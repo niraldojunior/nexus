@@ -1,0 +1,26 @@
+<!-- @dsCard group="Colors" viewport="700x140" name="Network-element taxonomy" subtitle="Color-coded classes for inventory & topology — OLT, splitter, CTO, pole, cable, site." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 18px; background: var(--surface-card); font-family: var(--font-ui); }
+  .row { display: flex; gap: 12px; }
+  .sw { flex: 1; text-align: center; }
+  .dot { width: 34px; height: 34px; border-radius: 8px; margin: 0 auto; }
+  .name { font: var(--text-label); color: var(--text-primary); margin-top: 8px; }
+  .hex { font: var(--text-eyebrow); font-family: var(--font-mono); color: var(--text-tertiary); margin-top: 2px; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="sw"><div class="dot" style="background:var(--net-olt)"></div><div class="name">OLT</div><div class="hex">#3B82F6</div></div>
+    <div class="sw"><div class="dot" style="background:var(--net-splitter)"></div><div class="name">Splitter</div><div class="hex">#8B5CF6</div></div>
+    <div class="sw"><div class="dot" style="background:var(--net-cto)"></div><div class="name">CTO</div><div class="hex">#10B981</div></div>
+    <div class="sw"><div class="dot" style="background:var(--net-poste)"></div><div class="name">Poste</div><div class="hex">#F59E0B</div></div>
+    <div class="sw"><div class="dot" style="background:var(--net-cabo)"></div><div class="name">Cabo</div><div class="hex">#334155</div></div>
+    <div class="sw"><div class="dot" style="background:var(--net-site);border:1px solid var(--border-strong)"></div><div class="name">Site/POP</div><div class="hex">#FFD919</div></div>
+  </div>
+</body>
+</html>

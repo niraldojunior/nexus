@@ -1,0 +1,25 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Status / Semantic" subtitle="Online, info, warning, error, planned — muted corporate palette." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 18px; background: var(--surface-card); font-family: var(--font-ui); }
+  .row { display: flex; gap: 14px; }
+  .sw { flex: 1; text-align: center; }
+  .dot { height: 56px; border-radius: var(--radius-md); display:flex; align-items:center; justify-content:center; }
+  .pill { display:inline-flex; padding: 3px 10px; border-radius: var(--radius-full); font: var(--text-eyebrow); text-transform: uppercase; letter-spacing: var(--tracking-wide); margin-top: 8px; }
+  .name { font: var(--text-eyebrow); color: var(--text-tertiary); text-transform: uppercase; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="sw"><div class="dot" style="background:var(--status-green)"></div><div class="pill" style="background:var(--status-green-soft);color:var(--status-green)">Online</div><div class="name">Green</div></div>
+    <div class="sw"><div class="dot" style="background:var(--status-blue)"></div><div class="pill" style="background:var(--status-blue-soft);color:var(--status-blue)">Em curso</div><div class="name">Blue</div></div>
+    <div class="sw"><div class="dot" style="background:var(--status-amber)"></div><div class="pill" style="background:var(--status-amber-soft);color:var(--status-amber)">Parcial</div><div class="name">Amber</div></div>
+    <div class="sw"><div class="dot" style="background:var(--status-red)"></div><div class="pill" style="background:var(--status-red-soft);color:var(--status-red)">Inviável</div><div class="name">Red</div></div>
+    <div class="sw"><div class="dot" style="background:var(--status-purple)"></div><div class="pill" style="background:var(--status-purple-soft);color:var(--status-purple)">Planejado</div><div class="name">Purple</div></div>
+  </div>
+</body>
+</html>

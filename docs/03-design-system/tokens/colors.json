@@ -1,0 +1,20 @@
+{
+  "vtYellow": "#FFD919",
+  "vtYellowLight": "#FFE047",
+  "vtInk": "#181919",
+  "surfaceApp": "#E5E7EB",
+  "surfaceCard": "#FFFFFF",
+  "surfaceSidebar": "#2E3238",
+  "surfaceInset": "#F1F5F9",
+  "border": "#E2E8F0",
+  "borderStrong": "#CBD5E1",
+  "textPrimary": "#181919",
+  "textSecondary": "#4B5563",
+  "textTertiary": "#9CA3AF",
+  "statusGreen": "#10B981",
+  "statusBlue": "#3B82F6",
+  "statusAmber": "#F59E0B",
+  "statusRed": "#EF4444",
+  "statusPurple": "#8B5CF6"
+}
+

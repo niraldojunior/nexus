@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="design_doc_mode" content="canvas">
+<title>Nexus — logotipo v3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#181919; --yellow:#FFD919; --b:#E7EBF0; }
+  body { margin:0; font-family:'Inter',sans-serif; }
+  .label { font-size:13px; font-weight:600; color:#6B7280; margin-bottom:12px; display:flex; align-items:center; gap:9px; }
+  .pill { font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:3px 8px; border-radius:99px; }
+  .pill-keep { background:#FFF6CC; color:#9A7B00; border:1px solid #F2D873; }
+  .pill-new { background:#EEF2F7; color:#5B6472; border:1px solid #DCE3EC; }
+  .card { background:#fff; border:1px solid var(--b); border-radius:18px; box-shadow:0 12px 36px rgba(15,23,42,.10); overflow:hidden; }
+  .card-keep { border-color:#F2D873; box-shadow:0 14px 40px rgba(255,196,0,.16); }
+  .eyebrow { font-size:10.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:#9CA3AF; }
+  .concept { font-size:13px; font-weight:600; color:#374151; margin-top:4px; }
+  .cap { padding:18px 34px 24px; font-size:12.5px; line-height:1.6; color:#5B6472; border-top:1px solid #EEF1F4; }
+  .sec { padding:34px; }
+  .hero { display:flex; align-items:center; gap:30px; border-bottom:1px solid #EEF1F4;
+          background:radial-gradient(120% 120% at 22% 30%, #FFFDF3 0%, #FFFFFF 60%); }
+  .symwrap { position:relative; display:flex; align-items:center; justify-content:center; width:100px; height:100px; flex-shrink:0; }
+  .glow { position:absolute; width:88px; height:88px; border-radius:50%;
+          background:radial-gradient(circle, rgba(255,217,25,.42) 0%, rgba(255,217,25,0) 68%); filter:blur(3px); }
+  .hero svg { position:relative; filter:drop-shadow(0 6px 12px rgba(15,23,42,.14)); }
+  .lockup { display:flex; align-items:center; gap:15px; }
+  .dark { background:#141516; display:flex; align-items:center; gap:22px; padding:24px 34px;
+          background-image:radial-gradient(120% 140% at 85% 10%, #1d1f21 0%, #121314 55%); }
+  .tile { width:54px; height:54px; border-radius:14px; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+          background:#26282b; box-shadow:inset 0 1px 0 rgba(255,255,255,.05); }
+  .fav { width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+         background:#1d1f21; box-shadow:inset 0 0 0 1.5px rgba(255,217,25,.55); }
+  .vdiv { width:1px; height:30px; background:#DBE0E7; display:inline-block; }
+  .vdiv-d { width:1px; height:24px; background:rgba(255,255,255,.2); display:inline-block; }
+  .nx { font-family:'Montserrat',sans-serif; font-weight:600; letter-spacing:-0.01em; }
+</style>
+</head>
+<body>
+
+<!-- ============ SYMBOL SPRITE ============ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+
+  <!-- KEEP · 2 Interlace -->
+  <g id="s2">
+    <rect x="14" y="14" width="36" height="36" rx="6" fill="none" stroke="currentColor" stroke-width="3.4"/>
+    <rect x="14" y="14" width="36" height="36" rx="6" fill="none" stroke="currentColor" stroke-width="3.4" transform="rotate(45 32 32)"/>
+    <rect x="25" y="25" width="14" height="14" rx="3.5" style="fill:#FFD919" transform="rotate(45 32 32)"/>
+  </g>
+
+  <!-- KEEP · 4 Gema facetada -->
+  <g id="s4">
+    <path d="M32 9 L53 21.5 L32 30 L11 21.5 Z" style="fill:#FFD919"/>
+    <path d="M11 21.5 L32 30 L32 55 L11 42.5 Z" fill="currentColor" opacity="0.92"/>
+    <path d="M53 21.5 L32 30 L32 55 L53 42.5 Z" fill="currentColor" opacity="0.5"/>
+    <path d="M32 9 L53 21.5 L32 30 L11 21.5 Z" fill="none" stroke="#FFFFFF" stroke-width="0.6" opacity="0.25"/>
+  </g>
+
+  <!-- NEW 1 · Diamante (lapidação brilhante, topo) -->
+  <g id="n1">
+    <polygon points="32,7 57,32 43,32 32,21" fill="currentColor" opacity="0.9"/>
+    <polygon points="57,32 32,57 32,43 43,32" fill="currentColor" opacity="0.55"/>
+    <polygon points="32,57 7,32 21,32 32,43" fill="currentColor" opacity="0.9"/>
+    <polygon points="7,32 32,7 32,21 21,32" fill="currentColor" opacity="0.55"/>
+    <polygon points="32,21 43,32 32,43 21,32" style="fill:#FFD919"/>
+    <g stroke="#FFFFFF" stroke-width="0.7" opacity="0.3">
+      <line x1="32" y1="7" x2="32" y2="21"/><line x1="57" y1="32" x2="43" y2="32"/>
+      <line x1="32" y1="57" x2="32" y2="43"/><line x1="7" y1="32" x2="21" y2="32"/>
+    </g>
+  </g>
+
+  <!-- NEW 2 · Octaedro (diamante 3D em pé) -->
+  <g id="n2">
+    <polygon points="32,6 32,30 12,30" style="fill:#FFD919"/>
+    <polygon points="32,6 32,30 52,30" style="fill:#FFD919" opacity="0.62"/>
+    <polygon points="12,30 32,30 32,58" fill="currentColor" opacity="0.9"/>
+    <polygon points="52,30 32,30 32,58" fill="currentColor" opacity="0.6"/>
+    <line x1="12" y1="30" x2="52" y2="30" stroke="#FFFFFF" stroke-width="0.8" opacity="0.35"/>
+  </g>
+
+  <!-- NEW 3 · Cubo no losango (hub + moldura de conexão) -->
+  <g id="n3">
+    <rect x="9" y="9" width="46" height="46" rx="6" fill="none" stroke="currentColor" stroke-width="3" transform="rotate(45 32 32)"/>
+    <polygon points="32,18 46,26 32,32 18,26" style="fill:#FFD919"/>
+    <polygon points="18,26 32,32 32,46 18,38" fill="currentColor" opacity="0.9"/>
+    <polygon points="46,26 32,32 32,46 46,38" fill="currentColor" opacity="0.55"/>
+  </g>
+
+  <!-- NEW 4 · Estrela facetada (8 pontas) -->
+  <g id="n4">
+    <g fill="currentColor" opacity="0.9">
+      <polygon points="27.79,21.84 32,6 36.2,21.84"/>
+      <polygon points="42.16,27.79 58,32 42.16,36.21"/>
+      <polygon points="36.2,42.16 32,58 27.79,42.16"/>
+      <polygon points="21.84,36.21 6,32 21.84,27.79"/>
+    </g>
+    <g fill="currentColor" opacity="0.58">
+      <polygon points="36.2,21.84 50.38,13.62 42.16,27.79"/>
+      <polygon points="42.16,36.21 50.38,50.38 36.2,42.16"/>
+      <polygon points="27.79,42.16 13.62,50.38 21.84,36.21"/>
+      <polygon points="21.84,27.79 13.62,13.62 27.79,21.84"/>
+    </g>
+    <polygon points="36.2,21.84 42.16,27.79 42.16,36.21 36.2,42.16 27.79,42.16 21.84,36.21 21.84,27.79 27.79,21.84" style="fill:#FFD919"/>
+  </g>
+
+  <!-- NEW 5 · Medalha / token extrudado -->
+  <g id="n5">
+    <polygon points="10,28 32,50 32,56 10,34" fill="currentColor" opacity="0.85"/>
+    <polygon points="54,28 32,50 32,56 54,34" fill="currentColor" opacity="0.85"/>
+    <polygon points="32,6 54,28 32,50 10,28" style="fill:#FFD919"/>
+    <g stroke="#181919" stroke-width="0.9" opacity="0.16">
+      <line x1="32" y1="6" x2="32" y2="50"/><line x1="10" y1="28" x2="54" y2="28"/>
+    </g>
+    <polygon points="32,15 45,28 32,41 19,28" fill="none" stroke="#181919" stroke-width="1.3" opacity="0.22"/>
+  </g>
+
+</defs></svg>
+
+<!-- ============ TITLE ============ -->
+<div style="position:absolute; left:80px; top:30px; width:1172px;">
+  <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:24px;">
+    <div>
+      <div style="font-family:'Montserrat'; font-weight:800; font-size:31px; letter-spacing:-0.02em; color:#181919;">Nexus — logotipo <span style="color:#B59500;">v3</span></div>
+      <div style="font-size:14px; color:#6B7280; margin-top:7px;">Mantidas as Direções 2 e 4 · 5 novas explorando faceta 3D + geometria de losango/estrela.</div>
+    </div>
+    <div style="font-size:12.5px; color:#9CA3AF; text-align:right; max-width:320px; line-height:1.55;">As novas combinam o vocabulário das duas prioritárias: profundidade facetada da gema + a estrela/losango do interlace.</div>
+  </div>
+</div>
+
+<!-- ====== KEEP: Dir 2 ====== -->
+<div style="position:absolute; left:80px; top:128px; width:560px;">
+  <div class="label" data-drags-parent="1">Direção 2 · Interlace <span class="pill pill-keep">Mantida</span></div>
+  <div class="card card-keep">
+    <div class="sec hero">
+      <div class="symwrap"><div class="glow"></div><svg viewBox="0 0 64 64" width="78" height="78" style="color:#181919; --acc:#FFD919"><use href="#s2"/></svg></div>
+      <div><div class="eyebrow">Símbolo</div><div class="concept">Quatro sistemas entrelaçados</div></div>
+    </div>
+    <div class="sec lockup">
+      <svg viewBox="0 0 64 64" width="44" height="44" style="color:#181919; --acc:#FFD919"><use href="#s2"/></svg>
+      <img src="assets/vtal-logo.png" alt="V.tal" style="height:30px;"/><span class="vdiv"></span><span class="nx" style="font-size:24px; color:#181919;">Nexus</span>
+    </div>
+    <div class="dark">
+      <svg viewBox="0 0 64 64" width="38" height="38" style="color:#fff; --acc:#FFD919"><use href="#s2"/></svg>
+      <img src="assets/vtal-logo-white.png" alt="V.tal" style="height:24px;"/><span class="vdiv-d"></span><span class="nx" style="font-size:20px; color:#fff;">Nexus</span>
+      <div style="flex:1"></div>
+      <div class="tile"><svg viewBox="0 0 64 64" width="32" height="32" style="color:#fff; --acc:#FFD919"><use href="#s2"/></svg></div>
+      <div class="fav"><svg viewBox="0 0 64 64" width="24" height="24" style="color:#fff"><use href="#s2"/></svg></div>
+    </div>
+    <div class="cap">Estrela de 8 pontas com núcleo dourado — a consolidação de Geosite, Logradouros, Geonet e Viabilidade.</div>
+  </div>
+</div>
+
+<!-- ====== KEEP: Dir 4 ====== -->
+<div style="position:absolute; left:696px; top:128px; width:560px;">
+  <div class="label" data-drags-parent="1">Direção 4 · Gema facetada <span class="pill pill-keep">Mantida</span></div>
+  <div class="card card-keep">
+    <div class="sec hero">
+      <div class="symwrap"><div class="glow"></div><svg viewBox="0 0 64 64" width="78" height="78" style="color:#181919; --acc:#FFD919"><use href="#s4"/></svg></div>
+      <div><div class="eyebrow">Símbolo</div><div class="concept">Hub dimensional — profundidade</div></div>
+    </div>
+    <div class="sec lockup">
+      <svg viewBox="0 0 64 64" width="44" height="44" style="color:#181919; --acc:#FFD919"><use href="#s4"/></svg>
+      <img src="assets/vtal-logo.png" alt="V.tal" style="height:30px;"/><span class="vdiv"></span><span class="nx" style="font-size:24px; color:#181919;">Nexus</span>
+    </div>
+    <div class="dark">
+      <svg viewBox="0 0 64 64" width="38" height="38" style="color:#fff; --acc:#FFD919"><use href="#s4"/></svg>
+      <img src="assets/vtal-logo-white.png" alt="V.tal" style="height:24px;"/><span class="vdiv-d"></span><span class="nx" style="font-size:20px; color:#fff;">Nexus</span>
+      <div style="flex:1"></div>
+      <div class="tile"><svg viewBox="0 0 64 64" width="32" height="32" style="color:#fff; --acc:#FFD919"><use href="#s4"/></svg></div>
+      <div class="fav"><svg viewBox="0 0 64 64" width="24" height="24" style="color:#fff"><use href="#s4"/></svg></div>
+    </div>
+    <div class="cap">Gema isométrica com face superior em ouro V·tal e faces laterais em profundidade — robustez de infraestrutura.</div>
+  </div>
+</div>
+
+<!-- ====== NEW 1 ====== -->
+<div style="position:absolute; left:80px; top:766px; width:560px;">
+  <div class="label" data-drags-parent="1">Nova A · Diamante <span class="pill pill-new">Nova</span></div>
+  <div class="card">
+    <div class="sec hero">
+      <div class="symwrap"><div class="glow"></div><svg viewBox="0 0 64 64" width="78" height="78" style="color:#181919; --acc:#FFD919"><use href="#n1"/></svg></div>
+      <div><div class="eyebrow">Símbolo</div><div class="concept">Lapidação brilhante,<br>mesa em ouro</div></div>
+    </div>
+    <div class="sec lockup">
+      <svg viewBox="0 0 64 64" width="44" height="44" style="color:#181919; --acc:#FFD919"><use href="#n1"/></svg>
+      <img src="assets/vtal-logo.png" alt="V.tal" style="height:30px;"/><span class="vdiv"></span><span class="nx" style="font-size:24px; color:#181919;">Nexus</span>
+    </div>
+    <div class="dark">
+      <svg viewBox="0 0 64 64" width="38" height="38" style="color:#fff; --acc:#FFD919"><use href="#n1"/></svg>
+      <img src="assets/vtal-logo-white.png" alt="V.tal" style="height:24px;"/><span class="vdiv-d"></span><span class="nx" style="font-size:20px; color:#fff;">Nexus</span>
+      <div style="flex:1"></div>
+      <div class="tile"><svg viewBox="0 0 64 64" width="32" height="32" style="color:#fff; --acc:#FFD919"><use href="#n1"/></svg></div>
+      <div class="fav"><svg viewBox="0 0 64 64" width="24" height="24" style="color:#fff"><use href="#n1"/></svg></div>
+    </div>
+    <div class="cap">A gema vista de topo — facetas em camadas com a mesa central em ouro V·tal. Joia: precisão, valor e clareza.</div>
+  </div>
+</div>
+
+<!-- ====== NEW 2 ====== -->
+<div style="position:absolute; left:696px; top:766px; width:560px;">
+  <div class="label" data-drags-parent="1">Nova B · Octaedro <span class="pill pill-new">Nova</span></div>
+  <div class="card">
+    <div class="sec hero">
+      <div class="symwrap"><div class="glow"></div><svg viewBox="0 0 64 64" width="78" height="78" style="color:#181919; --acc:#FFD919"><use href="#n2"/></svg></div>
+      <div><div class="eyebrow">Símbolo</div><div class="concept">Diamante 3D — coroa<br>em ouro, pavilhão escuro</div></div>
+    </div>
+    <div class="sec lockup">
+      <svg viewBox="0 0 64 64" width="44" height="44" style="color:#181919; --acc:#FFD919"><use href="#n2"/></svg>
+      <img src="assets/vtal-logo.png" alt="V.tal" style="height:30px;"/><span class="vdiv"></span><span class="nx" style="font-size:24px; color:#181919;">Nexus</span>
+    </div>
+    <div class="dark">
+      <svg viewBox="0 0 64 64" width="38" height="38" style="color:#fff; --acc:#FFD919"><use href="#n2"/></svg>
+      <img src="assets/vtal-logo-white.png" alt="V.tal" style="height:24px;"/><span class="vdiv-d"></span><span class="nx" style="font-size:20px; color:#fff;">Nexus</span>
+      <div style="flex:1"></div>
+      <div class="tile"><svg viewBox="0 0 64 64" width="32" height="32" style="color:#fff; --acc:#FFD919"><use href="#n2"/></svg></div>
+      <div class="fav"><svg viewBox="0 0 64 64" width="24" height="24" style="color:#fff"><use href="#n2"/></svg></div>
+    </div>
+    <div class="cap">Diamante tridimensional em pé — coroa dourada, pavilhão em profundidade. Icônico e inconfundível como ícone de app.</div>
+  </div>
+</div>
+
+<!-- ====== NEW 3 ====== -->
+<div style="position:absolute; left:80px; top:1404px; width:560px;">
+  <div class="label" data-drags-parent="1">Nova C · Cubo no losango <span class="pill pill-new">Nova</span></div>
+  <div class="card">
+    <div class="sec hero">
+      <div class="symwrap"><div class="glow"></div><svg viewBox="0 0 64 64" width="78" height="78" style="color:#181919; --acc:#FFD919"><use href="#n3"/></svg></div>
+      <div><div class="eyebrow">Símbolo</div><div class="concept">O hub dentro da<br>moldura de conexão</div></div>
+    </div>
+    <div class="sec lockup">
+      <svg viewBox="0 0 64 64" width="44" height="44" style="color:#181919; --acc:#FFD919"><use href="#n3"/></svg>
+      <img src="assets/vtal-logo.png" alt="V.tal" style="height:30px;"/><span class="vdiv"></span><span class="nx" style="font-size:24px; color:#181919;">Nexus</span>
+    </div>
+    <div class="dark">
+      <svg viewBox="0 0 64 64" width="38" height="38" style="color:#fff; --acc:#FFD919"><use href="#n3"/></svg>
+      <img src="assets/vtal-logo-white.png" alt="V.tal" style="height:24px;"/><span class="vdiv-d"></span><span class="nx" style="font-size:20px; color:#fff;">Nexus</span>
+      <div style="flex:1"></div>
+      <div class="tile"><svg viewBox="0 0 64 64" width="32" height="32" style="color:#fff; --acc:#FFD919"><use href="#n3"/></svg></div>
+      <div class="fav"><svg viewBox="0 0 64 64" width="24" height="24" style="color:#fff"><use href="#n3"/></svg></div>
+    </div>
+    <div class="cap">A fusão direta: o cubo-hub da Direção 4 abrigado no losango de conexão da Direção 2 — nó e rede num só sinal.</div>
+  </div>
+</div>
+
+<!-- ====== NEW 4 ====== -->
+<div style="position:absolute; left:696px; top:1404px; width:560px;">
+  <div class="label" data-drags-parent="1">Nova D · Estrela facetada <span class="pill pill-new">Nova</span></div>
+  <div class="card">
+    <div class="sec hero">
+      <div class="symwrap"><div class="glow"></div><svg viewBox="0 0 64 64" width="78" height="78" style="color:#181919; --acc:#FFD919"><use href="#n4"/></svg></div>
+      <div><div class="eyebrow">Símbolo</div><div class="concept">A estrela de 8 pontas,<br>agora facetada</div></div>
+    </div>
+    <div class="sec lockup">
+      <svg viewBox="0 0 64 64" width="44" height="44" style="color:#181919; --acc:#FFD919"><use href="#n4"/></svg>
+      <img src="assets/vtal-logo.png" alt="V.tal" style="height:30px;"/><span class="vdiv"></span><span class="nx" style="font-size:24px; color:#181919;">Nexus</span>
+    </div>
+    <div class="dark">
+      <svg viewBox="0 0 64 64" width="38" height="38" style="color:#fff; --acc:#FFD919"><use href="#n4"/></svg>
+      <img src="assets/vtal-logo-white.png" alt="V.tal" style="height:24px;"/><span class="vdiv-d"></span><span class="nx" style="font-size:20px; color:#fff;">Nexus</span>
+      <div style="flex:1"></div>
+      <div class="tile"><svg viewBox="0 0 64 64" width="32" height="32" style="color:#fff; --acc:#FFD919"><use href="#n4"/></svg></div>
+      <div class="fav"><svg viewBox="0 0 64 64" width="24" height="24" style="color:#fff"><use href="#n4"/></svg></div>
+    </div>
+    <div class="cap">A estrela da Direção 2 ganha facetas alternadas e um núcleo octogonal em ouro — dimensão e brilho de joia.</div>
+  </div>
+</div>
+
+<!-- ====== NEW 5 ====== -->
+<div style="position:absolute; left:388px; top:2042px; width:560px;">
+  <div class="label" data-drags-parent="1">Nova E · Medalha <span class="pill pill-new">Nova</span></div>
+  <div class="card">
+    <div class="sec hero">
+      <div class="symwrap"><div class="glow"></div><svg viewBox="0 0 64 64" width="78" height="78" style="color:#181919; --acc:#FFD919"><use href="#n5"/></svg></div>
+      <div><div class="eyebrow">Símbolo</div><div class="concept">Losango extrudado —<br>um selo sólido</div></div>
+    </div>
+    <div class="sec lockup">
+      <svg viewBox="0 0 64 64" width="44" height="44" style="color:#181919; --acc:#FFD919"><use href="#n5"/></svg>
+      <img src="assets/vtal-logo.png" alt="V.tal" style="height:30px;"/><span class="vdiv"></span><span class="nx" style="font-size:24px; color:#181919;">Nexus</span>
+    </div>
+    <div class="dark">
+      <svg viewBox="0 0 64 64" width="38" height="38" style="color:#fff; --acc:#FFD919"><use href="#n5"/></svg>
+      <img src="assets/vtal-logo-white.png" alt="V.tal" style="height:24px;"/><span class="vdiv-d"></span><span class="nx" style="font-size:20px; color:#fff;">Nexus</span>
+      <div style="flex:1"></div>
+      <div class="tile"><svg viewBox="0 0 64 64" width="32" height="32" style="color:#fff; --acc:#FFD919"><use href="#n5"/></svg></div>
+      <div class="fav"><svg viewBox="0 0 64 64" width="24" height="24" style="color:#fff"><use href="#n5"/></svg></div>
+    </div>
+    <div class="cap">Losango em ouro extrudado com profundidade — um selo/token sólido. Une a faceta da gema com a moldura do losango.</div>
+  </div>
+</div>
+
+</body>
+</html>

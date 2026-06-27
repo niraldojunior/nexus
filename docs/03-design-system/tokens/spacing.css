@@ -1,0 +1,29 @@
+/* ============================================================
+   V.tal Nexus — Spacing & Layout Tokens
+   4px base grid. Component padding lives on the 8/12/16 steps.
+   ============================================================ */
+
+:root {
+  /* ---- Spacing scale (4px base) ---------------------------- */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* ---- App layout ------------------------------------------ */
+  --sidebar-width: 220px;
+  --sidebar-collapsed: 56px;
+  --header-height: 48px;
+  --content-pad: 18px;
+  --content-max: 1440px;
+
+  /* ---- Common gaps ----------------------------------------- */
+  --gap-tight: 8px;
+  --gap-card: 12px;
+  --gap-section: 16px;
+}

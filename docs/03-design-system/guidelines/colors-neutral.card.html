@@ -1,0 +1,26 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Neutrals & Surfaces" subtitle="Cool-gray canvas, white cards, dark chrome, hairline borders." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 18px; background: var(--surface-card); font-family: var(--font-ui); }
+  .row { display: flex; gap: 14px; }
+  .sw { flex: 1; border-radius: var(--radius-md); border: 1px solid var(--border); overflow: hidden; }
+  .chip { height: 70px; }
+  .meta { padding: 8px 10px; }
+  .name { font: var(--text-label); color: var(--text-primary); }
+  .hex { font: var(--text-eyebrow); font-family: var(--font-mono); color: var(--text-tertiary); text-transform: uppercase; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:var(--surface-app)"></div><div class="meta"><div class="name">App</div><div class="hex">#E5E7EB</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--surface-card);border-bottom:1px solid var(--border)"></div><div class="meta"><div class="name">Card</div><div class="hex">#FFFFFF</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--surface-inset)"></div><div class="meta"><div class="name">Inset</div><div class="hex">#F1F5F9</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--surface-sidebar)"></div><div class="meta"><div class="name">Sidebar</div><div class="hex">#2E3238</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--border-strong)"></div><div class="meta"><div class="name">Border</div><div class="hex">#CBD5E1</div></div></div>
+  </div>
+</body>
+</html>

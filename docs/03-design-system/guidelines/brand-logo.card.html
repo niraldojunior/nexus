@@ -1,0 +1,50 @@
+<!-- @dsCard group="Brand" viewport="700x260" name="Logo & lockups" subtitle="Nexus cube-hub mark + official V·tal logo. Lockups on light and dark." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 0; background: var(--surface-card); font-family: var(--font-ui); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; }
+  .panel { display: flex; align-items: center; gap: 14px; padding: 26px 28px; min-height: 96px; }
+  .light { border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
+  .dark { background: var(--surface-sidebar); border-bottom: 1px solid var(--border); }
+  .icons { display: flex; align-items: center; gap: 16px; padding: 22px 28px; border-right: 1px solid var(--border); }
+  .meta { display: flex; align-items: center; gap: 16px; padding: 22px 28px; }
+  .vdiv { width: 1px; height: 24px; background: var(--border-strong); }
+  .vdiv-d { width: 1px; height: 20px; background: rgba(255,255,255,0.22); }
+  .nx { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.01em; }
+  .tile { width: 52px; height: 52px; border-radius: 13px; display: flex; align-items: center; justify-content: center; }
+  .cap { font: var(--text-eyebrow); text-transform: uppercase; letter-spacing: .05em; color: var(--text-tertiary); }
+</style>
+</head>
+<body>
+  <div class="grid">
+    <div class="panel light">
+      <img src="../assets/nexus-mark.svg" style="height:38px" alt="Nexus mark">
+      <img src="../assets/vtal-logo.png" style="height:24px" alt="V.tal">
+      <span class="vdiv"></span>
+      <span class="nx" style="font-size:21px; color:var(--text-primary)">Nexus</span>
+    </div>
+    <div class="panel dark">
+      <img src="../assets/nexus-mark-white.svg" style="height:38px" alt="Nexus mark">
+      <img src="../assets/vtal-logo-white.png" style="height:24px" alt="V.tal">
+      <span class="vdiv-d"></span>
+      <span class="nx" style="font-size:21px; color:#fff">Nexus</span>
+    </div>
+    <div class="icons">
+      <div class="tile" style="background:#141516"><img src="../assets/nexus-mark-white.svg" style="height:32px" alt=""></div>
+      <div class="tile" style="background:var(--vt-yellow)"><img src="../assets/nexus-mark-solid.svg" style="height:32px" alt=""></div>
+      <div class="tile" style="background:#fff; border:1px solid var(--border)"><img src="../assets/nexus-mark-solid.svg" style="height:32px" alt=""></div>
+    </div>
+    <div class="meta">
+      <img src="../assets/nexus-mark.svg" style="height:46px" alt="">
+      <div>
+        <div style="font-size:13px; font-weight:600; color:var(--text-primary)">Cube-hub no losango</div>
+        <div class="cap" style="margin-top:3px">Nó central · 4 nós de rede · 1 ativo (ouro)</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

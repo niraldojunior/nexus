@@ -1,0 +1,22 @@
+<!-- @dsCard group="Effects" viewport="700x170" name="Elevation & golden glow" subtitle="Soft low-contrast shadows; the gold glow signals focus & lift." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 26px 22px; background: var(--surface-app); font-family: var(--font-ui); }
+  .row { display: flex; gap: 22px; }
+  .card { flex: 1; background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-md); height: 80px; display:flex; align-items:flex-end; padding: 10px; }
+  .name { font: var(--text-eyebrow); text-transform: uppercase; letter-spacing: var(--tracking-wide); color: var(--text-tertiary); }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="card" style="box-shadow:var(--shadow-sm)"><span class="name">shadow-sm</span></div>
+    <div class="card" style="box-shadow:var(--shadow-md)"><span class="name">shadow-md</span></div>
+    <div class="card" style="box-shadow:var(--shadow-lg)"><span class="name">shadow-lg</span></div>
+    <div class="card" style="box-shadow:var(--shadow-gold);border-color:var(--vt-yellow)"><span class="name">shadow-gold</span></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "fontUi": "Inter",
+  "fontDisplay": "Montserrat",
+  "fontMono": "JetBrains Mono",
+  "display": {
+    "size": "1.9rem",
+    "weight": 800,
+    "lineHeight": 1.1,
+    "tracking": "-0.025em"
+  },
+  "h1": {
+    "size": "1.45rem",
+    "weight": 800,
+    "lineHeight": 1.1,
+    "tracking": "-0.025em"
+  },
+  "body": {
+    "size": "0.8125rem",
+    "weight": 400,
+    "lineHeight": 1.4,
+    "tracking": 0
+  },
+  "label": {
+    "size": "0.72rem",
+    "weight": 600,
+    "lineHeight": 1.22,
+    "tracking": "0.05em"
+  }
+}
+

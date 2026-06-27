@@ -1,0 +1,37 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Brand — V.tal Yellow" subtitle="Primary accent + ink. Yellow carries the brand; ink reads on it." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 18px; background: var(--surface-card); font-family: var(--font-ui); }
+  .row { display: flex; gap: 14px; }
+  .sw { flex: 1; border-radius: var(--radius-md); border: 1px solid var(--border); overflow: hidden; }
+  .chip { height: 70px; display: flex; align-items: flex-end; padding: 8px; }
+  .meta { padding: 8px 10px; }
+  .name { font: var(--text-label); color: var(--text-primary); }
+  .hex { font: var(--text-eyebrow); font-family: var(--font-mono); color: var(--text-tertiary); text-transform: uppercase; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="sw">
+      <div class="chip" style="background:var(--vt-yellow)"><span style="font:var(--text-label);color:var(--vt-ink)">Aa</span></div>
+      <div class="meta"><div class="name">Yellow</div><div class="hex">#FFD919</div></div>
+    </div>
+    <div class="sw">
+      <div class="chip" style="background:var(--vt-yellow-light)"></div>
+      <div class="meta"><div class="name">Yellow Light</div><div class="hex">#FFE047</div></div>
+    </div>
+    <div class="sw">
+      <div class="chip" style="background:var(--vt-ink)"><span style="font:var(--text-label);color:var(--vt-yellow)">Aa</span></div>
+      <div class="meta"><div class="name">Ink</div><div class="hex">#181919</div></div>
+    </div>
+    <div class="sw">
+      <div class="chip" style="background:var(--slate)"><span style="font:var(--text-label);color:#fff">Aa</span></div>
+      <div class="meta"><div class="name">Slate</div><div class="hex">#334155</div></div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,67 @@
+/* ============================================================
+   V.tal Nexus — Color Tokens
+   Source of truth: oraculo codebase (frontend/src/index.css)
+   Brand: V.tal Yellow on a clean light-corporate surface system.
+   ============================================================ */
+
+:root {
+  /* ---- Brand / Primary accent — V.tal Yellow ---------------- */
+  --vt-yellow: #FFD919;        /* core brand accent */
+  --vt-yellow-light: #FFE047;  /* hover / lift */
+  --vt-yellow-dim: rgba(255, 217, 25, 0.10); /* tint wash */
+  --vt-ink: #181919;           /* near-black brand ink (text on yellow) */
+
+  /* ---- Neutrals / Surfaces ---------------------------------- */
+  --surface-app: #E5E7EB;      /* app canvas (cool gray) */
+  --surface-card: #FFFFFF;     /* cards, panels, sheets */
+  --surface-card-hover: #F8FAFC;
+  --surface-sidebar: #2E3238;  /* dark chrome (sidebar) */
+  --surface-inset: #F1F5F9;    /* inputs, wells, code */
+
+  /* ---- Borders ---------------------------------------------- */
+  --border: #E2E8F0;           /* default hairline */
+  --border-strong: #CBD5E1;    /* emphasized / focus-adjacent */
+
+  /* ---- Text ------------------------------------------------- */
+  --text-primary: #181919;
+  --text-secondary: #4B5563;
+  --text-tertiary: #9CA3AF;
+  --text-on-dark: #FFFFFF;
+  --text-on-dark-dim: rgba(255, 255, 255, 0.45);
+
+  /* ---- Secondary accent — corporate slate ------------------- */
+  --slate: #334155;
+  --slate-700: #334155;
+  --slate-500: #64748B;
+
+  /* ---- Status / Semantic ------------------------------------ */
+  --status-green: #10B981;     /* ok / online / viable */
+  --status-blue: #3B82F6;      /* in progress / info */
+  --status-amber: #F59E0B;     /* warning / partial viability */
+  --status-red: #EF4444;       /* error / down / unviable */
+  --status-purple: #8B5CF6;    /* planned / reserved */
+
+  /* tinted fills for badges/pills (status color @ ~12% over white) */
+  --status-green-soft: #E7F8F1;
+  --status-blue-soft: #EAF2FE;
+  --status-amber-soft: #FEF4E2;
+  --status-red-soft: #FDECEC;
+  --status-purple-soft: #F1ECFD;
+
+  /* ---- Network-element taxonomy (V.tal Nexus domain) -------- */
+  /* Used to color-code network element classes in inventory/topology. */
+  --net-olt: #3B82F6;          /* OLT / head-end */
+  --net-splitter: #8B5CF6;     /* splitter / CEO */
+  --net-cto: #10B981;          /* CTO / terminal box */
+  --net-poste: #F59E0B;        /* pole / infra */
+  --net-cabo: #334155;         /* cable / span */
+  --net-site: #FFD919;         /* site / POP */
+
+  /* ---- Semantic aliases (prefer these in components) -------- */
+  --accent: var(--vt-yellow);
+  --accent-hover: var(--vt-yellow-light);
+  --accent-on: var(--vt-ink);
+  --bg-app: var(--surface-app);
+  --bg-card: var(--surface-card);
+  --focus-ring: rgba(255, 217, 25, 0.45);
+}

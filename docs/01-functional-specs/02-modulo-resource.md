@@ -51,6 +51,34 @@ Este documento é o segundo HLD de módulo da plataforma e estende o modelo arqu
 - Auditoria global e RBAC granular: **Módulo 8 — Nexus Platform & Administration**.
 - Capacidade de Service Assurance (correlação de alarmes, troubleshooting): consumidor de eventos TMF688 publicados por este módulo, fora do Nexus.
 
+### 2.3 Aderência ao codebase atual (`resource-catalog`)
+
+O codebase presente neste repositório implementa apenas um subconjunto bem definido do HLD03. Ele cobre o **catálogo TMF634** e a infraestrutura transversal necessária para operar esse catálogo como microserviço NestJS, mas **não** implementa o inventário TMF639 nem os subdomínios físicos e lógicos detalhados nas seções seguintes deste HLD.
+
+**Cobertura confirmada no código:**
+
+- `ResourceCatalog`, `ResourceCategory` e `ResourceSpecification` com CRUD de criação, consulta, atualização e paginação.
+- `ResourceCandidate` como entidade derivada e sincronizada automaticamente a partir de `ResourceSpecification`.
+- `Hub` para registro e remoção de assinantes de eventos.
+- Persistência com suporte a `MongoDB`, `SQLite` e `memory`.
+- Filtros, validação de payload, paginação e cabeçalhos de resultado.
+- Eventos de catálogo publicados para assinantes via dispatcher/Hub.
+- Controllers HTTP versionados, presenters e use cases separados.
+- Infraestrutura transversal de logger, health check, Swagger, CORS, cache, RMQ e tracing.
+
+**Fora do escopo do codebase atual:**
+
+- CRUD canônico de `Resource` TMF639.
+- Modelagem de `PhysicalResource` e `LogicalResource`.
+- Hierarquia de contenção física, portas, cards, racks, cabos, splices, IPAM, VRF, VLAN, ASN e MPLS.
+- Path computation e catálogos de relacionamento do inventário.
+- Ciclo de vida multi-dimensional X.731 do recurso físico/lógico.
+- Eventos TMF688 do inventário de recursos.
+
+**Conclusão de revisão:**
+
+O HLD03 permanece válido como visão funcional do domínio Resource, mas a implementação disponível neste repositório corresponde, na prática, ao módulo de **Resource Catalog (TMF634)** e à base técnica transversal. As seções de inventário TMF639 devem ser tratadas como evolução futura ou como material de especificação para os próximos projetos, não como entrega atual deste codebase.
+
 ---
 
 ## 3. Modelo conceitual TMF

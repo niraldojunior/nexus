@@ -1,0 +1,24 @@
+<!-- @dsCard group="Effects" viewport="700x140" name="Radii" subtitle="6 chips · 10 cards · 16 sheets · full pills. Soft, never sharp." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 22px; background: var(--surface-card); font-family: var(--font-ui); }
+  .row { display: flex; gap: 22px; align-items: center; }
+  .item { text-align: center; }
+  .box { width: 84px; height: 64px; background: var(--surface-inset); border: 1.5px solid var(--border-strong); }
+  .v { font: var(--text-label); color: var(--text-primary); margin-top: 8px; }
+  .t { font: var(--text-eyebrow); font-family: var(--font-mono); color: var(--text-tertiary); }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="item"><div class="box" style="border-radius:6px"></div><div class="v">6px</div><div class="t">radius-sm</div></div>
+    <div class="item"><div class="box" style="border-radius:10px"></div><div class="v">10px</div><div class="t">radius-md</div></div>
+    <div class="item"><div class="box" style="border-radius:16px"></div><div class="v">16px</div><div class="t">radius-lg</div></div>
+    <div class="item"><div class="box" style="width:120px;border-radius:9999px"></div><div class="v">full</div><div class="t">radius-full</div></div>
+  </div>
+</body>
+</html>

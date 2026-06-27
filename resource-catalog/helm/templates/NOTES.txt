@@ -1,0 +1,191 @@
+✅ Installed {{ .Release.Name }} in namespace {{ .Release.Namespace }}
+
+Backstage:
+  kubernetes-id: {{ include "app.backstageKubernetesId" . }}
+
+{{- $route := .Values.route | default dict -}}
+{{- $routeEnabled := $route.enabled | default false -}}
+{{- $host := $route.host | default "" -}}
+{{- $domain := $route.domain | default "" -}}
+{{- $tls := $route.tls | default dict -}}
+
+{{- $service := .Values.service | default dict -}}
+{{- $servicePort := $service.port | default 8080 -}}
+{{- $serviceTargetPort := $service.targetPort | default "http" -}}
+
+{{- $registrySecret := .Values.registrySecret | default dict -}}
+
+{{- $probes := .Values.probes | default dict -}}
+{{- $startup := $probes.startup | default dict -}}
+{{- $liveness := $probes.liveness | default dict -}}
+{{- $readiness := $probes.readiness | default dict -}}
+
+{{- $hpa := .Values.hpa | default dict -}}
+{{- $hpaEnabled := $hpa.enabled | default false -}}
+
+{{- $startupPath := "/healthz" -}}
+{{- $startupPort := 8080 -}}
+{{- if and ($startup.enabled | default false) ($startup.httpGet) -}}
+  {{- $startupPath = ($startup.httpGet.path | default "/healthz") -}}
+  {{- $startupPort = ($startup.httpGet.port | default 8080) -}}
+{{- end -}}
+
+{{- $livenessPath := "/healthz" -}}
+{{- $livenessPort := 8080 -}}
+{{- if and ($liveness.enabled | default false) ($liveness.httpGet) -}}
+  {{- $livenessPath = ($liveness.httpGet.path | default "/healthz") -}}
+  {{- $livenessPort = ($liveness.httpGet.port | default 8080) -}}
+{{- end -}}
+
+{{- $readinessPath := "/healthz" -}}
+{{- $readinessPort := 8080 -}}
+{{- if and ($readiness.enabled | default false) ($readiness.httpGet) -}}
+  {{- $readinessPath = ($readiness.httpGet.path | default "/healthz") -}}
+  {{- $readinessPort = ($readiness.httpGet.port | default 8080) -}}
+{{- end -}}
+
+Application:
+  name: {{ include "app.fullname" . }}
+  label: {{ include "app.label" . }}
+  namespace: {{ .Release.Namespace }}
+  release: {{ .Release.Name }}
+
+ServiceAccount:
+  create: {{ ((.Values.serviceAccount | default dict).create | default true) }}
+  name: {{ include "app.serviceAccountName" . }}
+
+Labels:
+  app.kubernetes.io/name: {{ include "app.label" . }}
+  app.kubernetes.io/instance: {{ .Release.Name }}
+  app.kubernetes.io/managed-by: {{ .Release.Service }}
+  helm.sh/chart: {{ printf "%s-%s" .Chart.Name (.Chart.Version | replace "+" "_") }}
+  {{- if .Chart.AppVersion }}
+  app.kubernetes.io/version: {{ .Chart.AppVersion }}
+  {{- end }}
+
+Service:
+  name: {{ include "app.fullname" . }}
+  port: {{ $servicePort }}
+  targetPort: {{ $serviceTargetPort }}
+
+Route:
+{{- if $routeEnabled }}
+  enabled: true
+  {{- if $host }}
+  url: https://{{ $host }}
+  {{- else if $domain }}
+  url: https://{{ include "app.fullname" . }}.{{ $domain }}
+  {{- else }}
+  url: (domain/host not set)
+  {{- end }}
+  tls:
+    enabled: {{ $tls.enabled | default false }}
+    termination: {{ $tls.termination | default "edge" }}
+    insecureEdgeTerminationPolicy: {{ $tls.insecureEdgeTerminationPolicy | default "Redirect" }}
+{{- else }}
+  enabled: false
+{{- end }}
+
+Registry pull Secret:
+{{- if ($registrySecret.create | default false) }}
+  created: true
+  name: {{ include "app.registrySecretName" . }}
+{{- else if and (.Values.imagePullSecrets) (gt (len .Values.imagePullSecrets) 0) }}
+  created: false
+  existing:
+{{- range .Values.imagePullSecrets }}
+    - {{ .name }}
+{{- end }}
+{{- else }}
+  created: false
+  existing: []
+{{- end }}
+
+Probes:
+  startup:
+{{- if ($startup.enabled | default false) }}
+    enabled: true
+    path: {{ $startupPath }}
+    port: {{ $startupPort }}
+{{- else }}
+    enabled: false
+{{- end }}
+
+  liveness:
+{{- if ($liveness.enabled | default false) }}
+    enabled: true
+    path: {{ $livenessPath }}
+    port: {{ $livenessPort }}
+{{- else }}
+    enabled: false
+{{- end }}
+
+  readiness:
+{{- if ($readiness.enabled | default false) }}
+    enabled: true
+    path: {{ $readinessPath }}
+    port: {{ $readinessPort }}
+{{- else }}
+    enabled: false
+{{- end }}
+
+HPA:
+{{- if $hpaEnabled }}
+  enabled: true
+  minReplicas: {{ $hpa.minReplicas | default 1 }}
+  maxReplicas: {{ $hpa.maxReplicas | default 3 }}
+  {{- if $hpa.metrics }}
+  metrics: custom
+  {{- else }}
+  metrics: cpu
+  targetCPUUtilizationPercentage: {{ $hpa.targetCPUUtilizationPercentage | default 80 }}
+  {{- end }}
+{{- else }}
+  enabled: false
+{{- end }}
+
+Useful endpoints:
+{{- if $routeEnabled }}
+  {{- if $host }}
+  Base URL: https://{{ $host }}
+  Swagger UI: https://{{ $host }}/swagger/index.html
+  Swagger JSON: https://{{ $host }}/swagger/swagger.json
+  {{- else if $domain }}
+  Base URL: https://{{ include "app.fullname" . }}.{{ $domain }}
+  Swagger UI: https://{{ include "app.fullname" . }}.{{ $domain }}/swagger/index.html
+  Swagger JSON: https://{{ include "app.fullname" . }}.{{ $domain }}/swagger/swagger.json
+  {{- else }}
+  Base URL: (domain/host not set)
+  Swagger UI: (domain/host not set)
+  Swagger JSON: (domain/host not set)
+  {{- end }}
+{{- else }}
+  Base URL: (route disabled)
+  Swagger UI: (route disabled)
+  Swagger JSON: (route disabled)
+{{- end }}
+
+Useful commands:
+  oc get all -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+  oc logs -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+  oc describe pod -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+  oc port-forward svc/{{ include "app.fullname" . }} 8080:{{ $servicePort }} -n {{ .Release.Namespace }}
+{{- if $routeEnabled }}
+  oc get route {{ include "app.fullname" . }} -n {{ .Release.Namespace }}
+{{- end }}
+{{- if $hpaEnabled }}
+  oc get hpa {{ include "app.fullname" . }} -n {{ .Release.Namespace }}
+  oc describe hpa {{ include "app.fullname" . }} -n {{ .Release.Namespace }}
+{{- end }}
+
+Manual test:
+  curl http://localhost:8080/
+{{- if ($startup.enabled | default false) }}
+  curl http://localhost:8080{{ $startupPath }}
+{{- end }}
+{{- if ($liveness.enabled | default false) }}
+  curl http://localhost:8080{{ $livenessPath }}
+{{- end }}
+{{- if ($readiness.enabled | default false) }}
+  curl http://localhost:8080{{ $readinessPath }}
+{{- end }}

@@ -1,0 +1,135 @@
+name: Build & Deploy Dev 🚀
+
+on:
+  push:
+    branches:
+      - "feature/**"
+      - "bugfix/**"
+      - "hotfix/**"
+  workflow_dispatch: {}
+
+concurrency:
+  group: dev-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  id-token: write
+
+jobs:
+  validate:
+    name: Guard 🛡️
+    secrets: inherit # pragma: allowlist secrets
+    uses: V-tal/shared-workflows/.github/workflows/check-rules.yml@main
+    with:
+      runs_on: '["self-hosted","dev"]'
+      trigger_event_name: ${{ github.event_name }}
+      push_created: ${{ github.event.created }}
+      main_branch: "main"
+      release_prefix: "release/"
+      feature_prefix: "feature/"
+      bugfix_prefix: "bugfix/"
+      hotfix_prefix: "hotfix/"
+      ignore_bot_prs: true
+      allow_workflow_dispatch: true
+
+  sonar:
+    name: SonarQube Scan 🔍
+    needs: [validate]
+    if: >-
+      ${{
+        needs.validate.result == 'success' &&
+        needs.validate.outputs.should_run_sonar == 'true' &&
+        !(
+          github.event_name == 'push' &&
+          github.event.created == true &&
+          github.event.commits[0] == null
+        )
+      }}
+    secrets: inherit # pragma: allowlist secret
+    uses: V-tal/shared-workflows/.github/workflows/sonar-node.yml@main
+    with:
+      runs_on: '["self-hosted","dev"]'
+      context: "."
+      unit_tests_enabled: true
+      coverage_required: true
+      sonar_enabled: true
+      sonar_project_name: "ms-resource-catalog"
+      sonar_project_key: "com.vtal.ms-resource-catalog"
+      sonar_sources: "src"
+      sonar_tests: ""
+      sonar_test_inclusions: "**/*.test.js,**/*.test.jsx,**/*.test.ts,**/*.test.tsx,**/*.spec.js,**/*.spec.jsx,**/*.spec.ts,**/*.spec.tsx"
+      sonar_exclusions: "node_modules/**,dist/**,build/**"
+      sonar_coverage: "coverage/lcov.info"
+
+  build:
+    name: Build & Push ♻️
+    needs: [validate, sonar]
+    if: >-
+      ${{
+        needs.validate.result == 'success' &&
+        needs.sonar.result == 'success' &&
+        !(
+          github.event_name == 'push' &&
+          github.event.created == true &&
+          github.event.commits[0] == null
+        )
+      }}
+    secrets: inherit # pragma: allowlist secret
+    uses: V-tal/shared-workflows/.github/workflows/build-docker.yml@main
+    with:
+      runs_on: '["self-hosted","dev"]'
+      dockerfile: "Dockerfile"
+      context: "."
+      registry_repo: "ms-resource-catalog"
+
+  deploy_dev:
+    name: Deploy Dev ⛵
+    needs: [validate, build]
+    if: >-
+      ${{
+        needs.validate.result == 'success' &&
+        needs.build.result == 'success'
+      }}
+    uses: V-tal/shared-workflows/.github/workflows/deploy-helm-openshift.yml@main
+    with:
+      runs_on: '["self-hosted","dev"]'
+      environment: "Dev"
+      chart: "./helm"
+      release: "ms-resource-catalog"
+      value_files: "./helm/values_dev.yaml"
+      namespace: "microservicososs-ms-tmf634-resource-catalog-dev-hml"
+      image_ref: ${{ needs.build.outputs.image_by_digest }}
+      validate_image: true
+      atomic: true
+    secrets: # pragma: allowlist secret
+      OC_TOKEN: ${{ secrets.OC_TOKEN_DEV }}
+      OC_SERVER: ${{ secrets.OC_SERVER_DEV }}
+      NEXUS_PASS: ${{ secrets.NEXUS_PASS }}
+      NEXUS_USER: ${{ secrets.NEXUS_USER }}
+
+  summary:
+    name: Summary 📜
+    needs: [validate, sonar, build, deploy_dev]
+    runs-on: [self-hosted, dev]
+    if: ${{ always() }}
+    steps:
+      - name: Final Summary
+        shell: bash
+        run: |
+          {
+            echo "## Dev Push Flow — Resumo"
+            echo "- branch: \`${GITHUB_REF_NAME}\`"
+            echo "- build: \`${{ needs.build.result || 'skipped' }}\`"
+
+            IMAGE="${{ needs.build.outputs.image_by_digest }}"
+            if [[ -n "${IMAGE}" ]]; then
+              echo "- image: \`${IMAGE}\`"
+            else
+              echo "- image: \`<none>\`"
+            fi
+
+            echo "- deploy_dev: \`${{ needs.deploy_dev.result || 'skipped' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

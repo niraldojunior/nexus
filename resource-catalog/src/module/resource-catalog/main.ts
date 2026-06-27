@@ -1,0 +1,120 @@
+/* eslint-disable no-console */
+import { fastifyHelmet as helmet } from '@fastify/helmet';
+import {
+    INestApplication,
+    RequestMethod,
+    ValidationPipe,
+    VersioningType,
+} from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import {
+    FastifyAdapter,
+    NestFastifyApplication,
+} from '@nestjs/platform-fastify';
+import { SwaggerModule } from '@nestjs/swagger';
+import { Logger } from 'nestjs-pino';
+
+import { VALIDATION_PIPE_OPTIONS } from '@/shared/application/const/config.constant';
+import { env } from '@/shared/infra/config/env/environment-config.service';
+import { createDocument } from '@/shared/infra/config/swagger/swagger';
+import { getCorsOrigins } from '@/shared/util/cors.util';
+
+import { Tmf634ResourceCatalogAppModule } from './app.module';
+
+let app: INestApplication;
+
+async function bootstrap() {
+    const APP_ROUTE_PREFIX = env('API_ROUTE_PREFIX', '');
+
+    app = await NestFactory.create<NestFastifyApplication>(
+        Tmf634ResourceCatalogAppModule,
+        new FastifyAdapter({
+            logger: env<boolean>('DEBUG'),
+            bodyLimit: 10485760, // 10 MB,
+        }),
+    );
+
+    app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
+
+    app.setGlobalPrefix(APP_ROUTE_PREFIX, {
+        exclude: [
+            { path: 'swagger', method: RequestMethod.ALL },
+            { path: 'health', method: RequestMethod.GET },
+        ],
+    });
+    app.enableVersioning({
+        type: VersioningType.URI,
+        prefix: 'v',
+        defaultVersion: '1',
+    });
+
+    app.useLogger(app.get(Logger));
+
+    app.enableCors({
+        origin: getCorsOrigins(),
+        methods: ['OPTIONS', 'GET', 'POST', 'PATCH', 'DELETE'],
+    });
+    app.getHttpAdapter()
+        .getInstance()
+        .addHook('onSend', (_request, reply, _payload, done) => {
+            reply.header('x-powered-by', '');
+            reply.header('e-tag', '');
+            done();
+        })
+        .register(helmet, {
+            hidePoweredBy: true,
+            originAgentCluster: true,
+            xContentTypeOptions: true,
+            xDownloadOptions: true,
+            xDnsPrefetchControl: { allow: true },
+            xFrameOptions: { action: 'sameorigin' },
+            referrerPolicy: { policy: 'same-origin' },
+            crossOriginOpenerPolicy: { policy: 'same-origin' },
+            crossOriginEmbedderPolicy: { policy: 'require-corp' },
+            xPermittedCrossDomainPolicies: { permittedPolicies: 'none' },
+            contentSecurityPolicy: {
+                directives: {
+                    defaultSrc: ["'self'"],
+                    scriptSrc: ["'self'", "'unsafe-inline'"],
+                    styleSrc: ["'self'", "'unsafe-inline'"],
+                    imgSrc: ["'self'", 'data:'],
+                    fontSrc: ["'self'"],
+                },
+            },
+        });
+
+    if (env('NODE_ENV') !== 'production' || env<boolean>('SWAGGER_ENABLED')) {
+        SwaggerModule.setup('swagger', app, createDocument(app), {
+            swaggerOptions: {
+                supportedSubmitMethods: env<string[] | undefined>(
+                    'SWAGGER_ALLOWED_METHODS',
+                ),
+            },
+        });
+    }
+
+    await app.listen(env<number>('PORT', 3000), '0.0.0.0').then(() => {
+        console.log(`Initializing at port ${env<number>('PORT', 3000)}...`);
+    });
+}
+bootstrap()
+    .then(() => {
+        const swaggerRoute = env('API_ROUTE_PREFIX')
+            ? `/${env('API_ROUTE_PREFIX')}/swagger`
+            : '/swagger';
+        console.log('Server is running...');
+        console.log(`Name: ${env('APP_NAME')}`);
+        console.log(`Version: ${env('DD_VERSION')}`);
+        console.log(`Environment: ${env('NODE_ENV')}`);
+        if (env<boolean>('SWAGGER_ENABLED'))
+            console.log(`Swagger: ${env('APP_HOST')}${swaggerRoute}`);
+        console.info(`Health Check: ${env('APP_HOST')}/health`);
+    })
+    .catch((error) => {
+        console.log(error);
+        throw error;
+    });
+
+export const getAppInstance = (): INestApplication => {
+    return app;
+};

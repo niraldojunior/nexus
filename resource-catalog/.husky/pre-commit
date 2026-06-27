@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+if [ -z "${BASH:-}" ]; then
+  exec bash "$0" "$@"
+fi
+
+files_list=$(git diff --cached --name-only | grep -E '.*\.([ts|tsx|js|jsx])+$' || true);
+files=();
+
+for file in ${files_list[@]}; do
+  if [[ -f $file ]]; then
+    files+=($file);
+  fi
+done
+
+if [[ -z ${files[@]} || ${#files[@]} -eq 0 ]]; then
+  echo "No files to check";
+  exit 0;
+fi
+
+echo "Checking format and lint for $(set -o noglob; set -- ${files[@]}; echo "$#") file(s):";
+for file in ${files[@]}; do echo $file; done; echo;
+
+batch_size=20;
+for ((i = 0; i < ${#files[@]}; i += batch_size)); do
+  batch=("${files[@]:i:batch_size}");
+  npx prettier --write "${batch[@]}";
+  git add "${batch[@]}";
+  npx eslint --fix "${batch[@]}";
+  git add "${batch[@]}";
+done

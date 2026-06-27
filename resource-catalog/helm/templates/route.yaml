@@ -1,0 +1,31 @@
+{{- $route := .Values.route | default dict -}}
+{{- $tls := $route.tls | default dict -}}
+{{- if ($route.enabled | default false) }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+    app: {{ include "app.label" . | quote }}
+  annotations:
+    backstage.io/kubernetes-id: {{ include "app.backstageKubernetesId" . }}
+spec:
+  {{- if ($route.host | default "") }}
+  host: {{ $route.host | quote }}
+  {{- else if ($route.domain | default "") }}
+  host: {{ printf "%s.%s" (include "app.fullname" .) $route.domain | quote }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ include "app.fullname" . }}
+    weight: 100
+  port:
+    targetPort: http
+  {{- if ($tls.enabled | default false) }}
+  tls:
+    termination: {{ default "edge" $tls.termination }}
+    insecureEdgeTerminationPolicy: {{ default "Redirect" $tls.insecureEdgeTerminationPolicy }}
+  {{- end }}
+  wildcardPolicy: None
+{{- end }}

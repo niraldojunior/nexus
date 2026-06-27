@@ -1,0 +1,21 @@
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: enterprise.orchestration.privado.api.ms.resource.catalog
+  description: API Node.js (NestJS) com suporte a health check, Swagger, tracing e logs ECS.
+  tags:
+    - api
+    - nodejs
+    - nestjs
+    - observability
+    - ecs-logs
+  annotations:
+    github.com/project-slug: V-tal/enterprise-orchestration-privado-api-ms-resource-catalog
+    backstage.io/kubernetes-id: enterprise.orchestration.privado.api.ms.resource.catalog
+    backstage.io/kubernetes-namespace: microservicososs-ms-tmf634-resource-catalog
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/github_desenv
+  system: fulfillment
+  definition: vazio

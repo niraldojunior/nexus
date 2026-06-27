@@ -1,0 +1,34 @@
+{{- $hpa := .Values.hpa | default dict -}}
+{{- if ($hpa.enabled | default false) }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+    app: {{ include "app.label" . | quote }}
+  annotations:
+    backstage.io/kubernetes-id: {{ include "app.backstageKubernetesId" . }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "app.fullname" . }}
+  minReplicas: {{ $hpa.minReplicas | default 1 }}
+  maxReplicas: {{ $hpa.maxReplicas | default 3 }}
+  metrics:
+    {{- if $hpa.metrics }}
+{{ toYaml $hpa.metrics | nindent 4 }}
+    {{- else }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $hpa.targetCPUUtilizationPercentage | default 80 }}
+    {{- end }}
+  {{- with $hpa.behavior }}
+  behavior:
+{{ toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

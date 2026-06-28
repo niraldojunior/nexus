@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-
-if [ -z "${BASH:-}" ]; then
-  exec bash "$0" "$@"
-fi
-
-npm run test || { echo -e '\n\e[31mTests failed!\e[93m'; exit 1; }

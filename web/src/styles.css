@@ -1,0 +1,38 @@
+:root {
+  --bg: #e5e7eb;
+  --card: #fff;
+  --sidebar: #2e3238;
+  --text: #1f2328;
+  --muted: #5f6570;
+  --border: #d8dce2;
+  --yellow: #ffd919;
+  --shadow: 0 1px 2px rgba(24, 25, 25, 0.08), 0 6px 18px rgba(24, 25, 25, 0.06);
+  font-family: Inter, system-ui, sans-serif;
+}
+html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
+.app { display: flex; min-height: 100vh; }
+.sidebar { width: 260px; background: var(--sidebar); color: #fff; padding: 20px; }
+.brand { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; }
+.brand-mark { width: 32px; height: 32px; border-radius: 10px; background: var(--yellow); color: var(--ink, #181919); display: grid; place-items: center; font-weight: 900; }
+.brand-title { font-weight: 800; font-size: 20px; line-height: 1.1; }
+.brand-subtitle { font-size: 11px; color: rgba(255,255,255,.45); margin-top: 2px; }
+.nav { display: grid; gap: 8px; }
+.nav-item { background: transparent; color: rgba(255,255,255,.7); border: 1px solid rgba(255,255,255,.08); padding: 12px 14px; border-radius: 12px; text-align: left; cursor: pointer; }
+.nav-item.active { background: rgba(255,255,255,.08); color: #fff; }
+.nav-item span { display: flex; flex-direction: column; gap: 2px; }
+.nav-item small { font-size: 11px; color: rgba(255,255,255,.45); }
+.main { flex: 1; padding: 24px; }
+.page h1 { margin-top: 0; font-size: 34px; }
+.lead { max-width: 72ch; color: var(--muted); line-height: 1.6; margin: 8px 0 20px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; margin: 24px 0 12px; }
+.section-head h2 { margin: 0; font-size: 18px; }
+.badge { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px; background: #fff4d6; color: #c58a00; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.metrics, .cards { display: grid; gap: 16px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.cards { margin-top: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow); padding: 18px; }
+.card h2 { margin: 0 0 8px; font-size: 20px; }
+.card p { margin: 0; color: var(--muted); line-height: 1.6; }
+.metric .label { text-transform: uppercase; font-size: 11px; color: var(--muted); letter-spacing: .08em; }
+.metric .value { font-size: 28px; font-weight: 800; margin-top: 10px; }
+.metric .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+@media (max-width: 900px) { .app { flex-direction: column; } .sidebar { width: auto; } .metrics, .cards { grid-template-columns: 1fr; } }

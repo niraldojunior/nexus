@@ -1,9 +1,0 @@
-node_modules
-dist
-.git
-.env
-.vscode
-.idea
-corverage
-documentation
-log.txt

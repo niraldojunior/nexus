@@ -1,0 +1,39 @@
+{
+  "name": "v-tal-nexus",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "V.tal Nexus foundation service",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "dev": "node --watch dist/main.js",
+    "web:dev": "node scripts/web-server.mjs",
+    "web:build": "node scripts/web-server.mjs",
+    "dev:sqlite": "npm run build && node scripts/dev-sqlite.mjs",
+    "start:sqlite": "npm run build && node scripts/dev-sqlite.mjs --start-only",
+    "format": "prettier --check .",
+    "format:fix": "prettier --write .",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "start": "node scripts/web-server.mjs",
+    "test": "npm run build && node scripts/run-tests.mjs",
+    "test:watch": "npm run build && node scripts/run-tests.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.30.1",
+    "@types/node": "^24.1.0",
+    "eslint": "^9.30.1",
+    "eslint-config-prettier": "^10.1.5",
+    "globals": "^16.3.0",
+    "prettier": "^3.6.2",
+    "typescript-eslint": "^8.37.0",
+    "typescript": "^5.9.2",
+    "vite": "^5.4.10"
+  }
+}

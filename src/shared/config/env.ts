@@ -22,7 +22,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv): AppConfig => {
     databaseUrl: env.DATABASE_URL ?? 'sqlite://./data/nexus.db',
     logLevel,
     nodeEnv,
-    port: normalizePort(env.PORT, 3000),
+    port: normalizePort(env.PORT, 4001),
   };
 };
 

@@ -6,6 +6,7 @@ import { renderService } from './pages/service.js';
 
 const app = document.querySelector('#app');
 const STORAGE_KEY = 'nexus.web.route';
+const SIDEBAR_KEY = 'nexus.web.sidebar';
 
 const pages = {
   dashboard: renderDashboard,
@@ -13,6 +14,7 @@ const pages = {
   resource: renderResource,
   service: renderService,
   order: renderOrder,
+  chat: renderGeo,
 };
 
 const normalizeRoute = (route) => (pages[route] ? route : 'dashboard');
@@ -30,6 +32,20 @@ const writeStoredRoute = (route) => {
     // Ignore storage failures; the app must still render.
   }
 };
+const readSidebarState = () => {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) || 'expanded';
+  } catch {
+    return 'expanded';
+  }
+};
+const writeSidebarState = (state) => {
+  try {
+    localStorage.setItem(SIDEBAR_KEY, state);
+  } catch {
+    // Ignore storage failures; the app must still render.
+  }
+};
 
 const render = () => {
   const route = normalizeRoute(location.hash.replace('#/', '') || readStoredRoute() || 'dashboard');
@@ -39,12 +55,24 @@ const render = () => {
     return;
   }
   app.innerHTML = pages[route]();
+  const shell = app.firstElementChild;
+  if (shell) shell.dataset.sidebarState = readSidebarState();
 
   document.querySelectorAll('[data-route]').forEach((el) => {
     el.addEventListener('click', () => {
       const nextRoute = normalizeRoute(el.dataset.route || 'dashboard');
+      if (el.hasAttribute('disabled')) return;
       writeStoredRoute(nextRoute);
       location.hash = `#/${nextRoute}`;
+    });
+  });
+
+  document.querySelectorAll('[data-sidebar-toggle]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const next = app.firstElementChild;
+      if (!next) return;
+      next.dataset.sidebarState = next.dataset.sidebarState === 'collapsed' ? 'expanded' : 'collapsed';
+      writeSidebarState(next.dataset.sidebarState);
     });
   });
 };

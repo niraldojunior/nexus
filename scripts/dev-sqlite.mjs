@@ -9,7 +9,7 @@ const distPath = resolve(workspaceRoot, 'dist', 'src', 'main.js');
 ensureDevSqliteDataDir(workspaceRoot);
 
 const env = buildDevSqliteRuntimeEnv(process.env);
-const port = Number(env.PORT || 3000);
+const port = Number(env.PORT || 4001);
 
 if (!process.argv.includes('--start-only')) {
   console.log(`Starting Nexus dev server with SQLite defaults on http://localhost:${port}`);

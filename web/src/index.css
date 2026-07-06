@@ -1,0 +1,123 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+html {
+  background:
+    radial-gradient(circle at top right, rgba(255, 210, 0, 0.12), transparent 24%),
+    linear-gradient(180deg, #f4f7fb 0%, #edf2f7 100%);
+  font-size: 16px;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top right, rgba(255, 210, 0, 0.12), transparent 24%),
+    linear-gradient(180deg, #f4f7fb 0%, #edf2f7 100%);
+  color: #243041;
+  font-family: "Aptos", "Segoe UI", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+@layer components {
+  .geo-btn {
+    @apply inline-flex min-h-[40px] items-center gap-2 rounded-[16px] border px-4 py-2 text-[0.88rem] font-semibold transition;
+  }
+
+  .geo-btn.primary {
+    @apply border-app-accent-border bg-app-accent text-app-text shadow-soft hover:brightness-95;
+  }
+
+  .geo-btn.secondary {
+    @apply border-app-border bg-white text-app-text shadow-soft hover:border-app-accent-border hover:bg-app-accent-soft;
+  }
+
+  .geo-input {
+    @apply h-11 w-full rounded-[16px] border border-app-border bg-white px-3 text-[0.9rem] font-medium text-app-text shadow-sm transition focus:border-app-accent-border;
+  }
+}
+
+textarea {
+  resize: none;
+}
+
+input:focus,
+textarea:focus,
+button:focus-visible {
+  outline: none;
+}
+
+::selection {
+  background: rgba(255, 210, 0, 0.32);
+  color: #243041;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.42);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
+  background-clip: padding-box;
+}
+
+@keyframes menu-item-icon-hover {
+  0% {
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+  30% {
+    transform: translateY(-1px) scale(1.1) rotate(-6deg);
+  }
+  60% {
+    transform: translateY(-2px) scale(1.12) rotate(6deg);
+  }
+  100% {
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+}
+
+.menu-item-icon {
+  transform-origin: 50% 60%;
+}
+
+.menu-item-nav:hover .menu-item-icon {
+  animation: menu-item-icon-hover 420ms ease-out;
+}

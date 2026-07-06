@@ -8,7 +8,7 @@ export default [
   prettier,
   ...tseslint.configs.recommended,
   {
-    ignores: ['docs/03-design-system/**', 'dist/**', 'node_modules/**'],
+    ignores: ['docs/03-design-system/**', 'dist/**', 'web/dist/**', 'node_modules/**'],
   },
   {
     files: ['**/*.{ts,mts,cts,js,mjs,cjs}'],
@@ -19,6 +19,14 @@ export default [
     },
     rules: {
       'no-console': 'off',
+    },
+  },
+  {
+    files: ['web/src/**/*.{ts,tsx,js,jsx}', 'src/shared/ui/**/*.js'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+      },
     },
   },
 ];

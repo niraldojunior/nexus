@@ -1,7 +1,11 @@
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
+import { config as loadEnv } from 'dotenv';
 import { buildDevSqliteRuntimeEnv, ensureDevSqliteDataDir } from '../dist/src/shared/config/dev-sqlite-core.js';
+
+// Load .env file into process.env
+loadEnv();
 
 const workspaceRoot = process.cwd();
 const distPath = resolve(workspaceRoot, 'dist', 'src', 'main.js');
@@ -22,7 +26,10 @@ if (!existsSync(distPath)) {
 
 const child = spawn(process.execPath, ['--watch', distPath], {
   stdio: 'inherit',
-  env,
+  env: {
+    ...env,
+    NODE_TLS_REJECT_UNAUTHORIZED: '0', // Allow self-signed certs in development for corporate networks
+  },
   shell: false,
 });
 

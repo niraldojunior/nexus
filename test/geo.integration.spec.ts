@@ -88,6 +88,62 @@ test('Geo HTTP integration handles spec, location and site creation', async (t) 
   assert.equal(site.statusCode, 201);
 });
 
+test('Geo HTTP integration supports TMF aliases, workspace transaction, status event and relatedSite', async (t) => {
+  const server = createApp({ config: createConfig(0), logger: createLogger() });
+  const port = await server.start();
+  t.after(async () => server.stop());
+
+  const spec = await requestJson(port, 'POST', '/tmf-api/geographicSiteManagement/v4/geographicSiteSpecification', {
+    name: 'Ponto de Instalacao',
+    category: 'SubSite',
+  });
+  assert.equal(spec.statusCode, 201);
+
+  const feederSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+    name: 'CTO',
+    category: 'Site',
+  });
+  assert.equal(feederSpec.statusCode, 201);
+
+  const feeder = await requestJson(port, 'POST', '/v1/geo/sites', {
+    name: 'CTO ICA-014',
+    siteSpecificationId: (feederSpec.body as { id: string }).id,
+  });
+  assert.equal(feeder.statusCode, 201);
+
+  const workspace = await requestJson(port, 'POST', '/v1/geo/workspace/site-at-address', {
+    location: {
+      geometryType: 'Point',
+      geometry: { type: 'Point', coordinates: [-43.1059, -22.9092] },
+    },
+    address: {
+      street: 'Rua Belisario Augusto',
+      streetNr: '145',
+      city: 'Niteroi',
+      stateOrProvince: 'RJ',
+      country: 'BR',
+    },
+    site: {
+      name: 'PI Belisario',
+      siteSpecificationId: (spec.body as { id: string }).id,
+    },
+    fedBySiteId: (feeder.body as { id: string }).id,
+  });
+  assert.equal(workspace.statusCode, 201);
+  assert.equal((workspace.body as { site: { '@type': string } }).site['@type'], 'GeographicSite');
+  assert.equal((workspace.body as { site: { relatedSite: Array<{ relationshipType: string }> } }).site.relatedSite[0]?.relationshipType, 'fedBy');
+
+  const siteId = (workspace.body as { site: { id: string } }).site.id;
+  const patch = await requestJson(port, 'PATCH', `/tmf-api/geographicSiteManagement/v4/geographicSite/${siteId}`, {
+    status: 'active',
+  });
+  assert.equal(patch.statusCode, 200);
+
+  const events = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}/events`);
+  assert.equal(events.statusCode, 200);
+  assert.ok((events.body as Array<{ eventType: string }>).some((event) => event.eventType === 'GeographicSiteStatusChangeEvent'));
+});
+
 test('App exposes health without auth and protected routes reject missing token', async (t) => {
   const server = createApp({ config: createConfig(0), logger: createLogger() });
   const port = await server.start();
@@ -145,6 +201,6 @@ test('App root returns Nexus shell html', async (t) => {
   });
 
   assert.equal(html.statusCode, 200);
-  assert.match(html.body, /<title>v-tal-nexus · Nexus<\/title>/);
-  assert.match(html.body, /Geo/);
+  assert.match(html.body, /<title>v-tal-nexus - Nexus<\/title>/);
+  assert.match(html.body, /Interface migrada para Vite/);
 });

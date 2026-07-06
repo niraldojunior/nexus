@@ -64,3 +64,43 @@ test('GeoService keeps repository state isolated from returned objects', () => {
   assert.ok(stored);
   assert.equal(stored.name, 'CO Botafogo');
 });
+
+test('GeoService validates containment rules and stores relatedSite', () => {
+  const service = new GeoService(new GeoRepository());
+  const regionSpec = service.createSpec({ name: 'Region', category: 'Region' });
+  const centralSpec = service.createSpec({
+    name: 'Central Office',
+    category: 'Site',
+    allowedParentSpecIds: [regionSpec.id],
+  });
+  const popSpec = service.createSpec({ name: 'POP', category: 'Site' });
+  const invalidParent = service.createSite({ name: 'POP Icaraí', siteSpecificationId: popSpec.id });
+
+  assert.throws(
+    () => service.createSite({ name: 'CO Icaraí', siteSpecificationId: centralSpec.id, parentSiteId: invalidParent.id }),
+    /parent specification not allowed/,
+  );
+
+  const region = service.createSite({ name: 'Niterói', siteSpecificationId: regionSpec.id });
+  const central = service.createSite({ name: 'CO Icaraí', siteSpecificationId: centralSpec.id, parentSiteId: region.id });
+  const cto = service.createSite({ name: 'CTO ICA-014', siteSpecificationId: popSpec.id });
+
+  service.addSiteRelationship(cto.id, central.id, 'fedBy');
+  const stored = service.getSite(cto.id);
+
+  assert.equal(stored?.parentSite, undefined);
+  assert.equal(stored?.relatedSite[0]?.id, central.id);
+  assert.equal(stored?.relatedSite[0]?.relationshipType, 'fedBy');
+});
+
+test('GeoService updates status and records TMF688 events', () => {
+  const service = new GeoService(new GeoRepository());
+  const spec = service.createSpec({ name: 'Ponto de Instalação', category: 'SubSite' });
+  const site = service.createSite({ name: 'PI Belisário', siteSpecificationId: spec.id });
+
+  const updated = service.updateSite(site.id, { status: 'active' });
+  const events = service.listSiteEvents(site.id);
+
+  assert.equal(updated.status, 'active');
+  assert.ok(events.some((event) => event.eventType === 'GeographicSiteStatusChangeEvent'));
+});

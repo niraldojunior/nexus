@@ -25,6 +25,7 @@
   <script type="text/babel" src="./Login.jsx"></script>
   <script type="text/babel" src="./Dashboard.jsx"></script>
   <script type="text/babel" src="./Inventory.jsx"></script>
+  <script type="text/babel" src="./Geo.jsx"></script>
   <script type="text/babel" src="./Viability.jsx"></script>
   <script type="text/babel" src="./Topology.jsx"></script>
   <script type="text/babel">
@@ -33,6 +34,7 @@
     const TITLES = {
       dashboard: { t: 'Visão Geral', s: 'Inventário de Redes · São Paulo, Rio de Janeiro +3' },
       inventory: { t: 'Inventário', s: 'Recursos de rede · TMF639 Resource Inventory' },
+      geo: { t: 'Geo', s: 'Geographic Site, Address & Location · TMF673/674/675' },
       viability: { t: 'Viabilidade', s: 'Motor fuzzy de viabilidade por endereço' },
       topology: { t: 'Topologia', s: 'Caminho óptico fim a fim · CTO-4821' },
     };
@@ -60,6 +62,7 @@
       let body;
       if (screen === 'dashboard') body = <Dashboard onNavigate={setScreen} />;
       else if (screen === 'inventory') body = <Inventory onNavigate={setScreen} />;
+      else if (screen === 'geo') body = <Geo />;
       else if (screen === 'viability') body = <Viability />;
       else if (screen === 'topology') body = <Topology />;
       else body = <Placeholder name={meta.t} />;

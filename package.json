@@ -8,9 +8,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
-    "dev": "node --watch dist/main.js",
-    "web:dev": "node scripts/web-server.mjs",
-    "web:build": "node scripts/web-server.mjs",
+    "dev": "npm run build && node --watch dist/src/main.js",
+    "web:dev": "vite --config web/vite.config.mjs",
+    "web:build": "vite build --config web/vite.config.mjs",
     "dev:sqlite": "npm run build && node scripts/dev-sqlite.mjs",
     "start:sqlite": "npm run build && node scripts/dev-sqlite.mjs --start-only",
     "format": "prettier --check .",
@@ -19,21 +19,39 @@
     "lint:fix": "eslint . --fix",
     "start": "node scripts/web-server.mjs",
     "test": "npm run build && node scripts/run-tests.mjs",
+    "test:coverage": "npm run build && c8 --exclude=dist/test/** --exclude=dist/scripts/** --exclude=test/** --exclude=scripts/** --reporter=text --reporter=lcov node scripts/run-tests.mjs",
     "test:watch": "npm run build && node scripts/run-tests.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit"
   },
   "engines": {
     "node": ">=22.0.0"
   },
+  "dependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "axios": "^1.6.0",
+    "better-sqlite3": "^12.11.1",
+    "dotenv": "^17.4.2",
+    "lucide-react": "^0.292.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
   "devDependencies": {
     "@eslint/js": "^9.30.1",
+    "@tailwindcss/forms": "^0.5.7",
     "@types/node": "^24.1.0",
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    "@vitejs/plugin-react": "^4.1.1",
+    "autoprefixer": "^10.4.16",
+    "c8": "^11.0.0",
     "eslint": "^9.30.1",
     "eslint-config-prettier": "^10.1.5",
     "globals": "^16.3.0",
+    "postcss": "^8.4.31",
     "prettier": "^3.6.2",
-    "typescript-eslint": "^8.37.0",
+    "tailwindcss": "^3.3.6",
     "typescript": "^5.9.2",
-    "vite": "^5.4.10"
+    "typescript-eslint": "^8.37.0",
+    "vite": "^8.1.3"
   }
 }

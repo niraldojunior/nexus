@@ -23,8 +23,29 @@ export type TimePeriod = {
 };
 
 export type Characteristic = {
+  group?: string;
   name: string;
-  value: string;
+  value: string | number | boolean | Record<string, unknown> | null;
+  valueType?: 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'json';
+};
+
+export type GeoSiteStatus = 'planned' | 'active' | 'suspended' | 'terminated';
+
+export type GeographicSiteRelationship = {
+  id: string;
+  relationshipType: string;
+  '@referredType': 'GeographicSite';
+  validFor?: TimePeriod;
+};
+
+export type GeoEvent = {
+  '@type': 'Event';
+  id: string;
+  eventType: string;
+  eventTime: string;
+  source: string;
+  eventData: Record<string, unknown>;
+  correlationId?: string;
 };
 
 export type GeographicLocation = {
@@ -71,13 +92,13 @@ export type GeographicSite = {
   id: string;
   href: string;
   name: string;
-  status: 'planned' | 'active' | 'suspended' | 'terminated';
+  status: GeoSiteStatus;
   siteSpecificationId: string;
   siteSpecification: { id: string; '@referredType': 'GeographicSiteSpecification' };
   place?: { id: string; '@referredType': 'GeographicLocation' };
   address?: { id: string; '@referredType': 'GeographicAddress' };
   parentSite?: { id: string; '@referredType': 'GeographicSite' };
-  relatedSite: Array<{ id: string; relationshipType: string; '@referredType': 'GeographicSite' }>;
+  relatedSite: GeographicSiteRelationship[];
   relatedParty: Array<{ id: string; role?: string; '@referredType': 'Party' }>;
   characteristic: Characteristic[];
 };

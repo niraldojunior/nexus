@@ -6,10 +6,12 @@
 - O sistema deve parecer um produto único, não coleções de telas diferentes.
 - Interfaces devem ser densas, corporativas e claras.
 - O produto deve comunicar precisão operacional.
+- A experiência padrão é assistant/workspace: sidebar clara, composer central e páginas de domínio.
 
 ## Comportamento visual
 
 - Usar sombras suaves e bordas delicadas.
+- Usar raios maiores em composer, cards e modais, conforme Lab001.
 - Limitar animações a interações úteis.
 - Manter estados de hover e foco previsíveis.
 - Preferir feedback visual direto em vez de ornamentos.
@@ -17,6 +19,5 @@
 ## Voz do sistema
 
 - A linguagem deve ser impessoal e técnica.
-- Textos devem usar vocabulário de inventário e telecom.
+- Textos devem usar vocabulário de inventário, telecom e TM Forum.
 - Botões e ações devem usar verbos claros.
-

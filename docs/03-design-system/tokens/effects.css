@@ -1,29 +1,24 @@
 /* ============================================================
-   V.tal Nexus — Effects: radii, shadows, motion
-   Soft, low-contrast elevation + the signature golden glow.
+   V.tal Nexus - Effects Tokens
+   Roomier assistant/workspace radii + soft elevation.
    ============================================================ */
 
 :root {
-  /* ---- Radii ----------------------------------------------- */
-  --radius-sm: 6px;     /* buttons, inputs, chips */
-  --radius-md: 10px;    /* cards, panels */
-  --radius-lg: 16px;    /* sheets, large surfaces, modals */
+  --radius-sm: 16px;
+  --radius-md: 22px;
+  --radius-lg: 28px;
   --radius-full: 9999px;
 
-  /* ---- Shadows (soft & modern) ----------------------------- */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.08);
-  --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.18);
-  /* Signature: V.tal golden glow — focus & active lift */
-  --shadow-gold: 0 0 15px rgba(255, 217, 25, 0.40);
+  --shadow-sm: 0 10px 30px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 10px 30px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 28px 64px rgba(15, 23, 42, 0.18);
+  --shadow-xl: 0 28px 64px rgba(15, 23, 42, 0.18);
+  --shadow-gold: 0 10px 30px rgba(255, 210, 0, 0.2);
 
-  /* ---- Motion ---------------------------------------------- */
-  --ease: cubic-bezier(0.4, 0, 0.2, 1); /* @kind other */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --transition-fast: 150ms var(--ease);
   --transition-normal: 300ms var(--ease);
   --transition-slow: 400ms var(--ease);
 
-  /* ---- Focus ----------------------------------------------- */
-  --focus-shadow: 0 0 0 3px var(--focus-ring);
+  --focus-shadow: 0 0 0 4px var(--focus-ring);
 }

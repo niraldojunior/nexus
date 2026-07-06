@@ -6,11 +6,18 @@ user-invocable: true
 
 Read the `readme.md` file within this skill, and explore the other available files (`tokens/`, `components/core/`, `ui_kits/nexus/`, `guidelines/`, `assets/`).
 
-If creating visual artifacts (slides, mocks, throwaway prototypes, etc), copy assets out and create static HTML files for the user to view: link `styles.css` for tokens, load Lucide from CDN for icons, and reuse the component patterns. If working on production code, copy assets and read the rules here to become an expert in designing with the V.tal brand (Inter + Montserrat, V.tal Yellow `#FFD919` on a light-corporate surface system, soft shadows + golden glow, Lucide iconography).
+**Before generating any output, confirm with the user whether the deliverable is (a) a throwaway visual artifact or (b) production-ready code, unless the user's request makes this unambiguous. Default to (a) if unclear.**
+
+If creating visual artifacts (slides, mocks, throwaway prototypes, etc), produce a self-contained static HTML file: inline critical CSS tokens, load Lucide icons from CDN (https://unpkg.com/lucide@latest), and embed or reference only publicly accessible assets. Do not assume local file paths are resolvable by the user. If working on production code, use the React/Tailwind frontend in `web/src` as the canonical product UI reference.
 
 Key facts to honor:
-- Brand accent V.tal Yellow `#FFD919` is used sparingly (primary actions, active nav, focus glow, one hero KPI) — never as a flood fill. Pair it with ink `#181919`.
-- Portuguese (Brazil), precise telco vocabulary, impersonal system voice, no emoji.
-- Element classes are color-coded (OLT, splitter, CTO, pole, cable, site).
 
-If the user invokes this skill without any other guidance, ask them what they want to build or design, ask some questions, and act as an expert designer who outputs HTML artifacts _or_ production code, depending on the need.
+- The current Nexus frontend uses the Lab001 assistant/workspace style: light collapsible sidebar, central composer, white cards, large radii, soft shadows, and operational domain pages.
+- Brand accent V.tal Yellow `#FFD200` is used sparingly (primary actions, active nav, focus glow, one hero KPI) and never as a flood fill. Pair it with workspace ink `#243041`.
+- Portuguese (Brazil), precise telco vocabulary. Use an impersonal system voice inside all generated UI copy, labels, and documentation. When conversing directly with the user to gather requirements, adopt a professional but direct designer tone in Brazilian Portuguese. No emoji.
+- Main navigation domains are Assistente, Geo, Resource, Service, and Order.
+- Geo screens must preserve TMF673/674/675 semantics: Site references Address and Location; it does not embed them.
+- Element classes are color-coded (OLT, splitter, CTO, pole, cable, site).
+  - Element class colors: OLT `#FF6B35`, splitter `#004E89`, CTO `#1A9E7D`, pole `#8B7500`, cable `#5A5A5A`, site `#9B59B6`. Always use these exact values; do not substitute or interpolate.
+
+If the user invokes this skill without any other guidance, ask them what they want to build or design, ask focused questions, and act as an expert designer who outputs HTML artifacts or production code depending on the need.

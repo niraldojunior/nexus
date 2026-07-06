@@ -1,0 +1,97 @@
+import { FormEvent } from 'react'
+import { ChevronDown, Loader2, Mic, Plus, SendHorizontal, Trash2, Waves } from 'lucide-react'
+
+interface ComposerProps {
+  value: string
+  onChange: (value: string) => void
+  onSubmit: () => void
+  loading: boolean
+  placeholder: string
+  size: 'hero' | 'compact'
+  modelLabel: string
+  qualityLabel: string
+}
+
+export default function Composer({
+  value,
+  onChange,
+  onSubmit,
+  loading,
+  placeholder,
+  size,
+  modelLabel,
+  qualityLabel
+}: ComposerProps) {
+  const isHero = size === 'hero'
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault()
+    onSubmit()
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className={`rounded-[28px] border border-app-border bg-white shadow-soft ${
+        isHero ? 'px-8 pb-6 pt-7' : 'px-8 pb-5 pt-6'
+      }`}
+    >
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        rows={isHero ? 3 : 2}
+        className={`w-full resize-none border-0 bg-transparent p-0 text-app-text placeholder:text-app-muted focus:outline-none focus:ring-0 ${
+          isHero ? 'min-h-[130px] text-[1.15rem]' : 'min-h-[84px] text-[1rem] leading-8'
+        }`}
+      />
+
+      <div className="mt-4 flex items-center justify-between gap-5">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="rounded-2xl border border-transparent p-2 text-app-text transition hover:border-app-border hover:bg-app-accent-soft"
+            aria-label="Adicionar"
+          >
+            <Plus className="h-7 w-7" strokeWidth={1.8} />
+          </button>
+          <button
+            type="button"
+            className="rounded-[18px] border border-app-accent-border bg-app-accent-soft p-3 text-app-text transition hover:bg-app-card"
+            aria-label="Anexos"
+          >
+            <Trash2 className="h-6 w-6" strokeWidth={1.8} />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-5 text-app-text">
+          <div className="rounded-[999px] border border-app-border bg-app-panel px-3 py-2">
+            <div className="flex items-center gap-2 text-[0.95rem]">
+              <span className="font-semibold">{modelLabel}</span>
+              <span className="text-app-muted">{qualityLabel}</span>
+              <ChevronDown className="h-5 w-5 text-app-muted" strokeWidth={1.8} />
+            </div>
+          </div>
+          <button type="button" className="transition hover:text-app-muted" aria-label="Microfone">
+            <Mic className="h-7 w-7" strokeWidth={1.8} />
+          </button>
+          <button type="button" className="transition hover:text-app-muted" aria-label="Audio">
+            <Waves className="h-7 w-7" strokeWidth={1.8} />
+          </button>
+          <button
+            type="submit"
+            disabled={loading || !value.trim()}
+            className="rounded-[18px] border border-app-accent-border bg-app-accent p-3 text-app-text shadow-soft transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Enviar"
+          >
+            {loading ? (
+              <Loader2 className="h-6 w-6 animate-spin" strokeWidth={1.8} />
+            ) : (
+              <SendHorizontal className="h-6 w-6" strokeWidth={1.8} />
+            )}
+          </button>
+        </div>
+      </div>
+    </form>
+  )
+}

@@ -1,48 +1,41 @@
 /* ============================================================
-   V.tal Nexus — Typography Tokens
-   Inter for UI & data; Montserrat for display & navigation.
-   Base scale runs at 90% root (matches product density).
+   V.tal Nexus - Typography Tokens
+   Assistant/workspace typography aligned to Lab001.
    ============================================================ */
 
 :root {
-  /* ---- Families -------------------------------------------- */
-  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-display: 'Montserrat', 'Inter', system-ui, sans-serif;
+  --font-ui: 'Aptos', 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Aptos Display', 'Aptos', 'Inter', 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  /* ---- Weights --------------------------------------------- */
-  --fw-regular: 400;   /* @kind font */
-  --fw-medium: 500;    /* @kind font */
-  --fw-semibold: 600;  /* @kind font */
-  --fw-bold: 700;      /* @kind font */
-  --fw-extrabold: 800; /* @kind font */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-extrabold: 800;
 
-  /* ---- Type scale (rem against 90% root → 14.4px base) ------ */
-  --fs-display: 1.9rem;   /* hero / numbers-led KPIs */
-  --fs-h1: 1.45rem;
-  --fs-h2: 1.15rem;
-  --fs-h3: 0.95rem;
-  --fs-body-lg: 0.875rem; /* ~14px — engineering density */
-  --fs-body: 0.8125rem;   /* ~13px — default body + tables */
-  --fs-sm: 0.72rem;       /* ~11.5px — labels, chips */
-  --fs-xs: 0.65rem;       /* ~10.5px — table heads, eyebrows */
+  --fs-display: 3rem;
+  --fs-h1: 2.6rem;
+  --fs-h2: 1.4rem;
+  --fs-h3: 1.1rem;
+  --fs-body-lg: 1rem;
+  --fs-body: 0.94rem;
+  --fs-sm: 0.82rem;
+  --fs-xs: 0.74rem;
 
-  /* ---- Line heights ---------------------------------------- */
-  --lh-tight: 1.1;   /* @kind other */
-  --lh-snug: 1.22;   /* @kind other */
-  --lh-normal: 1.4;  /* @kind other */
+  --lh-tight: 1.1;
+  --lh-snug: 1.22;
+  --lh-normal: 1.45;
 
-  /* ---- Tracking -------------------------------------------- */
-  --tracking-tight: -0.025em;  /* display & h1 */
+  --tracking-tight: -0.03em;
   --tracking-normal: 0;
-  --tracking-wide: 0.05em;     /* eyebrows, badges, table heads (uppercase) */
+  --tracking-wide: 0.08em;
 
-  /* ---- Semantic roles -------------------------------------- */
-  --text-display: var(--fw-extrabold) var(--fs-display)/var(--lh-tight) var(--font-display);
-  --text-h1: var(--fw-extrabold) var(--fs-h1)/var(--lh-tight) var(--font-display);
-  --text-h2: var(--fw-extrabold) var(--fs-h2)/var(--lh-snug) var(--font-display);
-  --text-h3: var(--fw-bold) var(--fs-h3)/var(--lh-snug) var(--font-ui);
+  --text-display: var(--fw-semibold) var(--fs-display)/var(--lh-tight) var(--font-display);
+  --text-h1: var(--fw-semibold) var(--fs-h1)/var(--lh-tight) var(--font-display);
+  --text-h2: var(--fw-semibold) var(--fs-h2)/var(--lh-snug) var(--font-display);
+  --text-h3: var(--fw-semibold) var(--fs-h3)/var(--lh-snug) var(--font-ui);
   --text-body: var(--fw-regular) var(--fs-body)/var(--lh-normal) var(--font-ui);
   --text-label: var(--fw-semibold) var(--fs-sm)/var(--lh-snug) var(--font-ui);
-  --text-eyebrow: var(--fw-bold) var(--fs-xs)/var(--lh-snug) var(--font-ui);
+  --text-eyebrow: var(--fw-semibold) var(--fs-xs)/var(--lh-snug) var(--font-ui);
 }

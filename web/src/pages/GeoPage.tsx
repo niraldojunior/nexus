@@ -114,6 +114,11 @@ const statusLabel: Record<GeoStatus, string> = {
   terminated: 'Terminado',
 };
 
+const layerOptions = ['CO', 'POP', 'CTO', 'PI', 'Relacoes', 'Sem coordenada'] as const;
+type LayerKey = (typeof layerOptions)[number];
+type SiteLayer = LayerKey | 'Site';
+type SiteCountKey = SiteLayer | 'Sem coordenada';
+
 export default function GeoPage() {
   const [sites, setSites] = useState<GeoSite[]>([]);
   const [addresses, setAddresses] = useState<GeoAddress[]>([]);
@@ -124,9 +129,11 @@ export default function GeoPage() {
   const [draftAddress, setDraftAddress] = useState<DraftAddress | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
+  const [layerPanelOpen, setLayerPanelOpen] = useState(false);
+  const [hierarchyOpen, setHierarchyOpen] = useState(true);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
-  const [layers, setLayers] = useState(() => new Set(['CO', 'POP', 'CTO', 'PI', 'Relacoes', 'Sem coordenada']));
+  const [layers, setLayers] = useState<Set<LayerKey>>(() => new Set(layerOptions));
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -136,6 +143,7 @@ export default function GeoPage() {
   const specById = useMemo(() => new Map(specs.map((item) => [item.id, item])), [specs]);
   const siteById = useMemo(() => new Map(sites.map((item) => [item.id, item])), [sites]);
   const selectedSite = selectedSiteId ? siteById.get(selectedSiteId) ?? null : null;
+  const hasQuery = query.trim().length > 0;
 
   const loadGeo = useCallback(async () => {
     setLoading(true);
@@ -176,7 +184,7 @@ export default function GeoPage() {
         const spec = specById.get(site.siteSpecificationId);
         const layer = layerForSpec(spec);
         const hasPoint = Boolean(pointForSite(site, locationById));
-        return layers.has(layer) || (!hasPoint && layers.has('Sem coordenada'));
+        return (layer !== 'Site' && layers.has(layer)) || (!hasPoint && layers.has('Sem coordenada'));
       }),
     [layers, locationById, sites, specById],
   );
@@ -197,19 +205,41 @@ export default function GeoPage() {
 
   const missingPlace = sites.filter((site) => !pointForSite(site, locationById));
   const childSites = selectedSite ? sites.filter((site) => site.parentSite?.id === selectedSite.id) : [];
+  const siteCounts = useMemo(() => {
+    const counts: Record<SiteCountKey, number> = {
+      CO: 0,
+      POP: 0,
+      CTO: 0,
+      PI: 0,
+      Relacoes: 0,
+      'Sem coordenada': 0,
+      Site: 0,
+    };
+
+    for (const site of sites) {
+      const spec = specById.get(site.siteSpecificationId);
+      const layer = layerForSpec(spec);
+      counts[layer] = (counts[layer] ?? 0) + 1;
+      if (!pointForSite(site, locationById)) counts['Sem coordenada'] += 1;
+    }
+
+    return counts;
+  }, [locationById, sites, specById]);
 
   const selectSite = (site: GeoSite) => {
     setSelectedSiteId(site.id);
     setDraftAddress(null);
+    setLayerPanelOpen(false);
   };
 
   const openDetail = (site: GeoSite, tab: DetailTab = 'overview') => {
     selectSite(site);
     setDetailTab(tab);
     setDetailOpen(true);
+    setLayerPanelOpen(false);
   };
 
-  const toggleLayer = (layer: string) => {
+  const toggleLayer = (layer: LayerKey) => {
     setLayers((current) => {
       const next = new Set(current);
       if (next.has(layer)) next.delete(layer);
@@ -219,147 +249,159 @@ export default function GeoPage() {
   };
 
   return (
-    <div className="rounded-[28px] border border-app-border bg-white p-4 shadow-soft">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="font-display text-[1.35rem] font-semibold text-app-text">Workspace de Locais</h2>
-          <p className="mt-1 text-[0.9rem] text-app-muted">GeographicSite referencia Address e Location conforme TMF673/674/675.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => void loadGeo()} className="geo-btn secondary">
-            <RefreshCw className="h-4 w-4" />
-            Atualizar
-          </button>
-          <button type="button" onClick={() => setTypeOpen(true)} className="geo-btn secondary">
-            <Settings className="h-4 w-4" />
-            Tipos de site
-          </button>
-          <button type="button" onClick={() => setCreateOpen(true)} className="geo-btn primary" disabled={!draftAddress && specs.length === 0}>
-            <Plus className="h-4 w-4" />
-            Novo Site
-          </button>
-        </div>
-      </div>
-
-      {error ? <div className="mb-4 rounded-[18px] border border-red-200 bg-red-50 px-4 py-3 text-[0.9rem] text-red-700">{error}</div> : null}
-
-      <div className="grid min-h-[680px] overflow-hidden rounded-[24px] border border-app-border bg-app-panel xl:grid-cols-[300px_minmax(0,1fr)]">
-        <aside className="flex min-h-[680px] flex-col border-r border-app-border bg-white">
-          <div className="border-b border-app-border p-4">
-            <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">Hierarquia</div>
-            <div className="mt-1 font-display text-[1.1rem] font-semibold text-app-text">Rede V.tal</div>
+    <div className="relative h-full min-h-0 min-w-0 overflow-hidden bg-transparent">
+      <main
+        className={`relative h-full min-h-0 min-w-0 overflow-hidden bg-[#eef2f6] transition-[padding-right] duration-200 ${
+          hierarchyOpen ? 'xl:pr-[360px]' : 'xl:pr-0'
+        }`}
+      >
+        {error ? (
+          <div className="absolute left-5 top-5 z-40 rounded-[18px] border border-red-200 bg-red-50 px-4 py-3 text-[0.88rem] text-red-700 shadow-soft">
+            {error}
           </div>
-          <div className="flex-1 overflow-auto p-3">
-            <HierarchyTree
-              sites={sites}
-              specs={specById}
-              selectedSiteId={selectedSiteId}
-              onSelect={selectSite}
-              onOpenDetail={openDetail}
+        ) : null}
+
+        <GoogleMapPanel
+          sites={visibleSites}
+          specs={specById}
+          locationById={locationById}
+          selectedSiteId={selectedSiteId}
+          draftAddress={draftAddress}
+          onSelectSite={selectSite}
+          onDraftAddress={setDraftAddress}
+        />
+
+        <div className="absolute left-5 top-5 z-30 flex max-w-[calc(100%-2.5rem)] flex-wrap items-start gap-3">
+          <div className="relative min-w-[320px] flex-[1_1_620px]">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-app-muted" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="h-14 w-full rounded-[24px] border border-app-border bg-white pl-11 pr-4 text-[0.95rem] text-app-text shadow-soft"
+              placeholder="Buscar endereco ou site"
+              id="geo-search-input"
+            />
+            <GoogleAutocompleteBridge onAddress={setDraftAddress} />
+            {hasQuery ? (
+              <div className="absolute left-0 right-0 top-[62px] z-40 max-h-[320px] overflow-auto rounded-[22px] border border-app-border bg-white p-2 shadow-modal">
+                {searchedSites.length ? searchedSites.map((site) => {
+                  const spec = specById.get(site.siteSpecificationId);
+                  const address = site.address ? addressById.get(site.address.id) : undefined;
+                  return (
+                    <button
+                      key={site.id}
+                      type="button"
+                      className="flex w-full items-center gap-3 rounded-[16px] px-3 py-2 text-left transition hover:bg-app-accent-soft"
+                      onClick={() => selectSite(site)}
+                    >
+                      <SiteIcon layer={layerForSpec(spec)} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[0.92rem] font-semibold text-app-text">{site.name}</span>
+                        <span className="block truncate text-[0.78rem] text-app-muted">{address ? formatAddress(address) : 'Sem endereco associado'}</span>
+                      </span>
+                      <ChevronRight className="h-4 w-4 text-app-muted" />
+                    </button>
+                  );
+                }) : (
+                  <div className="px-3 py-4 text-[0.86rem] text-app-muted">Nenhum site encontrado.</div>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex items-center gap-2 rounded-[24px] border border-app-border bg-white px-2 py-2 shadow-soft">
+            <ToolButton
+              icon={Plus}
+              label="Criar site"
+              onClick={() => {
+                setLayerPanelOpen(false);
+                setCreateOpen(true);
+              }}
+              active={createOpen}
+            />
+            <ToolButton
+              icon={Layers}
+              label="Tipos de site"
+              onClick={() => {
+                setLayerPanelOpen((current) => !current);
+              }}
+              active={layerPanelOpen}
+            />
+            <ToolButton
+              icon={RefreshCw}
+              label="Atualizar dados"
+              onClick={() => void loadGeo()}
             />
           </div>
-          <div className="grid grid-cols-2 gap-2 border-t border-app-border p-3">
-            <button type="button" className="geo-btn secondary justify-center" onClick={() => setTypeOpen(true)}>Tipos</button>
-            <button type="button" className="geo-btn secondary justify-center" onClick={() => setLayers(new Set(['CO', 'POP', 'CTO', 'PI', 'Relacoes', 'Sem coordenada']))}>Filtros</button>
-          </div>
-        </aside>
+        </div>
 
-        <main className="relative min-h-[680px] overflow-hidden bg-[#eef2f6]">
-          <div className="absolute left-4 right-4 top-4 z-30 flex flex-wrap items-start gap-3">
-            <div className="relative min-w-[300px] max-w-[520px] flex-1">
-              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-app-muted" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                className="h-11 w-full rounded-[18px] border border-app-border bg-white/95 pl-10 pr-4 text-[0.92rem] text-app-text shadow-soft"
-                placeholder="Buscar endereco ou site"
-                id="geo-search-input"
-              />
-              {query || searchedSites.length ? (
-                <div className="absolute left-0 right-0 top-12 z-40 max-h-[260px] overflow-auto rounded-[18px] border border-app-border bg-white p-2 shadow-modal">
-                  {searchedSites.map((site) => {
-                    const spec = specById.get(site.siteSpecificationId);
-                    const address = site.address ? addressById.get(site.address.id) : undefined;
-                    return (
-                      <button key={site.id} type="button" className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2 text-left hover:bg-app-accent-soft" onClick={() => selectSite(site)}>
-                        <SiteIcon layer={layerForSpec(spec)} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[0.9rem] font-semibold text-app-text">{site.name}</span>
-                          <span className="block truncate text-[0.78rem] text-app-muted">{address ? formatAddress(address) : 'Sem endereco associado'}</span>
-                        </span>
-                        <ChevronRight className="h-4 w-4 text-app-muted" />
-                      </button>
-                    );
-                  })}
-                  <GoogleAutocompleteBridge onAddress={setDraftAddress} onReadyLabel="Autocomplete Google ativo" />
-                </div>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {['CO', 'POP', 'CTO', 'PI', 'Relacoes', 'Sem coordenada'].map((layer) => (
+        {layerPanelOpen ? (
+          <div className="absolute left-5 top-[92px] z-40 w-[280px] rounded-[22px] border border-app-border bg-white p-4 shadow-modal">
+            <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">Tipos de site</div>
+            <div className="mt-3 grid gap-2">
+              {layerOptions.map((layer) => (
                 <button
                   key={layer}
                   type="button"
                   onClick={() => toggleLayer(layer)}
-                  className={`rounded-[999px] border px-3 py-2 text-[0.78rem] font-semibold shadow-soft ${
+                  className={`flex items-center justify-between rounded-[16px] border px-3 py-2 text-left text-[0.86rem] font-semibold transition ${
                     layers.has(layer)
-                      ? 'border-app-accent-border bg-app-accent text-app-text'
-                      : 'border-app-border bg-white/90 text-app-muted'
+                      ? 'border-app-accent-border bg-app-accent-soft text-app-text'
+                      : 'border-app-border bg-white text-app-muted hover:bg-app-accent-soft'
                   }`}
                 >
-                  {layer}
+                  <span>{layer}</span>
+                  <StatusPill tone={layers.has(layer) ? 'blue' : 'amber'}>{layers.has(layer) ? 'Visivel' : 'Oculto'}</StatusPill>
                 </button>
               ))}
             </div>
           </div>
+        ) : null}
 
-          <GoogleMapPanel
-            sites={visibleSites}
-            specs={specById}
-            locationById={locationById}
-            selectedSiteId={selectedSiteId}
-            draftAddress={draftAddress}
-            onSelectSite={selectSite}
-            onDraftAddress={setDraftAddress}
-          />
+        <FloatingPanel
+          selectedSite={selectedSite}
+          draftAddress={draftAddress}
+          addressById={addressById}
+          locationById={locationById}
+          specById={specById}
+          siteById={siteById}
+          onClose={() => {
+            setDraftAddress(null);
+            setSelectedSiteId(null);
+          }}
+          onCreate={() => setCreateOpen(true)}
+          onOpenDetail={openDetail}
+        />
 
-          <FloatingPanel
-            selectedSite={selectedSite}
-            draftAddress={draftAddress}
-            addressById={addressById}
-            locationById={locationById}
-            specById={specById}
-            siteById={siteById}
-            onClose={() => {
-              setDraftAddress(null);
-              setSelectedSiteId(null);
-            }}
-            onCreate={() => setCreateOpen(true)}
-            onOpenDetail={openDetail}
-          />
-
-          <div className="absolute bottom-4 left-4 z-30 rounded-[18px] bg-app-text px-4 py-3 text-[0.84rem] font-medium text-white shadow-modal">
-            Clique no mapa define uma Location; salvar cria Address + Site em transacao SQLite.
+        {loading ? (
+          <div className="absolute right-5 bottom-5 z-30 rounded-[18px] border border-app-border bg-white/90 px-4 py-3 text-[0.84rem] font-medium text-app-muted shadow-soft backdrop-blur">
+            Carregando dados Geo...
           </div>
+        ) : null}
 
-          <aside className="absolute bottom-4 right-4 z-30 w-[320px] rounded-[22px] border border-app-border bg-white p-4 shadow-modal">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div className="font-display text-[1rem] font-semibold text-app-text">Pendencias Geo</div>
-              <StatusPill tone="amber">{missingPlace.length}</StatusPill>
-            </div>
-            <div className="grid max-h-[170px] gap-2 overflow-auto">
-              {missingPlace.length ? missingPlace.map((site) => (
-                <button key={site.id} type="button" onClick={() => selectSite(site)} className="rounded-[14px] border border-app-border px-3 py-2 text-left hover:bg-app-accent-soft">
-                  <span className="block text-[0.84rem] font-semibold text-app-text">{site.name}</span>
-                  <span className="text-[0.75rem] text-app-muted">Sem place valido</span>
-                </button>
-              )) : <div className="text-[0.84rem] text-app-muted">Todas as entidades carregadas possuem place.</div>}
-            </div>
-          </aside>
-        </main>
-      </div>
+        <button
+          type="button"
+          onClick={() => setHierarchyOpen((current) => !current)}
+          className="absolute right-5 top-5 z-[60] rounded-[18px] border border-app-border bg-white px-3 py-2 text-[0.82rem] font-semibold text-app-text shadow-soft hover:border-app-accent-border hover:bg-app-accent-soft"
+        >
+          {hierarchyOpen ? 'Fechar hierarquia' : 'Abrir hierarquia'}
+        </button>
+      </main>
 
-      {loading ? <div className="mt-4 text-[0.86rem] text-app-muted">Carregando dados Geo...</div> : null}
+      <GeoHierarchySidebar
+        open={hierarchyOpen}
+        sites={sites}
+        missingPlace={missingPlace}
+        siteCounts={siteCounts}
+        specs={specById}
+        selectedSiteId={selectedSiteId}
+        onSelect={selectSite}
+        onOpenDetail={openDetail}
+        onOpenTypes={() => setTypeOpen(true)}
+        onReload={() => void loadGeo()}
+        onClose={() => setHierarchyOpen(false)}
+        onToggle={() => setHierarchyOpen((current) => !current)}
+      />
 
       {createOpen ? (
         <CreateSiteModal
@@ -524,7 +566,7 @@ function GoogleMapPanel({
     return <FallbackMap sites={sites} specs={specs} locationById={locationById} draftAddress={draftAddress} onSelectSite={onSelectSite} />;
   }
 
-  return <div ref={mapEl} className="absolute inset-0" />;
+  return <div ref={mapEl} className="absolute inset-0 h-full w-full" />;
 }
 
 function FallbackMap({
@@ -541,7 +583,7 @@ function FallbackMap({
   onSelectSite: (site: GeoSite) => void;
 }) {
   return (
-    <div className="absolute inset-0 bg-[linear-gradient(rgba(215,222,232,0.72)_1px,transparent_1px),linear-gradient(90deg,rgba(215,222,232,0.72)_1px,transparent_1px),linear-gradient(135deg,#dce4ec,#f8fafc_46%,#edf2f7)] bg-[length:36px_36px,36px_36px,auto]">
+    <div className="absolute inset-0 h-full w-full bg-[linear-gradient(rgba(215,222,232,0.72)_1px,transparent_1px),linear-gradient(90deg,rgba(215,222,232,0.72)_1px,transparent_1px),linear-gradient(135deg,#dce4ec,#f8fafc_46%,#edf2f7)] bg-[length:36px_36px,36px_36px,auto]">
       <div className="absolute right-4 top-20 z-20 rounded-[18px] border border-app-border bg-white px-4 py-3 text-[0.84rem] text-app-muted shadow-soft">
         Configure <strong className="text-app-text">VITE_GOOGLE_MAPS_API_KEY</strong> para ativar Google Maps.
       </div>
@@ -573,9 +615,7 @@ function FallbackMap({
   );
 }
 
-function GoogleAutocompleteBridge({ onAddress, onReadyLabel }: { onAddress: (address: DraftAddress) => void; onReadyLabel: string }) {
-  const [ready, setReady] = useState(false);
-
+function GoogleAutocompleteBridge({ onAddress }: { onAddress: (address: DraftAddress) => void }) {
   useEffect(() => {
     const input = document.getElementById('geo-search-input') as HTMLInputElement | null;
     if (!GOOGLE_MAPS_KEY || !input) return;
@@ -590,12 +630,10 @@ function GoogleAutocompleteBridge({ onAddress, onReadyLabel }: { onAddress: (add
         if (!location) return;
         onAddress(addressFromGooglePlace(place));
       });
-      setReady(true);
     });
   }, [onAddress]);
 
-  if (!ready) return null;
-  return <div className="px-3 pb-2 pt-1 text-[0.72rem] font-semibold text-app-muted">{onReadyLabel}</div>;
+  return null;
 }
 
 function FloatingPanel({
@@ -668,6 +706,153 @@ function FloatingPanel({
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function GeoHierarchySidebar({
+  open,
+  sites,
+  missingPlace,
+  siteCounts,
+  specs,
+  selectedSiteId,
+  onSelect,
+  onOpenDetail,
+  onOpenTypes,
+  onReload,
+  onClose,
+  onToggle,
+}: {
+  open: boolean;
+  sites: GeoSite[];
+  missingPlace: GeoSite[];
+  siteCounts: Record<string, number>;
+  specs: Map<string, GeoSpec>;
+  selectedSiteId: string | null;
+  onSelect: (site: GeoSite) => void;
+  onOpenDetail: (site: GeoSite, tab?: DetailTab) => void;
+  onOpenTypes: () => void;
+  onReload: () => void;
+  onClose: () => void;
+  onToggle: () => void;
+}) {
+  return (
+    <>
+      {!open ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          className="fixed right-0 top-1/2 z-[70] -translate-y-1/2 rounded-l-[18px] border border-app-border border-r-0 bg-white px-3 py-4 text-[0.78rem] font-semibold text-app-text shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft"
+          aria-label="Abrir hierarquia"
+        >
+          {'<'}
+        </button>
+      ) : null}
+
+      <aside
+        className={`fixed right-0 top-0 z-[65] flex h-screen w-[360px] max-w-[92vw] flex-col border-l border-app-border bg-white shadow-modal transition-transform duration-200 ${
+          open ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        <div className="border-b border-app-border px-4 py-4">
+          <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">Rede V.tal</div>
+            <h2 className="mt-1 font-display text-[1.15rem] font-semibold text-app-text">Hierarquia de sites</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <ToolButton icon={RefreshCw} label="Atualizar dados" onClick={onReload} />
+            <ToolButton icon={Settings} label="Tipos de site" onClick={onOpenTypes} />
+            <ToolButton icon={X} label="Fechar hierarquia" onClick={onClose} />
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <SummaryChip label="Sites" value={sites.length} />
+          <SummaryChip label="Sem coord." value={missingPlace.length} tone="amber" />
+          <SummaryChip label="CO" value={siteCounts.CO ?? 0} />
+          <SummaryChip label="POP" value={siteCounts.POP ?? 0} />
+          <SummaryChip label="CTO" value={siteCounts.CTO ?? 0} />
+          <SummaryChip label="PI" value={siteCounts.PI ?? 0} />
+        </div>
+      </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <HierarchyTree
+            sites={sites}
+            specs={specs}
+            selectedSiteId={selectedSiteId}
+            onSelect={onSelect}
+            onOpenDetail={onOpenDetail}
+          />
+        </div>
+
+        <div className="border-t border-app-border px-4 py-4">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">Sem coordenada</div>
+            <StatusPill tone="amber">{missingPlace.length}</StatusPill>
+          </div>
+          <div className="grid max-h-[180px] gap-2 overflow-auto">
+            {missingPlace.length ? missingPlace.map((site) => (
+              <button
+                key={site.id}
+                type="button"
+                onClick={() => onSelect(site)}
+                className={`rounded-[16px] border px-3 py-2 text-left transition ${
+                  selectedSiteId === site.id
+                    ? 'border-app-accent-border bg-app-accent-soft'
+                    : 'border-app-border hover:bg-app-accent-soft'
+                }`}
+              >
+                <span className="block text-[0.86rem] font-semibold text-app-text">{site.name}</span>
+                <span className="block text-[0.74rem] text-app-muted">Sem place associado</span>
+              </button>
+            )) : (
+              <div className="rounded-[16px] border border-dashed border-app-border px-3 py-3 text-[0.84rem] text-app-muted">
+                Todas as entidades carregadas possuem place.
+              </div>
+            )}
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+function ToolButton({
+  icon: Icon,
+  label,
+  onClick,
+  active = false,
+}: {
+  icon: typeof Search;
+  label: string;
+  onClick: () => void;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex h-11 w-11 items-center justify-center rounded-[18px] border transition ${
+        active
+          ? 'border-app-accent-border bg-app-accent-soft text-app-text'
+          : 'border-app-border bg-white text-app-text hover:border-app-accent-border hover:bg-app-accent-soft'
+      }`}
+      title={label}
+      aria-label={label}
+    >
+      <Icon className="h-4 w-4" />
+    </button>
+  );
+}
+
+function SummaryChip({ label, value, tone = 'blue' }: { label: string; value: number; tone?: 'blue' | 'amber' }) {
+  return (
+    <div className="rounded-[18px] border border-app-border bg-app-panel px-3 py-2">
+      <div className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-app-muted">{label}</div>
+      <div className={`mt-1 font-display text-[1.15rem] font-semibold ${tone === 'amber' ? 'text-amber-700' : 'text-app-text'}`}>{value}</div>
     </div>
   );
 }
@@ -1081,7 +1266,7 @@ function Th({ children }: { children: ReactNode }) {
   return <th className="border-b border-app-border px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">{children}</th>;
 }
 
-function SiteIcon({ layer }: { layer: string }) {
+function SiteIcon({ layer }: { layer: SiteLayer }) {
   const color = layer === 'CTO' ? '#1A9E7D' : layer === 'PI' ? '#8B7500' : layer === 'POP' ? '#004E89' : layer === 'CO' ? '#9B59B6' : '#5A5A5A';
   const Icon = layer === 'PI' ? MapPin : layer === 'CTO' ? Network : layer === 'POP' ? Layers : Building2;
   return <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] text-white" style={{ background: color }}><Icon className="h-4 w-4" /></span>;
@@ -1097,7 +1282,7 @@ function formatAddress(address: GeoAddress): string {
   return [address.street, address.streetNr, address.city, address.stateOrProvince, address.postcode].filter(Boolean).join(', ');
 }
 
-function layerForSpec(spec?: GeoSpec): string {
+function layerForSpec(spec?: GeoSpec): SiteLayer {
   const name = (spec?.name ?? '').toLowerCase();
   if (name.includes('central') || name === 'co') return 'CO';
   if (name.includes('pop')) return 'POP';
@@ -1106,7 +1291,7 @@ function layerForSpec(spec?: GeoSpec): string {
   return 'Site';
 }
 
-function markerLabel(layer: string): string {
+function markerLabel(layer: SiteLayer): string {
   if (layer === 'CO') return 'CO';
   if (layer === 'POP') return 'P';
   if (layer === 'CTO') return 'CT';

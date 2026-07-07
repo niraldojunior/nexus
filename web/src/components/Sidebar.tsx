@@ -1,22 +1,19 @@
-import { useState } from 'react';
 import {
   Briefcase,
   Boxes,
-  Check,
   FolderTree,
+  type LucideIcon,
   MapPinned,
   MessagesSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  Search,
   Settings,
-  SlidersHorizontal,
 } from 'lucide-react';
 import { PageId, RecentGroup, RecentItem } from '../types';
 import { ResearchHistoryPage } from '../pages/ResearchHistoryPage';
 
-type PrimaryItemId = 'searches' | 'research' | 'geo' | 'resource' | 'service' | 'order';
+type PrimaryItemId = 'conversations' | 'research' | 'geo' | 'resource' | 'service' | 'order';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -36,9 +33,9 @@ interface SidebarProps {
   researchSessionRefreshTrigger?: number;
 }
 
-const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: typeof Search }> = [
-  { id: 'research', label: 'Nova Pesquisa', icon: Plus },
-  { id: 'searches', label: 'Pesquisas', icon: MessagesSquare },
+const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: LucideIcon }> = [
+  { id: 'research', label: 'Nova Conversa', icon: Plus },
+  { id: 'conversations', label: 'Conversas', icon: MessagesSquare },
   { id: 'geo', label: 'Locais', icon: MapPinned },
   { id: 'resource', label: 'Recursos', icon: Boxes },
   { id: 'service', label: 'Serviços', icon: Briefcase },
@@ -48,21 +45,14 @@ const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: typeof Searc
 export default function Sidebar({
   collapsed,
   currentPage,
-  activeRecentConversationId,
   activeResearchSessionId,
   settingsOpen,
-  recentItems,
-  recentGroup,
-  onGroupChange,
   onToggleCollapse,
   onNewResearch,
   onSelectPage,
-  onOpenRecentItem,
   onSelectResearchSession,
   researchSessionRefreshTrigger,
 }: SidebarProps) {
-  const [showGrouping, setShowGrouping] = useState(false);
-
   return (
     <aside
       className={`flex flex-col overflow-hidden border-r border-app-border bg-app-sidebar shadow-soft transition-[width,min-width] duration-300 ease-in-out ${
@@ -82,18 +72,7 @@ export default function Sidebar({
         >
           Nexus
         </button>
-        <div className={`${collapsed ? 'flex items-center' : 'ml-auto flex items-center gap-4'}`}>
-          <button
-            type="button"
-            className={`overflow-hidden rounded-xl border border-transparent text-app-text transition-all duration-200 ease-in-out hover:bg-app-accent-soft ${
-              collapsed
-                ? 'max-w-0 p-0 opacity-0 pointer-events-none'
-                : 'max-w-[40px] p-2 opacity-100'
-            }`}
-            aria-label="Buscar"
-          >
-            <Search className="h-[1.15rem] w-[1.15rem]" strokeWidth={1.8} />
-          </button>
+        <div className={`${collapsed ? 'flex items-center' : 'ml-auto flex items-center'}`}>
           <button
             type="button"
             onClick={onToggleCollapse}
@@ -114,7 +93,7 @@ export default function Sidebar({
           {primaryItems.map(({ id, label, icon: Icon }) => {
             const isActive =
               (id === 'research' && currentPage === 'research' && activeResearchSessionId === null) ||
-              (id === 'searches' && currentPage === 'pesquisas') ||
+              (id === 'conversations' && currentPage === 'conversas') ||
               ((id === 'geo' || id === 'resource' || id === 'service' || id === 'order') &&
                 currentPage === id);
 
@@ -129,8 +108,8 @@ export default function Sidebar({
                     onNewResearch();
                     return;
                   }
-                  if (id === 'searches') {
-                    onSelectPage('pesquisas');
+                  if (id === 'conversations') {
+                    onSelectPage('conversas');
                     return;
                   }
                   onSelectPage(id);
@@ -148,13 +127,13 @@ export default function Sidebar({
         <div
           className={`h-full transition-opacity duration-150 ${collapsed ? 'opacity-0' : 'opacity-100'}`}
         >
-          <div className="flex items-center justify-between pl-4 pr-[15px] pb-[0.16rem] pt-3">
+          <div className="flex items-center justify-between pl-4 pr-[15px] pb-2 pt-2">
             <span className="text-[0.8rem] font-medium text-app-muted">
-              Pesquisas recentes
+              Conversas recentes
             </span>
           </div>
 
-          <div className="h-full overflow-y-auto px-3 pb-3">
+          <div className="h-full overflow-y-auto px-3 pb-2">
             <ResearchHistoryPage
               refreshTrigger={researchSessionRefreshTrigger}
               onSessionSelected={(sessionId) => {
@@ -208,7 +187,7 @@ function NavItem({
   collapsed = false,
 }: {
   active: boolean;
-  icon: typeof Search;
+  icon: LucideIcon;
   label: string;
   onClick: () => void;
   collapsed?: boolean;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Send, Loader } from 'lucide-react';
 
 interface NewResearchPageProps {
@@ -9,6 +9,15 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = '0px';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [input]);
 
   const handleSubmit = async () => {
     if (!input.trim() || loading) return;
@@ -24,12 +33,12 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
         },
         body: JSON.stringify({
           title: input.substring(0, 50),
-          model: 'gpt-4',
+          model: 'gpt-4o-mini',
         }),
       });
 
       if (!sessionResponse.ok) {
-        throw new Error(`Falha ao criar pesquisa: ${sessionResponse.status}`);
+        throw new Error(`Falha ao criar conversa: ${sessionResponse.status}`);
       }
 
       const session = await sessionResponse.json();
@@ -65,7 +74,7 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
         {/* Greeting / Title */}
         <div className="mb-8 text-center">
           <h1 className="font-display text-3xl font-semibold leading-tight tracking-tight text-app-text">
-            O que deseja Pesquisar?
+            Por onde Começamos?
           </h1>
         </div>
 
@@ -77,30 +86,27 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
         )}
 
         {/* Input Box */}
-        <div className="rounded-2xl border border-app-border bg-white p-2 shadow-sm">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Digite sua pergunta..."
-            rows={2}
-            className="w-full resize-none bg-transparent text-app-text placeholder-app-muted outline-none text-base"
+        <div className="group relative isolate">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -inset-12 -z-10 rounded-[42px] bg-[radial-gradient(circle_at_center,rgba(255,210,0,0.26),rgba(255,248,218,0.16)_38%,transparent_78%)] opacity-75 blur-[72px] transition-opacity duration-300 group-focus-within:opacity-100"
           />
-
-          <div className="mt-2 flex items-center justify-between">
-            <div className="text-xs text-app-muted">
-              {input.length > 0 && `${input.length} caracteres`}
-            </div>
+          <div className="relative z-10 rounded-2xl border border-app-border bg-white px-4 pb-4 pl-4 pr-16 pt-4 shadow-[0_14px_32px_rgba(15,23,42,0.08),0_0_0_1px_rgba(242,211,90,0.18),0_0_36px_rgba(255,210,0,0.12)] transition-shadow duration-300 focus-within:border-app-accent-border focus-within:shadow-[0_20px_52px_rgba(15,23,42,0.10),0_0_0_1px_rgba(242,211,90,0.32),0_0_64px_rgba(255,210,0,0.18),0_0_180px_rgba(255,248,218,0.40)]">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="Digite sua pergunta..."
+              rows={1}
+              className="w-full resize-none overflow-hidden bg-transparent text-[1.05rem] leading-7 text-app-text placeholder-app-muted outline-none"
+            />
             <button
               onClick={handleSubmit}
               disabled={!input.trim() || loading}
-              className="inline-flex items-center justify-center rounded-full bg-app-accent w-10 h-10 text-white transition hover:bg-opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-app-accent text-white transition hover:bg-opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {loading ? (
-                <Loader className="h-5 w-5 animate-spin" />
-              ) : (
-                <Send className="h-5 w-5" />
-              )}
+              {loading ? <Loader className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
             </button>
           </div>
         </div>

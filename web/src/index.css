@@ -14,23 +14,32 @@ body,
 }
 
 html {
-  background:
-    radial-gradient(circle at top right, rgba(255, 210, 0, 0.12), transparent 24%),
-    linear-gradient(180deg, #f4f7fb 0%, #edf2f7 100%);
+  background: #c7c9d2;
   font-size: 16px;
 }
 
 body {
+  position: relative;
   margin: 0;
   overflow: hidden;
-  background:
-    radial-gradient(circle at top right, rgba(255, 210, 0, 0.12), transparent 24%),
-    linear-gradient(180deg, #f4f7fb 0%, #edf2f7 100%);
+  background: #c7c9d2;
   color: #243041;
   font-family: "Aptos", "Segoe UI", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  width: 100%;
+  height: 3px;
+  background: #ffd200;
+  pointer-events: none;
 }
 
 button,

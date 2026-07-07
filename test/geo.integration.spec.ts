@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
 import http from 'node:http';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { createApp } from '../src/shared/http/app.js';
 
@@ -10,11 +13,11 @@ const createLogger = () => ({
   error: () => undefined,
 });
 
-const createConfig = (port: number) => ({
+const createConfig = (port: number, databaseUrl: string) => ({
   appName: 'v-tal-nexus',
   authEnabled: true,
   authToken: 'secret',
-  databaseUrl: 'sqlite://./data/nexus.db',
+  databaseUrl,
   logLevel: 'info' as const,
   nodeEnv: 'test' as const,
   port,
@@ -58,9 +61,13 @@ const requestJson = async (
 };
 
 test('Geo HTTP integration handles spec, location and site creation', async (t) => {
-  const server = createApp({ config: createConfig(0), logger: createLogger() });
+  const database = createTestDatabase();
+  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
   const port = await server.start();
-  t.after(async () => server.stop());
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
 
   const address = await requestJson(port, 'POST', '/v1/geo/addresses', {
     street: 'Rua Voluntarios da Patria',
@@ -89,9 +96,13 @@ test('Geo HTTP integration handles spec, location and site creation', async (t) 
 });
 
 test('Geo HTTP integration supports TMF aliases, workspace transaction, status event and relatedSite', async (t) => {
-  const server = createApp({ config: createConfig(0), logger: createLogger() });
+  const database = createTestDatabase();
+  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
   const port = await server.start();
-  t.after(async () => server.stop());
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
 
   const spec = await requestJson(port, 'POST', '/tmf-api/geographicSiteManagement/v4/geographicSiteSpecification', {
     name: 'Ponto de Instalacao',
@@ -145,9 +156,13 @@ test('Geo HTTP integration supports TMF aliases, workspace transaction, status e
 });
 
 test('App exposes health without auth and protected routes reject missing token', async (t) => {
-  const server = createApp({ config: createConfig(0), logger: createLogger() });
+  const database = createTestDatabase();
+  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
   const port = await server.start();
-  t.after(async () => server.stop());
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
 
   const health = await new Promise<{ statusCode: number; body: unknown }>((resolve, reject) => {
     const req = http.request(
@@ -183,9 +198,13 @@ test('App exposes health without auth and protected routes reject missing token'
 });
 
 test('App root returns Nexus shell html', async (t) => {
-  const server = createApp({ config: createConfig(0), logger: createLogger() });
+  const database = createTestDatabase();
+  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
   const port = await server.start();
-  t.after(async () => server.stop());
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
 
   const html = await new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
     const req = http.request(
@@ -204,3 +223,11 @@ test('App root returns Nexus shell html', async (t) => {
   assert.match(html.body, /<title>v-tal-nexus - Nexus<\/title>/);
   assert.match(html.body, /Interface migrada para Vite/);
 });
+
+const createTestDatabase = (): { databaseUrl: string; cleanup: () => void } => {
+  const root = mkdtempSync(join(tmpdir(), 'nexus-geo-'));
+  return {
+    databaseUrl: `sqlite://${join(root, 'nexus.db')}`,
+    cleanup: () => rmSync(root, { recursive: true, force: true }),
+  };
+};

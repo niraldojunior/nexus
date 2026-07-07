@@ -1,4 +1,4 @@
-export type PageId = 'assistant' | 'geo' | 'resource' | 'service' | 'order' | 'conversation' | 'research' | 'pesquisas';
+export type PageId = 'assistant' | 'geo' | 'resource' | 'service' | 'order' | 'conversation' | 'research' | 'conversas';
 
 export type RecentGroup = 'none' | 'date' | 'project';
 

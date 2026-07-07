@@ -1,5 +1,6 @@
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import type { ResearchSession, ResearchMessage, CreateResearchSessionInput, AddMessageInput, LLMResponse } from './domain.js';
+import { getNexusCopilotContext } from './nexus-copilot-context.js';
 import { SqliteSearchRepository } from './sqlite-repository.js';
 
 /**
@@ -24,7 +25,7 @@ export class SearchService {
       userId,
       title: input.title,
       status: 'active',
-      model: input.model || 'gpt-4',
+      model: input.model || 'gpt-4o-mini',
       temperature: input.temperature ?? 0.7,
       maxTokens: input.maxTokens ?? 2000,
       createdAt: now,
@@ -34,8 +35,9 @@ export class SearchService {
     if (input.description !== undefined) {
       sessionData.description = input.description;
     }
-    if (input.context !== undefined) {
-      sessionData.context = input.context;
+    const resolvedContext = input.context?.trim().length ? input.context : getNexusCopilotContext();
+    if (resolvedContext !== undefined) {
+      sessionData.context = resolvedContext;
     }
 
     return this.repository.createSession(sessionData);
@@ -76,8 +78,25 @@ export class SearchService {
       content: userMessage,
     });
 
-    // Get response from LLM
-    const llmResponse = await llmProvider(session.context || '', session.messages || [], userMessage);
+    // Get response from LLM, but keep the conversation usable even when the provider fails.
+    let llmResponse: LLMResponse;
+    try {
+      llmResponse = await llmProvider(
+        session.context?.trim().length ? session.context : getNexusCopilotContext(),
+        session.messages || [],
+        userMessage,
+      );
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      llmResponse = {
+        content:
+          'Nao consegui gerar uma resposta automatica agora. Sua mensagem foi salva e a conversa foi criada, mas o provedor de IA nao respondeu.',
+        metadata: {
+          fallback: true,
+          error: errorMsg,
+        },
+      };
+    }
 
     // Add assistant message - build object conditionally
     const assistantMsgInput: any = {

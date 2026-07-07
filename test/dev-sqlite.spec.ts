@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import { test } from 'vitest';
 import { buildDevSqliteRuntimeEnv, ensureDevSqliteDataDir } from '../src/shared/config/dev-sqlite-core.js';
 
 test('dev sqlite runtime defaults database url and node env', () => {

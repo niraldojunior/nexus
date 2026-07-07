@@ -18,7 +18,7 @@ interface ResearchSession {
   updatedAt: string;
 }
 
-export const PesquisasPage: React.FC<{
+export const ConversasPage: React.FC<{
   onSelectSession: (sessionId: string) => void;
 }> = ({ onSelectSession }) => {
   const [sessions, setSessions] = useState<ResearchSession[]>([]);
@@ -53,7 +53,7 @@ export const PesquisasPage: React.FC<{
         headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` },
       });
 
-      if (!response.ok) throw new Error('Erro ao carregar pesquisas');
+      if (!response.ok) throw new Error('Erro ao carregar conversas');
 
       const data = await response.json();
       setSessions(
@@ -72,7 +72,7 @@ export const PesquisasPage: React.FC<{
 
   const handleDelete = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Arquivar esta pesquisa?')) return;
+    if (!confirm('Arquivar esta conversa?')) return;
 
     try {
       const response = await fetch(`/v1/research/sessions/${sessionId}`, {
@@ -100,10 +100,10 @@ export const PesquisasPage: React.FC<{
         {/* Header */}
         <div className="mb-8">
           <h1 className="font-display text-4xl font-semibold text-app-text mb-2">
-            Pesquisas
+            Conversas
           </h1>
           <p className="text-app-muted">
-            {filteredSessions.length} pesquisa(s) encontrada(s)
+            {filteredSessions.length} conversa(s) encontrada(s)
           </p>
         </div>
 
@@ -112,7 +112,7 @@ export const PesquisasPage: React.FC<{
           <Search className="h-5 w-5 text-app-muted flex-shrink-0" />
           <input
             type="text"
-            placeholder="Buscar pesquisas por título..."
+            placeholder="Buscar conversas por título..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="flex-1 bg-transparent text-app-text placeholder-app-muted outline-none text-base"
@@ -138,7 +138,7 @@ export const PesquisasPage: React.FC<{
           <div className="flex items-center justify-center py-12 text-center">
             <div>
               <p className="text-lg text-app-muted mb-2">
-                {searchQuery ? 'Nenhuma pesquisa encontrada' : 'Nenhuma pesquisa ainda'}
+                {searchQuery ? 'Nenhuma conversa encontrada' : 'Nenhuma conversa ainda'}
               </p>
               {searchQuery && (
                 <button
@@ -183,7 +183,7 @@ export const PesquisasPage: React.FC<{
                   <button
                     onClick={(e) => handleDelete(session.id, e)}
                     className="ml-4 opacity-0 group-hover:opacity-100 transition p-2 text-app-muted hover:text-red-600 hover:bg-red-50 rounded"
-                    title="Arquivar"
+                    title="Arquivar conversa"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>

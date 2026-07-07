@@ -1,18 +1,13 @@
 import { useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
-  Copy,
   Download,
   FileText,
   FolderTree,
   Layers3,
   MapPin,
   MapPinned,
-  Play,
-  RotateCcw,
   Settings,
-  ThumbsDown,
-  ThumbsUp,
   Workflow,
   Zap,
 } from 'lucide-react';
@@ -25,8 +20,7 @@ import Sidebar from './components/Sidebar';
 import GeoPage from './pages/GeoPage';
 import NewResearchPage from './pages/NewResearchPage';
 import { ResearchPage } from './pages/ResearchPage';
-import { PesquisasPage } from './pages/PesquisasPage';
-import { ResearchHistoryPage } from './pages/ResearchHistoryPage';
+import { ConversasPage } from './pages/PesquisasPage';
 import {
   domainCards,
   domainMetrics,
@@ -54,7 +48,7 @@ const assistantChips = [
 ];
 
 const domainMeta: Record<
-  Exclude<PageId, 'assistant' | 'conversation' | 'research'>,
+  Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas'>,
   { title: string; subtitle: string; icon: typeof MapPin }
 > = {
   geo: { title: 'Geo', subtitle: 'Onde? Geographic Site, Address & Location', icon: MapPinned },
@@ -126,9 +120,17 @@ function AssistantHome({
   );
 }
 
-function DomainPage({ page }: { page: Exclude<PageId, 'assistant' | 'conversation' | 'research'> }) {
+function DomainPage({ page }: { page: Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas'> }) {
   const meta = domainMeta[page];
   const Icon = meta.icon;
+
+  if (page === 'geo') {
+    return (
+      <div className="h-full min-h-0 min-w-0">
+        <GeoPage />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-full px-8 py-8">
@@ -158,7 +160,7 @@ function DomainPage({ page }: { page: Exclude<PageId, 'assistant' | 'conversatio
         </div>
 
         <MetricGrid metrics={domainMetrics[page]} />
-        {page === 'geo' ? <GeoPage /> : <DomainOverview page={page} />}
+        <DomainOverview page={page} />
       </div>
     </div>
   );
@@ -248,50 +250,56 @@ function ConversationPage({
   conversation,
   input,
   loading,
+  errorMessage,
   onInputChange,
   onSubmit,
 }: {
   conversation: Conversation;
   input: string;
   loading: boolean;
+  errorMessage?: string | null;
   onInputChange: (value: string) => void;
   onSubmit: () => void;
 }) {
   return (
     <div className="flex min-h-full flex-col">
-      <div className="flex items-center justify-between px-9 py-4">
-        <div className="text-[0.9rem] font-semibold text-app-muted">
-          {conversation.projectLabel} / {conversation.title}
+      <div className="border-b border-transparent px-6 py-4">
+        <div className="mx-auto flex max-w-[860px] items-center justify-between gap-4">
+          <div className="text-[0.9rem] font-semibold text-app-muted">
+            {conversation.projectLabel} / {conversation.title}
+          </div>
+          <button
+            type="button"
+            className="rounded-[999px] border border-app-border bg-white px-5 py-2.5 text-[1rem] font-semibold text-app-text shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft"
+          >
+            Compartilhar
+          </button>
         </div>
-        <button
-          type="button"
-          className="rounded-[999px] border border-app-border bg-white px-5 py-2.5 text-[1rem] font-semibold text-app-text shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft"
-        >
-          Compartilhar
-        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-9">
-        <div className="mx-auto max-w-[1080px] pb-8">
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="mx-auto flex min-h-full max-w-[820px] flex-col justify-end gap-7 pb-4">
           {conversation.entries.map((entry) => (
-            <div key={entry.id} className="mb-10">
+            <div key={entry.id}>
               {entry.role === 'assistant' ? (
                 <AssistantEntry entry={entry} />
               ) : (
-                <div className="ml-auto max-w-[820px] rounded-[24px] border border-app-border bg-white px-6 py-5 shadow-soft">
-                  <p className="text-[1rem] leading-8 text-app-text">{entry.content}</p>
+                <div className="ml-auto max-w-[680px] rounded-[24px] border border-app-border bg-white px-6 py-5 shadow-sm">
+                  <p className="text-[1.06rem] leading-[1.7] tracking-[-0.01em] text-app-text">
+                    {entry.content}
+                  </p>
                 </div>
               )}
             </div>
           ))}
-          <div className="mb-8 flex items-center gap-3 pl-5">
+          <div className="mb-1 flex items-center gap-3 pl-2">
             <ClaudeBurst className="h-10 w-10 text-brand-terracotta" />
           </div>
         </div>
       </div>
 
-      <div className="px-9 pb-4">
-        <div className="mx-auto max-w-[1080px]">
+      <div className="px-6 pb-3">
+        <div className="mx-auto max-w-[820px]">
           <Composer
             value={input}
             onChange={onInputChange}
@@ -302,6 +310,11 @@ function ConversationPage({
             modelLabel="Nexus"
             qualityLabel="Baixo"
           />
+          {errorMessage ? (
+            <p className="mt-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+              {errorMessage}
+            </p>
+          ) : null}
           <p className="mt-3 text-center text-[0.92rem] text-app-muted">
             Nexus pode cometer erros. Verifique decisões arquiteturais nos HLDs.
           </p>
@@ -313,7 +326,7 @@ function ConversationPage({
 
 function AssistantEntry({ entry }: { entry: ConversationEntry }) {
   return (
-    <div className="max-w-[1020px] pl-5">
+    <div className="max-w-[860px]">
       {entry.attachments?.length ? (
         <div className="mb-7">
           {entry.attachments.map((attachment) => (
@@ -348,26 +361,14 @@ function AssistantEntry({ entry }: { entry: ConversationEntry }) {
         </div>
       ) : null}
 
-      <div className="max-w-none">
+      <div className="max-w-[720px] space-y-4">
         {entry.content.split('\n\n').map((paragraph) => (
           <p
             key={paragraph}
-            className="mb-7 text-[1.08rem] font-medium leading-[1.7] tracking-[-0.01em] text-app-text"
+            className="text-[1.06rem] font-normal leading-[1.78] tracking-[-0.01em] text-app-text"
           >
             {paragraph}
           </p>
-        ))}
-      </div>
-
-      <div className="mt-4 flex items-center gap-5 text-app-muted">
-        {[Copy, Play, ThumbsUp, ThumbsDown, RotateCcw].map((Icon) => (
-          <button
-            key={Icon.displayName || Icon.name}
-            type="button"
-            className="transition hover:text-app-text"
-          >
-            <Icon className="h-6 w-6" strokeWidth={1.8} />
-          </button>
         ))}
       </div>
     </div>
@@ -387,6 +388,7 @@ function App() {
   const [researchSessionRefreshTrigger, setResearchSessionRefreshTrigger] = useState(0);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSection>('skills');
   const messageAreaRef = useRef<HTMLDivElement>(null);
 
@@ -421,6 +423,7 @@ function App() {
     setActiveConversationId(id);
     setCurrentPage('assistant');
     setInput('');
+    setAssistantError(null);
   };
 
   const handleNewResearch = () => {
@@ -428,11 +431,7 @@ function App() {
     setActiveResearchSessionId(null);
     setCurrentPage('research');
     setInput('');
-  };
-
-  const handleViewPesquisas = () => {
-    setCurrentPage('pesquisas');
-    setInput('');
+    setAssistantError(null);
   };
 
   const handleSubmitMessage = async () => {
@@ -448,6 +447,7 @@ function App() {
 
     setInput('');
     setLoading(true);
+    setAssistantError(null);
     setCurrentPage('conversation');
     setActiveConversationId(nextConversationId);
 
@@ -498,6 +498,9 @@ function App() {
             : conversation,
         ),
       );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao chamar o ChatGPT.';
+      setAssistantError(message);
     } finally {
       setLoading(false);
       messageAreaRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -540,16 +543,20 @@ function App() {
         }}
       />
 
-      <main className="flex-1 overflow-hidden">
+      <main className="min-w-0 flex-1 overflow-hidden">
         {/* ResearchPage gerencia seu próprio scroll - sem container externo */}
         {currentPage === 'research' && activeResearchSessionId !== null ? (
           <ResearchPage
             sessionId={activeResearchSessionId}
             onBack={() => {
-              setCurrentPage('pesquisas');
+              setCurrentPage('conversas');
               setActiveResearchSessionId(null);
             }}
           />
+        ) : currentPage === 'geo' ? (
+          <div className="h-full min-h-0 overflow-hidden">
+            <DomainPage page="geo" />
+          </div>
         ) : (
           <div ref={messageAreaRef} className="h-full overflow-y-auto">
             <div className="min-h-full origin-top-left scale-[0.93] [width:107.5269%]">
@@ -562,7 +569,6 @@ function App() {
                   onNavigate={setCurrentPage}
                 />
               ) : null}
-              {currentPage === 'geo' ? <DomainPage page="geo" /> : null}
               {currentPage === 'resource' ? <DomainPage page="resource" /> : null}
               {currentPage === 'service' ? <DomainPage page="service" /> : null}
               {currentPage === 'order' ? <DomainPage page="order" /> : null}
@@ -577,8 +583,8 @@ function App() {
                   />
                 ) : null
               ) : null}
-              {currentPage === 'pesquisas' ? (
-                <PesquisasPage
+              {currentPage === 'conversas' ? (
+                <ConversasPage
                   onSelectSession={(sessionId) => {
                     setActiveResearchSessionId(sessionId);
                     setCurrentPage('research');
@@ -590,6 +596,7 @@ function App() {
                   conversation={activeConversation}
                   input={input}
                   loading={loading}
+                  errorMessage={assistantError}
                   onInputChange={setInput}
                   onSubmit={handleSubmitMessage}
                 />

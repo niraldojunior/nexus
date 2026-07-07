@@ -171,42 +171,44 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
       )}
 
       {/* Messages container - scrollable */}
-      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-        {messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-center">
-            <p className="text-app-muted">Inicie uma conversa...</p>
-          </div>
-        ) : (
-          messages.map((msg) => (
-            <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`max-w-[70%] rounded-lg px-4 py-3 ${
-                  msg.role === 'user'
-                    ? 'bg-app-accent text-white'
-                    : 'bg-white border border-app-border text-app-text'
-                }`}
-              >
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-                <div className="text-xs opacity-70 mt-2">
-                  {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="mx-auto flex min-h-full max-w-[720px] flex-col justify-end gap-6 pb-4">
+          {messages.length === 0 ? (
+            <div className="flex min-h-[240px] items-center justify-center text-center">
+              <p className="text-app-muted">Inicie uma conversa...</p>
+            </div>
+          ) : (
+            messages.map((msg) => (
+              <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  className={`max-w-[70%] rounded-lg px-4 py-3 ${
+                    msg.role === 'user'
+                      ? 'bg-app-accent text-white'
+                      : 'bg-white border border-app-border text-app-text'
+                  }`}
+                >
+                  <p className="text-[0.98rem] leading-[1.76] whitespace-pre-wrap">{msg.content}</p>
+                  <div className="text-xs opacity-70 mt-2">
+                    {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+          {loading && (
+            <div className="flex justify-start">
+              <div className="bg-white border border-app-border rounded-lg px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <Loader className="h-4 w-4 animate-spin text-app-accent" />
+                  <span className="text-sm text-app-muted">Pensando...</span>
                 </div>
               </div>
             </div>
-          ))
-        )}
-        {loading && (
-          <div className="flex justify-start">
-            <div className="bg-white border border-app-border rounded-lg px-4 py-3">
-              <div className="flex items-center gap-2">
-                <Loader className="h-4 w-4 animate-spin text-app-accent" />
-                <span className="text-sm text-app-muted">Pensando...</span>
-              </div>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Error message */}
@@ -218,7 +220,7 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
 
       {/* Input area - fixed at bottom with attractive styling */}
       <div className="flex-shrink-0 px-6 py-4 bg-app-canvas">
-        <div className="bg-white border border-app-border rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-end gap-4 px-5 py-4">
+        <div className="mx-auto max-w-[720px] bg-white border border-app-border rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-end gap-4 px-5 py-4">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}

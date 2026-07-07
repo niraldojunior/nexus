@@ -33,7 +33,7 @@ export default function Composer({
     <form
       onSubmit={handleSubmit}
       className={`rounded-[28px] border border-app-border bg-white shadow-soft ${
-        isHero ? 'px-8 pb-6 pt-7' : 'px-8 pb-5 pt-6'
+        isHero ? 'px-8 pb-6 pt-7' : 'px-7 pb-4 pt-5'
       }`}
     >
       <textarea
@@ -42,52 +42,52 @@ export default function Composer({
         placeholder={placeholder}
         rows={isHero ? 3 : 2}
         className={`w-full resize-none border-0 bg-transparent p-0 text-app-text placeholder:text-app-muted focus:outline-none focus:ring-0 ${
-          isHero ? 'min-h-[130px] text-[1.15rem]' : 'min-h-[84px] text-[1rem] leading-8'
+          isHero ? 'min-h-[130px] text-[1.15rem]' : 'min-h-[72px] text-[0.98rem] leading-[1.55]'
         }`}
       />
 
-      <div className="mt-4 flex items-center justify-between gap-5">
+      <div className="mt-3.5 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button
             type="button"
             className="rounded-2xl border border-transparent p-2 text-app-text transition hover:border-app-border hover:bg-app-accent-soft"
             aria-label="Adicionar"
           >
-            <Plus className="h-7 w-7" strokeWidth={1.8} />
+            <Plus className="h-6 w-6" strokeWidth={1.8} />
           </button>
           <button
             type="button"
             className="rounded-[18px] border border-app-accent-border bg-app-accent-soft p-3 text-app-text transition hover:bg-app-card"
             aria-label="Anexos"
           >
-            <Trash2 className="h-6 w-6" strokeWidth={1.8} />
+            <Trash2 className="h-5 w-5" strokeWidth={1.8} />
           </button>
         </div>
 
-        <div className="flex items-center gap-5 text-app-text">
-          <div className="rounded-[999px] border border-app-border bg-app-panel px-3 py-2">
-            <div className="flex items-center gap-2 text-[0.95rem]">
+        <div className="flex items-center gap-4 text-app-text">
+          <div className="rounded-[999px] border border-app-border bg-app-panel px-3 py-1.5">
+            <div className="flex items-center gap-2 text-[0.92rem]">
               <span className="font-semibold">{modelLabel}</span>
               <span className="text-app-muted">{qualityLabel}</span>
-              <ChevronDown className="h-5 w-5 text-app-muted" strokeWidth={1.8} />
+              <ChevronDown className="h-4 w-4 text-app-muted" strokeWidth={1.8} />
             </div>
           </div>
           <button type="button" className="transition hover:text-app-muted" aria-label="Microfone">
-            <Mic className="h-7 w-7" strokeWidth={1.8} />
+            <Mic className="h-6 w-6" strokeWidth={1.8} />
           </button>
           <button type="button" className="transition hover:text-app-muted" aria-label="Audio">
-            <Waves className="h-7 w-7" strokeWidth={1.8} />
+            <Waves className="h-6 w-6" strokeWidth={1.8} />
           </button>
           <button
             type="submit"
             disabled={loading || !value.trim()}
-            className="rounded-[18px] border border-app-accent-border bg-app-accent p-3 text-app-text shadow-soft transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-[18px] border border-app-accent-border bg-app-accent p-2.5 text-app-text shadow-soft transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Enviar"
           >
             {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin" strokeWidth={1.8} />
+              <Loader2 className="h-5 w-5 animate-spin" strokeWidth={1.8} />
             ) : (
-              <SendHorizontal className="h-6 w-6" strokeWidth={1.8} />
+              <SendHorizontal className="h-5 w-5" strokeWidth={1.8} />
             )}
           </button>
         </div>

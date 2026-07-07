@@ -62,7 +62,7 @@ async function main() {
     const session = await request('POST', '/v1/research/sessions', {
       title: 'Test Chat Session',
       context: 'You are a helpful assistant for Nexus inventory platform.',
-      model: 'gpt-4',
+      model: 'gpt-4o-mini',
       temperature: 0.7,
       maxTokens: 2000,
     });

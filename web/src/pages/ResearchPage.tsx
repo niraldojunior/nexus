@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Trash2, Send, Loader } from 'lucide-react';
+import { Trash2, Send, Loader } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -56,7 +56,7 @@ export const ResearchPage: React.FC<{
         headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` },
       });
 
-      if (!response.ok) throw new Error('Erro ao carregar pesquisa');
+      if (!response.ok) throw new Error('Erro ao carregar conversa');
 
       const data = await response.json() as ResearchSession;
       setSession(data);
@@ -69,7 +69,7 @@ export const ResearchPage: React.FC<{
   };
 
   const handleDelete = async () => {
-    if (!confirm('Arquivar esta pesquisa?')) return;
+    if (!confirm('Arquivar esta conversa?')) return;
 
     try {
       const response = await fetch(`/v1/research/sessions/${sessionId}`, {
@@ -158,7 +158,7 @@ export const ResearchPage: React.FC<{
     return (
       <div className="flex items-center justify-center h-full bg-app-canvas">
         <div className="text-center">
-          <p className="text-app-muted">Carregando pesquisa...</p>
+          <p className="text-app-muted">Carregando conversa...</p>
         </div>
       </div>
     );
@@ -168,7 +168,7 @@ export const ResearchPage: React.FC<{
     return (
       <div className="flex items-center justify-center h-full bg-app-canvas">
         <div className="text-center text-app-muted">
-          <p>Pesquisa não encontrada</p>
+          <p>Conversa não encontrada</p>
         </div>
       </div>
     );
@@ -177,28 +177,21 @@ export const ResearchPage: React.FC<{
   return (
     <div className="flex flex-col h-full bg-app-canvas">
       {/* Fixed Header - Top */}
-      <div className="flex-shrink-0 px-6 py-4 flex items-center justify-between bg-app-canvas">
-        <div className="flex items-center gap-4 flex-1 min-w-0">
-          <button
-            onClick={onBack}
-            className="inline-flex items-center gap-2 text-app-muted hover:text-app-text transition flex-shrink-0"
-            title="Voltar para Pesquisas"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
+      <div className="flex-shrink-0 bg-app-canvas px-6 py-4">
+        <div className="flex w-full items-center justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <h1 className="font-semibold text-lg text-app-text truncate">
+            <h1 className="truncate text-[0.98rem] font-semibold text-app-text">
               {session.title}
             </h1>
           </div>
+          <button
+            onClick={handleDelete}
+            className="p-2 text-app-muted hover:text-red-600 hover:bg-red-50 rounded-lg transition flex-shrink-0"
+            title="Arquivar conversa"
+          >
+            <Trash2 className="h-5 w-5" />
+          </button>
         </div>
-        <button
-          onClick={handleDelete}
-          className="p-2 text-app-muted hover:text-red-600 hover:bg-red-50 rounded-lg transition flex-shrink-0"
-          title="Arquivar pesquisa"
-        >
-          <Trash2 className="h-5 w-5" />
-        </button>
       </div>
 
       {/* Error message */}
@@ -209,48 +202,60 @@ export const ResearchPage: React.FC<{
       )}
 
       {/* Scrollable Messages Area - Middle */}
-      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-        {messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-center">
-            <p className="text-app-muted">Inicie uma conversa...</p>
-          </div>
-        ) : (
-          messages.map((msg) => (
-            <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`max-w-[70%] rounded-lg px-4 py-3 ${
-                  msg.role === 'user'
-                    ? 'bg-app-accent text-white'
-                    : 'bg-white border border-app-border text-app-text'
-                }`}
-              >
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-                <div className="text-xs opacity-70 mt-2">
-                  {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="mx-auto flex min-h-full max-w-[720px] flex-col justify-end gap-7 pb-4">
+          {messages.length === 0 ? (
+            <div className="flex min-h-[240px] items-center justify-center text-center">
+              <p className="text-app-muted">Inicie uma conversa...</p>
+            </div>
+          ) : (
+            messages.map((msg) => (
+              <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                {msg.role === 'user' ? (
+                  <div className="max-w-[620px] rounded-[24px] border border-app-border bg-white px-6 py-5 shadow-sm">
+                    <p className="whitespace-pre-wrap text-[0.96rem] leading-[1.7] tracking-[-0.01em] text-app-text">
+                      {msg.content}
+                    </p>
+                    <div className="mt-3 text-xs text-app-muted">
+                      {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="max-w-[660px]">
+                    <p className="whitespace-pre-wrap text-[0.96rem] font-normal leading-[1.8] tracking-[-0.01em] text-app-text">
+                      {msg.content}
+                    </p>
+                    <div className="mt-3 text-xs text-app-muted">
+                      {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+          {sendingMessage && (
+            <div className="flex justify-start">
+              <div className="max-w-[640px]">
+                <div className="flex items-center gap-2">
+                  <Loader className="h-4 w-4 animate-spin text-app-accent" />
+                  <span className="text-sm text-app-muted">Pensando...</span>
                 </div>
               </div>
             </div>
-          ))
-        )}
-        {sendingMessage && (
-          <div className="flex justify-start">
-            <div className="bg-white border border-app-border rounded-lg px-4 py-3">
-              <div className="flex items-center gap-2">
-                <Loader className="h-4 w-4 animate-spin text-app-accent" />
-                <span className="text-sm text-app-muted">Pensando...</span>
-              </div>
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
+          )}
+          <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* Fixed Input Area - Bottom */}
       <div className="flex-shrink-0 px-6 py-4 bg-app-canvas">
-        <div className="bg-white border border-app-border rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-end gap-4 px-5 py-4">
+        <div className="mx-auto max-w-[720px] bg-white border border-app-border rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-end gap-4 px-5 py-4">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -258,7 +263,7 @@ export const ResearchPage: React.FC<{
             placeholder="Digite sua pergunta..."
             rows={2}
             disabled={sendingMessage}
-            className="flex-1 resize-none bg-transparent text-app-text placeholder-app-muted outline-none text-base disabled:opacity-50 max-h-[150px]"
+            className="flex-1 resize-none bg-transparent text-[0.95rem] text-app-text placeholder-app-muted outline-none disabled:opacity-50 max-h-[150px]"
           />
           <button
             onClick={handleSendMessage}

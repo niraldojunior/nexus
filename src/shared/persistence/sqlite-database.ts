@@ -22,7 +22,7 @@ export class SqliteDatabase {
 
   static getInstance(dbPath?: string): SqliteDatabase {
     if (!SqliteDatabase.instance) {
-      const resolvedPath = dbPath || resolve(process.cwd(), 'data', 'nexus.db');
+      const resolvedPath = normalizeDatabasePath(dbPath);
       SqliteDatabase.instance = new SqliteDatabase(resolvedPath);
     }
     return SqliteDatabase.instance;
@@ -264,6 +264,16 @@ export class SqliteDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_tmf_resource_relationship ON tmf_resource_relationship(resource_from_id, resource_to_id);
 
+      CREATE TABLE IF NOT EXISTS tmf_resource_relationship_generic (
+        resource_from_id TEXT NOT NULL,
+        resource_to_id TEXT NOT NULL,
+        relationship_type TEXT NOT NULL,
+        valid_for_start DATETIME,
+        valid_for_end DATETIME,
+        PRIMARY KEY (resource_from_id, resource_to_id, relationship_type)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_resource_relationship_generic ON tmf_resource_relationship_generic(resource_from_id, resource_to_id);
+
       -- ========== MODULE 3: SERVICE (TMF633/638) ==========
 
       -- TMF633: Service Specification (catálogo de tipos de serviço)
@@ -282,6 +292,42 @@ export class SqliteDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_tmf_service_specification_category_type ON tmf_service_specification(category, service_type);
 
+      CREATE TABLE IF NOT EXISTS tmf_service_category (
+        id TEXT PRIMARY KEY,
+        href TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        parent_category_id TEXT,
+        valid_for_start DATETIME,
+        valid_for_end DATETIME,
+        characteristics TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (parent_category_id) REFERENCES tmf_service_category(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_service_category_parent ON tmf_service_category(parent_category_id);
+      CREATE INDEX IF NOT EXISTS idx_tmf_service_category_name ON tmf_service_category(name);
+
+      CREATE TABLE IF NOT EXISTS tmf_service_candidate (
+        id TEXT PRIMARY KEY,
+        href TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        service_specification_id TEXT NOT NULL,
+        service_category_id TEXT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'terminated')),
+        valid_for_start DATETIME,
+        valid_for_end DATETIME,
+        characteristics TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (service_specification_id) REFERENCES tmf_service_specification(id),
+        FOREIGN KEY (service_category_id) REFERENCES tmf_service_category(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_service_candidate_spec ON tmf_service_candidate(service_specification_id);
+      CREATE INDEX IF NOT EXISTS idx_tmf_service_candidate_category ON tmf_service_candidate(service_category_id);
+      CREATE INDEX IF NOT EXISTS idx_tmf_service_candidate_status ON tmf_service_candidate(status);
+
       -- TMF638: Customer Facing Service (serviço comercial ao cliente/ISP)
       CREATE TABLE IF NOT EXISTS tmf_customer_facing_service (
         id TEXT PRIMARY KEY,
@@ -289,11 +335,22 @@ export class SqliteDatabase {
         name TEXT NOT NULL,
         service_specification_id TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
+        state TEXT,
+        service_type TEXT,
+        category TEXT,
+        service_date TEXT,
+        start_date TEXT,
+        end_date TEXT,
+        is_service_enabled INTEGER,
+        has_started INTEGER,
         subscriber_id TEXT NOT NULL,
         supporting_resource_facing_service_id TEXT,
+        place TEXT,
+        related_party TEXT,
+        supporting_services TEXT,
+        service_relationships TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
-        related_party TEXT,
         characteristics TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -311,14 +368,26 @@ export class SqliteDatabase {
         name TEXT,
         service_specification_id TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
+        state TEXT,
+        service_type TEXT,
+        category TEXT,
+        service_date TEXT,
+        start_date TEXT,
+        end_date TEXT,
+        is_service_enabled INTEGER,
+        has_started INTEGER,
         supporting_resource_id TEXT NOT NULL,
+        place TEXT,
+        related_party TEXT,
+        supporting_resources TEXT,
+        supporting_services TEXT,
+        service_relationships TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
         characteristics TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (service_specification_id) REFERENCES tmf_service_specification(id),
-        FOREIGN KEY (supporting_resource_id) REFERENCES tmf_logical_resource(id)
+        FOREIGN KEY (service_specification_id) REFERENCES tmf_service_specification(id)
       );
       CREATE INDEX IF NOT EXISTS idx_tmf_resource_facing_service_spec ON tmf_resource_facing_service(service_specification_id);
       CREATE INDEX IF NOT EXISTS idx_tmf_resource_facing_service_resource ON tmf_resource_facing_service(supporting_resource_id);
@@ -335,6 +404,100 @@ export class SqliteDatabase {
         FOREIGN KEY (service_from_id) REFERENCES tmf_customer_facing_service(id),
         FOREIGN KEY (service_to_id) REFERENCES tmf_resource_facing_service(id)
       );
+
+      -- TMF645: Service Qualification
+      CREATE TABLE IF NOT EXISTS tmf_service_qualification (
+        id TEXT PRIMARY KEY,
+        href TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'done' CHECK(state IN ('done', 'terminated')),
+        place TEXT,
+        related_party TEXT,
+        service_characteristic TEXT,
+        service_qualification_item TEXT,
+        valid_for_start DATETIME,
+        valid_for_end DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_service_qualification_state ON tmf_service_qualification(state);
+
+      -- TMF641: Service Order
+      CREATE TABLE IF NOT EXISTS tmf_service_order (
+        id TEXT PRIMARY KEY,
+        href TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'acknowledged' CHECK(state IN ('acknowledged', 'inProgress', 'completed', 'failed', 'cancelled')),
+        description TEXT,
+        related_party TEXT,
+        service_order_item TEXT NOT NULL,
+        note TEXT,
+        valid_for_start DATETIME,
+        valid_for_end DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_service_order_state ON tmf_service_order(state);
+
+      -- TMF652: Resource Order
+      CREATE TABLE IF NOT EXISTS tmf_resource_order (
+        id TEXT PRIMARY KEY,
+        href TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'acknowledged' CHECK(state IN ('acknowledged', 'inProgress', 'completed', 'failed', 'cancelled')),
+        description TEXT,
+        related_party TEXT,
+        resource_order_item TEXT NOT NULL,
+        note TEXT,
+        valid_for_start DATETIME,
+        valid_for_end DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_resource_order_state ON tmf_resource_order(state);
+
+      -- ========== MODULE 6: PARTY & TENANT (TMF632/669) ==========
+
+      CREATE TABLE IF NOT EXISTS tmf_party (
+        id TEXT PRIMARY KEY,
+        href TEXT NOT NULL,
+        name TEXT NOT NULL,
+        party_type TEXT NOT NULL CHECK(party_type IN ('Organization', 'Individual')),
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'terminated')),
+        valid_for_start DATETIME,
+        valid_for_end DATETIME,
+        characteristics TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_party_name ON tmf_party(name);
+      CREATE INDEX IF NOT EXISTS idx_tmf_party_type_status ON tmf_party(party_type, status);
+
+      CREATE TABLE IF NOT EXISTS tmf_party_role (
+        id TEXT PRIMARY KEY,
+        href TEXT NOT NULL,
+        name TEXT NOT NULL,
+        party_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'terminated')),
+        valid_for_start DATETIME,
+        valid_for_end DATETIME,
+        characteristics TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (party_id) REFERENCES tmf_party(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_party_role_party ON tmf_party_role(party_id);
+      CREATE INDEX IF NOT EXISTS idx_tmf_party_role_name ON tmf_party_role(name);
+      CREATE INDEX IF NOT EXISTS idx_tmf_party_role_status ON tmf_party_role(status);
+
+      CREATE TABLE IF NOT EXISTS tmf_party_relationship (
+        party_from_id TEXT NOT NULL,
+        party_to_id TEXT NOT NULL,
+        relationship_type TEXT NOT NULL,
+        valid_for_start DATETIME,
+        valid_for_end DATETIME,
+        PRIMARY KEY (party_from_id, party_to_id, relationship_type),
+        FOREIGN KEY (party_from_id) REFERENCES tmf_party(id),
+        FOREIGN KEY (party_to_id) REFERENCES tmf_party(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_party_relationship ON tmf_party_relationship(party_from_id, party_to_id);
 
       -- ========== TRANSVERSAL: EVENTS (TMF688) ==========
 
@@ -413,6 +576,58 @@ export class SqliteDatabase {
       );
     `);
 
+    this.ensureColumn(db, 'tmf_physical_resource', 'place_id TEXT');
+    this.ensureColumn(db, 'tmf_physical_resource', 'place_type TEXT');
+    this.ensureColumn(db, 'tmf_physical_resource', 'administrative_state TEXT');
+    this.ensureColumn(db, 'tmf_physical_resource', 'operational_state TEXT');
+    this.ensureColumn(db, 'tmf_physical_resource', 'usage_state TEXT');
+    this.ensureColumn(db, 'tmf_logical_resource', 'place_id TEXT');
+    this.ensureColumn(db, 'tmf_logical_resource', 'place_type TEXT');
+    this.ensureColumn(db, 'tmf_logical_resource', 'related_party TEXT');
+    this.ensureColumn(db, 'tmf_logical_resource', 'administrative_state TEXT');
+    this.ensureColumn(db, 'tmf_logical_resource', 'operational_state TEXT');
+    this.ensureColumn(db, 'tmf_logical_resource', 'usage_state TEXT');
+    this.ensureColumn(db, 'tmf_customer_facing_service', 'state TEXT');
+    this.ensureColumn(db, 'tmf_customer_facing_service', 'service_type TEXT');
+    this.ensureColumn(db, 'tmf_customer_facing_service', 'category TEXT');
+    this.ensureColumn(db, 'tmf_customer_facing_service', 'service_date TEXT');
+    this.ensureColumn(db, 'tmf_customer_facing_service', 'start_date TEXT');
+    this.ensureColumn(db, 'tmf_customer_facing_service', 'end_date TEXT');
+    this.ensureColumn(db, 'tmf_customer_facing_service', 'is_service_enabled INTEGER');
+    this.ensureColumn(db, 'tmf_customer_facing_service', 'has_started INTEGER');
+    this.ensureColumn(db, 'tmf_customer_facing_service', 'place TEXT');
+    this.ensureColumn(db, 'tmf_customer_facing_service', 'related_party TEXT');
+    this.ensureColumn(db, 'tmf_customer_facing_service', 'supporting_services TEXT');
+    this.ensureColumn(db, 'tmf_customer_facing_service', 'service_relationships TEXT');
+    this.ensureColumn(db, 'tmf_resource_facing_service', 'state TEXT');
+    this.ensureColumn(db, 'tmf_resource_facing_service', 'service_type TEXT');
+    this.ensureColumn(db, 'tmf_resource_facing_service', 'category TEXT');
+    this.ensureColumn(db, 'tmf_resource_facing_service', 'service_date TEXT');
+    this.ensureColumn(db, 'tmf_resource_facing_service', 'start_date TEXT');
+    this.ensureColumn(db, 'tmf_resource_facing_service', 'end_date TEXT');
+    this.ensureColumn(db, 'tmf_resource_facing_service', 'is_service_enabled INTEGER');
+    this.ensureColumn(db, 'tmf_resource_facing_service', 'has_started INTEGER');
+    this.ensureColumn(db, 'tmf_resource_facing_service', 'place TEXT');
+    this.ensureColumn(db, 'tmf_resource_facing_service', 'related_party TEXT');
+    this.ensureColumn(db, 'tmf_resource_facing_service', 'supporting_resources TEXT');
+    this.ensureColumn(db, 'tmf_resource_facing_service', 'supporting_services TEXT');
+    this.ensureColumn(db, 'tmf_resource_facing_service', 'service_relationships TEXT');
+    this.ensureColumn(db, 'tmf_service_qualification', 'state TEXT');
+    this.ensureColumn(db, 'tmf_service_qualification', 'place TEXT');
+    this.ensureColumn(db, 'tmf_service_qualification', 'related_party TEXT');
+    this.ensureColumn(db, 'tmf_service_qualification', 'service_characteristic TEXT');
+    this.ensureColumn(db, 'tmf_service_qualification', 'service_qualification_item TEXT');
+    this.ensureColumn(db, 'tmf_service_order', 'state TEXT');
+    this.ensureColumn(db, 'tmf_service_order', 'description TEXT');
+    this.ensureColumn(db, 'tmf_service_order', 'related_party TEXT');
+    this.ensureColumn(db, 'tmf_service_order', 'service_order_item TEXT');
+    this.ensureColumn(db, 'tmf_service_order', 'note TEXT');
+    this.ensureColumn(db, 'tmf_resource_order', 'state TEXT');
+    this.ensureColumn(db, 'tmf_resource_order', 'description TEXT');
+    this.ensureColumn(db, 'tmf_resource_order', 'related_party TEXT');
+    this.ensureColumn(db, 'tmf_resource_order', 'resource_order_item TEXT');
+    this.ensureColumn(db, 'tmf_resource_order', 'note TEXT');
+
     this.initialized = true;
   }
 
@@ -443,4 +658,21 @@ export class SqliteDatabase {
     const transaction = this.getDatabase().transaction(fn);
     return transaction();
   }
+
+  private ensureColumn(db: Database.Database, table: string, definition: string): void {
+    const columnName = definition.split(/\s+/)[0];
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (columns.some((column) => column.name === columnName)) return;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+  }
 }
+
+const normalizeDatabasePath = (dbPath?: string): string => {
+  const rawPath = dbPath ?? 'sqlite://./data/nexus.db';
+  if (!rawPath.startsWith('sqlite://')) {
+    return rawPath;
+  }
+
+  const filePath = rawPath.slice('sqlite://'.length);
+  return resolve(process.cwd(), filePath);
+};

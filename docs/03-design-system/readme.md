@@ -11,7 +11,7 @@ Padronizar cores, tipografia, espaçamento, princípios de interface e component
 O frontend oficial agora segue a experiência **assistant/workspace** importada do projeto Lab001:
 
 - Shell lateral clara (`#F8FAFC`) com navegação colapsável.
-- Canvas claro (`#EDF2F7`) com cards brancos e borda `#D7DEE8`.
+- Canvas claro (`#C7C9D2`) com cards brancos e borda `#D7DEE8`.
 - Acento V.tal amarelo `#FFD200` usado em ações primárias, foco e chips ativos.
 - Composer central como ponto de entrada da experiência.
 - Cards com raio maior, sombra suave e densidade operacional.

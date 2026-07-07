@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { createApp } from '../src/shared/http/app.js';
 
@@ -45,12 +48,13 @@ const request = async (
 };
 
 test('E2E Geo flow rejects invalid JSON and supports the happy path', async (t) => {
+  const database = createTestDatabase();
   const server = createApp({
     config: {
       appName: 'v-tal-nexus',
       authEnabled: true,
       authToken: 'change-me',
-      databaseUrl: 'sqlite://./data/nexus.db',
+      databaseUrl: database.databaseUrl,
       logLevel: 'info',
       nodeEnv: 'test',
       port: 0,
@@ -59,7 +63,10 @@ test('E2E Geo flow rejects invalid JSON and supports the happy path', async (t) 
   });
 
   const port = await server.start();
-  t.after(async () => server.stop());
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
 
   const invalid = await new Promise<{ statusCode: number; body: unknown }>((resolve, reject) => {
     const req = http.request(
@@ -109,3 +116,11 @@ test('E2E Geo flow rejects invalid JSON and supports the happy path', async (t) 
   assert.equal(site.statusCode, 201);
   assert.equal((site.body as { '@type': string })['@type'], 'GeographicSite');
 });
+
+const createTestDatabase = (): { databaseUrl: string; cleanup: () => void } => {
+  const root = mkdtempSync(join(tmpdir(), 'nexus-e2e-geo-'));
+  return {
+    databaseUrl: `sqlite://${join(root, 'nexus.db')}`,
+    cleanup: () => rmSync(root, { recursive: true, force: true }),
+  };
+};

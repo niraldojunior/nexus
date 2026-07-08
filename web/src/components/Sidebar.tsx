@@ -93,7 +93,7 @@ export default function Sidebar({
           {primaryItems.map(({ id, label, icon: Icon }) => {
             const isActive =
               (id === 'research' && currentPage === 'research' && activeResearchSessionId === null) ||
-              (id === 'conversations' && currentPage === 'conversas') ||
+              (id === 'conversations' && (currentPage === 'conversas' || currentPage === 'conversation')) ||
               ((id === 'geo' || id === 'resource' || id === 'service' || id === 'order') &&
                 currentPage === id);
 
@@ -135,6 +135,7 @@ export default function Sidebar({
 
           <div className="h-full overflow-y-auto px-3 pb-2">
             <ResearchHistoryPage
+              activeSessionId={activeResearchSessionId}
               refreshTrigger={researchSessionRefreshTrigger}
               onSessionSelected={(sessionId) => {
                 onSelectResearchSession?.(sessionId);

@@ -25,7 +25,8 @@ interface ResearchSession {
 export const ResearchHistoryPage: React.FC<{
   onSessionSelected?: (sessionId: string) => void;
   refreshTrigger?: number;
-}> = ({ onSessionSelected, refreshTrigger }) => {
+  activeSessionId?: string | null;
+}> = ({ onSessionSelected, refreshTrigger, activeSessionId }) => {
   const [sessions, setSessions] = useState<ResearchSession[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -167,7 +168,11 @@ export const ResearchHistoryPage: React.FC<{
         sessions.map((session) => (
           <div
             key={session.id}
-            className="group flex items-start justify-between gap-1.5 rounded-md px-2 py-[2px] text-left transition hover:bg-app-accent-soft"
+            className={`group flex items-start justify-between gap-1.5 rounded-[14px] border px-2 py-[2px] text-left transition ${
+              activeSessionId === session.id
+                ? 'border-[#E6C54D] bg-[#F6E8A8]'
+                : 'border-transparent hover:bg-app-accent-soft'
+            }`}
           >
             <div className="flex-1 min-w-0">
               {editingSessionId === session.id ? (
@@ -197,7 +202,9 @@ export const ResearchHistoryPage: React.FC<{
                   className="w-full text-left"
                   title={session.title}
                 >
-                  <div className="truncate text-[0.92rem] leading-[1.1] text-app-text">{session.title}</div>
+                  <div className={`truncate text-[0.92rem] leading-[1.1] ${activeSessionId === session.id ? 'font-semibold text-app-text' : 'text-app-text'}`}>
+                    {session.title}
+                  </div>
                 </button>
               )}
             </div>

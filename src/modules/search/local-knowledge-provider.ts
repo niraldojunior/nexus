@@ -1,11 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { LLMResponse, ResearchMessage } from './domain.js';
-
-type OpenAIChatMessage = {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-};
+import type { LLMConversationMessage, LLMRequest, LLMResponse, ResearchMessage } from './domain.js';
 
 type KnowledgeDocument = {
   title: string;
@@ -130,6 +125,19 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
   },
 ];
 
+const CAPABILITY_RESPONSE = [
+  'Sem o provedor externo disponivel, o Nexus Copilot fica em modo de fallback local.',
+  '- Nesse modo, eu consigo responder com base na documentacao do Nexus sobre TMF, Geographic, Resource, Service, Order, Tenant, CFS e RFS.',
+  '- Eu nao consigo consultar dados reais do inventario nem executar ferramentas MCP enquanto o provedor externo estiver indisponivel.',
+  '- Quando o provedor estiver ativo, o Copilot pode consultar e preparar operacoes sobre Geo, Resource, Service, Party, Order e Event.',
+].join('\n');
+
+const INVENTORY_UNAVAILABLE_RESPONSE = [
+  'Nao consegui consultar o provedor externo, entao o Copilot nao pode usar MCP nesta conversa.',
+  'Sem MCP ativo, eu nao consigo consultar dados reais do inventario, cadastrar entidades, abrir ordens ou ativar recursos agora.',
+  'Posso explicar a modelagem e os fluxos TMF com base na documentacao local, ou voce pode reativar o provedor externo para operacao em tempo real.',
+].join('\n\n');
+
 const normalizeText = (value: string): string =>
   value
     .normalize('NFD')
@@ -140,6 +148,48 @@ const tokenize = (value: string): string[] =>
   normalizeText(value)
     .split(/[^a-z0-9]+/)
     .filter((token) => token.length >= 3 && !STOP_WORDS.has(token));
+
+const isCopilotCapabilityQuestion = (value: string): boolean => {
+  const normalized = normalizeText(value);
+  return (
+    normalized.includes('o que voce pode fazer') ||
+    normalized.includes('o que vc pode fazer') ||
+    normalized.includes('quais capacidades') ||
+    normalized.includes('quais ferramentas') ||
+    normalized.includes('como voce pode ajudar') ||
+    normalized.includes('o que o copilot faz') ||
+    normalized.includes('o que o nexus copilot faz')
+  );
+};
+
+const isInventoryOperationIntent = (tokens: string[]): boolean => {
+  const tokenSet = new Set(tokens);
+  const intentTokens = [
+    'listar',
+    'consultar',
+    'buscar',
+    'mostrar',
+    'inventario',
+    'site',
+    'sites',
+    'resource',
+    'resources',
+    'service',
+    'services',
+    'party',
+    'event',
+    'order',
+    'ordem',
+    'cadastre',
+    'criar',
+    'ativar',
+    'qualificacao',
+    'viabilidade',
+    'mcp',
+  ];
+
+  return intentTokens.some((token) => tokenSet.has(token));
+};
 
 const getCuratedAnswer = (tokens: string[]): string | null => {
   const tokenSet = new Set(tokens);
@@ -194,7 +244,15 @@ const pickRelevantSnippets = (document: KnowledgeDocument, tokens: string[]): st
 };
 
 const buildOfflineAnswer = (userMessage: string): string => {
+  if (isCopilotCapabilityQuestion(userMessage)) {
+    return CAPABILITY_RESPONSE;
+  }
+
   const queryTokens = tokenize(userMessage);
+  if (isInventoryOperationIntent(queryTokens)) {
+    return INVENTORY_UNAVAILABLE_RESPONSE;
+  }
+
   const curatedAnswer = getCuratedAnswer(queryTokens);
   if (curatedAnswer) {
     return [
@@ -214,10 +272,10 @@ const buildOfflineAnswer = (userMessage: string): string => {
     .filter((entry) => entry.score > 0)
     .sort((left, right) => right.score - left.score);
 
-  if (ranked.length === 0) {
+  if (ranked.length === 0 || queryTokens.length < 2 || (ranked[0]?.score ?? 0) < 2) {
     return [
-      'Nao consegui usar o provedor externo, mas a documentacao local do Nexus esta disponivel.',
-      'Tente reformular a pergunta com termos do dominio, como Geographic, Resource, Service, Tenant, Home Passed, CFS ou RFS.',
+      'Nao consegui usar o provedor externo e nao encontrei uma resposta confiavel na documentacao local para esta pergunta.',
+      'Tente reformular com termos do dominio Nexus, como Geographic, Resource, Service, Tenant, Home Passed, CFS ou RFS.',
     ].join('\n\n');
   }
 
@@ -236,7 +294,7 @@ const buildOfflineAnswer = (userMessage: string): string => {
 
 export class LocalKnowledgeProvider {
   async complete(
-    messages: OpenAIChatMessage[],
+    messages: LLMConversationMessage[],
     model = 'nexus-local-docs',
   ): Promise<LLMResponse> {
     const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user')?.content ?? '';
@@ -256,7 +314,7 @@ export class LocalKnowledgeProvider {
     userMessage: string,
     model = 'nexus-local-docs',
   ): Promise<LLMResponse> {
-    const openaiMessages: OpenAIChatMessage[] = [
+    const openaiMessages: LLMConversationMessage[] = [
       ...(context ? [{ role: 'system' as const, content: context }] : []),
       ...messages.map((message) => ({
         role: message.role as 'system' | 'user' | 'assistant',
@@ -266,5 +324,9 @@ export class LocalKnowledgeProvider {
     ];
 
     return this.complete(openaiMessages, model);
+  }
+
+  async invoke(request: LLMRequest): Promise<LLMResponse> {
+    return this.complete(request.transcript, request.model || 'nexus-local-docs');
   }
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test, vi } from 'vitest';
-import type { ResearchMessage, ResearchSession } from '../src/modules/search/domain.js';
+import type { LLMRequest, ResearchMessage, ResearchSession } from '../src/modules/search/domain.js';
 import { SearchService } from '../src/modules/search/index.js';
 import type { SqliteSearchRepository } from '../src/modules/search/sqlite-repository.js';
 
@@ -103,19 +103,17 @@ test('SearchService adiciona mensagem, preserva contexto e faz fallback quando o
   }));
 
   const service = new SearchService(repository);
-  const llmProvider = vi
-    .fn()
-    .mockResolvedValue({
+  const llmProvider = vi.fn(async (_request: LLMRequest) => ({
       content: 'Resposta do modelo',
       tokensUsed: 12,
       metadata: { model: 'gpt-4o-mini', finish_reason: 'stop' },
-    });
+    }));
 
   const result = await service.addMessageAndGetResponse('session-1', 'Qual a triade?', llmProvider);
 
-  assert.equal(llmProvider.mock.calls[0]?.[0], 'Contexto local');
-  assert.deepEqual(llmProvider.mock.calls[0]?.[1], session.messages);
-  assert.equal(llmProvider.mock.calls[0]?.[2], 'Qual a triade?');
+  assert.equal(llmProvider.mock.calls[0]?.[0]?.context, 'Contexto local');
+  assert.equal(llmProvider.mock.calls[0]?.[0]?.latestUserMessage, 'Qual a triade?');
+  assert.equal(llmProvider.mock.calls[0]?.[0]?.transcript.at(-1)?.content, 'Qual a triade?');
   assert.equal(result.userMessage.role, 'user');
   assert.equal(result.userMessage.content, 'Qual a triade?');
   assert.equal(result.assistantMessage.content, 'Resposta do modelo');
@@ -161,7 +159,7 @@ test('SearchService retorna fallback quando o provedor de IA falha', async () =>
     fallback: true,
     error: 'OpenAI fora do ar',
   });
-  assert.match(llmProvider.mock.calls[0]?.[0] ?? '', /Nexus Copilot/);
+  assert.match(llmProvider.mock.calls[0]?.[0]?.context ?? '', /Nexus Copilot/);
 });
 
 test('SearchService delega leitura, listagem, renomeação e arquivamento ao repositório', () => {
@@ -189,4 +187,68 @@ test('SearchService delega leitura, listagem, renomeação e arquivamento ao rep
   assert.deepEqual(service.listUserSessions('tenant-3', 10), [session]);
   assert.equal(service.updateSessionTitle('session-3', 'Atualizada')?.title, 'Atualizada');
   assert.equal(service.archiveSession('session-3')?.status, 'archived');
+});
+
+test('SearchService executa loop de ferramentas e persiste metadados de tool execution', async () => {
+  const repository = createRepositoryMock();
+  const session: ResearchSession = {
+    '@type': 'ResearchSession',
+    id: 'session-tools',
+    href: '/v1/search/sessions/session-tools',
+    userId: 'tenant-tools',
+    title: 'Sessao com tools',
+    status: 'active',
+    messages: [],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+
+  repository.getSession.mockReturnValue(session);
+  repository.addMessage.mockImplementation((sessionId: string, message: ResearchMessage & { id: string }) => ({
+    '@type': 'ResearchMessage',
+    id: message.id,
+    researchSessionId: sessionId,
+    role: message.role,
+    content: message.content,
+    tokensUsed: message.tokensUsed,
+    metadata: message.metadata,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  }));
+
+  const service = new SearchService(repository);
+  const llmProvider = vi
+    .fn()
+    .mockResolvedValueOnce({
+      content: '',
+      toolCalls: [{ id: 'tool-1', name: 'geo.list_sites', arguments: {} }],
+      finishReason: 'tool_calls',
+    })
+    .mockResolvedValueOnce({
+      content: 'Encontrei 1 site.',
+      metadata: { model: 'gpt-4o-mini' },
+      finishReason: 'stop',
+    });
+
+  const executeTool = vi.fn().mockResolvedValue({
+    ok: true,
+    domain: 'geo',
+    operation: 'list_sites',
+    data: { items: [{ id: 'site-1', name: 'CO Botafogo' }] },
+    warnings: [],
+    source: 'nexus-tmf-mcp',
+    correlationId: 'corr-1',
+  });
+
+  const result = await service.addMessageAndGetResponse('session-tools', 'Liste os sites', llmProvider, {
+    tools: [{ name: 'geo.list_sites', description: 'Lista sites', inputSchema: { type: 'object', properties: {} } }],
+    executeTool,
+  });
+
+  assert.equal(llmProvider.mock.calls.length, 2);
+  assert.equal(executeTool.mock.calls[0]?.[0], 'geo.list_sites');
+  assert.equal(result.assistantMessage.content, 'Encontrei 1 site.');
+  assert.equal(
+    (result.assistantMessage.metadata?.toolExecutions as Array<{ toolName: string }> | undefined)?.[0]?.toolName,
+    'geo.list_sites',
+  );
 });

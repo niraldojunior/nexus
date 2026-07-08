@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Trash2, Send, Loader } from 'lucide-react';
+import MarkdownMessage from '../components/MarkdownMessage';
+import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
 
 interface Message {
   id: string;
@@ -37,6 +39,7 @@ export const ResearchPage: React.FC<{
   const [loadingSession, setLoadingSession] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useAutoResizeTextarea(input, 220);
 
   useEffect(() => {
     if (sessionId) {
@@ -88,9 +91,18 @@ export const ResearchPage: React.FC<{
   const handleSendMessage = async () => {
     if (!input.trim() || !session || sendingMessage) return;
 
-    const userInput = input;
+    const userInput = input.trim();
+    const isFirstMessage = messages.length === 0;
+    const optimisticUserMessage: Message = {
+      id: `temp-user-${Date.now()}`,
+      role: 'user',
+      content: userInput,
+      createdAt: new Date().toISOString(),
+    };
+
     setInput('');
     setError(null);
+    setMessages((prev) => [...prev, optimisticUserMessage]);
 
     try {
       setSendingMessage(true);
@@ -110,14 +122,20 @@ export const ResearchPage: React.FC<{
       }
 
       const result = await response.json() as any;
-      setMessages((prev) => [...prev, result.userMessage, result.assistantMessage]);
+      setMessages((prev) => [
+        ...prev.filter((message) => message.id !== optimisticUserMessage.id),
+        result.userMessage,
+        result.assistantMessage,
+      ]);
 
       // Auto-generate title from first message if needed
-      if (messages.length === 0) {
+      if (isFirstMessage) {
         const shortTitle = userInput.substring(0, 50) + (userInput.length > 50 ? '...' : '');
         await updateSessionTitle(shortTitle);
       }
     } catch (err) {
+      setMessages((prev) => prev.filter((message) => message.id !== optimisticUserMessage.id));
+      setInput(userInput);
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
     } finally {
       setSendingMessage(false);
@@ -202,8 +220,9 @@ export const ResearchPage: React.FC<{
       )}
 
       {/* Scrollable Messages Area - Middle */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        <div className="mx-auto flex min-h-full max-w-[720px] flex-col justify-end gap-7 pb-4">
+      <div className="flex-1 overflow-y-auto px-6 py-2">
+        <div className="mx-auto min-h-full max-w-[720px]">
+          <div className="flex min-h-full flex-col justify-end gap-5 pb-0">
           {messages.length === 0 ? (
             <div className="flex min-h-[240px] items-center justify-center text-center">
               <p className="text-app-muted">Inicie uma conversa...</p>
@@ -213,7 +232,7 @@ export const ResearchPage: React.FC<{
               <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 {msg.role === 'user' ? (
                   <div className="max-w-[620px] rounded-[24px] border border-app-border bg-white px-6 py-5 shadow-sm">
-                    <p className="whitespace-pre-wrap text-[0.96rem] leading-[1.7] tracking-[-0.01em] text-app-text">
+                    <p className="whitespace-pre-wrap text-[0.92rem] leading-[1.6] tracking-[-0.01em] text-app-text">
                       {msg.content}
                     </p>
                     <div className="mt-3 text-xs text-app-muted">
@@ -225,9 +244,7 @@ export const ResearchPage: React.FC<{
                   </div>
                 ) : (
                   <div className="max-w-[660px]">
-                    <p className="whitespace-pre-wrap text-[0.96rem] font-normal leading-[1.8] tracking-[-0.01em] text-app-text">
-                      {msg.content}
-                    </p>
+                    <MarkdownMessage content={msg.content} />
                     <div className="mt-3 text-xs text-app-muted">
                       {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
                         hour: '2-digit',
@@ -249,6 +266,7 @@ export const ResearchPage: React.FC<{
               </div>
             </div>
           )}
+          </div>
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -257,13 +275,14 @@ export const ResearchPage: React.FC<{
       <div className="flex-shrink-0 px-6 py-4 bg-app-canvas">
         <div className="mx-auto max-w-[720px] bg-white border border-app-border rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-end gap-4 px-5 py-4">
           <textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Digite sua pergunta..."
-            rows={2}
+            rows={1}
             disabled={sendingMessage}
-            className="flex-1 resize-none bg-transparent text-[0.95rem] text-app-text placeholder-app-muted outline-none disabled:opacity-50 max-h-[150px]"
+            className="flex-1 min-h-[56px] max-h-[220px] resize-none overflow-y-auto bg-transparent text-[0.95rem] leading-[1.55] text-app-text placeholder-app-muted outline-none disabled:opacity-50"
           />
           <button
             onClick={handleSendMessage}

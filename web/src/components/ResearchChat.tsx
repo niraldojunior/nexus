@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Send, Loader } from 'lucide-react';
+import MarkdownMessage from './MarkdownMessage';
+import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
 
 interface Message {
   id: string;
@@ -42,6 +44,7 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const textareaRef = useAutoResizeTextarea(input, 220);
 
   React.useEffect(() => {
     if (sessionId) {
@@ -71,9 +74,18 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
   const handleSendMessage = async () => {
     if (!input.trim() || !session) return;
 
-    const userInput = input;
+    const userInput = input.trim();
+    const isFirstMessage = messages.length === 0;
+    const optimisticUserMessage: Message = {
+      id: `temp-user-${Date.now()}`,
+      role: 'user',
+      content: userInput,
+      createdAt: new Date().toISOString(),
+    };
+
     setInput('');
     setError(null);
+    setMessages((prev) => [...prev, optimisticUserMessage]);
 
     try {
       setLoading(true);
@@ -93,14 +105,20 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
       }
 
       const result = await response.json() as any;
-      setMessages((prev) => [...prev, result.userMessage, result.assistantMessage]);
+      setMessages((prev) => [
+        ...prev.filter((message) => message.id !== optimisticUserMessage.id),
+        result.userMessage,
+        result.assistantMessage,
+      ]);
 
       // Auto-generate title from first message if needed
-      if (messages.length === 0) {
+      if (isFirstMessage) {
         const shortTitle = userInput.substring(0, 50) + (userInput.length > 50 ? '...' : '');
         updateSessionTitle(shortTitle);
       }
     } catch (err) {
+      setMessages((prev) => prev.filter((message) => message.id !== optimisticUserMessage.id));
+      setInput(userInput);
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
@@ -187,7 +205,11 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
                       : 'bg-white border border-app-border text-app-text'
                   }`}
                 >
-                  <p className="text-[0.98rem] leading-[1.76] whitespace-pre-wrap">{msg.content}</p>
+                  {msg.role === 'assistant' ? (
+                    <MarkdownMessage content={msg.content} />
+                  ) : (
+                    <p className="text-[0.94rem] leading-[1.64] whitespace-pre-wrap">{msg.content}</p>
+                  )}
                   <div className="text-xs opacity-70 mt-2">
                     {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
                       hour: '2-digit',
@@ -222,13 +244,14 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
       <div className="flex-shrink-0 px-6 py-4 bg-app-canvas">
         <div className="mx-auto max-w-[720px] bg-white border border-app-border rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-end gap-4 px-5 py-4">
           <textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Digite sua pergunta..."
-            rows={3}
+            rows={1}
             disabled={loading}
-            className="flex-1 resize-none bg-transparent text-app-text placeholder-app-muted outline-none text-base disabled:opacity-50 max-h-[150px]"
+            className="flex-1 min-h-[72px] max-h-[220px] resize-none overflow-y-auto bg-transparent text-base leading-[1.6] text-app-text placeholder-app-muted outline-none disabled:opacity-50"
           />
           <button
             onClick={handleSendMessage}

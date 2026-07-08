@@ -5,22 +5,20 @@ import { forbiddenError, unauthorizedError } from '../errors/http-errors.js';
 import type { Logger } from '../logging/logger.js';
 import { InMemoryEntityRepository } from '../persistence/in-memory-entity-repository.js';
 import { SqliteDatabase } from '../persistence/sqlite-database.js';
-import { SqliteUserRepository } from '../persistence/sqlite-user-repository.js';
-import { SqliteSearchRepository } from '../persistence/sqlite-search-repository.js';
-import { GeoService } from '../../modules/geo/service.js';
-import { SqliteGeoRepository } from '../../modules/geo/sqlite-repository.js';
-import { SearchService } from '../../modules/search/service.js';
-import { SqliteSearchRepository as SqliteResearchRepository } from '../../modules/search/sqlite-repository.js';
 import { ChatGPTProvider } from '../../modules/search/chatgpt-provider.js';
 import { LocalKnowledgeProvider } from '../../modules/search/local-knowledge-provider.js';
 import { prependNexusCopilotContext } from '../../modules/search/nexus-copilot-context.js';
-import { EventService, SqliteEventRepository } from '../tmf/index.js';
+import { createNexusMcpModule } from '../../modules/mcp/index.js';
+import type { GeoService } from '../../modules/geo/service.js';
+import type { OrderService } from '../../modules/order/service.js';
+import { createNexusRuntime, DEFAULT_RUNTIME_USER, type NexusRuntime } from '../runtime/nexus-runtime.js';
+import type { PartyService } from '../../modules/party/service.js';
+import type { ResourceService } from '../../modules/resource/service.js';
+import type { ServiceService } from '../../modules/service/service.js';
 import type { TmfEventQuery } from '../tmf/index.js';
-import { PartyService, SqlitePartyRepository } from '../../modules/party/index.js';
+import type { EventService } from '../tmf/index.js';
 import type { PartyQuery, PartyRoleQuery } from '../../modules/party/index.js';
-import { ResourceService, SqliteResourceRepository } from '../../modules/resource/index.js';
 import type { ResourceQuery, ResourceSpecificationQuery, ResourceFunctionSpecificationQuery } from '../../modules/resource/index.js';
-import { ServiceService, SqliteServiceRepository } from '../../modules/service/index.js';
 import type {
   ServiceQuery,
   ServiceSpecificationQuery,
@@ -28,7 +26,6 @@ import type {
   ServiceCandidateQuery,
   ServiceRelationship,
 } from '../../modules/service/index.js';
-import { OrderService, SqliteOrderRepository } from '../../modules/order/index.js';
 import type {
   ResourceOrderQuery,
   ServiceOrderQuery,
@@ -73,19 +70,14 @@ export const createApp = ({ config, logger }: AppDependencies) => {
 
   return {
     start: async (): Promise<number> => {
-      // Initialize database and create default user
       await db.initialize();
-      const userRepository = new SqliteUserRepository(db);
-      const searchRepository = new SqliteSearchRepository(db);
-      
-      // Create or get default user
-      let defaultUser = userRepository.getByExternalId('VT158145');
-      if (!defaultUser) {
-        defaultUser = userRepository.create({
-          externalId: 'VT158145',
-          name: 'NIRALDO ROCHA GRANADO JUNIOR',
-        });
-        logger.info({ userId: defaultUser.id, externalId: defaultUser.externalId }, 'default user created');
+      const runtime = createNexusRuntime(db);
+
+      if (runtime.defaultUser.externalId === DEFAULT_RUNTIME_USER.externalId) {
+        logger.info(
+          { userId: runtime.defaultUser.id, externalId: runtime.defaultUser.externalId },
+          'default user ready',
+        );
       }
 
       const port = await new Promise<number>((resolve) => {
@@ -124,125 +116,23 @@ const routeRequest = async ({
   db,
 }: RouteDependencies): Promise<void> => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
-
-  // Create repositories (they depend on db being initialized)
-  const userRepository = new SqliteUserRepository(db);
-  const searchRepository = new SqliteSearchRepository(db);
-  const geoRepository = new SqliteGeoRepository(db);
-  const geoService = new GeoService(geoRepository);
-  const eventRepository = new SqliteEventRepository(db);
-  const eventService = new EventService(eventRepository);
-  const partyRepository = new SqlitePartyRepository(db);
-  const partyService = new PartyService(partyRepository, eventService);
-  const resourceRepository = new SqliteResourceRepository(db);
-  const resourceService = new ResourceService(
-    resourceRepository,
-    eventService,
-    {
-      lookupPlace: (id) => {
-        const site = geoService.getSite(id);
-        if (site) {
-          return { id: site.id, '@referredType': 'GeographicSite', href: site.href, name: site.name };
-        }
-        const location = geoService.getLocation(id);
-        if (location) {
-          return { id: location.id, '@referredType': 'GeographicLocation', href: location.href };
-        }
-        return undefined;
-      },
-      lookupParty: (id) => {
-        const party = partyService.getParty(id);
-        if (!party) return undefined;
-        return {
-          id: party.id,
-          '@referredType': party.partyType,
-          href: party.href,
-          name: party.name,
-        };
-      },
-    },
-  );
-  const serviceRepository = new SqliteServiceRepository(db);
-  let serviceService: ServiceService;
-  serviceService = new ServiceService(serviceRepository, eventService, {
-    lookupParty: (id) => {
-      const party = partyService.getParty(id);
-      if (!party) return undefined;
-      return {
-        id: party.id,
-        '@referredType': party.partyType,
-        href: party.href,
-        name: party.name,
-      };
-    },
-    lookupPlace: (id) => {
-      const site = geoService.getSite(id);
-      if (site) {
-        return { id: site.id, '@referredType': 'GeographicSite', href: site.href, name: site.name };
-      }
-      const location = geoService.getLocation(id);
-      if (location) {
-        return { id: location.id, '@referredType': 'GeographicLocation', href: location.href };
-      }
-      return undefined;
-    },
-    lookupResource: (id) => {
-      const resource = resourceService.getResource(id);
-      if (!resource) return undefined;
-      return {
-        id: resource.id,
-        '@referredType': resource['@type'],
-        href: resource.href,
-        name: resource.name,
-      };
-    },
-    lookupService: (id) => serviceService.getService(id),
-  });
-  const orderRepository = new SqliteOrderRepository(db);
-  const orderService = new OrderService(orderRepository, eventService, {
-    lookupParty: (id) => {
-      const party = partyService.getParty(id);
-      if (!party) return undefined;
-      return {
-        id: party.id,
-        '@referredType': party.partyType,
-        href: party.href,
-        name: party.name,
-      };
-    },
-    lookupPlace: (id) => {
-      const site = geoService.getSite(id);
-      if (site) {
-        return { id: site.id, '@referredType': 'GeographicSite', href: site.href, name: site.name };
-      }
-      const location = geoService.getLocation(id);
-      if (location) {
-        return { id: location.id, '@referredType': 'GeographicLocation', href: location.href };
-      }
-      const address = geoService.getAddress(id);
-      if (address) {
-        return { id: address.id, '@referredType': 'GeographicAddress', href: address.href };
-      }
-      return undefined;
-    },
-    serviceService,
+  const runtime = createNexusRuntime(db);
+  const {
+    userRepository,
+    searchRepository,
     geoService,
-    resourceService,
+    eventService,
     partyService,
-  });
+    resourceService,
+    serviceService,
+    orderService,
+    defaultUser,
+  } = runtime;
   const apiKey = process.env.OPENAI_API_KEY;
   const apiEndpoint = process.env.API_ENDPOINT || 'https://api.openai.com/v1';
   const chatGptProvider = apiKey ? new ChatGPTProvider(apiKey, apiEndpoint) : null;
   const localKnowledgeProvider = new LocalKnowledgeProvider();
-
-  // Get or create default user for the session
-  let defaultUser = userRepository.getByExternalId('VT158145');
-  if (!defaultUser) {
-    defaultUser = userRepository.create({
-      externalId: 'VT158145',
-      name: 'NIRALDO ROCHA GRANADO JUNIOR',
-    });
-  }
+  const mcpModule = createNexusMcpModule(runtime);
 
   if (request.method === 'GET' && url.pathname === '/health') {
     sendJson(response, 200, {
@@ -512,11 +402,16 @@ const routeRequest = async ({
   }
 
   if (url.pathname.startsWith('/v1/research/')) {
+    const llmToolCatalog = buildLlmToolCatalog(mcpModule);
     await routeResearchRequest({ 
       request, 
       response, 
       config, 
-      defaultUser,
+      runtime,
+      chatGptProvider,
+      localKnowledgeProvider,
+      mcpModule,
+      llmToolCatalog,
       url,
     });
     return;
@@ -1506,26 +1401,25 @@ const routeResearchRequest = async ({
   request,
   response,
   config,
-  defaultUser,
+  runtime,
+  chatGptProvider,
+  localKnowledgeProvider,
+  mcpModule,
+  llmToolCatalog,
   url,
 }: {
   request: IncomingMessage;
   response: ServerResponse;
   config: AppConfig;
-  defaultUser: any;
+  runtime: NexusRuntime;
+  chatGptProvider: ChatGPTProvider | null;
+  localKnowledgeProvider: LocalKnowledgeProvider;
+  mcpModule: ReturnType<typeof createNexusMcpModule>;
+  llmToolCatalog: ReturnType<typeof buildLlmToolCatalog>;
   url: URL;
 }): Promise<void> => {
   ensureAuthorized(request, config);
-  
-  const db = SqliteDatabase.getInstance();
-  const researchRepository = new SqliteResearchRepository(db);
-  const searchService = new SearchService(researchRepository);
-  
-  // Initialize ChatGPT provider
-  const apiKey = process.env.OPENAI_API_KEY;
-  const apiEndpoint = process.env.API_ENDPOINT || 'https://api.openai.com/v1';
-  const chatGptProvider = apiKey ? new ChatGPTProvider(apiKey, apiEndpoint) : null;
-  const localKnowledgeProvider = new LocalKnowledgeProvider();
+  const { defaultUser, searchService } = runtime;
 
   // GET /v1/research/sessions - List user's sessions
   if (request.method === 'GET' && url.pathname === '/v1/research/sessions') {
@@ -1580,19 +1474,25 @@ const routeResearchRequest = async ({
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
 
     const llmProvider = chatGptProvider
-      ? async (context: string, messages: any[], userMsg: string) => {
+      ? async (llmRequest: any) => {
           try {
-            return await chatGptProvider.call(
-              context,
-              messages,
-              userMsg,
-              session.model,
-              session.temperature,
-              session.maxTokens,
-            );
+            const providerResponse = await chatGptProvider.invoke(llmRequest);
+            if (!providerResponse.toolCalls) {
+              return providerResponse;
+            }
+            return {
+              ...providerResponse,
+              toolCalls: providerResponse.toolCalls.map((toolCall) => ({
+                ...toolCall,
+                name: llmToolCatalog.aliasToToolName.get(toolCall.name) ?? toolCall.name,
+              })),
+            };
           } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error);
-            return localKnowledgeProvider.call(context, messages, userMsg, `fallback:${session.model ?? 'nexus-local-docs'}`)
+            return localKnowledgeProvider.invoke({
+              ...llmRequest,
+              model: `fallback:${session.model ?? 'nexus-local-docs'}`,
+            })
               .then((fallback) => ({
                 ...fallback,
                 metadata: {
@@ -1602,13 +1502,31 @@ const routeResearchRequest = async ({
               }));
           }
         }
-      : async (context: string, messages: any[], userMsg: string) =>
-          localKnowledgeProvider.call(context, messages, userMsg, `fallback:${session.model ?? 'nexus-local-docs'}`);
+      : async (llmRequest: any) =>
+          localKnowledgeProvider.invoke({
+            ...llmRequest,
+            model: `fallback:${session.model ?? 'nexus-local-docs'}`,
+          });
 
     const { userMessage: userMsg, assistantMessage } = await searchService.addMessageAndGetResponse(
       sessionId,
       userMessage,
       llmProvider,
+      chatGptProvider
+        ? {
+            tools: llmToolCatalog.tools,
+            executeTool: async (toolName, input) =>
+              await mcpModule.registry.executeTool(
+                toolName,
+                input,
+                runtime.createToolContext({
+                  executionMode: 'internal-chat',
+                  sessionId,
+                }),
+              ),
+            maxToolCalls: 4,
+          }
+        : undefined,
     );
 
     return sendJson(response, 201, {
@@ -1711,6 +1629,29 @@ const normalizeOpenAIModel = (value: unknown): string => {
 const normalizeNumber = (value: unknown, fallback: number): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const buildLlmToolCatalog = (
+  mcpModule: ReturnType<typeof createNexusMcpModule>,
+): {
+  tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
+  aliasToToolName: Map<string, string>;
+} => {
+  const aliasToToolName = new Map<string, string>();
+  const tools = mcpModule.registry.listTools({ exposeToModelOnly: true }).map((tool) => {
+    const alias = tool.name.replace(/\./g, '__');
+    aliasToToolName.set(alias, tool.name);
+    return {
+      name: alias,
+      description: tool.description,
+      inputSchema: tool.inputSchema as Record<string, unknown>,
+    };
+  });
+
+  return {
+    tools,
+    aliasToToolName,
+  };
 };
 
 const sendJson = (

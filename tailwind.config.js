@@ -4,7 +4,8 @@ export default {
   theme: {
     extend: {
       colors: {
-        'app-bg': '#c7c9d2',
+        'app-bg': '#e7eaf0',
+        'app-canvas': '#e7eaf0',
         'app-sidebar': '#f8fafc',
         'app-panel': '#ffffff',
         'app-card': '#fff6cc',

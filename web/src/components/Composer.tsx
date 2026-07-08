@@ -1,5 +1,6 @@
 import { FormEvent } from 'react'
 import { ChevronDown, Loader2, Mic, Plus, SendHorizontal, Trash2, Waves } from 'lucide-react'
+import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea'
 
 interface ComposerProps {
   value: string
@@ -23,6 +24,7 @@ export default function Composer({
   qualityLabel
 }: ComposerProps) {
   const isHero = size === 'hero'
+  const textareaRef = useAutoResizeTextarea(value, isHero ? 320 : 240)
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
@@ -37,12 +39,15 @@ export default function Composer({
       }`}
     >
       <textarea
+        ref={textareaRef}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        rows={isHero ? 3 : 2}
+        rows={1}
         className={`w-full resize-none border-0 bg-transparent p-0 text-app-text placeholder:text-app-muted focus:outline-none focus:ring-0 ${
-          isHero ? 'min-h-[130px] text-[1.15rem]' : 'min-h-[72px] text-[0.98rem] leading-[1.55]'
+          isHero
+            ? 'min-h-[130px] max-h-[320px] overflow-y-auto text-[1.15rem] leading-[1.6]'
+            : 'min-h-[72px] max-h-[240px] overflow-y-auto text-[0.98rem] leading-[1.55]'
         }`}
       />
 

@@ -47,7 +47,33 @@ test('Composer disables submit while loading', () => {
   );
 
   const submitButton = screen.getByRole('button', { name: 'Enviar' });
-  expect(submitButton).toBeDisabled();
+  expect((submitButton as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(submitButton);
   expect(onSubmit).not.toHaveBeenCalled();
+});
+
+test('Composer auto-expands the textarea height as content grows', () => {
+  const onChange = vi.fn();
+  const onSubmit = vi.fn();
+  const scrollHeightSpy = vi
+    .spyOn(HTMLTextAreaElement.prototype, 'scrollHeight', 'get')
+    .mockReturnValue(164);
+
+  render(
+    <Composer
+      value={'Linha 1\nLinha 2\nLinha 3'}
+      onChange={onChange}
+      onSubmit={onSubmit}
+      loading={false}
+      placeholder="Pergunte algo"
+      size="compact"
+      modelLabel="Nexus"
+      qualityLabel="TMF-first"
+    />,
+  );
+
+  const textarea = screen.getByPlaceholderText('Pergunte algo') as HTMLTextAreaElement;
+  expect(textarea.style.height).toBe('164px');
+
+  scrollHeightSpy.mockRestore();
 });

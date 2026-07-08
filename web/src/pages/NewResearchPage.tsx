@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Send, Loader } from 'lucide-react';
+import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
 
 interface NewResearchPageProps {
   onSessionCreated?: (sessionId: string) => void;
@@ -9,15 +10,7 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-
-  useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    textarea.style.height = '0px';
-    textarea.style.height = `${textarea.scrollHeight}px`;
-  }, [input]);
+  const textareaRef = useAutoResizeTextarea(input, 260);
 
   const handleSubmit = async () => {
     if (!input.trim() || loading) return;
@@ -99,7 +92,7 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
               onKeyPress={handleKeyPress}
               placeholder="Digite sua pergunta..."
               rows={1}
-              className="w-full resize-none overflow-hidden bg-transparent text-[1.05rem] leading-7 text-app-text placeholder-app-muted outline-none"
+              className="w-full min-h-[44px] max-h-[260px] resize-none overflow-y-auto bg-transparent text-[1.05rem] leading-7 text-app-text placeholder-app-muted outline-none"
             />
             <button
               onClick={handleSubmit}

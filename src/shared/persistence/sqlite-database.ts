@@ -552,6 +552,22 @@ export class SqliteDatabase {
       CREATE INDEX IF NOT EXISTS idx_research_message_role ON research_message(role);
       CREATE INDEX IF NOT EXISTS idx_research_message_created ON research_message(created_at);
 
+      -- MCP two-phase confirmation tokens
+      CREATE TABLE IF NOT EXISTS mcp_confirmation (
+        token TEXT PRIMARY KEY,
+        domain TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        warnings TEXT NOT NULL,
+        context TEXT NOT NULL,
+        created_at DATETIME NOT NULL,
+        expires_at DATETIME NOT NULL,
+        consumed_at DATETIME
+      );
+      CREATE INDEX IF NOT EXISTS idx_mcp_confirmation_operation ON mcp_confirmation(domain, operation);
+      CREATE INDEX IF NOT EXISTS idx_mcp_confirmation_expires ON mcp_confirmation(expires_at);
+
       -- ========== CATALOGS: Extensible ==========
 
       -- Catalog: Relationship Types (reutilizável)

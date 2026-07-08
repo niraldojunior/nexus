@@ -12,7 +12,7 @@
 - `--vt-yellow`: `#FFD919`
 - `--vt-yellow-light`: `#FFE047`
 - `--vt-ink`: `#181919`
-- `--surface-app`: `#C7C9D2`
+- `--surface-app`: `#E7EAF0`
 - `--surface-card`: `#FFFFFF`
 - `--surface-sidebar`: `#2E3238`
 - `--border`: `#E2E8F0`
@@ -22,8 +22,8 @@
 ## Uso recomendado
 
 - Fundo da aplicacao: cinza claro.
+- Paginas de conteudo: usar `--surface-app` (`#E7EAF0`) como fundo padrao.
 - Cards e paineis: branco.
 - Navegacao lateral: escuro.
 - CTA principal: amarelo V.tal.
 - Texto sobre amarelo: sempre `ink`.
-

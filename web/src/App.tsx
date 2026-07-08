@@ -1,10 +1,11 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   Download,
   FileText,
   FolderTree,
   Layers3,
+  Loader2,
   MapPin,
   MapPinned,
   Settings,
@@ -14,6 +15,7 @@ import {
 import ClaudeBurst from './components/ClaudeBurst';
 import Composer from './components/Composer';
 import DocumentTile from './components/DocumentTile';
+import MarkdownMessage from './components/MarkdownMessage';
 import GoogleDriveMark from './components/GoogleDriveMark';
 import SettingsModal from './components/SettingsModal';
 import Sidebar from './components/Sidebar';
@@ -261,8 +263,14 @@ function ConversationPage({
   onInputChange: (value: string) => void;
   onSubmit: () => void;
 }) {
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [conversation.entries.length, loading]);
+
   return (
-    <div className="flex min-h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-transparent px-6 py-4">
         <div className="mx-auto flex max-w-[860px] items-center justify-between gap-4">
           <div className="text-[0.9rem] font-semibold text-app-muted">
@@ -277,23 +285,31 @@ function ConversationPage({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        <div className="mx-auto flex min-h-full max-w-[820px] flex-col justify-end gap-7 pb-4">
-          {conversation.entries.map((entry) => (
-            <div key={entry.id}>
-              {entry.role === 'assistant' ? (
-                <AssistantEntry entry={entry} />
-              ) : (
-                <div className="ml-auto max-w-[680px] rounded-[24px] border border-app-border bg-white px-6 py-5 shadow-sm">
-                  <p className="text-[1.06rem] leading-[1.7] tracking-[-0.01em] text-app-text">
-                    {entry.content}
-                  </p>
+      <div className="min-h-0 flex-1 px-6 py-2">
+        <div className="h-full overflow-y-auto">
+          <div className="mx-auto flex min-h-full max-w-[820px] flex-col justify-end gap-5 pb-0">
+            {conversation.entries.map((entry) => (
+              <div key={entry.id}>
+                {entry.role === 'assistant' ? (
+                  <AssistantEntry entry={entry} />
+                ) : (
+                  <div className="ml-auto max-w-[680px] rounded-[24px] border border-app-border bg-white px-6 py-5 shadow-sm">
+                    <p className="text-[1.02rem] leading-[1.6] tracking-[-0.01em] text-app-text">
+                      {entry.content}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ))}
+            {loading ? (
+              <div className="max-w-[860px]">
+                <div className="flex items-center gap-2 text-app-muted">
+                  <Loader2 className="h-4 w-4 animate-spin text-app-accent" strokeWidth={1.8} />
+                  <span className="text-[0.94rem]">Pensando...</span>
                 </div>
-              )}
-            </div>
-          ))}
-          <div className="mb-1 flex items-center gap-3 pl-2">
-            <ClaudeBurst className="h-10 w-10 text-brand-terracotta" />
+              </div>
+            ) : null}
+            <div ref={messagesEndRef} />
           </div>
         </div>
       </div>
@@ -361,16 +377,7 @@ function AssistantEntry({ entry }: { entry: ConversationEntry }) {
         </div>
       ) : null}
 
-      <div className="max-w-[720px] space-y-4">
-        {entry.content.split('\n\n').map((paragraph) => (
-          <p
-            key={paragraph}
-            className="text-[1.06rem] font-normal leading-[1.78] tracking-[-0.01em] text-app-text"
-          >
-            {paragraph}
-          </p>
-        ))}
-      </div>
+      <MarkdownMessage content={entry.content} />
     </div>
   );
 }
@@ -391,6 +398,57 @@ function App() {
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSection>('skills');
   const messageAreaRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const openConversationFromUrl = () => {
+      const match = window.location.pathname.match(/^\/c\/([^/]+)$/);
+      if (!match) return;
+
+      const conversationId = decodeURIComponent(match[1]);
+
+      // Backward compatibility for local mock conversations while prioritizing research sessions.
+      if (conversationId.startsWith('conversation-')) {
+        setConversations((current) => {
+          if (current.some((conversation) => conversation.id === conversationId)) return current;
+
+          return [
+            {
+              id: conversationId,
+              title: `Conversa ${conversationId.slice(0, 10)}`,
+              projectLabel: 'V.tal Nexus',
+              updatedAt: 'agora',
+              entries: [],
+            },
+            ...current,
+          ];
+        });
+        setActiveConversationId(conversationId);
+        setActiveResearchSessionId(null);
+        setCurrentPage('conversation');
+        return;
+      }
+
+      setActiveResearchSessionId(conversationId);
+      setCurrentPage('research');
+    };
+
+    openConversationFromUrl();
+    window.addEventListener('popstate', openConversationFromUrl);
+    return () => window.removeEventListener('popstate', openConversationFromUrl);
+  }, []);
+
+  useEffect(() => {
+    const expectedPath =
+      currentPage === 'conversation' && activeConversationId
+        ? `/c/${encodeURIComponent(activeConversationId)}`
+        : currentPage === 'research' && activeResearchSessionId
+          ? `/c/${encodeURIComponent(activeResearchSessionId)}`
+          : '/';
+
+    if (window.location.pathname !== expectedPath) {
+      window.history.replaceState({}, '', expectedPath);
+    }
+  }, [currentPage, activeConversationId]);
 
   const activeConversation = useMemo(
     () =>
@@ -558,8 +616,17 @@ function App() {
             <DomainPage page="geo" />
           </div>
         ) : (
-          <div ref={messageAreaRef} className="h-full overflow-y-auto">
-            <div className="min-h-full origin-top-left scale-[0.93] [width:107.5269%]">
+          <div
+            ref={messageAreaRef}
+            className={currentPage === 'conversation' ? 'h-full overflow-hidden' : 'h-full overflow-y-auto'}
+          >
+            <div
+              className={
+                currentPage === 'conversation'
+                  ? 'h-full min-h-0'
+                  : 'min-h-full origin-top-left scale-[0.93] [width:107.5269%]'
+              }
+            >
               {currentPage === 'assistant' ? (
                 <AssistantHome
                   input={input}

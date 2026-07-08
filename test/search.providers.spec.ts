@@ -91,6 +91,50 @@ test('ChatGPTProvider rejeita quando a resposta vem sem mensagem', async () => {
   );
 });
 
+test('ChatGPTProvider aceita resposta com tool calls e argumentos JSON', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          model: 'gpt-4o-mini',
+          choices: [
+            {
+              finish_reason: 'tool_calls',
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: 'call-1',
+                    type: 'function',
+                    function: {
+                      name: 'geo.list_sites',
+                      arguments: '{}',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    }),
+  );
+
+  const provider = new ChatGPTProvider('secret-key');
+  const result = await provider.complete([{ role: 'user', content: 'Liste os sites' }]);
+
+  assert.equal(result.content, '');
+  assert.equal(result.finishReason, 'tool_calls');
+  assert.equal(result.toolCalls?.[0]?.id, 'call-1');
+  assert.equal(result.toolCalls?.[0]?.name, 'geo.list_sites');
+  assert.deepEqual(result.toolCalls?.[0]?.arguments, {});
+});
+
 test('ChatGPTProvider monta contexto, histórico e mensagem atual ao chamar call', async () => {
   const provider = new ChatGPTProvider('secret-key');
   const completeSpy = vi.spyOn(provider, 'complete').mockResolvedValue({ content: 'ok' });
@@ -133,7 +177,7 @@ test('LocalKnowledgeProvider responde com conteúdo curado e fallback local', as
 
   const fallback = await provider.complete([{ role: 'user', content: 'qwertyuiopas' }]);
   assert.match(fallback.content, /Nao consegui usar o provedor externo/);
-  assert.match(fallback.content, /Tente reformular a pergunta/);
+  assert.match(fallback.content, /Tente reformular/);
 });
 
 test('LocalKnowledgeProvider reconhece o Nexus Copilot como contexto especializado', async () => {
@@ -142,6 +186,23 @@ test('LocalKnowledgeProvider reconhece o Nexus Copilot como contexto especializa
 
   assert.match(result.content, /Nexus Copilot/);
   assert.match(result.content, /Telecom/);
+});
+
+test('LocalKnowledgeProvider responde pergunta de capacidades sem colar trechos aleatorios', async () => {
+  const provider = new LocalKnowledgeProvider();
+  const result = await provider.complete([{ role: 'user', content: 'o que vc pode fazer?' }]);
+
+  assert.match(result.content, /modo de fallback local/);
+  assert.match(result.content, /nao consigo consultar dados reais do inventario/i);
+  assert.doesNotMatch(result.content, /VRF do cliente/);
+});
+
+test('LocalKnowledgeProvider informa indisponibilidade clara para operacoes de inventario sem MCP', async () => {
+  const provider = new LocalKnowledgeProvider();
+  const result = await provider.complete([{ role: 'user', content: 'liste os sites do inventario' }]);
+
+  assert.match(result.content, /nao pode usar MCP/i);
+  assert.match(result.content, /nao consigo consultar dados reais do inventario/i);
 });
 
 test('LocalKnowledgeProvider monta mensagens corretas ao chamar call', async () => {

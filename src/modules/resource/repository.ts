@@ -1,22 +1,36 @@
 import type {
   LogicalResource,
   PhysicalResource,
+  ResourceCategory,
   Resource,
   ResourceFunctionSpecification,
   ResourceFunctionSpecificationQuery,
   ResourceQuery,
   ResourceRelationship,
+  ResourceType,
   ResourceSpecification,
   ResourceSpecificationQuery,
 } from './domain.js';
 import type { IResourceRepository } from './resource-repository-interface.js';
+import { RESOURCE_CATEGORIES, RESOURCE_TYPES } from './catalog.js';
 
 export class ResourceRepository implements IResourceRepository {
+  private readonly resourceCategories = new Map<string, ResourceCategory>();
+  private readonly resourceTypes = new Map<string, ResourceType>();
   private readonly resourceSpecifications = new Map<string, ResourceSpecification>();
   private readonly resourceFunctionSpecifications = new Map<string, ResourceFunctionSpecification>();
   private readonly physicalResources = new Map<string, PhysicalResource>();
   private readonly logicalResources = new Map<string, LogicalResource>();
   private readonly relationships = new Map<string, ResourceRelationship[]>();
+
+  public constructor() {
+    for (const category of RESOURCE_CATEGORIES) {
+      this.resourceCategories.set(category.code, cloneResourceCategory(category));
+    }
+    for (const type of RESOURCE_TYPES) {
+      this.resourceTypes.set(type.code, cloneResourceType(type));
+    }
+  }
 
   public transaction<T>(fn: () => T): T {
     return fn();
@@ -54,6 +68,24 @@ export class ResourceRepository implements IResourceRepository {
     return [...this.resourceFunctionSpecifications.values()]
       .filter((spec) => filterFunctionSpec(spec, query))
       .map(cloneResourceFunctionSpecification);
+  }
+
+  public getResourceCategory(code: string): ResourceCategory | undefined {
+    const category = this.resourceCategories.get(code);
+    return category ? cloneResourceCategory(category) : undefined;
+  }
+
+  public listResourceCategories(): ResourceCategory[] {
+    return [...this.resourceCategories.values()].map(cloneResourceCategory);
+  }
+
+  public getResourceType(code: string): ResourceType | undefined {
+    const type = this.resourceTypes.get(code);
+    return type ? cloneResourceType(type) : undefined;
+  }
+
+  public listResourceTypes(): ResourceType[] {
+    return [...this.resourceTypes.values()].map(cloneResourceType);
   }
 
   public upsertPhysicalResource(resource: PhysicalResource): PhysicalResource {
@@ -156,6 +188,14 @@ const cloneResourceFunctionSpecification = (spec: ResourceFunctionSpecification)
   ...spec,
   resourceFunctionSpecificationCharacteristic: spec.resourceFunctionSpecificationCharacteristic.map((item) => ({ ...item })),
   ...(spec.validFor ? { validFor: { ...spec.validFor } } : {}),
+});
+
+const cloneResourceCategory = (category: ResourceCategory): ResourceCategory => ({
+  ...category,
+});
+
+const cloneResourceType = (type: ResourceType): ResourceType => ({
+  ...type,
 });
 
 const clonePhysicalResource = (resource: PhysicalResource): PhysicalResource => ({

@@ -1,6 +1,7 @@
 import { FormEvent } from 'react'
-import { ChevronDown, Loader2, Mic, Plus, SendHorizontal, Trash2, Waves } from 'lucide-react'
+import { ChevronDown, Mic, Plus, SendHorizontal, Trash2, Waves } from 'lucide-react'
 import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea'
+import NexusLoadingMark from './NexusLoadingMark'
 
 interface ComposerProps {
   value: string
@@ -90,7 +91,7 @@ export default function Composer({
             aria-label="Enviar"
           >
             {loading ? (
-              <Loader2 className="h-5 w-5 animate-spin" strokeWidth={1.8} />
+              <NexusLoadingMark size={20} className="h-5 w-5" />
             ) : (
               <SendHorizontal className="h-5 w-5" strokeWidth={1.8} />
             )}

@@ -6,6 +6,30 @@ export type AdministrativeState = 'unlocked' | 'locked';
 export type OperationalState = 'enabled' | 'disabled';
 export type UsageState = 'idle' | 'busy' | 'unknown';
 
+export type ResourceCatalogStatus = 'active' | 'inactive';
+
+export type ResourceCategory = {
+  '@type': 'ResourceCategory';
+  id: string;
+  href: string;
+  code: string;
+  name: string;
+  parentCategoryCode?: string;
+  description?: string;
+  status: ResourceCatalogStatus;
+};
+
+export type ResourceType = {
+  '@type': 'ResourceType';
+  id: string;
+  href: string;
+  code: string;
+  name: string;
+  categoryCode: string;
+  description?: string;
+  status: ResourceCatalogStatus;
+};
+
 export type ResourceQuery = {
   name?: string;
   status?: ResourceStatus;
@@ -29,6 +53,11 @@ export type ResourceFunctionSpecificationQuery = {
   name?: string;
   limit?: number;
   offset?: number;
+};
+
+export type ResourceCatalogQuery = {
+  name?: string;
+  status?: ResourceCatalogStatus;
 };
 
 export type ResourceRelationship = {

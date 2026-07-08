@@ -89,8 +89,8 @@ test('TMF645, TMF641 and TMF652 order endpoints qualify and execute orders', asy
 
   const resourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
     name: 'ONT',
-    category: 'Equipment',
-    resourceType: 'PhysicalResource',
+    category: 'Equipment.CustomerPremises',
+    resourceType: 'ONT',
   });
   assert.equal(resourceSpec.statusCode, 201);
 

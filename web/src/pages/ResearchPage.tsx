@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Trash2, Send, Loader } from 'lucide-react';
+import { Trash2, Send } from 'lucide-react';
 import MarkdownMessage from '../components/MarkdownMessage';
+import CopilotPendingResponse from '../components/CopilotPendingResponse';
+import NexusLoadingMark from '../components/NexusLoadingMark';
 import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
+import { scrollChatAnchorIntoView, scrollChatToBottom } from '../utils/chatScroll';
 
 interface Message {
   id: string;
@@ -38,7 +41,9 @@ export const ResearchPage: React.FC<{
   const [error, setError] = useState<string | null>(null);
   const [loadingSession, setLoadingSession] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const pendingMessageIdRef = useRef<string | null>(null);
+  const activeTurnAnchorRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useAutoResizeTextarea(input, 220);
 
   useEffect(() => {
@@ -47,10 +52,18 @@ export const ResearchPage: React.FC<{
     }
   }, [sessionId]);
 
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, sendingMessage]);
+    if (sendingMessage && pendingMessageIdRef.current) {
+      requestAnimationFrame(() => {
+        scrollChatAnchorIntoView(messagesScrollRef.current, activeTurnAnchorRef.current);
+      });
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      scrollChatToBottom(messagesScrollRef.current);
+    });
+  }, [sessionId, messages.length, sendingMessage]);
 
   const loadSession = async (id: string) => {
     try {
@@ -103,6 +116,7 @@ export const ResearchPage: React.FC<{
     setInput('');
     setError(null);
     setMessages((prev) => [...prev, optimisticUserMessage]);
+    pendingMessageIdRef.current = optimisticUserMessage.id;
 
     try {
       setSendingMessage(true);
@@ -122,6 +136,8 @@ export const ResearchPage: React.FC<{
       }
 
       const result = await response.json() as any;
+      pendingMessageIdRef.current = null;
+      setSendingMessage(false);
       setMessages((prev) => [
         ...prev.filter((message) => message.id !== optimisticUserMessage.id),
         result.userMessage,
@@ -139,6 +155,7 @@ export const ResearchPage: React.FC<{
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
     } finally {
       setSendingMessage(false);
+      pendingMessageIdRef.current = null;
     }
   };
 
@@ -176,6 +193,7 @@ export const ResearchPage: React.FC<{
     return (
       <div className="flex items-center justify-center h-full bg-app-canvas">
         <div className="text-center">
+          <NexusLoadingMark size={40} className="mx-auto mb-4 h-10 w-10" />
           <p className="text-app-muted">Carregando conversa...</p>
         </div>
       </div>
@@ -220,60 +238,55 @@ export const ResearchPage: React.FC<{
       )}
 
       {/* Scrollable Messages Area - Middle */}
-      <div className="flex-1 overflow-y-auto px-6 py-2">
-        <div className="mx-auto min-h-full max-w-[720px]">
-          <div className="flex min-h-full flex-col justify-end gap-5 pb-0">
-          {messages.length === 0 ? (
-            <div className="flex min-h-[240px] items-center justify-center text-center">
-              <p className="text-app-muted">Inicie uma conversa...</p>
-            </div>
-          ) : (
-            messages.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                {msg.role === 'user' ? (
-                  <div className="max-w-[620px] rounded-[24px] border border-app-border bg-white px-6 py-5 shadow-sm">
-                    <p className="whitespace-pre-wrap text-[0.92rem] leading-[1.6] tracking-[-0.01em] text-app-text">
-                      {msg.content}
-                    </p>
-                    <div className="mt-3 text-xs text-app-muted">
-                      {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="max-w-[660px]">
-                    <MarkdownMessage content={msg.content} />
-                    <div className="mt-3 text-xs text-app-muted">
-                      {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </div>
-                  </div>
-                )}
+      <div ref={messagesScrollRef} className="flex-1 overflow-y-auto px-6 py-2">
+        <div className="mx-auto flex min-h-full w-full max-w-[1070px] flex-col justify-start gap-5 pb-10 pt-8">
+            {messages.length === 0 ? (
+              <div className="flex min-h-[240px] items-center justify-center text-center">
+                <p className="text-app-muted">Inicie uma conversa...</p>
               </div>
-            ))
-          )}
-          {sendingMessage && (
-            <div className="flex justify-start">
-              <div className="max-w-[640px]">
-                <div className="flex items-center gap-2">
-                  <Loader className="h-4 w-4 animate-spin text-app-accent" />
-                  <span className="text-sm text-app-muted">Pensando...</span>
+            ) : (
+              messages.map((msg) => (
+                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  {msg.role === 'user' ? (
+                    <div className="flex w-full flex-col gap-3">
+                      {pendingMessageIdRef.current === msg.id ? (
+                        <div ref={activeTurnAnchorRef} className="h-1 w-full" />
+                      ) : null}
+                      <div className="ml-auto w-fit max-w-[760px] rounded-[24px] border border-app-border bg-white px-6 py-5 shadow-sm">
+                        <p className="whitespace-pre-wrap text-[0.92rem] leading-[1.6] tracking-[-0.01em] text-app-text">
+                          {msg.content}
+                        </p>
+                        <div className="mt-3 text-xs text-app-muted">
+                          {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </div>
+                      </div>
+                      {sendingMessage && pendingMessageIdRef.current === msg.id ? (
+                        <CopilotPendingResponse />
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="max-w-[1070px]">
+                      <MarkdownMessage content={msg.content} />
+                      <div className="mt-3 text-xs text-app-muted">
+                        {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            </div>
-          )}
-          </div>
-          <div ref={messagesEndRef} />
+              ))
+            )}
         </div>
       </div>
 
       {/* Fixed Input Area - Bottom */}
       <div className="flex-shrink-0 px-6 py-4 bg-app-canvas">
-        <div className="mx-auto max-w-[720px] bg-white border border-app-border rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-end gap-4 px-5 py-4">
+        <div className="mx-auto w-full max-w-[1070px] bg-white border border-app-border rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-end gap-4 px-5 py-4">
           <textarea
             ref={textareaRef}
             value={input}
@@ -281,8 +294,7 @@ export const ResearchPage: React.FC<{
             onKeyPress={handleKeyPress}
             placeholder="Digite sua pergunta..."
             rows={1}
-            disabled={sendingMessage}
-            className="flex-1 min-h-[56px] max-h-[220px] resize-none overflow-y-auto bg-transparent text-[0.95rem] leading-[1.55] text-app-text placeholder-app-muted outline-none disabled:opacity-50"
+            className="flex-1 min-h-[56px] max-h-[220px] resize-none overflow-y-auto bg-transparent text-[0.95rem] leading-[1.55] text-app-text placeholder-app-muted outline-none"
           />
           <button
             onClick={handleSendMessage}
@@ -291,7 +303,7 @@ export const ResearchPage: React.FC<{
             title="Enviar mensagem"
           >
             {sendingMessage ? (
-              <Loader className="h-5 w-5 animate-spin" />
+              <NexusLoadingMark size={20} className="h-5 w-5" />
             ) : (
               <Send className="h-5 w-5" />
             )}

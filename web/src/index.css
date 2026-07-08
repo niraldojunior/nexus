@@ -44,6 +44,7 @@ body::before {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -70,6 +71,45 @@ button {
   .geo-input {
     @apply h-11 w-full rounded-[16px] border border-app-border bg-white px-3 text-[0.9rem] font-medium text-app-text shadow-sm transition focus:border-app-accent-border;
   }
+
+  .geo-combobox {
+    @apply border-slate-300 bg-gradient-to-b from-white to-slate-50 pr-2 shadow-[inset_0_0_0_1px_rgba(36,48,65,0.04),0_1px_2px_rgba(36,48,65,0.08)] hover:border-app-accent-border hover:bg-app-accent-soft focus-visible:border-app-accent-border focus-visible:ring-4 focus-visible:ring-app-accent/20;
+  }
+
+  .geo-combobox-indicator {
+    @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] border border-app-accent-border bg-app-accent-soft text-app-text;
+  }
+}
+
+select.geo-input {
+  appearance: none;
+  cursor: pointer;
+  border-color: #c8d2e1;
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(90deg, transparent calc(100% - 42px), rgba(255, 210, 0, 0.18) calc(100% - 42px)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23243041' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0 top 0, right 12px center;
+  background-size: 42px 100%, 18px 18px;
+  padding-right: 3rem;
+  box-shadow:
+    inset 0 0 0 1px rgba(36, 48, 65, 0.04),
+    0 1px 2px rgba(36, 48, 65, 0.08);
+}
+
+select.geo-input:hover {
+  border-color: #d6b300;
+  background-image:
+    linear-gradient(90deg, transparent calc(100% - 42px), rgba(255, 210, 0, 0.28) calc(100% - 42px)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23243041' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+select.geo-input:focus {
+  border-color: #d6b300;
+  box-shadow:
+    0 0 0 4px rgba(255, 210, 0, 0.2),
+    inset 0 0 0 1px rgba(36, 48, 65, 0.04);
 }
 
 textarea {

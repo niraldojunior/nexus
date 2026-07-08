@@ -1,4 +1,4 @@
-// V.tal Nexus UI kit — Inventário (network elements table)
+// V.tal Nexus UI kit - Inventário (network elements table)
 function Inventory({ onNavigate }) {
   const { Badge, StatusPill, Button } = window.VTalNexusDesignSystem_63587b;
   const D = window.NexusData;
@@ -22,8 +22,46 @@ function Inventory({ onNavigate }) {
           ))}
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <Button variant="secondary" iconLeft={<Icon name="sliders-horizontal" size={15} />}>Filtros</Button>
-          <Button variant="primary" iconLeft={<Icon name="plus" size={15} />}>Novo elemento</Button>
+          <button
+            type="button"
+            aria-label="Filtros"
+            title="Filtros"
+            style={{
+              width: 40,
+              height: 40,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border)',
+              background: 'var(--surface-card)',
+              color: 'var(--text-secondary)',
+              boxShadow: 'var(--shadow-sm)',
+              cursor: 'pointer',
+            }}
+          >
+            <Icon name="sliders-horizontal" size={15} />
+          </button>
+          <button
+            type="button"
+            aria-label="Novo elemento"
+            title="Novo elemento"
+            style={{
+              width: 40,
+              height: 40,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--vt-yellow-light)',
+              background: 'var(--vt-yellow)',
+              color: 'var(--vt-ink)',
+              boxShadow: 'var(--shadow-sm)',
+              cursor: 'pointer',
+            }}
+          >
+            <Icon name="plus" size={15} />
+          </button>
         </div>
       </div>
 
@@ -79,7 +117,7 @@ function Inventory({ onNavigate }) {
           </tbody>
         </table>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
-          <span style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>{rows.length} de 38,1M recursos · TMF639 Resource Inventory</span>
+          <span style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>{rows.length} de 38,1M recursos</span>
           <div style={{ display: 'flex', gap: 6 }}>
             <Button variant="ghost" size="sm" iconLeft={<Icon name="chevron-left" size={14} />}>Anterior</Button>
             <Button variant="ghost" size="sm" iconRight={<Icon name="chevron-right" size={14} />}>Próximo</Button>

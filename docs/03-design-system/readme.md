@@ -16,6 +16,9 @@ O frontend oficial agora segue a experiência **assistant/workspace** importada 
 - Composer central como ponto de entrada da experiência.
 - Cards com raio maior, sombra suave e densidade operacional.
 - Domínios Nexus preservados na navegação: Assistente, Geo, Resource, Service e Order.
+- Cabeçalhos de página são contextuais: título por domínio/aba, ícone à esquerda, hint curto como subtítulo e ações compactas na mesma linha.
+- Quando houver visões irmãs, a troca acontece por botões apenas com ícone, alinhados à direita do título, com `aria-label` e `title`.
+- Ações primárias e destrutivas em barras de página devem preferir botões icon-only quando o significado for evidente no contexto.
 
 ## Fontes de referência
 
@@ -23,6 +26,7 @@ O frontend oficial agora segue a experiência **assistant/workspace** importada 
 - Direcionadores técnicos do produto Nexus.
 - Tokens em `docs/03-design-system/tokens/`.
 - Componentes e UI kits em `docs/03-design-system/components/` e `docs/03-design-system/ui_kits/`.
+- Guidelines canônicos em `docs/03-design-system/guidelines/`, com destaque para `page-chrome.md` como referência de cabeçalhos e barras de ação.
 
 ## Diretrizes-base
 

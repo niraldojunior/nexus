@@ -664,6 +664,26 @@ const routeResourceRequest = async ({
     }
   }
 
+  if (route.kind === 'resourceCategory') {
+    if (!route.id && request.method === 'GET') {
+      return sendJson(response, 200, resourceService.listResourceCategories());
+    }
+    if (route.id && request.method === 'GET') {
+      const category = resourceService.listResourceCategories().find((item) => item.id === route.id || item.code === route.id);
+      return sendJsonOrNotFound(response, category, 'RESOURCE_CATEGORY_NOT_FOUND');
+    }
+  }
+
+  if (route.kind === 'resourceType') {
+    if (!route.id && request.method === 'GET') {
+      return sendJson(response, 200, resourceService.listResourceTypes());
+    }
+    if (route.id && request.method === 'GET') {
+      const resourceType = resourceService.listResourceTypes().find((item) => item.id === route.id || item.code === route.id);
+      return sendJsonOrNotFound(response, resourceType, 'RESOURCE_TYPE_NOT_FOUND');
+    }
+  }
+
   if (route.kind === 'resource') {
     if (!route.id && request.method === 'GET') {
       return sendJson(response, 200, resourceService.listResources(parseResourceQuery(url.searchParams)));
@@ -920,7 +940,13 @@ type PartyRoute = {
 };
 
 type ResourceRoute = {
-  kind: 'resourceSpecification' | 'resourceFunctionSpecification' | 'resource' | 'resourceActivation';
+  kind:
+    | 'resourceSpecification'
+    | 'resourceFunctionSpecification'
+    | 'resourceCategory'
+    | 'resourceType'
+    | 'resource'
+    | 'resourceActivation';
   id?: string;
   relationshipId?: string;
   relationshipType?: string;
@@ -1077,6 +1103,18 @@ const resolveResourceRoute = (pathname: string): ResourceRoute | undefined => {
   if (pathname.startsWith(`${catalogBase}/resourceFunctionSpecification/`)) {
     const id = pathname.slice(`${catalogBase}/resourceFunctionSpecification/`.length);
     if (id && !id.includes('/')) return { kind: 'resourceFunctionSpecification', id: decodeURIComponent(id) };
+  }
+
+  if (pathname === `${catalogBase}/resourceCategory`) return { kind: 'resourceCategory' };
+  if (pathname.startsWith(`${catalogBase}/resourceCategory/`)) {
+    const id = pathname.slice(`${catalogBase}/resourceCategory/`.length);
+    if (id && !id.includes('/')) return { kind: 'resourceCategory', id: decodeURIComponent(id) };
+  }
+
+  if (pathname === `${catalogBase}/resourceType`) return { kind: 'resourceType' };
+  if (pathname.startsWith(`${catalogBase}/resourceType/`)) {
+    const id = pathname.slice(`${catalogBase}/resourceType/`.length);
+    if (id && !id.includes('/')) return { kind: 'resourceType', id: decodeURIComponent(id) };
   }
 
   if (pathname === inventoryBase) return { kind: 'resource' };

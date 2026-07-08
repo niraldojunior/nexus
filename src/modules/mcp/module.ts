@@ -520,6 +520,45 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
   });
 
   registry.register({
+    name: 'resource.list_resource_specifications',
+    description: 'Lista ResourceSpecifications do catalogo de recursos (modelos cadastrados via TMF634). Use esta ferramenta para saber quais modelos/tipos de recurso existem no catalogo antes de criar instancias.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        category: { type: 'string' },
+        resourceType: { type: 'string' },
+        limit: { type: 'integer' },
+        offset: { type: 'integer' },
+      },
+      additionalProperties: false,
+    },
+    handler: (input, context) => {
+      const query: { name?: string; category?: string; resourceType?: string; limit?: number; offset?: number } = {};
+      if (typeof input.name === 'string') query.name = input.name;
+      if (typeof input.category === 'string') query.category = input.category;
+      if (typeof input.resourceType === 'string') query.resourceType = input.resourceType;
+      if (typeof input.limit === 'number') query.limit = input.limit;
+      if (typeof input.offset === 'number') query.offset = input.offset;
+      const items = runtime.resourceService.listResourceSpecifications(query);
+      return registry.successResult('resource', 'list_resource_specifications', context, { items, count: items.length });
+    },
+  });
+
+  registry.register({
+    name: 'resource.get_resource_specification',
+    description: 'Consulta uma ResourceSpecification do catalogo por id.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
+    handler: (input, context) =>
+      registry.successResult('resource', 'get_resource_specification', context, runtime.resourceService.getResourceSpecification(String(input.id)) ?? null),
+  });
+
+  registry.register({
     name: 'resource.list_resources',
     description: 'Lista PhysicalResource e LogicalResource do inventario com filtros TMF.',
     inputSchema: resourceQuerySchema,

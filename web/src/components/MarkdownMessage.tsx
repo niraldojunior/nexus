@@ -20,7 +20,7 @@ export default function MarkdownMessage({ content }: MarkdownMessageProps) {
   };
 
   return (
-    <div className="markdown-content max-w-[720px] text-[1.02rem] font-normal leading-[1.66] tracking-[-0.01em] text-app-text">
+    <div className="markdown-content max-w-[960px] text-[1.02rem] font-normal leading-[1.66] tracking-[-0.01em] text-app-text">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

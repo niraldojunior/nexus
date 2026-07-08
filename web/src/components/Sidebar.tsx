@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { PageId, RecentGroup, RecentItem } from '../types';
 import { ResearchHistoryPage } from '../pages/ResearchHistoryPage';
+import type { ResourceTab } from '../services/resourceApi';
 
 type PrimaryItemId = 'conversations' | 'research' | 'geo' | 'resource' | 'service' | 'order';
 
@@ -20,6 +21,8 @@ interface SidebarProps {
   currentPage: PageId;
   activeRecentConversationId: string | null;
   activeResearchSessionId: string | null;
+  activeResourceTab: ResourceTab;
+  resourceMenuOpen: boolean;
   settingsOpen: boolean;
   recentItems: RecentItem[];
   recentGroup: RecentGroup;
@@ -28,6 +31,8 @@ interface SidebarProps {
   onNewConversation: () => void;
   onNewResearch: () => void;
   onSelectPage: (page: PageId | 'settings') => void;
+  onToggleResourceMenu: () => void;
+  onSelectResourceTab: (tab: ResourceTab) => void;
   onOpenRecentItem: (conversationId: string) => void;
   onSelectResearchSession?: (sessionId: string) => void;
   researchSessionRefreshTrigger?: number;
@@ -42,14 +47,24 @@ const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: LucideIcon }
   { id: 'order', label: 'Ordens', icon: FolderTree },
 ];
 
+const resourceSubItems: Array<{ tab: ResourceTab; label: string }> = [
+  { tab: 'PhysicalResource', label: 'Físicos' },
+  { tab: 'LogicalResource', label: 'Lógicos' },
+  { tab: 'ResourceSpecification', label: 'Catálogo' },
+];
+
 export default function Sidebar({
   collapsed,
   currentPage,
   activeResearchSessionId,
+  activeResourceTab,
+  resourceMenuOpen,
   settingsOpen,
   onToggleCollapse,
   onNewResearch,
   onSelectPage,
+  onToggleResourceMenu,
+  onSelectResourceTab,
   onSelectResearchSession,
   researchSessionRefreshTrigger,
 }: SidebarProps) {
@@ -98,24 +113,50 @@ export default function Sidebar({
                 currentPage === id);
 
             return (
-              <NavItem
-                key={id}
-                active={isActive}
-                icon={Icon}
-                label={label}
-                onClick={() => {
-                  if (id === 'research') {
-                    onNewResearch();
-                    return;
-                  }
-                  if (id === 'conversations') {
-                    onSelectPage('conversas');
-                    return;
-                  }
-                  onSelectPage(id);
-                }}
-                collapsed={collapsed}
-              />
+              <div key={id}>
+                <NavItem
+                  active={isActive}
+                  icon={Icon}
+                  label={label}
+                  onClick={() => {
+                    if (id === 'research') {
+                      onNewResearch();
+                      return;
+                    }
+                    if (id === 'conversations') {
+                      onSelectPage('conversas');
+                      return;
+                    }
+                    if (id === 'resource') {
+                      onToggleResourceMenu();
+                      return;
+                    }
+                    onSelectPage(id);
+                  }}
+                  collapsed={collapsed}
+                />
+                {id === 'resource' && resourceMenuOpen && !collapsed ? (
+                  <div className="ml-[35px] mt-1 space-y-1 border-l border-app-border pl-3">
+                    {resourceSubItems.map((item) => {
+                      const subItemActive = currentPage === 'resource' && activeResourceTab === item.tab;
+                      return (
+                        <button
+                          key={item.tab}
+                          type="button"
+                          onClick={() => onSelectResourceTab(item.tab)}
+                          className={`flex h-[28px] w-full items-center rounded-[10px] px-3 text-left text-[0.84rem] transition ${
+                            subItemActive
+                              ? 'bg-app-accent-soft font-semibold text-app-text'
+                              : 'font-medium text-app-muted hover:bg-app-accent-soft hover:text-app-text'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
             );
           })}
         </nav>

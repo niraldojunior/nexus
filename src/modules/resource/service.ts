@@ -17,6 +17,8 @@ import type {
   ResourceKind,
   ResourceQuery,
   ResourceRelationship,
+  ResourceCategory,
+  ResourceType,
   ResourceSpecification,
   ResourceSpecificationQuery,
   ResourceStatus,
@@ -42,16 +44,17 @@ export class ResourceService {
 
   public createResourceSpecification(input: CreateResourceSpecificationInput): ResourceSpecification {
     assertName(input.name);
-    assertName(input.category, 'category');
-    assertName(input.resourceType, 'resourceType');
+    const category = this.getResourceCategoryOrThrow(input.category);
+    const resourceType = this.getResourceTypeOrThrow(input.resourceType);
+    this.assertResourceTypeMatchesCategory(resourceType, category);
     const id = createCanonicalId();
     const spec: ResourceSpecification = {
       '@type': 'ResourceSpecification',
       id,
       href: `/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${id}`,
       name: input.name.trim(),
-      category: input.category.trim(),
-      resourceType: input.resourceType.trim(),
+      category: category.code,
+      resourceType: resourceType.code,
       resourceSpecificationCharacteristic: input.resourceSpecificationCharacteristic ?? [],
       relatedParty: normalizeRelatedParties(input.relatedParty, this.dependencies.lookupParty),
       ...(input.description ? { description: input.description } : {}),
@@ -66,14 +69,17 @@ export class ResourceService {
   public updateResourceSpecification(id: string, input: UpdateResourceSpecificationInput): ResourceSpecification {
     const current = this.getResourceSpecificationOrThrow(id);
     if (input.name !== undefined) assertName(input.name);
-    if (input.category !== undefined) assertName(input.category, 'category');
-    if (input.resourceType !== undefined) assertName(input.resourceType, 'resourceType');
+    const nextCategoryCode = input.category !== undefined ? input.category.trim() : current.category;
+    const nextResourceTypeCode = input.resourceType !== undefined ? input.resourceType.trim() : current.resourceType;
+    const nextCategory = this.getResourceCategoryOrThrow(nextCategoryCode);
+    const nextResourceType = this.getResourceTypeOrThrow(nextResourceTypeCode);
+    this.assertResourceTypeMatchesCategory(nextResourceType, nextCategory);
 
     const updated = this.repository.upsertResourceSpecification({
       ...current,
       name: input.name !== undefined ? input.name.trim() : current.name,
-      category: input.category !== undefined ? input.category.trim() : current.category,
-      resourceType: input.resourceType !== undefined ? input.resourceType.trim() : current.resourceType,
+      category: nextCategory.code,
+      resourceType: nextResourceType.code,
       resourceSpecificationCharacteristic: input.resourceSpecificationCharacteristic ?? current.resourceSpecificationCharacteristic,
       relatedParty: input.relatedParty
         ? normalizeRelatedParties(input.relatedParty, this.dependencies.lookupParty)
@@ -102,6 +108,14 @@ export class ResourceService {
 
   public getResourceSpecification(id: string): ResourceSpecification | undefined {
     return this.repository.getResourceSpecification(id);
+  }
+
+  public listResourceCategories(): ResourceCategory[] {
+    return this.repository.listResourceCategories();
+  }
+
+  public listResourceTypes(): ResourceType[] {
+    return this.repository.listResourceTypes();
   }
 
   public createResourceFunctionSpecification(input: CreateResourceFunctionSpecificationInput): ResourceFunctionSpecification {
@@ -482,6 +496,35 @@ export class ResourceService {
     const spec = this.repository.getResourceSpecification(id);
     if (!spec) throw new AppError('resource specification not found', { code: 'RESOURCE_SPEC_NOT_FOUND', statusCode: 404 });
     return spec;
+  }
+
+  private getResourceCategoryOrThrow(code: string): ResourceCategory {
+    assertName(code, 'category');
+    const category = this.repository.getResourceCategory(code.trim());
+    if (!category) throw new AppError('resource category not found', { code: 'RESOURCE_CATEGORY_NOT_FOUND', statusCode: 404 });
+    if (category.status !== 'active') {
+      throw new AppError('resource category is inactive', { code: 'RESOURCE_CATEGORY_INACTIVE', statusCode: 409 });
+    }
+    return category;
+  }
+
+  private getResourceTypeOrThrow(code: string): ResourceType {
+    assertName(code, 'resourceType');
+    const resourceType = this.repository.getResourceType(code.trim());
+    if (!resourceType) throw new AppError('resource type not found', { code: 'RESOURCE_TYPE_NOT_FOUND', statusCode: 404 });
+    if (resourceType.status !== 'active') {
+      throw new AppError('resource type is inactive', { code: 'RESOURCE_TYPE_INACTIVE', statusCode: 409 });
+    }
+    return resourceType;
+  }
+
+  private assertResourceTypeMatchesCategory(resourceType: ResourceType, category: ResourceCategory): void {
+    if (resourceType.categoryCode !== category.code) {
+      throw new AppError('resource type is not allowed for category', {
+        code: 'RESOURCE_TYPE_CATEGORY_MISMATCH',
+        statusCode: 409,
+      });
+    }
   }
 
   private getResourceFunctionSpecificationOrThrow(id: string): ResourceFunctionSpecification {

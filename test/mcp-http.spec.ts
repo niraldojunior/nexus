@@ -227,8 +227,8 @@ test('Copilot prepara cadastro de PhysicalResource, exige confirmacao e faz comm
     });
     const resourceSpec = await app.requestJson('POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
       name: 'ONT',
-      category: 'Equipment',
-      resourceType: 'PhysicalResource',
+      category: 'Equipment.CustomerPremises',
+      resourceType: 'ONT',
     });
 
     fetchMock.mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {

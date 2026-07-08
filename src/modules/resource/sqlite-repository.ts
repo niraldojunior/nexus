@@ -2,35 +2,170 @@ import { SqliteDatabase } from '../../shared/persistence/sqlite-database.js';
 import type {
   LogicalResource,
   PhysicalResource,
+  ResourceCategory,
   Resource,
   ResourceFunctionSpecification,
   ResourceFunctionSpecificationQuery,
   ResourceQuery,
   ResourceRelationship,
+  ResourceType,
   ResourceSpecification,
   ResourceSpecificationQuery,
 } from './domain.js';
 import type { IResourceRepository } from './resource-repository-interface.js';
+import { RESOURCE_CATEGORIES, RESOURCE_TYPES } from './catalog.js';
 
 export class SqliteResourceRepository implements IResourceRepository {
-  public constructor(private readonly db: SqliteDatabase) {}
+  public constructor(private readonly db: SqliteDatabase) {
+    this.seedResourceCatalog();
+  }
 
   public transaction<T>(fn: () => T): T {
     return this.db.transaction(fn);
+  }
+
+  private seedResourceCatalog(): void {
+    const now = new Date().toISOString();
+    this.db.run('DELETE FROM tmf_resource_type');
+    this.db.run('DELETE FROM tmf_resource_category');
+    for (const category of RESOURCE_CATEGORIES) {
+      this.db.run(
+        `INSERT INTO tmf_resource_category (id, href, code, name, parent_category_code, description, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(code) DO UPDATE SET
+         href = excluded.href,
+         name = excluded.name,
+         parent_category_code = excluded.parent_category_code,
+         description = excluded.description,
+         status = excluded.status,
+         updated_at = excluded.updated_at`,
+        [
+          category.id,
+          category.href,
+          category.code,
+          category.name,
+          category.parentCategoryCode ?? null,
+          category.description ?? null,
+          category.status,
+          now,
+          now,
+        ],
+      );
+    }
+
+    for (const type of RESOURCE_TYPES) {
+      this.db.run(
+        `INSERT INTO tmf_resource_type (id, href, code, name, category_code, description, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(code) DO UPDATE SET
+         href = excluded.href,
+         name = excluded.name,
+         category_code = excluded.category_code,
+         description = excluded.description,
+         status = excluded.status,
+         updated_at = excluded.updated_at`,
+        [
+          type.id,
+          type.href,
+          type.code,
+          type.name,
+          type.categoryCode,
+          type.description ?? null,
+          type.status,
+          now,
+          now,
+        ],
+      );
+    }
+  }
+
+  public getResourceCategory(code: string): ResourceCategory | undefined {
+    const row = this.db.get<{
+      id: string;
+      href: string;
+      code: string;
+      name: string;
+      parent_category_code?: string | null;
+      description?: string | null;
+      status: 'active' | 'inactive';
+    }>(
+      `SELECT id, href, code, name, parent_category_code, description, status
+       FROM tmf_resource_category
+       WHERE code = ?`,
+      [code],
+    );
+
+    return row ? this.mapResourceCategory(row) : undefined;
+  }
+
+  public listResourceCategories(): ResourceCategory[] {
+    const rows = this.db.all<{
+      id: string;
+      href: string;
+      code: string;
+      name: string;
+      parent_category_code?: string | null;
+      description?: string | null;
+      status: 'active' | 'inactive';
+    }>(
+      `SELECT id, href, code, name, parent_category_code, description, status
+       FROM tmf_resource_category
+       ORDER BY code`,
+    );
+    return rows.map((row) => this.mapResourceCategory(row));
+  }
+
+  public getResourceType(code: string): ResourceType | undefined {
+    const row = this.db.get<{
+      id: string;
+      href: string;
+      code: string;
+      name: string;
+      category_code: string;
+      description?: string | null;
+      status: 'active' | 'inactive';
+    }>(
+      `SELECT id, href, code, name, category_code, description, status
+       FROM tmf_resource_type
+       WHERE code = ?`,
+      [code],
+    );
+
+    return row ? this.mapResourceType(row) : undefined;
+  }
+
+  public listResourceTypes(): ResourceType[] {
+    const rows = this.db.all<{
+      id: string;
+      href: string;
+      code: string;
+      name: string;
+      category_code: string;
+      description?: string | null;
+      status: 'active' | 'inactive';
+    }>(
+      `SELECT id, href, code, name, category_code, description, status
+       FROM tmf_resource_type
+       ORDER BY category_code, code`,
+    );
+    return rows.map((row) => this.mapResourceType(row));
   }
 
   public upsertResourceSpecification(spec: ResourceSpecification): ResourceSpecification {
     const now = new Date().toISOString();
     this.db.run(
       `INSERT INTO tmf_resource_specification
-       (id, href, name, category, resource_type, description, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, href, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
        category = excluded.category,
        resource_type = excluded.resource_type,
        description = excluded.description,
+       valid_for_start = excluded.valid_for_start,
+       valid_for_end = excluded.valid_for_end,
+       related_party = excluded.related_party,
        characteristics = excluded.characteristics,
        updated_at = excluded.updated_at`,
       [
@@ -40,6 +175,9 @@ export class SqliteResourceRepository implements IResourceRepository {
         spec.category,
         spec.resourceType,
         spec.description ?? null,
+        spec.validFor?.startDateTime ?? null,
+        spec.validFor?.endDateTime ?? null,
+        JSON.stringify(spec.relatedParty),
         JSON.stringify(spec.resourceSpecificationCharacteristic),
         now,
         now,
@@ -57,9 +195,12 @@ export class SqliteResourceRepository implements IResourceRepository {
       category: string;
       resource_type: string;
       description?: string | null;
+      valid_for_start?: string | null;
+      valid_for_end?: string | null;
+      related_party?: string | null;
       characteristics?: string | null;
     }>(
-      `SELECT id, href, name, category, resource_type, description, characteristics
+      `SELECT id, href, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics
        FROM tmf_resource_specification
        WHERE id = ?`,
       [id],
@@ -88,7 +229,7 @@ export class SqliteResourceRepository implements IResourceRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, href, name, category, resource_type, description, characteristics FROM tmf_resource_specification',
+      'SELECT id, href, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics FROM tmf_resource_specification',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY category, name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -107,6 +248,9 @@ export class SqliteResourceRepository implements IResourceRepository {
       category: string;
       resource_type: string;
       description?: string | null;
+      valid_for_start?: string | null;
+      valid_for_end?: string | null;
+      related_party?: string | null;
       characteristics?: string | null;
     }>(sql, params);
 
@@ -483,6 +627,9 @@ export class SqliteResourceRepository implements IResourceRepository {
     category: string;
     resource_type: string;
     description?: string | null;
+    valid_for_start?: string | null;
+    valid_for_end?: string | null;
+    related_party?: string | null;
     characteristics?: string | null;
   }): ResourceSpecification {
     const spec: ResourceSpecification = {
@@ -493,11 +640,59 @@ export class SqliteResourceRepository implements IResourceRepository {
       category: row.category,
       resourceType: row.resource_type,
       resourceSpecificationCharacteristic: JSON.parse(row.characteristics || '[]') as ResourceSpecification['resourceSpecificationCharacteristic'],
-      relatedParty: [],
+      relatedParty: JSON.parse(row.related_party || '[]') as ResourceSpecification['relatedParty'],
     };
 
     if (row.description) spec.description = row.description;
+    if (row.valid_for_start || row.valid_for_end) {
+      spec.validFor = {
+        ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
+        ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
+      };
+    }
     return spec;
+  }
+
+  private mapResourceCategory(row: {
+    id: string;
+    href: string;
+    code: string;
+    name: string;
+    parent_category_code?: string | null;
+    description?: string | null;
+    status: 'active' | 'inactive';
+  }): ResourceCategory {
+    return {
+      '@type': 'ResourceCategory',
+      id: row.id,
+      href: row.href,
+      code: row.code,
+      name: row.name,
+      ...(row.parent_category_code ? { parentCategoryCode: row.parent_category_code } : {}),
+      ...(row.description ? { description: row.description } : {}),
+      status: row.status,
+    };
+  }
+
+  private mapResourceType(row: {
+    id: string;
+    href: string;
+    code: string;
+    name: string;
+    category_code: string;
+    description?: string | null;
+    status: 'active' | 'inactive';
+  }): ResourceType {
+    return {
+      '@type': 'ResourceType',
+      id: row.id,
+      href: row.href,
+      code: row.code,
+      name: row.name,
+      categoryCode: row.category_code,
+      ...(row.description ? { description: row.description } : {}),
+      status: row.status,
+    };
   }
 
   private mapFunctionSpec(row: {

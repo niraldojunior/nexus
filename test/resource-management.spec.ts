@@ -89,13 +89,39 @@ test('TMF634, TMF639 and TMF664 resource endpoints create and activate resources
 
   const resourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
     name: 'OLT MA5800',
-    category: 'Equipment',
-    resourceType: 'PhysicalResource',
+    category: 'Equipment.Access',
+    resourceType: 'OLT',
     relatedParty: [
       { id: (party.body as { id: string }).id, '@referredType': 'Organization', role: 'manufacturer' },
     ],
   });
   assert.equal(resourceSpec.statusCode, 201);
+
+  const categories = await requestJson(port, 'GET', '/tmf-api/resourceCatalogManagement/v4/resourceCategory');
+  assert.equal(categories.statusCode, 200);
+  assert.ok(Array.isArray(categories.body));
+  assert.ok((categories.body as Array<{ code: string }>).some((category) => category.code === 'Equipment.Access'));
+
+  const types = await requestJson(port, 'GET', '/tmf-api/resourceCatalogManagement/v4/resourceType');
+  assert.equal(types.statusCode, 200);
+  assert.ok(Array.isArray(types.body));
+  assert.ok((types.body as Array<{ code: string }>).some((type) => type.code === 'OLT'));
+
+  const deletedSpec = await requestJson(
+    port,
+    'DELETE',
+    `/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${(resourceSpec.body as { id: string }).id}`,
+  );
+  assert.equal(deletedSpec.statusCode, 200);
+  assert.ok((deletedSpec.body as { validFor?: { endDateTime?: string } }).validFor?.endDateTime);
+
+  const fetchedDeletedSpec = await requestJson(
+    port,
+    'GET',
+    `/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${(resourceSpec.body as { id: string }).id}`,
+  );
+  assert.equal(fetchedDeletedSpec.statusCode, 200);
+  assert.ok((fetchedDeletedSpec.body as { validFor?: { endDateTime?: string } }).validFor?.endDateTime);
 
   const functionSpec = await requestJson(
     port,

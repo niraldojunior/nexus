@@ -15,8 +15,8 @@ test('ResourceRepository clones stored entities and filters across resource kind
     id: 'spec-1',
     href: '/resource-spec/spec-1',
     name: 'OLT',
-    category: 'Equipment',
-    resourceType: 'PhysicalResource',
+    category: 'Equipment.Access',
+    resourceType: 'OLT',
     resourceSpecificationCharacteristic: [{ name: 'vendor', value: 'Huawei', valueType: 'string' }],
     relatedParty: [{ id: 'party-1', '@referredType': 'Organization', name: 'V.tal' }],
   });
@@ -72,8 +72,14 @@ test('ResourceRepository clones stored entities and filters across resource kind
   assert.equal(repository.getResourceFunctionSpecification('func-1')?.name, 'Activation');
   assert.equal(repository.getPhysicalResource('res-1')?.name, 'OLT-01');
   assert.equal(repository.getLogicalResource('res-2')?.name, 'VLAN-100');
-  assert.equal(repository.listResourceSpecifications({ name: 'ol', category: 'Equipment' }).length, 1);
+  assert.equal(repository.listResourceSpecifications({ name: 'ol', category: 'Equipment.Access' }).length, 1);
   assert.equal(repository.listResourceFunctionSpecifications({ name: 'act' }).length, 1);
+  assert.ok(repository.getResourceCategory('Equipment.Access'));
+  assert.ok(repository.getResourceCategory('Equipment.CustomerPremises'));
+  assert.ok(repository.getResourceType('OLT'));
+  assert.ok(repository.getResourceType('CPE'));
+  assert.ok(repository.listResourceCategories().length > 0);
+  assert.ok(repository.listResourceTypes().length > 0);
   assert.equal(repository.listPhysicalResources({ kind: 'PhysicalResource', status: 'active', placeId: 'site-1' }).length, 1);
   assert.equal(repository.listLogicalResources({ kind: 'LogicalResource', status: 'inactive', resourceSpecificationId: spec.id }).length, 1);
   assert.equal(repository.listResources({ kind: 'PhysicalResource' }).length, 1);
@@ -101,13 +107,13 @@ test('ResourceService creates, mutates and terminates inventory resources', () =
     lookupPlace: (id) => (id === place.id ? place : undefined),
   });
 
-  assert.throws(() => service.createResourceSpecification({ name: '  ', category: 'Equipment', resourceType: 'PhysicalResource' }), /name is required/);
+  assert.throws(() => service.createResourceSpecification({ name: '  ', category: 'Equipment.Access', resourceType: 'OLT' }), /name is required/);
   assert.throws(() => service.createPhysicalResource({ name: 'OLT', resourceSpecificationId: 'missing' }), /resource specification not found/);
 
   const spec = service.createResourceSpecification({
     name: 'OLT',
-    category: 'Equipment',
-    resourceType: 'PhysicalResource',
+    category: 'Equipment.Access',
+    resourceType: 'OLT',
     relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'owner' }],
   });
   const functionSpec = service.createResourceFunctionSpecification({ name: 'Activation' });
@@ -117,8 +123,8 @@ test('ResourceService creates, mutates and terminates inventory resources', () =
     () =>
       service.createResourceSpecification({
         name: 'OLT',
-        category: 'Equipment',
-        resourceType: 'PhysicalResource',
+        category: 'Equipment.Access',
+        resourceType: 'OLT',
         relatedParty: [{ id: 'missing', '@referredType': 'Organization' }],
       }),
     /related party not found/,
@@ -207,6 +213,16 @@ test('ResourceService creates, mutates and terminates inventory resources', () =
   assert.ok(deletedPhysical.validFor?.endDateTime);
   const deletedLogical = service.deleteLogicalResource(logical.id);
   assert.equal(deletedLogical.status, 'terminated');
+
+  assert.throws(
+    () =>
+      service.createResourceSpecification({
+        name: 'Bad type',
+        category: 'Equipment.Access',
+        resourceType: 'VLAN',
+      }),
+    /resource type is not allowed for category/,
+  );
 
   assert.throws(() => service.updatePhysicalResource('missing', { name: 'x' }), /resource not found/);
   assert.throws(() => service.updateLogicalResource('missing', { name: 'x' }), /resource not found/);

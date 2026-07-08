@@ -226,13 +226,24 @@ test('TMF party and resource endpoints support read, update, delete and relation
 
   const resourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
     name: 'OLT MA5800',
-    category: 'Equipment',
-    resourceType: 'PhysicalResource',
+    category: 'Equipment.Access',
+    resourceType: 'OLT',
+    resourceSpecificationCharacteristic: [
+      { name: 'manufacturer', value: 'Huawei', valueType: 'string', group: 'commercial' },
+      { name: 'stockable', value: true, valueType: 'boolean', group: 'capability' },
+      { name: 'endOfLifeDate', value: '2026-07-03', valueType: 'date', group: 'lifecycle' },
+    ],
     relatedParty: [
       { id: (party.body as { id: string }).id, '@referredType': 'Organization', role: 'manufacturer' },
     ],
   });
   assert.equal(resourceSpec.statusCode, 201);
+  assert.equal(
+    (resourceSpec.body as { resourceSpecificationCharacteristic?: Array<{ name: string; value: unknown }> })
+      .resourceSpecificationCharacteristic?.length,
+    3,
+  );
+  assert.equal((resourceSpec.body as { relatedParty?: Array<{ id: string }> }).relatedParty?.length, 1);
 
   const functionSpec = await requestJson(
     port,
@@ -283,6 +294,11 @@ test('TMF party and resource endpoints support read, update, delete and relation
     `/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${(resourceSpec.body as { id: string }).id}`,
   );
   assert.equal(resourceSpecRead.statusCode, 200);
+  assert.equal(
+    (resourceSpecRead.body as { resourceSpecificationCharacteristic?: Array<{ name: string; value: unknown }> })
+      .resourceSpecificationCharacteristic?.some((item) => item.name === 'stockable' && item.value === true),
+    true,
+  );
 
   const resourceSpecPatch = await requestJson(
     port,
@@ -430,8 +446,8 @@ test('TMF service endpoints support read, update, delete and relationships', asy
 
   const resourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
     name: 'ONT',
-    category: 'Equipment',
-    resourceType: 'PhysicalResource',
+    category: 'Equipment.Access',
+    resourceType: 'OLT',
   });
   assert.equal(resourceSpec.statusCode, 201);
 
@@ -661,8 +677,8 @@ test('TMF order endpoints support read, update and delete', async (t) => {
 
   const resourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
     name: 'ONT',
-    category: 'Equipment',
-    resourceType: 'PhysicalResource',
+    category: 'Equipment.Access',
+    resourceType: 'OLT',
   });
   assert.equal(resourceSpec.statusCode, 201);
 

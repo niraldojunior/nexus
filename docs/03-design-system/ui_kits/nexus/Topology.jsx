@@ -94,7 +94,7 @@ function Topology() {
             <Icon name="plug-zap" size={16} color="var(--vt-yellow)" />
             <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>Padrão TM Forum</span>
           </div>
-          <p style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>Este recurso é exposto via Open API TMF639 (Resource Inventory) e reconciliado a cada 15 min.</p>
+          <p style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>Este recurso é exposto via Open API TMF639 e reconciliado a cada 15 min.</p>
           <div style={{ marginTop: 12, fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--vt-yellow)', background: 'rgba(255,255,255,0.06)', padding: '8px 11px', borderRadius: 6 }}>GET /resourceInventory/v4/resource/0x9F2A</div>
         </Card>
       </div>

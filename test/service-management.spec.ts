@@ -89,8 +89,8 @@ test('TMF633 and TMF638 service endpoints create and constrain services', async 
 
   const resourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
     name: 'ONT',
-    category: 'Equipment',
-    resourceType: 'PhysicalResource',
+    category: 'Equipment.CustomerPremises',
+    resourceType: 'ONT',
   });
   assert.equal(resourceSpec.statusCode, 201);
 

@@ -184,6 +184,7 @@ export class SqliteDatabase {
         description TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
+        related_party TEXT,
         characteristics TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -191,6 +192,35 @@ export class SqliteDatabase {
       CREATE INDEX IF NOT EXISTS idx_tmf_resource_specification_category_type ON tmf_resource_specification(category, resource_type);
 
       -- TMF634: Resource Function Specification (template funcional reutilizável)
+      CREATE TABLE IF NOT EXISTS tmf_resource_category (
+        id TEXT PRIMARY KEY,
+        href TEXT NOT NULL,
+        code TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        parent_category_code TEXT,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_resource_category_parent ON tmf_resource_category(parent_category_code);
+      CREATE INDEX IF NOT EXISTS idx_tmf_resource_category_status ON tmf_resource_category(status);
+
+      CREATE TABLE IF NOT EXISTS tmf_resource_type (
+        id TEXT PRIMARY KEY,
+        href TEXT NOT NULL,
+        code TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        category_code TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (category_code) REFERENCES tmf_resource_category(code)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_resource_type_category ON tmf_resource_type(category_code);
+      CREATE INDEX IF NOT EXISTS idx_tmf_resource_type_status ON tmf_resource_type(status);
+
       CREATE TABLE IF NOT EXISTS tmf_resource_function_specification (
         id TEXT PRIMARY KEY,
         href TEXT NOT NULL,
@@ -597,6 +627,7 @@ export class SqliteDatabase {
     this.ensureColumn(db, 'tmf_physical_resource', 'administrative_state TEXT');
     this.ensureColumn(db, 'tmf_physical_resource', 'operational_state TEXT');
     this.ensureColumn(db, 'tmf_physical_resource', 'usage_state TEXT');
+    this.ensureColumn(db, 'tmf_resource_specification', 'related_party TEXT');
     this.ensureColumn(db, 'tmf_logical_resource', 'place_id TEXT');
     this.ensureColumn(db, 'tmf_logical_resource', 'place_type TEXT');
     this.ensureColumn(db, 'tmf_logical_resource', 'related_party TEXT');

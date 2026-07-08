@@ -5,7 +5,6 @@ import {
   FileText,
   FolderTree,
   Layers3,
-  Loader2,
   MapPin,
   MapPinned,
   Settings,
@@ -13,6 +12,7 @@ import {
   Zap,
 } from 'lucide-react';
 import ClaudeBurst from './components/ClaudeBurst';
+import CopilotPendingResponse from './components/CopilotPendingResponse';
 import Composer from './components/Composer';
 import DocumentTile from './components/DocumentTile';
 import MarkdownMessage from './components/MarkdownMessage';
@@ -21,8 +21,10 @@ import SettingsModal from './components/SettingsModal';
 import Sidebar from './components/Sidebar';
 import GeoPage from './pages/GeoPage';
 import NewResearchPage from './pages/NewResearchPage';
+import ResourcePage from './pages/ResourcePage';
 import { ResearchPage } from './pages/ResearchPage';
 import { ConversasPage } from './pages/PesquisasPage';
+import { scrollChatAnchorIntoView, scrollChatToBottom } from './utils/chatScroll';
 import {
   domainCards,
   domainMetrics,
@@ -31,6 +33,7 @@ import {
   settingsSections,
 } from './data/mockData';
 import { sendMessage } from './services/api';
+import type { ResourceTab } from './services/resourceApi';
 import {
   Conversation,
   ConversationEntry,
@@ -252,6 +255,7 @@ function ConversationPage({
   conversation,
   input,
   loading,
+  pendingUserMessageId,
   errorMessage,
   onInputChange,
   onSubmit,
@@ -259,20 +263,31 @@ function ConversationPage({
   conversation: Conversation;
   input: string;
   loading: boolean;
+  pendingUserMessageId: string | null;
   errorMessage?: string | null;
   onInputChange: (value: string) => void;
   onSubmit: () => void;
 }) {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const activeTurnAnchorRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [conversation.entries.length, loading]);
+    if (pendingUserMessageId) {
+      requestAnimationFrame(() => {
+        scrollChatAnchorIntoView(messagesScrollRef.current, activeTurnAnchorRef.current);
+      });
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      scrollChatToBottom(messagesScrollRef.current);
+    });
+  }, [conversation.id, conversation.entries.length, pendingUserMessageId, loading]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-transparent px-6 py-4">
-        <div className="mx-auto flex max-w-[860px] items-center justify-between gap-4">
+        <div className="mx-auto flex max-w-[1180px] items-center justify-between gap-4">
           <div className="text-[0.9rem] font-semibold text-app-muted">
             {conversation.projectLabel} / {conversation.title}
           </div>
@@ -286,36 +301,33 @@ function ConversationPage({
       </div>
 
       <div className="min-h-0 flex-1 px-6 py-2">
-        <div className="h-full overflow-y-auto">
-          <div className="mx-auto flex min-h-full max-w-[820px] flex-col justify-end gap-5 pb-0">
+        <div ref={messagesScrollRef} className="h-full overflow-y-auto">
+          <div className="mx-auto flex min-h-full max-w-[1180px] flex-col justify-start gap-5 pb-10 pt-8">
             {conversation.entries.map((entry) => (
               <div key={entry.id}>
                 {entry.role === 'assistant' ? (
                   <AssistantEntry entry={entry} />
                 ) : (
-                  <div className="ml-auto max-w-[680px] rounded-[24px] border border-app-border bg-white px-6 py-5 shadow-sm">
-                    <p className="text-[1.02rem] leading-[1.6] tracking-[-0.01em] text-app-text">
-                      {entry.content}
-                    </p>
+                  <div className="flex w-full flex-col gap-3">
+                    {pendingUserMessageId === entry.id ? (
+                      <div ref={activeTurnAnchorRef} className="h-1 w-full" />
+                    ) : null}
+                    <div className="ml-auto w-fit max-w-[840px] rounded-[24px] border border-app-border bg-white px-6 py-5 shadow-sm">
+                      <p className="text-[1.02rem] leading-[1.6] tracking-[-0.01em] text-app-text">
+                        {entry.content}
+                      </p>
+                    </div>
+                    {loading && pendingUserMessageId === entry.id ? <CopilotPendingResponse /> : null}
                   </div>
                 )}
               </div>
             ))}
-            {loading ? (
-              <div className="max-w-[860px]">
-                <div className="flex items-center gap-2 text-app-muted">
-                  <Loader2 className="h-4 w-4 animate-spin text-app-accent" strokeWidth={1.8} />
-                  <span className="text-[0.94rem]">Pensando...</span>
-                </div>
-              </div>
-            ) : null}
-            <div ref={messagesEndRef} />
           </div>
         </div>
       </div>
 
       <div className="px-6 pb-3">
-        <div className="mx-auto max-w-[820px]">
+        <div className="mx-auto max-w-[1180px]">
           <Composer
             value={input}
             onChange={onInputChange}
@@ -342,7 +354,7 @@ function ConversationPage({
 
 function AssistantEntry({ entry }: { entry: ConversationEntry }) {
   return (
-    <div className="max-w-[860px]">
+    <div className="max-w-[1180px]">
       {entry.attachments?.length ? (
         <div className="mb-7">
           {entry.attachments.map((attachment) => (
@@ -391,13 +403,15 @@ function App() {
   const [activeConversationId, setActiveConversationId] = useState(
     initialConversations[0]?.id ?? null,
   );
+  const [pendingConversationEntryId, setPendingConversationEntryId] = useState<string | null>(null);
   const [activeResearchSessionId, setActiveResearchSessionId] = useState<string | null>(null);
+  const [activeResourceTab, setActiveResourceTab] = useState<ResourceTab>('PhysicalResource');
+  const [resourceMenuOpen, setResourceMenuOpen] = useState(false);
   const [researchSessionRefreshTrigger, setResearchSessionRefreshTrigger] = useState(0);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSection>('skills');
-  const messageAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const openConversationFromUrl = () => {
@@ -482,6 +496,8 @@ function App() {
     setCurrentPage('assistant');
     setInput('');
     setAssistantError(null);
+    setPendingConversationEntryId(null);
+    setResourceMenuOpen(false);
   };
 
   const handleNewResearch = () => {
@@ -490,6 +506,45 @@ function App() {
     setCurrentPage('research');
     setInput('');
     setAssistantError(null);
+    setPendingConversationEntryId(null);
+    setResourceMenuOpen(false);
+  };
+
+  const handleSelectResourceTab = (tab: ResourceTab) => {
+    setSettingsOpen(false);
+    setActiveResearchSessionId(null);
+    setActiveResourceTab(tab);
+    setResourceMenuOpen(true);
+    setCurrentPage('resource');
+  };
+
+  const handleToggleResourceMenu = () => {
+    setSettingsOpen(false);
+    setActiveResearchSessionId(null);
+    setCurrentPage('resource');
+    setResourceMenuOpen((current) => !current);
+    if (!resourceMenuOpen) {
+      setActiveResourceTab('PhysicalResource');
+    }
+  };
+
+  const handleSelectPage = (page: PageId | 'settings') => {
+    if (page === 'settings') {
+      setSettingsOpen(true);
+      return;
+    }
+    setSettingsOpen(false);
+    setResourceMenuOpen(page === 'resource' ? resourceMenuOpen : false);
+    if (page === 'resource') {
+      setActiveResourceTab('PhysicalResource');
+    }
+    setCurrentPage(page);
+    setActiveResearchSessionId(null);
+  };
+
+  const handleAssistantNavigate = (page: PageId) => {
+    setResourceMenuOpen(false);
+    setCurrentPage(page);
   };
 
   const handleSubmitMessage = async () => {
@@ -506,8 +561,10 @@ function App() {
     setInput('');
     setLoading(true);
     setAssistantError(null);
+    setResourceMenuOpen(false);
     setCurrentPage('conversation');
     setActiveConversationId(nextConversationId);
+    setPendingConversationEntryId(userEntry.id);
 
     setConversations((current) => {
       const exists = current.some((conversation) => conversation.id === nextConversationId);
@@ -549,6 +606,8 @@ function App() {
         content: response,
       };
 
+      setPendingConversationEntryId(null);
+      setLoading(false);
       setConversations((current) =>
         current.map((conversation) =>
           conversation.id === nextConversationId
@@ -561,7 +620,7 @@ function App() {
       setAssistantError(message);
     } finally {
       setLoading(false);
-      messageAreaRef.current?.scrollIntoView({ behavior: 'smooth' });
+      setPendingConversationEntryId(null);
     }
   };
 
@@ -572,6 +631,8 @@ function App() {
         currentPage={currentPage}
         activeRecentConversationId={activeConversationId}
         activeResearchSessionId={activeResearchSessionId}
+        activeResourceTab={activeResourceTab}
+        resourceMenuOpen={resourceMenuOpen}
         settingsOpen={settingsOpen}
         recentItems={recentItems}
         recentGroup={recentGroup}
@@ -580,22 +641,18 @@ function App() {
         onToggleCollapse={() => setSidebarCollapsed((current) => !current)}
         onNewConversation={handleNewConversation}
         onNewResearch={handleNewResearch}
-        onSelectPage={(page) => {
-          if (page === 'settings') {
-            setSettingsOpen(true);
-            return;
-          }
-          setSettingsOpen(false);
-          setCurrentPage(page);
-          setActiveResearchSessionId(null);
-        }}
+        onToggleResourceMenu={handleToggleResourceMenu}
+        onSelectResourceTab={handleSelectResourceTab}
+        onSelectPage={handleSelectPage}
         onOpenRecentItem={(conversationId) => {
           setSettingsOpen(false);
+          setResourceMenuOpen(false);
           setActiveConversationId(conversationId);
           setCurrentPage('conversation');
         }}
         onSelectResearchSession={(sessionId) => {
           setSettingsOpen(false);
+          setResourceMenuOpen(false);
           setActiveResearchSessionId(sessionId);
           setCurrentPage('research');
         }}
@@ -616,10 +673,7 @@ function App() {
             <DomainPage page="geo" />
           </div>
         ) : (
-          <div
-            ref={messageAreaRef}
-            className={currentPage === 'conversation' ? 'h-full overflow-hidden' : 'h-full overflow-y-auto'}
-          >
+          <div className={currentPage === 'conversation' ? 'h-full overflow-hidden' : 'h-full overflow-y-auto'}>
             <div
               className={
                 currentPage === 'conversation'
@@ -633,10 +687,12 @@ function App() {
                   loading={loading}
                   onInputChange={setInput}
                   onSubmit={handleSubmitMessage}
-                  onNavigate={setCurrentPage}
+                  onNavigate={handleAssistantNavigate}
                 />
               ) : null}
-              {currentPage === 'resource' ? <DomainPage page="resource" /> : null}
+              {currentPage === 'resource' ? (
+                <ResourcePage activeTab={activeResourceTab} onActiveTabChange={setActiveResourceTab} />
+              ) : null}
               {currentPage === 'service' ? <DomainPage page="service" /> : null}
               {currentPage === 'order' ? <DomainPage page="order" /> : null}
               {currentPage === 'research' ? (
@@ -663,6 +719,7 @@ function App() {
                   conversation={activeConversation}
                   input={input}
                   loading={loading}
+                  pendingUserMessageId={pendingConversationEntryId}
                   errorMessage={assistantError}
                   onInputChange={setInput}
                   onSubmit={handleSubmitMessage}

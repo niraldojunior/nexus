@@ -5,11 +5,13 @@ import type {
   CreateResourceSpecificationInput,
   LogicalResource,
   PhysicalResource,
+  ResourceCategory,
   Resource,
   ResourceFunctionSpecification,
   ResourceFunctionSpecificationQuery,
   ResourceQuery,
   ResourceRelationship,
+  ResourceType,
   ResourceSpecification,
   ResourceSpecificationQuery,
   UpdateLogicalResourceInput,
@@ -28,6 +30,11 @@ export interface IResourceRepository {
   upsertResourceFunctionSpecification(spec: ResourceFunctionSpecification): ResourceFunctionSpecification;
   getResourceFunctionSpecification(id: string): ResourceFunctionSpecification | undefined;
   listResourceFunctionSpecifications(query?: ResourceFunctionSpecificationQuery): ResourceFunctionSpecification[];
+
+  getResourceCategory(code: string): ResourceCategory | undefined;
+  listResourceCategories(): ResourceCategory[];
+  getResourceType(code: string): ResourceType | undefined;
+  listResourceTypes(): ResourceType[];
 
   upsertPhysicalResource(resource: PhysicalResource): PhysicalResource;
   getPhysicalResource(id: string): PhysicalResource | undefined;

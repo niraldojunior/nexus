@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
-import { Send, Loader } from 'lucide-react';
+import { Send } from 'lucide-react';
 import MarkdownMessage from './MarkdownMessage';
+import CopilotPendingResponse from './CopilotPendingResponse';
+import NexusLoadingMark from './NexusLoadingMark';
 import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
+import { scrollChatAnchorIntoView, scrollChatToBottom } from '../utils/chatScroll';
 
 interface Message {
   id: string;
@@ -42,8 +45,12 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
   const [session, setSession] = useState<ResearchSession | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loadingSession, setLoadingSession] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pendingMessageIdRef = React.useRef<string | null>(null);
+  const activeTurnAnchorRef = React.useRef<HTMLDivElement>(null);
+  const messagesScrollRef = React.useRef<HTMLDivElement>(null);
   const textareaRef = useAutoResizeTextarea(input, 220);
 
   React.useEffect(() => {
@@ -54,7 +61,7 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
 
   const loadSession = async (id: string) => {
     try {
-      setLoading(true);
+      setLoadingSession(true);
       const response = await fetch(`/v1/research/sessions/${id}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` },
       });
@@ -67,7 +74,7 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
-      setLoading(false);
+      setLoadingSession(false);
     }
   };
 
@@ -86,9 +93,10 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
     setInput('');
     setError(null);
     setMessages((prev) => [...prev, optimisticUserMessage]);
+    pendingMessageIdRef.current = optimisticUserMessage.id;
 
     try {
-      setLoading(true);
+      setSendingMessage(true);
 
       const response = await fetch(`/v1/research/sessions/${session.id}/messages`, {
         method: 'POST',
@@ -105,6 +113,8 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
       }
 
       const result = await response.json() as any;
+      pendingMessageIdRef.current = null;
+      setSendingMessage(false);
       setMessages((prev) => [
         ...prev.filter((message) => message.id !== optimisticUserMessage.id),
         result.userMessage,
@@ -121,7 +131,8 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
       setInput(userInput);
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
-      setLoading(false);
+      setSendingMessage(false);
+      pendingMessageIdRef.current = null;
     }
   };
 
@@ -155,11 +166,24 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
     }
   };
 
-  if (loading && !session) {
+  React.useEffect(() => {
+    if (sendingMessage && pendingMessageIdRef.current) {
+      requestAnimationFrame(() => {
+        scrollChatAnchorIntoView(messagesScrollRef.current, activeTurnAnchorRef.current);
+      });
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      scrollChatToBottom(messagesScrollRef.current);
+    });
+  }, [sessionId, messages.length, sendingMessage]);
+
+  if (loadingSession && !session) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
-          <Loader className="h-8 w-8 animate-spin text-app-accent mx-auto mb-4" />
+          <NexusLoadingMark size={32} className="mx-auto mb-4 h-8 w-8" />
           <p className="text-app-muted">Carregando conversa...</p>
         </div>
       </div>
@@ -189,8 +213,8 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
       )}
 
       {/* Messages container - scrollable */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        <div className="mx-auto flex min-h-full max-w-[720px] flex-col justify-end gap-6 pb-4">
+      <div ref={messagesScrollRef} className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="mx-auto flex min-h-full w-full max-w-[1070px] flex-col justify-start gap-6 pb-10 pt-6">
           {messages.length === 0 ? (
             <div className="flex min-h-[240px] items-center justify-center text-center">
               <p className="text-app-muted">Inicie uma conversa...</p>
@@ -198,37 +222,39 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
           ) : (
             messages.map((msg) => (
               <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div
-                  className={`max-w-[70%] rounded-lg px-4 py-3 ${
-                    msg.role === 'user'
-                      ? 'bg-app-accent text-white'
-                      : 'bg-white border border-app-border text-app-text'
-                  }`}
-                >
-                  {msg.role === 'assistant' ? (
-                    <MarkdownMessage content={msg.content} />
-                  ) : (
-                    <p className="text-[0.94rem] leading-[1.64] whitespace-pre-wrap">{msg.content}</p>
-                  )}
-                  <div className="text-xs opacity-70 mt-2">
-                    {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                {msg.role === 'user' ? (
+                  <div className="flex w-full flex-col gap-3">
+                    {pendingMessageIdRef.current === msg.id ? (
+                      <div ref={activeTurnAnchorRef} className="h-1 w-full scroll-mt-6" />
+                    ) : null}
+                    <div className="ml-auto w-fit max-w-[70%] rounded-[24px] border border-app-border bg-white px-4 py-3 shadow-sm">
+                      <p className="whitespace-pre-wrap text-[0.94rem] leading-[1.64] text-app-text">
+                        {msg.content}
+                      </p>
+                      <div className="mt-2 text-xs text-app-muted">
+                        {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </div>
+                    </div>
+                    {sendingMessage && pendingMessageIdRef.current === msg.id ? (
+                      <CopilotPendingResponse />
+                    ) : null}
                   </div>
-                </div>
+                ) : (
+                  <div className="max-w-[70%]">
+                    <MarkdownMessage content={msg.content} />
+                    <div className="mt-2 text-xs text-app-muted">
+                      {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             ))
-          )}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-white border border-app-border rounded-lg px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <Loader className="h-4 w-4 animate-spin text-app-accent" />
-                  <span className="text-sm text-app-muted">Pensando...</span>
-                </div>
-              </div>
-            </div>
           )}
         </div>
       </div>
@@ -242,7 +268,7 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
 
       {/* Input area - fixed at bottom with attractive styling */}
       <div className="flex-shrink-0 px-6 py-4 bg-app-canvas">
-        <div className="mx-auto max-w-[720px] bg-white border border-app-border rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-end gap-4 px-5 py-4">
+        <div className="mx-auto w-full max-w-[1070px] bg-white border border-app-border rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-end gap-4 px-5 py-4">
           <textarea
             ref={textareaRef}
             value={input}
@@ -250,17 +276,16 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
             onKeyPress={handleKeyPress}
             placeholder="Digite sua pergunta..."
             rows={1}
-            disabled={loading}
-            className="flex-1 min-h-[72px] max-h-[220px] resize-none overflow-y-auto bg-transparent text-base leading-[1.6] text-app-text placeholder-app-muted outline-none disabled:opacity-50"
+            className="flex-1 min-h-[72px] max-h-[220px] resize-none overflow-y-auto bg-transparent text-base leading-[1.6] text-app-text placeholder-app-muted outline-none"
           />
           <button
             onClick={handleSendMessage}
-            disabled={loading || !input.trim()}
+            disabled={sendingMessage || !input.trim()}
             className="inline-flex items-center justify-center rounded-full bg-app-accent w-10 h-10 text-white transition hover:bg-opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
             title="Enviar mensagem"
           >
-            {loading ? (
-              <Loader className="h-5 w-5 animate-spin" />
+            {sendingMessage ? (
+              <NexusLoadingMark size={20} className="h-5 w-5" />
             ) : (
               <Send className="h-5 w-5" />
             )}

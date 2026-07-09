@@ -9,6 +9,14 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5200,
     proxy: {
+      '/api/v1': {
+        target: 'http://127.0.0.1:4001',
+        changeOrigin: true,
+      },
+      '/api/tmf-api': {
+        target: 'http://127.0.0.1:4001',
+        changeOrigin: true,
+      },
       '/v1': {
         target: 'http://127.0.0.1:4001',
         changeOrigin: true,

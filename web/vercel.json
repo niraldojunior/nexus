@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "npm run build && npm run web:build",
-  "outputDirectory": "web/dist",
+  "buildCommand": "vite build --config vite.config.mjs",
+  "outputDirectory": "dist",
   "routes": [
     {
       "handle": "filesystem"

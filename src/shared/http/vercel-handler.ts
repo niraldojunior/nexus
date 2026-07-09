@@ -36,6 +36,12 @@ export const handler = async (request: IncomingMessage, response: ServerResponse
 
 export const normalizeRequestUrl = (rawUrl: string): string => {
   const url = new URL(rawUrl, 'http://localhost');
+  const routedPath = url.searchParams.get('__nexusPath');
+  if (routedPath) {
+    const routedUrl = new URL(routedPath, 'http://localhost');
+    return `${routedUrl.pathname}${routedUrl.search}`;
+  }
+
   const pathname = url.pathname.replace(/^\/api(?=\/|$)/, '') || '/';
   return `${pathname}${url.search}`;
 };

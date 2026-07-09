@@ -6,7 +6,7 @@ import { InMemoryEntityRepository } from '../src/shared/persistence/in-memory-en
 import { SqliteDatabase } from '../src/shared/persistence/sqlite-database.js';
 
 export const config = {
-  runtime: 'nodejs22.x',
+  runtime: 'nodejs',
   maxDuration: 30,
 };
 
@@ -34,7 +34,7 @@ export default async function handler(request: IncomingMessage, response: Server
   }
 }
 
-const normalizeRequestUrl = (rawUrl: string): string => {
+export const normalizeRequestUrl = (rawUrl: string): string => {
   const url = new URL(rawUrl, 'http://localhost');
   const pathname = url.pathname.replace(/^\/api(?=\/|$)/, '') || '/';
   return `${pathname}${url.search}`;

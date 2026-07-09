@@ -11,28 +11,35 @@ const __dirname = dirname(__filename);
  * Manages connection and initialization for all modules
  */
 export class SqliteDatabase {
-  private static instance: SqliteDatabase | null = null;
+  private static instances = new Map<string, SqliteDatabase>();
   private db: Database.Database | null = null;
   private initialized = false;
 
-  private constructor(dbPath: string) {
+  private constructor(private readonly dbPath: string) {
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
   }
 
   static getInstance(dbPath?: string): SqliteDatabase {
-    if (!SqliteDatabase.instance) {
-      const resolvedPath = normalizeDatabasePath(dbPath);
-      SqliteDatabase.instance = new SqliteDatabase(resolvedPath);
+    const resolvedPath = normalizeDatabasePath(dbPath);
+    const existing = SqliteDatabase.instances.get(resolvedPath);
+    if (existing) {
+      return existing;
     }
-    return SqliteDatabase.instance;
+
+    const instance = new SqliteDatabase(resolvedPath);
+    SqliteDatabase.instances.set(resolvedPath, instance);
+    return instance;
   }
 
   static resetForTesting(): void {
-    if (SqliteDatabase.instance?.db) {
-      SqliteDatabase.instance.db.close();
+    for (const instance of SqliteDatabase.instances.values()) {
+      if (instance.db) {
+        instance.db.close();
+        instance.db = null;
+      }
     }
-    SqliteDatabase.instance = null;
+    SqliteDatabase.instances.clear();
   }
 
   getDatabase(): Database.Database {
@@ -683,6 +690,7 @@ export class SqliteDatabase {
       this.db.close();
       this.db = null;
     }
+    SqliteDatabase.instances.delete(this.dbPath);
   }
 
   run(sql: string, params?: any[]): Database.RunResult {

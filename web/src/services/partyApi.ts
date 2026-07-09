@@ -55,16 +55,6 @@ const authHeaders = (): HeadersInit => ({
   Authorization: `Bearer ${localStorage.getItem('authToken') || 'change-me'}`,
 });
 
-const cleanObject = <T extends Record<string, unknown>>(value: T): Partial<T> => {
-  const entries = Object.entries(value).filter(([, item]) => {
-    if (item === undefined || item === null) return false;
-    if (typeof item === 'string') return item.trim().length > 0;
-    if (typeof item === 'object') return Object.keys(item as Record<string, unknown>).length > 0;
-    return true;
-  });
-  return Object.fromEntries(entries) as Partial<T>;
-};
-
 async function requestJson<T>(url: string, options: FetchJsonOptions = {}): Promise<T> {
   const response = await fetch(url, {
     method: options.method ?? 'GET',

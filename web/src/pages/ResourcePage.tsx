@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
+  AlertTriangle,
   Cable,
   ChevronDown,
   Cpu,
@@ -228,8 +229,11 @@ export default function ResourcePage({
   const [error, setError] = useState<string | null>(null);
   const [modalState, setModalState] = useState<ModalState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [formState, setFormState] = useState<ResourceFormState>(emptyFormState());
   const selectAllRef = useRef<HTMLInputElement>(null);
+  const refreshCatalogRef = useRef<null | (() => void)>(null);
 
   const activeTab = controlledActiveTab ?? 'PhysicalResource';
   const activePage = pageByTab[activeTab];
@@ -239,7 +243,6 @@ export default function ResourcePage({
   const activeTabConfig = tabConfig[activeTab];
   const ActiveIcon = activeTabConfig.icon;
   const placeOptions = buildPlaceOptions([...physicalResourceOptions, ...logicalResourceOptions]);
-  const selectedManufacturer = manufacturerOptions.find((party) => party.id === formState.manufacturerPartyId) ?? null;
   const selectedCategory = resourceCategories.find((category) => category.code === formState.category);
   const visibleTypeOptions = buildTypeOptions(resourceTypes, formState.category);
   const selectedResourceType = resourceTypes.find((type) => type.code === formState.resourceType);
@@ -261,6 +264,7 @@ export default function ResourcePage({
   const selectedOnPage = activeItems.filter((item) => activeSelection.has(item.id));
   const pageSelectionCount = selectedOnPage.length;
   const selectedCount = activeSelection.size;
+  const selectedDeletePreview = selectedOnPage.slice(0, 3).map((item) => item.name).join(', ');
 
   const loadTab = async (tab: ResourceTabId, page: number): Promise<void> => {
     setIsLoading(true);
@@ -334,6 +338,10 @@ export default function ResourcePage({
   }, [activeItems.length, pageSelectionCount]);
 
   useEffect(() => {
+    setDeleteConfirmOpen(false);
+  }, [activeTab]);
+
+  useEffect(() => {
     if (!modalState) {
       setFormState(emptyFormState());
       return;
@@ -361,7 +369,7 @@ export default function ResourcePage({
         description: entity?.description ?? '',
         equipmentCode: readResourceSpecificationCharacteristicString(characteristics, 'equipmentCode'),
         equipmentFunction: readResourceSpecificationCharacteristicString(characteristics, 'equipmentFunction'),
-        model: readResourceSpecificationCharacteristicString(characteristics, 'model'),
+        model: readSpecificationModel(entity),
         manufacturerPartyId: resolvedManufacturer?.id ?? '',
         skuId: readResourceSpecificationCharacteristicString(characteristics, 'skuId'),
         stockable: readResourceSpecificationCharacteristicBooleanState(characteristics, 'stockable'),
@@ -476,9 +484,33 @@ export default function ResourcePage({
     setSaving(false);
   };
 
+  const openDeleteConfirmation = () => {
+    if (!selectedCount) return;
+    setDeleteConfirmOpen(true);
+  };
+
+  const closeDeleteConfirmation = () => {
+    if (deleting) return;
+    setDeleteConfirmOpen(false);
+  };
+
   const refreshActiveTab = async () => {
     await loadTab(activeTab, pageByTab[activeTab]);
   };
+
+  refreshCatalogRef.current = () => {
+    void loadLookupOptions();
+    void refreshActiveTab();
+  };
+
+  useEffect(() => {
+    const handler = () => {
+      refreshCatalogRef.current?.();
+    };
+
+    window.addEventListener('nexus:resource-catalog-updated', handler);
+    return () => window.removeEventListener('nexus:resource-catalog-updated', handler);
+  }, []);
 
   const submitModal = async (event: FormEvent) => {
     event.preventDefault();
@@ -517,9 +549,9 @@ export default function ResourcePage({
     }
   };
 
-  const deleteSelected = async () => {
+  const confirmDeleteSelected = async () => {
     if (!selectedCount) return;
-    setSaving(true);
+    setDeleting(true);
     setError(null);
     try {
       const idsToDelete = [...activeSelection];
@@ -528,11 +560,12 @@ export default function ResourcePage({
         else await deleteResource(id);
       }
       setSelectedIds((current) => ({ ...current, [activeTab]: new Set() }));
+      setDeleteConfirmOpen(false);
       await refreshActiveTab();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao excluir Resource.');
     } finally {
-      setSaving(false);
+      setDeleting(false);
     }
   };
 
@@ -556,7 +589,7 @@ export default function ResourcePage({
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readResourceCategoryLabel(resourceCategories, spec.category)}</td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readResourceTypeCode(resourceTypes, spec.resourceType)}</td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readSpecificationManufacturer(spec)}</td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readSpecCharacteristic(spec.resourceSpecificationCharacteristic, 'model')}</td>
+            <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readSpecificationModel(spec)}</td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readSpecLifecycleStatus(spec.resourceSpecificationCharacteristic)}</td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readSpecCharacteristic(spec.resourceSpecificationCharacteristic, 'equipmentFunction')}</td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readSpecCharacteristic(spec.resourceSpecificationCharacteristic, 'endOfLifeDate')}</td>
@@ -625,8 +658,8 @@ export default function ResourcePage({
             </button>
             <button
               type="button"
-              onClick={() => void deleteSelected()}
-              disabled={!selectedCount || saving}
+              onClick={openDeleteConfirmation}
+              disabled={!selectedCount || saving || deleting}
               aria-label="Excluir selecionados"
               title="Excluir selecionados"
               className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-app-border bg-white text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text focus-visible:border-app-accent-border disabled:cursor-not-allowed disabled:opacity-50"
@@ -727,6 +760,68 @@ export default function ResourcePage({
           onChange={setFormState}
           onSubmit={submitModal}
         />
+      ) : null}
+
+      {deleteConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-confirmation-title"
+            className="w-full max-w-[560px] rounded-[28px] border border-app-border bg-white p-6 shadow-modal"
+          >
+            <div className="mb-5 flex items-start justify-between gap-4 border-b border-app-border pb-4">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 rounded-[14px] bg-amber-50 p-2 text-amber-700">
+                  <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div>
+                  <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+                    Confirmação de exclusão
+                  </div>
+                  <h2 id="delete-confirmation-title" className="mt-1 font-display text-[1.4rem] font-semibold text-app-text">
+                    Excluir {selectedCount} selecionado{selectedCount === 1 ? '' : 's'}?
+                  </h2>
+                </div>
+              </div>
+              <button type="button" className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft" onClick={closeDeleteConfirmation} disabled={deleting}>
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid gap-4 text-[0.92rem] text-app-muted">
+              <p>
+                A exclusão é lógica. Os itens selecionados serão encerrados e removidos da listagem ativa.
+              </p>
+              {selectedDeletePreview ? (
+                <div className="rounded-[18px] border border-app-border bg-app-accent-soft px-4 py-3 text-[0.88rem] text-app-text">
+                  {selectedDeletePreview}
+                  {selectedCount > selectedOnPage.length ? ' e outros itens selecionados em páginas anteriores.' : ''}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3 border-t border-app-border pt-4">
+              <button
+                type="button"
+                onClick={closeDeleteConfirmation}
+                disabled={deleting}
+                className="geo-btn secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmDeleteSelected()}
+                disabled={deleting}
+                className="inline-flex items-center gap-2 rounded-[16px] border border-red-200 bg-red-600 px-4 py-2 text-[0.92rem] font-semibold text-white shadow-soft transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Trash2 className="h-4 w-4" />
+                {deleting ? 'Excluindo...' : 'Confirmar exclusão'}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {isLoading ? (
@@ -1445,17 +1540,18 @@ function buildSpecificationPayload(
   if (manufacturerParty) {
     relatedParty.push({
       id: manufacturerParty.id,
-      '@referredType': manufacturerParty.partyType,
+      '@referredType': 'partyType' in manufacturerParty ? manufacturerParty.partyType : manufacturerParty['@referredType'],
       role: 'manufacturer',
       name: manufacturerParty.name,
     });
   }
 
   const resourceSpecificationCharacteristic = mergeSpecificationCharacteristics(existing?.resourceSpecificationCharacteristic ?? [], state);
+  const modelName = normalizeCatalogText(state.model) || normalizeCatalogText(state.name);
   if (manufacturerParty) {
     const filtered = resourceSpecificationCharacteristic.filter((item) => item.name !== 'manufacturer');
     return {
-      name: state.model.trim() || state.name.trim(),
+      name: modelName,
       category: state.category.trim(),
       resourceType: state.resourceType.trim(),
       description: state.description.trim(),
@@ -1465,7 +1561,7 @@ function buildSpecificationPayload(
   }
 
   return {
-    name: state.model.trim() || state.name.trim(),
+    name: modelName,
     category: state.category.trim(),
     resourceType: state.resourceType.trim(),
     description: state.description.trim(),
@@ -1482,7 +1578,7 @@ function buildPhysicalPayload(state: ResourceFormState): PhysicalResourcePayload
     placeType: state.placeType.trim(),
     status: state.status as PhysicalResource['status'],
     manufacturer: state.manufacturer.trim(),
-    model: state.model.trim(),
+    model: normalizeCatalogText(state.model),
     serialNumber: state.serialNumber.trim(),
     partNumber: state.partNumber.trim(),
   };
@@ -1521,7 +1617,7 @@ function mergeSpecificationCharacteristics(
       continue;
     }
 
-    const text = String(value ?? '').trim();
+    const text = definition.name === 'model' ? normalizeCatalogText(String(value ?? '')) : String(value ?? '').trim();
     if (!text) {
       merged.delete(definition.name);
       continue;
@@ -1557,6 +1653,13 @@ function readSpecificationManufacturer(spec: ResourceSpecification | null | unde
   const manufacturerParty = spec.relatedParty?.find((party) => party.role === 'manufacturer');
   if (manufacturerParty?.name) return manufacturerParty.name;
   return readSpecCharacteristic(spec.resourceSpecificationCharacteristic, 'manufacturer');
+}
+
+function readSpecificationModel(spec: ResourceSpecification | null | undefined): string {
+  if (!spec) return '-';
+  const model = readSpecCharacteristic(spec.resourceSpecificationCharacteristic, 'model');
+  if (model !== '-') return model;
+  return spec.name || '-';
 }
 
 function readSpecLifecycleStatus(characteristics: ResourceSpecificationCharacteristic[] | undefined): string {
@@ -1871,4 +1974,8 @@ function resourceTypeIconForCode(typeCode: string): LucideIcon {
     default:
       return FileText;
   }
+}
+
+function normalizeCatalogText(value: string): string {
+  return value.trim().replace(/^[-\s]+/, '');
 }

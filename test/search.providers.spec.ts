@@ -205,6 +205,25 @@ test('LocalKnowledgeProvider informa indisponibilidade clara para operacoes de i
   assert.match(result.content, /nao consigo consultar dados reais do inventario/i);
 });
 
+test('LocalKnowledgeProvider entende que modelo de ONT e ResourceSpecification', async () => {
+  const provider = new LocalKnowledgeProvider();
+  const result = await provider.complete([{ role: 'user', content: 'quero cadastrar um modelo de ONT F6201BV9.3.12 da Huawei' }]);
+
+  assert.match(result.content, /modelo de ONT|catalogo de equipamento/i);
+  assert.match(result.content, /Equipment\.CustomerPremises|Equipamentos de Cliente/i);
+  assert.match(result.content, /fabricante/i);
+  assert.doesNotMatch(result.content, /ID de party|relatedParty/i);
+});
+
+test('LocalKnowledgeProvider entende que remover modelo e soft-delete de ResourceSpecification', async () => {
+  const provider = new LocalKnowledgeProvider();
+  const result = await provider.complete([{ role: 'user', content: 'remova o modelo F6201BV9.3.12 da ZTE' }]);
+
+  assert.match(result.content, /soft-delete|ResourceSpecification/i);
+  assert.match(result.content, /sem exclusao fisica|nao faz exclusao fisica/i);
+  assert.match(result.content, /causa/i);
+});
+
 test('LocalKnowledgeProvider monta mensagens corretas ao chamar call', async () => {
   const provider = new LocalKnowledgeProvider();
   const completeSpy = vi.spyOn(provider, 'complete').mockResolvedValue({ content: 'ok' });

@@ -4,10 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import * as partyApi from '../services/partyApi';
 import * as resourceApi from '../services/resourceApi';
-import type { PhysicalResource } from '../services/resourceApi';
+import type { PhysicalResource, ResourceSpecification } from '../services/resourceApi';
 import ResourcePage from './ResourcePage';
 
-const resourceSpecifications = Array.from({ length: 20 }, (_, index) => ({
+const resourceSpecifications: ResourceSpecification[] = Array.from({ length: 20 }, (_, index) => ({
   '@type': 'ResourceSpecification' as const,
   id: `spec-${index + 1}`,
   name: `Spec ${index + 1}`,
@@ -167,7 +167,13 @@ const deleteResourceMock = vi.spyOn(resourceApi, 'deleteResource');
 
 beforeEach(() => {
   vi.clearAllMocks();
-  listResourceSpecificationsMock.mockImplementation(async ({ limit, offset }) => resourceSpecifications.slice(offset, offset + limit));
+  for (const spec of resourceSpecifications) {
+    delete spec.validFor;
+  }
+  listResourceSpecificationsMock.mockImplementation(async ({ limit, offset, includeEnded }) => {
+    const source = includeEnded ? resourceSpecifications : resourceSpecifications.filter((spec) => !spec.validFor?.endDateTime);
+    return source.slice(offset, offset + limit);
+  });
   listResourceCategoriesMock.mockResolvedValue(resourceCategories);
   listResourceTypesMock.mockResolvedValue(resourceTypes);
   listPartiesMock.mockImplementation(async ({ limit, offset }) => manufacturerParties.slice(offset, offset + limit));
@@ -178,7 +184,12 @@ beforeEach(() => {
   });
   createResourceSpecificationMock.mockResolvedValue(resourceSpecifications[0]);
   updateResourceSpecificationMock.mockResolvedValue(resourceSpecifications[0]);
-  deleteResourceSpecificationMock.mockResolvedValue(resourceSpecifications[0]);
+  deleteResourceSpecificationMock.mockImplementation(async (id) => {
+    const spec = resourceSpecifications.find((item) => item.id === id);
+    if (!spec) return resourceSpecifications[0];
+    spec.validFor = { endDateTime: '2026-07-09T10:00:00.000Z' };
+    return spec;
+  });
   createResourceMock.mockResolvedValue(physicalResources[0]);
   updateResourceMock.mockResolvedValue(physicalResources[0]);
   deleteResourceMock.mockResolvedValue(physicalResources[0]);
@@ -342,6 +353,24 @@ test('resource specification table falls back to legacy manufacturer characteris
   expect(await screen.findByText('Legacy Corp')).toBeInTheDocument();
 });
 
+test('resource specification table falls back to the specification name when model characteristic is missing', async () => {
+  listResourceSpecificationsMock.mockImplementation(async ({ limit, offset }) => {
+    if (offset > 0) return [];
+    return [
+      {
+        ...resourceSpecifications[0],
+        resourceSpecificationCharacteristic: resourceSpecifications[0].resourceSpecificationCharacteristic.filter(
+          (item) => item.name !== 'model',
+        ),
+      },
+    ].slice(0, limit);
+  });
+
+  render(<ResourcePage activeTab="ResourceSpecification" />);
+
+  expect(await screen.findByText('Spec 1')).toBeInTheDocument();
+});
+
 test('resource specification create serializes the extended characteristic set', async () => {
   const user = userEvent.setup();
   render(<ResourcePage activeTab="ResourceSpecification" />);
@@ -416,8 +445,43 @@ test('bulk selection enables delete and reloads the active tab after deletion', 
   await user.click(screen.getAllByRole('checkbox', { name: 'Selecionar Physical 2' })[0]);
   await waitFor(() => expect(screen.getByRole('button', { name: 'Excluir selecionados' })).toBeEnabled());
   await user.click(screen.getByRole('button', { name: 'Excluir selecionados' }));
+  expect(await screen.findByRole('dialog')).toHaveTextContent('Excluir 2 selecionados?');
+  await user.click(screen.getByRole('button', { name: 'Confirmar exclusão' }));
 
   await waitFor(() => expect(deleteResourceMock).toHaveBeenCalledTimes(2));
   expect(screen.getByRole('button', { name: 'Excluir selecionados' })).toBeDisabled();
   await waitFor(() => expect(screen.queryByText('Physical 1')).not.toBeInTheDocument());
+});
+
+test('deleting a resource specification requires confirmation and removes it from the catalog', async () => {
+  const user = userEvent.setup();
+  render(<ResourcePage activeTab="ResourceSpecification" />);
+
+  await screen.findByRole('checkbox', { name: 'Selecionar Spec 1' });
+  await user.click(screen.getAllByRole('checkbox', { name: 'Selecionar Spec 1' })[0]);
+  await user.click(screen.getByRole('button', { name: 'Excluir selecionados' }));
+
+  const dialog = await screen.findByRole('dialog');
+  expect(dialog).toHaveTextContent('Excluir 1 selecionado?');
+  expect(dialog).toHaveTextContent('Spec 1');
+
+  await user.click(screen.getByRole('button', { name: 'Confirmar exclusão' }));
+
+  await waitFor(() => expect(deleteResourceSpecificationMock).toHaveBeenCalledWith('spec-1'));
+  await waitFor(() => expect(screen.queryByText('Spec 1')).not.toBeInTheDocument());
+});
+
+test('canceling the delete confirmation does not call delete', async () => {
+  const user = userEvent.setup();
+  render(<ResourcePage activeTab="ResourceSpecification" />);
+
+  await screen.findByRole('checkbox', { name: 'Selecionar Spec 1' });
+  await user.click(screen.getAllByRole('checkbox', { name: 'Selecionar Spec 1' })[0]);
+  await user.click(screen.getByRole('button', { name: 'Excluir selecionados' }));
+
+  expect(await screen.findByRole('dialog')).toHaveTextContent('Excluir 1 selecionado?');
+  await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(deleteResourceSpecificationMock).not.toHaveBeenCalled();
 });

@@ -226,6 +226,7 @@ const filterSpec = (spec: ResourceSpecification, query?: ResourceSpecificationQu
   if (query.name && !spec.name.toLowerCase().includes(query.name.toLowerCase())) return false;
   if (query.category && spec.category !== query.category) return false;
   if (query.resourceType && spec.resourceType !== query.resourceType) return false;
+  if (!query.includeEnded && spec.validFor?.endDateTime) return false;
   return true;
 };
 

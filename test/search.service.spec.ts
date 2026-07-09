@@ -252,3 +252,88 @@ test('SearchService executa loop de ferramentas e persiste metadados de tool exe
     'geo.list_sites',
   );
 });
+
+test('SearchService carrega confirmacao em lote com lista de itens', async () => {
+  const repository = createRepositoryMock();
+  const session: ResearchSession = {
+    '@type': 'ResearchSession',
+    id: 'session-batch',
+    href: '/v1/search/sessions/session-batch',
+    userId: 'tenant-batch',
+    title: 'Sessao em lote',
+    status: 'active',
+    messages: [],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+
+  repository.getSession.mockReturnValue(session);
+  repository.addMessage.mockImplementation((sessionId: string, message: ResearchMessage & { id: string }) => ({
+    '@type': 'ResearchMessage',
+    id: message.id,
+    researchSessionId: sessionId,
+    role: message.role,
+    content: message.content,
+    tokensUsed: message.tokensUsed,
+    metadata: message.metadata,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  }));
+
+  const service = new SearchService(repository);
+  const llmProvider = vi
+    .fn()
+    .mockResolvedValueOnce({
+      content: '',
+      toolCalls: [{ id: 'tool-1', name: 'resource.create_equipment_models', arguments: { payload: { items: [
+        { model: 'G-010G-Q', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
+        { model: 'G-0425G-C', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
+      ] } } }],
+      finishReason: 'tool_calls',
+    })
+    .mockResolvedValueOnce({
+      content: 'Cadastro preparado. Revise os 2 itens abaixo e confirme para concluir.',
+      metadata: { model: 'gpt-4o-mini' },
+      finishReason: 'stop',
+    });
+
+  const executeTool = vi.fn().mockResolvedValue({
+    ok: true,
+    domain: 'resource',
+    operation: 'create_equipment_models',
+    data: {
+      confirmationToken: 'token-batch',
+      summary: '2 modelos de ONT da NOKIA serao criados no catalogo.',
+      expiresAt: '2026-01-01T00:30:00.000Z',
+      payload: {
+        items: [
+          { model: 'G-010G-Q', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
+          { model: 'G-0425G-C', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
+        ],
+      },
+    },
+    warnings: [],
+    source: 'nexus-tmf-mcp',
+    correlationId: 'corr-batch',
+  });
+
+  const result = await service.addMessageAndGetResponse('session-batch', 'Cadastre dois modelos', llmProvider, {
+    tools: [{ name: 'resource.create_equipment_models', description: 'Cadastro em lote', inputSchema: { type: 'object', properties: {} } }],
+    executeTool,
+  });
+
+  assert.equal(result.assistantMessage.content, 'Cadastro preparado. Revise os 2 itens abaixo e confirme para concluir.');
+  assert.deepEqual(
+    result.assistantMessage.metadata?.pendingConfirmation,
+    {
+      confirmationToken: 'token-batch',
+      domain: 'resource',
+      operation: 'create_equipment_models',
+      summary: '2 modelos de ONT da NOKIA serao criados no catalogo.',
+      expiresAt: '2026-01-01T00:30:00.000Z',
+      items: [
+        { model: 'G-010G-Q', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
+        { model: 'G-0425G-C', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
+      ],
+    },
+  );
+});

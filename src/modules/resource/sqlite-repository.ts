@@ -225,6 +225,9 @@ export class SqliteResourceRepository implements IResourceRepository {
       conditions.push('resource_type = ?');
       params.push(query.resourceType);
     }
+    if (!query?.includeEnded) {
+      conditions.push('valid_for_end IS NULL');
+    }
 
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;

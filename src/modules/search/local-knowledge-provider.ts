@@ -56,6 +56,35 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
     ].join('\n'),
   },
   {
+    allOf: ['modelo', 'ont'],
+    content: [
+      'Quando o usuario fala em "modelo de ONT", o Nexus deve tratar isso como cadastro de catalogo de equipamento, nao como instancia fisica.',
+      '- O nome informado vira o nome do modelo no catalogo.',
+      '- O fabricante deve ser resolvido automaticamente quando ja existir no inventario; nao faz sentido pedir ID para usuario leigo.',
+      '- Para ONT e CPE, a categoria canonica e Equipamentos de Cliente (`Equipment.CustomerPremises`) e o tipo e `ONT`.',
+      'Fontes locais: docs/00-visao-geral/nexus-copilot-training.md, docs/01-functional-specs/02-modulo-resource.md',
+    ].join('\n'),
+  },
+  {
+    allOf: ['remova', 'modelo'],
+    content: [
+      'Quando o usuario pede para remover, excluir ou desativar um modelo de equipamento, o Nexus deve tratar isso como soft-delete de ResourceSpecification no modulo Resource.',
+      '- O catalogo nao faz exclusao fisica.',
+      '- A resposta precisa ser explicita: se o modelo nao existir, ou houver ambiguidade, diga qual foi a causa.',
+      '- Para ONT, CPE, OLT, Router e Switch, a referencia continua sendo o modelo de catalogo; a instancia fisica e outro objeto.',
+      'Fontes locais: docs/00-visao-geral/nexus-copilot-training.md, docs/00-visao-geral/business-rules.md, docs/01-functional-specs/02-modulo-resource.md',
+    ].join('\n'),
+  },
+  {
+    allOf: ['modelos', 'abaixo'],
+    content: [
+      'Quando o usuario envia varios modelos em lote, o Nexus deve consolidar a operacao como cadastro em lote e nao parar no primeiro item.',
+      '- A confirmacao precisa listar todos os itens do lote antes do commit.',
+      '- O retorno final deve refletir o total de modelos processados.',
+      'Fontes locais: docs/00-visao-geral/nexus-copilot-training.md, docs/01-functional-specs/02-modulo-resource.md',
+    ].join('\n'),
+  },
+  {
     allOf: ['resource'],
     content: [
       'Resource e a camada que responde "o que existe" na rede.',
@@ -182,7 +211,14 @@ const isInventoryOperationIntent = (tokens: string[]): boolean => {
     'ordem',
     'cadastre',
     'criar',
+    'lote',
+    'varios',
+    'vários',
     'ativar',
+    'remover',
+    'excluir',
+    'desativar',
+    'retirar',
     'qualificacao',
     'viabilidade',
     'mcp',
@@ -249,16 +285,16 @@ const buildOfflineAnswer = (userMessage: string): string => {
   }
 
   const queryTokens = tokenize(userMessage);
-  if (isInventoryOperationIntent(queryTokens)) {
-    return INVENTORY_UNAVAILABLE_RESPONSE;
-  }
-
   const curatedAnswer = getCuratedAnswer(queryTokens);
   if (curatedAnswer) {
     return [
       'Nao consegui consultar o provedor externo. Respondi com base na documentacao local do Nexus.',
       curatedAnswer,
     ].join('\n\n');
+  }
+
+  if (isInventoryOperationIntent(queryTokens)) {
+    return INVENTORY_UNAVAILABLE_RESPONSE;
   }
 
   const documents = loadDocuments();

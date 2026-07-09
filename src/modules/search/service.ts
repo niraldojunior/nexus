@@ -126,6 +126,19 @@ export class SearchService {
       };
     }
 
+    const pendingConfirmation = extractPendingConfirmation(toolExecutions);
+    if (pendingConfirmation) {
+      const pendingMessage = buildPendingConfirmationMessage(pendingConfirmation);
+      llmResponse = {
+        ...llmResponse,
+        content: pendingMessage,
+        metadata: {
+          ...(llmResponse.metadata ?? {}),
+          pendingConfirmation,
+        },
+      };
+    }
+
     // Add assistant message - build object conditionally
     const assistantMsgInput: any = {
       id: createCanonicalId(),
@@ -256,3 +269,88 @@ const buildTranscript = (
     content: latestUserMessage,
   },
 ];
+
+type PendingConfirmation = {
+  confirmationToken: string;
+  domain: string;
+  operation: string;
+  summary?: string;
+  expiresAt?: string;
+  items?: PendingConfirmationItem[];
+};
+
+type PendingConfirmationItem = {
+  model: string;
+  manufacturerName: string;
+  equipmentType: string;
+};
+
+const buildPendingConfirmationMessage = (pendingConfirmation: PendingConfirmation): string => {
+  const itemCount = pendingConfirmation.items?.length ?? 0;
+
+  if (pendingConfirmation.domain === 'resource' && pendingConfirmation.operation === 'create_equipment_models') {
+    return itemCount > 0
+      ? `Cadastro preparado. Revise os ${itemCount} itens abaixo e confirme para concluir.`
+      : 'Cadastro preparado. Revise os itens abaixo e confirme para concluir.';
+  }
+
+  if (pendingConfirmation.domain === 'resource' && pendingConfirmation.operation === 'delete_equipment_model') {
+    return 'Remocao preparada. Clique em Confirmar remocao para concluir.';
+  }
+
+  if (pendingConfirmation.domain === 'resource' && pendingConfirmation.operation === 'create_equipment_model') {
+    return 'Cadastro preparado. Clique em Confirmar cadastro para concluir.';
+  }
+
+  return 'Operacao preparada. Clique em confirmar para concluir.';
+};
+
+const extractPendingConfirmation = (
+  toolExecutions: ToolExecutionRecord[],
+): PendingConfirmation | undefined => {
+  for (const execution of toolExecutions) {
+    const result = execution.result as { data?: Record<string, unknown> } | undefined;
+    const data = result?.data;
+    if (!data) {
+      continue;
+    }
+    const confirmationToken = data?.confirmationToken;
+    if (typeof confirmationToken !== 'string' || confirmationToken.trim().length === 0) {
+      continue;
+    }
+
+    const pendingItems = extractPendingConfirmationItems(data);
+
+    return {
+      confirmationToken,
+      domain: execution.toolName.split('.')[0] ?? 'mcp',
+      operation: execution.toolName.split('.').slice(1).join('.'),
+      ...(typeof data.summary === 'string' ? { summary: data.summary } : {}),
+      ...(typeof data.expiresAt === 'string' ? { expiresAt: data.expiresAt } : {}),
+      ...(pendingItems.length > 0 ? { items: pendingItems } : {}),
+    };
+  }
+
+  return undefined;
+};
+
+const extractPendingConfirmationItems = (data: Record<string, unknown>): PendingConfirmationItem[] => {
+  const payload = data.payload as Record<string, unknown> | undefined;
+  const itemsSource: unknown[] = Array.isArray(data.items)
+    ? data.items
+    : Array.isArray(payload?.items)
+      ? payload.items
+      : [];
+
+  return itemsSource
+    .filter((item): item is PendingConfirmationItem => {
+      if (!item || typeof item !== 'object') return false;
+      const record = item as Record<string, unknown>;
+      return typeof record.model === 'string' && typeof record.manufacturerName === 'string' && typeof record.equipmentType === 'string';
+    })
+    .map((item) => ({
+      model: item.model,
+      manufacturerName: item.manufacturerName,
+      equipmentType: item.equipmentType,
+    }));
+};

@@ -5,6 +5,7 @@ import { forbiddenError, unauthorizedError } from '../errors/http-errors.js';
 import type { Logger } from '../logging/logger.js';
 import { InMemoryEntityRepository } from '../persistence/in-memory-entity-repository.js';
 import { SqliteDatabase } from '../persistence/sqlite-database.js';
+import { createCanonicalId } from '../utils/canonical-id.js';
 import { ChatGPTProvider } from '../../modules/search/chatgpt-provider.js';
 import { LocalKnowledgeProvider } from '../../modules/search/local-knowledge-provider.js';
 import { prependNexusCopilotContext } from '../../modules/search/nexus-copilot-context.js';
@@ -51,6 +52,11 @@ type AppDependencies = {
   logger: Logger;
 };
 
+export type HttpRequestHandlerDependencies = RouteDependencies;
+
+export const handleHttpRequest = async (dependencies: HttpRequestHandlerDependencies): Promise<void> =>
+  routeRequest(dependencies);
+
 export const createApp = ({ config, logger }: AppDependencies) => {
   const repository = new InMemoryEntityRepository();
   const db = SqliteDatabase.getInstance(config.databaseUrl);
@@ -64,7 +70,7 @@ export const createApp = ({ config, logger }: AppDependencies) => {
       repository, 
       db,
     }).catch((error: unknown) =>
-      handleError({ error, logger, response }),
+      handleHttpError({ error, logger, response }),
     );
   });
 
@@ -365,6 +371,8 @@ const routeRequest = async ({
   if (
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceSpecification') ||
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceFunctionSpecification') ||
+    url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceCategory') ||
+    url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceType') ||
     url.pathname.startsWith('/tmf-api/resourceInventoryManagement/v4/resource') ||
     url.pathname.startsWith('/tmf-api/resourceFunctionActivation/v4/resourceFunction')
   ) {
@@ -1214,6 +1222,10 @@ const parseResourceSpecificationQuery = (params: URLSearchParams): ResourceSpeci
   if (category) query.category = category;
   const resourceType = params.get('resourceType');
   if (resourceType) query.resourceType = resourceType;
+  const includeEnded = params.get('includeEnded');
+  if (includeEnded === 'true') {
+    query.includeEnded = true;
+  }
   const limit = parseOptionalNumber(params.get('limit'));
   if (limit !== undefined) query.limit = limit;
   const offset = parseOptionalNumber(params.get('offset'));
@@ -1457,7 +1469,7 @@ const routeResearchRequest = async ({
   url: URL;
 }): Promise<void> => {
   ensureAuthorized(request, config);
-  const { defaultUser, searchService } = runtime;
+  const { defaultUser, searchService, researchRepository } = runtime;
 
   // GET /v1/research/sessions - List user's sessions
   if (request.method === 'GET' && url.pathname === '/v1/research/sessions') {
@@ -1488,6 +1500,71 @@ const routeResearchRequest = async ({
 
     const session = searchService.createSession(defaultUser.id, sessionInput);
     return sendJson(response, 201, session);
+  }
+
+  // POST /v1/research/sessions/:id/confirmations - Confirm a pending MCP mutation
+  if (request.method === 'POST' && url.pathname.includes('/confirmations')) {
+    const sessionId = url.pathname.split('/')[4];
+    if (!sessionId) throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
+
+    const body = await readBody(request);
+    const confirmationToken = body.confirmationToken as string;
+    if (!confirmationToken) {
+      throw new AppError('confirmationToken required', { code: 'INVALID_CONFIRMATION_TOKEN', statusCode: 400 });
+    }
+
+    const session = searchService.getSession(sessionId);
+    if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
+
+    const pendingConfirmation = mcpModule.confirmations.get(confirmationToken);
+    if (!pendingConfirmation) {
+      throw new AppError('confirmation token not found', { code: 'MCP_CONFIRMATION_NOT_FOUND', statusCode: 404 });
+    }
+
+    const pendingSessionId = typeof pendingConfirmation.context.sessionId === 'string' ? pendingConfirmation.context.sessionId : undefined;
+    if (pendingSessionId !== sessionId) {
+      throw new AppError('confirmation token does not belong to this session', {
+        code: 'MCP_CONFIRMATION_SESSION_MISMATCH',
+        statusCode: 409,
+      });
+    }
+
+    const commitToolName = buildConfirmationCommitToolName(pendingConfirmation.domain, pendingConfirmation.operation);
+    const commitResult = await mcpModule.registry.executeTool(
+      commitToolName,
+      { confirmationToken },
+      runtime.createToolContext({
+        executionMode: 'internal-chat',
+        sessionId,
+      }),
+    );
+    const outcomeMessage = buildConfirmationOutcomeMessage(pendingConfirmation, commitResult);
+    const assistantMessage = researchRepository.addMessage(sessionId, {
+      id: createCanonicalId(),
+      role: 'assistant',
+      content: outcomeMessage,
+        metadata: {
+          confirmation: {
+            ok: commitResult.ok,
+            domain: pendingConfirmation.domain,
+            operation: pendingConfirmation.operation,
+            confirmationToken,
+            ...(typeof pendingConfirmation.summary === 'string' ? { summary: pendingConfirmation.summary } : {}),
+            ...(typeof pendingConfirmation.expiresAt === 'string' ? { expiresAt: pendingConfirmation.expiresAt } : {}),
+            ...(Array.isArray((pendingConfirmation as { items?: unknown[] }).items) ? { items: (pendingConfirmation as { items?: unknown[] }).items } : {}),
+          },
+        },
+      });
+
+    return sendJson(response, 200, {
+      assistantMessage,
+      confirmation: {
+        ok: commitResult.ok,
+        domain: pendingConfirmation.domain,
+        operation: pendingConfirmation.operation,
+        shouldRefreshResourceCatalog: commitResult.ok && pendingConfirmation.domain === 'resource',
+      },
+    });
   }
 
   // GET /v1/research/sessions/:id - Get session with messages
@@ -1692,6 +1769,103 @@ const buildLlmToolCatalog = (
   };
 };
 
+const buildConfirmationCommitToolName = (domain: string, operation: string): string => `${domain}.commit_${operation}`;
+
+const buildConfirmationOperationLabel = (operation: string): string => {
+  if (operation === 'create_equipment_model') return 'cadastro';
+  if (operation === 'create_equipment_models') return 'cadastro em lote';
+  if (operation === 'delete_equipment_model') return 'remocao';
+  return 'operacao';
+};
+
+const buildConfirmationOutcomeMessage = (
+  pendingConfirmation: {
+    domain: string;
+    operation: string;
+    summary?: string;
+  },
+  commitResult: { ok: boolean; data: unknown; error?: { code?: string; message?: string } },
+): string => {
+  if (commitResult.ok) {
+    if (pendingConfirmation.domain === 'resource' && pendingConfirmation.operation === 'create_equipment_models') {
+      const resource = commitResult.data as {
+        items?: Array<{
+          name?: string;
+          relatedParty?: Array<{ name?: string; role?: string }>;
+          resourceType?: string;
+        }>;
+      };
+      const items = resource.items ?? [];
+      const first = items[0];
+      const manufacturer = first?.relatedParty?.find((party) => party.role === 'manufacturer')?.name;
+      const modelCount = items.length || (pendingConfirmation.summary ? 1 : 0);
+      if (manufacturer && modelCount > 0 && first?.resourceType) {
+        return `${modelCount} modelos de ${first.resourceType} da ${manufacturer} cadastrados com sucesso.`;
+      }
+      if (modelCount > 0) {
+        return `${modelCount} modelos cadastrados com sucesso.`;
+      }
+      return 'Cadastro em lote confirmado com sucesso.';
+    }
+
+    if (pendingConfirmation.domain === 'resource' && pendingConfirmation.operation === 'create_equipment_model') {
+      const resource = commitResult.data as {
+        name?: string;
+        relatedParty?: Array<{ name?: string; role?: string }>;
+      };
+      const manufacturer = resource.relatedParty?.find((party) => party.role === 'manufacturer')?.name;
+      const modelName = resource.name ?? pendingConfirmation.summary ?? 'modelo de equipamento';
+      return manufacturer
+        ? `Modelo ${modelName} da ${manufacturer} cadastrado com sucesso.`
+        : `Modelo ${modelName} cadastrado com sucesso.`;
+    }
+
+    if (pendingConfirmation.domain === 'resource' && pendingConfirmation.operation === 'delete_equipment_model') {
+      const resource = commitResult.data as {
+        name?: string;
+        relatedParty?: Array<{ name?: string; role?: string }>;
+      };
+      const manufacturer = resource.relatedParty?.find((party) => party.role === 'manufacturer')?.name;
+      const modelName = resource.name ?? pendingConfirmation.summary ?? 'modelo de equipamento';
+      return manufacturer
+        ? `Modelo ${modelName} da ${manufacturer} removido do catalogo com sucesso.`
+        : `Modelo ${modelName} removido do catalogo com sucesso.`;
+    }
+
+    if (pendingConfirmation.summary) {
+      return `${pendingConfirmation.summary} Confirmado com sucesso.`;
+    }
+
+    return 'Cadastro confirmado com sucesso.';
+  }
+
+  const code = commitResult.error?.code;
+  switch (code) {
+    case 'MCP_CONFIRMATION_NOT_FOUND':
+      return 'Nao consegui confirmar: o token de confirmacao nao foi encontrado.';
+    case 'MCP_CONFIRMATION_ALREADY_CONSUMED':
+      return 'Nao consegui confirmar: este token de confirmacao ja foi usado.';
+    case 'MCP_CONFIRMATION_EXPIRED':
+      return 'Nao consegui confirmar: este token de confirmacao expirou.';
+    case 'MCP_CONFIRMATION_SESSION_MISMATCH':
+      return 'Nao consegui confirmar: este token nao pertence a esta sessao.';
+    case 'RESOURCE_MANUFACTURER_NOT_FOUND':
+      return 'Nao consegui confirmar: nao encontrei o fabricante informado no catalogo.';
+    case 'RESOURCE_MANUFACTURER_AMBIGUOUS':
+      return 'Nao consegui confirmar: o fabricante informado e ambíguo no catalogo.';
+    case 'RESOURCE_EQUIPMENT_MODEL_NOT_FOUND':
+      return 'Nao consegui confirmar: nao encontrei um modelo ativo com esse nome e fabricante.';
+    case 'RESOURCE_EQUIPMENT_MODEL_AMBIGUOUS':
+      return 'Nao consegui confirmar: ha mais de um modelo ativo com esse nome e fabricante.';
+    case 'RESOURCE_EQUIPMENT_MODEL_ALREADY_REMOVED':
+      return 'Nao consegui confirmar: esse modelo ja estava removido do catalogo.';
+    default:
+      return commitResult.error?.message
+        ? `Nao consegui confirmar a ${buildConfirmationOperationLabel(pendingConfirmation.operation)}: ${commitResult.error.message}.`
+        : `Nao consegui confirmar a ${buildConfirmationOperationLabel(pendingConfirmation.operation)}.`;
+  }
+};
+
 const sendJson = (
   response: ServerResponse,
   statusCode: number,
@@ -1769,7 +1943,7 @@ const buildLegacyUiNoticeHtml = (appName: string): string => `<!doctype html>
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char] ?? char));
 
-const handleError = ({
+export const handleHttpError = ({
   error,
   logger,
   response,

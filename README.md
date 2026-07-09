@@ -14,6 +14,29 @@ No business rules are implemented here.
 4. Run `npm run build`.
 5. Start the web app with `npm run start` or `npm run web:dev`.
 
+## Vercel deploy
+
+This repository is configured for automatic deployment on Vercel:
+
+- pushes to `main` create Production Deployments;
+- pull requests and other branches create Preview Deployments;
+- the frontend is built from `web/` and served from `web/dist`;
+- API routes are exposed through Vercel Functions under `/v1`, `/tmf-api`, and `/health`.
+
+Required environment variables in Vercel:
+
+- `NODE_ENV=production`
+- `APP_NAME=v-tal-nexus`
+- `AUTH_ENABLED=true`
+- `AUTH_TOKEN=<strong-secret>`
+- `DATABASE_URL=sqlite:///tmp/nexus.db`
+- `OPENAI_API_KEY=<optional>`
+- `OPENAI_MODEL=<optional>`
+- `API_ENDPOINT=<optional>`
+- `VITE_GOOGLE_MAPS_API_KEY=<optional>`
+
+The SQLite database is ephemeral on Vercel. It is suitable for previews and demos, not durable production data.
+
 ### Development with SQLite
 
 Use the local SQLite bootstrap for development:

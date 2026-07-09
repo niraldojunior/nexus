@@ -35,6 +35,8 @@ test('SqliteResourceRepository persists validFor when a resource specification i
     const persisted = repository.getResourceSpecification(created.id);
     assert.ok(persisted?.validFor?.endDateTime);
     assert.equal(persisted?.validFor?.endDateTime, terminated.validFor?.endDateTime);
+    assert.equal(repository.listResourceSpecifications({ category: 'Equipment.Access' }).length, 0);
+    assert.equal(repository.listResourceSpecifications({ category: 'Equipment.Access', includeEnded: true }).length, 1);
   } finally {
     SqliteDatabase.resetForTesting();
     cleanup();

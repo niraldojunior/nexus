@@ -174,16 +174,19 @@ function extractErrorMessage(payload: unknown, status: number): string {
   return `Request failed (${status})`;
 }
 
-function buildListUrl(path: string, params: ListParams): string {
+export async function listResourceSpecifications({
+  limit,
+  offset,
+  includeEnded,
+}: ListParams & { includeEnded?: boolean }): Promise<ResourceSpecification[]> {
   const searchParams = new URLSearchParams({
-    limit: String(params.limit),
-    offset: String(params.offset),
+    limit: String(limit),
+    offset: String(offset),
   });
-  return `${API_BASE_URL}${path}?${searchParams.toString()}`;
-}
-
-export async function listResourceSpecifications({ limit, offset }: ListParams): Promise<ResourceSpecification[]> {
-  return await requestJson<ResourceSpecification[]>(buildListUrl('/resourceCatalogManagement/v4/resourceSpecification', { limit, offset }));
+  if (includeEnded) searchParams.set('includeEnded', 'true');
+  return await requestJson<ResourceSpecification[]>(
+    `${API_BASE_URL}/resourceCatalogManagement/v4/resourceSpecification?${searchParams.toString()}`,
+  );
 }
 
 export async function listResourceCategories(): Promise<ResourceCategory[]> {

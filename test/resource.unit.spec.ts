@@ -73,6 +73,13 @@ test('ResourceRepository clones stored entities and filters across resource kind
   assert.equal(repository.getPhysicalResource('res-1')?.name, 'OLT-01');
   assert.equal(repository.getLogicalResource('res-2')?.name, 'VLAN-100');
   assert.equal(repository.listResourceSpecifications({ name: 'ol', category: 'Equipment.Access' }).length, 1);
+  repository.upsertResourceSpecification({
+    ...spec,
+    validFor: { endDateTime: '2026-07-09T10:00:00.000Z' },
+  });
+  assert.equal(repository.listResourceSpecifications({ category: 'Equipment.Access' }).length, 0);
+  assert.equal(repository.listResourceSpecifications({ category: 'Equipment.Access', includeEnded: true }).length, 1);
+  assert.ok(repository.getResourceSpecification('spec-1')?.validFor?.endDateTime);
   assert.equal(repository.listResourceFunctionSpecifications({ name: 'act' }).length, 1);
   assert.ok(repository.getResourceCategory('Equipment.Access'));
   assert.ok(repository.getResourceCategory('Equipment.CustomerPremises'));

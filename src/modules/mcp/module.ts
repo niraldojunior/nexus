@@ -2,7 +2,7 @@ import { AppError } from '../../shared/errors/app-error.js';
 import type { NexusRuntime } from '../../shared/runtime/nexus-runtime.js';
 import type { Characteristic, TmfEventQuery } from '../../shared/tmf/index.js';
 import type { CreatePartyInput, CreatePartyRoleInput, PartyQuery } from '../party/index.js';
-import type { CreatePhysicalResourceInput, CreateLogicalResourceInput, ResourceFunctionActivationInput, ResourceQuery } from '../resource/index.js';
+import type { CreatePhysicalResourceInput, CreateLogicalResourceInput, CreateResourceSpecificationInput, ResourceFunctionActivationInput, ResourceQuery } from '../resource/index.js';
 import type { CreateServiceInput, ServiceQuery } from '../service/index.js';
 import type { CreateResourceOrderInput, CreateServiceOrderInput, CreateServiceQualificationInput } from '../order/index.js';
 import { type JsonSchema, validateJsonSchema } from './schema.js';
@@ -36,6 +36,16 @@ export type McpToolDefinition = {
 
 const SOURCE = 'nexus-tmf-mcp' as const;
 const DEFAULT_CONFIRMATION_TTL_MS = 30 * 60 * 1000;
+const EQUIPMENT_MODEL_CATALOG: Record<
+  'ONT' | 'CPE' | 'OLT' | 'Router' | 'Switch',
+  { category: string; resourceType: string; label: string }
+> = {
+  ONT: { category: 'Equipment.CustomerPremises', resourceType: 'ONT', label: 'ONT' },
+  CPE: { category: 'Equipment.CustomerPremises', resourceType: 'CPE', label: 'CPE' },
+  OLT: { category: 'Equipment.Access', resourceType: 'OLT', label: 'OLT' },
+  Router: { category: 'Equipment.Transport', resourceType: 'Router', label: 'Router' },
+  Switch: { category: 'Equipment.Transport', resourceType: 'Switch', label: 'Switch' },
+};
 
 type PrepareResult = {
   summary: string;
@@ -578,6 +588,53 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
   });
 
   registry.register({
+    name: 'resource.list_resource_categories',
+    description: 'Lista ResourceCategory do catalogo de recursos (TMF634). Use para resolver categorias canônicas antes de criar ResourceSpecification.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        status: { type: 'string', enum: ['active', 'inactive'] },
+      },
+      additionalProperties: false,
+    },
+    handler: (input, context) => {
+      const name = typeof input.name === 'string' ? input.name.trim().toLowerCase() : '';
+      const status = input.status === 'active' || input.status === 'inactive' ? input.status : undefined;
+      const items = runtime.resourceService
+        .listResourceCategories()
+        .filter((item) => (!name || item.name.toLowerCase().includes(name) || item.code.toLowerCase().includes(name)))
+        .filter((item) => !status || item.status === status);
+      return registry.successResult('resource', 'list_resource_categories', context, { items, count: items.length });
+    },
+  });
+
+  registry.register({
+    name: 'resource.list_resource_types',
+    description: 'Lista ResourceType do catalogo de recursos (TMF634). Use para resolver tipos canônicos antes de criar ResourceSpecification.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        categoryCode: { type: 'string' },
+        status: { type: 'string', enum: ['active', 'inactive'] },
+      },
+      additionalProperties: false,
+    },
+    handler: (input, context) => {
+      const name = typeof input.name === 'string' ? input.name.trim().toLowerCase() : '';
+      const categoryCode = typeof input.categoryCode === 'string' ? input.categoryCode.trim() : '';
+      const status = input.status === 'active' || input.status === 'inactive' ? input.status : undefined;
+      const items = runtime.resourceService
+        .listResourceTypes()
+        .filter((item) => (!name || item.name.toLowerCase().includes(name) || item.code.toLowerCase().includes(name)))
+        .filter((item) => (!categoryCode || item.categoryCode === categoryCode))
+        .filter((item) => !status || item.status === status);
+      return registry.successResult('resource', 'list_resource_types', context, { items, count: items.length });
+    },
+  });
+
+  registry.register({
     name: 'resource.get_resource',
     description: 'Consulta um Resource por id.',
     inputSchema: {
@@ -662,6 +719,321 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       registry.commitMutation('resource', 'create_physical_resource', String(input.confirmationToken), context, (pending) =>
         runtime.resourceService.createPhysicalResource(pending.payload as CreatePhysicalResourceInput),
       ),
+  });
+
+  const createResourceSpecificationSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+      payload: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          category: { type: 'string' },
+          resourceType: { type: 'string' },
+          description: { type: 'string' },
+          relatedParty: entityRefArraySchema,
+          resourceSpecificationCharacteristic: characteristicArraySchema,
+        },
+        required: ['name', 'category', 'resourceType'],
+        additionalProperties: true,
+      },
+    },
+    required: ['payload'],
+    additionalProperties: false,
+  };
+
+  registerPreparationAlias(
+    'resource.create_resource_specification',
+    'Prepara a criacao de uma ResourceSpecification. Nao executa a mutacao; retorna confirmationToken para commit explicito.',
+    createResourceSpecificationSchema,
+    'resource',
+    'create_resource_specification',
+    (payload) => {
+      const typedPayload = payload as CreateResourceSpecificationInput;
+      const category = runtime.resourceService
+        .listResourceCategories()
+        .find((item) => item.code === typedPayload.category || item.id === typedPayload.category);
+      if (!category) {
+        throw new AppError('resource category not found', { code: 'RESOURCE_CATEGORY_NOT_FOUND', statusCode: 404 });
+      }
+      if (category.status !== 'active') {
+        throw new AppError('resource category is inactive', { code: 'RESOURCE_CATEGORY_INACTIVE', statusCode: 409 });
+      }
+
+      const resourceType = runtime.resourceService
+        .listResourceTypes()
+        .find((item) => item.code === typedPayload.resourceType || item.id === typedPayload.resourceType);
+      if (!resourceType) {
+        throw new AppError('resource type not found', { code: 'RESOURCE_TYPE_NOT_FOUND', statusCode: 404 });
+      }
+      if (resourceType.status !== 'active') {
+        throw new AppError('resource type is inactive', { code: 'RESOURCE_TYPE_INACTIVE', statusCode: 409 });
+      }
+      if (resourceType.categoryCode !== category.code) {
+        throw new AppError('resource type is not allowed for category', {
+          code: 'RESOURCE_TYPE_CATEGORY_MISMATCH',
+          statusCode: 409,
+        });
+      }
+      for (const party of typedPayload.relatedParty ?? []) {
+        if (!runtime.partyService.getParty(party.id)) {
+          throw new AppError('related party not found', { code: 'RESOURCE_PARTY_NOT_FOUND', statusCode: 404 });
+        }
+      }
+
+      return {
+        summary: `ResourceSpecification ${typedPayload.name} sera criada como ${resourceType.code} em ${category.code}.`,
+        warnings: typedPayload.relatedParty?.length ? [] : ['Nenhum relatedParty informado para o ResourceSpecification.'],
+      };
+    },
+  );
+
+  registry.register({
+    name: 'resource.commit_create_resource_specification',
+    description: 'Confirma e executa a criacao de uma ResourceSpecification.',
+    inputSchema: {
+      type: 'object',
+      properties: { confirmationToken: { type: 'string' } },
+      required: ['confirmationToken'],
+      additionalProperties: false,
+    },
+    handler: (input, context) =>
+      registry.commitMutation('resource', 'create_resource_specification', String(input.confirmationToken), context, (pending) =>
+      runtime.resourceService.createResourceSpecification(pending.payload as CreateResourceSpecificationInput),
+      ),
+  });
+
+  const createEquipmentModelSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+      payload: {
+        type: 'object',
+        properties: {
+          model: { type: 'string' },
+          manufacturerName: { type: 'string' },
+          equipmentType: { type: 'string', enum: ['ONT', 'CPE', 'OLT', 'Router', 'Switch'] },
+          description: { type: 'string' },
+          equipmentCode: { type: 'string' },
+          skuId: { type: 'string' },
+          homologationDate: { type: 'string' },
+          lifecycleStatus: { type: 'string' },
+          stockable: { type: 'boolean' },
+          discontinued: { type: 'boolean' },
+          supportsSdWan: { type: 'boolean' },
+          supportsVoice: { type: 'boolean' },
+        },
+        required: ['model', 'manufacturerName', 'equipmentType'],
+        additionalProperties: true,
+      },
+    },
+    required: ['payload'],
+    additionalProperties: false,
+  };
+
+  registerPreparationAlias(
+    'resource.create_equipment_model',
+    'Prepara o cadastro de um modelo de equipamento no catalogo de recursos. Resolve fabricante existente automaticamente e retorna confirmationToken para commit explicito.',
+    createEquipmentModelSchema,
+    'resource',
+    'create_equipment_model',
+    (payload) => {
+      const prepared = prepareEquipmentModel(runtime, payload as EquipmentModelInput);
+
+      return {
+        summary: `Modelo de ${prepared.catalogEntry.label} ${prepared.model} da ${prepared.manufacturer.name} sera criado no catalogo.`,
+        warnings: [],
+      };
+    },
+  );
+
+  registry.register({
+    name: 'resource.commit_create_equipment_model',
+    description: 'Confirma e executa o cadastro de um modelo de equipamento no catalogo de recursos.',
+    inputSchema: {
+      type: 'object',
+      properties: { confirmationToken: { type: 'string' } },
+      required: ['confirmationToken'],
+      additionalProperties: false,
+    },
+    handler: (input, context) =>
+      registry.commitMutation('resource', 'create_equipment_model', String(input.confirmationToken), context, (pending) => {
+        const prepared = prepareEquipmentModel(runtime, pending.payload as EquipmentModelInput);
+        return runtime.resourceService.createResourceSpecification(buildEquipmentModelSpecificationInput(prepared));
+      }),
+  });
+
+  const createEquipmentModelsSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+      payload: {
+        type: 'object',
+        properties: {
+          items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                model: { type: 'string' },
+                manufacturerName: { type: 'string' },
+                equipmentType: { type: 'string', enum: ['ONT', 'CPE', 'OLT', 'Router', 'Switch'] },
+                description: { type: 'string' },
+                equipmentCode: { type: 'string' },
+                skuId: { type: 'string' },
+                homologationDate: { type: 'string' },
+                lifecycleStatus: { type: 'string' },
+                stockable: { type: 'boolean' },
+                discontinued: { type: 'boolean' },
+                supportsSdWan: { type: 'boolean' },
+                supportsVoice: { type: 'boolean' },
+              },
+              required: ['model', 'manufacturerName', 'equipmentType'],
+              additionalProperties: true,
+            },
+          },
+        },
+        required: ['items'],
+        additionalProperties: true,
+      },
+    },
+    required: ['payload'],
+    additionalProperties: false,
+  };
+
+  registerPreparationAlias(
+    'resource.create_equipment_models',
+    'Prepara o cadastro em lote de modelos de equipamento no catalogo de recursos. Retorna confirmationToken para commit explicito com a lista completa de itens.',
+    createEquipmentModelsSchema,
+    'resource',
+    'create_equipment_models',
+    (payload) => {
+      const typedPayload = payload as { items: EquipmentModelInput[] };
+      if (typedPayload.items.length === 0) {
+        throw new AppError('batch is empty', {
+          code: 'RESOURCE_EQUIPMENT_MODEL_BATCH_EMPTY',
+          statusCode: 422,
+        });
+      }
+      const items = typedPayload.items.map((item) => prepareEquipmentModel(runtime, item));
+      const duplicateKeys = new Set<string>();
+
+      for (const item of items) {
+        const duplicateKey = `${normalizeSearchText(item.model)}|${normalizeSearchText(item.manufacturer.name)}|${item.equipmentType}`;
+        if (duplicateKeys.has(duplicateKey)) {
+          throw new AppError('duplicate equipment model in batch', {
+            code: 'RESOURCE_EQUIPMENT_MODEL_BATCH_DUPLICATE',
+            statusCode: 409,
+          });
+        }
+        duplicateKeys.add(duplicateKey);
+      }
+
+      return {
+        summary: buildEquipmentModelBatchSummary(items),
+        warnings: [],
+      };
+    },
+  );
+
+  registry.register({
+    name: 'resource.commit_create_equipment_models',
+    description: 'Confirma e executa o cadastro em lote de modelos de equipamento no catalogo de recursos.',
+    inputSchema: {
+      type: 'object',
+      properties: { confirmationToken: { type: 'string' } },
+      required: ['confirmationToken'],
+      additionalProperties: false,
+    },
+    handler: (input, context) =>
+      registry.commitMutation('resource', 'create_equipment_models', String(input.confirmationToken), context, (pending) => {
+        const payload = pending.payload as { items: EquipmentModelInput[] };
+        const items = payload.items.map((item) => prepareEquipmentModel(runtime, item));
+        const createdItems = items.map((item) => runtime.resourceService.createResourceSpecification(buildEquipmentModelSpecificationInput(item)));
+
+        return {
+          items: createdItems,
+        };
+      }),
+  });
+
+  const deleteEquipmentModelSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+      payload: {
+        type: 'object',
+        properties: {
+          model: { type: 'string' },
+          manufacturerName: { type: 'string' },
+          equipmentType: { type: 'string', enum: ['ONT', 'CPE', 'OLT', 'Router', 'Switch'] },
+        },
+        required: ['model', 'manufacturerName'],
+        additionalProperties: true,
+      },
+    },
+    required: ['payload'],
+    additionalProperties: false,
+  };
+
+  registerPreparationAlias(
+    'resource.delete_equipment_model',
+    'Prepara a remocao de um modelo de equipamento do catalogo de recursos. A remocao e logica/soft-delete e retorna confirmationToken para commit explicito.',
+    deleteEquipmentModelSchema,
+    'resource',
+    'delete_equipment_model',
+    (payload) => {
+      const typedPayload = payload as {
+        model: string;
+        manufacturerName: string;
+        equipmentType?: keyof typeof EQUIPMENT_MODEL_CATALOG;
+      };
+
+      const match = findEquipmentModelSpecification(runtime, typedPayload);
+      if (!match) {
+        throw new AppError('equipment model not found', {
+          code: 'RESOURCE_EQUIPMENT_MODEL_NOT_FOUND',
+          statusCode: 404,
+        });
+      }
+      if (match.state === 'alreadyRemoved') {
+        throw new AppError('equipment model already removed', {
+          code: 'RESOURCE_EQUIPMENT_MODEL_ALREADY_REMOVED',
+          statusCode: 409,
+        });
+      }
+
+      return {
+        summary: `Modelo de ${match.label} ${match.spec.name} da ${match.manufacturer.name} sera removido do catalogo.`,
+        warnings: [],
+      };
+    },
+  );
+
+  registry.register({
+    name: 'resource.commit_delete_equipment_model',
+    description: 'Confirma e executa a remocao logica de um modelo de equipamento no catalogo de recursos.',
+    inputSchema: {
+      type: 'object',
+      properties: { confirmationToken: { type: 'string' } },
+      required: ['confirmationToken'],
+      additionalProperties: false,
+    },
+    handler: (input, context) =>
+      registry.commitMutation('resource', 'delete_equipment_model', String(input.confirmationToken), context, (pending) => {
+        const payload = pending.payload as {
+          model: string;
+          manufacturerName: string;
+          equipmentType?: keyof typeof EQUIPMENT_MODEL_CATALOG;
+        };
+
+        const match = findEquipmentModelSpecification(runtime, payload);
+        if (!match || match.state === 'alreadyRemoved') {
+          throw new AppError('equipment model not found', {
+            code: !match ? 'RESOURCE_EQUIPMENT_MODEL_NOT_FOUND' : 'RESOURCE_EQUIPMENT_MODEL_ALREADY_REMOVED',
+            statusCode: !match ? 404 : 409,
+          });
+        }
+
+        return runtime.resourceService.deleteResourceSpecification(match.spec.id);
+      }),
   });
 
   const createLogicalResourceSchema: JsonSchema = {
@@ -1305,4 +1677,329 @@ const paginate = <T>(items: T[], input: Record<string, unknown>): T[] => {
   const offset = typeof input.offset === 'number' ? input.offset : 0;
   const limit = typeof input.limit === 'number' ? input.limit : undefined;
   return items.slice(offset, limit !== undefined ? offset + limit : undefined);
+};
+
+type ManufacturerPartyReference = {
+  id: string;
+  '@referredType': string;
+  href?: string;
+  name: string;
+};
+
+type EquipmentModelInput = {
+  model: string;
+  manufacturerName: string;
+  equipmentType: keyof typeof EQUIPMENT_MODEL_CATALOG;
+  description?: string;
+  equipmentCode?: string;
+  skuId?: string;
+  homologationDate?: string;
+  lifecycleStatus?: string;
+  stockable?: boolean;
+  discontinued?: boolean;
+  supportsSdWan?: boolean;
+  supportsVoice?: boolean;
+};
+
+type PreparedEquipmentModel = EquipmentModelInput & {
+  manufacturer: ManufacturerPartyReference;
+  catalogEntry: (typeof EQUIPMENT_MODEL_CATALOG)[keyof typeof EQUIPMENT_MODEL_CATALOG];
+};
+
+type EquipmentModelLookupResult =
+  | {
+      state: 'active';
+      spec: {
+        id: string;
+        name: string;
+        category: string;
+        resourceType: string;
+        validFor?: { startDateTime?: string; endDateTime?: string };
+        relatedParty: Array<{ id: string; name?: string; role?: string; '@referredType': string }>;
+      };
+      manufacturer: ManufacturerPartyReference;
+      label: string;
+    }
+  | {
+      state: 'alreadyRemoved';
+      spec: {
+        id: string;
+        name: string;
+        category: string;
+        resourceType: string;
+        validFor?: { startDateTime?: string; endDateTime?: string };
+        relatedParty: Array<{ id: string; name?: string; role?: string; '@referredType': string }>;
+      };
+      manufacturer: ManufacturerPartyReference;
+      label: string;
+    };
+
+const resolveManufacturerParty = (runtime: NexusRuntime, manufacturerName: string): ManufacturerPartyReference => {
+  const normalizedName = normalizeSearchText(manufacturerName);
+  if (!normalizedName) {
+    throw new AppError('manufacturer name is required', { code: 'RESOURCE_MANUFACTURER_NAME_REQUIRED', statusCode: 422 });
+  }
+
+  const manufacturerRoles = runtime.partyService
+    .listPartyRoles({ name: 'manufacturer', status: 'active', limit: 1000, offset: 0 })
+    .map((role) => toManufacturerPartyReference(role.party))
+    .filter((party): party is ManufacturerPartyReference => party !== null);
+
+  const exactRoleMatches = manufacturerRoles.filter((party) => normalizeSearchText(party.name ?? '') === normalizedName);
+  if (exactRoleMatches.length === 1) {
+    const match = exactRoleMatches[0];
+    if (match) return match;
+  }
+
+  const partialRoleMatches = manufacturerRoles.filter((party) => normalizeSearchText(party.name ?? '').includes(normalizedName));
+  const roleMatches = exactRoleMatches.length > 0 ? exactRoleMatches : partialRoleMatches;
+  if (roleMatches.length === 1) {
+    const match = roleMatches[0];
+    if (match) return match;
+  }
+  if (roleMatches.length > 1) {
+    throw new AppError('manufacturer name is ambiguous', {
+      code: 'RESOURCE_MANUFACTURER_AMBIGUOUS',
+      statusCode: 409,
+    });
+  }
+
+  const partyMatches = runtime.partyService
+    .listParties({ name: manufacturerName, partyType: 'Organization', status: 'active', limit: 1000, offset: 0 })
+    .filter((party) => normalizeSearchText(party.name) === normalizedName || normalizeSearchText(party.name).includes(normalizedName))
+    .map((party) => ({
+      id: party.id,
+      '@referredType': party.partyType,
+      href: party.href,
+      name: party.name,
+    }));
+
+  if (partyMatches.length === 1) {
+    const match = partyMatches[0];
+    if (match) return match;
+  }
+  if (partyMatches.length > 1) {
+    throw new AppError('manufacturer name is ambiguous', {
+      code: 'RESOURCE_MANUFACTURER_AMBIGUOUS',
+      statusCode: 409,
+    });
+  }
+
+  throw new AppError('manufacturer not found', {
+    code: 'RESOURCE_MANUFACTURER_NOT_FOUND',
+    statusCode: 404,
+  });
+};
+
+const normalizeEquipmentModelInput = (input: EquipmentModelInput): EquipmentModelInput => ({
+  model: input.model.trim(),
+  manufacturerName: input.manufacturerName.trim(),
+  equipmentType: input.equipmentType,
+  ...(input.description !== undefined ? { description: input.description.trim() } : {}),
+  ...(input.equipmentCode !== undefined ? { equipmentCode: input.equipmentCode.trim() } : {}),
+  ...(input.skuId !== undefined ? { skuId: input.skuId.trim() } : {}),
+  ...(input.homologationDate !== undefined ? { homologationDate: input.homologationDate.trim() } : {}),
+  ...(input.lifecycleStatus !== undefined ? { lifecycleStatus: input.lifecycleStatus.trim() } : {}),
+  ...(input.stockable !== undefined ? { stockable: input.stockable } : {}),
+  ...(input.discontinued !== undefined ? { discontinued: input.discontinued } : {}),
+  ...(input.supportsSdWan !== undefined ? { supportsSdWan: input.supportsSdWan } : {}),
+  ...(input.supportsVoice !== undefined ? { supportsVoice: input.supportsVoice } : {}),
+});
+
+const prepareEquipmentModel = (runtime: NexusRuntime, input: EquipmentModelInput): PreparedEquipmentModel => {
+  const normalized = normalizeEquipmentModelInput(input);
+  const catalogEntry = EQUIPMENT_MODEL_CATALOG[normalized.equipmentType];
+  if (!catalogEntry) {
+    throw new AppError('equipment type not supported', {
+      code: 'RESOURCE_EQUIPMENT_TYPE_NOT_SUPPORTED',
+      statusCode: 422,
+    });
+  }
+
+  const manufacturer = resolveManufacturerParty(runtime, normalized.manufacturerName);
+  return {
+    ...normalized,
+    manufacturer,
+    catalogEntry,
+  };
+};
+
+const buildEquipmentModelSpecificationInput = (item: PreparedEquipmentModel): CreateResourceSpecificationInput => ({
+  name: item.model,
+  category: item.catalogEntry.category,
+  resourceType: item.catalogEntry.resourceType,
+  ...(item.description ? { description: item.description } : {}),
+  relatedParty: [
+    {
+      id: item.manufacturer.id,
+      '@referredType': item.manufacturer['@referredType'],
+      name: item.manufacturer.name,
+      role: 'manufacturer',
+    },
+  ],
+  resourceSpecificationCharacteristic: buildEquipmentModelCharacteristics(item),
+});
+
+const buildEquipmentModelBatchSummary = (items: PreparedEquipmentModel[]): string => {
+  if (items.length === 0) {
+    return 'Nenhum modelo informado.';
+  }
+
+  const first = items[0];
+  if (!first) {
+    return 'Nenhum modelo informado.';
+  }
+
+  const sameManufacturer = items.every((item) => normalizeSearchText(item.manufacturer.name) === normalizeSearchText(first.manufacturer.name));
+  const sameType = items.every((item) => item.equipmentType === first.equipmentType);
+
+  if (sameManufacturer && sameType) {
+    return `${items.length} modelos de ${first.catalogEntry.label} da ${first.manufacturer.name} serao criados no catalogo.`;
+  }
+
+  if (sameManufacturer) {
+    return `${items.length} modelos da ${first.manufacturer.name} serao criados no catalogo.`;
+  }
+
+  return `${items.length} modelos de equipamento serao criados no catalogo.`;
+};
+
+const findEquipmentModelSpecification = (
+  runtime: NexusRuntime,
+  input: {
+    model: string;
+    manufacturerName: string;
+    equipmentType?: keyof typeof EQUIPMENT_MODEL_CATALOG;
+  },
+): EquipmentModelLookupResult | undefined => {
+  const normalizedModel = normalizeSearchText(input.model);
+  const manufacturer = resolveManufacturerParty(runtime, input.manufacturerName);
+  const catalogEntry = input.equipmentType ? EQUIPMENT_MODEL_CATALOG[input.equipmentType] : undefined;
+  const specs = runtime.resourceService.listResourceSpecifications({
+    name: input.model,
+    includeEnded: true,
+  });
+
+  const matches = specs.filter((spec) => {
+    if (normalizeSearchText(spec.name) !== normalizedModel) {
+      return false;
+    }
+    if (catalogEntry && (spec.category !== catalogEntry.category || spec.resourceType !== catalogEntry.resourceType)) {
+      return false;
+    }
+
+    const specManufacturer = spec.relatedParty.find((party) => party.role === 'manufacturer');
+    if (!specManufacturer) {
+      return false;
+    }
+
+    const manufacturerNameMatches = normalizeSearchText(specManufacturer.name ?? '') === normalizeSearchText(manufacturer.name);
+    const manufacturerIdMatches = specManufacturer.id === manufacturer.id;
+    return manufacturerNameMatches || manufacturerIdMatches;
+  });
+
+  const activeMatches = matches.filter((spec) => !spec.validFor?.endDateTime);
+  if (activeMatches.length === 1) {
+    const spec = activeMatches[0];
+    if (spec) {
+      return {
+        state: 'active',
+        spec,
+        manufacturer,
+        label: catalogEntry?.label ?? spec.resourceType,
+      };
+    }
+  }
+
+  if (activeMatches.length > 1) {
+    throw new AppError('equipment model is ambiguous', {
+      code: 'RESOURCE_EQUIPMENT_MODEL_AMBIGUOUS',
+      statusCode: 409,
+    });
+  }
+
+  const endedMatches = matches.filter((spec) => Boolean(spec.validFor?.endDateTime));
+  if (endedMatches.length > 0) {
+    const spec = endedMatches[0];
+    if (spec) {
+      return {
+        state: 'alreadyRemoved',
+        spec,
+        manufacturer,
+        label: catalogEntry?.label ?? spec.resourceType,
+      };
+    }
+  }
+
+  return undefined;
+};
+
+const buildEquipmentModelCharacteristics = (
+  input: {
+    model: string;
+    equipmentCode?: string;
+    skuId?: string;
+    homologationDate?: string;
+    lifecycleStatus?: string;
+    stockable?: boolean;
+    discontinued?: boolean;
+    supportsSdWan?: boolean;
+    supportsVoice?: boolean;
+  },
+): Characteristic[] => {
+  const characteristics: Characteristic[] = [
+    {
+      name: 'model',
+      value: input.model.trim(),
+      valueType: 'string' as const,
+      group: 'commercial',
+    },
+  ];
+
+  if (input.equipmentCode?.trim()) {
+    characteristics.push({ name: 'equipmentCode', value: input.equipmentCode.trim(), valueType: 'string' as const, group: 'identification' });
+  }
+  if (input.skuId?.trim()) {
+    characteristics.push({ name: 'skuId', value: input.skuId.trim(), valueType: 'string' as const, group: 'commercial' });
+  }
+  if (input.homologationDate?.trim()) {
+    characteristics.push({ name: 'homologationDate', value: input.homologationDate.trim(), valueType: 'date' as const, group: 'commercial' });
+  }
+  if (input.lifecycleStatus?.trim()) {
+    characteristics.push({ name: 'lifecycleStatus', value: input.lifecycleStatus.trim(), valueType: 'string' as const, group: 'lifecycle' });
+  }
+  if (input.stockable !== undefined) {
+    characteristics.push({ name: 'stockable', value: input.stockable, valueType: 'boolean' as const, group: 'capability' });
+  }
+  if (input.discontinued !== undefined) {
+    characteristics.push({ name: 'discontinued', value: input.discontinued, valueType: 'boolean' as const, group: 'lifecycle' });
+  }
+  if (input.supportsSdWan !== undefined) {
+    characteristics.push({ name: 'supportsSdWan', value: input.supportsSdWan, valueType: 'boolean' as const, group: 'capability' });
+  }
+  if (input.supportsVoice !== undefined) {
+    characteristics.push({ name: 'supportsVoice', value: input.supportsVoice, valueType: 'boolean' as const, group: 'capability' });
+  }
+
+  return characteristics;
+};
+
+const normalizeSearchText = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+const toManufacturerPartyReference = (party: { id: string; '@referredType': string; href?: string; name?: string } | undefined): ManufacturerPartyReference | null => {
+  if (!party || party['@referredType'] !== 'Organization') {
+    return null;
+  }
+
+  return {
+    id: party.id,
+    '@referredType': party['@referredType'],
+    ...(party.href ? { href: party.href } : {}),
+    name: party.name ?? party.id,
+  };
 };

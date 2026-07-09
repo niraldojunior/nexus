@@ -45,6 +45,7 @@ export type ResourceSpecificationQuery = {
   name?: string;
   category?: string;
   resourceType?: string;
+  includeEnded?: boolean;
   limit?: number;
   offset?: number;
 };

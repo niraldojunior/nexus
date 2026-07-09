@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build && npm run web:build",
+  "outputDirectory": "web/dist",
+  "routes": [
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/health",
+      "dest": "/api/health"
+    },
+    {
+      "src": "/v1/(.*)",
+      "dest": "/api/v1/$1"
+    },
+    {
+      "src": "/tmf-api/(.*)",
+      "dest": "/api/tmf-api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
+}

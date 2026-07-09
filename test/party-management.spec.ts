@@ -112,6 +112,25 @@ test('TMF632 and TMF669 party endpoints create, search and terminate parties', a
   assert.ok((events.body as Array<{ eventType: string }>).some((event) => event.eventType === 'PartyCreateEvent'));
 });
 
+test('bootstrap seeds manufacturer party roles for resource catalog combos', async (t) => {
+  const database = createTestDatabase();
+  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const port = await server.start();
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
+
+  const response = await requestJson(port, 'GET', '/tmf-api/partyRoleManagement/v4/partyRole?status=active');
+  assert.equal(response.statusCode, 200);
+  assert.ok(Array.isArray(response.body));
+
+  const names = (response.body as Array<{ party: { name?: string }; name: string }>).map((item) => item.party.name ?? item.name);
+  for (const expected of ['VANTIVA', 'BLU-CASTLE', 'DATACOM', 'HUAWEI', 'ZTE', 'SAGEMCOM', 'NOKIA', 'TELLESCOM', 'ARCADYAN']) {
+    assert.ok(names.includes(expected), `expected bootstrap to include ${expected}`);
+  }
+});
+
 const createTestDatabase = (): { databaseUrl: string; cleanup: () => void } => {
   const root = mkdtempSync(join(tmpdir(), 'nexus-party-'));
   return {

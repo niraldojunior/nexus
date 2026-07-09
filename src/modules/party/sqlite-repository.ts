@@ -2,11 +2,86 @@ import { SqliteDatabase } from '../../shared/persistence/sqlite-database.js';
 import type { Party, PartyQuery, PartyRelationship, PartyRole, PartyRoleQuery } from './domain.js';
 import type { IPartyRepository } from './party-repository-interface.js';
 
+const MANUFACTURER_BOOTSTRAP = [
+  'VANTIVA',
+  'BLU-CASTLE',
+  'DATACOM',
+  'HUAWEI',
+  'ZTE',
+  'SAGEMCOM',
+  'NOKIA',
+  'TELLESCOM',
+  'ARCADYAN',
+] as const;
+
 export class SqlitePartyRepository implements IPartyRepository {
-  public constructor(private readonly db: SqliteDatabase) {}
+  public constructor(private readonly db: SqliteDatabase) {
+    this.seedManufacturerParties();
+  }
 
   public transaction<T>(fn: () => T): T {
     return this.db.transaction(fn);
+  }
+
+  private seedManufacturerParties(): void {
+    const now = new Date().toISOString();
+    for (const name of MANUFACTURER_BOOTSTRAP) {
+      const slug = slugify(name);
+      const partyId = `party-${slug}`;
+      const roleId = `party-role-${slug}-manufacturer`;
+      this.db.run(
+        `INSERT INTO tmf_party
+         (id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+         href = excluded.href,
+         name = excluded.name,
+         party_type = excluded.party_type,
+         status = excluded.status,
+         valid_for_start = excluded.valid_for_start,
+         valid_for_end = excluded.valid_for_end,
+         characteristics = excluded.characteristics,
+         updated_at = excluded.updated_at`,
+        [
+          partyId,
+          `/tmf-api/partyManagement/v4/party/${partyId}`,
+          name,
+          'Organization',
+          'active',
+          null,
+          null,
+          '[]',
+          now,
+          now,
+        ],
+      );
+      this.db.run(
+        `INSERT INTO tmf_party_role
+         (id, href, name, party_id, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+         href = excluded.href,
+         name = excluded.name,
+         party_id = excluded.party_id,
+         status = excluded.status,
+         valid_for_start = excluded.valid_for_start,
+         valid_for_end = excluded.valid_for_end,
+         characteristics = excluded.characteristics,
+         updated_at = excluded.updated_at`,
+        [
+          roleId,
+          `/tmf-api/partyRoleManagement/v4/partyRole/${roleId}`,
+          'manufacturer',
+          partyId,
+          'active',
+          null,
+          null,
+          '[]',
+          now,
+          now,
+        ],
+      );
+    }
   }
 
   public upsertParty(party: Party): Party {
@@ -341,6 +416,15 @@ export class SqlitePartyRepository implements IPartyRepository {
     return role;
   }
 }
+
+const slugify = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 
 const filterPartyDocument = (party: Party, document?: string): boolean => {
   if (!document) return true;

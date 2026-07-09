@@ -7,6 +7,7 @@ type FetchJsonOptions = {
 
 export type PartyType = 'Organization' | 'Individual';
 export type PartyStatus = 'active' | 'inactive' | 'terminated';
+export type PartyRoleStatus = 'active' | 'inactive' | 'terminated';
 
 export type PartyQuery = {
   name?: string;
@@ -24,6 +25,29 @@ export type Party = {
   name: string;
   status: PartyStatus;
   partyType: PartyType;
+};
+
+export type PartyRoleQuery = {
+  name?: string;
+  partyId?: string;
+  status?: PartyRoleStatus;
+  limit: number;
+  offset: number;
+};
+
+export type PartyRole = {
+  '@type': 'PartyRole';
+  id: string;
+  href: string;
+  name: string;
+  status: PartyRoleStatus;
+  partyId: string;
+  party: {
+    id: string;
+    '@referredType': PartyType;
+    href?: string;
+    name?: string;
+  };
 };
 
 const authHeaders = (): HeadersInit => ({
@@ -82,4 +106,19 @@ function buildListUrl(path: string, params: PartyQuery): string {
 
 export async function listParties(query: PartyQuery): Promise<Party[]> {
   return await requestJson<Party[]>(buildListUrl('/partyManagement/v4/party', query));
+}
+
+function buildRoleListUrl(path: string, params: PartyRoleQuery): string {
+  const searchParams = new URLSearchParams({
+    limit: String(params.limit),
+    offset: String(params.offset),
+  });
+  if (params.name) searchParams.set('name', params.name);
+  if (params.partyId) searchParams.set('partyId', params.partyId);
+  if (params.status) searchParams.set('status', params.status);
+  return `${API_BASE_URL}${path}?${searchParams.toString()}`;
+}
+
+export async function listPartyRoles(query: PartyRoleQuery): Promise<PartyRole[]> {
+  return await requestJson<PartyRole[]>(buildRoleListUrl('/partyRoleManagement/v4/partyRole', query));
 }

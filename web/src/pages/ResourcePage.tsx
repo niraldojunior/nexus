@@ -40,7 +40,7 @@ import {
   type ResourceType,
   type ResourceTab,
 } from '../services/resourceApi';
-import { listParties, type Party } from '../services/partyApi';
+import { listParties, listPartyRoles, type Party } from '../services/partyApi';
 import { RESOURCE_CATEGORY_DEFAULTS, RESOURCE_TYPE_DEFAULTS } from '../data/resourceCatalogDefaults';
 import { resourceFieldLabel } from '../utils/resourceFieldLabels';
 import {
@@ -53,6 +53,17 @@ import {
 } from '../utils/resourceSpecificationCharacteristics';
 
 const PAGE_SIZE = 20;
+const MANUFACTURER_PARTY_NAMES = new Set([
+  'VANTIVA',
+  'BLU-CASTLE',
+  'DATACOM',
+  'HUAWEI',
+  'ZTE',
+  'SAGEMCOM',
+  'NOKIA',
+  'TELLESCOM',
+  'ARCADYAN',
+]);
 
 type ResourceTabId = ResourceTab;
 type ResourceMode = 'create' | 'edit';
@@ -73,7 +84,6 @@ type ResourceFormState = {
   manufacturer: string;
   model: string;
   manufacturerPartyId: string;
-  manufacturerSearch: string;
   skuId: string;
   stockable: '' | 'true' | 'false';
   discontinued: '' | 'true' | 'false';
@@ -115,7 +125,6 @@ const emptyFormState = (): ResourceFormState => ({
   manufacturer: '',
   model: '',
   manufacturerPartyId: '',
-  manufacturerSearch: '',
   skuId: '',
   stockable: '',
   discontinued: '',
@@ -230,6 +239,7 @@ export default function ResourcePage({
   const activeTabConfig = tabConfig[activeTab];
   const ActiveIcon = activeTabConfig.icon;
   const placeOptions = buildPlaceOptions([...physicalResourceOptions, ...logicalResourceOptions]);
+  const selectedManufacturer = manufacturerOptions.find((party) => party.id === formState.manufacturerPartyId) ?? null;
   const selectedCategory = resourceCategories.find((category) => category.code === formState.category);
   const visibleTypeOptions = buildTypeOptions(resourceTypes, formState.category);
   const selectedResourceType = resourceTypes.find((type) => type.code === formState.resourceType);
@@ -274,13 +284,13 @@ export default function ResourcePage({
   const loadLookupOptions = async (): Promise<void> => {
     setLookupLoading(true);
     try {
-      const [specsResult, categoriesResult, typesResult, physicalResourcesResult, logicalResourcesResult, partiesResult] = await Promise.allSettled([
+      const [specsResult, categoriesResult, typesResult, physicalResourcesResult, logicalResourcesResult, manufacturerCandidatesResult] = await Promise.allSettled([
         loadAllResourceSpecifications(),
         listResourceCategories(),
         listResourceTypes(),
         loadAllResources('PhysicalResource'),
         loadAllResources('LogicalResource'),
-        loadAllParties(),
+        loadManufacturerCandidates(),
       ]);
 
       if (specsResult.status === 'fulfilled') {
@@ -302,8 +312,8 @@ export default function ResourcePage({
       if (logicalResourcesResult.status === 'fulfilled') {
         setLogicalResourceOptions(logicalResourcesResult.value.filter(isLogicalResource));
       }
-      if (partiesResult.status === 'fulfilled') {
-        setManufacturerOptions(partiesResult.value);
+      if (manufacturerCandidatesResult.status === 'fulfilled') {
+        setManufacturerOptions(manufacturerCandidatesResult.value);
       }
     } finally {
       setLookupLoading(false);
@@ -353,7 +363,6 @@ export default function ResourcePage({
         equipmentFunction: readResourceSpecificationCharacteristicString(characteristics, 'equipmentFunction'),
         model: readResourceSpecificationCharacteristicString(characteristics, 'model'),
         manufacturerPartyId: resolvedManufacturer?.id ?? '',
-        manufacturerSearch: resolvedManufacturer?.name ?? manufacturerLabel.trim(),
         skuId: readResourceSpecificationCharacteristicString(characteristics, 'skuId'),
         stockable: readResourceSpecificationCharacteristicBooleanState(characteristics, 'stockable'),
         discontinued: readResourceSpecificationCharacteristicBooleanState(characteristics, 'discontinued'),
@@ -780,20 +789,11 @@ function ResourceModal({
   const physicalModelOptions = buildPhysicalModelOptions(resourceSpecificationOptions, formState.category, formState.resourceType);
   const selectedPhysicalResource = physicalResourceOptions.find((resource) => resource.id === formState.supportingPhysicalResourceId);
   const selectedPlace = placeOptions.find((place) => place.id === formState.placeId);
+  const selectedManufacturer = manufacturerOptions.find((party) => party.id === formState.manufacturerPartyId) ?? null;
   const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
-  const [manufacturerMenuOpen, setManufacturerMenuOpen] = useState(false);
   const categoryMenuRef = useRef<HTMLDivElement>(null);
   const typeMenuRef = useRef<HTMLDivElement>(null);
-  const manufacturerMenuRef = useRef<HTMLDivElement>(null);
-  const manufacturerSearchTerm = formState.manufacturerSearch.trim().toLowerCase();
-  const filteredManufacturerOptions = manufacturerOptions
-    .filter((party) => {
-      if (!manufacturerSearchTerm) return true;
-      return [party.name, party.id].some((value) => String(value).toLowerCase().includes(manufacturerSearchTerm));
-    })
-    .slice(0, 8);
-  const selectedManufacturer = manufacturerOptions.find((party) => party.id === formState.manufacturerPartyId);
 
   useEffect(() => {
     if (!categoryMenuOpen) return;
@@ -816,17 +816,6 @@ function ResourceModal({
     document.addEventListener('mousedown', handlePointerDown);
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [typeMenuOpen]);
-
-  useEffect(() => {
-    if (!manufacturerMenuOpen) return;
-    const handlePointerDown = (event: MouseEvent) => {
-      if (manufacturerMenuRef.current && !manufacturerMenuRef.current.contains(event.target as Node)) {
-        setManufacturerMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [manufacturerMenuOpen]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
@@ -1007,71 +996,21 @@ function ResourceModal({
                 </div>
               </Field>
               <Field label={resourceFieldLabel('manufacturer')}>
-                <div ref={manufacturerMenuRef} className="relative">
-                  <input
-                    type="text"
-                    role="combobox"
-                    aria-expanded={manufacturerMenuOpen}
-                    aria-controls="manufacturer-listbox"
-                    value={formState.manufacturerSearch}
-                    onChange={(event) => {
-                      setManufacturerMenuOpen(true);
-                      onChange({
-                        ...formState,
-                        manufacturerSearch: event.target.value,
-                        manufacturerPartyId: '',
-                      });
-                    }}
-                    onFocus={() => setManufacturerMenuOpen(true)}
-                    className="geo-input"
-                    placeholder="Buscar Party por nome"
-                    autoComplete="off"
-                  />
-                  {manufacturerMenuOpen ? (
-                    <div
-                      id="manufacturer-listbox"
-                      role="listbox"
-                      className="absolute z-20 mt-2 max-h-72 w-full overflow-auto rounded-[18px] border border-app-border bg-white p-2 shadow-modal"
-                    >
-                      {filteredManufacturerOptions.length ? (
-                        filteredManufacturerOptions.map((party) => {
-                          const isSelected = party.id === formState.manufacturerPartyId;
-                          return (
-                            <button
-                              key={party.id}
-                              type="button"
-                              role="option"
-                              aria-selected={isSelected}
-                              onClick={() => {
-                                onChange({
-                                  ...formState,
-                                  manufacturerPartyId: party.id,
-                                  manufacturerSearch: party.name,
-                                });
-                                setManufacturerMenuOpen(false);
-                              }}
-                              className={`flex w-full items-center justify-between gap-3 rounded-[14px] px-3 py-2 text-left text-[0.92rem] transition ${
-                                isSelected ? 'bg-app-accent-soft text-app-text' : 'text-app-text hover:bg-app-accent-soft'
-                              }`}
-                            >
-                              <span className="min-w-0 flex-1 truncate">{party.name}</span>
-                              <span className="shrink-0 text-[0.72rem] text-app-muted">{party.id}</span>
-                            </button>
-                          );
-                        })
-                      ) : (
-                        <div className="px-3 py-2 text-[0.88rem] text-app-muted">Nenhuma Party encontrada</div>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
+                <select
+                  value={formState.manufacturerPartyId}
+                  onChange={(event) => onChange({ ...formState, manufacturerPartyId: event.target.value })}
+                  className="geo-input"
+                >
+                  <option value="">Selecione um fabricante</option>
+                  {manufacturerOptions.map((party) => (
+                    <option key={party.id} value={party.id}>
+                      {party.name}
+                    </option>
+                  ))}
+                </select>
                 {selectedManufacturer ? (
                   <span className="text-[0.72rem] font-medium normal-case tracking-normal text-app-muted">
                     Selecionado: {selectedManufacturer.name}
-                  </span>
-                ) : formState.manufacturerSearch.trim() ? (
-                  <span className="text-[0.72rem] font-medium normal-case tracking-normal text-app-muted">
-                    Busca local na base de Parties
                   </span>
                 ) : null}
               </Field>
@@ -1501,7 +1440,7 @@ function buildSpecificationPayload(
   manufacturerOptions: Party[] = [],
 ): ResourceSpecificationPayload {
   const existingManufacturerParty = existing?.relatedParty?.find((party) => party.role === 'manufacturer');
-  const manufacturerParty = resolveManufacturerParty(state, manufacturerOptions) ?? (state.manufacturerSearch.trim() ? existingManufacturerParty : undefined);
+  const manufacturerParty = resolveManufacturerParty(state, manufacturerOptions) ?? existingManufacturerParty;
   const relatedParty = (existing?.relatedParty ?? []).filter((party) => party.role !== 'manufacturer');
   if (manufacturerParty) {
     relatedParty.push({
@@ -1604,13 +1543,7 @@ function resolveManufacturerParty(state: ResourceFormState, options: Party[]): P
     const selected = options.find((party) => party.id === state.manufacturerPartyId);
     if (selected) return selected;
   }
-
-  const search = state.manufacturerSearch.trim().toLowerCase();
-  if (!search) return undefined;
-
-  return options.find(
-    (party) => party.name.trim().toLowerCase() === search || party.id.trim().toLowerCase() === search,
-  );
+  return undefined;
 }
 
 function readSpecCharacteristic(characteristics: ResourceSpecificationCharacteristic[] | undefined, name: string): string {
@@ -1676,14 +1609,67 @@ async function loadAllResourceSpecifications(): Promise<ResourceSpecification[]>
   return collected;
 }
 
-async function loadAllParties(): Promise<Party[]> {
+async function loadManufacturerCandidates(): Promise<Party[]> {
+  const fromRoles = await loadManufacturerCandidatesFromRoles();
+  if (fromRoles.length > 0) {
+    return fromRoles;
+  }
+
+  const fromParties = await loadManufacturerCandidatesFromParties();
+  return fromParties;
+}
+
+function isManufacturerParty(party: Party): boolean {
+  return party.partyType === 'Organization' && MANUFACTURER_PARTY_NAMES.has(party.name.trim().toUpperCase());
+}
+
+async function loadManufacturerCandidatesFromRoles(): Promise<Party[]> {
   const collected: Party[] = [];
   for (let offset = 0; ; offset += PAGE_SIZE) {
-    const items = await listParties({ limit: PAGE_SIZE, offset, partyType: 'Organization', status: 'active' });
-    collected.push(...items);
+    const items = await listPartyRoles({ limit: PAGE_SIZE, offset, status: 'active', name: 'manufacturer' });
+    for (const role of items) {
+      const party = role.party;
+      if (!party || party['@referredType'] !== 'Organization') continue;
+      collected.push({
+        '@type': 'Organization',
+        id: party.id,
+        href: party.href ?? `/tmf-api/partyManagement/v4/party/${party.id}`,
+        name: party.name ?? party.id,
+        status: 'active',
+        partyType: 'Organization',
+      });
+    }
     if (items.length < PAGE_SIZE) break;
   }
-  return collected;
+
+  return normalizeManufacturerParties(collected);
+}
+
+async function loadManufacturerCandidatesFromParties(): Promise<Party[]> {
+  const collected: Party[] = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const items = await listParties({ limit: PAGE_SIZE, offset, status: 'active', partyType: 'Organization' });
+    for (const party of items) {
+      if (!isManufacturerParty(party)) continue;
+      collected.push({
+        '@type': 'Organization',
+        id: party.id,
+        href: party.href ?? `/tmf-api/partyManagement/v4/party/${party.id}`,
+        name: party.name,
+        status: 'active',
+        partyType: 'Organization',
+      });
+    }
+    if (items.length < PAGE_SIZE) break;
+  }
+
+  return normalizeManufacturerParties(collected);
+}
+
+function normalizeManufacturerParties(parties: Party[]): Party[] {
+  return [...new Map(parties.map((party) => [party.id, party] as const)).values()].sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
 }
 
 async function loadAllResources(kind: Exclude<ResourceTabId, 'ResourceSpecification'>): Promise<ResourceEntity[]> {

@@ -33,24 +33,42 @@ const resourceSpecifications = Array.from({ length: 20 }, (_, index) => ({
   ],
 }));
 
-const parties = [
-  {
-    '@type': 'Organization' as const,
-    id: 'party-datacom',
-    href: '/tmf-api/partyManagement/v4/party/party-datacom',
-    name: 'DATACOM',
+const partyRoles = [
+  'VANTIVA',
+  'BLU-CASTLE',
+  'DATACOM',
+  'HUAWEI',
+  'ZTE',
+  'SAGEMCOM',
+  'NOKIA',
+  'TELLESCOM',
+  'ARCADYAN',
+].map((name) => {
+  const id = `party-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+  return {
+    '@type': 'PartyRole' as const,
+    id: `${id}-role`,
+    href: `/tmf-api/partyRoleManagement/v4/partyRole/${id}-role`,
+    name: 'manufacturer' as const,
     status: 'active' as const,
-    partyType: 'Organization' as const,
-  },
-  {
-    '@type': 'Organization' as const,
-    id: 'party-huawei',
-    href: '/tmf-api/partyManagement/v4/party/party-huawei',
-    name: 'Huawei',
-    status: 'active' as const,
-    partyType: 'Organization' as const,
-  },
-];
+    partyId: id,
+    party: {
+      id,
+      '@referredType': 'Organization' as const,
+      href: `/tmf-api/partyManagement/v4/party/${id}`,
+      name,
+    },
+  };
+});
+
+const manufacturerParties = partyRoles.map((role) => ({
+  '@type': 'Organization' as const,
+  id: role.party.id,
+  href: role.party.href,
+  name: role.party.name,
+  status: 'active' as const,
+  partyType: 'Organization' as const,
+}));
 
 const resourceCategories = [
   {
@@ -139,6 +157,7 @@ const listResourceCategoriesMock = vi.spyOn(resourceApi, 'listResourceCategories
 const listResourceTypesMock = vi.spyOn(resourceApi, 'listResourceTypes');
 const listResourcesMock = vi.spyOn(resourceApi, 'listResources');
 const listPartiesMock = vi.spyOn(partyApi, 'listParties');
+const listPartyRolesMock = vi.spyOn(partyApi, 'listPartyRoles');
 const createResourceSpecificationMock = vi.spyOn(resourceApi, 'createResourceSpecification');
 const updateResourceSpecificationMock = vi.spyOn(resourceApi, 'updateResourceSpecification');
 const deleteResourceSpecificationMock = vi.spyOn(resourceApi, 'deleteResourceSpecification');
@@ -151,7 +170,8 @@ beforeEach(() => {
   listResourceSpecificationsMock.mockImplementation(async ({ limit, offset }) => resourceSpecifications.slice(offset, offset + limit));
   listResourceCategoriesMock.mockResolvedValue(resourceCategories);
   listResourceTypesMock.mockResolvedValue(resourceTypes);
-  listPartiesMock.mockImplementation(async ({ limit, offset }) => parties.slice(offset, offset + limit));
+  listPartiesMock.mockImplementation(async ({ limit, offset }) => manufacturerParties.slice(offset, offset + limit));
+  listPartyRolesMock.mockImplementation(async ({ limit, offset }) => partyRoles.slice(offset, offset + limit));
   listResourcesMock.mockImplementation(async ({ kind, limit, offset }) => {
     const source = kind === 'PhysicalResource' ? physicalResources : logicalResources;
     return source.slice(offset, offset + limit);
@@ -209,6 +229,7 @@ test('create button opens the modal in create mode and row click opens edit mode
   expect(screen.getByRole('combobox', { name: /^Categoria$/i })).toBeInTheDocument();
   expect(screen.getByRole('combobox', { name: /^Tipo do Recurso$/i })).toBeInTheDocument();
   expect(screen.getByRole('combobox', { name: /Modelo/i })).toBeInTheDocument();
+  await waitFor(() => expect(listPartyRolesMock).toHaveBeenCalled());
   expect(screen.getByRole('textbox', { name: /^Modelo físico$/i })).toBeInTheDocument();
   expect(screen.getByLabelText(/ID do Local/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/Tipo de Local/i)).toHaveAttribute('readonly');
@@ -283,7 +304,7 @@ test('resource specification editor uses catalog-driven selects for category and
   expect(screen.getByRole('combobox', { name: 'Categoria' })).toBeInTheDocument();
   expect(screen.getByRole('combobox', { name: 'Tipo do Recurso' })).toBeInTheDocument();
   expect(screen.getByLabelText(/Cod\. Equipamento/i)).toHaveValue('EQ-1');
-  expect(screen.getByLabelText(/Fabricante/i)).toHaveValue('DATACOM');
+  expect(screen.getByLabelText(/Fabricante/i)).toHaveValue('party-datacom');
   expect(screen.getByLabelText(/^Modelo$/i)).toHaveValue('Model 1');
   expect(screen.getByLabelText(/ID-SKU/i)).toHaveValue('SKU-1');
   expect(screen.getByLabelText(/EOL/i)).toHaveValue('2026-07-03');
@@ -328,8 +349,7 @@ test('resource specification create serializes the extended characteristic set',
   await user.click(screen.getByRole('button', { name: 'Criar recurso' }));
 
   expect(await screen.findByRole('dialog')).toHaveTextContent('Criar Modelo de Recurso');
-  await user.type(screen.getByRole('combobox', { name: /Fabricante/i }), 'Hua');
-  await user.click(await screen.findByRole('option', { name: /Huawei/i }));
+  await user.selectOptions(screen.getByLabelText(/Fabricante/i), 'party-huawei');
   await user.type(screen.getByLabelText(/Cod\. Equipamento/i), 'EQ-OLT-001');
   await user.click(screen.getByRole('combobox', { name: 'Categoria' }));
   await user.click(screen.getByRole('option', { name: /Equipamentos de Acesso/ }));
@@ -359,7 +379,7 @@ test('resource specification create serializes the extended characteristic set',
           id: 'party-huawei',
           '@referredType': 'Organization',
           role: 'manufacturer',
-          name: 'Huawei',
+          name: 'HUAWEI',
         }),
       ],
     }),

@@ -4,6 +4,7 @@ import {
   createResourceSpecification,
   deleteResource,
   deleteResourceSpecification,
+  loadResourceWorkspaceSnapshot,
   listResourceCategories,
   listResourceTypes,
   listResourceSpecifications,
@@ -145,6 +146,32 @@ test('resource catalog helpers hit the read-only endpoints', async () => {
   expect(types).toHaveLength(1);
   expect(fetchMock).toHaveBeenCalledWith('/tmf-api/resourceCatalogManagement/v4/resourceCategory', expect.objectContaining({ method: 'GET' }));
   expect(fetchMock).toHaveBeenCalledWith('/tmf-api/resourceCatalogManagement/v4/resourceType', expect.objectContaining({ method: 'GET' }));
+});
+
+test('loadResourceWorkspaceSnapshot requests the aggregated workspace endpoint', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    expect(String(input)).toBe('/v1/resource/workspace?tab=PhysicalResource&limit=20&offset=40');
+    return new Response(
+      JSON.stringify({
+        items: [],
+        resourceSpecificationOptions: [],
+        resourceCategories: [],
+        resourceTypes: [],
+        physicalResources: [],
+        logicalResources: [],
+        manufacturerOptions: [],
+      }),
+      {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      },
+    );
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  const result = await loadResourceWorkspaceSnapshot({ tab: 'PhysicalResource', limit: 20, offset: 40 });
+
+  expect(result.items).toEqual([]);
 });
 
 test('deleteResourceSpecification calls DELETE and returns the closed entity', async () => {

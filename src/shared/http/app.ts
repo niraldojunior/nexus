@@ -9,6 +9,7 @@ import { createCanonicalId } from '../utils/canonical-id.js';
 import { ChatGPTProvider } from '../../modules/search/chatgpt-provider.js';
 import { LocalKnowledgeProvider } from '../../modules/search/local-knowledge-provider.js';
 import { prependNexusCopilotContext } from '../../modules/search/nexus-copilot-context.js';
+import { SearchService } from '../../modules/search/service.js';
 import { createNexusMcpModule } from '../../modules/mcp/index.js';
 import type { GeoService } from '../../modules/geo/service.js';
 import type { OrderService } from '../../modules/order/service.js';
@@ -16,10 +17,19 @@ import { createNexusRuntime, DEFAULT_RUNTIME_USER, type NexusRuntime } from '../
 import type { PartyService } from '../../modules/party/service.js';
 import type { ResourceService } from '../../modules/resource/service.js';
 import type { ServiceService } from '../../modules/service/service.js';
+import type { AddMessageInput, ResearchMessage } from '../../modules/search/domain.js';
 import type { TmfEventQuery } from '../tmf/index.js';
 import type { EventService } from '../tmf/index.js';
-import type { PartyQuery, PartyRoleQuery } from '../../modules/party/index.js';
-import type { ResourceQuery, ResourceSpecificationQuery, ResourceFunctionSpecificationQuery } from '../../modules/resource/index.js';
+import type { Party, PartyQuery, PartyRoleQuery } from '../../modules/party/index.js';
+import type {
+  Resource,
+  ResourceCategory,
+  ResourceFunctionSpecificationQuery,
+  ResourceQuery,
+  ResourceSpecification,
+  ResourceSpecificationQuery,
+  ResourceType,
+} from '../../modules/resource/index.js';
 import type {
   ServiceQuery,
   ServiceSpecificationQuery,
@@ -54,30 +64,74 @@ type AppDependencies = {
 
 export type HttpRequestHandlerDependencies = RouteDependencies;
 
+type ResearchMessageRepository = {
+  addMessage: (
+    sessionId: string,
+    message: AddMessageInput & { id: string },
+  ) => Promise<ResearchMessage> | ResearchMessage;
+};
+
+type ResourceWorkspaceTab = 'PhysicalResource' | 'LogicalResource' | 'ResourceSpecification';
+
+type ResourceWorkspaceSnapshot = {
+  items: Resource[] | ResourceSpecification[];
+  resourceSpecificationOptions: ResourceSpecification[];
+  resourceCategories: ResourceCategory[];
+  resourceTypes: ResourceType[];
+  physicalResources: Resource[];
+  logicalResources: Resource[];
+  manufacturerOptions: Party[];
+};
+
+const RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE = 100;
+
 export const handleHttpRequest = async (dependencies: HttpRequestHandlerDependencies): Promise<void> =>
   routeRequest(dependencies);
 
 export const createApp = ({ config, logger }: AppDependencies) => {
   const repository = new InMemoryEntityRepository();
   const db = SqliteDatabase.getInstance(config.databaseUrl);
+  // The runtime builds every repository and runs their seeds, which over a Postgres/Neon
+  // backend means dozens of network round-trips. Build it ONCE at startup and reuse it for
+  // every request instead of rebuilding per request (which made each request take seconds).
+  let runtime: NexusRuntime | null = null;
 
   const server = createServer((request, response) => {
-    void routeRequest({ 
-      request, 
-      response, 
-      config, 
-      logger, 
-      repository, 
+    const activeRuntime = runtime ?? (runtime = createNexusRuntime(db));
+    const startedAt = Date.now();
+    void routeRequest({
+      request,
+      response,
+      config,
+      logger,
+      repository,
       db,
-    }).catch((error: unknown) =>
-      handleHttpError({ error, logger, response }),
-    );
+      runtime: activeRuntime,
+    })
+      .catch((error: unknown) => handleHttpError({ error, logger, response }))
+      .finally(() => {
+        const durationMs = Date.now() - startedAt;
+        if (durationMs >= 250) {
+          logger.info(
+            {
+              method: request.method,
+              path: request.url,
+              durationMs,
+              statusCode: response.statusCode,
+            },
+            'request completed',
+          );
+        }
+      });
   });
 
   return {
     start: async (): Promise<number> => {
       await db.initialize();
-      const runtime = createNexusRuntime(db);
+      logger.info({ databaseUrl: redactDatabaseUrl(config.databaseUrl) }, 'database initialized');
+      const runtimeStartedAt = Date.now();
+      runtime = createNexusRuntime(db);
+      logger.info({ durationMs: Date.now() - runtimeStartedAt }, 'runtime initialized');
 
       if (runtime.defaultUser.externalId === DEFAULT_RUNTIME_USER.externalId) {
         logger.info(
@@ -97,6 +151,7 @@ export const createApp = ({ config, logger }: AppDependencies) => {
       return port;
     },
     stop: async (): Promise<void> => {
+      runtime = null;
       db.close();
       SqliteDatabase.resetForTesting();
       await new Promise<void>((resolve, reject) => {
@@ -111,6 +166,7 @@ type RouteDependencies = AppDependencies & {
   response: ServerResponse;
   repository: InMemoryEntityRepository;
   db: SqliteDatabase;
+  runtime: NexusRuntime;
 };
 
 const routeRequest = async ({
@@ -120,19 +176,21 @@ const routeRequest = async ({
   logger,
   repository,
   db,
+  runtime,
 }: RouteDependencies): Promise<void> => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
-  const runtime = createNexusRuntime(db);
+  const searchService = runtime.searchService;
+  const defaultUser = runtime.defaultUser;
+  const userRepository = runtime.userRepository;
+  const searchRepository = runtime.searchRepository;
+  const researchRepository = runtime.researchRepository;
   const {
-    userRepository,
-    searchRepository,
     geoService,
     eventService,
     partyService,
     resourceService,
     serviceService,
     orderService,
-    defaultUser,
   } = runtime;
   const apiKey = process.env.OPENAI_API_KEY;
   const apiEndpoint = process.env.API_ENDPOINT || 'https://api.openai.com/v1';
@@ -158,6 +216,22 @@ const routeRequest = async ({
     ensureAuthorized(request, config);
     const count = repository.count();
     sendJson(response, 200, { status: 'ready', entities: count });
+    return;
+  }
+
+  if (request.method === 'GET' && url.pathname === '/v1/resource/workspace') {
+    ensureAuthorized(request, config);
+    const tab = parseResourceWorkspaceTab(url.searchParams.get('tab'));
+    const limit = parseOptionalNumber(url.searchParams.get('limit')) ?? 20;
+    const offset = parseOptionalNumber(url.searchParams.get('offset')) ?? 0;
+    const snapshot = await buildResourceWorkspaceSnapshot({
+      tab,
+      limit,
+      offset,
+      resourceService: runtime.resourceService,
+      partyService: runtime.partyService,
+    });
+    sendJson(response, 200, snapshot);
     return;
   }
 
@@ -228,7 +302,7 @@ const routeRequest = async ({
   // Users API
   if (request.method === 'GET' && url.pathname === '/v1/users') {
     ensureAuthorized(request, config);
-    const users = userRepository.list();
+    const users = await userRepository.list();
     sendJson(response, 200, users);
     return;
   }
@@ -237,7 +311,7 @@ const routeRequest = async ({
     ensureAuthorized(request, config);
     const body = await readBody(request);
     const email = body.email ? String(body.email) : undefined;
-    const user = userRepository.create({
+    const user = await userRepository.create({
       externalId: String(body.externalId),
       name: String(body.name),
       ...(email ? { email } : {}),
@@ -252,7 +326,7 @@ const routeRequest = async ({
     const userId = userIdMatch[1];
     if (request.method === 'GET') {
       ensureAuthorized(request, config);
-      const user = userRepository.getById(userId);
+      const user = await userRepository.getById(userId);
       if (!user) {
         throw new AppError('user not found', { code: 'USER_NOT_FOUND', statusCode: 404 });
       }
@@ -264,7 +338,7 @@ const routeRequest = async ({
       ensureAuthorized(request, config);
       const body = await readBody(request);
       const email = body.email ? String(body.email) : undefined;
-      const user = userRepository.update(userId, {
+      const user = await userRepository.update(userId, {
         ...(body.name ? { name: String(body.name) } : {}),
         ...(email ? { email } : {}),
       });
@@ -278,7 +352,7 @@ const routeRequest = async ({
 
     if (request.method === 'DELETE') {
       ensureAuthorized(request, config);
-      const deleted = userRepository.delete(userId);
+      const deleted = await userRepository.delete(userId);
       if (!deleted) {
         throw new AppError('user not found', { code: 'USER_NOT_FOUND', statusCode: 404 });
       }
@@ -291,14 +365,14 @@ const routeRequest = async ({
   // Searches API
   if (request.method === 'GET' && url.pathname === '/v1/searches') {
     ensureAuthorized(request, config);
-    const searches = searchRepository.list();
+    const searches = await searchRepository.list();
     sendJson(response, 200, searches);
     return;
   }
 
   if (request.method === 'GET' && url.pathname === '/v1/searches/my') {
     ensureAuthorized(request, config);
-    const searches = searchRepository.listByUserId(defaultUser.id);
+    const searches = await searchRepository.listByUserId(defaultUser.id);
     sendJson(response, 200, searches);
     return;
   }
@@ -308,7 +382,7 @@ const routeRequest = async ({
     const body = await readBody(request);
     const filters = body.filters ? (body.filters as Record<string, any>) : undefined;
     const results = body.results ? (body.results as Record<string, any>) : undefined;
-    const search = searchRepository.create({
+    const search = await searchRepository.create({
       userId: defaultUser.id,
       query: String(body.query),
       ...(filters ? { filters } : {}),
@@ -324,7 +398,7 @@ const routeRequest = async ({
     const searchId = searchIdMatch[1];
     if (request.method === 'GET') {
       ensureAuthorized(request, config);
-      const search = searchRepository.getById(searchId);
+      const search = await searchRepository.getById(searchId);
       if (!search) {
         throw new AppError('search not found', { code: 'SEARCH_NOT_FOUND', statusCode: 404 });
       }
@@ -337,7 +411,7 @@ const routeRequest = async ({
       const body = await readBody(request);
       const filters = body.filters ? (body.filters as Record<string, any>) : undefined;
       const results = body.results ? (body.results as Record<string, any>) : undefined;
-      const search = searchRepository.update(searchId, {
+      const search = await searchRepository.update(searchId, {
         userId: defaultUser.id,
         ...(body.query ? { query: String(body.query) } : {}),
         ...(filters ? { filters } : {}),
@@ -353,7 +427,7 @@ const routeRequest = async ({
 
     if (request.method === 'DELETE') {
       ensureAuthorized(request, config);
-      const deleted = searchRepository.delete(searchId);
+      const deleted = await searchRepository.delete(searchId);
       if (!deleted) {
         throw new AppError('search not found', { code: 'SEARCH_NOT_FOUND', statusCode: 404 });
       }
@@ -412,10 +486,13 @@ const routeRequest = async ({
   if (url.pathname.startsWith('/v1/research/')) {
     const llmToolCatalog = buildLlmToolCatalog(mcpModule);
     await routeResearchRequest({ 
-      request, 
-      response, 
-      config, 
-      runtime,
+    request,
+    response,
+    config,
+    runtime,
+    defaultUser,
+    searchService,
+    researchRepository,
       chatGptProvider,
       localKnowledgeProvider,
       mcpModule,
@@ -1233,6 +1310,115 @@ const parseResourceSpecificationQuery = (params: URLSearchParams): ResourceSpeci
   return query;
 };
 
+const parseResourceWorkspaceTab = (value: string | null): ResourceWorkspaceTab => {
+  if (value === 'LogicalResource' || value === 'ResourceSpecification') {
+    return value;
+  }
+  return 'PhysicalResource';
+};
+
+const buildResourceWorkspaceSnapshot = async ({
+  tab,
+  limit,
+  offset,
+  resourceService,
+  partyService,
+}: {
+  tab: ResourceWorkspaceTab;
+  limit: number;
+  offset: number;
+  resourceService: ResourceService;
+  partyService: PartyService;
+}): Promise<ResourceWorkspaceSnapshot> => {
+  const items = getResourceWorkspaceItems(tab, limit, offset, resourceService);
+  const resourceSpecificationOptions = await loadAllResourceSpecifications(resourceService);
+  const resourceCategories = resourceService.listResourceCategories();
+  const resourceTypes = resourceService.listResourceTypes();
+  const physicalResources = await loadAllResources(resourceService, 'PhysicalResource');
+  const logicalResources = await loadAllResources(resourceService, 'LogicalResource');
+  const manufacturerOptions = await loadAllManufacturerOptions(partyService);
+
+  return {
+    items,
+    resourceSpecificationOptions,
+    resourceCategories,
+    resourceTypes,
+    physicalResources,
+    logicalResources,
+    manufacturerOptions,
+  };
+};
+
+const getResourceWorkspaceItems = (
+  tab: ResourceWorkspaceTab,
+  limit: number,
+  offset: number,
+  resourceService: ResourceService,
+): Resource[] | ResourceSpecification[] => {
+  if (tab === 'ResourceSpecification') {
+    return resourceService.listResourceSpecifications({ limit, offset });
+  }
+
+  return resourceService.listResources({ kind: tab, limit, offset, status: 'active' });
+};
+
+const loadAllResourceSpecifications = async (resourceService: ResourceService): Promise<ResourceSpecification[]> => {
+  const collected: ResourceSpecification[] = [];
+  for (let offset = 0; ; offset += RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) {
+    const items = resourceService.listResourceSpecifications({ limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE, offset });
+    collected.push(...items);
+    if (items.length < RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) break;
+  }
+  return collected;
+};
+
+const loadAllResources = async (
+  resourceService: ResourceService,
+  kind: 'PhysicalResource' | 'LogicalResource',
+): Promise<Resource[]> => {
+  const collected: Resource[] = [];
+  for (let offset = 0; ; offset += RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) {
+    const items = resourceService.listResources({
+      kind,
+      limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE,
+      offset,
+      status: 'active',
+    });
+    collected.push(...items);
+    if (items.length < RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) break;
+  }
+  return collected;
+};
+
+const loadAllManufacturerOptions = async (partyService: PartyService): Promise<Party[]> => {
+  const collected: Party[] = [];
+  for (let offset = 0; ; offset += RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) {
+    const items = partyService.listPartyRoles({
+      limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE,
+      offset,
+      status: 'active',
+      name: 'manufacturer',
+    });
+    for (const role of items) {
+      if (role.party['@referredType'] !== 'Organization') continue;
+      collected.push({
+        '@type': 'Organization',
+        id: role.party.id,
+        href: role.party.href ?? `/tmf-api/partyManagement/v4/party/${role.party.id}`,
+        name: role.party.name ?? role.party.id,
+        status: 'active',
+        partyType: 'Organization',
+        partyCharacteristic: [],
+      });
+    }
+    if (items.length < RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) break;
+  }
+
+  return [...new Map(collected.map((party) => [party.id, party] as const)).values()].sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
+};
+
 const parseResourceFunctionSpecificationQuery = (params: URLSearchParams): ResourceFunctionSpecificationQuery => {
   const query: ResourceFunctionSpecificationQuery = {};
   const name = params.get('name');
@@ -1452,6 +1638,9 @@ const routeResearchRequest = async ({
   response,
   config,
   runtime,
+  defaultUser,
+  searchService,
+  researchRepository,
   chatGptProvider,
   localKnowledgeProvider,
   mcpModule,
@@ -1462,6 +1651,9 @@ const routeResearchRequest = async ({
   response: ServerResponse;
   config: AppConfig;
   runtime: NexusRuntime;
+  defaultUser: NexusRuntime['defaultUser'];
+  searchService: SearchService;
+  researchRepository: ResearchMessageRepository;
   chatGptProvider: ChatGPTProvider | null;
   localKnowledgeProvider: LocalKnowledgeProvider;
   mcpModule: ReturnType<typeof createNexusMcpModule>;
@@ -1469,11 +1661,10 @@ const routeResearchRequest = async ({
   url: URL;
 }): Promise<void> => {
   ensureAuthorized(request, config);
-  const { defaultUser, searchService, researchRepository } = runtime;
 
   // GET /v1/research/sessions - List user's sessions
   if (request.method === 'GET' && url.pathname === '/v1/research/sessions') {
-    const sessions = searchService.listUserSessions(defaultUser.id);
+    const sessions = await searchService.listUserSessions(defaultUser.id);
     return sendJson(response, 200, sessions);
   }
 
@@ -1498,7 +1689,7 @@ const routeResearchRequest = async ({
       sessionInput.maxTokens = Number(body.maxTokens);
     }
 
-    const session = searchService.createSession(defaultUser.id, sessionInput);
+    const session = await searchService.createSession(defaultUser.id, sessionInput);
     return sendJson(response, 201, session);
   }
 
@@ -1513,7 +1704,7 @@ const routeResearchRequest = async ({
       throw new AppError('confirmationToken required', { code: 'INVALID_CONFIRMATION_TOKEN', statusCode: 400 });
     }
 
-    const session = searchService.getSession(sessionId);
+    const session = await searchService.getSession(sessionId);
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
 
     const pendingConfirmation = mcpModule.confirmations.get(confirmationToken);
@@ -1539,22 +1730,22 @@ const routeResearchRequest = async ({
       }),
     );
     const outcomeMessage = buildConfirmationOutcomeMessage(pendingConfirmation, commitResult);
-    const assistantMessage = researchRepository.addMessage(sessionId, {
+    const assistantMessage = await researchRepository.addMessage(sessionId, {
       id: createCanonicalId(),
       role: 'assistant',
       content: outcomeMessage,
-        metadata: {
-          confirmation: {
-            ok: commitResult.ok,
-            domain: pendingConfirmation.domain,
-            operation: pendingConfirmation.operation,
-            confirmationToken,
-            ...(typeof pendingConfirmation.summary === 'string' ? { summary: pendingConfirmation.summary } : {}),
-            ...(typeof pendingConfirmation.expiresAt === 'string' ? { expiresAt: pendingConfirmation.expiresAt } : {}),
-            ...(Array.isArray((pendingConfirmation as { items?: unknown[] }).items) ? { items: (pendingConfirmation as { items?: unknown[] }).items } : {}),
-          },
+      metadata: {
+        confirmation: {
+          ok: commitResult.ok,
+          domain: pendingConfirmation.domain,
+          operation: pendingConfirmation.operation,
+          confirmationToken,
+          ...(typeof pendingConfirmation.summary === 'string' ? { summary: pendingConfirmation.summary } : {}),
+          ...(typeof pendingConfirmation.expiresAt === 'string' ? { expiresAt: pendingConfirmation.expiresAt } : {}),
+          ...(Array.isArray((pendingConfirmation as { items?: unknown[] }).items) ? { items: (pendingConfirmation as { items?: unknown[] }).items } : {}),
         },
-      });
+      },
+    });
 
     return sendJson(response, 200, {
       assistantMessage,
@@ -1571,7 +1762,7 @@ const routeResearchRequest = async ({
   if (request.method === 'GET' && url.pathname.startsWith('/v1/research/sessions/')) {
     const sessionId = url.pathname.split('/').pop();
     if (!sessionId) throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
-    const session = searchService.getSession(sessionId);
+    const session = await searchService.getSession(sessionId);
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
     return sendJson(response, 200, session);
   }
@@ -1585,7 +1776,7 @@ const routeResearchRequest = async ({
     const userMessage = body.message as string;
     if (!userMessage) throw new AppError('message required', { code: 'INVALID_MESSAGE', statusCode: 400 });
 
-    const session = searchService.getSession(sessionId);
+    const session = await searchService.getSession(sessionId);
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
 
     const llmProvider = chatGptProvider
@@ -1656,7 +1847,7 @@ const routeResearchRequest = async ({
     if (!sessionId) throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
     
     const body = await readBody(request);
-    const updated = searchService.updateSessionTitle(sessionId, (body.title || 'Untitled') as string);
+    const updated = await searchService.updateSessionTitle(sessionId, (body.title || 'Untitled') as string);
     if (!updated) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
     return sendJson(response, 200, updated);
   }
@@ -1666,7 +1857,7 @@ const routeResearchRequest = async ({
     const sessionId = url.pathname.split('/').pop();
     if (!sessionId) throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
     
-    const archived = searchService.archiveSession(sessionId);
+    const archived = await searchService.archiveSession(sessionId);
     if (!archived) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
     return sendJson(response, 200, archived);
   }
@@ -1942,6 +2133,17 @@ const buildLegacyUiNoticeHtml = (appName: string): string => `<!doctype html>
 
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char] ?? char));
+
+const redactDatabaseUrl = (value: string): string => {
+  try {
+    const url = new URL(value);
+    if (url.password) url.password = '***';
+    if (url.username) url.username = '***';
+    return url.toString();
+  } catch {
+    return value.startsWith('sqlite://') ? value : '<redacted>';
+  }
+};
 
 export const handleHttpError = ({
   error,

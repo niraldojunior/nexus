@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { createApp } from '../src/shared/http/app.js';
+import { createTestDatabase as createPostgresTestDatabase } from './test-utils.js';
 
 const createLogger = () => ({
   debug: () => undefined,
@@ -107,6 +108,25 @@ test('TMF634, TMF639 and TMF664 resource endpoints create and activate resources
   assert.ok(Array.isArray(types.body));
   assert.ok((types.body as Array<{ code: string }>).some((type) => type.code === 'OLT'));
 
+  const workspace = await requestJson(port, 'GET', '/v1/resource/workspace?tab=PhysicalResource&limit=20&offset=0');
+  assert.equal(workspace.statusCode, 200);
+  const workspaceBody = workspace.body as {
+    items: Array<{ id: string }>;
+    resourceSpecificationOptions: Array<{ id: string }>;
+    resourceCategories: Array<{ code: string }>;
+    resourceTypes: Array<{ code: string }>;
+    physicalResources: Array<{ id: string }>;
+    logicalResources: Array<{ id: string }>;
+    manufacturerOptions: Array<{ id: string }>;
+  };
+  assert.ok(Array.isArray(workspaceBody.items));
+  assert.ok(Array.isArray(workspaceBody.resourceSpecificationOptions));
+  assert.ok(Array.isArray(workspaceBody.resourceCategories));
+  assert.ok(Array.isArray(workspaceBody.resourceTypes));
+  assert.ok(Array.isArray(workspaceBody.physicalResources));
+  assert.ok(Array.isArray(workspaceBody.logicalResources));
+  assert.ok(Array.isArray(workspaceBody.manufacturerOptions));
+
   const deletedSpec = await requestJson(
     port,
     'DELETE',
@@ -183,9 +203,5 @@ test('TMF634, TMF639 and TMF664 resource endpoints create and activate resources
 });
 
 const createTestDatabase = (): { databaseUrl: string; cleanup: () => void } => {
-  const root = mkdtempSync(join(tmpdir(), 'nexus-resource-'));
-  return {
-    databaseUrl: `sqlite://${join(root, 'nexus.db')}`,
-    cleanup: () => rmSync(root, { recursive: true, force: true }),
-  };
+  return createPostgresTestDatabase('nexus-resource-');
 };

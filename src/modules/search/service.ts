@@ -13,19 +13,30 @@ import type {
 import { getNexusCopilotContext } from './nexus-copilot-context.js';
 import { SqliteSearchRepository } from './sqlite-repository.js';
 
+type Awaitable<T> = T | Promise<T>;
+
+type ResearchRepository = {
+  createSession(session: Omit<ResearchSession, 'createdAt' | 'updatedAt'>): Awaitable<ResearchSession>;
+  getSession(sessionId: string): Awaitable<ResearchSession | undefined>;
+  listSessionsByUser(userId: string, limit?: number): Awaitable<ResearchSession[]>;
+  addMessage(sessionId: string, message: AddMessageInput & { id: string }): Awaitable<ResearchMessage>;
+  updateSessionTitle(sessionId: string, title: string): Awaitable<ResearchSession | undefined>;
+  archiveSession(sessionId: string): Awaitable<ResearchSession | undefined>;
+};
+
 /**
  * Service for managing research sessions and chat interactions
  */
 export class SearchService {
-  constructor(private readonly repository: SqliteSearchRepository) {}
+  constructor(private readonly repository: ResearchRepository) {}
 
   /**
    * Create a new research session (like starting a ChatGPT conversation)
    */
-  public createSession(
+  public async createSession(
     userId: string,
     input: CreateResearchSessionInput,
-  ): ResearchSession {
+  ): Promise<ResearchSession> {
     const id = createCanonicalId();
     const now = new Date().toISOString();
     const sessionData: any = {
@@ -50,21 +61,21 @@ export class SearchService {
       sessionData.context = resolvedContext;
     }
 
-    return this.repository.createSession(sessionData);
+    return await this.repository.createSession(sessionData);
   }
 
   /**
    * Get a research session with all messages
    */
-  public getSession(sessionId: string): ResearchSession | undefined {
-    return this.repository.getSession(sessionId);
+  public async getSession(sessionId: string): Promise<ResearchSession | undefined> {
+    return await this.repository.getSession(sessionId);
   }
 
   /**
    * List recent sessions for a user
    */
-  public listUserSessions(userId: string, limit = 50): ResearchSession[] {
-    return this.repository.listSessionsByUser(userId, limit);
+  public async listUserSessions(userId: string, limit = 50): Promise<ResearchSession[]> {
+    return await this.repository.listSessionsByUser(userId, limit);
   }
 
   /**
@@ -83,11 +94,11 @@ export class SearchService {
       maxToolCalls?: number;
     },
   ): Promise<{ userMessage: ResearchMessage; assistantMessage: ResearchMessage }> {
-    const session = this.repository.getSession(sessionId);
+    const session = await this.repository.getSession(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
 
     // Add user message
-    const userMsg = this.repository.addMessage(sessionId, {
+    const userMsg = await this.repository.addMessage(sessionId, {
       id: createCanonicalId(),
       role: 'user',
       content: userMessage,
@@ -158,7 +169,7 @@ export class SearchService {
       assistantMsgInput.metadata = metadata;
     }
 
-    const assistantMsg = this.repository.addMessage(sessionId, assistantMsgInput);
+    const assistantMsg = await this.repository.addMessage(sessionId, assistantMsgInput);
 
     return { userMessage: userMsg, assistantMessage: assistantMsg };
   }
@@ -166,15 +177,15 @@ export class SearchService {
   /**
    * Update session title (e.g., auto-generate from first message)
    */
-  public updateSessionTitle(sessionId: string, title: string): ResearchSession | undefined {
-    return this.repository.updateSessionTitle(sessionId, title);
+  public async updateSessionTitle(sessionId: string, title: string): Promise<ResearchSession | undefined> {
+    return await this.repository.updateSessionTitle(sessionId, title);
   }
 
   /**
    * Archive a session
    */
-  public archiveSession(sessionId: string): ResearchSession | undefined {
-    return this.repository.archiveSession(sessionId);
+  public async archiveSession(sessionId: string): Promise<ResearchSession | undefined> {
+    return await this.repository.archiveSession(sessionId);
   }
 
   private async runToolLoop(

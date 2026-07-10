@@ -26,57 +26,57 @@ export class SqliteResourceRepository implements IResourceRepository {
 
   private seedResourceCatalog(): void {
     const now = new Date().toISOString();
-    this.db.run('DELETE FROM tmf_resource_type');
-    this.db.run('DELETE FROM tmf_resource_category');
-    for (const category of RESOURCE_CATEGORIES) {
-      this.db.run(
-        `INSERT INTO tmf_resource_category (id, href, code, name, parent_category_code, description, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(code) DO UPDATE SET
-         href = excluded.href,
-         name = excluded.name,
-         parent_category_code = excluded.parent_category_code,
-         description = excluded.description,
-         status = excluded.status,
-         updated_at = excluded.updated_at`,
-        [
-          category.id,
-          category.href,
-          category.code,
-          category.name,
-          category.parentCategoryCode ?? null,
-          category.description ?? null,
-          category.status,
-          now,
-          now,
-        ],
-      );
-    }
+    this.db.transaction(() => {
+      for (const category of RESOURCE_CATEGORIES) {
+        this.db.run(
+          `INSERT INTO tmf_resource_category (id, href, code, name, parent_category_code, description, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(code) DO UPDATE SET
+           href = excluded.href,
+           name = excluded.name,
+           parent_category_code = excluded.parent_category_code,
+           description = excluded.description,
+           status = excluded.status,
+           updated_at = excluded.updated_at`,
+          [
+            category.id,
+            category.href,
+            category.code,
+            category.name,
+            category.parentCategoryCode ?? null,
+            category.description ?? null,
+            category.status,
+            now,
+            now,
+          ],
+        );
+      }
 
-    for (const type of RESOURCE_TYPES) {
-      this.db.run(
-        `INSERT INTO tmf_resource_type (id, href, code, name, category_code, description, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(code) DO UPDATE SET
-         href = excluded.href,
-         name = excluded.name,
-         category_code = excluded.category_code,
-         description = excluded.description,
-         status = excluded.status,
-         updated_at = excluded.updated_at`,
-        [
-          type.id,
-          type.href,
-          type.code,
-          type.name,
-          type.categoryCode,
-          type.description ?? null,
-          type.status,
-          now,
-          now,
-        ],
-      );
-    }
+      for (const type of RESOURCE_TYPES) {
+        this.db.run(
+          `INSERT INTO tmf_resource_type (id, href, code, name, category_code, description, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(code) DO UPDATE SET
+           href = excluded.href,
+           name = excluded.name,
+           category_code = excluded.category_code,
+           description = excluded.description,
+           status = excluded.status,
+           updated_at = excluded.updated_at`,
+          [
+            type.id,
+            type.href,
+            type.code,
+            type.name,
+            type.categoryCode,
+            type.description ?? null,
+            type.status,
+            now,
+            now,
+          ],
+        );
+      }
+    });
   }
 
   public getResourceCategory(code: string): ResourceCategory | undefined {
@@ -446,7 +446,8 @@ export class SqliteResourceRepository implements IResourceRepository {
     if (hasOffset) params.push(query.offset as number);
 
     const rows = this.db.all<any>(sql, params);
-    return rows.map((row) => this.mapPhysicalResource(row));
+    const relationshipsByResourceId = this.loadResourceRelationshipsByResourceIds(rows.map((row) => row.id));
+    return rows.map((row) => this.mapPhysicalResource(row, relationshipsByResourceId.get(row.id)));
   }
 
   public upsertLogicalResource(resource: LogicalResource): LogicalResource {
@@ -550,7 +551,8 @@ export class SqliteResourceRepository implements IResourceRepository {
     if (hasOffset) params.push(query.offset as number);
 
     const rows = this.db.all<any>(sql, params);
-    return rows.map((row) => this.mapLogicalResource(row));
+    const relationshipsByResourceId = this.loadResourceRelationshipsByResourceIds(rows.map((row) => row.id));
+    return rows.map((row) => this.mapLogicalResource(row, relationshipsByResourceId.get(row.id)));
   }
 
   public upsertResourceRelationship(resourceId: string, relationship: ResourceRelationship): ResourceRelationship {
@@ -607,8 +609,50 @@ export class SqliteResourceRepository implements IResourceRepository {
               ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
             },
           }
-        : {}),
+      : {}),
     }));
+  }
+
+  private loadResourceRelationshipsByResourceIds(resourceIds: string[]): Map<string, ResourceRelationship[]> {
+    if (resourceIds.length === 0) {
+      return new Map();
+    }
+
+    const placeholders = resourceIds.map(() => '?').join(', ');
+    const rows = this.db.all<{
+      resource_from_id: string;
+      resource_to_id: string;
+      relationship_type: string;
+      valid_for_start?: string | null;
+      valid_for_end?: string | null;
+    }>(
+      `SELECT resource_from_id, resource_to_id, relationship_type, valid_for_start, valid_for_end
+       FROM tmf_resource_relationship
+       WHERE resource_from_id IN (${placeholders})
+       ORDER BY resource_from_id, relationship_type, resource_to_id`,
+      resourceIds,
+    );
+
+    const relationshipsByResourceId = new Map<string, ResourceRelationship[]>();
+    for (const row of rows) {
+      const current = relationshipsByResourceId.get(row.resource_from_id) ?? [];
+      current.push({
+        id: row.resource_to_id,
+        relationshipType: row.relationship_type,
+        '@referredType': 'Resource',
+        ...(row.valid_for_start || row.valid_for_end
+          ? {
+              validFor: {
+                ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
+                ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
+              },
+            }
+          : {}),
+      });
+      relationshipsByResourceId.set(row.resource_from_id, current);
+    }
+
+    return relationshipsByResourceId;
   }
 
   public listResources(query?: ResourceQuery): Resource[] {
@@ -717,7 +761,7 @@ export class SqliteResourceRepository implements IResourceRepository {
     return spec;
   }
 
-  private mapPhysicalResource(row: any): PhysicalResource {
+  private mapPhysicalResource(row: any, resourceRelationships: ResourceRelationship[] = this.listResourceRelationships(row.id)): PhysicalResource {
     const resource: PhysicalResource = {
       '@type': 'PhysicalResource',
       id: row.id,
@@ -731,7 +775,7 @@ export class SqliteResourceRepository implements IResourceRepository {
       operationalState: row.operational_state ?? 'enabled',
       usageState: row.usage_state ?? 'idle',
       relatedParty: JSON.parse(row.related_party || '[]'),
-      resourceRelationship: this.listResourceRelationships(row.id),
+      resourceRelationship: resourceRelationships,
       characteristic: JSON.parse(row.characteristics || '[]'),
     };
 
@@ -755,7 +799,7 @@ export class SqliteResourceRepository implements IResourceRepository {
     return resource;
   }
 
-  private mapLogicalResource(row: any): LogicalResource {
+  private mapLogicalResource(row: any, resourceRelationships: ResourceRelationship[] = this.listResourceRelationships(row.id)): LogicalResource {
     const resource: LogicalResource = {
       '@type': 'LogicalResource',
       id: row.id,
@@ -769,7 +813,7 @@ export class SqliteResourceRepository implements IResourceRepository {
       operationalState: row.operational_state ?? 'enabled',
       usageState: row.usage_state ?? 'idle',
       relatedParty: JSON.parse(row.related_party || '[]'),
-      resourceRelationship: this.listResourceRelationships(row.id),
+      resourceRelationship: resourceRelationships,
       characteristic: JSON.parse(row.characteristics || '[]'),
     };
 

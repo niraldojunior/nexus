@@ -1,3 +1,8 @@
+import { config as loadEnv } from 'dotenv';
+
+loadEnv();
+process.env.DATABASE_AUTO_SCHEMA = process.env.DATABASE_AUTO_SCHEMA ?? 'true';
+
 import '../dist/test/geo.integration.spec.js';
 import '../dist/test/geo.e2e.spec.js';
 import '../dist/test/event-management.spec.js';

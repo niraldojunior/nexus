@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { createApp } from '../src/shared/http/app.js';
+import { createTestDatabase as createPostgresTestDatabase } from './test-utils.js';
 
 const createLogger = () => ({
   debug: () => undefined,
@@ -236,9 +237,5 @@ test('TMF645, TMF641 and TMF652 order endpoints qualify and execute orders', asy
 });
 
 const createTestDatabase = (): { databaseUrl: string; cleanup: () => void } => {
-  const root = mkdtempSync(join(tmpdir(), 'nexus-order-'));
-  return {
-    databaseUrl: `sqlite://${join(root, 'nexus.db')}`,
-    cleanup: () => rmSync(root, { recursive: true, force: true }),
-  };
+  return createPostgresTestDatabase('nexus-order-');
 };

@@ -214,7 +214,7 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
 
       {/* Messages container - scrollable */}
       <div ref={messagesScrollRef} className="flex-1 overflow-y-auto px-6 py-4">
-        <div className="mx-auto flex min-h-full w-full max-w-[1070px] flex-col justify-start gap-6 pb-10 pt-6">
+        <div className="mx-auto flex min-h-full w-full max-w-[780px] flex-col justify-start gap-6 pb-10 pt-6">
           {messages.length === 0 ? (
             <div className="flex min-h-[240px] items-center justify-center text-center">
               <p className="text-app-muted">Inicie uma conversa...</p>
@@ -243,7 +243,7 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
                     ) : null}
                   </div>
                 ) : (
-                  <div className="max-w-[70%]">
+                  <div className="w-full">
                     <MarkdownMessage content={msg.content} />
                     <div className="mt-2 text-xs text-app-muted">
                       {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
@@ -268,7 +268,7 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
 
       {/* Input area - fixed at bottom with attractive styling */}
       <div className="flex-shrink-0 px-6 py-4 bg-app-canvas">
-        <div className="mx-auto w-full max-w-[1070px] bg-white border border-app-border rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-end gap-4 px-5 py-4">
+        <div className="mx-auto w-full max-w-[780px] bg-white border border-app-border rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-end gap-4 px-5 py-4">
           <textarea
             ref={textareaRef}
             value={input}
@@ -281,7 +281,7 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
           <button
             onClick={handleSendMessage}
             disabled={sendingMessage || !input.trim()}
-            className="inline-flex items-center justify-center rounded-full bg-app-accent w-10 h-10 text-white transition hover:bg-opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+            className="inline-flex items-center justify-center rounded-full bg-app-accent w-10 h-10 text-app-ink transition hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
             title="Enviar mensagem"
           >
             {sendingMessage ? (

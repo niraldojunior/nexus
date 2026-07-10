@@ -1,6 +1,7 @@
 import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { stripApiPrefix } from './proxy-rewrite.mjs';
 
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
@@ -12,10 +13,12 @@ export default defineConfig({
       '/api/v1': {
         target: 'http://127.0.0.1:4001',
         changeOrigin: true,
+        rewrite: stripApiPrefix,
       },
       '/api/tmf-api': {
         target: 'http://127.0.0.1:4001',
         changeOrigin: true,
+        rewrite: stripApiPrefix,
       },
       '/v1': {
         target: 'http://127.0.0.1:4001',

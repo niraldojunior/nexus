@@ -1,18 +1,16 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { afterEach, test, vi } from 'vitest';
 import { ResourceService } from '../src/modules/resource/service.js';
 import { SqliteResourceRepository } from '../src/modules/resource/sqlite-repository.js';
 import { SqliteDatabase } from '../src/shared/persistence/sqlite-database.js';
+import { createTestDatabase } from './test-utils.js';
 
 afterEach(() => {
   SqliteDatabase.resetForTesting();
 });
 
-test('SqliteResourceRepository persists validFor when a resource specification is terminated', async () => {
-  const { databaseUrl, cleanup } = createTestDatabase();
+test('Resource repository persists validFor when a resource specification is terminated', async () => {
+  const { databaseUrl, cleanup } = createTestDatabase('nexus-resource-spec-');
   const sqlite = SqliteDatabase.getInstance(databaseUrl);
   await sqlite.initialize();
 
@@ -43,8 +41,8 @@ test('SqliteResourceRepository persists validFor when a resource specification i
   }
 });
 
-test('SqliteResourceRepository persists resource specification characteristics and related parties', async () => {
-  const { databaseUrl, cleanup } = createTestDatabase();
+test('Resource repository persists resource specification characteristics and related parties', async () => {
+  const { databaseUrl, cleanup } = createTestDatabase('nexus-resource-spec-');
   const sqlite = SqliteDatabase.getInstance(databaseUrl);
   await sqlite.initialize();
 
@@ -74,11 +72,3 @@ test('SqliteResourceRepository persists resource specification characteristics a
     cleanup();
   }
 });
-
-const createTestDatabase = (): { databaseUrl: string; cleanup: () => void } => {
-  const root = mkdtempSync(join(tmpdir(), 'nexus-resource-spec-'));
-  return {
-    databaseUrl: `sqlite://${join(root, 'nexus.db')}`,
-    cleanup: () => rmSync(root, { recursive: true, force: true }),
-  };
-};

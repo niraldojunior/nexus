@@ -2,21 +2,21 @@ import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { config as loadEnv } from 'dotenv';
-import { buildDevSqliteRuntimeEnv, ensureDevSqliteDataDir } from '../dist/src/shared/config/dev-sqlite-core.js';
+import { buildDevNeonRuntimeEnv, ensureDevDataDir } from '../dist/src/shared/config/dev-neon-core.js';
 
-// Load .env file into process.env
 loadEnv();
 
 const workspaceRoot = process.cwd();
 const distPath = resolve(workspaceRoot, 'dist', 'src', 'main.js');
+const startOnly = process.argv.includes('--start-only');
 
-ensureDevSqliteDataDir(workspaceRoot);
+ensureDevDataDir(workspaceRoot);
 
-const env = buildDevSqliteRuntimeEnv(process.env);
+const env = buildDevNeonRuntimeEnv(process.env);
 const port = Number(env.PORT || 4001);
 
-if (!process.argv.includes('--start-only')) {
-  console.log(`Starting Nexus dev server with SQLite defaults on http://localhost:${port}`);
+if (!startOnly) {
+  console.log(`Starting Nexus dev server with Neon/Postgres on http://localhost:${port}`);
 }
 
 if (!existsSync(distPath)) {
@@ -24,11 +24,12 @@ if (!existsSync(distPath)) {
   process.exit(1);
 }
 
-const child = spawn(process.execPath, ['--watch', distPath], {
+const child = spawn(process.execPath, startOnly ? [distPath] : ['--watch', distPath], {
   stdio: 'inherit',
   env: {
     ...env,
-    NODE_TLS_REJECT_UNAUTHORIZED: '0', // Allow self-signed certs in development for corporate networks
+    DATABASE_AUTO_SCHEMA: env.DATABASE_AUTO_SCHEMA ?? 'true',
+    NODE_TLS_REJECT_UNAUTHORIZED: '0',
   },
   shell: false,
 });

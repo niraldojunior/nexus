@@ -171,12 +171,55 @@ button:focus-visible {
   animation: menu-item-icon-hover 420ms ease-out;
 }
 
+@keyframes vt-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: rotate(45deg) scale(0.82);
+  }
+  50% {
+    opacity: 1;
+    transform: rotate(45deg) scale(1);
+  }
+}
+
+.animate-vt-pulse {
+  animation: vt-pulse 1.05s ease-in-out infinite;
+}
+
+@keyframes vt-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-vt-rise {
+  animation: vt-rise 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 .markdown-content > *:first-child {
   margin-top: 0;
 }
 
 .markdown-content > *:last-child {
   margin-bottom: 0;
+}
+
+.copilot-message {
+  display: block;
+  width: 100%;
+  max-width: none;
+  color: #334155;
+  font-family: "Aptos", "Segoe UI", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0;
 }
 
 .markdown-content p,

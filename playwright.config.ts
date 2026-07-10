@@ -20,7 +20,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'npm run dev:sqlite',
+      command: 'npm run dev:neon',
       url: 'http://127.0.0.1:4001/health',
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

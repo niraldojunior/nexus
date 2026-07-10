@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test, vi } from 'vitest';
+import { AppError } from '../src/shared/errors/app-error.js';
 import { ResourceRepository } from '../src/modules/resource/repository.js';
 import { ResourceService } from '../src/modules/resource/service.js';
 
@@ -114,7 +115,14 @@ test('ResourceService creates, mutates and terminates inventory resources', () =
     lookupPlace: (id) => (id === place.id ? place : undefined),
   });
 
-  assert.throws(() => service.createResourceSpecification({ name: '  ', category: 'Equipment.Access', resourceType: 'OLT' }), /name is required/);
+  assert.throws(
+    () => service.createResourceSpecification({ name: '  ', category: 'Equipment.Access', resourceType: 'OLT' }),
+    (error: unknown) => error instanceof AppError && error.statusCode === 400 && /name is required/.test(error.message),
+  );
+  assert.throws(
+    () => service.createResourceSpecification({ name: 'OLT', category: '', resourceType: 'OLT' }),
+    (error: unknown) => error instanceof AppError && error.statusCode === 400 && /category is required/.test(error.message),
+  );
   assert.throws(() => service.createPhysicalResource({ name: 'OLT', resourceSpecificationId: 'missing' }), /resource specification not found/);
 
   const spec = service.createResourceSpecification({

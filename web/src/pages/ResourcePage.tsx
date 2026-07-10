@@ -235,6 +235,9 @@ export default function ResourcePage({
     formState.resourceType &&
       (!selectedResourceType || selectedResourceType.status !== 'active' || selectedResourceType.categoryCode !== formState.category),
   );
+  const catalogRequiredFieldsValid =
+    modalState?.tab !== 'ResourceSpecification' ||
+    (formState.category.trim().length > 0 && formState.resourceType.trim().length > 0 && formState.model.trim().length > 0);
   const catalogSelectionValid =
     !(
       modalState?.tab === 'ResourceSpecification' &&
@@ -244,6 +247,7 @@ export default function ResourcePage({
           Boolean(formState.resourceType) &&
           !visibleTypeOptions.some((option) => option.code === formState.resourceType)))
     );
+  const catalogSubmitValid = catalogRequiredFieldsValid && catalogSelectionValid;
   const hasMore = activeItems.length === PAGE_SIZE;
   const selectedOnPage = activeItems.filter((item) => activeSelection.has(item.id));
   const pageSelectionCount = selectedOnPage.length;
@@ -705,6 +709,7 @@ export default function ResourcePage({
           lookupLoading={lookupLoading}
           saving={saving}
           catalogSelectionValid={catalogSelectionValid}
+          catalogSubmitValid={catalogSubmitValid}
           onClose={closeModal}
           onChange={setFormState}
           onSubmit={submitModal}
@@ -796,6 +801,7 @@ function ResourceModal({
   lookupLoading,
   saving,
   catalogSelectionValid,
+  catalogSubmitValid,
   onClose,
   onChange,
   onSubmit,
@@ -812,6 +818,7 @@ function ResourceModal({
   lookupLoading: boolean;
   saving: boolean;
   catalogSelectionValid: boolean;
+  catalogSubmitValid: boolean;
   onClose: () => void;
   onChange: (next: ResourceFormState) => void;
   onSubmit: (event: FormEvent) => void;
@@ -1435,7 +1442,7 @@ function ResourceModal({
             </button>
             <button
               type="submit"
-              disabled={saving || (tab === 'ResourceSpecification' && !catalogSelectionValid)}
+              disabled={saving || (tab === 'ResourceSpecification' && !catalogSubmitValid)}
               className="geo-btn primary disabled:cursor-not-allowed disabled:opacity-60"
             >
               {saving ? 'Salvando...' : mode === 'create' ? 'Criar' : 'Salvar'}

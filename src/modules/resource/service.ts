@@ -559,7 +559,10 @@ export class ResourceService {
 
 const assertName = (value: unknown, field = 'name'): void => {
   if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error(`${field} is required`);
+    throw new AppError(`${field} is required`, {
+      code: 'RESOURCE_REQUIRED_FIELD',
+      statusCode: 400,
+    });
   }
 };
 

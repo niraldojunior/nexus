@@ -1,6 +1,12 @@
 import { config as loadEnv } from 'dotenv';
-import { isPostgresDatabaseUrl } from '../shared/config/env.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { Pool, types } from 'pg';
 import { SqliteDatabase } from '../shared/persistence/sqlite-database.js';
+
+// Preserve numeric semantics when reading back counts from Postgres.
+types.setTypeParser(20, (value) => Number.parseInt(value, 10));
+types.setTypeParser(1700, (value) => Number.parseFloat(value));
 
 type TableRow = Record<string, unknown>;
 
@@ -45,6 +51,66 @@ const SELF_REFERENCING_PARENT_COLUMNS: Record<string, string> = {
   tmf_service_category: 'parent_category_id',
 };
 
+const SQLITE_SCHEMA_SOURCE_PATHS = [
+  resolve(process.cwd(), 'src/shared/persistence/sqlite-database.ts'),
+  resolve(process.cwd(), 'dist/src/shared/persistence/sqlite-database.js'),
+];
+
+const MIGRATIONS_SQL = `
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS place_id TEXT;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS place_type TEXT;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS administrative_state TEXT;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS operational_state TEXT;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS usage_state TEXT;
+  ALTER TABLE tmf_resource_specification ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS place_id TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS place_type TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS administrative_state TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS operational_state TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS usage_state TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS service_type TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS category TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS service_date TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS start_date TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS end_date TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS is_service_enabled INTEGER;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS has_started INTEGER;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS place TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS supporting_services TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS service_relationships TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS service_type TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS category TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS service_date TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS start_date TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS end_date TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS is_service_enabled INTEGER;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS has_started INTEGER;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS place TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS supporting_resources TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS supporting_services TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS service_relationships TEXT;
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS place TEXT;
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS service_characteristic TEXT;
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS service_qualification_item TEXT;
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS description TEXT;
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS service_order_item TEXT;
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS note TEXT;
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS description TEXT;
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS resource_order_item TEXT;
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS note TEXT;
+`;
+
 async function main(): Promise<void> {
   loadEnv();
 
@@ -52,73 +118,124 @@ async function main(): Promise<void> {
   const targetUrl = process.env.TARGET_DATABASE_URL ?? process.env.DATABASE_URL;
 
   if (!targetUrl) {
-    throw new Error(
-      'TARGET_DATABASE_URL or DATABASE_URL must be set to the Neon connection string before running this migration.',
-    );
+    throw new Error('TARGET_DATABASE_URL or DATABASE_URL must be set to the Neon connection string before running this migration.');
   }
 
   console.log(`Source: ${sourceUrl}`);
   console.log(`Target: ${targetUrl}`);
 
   const sourceDb = SqliteDatabase.getInstance(sourceUrl);
-  const targetDb = SqliteDatabase.getInstance(targetUrl);
-
   await sourceDb.initialize();
-  targetDb.initialize();
 
-  const tableNames = getTableNames(sourceDb);
-  const missingTables = TABLE_ORDER.filter((table) => !tableNames.includes(table));
-  if (missingTables.length > 0) {
-    throw new Error(`Source database is missing expected tables: ${missingTables.join(', ')}`);
-  }
-
-  const extraTables = tableNames.filter((table) => !TABLE_ORDER.includes(table as (typeof TABLE_ORDER)[number]));
-  if (extraTables.length > 0) {
-    console.log(`Additional source tables detected and will be ignored: ${extraTables.join(', ')}`);
-  }
-
-  const orderedTables = TABLE_ORDER.filter((table) => tableNames.includes(table));
-  const reverseTables = [...orderedTables].reverse();
-
-  console.log('Cleaning target tables...');
-  if (isPostgresDatabaseUrl(targetUrl)) {
-    targetDb.exec(
-      `TRUNCATE TABLE ${orderedTables.map((table) => quoteIdentifier(table)).join(', ')} RESTART IDENTITY CASCADE`,
-    );
-  } else {
-    targetDb.transaction(() => {
-      for (const table of reverseTables) {
-        targetDb.exec(`DELETE FROM ${quoteIdentifier(table)}`);
-      }
-    });
-  }
-
-  console.log('Copying data...');
-  targetDb.transaction(() => {
-    for (const table of orderedTables) {
-      const columns = getColumns(sourceDb, table);
-      const rows = sourceDb.all<TableRow>(`SELECT * FROM ${table}`);
-      const orderedRows = orderRowsForTable(table, rows);
-
-      if (orderedRows.length === 0) {
-        console.log(`- ${table}: 0 rows`);
-        continue;
-      }
-
-      const columnSql = columns.map((column) => quoteIdentifier(column)).join(', ');
-      const placeholders = columns.map(() => '?').join(', ');
-      const insertSql = `INSERT INTO ${quoteIdentifier(table)} (${columnSql}) VALUES (${placeholders})`;
-
-      for (const row of orderedRows) {
-        const values = columns.map((column) => normalizeValue(row[column]));
-        targetDb.run(insertSql, values);
-      }
-
-      console.log(`- ${table}: ${orderedRows.length} rows`);
-    }
+  const pool = new Pool({
+    connectionString: targetUrl,
+    connectionTimeoutMillis: Number(process.env.DATABASE_CONNECTION_TIMEOUT_MS ?? 15_000),
+    ssl: { rejectUnauthorized: false },
   });
 
-  console.log('Migration completed successfully.');
+  const client = await pool.connect();
+  try {
+    await bootstrapTargetSchema(client);
+
+    const tableNames = getTableNames(sourceDb);
+    const missingTables = TABLE_ORDER.filter((table) => !tableNames.includes(table));
+    if (missingTables.length > 0) {
+      throw new Error(`Source database is missing expected tables: ${missingTables.join(', ')}`);
+    }
+
+    const extraTables = tableNames.filter((table) => !TABLE_ORDER.includes(table as (typeof TABLE_ORDER)[number]));
+    if (extraTables.length > 0) {
+      console.log(`Additional source tables detected and will be ignored: ${extraTables.join(', ')}`);
+    }
+
+    const orderedTables = TABLE_ORDER.filter((table) => tableNames.includes(table));
+
+    console.log('Cleaning target tables...');
+    await client.query('BEGIN');
+    try {
+      if (orderedTables.length > 0) {
+        await client.query(
+          `TRUNCATE TABLE ${orderedTables.map((table) => quoteIdentifier(table)).join(', ')} RESTART IDENTITY CASCADE`,
+        );
+      }
+
+      console.log('Copying data...');
+      for (const table of orderedTables) {
+        const columns = getColumns(sourceDb, table);
+        const rows = sourceDb.all<TableRow>(`SELECT * FROM ${quoteIdentifier(table)}`);
+        const orderedRows = orderRowsForTable(table, rows);
+
+        if (orderedRows.length === 0) {
+          console.log(`- ${table}: 0 rows`);
+          continue;
+        }
+
+        const insertSql = buildInsertSql(table, columns);
+        for (const row of orderedRows) {
+          const values = columns.map((column) => normalizeValue(row[column]));
+          await client.query(insertSql, values);
+        }
+
+        console.log(`- ${table}: ${orderedRows.length} rows`);
+      }
+
+      await client.query('COMMIT');
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // Ignore rollback failures during error propagation.
+      }
+      throw error;
+    }
+
+    console.log('Migration completed successfully.');
+  } finally {
+    client.release();
+    await pool.end();
+    sourceDb.close();
+    SqliteDatabase.resetForTesting();
+  }
+}
+
+async function bootstrapTargetSchema(client: { query: (sql: string, params?: unknown[]) => Promise<unknown> }): Promise<void> {
+  const sqliteSchema = extractSqliteSchema();
+  const statements = [...splitSqlStatements(transformSchemaSql(sqliteSchema)), ...splitSqlStatements(MIGRATIONS_SQL)];
+
+  for (const statement of statements) {
+    await client.query(statement);
+  }
+}
+
+function extractSqliteSchema(): string {
+  for (const path of SQLITE_SCHEMA_SOURCE_PATHS) {
+    if (!existsSync(path)) continue;
+    const source = readFileSync(path, 'utf8');
+    const match = source.match(/db\.exec\(\s*`([\s\S]*?)`\s*\);/);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+
+  throw new Error('Unable to locate the SQLite schema source in src/shared/persistence/sqlite-database.ts');
+}
+
+function transformSchemaSql(sql: string): string {
+  return sql
+    .replace(/\bDATETIME\b/g, 'TIMESTAMPTZ')
+    .replace(/\bREAL\b/g, 'DOUBLE PRECISION')
+    .replace(
+      /CREATE INDEX IF NOT EXISTS idx_tmf_event_entity ON tmf_event\(json_extract\(event_data, '\$\.(.+?)'\)\);/g,
+      (_match, path: string) => `CREATE INDEX IF NOT EXISTS idx_tmf_event_entity ON tmf_event (((event_data)::jsonb->>'${path}'));`,
+    )
+    .replace(/--.*$/gm, '');
+}
+
+function splitSqlStatements(sql: string): string[] {
+  return sql
+    .split(';')
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0 && !statement.startsWith('--'));
 }
 
 function getTableNames(db: SqliteDatabase): string[] {
@@ -175,6 +292,12 @@ function orderRowsForTable(table: string, rows: TableRow[]): TableRow[] {
   }
 
   return ordered;
+}
+
+function buildInsertSql(table: string, columns: string[]): string {
+  const columnSql = columns.map((column) => quoteIdentifier(column)).join(', ');
+  const placeholders = columns.map((_, index) => `$${index + 1}`).join(', ');
+  return `INSERT INTO ${quoteIdentifier(table)} (${columnSql}) VALUES (${placeholders})`;
 }
 
 function normalizeValue(value: unknown): unknown {

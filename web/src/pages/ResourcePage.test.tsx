@@ -435,6 +435,31 @@ test('resource specification create serializes the extended characteristic set',
   expect(payload.resourceSpecificationCharacteristic).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: 'manufacturer' })]));
 });
 
+test('resource specification create requires category, type and model before submitting', async () => {
+  const user = userEvent.setup();
+  render(<ResourcePage activeTab="ResourceSpecification" />);
+
+  await user.click(screen.getByRole('button', { name: 'Criar recurso' }));
+
+  const createButton = await screen.findByRole('button', { name: 'Criar' });
+  expect(createButton).toBeDisabled();
+
+  await user.type(screen.getByLabelText(/^Modelo$/i), 'MA5800');
+  expect(createButton).toBeDisabled();
+
+  await user.click(screen.getByRole('combobox', { name: 'Categoria' }));
+  await user.click(screen.getByRole('option', { name: /Equipamentos de Acesso/ }));
+  expect(createButton).toBeDisabled();
+
+  await user.click(screen.getByRole('combobox', { name: 'Tipo do Recurso' }));
+  await user.click(screen.getByRole('option', { name: /Optical Line Terminal/ }));
+
+  await waitFor(() => expect(createButton).toBeEnabled());
+  await user.click(createButton);
+
+  await waitFor(() => expect(createResourceSpecificationMock).toHaveBeenCalledTimes(1));
+});
+
 test('bulk selection enables delete and reloads the active tab after deletion', async () => {
   const user = userEvent.setup();
   const inventory: PhysicalResource[] = physicalResources.map((resource) => ({ ...resource }));

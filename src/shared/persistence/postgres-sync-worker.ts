@@ -75,6 +75,7 @@ const handle = async (message: WorkerRequest): Promise<void> => {
           await withRetry(() => initializeSchema());
         } else {
           await withRetry(() => executeQuery('SELECT 1', [], 'get', undefined));
+          await withRetry(() => runPendingMigrations());
         }
         initialized = true;
       }
@@ -179,6 +180,18 @@ const initializeSchema = async (): Promise<void> => {
   const statements = [...splitSqlStatements(transformSchemaSql(SCHEMA_SQL)), ...splitSqlStatements(MIGRATIONS_SQL)];
 
   for (const statement of statements) {
+    try {
+      await executeQuery(statement, [], 'run', undefined);
+    } catch (error) {
+      if (!isIgnorableSchemaError(statement, error)) {
+        throw error;
+      }
+    }
+  }
+};
+
+const runPendingMigrations = async (): Promise<void> => {
+  for (const statement of splitSqlStatements(MIGRATIONS_SQL)) {
     try {
       await executeQuery(statement, [], 'run', undefined);
     } catch (error) {

@@ -29,6 +29,8 @@ const child = spawn(process.execPath, startOnly ? [distPath] : ['--watch', distP
   env: {
     ...env,
     DATABASE_AUTO_SCHEMA: env.DATABASE_AUTO_SCHEMA ?? 'true',
+    DATABASE_BRIDGE_TIMEOUT_MS: env.DATABASE_BRIDGE_TIMEOUT_MS ?? '120000',
+    DATABASE_CONNECTION_TIMEOUT_MS: env.DATABASE_CONNECTION_TIMEOUT_MS ?? '60000',
     NODE_TLS_REJECT_UNAUTHORIZED: '0',
   },
   shell: false,

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { createApp } from '../src/shared/http/app.js';
+import { createTestDatabase as createPostgresTestDatabase } from './test-utils.js';
 
 const logger = {
   debug: () => undefined,
@@ -118,9 +119,5 @@ test('E2E Geo flow rejects invalid JSON and supports the happy path', async (t) 
 });
 
 const createTestDatabase = (): { databaseUrl: string; cleanup: () => void } => {
-  const root = mkdtempSync(join(tmpdir(), 'nexus-e2e-geo-'));
-  return {
-    databaseUrl: `sqlite://${join(root, 'nexus.db')}`,
-    cleanup: () => rmSync(root, { recursive: true, force: true }),
-  };
+  return createPostgresTestDatabase('nexus-e2e-geo-');
 };

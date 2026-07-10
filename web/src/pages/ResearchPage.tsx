@@ -3,6 +3,7 @@ import { CheckCircle2, Loader2, Trash2, Send } from 'lucide-react';
 import MarkdownMessage from '../components/MarkdownMessage';
 import CopilotPendingResponse from '../components/CopilotPendingResponse';
 import NexusLoadingMark from '../components/NexusLoadingMark';
+import Diamond from '../components/Diamond';
 import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
 import { scrollChatAnchorIntoView, scrollChatToBottom } from '../utils/chatScroll';
 import { confirmResearchSessionAction, type ResearchConfirmationResponse } from '../services/researchApi';
@@ -317,9 +318,10 @@ export const ResearchPage: React.FC<{
   return (
     <div className="flex flex-col h-full bg-app-canvas">
       {/* Fixed Header - Top */}
-      <div className="flex-shrink-0 bg-app-canvas px-6 py-4">
+      <div className="flex-shrink-0 border-b border-app-border bg-app-canvas px-6 py-4">
         <div className="flex w-full items-center justify-between gap-4">
-          <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <Diamond size={7} />
             <h1 className="truncate text-[0.98rem] font-semibold text-app-text">
               {session.title}
             </h1>
@@ -343,7 +345,7 @@ export const ResearchPage: React.FC<{
 
       {/* Scrollable Messages Area - Middle */}
       <div ref={messagesScrollRef} className="flex-1 overflow-y-auto px-6 py-2">
-        <div className="mx-auto flex min-h-full w-full max-w-[1070px] flex-col justify-start gap-5 pb-10 pt-8">
+        <div className="mx-auto flex min-h-full w-full max-w-[780px] flex-col justify-start gap-5 pb-10 pt-8">
             {messages.length === 0 ? (
               <div className="flex min-h-[240px] items-center justify-center text-center">
                 <p className="text-app-muted">Inicie uma conversa...</p>
@@ -372,17 +374,18 @@ export const ResearchPage: React.FC<{
                       ) : null}
                     </div>
                   ) : (
-                    <div className="max-w-[1070px]">
-                      <MarkdownMessage content={msg.content} />
+                  <div className="w-full">
+                    <MarkdownMessage content={msg.content} />
                       {(() => {
                         const pending = readPendingConfirmation(msg);
                         if (!pending) return null;
                         if (resolvedConfirmationTokens.has(pending.confirmationToken)) return null;
                         const isConfirming = confirmingToken === pending.confirmationToken;
                         return (
-                          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-app-accent-border bg-app-accent-soft px-4 py-3 shadow-soft">
+                          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-app-border border-l-[3px] border-l-app-accent bg-white px-4 py-3 shadow-soft">
                             <div className="min-w-0">
-                              <div className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+                              <div className="flex items-center gap-2 text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+                                <Diamond size={6} />
                                 {getPendingConfirmationTitle(pending)}
                               </div>
                               <div className="mt-1 text-[0.92rem] leading-[1.55] text-app-text">
@@ -407,7 +410,8 @@ export const ResearchPage: React.FC<{
                                 void handleConfirmPending(msg, pending);
                               }}
                               disabled={isConfirming}
-                              className="inline-flex items-center gap-2 rounded-[16px] border border-app-border bg-white px-4 py-2 text-[0.9rem] font-semibold text-app-text shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft disabled:cursor-not-allowed disabled:opacity-60"
+                              style={{ border: '2px solid #000000' }}
+                              className="inline-flex items-center gap-2 rounded-[16px] !border-2 !border-black bg-white px-4 py-2 text-[0.9rem] font-semibold text-app-text shadow-soft transition hover:bg-app-accent-soft disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               {isConfirming ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                               <span>{isConfirming ? 'Confirmando...' : getPendingConfirmationLabel(pending)}</span>
@@ -431,7 +435,7 @@ export const ResearchPage: React.FC<{
 
       {/* Fixed Input Area - Bottom */}
       <div className="flex-shrink-0 px-6 py-4 bg-app-canvas">
-        <div className="mx-auto w-full max-w-[1070px] bg-white border border-app-border rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-end gap-4 px-5 py-4">
+        <div className="mx-auto w-full max-w-[780px] bg-white border border-app-border rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-end gap-4 px-5 py-4">
           <textarea
             ref={textareaRef}
             value={input}
@@ -444,7 +448,7 @@ export const ResearchPage: React.FC<{
           <button
             onClick={handleSendMessage}
             disabled={sendingMessage || !input.trim()}
-            className="inline-flex items-center justify-center rounded-full bg-app-accent w-10 h-10 text-white transition hover:bg-opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+            className="inline-flex items-center justify-center rounded-full bg-app-accent w-10 h-10 text-app-ink transition hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
             title="Enviar mensagem"
           >
             {sendingMessage ? (

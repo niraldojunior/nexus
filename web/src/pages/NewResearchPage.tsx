@@ -1,16 +1,56 @@
-import { useState } from 'react';
-import { Send, Loader } from 'lucide-react';
-import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
+import { useMemo, useState } from 'react';
+import { FileText, Layers3, MapPinned, Workflow, Zap } from 'lucide-react';
+import Composer from '../components/Composer';
 
 interface NewResearchPageProps {
   onSessionCreated?: (sessionId: string) => void;
+}
+
+const promptStarters = [
+  {
+    icon: MapPinned,
+    label: 'Locais',
+    prompt:
+      'Quero explorar um Local. Mostre os atributos de GeographicSite, Address e Location e como eles se relacionam no modelo TMF.',
+  },
+  {
+    icon: Layers3,
+    label: 'Recursos',
+    prompt:
+      'Ajude-me a analisar o inventário de Recursos: quais PhysicalResource e LogicalResource existem e como estão associados?',
+  },
+  {
+    icon: Workflow,
+    label: 'Serviços',
+    prompt:
+      'Quero modelar um Serviço. Explique como estruturar CFS e RFS e o vínculo com SubscriberID neste caso.',
+  },
+  {
+    icon: Zap,
+    label: 'Ordens',
+    prompt:
+      'Preciso checar a viabilidade de uma Ordem. Descreva os passos de qualificação e fulfillment para este pedido.',
+  },
+  {
+    icon: FileText,
+    label: 'Especificação TMF',
+    prompt:
+      'Gere uma especificação TMF-first para o seguinte cenário, preservando interoperabilidade ODA:',
+  },
+];
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  const period = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+  const name = localStorage.getItem('userName')?.trim().split(/\s+/)[0];
+  return name ? `${period}, ${name}` : period;
 }
 
 export default function NewResearchPage({ onSessionCreated }: NewResearchPageProps) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const textareaRef = useAutoResizeTextarea(input, 260);
+  const greeting = useMemo(getGreeting, []);
 
   const handleSubmit = async () => {
     if (!input.trim() || loading) return;
@@ -54,54 +94,49 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
-  };
-
   return (
     <div className="relative flex min-h-screen items-center justify-center px-7 py-9">
-      <div className="w-full max-w-[640px]">
-        {/* Greeting / Title */}
-        <div className="mb-8 text-center">
-          <h1 className="font-display text-3xl font-semibold leading-tight tracking-tight text-app-text">
-            Por onde Começamos?
-          </h1>
-        </div>
+      <div className="w-full max-w-[680px]">
+        {/* Greeting */}
+        <h1 className="mb-7 animate-vt-rise text-center font-display text-[2rem] font-semibold leading-tight tracking-[-0.02em] text-app-text [animation-delay:40ms]">
+          {greeting}
+        </h1>
 
         {/* Error */}
         {error && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="mb-4 animate-vt-rise rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </div>
         )}
 
-        {/* Input Box */}
-        <div className="group relative isolate">
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute -inset-12 -z-10 rounded-[42px] bg-[radial-gradient(circle_at_center,rgba(255,210,0,0.26),rgba(255,248,218,0.16)_38%,transparent_78%)] opacity-75 blur-[72px] transition-opacity duration-300 group-focus-within:opacity-100"
+        {/* Composer */}
+        <div className="animate-vt-rise [animation-delay:120ms]">
+          <Composer
+            value={input}
+            onChange={setInput}
+            onSubmit={handleSubmit}
+            loading={loading}
+            placeholder="Pergunte sobre Locais, Recursos, Serviços, Ordens ou gere uma especificação..."
+            size="hero"
+            modelLabel="Nexus"
+            qualityLabel="TMF-first"
+            autoFocus
           />
-          <div className="relative z-10 rounded-2xl border border-app-border bg-white px-4 pb-4 pl-4 pr-16 pt-4 shadow-[0_14px_32px_rgba(15,23,42,0.08),0_0_0_1px_rgba(242,211,90,0.18),0_0_36px_rgba(255,210,0,0.12)] transition-shadow duration-300 focus-within:border-app-accent-border focus-within:shadow-[0_20px_52px_rgba(15,23,42,0.10),0_0_0_1px_rgba(242,211,90,0.32),0_0_64px_rgba(255,210,0,0.18),0_0_180px_rgba(255,248,218,0.40)]">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Digite sua pergunta..."
-              rows={1}
-              className="w-full min-h-[44px] max-h-[260px] resize-none overflow-y-auto bg-transparent text-[1.05rem] leading-7 text-app-text placeholder-app-muted outline-none"
-            />
+        </div>
+
+        {/* Prompt starters */}
+        <div className="mt-4 flex animate-vt-rise flex-wrap items-center justify-center gap-2 [animation-delay:200ms]">
+          {promptStarters.map(({ icon: Icon, label, prompt }) => (
             <button
-              onClick={handleSubmit}
-              disabled={!input.trim() || loading}
-              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-app-accent text-white transition hover:bg-opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              key={label}
+              type="button"
+              onClick={() => setInput(prompt)}
+              className="flex items-center gap-2 rounded-full border border-app-border bg-transparent px-3.5 py-1.5 text-[0.9rem] text-app-muted transition hover:border-app-accent-border hover:text-app-text"
             >
-              {loading ? <Loader className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+              <Icon className="h-4 w-4" strokeWidth={1.8} />
+              <span>{label}</span>
             </button>
-          </div>
+          ))}
         </div>
       </div>
     </div>

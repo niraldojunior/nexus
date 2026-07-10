@@ -25,63 +25,65 @@ export class SqlitePartyRepository implements IPartyRepository {
 
   private seedManufacturerParties(): void {
     const now = new Date().toISOString();
-    for (const name of MANUFACTURER_BOOTSTRAP) {
-      const slug = slugify(name);
-      const partyId = `party-${slug}`;
-      const roleId = `party-role-${slug}-manufacturer`;
-      this.db.run(
-        `INSERT INTO tmf_party
-         (id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-         href = excluded.href,
-         name = excluded.name,
-         party_type = excluded.party_type,
-         status = excluded.status,
-         valid_for_start = excluded.valid_for_start,
-         valid_for_end = excluded.valid_for_end,
-         characteristics = excluded.characteristics,
-         updated_at = excluded.updated_at`,
-        [
-          partyId,
-          `/tmf-api/partyManagement/v4/party/${partyId}`,
-          name,
-          'Organization',
-          'active',
-          null,
-          null,
-          '[]',
-          now,
-          now,
-        ],
-      );
-      this.db.run(
-        `INSERT INTO tmf_party_role
-         (id, href, name, party_id, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-         href = excluded.href,
-         name = excluded.name,
-         party_id = excluded.party_id,
-         status = excluded.status,
-         valid_for_start = excluded.valid_for_start,
-         valid_for_end = excluded.valid_for_end,
-         characteristics = excluded.characteristics,
-         updated_at = excluded.updated_at`,
-        [
-          roleId,
-          `/tmf-api/partyRoleManagement/v4/partyRole/${roleId}`,
-          'manufacturer',
-          partyId,
-          'active',
-          null,
-          null,
-          '[]',
-          now,
-          now,
-        ],
-      );
-    }
+    this.db.transaction(() => {
+      for (const name of MANUFACTURER_BOOTSTRAP) {
+        const slug = slugify(name);
+        const partyId = `party-${slug}`;
+        const roleId = `party-role-${slug}-manufacturer`;
+        this.db.run(
+          `INSERT INTO tmf_party
+           (id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+           href = excluded.href,
+           name = excluded.name,
+           party_type = excluded.party_type,
+           status = excluded.status,
+           valid_for_start = excluded.valid_for_start,
+           valid_for_end = excluded.valid_for_end,
+           characteristics = excluded.characteristics,
+           updated_at = excluded.updated_at`,
+          [
+            partyId,
+            `/tmf-api/partyManagement/v4/party/${partyId}`,
+            name,
+            'Organization',
+            'active',
+            null,
+            null,
+            '[]',
+            now,
+            now,
+          ],
+        );
+        this.db.run(
+          `INSERT INTO tmf_party_role
+           (id, href, name, party_id, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+           href = excluded.href,
+           name = excluded.name,
+           party_id = excluded.party_id,
+           status = excluded.status,
+           valid_for_start = excluded.valid_for_start,
+           valid_for_end = excluded.valid_for_end,
+           characteristics = excluded.characteristics,
+           updated_at = excluded.updated_at`,
+          [
+            roleId,
+            `/tmf-api/partyRoleManagement/v4/partyRole/${roleId}`,
+            'manufacturer',
+            partyId,
+            'active',
+            null,
+            null,
+            '[]',
+            now,
+            now,
+          ],
+        );
+      }
+    });
   }
 
   public upsertParty(party: Party): Party {
@@ -227,10 +229,15 @@ export class SqlitePartyRepository implements IPartyRepository {
       valid_for_start?: string | null;
       valid_for_end?: string | null;
       characteristics?: string | null;
+      party_href: string;
+      party_name: string;
+      party_type: 'Organization' | 'Individual';
     }>(
-      `SELECT id, href, name, party_id, status, valid_for_start, valid_for_end, characteristics
-       FROM tmf_party_role
-       WHERE id = ?`,
+      `SELECT role.id, role.href, role.name, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics,
+              party.href AS party_href, party.name AS party_name, party.party_type AS party_type
+       FROM tmf_party_role role
+       INNER JOIN tmf_party party ON party.id = role.party_id
+       WHERE role.id = ?`,
       [id],
     );
 
@@ -242,15 +249,15 @@ export class SqlitePartyRepository implements IPartyRepository {
     const params: Array<string | number> = [];
 
     if (query?.partyId) {
-      conditions.push('party_id = ?');
+      conditions.push('role.party_id = ?');
       params.push(query.partyId);
     }
     if (query?.name) {
-      conditions.push('LOWER(name) LIKE LOWER(?)');
+      conditions.push('LOWER(role.name) LIKE LOWER(?)');
       params.push(`%${query.name}%`);
     }
     if (query?.status) {
-      conditions.push('status = ?');
+      conditions.push('role.status = ?');
       params.push(query.status);
     }
 
@@ -260,9 +267,12 @@ export class SqlitePartyRepository implements IPartyRepository {
     const offsetClause = hasOffset ? 'OFFSET ?' : '';
 
     const sql = [
-      'SELECT id, href, name, party_id, status, valid_for_start, valid_for_end, characteristics FROM tmf_party_role',
+      'SELECT role.id, role.href, role.name, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics,',
+      '       party.href AS party_href, party.name AS party_name, party.party_type AS party_type',
+      'FROM tmf_party_role role',
+      'INNER JOIN tmf_party party ON party.id = role.party_id',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
-      'ORDER BY name ASC, id ASC',
+      'ORDER BY role.name ASC, role.id ASC',
       limitClause,
       offsetClause,
     ]
@@ -281,6 +291,9 @@ export class SqlitePartyRepository implements IPartyRepository {
       valid_for_start?: string | null;
       valid_for_end?: string | null;
       characteristics?: string | null;
+      party_href: string;
+      party_name: string;
+      party_type: 'Organization' | 'Individual';
     }>(sql, params);
 
     return rows.map((row) => this.mapRole(row));
@@ -384,12 +397,10 @@ export class SqlitePartyRepository implements IPartyRepository {
     valid_for_start?: string | null;
     valid_for_end?: string | null;
     characteristics?: string | null;
+    party_href: string;
+    party_name: string;
+    party_type: 'Organization' | 'Individual';
   }): PartyRole {
-    const party = this.getParty(row.party_id);
-    if (!party) {
-      throw new Error('party not found for role');
-    }
-
     const role: PartyRole = {
       '@type': 'PartyRole',
       id: row.id,
@@ -398,10 +409,10 @@ export class SqlitePartyRepository implements IPartyRepository {
       status: row.status,
       partyId: row.party_id,
       party: {
-        id: party.id,
-        '@referredType': party.partyType,
-        href: party.href,
-        name: party.name,
+        id: row.party_id,
+        '@referredType': row.party_type,
+        href: row.party_href,
+        name: row.party_name,
       },
       partyRoleCharacteristic: JSON.parse(row.characteristics || '[]') as PartyRole['partyRoleCharacteristic'],
     };

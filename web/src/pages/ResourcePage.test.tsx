@@ -2,7 +2,6 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import * as partyApi from '../services/partyApi';
 import * as resourceApi from '../services/resourceApi';
 import type { PhysicalResource, ResourceSpecification } from '../services/resourceApi';
 import ResourcePage from './ResourcePage';
@@ -152,12 +151,7 @@ const logicalResources = Array.from({ length: 20 }, (_, index) => ({
   place: { id: `site-${index + 1}`, '@referredType': 'GeographicSite' as const },
 }));
 
-const listResourceSpecificationsMock = vi.spyOn(resourceApi, 'listResourceSpecifications');
-const listResourceCategoriesMock = vi.spyOn(resourceApi, 'listResourceCategories');
-const listResourceTypesMock = vi.spyOn(resourceApi, 'listResourceTypes');
-const listResourcesMock = vi.spyOn(resourceApi, 'listResources');
-const listPartiesMock = vi.spyOn(partyApi, 'listParties');
-const listPartyRolesMock = vi.spyOn(partyApi, 'listPartyRoles');
+const loadResourceWorkspaceSnapshotMock = vi.spyOn(resourceApi, 'loadResourceWorkspaceSnapshot');
 const createResourceSpecificationMock = vi.spyOn(resourceApi, 'createResourceSpecification');
 const updateResourceSpecificationMock = vi.spyOn(resourceApi, 'updateResourceSpecification');
 const deleteResourceSpecificationMock = vi.spyOn(resourceApi, 'deleteResourceSpecification');
@@ -170,18 +164,20 @@ beforeEach(() => {
   for (const spec of resourceSpecifications) {
     delete spec.validFor;
   }
-  listResourceSpecificationsMock.mockImplementation(async ({ limit, offset, includeEnded }) => {
-    const source = includeEnded ? resourceSpecifications : resourceSpecifications.filter((spec) => !spec.validFor?.endDateTime);
-    return source.slice(offset, offset + limit);
-  });
-  listResourceCategoriesMock.mockResolvedValue(resourceCategories);
-  listResourceTypesMock.mockResolvedValue(resourceTypes);
-  listPartiesMock.mockImplementation(async ({ limit, offset }) => manufacturerParties.slice(offset, offset + limit));
-  listPartyRolesMock.mockImplementation(async ({ limit, offset }) => partyRoles.slice(offset, offset + limit));
-  listResourcesMock.mockImplementation(async ({ kind, limit, offset }) => {
-    const source = kind === 'PhysicalResource' ? physicalResources : logicalResources;
-    return source.slice(offset, offset + limit);
-  });
+  loadResourceWorkspaceSnapshotMock.mockImplementation(async ({ tab, limit, offset }) => ({
+    items:
+      tab === 'ResourceSpecification'
+        ? resourceSpecifications.slice(offset, offset + limit)
+        : tab === 'PhysicalResource'
+          ? physicalResources.slice(offset, offset + limit)
+          : logicalResources.slice(offset, offset + limit),
+    resourceSpecificationOptions: resourceSpecifications,
+    resourceCategories,
+    resourceTypes,
+    physicalResources,
+    logicalResources,
+    manufacturerOptions: manufacturerParties,
+  }));
   createResourceSpecificationMock.mockResolvedValue(resourceSpecifications[0]);
   updateResourceSpecificationMock.mockResolvedValue(resourceSpecifications[0]);
   deleteResourceSpecificationMock.mockImplementation(async (id) => {
@@ -209,7 +205,7 @@ test('ResourcePage renders the contextual title and paginates with 20 records', 
   expect(screen.getByRole('button', { name: 'Criar recurso' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Excluir selecionados' })).toBeInTheDocument();
 
-  await waitFor(() => expect(listResourcesMock).toHaveBeenCalledWith({ kind: 'PhysicalResource', limit: 20, offset: 0, status: 'active' }));
+  await waitFor(() => expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({ tab: 'PhysicalResource', limit: 20, offset: 0 }));
   expect((await screen.findAllByText('Physical 1'))[0]).toBeInTheDocument();
   expect(screen.getByRole('columnheader', { name: 'Nome do Modelo' })).toBeInTheDocument();
   expect(screen.getByRole('columnheader', { name: 'Tipo do Recurso' })).toBeInTheDocument();
@@ -218,14 +214,14 @@ test('ResourcePage renders the contextual title and paginates with 20 records', 
   expect((await screen.findAllByText('Physical 20'))[0]).toBeInTheDocument();
 
   await userEvent.click(screen.getByRole('button', { name: 'Próximo' }));
-  await waitFor(() => expect(listResourcesMock).toHaveBeenCalledWith({ kind: 'PhysicalResource', limit: 20, offset: 20, status: 'active' }));
+  await waitFor(() => expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({ tab: 'PhysicalResource', limit: 20, offset: 20 }));
 });
 
 test('controlled tab renders the requested resource view', async () => {
   render(<ResourcePage activeTab="LogicalResource" />);
 
   expect(screen.getByRole('heading', { name: 'Recursos Lógicos' })).toBeInTheDocument();
-  await waitFor(() => expect(listResourcesMock).toHaveBeenCalledWith({ kind: 'LogicalResource', limit: 20, offset: 0, status: 'active' }));
+  await waitFor(() => expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({ tab: 'LogicalResource', limit: 20, offset: 0 }));
   expect((await screen.findAllByText('Logical 1'))[0]).toBeInTheDocument();
 });
 
@@ -240,7 +236,6 @@ test('create button opens the modal in create mode and row click opens edit mode
   expect(screen.getByRole('combobox', { name: /^Categoria$/i })).toBeInTheDocument();
   expect(screen.getByRole('combobox', { name: /^Tipo do Recurso$/i })).toBeInTheDocument();
   expect(screen.getByRole('combobox', { name: /Modelo/i })).toBeInTheDocument();
-  await waitFor(() => expect(listPartyRolesMock).toHaveBeenCalled());
   expect(screen.getByRole('textbox', { name: /^Modelo físico$/i })).toBeInTheDocument();
   expect(screen.getByLabelText(/ID do Local/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/Tipo de Local/i)).toHaveAttribute('readonly');
@@ -307,7 +302,7 @@ test('resource specification editor uses catalog-driven selects for category and
   const user = userEvent.setup();
   render(<ResourcePage activeTab="ResourceSpecification" />);
 
-  await waitFor(() => expect(listResourceSpecificationsMock).toHaveBeenCalled());
+  await waitFor(() => expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({ tab: 'ResourceSpecification', limit: 20, offset: 0 }));
   await screen.findAllByText('Equipamentos de Acesso');
   await user.click(screen.getAllByText('Equipamentos de Acesso')[0]);
 
@@ -334,19 +329,27 @@ test('resource specification table shows friendly category and short type codes'
 });
 
 test('resource specification table falls back to legacy manufacturer characteristic', async () => {
-  listResourceSpecificationsMock.mockImplementation(async ({ limit, offset }) => {
-    if (offset > 0) return [];
-    return [
-      {
-        ...resourceSpecifications[0],
-        relatedParty: [],
-        resourceSpecificationCharacteristic: [
-          ...resourceSpecifications[0].resourceSpecificationCharacteristic,
-          { name: 'manufacturer', value: 'Legacy Corp', valueType: 'string' as const, group: 'commercial' },
-        ],
-      },
-    ].slice(0, limit);
-  });
+  loadResourceWorkspaceSnapshotMock.mockImplementation(async ({ tab, limit, offset }) => ({
+    items:
+      tab === 'ResourceSpecification'
+        ? [
+            {
+              ...resourceSpecifications[0],
+              relatedParty: [],
+              resourceSpecificationCharacteristic: [
+                ...resourceSpecifications[0].resourceSpecificationCharacteristic,
+                { name: 'manufacturer', value: 'Legacy Corp', valueType: 'string' as const, group: 'commercial' },
+              ],
+            },
+          ].slice(offset, offset + limit)
+        : physicalResources.slice(offset, offset + limit),
+    resourceSpecificationOptions: resourceSpecifications,
+    resourceCategories,
+    resourceTypes,
+    physicalResources,
+    logicalResources,
+    manufacturerOptions: manufacturerParties,
+  }));
 
   render(<ResourcePage activeTab="ResourceSpecification" />);
 
@@ -354,17 +357,25 @@ test('resource specification table falls back to legacy manufacturer characteris
 });
 
 test('resource specification table falls back to the specification name when model characteristic is missing', async () => {
-  listResourceSpecificationsMock.mockImplementation(async ({ limit, offset }) => {
-    if (offset > 0) return [];
-    return [
-      {
-        ...resourceSpecifications[0],
-        resourceSpecificationCharacteristic: resourceSpecifications[0].resourceSpecificationCharacteristic.filter(
-          (item) => item.name !== 'model',
-        ),
-      },
-    ].slice(0, limit);
-  });
+  loadResourceWorkspaceSnapshotMock.mockImplementation(async ({ tab, limit, offset }) => ({
+    items:
+      tab === 'ResourceSpecification'
+        ? [
+            {
+              ...resourceSpecifications[0],
+              resourceSpecificationCharacteristic: resourceSpecifications[0].resourceSpecificationCharacteristic.filter(
+                (item) => item.name !== 'model',
+              ),
+            },
+          ].slice(offset, offset + limit)
+        : physicalResources.slice(offset, offset + limit),
+    resourceSpecificationOptions: resourceSpecifications,
+    resourceCategories,
+    resourceTypes,
+    physicalResources,
+    logicalResources,
+    manufacturerOptions: manufacturerParties,
+  }));
 
   render(<ResourcePage activeTab="ResourceSpecification" />);
 
@@ -427,11 +438,20 @@ test('resource specification create serializes the extended characteristic set',
 test('bulk selection enables delete and reloads the active tab after deletion', async () => {
   const user = userEvent.setup();
   const inventory: PhysicalResource[] = physicalResources.map((resource) => ({ ...resource }));
-  listResourcesMock.mockImplementation(async ({ kind, limit, offset, status }) => {
-    const source = kind === 'PhysicalResource' ? inventory : logicalResources;
-    const filtered = status ? source.filter((item) => item.status === status) : source;
-    return filtered.slice(offset, offset + limit);
-  });
+  loadResourceWorkspaceSnapshotMock.mockImplementation(async ({ tab, limit, offset }) => ({
+    items:
+      tab === 'ResourceSpecification'
+        ? resourceSpecifications.slice(offset, offset + limit)
+        : tab === 'PhysicalResource'
+          ? inventory.filter((resource) => resource.status === 'active').slice(offset, offset + limit)
+          : logicalResources.filter((resource) => resource.status === 'active').slice(offset, offset + limit),
+    resourceSpecificationOptions: resourceSpecifications,
+    resourceCategories,
+    resourceTypes,
+    physicalResources: inventory.filter((resource) => resource.status === 'active'),
+    logicalResources: logicalResources.filter((resource) => resource.status === 'active'),
+    manufacturerOptions: manufacturerParties,
+  }));
   deleteResourceMock.mockImplementation(async (id) => {
     const resource = inventory.find((item) => item.id === id);
     if (!resource) return physicalResources[0];

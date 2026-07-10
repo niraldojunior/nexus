@@ -5,7 +5,7 @@ test('nexus web app loads and basic backend smoke passes', async ({ page, reques
   expect(health.ok()).toBeTruthy();
 
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Por onde Começamos?' })).toBeVisible();
-  await page.getByRole('button', { name: 'Locais' }).click();
+  await expect(page.getByRole('main').getByRole('textbox', { name: /Pergunte sobre Locais/ })).toBeVisible();
+  await page.getByRole('navigation').getByRole('button', { name: 'Locais' }).click();
   await expect(page.getByText('Hierarquia de sites')).toBeVisible();
 });

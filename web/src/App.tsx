@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import ClaudeBurst from './components/ClaudeBurst';
 import CopilotPendingResponse from './components/CopilotPendingResponse';
+import Diamond from './components/Diamond';
 import Composer from './components/Composer';
 import DocumentTile from './components/DocumentTile';
 import MarkdownMessage from './components/MarkdownMessage';
@@ -83,7 +84,7 @@ function AssistantHome({
     <div className="relative flex min-h-full items-center justify-center px-7 py-9">
       <div className="w-full max-w-[940px] text-center">
         <div className="mb-8 flex items-center justify-center gap-3">
-          <ClaudeBurst className="h-10 w-10 text-brand-terracotta" />
+          <ClaudeBurst className="h-10 w-10 text-brand-amber" />
           <h1 className="font-display text-[3rem] font-semibold leading-[0.98] tracking-[-0.03em] text-app-text">
             Como vamos evoluir o Nexus hoje?
           </h1>
@@ -113,8 +114,9 @@ function AssistantHome({
                 if (label.includes('Service')) onNavigate('service');
                 if (label.includes('Order')) onNavigate('order');
               }}
-              className="flex items-center gap-2 rounded-2xl border border-app-border bg-white px-3.5 py-2 text-[0.92rem] font-semibold text-app-text shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft"
+              className="group flex items-center gap-2 rounded-2xl border border-app-border bg-white px-3.5 py-2 text-[0.92rem] font-medium text-app-text shadow-soft transition hover:border-app-accent-border hover:bg-white"
             >
+              <Diamond size={5} className="opacity-40 transition-opacity group-hover:opacity-100" />
               <Icon className="h-5 w-5 text-app-muted" />
               <span>{label}</span>
             </button>
@@ -239,8 +241,9 @@ function DomainOverview({ page }: { page: Exclude<PageId, 'assistant' | 'convers
 
 function DomainCard({ card }: { card: DomainCardData }) {
   return (
-    <article className="rounded-[26px] border border-app-border bg-white p-6 shadow-soft transition hover:-translate-y-[1px] hover:border-app-accent-border hover:bg-app-accent-soft">
-      <div className="mb-5 inline-flex rounded-[999px] border border-app-accent-border bg-app-accent-soft px-3 py-1 text-[0.78rem] font-semibold text-app-text">
+    <article className="rounded-[26px] border border-app-border bg-white p-6 shadow-soft transition hover:-translate-y-[1px] hover:border-app-accent-border hover:shadow-soft-lg">
+      <div className="mb-5 inline-flex items-center gap-2 rounded-[999px] border border-app-border bg-white px-3 py-1 text-[0.78rem] font-semibold text-app-text">
+        <Diamond size={6} />
         {card.tag}
       </div>
       <h2 className="mb-3 font-display text-[1.4rem] font-semibold tracking-[-0.02em] text-app-text">

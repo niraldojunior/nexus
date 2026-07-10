@@ -1,3 +1,5 @@
+import type { Party } from './partyApi';
+
 const API_BASE_URL = '/tmf-api';
 
 type FetchJsonOptions = {
@@ -90,6 +92,16 @@ export type LogicalResource = ResourceBase & {
 };
 
 export type ResourceEntity = PhysicalResource | LogicalResource;
+
+export type ResourceWorkspaceSnapshot = {
+  items: ResourceEntity[] | ResourceSpecification[];
+  resourceSpecificationOptions: ResourceSpecification[];
+  resourceCategories: ResourceCategory[];
+  resourceTypes: ResourceType[];
+  physicalResources: PhysicalResource[];
+  logicalResources: LogicalResource[];
+  manufacturerOptions: Party[];
+};
 
 export type ListParams = {
   limit: number;
@@ -195,6 +207,23 @@ export async function listResourceCategories(): Promise<ResourceCategory[]> {
 
 export async function listResourceTypes(): Promise<ResourceType[]> {
   return await requestJson<ResourceType[]>('/tmf-api/resourceCatalogManagement/v4/resourceType');
+}
+
+export async function loadResourceWorkspaceSnapshot({
+  tab,
+  limit,
+  offset,
+}: {
+  tab: ResourceTab;
+  limit: number;
+  offset: number;
+}): Promise<ResourceWorkspaceSnapshot> {
+  const searchParams = new URLSearchParams({
+    tab,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return await requestJson<ResourceWorkspaceSnapshot>(`/v1/resource/workspace?${searchParams.toString()}`);
 }
 
 export async function createResourceSpecification(payload: ResourceSpecificationPayload): Promise<ResourceSpecification> {

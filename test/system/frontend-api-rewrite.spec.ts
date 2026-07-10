@@ -14,6 +14,21 @@ test('frontend rewrites API calls to /api in the browser runtime', async ({ page
       return;
     }
 
+    if (pathname === '/api/v1/resource/workspace') {
+      await route.fulfill({
+        json: {
+          items: [],
+          resourceSpecificationOptions: [],
+          resourceCategories: [],
+          resourceTypes: [],
+          physicalResources: [],
+          logicalResources: [],
+          manufacturerOptions: [],
+        },
+      });
+      return;
+    }
+
     if (pathname === '/api/tmf-api/resourceCatalogManagement/v4/resourceCategory') {
       await route.fulfill({ json: [] });
       return;
@@ -51,10 +66,9 @@ test('frontend rewrites API calls to /api in the browser runtime', async ({ page
 
   await expect(page.getByText('Nenhuma conversa ainda')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Recursos' }).click();
+  await page.getByRole('navigation').getByRole('button', { name: 'Recursos' }).click();
   await expect(page.getByRole('heading', { name: 'Recursos Físicos' })).toBeVisible();
 
   expect(seenUrls).toContain('/api/v1/research/sessions');
-  expect(seenUrls).toContain('/api/tmf-api/resourceCatalogManagement/v4/resourceCategory');
-  expect(seenUrls).toContain('/api/tmf-api/resourceCatalogManagement/v4/resourceType');
+  expect(seenUrls).toContain('/api/v1/resource/workspace?tab=PhysicalResource&limit=20&offset=0');
 });

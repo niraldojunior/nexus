@@ -1,81 +1,481 @@
-import Database from 'better-sqlite3';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
-import { isPostgresDatabaseUrl } from '../config/env.js';
-import { PostgresSyncBridge } from './postgres-sync-bridge.js';
+import { neon, Pool, types } from '@neondatabase/serverless';
+import { parentPort, workerData } from 'node:worker_threads';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Postgres returns int8 (bigint) and numeric as strings by default. The repository layer was
+// written against better-sqlite3, which yields JS numbers, so callers do strict numeric
+// comparisons (e.g. `count() === 3`). Coerce these types back to numbers to preserve that
+// contract. Values here (COUNT(*), tokens, temperatures) are well within Number's safe range.
+types.setTypeParser(20, (value) => Number.parseInt(value, 10)); // int8 / bigint
+types.setTypeParser(1700, (value) => Number.parseFloat(value)); // numeric
 
-/**
- * SQLite Database Singleton
- * Manages connection and initialization for all modules
- */
-export class SqliteDatabase {
-  private static instances = new Map<string, SqliteDatabase>();
-  private db: Database.Database | null = null;
-  private postgresBridge: PostgresSyncBridge | null = null;
-  private initialized = false;
-  private readonly postgresBackend: boolean;
+type WorkerInitData = {
+  connectionString: string;
+  controlBuffer: SharedArrayBuffer;
+  dataBuffer: SharedArrayBuffer;
+};
 
-  private constructor(private readonly dbPath: string) {
-    this.postgresBackend = isPostgresDatabaseUrl(dbPath);
-    if (this.postgresBackend) {
-      this.postgresBridge = new PostgresSyncBridge(dbPath);
+// Control buffer layout (Int32Array): [status, payloadByteLength]
+const STATUS_INDEX = 0;
+const LENGTH_INDEX = 1;
+const STATUS_OK = 1;
+const STATUS_ERROR = 2;
+const STATUS_OVERFLOW = 3;
+
+type WorkerRequest =
+  | { id: string; request: { type: 'initialize' } }
+  | { id: string; request: { type: 'close' } }
+  | { id: string; request: { type: 'exec'; sql: string } }
+  | { id: string; request: { type: 'query'; sql: string; params: unknown[]; mode: 'run' | 'get' | 'all'; txId?: string } }
+  | { id: string; request: { type: 'begin-transaction'; txId: string } }
+  | { id: string; request: { type: 'commit-transaction'; txId: string } }
+  | { id: string; request: { type: 'rollback-transaction'; txId: string } };
+
+type WorkerResponse = { id: string; ok: true; data?: unknown } | { id: string; ok: false; error: string };
+
+type TransactionContext = {
+  client: any;
+};
+
+const initData = workerData as WorkerInitData;
+const { connectionString, schemaName } = parseConnectionString(initData.connectionString);
+const controlView = new Int32Array(initData.controlBuffer);
+const dataView = new Uint8Array(initData.dataBuffer);
+const encoder = new TextEncoder();
+const connectionTimeoutMs = Number(process.env.DATABASE_CONNECTION_TIMEOUT_MS ?? 15_000);
+// NOTE: the abort signal must be created per query, not once at module load. A single
+// AbortSignal.timeout() shared across every request fires 15s after the worker starts and
+// then aborts all subsequent queries permanently ("operation was aborted due to timeout").
+const sqlClient = neon<false, true>(connectionString, {
+  fullResults: true,
+});
+let pool: Pool | undefined;
+const transactions = new Map<string, TransactionContext>();
+let initialized = false;
+
+if (!parentPort) {
+  throw new Error('worker parent port not available');
+}
+
+parentPort.on('message', (message: WorkerRequest) => {
+  void handle(message).catch((error: unknown) => {
+    post({ id: message.id, ok: false, error: error instanceof Error ? error.message : String(error) });
+  });
+});
+
+const handle = async (message: WorkerRequest): Promise<void> => {
+  switch (message.request.type) {
+    case 'initialize':
+      if (!initialized) {
+        // Initialize is idempotent (CREATE ... IF NOT EXISTS), so retry it through transient
+        // network blips — Neon HTTP over the corporate proxy occasionally drops the first connect.
+        if (schemaName) {
+          await withRetry(() => sqlClient.query(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(schemaName)}`));
+        }
+        if (process.env.DATABASE_AUTO_SCHEMA === 'true') {
+          await withRetry(() => initializeSchema());
+        } else {
+          await withRetry(() => executeQuery('SELECT 1', [], 'get', undefined));
+        }
+        initialized = true;
+      }
+      post({ id: message.id, ok: true });
+      return;
+    case 'close':
+      await pool?.end();
+      post({ id: message.id, ok: true });
+      return;
+    case 'exec':
+      await executeStatements(message.request.sql, undefined, undefined);
+      post({ id: message.id, ok: true });
+      return;
+    case 'begin-transaction': {
+      const client = await getPool().connect();
+      try {
+        await client.query('BEGIN');
+        await setSearchPath(client);
+      } catch (error) {
+        // Never leak a checked-out connection stuck mid-transaction: it would hold locks and
+        // deadlock the schema teardown in cleanup. Roll back best-effort and return it to the pool.
+        try {
+          await client.query('ROLLBACK');
+        } catch {
+          // Ignore rollback failures during error propagation.
+        }
+        client.release();
+        throw error;
+      }
+      transactions.set(message.request.txId, { client });
+      post({ id: message.id, ok: true });
       return;
     }
-
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-  }
-
-  static getInstance(dbPath?: string): SqliteDatabase {
-    const resolvedPath = normalizeDatabasePath(dbPath);
-    const existing = SqliteDatabase.instances.get(resolvedPath);
-    if (existing) {
-      return existing;
-    }
-
-    const instance = new SqliteDatabase(resolvedPath);
-    SqliteDatabase.instances.set(resolvedPath, instance);
-    return instance;
-  }
-
-  static resetForTesting(): void {
-    for (const instance of SqliteDatabase.instances.values()) {
-      if (instance.db) {
-        instance.db.close();
-        instance.db = null;
+    case 'commit-transaction': {
+      const context = transactions.get(message.request.txId);
+      if (!context) throw new Error('transaction not found');
+      try {
+        await context.client.query('COMMIT');
+      } finally {
+        context.client.release();
+        transactions.delete(message.request.txId);
       }
-      if (instance.postgresBridge) {
-        instance.postgresBridge.close();
-        instance.postgresBridge = null;
-      }
-    }
-    SqliteDatabase.instances.clear();
-  }
-
-  getDatabase(): Database.Database {
-    if (!this.db) {
-      throw new Error('Database not initialized');
-    }
-    return this.db;
-  }
-
-  async initialize(): Promise<void> {
-    if (this.initialized) return;
-
-    if (this.postgresBackend) {
-      this.postgresBridge?.initialize();
-      this.initialized = true;
+      post({ id: message.id, ok: true });
       return;
     }
+    case 'rollback-transaction': {
+      const context = transactions.get(message.request.txId);
+      if (!context) throw new Error('transaction not found');
+      try {
+        await context.client.query('ROLLBACK');
+      } finally {
+        context.client.release();
+        transactions.delete(message.request.txId);
+      }
+      post({ id: message.id, ok: true });
+      return;
+    }
+    case 'query': {
+      const result = await executeQuery(message.request.sql, message.request.params, message.request.mode, message.request.txId);
+      post({ id: message.id, ok: true, data: result });
+      return;
+    }
+    default:
+      throw new Error(`unsupported request ${(message.request as { type?: string }).type ?? 'unknown'}`);
+  }
+};
 
-    const db = this.getDatabase();
+const isTransientConnectionError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  return /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|Connection terminated|connection closed|network/i.test(
+    message,
+  );
+};
 
-    // Create all tables following TM Forum standard rigorously
-    db.exec(`
+// Retry idempotent operations through transient network failures (Neon HTTP over the proxy).
+const withRetry = async <T>(operation: () => Promise<T>, attempts = 3): Promise<T> => {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientConnectionError(error) || attempt === attempts - 1) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+};
+
+const initializeSchema = async (): Promise<void> => {
+  // Fast path: send the whole (idempotent) schema as a single simple-query batch — one HTTP
+  // round-trip instead of ~60. This is what keeps test setup from timing out through the proxy.
+  try {
+    await runSchemaBatch(`${transformSchemaSql(SCHEMA_SQL)}\n${MIGRATIONS_SQL}`);
+    return;
+  } catch {
+    // Fall back to per-statement execution (tolerating idempotent errors) if the batch fails.
+  }
+
+  const statements = [...splitSqlStatements(transformSchemaSql(SCHEMA_SQL)), ...splitSqlStatements(MIGRATIONS_SQL)];
+
+  for (const statement of statements) {
+    try {
+      await executeQuery(statement, [], 'run', undefined);
+    } catch (error) {
+      if (!isIgnorableSchemaError(statement, error)) {
+        throw error;
+      }
+    }
+  }
+};
+
+const runSchemaBatch = async (sql: string): Promise<void> => {
+  if (!schemaName) {
+    await sqlClient.query(sql);
+    return;
+  }
+  const client = await getPool().connect();
+  try {
+    // Same transaction-pooling caveat as executePooledQuery: without pinning the backend the DDL
+    // would run with search_path = public and create the tables in the wrong schema.
+    await beginSchemaScope(client);
+    try {
+      await client.query(sql);
+      await client.query('COMMIT');
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // Ignore rollback failures during error propagation.
+      }
+      throw error;
+    }
+  } finally {
+    client.release();
+  }
+};
+
+const splitSqlStatements = (sql: string): string[] =>
+  sql
+    .split(';')
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0 && !statement.startsWith('--'));
+
+const executeStatements = async (sql: string, params: unknown[] | undefined, txId: string | undefined): Promise<void> => {
+  const statements = sql
+    .split(';')
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0 && !statement.startsWith('--'));
+
+  for (const statement of statements) {
+    await executeQuery(statement, params ?? [], 'run', txId);
+  }
+};
+
+const executeQuery = async (
+  sql: string,
+  params: unknown[],
+  mode: 'run' | 'get' | 'all',
+  txId?: string,
+): Promise<unknown> => {
+  const client = txId ? transactions.get(txId)?.client : undefined;
+  const queryText = transformQuerySql(sql);
+  const queryParams = params ?? [];
+  const result = client
+    ? await client.query(queryText, queryParams)
+    : schemaName
+      ? await executePooledQuery(queryText, queryParams)
+      : await sqlClient.query(queryText, queryParams, {
+          fetchOptions: { signal: AbortSignal.timeout(connectionTimeoutMs) },
+        });
+
+  if (mode === 'run') {
+    return {
+      changes: Number(result.rowCount ?? 0),
+    };
+  }
+
+  if (mode === 'get') {
+    return result.rows[0];
+  }
+
+  return result.rows;
+};
+
+const getPool = (): Pool => {
+  pool ??= new Pool({
+    connectionString,
+    connectionTimeoutMillis: Number(process.env.DATABASE_CONNECTION_TIMEOUT_MS ?? 15_000),
+  });
+  return pool;
+};
+
+const executePooledQuery = async (queryText: string, queryParams: unknown[]) => {
+  const client = await getPool().connect();
+  try {
+    // Neon's connection uses the `-pooler` endpoint (PgBouncer, transaction pooling), which does
+    // NOT preserve a session-level `SET search_path` across separate statements — the follow-up
+    // query can land on a different backend where search_path is `public`, silently reading/writing
+    // the wrong schema. Pin the backend with an explicit transaction and scope search_path with
+    // SET LOCAL so it is guaranteed to apply to this query.
+    if (!schemaName) {
+      return await client.query(queryText, queryParams);
+    }
+    await beginSchemaScope(client);
+    try {
+      const result = await client.query(queryText, queryParams);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // Ignore rollback failures during error propagation.
+      }
+      throw error;
+    }
+  } finally {
+    client.release();
+  }
+};
+
+// Opens a transaction (pinning the pooled backend) with search_path scoped to the test schema.
+// `BEGIN; SET LOCAL ...` is one round-trip via the simple-query protocol (no parameters).
+const beginSchemaScope = async (client: any): Promise<void> => {
+  await client.query(`BEGIN; SET LOCAL search_path TO ${quoteIdentifier(schemaName as string)}, public`);
+};
+
+const setSearchPath = async (client: any): Promise<void> => {
+  if (!schemaName) return;
+  await client.query(`SET search_path TO ${quoteIdentifier(schemaName)}, public`);
+};
+
+const transformSchemaSql = (sql: string): string =>
+  sql
+    .replace(/\bDATETIME\b/g, 'TIMESTAMPTZ')
+    .replace(/\bREAL\b/g, 'DOUBLE PRECISION')
+    .replace(/CREATE INDEX IF NOT EXISTS idx_tmf_event_entity ON tmf_event\(json_extract\(event_data, '\$\.(.+?)'\)\);/g, (
+      _match,
+      path: string,
+    ) => `CREATE INDEX IF NOT EXISTS idx_tmf_event_entity ON tmf_event (((event_data)::jsonb->>'${path}'));`)
+    .replace(/--.*$/gm, '');
+
+const transformQuerySql = (sql: string): string => {
+  let output = sql.replace(/json_extract\(([^,]+),\s*'\$\.(.+?)'\)/g, (_match, column: string, path: string) => {
+    const escapedPath = path.replace(/'/g, "''");
+    return `(${column.trim()}::jsonb->>'${escapedPath}')`;
+  });
+  output = output.replace(/\bLIMIT\s+-1\b/gi, 'LIMIT ALL');
+  output = quoteCamelCaseAliases(output);
+  output = replacePositionalParameters(output);
+  return output;
+};
+
+// SQLite preserves the case of unquoted column aliases; Postgres folds them to lower case, so
+// `SELECT user_id AS userId` yields a column named `userid` and repository code that reads
+// `row.userId` gets undefined. Quote any camelCase alias to force Postgres to keep its case.
+// better-sqlite3 also accepts double-quoted aliases, so this stays compatible with both.
+const quoteCamelCaseAliases = (sql: string): string =>
+  sql.replace(/\bAS\s+("?)([A-Za-z_][A-Za-z0-9_]*)\1/gi, (match, quote: string, identifier: string) => {
+    if (quote) return match; // already quoted
+    if (!/[a-z][A-Z]/.test(identifier)) return match; // not camelCase (SQL types, all-lowercase)
+    return `AS "${identifier}"`;
+  });
+
+const replacePositionalParameters = (sql: string): string => {
+  let index = 1;
+  let result = '';
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  for (let i = 0; i < sql.length; i += 1) {
+    const char = sql[i];
+    if (char === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      result += char;
+      continue;
+    }
+    if (char === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      result += char;
+      continue;
+    }
+    if (char === '?' && !inSingleQuote && !inDoubleQuote) {
+      result += `$${index}`;
+      index += 1;
+      continue;
+    }
+    result += char;
+  }
+  return result;
+};
+
+const isIgnorableSchemaError = (statement: string, error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    statement.includes('json_extract(event_data') ||
+    message.includes('already exists') ||
+    message.includes('duplicate key') ||
+    message.includes('does not exist')
+  );
+};
+
+function parseConnectionString(rawConnectionString: string): { connectionString: string; schemaName?: string } {
+  const url = new URL(rawConnectionString);
+  const rawSchema = url.searchParams.get('schema') ?? undefined;
+  url.searchParams.delete('schema');
+  return {
+    connectionString: url.toString(),
+    ...(rawSchema ? { schemaName: sanitizeSchemaName(rawSchema) } : {}),
+  };
+}
+
+function sanitizeSchemaName(value: string): string {
+  const normalized = value.trim().replace(/[^a-zA-Z0-9_]/g, '_');
+  if (!normalized) throw new Error('schema query parameter cannot be empty');
+  return normalized.length > 63 ? normalized.slice(0, 63) : normalized;
+}
+
+const quoteIdentifier = (value: string): string => `"${value.replace(/"/g, '""')}"`;
+
+const post = (response: WorkerResponse): void => {
+  // The main thread is blocked in Atomics.wait, so its event loop is frozen and it
+  // cannot receive postMessage responses. Signal completion through the shared buffer
+  // instead: write the serialized payload, then flip the status flag and notify.
+  const { id: _id, ...rest } = response;
+  const bytes = encoder.encode(JSON.stringify(rest));
+
+  if (bytes.byteLength > dataView.byteLength) {
+    Atomics.store(controlView, LENGTH_INDEX, bytes.byteLength);
+    Atomics.store(controlView, STATUS_INDEX, STATUS_OVERFLOW);
+    Atomics.notify(controlView, STATUS_INDEX);
+    return;
+  }
+
+  dataView.set(bytes, 0);
+  Atomics.store(controlView, LENGTH_INDEX, bytes.byteLength);
+  Atomics.store(controlView, STATUS_INDEX, rest.ok ? STATUS_OK : STATUS_ERROR);
+  Atomics.notify(controlView, STATUS_INDEX);
+};
+
+// Column migrations that mirror SqliteDatabase.ensureColumn(...). These columns are added
+// after the base schema so that databases created before the columns existed get upgraded.
+// Postgres supports ADD COLUMN IF NOT EXISTS natively, so this is idempotent.
+const MIGRATIONS_SQL = `
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS place_id TEXT;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS place_type TEXT;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS administrative_state TEXT;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS operational_state TEXT;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS usage_state TEXT;
+  ALTER TABLE tmf_resource_specification ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS place_id TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS place_type TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS administrative_state TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS operational_state TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS usage_state TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS service_type TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS category TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS service_date TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS start_date TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS end_date TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS is_service_enabled INTEGER;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS has_started INTEGER;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS place TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS supporting_services TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS service_relationships TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS service_type TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS category TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS service_date TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS start_date TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS end_date TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS is_service_enabled INTEGER;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS has_started INTEGER;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS place TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS supporting_resources TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS supporting_services TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS service_relationships TEXT;
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS place TEXT;
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS service_characteristic TEXT;
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS service_qualification_item TEXT;
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS description TEXT;
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS service_order_item TEXT;
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS note TEXT;
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS description TEXT;
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS resource_order_item TEXT;
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS note TEXT;
+`;
+
+const SCHEMA_SQL = `
       -- ========== PLATFORM TABLES (Non-TMF) ==========
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
@@ -185,7 +585,7 @@ export class SqliteDatabase {
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_status ON tmf_geographic_site(status);
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_name ON tmf_geographic_site(name);
 
-      -- Geographic Site Relationship (topologia A↔Z)
+      -- Geographic Site Relationship (topologia A→Z)
       CREATE TABLE IF NOT EXISTS tmf_geographic_site_relationship (
         site_from_id TEXT NOT NULL,
         site_to_id TEXT NOT NULL,
@@ -650,127 +1050,4 @@ export class SqliteDatabase {
         allowed_characteristics TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-
-    this.ensureColumn(db, 'tmf_physical_resource', 'place_id TEXT');
-    this.ensureColumn(db, 'tmf_physical_resource', 'place_type TEXT');
-    this.ensureColumn(db, 'tmf_physical_resource', 'administrative_state TEXT');
-    this.ensureColumn(db, 'tmf_physical_resource', 'operational_state TEXT');
-    this.ensureColumn(db, 'tmf_physical_resource', 'usage_state TEXT');
-    this.ensureColumn(db, 'tmf_resource_specification', 'related_party TEXT');
-    this.ensureColumn(db, 'tmf_logical_resource', 'place_id TEXT');
-    this.ensureColumn(db, 'tmf_logical_resource', 'place_type TEXT');
-    this.ensureColumn(db, 'tmf_logical_resource', 'related_party TEXT');
-    this.ensureColumn(db, 'tmf_logical_resource', 'administrative_state TEXT');
-    this.ensureColumn(db, 'tmf_logical_resource', 'operational_state TEXT');
-    this.ensureColumn(db, 'tmf_logical_resource', 'usage_state TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'state TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'service_type TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'category TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'service_date TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'start_date TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'end_date TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'is_service_enabled INTEGER');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'has_started INTEGER');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'place TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'related_party TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'supporting_services TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'service_relationships TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'state TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'service_type TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'category TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'service_date TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'start_date TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'end_date TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'is_service_enabled INTEGER');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'has_started INTEGER');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'place TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'related_party TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'supporting_resources TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'supporting_services TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'service_relationships TEXT');
-    this.ensureColumn(db, 'tmf_service_qualification', 'state TEXT');
-    this.ensureColumn(db, 'tmf_service_qualification', 'place TEXT');
-    this.ensureColumn(db, 'tmf_service_qualification', 'related_party TEXT');
-    this.ensureColumn(db, 'tmf_service_qualification', 'service_characteristic TEXT');
-    this.ensureColumn(db, 'tmf_service_qualification', 'service_qualification_item TEXT');
-    this.ensureColumn(db, 'tmf_service_order', 'state TEXT');
-    this.ensureColumn(db, 'tmf_service_order', 'description TEXT');
-    this.ensureColumn(db, 'tmf_service_order', 'related_party TEXT');
-    this.ensureColumn(db, 'tmf_service_order', 'service_order_item TEXT');
-    this.ensureColumn(db, 'tmf_service_order', 'note TEXT');
-    this.ensureColumn(db, 'tmf_resource_order', 'state TEXT');
-    this.ensureColumn(db, 'tmf_resource_order', 'description TEXT');
-    this.ensureColumn(db, 'tmf_resource_order', 'related_party TEXT');
-    this.ensureColumn(db, 'tmf_resource_order', 'resource_order_item TEXT');
-    this.ensureColumn(db, 'tmf_resource_order', 'note TEXT');
-
-    this.initialized = true;
-  }
-
-  close(): void {
-    if (this.postgresBridge) {
-      this.postgresBridge.close();
-      this.postgresBridge = null;
-    }
-    if (this.db) {
-      this.db.close();
-      this.db = null;
-    }
-    SqliteDatabase.instances.delete(this.dbPath);
-  }
-
-  run(sql: string, params?: any[]): Database.RunResult {
-    if (this.postgresBridge) {
-      return this.postgresBridge.run(sql, params ?? []) as Database.RunResult;
-    }
-    return this.getDatabase().prepare(sql).run(...(params || []));
-  }
-
-  get<T>(sql: string, params?: any[]): T | undefined {
-    if (this.postgresBridge) {
-      return this.postgresBridge.get<T>(sql, params ?? []);
-    }
-    return this.getDatabase().prepare(sql).get(...(params || [])) as T | undefined;
-  }
-
-  all<T>(sql: string, params?: any[]): T[] {
-    if (this.postgresBridge) {
-      return this.postgresBridge.all<T>(sql, params ?? []);
-    }
-    return this.getDatabase().prepare(sql).all(...(params || [])) as T[];
-  }
-
-  exec(sql: string): void {
-    if (this.postgresBridge) {
-      this.postgresBridge.exec(sql);
-      return;
-    }
-    this.getDatabase().exec(sql);
-  }
-
-  transaction<T>(fn: () => T): T {
-    if (this.postgresBridge) {
-      return this.postgresBridge.transaction(fn);
-    }
-    const transaction = this.getDatabase().transaction(fn);
-    return transaction();
-  }
-
-  private ensureColumn(db: Database.Database, table: string, definition: string): void {
-    const columnName = definition.split(/\s+/)[0];
-    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-    if (columns.some((column) => column.name === columnName)) return;
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
-  }
-}
-
-const normalizeDatabasePath = (dbPath?: string): string => {
-  const rawPath = dbPath ?? 'sqlite://./data/nexus.db';
-  if (!rawPath.startsWith('sqlite://')) {
-    return rawPath;
-  }
-
-  const filePath = rawPath.slice('sqlite://'.length);
-  return resolve(process.cwd(), filePath);
-};
+`;

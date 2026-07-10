@@ -1,3 +1,5 @@
+import Diamond from './Diamond';
+
 type NexusLoadingMarkProps = {
   className?: string;
   size?: number;
@@ -5,14 +7,12 @@ type NexusLoadingMarkProps = {
 
 export default function NexusLoadingMark({ className = '', size = 24 }: NexusLoadingMarkProps) {
   return (
-    <img
-      src="/nexus-mark-transparent.gif"
-      alt=""
+    <span
       aria-hidden="true"
-      draggable={false}
-      decoding="async"
-      className={className}
+      className={`inline-flex items-center justify-center ${className}`}
       style={{ width: size, height: size }}
-    />
+    >
+      <Diamond size={Math.round(size * 0.5)} className="animate-vt-pulse" />
+    </span>
   );
 }

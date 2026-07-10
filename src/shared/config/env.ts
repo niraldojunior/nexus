@@ -19,11 +19,48 @@ export const loadConfig = (env: NodeJS.ProcessEnv): AppConfig => {
     appName: env.APP_NAME ?? 'v-tal-nexus',
     authEnabled: normalizeBoolean(env.AUTH_ENABLED, true),
     authToken: env.AUTH_TOKEN ?? 'change-me',
-    databaseUrl: env.DATABASE_URL ?? 'sqlite://./data/nexus.db',
+    databaseUrl: resolveDatabaseUrl(env, nodeEnv),
     logLevel,
     nodeEnv,
     port: normalizePort(env.PORT, 4001),
   };
+};
+
+export const isPostgresDatabaseUrl = (value: string | undefined): value is string =>
+  typeof value === 'string' && (value.startsWith('postgres://') || value.startsWith('postgresql://'));
+
+export const resolveDatabaseUrl = (env: NodeJS.ProcessEnv, nodeEnv: AppConfig['nodeEnv']): string => {
+  if (env.DATABASE_URL) {
+    return assertPostgresUrl(env.DATABASE_URL, 'DATABASE_URL');
+  }
+
+  if (env.VERCEL_ENV === 'production') {
+    return requirePostgresUrl(env.DATABASE_URL_PROD ?? env.NEON_DATABASE_URL_PROD, 'DATABASE_URL_PROD');
+  }
+
+  if (env.VERCEL_ENV === 'preview' || env.VERCEL_ENV === 'development') {
+    return requirePostgresUrl(env.DATABASE_URL_DEV ?? env.NEON_DATABASE_URL_DEV, 'DATABASE_URL_DEV');
+  }
+
+  if (nodeEnv === 'production') {
+    return requirePostgresUrl(env.DATABASE_URL_PROD ?? env.NEON_DATABASE_URL_PROD, 'DATABASE_URL_PROD');
+  }
+
+  return requirePostgresUrl(env.DATABASE_URL_TEST ?? env.NEON_DATABASE_URL_TEST ?? env.DATABASE_URL_DEV ?? env.NEON_DATABASE_URL_DEV, 'DATABASE_URL_DEV');
+};
+
+const requirePostgresUrl = (value: string | undefined, name: string): string => {
+  if (!value) {
+    throw new Error(`${name} must be set to a postgres:// or postgresql:// Neon connection string.`);
+  }
+  return assertPostgresUrl(value, name);
+};
+
+const assertPostgresUrl = (value: string, name: string): string => {
+  if (!isPostgresDatabaseUrl(value)) {
+    throw new Error(`${name} must be a postgres:// or postgresql:// Neon connection string.`);
+  }
+  return value;
 };
 
 const normalizeBoolean = (value: string | undefined, fallback: boolean): boolean => {

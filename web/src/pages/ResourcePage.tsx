@@ -24,10 +24,7 @@ import {
   createResourceSpecification,
   deleteResource,
   deleteResourceSpecification,
-  listResourceCategories,
-  listResourceSpecifications,
-  listResourceTypes,
-  listResources,
+  loadResourceWorkspaceSnapshot,
   updateResource,
   updateResourceSpecification,
   type ResourceCategory,
@@ -41,8 +38,7 @@ import {
   type ResourceType,
   type ResourceTab,
 } from '../services/resourceApi';
-import { listParties, listPartyRoles, type Party } from '../services/partyApi';
-import { RESOURCE_CATEGORY_DEFAULTS, RESOURCE_TYPE_DEFAULTS } from '../data/resourceCatalogDefaults';
+import type { Party } from '../services/partyApi';
 import { resourceFieldLabel } from '../utils/resourceFieldLabels';
 import {
   characteristicBooleanValue,
@@ -54,18 +50,6 @@ import {
 } from '../utils/resourceSpecificationCharacteristics';
 
 const PAGE_SIZE = 20;
-const MANUFACTURER_PARTY_NAMES = new Set([
-  'VANTIVA',
-  'BLU-CASTLE',
-  'DATACOM',
-  'HUAWEI',
-  'ZTE',
-  'SAGEMCOM',
-  'NOKIA',
-  'TELLESCOM',
-  'ARCADYAN',
-]);
-
 type ResourceTabId = ResourceTab;
 type ResourceMode = 'create' | 'edit';
 
@@ -266,71 +250,37 @@ export default function ResourcePage({
   const selectedCount = activeSelection.size;
   const selectedDeletePreview = selectedOnPage.slice(0, 3).map((item) => item.name).join(', ');
 
-  const loadTab = async (tab: ResourceTabId, page: number): Promise<void> => {
+  const loadWorkspaceData = async (tab: ResourceTabId, page: number): Promise<void> => {
     setIsLoading(true);
+    setLookupLoading(true);
     setError(null);
     try {
       const offset = (page - 1) * PAGE_SIZE;
+      const snapshot = await loadResourceWorkspaceSnapshot({ tab, limit: PAGE_SIZE, offset });
+
+      setResourceSpecificationOptions(snapshot.resourceSpecificationOptions);
+      setResourceCategories(snapshot.resourceCategories);
+      setResourceTypes(snapshot.resourceTypes);
+      setPhysicalResourceOptions(snapshot.physicalResources.filter(isPhysicalResource));
+      setLogicalResourceOptions(snapshot.logicalResources.filter(isLogicalResource));
+      setManufacturerOptions(snapshot.manufacturerOptions);
+
       if (tab === 'ResourceSpecification') {
-        const items = await listResourceSpecifications({ limit: PAGE_SIZE, offset });
-        setResourceSpecifications(items);
+        setResourceSpecifications(snapshot.items as ResourceSpecification[]);
       } else {
-        const items = await listResources({ kind: tab, limit: PAGE_SIZE, offset, status: 'active' });
-        setResourcesByTab((current) => ({ ...current, [tab]: items }));
+        setResourcesByTab((current) => ({ ...current, [tab]: snapshot.items as ResourceEntity[] }));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao carregar Resource.');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const loadLookupOptions = async (): Promise<void> => {
-    setLookupLoading(true);
-    try {
-      const [specsResult, categoriesResult, typesResult, physicalResourcesResult, logicalResourcesResult, manufacturerCandidatesResult] = await Promise.allSettled([
-        loadAllResourceSpecifications(),
-        listResourceCategories(),
-        listResourceTypes(),
-        loadAllResources('PhysicalResource'),
-        loadAllResources('LogicalResource'),
-        loadManufacturerCandidates(),
-      ]);
-
-      if (specsResult.status === 'fulfilled') {
-        setResourceSpecificationOptions(specsResult.value);
-      }
-
-      setResourceCategories(
-        categoriesResult.status === 'fulfilled' && categoriesResult.value.length
-          ? categoriesResult.value
-          : RESOURCE_CATEGORY_DEFAULTS,
-      );
-      setResourceTypes(
-        typesResult.status === 'fulfilled' && typesResult.value.length ? typesResult.value : RESOURCE_TYPE_DEFAULTS,
-      );
-
-      if (physicalResourcesResult.status === 'fulfilled') {
-        setPhysicalResourceOptions(physicalResourcesResult.value.filter(isPhysicalResource));
-      }
-      if (logicalResourcesResult.status === 'fulfilled') {
-        setLogicalResourceOptions(logicalResourcesResult.value.filter(isLogicalResource));
-      }
-      if (manufacturerCandidatesResult.status === 'fulfilled') {
-        setManufacturerOptions(manufacturerCandidatesResult.value);
-      }
-    } finally {
       setLookupLoading(false);
     }
   };
 
   useEffect(() => {
-    void loadTab(activeTab, activePage);
+    void loadWorkspaceData(activeTab, activePage);
   }, [activeTab, activePage]);
-
-  useEffect(() => {
-    void loadLookupOptions();
-  }, []);
 
   useEffect(() => {
     if (!selectAllRef.current) return;
@@ -494,13 +444,12 @@ export default function ResourcePage({
     setDeleteConfirmOpen(false);
   };
 
-  const refreshActiveTab = async () => {
-    await loadTab(activeTab, pageByTab[activeTab]);
+  const refreshWorkspace = async () => {
+    await loadWorkspaceData(activeTab, pageByTab[activeTab]);
   };
 
   refreshCatalogRef.current = () => {
-    void loadLookupOptions();
-    void refreshActiveTab();
+    void refreshWorkspace();
   };
 
   useEffect(() => {
@@ -541,7 +490,7 @@ export default function ResourcePage({
       }
       closeModal();
       setSelectedIds((current) => ({ ...current, [activeTab]: new Set() }));
-      await refreshActiveTab();
+      await refreshWorkspace();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao salvar Resource.');
     } finally {
@@ -561,7 +510,7 @@ export default function ResourcePage({
       }
       setSelectedIds((current) => ({ ...current, [activeTab]: new Set() }));
       setDeleteConfirmOpen(false);
-      await refreshActiveTab();
+      await refreshWorkspace();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao excluir Resource.');
     } finally {
@@ -1700,89 +1649,6 @@ function physicalDetails(resource: PhysicalResource): string {
 
 function logicalDetails(resource: LogicalResource): string {
   return resource.supportingPhysicalResourceId ?? '-';
-}
-
-async function loadAllResourceSpecifications(): Promise<ResourceSpecification[]> {
-  const collected: ResourceSpecification[] = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const items = await listResourceSpecifications({ limit: PAGE_SIZE, offset });
-    collected.push(...items);
-    if (items.length < PAGE_SIZE) break;
-  }
-  return collected;
-}
-
-async function loadManufacturerCandidates(): Promise<Party[]> {
-  const fromRoles = await loadManufacturerCandidatesFromRoles();
-  if (fromRoles.length > 0) {
-    return fromRoles;
-  }
-
-  const fromParties = await loadManufacturerCandidatesFromParties();
-  return fromParties;
-}
-
-function isManufacturerParty(party: Party): boolean {
-  return party.partyType === 'Organization' && MANUFACTURER_PARTY_NAMES.has(party.name.trim().toUpperCase());
-}
-
-async function loadManufacturerCandidatesFromRoles(): Promise<Party[]> {
-  const collected: Party[] = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const items = await listPartyRoles({ limit: PAGE_SIZE, offset, status: 'active', name: 'manufacturer' });
-    for (const role of items) {
-      const party = role.party;
-      if (!party || party['@referredType'] !== 'Organization') continue;
-      collected.push({
-        '@type': 'Organization',
-        id: party.id,
-        href: party.href ?? `/tmf-api/partyManagement/v4/party/${party.id}`,
-        name: party.name ?? party.id,
-        status: 'active',
-        partyType: 'Organization',
-      });
-    }
-    if (items.length < PAGE_SIZE) break;
-  }
-
-  return normalizeManufacturerParties(collected);
-}
-
-async function loadManufacturerCandidatesFromParties(): Promise<Party[]> {
-  const collected: Party[] = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const items = await listParties({ limit: PAGE_SIZE, offset, status: 'active', partyType: 'Organization' });
-    for (const party of items) {
-      if (!isManufacturerParty(party)) continue;
-      collected.push({
-        '@type': 'Organization',
-        id: party.id,
-        href: party.href ?? `/tmf-api/partyManagement/v4/party/${party.id}`,
-        name: party.name,
-        status: 'active',
-        partyType: 'Organization',
-      });
-    }
-    if (items.length < PAGE_SIZE) break;
-  }
-
-  return normalizeManufacturerParties(collected);
-}
-
-function normalizeManufacturerParties(parties: Party[]): Party[] {
-  return [...new Map(parties.map((party) => [party.id, party] as const)).values()].sort((left, right) =>
-    left.name.localeCompare(right.name),
-  );
-}
-
-async function loadAllResources(kind: Exclude<ResourceTabId, 'ResourceSpecification'>): Promise<ResourceEntity[]> {
-  const collected: ResourceEntity[] = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const items = await listResources({ kind, limit: PAGE_SIZE, offset, status: 'active' });
-    collected.push(...items);
-    if (items.length < PAGE_SIZE) break;
-  }
-  return collected;
 }
 
 function buildPlaceOptions(resources: ResourceEntity[]): PlaceOption[] {

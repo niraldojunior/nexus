@@ -20,15 +20,15 @@ const createRepositoryMock = () => ({
   archiveSession: ReturnType<typeof vi.fn>;
 };
 
-test('SearchService cria sessões com defaults canônicos e campos opcionais', () => {
+test('SearchService cria sessoes com defaults canonicos e campos opcionais', async () => {
   const repository = createRepositoryMock();
   repository.createSession.mockImplementation((session: ResearchSession) => ({ ...session, messages: [] }));
   const service = new SearchService(repository);
 
-  const session = service.createSession('tenant-1', {
+  const session = await service.createSession('tenant-1', {
     title: 'Nova conversa',
     description: 'Contexto inicial',
-    context: 'Você é o Nexus',
+    context: 'Voce e o Nexus',
     model: 'gpt-4o',
     temperature: 0.2,
     maxTokens: 900,
@@ -36,7 +36,7 @@ test('SearchService cria sessões com defaults canônicos e campos opcionais', (
 
   assert.equal(session.title, 'Nova conversa');
   assert.equal(session.description, 'Contexto inicial');
-  assert.equal(session.context, 'Você é o Nexus');
+  assert.equal(session.context, 'Voce e o Nexus');
   assert.equal(session.model, 'gpt-4o');
   assert.equal(session.temperature, 0.2);
   assert.equal(session.maxTokens, 900);
@@ -46,12 +46,12 @@ test('SearchService cria sessões com defaults canônicos e campos opcionais', (
   assert.match(repository.createSession.mock.calls[0]?.[0].href, /^\/v1\/search\/sessions\//);
 });
 
-test('SearchService preenche defaults quando criação não traz opcionais', () => {
+test('SearchService preenche defaults quando criacao nao traz opcionais', async () => {
   const repository = createRepositoryMock();
   repository.createSession.mockImplementation((session: ResearchSession) => ({ ...session, messages: [] }));
   const service = new SearchService(repository);
 
-  service.createSession('tenant-2', { title: 'Sessão sem extras' });
+  await service.createSession('tenant-2', { title: 'Sessao sem extras' });
 
   const payload = repository.createSession.mock.calls[0]?.[0] as ResearchSession;
   assert.equal(payload.model, 'gpt-4o-mini');
@@ -70,7 +70,7 @@ test('SearchService adiciona mensagem, preserva contexto e faz fallback quando o
     id: 'session-1',
     href: '/v1/search/sessions/session-1',
     userId: 'tenant-1',
-    title: 'Sessão',
+    title: 'Sessao',
     context: 'Contexto local',
     status: 'active',
     model: 'gpt-4o-mini',
@@ -104,10 +104,10 @@ test('SearchService adiciona mensagem, preserva contexto e faz fallback quando o
 
   const service = new SearchService(repository);
   const llmProvider = vi.fn(async (_request: LLMRequest) => ({
-      content: 'Resposta do modelo',
-      tokensUsed: 12,
-      metadata: { model: 'gpt-4o-mini', finish_reason: 'stop' },
-    }));
+    content: 'Resposta do modelo',
+    tokensUsed: 12,
+    metadata: { model: 'gpt-4o-mini', finish_reason: 'stop' },
+  }));
 
   const result = await service.addMessageAndGetResponse('session-1', 'Qual a triade?', llmProvider);
 
@@ -129,7 +129,7 @@ test('SearchService retorna fallback quando o provedor de IA falha', async () =>
     id: 'session-2',
     href: '/v1/search/sessions/session-2',
     userId: 'tenant-2',
-    title: 'Sessão sem contexto',
+    title: 'Sessao sem contexto',
     status: 'active',
     messages: [],
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -162,14 +162,14 @@ test('SearchService retorna fallback quando o provedor de IA falha', async () =>
   assert.match(llmProvider.mock.calls[0]?.[0]?.context ?? '', /Nexus Copilot/);
 });
 
-test('SearchService delega leitura, listagem, renomeação e arquivamento ao repositório', () => {
+test('SearchService delega leitura, listagem, renomeacao e arquivamento ao repositorio', async () => {
   const repository = createRepositoryMock();
   const session: ResearchSession = {
     '@type': 'ResearchSession',
     id: 'session-3',
     href: '/v1/search/sessions/session-3',
     userId: 'tenant-3',
-    title: 'Sessão',
+    title: 'Sessao',
     status: 'active',
     messages: [],
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -183,10 +183,10 @@ test('SearchService delega leitura, listagem, renomeação e arquivamento ao rep
 
   const service = new SearchService(repository);
 
-  assert.equal(service.getSession('session-3'), session);
-  assert.deepEqual(service.listUserSessions('tenant-3', 10), [session]);
-  assert.equal(service.updateSessionTitle('session-3', 'Atualizada')?.title, 'Atualizada');
-  assert.equal(service.archiveSession('session-3')?.status, 'archived');
+  assert.equal(await service.getSession('session-3'), session);
+  assert.deepEqual(await service.listUserSessions('tenant-3', 10), [session]);
+  assert.equal((await service.updateSessionTitle('session-3', 'Atualizada'))?.title, 'Atualizada');
+  assert.equal((await service.archiveSession('session-3'))?.status, 'archived');
 });
 
 test('SearchService executa loop de ferramentas e persiste metadados de tool execution', async () => {
@@ -284,10 +284,14 @@ test('SearchService carrega confirmacao em lote com lista de itens', async () =>
     .fn()
     .mockResolvedValueOnce({
       content: '',
-      toolCalls: [{ id: 'tool-1', name: 'resource.create_equipment_models', arguments: { payload: { items: [
-        { model: 'G-010G-Q', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
-        { model: 'G-0425G-C', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
-      ] } } }],
+      toolCalls: [{
+        id: 'tool-1',
+        name: 'resource.create_equipment_models',
+        arguments: { payload: { items: [
+          { model: 'G-010G-Q', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
+          { model: 'G-0425G-C', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
+        ] } },
+      }],
       finishReason: 'tool_calls',
     })
     .mockResolvedValueOnce({

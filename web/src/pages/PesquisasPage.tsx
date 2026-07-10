@@ -208,7 +208,7 @@ export const ConversasPage: React.FC<{
                       onClick={() => setPage(p)}
                       className={`px-3 py-2 rounded-lg transition ${
                         p === page
-                          ? 'bg-app-accent text-white'
+                          ? 'bg-app-accent text-app-ink font-semibold'
                           : 'border border-app-border text-app-text hover:bg-app-accent-soft'
                       }`}
                     >

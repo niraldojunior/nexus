@@ -10,7 +10,7 @@ export const createLogger = (level: string): Logger => {
     const entry = JSON.stringify({
       level: severity,
       message,
-      details,
+      details: serializeDetails(details),
       timestamp: new Date().toISOString(),
     });
     if (severity === 'error' || severity === 'warn') {
@@ -31,3 +31,22 @@ export const createLogger = (level: string): Logger => {
     error: (details, message) => write('error', details, message),
   };
 };
+
+const serializeDetails = (details: unknown): unknown => {
+  if (details instanceof Error) return serializeError(details);
+  if (!details || typeof details !== 'object') return details;
+
+  return Object.fromEntries(
+    Object.entries(details).map(([key, value]) => [
+      key,
+      value instanceof Error ? serializeError(value) : value,
+    ]),
+  );
+};
+
+const serializeError = (error: Error): Record<string, unknown> => ({
+  name: error.name,
+  message: error.message,
+  stack: error.stack,
+  ...(error.cause ? { cause: error.cause instanceof Error ? serializeError(error.cause) : error.cause } : {}),
+});

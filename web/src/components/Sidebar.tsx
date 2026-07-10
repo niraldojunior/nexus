@@ -13,6 +13,7 @@ import {
 import { PageId, RecentGroup, RecentItem } from '../types';
 import { ResearchHistoryPage } from '../pages/ResearchHistoryPage';
 import type { ResourceTab } from '../services/resourceApi';
+import Diamond from './Diamond';
 
 type PrimaryItemId = 'conversations' | 'research' | 'geo' | 'resource' | 'service' | 'order';
 
@@ -71,7 +72,7 @@ export default function Sidebar({
   return (
     <aside
       className={`flex flex-col overflow-hidden border-r border-app-border bg-app-sidebar shadow-soft transition-[width,min-width] duration-300 ease-in-out ${
-        collapsed ? 'w-[50px] min-w-[50px]' : 'w-[256px] min-w-[256px]'
+        collapsed ? 'w-[58px] min-w-[58px]' : 'w-[256px] min-w-[256px]'
       }`}
     >
       <div
@@ -82,7 +83,7 @@ export default function Sidebar({
         <button
           type="button"
           className={`overflow-hidden whitespace-nowrap font-display text-[1.75rem] font-semibold leading-none tracking-[-0.03em] text-app-text transition-all duration-200 ease-in-out ${
-            collapsed ? 'max-w-0 opacity-0 pointer-events-none' : 'max-w-[140px] opacity-100'
+            collapsed ? 'max-w-0 opacity-0 pointer-events-none' : 'max-w-[160px] opacity-100'
           }`}
         >
           Nexus
@@ -205,10 +206,10 @@ export default function Sidebar({
             <button
               type="button"
               onClick={() => onSelectPage('settings')}
-              className={`rounded-xl border border-transparent p-1.5 transition ${
+              className={`rounded-xl border p-1.5 transition ${
                 settingsOpen
-                  ? 'border-[#E6C54D] bg-[#F6E8A8] text-app-text'
-                  : 'text-app-muted hover:bg-app-accent-soft hover:text-app-text'
+                  ? 'border-app-border bg-white text-app-text shadow-soft'
+                  : 'border-transparent text-app-muted hover:bg-app-accent-soft hover:text-app-text'
               }`}
               aria-label="Configurações"
             >
@@ -238,27 +239,27 @@ function NavItem({
     <button
       type="button"
       onClick={onClick}
-      className={`menu-item-nav flex w-full items-center text-left transition ${
+      className={`menu-item-nav relative flex w-full items-center text-left transition ${
         collapsed
-          ? 'h-[32px] justify-center px-0'
-          : 'h-[32px] rounded-[14px] px-[15px] gap-4 border'
+          ? 'h-[46px] justify-center px-0'
+          : 'h-[34px] rounded-[14px] px-[15px] gap-4 border'
       } ${
         collapsed
           ? 'text-app-text'
           : active
-            ? 'border-[#E6C54D] bg-[#F6E8A8] text-app-text'
+            ? 'border-app-border bg-white text-app-text shadow-soft'
             : 'border-transparent text-app-text hover:bg-app-accent-soft'
       }`}
     >
       {collapsed ? (
         <span
-          className={`flex h-[31px] w-[31px] items-center justify-center rounded-full transition ${
+          className={`relative flex h-[42px] w-[42px] items-center justify-center rounded-[14px] border transition ${
             active
-              ? 'border border-[#E6C54D] bg-[#F6E8A8]'
-              : 'border border-transparent hover:bg-app-accent-soft'
+              ? 'border-app-accent-border bg-app-accent-soft text-app-text shadow-soft'
+              : 'border-transparent text-app-text hover:border-app-border hover:bg-white hover:shadow-soft'
           }`}
         >
-          <Icon className="menu-item-icon h-[1.14rem] w-[1.14rem]" strokeWidth={1.8} />
+          <Icon className="menu-item-icon h-[1.2rem] w-[1.2rem]" strokeWidth={1.8} />
         </span>
       ) : (
         <Icon className="menu-item-icon h-[1.18rem] w-[1.18rem]" strokeWidth={1.8} />
@@ -272,6 +273,11 @@ function NavItem({
       >
         {label}
       </span>
+      {!collapsed && active ? (
+        <span className="ml-auto flex items-center">
+          <Diamond size={6} />
+        </span>
+      ) : null}
     </button>
   );
 }

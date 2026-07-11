@@ -152,8 +152,11 @@ export const createApp = ({ config, logger }: AppDependencies) => {
     },
     stop: async (): Promise<void> => {
       runtime = null;
+      // db.close() already removes just this instance from the static map. Calling
+      // PostgresDatabase.resetForTesting() here would additionally tear down every other
+      // instance still registered — including one from a test whose async teardown is
+      // still in flight — leaving it with a null bridge ("Database not initialized").
       db.close();
-      PostgresDatabase.resetForTesting();
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
       });

@@ -58,7 +58,7 @@ if (!parentPort) {
 
 parentPort.on('message', (message: WorkerRequest) => {
   void handle(message).catch((error: unknown) => {
-    post({ id: message.id, ok: false, error: error instanceof Error ? error.message : String(error) });
+    post({ id: message.id, ok: false, error: toErrorMessage(error) });
   });
 });
 
@@ -90,7 +90,7 @@ const handle = async (message: WorkerRequest): Promise<void> => {
       post({ id: message.id, ok: true });
       return;
     case 'begin-transaction': {
-      const client = await getPool().connect();
+      const client = await connectPooled();
       try {
         await client.query('BEGIN');
         await setSearchPath(client);
@@ -143,9 +143,33 @@ const handle = async (message: WorkerRequest): Promise<void> => {
   }
 };
 
+// The neon serverless driver's Pool talks WebSocket under the hood; a dropped connection often
+// rejects with a raw ErrorEvent/CloseEvent (not an Error), which stringifies to the useless
+// "[object ErrorEvent]" unless we dig `.message`/`.error` out of it ourselves.
+const toErrorMessage = (error: unknown): string => {
+  if (error instanceof Error && error.message.length > 0) return error.message;
+  if (error && typeof error === 'object') {
+    const candidate = error as { message?: unknown; error?: unknown; type?: unknown; errors?: unknown; code?: unknown };
+    if (candidate.error instanceof Error && candidate.error.message.length > 0) return candidate.error.message;
+    if (typeof candidate.message === 'string' && candidate.message.length > 0) return candidate.message;
+    if (Array.isArray(candidate.errors) && candidate.errors.length > 0) {
+      return candidate.errors.map((inner) => toErrorMessage(inner)).join('; ');
+    }
+    if (typeof candidate.type === 'string' && candidate.type.length > 0) {
+      return `${Object.prototype.toString.call(error)} (type: ${candidate.type}${
+        typeof candidate.code === 'string' ? `, code: ${candidate.code}` : ''
+      })`;
+    }
+    if (error instanceof Error) {
+      return `${Object.prototype.toString.call(error)} (empty message, name: ${error.name})`;
+    }
+  }
+  return String(error);
+};
+
 const isTransientConnectionError = (error: unknown): boolean => {
-  const message = error instanceof Error ? error.message : String(error);
-  return /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|Connection terminated|connection closed|network/i.test(
+  const message = toErrorMessage(error);
+  return /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|Connection terminated|connection closed|network|ErrorEvent|CloseEvent|empty message/i.test(
     message,
   );
 };
@@ -207,7 +231,7 @@ const runSchemaBatch = async (sql: string): Promise<void> => {
     await sqlClient.query(sql);
     return;
   }
-  const client = await getPool().connect();
+  const client = await connectPooled();
   try {
     // Same transaction-pooling caveat as executePooledQuery: without pinning the backend the DDL
     // would run with search_path = public and create the tables in the wrong schema.
@@ -283,8 +307,12 @@ const getPool = (): Pool => {
   return pool;
 };
 
+// Checking out a connection hasn't sent any query yet, so retrying it on a transient
+// WebSocket/network blip is always safe (unlike retrying a query that may have already landed).
+const connectPooled = async (): Promise<any> => withRetry(() => getPool().connect());
+
 const executePooledQuery = async (queryText: string, queryParams: unknown[]) => {
-  const client = await getPool().connect();
+  const client = await connectPooled();
   try {
     // Neon's connection uses the `-pooler` endpoint (PgBouncer, transaction pooling), which does
     // NOT preserve a session-level `SET search_path` across separate statements — the follow-up

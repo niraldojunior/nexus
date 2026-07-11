@@ -33,6 +33,29 @@ const STATUS_OVERFLOW = 3;
 
 const DEFAULT_BUFFER_BYTES = 16 * 1024 * 1024;
 
+// A worker crash can surface a raw WebSocket ErrorEvent/CloseEvent rather than an Error, which
+// stringifies to the useless "[object ErrorEvent]" unless we pull `.message`/`.error` out first.
+const toErrorMessage = (error: unknown): string => {
+  if (error instanceof Error && error.message.length > 0) return error.message;
+  if (error && typeof error === 'object') {
+    const candidate = error as { message?: unknown; error?: unknown; type?: unknown; errors?: unknown; code?: unknown };
+    if (candidate.error instanceof Error && candidate.error.message.length > 0) return candidate.error.message;
+    if (typeof candidate.message === 'string' && candidate.message.length > 0) return candidate.message;
+    if (Array.isArray(candidate.errors) && candidate.errors.length > 0) {
+      return candidate.errors.map((inner) => toErrorMessage(inner)).join('; ');
+    }
+    if (typeof candidate.type === 'string' && candidate.type.length > 0) {
+      return `${Object.prototype.toString.call(error)} (type: ${candidate.type}${
+        typeof candidate.code === 'string' ? `, code: ${candidate.code}` : ''
+      })`;
+    }
+    if (error instanceof Error) {
+      return `${Object.prototype.toString.call(error)} (empty message, name: ${error.name})`;
+    }
+  }
+  return String(error);
+};
+
 /**
  * Synchronous bridge over an async Neon worker.
  *
@@ -78,7 +101,7 @@ export class PostgresSyncBridge {
     // Atomics.wait, so we only record it here. The request() timeout guarantees the
     // caller still gets an error instead of hanging forever.
     this.worker.on('error', (error) => {
-      this.workerError = error instanceof Error ? error.message : String(error);
+      this.workerError = toErrorMessage(error);
     });
   }
 

@@ -91,8 +91,11 @@ export const createTestDatabase = (prefix: string): { databaseUrl: string; clean
       try {
         database.exec(`DROP SCHEMA IF EXISTS "${schema.replace(/"/g, '""')}" CASCADE`);
       } finally {
+        // Only close this instance. PostgresDatabase.resetForTesting() would tear down
+        // every instance in the static map, including ones from other tests whose
+        // async teardown hasn't finished yet — that raced here and left the next
+        // test's fresh instance with a null bridge ("Database not initialized").
         database.close();
-        PostgresDatabase.resetForTesting();
       }
     },
   };

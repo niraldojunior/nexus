@@ -1,20 +1,20 @@
 import { createCanonicalId } from '../utils/canonical-id.js';
-import { SqliteGeoRepository } from '../../modules/geo/sqlite-repository.js';
+import { PostgresGeoRepository } from '../../modules/geo/postgres-repository.js';
 import { GeoService } from '../../modules/geo/service.js';
 import { OrderService } from '../../modules/order/service.js';
-import { SqliteOrderRepository } from '../../modules/order/sqlite-repository.js';
+import { PostgresOrderRepository } from '../../modules/order/postgres-repository.js';
 import { PartyService } from '../../modules/party/service.js';
-import { SqlitePartyRepository } from '../../modules/party/sqlite-repository.js';
+import { PostgresPartyRepository } from '../../modules/party/postgres-repository.js';
 import { ResourceService } from '../../modules/resource/service.js';
-import { SqliteResourceRepository } from '../../modules/resource/sqlite-repository.js';
+import { PostgresResourceRepository } from '../../modules/resource/postgres-repository.js';
 import { SearchService } from '../../modules/search/service.js';
-import { SqliteSearchRepository as ResearchRepository } from '../../modules/search/sqlite-repository.js';
+import { PostgresSearchRepository as ResearchRepository } from '../../modules/search/postgres-repository.js';
 import { ServiceService } from '../../modules/service/service.js';
-import { SqliteServiceRepository } from '../../modules/service/sqlite-repository.js';
-import { SqliteDatabase } from '../persistence/sqlite-database.js';
-import { SqliteSearchRepository } from '../persistence/sqlite-search-repository.js';
-import { SqliteUserRepository, type UserRecord } from '../persistence/sqlite-user-repository.js';
-import { EventService, SqliteEventRepository } from '../tmf/index.js';
+import { PostgresServiceRepository } from '../../modules/service/postgres-repository.js';
+import { PostgresDatabase } from '../persistence/postgres-database.js';
+import { PostgresSearchRepository } from '../persistence/postgres-search-repository.js';
+import { PostgresUserRepository, type UserRecord } from '../persistence/postgres-user-repository.js';
+import { EventService, PostgresEventRepository } from '../tmf/index.js';
 
 export type NexusRuntimeUser = UserRecord;
 
@@ -34,17 +34,17 @@ export const DEFAULT_RUNTIME_USER = {
   name: 'NIRALDO ROCHA GRANADO JUNIOR',
 } as const;
 
-export const createNexusRuntime = (db: SqliteDatabase) => {
-  const userRepository = new SqliteUserRepository(db);
-  const searchRepository = new SqliteSearchRepository(db);
+export const createNexusRuntime = (db: PostgresDatabase) => {
+  const userRepository = new PostgresUserRepository(db);
+  const searchRepository = new PostgresSearchRepository(db);
   const researchRepository = new ResearchRepository(db);
-  const geoRepository = new SqliteGeoRepository(db);
+  const geoRepository = new PostgresGeoRepository(db);
   const geoService = new GeoService(geoRepository);
-  const eventRepository = new SqliteEventRepository(db);
+  const eventRepository = new PostgresEventRepository(db);
   const eventService = new EventService(eventRepository);
-  const partyRepository = new SqlitePartyRepository(db);
+  const partyRepository = new PostgresPartyRepository(db);
   const partyService = new PartyService(partyRepository, eventService);
-  const resourceRepository = new SqliteResourceRepository(db);
+  const resourceRepository = new PostgresResourceRepository(db);
   const resourceService = new ResourceService(resourceRepository, eventService, {
     lookupPlace: (id) => {
       const site = geoService.getSite(id);
@@ -68,7 +68,7 @@ export const createNexusRuntime = (db: SqliteDatabase) => {
       };
     },
   });
-  const serviceRepository = new SqliteServiceRepository(db);
+  const serviceRepository = new PostgresServiceRepository(db);
   let serviceService: ServiceService;
   serviceService = new ServiceService(serviceRepository, eventService, {
     lookupParty: (id) => {
@@ -104,7 +104,7 @@ export const createNexusRuntime = (db: SqliteDatabase) => {
     },
     lookupService: (id) => serviceService.getService(id),
   });
-  const orderRepository = new SqliteOrderRepository(db);
+  const orderRepository = new PostgresOrderRepository(db);
   const orderService = new OrderService(orderRepository, eventService, {
     lookupParty: (id) => {
       const party = partyService.getParty(id);

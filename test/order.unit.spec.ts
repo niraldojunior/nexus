@@ -1,20 +1,20 @@
 import assert from 'node:assert/strict';
 import { afterEach, test, vi } from 'vitest';
-import { SqliteDatabase } from '../src/shared/persistence/sqlite-database.js';
-import { SqliteOrderRepository } from '../src/modules/order/sqlite-repository.js';
+import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
+import { PostgresOrderRepository } from '../src/modules/order/postgres-repository.js';
 import { OrderService } from '../src/modules/order/service.js';
 import { createTestDatabase } from './test-utils.js';
 
 afterEach(() => {
-  SqliteDatabase.resetForTesting();
+  PostgresDatabase.resetForTesting();
   vi.restoreAllMocks();
 });
 
 const setupOrder = async () => {
   const database = createTestDatabase('nexus-order-unit-');
-  const sqlite = SqliteDatabase.getInstance(database.databaseUrl);
+  const sqlite = PostgresDatabase.getInstance(database.databaseUrl);
   await sqlite.initialize();
-  const repository = new SqliteOrderRepository(sqlite);
+  const repository = new PostgresOrderRepository(sqlite);
   const appendEvent = vi.fn(() => undefined);
   const eventService = { appendEvent };
 
@@ -261,7 +261,7 @@ test('OrderService qualifies places and executes service/resource orders', async
     assert.ok((appendEvent.mock.calls as unknown as Array<[ { eventType?: string } ]>).some((call) => call[0]?.eventType === 'ServiceOrderCreateEvent'));
     assert.ok((appendEvent.mock.calls as unknown as Array<[ { eventType?: string } ]>).some((call) => call[0]?.eventType === 'ResourceOrderCreateEvent'));
   } finally {
-    SqliteDatabase.resetForTesting();
+    PostgresDatabase.resetForTesting();
     database.cleanup();
   }
 });
@@ -283,7 +283,7 @@ test('OrderService rejects invalid order permutations and unknown references', a
     assert.throws(() => order.cancelServiceOrder('missing'), /service order not found/);
     assert.throws(() => order.cancelResourceOrder('missing'), /resource order not found/);
   } finally {
-    SqliteDatabase.resetForTesting();
+    PostgresDatabase.resetForTesting();
     database.cleanup();
   }
 });

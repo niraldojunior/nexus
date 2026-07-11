@@ -1,4 +1,4 @@
-import { SqliteDatabase } from '../../shared/persistence/sqlite-database.js';
+import { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
 import type { Party, PartyQuery, PartyRelationship, PartyRole, PartyRoleQuery } from './domain.js';
 import type { IPartyRepository } from './party-repository-interface.js';
 
@@ -14,8 +14,8 @@ const MANUFACTURER_BOOTSTRAP = [
   'ARCADYAN',
 ] as const;
 
-export class SqlitePartyRepository implements IPartyRepository {
-  public constructor(private readonly db: SqliteDatabase) {
+export class PostgresPartyRepository implements IPartyRepository {
+  public constructor(private readonly db: PostgresDatabase) {
     this.seedManufacturerParties();
   }
 

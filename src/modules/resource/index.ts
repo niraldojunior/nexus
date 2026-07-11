@@ -28,5 +28,5 @@ export type {
 } from './domain.js';
 export type { IResourceRepository } from './resource-repository-interface.js';
 export { ResourceRepository } from './repository.js';
-export { SqliteResourceRepository } from './sqlite-repository.js';
+export { PostgresResourceRepository } from './postgres-repository.js';
 export { ResourceService } from './service.js';

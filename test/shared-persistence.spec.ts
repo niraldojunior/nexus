@@ -1,23 +1,23 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'vitest';
 import { InMemoryEntityRepository } from '../src/shared/persistence/in-memory-entity-repository.js';
-import { SqliteDatabase } from '../src/shared/persistence/sqlite-database.js';
-import { SqliteSearchRepository as SharedSqliteSearchRepository } from '../src/shared/persistence/sqlite-search-repository.js';
-import { SqliteUserRepository } from '../src/shared/persistence/sqlite-user-repository.js';
+import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
+import { PostgresSearchRepository as SharedSqliteSearchRepository } from '../src/shared/persistence/postgres-search-repository.js';
+import { PostgresUserRepository } from '../src/shared/persistence/postgres-user-repository.js';
 import { createTestDatabase } from './test-utils.js';
 
 afterEach(() => {
-  SqliteDatabase.resetForTesting();
+  PostgresDatabase.resetForTesting();
 });
 
 const setupDatabase = async () => {
   const database = createTestDatabase('nexus-shared-persistence-');
-  const sqlite = SqliteDatabase.getInstance(database.databaseUrl);
+  const sqlite = PostgresDatabase.getInstance(database.databaseUrl);
   await sqlite.initialize();
   return {
     sqlite,
     cleanup: () => {
-      SqliteDatabase.resetForTesting();
+      PostgresDatabase.resetForTesting();
       database.cleanup();
     },
   };
@@ -37,11 +37,11 @@ test('InMemoryEntityRepository cria, conta e entrega listas independentes', () =
   assert.equal(repository.list().length, 2);
 });
 
-test('SqliteUserRepository persiste e atualiza usuários', async () => {
+test('PostgresUserRepository persiste e atualiza usuários', async () => {
   const { sqlite, cleanup } = await setupDatabase();
 
   try {
-    const repository = new SqliteUserRepository(sqlite);
+    const repository = new PostgresUserRepository(sqlite);
     const created = repository.create({
       externalId: 'ext-1',
       name: 'Operações',
@@ -64,11 +64,11 @@ test('SqliteUserRepository persiste e atualiza usuários', async () => {
   }
 });
 
-test('SqliteSearchRepository persiste filtros, resultados e remoção em lote', async () => {
+test('PostgresSearchRepository persiste filtros, resultados e remoção em lote', async () => {
   const { sqlite, cleanup } = await setupDatabase();
 
   try {
-    const users = new SqliteUserRepository(sqlite);
+    const users = new PostgresUserRepository(sqlite);
     const userOne = users.create({ externalId: 'user-1', name: 'Tenant One' });
     const userTwo = users.create({ externalId: 'user-2', name: 'Tenant Two' });
 

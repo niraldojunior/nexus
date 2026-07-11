@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test, vi } from 'vitest';
 import type { LLMRequest, ResearchMessage, ResearchSession } from '../src/modules/search/domain.js';
 import { SearchService } from '../src/modules/search/index.js';
-import type { SqliteSearchRepository } from '../src/modules/search/sqlite-repository.js';
+import type { PostgresSearchRepository } from '../src/modules/search/postgres-repository.js';
 
 const createRepositoryMock = () => ({
   createSession: vi.fn(),
@@ -11,7 +11,7 @@ const createRepositoryMock = () => ({
   addMessage: vi.fn(),
   updateSessionTitle: vi.fn(),
   archiveSession: vi.fn(),
-}) as unknown as SqliteSearchRepository & {
+}) as unknown as PostgresSearchRepository & {
   createSession: ReturnType<typeof vi.fn>;
   getSession: ReturnType<typeof vi.fn>;
   listSessionsByUser: ReturnType<typeof vi.fn>;

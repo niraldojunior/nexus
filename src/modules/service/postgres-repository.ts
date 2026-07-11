@@ -1,4 +1,4 @@
-import { SqliteDatabase } from '../../shared/persistence/sqlite-database.js';
+import { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
 import type {
   CustomerFacingService,
   ResourceFacingService,
@@ -15,8 +15,8 @@ import type {
 } from './domain.js';
 import type { IServiceRepository } from './service-repository-interface.js';
 
-export class SqliteServiceRepository implements IServiceRepository {
-  public constructor(private readonly db: SqliteDatabase) {}
+export class PostgresServiceRepository implements IServiceRepository {
+  public constructor(private readonly db: PostgresDatabase) {}
 
   public transaction<T>(fn: () => T): T {
     return this.db.transaction(fn);

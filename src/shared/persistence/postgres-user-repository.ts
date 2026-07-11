@@ -1,4 +1,4 @@
-import { SqliteDatabase } from './sqlite-database.js';
+import { PostgresDatabase } from './postgres-database.js';
 import { randomUUID } from 'node:crypto';
 
 export type UserRecord = {
@@ -16,8 +16,8 @@ export type NewUserInput = {
   email?: string;
 };
 
-export class SqliteUserRepository {
-  constructor(private db: SqliteDatabase) {}
+export class PostgresUserRepository {
+  constructor(private db: PostgresDatabase) {}
 
   create(input: NewUserInput): UserRecord {
     const id = randomUUID();

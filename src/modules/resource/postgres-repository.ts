@@ -1,4 +1,4 @@
-import { SqliteDatabase } from '../../shared/persistence/sqlite-database.js';
+import { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
 import type {
   LogicalResource,
   PhysicalResource,
@@ -15,8 +15,8 @@ import type {
 import type { IResourceRepository } from './resource-repository-interface.js';
 import { RESOURCE_CATEGORIES, RESOURCE_TYPES } from './catalog.js';
 
-export class SqliteResourceRepository implements IResourceRepository {
-  public constructor(private readonly db: SqliteDatabase) {
+export class PostgresResourceRepository implements IResourceRepository {
+  public constructor(private readonly db: PostgresDatabase) {
     this.seedResourceCatalog();
   }
 

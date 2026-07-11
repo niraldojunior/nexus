@@ -1,4 +1,4 @@
-import { SqliteDatabase } from './sqlite-database.js';
+import { PostgresDatabase } from './postgres-database.js';
 import { randomUUID } from 'node:crypto';
 
 export type SearchRecord = {
@@ -17,8 +17,8 @@ export type NewSearchInput = {
   results?: Record<string, any>;
 };
 
-export class SqliteSearchRepository {
-  constructor(private db: SqliteDatabase) {}
+export class PostgresSearchRepository {
+  constructor(private db: PostgresDatabase) {}
 
   create(input: NewSearchInput): SearchRecord {
     const id = randomUUID();

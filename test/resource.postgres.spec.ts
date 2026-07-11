@@ -1,21 +1,21 @@
 import assert from 'node:assert/strict';
 import { afterEach, test, vi } from 'vitest';
 import { ResourceService } from '../src/modules/resource/service.js';
-import { SqliteResourceRepository } from '../src/modules/resource/sqlite-repository.js';
-import { SqliteDatabase } from '../src/shared/persistence/sqlite-database.js';
+import { PostgresResourceRepository } from '../src/modules/resource/postgres-repository.js';
+import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
 import { createTestDatabase } from './test-utils.js';
 
 afterEach(() => {
-  SqliteDatabase.resetForTesting();
+  PostgresDatabase.resetForTesting();
 });
 
 test('Resource repository persists validFor when a resource specification is terminated', async () => {
   const { databaseUrl, cleanup } = createTestDatabase('nexus-resource-spec-');
-  const sqlite = SqliteDatabase.getInstance(databaseUrl);
+  const sqlite = PostgresDatabase.getInstance(databaseUrl);
   await sqlite.initialize();
 
   try {
-    const repository = new SqliteResourceRepository(sqlite);
+    const repository = new PostgresResourceRepository(sqlite);
     const appendEvent = vi.fn(() => undefined);
     const service = new ResourceService(repository, { appendEvent } as never);
 
@@ -36,18 +36,18 @@ test('Resource repository persists validFor when a resource specification is ter
     assert.equal(repository.listResourceSpecifications({ category: 'Equipment.Access' }).length, 0);
     assert.equal(repository.listResourceSpecifications({ category: 'Equipment.Access', includeEnded: true }).length, 1);
   } finally {
-    SqliteDatabase.resetForTesting();
+    PostgresDatabase.resetForTesting();
     cleanup();
   }
 });
 
 test('Resource repository persists resource specification characteristics and related parties', async () => {
   const { databaseUrl, cleanup } = createTestDatabase('nexus-resource-spec-');
-  const sqlite = SqliteDatabase.getInstance(databaseUrl);
+  const sqlite = PostgresDatabase.getInstance(databaseUrl);
   await sqlite.initialize();
 
   try {
-    const repository = new SqliteResourceRepository(sqlite);
+    const repository = new PostgresResourceRepository(sqlite);
     const appendEvent = vi.fn(() => undefined);
     const service = new ResourceService(repository, { appendEvent } as never);
 
@@ -68,7 +68,7 @@ test('Resource repository persists resource specification characteristics and re
     assert.equal(persisted?.relatedParty.length, 1);
     assert.equal(persisted?.relatedParty[0]?.role, 'manufacturer');
   } finally {
-    SqliteDatabase.resetForTesting();
+    PostgresDatabase.resetForTesting();
     cleanup();
   }
 });

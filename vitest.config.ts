@@ -1,12 +1,18 @@
 export default {
   test: {
     environment: 'jsdom',
-    // The Neon/Postgres-backed suites share a single database; running the files in parallel
-    // saturates the connection pool (dropped queries, 500s, deadlock on DROP SCHEMA). Serialize
-    // the files to keep the run deterministic.
-    fileParallelism: false,
-    // DB-backed tests do many Neon HTTP round-trips through the proxy; the default 5s per-test /
-    // 10s per-hook budget is far too short. Give them generous ceilings.
+    // Each Vitest worker now owns its own Neon schema (see test/test-utils.ts) and no longer drops
+    // schemas mid-run, so parallel files no longer deadlock. Run files in parallel, but cap the
+    // worker count to stay within the direct endpoint's connection budget.
+    fileParallelism: true,
+    // Cap worker threads so parallel files stay within Neon's connection budget (each worker owns
+    // its own schema + pool). Top-level in Vitest 4 (the old `poolOptions.threads` was removed).
+    minWorkers: 1,
+    maxWorkers: 4,
+    // Drops leftover `nexus_test_%` schemas before the run and after it.
+    globalSetup: ['test/global-setup.ts'],
+    // DB-backed tests still cross the corporate proxy to Neon; keep generous ceilings so slow
+    // round-trips never trip the default 5s per-test / 10s per-hook budget.
     testTimeout: 120000,
     hookTimeout: 120000,
     // TLS note: behind a corporate TLS-inspection proxy Node rejects Neon's self-signed chain.

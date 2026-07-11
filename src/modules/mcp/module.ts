@@ -6,7 +6,7 @@ import type { CreatePhysicalResourceInput, CreateLogicalResourceInput, CreateRes
 import type { CreateServiceInput, ServiceQuery } from '../service/index.js';
 import type { CreateResourceOrderInput, CreateServiceOrderInput, CreateServiceQualificationInput } from '../order/index.js';
 import { type JsonSchema, validateJsonSchema } from './schema.js';
-import { SqliteMcpConfirmationRepository } from './confirmation.js';
+import { PostgresMcpConfirmationRepository } from './confirmation.js';
 import type { PendingMcpConfirmation } from './confirmation.js';
 
 export type McpToolContext = ReturnType<NexusRuntime['createToolContext']>;
@@ -55,7 +55,7 @@ type PrepareResult = {
 export class McpToolRegistry {
   private readonly tools = new Map<string, McpToolDefinition>();
 
-  public constructor(private readonly runtime: NexusRuntime, private readonly confirmations: SqliteMcpConfirmationRepository) {}
+  public constructor(private readonly runtime: NexusRuntime, private readonly confirmations: PostgresMcpConfirmationRepository) {}
 
   public register(tool: McpToolDefinition): void {
     this.tools.set(tool.name, tool);
@@ -259,7 +259,7 @@ const characteristicArraySchema: JsonSchema = {
 };
 
 export const createNexusMcpModule = (runtime: NexusRuntime) => {
-  const confirmations = new SqliteMcpConfirmationRepository(runtime.db);
+  const confirmations = new PostgresMcpConfirmationRepository(runtime.db);
   const registry = new McpToolRegistry(runtime, confirmations);
 
   const querySiteSchema: JsonSchema = {

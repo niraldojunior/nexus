@@ -1,4 +1,4 @@
-import { SqliteDatabase } from '../../shared/persistence/sqlite-database.js';
+import { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
 import type {
   ResourceOrder,
   ResourceOrderQuery,
@@ -9,8 +9,8 @@ import type {
 } from './domain.js';
 import type { IOrderRepository } from './order-repository-interface.js';
 
-export class SqliteOrderRepository implements IOrderRepository {
-  public constructor(private readonly db: SqliteDatabase) {}
+export class PostgresOrderRepository implements IOrderRepository {
+  public constructor(private readonly db: PostgresDatabase) {}
 
   public transaction<T>(fn: () => T): T {
     return this.db.transaction(fn);

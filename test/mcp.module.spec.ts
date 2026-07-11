@@ -1,17 +1,17 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'vitest';
 import { createNexusMcpModule } from '../src/modules/mcp/index.js';
-import { SqliteDatabase } from '../src/shared/persistence/sqlite-database.js';
+import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
 import { createNexusRuntime } from '../src/shared/runtime/nexus-runtime.js';
 import { createTestDatabase } from './test-utils.js';
 
 afterEach(() => {
-  SqliteDatabase.resetForTesting();
+  PostgresDatabase.resetForTesting();
 });
 
 const createFixture = async () => {
   const database = createTestDatabase('nexus-mcp-unit-');
-  const sqlite = SqliteDatabase.getInstance(database.databaseUrl);
+  const sqlite = PostgresDatabase.getInstance(database.databaseUrl);
   await sqlite.initialize();
   const runtime = createNexusRuntime(sqlite);
   const module = createNexusMcpModule(runtime);
@@ -23,7 +23,7 @@ const createFixture = async () => {
     module,
     context,
     cleanup: () => {
-      SqliteDatabase.resetForTesting();
+      PostgresDatabase.resetForTesting();
       database.cleanup();
     },
   };

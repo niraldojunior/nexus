@@ -430,7 +430,7 @@ const post = (response: WorkerResponse): void => {
   Atomics.notify(controlView, STATUS_INDEX);
 };
 
-// Column migrations that mirror SqliteDatabase.ensureColumn(...). These columns are added
+// Column migrations that mirror PostgresDatabase.ensureColumn(...). These columns are added
 // after the base schema so that databases created before the columns existed get upgraded.
 // Postgres supports ADD COLUMN IF NOT EXISTS natively, so this is idempotent.
 const MIGRATIONS_SQL = `

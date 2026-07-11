@@ -1,81 +1,104 @@
-import Database from 'better-sqlite3';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
-import { isPostgresDatabaseUrl } from '../config/env.js';
-import { PostgresSyncBridge } from './postgres-sync-bridge.js';
+// Canonical database schema, shared by the Postgres sync worker (runtime schema init) and the
+// migrate-sqlite-to-neon script (target schema bootstrap). The DDL is authored in the SQLite
+// dialect the repositories emit; `transformSchemaSql` rewrites the SQLite-only constructs to
+// their Postgres equivalents before the schema is applied to Neon.
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Every table in the schema, ordered parent-before-child so it is safe both for FK-ordered inserts
+// (migrate-sqlite-to-neon) and for a single TRUNCATE ... CASCADE between tests (test-utils).
+export const TABLE_NAMES = [
+  'users',
+  'searches',
+  'tmf_geographic_location',
+  'tmf_geographic_address',
+  'tmf_geographic_site_specification',
+  'tmf_geographic_site',
+  'tmf_geographic_site_relationship',
+  'tmf_resource_specification',
+  'tmf_resource_category',
+  'tmf_resource_type',
+  'tmf_resource_function_specification',
+  'tmf_physical_resource',
+  'tmf_logical_resource',
+  'tmf_resource_relationship',
+  'tmf_resource_relationship_generic',
+  'tmf_service_specification',
+  'tmf_service_category',
+  'tmf_service_candidate',
+  'tmf_customer_facing_service',
+  'tmf_resource_facing_service',
+  'tmf_service_relationship',
+  'tmf_service_qualification',
+  'tmf_service_order',
+  'tmf_resource_order',
+  'tmf_party',
+  'tmf_party_role',
+  'tmf_party_relationship',
+  'tmf_event',
+  'research_session',
+  'research_message',
+  'mcp_confirmation',
+  'tmf_relationship_type_catalog',
+  'tmf_characteristic_group_catalog',
+] as const;
 
-/**
- * SQLite Database Singleton
- * Manages connection and initialization for all modules
- */
-export class SqliteDatabase {
-  private static instances = new Map<string, SqliteDatabase>();
-  private db: Database.Database | null = null;
-  private postgresBridge: PostgresSyncBridge | null = null;
-  private initialized = false;
-  private readonly postgresBackend: boolean;
+// Column migrations added after the base schema so databases created before these columns get
+// upgraded. Postgres supports ADD COLUMN IF NOT EXISTS natively, so this is idempotent.
+export const MIGRATIONS_SQL = `
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS place_id TEXT;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS place_type TEXT;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS administrative_state TEXT;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS operational_state TEXT;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS usage_state TEXT;
+  ALTER TABLE tmf_resource_specification ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS place_id TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS place_type TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS administrative_state TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS operational_state TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS usage_state TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS service_type TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS category TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS service_date TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS start_date TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS end_date TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS is_service_enabled INTEGER;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS has_started INTEGER;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS place TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS supporting_services TEXT;
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS service_relationships TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS service_type TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS category TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS service_date TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS start_date TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS end_date TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS is_service_enabled INTEGER;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS has_started INTEGER;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS place TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS supporting_resources TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS supporting_services TEXT;
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS service_relationships TEXT;
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS place TEXT;
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS service_characteristic TEXT;
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS service_qualification_item TEXT;
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS description TEXT;
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS service_order_item TEXT;
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS note TEXT;
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS description TEXT;
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS resource_order_item TEXT;
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS note TEXT;
+`;
 
-  private constructor(private readonly dbPath: string) {
-    this.postgresBackend = isPostgresDatabaseUrl(dbPath);
-    if (this.postgresBackend) {
-      this.postgresBridge = new PostgresSyncBridge(dbPath);
-      return;
-    }
-
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-  }
-
-  static getInstance(dbPath?: string): SqliteDatabase {
-    const resolvedPath = normalizeDatabasePath(dbPath);
-    const existing = SqliteDatabase.instances.get(resolvedPath);
-    if (existing) {
-      return existing;
-    }
-
-    const instance = new SqliteDatabase(resolvedPath);
-    SqliteDatabase.instances.set(resolvedPath, instance);
-    return instance;
-  }
-
-  static resetForTesting(): void {
-    for (const instance of SqliteDatabase.instances.values()) {
-      if (instance.db) {
-        instance.db.close();
-        instance.db = null;
-      }
-      if (instance.postgresBridge) {
-        instance.postgresBridge.close();
-        instance.postgresBridge = null;
-      }
-    }
-    SqliteDatabase.instances.clear();
-  }
-
-  getDatabase(): Database.Database {
-    if (!this.db) {
-      throw new Error('Database not initialized');
-    }
-    return this.db;
-  }
-
-  async initialize(): Promise<void> {
-    if (this.initialized) return;
-
-    if (this.postgresBackend) {
-      this.postgresBridge?.initialize();
-      this.initialized = true;
-      return;
-    }
-
-    const db = this.getDatabase();
-
-    // Create all tables following TM Forum standard rigorously
-    db.exec(`
+export const SCHEMA_SQL = `
       -- ========== PLATFORM TABLES (Non-TMF) ==========
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
@@ -98,7 +121,7 @@ export class SqliteDatabase {
       CREATE INDEX IF NOT EXISTS idx_searches_user_id ON searches(user_id);
 
       -- ========== MODULE 1: GEOGRAPHIC (TMF673/674/675) ==========
-      
+
       -- TMF675: Geographic Location (geoespacial pura: Point, LineString, Polygon)
       CREATE TABLE IF NOT EXISTS tmf_geographic_location (
         id TEXT PRIMARY KEY,
@@ -185,7 +208,7 @@ export class SqliteDatabase {
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_status ON tmf_geographic_site(status);
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_name ON tmf_geographic_site(name);
 
-      -- Geographic Site Relationship (topologia A↔Z)
+      -- Geographic Site Relationship (topologia A→Z)
       CREATE TABLE IF NOT EXISTS tmf_geographic_site_relationship (
         site_from_id TEXT NOT NULL,
         site_to_id TEXT NOT NULL,
@@ -650,127 +673,18 @@ export class SqliteDatabase {
         allowed_characteristics TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
-    `);
+`;
 
-    this.ensureColumn(db, 'tmf_physical_resource', 'place_id TEXT');
-    this.ensureColumn(db, 'tmf_physical_resource', 'place_type TEXT');
-    this.ensureColumn(db, 'tmf_physical_resource', 'administrative_state TEXT');
-    this.ensureColumn(db, 'tmf_physical_resource', 'operational_state TEXT');
-    this.ensureColumn(db, 'tmf_physical_resource', 'usage_state TEXT');
-    this.ensureColumn(db, 'tmf_resource_specification', 'related_party TEXT');
-    this.ensureColumn(db, 'tmf_logical_resource', 'place_id TEXT');
-    this.ensureColumn(db, 'tmf_logical_resource', 'place_type TEXT');
-    this.ensureColumn(db, 'tmf_logical_resource', 'related_party TEXT');
-    this.ensureColumn(db, 'tmf_logical_resource', 'administrative_state TEXT');
-    this.ensureColumn(db, 'tmf_logical_resource', 'operational_state TEXT');
-    this.ensureColumn(db, 'tmf_logical_resource', 'usage_state TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'state TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'service_type TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'category TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'service_date TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'start_date TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'end_date TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'is_service_enabled INTEGER');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'has_started INTEGER');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'place TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'related_party TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'supporting_services TEXT');
-    this.ensureColumn(db, 'tmf_customer_facing_service', 'service_relationships TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'state TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'service_type TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'category TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'service_date TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'start_date TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'end_date TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'is_service_enabled INTEGER');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'has_started INTEGER');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'place TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'related_party TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'supporting_resources TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'supporting_services TEXT');
-    this.ensureColumn(db, 'tmf_resource_facing_service', 'service_relationships TEXT');
-    this.ensureColumn(db, 'tmf_service_qualification', 'state TEXT');
-    this.ensureColumn(db, 'tmf_service_qualification', 'place TEXT');
-    this.ensureColumn(db, 'tmf_service_qualification', 'related_party TEXT');
-    this.ensureColumn(db, 'tmf_service_qualification', 'service_characteristic TEXT');
-    this.ensureColumn(db, 'tmf_service_qualification', 'service_qualification_item TEXT');
-    this.ensureColumn(db, 'tmf_service_order', 'state TEXT');
-    this.ensureColumn(db, 'tmf_service_order', 'description TEXT');
-    this.ensureColumn(db, 'tmf_service_order', 'related_party TEXT');
-    this.ensureColumn(db, 'tmf_service_order', 'service_order_item TEXT');
-    this.ensureColumn(db, 'tmf_service_order', 'note TEXT');
-    this.ensureColumn(db, 'tmf_resource_order', 'state TEXT');
-    this.ensureColumn(db, 'tmf_resource_order', 'description TEXT');
-    this.ensureColumn(db, 'tmf_resource_order', 'related_party TEXT');
-    this.ensureColumn(db, 'tmf_resource_order', 'resource_order_item TEXT');
-    this.ensureColumn(db, 'tmf_resource_order', 'note TEXT');
-
-    this.initialized = true;
-  }
-
-  close(): void {
-    if (this.postgresBridge) {
-      this.postgresBridge.close();
-      this.postgresBridge = null;
-    }
-    if (this.db) {
-      this.db.close();
-      this.db = null;
-    }
-    SqliteDatabase.instances.delete(this.dbPath);
-  }
-
-  run(sql: string, params?: any[]): Database.RunResult {
-    if (this.postgresBridge) {
-      return this.postgresBridge.run(sql, params ?? []) as Database.RunResult;
-    }
-    return this.getDatabase().prepare(sql).run(...(params || []));
-  }
-
-  get<T>(sql: string, params?: any[]): T | undefined {
-    if (this.postgresBridge) {
-      return this.postgresBridge.get<T>(sql, params ?? []);
-    }
-    return this.getDatabase().prepare(sql).get(...(params || [])) as T | undefined;
-  }
-
-  all<T>(sql: string, params?: any[]): T[] {
-    if (this.postgresBridge) {
-      return this.postgresBridge.all<T>(sql, params ?? []);
-    }
-    return this.getDatabase().prepare(sql).all(...(params || [])) as T[];
-  }
-
-  exec(sql: string): void {
-    if (this.postgresBridge) {
-      this.postgresBridge.exec(sql);
-      return;
-    }
-    this.getDatabase().exec(sql);
-  }
-
-  transaction<T>(fn: () => T): T {
-    if (this.postgresBridge) {
-      return this.postgresBridge.transaction(fn);
-    }
-    const transaction = this.getDatabase().transaction(fn);
-    return transaction();
-  }
-
-  private ensureColumn(db: Database.Database, table: string, definition: string): void {
-    const columnName = definition.split(/\s+/)[0];
-    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-    if (columns.some((column) => column.name === columnName)) return;
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
-  }
-}
-
-const normalizeDatabasePath = (dbPath?: string): string => {
-  const rawPath = dbPath ?? 'sqlite://./data/nexus.db';
-  if (!rawPath.startsWith('sqlite://')) {
-    return rawPath;
-  }
-
-  const filePath = rawPath.slice('sqlite://'.length);
-  return resolve(process.cwd(), filePath);
-};
+// Rewrites the SQLite-dialect schema DDL to its Postgres equivalent: SQLite type names to
+// Postgres ones and the json_extract() expression index to a jsonb expression index. Comments
+// are stripped so the statements can be split on ';' safely.
+export const transformSchemaSql = (sql: string): string =>
+  sql
+    .replace(/\bDATETIME\b/g, 'TIMESTAMPTZ')
+    .replace(/\bREAL\b/g, 'DOUBLE PRECISION')
+    .replace(
+      /CREATE INDEX IF NOT EXISTS idx_tmf_event_entity ON tmf_event\(json_extract\(event_data, '\$\.(.+?)'\)\);/g,
+      (_match, path: string) =>
+        `CREATE INDEX IF NOT EXISTS idx_tmf_event_entity ON tmf_event (((event_data)::jsonb->>'${path}'));`,
+    )
+    .replace(/--.*$/gm, '');

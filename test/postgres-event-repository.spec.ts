@@ -1,32 +1,32 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'vitest';
-import { SqliteDatabase } from '../src/shared/persistence/sqlite-database.js';
-import { SqliteEventRepository } from '../src/shared/tmf/sqlite-event-repository.js';
+import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
+import { PostgresEventRepository } from '../src/shared/tmf/postgres-event-repository.js';
 import { createTestDatabase } from './test-utils.js';
 
 afterEach(() => {
-  SqliteDatabase.resetForTesting();
+  PostgresDatabase.resetForTesting();
 });
 
 const setupDatabase = async () => {
   const database = createTestDatabase('nexus-event-repository-');
-  const sqlite = SqliteDatabase.getInstance(database.databaseUrl);
+  const sqlite = PostgresDatabase.getInstance(database.databaseUrl);
   await sqlite.initialize();
 
   return {
     sqlite,
     cleanup: () => {
-      SqliteDatabase.resetForTesting();
+      PostgresDatabase.resetForTesting();
       database.cleanup();
     },
   };
 };
 
-test('SqliteEventRepository persists, updates and queries TMF688 events', async () => {
+test('PostgresEventRepository persists, updates and queries TMF688 events', async () => {
   const { sqlite, cleanup } = await setupDatabase();
 
   try {
-    const repository = new SqliteEventRepository(sqlite);
+    const repository = new PostgresEventRepository(sqlite);
 
     repository.appendEvent({
       '@type': 'Event',

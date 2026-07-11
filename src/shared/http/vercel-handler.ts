@@ -3,7 +3,7 @@ import { loadConfig } from '../config/env.js';
 import { handleHttpError, handleHttpRequest } from './app.js';
 import { createLogger } from '../logging/logger.js';
 import { InMemoryEntityRepository } from '../persistence/in-memory-entity-repository.js';
-import { SqliteDatabase } from '../persistence/sqlite-database.js';
+import { PostgresDatabase } from '../persistence/postgres-database.js';
 import { createNexusRuntime, type NexusRuntime } from '../runtime/nexus-runtime.js';
 
 export const config = {
@@ -14,7 +14,7 @@ export const config = {
 const appConfig = loadConfig(process.env);
 const logger = createLogger(appConfig.logLevel);
 const repository = new InMemoryEntityRepository();
-const db = SqliteDatabase.getInstance(appConfig.databaseUrl);
+const db = PostgresDatabase.getInstance(appConfig.databaseUrl);
 const initialized = db.initialize();
 // Build the runtime once per cold start and reuse it; building it per request runs the
 // repository seeds (many DB round-trips) on every invocation.

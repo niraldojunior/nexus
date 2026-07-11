@@ -4,7 +4,7 @@ import { AppError } from '../errors/app-error.js';
 import { forbiddenError, unauthorizedError } from '../errors/http-errors.js';
 import type { Logger } from '../logging/logger.js';
 import { InMemoryEntityRepository } from '../persistence/in-memory-entity-repository.js';
-import { SqliteDatabase } from '../persistence/sqlite-database.js';
+import { PostgresDatabase } from '../persistence/postgres-database.js';
 import { createCanonicalId } from '../utils/canonical-id.js';
 import { ChatGPTProvider } from '../../modules/search/chatgpt-provider.js';
 import { LocalKnowledgeProvider } from '../../modules/search/local-knowledge-provider.js';
@@ -90,7 +90,7 @@ export const handleHttpRequest = async (dependencies: HttpRequestHandlerDependen
 
 export const createApp = ({ config, logger }: AppDependencies) => {
   const repository = new InMemoryEntityRepository();
-  const db = SqliteDatabase.getInstance(config.databaseUrl);
+  const db = PostgresDatabase.getInstance(config.databaseUrl);
   // The runtime builds every repository and runs their seeds, which over a Postgres/Neon
   // backend means dozens of network round-trips. Build it ONCE at startup and reuse it for
   // every request instead of rebuilding per request (which made each request take seconds).
@@ -153,7 +153,7 @@ export const createApp = ({ config, logger }: AppDependencies) => {
     stop: async (): Promise<void> => {
       runtime = null;
       db.close();
-      SqliteDatabase.resetForTesting();
+      PostgresDatabase.resetForTesting();
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
       });
@@ -165,7 +165,7 @@ type RouteDependencies = AppDependencies & {
   request: IncomingMessage;
   response: ServerResponse;
   repository: InMemoryEntityRepository;
-  db: SqliteDatabase;
+  db: PostgresDatabase;
   runtime: NexusRuntime;
 };
 

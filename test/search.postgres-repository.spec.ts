@@ -1,28 +1,28 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'vitest';
-import { SqliteDatabase } from '../src/shared/persistence/sqlite-database.js';
-import { SqliteSearchRepository } from '../src/modules/search/sqlite-repository.js';
+import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
+import { PostgresSearchRepository } from '../src/modules/search/postgres-repository.js';
 import { createTestDatabase } from './test-utils.js';
 
 afterEach(() => {
-  SqliteDatabase.resetForTesting();
+  PostgresDatabase.resetForTesting();
 });
 
 const setupRepository = async () => {
   const database = createTestDatabase('nexus-search-repository-');
-  const sqlite = SqliteDatabase.getInstance(database.databaseUrl);
+  const sqlite = PostgresDatabase.getInstance(database.databaseUrl);
   await sqlite.initialize();
   return {
     sqlite,
-    repository: new SqliteSearchRepository(sqlite),
+    repository: new PostgresSearchRepository(sqlite),
     cleanup: () => {
-      SqliteDatabase.resetForTesting();
+      PostgresDatabase.resetForTesting();
       database.cleanup();
     },
   };
 };
 
-test('SqliteSearchRepository persiste, recarrega e arquiva sessões e mensagens', async () => {
+test('PostgresSearchRepository persiste, recarrega e arquiva sessões e mensagens', async () => {
   const { sqlite, repository, cleanup } = await setupRepository();
 
   try {
@@ -93,7 +93,7 @@ test('SqliteSearchRepository persiste, recarrega e arquiva sessões e mensagens'
   }
 });
 
-test('SqliteSearchRepository lista várias sessões por usuário com limite', async () => {
+test('PostgresSearchRepository lista várias sessões por usuário com limite', async () => {
   const { repository, cleanup } = await setupRepository();
 
   try {

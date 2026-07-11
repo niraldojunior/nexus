@@ -24,5 +24,5 @@ export type {
   UpdateServiceSpecificationInput,
 } from './domain.js';
 export type { IServiceRepository } from './service-repository-interface.js';
-export { SqliteServiceRepository } from './sqlite-repository.js';
+export { PostgresServiceRepository } from './postgres-repository.js';
 export { ServiceService } from './service.js';

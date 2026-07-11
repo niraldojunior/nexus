@@ -108,6 +108,14 @@ test('TMF634, TMF639 and TMF664 resource endpoints create and activate resources
   assert.ok(Array.isArray(types.body));
   assert.ok((types.body as Array<{ code: string }>).some((type) => type.code === 'OLT'));
 
+  const invalidResourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
+    name: 'OLT sem tipo',
+    category: 'Equipment.Access',
+  });
+  assert.equal(invalidResourceSpec.statusCode, 400);
+  assert.equal((invalidResourceSpec.body as { error?: string }).error, 'RESOURCE_REQUIRED_FIELD');
+  assert.equal((invalidResourceSpec.body as { message?: string }).message, 'resourceType is required');
+
   const workspace = await requestJson(port, 'GET', '/v1/resource/workspace?tab=PhysicalResource&limit=20&offset=0');
   assert.equal(workspace.statusCode, 200);
   const workspaceBody = workspace.body as {

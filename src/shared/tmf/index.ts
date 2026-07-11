@@ -10,4 +10,4 @@ export type {
 } from './types.js';
 export type { AppendEventInput, IEventRepository } from './event-repository.js';
 export { EventService } from './event-service.js';
-export { SqliteEventRepository } from './sqlite-event-repository.js';
+export { PostgresEventRepository } from './postgres-event-repository.js';

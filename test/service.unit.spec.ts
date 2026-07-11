@@ -1,20 +1,20 @@
 import assert from 'node:assert/strict';
 import { afterEach, test, vi } from 'vitest';
-import { SqliteDatabase } from '../src/shared/persistence/sqlite-database.js';
-import { SqliteServiceRepository } from '../src/modules/service/sqlite-repository.js';
+import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
+import { PostgresServiceRepository } from '../src/modules/service/postgres-repository.js';
 import { ServiceService } from '../src/modules/service/service.js';
 import { createTestDatabase } from './test-utils.js';
 
 afterEach(() => {
-  SqliteDatabase.resetForTesting();
+  PostgresDatabase.resetForTesting();
   vi.restoreAllMocks();
 });
 
 const setupService = async () => {
   const database = createTestDatabase('nexus-service-unit-');
-  const sqlite = SqliteDatabase.getInstance(database.databaseUrl);
+  const sqlite = PostgresDatabase.getInstance(database.databaseUrl);
   await sqlite.initialize();
-  const repository = new SqliteServiceRepository(sqlite);
+  const repository = new PostgresServiceRepository(sqlite);
   const appendEvent = vi.fn(() => undefined);
   const eventService = { appendEvent };
   const party = { id: 'party-1', '@referredType': 'Organization', href: '/party/party-1', name: 'ISP Alfa' };
@@ -146,7 +146,7 @@ test('ServiceService creates and queries service catalog and inventory records',
     assert.equal(service.listServiceSpecifications({ serviceType: 'CFS' }).length, 1);
     assert.ok((appendEvent.mock.calls as unknown as Array<[ { eventType?: string } ]>).some((call) => call[0]?.eventType === 'ServiceCreateEvent'));
   } finally {
-    SqliteDatabase.resetForTesting();
+    PostgresDatabase.resetForTesting();
     database.cleanup();
   }
 });
@@ -214,7 +214,7 @@ test('ServiceService rejects invalid service permutations and missing references
     assert.throws(() => service.deleteService('missing'), /service not found/);
     assert.throws(() => service.addServiceRelationship('missing', { id: 'x', relationshipType: 'dependsOn', '@referredType': 'Service' }), /service not found/);
   } finally {
-    SqliteDatabase.resetForTesting();
+    PostgresDatabase.resetForTesting();
     database.cleanup();
   }
 });

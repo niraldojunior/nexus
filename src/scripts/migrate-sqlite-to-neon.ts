@@ -1,8 +1,8 @@
+import Database from 'better-sqlite3';
 import { config as loadEnv } from 'dotenv';
-import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Pool, types } from 'pg';
-import { SqliteDatabase } from '../shared/persistence/sqlite-database.js';
+import { MIGRATIONS_SQL, SCHEMA_SQL, TABLE_NAMES, transformSchemaSql } from '../shared/persistence/schema.js';
 
 // Preserve numeric semantics when reading back counts from Postgres.
 types.setTypeParser(20, (value) => Number.parseInt(value, 10));
@@ -10,106 +10,13 @@ types.setTypeParser(1700, (value) => Number.parseFloat(value));
 
 type TableRow = Record<string, unknown>;
 
-const TABLE_ORDER = [
-  'users',
-  'searches',
-  'tmf_geographic_location',
-  'tmf_geographic_address',
-  'tmf_geographic_site_specification',
-  'tmf_geographic_site',
-  'tmf_geographic_site_relationship',
-  'tmf_resource_specification',
-  'tmf_resource_category',
-  'tmf_resource_type',
-  'tmf_resource_function_specification',
-  'tmf_physical_resource',
-  'tmf_logical_resource',
-  'tmf_resource_relationship',
-  'tmf_resource_relationship_generic',
-  'tmf_service_specification',
-  'tmf_service_category',
-  'tmf_service_candidate',
-  'tmf_customer_facing_service',
-  'tmf_resource_facing_service',
-  'tmf_service_relationship',
-  'tmf_service_qualification',
-  'tmf_service_order',
-  'tmf_resource_order',
-  'tmf_party',
-  'tmf_party_role',
-  'tmf_party_relationship',
-  'tmf_event',
-  'research_session',
-  'research_message',
-  'mcp_confirmation',
-  'tmf_relationship_type_catalog',
-  'tmf_characteristic_group_catalog',
-] as const;
+// Parent-before-child order for FK-safe inserts (shared with the test-suite TRUNCATE logic).
+const TABLE_ORDER = TABLE_NAMES;
 
 const SELF_REFERENCING_PARENT_COLUMNS: Record<string, string> = {
   tmf_geographic_site: 'parent_site_id',
   tmf_service_category: 'parent_category_id',
 };
-
-const SQLITE_SCHEMA_SOURCE_PATHS = [
-  resolve(process.cwd(), 'src/shared/persistence/sqlite-database.ts'),
-  resolve(process.cwd(), 'dist/src/shared/persistence/sqlite-database.js'),
-];
-
-const MIGRATIONS_SQL = `
-  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS place_id TEXT;
-  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS place_type TEXT;
-  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS administrative_state TEXT;
-  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS operational_state TEXT;
-  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS usage_state TEXT;
-  ALTER TABLE tmf_resource_specification ADD COLUMN IF NOT EXISTS related_party TEXT;
-  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS place_id TEXT;
-  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS place_type TEXT;
-  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS related_party TEXT;
-  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS administrative_state TEXT;
-  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS operational_state TEXT;
-  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS usage_state TEXT;
-  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS state TEXT;
-  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS service_type TEXT;
-  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS category TEXT;
-  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS service_date TEXT;
-  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS start_date TEXT;
-  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS end_date TEXT;
-  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS is_service_enabled INTEGER;
-  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS has_started INTEGER;
-  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS place TEXT;
-  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS related_party TEXT;
-  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS supporting_services TEXT;
-  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS service_relationships TEXT;
-  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS state TEXT;
-  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS service_type TEXT;
-  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS category TEXT;
-  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS service_date TEXT;
-  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS start_date TEXT;
-  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS end_date TEXT;
-  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS is_service_enabled INTEGER;
-  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS has_started INTEGER;
-  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS place TEXT;
-  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS related_party TEXT;
-  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS supporting_resources TEXT;
-  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS supporting_services TEXT;
-  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS service_relationships TEXT;
-  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS state TEXT;
-  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS place TEXT;
-  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS related_party TEXT;
-  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS service_characteristic TEXT;
-  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS service_qualification_item TEXT;
-  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS state TEXT;
-  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS description TEXT;
-  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS related_party TEXT;
-  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS service_order_item TEXT;
-  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS note TEXT;
-  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS state TEXT;
-  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS description TEXT;
-  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS related_party TEXT;
-  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS resource_order_item TEXT;
-  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS note TEXT;
-`;
 
 async function main(): Promise<void> {
   loadEnv();
@@ -121,11 +28,11 @@ async function main(): Promise<void> {
     throw new Error('TARGET_DATABASE_URL or DATABASE_URL must be set to the Neon connection string before running this migration.');
   }
 
+  const sourcePath = resolveSqlitePath(sourceUrl);
   console.log(`Source: ${sourceUrl}`);
   console.log(`Target: ${targetUrl}`);
 
-  const sourceDb = SqliteDatabase.getInstance(sourceUrl);
-  await sourceDb.initialize();
+  const sourceDb = new Database(sourcePath, { readonly: true });
 
   const pool = new Pool({
     connectionString: targetUrl,
@@ -162,7 +69,7 @@ async function main(): Promise<void> {
       console.log('Copying data...');
       for (const table of orderedTables) {
         const columns = getColumns(sourceDb, table);
-        const rows = sourceDb.all<TableRow>(`SELECT * FROM ${quoteIdentifier(table)}`);
+        const rows = sourceDb.prepare(`SELECT * FROM ${quoteIdentifier(table)}`).all() as TableRow[];
         const orderedRows = orderRowsForTable(table, rows);
 
         if (orderedRows.length === 0) {
@@ -194,41 +101,15 @@ async function main(): Promise<void> {
     client.release();
     await pool.end();
     sourceDb.close();
-    SqliteDatabase.resetForTesting();
   }
 }
 
 async function bootstrapTargetSchema(client: { query: (sql: string, params?: unknown[]) => Promise<unknown> }): Promise<void> {
-  const sqliteSchema = extractSqliteSchema();
-  const statements = [...splitSqlStatements(transformSchemaSql(sqliteSchema)), ...splitSqlStatements(MIGRATIONS_SQL)];
+  const statements = [...splitSqlStatements(transformSchemaSql(SCHEMA_SQL)), ...splitSqlStatements(MIGRATIONS_SQL)];
 
   for (const statement of statements) {
     await client.query(statement);
   }
-}
-
-function extractSqliteSchema(): string {
-  for (const path of SQLITE_SCHEMA_SOURCE_PATHS) {
-    if (!existsSync(path)) continue;
-    const source = readFileSync(path, 'utf8');
-    const match = source.match(/db\.exec\(\s*`([\s\S]*?)`\s*\);/);
-    if (match?.[1]) {
-      return match[1];
-    }
-  }
-
-  throw new Error('Unable to locate the SQLite schema source in src/shared/persistence/sqlite-database.ts');
-}
-
-function transformSchemaSql(sql: string): string {
-  return sql
-    .replace(/\bDATETIME\b/g, 'TIMESTAMPTZ')
-    .replace(/\bREAL\b/g, 'DOUBLE PRECISION')
-    .replace(
-      /CREATE INDEX IF NOT EXISTS idx_tmf_event_entity ON tmf_event\(json_extract\(event_data, '\$\.(.+?)'\)\);/g,
-      (_match, path: string) => `CREATE INDEX IF NOT EXISTS idx_tmf_event_entity ON tmf_event (((event_data)::jsonb->>'${path}'));`,
-    )
-    .replace(/--.*$/gm, '');
 }
 
 function splitSqlStatements(sql: string): string[] {
@@ -238,15 +119,21 @@ function splitSqlStatements(sql: string): string[] {
     .filter((statement) => statement.length > 0 && !statement.startsWith('--'));
 }
 
-function getTableNames(db: SqliteDatabase): string[] {
-  const rows = db.all<{ name: string }>(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-  );
+// Resolves a `sqlite://<path>` URL (or a bare filesystem path) to an absolute file path.
+function resolveSqlitePath(sourceUrl: string): string {
+  const filePath = sourceUrl.startsWith('sqlite://') ? sourceUrl.slice('sqlite://'.length) : sourceUrl;
+  return resolve(process.cwd(), filePath);
+}
+
+function getTableNames(db: Database.Database): string[] {
+  const rows = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+    .all() as Array<{ name: string }>;
   return rows.map((row) => row.name);
 }
 
-function getColumns(db: SqliteDatabase, table: string): string[] {
-  const rows = db.all<{ name: string }>(`PRAGMA table_info(${quoteIdentifier(table)})`);
+function getColumns(db: Database.Database, table: string): string[] {
+  const rows = db.prepare(`PRAGMA table_info(${quoteIdentifier(table)})`).all() as Array<{ name: string }>;
   return rows.map((row) => row.name);
 }
 

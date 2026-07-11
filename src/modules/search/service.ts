@@ -11,7 +11,7 @@ import type {
   ToolExecutionRecord,
 } from './domain.js';
 import { getNexusCopilotContext } from './nexus-copilot-context.js';
-import { SqliteSearchRepository } from './sqlite-repository.js';
+import { PostgresSearchRepository } from './postgres-repository.js';
 
 type Awaitable<T> = T | Promise<T>;
 

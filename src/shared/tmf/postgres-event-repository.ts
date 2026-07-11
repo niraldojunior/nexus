@@ -1,9 +1,9 @@
-import type { SqliteDatabase } from '../persistence/sqlite-database.js';
+import type { PostgresDatabase } from '../persistence/postgres-database.js';
 import type { IEventRepository } from './event-repository.js';
 import type { TmfEvent, TmfEventQuery } from './types.js';
 
-export class SqliteEventRepository implements IEventRepository {
-  public constructor(private readonly db: SqliteDatabase) {}
+export class PostgresEventRepository implements IEventRepository {
+  public constructor(private readonly db: PostgresDatabase) {}
 
   public appendEvent(event: TmfEvent): TmfEvent {
     this.db.run(

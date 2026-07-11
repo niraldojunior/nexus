@@ -13,5 +13,5 @@ export type {
 } from './domain.js';
 export type { IPartyRepository } from './party-repository-interface.js';
 export { PartyRepository } from './repository.js';
-export { SqlitePartyRepository } from './sqlite-repository.js';
+export { PostgresPartyRepository } from './postgres-repository.js';
 export { PartyService } from './service.js';

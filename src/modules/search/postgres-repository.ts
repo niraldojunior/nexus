@@ -1,11 +1,11 @@
-import { SqliteDatabase } from '../../shared/persistence/sqlite-database.js';
+import { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
 import type { ResearchSession, ResearchMessage, AddMessageInput } from './domain.js';
 
 /**
  * SQLite Repository for Research/Chat Sessions
  */
-export class SqliteSearchRepository {
-  constructor(private readonly db: SqliteDatabase) {}
+export class PostgresSearchRepository {
+  constructor(private readonly db: PostgresDatabase) {}
 
   // ============ RESEARCH SESSIONS ============
 

@@ -2,7 +2,7 @@ import { config as loadEnv } from 'dotenv';
 import { createInterface } from 'node:readline';
 import { loadConfig } from '../../shared/config/env.js';
 import { createLogger } from '../../shared/logging/logger.js';
-import { SqliteDatabase } from '../../shared/persistence/sqlite-database.js';
+import { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
 import { createNexusRuntime } from '../../shared/runtime/nexus-runtime.js';
 import { createNexusMcpModule } from './module.js';
 
@@ -16,7 +16,7 @@ loadEnv();
 
 const config = loadConfig(process.env);
 const logger = createLogger(config.logLevel);
-const db = SqliteDatabase.getInstance(config.databaseUrl);
+const db = PostgresDatabase.getInstance(config.databaseUrl);
 
 const writeMessage = (payload: unknown): void => {
   process.stdout.write(`${JSON.stringify(payload)}\n`);

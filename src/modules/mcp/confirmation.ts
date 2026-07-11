@@ -1,4 +1,4 @@
-import type { SqliteDatabase } from '../../shared/persistence/sqlite-database.js';
+import type { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 
 export type PendingMcpConfirmation = {
@@ -14,8 +14,8 @@ export type PendingMcpConfirmation = {
   consumedAt?: string;
 };
 
-export class SqliteMcpConfirmationRepository {
-  public constructor(private readonly db: SqliteDatabase) {}
+export class PostgresMcpConfirmationRepository {
+  public constructor(private readonly db: PostgresDatabase) {}
 
   public create(input: Omit<PendingMcpConfirmation, 'token' | 'createdAt'> & { token?: string; createdAt?: string }): PendingMcpConfirmation {
     const createdAt = input.createdAt ?? new Date().toISOString();

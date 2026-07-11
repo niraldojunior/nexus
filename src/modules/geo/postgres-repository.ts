@@ -1,4 +1,4 @@
-import { SqliteDatabase } from '../../shared/persistence/sqlite-database.js';
+import { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
 import type {
   GeographicAddress,
   GeoEvent,
@@ -9,8 +9,8 @@ import type {
 } from './domain.js';
 import type { IGeoRepository } from './geo-repository-interface.js';
 
-export class SqliteGeoRepository implements IGeoRepository {
-  constructor(private db: SqliteDatabase) {}
+export class PostgresGeoRepository implements IGeoRepository {
+  constructor(private db: PostgresDatabase) {}
 
   public transaction<T>(fn: () => T): T {
     return this.db.transaction(fn);

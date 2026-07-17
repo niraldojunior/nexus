@@ -159,8 +159,8 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter') {
       e.preventDefault();
       handleSendMessage();
     }
@@ -273,7 +273,7 @@ export const ResearchChat: React.FC<ResearchChatProps> = ({
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyDown}
             placeholder="Digite sua pergunta..."
             rows={1}
             className="flex-1 min-h-[72px] max-h-[220px] resize-none overflow-y-auto bg-transparent text-base leading-[1.6] text-app-text placeholder-app-muted outline-none"

@@ -1,4 +1,4 @@
-import { FormEvent } from 'react'
+import { FormEvent, KeyboardEvent } from 'react'
 import { SendHorizontal } from 'lucide-react'
 import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea'
 import NexusLoadingMark from './NexusLoadingMark'
@@ -29,6 +29,15 @@ export default function Composer({
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
+    if (loading || !value.trim()) return
+    onSubmit()
+  }
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter') return
+
+    event.preventDefault()
+    if (loading || !value.trim()) return
     onSubmit()
   }
 
@@ -43,6 +52,7 @@ export default function Composer({
         ref={textareaRef}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder}
         rows={1}
         autoFocus={autoFocus}

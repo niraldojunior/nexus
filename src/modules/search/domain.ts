@@ -104,6 +104,10 @@ export type LLMRequest = {
   temperature: number;
   maxTokens: number;
   tools?: LLMToolDefinition[];
+  /** Called with each incremental text chunk as the provider streams a response. */
+  onDelta?: (textChunk: string) => void;
+  /** Aborts the in-flight provider call, e.g. when the client cancels generation. */
+  signal?: AbortSignal;
 };
 
 export type ToolExecutionRecord = {

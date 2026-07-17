@@ -88,6 +88,36 @@ Response:
 }
 ```
 
+### Send Message with Streaming (SSE) - what the web UI actually uses
+
+```bash
+curl -N -X POST http://localhost:4001/v1/research/sessions/{sessionId}/messages/stream \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -d '{
+    "message": "What is geographic site in Nexus?"
+  }'
+```
+
+Response (`text/event-stream`, one frame per token/tool-call fragment, ending with `done`):
+```
+event: delta
+data: {"text":"A"}
+
+event: delta
+data: {"text":" geographic"}
+
+...
+
+event: done
+data: {"userMessage": { "...": "same shape as the buffered endpoint" }, "assistantMessage": { "...": "..." }}
+```
+
+If the provider call fails mid-stream, the server sends `event: error` with `{"message": "..."}`
+instead of `done` and closes the connection; it never falls back to a plain JSON error response
+because the SSE headers are already flushed by that point. Closing the connection from the client
+side (e.g. clicking "stop" in the UI) aborts the in-flight OpenAI request server-side too.
+
 ### Update Session Title
 ```bash
 curl -X PUT http://localhost:3001/v1/research/sessions/{sessionId} \
@@ -152,10 +182,11 @@ Instead of calling OpenAI, query internal database:
 - Service definitions and instances
 - Return results in message format
 
-### Phase 3: Streaming Responses
-- Replace blocking fetch with EventSource/Server-Sent Events
-- Show LLM response word-by-word as it arrives
-- Add stop/cancel button for long-running queries
+### ✅ Streaming Responses (done)
+
+- `POST .../messages/stream` streams the LLM response via Server-Sent Events
+- The chat UI (`ResearchPage.tsx`) shows the response token-by-token as it arrives
+- Stop button aborts the in-flight response (client `AbortController` + server-side cancel of the OpenAI request)
 
 ### Phase 4: Advanced Features
 - File uploads (e.g., import site definitions)

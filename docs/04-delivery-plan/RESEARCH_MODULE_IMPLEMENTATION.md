@@ -14,9 +14,10 @@
 1. `POST /v1/research/sessions` - Create new chat session
 2. `GET /v1/research/sessions` - List user's conversations
 3. `GET /v1/research/sessions/:id` - Get session with message history
-4. `POST /v1/research/sessions/:id/messages` - Send user message, get AI response
-5. `PUT /v1/research/sessions/:id` - Update session title
-6. `DELETE /v1/research/sessions/:id` - Archive session (soft-delete)
+4. `POST /v1/research/sessions/:id/messages` - Send user message, get AI response (buffered JSON, still used by non-browser callers)
+5. `POST /v1/research/sessions/:id/messages/stream` - Same as above, but streams the assistant reply via Server-Sent Events (`delta`/`done`/`error`); this is what the web UI uses today
+6. `PUT /v1/research/sessions/:id` - Update session title
+7. `DELETE /v1/research/sessions/:id` - Archive session (soft-delete)
 
 ### Utility Functions
 
@@ -97,26 +98,38 @@
 
 ## 🏗️ Architecture
 
-### Data Flow
+### Data Flow (current: streaming)
+
 ```
 User Types Message
     ↓
-React Input Component
+web/src/pages/ResearchPage.tsx (Composer)
     ↓
-HTTP POST /v1/research/sessions/:id/messages
+HTTP POST /v1/research/sessions/:id/messages/stream (SSE)
     ↓
-SearchService.addMessageAndGetResponse()
+SearchService.addMessageAndGetResponse({ onDelta, signal })
     ↓
-SQLite: Store user message
+Postgres: Store user message
     ↓
-ChatGPTProvider.call() → OpenAI API
+ChatGPTProvider.invoke() with `stream: true` → OpenAI API (token-by-token)
     ↓
-SQLite: Store assistant response
+Each token forwarded as an `event: delta` SSE frame
     ↓
-HTTP Response with both messages
+web/src/services/researchApi.ts#sendResearchMessageStream reads the stream and
+appends each chunk to the assistant bubble as it arrives (ChatGPT/Claude-style typing)
     ↓
-React updates UI with new messages
+Postgres: Store final assistant response once the stream ends
+    ↓
+`event: done` SSE frame with the persisted { userMessage, assistantMessage }
+    ↓
+React reconciles the optimistic bubbles with the persisted messages
 ```
+
+The user can cancel an in-flight response with the composer's stop button; it aborts
+the client `fetch` and the server's `AbortController`, which cancels the outstream
+OpenAI request without crashing the connection. The older buffered flow
+(`POST .../messages`, single JSON response) is still available and unchanged, sharing
+the same `SearchService`/provider code via `createLlmProvider` in `src/shared/http/app.ts`.
 
 ### Database Tables
 ```sql
@@ -186,9 +199,9 @@ node scripts/test-research-api.mjs
 ### Phase 1 (Current - ChatGPT)
 - ✅ HTTP endpoints implemented
 - ✅ React components created
-- ✅ SQLite persistence working
+- ✅ Postgres/Neon persistence working
 - ⏳ Token auth from localStorage
-- ⏳ Streaming responses for long messages
+- ✅ Streaming responses for long messages (`/messages/stream`, token-by-token UI, stop-generation button)
 
 ### Phase 2 (Future - Internal Nexus)
 Replace ChatGPT with internal query provider:
@@ -253,6 +266,28 @@ Replace ChatGPT with internal query provider:
 - `web/src/types.ts` - Added 'research' PageId
 - `web/src/App.tsx` - Added research routing
 - `web/src/components/Sidebar.tsx` - Updated navigation
+
+---
+
+## 🌊 Update: Streaming Responses (SSE)
+
+Adds token-by-token streaming to the chat UI, closing the "Phase 1 - Streaming responses"
+item above. Matches the UX of Claude/ChatGPT: the assistant bubble fills in as text
+arrives, and the send button becomes a stop button while a response is generating.
+
+### Files Created/Modified
+
+- `src/modules/search/domain.ts` - `LLMRequest` gained optional `onDelta`/`signal`
+- `src/modules/search/chatgpt-provider.ts` - streams from OpenAI (`stream: true`) when `onDelta` is set; accumulates text and fragmented `tool_calls` from SSE chunks
+- `src/modules/search/local-knowledge-provider.ts` - calls `onDelta` once with the full offline answer (no real streaming, kept for API symmetry)
+- `src/modules/search/service.ts` - `addMessageAndGetResponse` accepts `onDelta`/`signal` and threads them into the tool-loop's `LLMRequest`
+- `src/shared/http/app.ts` - new `POST /v1/research/sessions/:id/messages/stream` route (SSE); `createLlmProvider` helper extracted and shared with the original buffered route
+- `web/src/services/researchApi.ts` - `sendResearchMessageStream()` reads the SSE response via `fetch` + `ReadableStream`
+- `web/src/pages/ResearchPage.tsx` - assistant message renders incrementally as deltas arrive; send button becomes a stop button (`AbortController`) while streaming
+
+### Not covered by this update
+
+- The older `ResearchChat.tsx` / `ResearchHistoryPage`'s embedded chat and the `POST .../messages` buffered endpoint referenced elsewhere in this document are legacy/unused by the current router (`web/src/pages/ResearchPage.tsx` is the live chat screen) and were left untouched.
 
 ---
 

@@ -17,7 +17,7 @@ import { createNexusRuntime, DEFAULT_RUNTIME_USER, type NexusRuntime } from '../
 import type { PartyService } from '../../modules/party/service.js';
 import type { ResourceService } from '../../modules/resource/service.js';
 import type { ServiceService } from '../../modules/service/service.js';
-import type { AddMessageInput, ResearchMessage } from '../../modules/search/domain.js';
+import type { AddMessageInput, LLMRequest, LLMResponse, ResearchMessage, ResearchSession } from '../../modules/search/domain.js';
 import type { TmfEventQuery } from '../tmf/index.js';
 import type { EventService } from '../tmf/index.js';
 import type { Party, PartyQuery, PartyRoleQuery } from '../../modules/party/index.js';
@@ -1636,6 +1636,53 @@ const resolveGeoEntityRoute = (pathname: string): GeoEntityRoute | undefined => 
   return undefined;
 };
 
+/**
+ * Builds the ChatGPT-with-local-fallback provider callback shared by the buffered and
+ * streaming "send message" routes. Streaming is opt-in per call via `llmRequest.onDelta`/
+ * `llmRequest.signal`, which the service layer attaches to each request it builds.
+ */
+const createLlmProvider = (
+  chatGptProvider: ChatGPTProvider | null,
+  localKnowledgeProvider: LocalKnowledgeProvider,
+  llmToolCatalog: ReturnType<typeof buildLlmToolCatalog>,
+  session: ResearchSession,
+): ((llmRequest: LLMRequest) => Promise<LLMResponse>) =>
+  chatGptProvider
+    ? async (llmRequest) => {
+        try {
+          const providerResponse = await chatGptProvider.invoke(llmRequest);
+          if (!providerResponse.toolCalls) {
+            return providerResponse;
+          }
+          return {
+            ...providerResponse,
+            toolCalls: providerResponse.toolCalls.map((toolCall) => ({
+              ...toolCall,
+              name: llmToolCatalog.aliasToToolName.get(toolCall.name) ?? toolCall.name,
+            })),
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return localKnowledgeProvider
+            .invoke({
+              ...llmRequest,
+              model: `fallback:${session.model ?? 'nexus-local-docs'}`,
+            })
+            .then((fallback) => ({
+              ...fallback,
+              metadata: {
+                ...(fallback.metadata ?? {}),
+                error: errorMsg,
+              },
+            }));
+        }
+      }
+    : async (llmRequest) =>
+        localKnowledgeProvider.invoke({
+          ...llmRequest,
+          model: `fallback:${session.model ?? 'nexus-local-docs'}`,
+        });
+
 const routeResearchRequest = async ({
   request,
   response,
@@ -1770,6 +1817,71 @@ const routeResearchRequest = async ({
     return sendJson(response, 200, session);
   }
 
+  // POST /v1/research/sessions/:id/messages/stream - Send message and stream the LLM response via SSE
+  if (request.method === 'POST' && url.pathname.endsWith('/messages/stream')) {
+    const sessionId = url.pathname.split('/')[4]; // /v1/research/sessions/{id}/messages/stream
+    if (!sessionId) throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
+
+    const body = await readBody(request);
+    const userMessage = body.message as string;
+    if (!userMessage) throw new AppError('message required', { code: 'INVALID_MESSAGE', statusCode: 400 });
+
+    const session = await searchService.getSession(sessionId);
+    if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
+
+    const abortController = new AbortController();
+    request.on('close', () => abortController.abort());
+
+    response.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+
+    const sendEvent = (event: string, data: unknown): void => {
+      response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    const llmProvider = createLlmProvider(chatGptProvider, localKnowledgeProvider, llmToolCatalog, session);
+
+    // Streaming responses must never throw past this point: headers are already sent, so any
+    // failure has to be reported as an `error` SSE event instead of the normal AppError path.
+    try {
+      const { userMessage: userMsg, assistantMessage } = await searchService.addMessageAndGetResponse(
+        sessionId,
+        userMessage,
+        llmProvider,
+        {
+          ...(chatGptProvider
+            ? {
+                tools: llmToolCatalog.tools,
+                executeTool: async (toolName, input) =>
+                  await mcpModule.registry.executeTool(
+                    toolName,
+                    input,
+                    runtime.createToolContext({
+                      executionMode: 'internal-chat',
+                      sessionId,
+                    }),
+                  ),
+                maxToolCalls: 4,
+              }
+            : {}),
+          onDelta: (text) => sendEvent('delta', { text }),
+          signal: abortController.signal,
+        },
+      );
+      sendEvent('done', { userMessage: userMsg, assistantMessage });
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      sendEvent('error', { message: errorMsg });
+    } finally {
+      response.end();
+    }
+    return;
+  }
+
   // POST /v1/research/sessions/:id/messages - Send message and get LLM response
   if (request.method === 'POST' && url.pathname.includes('/messages')) {
     const sessionId = url.pathname.split('/')[4]; // /v1/research/sessions/{id}/messages
@@ -1782,40 +1894,7 @@ const routeResearchRequest = async ({
     const session = await searchService.getSession(sessionId);
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
 
-    const llmProvider = chatGptProvider
-      ? async (llmRequest: any) => {
-          try {
-            const providerResponse = await chatGptProvider.invoke(llmRequest);
-            if (!providerResponse.toolCalls) {
-              return providerResponse;
-            }
-            return {
-              ...providerResponse,
-              toolCalls: providerResponse.toolCalls.map((toolCall) => ({
-                ...toolCall,
-                name: llmToolCatalog.aliasToToolName.get(toolCall.name) ?? toolCall.name,
-              })),
-            };
-          } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error);
-            return localKnowledgeProvider.invoke({
-              ...llmRequest,
-              model: `fallback:${session.model ?? 'nexus-local-docs'}`,
-            })
-              .then((fallback) => ({
-                ...fallback,
-                metadata: {
-                  ...(fallback.metadata ?? {}),
-                  error: errorMsg,
-                },
-              }));
-          }
-        }
-      : async (llmRequest: any) =>
-          localKnowledgeProvider.invoke({
-            ...llmRequest,
-            model: `fallback:${session.model ?? 'nexus-local-docs'}`,
-          });
+    const llmProvider = createLlmProvider(chatGptProvider, localKnowledgeProvider, llmToolCatalog, session);
 
     const { userMessage: userMsg, assistantMessage } = await searchService.addMessageAndGetResponse(
       sessionId,

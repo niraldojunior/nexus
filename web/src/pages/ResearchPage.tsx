@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CheckCircle2, Loader2, Trash2, Send } from 'lucide-react';
+import { CheckCircle2, Loader2, Trash2, Send, Square } from 'lucide-react';
 import MarkdownMessage from '../components/MarkdownMessage';
 import CopilotPendingResponse from '../components/CopilotPendingResponse';
 import NexusLoadingMark from '../components/NexusLoadingMark';
 import Diamond from '../components/Diamond';
 import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
 import { scrollChatAnchorIntoView, scrollChatToBottom } from '../utils/chatScroll';
-import { confirmResearchSessionAction, type ResearchConfirmationResponse } from '../services/researchApi';
+import {
+  confirmResearchSessionAction,
+  sendResearchMessageStream,
+  type ResearchConfirmationResponse,
+} from '../services/researchApi';
 
 interface Message {
   id: string;
@@ -83,6 +87,7 @@ export const ResearchPage: React.FC<{
   const pendingMessageIdRef = useRef<string | null>(null);
   const activeTurnAnchorRef = useRef<HTMLDivElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const textareaRef = useAutoResizeTextarea(input, 220);
 
   useEffect(() => {
@@ -151,34 +156,40 @@ export const ResearchPage: React.FC<{
       content: userInput,
       createdAt: new Date().toISOString(),
     };
+    const optimisticAssistantId = `temp-assistant-${Date.now()}`;
+    const optimisticAssistantMessage: Message = {
+      id: optimisticAssistantId,
+      role: 'assistant',
+      content: '',
+      createdAt: new Date().toISOString(),
+    };
 
     setInput('');
     setError(null);
-    setMessages((prev) => [...prev, optimisticUserMessage]);
+    setMessages((prev) => [...prev, optimisticUserMessage, optimisticAssistantMessage]);
     pendingMessageIdRef.current = optimisticUserMessage.id;
 
-    try {
-      setSendingMessage(true);
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    setSendingMessage(true);
 
-      const response = await fetch(`/v1/research/sessions/${session.id}/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+    try {
+      const result = await sendResearchMessageStream(session.id, userInput, {
+        signal: abortController.signal,
+        onDelta: (textChunk) => {
+          pendingMessageIdRef.current = null;
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === optimisticAssistantId
+                ? { ...message, content: message.content + textChunk }
+                : message,
+            ),
+          );
         },
-        body: JSON.stringify({ message: userInput }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json() as any;
-        throw new Error(errorData.message || `Failed to send message: ${response.status}`);
-      }
-
-      const result = await response.json() as any;
-      pendingMessageIdRef.current = null;
-      setSendingMessage(false);
       setMessages((prev) => [
-        ...prev.filter((message) => message.id !== optimisticUserMessage.id),
+        ...prev.filter((message) => message.id !== optimisticUserMessage.id && message.id !== optimisticAssistantId),
         result.userMessage,
         result.assistantMessage,
       ]);
@@ -189,13 +200,31 @@ export const ResearchPage: React.FC<{
         await updateSessionTitle(shortTitle);
       }
     } catch (err) {
-      setMessages((prev) => prev.filter((message) => message.id !== optimisticUserMessage.id));
-      setInput(userInput);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        // User stopped generation on purpose: keep whatever partial text already streamed in.
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === optimisticAssistantId
+              ? { ...message, metadata: { ...(message.metadata ?? {}), stopped: true } }
+              : message,
+          ),
+        );
+      } else {
+        setMessages((prev) =>
+          prev.filter((message) => message.id !== optimisticUserMessage.id && message.id !== optimisticAssistantId),
+        );
+        setInput(userInput);
+        setError(err instanceof Error ? err.message : 'Erro desconhecido');
+      }
     } finally {
       setSendingMessage(false);
       pendingMessageIdRef.current = null;
+      abortControllerRef.current = null;
     }
+  };
+
+  const handleStopGenerating = () => {
+    abortControllerRef.current?.abort();
   };
 
   const updateSessionTitle = async (title: string) => {
@@ -257,7 +286,7 @@ export const ResearchPage: React.FC<{
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
     }
@@ -435,7 +464,7 @@ export const ResearchPage: React.FC<{
 
       {/* Fixed Input Area - Bottom */}
       <div className="flex-shrink-0 px-6 py-4 bg-app-canvas">
-        <div className="mx-auto w-full max-w-[780px] bg-white border border-app-border rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-end gap-4 px-5 py-4">
+        <div className="mx-auto w-full max-w-[780px] bg-white border border-app-border rounded-2xl shadow-sm transition-shadow flex items-end gap-4 px-5 py-4 focus-within:shadow-md focus-within:ring-2 focus-within:ring-app-focus/40">
           <textarea
             ref={textareaRef}
             value={input}
@@ -446,13 +475,14 @@ export const ResearchPage: React.FC<{
             className="flex-1 min-h-[56px] max-h-[220px] resize-none overflow-y-auto bg-transparent text-[0.95rem] leading-[1.55] text-app-text placeholder-app-muted outline-none"
           />
           <button
-            onClick={handleSendMessage}
-            disabled={sendingMessage || !input.trim()}
+            onClick={sendingMessage ? handleStopGenerating : handleSendMessage}
+            disabled={!sendingMessage && !input.trim()}
             className="inline-flex items-center justify-center rounded-full bg-app-accent w-10 h-10 text-app-ink transition hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-            title="Enviar mensagem"
+            title={sendingMessage ? 'Parar geração' : 'Enviar mensagem'}
+            aria-label={sendingMessage ? 'Parar geração' : 'Enviar mensagem'}
           >
             {sendingMessage ? (
-              <NexusLoadingMark size={20} className="h-5 w-5" />
+              <Square className="h-4 w-4 fill-current" />
             ) : (
               <Send className="h-5 w-5" />
             )}

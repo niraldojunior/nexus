@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Building2,
   ChevronRight,
@@ -1203,7 +1204,15 @@ function HierarchyTree({
 }
 
 function Modal({ children, title, eyebrow, onClose, wide }: { children: ReactNode; title: string; eyebrow: string; onClose: () => void; wide?: boolean }) {
-  return (
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-6">
       <div className={`max-h-[90vh] overflow-auto rounded-[26px] border border-app-border bg-white p-5 shadow-modal ${wide ? 'w-full max-w-[920px]' : 'w-full max-w-[720px]'}`}>
         <div className="mb-4 flex items-start justify-between gap-4 border-b border-app-border pb-4">
@@ -1215,7 +1224,8 @@ function Modal({ children, title, eyebrow, onClose, wide }: { children: ReactNod
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

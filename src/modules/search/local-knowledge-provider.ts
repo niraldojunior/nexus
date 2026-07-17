@@ -363,6 +363,8 @@ export class LocalKnowledgeProvider {
   }
 
   async invoke(request: LLMRequest): Promise<LLMResponse> {
-    return this.complete(request.transcript, request.model || 'nexus-local-docs');
+    const response = await this.complete(request.transcript, request.model || 'nexus-local-docs');
+    request.onDelta?.(response.content);
+    return response;
   }
 }

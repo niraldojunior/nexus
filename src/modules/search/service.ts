@@ -92,6 +92,8 @@ export class SearchService {
       tools?: LLMToolDefinition[];
       executeTool?: (toolName: string, input: Record<string, unknown>) => Promise<unknown> | unknown;
       maxToolCalls?: number;
+      onDelta?: (textChunk: string) => void;
+      signal?: AbortSignal;
     },
   ): Promise<{ userMessage: ResearchMessage; assistantMessage: ResearchMessage }> {
     const session = await this.repository.getSession(sessionId);
@@ -118,6 +120,8 @@ export class SearchService {
         temperature: session.temperature ?? 0.7,
         maxTokens: session.maxTokens ?? 2000,
         ...(options?.tools ? { tools: options.tools } : {}),
+        ...(options?.onDelta ? { onDelta: options.onDelta } : {}),
+        ...(options?.signal ? { signal: options.signal } : {}),
       };
       llmResponse = await this.runToolLoop(
         llmRequest,

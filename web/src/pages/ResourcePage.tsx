@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   Cable,
@@ -716,7 +717,7 @@ export default function ResourcePage({
         />
       ) : null}
 
-      {deleteConfirmOpen ? (
+      {deleteConfirmOpen ? createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
           <div
             role="dialog"
@@ -775,7 +776,8 @@ export default function ResourcePage({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       ) : null}
 
       {isLoading ? (
@@ -868,7 +870,15 @@ function ResourceModal({
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [typeMenuOpen]);
 
-  return (
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
       <div
         role="dialog"
@@ -1450,7 +1460,8 @@ function ResourceModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

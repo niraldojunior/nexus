@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import {
   Blocks,
   CreditCard,
@@ -43,6 +44,15 @@ export default function SettingsModal({
   onClose,
   onSelectSection
 }: SettingsModalProps) {
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, onClose])
+
   if (!isOpen) {
     return null
   }

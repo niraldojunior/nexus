@@ -55,7 +55,7 @@ test('Composer submits on Enter instead of inserting a new line', () => {
   expect(textarea.value).toBe('Consulta TMF');
 });
 
-test('Composer submits on Shift+Enter instead of inserting a new line', () => {
+test('Composer inserts a new line on Shift+Enter instead of submitting', () => {
   const onChange = vi.fn();
   const onSubmit = vi.fn();
 
@@ -75,9 +75,10 @@ test('Composer submits on Shift+Enter instead of inserting a new line', () => {
   const textarea = screen.getByPlaceholderText('Pergunte algo') as HTMLTextAreaElement;
   const eventResult = fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter', shiftKey: true });
 
-  expect(eventResult).toBe(false);
-  expect(onSubmit).toHaveBeenCalledTimes(1);
-  expect(onChange).not.toHaveBeenCalled();
+  // The handler leaves the keydown uncancelled, so the browser performs its default
+  // action (inserting a newline) instead of Composer submitting the message.
+  expect(eventResult).toBe(true);
+  expect(onSubmit).not.toHaveBeenCalled();
   expect(textarea.value).toBe('Consulta TMF');
 });
 

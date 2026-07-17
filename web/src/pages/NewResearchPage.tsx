@@ -6,6 +6,11 @@ interface NewResearchPageProps {
   onSessionCreated?: (sessionId: string) => void;
 }
 
+const AVAILABLE_MODELS = [
+  { value: 'gpt-4o-mini', label: 'GPT-4o mini' },
+  { value: 'gpt-4o', label: 'GPT-4o' },
+];
+
 const promptStarters = [
   {
     icon: MapPinned,
@@ -50,6 +55,7 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [model, setModel] = useState(AVAILABLE_MODELS[0].value);
   const greeting = useMemo(getGreeting, []);
 
   const handleSubmit = async () => {
@@ -66,7 +72,7 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
         },
         body: JSON.stringify({
           title: input.substring(0, 50),
-          model: 'gpt-4o-mini',
+          model,
         }),
       });
 
@@ -118,8 +124,10 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
             loading={loading}
             placeholder="Pergunte sobre Locais, Recursos, Serviços, Ordens ou gere uma especificação..."
             size="hero"
-            modelLabel="Nexus"
+            modelLabel={model}
             qualityLabel="TMF-first"
+            models={AVAILABLE_MODELS}
+            onModelChange={setModel}
             autoFocus
           />
         </div>

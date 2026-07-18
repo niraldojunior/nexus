@@ -909,6 +909,7 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
           resourceSpecificationOptions={resourceSpecificationOptions}
           manufacturerOptions={manufacturerOptions}
           physicalResourceOptions={physicalResourceOptions}
+          geoDirectory={geoDirectory}
           lookupLoading={lookupLoading}
           saving={saving}
           catalogSelectionValid={catalogSelectionValid}
@@ -1001,6 +1002,7 @@ function ResourceModal({
   resourceSpecificationOptions,
   manufacturerOptions,
   physicalResourceOptions,
+  geoDirectory,
   lookupLoading,
   saving,
   catalogSelectionValid,
@@ -1017,6 +1019,7 @@ function ResourceModal({
   resourceSpecificationOptions: ResourceSpecification[];
   manufacturerOptions: Party[];
   physicalResourceOptions: PhysicalResource[];
+  geoDirectory: ReturnType<typeof useGeoDirectory>['directory'] | null;
   lookupLoading: boolean;
   saving: boolean;
   catalogSelectionValid: boolean;

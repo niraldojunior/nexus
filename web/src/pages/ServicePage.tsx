@@ -763,6 +763,7 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
           supportingServiceOptions={supportingServiceOptions}
           resourceOptions={resourceOptions}
           servicesById={servicesById}
+          geoDirectory={geoDirectory}
           saving={saving}
           onClose={closeModal}
           onChange={setFormState}
@@ -866,6 +867,7 @@ function ServiceModal({
   supportingServiceOptions,
   resourceOptions,
   servicesById,
+  geoDirectory,
   saving,
   onClose,
   onChange,
@@ -879,6 +881,7 @@ function ServiceModal({
   supportingServiceOptions: ResourceFacingService[];
   resourceOptions: ResourceEntity[];
   servicesById: Map<string, ServiceEntity>;
+  geoDirectory: ReturnType<typeof useGeoDirectory>['directory'] | null;
   saving: boolean;
   onClose: () => void;
   onChange: (next: ServiceFormState) => void;

@@ -23,7 +23,8 @@ import type {
 } from '../services/geoApi';
 import { getJson, postJson, patchJson } from '../services/geoApi';
 import { siteKindFromSpec, siteKindLabel, formatAddress } from '../utils/placeLabel';
-import { TabSelector, ListTab, GuidedSignupModal, type TabId } from './geo-tabs';
+import { useEquipmentCatalog } from '../hooks/useEquipmentCatalog';
+import { TabSelector, ListTab, GuidedSignupModal, AddEquipmentModal, type TabId } from './geo-tabs';
 
 declare global {
   interface Window {
@@ -101,6 +102,9 @@ export default function GeoPage() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [addEquipmentOpen, setAddEquipmentOpen] = useState(false);
+
+  const { equipment } = useEquipmentCatalog();
 
   const locationById = useMemo(() => new Map(locations.map((item) => [item.id, item])), [locations]);
   const addressById = useMemo(() => new Map(addresses.map((item) => [item.id, item])), [addresses]);
@@ -287,6 +291,15 @@ export default function GeoPage() {
               active={createOpen}
             />
             <ToolButton
+              icon={Network}
+              label="Adicionar equipamento"
+              onClick={() => {
+                setLayerPanelOpen(false);
+                setAddEquipmentOpen(true);
+              }}
+              active={addEquipmentOpen}
+            />
+            <ToolButton
               icon={Layers}
               label="Tipos de site"
               onClick={() => {
@@ -418,6 +431,21 @@ export default function GeoPage() {
           onClose={() => setCreateOpen(false)}
           onCreated={async () => {
             setCreateOpen(false);
+            setDraftAddress(null);
+            await loadGeo();
+          }}
+        />
+      ) : null}
+
+      {addEquipmentOpen ? (
+        <AddEquipmentModal
+          draftAddress={draftAddress}
+          selectedSite={selectedSite}
+          equipment={equipment}
+          locationById={locationById}
+          onClose={() => setAddEquipmentOpen(false)}
+          onCreated={async () => {
+            setAddEquipmentOpen(false);
             setDraftAddress(null);
             await loadGeo();
           }}

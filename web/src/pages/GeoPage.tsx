@@ -67,6 +67,16 @@ const statusLabel: Record<GeoStatus, string> = {
   terminated: 'Terminado',
 };
 
+const relationshipTypeLabel = (type: string): string => {
+  const labels: Record<string, string> = {
+    fedBy: 'Alimentado por',
+    feeds: 'Alimenta',
+    nearby: 'Próximo de',
+    contains: 'Contém',
+  };
+  return labels[type] || type;
+};
+
 const layerOptions = ['CO', 'POP', 'CTO', 'PI', 'Relacoes', 'Sem coordenada'] as const;
 type LayerKey = (typeof layerOptions)[number];
 type SiteLayer = LayerKey | 'Site';
@@ -254,7 +264,7 @@ export default function GeoPage() {
                       <SiteIcon layer={siteKindFromSpec(spec)} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[0.92rem] font-semibold text-app-text">{site.name}</span>
-                        <span className="block truncate text-[0.78rem] text-app-muted">{address ? formatAddress(address) : 'Sem endereco associado'}</span>
+                        <span className="block truncate text-[0.78rem] text-app-muted">{address ? formatAddress(address) : 'Sem endereço associado'}</span>
                       </span>
                       <ChevronRight className="h-4 w-4 text-app-muted" />
                     </button>
@@ -660,8 +670,8 @@ function FloatingPanel({
     <div className="absolute right-5 top-24 z-40 w-[360px] rounded-[24px] border border-app-border bg-white p-4 shadow-modal">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">Endereco</div>
-          <div className="mt-1 text-[0.98rem] font-semibold text-app-text">{draftAddress?.label ?? (address ? formatAddress(address) : 'Sem endereco')}</div>
+          <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">Endereço</div>
+          <div className="mt-1 text-[0.98rem] font-semibold text-app-text">{draftAddress?.label ?? (address ? formatAddress(address) : 'Sem endereço')}</div>
           {location ? <div className="mt-1 font-mono text-[0.74rem] text-app-muted">[{location[0].toFixed(5)}, {location[1].toFixed(5)}]</div> : null}
         </div>
         <button type="button" onClick={onClose} className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft">
@@ -675,14 +685,14 @@ function FloatingPanel({
             <SiteIcon layer={siteKindFromSpec(spec)} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[0.95rem] font-semibold text-app-text">{selectedSite.name}</div>
-              <div className="text-[0.78rem] text-app-muted">{spec?.name ?? 'Tipo nao informado'} · {statusLabel[selectedSite.status]}</div>
+              <div className="text-[0.78rem] text-app-muted">{spec?.name ?? 'Tipo não informado'} · {statusLabel[selectedSite.status]}</div>
             </div>
             <ChevronRight className="h-4 w-4 text-app-muted" />
           </div>
         </button>
       ) : (
         <div className="rounded-[18px] border border-dashed border-app-border p-4 text-center">
-          <div className="text-[0.9rem] font-semibold text-app-text">Nenhum site cadastrado neste endereco.</div>
+          <div className="text-[0.9rem] font-semibold text-app-text">Nenhum site cadastrado neste endereço.</div>
           <button type="button" onClick={onCreate} className="geo-btn primary mt-3 w-full justify-center">
             <Plus className="h-4 w-4" />
             Criar Site aqui
@@ -799,11 +809,11 @@ function GeoHierarchySidebar({
                 }`}
               >
                 <span className="block text-[0.86rem] font-semibold text-app-text">{site.name}</span>
-                <span className="block text-[0.74rem] text-app-muted">Sem place associado</span>
+                <span className="block text-[0.74rem] text-app-muted">Sem localização no mapa</span>
               </button>
             )) : (
               <div className="rounded-[16px] border border-dashed border-app-border px-3 py-3 text-[0.84rem] text-app-muted">
-                Todas as entidades carregadas possuem place.
+                Todos os locais estão georreferenciados.
               </div>
             )}
           </div>
@@ -933,10 +943,10 @@ function CreateSiteModal({
   };
 
   return (
-    <Modal onClose={onClose} title="Criar site neste endereco" eyebrow="Novo Site">
+    <Modal onClose={onClose} title="Criar site neste endereço" eyebrow="Novo Site">
       <form onSubmit={submit}>
         <div className="mb-4 rounded-[18px] bg-app-accent-soft p-4 text-[0.86rem] text-app-muted">
-          <strong className="text-app-text">Address + Location</strong> serao criados ou herdados sem telas proprias.
+          <strong className="text-app-text">Endereço e Localização</strong> serão criados ou herdados automaticamente.
           <div className="mt-1">{draftAddress?.label ?? (selectedSite ? `Herdado de ${selectedSite.name}` : 'Selecione um ponto no mapa para criar um site georreferenciado.')}</div>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
@@ -962,7 +972,7 @@ function CreateSiteModal({
           </FormField>
           <FormField label="Alimentado por">
             <select value={fedBySiteId} onChange={(event) => setFedBySiteId(event.target.value)} className="geo-input">
-              <option value="">Nao informado</option>
+              <option value="">Não informado</option>
               {sites.filter((site) => site.id !== selectedSite?.id).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
             </select>
           </FormField>
@@ -1043,8 +1053,8 @@ function SiteDetailModal({
         <div className="grid gap-4 md:grid-cols-2">
           <Info label="Tipo" value={`${spec?.name ?? '-'} · ${spec?.category ?? '-'}`} />
           <Info label="Status" value={statusLabel[site.status]} />
-          <Info label="Address" value={address ? formatAddress(address) : 'Sem endereco'} />
-          <Info label="Location" value={point ? `[${point[0].toFixed(5)}, ${point[1].toFixed(5)}]` : 'Sem place'} />
+          <Info label="Endereço" value={address ? formatAddress(address) : 'Sem endereço'} />
+          <Info label="Localização" value={point ? `[${point[0].toFixed(5)}, ${point[1].toFixed(5)}]` : 'Não localizado'} />
           <Info label="ParentSite" value={site.parentSite ? siteById.get(site.parentSite.id)?.name ?? site.parentSite.id : 'Nenhum'} />
           <Info label="ID" value={site.id} mono />
         </div>
@@ -1053,19 +1063,19 @@ function SiteDetailModal({
       {tab === 'subsites' ? (
         <div>
           <div className="mb-3 flex justify-between gap-3">
-            <div className="text-[0.88rem] text-app-muted">Contencao fisica via parentSite.</div>
+            <div className="text-[0.88rem] text-app-muted">Contenção física via site pai.</div>
             <button type="button" className="geo-btn primary" onClick={onCreateSubSite}><Plus className="h-4 w-4" />Adicionar sub-site</button>
           </div>
-          <SimpleRows rows={childSites.map((child) => [child.name, specById.get(child.siteSpecificationId)?.name ?? '-', statusLabel[child.status]])} empty="Este site ainda nao possui sub-sites." />
+          <SimpleRows rows={childSites.map((child) => [child.name, specById.get(child.siteSpecificationId)?.name ?? '-', statusLabel[child.status]])} empty="Este site ainda não possui sub-sites." />
         </div>
       ) : null}
 
       {tab === 'topology' ? (
         <div className="grid gap-4">
-          <SimpleRows rows={site.relatedSite.map((rel) => [rel.relationshipType, siteById.get(rel.id)?.name ?? rel.id, rel.id])} empty="Sem relacoes topologicas." />
+          <SimpleRows rows={site.relatedSite.map((rel) => [relationshipTypeLabel(rel.relationshipType), siteById.get(rel.id)?.name ?? rel.id, rel.id])} empty="Sem relações topológicas." />
           <div className="grid gap-3 rounded-[18px] border border-app-border p-4 md:grid-cols-[1fr_1fr_auto]">
             <select value={relationshipType} onChange={(event) => setRelationshipType(event.target.value)} className="geo-input">
-              {['fedBy', 'feeds', 'nearby', 'contains'].map((value) => <option key={value} value={value}>{value}</option>)}
+              {['fedBy', 'feeds', 'nearby', 'contains'].map((value) => <option key={value} value={value}>{relationshipTypeLabel(value)}</option>)}
             </select>
             <select value={relationshipTarget} onChange={(event) => setRelationshipTarget(event.target.value)} className="geo-input">
               <option value="">Site relacionado</option>
@@ -1180,7 +1190,7 @@ function HierarchyTree({
           <SiteIcon layer={siteKindFromSpec(spec)} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[0.86rem] font-semibold">{site.name}</span>
-            <span className="block truncate text-[0.72rem]">{spec?.name ?? 'Tipo nao informado'}</span>
+            <span className="block truncate text-[0.72rem]">{spec?.name ?? 'Tipo não informado'}</span>
           </span>
         </button>
         {children.map((child) => renderNode(child, level + 1))}
@@ -1189,7 +1199,7 @@ function HierarchyTree({
   };
 
   if (!sites.length) {
-    return <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.86rem] text-app-muted">Nenhum GeographicSite cadastrado.</div>;
+    return <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.86rem] text-app-muted">Nenhum local cadastrado.</div>;
   }
 
   return <div className="grid gap-1">{roots.map((site) => renderNode(site, 0))}</div>;

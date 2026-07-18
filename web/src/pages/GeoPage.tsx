@@ -23,7 +23,7 @@ import type {
 } from '../services/geoApi';
 import { getJson, postJson, patchJson } from '../services/geoApi';
 import { siteKindFromSpec, siteKindLabel, formatAddress } from '../utils/placeLabel';
-import { TabSelector, ListTab, type TabId } from './geo-tabs';
+import { TabSelector, ListTab, GuidedSignupModal, type TabId } from './geo-tabs';
 
 declare global {
   interface Window {
@@ -407,7 +407,7 @@ export default function GeoPage() {
       />
 
       {createOpen ? (
-        <CreateSiteModal
+        <GuidedSignupModal
           draftAddress={draftAddress}
           selectedSite={selectedSite}
           specs={specs}
@@ -860,128 +860,6 @@ function SummaryChip({ label, value, tone = 'blue' }: { label: string; value: nu
   );
 }
 
-function CreateSiteModal({
-  draftAddress,
-  selectedSite,
-  specs,
-  sites,
-  specById,
-  addressById,
-  locationById,
-  onClose,
-  onCreated,
-}: {
-  draftAddress: DraftAddress | null;
-  selectedSite: GeoSite | null;
-  specs: GeoSpec[];
-  sites: GeoSite[];
-  specById: Map<string, GeoSpec>;
-  addressById: Map<string, GeoAddress>;
-  locationById: Map<string, GeoLocation>;
-  onClose: () => void;
-  onCreated: () => Promise<void>;
-}) {
-  const [siteSpecificationId, setSiteSpecificationId] = useState(specs[0]?.id ?? '');
-  const [name, setName] = useState(draftAddress ? `Site - ${draftAddress.street}` : '');
-  const [status, setStatus] = useState<GeoStatus>('planned');
-  const [parentSiteId, setParentSiteId] = useState(selectedSite?.id ?? '');
-  const [fedBySiteId, setFedBySiteId] = useState('');
-  const [saving, setSaving] = useState(false);
-  const selectedSpec = specById.get(siteSpecificationId);
-
-  const parentOptions = useMemo(
-    () => sites.filter((site) => isParentAllowed(selectedSpec, specById.get(site.siteSpecificationId))),
-    [selectedSpec, sites, specById],
-  );
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!siteSpecificationId || !name.trim()) return;
-    setSaving(true);
-    try {
-      if (draftAddress) {
-        await postJson('/v1/geo/workspace/site-at-address', {
-          location: {
-            geometryType: 'Point',
-            geometry: { type: 'Point', coordinates: draftAddress.coordinates },
-            spatialRef: 'EPSG:4326',
-            accuracy: 'GOOGLE_MAPS',
-          },
-          address: {
-            street: draftAddress.street,
-            streetNr: draftAddress.streetNr,
-            city: draftAddress.city,
-            stateOrProvince: draftAddress.stateOrProvince,
-            postcode: draftAddress.postcode,
-            country: draftAddress.country,
-          },
-          site: {
-            name,
-            status,
-            siteSpecificationId,
-            parentSiteId: parentSiteId || undefined,
-          },
-          fedBySiteId: fedBySiteId || undefined,
-          fedByRelationshipType: fedBySiteId ? 'fedBy' : undefined,
-        });
-      } else {
-        const inheritedAddress = selectedSite?.address ? addressById.get(selectedSite.address.id) : undefined;
-        const inheritedLocation = selectedSite ? pointForSite(selectedSite, locationById) : undefined;
-        await postJson('/v1/geo/sites', {
-          name,
-          status,
-          siteSpecificationId,
-          parentSiteId: parentSiteId || undefined,
-          addressId: inheritedAddress?.id,
-          placeId: selectedSite?.place?.id ?? (inheritedLocation ? undefined : undefined),
-        });
-      }
-      await onCreated();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Modal onClose={onClose} title="Criar site neste endereço" eyebrow="Novo Site">
-      <form onSubmit={submit}>
-        <div className="mb-4 rounded-[18px] bg-app-accent-soft p-4 text-[0.86rem] text-app-muted">
-          <strong className="text-app-text">Endereço e Localização</strong> serão criados ou herdados automaticamente.
-          <div className="mt-1">{draftAddress?.label ?? (selectedSite ? `Herdado de ${selectedSite.name}` : 'Selecione um ponto no mapa para criar um site georreferenciado.')}</div>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <FormField label="Tipo do site">
-            <select value={siteSpecificationId} onChange={(event) => setSiteSpecificationId(event.target.value)} className="geo-input">
-              <option value="">Selecione...</option>
-              {specs.map((spec) => <option key={spec.id} value={spec.id}>{spec.name} · {spec.category}</option>)}
-            </select>
-          </FormField>
-          <FormField label="Nome do site">
-            <input value={name} onChange={(event) => setName(event.target.value)} className="geo-input" placeholder="ex: PI - Rua Miguel de Frias, 380" />
-          </FormField>
-          <FormField label="Status inicial">
-            <select value={status} onChange={(event) => setStatus(event.target.value as GeoStatus)} className="geo-input">
-              {Object.entries(statusLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </FormField>
-          <FormField label="Site pai">
-            <select value={parentSiteId} onChange={(event) => setParentSiteId(event.target.value)} className="geo-input">
-              <option value="">Nenhum</option>
-              {parentOptions.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
-            </select>
-          </FormField>
-          <FormField label="Alimentado por">
-            <select value={fedBySiteId} onChange={(event) => setFedBySiteId(event.target.value)} className="geo-input">
-              <option value="">Não informado</option>
-              {sites.filter((site) => site.id !== selectedSite?.id).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
-            </select>
-          </FormField>
-        </div>
-        <ModalFooter onClose={onClose} primaryLabel={saving ? 'Salvando...' : 'Criar site'} disabled={saving || !siteSpecificationId || !name.trim()} />
-      </form>
-    </Modal>
-  );
-}
 
 function SiteDetailModal({
   site,

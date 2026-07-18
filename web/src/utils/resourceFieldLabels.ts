@@ -28,7 +28,7 @@ export const RESOURCE_FIELD_LABELS: Record<ResourceFieldKey, string> = {
   description: 'Descrição',
   resourceSpecificationName: 'Nome do Modelo',
   supportingPhysicalResourceName: 'Recurso Físico Associado',
-  placeId: 'ID do Local',
+  placeId: 'Local',
   placeType: 'Tipo de Local',
   equipmentCode: 'Cod. Equipamento',
   equipmentFunction: 'Equipamento',

@@ -34,6 +34,9 @@ import {
 import type { ResourceEntity } from '../services/resourceApi';
 import ColumnFilterMenu from '../components/ColumnFilterMenu';
 import Field from '../components/Field';
+import { useGeoDirectory } from '../hooks/useGeoDirectory';
+import { PlaceLabelCompact } from '../components/PlaceLabel';
+import { PlacePicker } from '../components/PlacePicker';
 import { SERVICE_CATEGORY_DEFAULTS } from '../data/serviceCatalogDefaults';
 import {
   DEFAULT_SERVICE_CATEGORY_CODE,
@@ -86,7 +89,6 @@ const emptyFormState = (): ServiceFormState => ({
   placeType: 'GeographicAddress',
 });
 
-const PLACE_TYPES = ['GeographicAddress', 'GeographicSite'];
 
 const tabConfig: Record<
   ServiceTabId,
@@ -171,6 +173,9 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
   const [terminateConfirmOpen, setTerminateConfirmOpen] = useState(false);
   const [formState, setFormState] = useState<ServiceFormState>(emptyFormState());
   const selectAllRef = useRef<HTMLInputElement>(null);
+
+  // Carregar diretório Geo para resolução de rótulos de locais
+  const { directory: geoDirectory } = useGeoDirectory();
 
   const activeTabConfig = tabConfig[effectiveTab];
   const activeColumns = activeTabConfig.buildColumns();
@@ -526,7 +531,7 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
               <StateBadge state={service.state} />
             </td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{serviceBindingSummary(service)}</td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">{service.place?.[0]?.id ?? '-'}</td>
+            <td className="px-4 py-3 text-[0.88rem] text-app-muted"><PlaceLabelCompact place={service.place?.[0]} directory={geoDirectory} /></td>
           </tr>
         ));
 
@@ -1029,27 +1034,19 @@ function ServiceModal({
                 </Field>
               ) : null}
 
-              <Field label="Local (ID)">
-                <input
-                  className="geo-input"
-                  value={formState.placeId}
-                  onChange={(event) => onChange({ ...formState, placeId: event.target.value })}
-                  placeholder="Endereço ou site"
+              <Field label="Local">
+                <PlacePicker
+                  value={formState.placeId ? { id: formState.placeId, '@referredType': formState.placeType || 'GeographicAddress' } : null}
+                  onChange={(place) => {
+                    onChange({
+                      ...formState,
+                      placeId: place?.id ?? '',
+                      placeType: place?.['@referredType'] ?? 'GeographicAddress',
+                    });
+                  }}
+                  directory={geoDirectory}
+                  placeholder="Selecione um local…"
                 />
-              </Field>
-
-              <Field label="Tipo de local">
-                <select
-                  className="geo-input"
-                  value={formState.placeType}
-                  onChange={(event) => onChange({ ...formState, placeType: event.target.value })}
-                >
-                  {PLACE_TYPES.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
               </Field>
 
               {/*

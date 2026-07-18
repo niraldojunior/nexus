@@ -12,6 +12,17 @@ import {
   Settings,
   X,
 } from 'lucide-react';
+import type {
+  GeoStatus,
+  GeoLocation,
+  GeoAddress,
+  GeoSpec,
+  GeoSite,
+  GeoEvent,
+  GeoGeometry,
+} from '../services/geoApi';
+import { getJson, postJson, patchJson } from '../services/geoApi';
+import { siteKindFromSpec, siteKindLabel, formatAddress } from '../utils/placeLabel';
 
 declare global {
   interface Window {
@@ -20,71 +31,10 @@ declare global {
   }
 }
 
-type GeoStatus = 'planned' | 'active' | 'suspended' | 'terminated';
-type GeoGeometry = { type: 'Point'; coordinates: [number, number] };
-
-type GeoLocation = {
-  '@type': 'GeographicLocation';
-  id: string;
-  href: string;
-  geometryType: 'Point' | 'LineString' | 'Polygon';
-  geometry: GeoGeometry | { type: 'LineString'; coordinates: Array<[number, number]> } | { type: 'Polygon'; coordinates: Array<Array<[number, number]>> };
-  spatialRef: string;
-};
-
-type GeoAddress = {
-  '@type': 'GeographicAddress';
-  id: string;
-  href: string;
-  street: string;
-  streetNr?: string;
-  city?: string;
-  stateOrProvince?: string;
-  postcode?: string;
-  country?: string;
-  geographicLocationId?: string;
-  place?: { id: string; '@referredType': 'GeographicLocation' };
-};
-
-type GeoSpec = {
-  '@type': 'GeographicSiteSpecification';
-  id: string;
-  href: string;
-  name: string;
-  category: 'Region' | 'FunctionalGroup' | 'Site' | 'SubSite';
-  allowedParentSpecIds: string[];
-  allowedChildSpecIds: string[];
-};
-
 type RelatedSite = {
   id: string;
   relationshipType: string;
   '@referredType': 'GeographicSite';
-};
-
-type GeoSite = {
-  '@type': 'GeographicSite';
-  id: string;
-  href: string;
-  name: string;
-  status: GeoStatus;
-  siteSpecificationId: string;
-  siteSpecification: { id: string; '@referredType': 'GeographicSiteSpecification' };
-  place?: { id: string; '@referredType': 'GeographicLocation' };
-  address?: { id: string; '@referredType': 'GeographicAddress' };
-  parentSite?: { id: string; '@referredType': 'GeographicSite' };
-  relatedSite: RelatedSite[];
-  relatedParty: Array<{ id: string; role?: string; '@referredType': 'Party' }>;
-  characteristic: Array<{ group?: string; name: string; value: unknown; valueType?: string }>;
-};
-
-type GeoEvent = {
-  '@type': 'Event';
-  id: string;
-  eventType: string;
-  eventTime: string;
-  source: string;
-  eventData: Record<string, unknown>;
 };
 
 type DraftAddress = {
@@ -183,7 +133,7 @@ export default function GeoPage() {
     () =>
       sites.filter((site) => {
         const spec = specById.get(site.siteSpecificationId);
-        const layer = layerForSpec(spec);
+        const layer = siteKindFromSpec(spec);
         const hasPoint = Boolean(pointForSite(site, locationById));
         return (layer !== 'Site' && layers.has(layer)) || (!hasPoint && layers.has('Sem coordenada'));
       }),
@@ -219,7 +169,7 @@ export default function GeoPage() {
 
     for (const site of sites) {
       const spec = specById.get(site.siteSpecificationId);
-      const layer = layerForSpec(spec);
+      const layer = siteKindFromSpec(spec);
       counts[layer] = (counts[layer] ?? 0) + 1;
       if (!pointForSite(site, locationById)) counts['Sem coordenada'] += 1;
     }
@@ -295,7 +245,7 @@ export default function GeoPage() {
                       className="flex w-full items-center gap-3 rounded-[16px] px-3 py-2 text-left transition hover:bg-app-accent-soft"
                       onClick={() => selectSite(site)}
                     >
-                      <SiteIcon layer={layerForSpec(spec)} />
+                      <SiteIcon layer={siteKindFromSpec(spec)} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[0.92rem] font-semibold text-app-text">{site.name}</span>
                         <span className="block truncate text-[0.78rem] text-app-muted">{address ? formatAddress(address) : 'Sem endereco associado'}</span>
@@ -527,7 +477,7 @@ function GoogleMapPanel({
         map: mapRef.current,
         position: { lng: point[0], lat: point[1] },
         title: site.name,
-        label: markerLabel(layerForSpec(spec)),
+        label: markerLabel(siteKindFromSpec(spec)),
         icon: {
           path: window.google.maps.SymbolPath.CIRCLE,
           fillColor: markerColor(site, spec),
@@ -605,7 +555,7 @@ function FallbackMap({
               color: '#243041',
             }}
           >
-            {markerLabel(layerForSpec(spec))}
+            {markerLabel(siteKindFromSpec(spec))}
           </button>
         );
       })}
@@ -680,7 +630,7 @@ function FloatingPanel({
       {selectedSite ? (
         <button type="button" onClick={() => onOpenDetail(selectedSite)} className="w-full rounded-[18px] border border-app-border p-3 text-left hover:bg-app-accent-soft">
           <div className="flex items-center gap-3">
-            <SiteIcon layer={layerForSpec(spec)} />
+            <SiteIcon layer={siteKindFromSpec(spec)} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[0.95rem] font-semibold text-app-text">{selectedSite.name}</div>
               <div className="text-[0.78rem] text-app-muted">{spec?.name ?? 'Tipo nao informado'} · {statusLabel[selectedSite.status]}</div>
@@ -1185,7 +1135,7 @@ function HierarchyTree({
           className={`flex w-full items-center gap-2 rounded-[14px] px-3 py-2 text-left ${selectedSiteId === site.id ? 'bg-app-accent-soft text-app-text' : 'text-app-muted hover:bg-app-accent-soft'}`}
           style={{ paddingLeft: 12 + level * 18 }}
         >
-          <SiteIcon layer={layerForSpec(spec)} />
+          <SiteIcon layer={siteKindFromSpec(spec)} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[0.86rem] font-semibold">{site.name}</span>
             <span className="block truncate text-[0.72rem]">{spec?.name ?? 'Tipo nao informado'}</span>
@@ -1288,36 +1238,37 @@ function pointForSite(site: GeoSite, locations: Map<string, GeoLocation>): [numb
   return location.geometry.coordinates;
 }
 
-function formatAddress(address: GeoAddress): string {
-  return [address.street, address.streetNr, address.city, address.stateOrProvince, address.postcode].filter(Boolean).join(', ');
+
+// Converter tipo de site (SiteKind) para rótulo de marker no Google Maps.
+function markerLabel(kind: ReturnType<typeof siteKindFromSpec>): string {
+  const labels: Record<string, string> = {
+    CO: 'CO',
+    POP: 'P',
+    CTO: 'CT',
+    PI: 'PI',
+    REGION: 'R',
+    SUBSITE: 'S',
+    SITE: 'S',
+  };
+  return labels[kind] ?? 'S';
 }
 
-function layerForSpec(spec?: GeoSpec): SiteLayer {
-  const name = (spec?.name ?? '').toLowerCase();
-  if (name.includes('central') || name === 'co') return 'CO';
-  if (name.includes('pop')) return 'POP';
-  if (name.includes('cto') || name.includes('armario')) return 'CTO';
-  if (name.includes('instalacao') || name === 'pi') return 'PI';
-  return 'Site';
-}
-
-function markerLabel(layer: SiteLayer): string {
-  if (layer === 'CO') return 'CO';
-  if (layer === 'POP') return 'P';
-  if (layer === 'CTO') return 'CT';
-  if (layer === 'PI') return 'PI';
-  return 'S';
-}
-
+// Colorir o marker no mapa por tipo de site + status.
 function markerColor(site: GeoSite, spec?: GeoSpec): string {
   if (site.status === 'terminated') return '#9CA3AF';
   if (site.status === 'suspended') return '#F59E0B';
   if (site.status === 'planned') return '#9B59B6';
-  const layer = layerForSpec(spec);
-  if (layer === 'CTO') return '#1A9E7D';
-  if (layer === 'PI') return '#8B7500';
-  if (layer === 'POP') return '#004E89';
-  return '#FFD200';
+  const kind = siteKindFromSpec(spec);
+  const colors: Record<string, string> = {
+    CO: '#9B59B6',
+    POP: '#004E89',
+    CTO: '#1A9E7D',
+    PI: '#8B7500',
+    REGION: '#5A5A5A',
+    SUBSITE: '#5A5A5A',
+    SITE: '#FFD200',
+  };
+  return colors[kind] ?? '#FFD200';
 }
 
 function isParentAllowed(child?: GeoSpec, parent?: GeoSpec): boolean {
@@ -1327,23 +1278,6 @@ function isParentAllowed(child?: GeoSpec, parent?: GeoSpec): boolean {
   return true;
 }
 
-async function getJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { headers: API_HEADERS() });
-  if (!response.ok) throw new Error(`GET ${url} falhou (${response.status})`);
-  return await response.json() as T;
-}
-
-async function postJson<T = unknown>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(url, { method: 'POST', headers: API_HEADERS(), body: JSON.stringify(body) });
-  if (!response.ok) throw new Error(`POST ${url} falhou (${response.status})`);
-  return await response.json() as T;
-}
-
-async function patchJson<T = unknown>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(url, { method: 'PATCH', headers: API_HEADERS(), body: JSON.stringify(body) });
-  if (!response.ok) throw new Error(`PATCH ${url} falhou (${response.status})`);
-  return await response.json() as T;
-}
 
 function loadGoogleMaps(apiKey: string): Promise<void> {
   if (window.google?.maps) return Promise.resolve();

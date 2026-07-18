@@ -41,6 +41,9 @@ import {
   type ResourceTab,
 } from '../services/resourceApi';
 import type { Party } from '../services/partyApi';
+import { useGeoDirectory } from '../hooks/useGeoDirectory';
+import { PlaceLabelCompact } from '../components/PlaceLabel';
+import { PlacePicker } from '../components/PlacePicker';
 import ColumnFilterMenu from '../components/ColumnFilterMenu';
 import Field from '../components/Field';
 import { resourceFieldLabel } from '../utils/resourceFieldLabels';
@@ -94,12 +97,6 @@ type ResourceFormState = {
   serialNumber: string;
   partNumber: string;
   supportingPhysicalResourceId: string;
-};
-
-type PlaceOption = {
-  id: string;
-  referredType: string;
-  label: string;
 };
 
 type CatalogOption = {
@@ -229,11 +226,13 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   const selectAllRef = useRef<HTMLInputElement>(null);
   const refreshCatalogRef = useRef<null | (() => void)>(null);
 
+  // Carregar diretório Geo para resolução de rótulos de locais
+  const { directory: geoDirectory } = useGeoDirectory();
+
   const activeTabConfig = tabConfig[effectiveTab];
   const activeColumns = activeTabConfig.buildColumns();
   const categoryName = resourceCategories.find((item) => item.code === category)?.name ?? category;
   const CategoryIcon = categoryIconForCode(category);
-  const placeOptions = buildPlaceOptions([...physicalResourceOptions, ...logicalResourceOptions]);
 
   const specCategoryById = useMemo(() => {
     const map = new Map<string, string>();
@@ -696,7 +695,7 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
                 {readResourceSpecificationType(resourceSpecificationOptions, resourceItem.resourceSpecification?.id ?? resourceItem.resourceSpecificationId)}
               </td>
             ) : null}
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">{resourceItem.place?.id ?? '-'}</td>
+            <td className="px-4 py-3 text-[0.88rem] text-app-muted"><PlaceLabelCompact place={resourceItem.place} directory={geoDirectory} /></td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{resourceItem.status ?? '-'}</td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">
               {effectiveTab === 'PhysicalResource'
@@ -1044,7 +1043,6 @@ function ResourceModal({
   const physicalModelOptions = buildPhysicalModelOptions(resourceSpecificationOptions, category, formState.resourceType);
   const logicalSpecificationOptions = resourceSpecificationOptions.filter((spec) => spec.category === category);
   const selectedPhysicalResource = physicalResourceOptions.find((resource) => resource.id === formState.supportingPhysicalResourceId);
-  const selectedPlace = placeOptions.find((place) => place.id === formState.placeId);
   const selectedManufacturer = manufacturerOptions.find((party) => party.id === formState.manufacturerPartyId) ?? null;
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const typeMenuRef = useRef<HTMLDivElement>(null);
@@ -1390,29 +1388,18 @@ function ResourceModal({
                 </select>
               </Field>
               <Field label={resourceFieldLabel('placeId')}>
-                <select
-                  value={formState.placeId}
-                  onChange={(event) => {
-                    const nextPlace = placeOptions.find((place) => place.id === event.target.value);
+                <PlacePicker
+                  value={formState.placeId ? { id: formState.placeId, '@referredType': formState.placeType || 'GeographicSite' } : null}
+                  onChange={(place) => {
                     onChange({
                       ...formState,
-                      placeId: event.target.value,
-                      placeType: nextPlace?.referredType ?? '',
+                      placeId: place?.id ?? '',
+                      placeType: place?.['@referredType'] ?? '',
                     });
                   }}
-                  className="geo-input"
-                >
-                  <option value="">Sem place</option>
-                  {placeOptions.map((place) => (
-                    <option key={`${place.referredType}:${place.id}`} value={place.id}>
-                      {place.label}
-                    </option>
-                  ))}
-                  {formState.placeId && !selectedPlace ? <option value={formState.placeId}>{formState.placeId}</option> : null}
-                </select>
-              </Field>
-              <Field label={resourceFieldLabel('placeType')}>
-                <input value={formState.placeType || selectedPlace?.referredType || '—'} readOnly className="geo-input bg-app-accent-soft text-app-muted" />
+                  directory={geoDirectory}
+                  placeholder="Selecione um local…"
+                />
               </Field>
               <Field label="status">
                 <select value={formState.status} onChange={(event) => onChange({ ...formState, status: event.target.value })} className="geo-input">
@@ -1478,29 +1465,18 @@ function ResourceModal({
                 </span>
               </Field>
               <Field label={resourceFieldLabel('placeId')}>
-                <select
-                  value={formState.placeId}
-                  onChange={(event) => {
-                    const nextPlace = placeOptions.find((place) => place.id === event.target.value);
+                <PlacePicker
+                  value={formState.placeId ? { id: formState.placeId, '@referredType': formState.placeType || 'GeographicSite' } : null}
+                  onChange={(place) => {
                     onChange({
                       ...formState,
-                      placeId: event.target.value,
-                      placeType: nextPlace?.referredType ?? '',
+                      placeId: place?.id ?? '',
+                      placeType: place?.['@referredType'] ?? '',
                     });
                   }}
-                  className="geo-input"
-                >
-                  <option value="">Sem place</option>
-                  {placeOptions.map((place) => (
-                    <option key={`${place.referredType}:${place.id}`} value={place.id}>
-                      {place.label}
-                    </option>
-                  ))}
-                  {formState.placeId && !selectedPlace ? <option value={formState.placeId}>{formState.placeId}</option> : null}
-                </select>
-              </Field>
-              <Field label={resourceFieldLabel('placeType')}>
-                <input value={formState.placeType || selectedPlace?.referredType || '—'} readOnly className="geo-input bg-app-accent-soft text-app-muted" />
+                  directory={geoDirectory}
+                  placeholder="Selecione um local…"
+                />
               </Field>
               <Field label="status">
                 <select value={formState.status} onChange={(event) => onChange({ ...formState, status: event.target.value })} className="geo-input">
@@ -1742,22 +1718,6 @@ function logicalDetails(resource: LogicalResource): string {
   return resource.supportingPhysicalResourceId ?? '-';
 }
 
-function buildPlaceOptions(resources: ResourceEntity[]): PlaceOption[] {
-  const options = new Map<string, PlaceOption>();
-  for (const resource of resources) {
-    const place = resource.place;
-    if (!place) continue;
-    const key = `${place['@referredType']}::${place.id}`;
-    if (!options.has(key)) {
-      options.set(key, {
-        id: place.id,
-        referredType: place['@referredType'],
-        label: `${place.id} · ${place['@referredType']}`,
-      });
-    }
-  }
-  return [...options.values()].sort((left, right) => left.label.localeCompare(right.label));
-}
 
 function buildPhysicalModelOptions(
   resourceSpecifications: ResourceSpecification[],

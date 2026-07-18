@@ -909,7 +909,6 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
           resourceSpecificationOptions={resourceSpecificationOptions}
           manufacturerOptions={manufacturerOptions}
           physicalResourceOptions={physicalResourceOptions}
-          placeOptions={placeOptions}
           lookupLoading={lookupLoading}
           saving={saving}
           catalogSelectionValid={catalogSelectionValid}
@@ -1002,7 +1001,6 @@ function ResourceModal({
   resourceSpecificationOptions,
   manufacturerOptions,
   physicalResourceOptions,
-  placeOptions,
   lookupLoading,
   saving,
   catalogSelectionValid,
@@ -1019,7 +1017,6 @@ function ResourceModal({
   resourceSpecificationOptions: ResourceSpecification[];
   manufacturerOptions: Party[];
   physicalResourceOptions: PhysicalResource[];
-  placeOptions: PlaceOption[];
   lookupLoading: boolean;
   saving: boolean;
   catalogSelectionValid: boolean;

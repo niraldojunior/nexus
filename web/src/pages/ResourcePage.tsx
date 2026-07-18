@@ -42,6 +42,7 @@ import {
 } from '../services/resourceApi';
 import type { Party } from '../services/partyApi';
 import { useGeoDirectory } from '../hooks/useGeoDirectory';
+import { useNavigation } from '../hooks/useNavigation';
 import { PlaceLabelCompact } from '../components/PlaceLabel';
 import { PlacePicker } from '../components/PlacePicker';
 import ColumnFilterMenu from '../components/ColumnFilterMenu';
@@ -228,6 +229,7 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
 
   // Carregar diretório Geo para resolução de rótulos de locais
   const { directory: geoDirectory } = useGeoDirectory();
+  const { goToGeo } = useNavigation();
 
   const activeTabConfig = tabConfig[effectiveTab];
   const activeColumns = activeTabConfig.buildColumns();
@@ -695,7 +697,21 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
                 {readResourceSpecificationType(resourceSpecificationOptions, resourceItem.resourceSpecification?.id ?? resourceItem.resourceSpecificationId)}
               </td>
             ) : null}
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted"><PlaceLabelCompact place={resourceItem.place} directory={geoDirectory} /></td>
+            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
+              <div className="flex items-center gap-2">
+                <PlaceLabelCompact place={resourceItem.place} directory={geoDirectory} />
+                {resourceItem.place?.id && (
+                  <button
+                    type="button"
+                    onClick={() => goToGeo(resourceItem.place!.id)}
+                    className="text-[0.75rem] font-semibold text-app-accent hover:text-app-accent-border transition"
+                    title="Ver no mapa de locais"
+                  >
+                    📍
+                  </button>
+                )}
+              </div>
+            </td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{resourceItem.status ?? '-'}</td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">
               {effectiveTab === 'PhysicalResource'

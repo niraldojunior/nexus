@@ -35,6 +35,7 @@ import type { ResourceEntity } from '../services/resourceApi';
 import ColumnFilterMenu from '../components/ColumnFilterMenu';
 import Field from '../components/Field';
 import { useGeoDirectory } from '../hooks/useGeoDirectory';
+import { useNavigation } from '../hooks/useNavigation';
 import { PlaceLabelCompact } from '../components/PlaceLabel';
 import { PlacePicker } from '../components/PlacePicker';
 import { SERVICE_CATEGORY_DEFAULTS } from '../data/serviceCatalogDefaults';
@@ -176,6 +177,7 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
 
   // Carregar diretório Geo para resolução de rótulos de locais
   const { directory: geoDirectory } = useGeoDirectory();
+  const { goToGeo } = useNavigation();
 
   const activeTabConfig = tabConfig[effectiveTab];
   const activeColumns = activeTabConfig.buildColumns();
@@ -531,7 +533,21 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
               <StateBadge state={service.state} />
             </td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{serviceBindingSummary(service)}</td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted"><PlaceLabelCompact place={service.place?.[0]} directory={geoDirectory} /></td>
+            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
+              <div className="flex items-center gap-2">
+                <PlaceLabelCompact place={service.place?.[0]} directory={geoDirectory} />
+                {service.place?.[0]?.id && (
+                  <button
+                    type="button"
+                    onClick={() => goToGeo(service.place![0].id)}
+                    className="text-[0.75rem] font-semibold text-app-accent hover:text-app-accent-border transition"
+                    title="Ver no mapa de locais"
+                  >
+                    📍
+                  </button>
+                )}
+              </div>
+            </td>
           </tr>
         ));
 

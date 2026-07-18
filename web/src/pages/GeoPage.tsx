@@ -24,6 +24,7 @@ import type {
 import { getJson, postJson, patchJson } from '../services/geoApi';
 import { siteKindFromSpec, siteKindLabel, formatAddress } from '../utils/placeLabel';
 import { useEquipmentCatalog } from '../hooks/useEquipmentCatalog';
+import { useEquipmentInventory, identifyEquipmentType, equipmentTypeColor, equipmentTypeLabel } from '../hooks/useEquipmentInventory';
 import { useNavigation } from '../hooks/useNavigation';
 import { TabSelector, ListTab, GuidedSignupModal, AddEquipmentModal, type TabId } from './geo-tabs';
 
@@ -106,7 +107,9 @@ export default function GeoPage() {
   const [addEquipmentOpen, setAddEquipmentOpen] = useState(false);
 
   const { equipment } = useEquipmentCatalog();
+  const { equipment: inventoryEquipment } = useEquipmentInventory();
   const { navParams, clearNav } = useNavigation();
+  const [showEquipment, setShowEquipment] = useState(true);
 
   const locationById = useMemo(() => new Map(locations.map((item) => [item.id, item])), [locations]);
   const addressById = useMemo(() => new Map(addresses.map((item) => [item.id, item])), [addresses]);
@@ -256,6 +259,7 @@ export default function GeoPage() {
           draftAddress={draftAddress}
           onSelectSite={selectSite}
           onDraftAddress={setDraftAddress}
+          equipment={showEquipment ? inventoryEquipment : []}
         />
 
         <div className="absolute left-5 top-5 z-30 flex max-w-[calc(100%-2.5rem)] flex-wrap items-start gap-3">
@@ -350,6 +354,23 @@ export default function GeoPage() {
                   <StatusPill tone={layers.has(layer) ? 'blue' : 'amber'}>{layers.has(layer) ? 'Visivel' : 'Oculto'}</StatusPill>
                 </button>
               ))}
+            </div>
+            <div className="mt-4 border-t border-app-border pt-4">
+              <button
+                type="button"
+                onClick={() => setShowEquipment((current) => !current)}
+                className={`flex w-full items-center justify-between rounded-[16px] border px-3 py-2 text-left text-[0.86rem] font-semibold transition ${
+                  showEquipment
+                    ? 'border-app-accent-border bg-app-accent-soft text-app-text'
+                    : 'border-app-border bg-white text-app-muted hover:bg-app-accent-soft'
+                }`}
+              >
+                <span>⚡ Equipamentos</span>
+                <StatusPill tone={showEquipment ? 'blue' : 'amber'}>{showEquipment ? 'Visível' : 'Oculto'}</StatusPill>
+              </button>
+              <div className="mt-2 text-[0.75rem] text-app-muted">
+                {inventoryEquipment.length} equipamento(s) no inventário
+              </div>
             </div>
           </div>
         ) : null}
@@ -514,6 +535,7 @@ function GoogleMapPanel({
   draftAddress,
   onSelectSite,
   onDraftAddress,
+  equipment = [],
 }: {
   sites: GeoSite[];
   specs: Map<string, GeoSpec>;
@@ -522,10 +544,12 @@ function GoogleMapPanel({
   draftAddress: DraftAddress | null;
   onSelectSite: (site: GeoSite) => void;
   onDraftAddress: (address: DraftAddress) => void;
+  equipment?: any[];
 }) {
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
+  const equipmentMarkersRef = useRef<any[]>([]);
   const draftMarkerRef = useRef<any>(null);
   const [mapsReady, setMapsReady] = useState(false);
 
@@ -608,6 +632,41 @@ function GoogleMapPanel({
     });
     mapRef.current.panTo({ lng, lat });
   }, [draftAddress, mapsReady]);
+
+  // Renderizar equipamentos no mapa
+  useEffect(() => {
+    if (!mapsReady || !mapRef.current) return;
+    equipmentMarkersRef.current.forEach((marker) => marker.setMap(null));
+    equipmentMarkersRef.current = [];
+
+    for (const equip of equipment) {
+      if (!equip.place?.id) continue;
+      // Para equipamentos, assumir que place.id é uma location (não site)
+      const location = locationById.get(equip.place.id);
+      if (!location?.geometry?.coordinates) continue;
+
+      const [lng, lat] = location.geometry.coordinates;
+      const type = identifyEquipmentType(equip);
+      const color = equipmentTypeColor[type] || '#6B7280';
+      const label = equipmentTypeLabel[type] || '?';
+
+      const marker = new window.google.maps.Marker({
+        map: mapRef.current,
+        position: { lng, lat },
+        title: equip.name,
+        label,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          fillColor: color,
+          fillOpacity: 0.85,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+          scale: 7,
+        },
+      });
+      equipmentMarkersRef.current.push(marker);
+    }
+  }, [equipment, locationById, mapsReady]);
 
   if (!GOOGLE_MAPS_KEY) {
     return <FallbackMap sites={sites} specs={specs} locationById={locationById} draftAddress={draftAddress} onSelectSite={onSelectSite} />;

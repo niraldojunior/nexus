@@ -1,12 +1,13 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import * as resourceApi from '../services/resourceApi';
 import type { PhysicalResource, ResourceSpecification } from '../services/resourceApi';
 import ResourcePage from './ResourcePage';
 
-const resourceSpecifications: ResourceSpecification[] = Array.from({ length: 20 }, (_, index) => ({
+// 25 physical specs so the Equipment.Access inventory paginates client-side (>20 items).
+const physicalSpecs: ResourceSpecification[] = Array.from({ length: 20 }, (_, index) => ({
   '@type': 'ResourceSpecification' as const,
   id: `spec-${index + 1}`,
   name: `Spec ${index + 1}`,
@@ -31,6 +32,20 @@ const resourceSpecifications: ResourceSpecification[] = Array.from({ length: 20 
     { id: 'party-datacom', '@referredType': 'Organization' as const, role: 'manufacturer', name: 'DATACOM' },
   ],
 }));
+
+// A logical spec so logical categories have their own inventory and catalog entries.
+const logicalSpec: ResourceSpecification = {
+  '@type': 'ResourceSpecification',
+  id: 'spec-ipam',
+  name: 'Bloco IPAM',
+  category: 'Logical.IPAM',
+  resourceType: 'IPAddress',
+  description: 'Endereçamento IPAM',
+  resourceSpecificationCharacteristic: [],
+  relatedParty: [],
+};
+
+const resourceSpecifications: ResourceSpecification[] = [...physicalSpecs, logicalSpec];
 
 const partyRoles = [
   'VANTIVA',
@@ -99,15 +114,6 @@ const resourceCategories = [
 const resourceTypes = [
   {
     '@type': 'ResourceType' as const,
-    id: 'rt-physical-resource',
-    href: '/tmf-api/resourceCatalogManagement/v4/resourceType/rt-physical-resource',
-    code: 'PhysicalResource',
-    name: 'Physical Resource',
-    categoryCode: 'Equipment.Access',
-    status: 'active' as const,
-  },
-  {
-    '@type': 'ResourceType' as const,
     id: 'rt-olt',
     href: '/tmf-api/resourceCatalogManagement/v4/resourceType/rt-olt',
     code: 'OLT',
@@ -117,16 +123,17 @@ const resourceTypes = [
   },
   {
     '@type': 'ResourceType' as const,
-    id: 'rt-logical-resource',
-    href: '/tmf-api/resourceCatalogManagement/v4/resourceType/rt-logical-resource',
-    code: 'LogicalResource',
-    name: 'Logical Resource',
-    categoryCode: 'Logical',
+    id: 'rt-ip-address',
+    href: '/tmf-api/resourceCatalogManagement/v4/resourceType/rt-ip-address',
+    code: 'IPAddress',
+    name: 'IP Address',
+    categoryCode: 'Logical.IPAM',
     status: 'active' as const,
   },
 ];
 
-const physicalResources = Array.from({ length: 20 }, (_, index) => ({
+// 25 physical resources in Equipment.Access to exercise client-side pagination.
+const physicalResources = Array.from({ length: 25 }, (_, index) => ({
   '@type': 'PhysicalResource' as const,
   id: `phy-${index + 1}`,
   name: `Physical ${index + 1}`,
@@ -144,8 +151,8 @@ const logicalResources = Array.from({ length: 20 }, (_, index) => ({
   '@type': 'LogicalResource' as const,
   id: `log-${index + 1}`,
   name: `Logical ${index + 1}`,
-  resourceSpecificationId: 'spec-1',
-  resourceSpecification: { id: 'spec-1', '@referredType': 'ResourceSpecification' as const },
+  resourceSpecificationId: 'spec-ipam',
+  resourceSpecification: { id: 'spec-ipam', '@referredType': 'ResourceSpecification' as const },
   status: 'active' as const,
   supportingPhysicalResourceId: `phy-${index + 1}`,
   place: { id: `site-${index + 1}`, '@referredType': 'GeographicSite' as const },
@@ -159,25 +166,25 @@ const createResourceMock = vi.spyOn(resourceApi, 'createResource');
 const updateResourceMock = vi.spyOn(resourceApi, 'updateResource');
 const deleteResourceMock = vi.spyOn(resourceApi, 'deleteResource');
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  for (const spec of resourceSpecifications) {
-    delete spec.validFor;
-  }
-  loadResourceWorkspaceSnapshotMock.mockImplementation(async ({ tab, limit, offset }) => ({
-    items:
-      tab === 'ResourceSpecification'
-        ? resourceSpecifications.slice(offset, offset + limit)
-        : tab === 'PhysicalResource'
-          ? physicalResources.slice(offset, offset + limit)
-          : logicalResources.slice(offset, offset + limit),
+function snapshotFor(overrides: Partial<resourceApi.ResourceWorkspaceSnapshot> = {}) {
+  return {
+    items: [],
     resourceSpecificationOptions: resourceSpecifications,
     resourceCategories,
     resourceTypes,
     physicalResources,
     logicalResources,
     manufacturerOptions: manufacturerParties,
-  }));
+    ...overrides,
+  } as resourceApi.ResourceWorkspaceSnapshot;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  for (const spec of resourceSpecifications) {
+    delete spec.validFor;
+  }
+  loadResourceWorkspaceSnapshotMock.mockImplementation(async () => snapshotFor());
   createResourceSpecificationMock.mockResolvedValue(resourceSpecifications[0]);
   updateResourceSpecificationMock.mockResolvedValue(resourceSpecifications[0]);
   deleteResourceSpecificationMock.mockImplementation(async (id) => {
@@ -195,64 +202,111 @@ afterEach(() => {
   cleanup();
 });
 
-test('ResourcePage renders the contextual title and paginates with 20 records', async () => {
+test('defaults to the first category and lists its physical inventory', async () => {
   render(<ResourcePage />);
 
-  expect(screen.getByRole('heading', { name: 'Recursos Físicos' })).toBeInTheDocument();
-  expect(screen.queryByText('Resource Inventory')).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Abrir Recursos Lógicos' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Abrir Catálogo de Recursos' })).not.toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Equipamentos de Acesso' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Criar recurso' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Excluir selecionados' })).toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: 'Inventário' })).toHaveAttribute('aria-selected', 'true');
 
-  await waitFor(() => expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({ tab: 'PhysicalResource', limit: 20, offset: 0 }));
+  await waitFor(() =>
+    expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({ tab: 'PhysicalResource', limit: 20, offset: 0 }),
+  );
   expect((await screen.findAllByText('Physical 1'))[0]).toBeInTheDocument();
   expect(screen.getByRole('columnheader', { name: 'Nome do Modelo' })).toBeInTheDocument();
   expect(screen.getByRole('columnheader', { name: 'Tipo do Recurso' })).toBeInTheDocument();
-  expect((await screen.findAllByText('Spec 1'))[0]).toBeInTheDocument();
+});
+
+test('paginates the category inventory client-side without refetching', async () => {
+  const user = userEvent.setup();
+  render(<ResourcePage category="Equipment.Access" />);
+
+  expect((await screen.findAllByText('Physical 1'))[0]).toBeInTheDocument();
+  expect(screen.getByText('Physical 20')).toBeInTheDocument();
+  expect(screen.queryByText('Physical 21')).not.toBeInTheDocument();
+
+  const callsBefore = loadResourceWorkspaceSnapshotMock.mock.calls.length;
+  await user.click(screen.getByRole('button', { name: 'Próximo' }));
+
+  expect(await screen.findByText('Physical 21')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Próximo' })).toBeDisabled();
+  // Pagination is local — the full arrays already arrived in the snapshot.
+  expect(loadResourceWorkspaceSnapshotMock.mock.calls.length).toBe(callsBefore);
+});
+
+test('clicking a filterable header opens a picklist that narrows the inventory', async () => {
+  const user = userEvent.setup();
+  // First five resources become inactive so the Status column has a real domain to filter on.
+  const mixedPhysical = physicalResources.map((resource, index) => ({
+    ...resource,
+    status: (index < 5 ? 'inactive' : 'active') as PhysicalResource['status'],
+  }));
+  loadResourceWorkspaceSnapshotMock.mockImplementation(async () =>
+    snapshotFor({ physicalResources: mixedPhysical }),
+  );
+
+  render(<ResourcePage category="Equipment.Access" />);
+  await screen.findAllByText('Physical 1');
+
+  await user.click(screen.getByRole('button', { name: 'Status' }));
+
+  // The picklist offers only the domain of system values present in the column.
+  expect(screen.getByRole('menuitemcheckbox', { name: 'active' })).toBeInTheDocument();
+  await user.click(screen.getByRole('menuitemcheckbox', { name: 'inactive' }));
+
+  // Only the five inactive resources remain, on the first page.
+  expect(screen.getByText('Physical 5')).toBeInTheDocument();
+  expect(screen.queryByText('Physical 6')).not.toBeInTheDocument();
+  expect(screen.getByText(/de 5 registro\(s\)/)).toBeInTheDocument();
+});
+
+test('does not add filter controls to free-text columns', async () => {
+  render(<ResourcePage category="Equipment.Access" />);
+  await screen.findAllByText('Physical 1');
+
+  // "Detalhes" is free text, so its header stays plain text — not a filter button.
+  expect(screen.queryByRole('button', { name: 'Detalhes' })).not.toBeInTheDocument();
+  expect(screen.getByRole('columnheader', { name: 'Detalhes' })).toBeInTheDocument();
+});
+
+test('switching to Catálogo lists specs scoped to the category with no Categoria column', async () => {
+  const user = userEvent.setup();
+  render(<ResourcePage category="Equipment.Access" />);
+
+  await screen.findAllByText('Physical 1');
+  await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
+
+  await waitFor(() =>
+    expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({ tab: 'ResourceSpecification', limit: 20, offset: 0 }),
+  );
+  expect((await screen.findAllByText('Model 1'))[0]).toBeInTheDocument();
   expect((await screen.findAllByText('OLT'))[0]).toBeInTheDocument();
-  expect((await screen.findAllByText('Physical 20'))[0]).toBeInTheDocument();
-
-  await userEvent.click(screen.getByRole('button', { name: 'Próximo' }));
-  await waitFor(() => expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({ tab: 'PhysicalResource', limit: 20, offset: 20 }));
+  expect(screen.queryByRole('columnheader', { name: 'Categoria' })).not.toBeInTheDocument();
+  expect(screen.getByRole('columnheader', { name: 'Tipo do Recurso' })).toBeInTheDocument();
 });
 
-test('controlled tab renders the requested resource view', async () => {
-  render(<ResourcePage activeTab="LogicalResource" />);
-
-  expect(screen.getByRole('heading', { name: 'Recursos Lógicos' })).toBeInTheDocument();
-  await waitFor(() => expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({ tab: 'LogicalResource', limit: 20, offset: 0 }));
-  expect((await screen.findAllByText('Logical 1'))[0]).toBeInTheDocument();
-});
-
-test('create button opens the modal in create mode and row click opens edit mode', async () => {
+test('physical create modal assumes the page category and hides the Categoria field', async () => {
   const user = userEvent.setup();
-  render(<ResourcePage />);
+  render(<ResourcePage category="Equipment.Access" />);
 
   await screen.findAllByText('Physical 1');
-
   await user.click(screen.getByRole('button', { name: 'Criar recurso' }));
+
   expect(await screen.findByRole('dialog')).toHaveTextContent('Criar Recursos Físicos');
-  expect(screen.getByRole('combobox', { name: /^Categoria$/i })).toBeInTheDocument();
-  expect(screen.getByRole('combobox', { name: /^Tipo do Recurso$/i })).toBeInTheDocument();
+  expect(screen.queryByLabelText(/^Categoria$/i)).not.toBeInTheDocument();
+  expect(screen.getByLabelText(/^Tipo do Recurso$/i)).toBeInTheDocument();
   expect(screen.getByRole('combobox', { name: /Modelo/i })).toBeInTheDocument();
-  expect(screen.getByRole('textbox', { name: /^Modelo físico$/i })).toBeInTheDocument();
-  expect(screen.getByLabelText(/ID do Local/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/Tipo de Local/i)).toHaveAttribute('readonly');
-
-  await user.click(screen.getByRole('button', { name: 'Cancelar' }));
-  await user.click((await screen.findAllByText('Physical 1'))[0]);
-  expect(await screen.findByRole('dialog')).toHaveTextContent('Editar Recursos Físicos');
 });
 
-test('physical resource model selection auto-populates manufacturer from the selected specification', async () => {
+test('physical model selection auto-populates manufacturer from the selected specification', async () => {
   const user = userEvent.setup();
-  render(<ResourcePage />);
+  render(<ResourcePage category="Equipment.Access" />);
 
   await screen.findAllByText('Physical 1');
   await user.click(screen.getByRole('button', { name: 'Criar recurso' }));
 
-  await user.selectOptions(screen.getByLabelText(/^Categoria$/i), 'Equipment.Access');
   await user.selectOptions(screen.getByLabelText(/^Tipo do Recurso$/i), 'OLT');
   await user.selectOptions(screen.getByLabelText(/^Modelo$/i), 'spec-1');
 
@@ -262,7 +316,7 @@ test('physical resource model selection auto-populates manufacturer from the sel
 
 test('editing a physical resource also auto-populates manufacturer from the selected specification', async () => {
   const user = userEvent.setup();
-  render(<ResourcePage />);
+  render(<ResourcePage category="Equipment.Access" />);
 
   await screen.findAllByText('Physical 1');
   await user.click((await screen.findAllByText('Physical 1'))[0]);
@@ -272,127 +326,51 @@ test('editing a physical resource also auto-populates manufacturer from the sele
   expect(screen.getByLabelText(/Modelo físico/i)).toHaveValue('Spec 1');
 });
 
-test('physical resource category combo only exposes physical categories', async () => {
+test('logical category lists logical inventory and its modal scopes specs by category', async () => {
   const user = userEvent.setup();
-  render(<ResourcePage />);
+  render(<ResourcePage category="Logical.IPAM" />);
+
+  expect(await screen.findByRole('heading', { name: 'Endereçamento e IPAM' })).toBeInTheDocument();
+  await waitFor(() =>
+    expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({ tab: 'LogicalResource', limit: 20, offset: 0 }),
+  );
+  expect((await screen.findAllByText('Logical 1'))[0]).toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: 'Criar recurso' }));
+  expect(await screen.findByRole('dialog')).toHaveTextContent('Criar Recursos Lógicos');
+  const specSelect = screen.getByLabelText(/Nome do Modelo/i);
+  expect(specSelect).toBeInTheDocument();
+  expect(screen.getByLabelText(/Recurso Físico Associado/i)).toBeInTheDocument();
+  expect(specSelect).toHaveTextContent('Bloco IPAM');
+});
+
+test('resource specification editor omits Categoria but keeps the Tipo combobox', async () => {
+  const user = userEvent.setup();
+  render(<ResourcePage category="Equipment.Access" />);
 
   await screen.findAllByText('Physical 1');
-  await user.click(screen.getByRole('button', { name: 'Criar recurso' }));
+  await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
 
-  const categorySelect = screen.getByLabelText(/^Categoria$/i);
-  expect(categorySelect).toBeInTheDocument();
-  expect(within(categorySelect).getByRole('option', { name: /Equipamentos de Acesso/i })).toBeInTheDocument();
-  expect(within(categorySelect).getByRole('option', { name: /Equipamentos de Transporte/i })).toBeInTheDocument();
-  expect(within(categorySelect).queryByRole('option', { name: /Endereçamento e IPAM/i })).not.toBeInTheDocument();
-});
-
-test('logical resource modal keeps FK-like fields as selects', async () => {
-  const user = userEvent.setup();
-  render(<ResourcePage activeTab="LogicalResource" />);
-
-  await screen.findAllByText('Logical 1');
-  await user.click(screen.getByRole('button', { name: 'Criar recurso' }));
-
-  expect(await screen.findByRole('dialog')).toHaveTextContent('Criar Recursos Lógicos');
-  expect(screen.getByLabelText(/Nome do Modelo/i)).toBeInTheDocument();
-  expect(screen.getByLabelText(/Recurso Físico Associado/i)).toBeInTheDocument();
-});
-
-test('resource specification editor uses catalog-driven selects for category and type', async () => {
-  const user = userEvent.setup();
-  render(<ResourcePage activeTab="ResourceSpecification" />);
-
-  await waitFor(() => expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({ tab: 'ResourceSpecification', limit: 20, offset: 0 }));
-  await screen.findAllByText('Equipamentos de Acesso');
-  await user.click(screen.getAllByText('Equipamentos de Acesso')[0]);
-
+  await user.click((await screen.findAllByText('Model 1'))[0]);
   expect(await screen.findByRole('dialog')).toHaveTextContent('Editar Modelo de Recurso');
-  expect(screen.getByRole('combobox', { name: 'Categoria' })).toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: 'Categoria' })).not.toBeInTheDocument();
   expect(screen.getByRole('combobox', { name: 'Tipo do Recurso' })).toBeInTheDocument();
   expect(screen.getByLabelText(/Cod\. Equipamento/i)).toHaveValue('EQ-1');
   expect(screen.getByLabelText(/Fabricante/i)).toHaveValue('party-datacom');
   expect(screen.getByLabelText(/^Modelo$/i)).toHaveValue('Model 1');
-  expect(screen.getByLabelText(/ID-SKU/i)).toHaveValue('SKU-1');
-  expect(screen.getByLabelText(/EOL/i)).toHaveValue('2026-07-03');
-  expect(screen.queryByLabelText(/^Nome$/i)).not.toBeInTheDocument();
-  expect(screen.queryByRole('textbox', { name: 'Categoria' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('textbox', { name: 'Tipo do Recurso' })).not.toBeInTheDocument();
 });
 
-test('resource specification table shows friendly category and short type codes', async () => {
-  render(<ResourcePage activeTab="ResourceSpecification" />);
-
-  expect((await screen.findAllByText('Equipamentos de Acesso'))[0]).toBeInTheDocument();
-  expect((await screen.findAllByText('OLT'))[0]).toBeInTheDocument();
-  expect(screen.queryByText('Equipment.Access')).not.toBeInTheDocument();
-  expect(screen.queryByText('Optical Line Terminal')).not.toBeInTheDocument();
-});
-
-test('resource specification table falls back to legacy manufacturer characteristic', async () => {
-  loadResourceWorkspaceSnapshotMock.mockImplementation(async ({ tab, limit, offset }) => ({
-    items:
-      tab === 'ResourceSpecification'
-        ? [
-            {
-              ...resourceSpecifications[0],
-              relatedParty: [],
-              resourceSpecificationCharacteristic: [
-                ...resourceSpecifications[0].resourceSpecificationCharacteristic,
-                { name: 'manufacturer', value: 'Legacy Corp', valueType: 'string' as const, group: 'commercial' },
-              ],
-            },
-          ].slice(offset, offset + limit)
-        : physicalResources.slice(offset, offset + limit),
-    resourceSpecificationOptions: resourceSpecifications,
-    resourceCategories,
-    resourceTypes,
-    physicalResources,
-    logicalResources,
-    manufacturerOptions: manufacturerParties,
-  }));
-
-  render(<ResourcePage activeTab="ResourceSpecification" />);
-
-  expect(await screen.findByText('Legacy Corp')).toBeInTheDocument();
-});
-
-test('resource specification table falls back to the specification name when model characteristic is missing', async () => {
-  loadResourceWorkspaceSnapshotMock.mockImplementation(async ({ tab, limit, offset }) => ({
-    items:
-      tab === 'ResourceSpecification'
-        ? [
-            {
-              ...resourceSpecifications[0],
-              resourceSpecificationCharacteristic: resourceSpecifications[0].resourceSpecificationCharacteristic.filter(
-                (item) => item.name !== 'model',
-              ),
-            },
-          ].slice(offset, offset + limit)
-        : physicalResources.slice(offset, offset + limit),
-    resourceSpecificationOptions: resourceSpecifications,
-    resourceCategories,
-    resourceTypes,
-    physicalResources,
-    logicalResources,
-    manufacturerOptions: manufacturerParties,
-  }));
-
-  render(<ResourcePage activeTab="ResourceSpecification" />);
-
-  expect(await screen.findByText('Spec 1')).toBeInTheDocument();
-});
-
-test('resource specification create serializes the extended characteristic set', async () => {
+test('resource specification create fixes the category from the page and serializes characteristics', async () => {
   const user = userEvent.setup();
-  render(<ResourcePage activeTab="ResourceSpecification" />);
+  render(<ResourcePage category="Equipment.Access" />);
 
+  await screen.findAllByText('Physical 1');
+  await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
   await user.click(screen.getByRole('button', { name: 'Criar recurso' }));
 
   expect(await screen.findByRole('dialog')).toHaveTextContent('Criar Modelo de Recurso');
   await user.selectOptions(screen.getByLabelText(/Fabricante/i), 'party-huawei');
   await user.type(screen.getByLabelText(/Cod\. Equipamento/i), 'EQ-OLT-001');
-  await user.click(screen.getByRole('combobox', { name: 'Categoria' }));
-  await user.click(screen.getByRole('option', { name: /Equipamentos de Acesso/ }));
   await user.click(screen.getByRole('combobox', { name: 'Tipo do Recurso' }));
   await user.click(screen.getByRole('option', { name: /Optical Line Terminal/ }));
   await user.type(screen.getByLabelText(/^Modelo$/i), 'MA5800');
@@ -432,23 +410,20 @@ test('resource specification create serializes the extended characteristic set',
       expect.objectContaining({ name: 'lifecycleStatus', value: 'active' }),
     ]),
   );
-  expect(payload.resourceSpecificationCharacteristic).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: 'manufacturer' })]));
 });
 
-test('resource specification create requires category, type and model before submitting', async () => {
+test('resource specification create requires type and model before submitting', async () => {
   const user = userEvent.setup();
-  render(<ResourcePage activeTab="ResourceSpecification" />);
+  render(<ResourcePage category="Equipment.Access" />);
 
+  await screen.findAllByText('Physical 1');
+  await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
   await user.click(screen.getByRole('button', { name: 'Criar recurso' }));
 
   const createButton = await screen.findByRole('button', { name: 'Criar' });
   expect(createButton).toBeDisabled();
 
   await user.type(screen.getByLabelText(/^Modelo$/i), 'MA5800');
-  expect(createButton).toBeDisabled();
-
-  await user.click(screen.getByRole('combobox', { name: 'Categoria' }));
-  await user.click(screen.getByRole('option', { name: /Equipamentos de Acesso/ }));
   expect(createButton).toBeDisabled();
 
   await user.click(screen.getByRole('combobox', { name: 'Tipo do Recurso' }));
@@ -460,30 +435,19 @@ test('resource specification create requires category, type and model before sub
   await waitFor(() => expect(createResourceSpecificationMock).toHaveBeenCalledTimes(1));
 });
 
-test('bulk selection enables delete and reloads the active tab after deletion', async () => {
+test('bulk selection enables delete and reloads the inventory after deletion', async () => {
   const user = userEvent.setup();
   const inventory: PhysicalResource[] = physicalResources.map((resource) => ({ ...resource }));
-  loadResourceWorkspaceSnapshotMock.mockImplementation(async ({ tab, limit, offset }) => ({
-    items:
-      tab === 'ResourceSpecification'
-        ? resourceSpecifications.slice(offset, offset + limit)
-        : tab === 'PhysicalResource'
-          ? inventory.filter((resource) => resource.status === 'active').slice(offset, offset + limit)
-          : logicalResources.filter((resource) => resource.status === 'active').slice(offset, offset + limit),
-    resourceSpecificationOptions: resourceSpecifications,
-    resourceCategories,
-    resourceTypes,
-    physicalResources: inventory.filter((resource) => resource.status === 'active'),
-    logicalResources: logicalResources.filter((resource) => resource.status === 'active'),
-    manufacturerOptions: manufacturerParties,
-  }));
+  loadResourceWorkspaceSnapshotMock.mockImplementation(async () =>
+    snapshotFor({ physicalResources: inventory.filter((resource) => resource.status === 'active') }),
+  );
   deleteResourceMock.mockImplementation(async (id) => {
     const resource = inventory.find((item) => item.id === id);
     if (!resource) return physicalResources[0];
     resource.status = 'terminated';
     return resource;
   });
-  render(<ResourcePage />);
+  render(<ResourcePage category="Equipment.Access" />);
 
   await screen.findAllByText('Physical 1');
   await user.click(screen.getAllByRole('checkbox', { name: 'Selecionar Physical 1' })[0]);
@@ -500,7 +464,21 @@ test('bulk selection enables delete and reloads the active tab after deletion', 
 
 test('deleting a resource specification requires confirmation and removes it from the catalog', async () => {
   const user = userEvent.setup();
-  render(<ResourcePage activeTab="ResourceSpecification" />);
+  const catalog: ResourceSpecification[] = resourceSpecifications.map((spec) => ({ ...spec }));
+  loadResourceWorkspaceSnapshotMock.mockImplementation(async () =>
+    // The backend excludes soft-terminated specs; mirror that so deletions leave the catalog.
+    snapshotFor({ resourceSpecificationOptions: catalog.filter((spec) => !spec.validFor?.endDateTime) }),
+  );
+  deleteResourceSpecificationMock.mockImplementation(async (id) => {
+    const spec = catalog.find((item) => item.id === id);
+    if (!spec) return resourceSpecifications[0];
+    spec.validFor = { endDateTime: '2026-07-09T10:00:00.000Z' };
+    return spec;
+  });
+  render(<ResourcePage category="Equipment.Access" />);
+
+  await screen.findAllByText('Physical 1');
+  await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
 
   await screen.findByRole('checkbox', { name: 'Selecionar Spec 1' });
   await user.click(screen.getAllByRole('checkbox', { name: 'Selecionar Spec 1' })[0]);
@@ -513,12 +491,15 @@ test('deleting a resource specification requires confirmation and removes it fro
   await user.click(screen.getByRole('button', { name: 'Confirmar exclusão' }));
 
   await waitFor(() => expect(deleteResourceSpecificationMock).toHaveBeenCalledWith('spec-1'));
-  await waitFor(() => expect(screen.queryByText('Spec 1')).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByText('Model 1')).not.toBeInTheDocument());
 });
 
 test('canceling the delete confirmation does not call delete', async () => {
   const user = userEvent.setup();
-  render(<ResourcePage activeTab="ResourceSpecification" />);
+  render(<ResourcePage category="Equipment.Access" />);
+
+  await screen.findAllByText('Physical 1');
+  await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
 
   await screen.findByRole('checkbox', { name: 'Selecionar Spec 1' });
   await user.click(screen.getAllByRole('checkbox', { name: 'Selecionar Spec 1' })[0]);

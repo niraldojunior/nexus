@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Cpu,
   FileText,
+  Filter,
   Globe2,
   Home,
   Layers3,
@@ -40,7 +41,14 @@ import {
   type ResourceTab,
 } from '../services/resourceApi';
 import type { Party } from '../services/partyApi';
+import ColumnFilterMenu from '../components/ColumnFilterMenu';
+import Field from '../components/Field';
 import { resourceFieldLabel } from '../utils/resourceFieldLabels';
+import {
+  DEFAULT_RESOURCE_CATEGORY_CODE,
+  RESOURCE_VIEWS,
+  type ResourceView,
+} from '../data/resourceCategoryViews';
 import {
   characteristicBooleanValue,
   RESOURCE_SPEC_LIFECYCLE_STATUS_OPTIONS,
@@ -168,7 +176,6 @@ const tabConfig: Record<
     description: 'Catálogo de tipos, categorias e especificações que tipam as instâncias de recurso.',
     icon: FileText,
     buildColumns: () => [
-      { key: 'category', label: resourceFieldLabel('category') },
       { key: 'resourceType', label: resourceFieldLabel('resourceType') },
       { key: 'manufacturer', label: resourceFieldLabel('manufacturer') },
       { key: 'model', label: resourceFieldLabel('model') },
@@ -180,31 +187,33 @@ const tabConfig: Record<
   },
 };
 
+// Colunas cujo domínio é um conjunto fechado de valores de sistema (não texto livre) e que, por
+// isso, ganham filtro por picklist no cabeçalho. Datas, nomes e modelos ficam de fora.
+const FILTERABLE_COLUMNS: Record<ResourceTabId, string[]> = {
+  PhysicalResource: ['spec', 'resourceType', 'status'],
+  LogicalResource: ['spec', 'status'],
+  ResourceSpecification: ['resourceType', 'manufacturer', 'lifecycleStatus', 'equipmentFunction'],
+};
+
+type OpenFilterState = { key: string; rect: DOMRect };
+
 interface ResourcePageProps {
-  activeTab?: ResourceTab;
-  onActiveTabChange?: (tab: ResourceTab) => void;
+  category?: string;
 }
 
-export default function ResourcePage({
-  activeTab: controlledActiveTab,
-}: ResourcePageProps = {}) {
-  const [pageByTab, setPageByTab] = useState<Record<ResourceTabId, number>>({
-    PhysicalResource: 1,
-    LogicalResource: 1,
-    ResourceSpecification: 1,
-  });
-  const [selectedIds, setSelectedIds] = useState<Record<ResourceTabId, Set<string>>>({
-    PhysicalResource: new Set(),
-    LogicalResource: new Set(),
-    ResourceSpecification: new Set(),
-  });
-  const [resourceSpecifications, setResourceSpecifications] = useState<ResourceSpecification[]>([]);
+export default function ResourcePage({ category: categoryProp }: ResourcePageProps = {}) {
+  const category = categoryProp ?? DEFAULT_RESOURCE_CATEGORY_CODE;
+  const isPhysicalCategory = isPhysicalCategoryCode(category);
+  const [view, setView] = useState<ResourceView>('inventory');
+  const effectiveTab: ResourceTabId =
+    view === 'catalog' ? 'ResourceSpecification' : isPhysicalCategory ? 'PhysicalResource' : 'LogicalResource';
+
+  const [page, setPage] = useState(1);
+  const [columnFilters, setColumnFilters] = useState<Record<string, Set<string>>>({});
+  const [openFilter, setOpenFilter] = useState<OpenFilterState | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [resourceCategories, setResourceCategories] = useState<ResourceCategory[]>([]);
   const [resourceTypes, setResourceTypes] = useState<ResourceType[]>([]);
-  const [resourcesByTab, setResourcesByTab] = useState<Record<Exclude<ResourceTabId, 'ResourceSpecification'>, ResourceEntity[]>>({
-    PhysicalResource: [],
-    LogicalResource: [],
-  });
   const [resourceSpecificationOptions, setResourceSpecificationOptions] = useState<ResourceSpecification[]>([]);
   const [manufacturerOptions, setManufacturerOptions] = useState<Party[]>([]);
   const [physicalResourceOptions, setPhysicalResourceOptions] = useState<PhysicalResource[]>([]);
@@ -220,15 +229,124 @@ export default function ResourcePage({
   const selectAllRef = useRef<HTMLInputElement>(null);
   const refreshCatalogRef = useRef<null | (() => void)>(null);
 
-  const activeTab = controlledActiveTab ?? 'PhysicalResource';
-  const activePage = pageByTab[activeTab];
-  const activeSelection = selectedIds[activeTab];
-  const activeItems = activeTab === 'ResourceSpecification' ? resourceSpecifications : resourcesByTab[activeTab];
-  const activeColumns = tabConfig[activeTab].buildColumns();
-  const activeTabConfig = tabConfig[activeTab];
-  const ActiveIcon = activeTabConfig.icon;
+  const activeTabConfig = tabConfig[effectiveTab];
+  const activeColumns = activeTabConfig.buildColumns();
+  const categoryName = resourceCategories.find((item) => item.code === category)?.name ?? category;
+  const CategoryIcon = categoryIconForCode(category);
   const placeOptions = buildPlaceOptions([...physicalResourceOptions, ...logicalResourceOptions]);
-  const selectedCategory = resourceCategories.find((category) => category.code === formState.category);
+
+  const specCategoryById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const spec of resourceSpecificationOptions) map.set(spec.id, spec.category);
+    return map;
+  }, [resourceSpecificationOptions]);
+
+  // The workspace snapshot already ships the full resource/spec arrays, so we filter and paginate
+  // by the active category client-side instead of relying on the server-paginated `items`.
+  const categoryItems = useMemo<Array<ResourceEntity | ResourceSpecification>>(() => {
+    if (view === 'catalog') {
+      return resourceSpecificationOptions.filter((spec) => spec.category === category);
+    }
+    const pool: ResourceEntity[] = isPhysicalCategory ? physicalResourceOptions : logicalResourceOptions;
+    return pool.filter((resource) => {
+      const specId = resource.resourceSpecification?.id ?? resource.resourceSpecificationId;
+      return specCategoryById.get(specId) === category;
+    });
+  }, [
+    view,
+    category,
+    isPhysicalCategory,
+    resourceSpecificationOptions,
+    physicalResourceOptions,
+    logicalResourceOptions,
+    specCategoryById,
+  ]);
+
+  // Valor exibido de uma coluna para um item — usado tanto para montar o domínio do filtro quanto
+  // para aplicá-lo, garantindo que o filtro casa exatamente com o texto renderizado na célula.
+  const filterableColumns = FILTERABLE_COLUMNS[effectiveTab];
+  const columnValueFor = (item: ResourceEntity | ResourceSpecification, key: string): string => {
+    if (effectiveTab === 'ResourceSpecification') {
+      const spec = item as ResourceSpecification;
+      switch (key) {
+        case 'resourceType':
+          return readResourceTypeCode(resourceTypes, spec.resourceType);
+        case 'manufacturer':
+          return readSpecificationManufacturer(spec);
+        case 'lifecycleStatus':
+          return readSpecLifecycleStatus(spec.resourceSpecificationCharacteristic);
+        case 'equipmentFunction':
+          return readSpecCharacteristic(spec.resourceSpecificationCharacteristic, 'equipmentFunction');
+        default:
+          return '-';
+      }
+    }
+    const resourceItem = item as ResourceEntity;
+    const specId = resourceItem.resourceSpecification?.id ?? resourceItem.resourceSpecificationId;
+    switch (key) {
+      case 'spec':
+        return readResourceSpecificationName(resourceSpecificationOptions, specId);
+      case 'resourceType':
+        return readResourceSpecificationType(resourceSpecificationOptions, specId);
+      case 'status':
+        return resourceItem.status ?? '-';
+      default:
+        return '-';
+    }
+  };
+
+  const columnDomain = (key: string): string[] => {
+    const values = new Set<string>();
+    for (const item of categoryItems) values.add(columnValueFor(item, key));
+    return [...values].sort((left, right) => left.localeCompare(right, 'pt-BR'));
+  };
+
+  const filteredItems = useMemo(() => {
+    const entries = Object.entries(columnFilters).filter(([, values]) => values.size > 0);
+    if (!entries.length) return categoryItems;
+    return categoryItems.filter((item) =>
+      entries.every(([key, values]) => values.has(columnValueFor(item, key))),
+    );
+    // columnValueFor deriva de effectiveTab + catálogos, cobertos abaixo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryItems, columnFilters, effectiveTab, resourceTypes, resourceSpecificationOptions]);
+
+  const setColumnFilter = (key: string, values: Set<string>) => {
+    setColumnFilters((current) => {
+      const next = { ...current };
+      if (values.size === 0) delete next[key];
+      else next[key] = values;
+      return next;
+    });
+  };
+
+  const toggleColumnFilterValue = (key: string, value: string) => {
+    setColumnFilters((current) => {
+      const next = { ...current };
+      const set = new Set(next[key] ?? []);
+      if (set.has(value)) set.delete(value);
+      else set.add(value);
+      if (set.size === 0) delete next[key];
+      else next[key] = set;
+      return next;
+    });
+  };
+
+  const clearColumnFilter = (key: string) => {
+    setColumnFilters((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+  const activePage = Math.min(Math.max(1, page), totalPages);
+  const pageItems = filteredItems.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE);
+  const hasMore = activePage < totalPages;
+
+  const selectedCategory = resourceCategories.find((item) => item.code === formState.category);
   const visibleTypeOptions = buildTypeOptions(resourceTypes, formState.category);
   const selectedResourceType = resourceTypes.find((type) => type.code === formState.resourceType);
   const categorySelectionInvalid = Boolean(formState.category && (!selectedCategory || selectedCategory.status !== 'active'));
@@ -249,19 +367,17 @@ export default function ResourcePage({
           !visibleTypeOptions.some((option) => option.code === formState.resourceType)))
     );
   const catalogSubmitValid = catalogRequiredFieldsValid && catalogSelectionValid;
-  const hasMore = activeItems.length === PAGE_SIZE;
-  const selectedOnPage = activeItems.filter((item) => activeSelection.has(item.id));
+  const selectedOnPage = pageItems.filter((item) => selectedIds.has(item.id));
   const pageSelectionCount = selectedOnPage.length;
-  const selectedCount = activeSelection.size;
+  const selectedCount = selectedIds.size;
   const selectedDeletePreview = selectedOnPage.slice(0, 3).map((item) => item.name).join(', ');
 
-  const loadWorkspaceData = async (tab: ResourceTabId, page: number): Promise<void> => {
+  const loadWorkspaceData = async (tab: ResourceTabId): Promise<void> => {
     setIsLoading(true);
     setLookupLoading(true);
     setError(null);
     try {
-      const offset = (page - 1) * PAGE_SIZE;
-      const snapshot = await loadResourceWorkspaceSnapshot({ tab, limit: PAGE_SIZE, offset });
+      const snapshot = await loadResourceWorkspaceSnapshot({ tab, limit: PAGE_SIZE, offset: 0 });
 
       setResourceSpecificationOptions(snapshot.resourceSpecificationOptions);
       setResourceCategories(snapshot.resourceCategories);
@@ -269,12 +385,6 @@ export default function ResourcePage({
       setPhysicalResourceOptions(snapshot.physicalResources.filter(isPhysicalResource));
       setLogicalResourceOptions(snapshot.logicalResources.filter(isLogicalResource));
       setManufacturerOptions(snapshot.manufacturerOptions);
-
-      if (tab === 'ResourceSpecification') {
-        setResourceSpecifications(snapshot.items as ResourceSpecification[]);
-      } else {
-        setResourcesByTab((current) => ({ ...current, [tab]: snapshot.items as ResourceEntity[] }));
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao carregar Resource.');
     } finally {
@@ -284,17 +394,27 @@ export default function ResourcePage({
   };
 
   useEffect(() => {
-    void loadWorkspaceData(activeTab, activePage);
-  }, [activeTab, activePage]);
+    void loadWorkspaceData(effectiveTab);
+  }, [effectiveTab]);
 
   useEffect(() => {
     if (!selectAllRef.current) return;
-    selectAllRef.current.indeterminate = pageSelectionCount > 0 && pageSelectionCount < activeItems.length;
-  }, [activeItems.length, pageSelectionCount]);
+    selectAllRef.current.indeterminate = pageSelectionCount > 0 && pageSelectionCount < pageItems.length;
+  }, [pageItems.length, pageSelectionCount]);
 
+  // Category or sub-view changes reset the local pagination/selection/filter scope.
   useEffect(() => {
+    setPage(1);
+    setSelectedIds(new Set());
     setDeleteConfirmOpen(false);
-  }, [activeTab]);
+    setColumnFilters({});
+    setOpenFilter(null);
+  }, [category, view]);
+
+  // Any change to the active filters returns to the first page.
+  useEffect(() => {
+    setPage(1);
+  }, [columnFilters]);
 
   useEffect(() => {
     if (!modalState) {
@@ -319,7 +439,8 @@ export default function ResourcePage({
       setFormState({
         ...emptyFormState(),
         name: entity?.name ?? '',
-        category: entity?.category ?? '',
+        // The category is fixed by the active page; new specs inherit it, edits keep their own.
+        category: entity?.category ?? category,
         resourceType: entity?.resourceType ?? '',
         description: entity?.description ?? '',
         equipmentCode: readResourceSpecificationCharacteristicString(characteristics, 'equipmentCode'),
@@ -345,7 +466,8 @@ export default function ResourcePage({
       ...emptyFormState(),
       name: entity?.name ?? '',
       resourceSpecificationId: entity?.resourceSpecificationId ?? '',
-      category: isPhysicalResource(entity) ? resourceSpecification?.category ?? '' : '',
+      // Physical resources scope their catalog lookups by category; default to the active page category.
+      category: isPhysicalResource(entity) ? resourceSpecification?.category ?? category : category,
       resourceType: isPhysicalResource(entity) ? resourceSpecification?.resourceType ?? '' : '',
       placeId: entity?.place?.id ?? '',
       placeType: entity?.place?.['@referredType'] ?? '',
@@ -355,17 +477,18 @@ export default function ResourcePage({
       partNumber: isPhysicalResource(entity) ? entity.partNumber ?? '' : '',
       supportingPhysicalResourceId: isLogicalResource(entity) ? entity.supportingPhysicalResourceId ?? '' : '',
     });
-  }, [modalState, manufacturerOptions]);
+  }, [modalState, manufacturerOptions, category]);
 
   useEffect(() => {
     if (!modalState || modalState.mode !== 'create') return;
     if (modalState.tab !== 'LogicalResource') return;
+    const firstCategorySpecId = resourceSpecificationOptions.find((spec) => spec.category === category)?.id ?? '';
     setFormState((current) => {
-      const nextResourceSpecificationId = current.resourceSpecificationId || resourceSpecificationOptions[0]?.id || '';
+      const nextResourceSpecificationId = current.resourceSpecificationId || firstCategorySpecId;
       if (nextResourceSpecificationId === current.resourceSpecificationId) return current;
       return { ...current, resourceSpecificationId: nextResourceSpecificationId };
     });
-  }, [modalState, resourceSpecificationOptions]);
+  }, [modalState, resourceSpecificationOptions, category]);
 
   // Auto-populate manufacturer and model from ResourceSpecification for PhysicalResource.
   useEffect(() => {
@@ -402,36 +525,36 @@ export default function ResourcePage({
   }, [modalState, formState.resourceSpecificationId, resourceSpecificationOptions]);
 
   const goToPage = (nextPage: number) => {
-    setPageByTab((current) => ({ ...current, [activeTab]: Math.max(1, nextPage) }));
+    setPage(Math.min(Math.max(1, nextPage), totalPages));
   };
 
   const toggleSelected = (id: string) => {
     setSelectedIds((current) => {
-      const next = new Set(current[activeTab]);
+      const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      return { ...current, [activeTab]: next };
+      return next;
     });
   };
 
   const toggleSelectPage = () => {
     setSelectedIds((current) => {
-      const next = new Set(current[activeTab]);
-      if (selectedOnPage.length === activeItems.length && activeItems.length > 0) {
-        for (const item of activeItems) next.delete(item.id);
+      const next = new Set(current);
+      if (selectedOnPage.length === pageItems.length && pageItems.length > 0) {
+        for (const item of pageItems) next.delete(item.id);
       } else {
-        for (const item of activeItems) next.add(item.id);
+        for (const item of pageItems) next.add(item.id);
       }
-      return { ...current, [activeTab]: next };
+      return next;
     });
   };
 
   const openCreateModal = () => {
-    setModalState({ tab: activeTab, mode: 'create', entity: null });
+    setModalState({ tab: effectiveTab, mode: 'create', entity: null });
   };
 
   const openEditModal = (entity: ResourceEntity | ResourceSpecification) => {
-    setModalState({ tab: activeTab, mode: 'edit', entity });
+    setModalState({ tab: effectiveTab, mode: 'edit', entity });
   };
 
   const closeModal = () => {
@@ -450,7 +573,7 @@ export default function ResourcePage({
   };
 
   const refreshWorkspace = async () => {
-    await loadWorkspaceData(activeTab, pageByTab[activeTab]);
+    await loadWorkspaceData(effectiveTab);
   };
 
   refreshCatalogRef.current = () => {
@@ -494,7 +617,7 @@ export default function ResourcePage({
         }
       }
       closeModal();
-      setSelectedIds((current) => ({ ...current, [activeTab]: new Set() }));
+      setSelectedIds(new Set());
       await refreshWorkspace();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao salvar Resource.');
@@ -508,12 +631,12 @@ export default function ResourcePage({
     setDeleting(true);
     setError(null);
     try {
-      const idsToDelete = [...activeSelection];
+      const idsToDelete = [...selectedIds];
       for (const id of idsToDelete) {
-        if (activeTab === 'ResourceSpecification') await deleteResourceSpecification(id);
+        if (effectiveTab === 'ResourceSpecification') await deleteResourceSpecification(id);
         else await deleteResource(id);
       }
-      setSelectedIds((current) => ({ ...current, [activeTab]: new Set() }));
+      setSelectedIds(new Set());
       setDeleteConfirmOpen(false);
       await refreshWorkspace();
     } catch (err) {
@@ -524,8 +647,8 @@ export default function ResourcePage({
   };
 
   const rows =
-    activeTab === 'ResourceSpecification'
-      ? resourceSpecifications.map((spec) => (
+    effectiveTab === 'ResourceSpecification'
+      ? (pageItems as ResourceSpecification[]).map((spec) => (
           <tr
             key={spec.id}
             className="cursor-pointer border-b border-app-border last:border-b-0 hover:bg-app-accent-soft"
@@ -535,12 +658,11 @@ export default function ResourcePage({
               <input
                 type="checkbox"
                 aria-label={`Selecionar ${spec.name}`}
-                checked={activeSelection.has(spec.id)}
+                checked={selectedIds.has(spec.id)}
                 onClick={(event) => event.stopPropagation()}
                 onChange={() => toggleSelected(spec.id)}
               />
             </td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readResourceCategoryLabel(resourceCategories, spec.category)}</td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readResourceTypeCode(resourceTypes, spec.resourceType)}</td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readSpecificationManufacturer(spec)}</td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readSpecificationModel(spec)}</td>
@@ -550,9 +672,7 @@ export default function ResourcePage({
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readSpecCharacteristic(spec.resourceSpecificationCharacteristic, 'endOfSupportLifeDate')}</td>
           </tr>
         ))
-      : activeItems.map((resource) => {
-          const resourceItem = resource as ResourceEntity;
-          return (
+      : (pageItems as ResourceEntity[]).map((resourceItem) => (
           <tr
             key={resourceItem.id}
             className="cursor-pointer border-b border-app-border last:border-b-0 hover:bg-app-accent-soft"
@@ -562,7 +682,7 @@ export default function ResourcePage({
               <input
                 type="checkbox"
                 aria-label={`Selecionar ${resourceItem.name}`}
-                checked={activeSelection.has(resourceItem.id)}
+                checked={selectedIds.has(resourceItem.id)}
                 onClick={(event) => event.stopPropagation()}
                 onChange={() => toggleSelected(resourceItem.id)}
               />
@@ -571,19 +691,20 @@ export default function ResourcePage({
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">
               {readResourceSpecificationName(resourceSpecificationOptions, resourceItem.resourceSpecification?.id ?? resourceItem.resourceSpecificationId)}
             </td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
-              {readResourceSpecificationType(resourceSpecificationOptions, resourceItem.resourceSpecification?.id ?? resourceItem.resourceSpecificationId)}
-            </td>
+            {effectiveTab === 'PhysicalResource' ? (
+              <td className="px-4 py-3 text-[0.88rem] text-app-muted">
+                {readResourceSpecificationType(resourceSpecificationOptions, resourceItem.resourceSpecification?.id ?? resourceItem.resourceSpecificationId)}
+              </td>
+            ) : null}
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{resourceItem.place?.id ?? '-'}</td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">{resourceItem.status ?? '-'}</td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">
-              {activeTab === 'PhysicalResource'
+              {effectiveTab === 'PhysicalResource'
                 ? physicalDetails(resourceItem as PhysicalResource)
                 : logicalDetails(resourceItem as LogicalResource)}
             </td>
           </tr>
-          );
-        });
+        ));
 
   return (
     <div className="h-full min-h-0 overflow-hidden px-8 py-8">
@@ -591,9 +712,9 @@ export default function ResourcePage({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
-              <ActiveIcon className="h-7 w-7 shrink-0 text-app-muted" strokeWidth={2} />
+              <CategoryIcon className="h-7 w-7 shrink-0 text-app-muted" strokeWidth={2} />
               <h1 className="font-display text-4xl font-semibold text-app-text">
-                {activeTabConfig.title}
+                {categoryName}
               </h1>
             </div>
             <p className="mt-2 max-w-[820px] text-[0.96rem] text-app-muted">
@@ -601,6 +722,31 @@ export default function ResourcePage({
             </p>
           </div>
           <div className="mt-1 flex shrink-0 items-center gap-2">
+            <div
+              role="tablist"
+              aria-label="Visão do recurso"
+              className="mr-1 inline-flex items-center gap-1 rounded-[16px] border border-app-border bg-white p-1 shadow-soft"
+            >
+              {RESOURCE_VIEWS.map((viewOption) => {
+                const selected = view === viewOption.id;
+                return (
+                  <button
+                    key={viewOption.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => setView(viewOption.id)}
+                    className={`rounded-[12px] px-4 py-2 text-[0.88rem] font-semibold transition ${
+                      selected
+                        ? 'bg-app-accent-soft text-app-text'
+                        : 'text-app-muted hover:bg-app-accent-soft hover:text-app-text'
+                    }`}
+                  >
+                    {viewOption.label}
+                  </button>
+                );
+              })}
+            </div>
             <button
               type="button"
               onClick={openCreateModal}
@@ -639,18 +785,53 @@ export default function ResourcePage({
                       ref={selectAllRef}
                       type="checkbox"
                       aria-label="Selecionar página atual"
-                      checked={activeItems.length > 0 && pageSelectionCount === activeItems.length}
+                      checked={pageItems.length > 0 && pageSelectionCount === pageItems.length}
                       onChange={toggleSelectPage}
                     />
                   </th>
-                  {activeColumns.map((column) => (
-                    <th
-                      key={column.key}
-                      className="px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted"
-                    >
-                      {column.label}
-                    </th>
-                  ))}
+                  {activeColumns.map((column) => {
+                    const isFilterable = filterableColumns.includes(column.key);
+                    const activeCount = columnFilters[column.key]?.size ?? 0;
+                    return (
+                      <th
+                        key={column.key}
+                        className="px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted"
+                      >
+                        {isFilterable ? (
+                          <button
+                            type="button"
+                            title={`Filtrar por ${column.label}`}
+                            aria-expanded={openFilter?.key === column.key}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              const rect = event.currentTarget.getBoundingClientRect();
+                              setOpenFilter((current) =>
+                                current?.key === column.key ? null : { key: column.key, rect },
+                              );
+                            }}
+                            className={`-mx-2 inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 uppercase tracking-[0.08em] transition hover:bg-app-accent-soft ${
+                              activeCount ? 'text-app-text' : 'text-app-muted'
+                            }`}
+                          >
+                            <span>{column.label}</span>
+                            <Filter
+                              className={`h-3 w-3 ${activeCount ? 'text-app-text' : 'text-app-muted opacity-60'}`}
+                              strokeWidth={2}
+                              fill={activeCount ? 'currentColor' : 'none'}
+                              aria-hidden
+                            />
+                            {activeCount ? (
+                              <span className="rounded-full bg-app-accent px-1.5 text-[0.6rem] font-bold leading-[1.4] text-app-text">
+                                {activeCount}
+                              </span>
+                            ) : null}
+                          </button>
+                        ) : (
+                          column.label
+                        )}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -669,39 +850,62 @@ export default function ResourcePage({
 
           <div className="flex items-center justify-between gap-3 border-t border-app-border px-5 py-4">
             <div className="text-[0.88rem] text-app-muted">
-              {selectedCount ? `${selectedCount} selecionados no total` : 'Nenhuma seleção ativa'}
+              {selectedCount
+                ? `${selectedCount} selecionados no total`
+                : filteredItems.length
+                  ? `Mostrando ${(activePage - 1) * PAGE_SIZE + 1}–${Math.min(activePage * PAGE_SIZE, filteredItems.length)} de ${filteredItems.length} registro(s)${
+                      filteredItems.length !== categoryItems.length ? ` (filtrado de ${categoryItems.length})` : ''
+                    }`
+                  : categoryItems.length
+                    ? 'Nenhum registro para os filtros aplicados'
+                    : 'Nenhuma seleção ativa'}
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="geo-btn secondary"
-                onClick={() => goToPage(activePage - 1)}
-                disabled={activePage <= 1 || isLoading}
-              >
-                Anterior
-              </button>
-              <div className="rounded-[16px] border border-app-border bg-app-accent-soft px-4 py-2 text-[0.88rem] font-semibold text-app-text">
-                Página {activePage}
+            <div className="flex items-center gap-4">
+              <div className="text-[0.88rem] text-app-muted">
+                Página {activePage} de {totalPages}
               </div>
-              <button
-                type="button"
-                className="geo-btn secondary"
-                onClick={() => goToPage(activePage + 1)}
-                disabled={!hasMore || isLoading}
-              >
-                Próximo
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="geo-btn secondary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-app-border disabled:hover:bg-white"
+                  onClick={() => goToPage(activePage - 1)}
+                  disabled={activePage <= 1 || isLoading}
+                >
+                  Anterior
+                </button>
+                <button
+                  type="button"
+                  className="geo-btn secondary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-app-border disabled:hover:bg-white"
+                  onClick={() => goToPage(activePage + 1)}
+                  disabled={!hasMore || isLoading}
+                >
+                  Próximo
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
+      {openFilter ? (
+        <ColumnFilterMenu
+          label={activeColumns.find((column) => column.key === openFilter.key)?.label ?? ''}
+          rect={openFilter.rect}
+          options={columnDomain(openFilter.key)}
+          selected={columnFilters[openFilter.key] ?? new Set()}
+          onToggle={(value) => toggleColumnFilterValue(openFilter.key, value)}
+          onSelectAll={() => setColumnFilter(openFilter.key, new Set(columnDomain(openFilter.key)))}
+          onClear={() => clearColumnFilter(openFilter.key)}
+          onClose={() => setOpenFilter(null)}
+        />
+      ) : null}
+
       {modalState ? (
         <ResourceModal
           tab={modalState.tab}
           mode={modalState.mode}
+          category={category}
           formState={formState}
-          resourceCategories={resourceCategories}
           resourceTypes={resourceTypes}
           resourceSpecificationOptions={resourceSpecificationOptions}
           manufacturerOptions={manufacturerOptions}
@@ -793,8 +997,8 @@ export default function ResourcePage({
 function ResourceModal({
   tab,
   mode,
+  category,
   formState,
-  resourceCategories,
   resourceTypes,
   resourceSpecificationOptions,
   manufacturerOptions,
@@ -810,8 +1014,8 @@ function ResourceModal({
 }: {
   tab: ResourceTabId;
   mode: ResourceMode;
+  category: string;
   formState: ResourceFormState;
-  resourceCategories: ResourceCategory[];
   resourceTypes: ResourceType[];
   resourceSpecificationOptions: ResourceSpecification[];
   manufacturerOptions: Party[];
@@ -825,39 +1029,25 @@ function ResourceModal({
   onChange: (next: ResourceFormState) => void;
   onSubmit: (event: FormEvent) => void;
 }) {
+  // The active page already establishes the category, so the modal never asks for it again —
+  // it just scopes the type/model/spec options to `category`.
   const title =
     tab === 'ResourceSpecification'
       ? `${mode === 'create' ? 'Criar' : 'Editar'} Modelo de Recurso`
       : `${mode === 'create' ? 'Criar' : 'Editar'} ${tabConfig[tab].title}`;
-  const categoryOptions = buildCategoryOptions(resourceCategories);
-  const physicalCategoryOptions = buildPhysicalCategoryOptions(resourceCategories);
-  const visibleTypeOptions = buildTypeOptions(resourceTypes, formState.category);
+  const visibleTypeOptions = buildTypeOptions(resourceTypes, category);
   const selectedResourceSpecification = resourceSpecificationOptions.find((spec) => spec.id === formState.resourceSpecificationId);
-  const selectedCategory = resourceCategories.find((category) => category.code === formState.category);
-  const selectedCategoryOption = categoryOptions.find((option) => option.code === formState.category);
   const selectedResourceType = resourceTypes.find((type) => type.code === formState.resourceType);
   const selectedResourceTypeOption = visibleTypeOptions.find((option) => option.code === formState.resourceType);
   const selectedResourceTypeVisible = visibleTypeOptions.some((option) => option.code === formState.resourceType);
-  const physicalTypeOptions = buildTypeOptions(resourceTypes, formState.category);
-  const physicalModelOptions = buildPhysicalModelOptions(resourceSpecificationOptions, formState.category, formState.resourceType);
+  const physicalTypeOptions = visibleTypeOptions;
+  const physicalModelOptions = buildPhysicalModelOptions(resourceSpecificationOptions, category, formState.resourceType);
+  const logicalSpecificationOptions = resourceSpecificationOptions.filter((spec) => spec.category === category);
   const selectedPhysicalResource = physicalResourceOptions.find((resource) => resource.id === formState.supportingPhysicalResourceId);
   const selectedPlace = placeOptions.find((place) => place.id === formState.placeId);
   const selectedManufacturer = manufacturerOptions.find((party) => party.id === formState.manufacturerPartyId) ?? null;
-  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
-  const categoryMenuRef = useRef<HTMLDivElement>(null);
   const typeMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!categoryMenuOpen) return;
-    const handlePointerDown = (event: MouseEvent) => {
-      if (categoryMenuRef.current && !categoryMenuRef.current.contains(event.target as Node)) {
-        setCategoryMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [categoryMenuOpen]);
 
   useEffect(() => {
     if (!typeMenuOpen) return;
@@ -906,85 +1096,6 @@ function ResourceModal({
               <div className="md:col-span-2 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
                 Identificação
               </div>
-              <Field label={resourceFieldLabel('category')}>
-                <div ref={categoryMenuRef} className="relative">
-                  <button
-                    type="button"
-                    role="combobox"
-                    aria-expanded={categoryMenuOpen}
-                    aria-controls="resource-category-listbox"
-                    onClick={() => setCategoryMenuOpen((current) => !current)}
-                    className="geo-input geo-combobox flex items-center justify-between gap-3 text-left"
-                    disabled={lookupLoading && !resourceCategories.length}
-                  >
-                    <span className="flex min-w-0 items-center gap-2">
-                      {selectedCategoryOption ? (
-                        <>
-                          <selectedCategoryOption.icon className="h-4 w-4 shrink-0 text-app-muted" aria-hidden="true" />
-                          <span className="truncate">{selectedCategoryOption.label}</span>
-                        </>
-                      ) : (
-                        <span className="text-app-muted">Selecione uma categoria</span>
-                      )}
-                    </span>
-                    <span className="geo-combobox-indicator">
-                      <ChevronDown className="h-4 w-4" aria-hidden="true" />
-                    </span>
-                  </button>
-                  {categoryMenuOpen ? (
-                    <div
-                      id="resource-category-listbox"
-                      role="listbox"
-                      className="absolute z-20 mt-2 max-h-72 w-full overflow-auto rounded-[18px] border border-app-border bg-white p-2 shadow-modal"
-                    >
-                      {categoryOptions.map((option) => {
-                        const OptionIcon = option.icon;
-                        const isSelected = option.code === formState.category;
-                        return (
-                          <button
-                            key={option.code}
-                            type="button"
-                            role="option"
-                            aria-selected={isSelected}
-                            disabled={!option.active}
-                            onClick={() => {
-                              const nextTypeOptions = buildTypeOptions(resourceTypes, option.code);
-                              onChange({
-                                ...formState,
-                                category: option.code,
-                                resourceType: nextTypeOptions.some((typeOption) => typeOption.code === formState.resourceType)
-                                  ? formState.resourceType
-                                  : '',
-                              });
-                              setTypeMenuOpen(false);
-                              setCategoryMenuOpen(false);
-                            }}
-                            className={`flex w-full items-center gap-3 rounded-[14px] px-3 py-2 text-left text-[0.92rem] transition ${
-                              isSelected ? 'bg-app-accent-soft text-app-text' : 'text-app-text hover:bg-app-accent-soft'
-                            } disabled:cursor-not-allowed disabled:opacity-50`}
-                          >
-                            <OptionIcon className="h-4 w-4 shrink-0 text-app-muted" aria-hidden="true" />
-                            <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                            {!option.active ? <span className="text-[0.72rem] text-app-muted">(inativa)</span> : null}
-                          </button>
-                        );
-                      })}
-                      {formState.category && !selectedCategory ? (
-                        <button
-                          type="button"
-                          role="option"
-                          aria-selected="true"
-                          className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2 text-left text-[0.92rem] text-amber-900 transition hover:bg-amber-50"
-                          onClick={() => setCategoryMenuOpen(false)}
-                        >
-                          <FileText className="h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
-                          <span className="min-w-0 flex-1 truncate">{formState.category} (legado)</span>
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              </Field>
               <Field label={resourceFieldLabel('resourceType')}>
                 <div ref={typeMenuRef} className="relative">
                   <button
@@ -1222,31 +1333,6 @@ function ResourceModal({
               <Field label={resourceFieldLabel('name')}>
                 <input required value={formState.name} onChange={(event) => onChange({ ...formState, name: event.target.value })} className="geo-input" />
               </Field>
-              <Field label={resourceFieldLabel('category')}>
-                <select
-                  required
-                  value={formState.category}
-                  onChange={(event) => {
-                    const nextCategory = event.target.value;
-                    const nextResourceTypes = buildTypeOptions(resourceTypes, nextCategory);
-                    onChange({
-                      ...formState,
-                      category: nextCategory,
-                      resourceType: nextResourceTypes.some((option) => option.code === formState.resourceType) ? formState.resourceType : '',
-                      resourceSpecificationId: '',
-                    });
-                  }}
-                  className="geo-input"
-                  disabled={lookupLoading && !resourceCategories.length}
-                >
-                  <option value="">Selecione uma categoria</option>
-                  {physicalCategoryOptions.map((option) => (
-                    <option key={option.code} value={option.code} disabled={!option.active}>
-                      {option.label}{!option.active ? ' (inativa)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </Field>
               <Field label={resourceFieldLabel('resourceType')}>
                 <select
                   required
@@ -1376,9 +1462,9 @@ function ResourceModal({
                   disabled={lookupLoading && !resourceSpecificationOptions.length}
                 >
                   <option value="">Selecione uma especificacao</option>
-                  {resourceSpecificationOptions.map((spec) => (
+                  {logicalSpecificationOptions.map((spec) => (
                     <option key={spec.id} value={spec.id}>
-                      {spec.name} · {spec.category} · {spec.resourceType}
+                      {spec.name} · {spec.resourceType}
                     </option>
                   ))}
                   {formState.resourceSpecificationId && !selectedResourceSpecification ? (
@@ -1462,15 +1548,6 @@ function ResourceModal({
       </div>
     </div>,
     document.body
-  );
-}
-
-function Field({ label, children, fullWidth }: { label: string; children: ReactNode; fullWidth?: boolean }) {
-  return (
-    <label className={`grid gap-2 text-[0.78rem] font-semibold uppercase tracking-[0.07em] text-app-muted ${fullWidth ? 'md:col-span-2' : ''}`}>
-      {label}
-      {children}
-    </label>
   );
 }
 
@@ -1635,10 +1712,6 @@ function readSpecLifecycleStatus(characteristics: ResourceSpecificationCharacter
   return readResourceSpecificationStatusLabel(value);
 }
 
-function readResourceCategoryLabel(categories: ResourceCategory[], categoryCode: string): string {
-  return categories.find((category) => category.code === categoryCode)?.name ?? categoryCode;
-}
-
 function readResourceTypeCode(types: ResourceType[], resourceTypeCode: string): string {
   return types.find((type) => type.code === resourceTypeCode)?.code ?? resourceTypeCode;
 }
@@ -1684,48 +1757,6 @@ function buildPlaceOptions(resources: ResourceEntity[]): PlaceOption[] {
     }
   }
   return [...options.values()].sort((left, right) => left.label.localeCompare(right.label));
-}
-
-function buildCategoryOptions(categories: ResourceCategory[]): CatalogOption[] {
-  const byCode = new Map(categories.map((category) => [category.code, category] as const));
-  const childrenByParent = new Map<string | undefined, ResourceCategory[]>();
-  for (const category of categories) {
-    const parentKey = category.parentCategoryCode;
-    const current = childrenByParent.get(parentKey) ?? [];
-    current.push(category);
-    childrenByParent.set(parentKey, current);
-  }
-
-  const labelCache = new Map<string, string>();
-  const resolveLabel = (category: ResourceCategory): string => {
-    const cached = labelCache.get(category.code);
-    if (cached) return cached;
-    const parent = category.parentCategoryCode ? byCode.get(category.parentCategoryCode) : undefined;
-    const label = parent ? `${resolveLabel(parent)} / ${category.name}` : category.name;
-    labelCache.set(category.code, label);
-    return label;
-  };
-
-  const visit = (parentCode: string | undefined, depth: number, acc: CatalogOption[]): void => {
-    const children = (childrenByParent.get(parentCode) ?? []).slice().sort((left, right) => left.code.localeCompare(right.code));
-    for (const category of children) {
-      acc.push({
-        code: category.code,
-        label: `${'  '.repeat(depth)}${resolveLabel(category)}`,
-        active: category.status === 'active',
-        icon: categoryIconForCode(category.code),
-      });
-      visit(category.code, depth + 1, acc);
-    }
-  };
-
-  const options: CatalogOption[] = [];
-  visit(undefined, 0, options);
-  return options;
-}
-
-function buildPhysicalCategoryOptions(categories: ResourceCategory[]): CatalogOption[] {
-  return buildCategoryOptions(categories.filter((category) => isPhysicalCategoryCode(category.code)));
 }
 
 function buildPhysicalModelOptions(

@@ -31,7 +31,11 @@ import type {
   ResourceType,
 } from '../../modules/resource/index.js';
 import type {
+  Service,
+  ServiceCandidate,
+  ServiceCategory,
   ServiceQuery,
+  ServiceSpecification,
   ServiceSpecificationQuery,
   ServiceCategoryQuery,
   ServiceCandidateQuery,
@@ -84,6 +88,18 @@ type ResourceWorkspaceSnapshot = {
 };
 
 const RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE = 100;
+
+type ServiceWorkspaceTab = 'CustomerFacingService' | 'ResourceFacingService' | 'ServiceSpecification';
+
+type ServiceWorkspaceSnapshot = {
+  items: Service[] | ServiceSpecification[];
+  serviceSpecificationOptions: ServiceSpecification[];
+  serviceCategories: ServiceCategory[];
+  serviceCandidates: ServiceCandidate[];
+  customerFacingServices: Service[];
+  resourceFacingServices: Service[];
+  resourceOptions: Resource[];
+};
 
 export const handleHttpRequest = async (dependencies: HttpRequestHandlerDependencies): Promise<void> =>
   routeRequest(dependencies);
@@ -233,6 +249,22 @@ const routeRequest = async ({
       offset,
       resourceService: runtime.resourceService,
       partyService: runtime.partyService,
+    });
+    sendJson(response, 200, snapshot);
+    return;
+  }
+
+  if (request.method === 'GET' && url.pathname === '/v1/service/workspace') {
+    ensureAuthorized(request, config);
+    const tab = parseServiceWorkspaceTab(url.searchParams.get('tab'));
+    const limit = parseOptionalNumber(url.searchParams.get('limit')) ?? 20;
+    const offset = parseOptionalNumber(url.searchParams.get('offset')) ?? 0;
+    const snapshot = await buildServiceWorkspaceSnapshot({
+      tab,
+      limit,
+      offset,
+      serviceService: runtime.serviceService,
+      resourceService: runtime.resourceService,
     });
     sendJson(response, 200, snapshot);
     return;
@@ -1318,6 +1350,95 @@ const parseResourceWorkspaceTab = (value: string | null): ResourceWorkspaceTab =
     return value;
   }
   return 'PhysicalResource';
+};
+
+const parseServiceWorkspaceTab = (value: string | null): ServiceWorkspaceTab => {
+  if (value === 'ResourceFacingService' || value === 'ServiceSpecification') {
+    return value;
+  }
+  return 'CustomerFacingService';
+};
+
+/**
+ * Snapshot agregado do workspace de Serviços — espelha `buildResourceWorkspaceSnapshot`.
+ *
+ * Além da página ativa (`items`), devolve as coleções completas que a UI precisa para resolver
+ * vínculos sem round-trips: as specs (usadas para derivar a categoria de cada serviço), os CFS/RFS
+ * (filtro client-side e seletor de `supportingService`) e os recursos (seletor de
+ * `supportingResource` do RFS).
+ */
+const buildServiceWorkspaceSnapshot = async ({
+  tab,
+  limit,
+  offset,
+  serviceService,
+  resourceService,
+}: {
+  tab: ServiceWorkspaceTab;
+  limit: number;
+  offset: number;
+  serviceService: ServiceService;
+  resourceService: ResourceService;
+}): Promise<ServiceWorkspaceSnapshot> => {
+  const items = getServiceWorkspaceItems(tab, limit, offset, serviceService);
+  const serviceSpecificationOptions = loadAllServiceSpecifications(serviceService);
+  const serviceCategories = serviceService.listServiceCategories();
+  const serviceCandidates = serviceService.listServiceCandidates();
+  const customerFacingServices = loadAllServices(serviceService, 'CustomerFacingService');
+  const resourceFacingServices = loadAllServices(serviceService, 'ResourceFacingService');
+  const resourceOptions = [
+    ...(await loadAllResources(resourceService, 'PhysicalResource')),
+    ...(await loadAllResources(resourceService, 'LogicalResource')),
+  ];
+
+  return {
+    items,
+    serviceSpecificationOptions,
+    serviceCategories,
+    serviceCandidates,
+    customerFacingServices,
+    resourceFacingServices,
+    resourceOptions,
+  };
+};
+
+const getServiceWorkspaceItems = (
+  tab: ServiceWorkspaceTab,
+  limit: number,
+  offset: number,
+  serviceService: ServiceService,
+): Service[] | ServiceSpecification[] => {
+  if (tab === 'ServiceSpecification') {
+    return serviceService.listServiceSpecifications({ limit, offset });
+  }
+
+  return serviceService.listServices({ type: tab, limit, offset });
+};
+
+const loadAllServiceSpecifications = (serviceService: ServiceService): ServiceSpecification[] => {
+  const collected: ServiceSpecification[] = [];
+  for (let offset = 0; ; offset += RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) {
+    const items = serviceService.listServiceSpecifications({
+      limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE,
+      offset,
+    });
+    collected.push(...items);
+    if (items.length < RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) break;
+  }
+  return collected;
+};
+
+const loadAllServices = (
+  serviceService: ServiceService,
+  type: 'CustomerFacingService' | 'ResourceFacingService',
+): Service[] => {
+  const collected: Service[] = [];
+  for (let offset = 0; ; offset += RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) {
+    const items = serviceService.listServices({ type, limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE, offset });
+    collected.push(...items);
+    if (items.length < RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) break;
+  }
+  return collected;
 };
 
 const buildResourceWorkspaceSnapshot = async ({

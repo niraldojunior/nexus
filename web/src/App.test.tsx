@@ -44,12 +44,12 @@ test('resource submenu opens from Recursos and closes when navigating elsewhere'
   const user = userEvent.setup();
   render(<App />);
 
-  expect(screen.queryByRole('button', { name: 'Físicos' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Cliente' })).not.toBeInTheDocument();
 
   await user.click(screen.getByRole('button', { name: 'Recursos' }));
-  expect(screen.getByRole('button', { name: 'Físicos' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Cliente' })).toBeInTheDocument();
 
   await user.click(screen.getByRole('button', { name: 'Conversas' }));
-  expect(screen.queryByRole('button', { name: 'Físicos' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Cliente' })).not.toBeInTheDocument();
   expect(screen.getByText('ConversasPage')).toBeInTheDocument();
 });

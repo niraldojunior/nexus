@@ -12,18 +12,26 @@ import {
 } from 'lucide-react';
 import { PageId, RecentGroup, RecentItem } from '../types';
 import { ResearchHistoryPage } from '../pages/ResearchHistoryPage';
-import type { ResourceTab } from '../services/resourceApi';
+import { RESOURCE_CATEGORY_DEFAULTS } from '../data/resourceCatalogDefaults';
+import { groupResourceCategories, sidebarCategoryLabel } from '../data/resourceCategoryViews';
+import { SERVICE_CATEGORY_DEFAULTS } from '../data/serviceCatalogDefaults';
+import { listServiceCategories } from '../data/serviceCategoryViews';
 import Diamond from './Diamond';
 
 type PrimaryItemId = 'conversations' | 'research' | 'geo' | 'resource' | 'service' | 'order';
+
+/** Item de submenu de categoria — a forma comum entre Resource e Service. */
+type CategoryMenuItem = { code: string; label: string };
 
 interface SidebarProps {
   collapsed: boolean;
   currentPage: PageId;
   activeRecentConversationId: string | null;
   activeResearchSessionId: string | null;
-  activeResourceTab: ResourceTab;
+  activeResourceCategory: string;
   resourceMenuOpen: boolean;
+  activeServiceCategory: string;
+  serviceMenuOpen: boolean;
   settingsOpen: boolean;
   recentItems: RecentItem[];
   recentGroup: RecentGroup;
@@ -33,7 +41,9 @@ interface SidebarProps {
   onNewResearch: () => void;
   onSelectPage: (page: PageId | 'settings') => void;
   onToggleResourceMenu: () => void;
-  onSelectResourceTab: (tab: ResourceTab) => void;
+  onSelectResourceCategory: (categoryCode: string) => void;
+  onToggleServiceMenu: () => void;
+  onSelectServiceCategory: (categoryCode: string) => void;
   onOpenRecentItem: (conversationId: string) => void;
   onSelectResearchSession?: (sessionId: string) => void;
   researchSessionRefreshTrigger?: number;
@@ -48,27 +58,62 @@ const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: LucideIcon }
   { id: 'order', label: 'Ordens', icon: FolderTree },
 ];
 
-const resourceSubItems: Array<{ tab: ResourceTab; label: string }> = [
-  { tab: 'PhysicalResource', label: 'Físicos' },
-  { tab: 'LogicalResource', label: 'Lógicos' },
-  { tab: 'ResourceSpecification', label: 'Catálogo' },
-];
+const resourceCategoryItems: CategoryMenuItem[] = groupResourceCategories(RESOURCE_CATEGORY_DEFAULTS)
+  .flatMap((group) => group.categories)
+  .map((category) => ({ code: category.code, label: sidebarCategoryLabel(category) }));
+
+const serviceCategoryItems: CategoryMenuItem[] = listServiceCategories(SERVICE_CATEGORY_DEFAULTS).map(
+  (category) => ({ code: category.code, label: category.name }),
+);
 
 export default function Sidebar({
   collapsed,
   currentPage,
   activeResearchSessionId,
-  activeResourceTab,
+  activeResourceCategory,
   resourceMenuOpen,
+  activeServiceCategory,
+  serviceMenuOpen,
   settingsOpen,
   onToggleCollapse,
   onNewResearch,
   onSelectPage,
   onToggleResourceMenu,
-  onSelectResourceTab,
+  onSelectResourceCategory,
+  onToggleServiceMenu,
+  onSelectServiceCategory,
   onSelectResearchSession,
   researchSessionRefreshTrigger,
 }: SidebarProps) {
+  // Os módulos com submenu de categoria compartilham a mesma mecânica; só variam os dados.
+  const categoryMenus: Partial<
+    Record<
+      PrimaryItemId,
+      {
+        items: CategoryMenuItem[];
+        open: boolean;
+        activeCode: string;
+        onToggle: () => void;
+        onSelect: (code: string) => void;
+      }
+    >
+  > = {
+    resource: {
+      items: resourceCategoryItems,
+      open: resourceMenuOpen,
+      activeCode: activeResourceCategory,
+      onToggle: onToggleResourceMenu,
+      onSelect: onSelectResourceCategory,
+    },
+    service: {
+      items: serviceCategoryItems,
+      open: serviceMenuOpen,
+      activeCode: activeServiceCategory,
+      onToggle: onToggleServiceMenu,
+      onSelect: onSelectServiceCategory,
+    },
+  };
+
   return (
     <aside
       className={`flex flex-col overflow-hidden border-r border-app-border bg-app-sidebar shadow-soft transition-[width,min-width] duration-300 ease-in-out ${
@@ -106,60 +151,18 @@ export default function Sidebar({
 
       <div className="px-0">
         <nav className="space-y-0.6">
-          {primaryItems.map(({ id, label, icon: Icon }) => {
-            const isActive =
-              (id === 'research' && currentPage === 'research' && activeResearchSessionId === null) ||
-              (id === 'conversations' && (currentPage === 'conversas' || currentPage === 'conversation')) ||
-              ((id === 'geo' || id === 'resource' || id === 'service' || id === 'order') &&
-                currentPage === id);
-
-            return (
-              <div key={id}>
-                <NavItem
-                  active={isActive}
-                  icon={Icon}
-                  label={label}
-                  onClick={() => {
-                    if (id === 'research') {
-                      onNewResearch();
-                      return;
-                    }
-                    if (id === 'conversations') {
-                      onSelectPage('conversas');
-                      return;
-                    }
-                    if (id === 'resource') {
-                      onToggleResourceMenu();
-                      return;
-                    }
-                    onSelectPage(id);
-                  }}
-                  collapsed={collapsed}
-                />
-                {id === 'resource' && resourceMenuOpen && !collapsed ? (
-                  <div className="ml-[35px] mt-1 space-y-1 border-l border-app-border pl-3">
-                    {resourceSubItems.map((item) => {
-                      const subItemActive = currentPage === 'resource' && activeResourceTab === item.tab;
-                      return (
-                        <button
-                          key={item.tab}
-                          type="button"
-                          onClick={() => onSelectResourceTab(item.tab)}
-                          className={`flex h-[28px] w-full items-center rounded-[10px] px-3 text-left text-[0.84rem] transition ${
-                            subItemActive
-                              ? 'bg-app-accent-soft font-semibold text-app-text'
-                              : 'font-medium text-app-muted hover:bg-app-accent-soft hover:text-app-text'
-                          }`}
-                        >
-                          {item.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
+          {primaryItems
+            .filter(({ id }) => id === 'research')
+            .map(({ id, label, icon: Icon }) => (
+              <NavItem
+                key={id}
+                active={currentPage === 'research' && activeResearchSessionId === null}
+                icon={Icon}
+                label={label}
+                onClick={onNewResearch}
+                collapsed={collapsed}
+              />
+            ))}
         </nav>
       </div>
 
@@ -167,15 +170,71 @@ export default function Sidebar({
         className={`relative min-h-0 flex-1 overflow-hidden ${collapsed ? 'pointer-events-none' : ''}`}
       >
         <div
-          className={`h-full transition-opacity duration-150 ${collapsed ? 'opacity-0' : 'opacity-100'}`}
+          className={`h-full overflow-y-auto transition-opacity duration-150 ${collapsed ? 'opacity-0' : 'opacity-100'}`}
         >
-          <div className="flex items-center justify-between pl-4 pr-[15px] pb-2 pt-2">
+          <nav className="space-y-0.6">
+            {primaryItems
+              .filter(({ id }) => id !== 'research')
+              .map(({ id, label, icon: Icon }) => {
+                const isActive =
+                  (id === 'conversations' && (currentPage === 'conversas' || currentPage === 'conversation')) ||
+                  ((id === 'geo' || id === 'resource' || id === 'service' || id === 'order') &&
+                    currentPage === id);
+
+                const categoryMenu = categoryMenus[id];
+
+                return (
+                  <div key={id}>
+                    <NavItem
+                      active={isActive}
+                      icon={Icon}
+                      label={label}
+                      onClick={() => {
+                        if (id === 'conversations') {
+                          onSelectPage('conversas');
+                          return;
+                        }
+                        if (categoryMenu) {
+                          categoryMenu.onToggle();
+                          return;
+                        }
+                        onSelectPage(id);
+                      }}
+                      collapsed={collapsed}
+                    />
+                    {categoryMenu && categoryMenu.open && !collapsed ? (
+                      <div className="ml-[35px] mt-1 space-y-1 border-l border-app-border pl-3">
+                        {categoryMenu.items.map((item) => {
+                          const subItemActive = currentPage === id && categoryMenu.activeCode === item.code;
+                          return (
+                            <button
+                              key={item.code}
+                              type="button"
+                              onClick={() => categoryMenu.onSelect(item.code)}
+                              className={`flex h-[28px] w-full items-center rounded-[10px] px-3 text-left text-[0.84rem] transition ${
+                                subItemActive
+                                  ? 'bg-app-accent-soft font-semibold text-app-text'
+                                  : 'font-medium text-app-muted hover:bg-app-accent-soft hover:text-app-text'
+                              }`}
+                            >
+                              {item.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+          </nav>
+
+          <div className="flex items-center justify-between pl-4 pr-[15px] pb-2 pt-3">
             <span className="text-[0.8rem] font-medium text-app-muted">
               Conversas recentes
             </span>
           </div>
 
-          <div className="h-full overflow-y-auto px-3 pb-2">
+          <div className="px-3 pb-2">
             <ResearchHistoryPage
               activeSessionId={activeResearchSessionId}
               refreshTrigger={researchSessionRefreshTrigger}

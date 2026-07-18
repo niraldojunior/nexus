@@ -159,6 +159,30 @@ test('TMF633 and TMF638 service endpoints create and constrain services', async 
   assert.ok(Array.isArray(filtered.body));
   assert.equal((filtered.body as Array<{ id: string }>).length, 1);
 
+  const workspace = await requestJson(port, 'GET', '/v1/service/workspace?tab=CustomerFacingService&limit=20&offset=0');
+  assert.equal(workspace.statusCode, 200);
+  const workspaceBody = workspace.body as {
+    items: Array<{ id: string }>;
+    serviceSpecificationOptions: Array<{ id: string }>;
+    serviceCategories: Array<{ id: string }>;
+    serviceCandidates: Array<{ id: string }>;
+    customerFacingServices: Array<{ id: string }>;
+    resourceFacingServices: Array<{ id: string }>;
+    resourceOptions: Array<{ id: string }>;
+  };
+  assert.ok(Array.isArray(workspaceBody.items));
+  assert.ok(Array.isArray(workspaceBody.serviceSpecificationOptions));
+  assert.ok(Array.isArray(workspaceBody.serviceCandidates));
+  assert.ok(
+    workspaceBody.customerFacingServices.some((service) => service.id === (cfs.body as { id: string }).id),
+  );
+  assert.ok(
+    workspaceBody.resourceFacingServices.some((service) => service.id === (rfs.body as { id: string }).id),
+  );
+  assert.ok(
+    workspaceBody.resourceOptions.some((option) => option.id === (resource.body as { id: string }).id),
+  );
+
   const invalidCfs = await requestJson(port, 'POST', '/tmf-api/serviceInventoryManagement/v4/service', {
     '@type': 'CustomerFacingService',
     name: 'Invalid CFS',

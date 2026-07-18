@@ -18,8 +18,10 @@ const renderSidebar = (overrides: Partial<Parameters<typeof Sidebar>[0]> = {}) =
     currentPage: 'resource',
     activeRecentConversationId: null,
     activeResearchSessionId: null,
-    activeResourceTab: 'PhysicalResource',
+    activeResourceCategory: 'Equipment.Access',
     resourceMenuOpen: false,
+    activeServiceCategory: 'Access',
+    serviceMenuOpen: false,
     settingsOpen: false,
     recentItems: [],
     recentGroup: 'none',
@@ -29,7 +31,9 @@ const renderSidebar = (overrides: Partial<Parameters<typeof Sidebar>[0]> = {}) =
     onNewResearch: vi.fn(),
     onSelectPage: vi.fn(),
     onToggleResourceMenu: vi.fn(),
-    onSelectResourceTab: vi.fn(),
+    onSelectResourceCategory: vi.fn(),
+    onToggleServiceMenu: vi.fn(),
+    onSelectServiceCategory: vi.fn(),
     onOpenRecentItem: vi.fn(),
     ...overrides,
   };
@@ -38,22 +42,27 @@ const renderSidebar = (overrides: Partial<Parameters<typeof Sidebar>[0]> = {}) =
   return props;
 };
 
-test('shows resource submenu when expanded', () => {
+test('shows flat category submenu when expanded, without group headers', () => {
   renderSidebar({ resourceMenuOpen: true });
 
-  expect(screen.getByRole('button', { name: 'Físicos' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Lógicos' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Catálogo' })).toBeInTheDocument();
+  // No group headers
+  expect(screen.queryByText('Equipamentos')).not.toBeInTheDocument();
+  expect(screen.queryByText('Cabos')).not.toBeInTheDocument();
+  expect(screen.queryByText('Lógicos')).not.toBeInTheDocument();
+  // Category items
+  expect(screen.getByRole('button', { name: 'Cliente' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Cabos OSP' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Recursos L2' })).toBeInTheDocument();
 });
 
-test('resource menu toggles submenu visibility and submenu selects the matching tab', async () => {
+test('resource menu toggles submenu and category items select the matching category', async () => {
   const user = userEvent.setup();
   const onToggleResourceMenu = vi.fn();
-  const onSelectResourceTab = vi.fn();
+  const onSelectResourceCategory = vi.fn();
 
-  renderSidebar({ onToggleResourceMenu, onSelectResourceTab });
+  renderSidebar({ onToggleResourceMenu, onSelectResourceCategory });
 
-  expect(screen.queryByRole('button', { name: 'Físicos' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Cliente' })).not.toBeInTheDocument();
 
   await user.click(screen.getByRole('button', { name: 'Recursos' }));
   expect(onToggleResourceMenu).toHaveBeenCalledTimes(1);
@@ -62,20 +71,19 @@ test('resource menu toggles submenu visibility and submenu selects the matching 
   renderSidebar({
     resourceMenuOpen: true,
     onToggleResourceMenu,
-    onSelectResourceTab,
+    onSelectResourceCategory,
   });
 
-  await user.click(screen.getByRole('button', { name: 'Lógicos' }));
-  await user.click(screen.getByRole('button', { name: 'Catálogo' }));
+  await user.click(screen.getByRole('button', { name: 'Cliente' }));
+  await user.click(screen.getByRole('button', { name: 'Endereçamento e IPAM' }));
 
-  expect(onSelectResourceTab).toHaveBeenNthCalledWith(1, 'LogicalResource');
-  expect(onSelectResourceTab).toHaveBeenNthCalledWith(2, 'ResourceSpecification');
+  expect(onSelectResourceCategory).toHaveBeenNthCalledWith(1, 'Equipment.CustomerPremises');
+  expect(onSelectResourceCategory).toHaveBeenNthCalledWith(2, 'Logical.IPAM');
 });
 
 test('resource submenu is hidden when collapsed', () => {
   renderSidebar({ collapsed: true, resourceMenuOpen: true });
 
-  expect(screen.queryByRole('button', { name: 'Físicos' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Lógicos' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Catálogo' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Cliente' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Equipamentos')).not.toBeInTheDocument();
 });

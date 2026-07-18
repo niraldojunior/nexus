@@ -23,6 +23,7 @@ import Sidebar from './components/Sidebar';
 import GeoPage from './pages/GeoPage';
 import NewResearchPage from './pages/NewResearchPage';
 import ResourcePage from './pages/ResourcePage';
+import ServicePage from './pages/ServicePage';
 import { ResearchPage } from './pages/ResearchPage';
 import { ConversasPage } from './pages/PesquisasPage';
 import { scrollChatAnchorIntoView, scrollChatToBottom } from './utils/chatScroll';
@@ -34,7 +35,8 @@ import {
   settingsSections,
 } from './data/mockData';
 import { sendMessage } from './services/api';
-import type { ResourceTab } from './services/resourceApi';
+import { DEFAULT_RESOURCE_CATEGORY_CODE } from './data/resourceCategoryViews';
+import { DEFAULT_SERVICE_CATEGORY_CODE } from './data/serviceCategoryViews';
 import {
   Conversation,
   ConversationEntry,
@@ -408,8 +410,10 @@ function App() {
   );
   const [pendingConversationEntryId, setPendingConversationEntryId] = useState<string | null>(null);
   const [activeResearchSessionId, setActiveResearchSessionId] = useState<string | null>(null);
-  const [activeResourceTab, setActiveResourceTab] = useState<ResourceTab>('PhysicalResource');
+  const [activeResourceCategory, setActiveResourceCategory] = useState<string>(DEFAULT_RESOURCE_CATEGORY_CODE);
   const [resourceMenuOpen, setResourceMenuOpen] = useState(false);
+  const [activeServiceCategory, setActiveServiceCategory] = useState<string>(DEFAULT_SERVICE_CATEGORY_CODE);
+  const [serviceMenuOpen, setServiceMenuOpen] = useState(false);
   const [researchSessionRefreshTrigger, setResearchSessionRefreshTrigger] = useState(0);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -513,11 +517,12 @@ function App() {
     setResourceMenuOpen(false);
   };
 
-  const handleSelectResourceTab = (tab: ResourceTab) => {
+  const handleSelectResourceCategory = (categoryCode: string) => {
     setSettingsOpen(false);
     setActiveResearchSessionId(null);
-    setActiveResourceTab(tab);
+    setActiveResourceCategory(categoryCode);
     setResourceMenuOpen(true);
+    setServiceMenuOpen(false);
     setCurrentPage('resource');
   };
 
@@ -525,10 +530,25 @@ function App() {
     setSettingsOpen(false);
     setActiveResearchSessionId(null);
     setCurrentPage('resource');
+    setServiceMenuOpen(false);
     setResourceMenuOpen((current) => !current);
-    if (!resourceMenuOpen) {
-      setActiveResourceTab('PhysicalResource');
-    }
+  };
+
+  const handleSelectServiceCategory = (categoryCode: string) => {
+    setSettingsOpen(false);
+    setActiveResearchSessionId(null);
+    setActiveServiceCategory(categoryCode);
+    setServiceMenuOpen(true);
+    setResourceMenuOpen(false);
+    setCurrentPage('service');
+  };
+
+  const handleToggleServiceMenu = () => {
+    setSettingsOpen(false);
+    setActiveResearchSessionId(null);
+    setCurrentPage('service');
+    setResourceMenuOpen(false);
+    setServiceMenuOpen((current) => !current);
   };
 
   const handleSelectPage = (page: PageId | 'settings') => {
@@ -538,15 +558,14 @@ function App() {
     }
     setSettingsOpen(false);
     setResourceMenuOpen(page === 'resource' ? resourceMenuOpen : false);
-    if (page === 'resource') {
-      setActiveResourceTab('PhysicalResource');
-    }
+    setServiceMenuOpen(page === 'service' ? serviceMenuOpen : false);
     setCurrentPage(page);
     setActiveResearchSessionId(null);
   };
 
   const handleAssistantNavigate = (page: PageId) => {
     setResourceMenuOpen(false);
+    setServiceMenuOpen(false);
     setCurrentPage(page);
   };
 
@@ -634,8 +653,10 @@ function App() {
         currentPage={currentPage}
         activeRecentConversationId={activeConversationId}
         activeResearchSessionId={activeResearchSessionId}
-        activeResourceTab={activeResourceTab}
+        activeResourceCategory={activeResourceCategory}
         resourceMenuOpen={resourceMenuOpen}
+        activeServiceCategory={activeServiceCategory}
+        serviceMenuOpen={serviceMenuOpen}
         settingsOpen={settingsOpen}
         recentItems={recentItems}
         recentGroup={recentGroup}
@@ -645,7 +666,9 @@ function App() {
         onNewConversation={handleNewConversation}
         onNewResearch={handleNewResearch}
         onToggleResourceMenu={handleToggleResourceMenu}
-        onSelectResourceTab={handleSelectResourceTab}
+        onSelectResourceCategory={handleSelectResourceCategory}
+        onToggleServiceMenu={handleToggleServiceMenu}
+        onSelectServiceCategory={handleSelectServiceCategory}
         onSelectPage={handleSelectPage}
         onOpenRecentItem={(conversationId) => {
           setSettingsOpen(false);
@@ -694,9 +717,9 @@ function App() {
                 />
               ) : null}
               {currentPage === 'resource' ? (
-                <ResourcePage activeTab={activeResourceTab} onActiveTabChange={setActiveResourceTab} />
+                <ResourcePage category={activeResourceCategory} />
               ) : null}
-              {currentPage === 'service' ? <DomainPage page="service" /> : null}
+              {currentPage === 'service' ? <ServicePage category={activeServiceCategory} /> : null}
               {currentPage === 'order' ? <DomainPage page="order" /> : null}
               {currentPage === 'research' ? (
                 activeResearchSessionId === null ? (

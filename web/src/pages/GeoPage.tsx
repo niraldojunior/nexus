@@ -23,6 +23,7 @@ import type {
 } from '../services/geoApi';
 import { getJson, postJson, patchJson } from '../services/geoApi';
 import { siteKindFromSpec, siteKindLabel, formatAddress } from '../utils/placeLabel';
+import { TabSelector, ListTab, type TabId } from './geo-tabs';
 
 declare global {
   interface Window {
@@ -49,6 +50,7 @@ type DraftAddress = {
 };
 
 type DetailTab = 'overview' | 'subsites' | 'topology' | 'lifecycle' | 'resources';
+type MainTab = 'map' | 'list' | 'hierarchy' | 'catalog';
 
 const API_HEADERS = () => ({
   'Content-Type': 'application/json',
@@ -78,6 +80,7 @@ export default function GeoPage() {
   const [events, setEvents] = useState<GeoEvent[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
   const [draftAddress, setDraftAddress] = useState<DraftAddress | null>(null);
+  const [currentTab, setCurrentTab] = useState<MainTab>('map');
   const [createOpen, setCreateOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
@@ -200,10 +203,11 @@ export default function GeoPage() {
   };
 
   return (
-    <div className="relative h-full min-h-0 min-w-0 overflow-hidden bg-transparent">
+    <div className="relative h-full min-h-0 min-w-0 overflow-hidden bg-transparent flex flex-col">
+      <TabSelector currentTab={currentTab} onTabChange={setCurrentTab} />
       <main
-        className={`relative h-full min-h-0 min-w-0 overflow-hidden bg-[#eef2f6] transition-[padding-right] duration-200 ${
-          hierarchyOpen ? 'xl:pr-[360px]' : 'xl:pr-0'
+        className={`relative flex-1 min-h-0 min-w-0 overflow-hidden bg-[#eef2f6] transition-[padding-right] duration-200 ${
+          hierarchyOpen && currentTab === 'map' ? 'xl:pr-[360px]' : 'xl:pr-0'
         }`}
       >
         {error ? (
@@ -212,7 +216,9 @@ export default function GeoPage() {
           </div>
         ) : null}
 
-        <GoogleMapPanel
+        {currentTab === 'map' ? (
+          <>
+            <GoogleMapPanel
           sites={visibleSites}
           specs={specById}
           locationById={locationById}
@@ -330,13 +336,49 @@ export default function GeoPage() {
           </div>
         ) : null}
 
-        <button
-          type="button"
-          onClick={() => setHierarchyOpen((current) => !current)}
-          className="absolute right-5 top-5 z-[60] rounded-[18px] border border-app-border bg-white px-3 py-2 text-[0.82rem] font-semibold text-app-text shadow-soft hover:border-app-accent-border hover:bg-app-accent-soft"
-        >
-          {hierarchyOpen ? 'Fechar hierarquia' : 'Abrir hierarquia'}
-        </button>
+            <button
+              type="button"
+              onClick={() => setHierarchyOpen((current) => !current)}
+              className="absolute right-5 top-5 z-[60] rounded-[18px] border border-app-border bg-white px-3 py-2 text-[0.82rem] font-semibold text-app-text shadow-soft hover:border-app-accent-border hover:bg-app-accent-soft"
+            >
+              {hierarchyOpen ? 'Fechar hierarquia' : 'Abrir hierarquia'}
+            </button>
+          </>
+        ) : currentTab === 'list' ? (
+          <ListTab
+            sites={sites}
+            specs={specById}
+            addressesById={addressById}
+            selectedSiteId={selectedSiteId}
+            onSelectSite={selectSite}
+            onOpenDetail={openDetail}
+          />
+        ) : currentTab === 'hierarchy' ? (
+          <GeoHierarchySidebar
+            open={true}
+            sites={sites}
+            missingPlace={missingPlace}
+            siteCounts={siteCounts}
+            specs={specById}
+            selectedSiteId={selectedSiteId}
+            onSelect={selectSite}
+            onOpenDetail={openDetail}
+            onOpenTypes={() => setTypeOpen(true)}
+            onReload={() => void loadGeo()}
+            onClose={() => {}}
+            onToggle={() => {}}
+          />
+        ) : currentTab === 'catalog' ? (
+          <div className="h-full overflow-auto">
+            <TypeManagementModal
+              specs={specs}
+              onClose={() => setCurrentTab('map')}
+              onChanged={async () => {
+                await loadGeo();
+              }}
+            />
+          </div>
+        ) : null}
       </main>
 
       <GeoHierarchySidebar

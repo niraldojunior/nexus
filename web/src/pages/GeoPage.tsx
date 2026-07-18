@@ -24,6 +24,7 @@ import type {
 import { getJson, postJson, patchJson } from '../services/geoApi';
 import { siteKindFromSpec, siteKindLabel, formatAddress } from '../utils/placeLabel';
 import { useEquipmentCatalog } from '../hooks/useEquipmentCatalog';
+import { useNavigation } from '../hooks/useNavigation';
 import { TabSelector, ListTab, GuidedSignupModal, AddEquipmentModal, type TabId } from './geo-tabs';
 
 declare global {
@@ -105,6 +106,7 @@ export default function GeoPage() {
   const [addEquipmentOpen, setAddEquipmentOpen] = useState(false);
 
   const { equipment } = useEquipmentCatalog();
+  const { navParams, clearNav } = useNavigation();
 
   const locationById = useMemo(() => new Map(locations.map((item) => [item.id, item])), [locations]);
   const addressById = useMemo(() => new Map(addresses.map((item) => [item.id, item])), [addresses]);
@@ -145,6 +147,20 @@ export default function GeoPage() {
       .then(setEvents)
       .catch(() => setEvents([]));
   }, [detailOpen, selectedSite]);
+
+  // Responder a parâmetros de navegação (ex: vindo de Recursos/Serviços)
+  useEffect(() => {
+    if (!navParams || navParams.page !== 'geo') return;
+    if (navParams.siteId) {
+      const site = sites.find((s) => s.id === navParams.siteId);
+      if (site) {
+        setSelectedSiteId(site.id);
+        setDetailOpen(true);
+        setHierarchyOpen(true);
+        clearNav();
+      }
+    }
+  }, [navParams, sites, clearNav]);
 
   const visibleSites = useMemo(
     () =>

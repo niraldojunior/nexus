@@ -108,7 +108,7 @@ export const ConversasPage: React.FC<{
         </div>
 
         {/* Search */}
-        <div className="mb-8 flex items-center gap-3 bg-white border border-app-border rounded-xl px-4 py-3 shadow-sm">
+        <div className="mb-8 flex items-center gap-3 rounded-2xl border border-app-border bg-white px-4 py-3 shadow-soft transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15">
           <Search className="h-5 w-5 text-app-muted flex-shrink-0" />
           <input
             type="text"

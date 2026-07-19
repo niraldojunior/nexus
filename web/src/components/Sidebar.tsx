@@ -166,12 +166,8 @@ export default function Sidebar({
         </nav>
       </div>
 
-      <div
-        className={`relative min-h-0 flex-1 overflow-hidden ${collapsed ? 'pointer-events-none' : ''}`}
-      >
-        <div
-          className={`h-full overflow-y-auto transition-opacity duration-150 ${collapsed ? 'opacity-0' : 'opacity-100'}`}
-        >
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <div className="h-full overflow-y-auto">
           <nav className="space-y-0.6">
             {primaryItems
               .filter(({ id }) => id !== 'research')
@@ -228,21 +224,25 @@ export default function Sidebar({
               })}
           </nav>
 
-          <div className="flex items-center justify-between pl-4 pr-[15px] pb-2 pt-3">
-            <span className="text-[0.8rem] font-medium text-app-muted">
-              Conversas recentes
-            </span>
-          </div>
+          {!collapsed ? (
+            <>
+              <div className="flex items-center justify-between pb-2 pl-4 pr-[15px] pt-3">
+                <span className="text-[0.8rem] font-medium text-app-muted">
+                  Conversas recentes
+                </span>
+              </div>
 
-          <div className="px-3 pb-2">
-            <ResearchHistoryPage
-              activeSessionId={activeResearchSessionId}
-              refreshTrigger={researchSessionRefreshTrigger}
-              onSessionSelected={(sessionId) => {
-                onSelectResearchSession?.(sessionId);
-              }}
-            />
-          </div>
+              <div className="pb-2 pl-4 pr-1">
+                <ResearchHistoryPage
+                  activeSessionId={activeResearchSessionId}
+                  refreshTrigger={researchSessionRefreshTrigger}
+                  onSessionSelected={(sessionId) => {
+                    onSelectResearchSession?.(sessionId);
+                  }}
+                />
+              </div>
+            </>
+          ) : null}
         </div>
       </div>
 

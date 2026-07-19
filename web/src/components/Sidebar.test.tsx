@@ -87,3 +87,21 @@ test('resource submenu is hidden when collapsed', () => {
   expect(screen.queryByRole('button', { name: 'Cliente' })).not.toBeInTheDocument();
   expect(screen.queryByText('Equipamentos')).not.toBeInTheDocument();
 });
+
+test('primary navigation remains clickable when collapsed', async () => {
+  const user = userEvent.setup();
+  const onSelectPage = vi.fn();
+  const onToggleResourceMenu = vi.fn();
+
+  renderSidebar({
+    collapsed: true,
+    onSelectPage,
+    onToggleResourceMenu,
+  });
+
+  await user.click(screen.getByRole('button', { name: 'Locais' }));
+  await user.click(screen.getByRole('button', { name: 'Recursos' }));
+
+  expect(onSelectPage).toHaveBeenCalledWith('geo');
+  expect(onToggleResourceMenu).toHaveBeenCalledTimes(1);
+});

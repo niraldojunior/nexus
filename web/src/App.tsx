@@ -420,6 +420,12 @@ function App() {
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSection>('skills');
 
+  // Menu Locais (Geo) abre com o mapa em foco: recolhe a barra lateral com
+  // animação ao entrar e a reabre com animação ao navegar para qualquer outro menu.
+  useEffect(() => {
+    setSidebarCollapsed(currentPage === 'geo');
+  }, [currentPage]);
+
   useEffect(() => {
     const openConversationFromUrl = () => {
       const match = window.location.pathname.match(/^\/c\/([^/]+)$/);

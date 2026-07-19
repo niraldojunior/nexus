@@ -1,6 +1,6 @@
-import { Map, List, GitBranch, Layers2 } from 'lucide-react';
+import { Map, List, Layers2 } from 'lucide-react';
 
-export type TabId = 'map' | 'list' | 'hierarchy' | 'catalog';
+export type TabId = 'map' | 'list' | 'catalog';
 
 export type TabSelectorProps = {
   currentTab: TabId;
@@ -10,13 +10,13 @@ export type TabSelectorProps = {
 const TABS: Array<{ id: TabId; label: string; icon: typeof Map }> = [
   { id: 'map', label: 'Mapa', icon: Map },
   { id: 'list', label: 'Lista', icon: List },
-  { id: 'hierarchy', label: 'Hierarquia', icon: GitBranch },
   { id: 'catalog', label: 'Catálogo', icon: Layers2 },
 ];
 
 /**
  * Seletor de abas para GeoPage.
- * Mostra: Mapa, Lista, Hierarquia, Catálogo
+ * Mostra: Mapa, Lista, Catálogo. A navegação por hierarquia (Árvore/Combos)
+ * vive na sidebar fixa à esquerda do Mapa.
  */
 export function TabSelector({ currentTab, onTabChange }: TabSelectorProps) {
   return (

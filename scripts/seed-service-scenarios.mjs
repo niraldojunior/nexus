@@ -32,6 +32,19 @@ const BASE = process.env.NEXUS_API || 'http://127.0.0.1:4001';
 const TOKEN = process.env.NEXUS_TOKEN || 'change-me';
 const SEED_TAG = 'vtal-scenarios';
 
+// Posicionamento geográfico dos sites no RJ (spread Rio / Niterói / São Gonçalo).
+// coord = [lng, lat] (ordem GeoJSON, como o mapa espera). Os equipamentos ancorados
+// em cada site ganham um ponto próprio (jitter) ao redor desta coordenada.
+const SITE_GEO = {
+  'CO TIM':              { city: 'Rio de Janeiro', street: 'Av. Rio Branco, 1',                 coord: [-43.1786, -22.9035] },
+  'CO NIO':              { city: 'Rio de Janeiro', street: 'Av. N. Sra. de Copacabana, 500',    coord: [-43.1866, -22.9711] },
+  'POP IP Connect GPON': { city: 'Rio de Janeiro', street: 'Rua Conde de Bonfim, 300',          coord: [-43.2323, -22.9249] },
+  'CO Claro':            { city: 'Niterói',        street: 'Rua da Conceição, 100',             coord: [-43.1150, -22.8940] },
+  'POP IP Connect P2P':  { city: 'Niterói',        street: 'Av. Roberto Silveira, 200',         coord: [-43.1050, -22.9060] },
+  'POP Link Dedicado':   { city: 'São Gonçalo',    street: 'Rua Dr. Nilo Peçanha, 50',          coord: [-43.0537, -22.8268] },
+  'POP VPN L3':          { city: 'São Gonçalo',    street: 'Av. Presidente Kennedy, 800',       coord: [-43.0230, -22.8230] },
+};
+
 async function api(method, path, body) {
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -59,8 +72,10 @@ const cfsByName = new Map(); // name -> { id }
 const specByName = new Map(); // name -> id
 const partyByName = new Map(); // name -> id
 const siteByName = new Map(); // name -> id
+const siteHasPlace = new Set(); // nomes de sites que já têm Location (place)
+const resourceSiteByName = new Map(); // resource name -> site name (âncora geográfica)
 
-let created = { resources: 0, rfs: 0, cfs: 0, specs: 0, parties: 0, sites: 0 };
+let created = { resources: 0, rfs: 0, cfs: 0, specs: 0, parties: 0, sites: 0, sitesLocated: 0, equipLocated: 0 };
 let reused = { resources: 0, rfs: 0, cfs: 0 };
 let failures = [];
 
@@ -74,7 +89,43 @@ async function bootstrapIndexes() {
   const sites = await api('GET', '/v1/geo/sites');
   for (const site of Array.isArray(sites) ? sites : []) {
     if (site?.name && !siteByName.has(site.name)) siteByName.set(site.name, site.id);
+    if (site?.name && site.place?.id) siteHasPlace.add(site.name);
   }
+}
+
+// ---- Posicionamento geográfico (idempotente) ----------------------------
+
+async function createLocationPoint(coord) {
+  const loc = await api('POST', '/v1/geo/locations', {
+    geometryType: 'Point',
+    geometry: { type: 'Point', coordinates: coord },
+    spatialRef: 'EPSG:4326',
+  });
+  return loc.id;
+}
+
+async function createRjAddress({ street, city, locationId }) {
+  const addr = await api('POST', '/v1/geo/addresses', {
+    street,
+    city,
+    stateOrProvince: 'RJ',
+    country: 'BR',
+    geographicLocationId: locationId,
+  });
+  return addr.id;
+}
+
+// Deslocamento determinístico (~±400m) a partir do nome, para espalhar os
+// equipamentos ao redor do seu CO/POP sem empilhar todos os pins no mesmo ponto.
+function jitterCoord([lng, lat], seed) {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const dx = (((h >>> 0) & 0xffff) / 0xffff - 0.5) * 0.008;
+  const dy = (((h >>> 16) & 0xffff) / 0xffff - 0.5) * 0.008;
+  return [lng + dx, lat + dy];
 }
 
 async function ensureServiceSpec(name, category, serviceType) {
@@ -128,6 +179,50 @@ async function ensureSite(name) {
   siteByName.set(name, site.id);
   created.sites++;
   return site.id;
+}
+
+// Igual a ensureSite, mas garante que o site tenha Location (Point) + Address no
+// RJ — assim renderiza como pin no mapa e aninha sob RJ → Município na árvore.
+async function ensureSiteLocated(name) {
+  const siteId = await ensureSite(name);
+  if (siteHasPlace.has(name)) return siteId;
+  const geo = SITE_GEO[name];
+  if (!geo) return siteId;
+  const locationId = await createLocationPoint(geo.coord);
+  const addressId = await createRjAddress({ street: geo.street, city: geo.city, locationId });
+  await api('PATCH', `/v1/geo/sites/${siteId}`, { placeId: locationId, addressId });
+  siteHasPlace.add(name);
+  created.sitesLocated++;
+  return siteId;
+}
+
+// Dá a cada equipamento semeado um ponto próprio perto do seu CO/POP, para
+// renderizar como pin no mapa (efeito Fase 4) e aninhar sob RJ → Município →
+// Equipamento na árvore. Idempotente: pula recursos que já apontam para uma
+// GeographicLocation.
+async function locateEquipment() {
+  const ws = await api('GET', '/v1/resource/workspace?tab=PhysicalResource&limit=1&offset=0');
+  const placeByResourceId = new Map();
+  for (const r of ws.physicalResources ?? []) placeByResourceId.set(r.id, r.place);
+
+  for (const [name, ref] of resourceByName) {
+    const siteName = resourceSiteByName.get(name);
+    const geo = siteName ? SITE_GEO[siteName] : undefined;
+    if (!geo) continue;
+    const place = placeByResourceId.get(ref.id);
+    if (place && place['@referredType'] === 'GeographicLocation') continue;
+    try {
+      const locationId = await createLocationPoint(jitterCoord(geo.coord, name));
+      await createRjAddress({ street: geo.street, city: geo.city, locationId });
+      await api('PATCH', `/tmf-api/resourceInventoryManagement/v4/resource/${ref.id}`, {
+        placeId: locationId,
+        placeType: 'GeographicLocation',
+      });
+      created.equipLocated++;
+    } catch (err) {
+      failures.push(`Geo equip ${name}: ${err.message}`);
+    }
+  }
 }
 
 async function ensureResource(name, resourceSpecId, siteId, serialNumber) {
@@ -201,11 +296,13 @@ async function seedFtth({ tenant, speedLabel, speedMbps, count }) {
   const rfsSpecId = await ensureServiceSpec('Acesso GPON', category, 'RFS');
   const cfsSpecId = await ensureServiceSpec('Bitstream FTTH', category, 'CFS');
   const partyId = await ensureParty(tenant);
-  const siteId = await ensureSite(`CO ${tenant}`);
+  const siteName = `CO ${tenant}`;
+  const siteId = await ensureSiteLocated(siteName);
 
   for (let i = 1; i <= count; i++) {
     const serial = `ONT-${tenant}-${pad(i)}`;
     const subscriberId = `SUB-${tenant}-${pad(i)}`;
+    resourceSiteByName.set(serial, siteName);
     try {
       const resource = await ensureResource(serial, ontSpecId, siteId, serial);
       const rfs = await ensureRfs({
@@ -240,13 +337,16 @@ async function seedAtacado({ product, category, rfsSpecName, cfsSpecName, resour
   const resourceSpecId = await ensureResourceSpec(accessLabel, resourceCategory, resourceType);
   const rfsSpecId = await ensureServiceSpec(rfsSpecName, category, 'RFS');
   const cfsSpecId = await ensureServiceSpec(cfsSpecName, category, 'CFS');
-  const siteId = await ensureSite(`POP ${product}`);
+  const siteName = `POP ${product}`;
+  const siteId = await ensureSiteLocated(siteName);
 
   for (let i = 1; i <= count; i++) {
     const subscriberId = `SUB-${cfsPrefix}-${pad(i)}`;
     const partyId = await ensureParty(`Cliente ${product} ${i}`);
+    const resourceName = `${accessLabel}-${pad(i)}`;
+    resourceSiteByName.set(resourceName, siteName);
     try {
-      const resource = await ensureResource(`${accessLabel}-${pad(i)}`, resourceSpecId, siteId, `${cfsPrefix}-${pad(i)}`);
+      const resource = await ensureResource(resourceName, resourceSpecId, siteId, `${cfsPrefix}-${pad(i)}`);
       const rfs = await ensureRfs({
         name: `${rfsPrefix}-${pad(i)}`,
         specId: rfsSpecId,
@@ -308,11 +408,15 @@ async function main() {
     count: 5, rfsPrefix: 'Transporte-L3VPN', cfsPrefix: 'VPN-L3',
   });
 
+  // Posiciona os equipamentos no RJ (perto do seu CO/POP) — depois de todos criados.
+  await locateEquipment();
+
   console.log('\n== Resumo ==');
   console.log(`Recursos: ${created.resources} criados, ${reused.resources} reaproveitados`);
   console.log(`RFS:      ${created.rfs} criados, ${reused.rfs} reaproveitados`);
   console.log(`CFS:      ${created.cfs} criados, ${reused.cfs} reaproveitados`);
   console.log(`Specs:    ${created.specs} | Parties: ${created.parties} | Sites: ${created.sites}`);
+  console.log(`Geo RJ:   ${created.sitesLocated} sites posicionados, ${created.equipLocated} equipamentos posicionados`);
   if (failures.length) {
     console.log(`\nFalhas (${failures.length}):`);
     for (const f of failures) console.log(`  - ${f}`);

@@ -1,53 +1,93 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { loadResourceWorkspaceSnapshot } from '../services/resourceApi';
-import type { PhysicalResource } from '../services/resourceApi';
+import type { PhysicalResource, LogicalResource } from '../services/resourceApi';
+import { isCableResource } from '../utils/geoHierarchy';
+
+export type ResourceInventory = {
+  physical: PhysicalResource[];
+  logical: LogicalResource[];
+  // Todos os recursos com place, para a hierarquia de Locais.
+  all: Array<PhysicalResource | LogicalResource>;
+  // Recursos posicionáveis no mapa (têm place).
+  located: Array<PhysicalResource | LogicalResource>;
+  loading: boolean;
+  error: string | null;
+};
 
 /**
- * Hook para carregar equipamentos (PhysicalResource) com localização.
- * Usa apenas recursos que têm placeId/placeType (para renderizar no mapa).
+ * Hook que carrega o inventário de recursos (equipamentos + cabos).
+ *
+ * O endpoint /v1/resource/workspace sempre devolve as listas completas de
+ * `physicalResources` e `logicalResources`, independentemente da aba pedida —
+ * então uma única chamada basta.
  */
-export function useEquipmentInventory() {
-  const [equipment, setEquipment] = useState<PhysicalResource[]>([]);
+export function useResourceInventory(): ResourceInventory {
+  const [physical, setPhysical] = useState<PhysicalResource[]>([]);
+  const [logical, setLogical] = useState<LogicalResource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
       try {
-        const snapshot = await loadResourceWorkspaceSnapshot();
-        // Filtrar apenas PhysicalResource com place
-        const filtered = snapshot.data.resources
-          .filter((r) => r['@type'] === 'PhysicalResource' && r.place?.id)
-          .slice(0, 500); // Limitar a 500 para não sobrecarregar mapa
-        setEquipment(filtered as PhysicalResource[]);
+        const snapshot = await loadResourceWorkspaceSnapshot({ tab: 'PhysicalResource', limit: 1, offset: 0 });
+        if (cancelled) return;
+        setPhysical(snapshot.physicalResources ?? []);
+        setLogical(snapshot.logicalResources ?? []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Erro ao carregar equipamentos');
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Erro ao carregar recursos');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
-    load();
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
+  // Memoizados: sem isto, `all`/`located` teriam referência nova a cada render,
+  // invalidando o useMemo de `hierarchyRoots` no GeoPage e reconstruindo a árvore
+  // de 6 níveis a cada pan/seleção/tecla.
+  const all = useMemo(() => [...physical, ...logical], [physical, logical]);
+  const located = useMemo(() => all.filter((resource) => resource.place?.id), [all]);
+
+  return { physical, logical, all, located, loading, error };
+}
+
+/**
+ * Mantido por compatibilidade: expõe apenas os equipamentos posicionáveis no
+ * mapa (PhysicalResource com place), como o hook original.
+ */
+export function useEquipmentInventory(): { equipment: PhysicalResource[]; loading: boolean; error: string | null } {
+  const { physical, loading, error } = useResourceInventory();
+  const equipment = physical.filter((resource) => resource.place?.id).slice(0, 500);
   return { equipment, loading, error };
 }
 
 /**
- * Identificar tipo de equipamento a partir de resourceSpecificationId ou name.
+ * Identificar tipo de equipamento a partir de resourceType, resourceSpecificationId ou name.
  */
-export function identifyEquipmentType(resource: PhysicalResource): string {
+export function identifyEquipmentType(resource: { name?: string; resourceType?: string; resourceSpecificationId?: string }): string {
+  const type = resource.resourceType?.toLowerCase() || '';
   const name = resource.name?.toLowerCase() || '';
   const specId = resource.resourceSpecificationId?.toLowerCase() || '';
+  const haystack = `${type} ${name} ${specId}`;
 
-  if (name.includes('splitter') || specId.includes('splitter')) return 'Splitter';
-  if (name.includes('pole') || name.includes('poste') || specId.includes('pole')) return 'Pole';
-  if (name.includes('olt') || specId.includes('olt')) return 'OLT';
-  if (name.includes('ont') || specId.includes('ont')) return 'ONT';
-  if (name.includes('cto') || specId.includes('cto')) return 'CTO';
-  if (name.includes('cpe') || specId.includes('cpe')) return 'CPE';
+  if (haystack.includes('splitter')) return 'Splitter';
+  if (haystack.includes('pole') || haystack.includes('poste')) return 'Pole';
+  if (haystack.includes('olt')) return 'OLT';
+  if (haystack.includes('ont')) return 'ONT';
+  if (haystack.includes('cto')) return 'CTO';
+  if (haystack.includes('cpe')) return 'CPE';
 
   return 'Unknown';
 }
+
+// Reexporta o classificador de cabo para consumidores do inventário.
+export { isCableResource };
 
 /**
  * Obter cor de equipamento por tipo.

@@ -168,7 +168,7 @@ export const ResearchHistoryPage: React.FC<{
         sessions.map((session) => (
           <div
             key={session.id}
-            className={`group flex items-start justify-between gap-1.5 rounded-[14px] border px-2 py-[2px] text-left transition ${
+            className={`group relative rounded-[14px] border px-2 py-[2px] text-left transition ${
               activeSessionId === session.id
                 ? 'border-[#E6C54D] bg-[#F6E8A8]'
                 : 'border-transparent hover:bg-app-accent-soft'
@@ -199,7 +199,7 @@ export const ResearchHistoryPage: React.FC<{
                 <button
                   type="button"
                   onClick={() => onSessionSelected?.(session.id)}
-                  className="w-full text-left"
+                  className="w-full pr-2 text-left"
                   title={session.title}
                 >
                   <div className={`truncate text-[0.92rem] leading-[1.1] ${activeSessionId === session.id ? 'font-semibold text-app-text' : 'text-app-text'}`}>
@@ -209,20 +209,22 @@ export const ResearchHistoryPage: React.FC<{
               )}
             </div>
             {editingSessionId === session.id ? null : (
-              <div className="flex flex-shrink-0 items-center gap-1">
+              <div className="pointer-events-none absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-[10px] bg-app-sidebar/95 pl-2 opacity-0 shadow-[0_0_12px_rgba(248,250,252,0.95)] transition group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                 <button
                   type="button"
                   onClick={(e) => beginEdit(session, e)}
-                  className="opacity-0 transition p-1 text-app-muted hover:text-app-text group-hover:opacity-100"
+                  className="rounded-[8px] p-1 text-app-muted transition hover:bg-white hover:text-app-text"
                   title="Editar conversa"
+                  aria-label={`Editar conversa ${session.title}`}
                 >
                   <PencilLine className="h-3 w-3" />
                 </button>
                 <button
                   type="button"
                   onClick={(e) => handleDelete(session.id, e)}
-                  className="opacity-0 transition p-1 text-app-muted hover:text-red-600 group-hover:opacity-100"
+                  className="rounded-[8px] p-1 text-app-muted transition hover:bg-white hover:text-red-600"
                   title="Arquivar"
+                  aria-label={`Arquivar conversa ${session.title}`}
                 >
                   <Trash2 className="h-3 w-3" />
                 </button>

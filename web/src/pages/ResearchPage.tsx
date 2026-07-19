@@ -464,7 +464,7 @@ export const ResearchPage: React.FC<{
 
       {/* Fixed Input Area - Bottom */}
       <div className="flex-shrink-0 px-6 py-4 bg-app-canvas">
-        <div className="mx-auto w-full max-w-[780px] bg-white border border-app-border rounded-2xl shadow-sm transition-shadow flex items-end gap-4 px-5 py-4 focus-within:shadow-md focus-within:ring-2 focus-within:ring-app-focus/40">
+        <div className="mx-auto flex w-full max-w-[780px] items-end gap-4 rounded-[24px] border border-app-border bg-white px-5 py-4 shadow-soft transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15">
           <textarea
             ref={textareaRef}
             value={input}

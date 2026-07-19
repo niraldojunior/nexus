@@ -58,7 +58,7 @@ export default function Composer({
     <div>
       <form
         onSubmit={handleSubmit}
-        className={`flex items-end gap-2 rounded-[24px] border border-app-border bg-white shadow-soft transition focus-within:border-app-accent-border focus-within:ring-2 focus-within:ring-app-focus/40 ${
+        className={`flex items-end gap-2 rounded-[24px] border border-app-border bg-white shadow-soft transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15 ${
           isHero ? 'px-4 py-2.5' : 'px-4 py-2'
         }`}
       >

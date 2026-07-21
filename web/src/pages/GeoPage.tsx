@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Plus,
@@ -16,9 +16,20 @@ import type {
   GeoGeometry,
 } from '../services/geoApi';
 import { getJson, postJson, patchJson } from '../services/geoApi';
-import { siteKindFromSpec, formatAddress, buildGeoDirectory } from '../utils/placeLabel';
-import { buildLocationHierarchy, type HierInstance } from '../utils/geoHierarchy';
-import { useResourceInventory, identifyEquipmentType, equipmentTypeColor, equipmentTypeLabel } from '../hooks/useEquipmentInventory';
+import {
+  siteKindFromSpec,
+  siteKindLabel,
+  formatAddress,
+  buildGeoDirectory,
+  resolvePlaceLabel,
+  resolvePlacePoint,
+  resolvePlaceRoute,
+} from '../utils/placeLabel';
+import type { GeoDirectory, SiteKind } from '../utils/placeLabel';
+import { buildLocationHierarchy, isCableResource, type HierInstance, type HierResource } from '../utils/geoHierarchy';
+import { useResourceInventory } from '../hooks/useEquipmentInventory';
+import { resourceIconFor, resourceIconDataUrl, resourceTypeCode } from '../utils/resourceIcon';
+import { siteIconDataUrl, siteIconFor } from '../utils/siteIcon';
 import { useNavigation } from '../hooks/useNavigation';
 import { GuidedSignupModal, HierarchySidebar } from './geo-tabs';
 
@@ -48,13 +59,65 @@ type DraftAddress = {
 
 type DetailTab = 'overview' | 'subsites' | 'topology' | 'lifecycle' | 'resources';
 
+// Conteúdo do balão flutuante ancorado no item clicado no mapa. É montado no
+// GeoPage (que tem o diretório Geo e o inventário) e apenas desenhado pelo
+// painel do mapa — assim o painel não precisa saber o que é Site ou Recurso.
+type MapBalloon = {
+  // `site:<id>` | `resource:<id>` — identifica o alvo e detecta troca de item.
+  key: string;
+  point: [number, number];
+  // Deslocamento em px do bico do balão em relação à coordenada, para o balão
+  // pousar acima do ícone em vez de cobri-lo.
+  offset: [number, number];
+  iconUrl: string;
+  eyebrow: string;
+  title: string;
+  rows: Array<[string, string]>;
+  actionLabel: string;
+  onAction: () => void;
+};
+
 const API_HEADERS = () => ({
   'Content-Type': 'application/json',
   Authorization: `Bearer ${localStorage.getItem('authToken') ?? 'change-me'}`,
 });
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+
+// Lado do ícone de equipamento no mapa, em px. Um pouco menor que o pin de site
+// para o equipamento não competir com o local que o contém.
+const MARKER_ICON_SIZE = 26;
+
+// Equipamento desenha acima do pin de local: por padrão o Google Maps ordena os
+// markers por latitude, e o pin do site cobriria o equipamento que mora nele.
+const EQUIPMENT_MARKER_Z = 1000;
+
+// Lado do ícone de local, um pouco maior que o de equipamento: o local é o
+// contexto, o equipamento é o detalhe dentro dele.
+const SITE_ICON_SIZE = 30;
+const SITE_MARKER_Z = 500;
+
+// A rota do cabo fica abaixo de todos os pins — é o fundo por onde a rede passa.
+const CABLE_ROUTE_Z = 10;
+
+// Espessura por hierarquia da planta: o feeder é o tronco, o drop é o capilar.
+const CABLE_STROKE_WEIGHT: Record<string, number> = {
+  BackboneCable: 5,
+  DistributionCable: 3.5,
+  DropCable: 2,
+  Fiber: 3,
+  Jumper: 2,
+  PatchCord: 2,
+};
 const DEFAULT_CENTER = { lat: -22.9068, lng: -43.1075 };
+
+// O basemap é contexto, não conteúdo: POI comercial some por inteiro e os demais
+// POIs perdem o ícone (o texto fica, como referência de orientação) para não
+// competirem com os pins de local, equipamento e rota de cabo do inventário.
+const MAP_STYLES = [
+  { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+];
 
 const statusLabel: Record<GeoStatus, string> = {
   planned: 'Planejado',
@@ -76,6 +139,16 @@ const relationshipTypeLabel = (type: string): string => {
 const layerOptions = ['CO', 'POP', 'CTO', 'PI', 'Relacoes', 'Sem coordenada'] as const;
 type LayerKey = (typeof layerOptions)[number];
 
+// As camadas cobrem só os tipos de local que ganham pin próprio. Região,
+// Sub-local (andar, sala técnica) e Local genérico não têm chave de camada —
+// antes isto os derrubava do mapa, porque `layers.has(kind)` nunca casava.
+const LAYER_FOR_SITE_KIND: Partial<Record<SiteKind, LayerKey>> = {
+  CO: 'CO',
+  POP: 'POP',
+  CTO: 'CTO',
+  PI: 'PI',
+};
+
 export default function GeoPage() {
   const [sites, setSites] = useState<GeoSite[]>([]);
   const [addresses, setAddresses] = useState<GeoAddress[]>([]);
@@ -94,6 +167,9 @@ export default function GeoPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedResource, setSelectedResource] = useState<HierInstance | null>(null);
   const [focusPoint, setFocusPoint] = useState<[number, number] | null>(null);
+  // Alvo do balão. Estado separado da seleção porque a carga inicial pré-seleciona
+  // o primeiro site — isso posiciona a árvore, mas não deve abrir um balão sozinho.
+  const [balloonKey, setBalloonKey] = useState<string | null>(null);
 
   const { physical, located, loading: resourcesLoading } = useResourceInventory();
   const { navParams, clearNav, goToResource } = useNavigation();
@@ -105,13 +181,17 @@ export default function GeoPage() {
   const selectedSite = selectedSiteId ? siteById.get(selectedSiteId) ?? null : null;
   const [searching, setSearching] = useState(false);
 
-  // Equipamentos posicionáveis no mapa (PhysicalResource com place).
-  const inventoryEquipment = useMemo(() => physical.filter((item) => item.place?.id).slice(0, 500), [physical]);
-
   // Diretório Geo + hierarquia de navegação (UF → Município → … → instância).
   const directory = useMemo(
     () => buildGeoDirectory(sites, addresses, locations, specs),
     [sites, addresses, locations, specs],
+  );
+
+  // Equipamentos posicionáveis no mapa: só entram os que o diretório consegue
+  // resolver para uma coordenada — seja via Site, Location ou Address.
+  const inventoryEquipment = useMemo<HierResource[]>(
+    () => physical.filter((item) => resolvePlacePoint(item.place, directory)).slice(0, 500),
+    [physical, directory],
   );
   const hierarchyRoots = useMemo(
     () => buildLocationHierarchy(directory, sites, located),
@@ -185,9 +265,9 @@ export default function GeoPage() {
     () =>
       sites.filter((site) => {
         const spec = specById.get(site.siteSpecificationId);
-        const layer = siteKindFromSpec(spec);
-        const hasPoint = Boolean(pointForSite(site, locationById));
-        return (layer !== 'Site' && layers.has(layer)) || (!hasPoint && layers.has('Sem coordenada'));
+        if (!pointForSite(site, locationById)) return layers.has('Sem coordenada');
+        const layer = LAYER_FOR_SITE_KIND[siteKindFromSpec(spec)];
+        return layer ? layers.has(layer) : true;
       }),
     [layers, locationById, sites, specById],
   );
@@ -198,9 +278,13 @@ export default function GeoPage() {
     setSelectedSiteId(site.id);
     setSelectedResource(null);
     setDraftAddress(null);
+    setBalloonKey(`site:${site.id}`);
     const point = pointForSite(site, locationById);
     if (point) setFocusPoint(point);
   };
+
+  // Fecha o balão: clique no mapa fora de qualquer item, X do próprio balão ou Esc.
+  const closeBalloon = useCallback(() => setBalloonKey(null), []);
 
   const openDetail = (site: GeoSite, tab: DetailTab = 'overview') => {
     selectSite(site);
@@ -208,22 +292,129 @@ export default function GeoPage() {
     setDetailOpen(true);
   };
 
-  // Seleção vinda da sidebar de hierarquia (árvore ou combos).
-  // Local → seleciona + abre detalhe do Site; Equipamento/Cabo → seleciona,
-  // centraliza no mapa e abre o cartão de detalhe do recurso.
+  // Seleção vinda do mapa (pin de equipamento ou traçado de cabo). Converte o
+  // recurso cru na mesma forma que a árvore entrega, para o cartão de detalhe
+  // ser o mesmo nos dois caminhos.
+  const selectResourceFromMap = useCallback((resource: HierResource) => {
+    setSelectedSiteId(null);
+    setBalloonKey(`resource:${resource.id}`);
+    setSelectedResource({
+      id: resource.id,
+      name: resource.name,
+      entity: isCableResource(resource) ? 'Cabo' : 'Equipamento',
+      referredType: resource['@type'] ?? 'PhysicalResource',
+      placeId: resource.place?.id,
+      placeType: resource.place?.['@referredType'],
+      siteKind: null,
+      resourceType: resourceTypeCode(resource),
+    });
+  }, []);
+
+  // Seleção vinda da sidebar de hierarquia (árvore ou combos). Centraliza o mapa
+  // e abre o mesmo balão do clique no pin — a árvore e o mapa são dois caminhos
+  // para a mesma seleção, e o detalhe completo sai do botão do balão.
   const selectInstance = (instance: HierInstance) => {
     if (instance.referredType === 'GeographicSite') {
       const site = siteById.get(instance.id);
-      if (site) openDetail(site);
+      if (site) selectSite(site);
       return;
     }
     setSelectedResource(instance);
     setSelectedSiteId(null);
-    if (instance.placeId) {
-      const location = locationById.get(instance.placeId);
-      if (location?.geometry.type === 'Point') setFocusPoint(location.geometry.coordinates);
-    }
+    setBalloonKey(`resource:${instance.id}`);
+    const point = resolvePlacePoint(
+      instance.placeId ? { id: instance.placeId, '@referredType': instance.placeType } : null,
+      directory,
+    );
+    if (point) setFocusPoint(point);
   };
+
+  // Monta o conteúdo do balão a partir do alvo selecionado. Fica aqui, e não no
+  // painel do mapa, porque só o GeoPage tem diretório Geo + inventário para
+  // resolver tipo, endereço e local de um item.
+  const balloon = useMemo<MapBalloon | null>(() => {
+    if (!balloonKey) return null;
+    const separator = balloonKey.indexOf(':');
+    const kind = balloonKey.slice(0, separator);
+    const id = balloonKey.slice(separator + 1);
+
+    if (kind === 'site') {
+      const site = siteById.get(id);
+      if (!site) return null;
+      const point = pointForSite(site, locationById);
+      if (!point) return null;
+      const spec = specById.get(site.siteSpecificationId);
+      const kindOfSite = siteKindFromSpec(spec);
+      const icon = siteIconFor(kindOfSite, site.status);
+      const address = site.address ? addressById.get(site.address.id) : undefined;
+      const parent = site.parentSite ? siteById.get(site.parentSite.id) : undefined;
+      // O pin do local é centrado na coordenada e cresce quando selecionado.
+      const pinSize = SITE_ICON_SIZE + 8;
+      const rows: Array<[string, string]> = [
+        ['Status', statusLabel[site.status]],
+        ['Endereço', address ? formatAddress(address) : 'Sem endereço'],
+      ];
+      if (parent) rows.push(['Local pai', parent.name]);
+      return {
+        key: balloonKey,
+        point,
+        offset: [0, -(pinSize / 2 + 6)],
+        iconUrl: siteIconDataUrl(icon, { size: 40 }),
+        eyebrow: spec?.name ?? siteKindLabel[kindOfSite],
+        title: site.name,
+        rows,
+        actionLabel: 'Ver detalhes do local',
+        onAction: () => openDetail(site),
+      };
+    }
+
+    const equip = inventoryEquipment.find((item) => item.id === id);
+    if (!equip) return null;
+    const point = resolvePlacePoint(equip.place, directory);
+    if (!point) return null;
+    const icon = resourceIconFor(equip);
+    // Cabo não tem pin: o balão nasce sobre o traçado, sem folga de ícone.
+    const isCable = Boolean(resolvePlaceRoute(equip.place, directory));
+    const placeLabel = resolvePlaceLabel(equip.place, directory);
+    const rows: Array<[string, string]> = [];
+    if (equip.model) rows.push(['Modelo', equip.model]);
+    if (equip.manufacturer) rows.push(['Fabricante', equip.manufacturer]);
+    if (equip.serialNumber) rows.push(['Nº de série', equip.serialNumber]);
+    if (placeLabel) rows.push(['Local', placeLabel.name]);
+    return {
+      key: balloonKey,
+      point,
+      // O ícone de equipamento é ancorado no canto inferior-esquerdo, então ele
+      // fica acima e à direita da coordenada — o balão segue o ícone.
+      offset: isCable ? [0, -8] : [MARKER_ICON_SIZE / 2, -(MARKER_ICON_SIZE + 4)],
+      iconUrl: resourceIconDataUrl(icon, { size: 40 }),
+      eyebrow: icon.label,
+      title: equip.name,
+      rows,
+      actionLabel: 'Abrir no módulo Recursos',
+      onAction: () => goToResource(equip.id),
+    };
+  }, [
+    addressById,
+    balloonKey,
+    directory,
+    goToResource,
+    inventoryEquipment,
+    locationById,
+    siteById,
+    specById,
+  ]);
+
+  // Esc fecha o balão — mas só quando nenhum modal está aberto, senão a tecla
+  // fecharia os dois de uma vez.
+  useEffect(() => {
+    if (!balloonKey || detailOpen || createOpen || typeOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeBalloon();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [balloonKey, closeBalloon, createOpen, detailOpen, typeOpen]);
 
   return (
     <div className="relative h-full min-h-0 min-w-0 overflow-hidden bg-transparent flex flex-col">
@@ -248,10 +439,14 @@ export default function GeoPage() {
           sites={visibleSites}
           specs={specById}
           locationById={locationById}
+          directory={directory}
           selectedSiteId={selectedSiteId}
           draftAddress={draftAddress}
           focusPoint={focusPoint}
+          balloon={balloon}
           onSelectSite={selectSite}
+          onSelectResource={selectResourceFromMap}
+          onCloseBalloon={closeBalloon}
           onDraftAddress={setDraftAddress}
           equipment={inventoryEquipment}
         />
@@ -299,13 +494,6 @@ export default function GeoPage() {
           </div>
         ) : null}
 
-        {selectedResource ? (
-          <ResourceDetailCard
-            instance={selectedResource}
-            onClose={() => setSelectedResource(null)}
-            onOpenResource={() => goToResource(selectedResource.id)}
-          />
-        ) : null}
             </div>
           </div>
       </main>
@@ -370,29 +558,50 @@ function GoogleMapPanel({
   sites,
   specs,
   locationById,
+  directory,
   selectedSiteId,
   draftAddress,
   focusPoint,
+  balloon,
   onSelectSite,
+  onSelectResource,
+  onCloseBalloon,
   onDraftAddress,
   equipment = [],
 }: {
   sites: GeoSite[];
   specs: Map<string, GeoSpec>;
   locationById: Map<string, GeoLocation>;
+  directory: GeoDirectory;
   selectedSiteId: string | null;
   draftAddress: DraftAddress | null;
   focusPoint?: [number, number] | null;
+  balloon: MapBalloon | null;
   onSelectSite: (site: GeoSite) => void;
+  onSelectResource: (resource: HierResource) => void;
+  onCloseBalloon: () => void;
   onDraftAddress: (address: DraftAddress) => void;
-  equipment?: any[];
+  equipment?: HierResource[];
 }) {
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const equipmentMarkersRef = useRef<any[]>([]);
+  const cableRoutesRef = useRef<any[]>([]);
   const draftMarkerRef = useRef<any>(null);
+  const infoWindowRef = useRef<any>(null);
+  // Nó fora da árvore do React: o InfoWindow do Google recebe este elemento como
+  // conteúdo e o React desenha dentro dele via portal, mantendo o balão como
+  // componente normal (com handlers) em vez de HTML em string.
+  const balloonNode = useMemo(() => document.createElement('div'), []);
+  // O balão abre/fecha por callbacks que mudam a cada render; o listener do mapa
+  // é registrado uma vez só, então lê sempre a versão atual daqui.
+  const closeBalloonRef = useRef(onCloseBalloon);
   const [mapsReady, setMapsReady] = useState(false);
+
+  useEffect(() => {
+    closeBalloonRef.current = onCloseBalloon;
+  }, [onCloseBalloon]);
 
   useEffect(() => {
     if (!GOOGLE_MAPS_KEY || !mapEl.current) return;
@@ -405,8 +614,12 @@ function GoogleMapPanel({
           mapTypeControl: false,
           fullscreenControl: false,
           streetViewControl: false,
+          styles: MAP_STYLES,
         });
         mapRef.current.addListener('click', (event: any) => {
+          // Clique fora de qualquer item: o balão sai. Cliques em marker ou
+          // polyline não chegam aqui, então o balão só fecha no vazio do mapa.
+          closeBalloonRef.current();
           const lat = event.latLng.lat();
           const lng = event.latLng.lng();
           reverseGeocode(lat, lng).then((address) => {
@@ -434,19 +647,20 @@ function GoogleMapPanel({
       const point = pointForSite(site, locationById);
       if (!point) continue;
       const spec = specs.get(site.siteSpecificationId);
+      const icon = siteIconFor(siteKindFromSpec(spec), site.status);
+      // O selecionado cresce; o resto fica no tamanho base. Local é quadrado
+      // arredondado, para não se confundir com o círculo dos equipamentos.
+      const size = selectedSiteId === site.id ? SITE_ICON_SIZE + 8 : SITE_ICON_SIZE;
       const marker = new window.google.maps.Marker({
         map: mapRef.current,
         position: { lng: point[0], lat: point[1] },
-        title: site.name,
-        label: markerLabel(siteKindFromSpec(spec)),
+        title: `${site.name} · ${icon.label}`,
         icon: {
-          path: window.google.maps.SymbolPath.CIRCLE,
-          fillColor: markerColor(site, spec),
-          fillOpacity: 1,
-          strokeColor: selectedSiteId === site.id ? '#243041' : '#ffffff',
-          strokeWeight: selectedSiteId === site.id ? 4 : 2,
-          scale: selectedSiteId === site.id ? 12 : 9,
+          url: siteIconDataUrl(icon, { size }),
+          scaledSize: new window.google.maps.Size(size, size),
+          anchor: new window.google.maps.Point(size / 2, size / 2),
         },
+        zIndex: selectedSiteId === site.id ? SITE_MARKER_Z + 1 : SITE_MARKER_Z,
       });
       marker.addListener('click', () => onSelectSite(site));
       markersRef.current.push(marker);
@@ -488,39 +702,133 @@ function GoogleMapPanel({
     equipmentMarkersRef.current = [];
 
     for (const equip of equipment) {
-      if (!equip.place?.id) continue;
-      // Para equipamentos, assumir que place.id é uma location (não site)
-      const location = locationById.get(equip.place.id);
-      if (!location?.geometry?.coordinates) continue;
+      // O place de um equipamento pode ser Site (dentro do CO/POP, C2), Location
+      // (ponto de planta externa) ou Address — resolvePlacePoint cobre os três.
+      const point = resolvePlacePoint(equip.place, directory);
+      if (!point) continue;
 
-      const [lng, lat] = location.geometry.coordinates;
-      const type = identifyEquipmentType(equip);
-      const color = equipmentTypeColor[type] || '#6B7280';
-      const label = equipmentTypeLabel[type] || '?';
+      const [lng, lat] = point;
+      // Mesmo glifo e mesma cor de família que a árvore de Locais usa.
+      const icon = resourceIconFor(equip);
 
       const marker = new window.google.maps.Marker({
         map: mapRef.current,
         position: { lng, lat },
-        title: equip.name,
-        label,
+        title: `${equip.name} · ${icon.label}`,
         icon: {
-          path: window.google.maps.SymbolPath.CIRCLE,
-          fillColor: color,
-          fillOpacity: 0.85,
-          strokeColor: '#ffffff',
-          strokeWeight: 2,
-          scale: 7,
+          url: resourceIconDataUrl(icon, { size: MARKER_ICON_SIZE }),
+          scaledSize: new window.google.maps.Size(MARKER_ICON_SIZE, MARKER_ICON_SIZE),
+          // Âncora no canto inferior-esquerdo do ícone: o equipamento fica acima e
+          // à direita da coordenada, em vez de centrado nela. Um equipamento dentro
+          // de um CO/PI compartilha a coordenada exata do site, e centrado ele ficaria
+          // escondido atrás do pin do local.
+          anchor: new window.google.maps.Point(0, MARKER_ICON_SIZE),
         },
+        zIndex: EQUIPMENT_MARKER_Z,
       });
+      marker.addListener('click', () => onSelectResource(equip));
       equipmentMarkersRef.current.push(marker);
     }
-  }, [equipment, locationById, mapsReady]);
+  }, [directory, equipment, mapsReady, onSelectResource]);
+
+  // Renderizar a rota dos cabos. Um cabo não é um ponto: a Location dele é uma
+  // LineString com o traçado real na rua, então vira polyline em vez de pin.
+  useEffect(() => {
+    if (!mapsReady || !mapRef.current) return;
+    cableRoutesRef.current.forEach((line) => line.setMap(null));
+    cableRoutesRef.current = [];
+
+    for (const equip of equipment) {
+      const route = resolvePlaceRoute(equip.place, directory);
+      if (!route) continue;
+      const icon = resourceIconFor(equip);
+
+      const line = new window.google.maps.Polyline({
+        map: mapRef.current,
+        path: route.map(([lng, lat]) => ({ lng, lat })),
+        strokeColor: icon.color,
+        strokeOpacity: 0.9,
+        strokeWeight: CABLE_STROKE_WEIGHT[icon.code] ?? 2.5,
+        zIndex: CABLE_ROUTE_Z,
+      });
+      line.addListener('click', () => onSelectResource(equip));
+      cableRoutesRef.current.push(line);
+    }
+  }, [directory, equipment, mapsReady, onSelectResource]);
+
+  // Balão ancorado no item selecionado. Usa o InfoWindow nativo — é o que dá o
+  // bico apontando para o pin, o auto-pan quando o balão nasce fora da tela e o
+  // X de fechar que o usuário já espera do Google Maps.
+  useEffect(() => {
+    if (!mapsReady || !mapRef.current) return;
+    if (!infoWindowRef.current) {
+      infoWindowRef.current = new window.google.maps.InfoWindow();
+      infoWindowRef.current.addListener('closeclick', () => closeBalloonRef.current());
+    }
+    const infoWindow = infoWindowRef.current;
+
+    if (!balloon) {
+      infoWindow.close();
+      return;
+    }
+
+    const [lng, lat] = balloon.point;
+    infoWindow.setContent(balloonNode);
+    infoWindow.setOptions({
+      pixelOffset: new window.google.maps.Size(balloon.offset[0], balloon.offset[1]),
+    });
+    infoWindow.setPosition({ lng, lat });
+    infoWindow.open({ map: mapRef.current });
+  }, [balloon, balloonNode, mapsReady]);
+
+  useEffect(() => () => infoWindowRef.current?.close(), []);
 
   if (!GOOGLE_MAPS_KEY) {
     return <FallbackMap sites={sites} specs={specs} locationById={locationById} draftAddress={draftAddress} onSelectSite={onSelectSite} />;
   }
 
-  return <div ref={mapEl} className="absolute inset-0 h-full w-full" />;
+  return (
+    <>
+      <div ref={mapEl} className="absolute inset-0 h-full w-full" />
+      {balloon ? createPortal(<MapBalloonCard balloon={balloon} />, balloonNode) : null}
+    </>
+  );
+}
+
+// Conteúdo do balão do mapa: identidade do item (tipo + nome + ícone), os campos
+// que o identificam em campo e o atalho para o detalhe completo. O detalhe mora
+// no módulo dono da entidade — aqui é só o cartão de visita.
+function MapBalloonCard({ balloon }: { balloon: MapBalloon }) {
+  return (
+    <div className="w-[244px] pb-1 pl-1 pt-1">
+      <div className="flex items-start gap-2.5 pr-5">
+        <img src={balloon.iconUrl} alt="" className="mt-0.5 h-8 w-8 shrink-0" />
+        <div className="min-w-0">
+          <div className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+            {balloon.eyebrow}
+          </div>
+          <h3 className="font-display text-[1rem] font-semibold leading-tight text-app-text">{balloon.title}</h3>
+        </div>
+      </div>
+
+      {balloon.rows.length ? (
+        <dl className="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-t border-app-border pt-2.5">
+          {balloon.rows.map(([label, value]) => (
+            <Fragment key={label}>
+              <dt className="text-[0.72rem] text-app-muted">{label}</dt>
+              <dd className="truncate text-[0.78rem] text-app-text" title={value}>
+                {value}
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
+      ) : null}
+
+      <button type="button" onClick={balloon.onAction} className="geo-btn primary mt-3 w-full justify-center">
+        {balloon.actionLabel}
+      </button>
+    </div>
+  );
 }
 
 function FallbackMap({
@@ -545,20 +853,20 @@ function FallbackMap({
         const point = pointForSite(site, locationById);
         if (!point) return null;
         const spec = specs.get(site.siteSpecificationId);
+        const icon = siteIconFor(siteKindFromSpec(spec), site.status);
         return (
           <button
             key={site.id}
             type="button"
             onClick={() => onSelectSite(site)}
-            className="absolute z-20 flex h-10 w-10 items-center justify-center rounded-[14px] border-2 border-white text-[0.72rem] font-bold shadow-soft"
+            title={`${site.name} · ${icon.label}`}
+            className="absolute z-20 h-10 w-10 shadow-soft"
             style={{
               left: `${20 + (index % 6) * 10}%`,
               top: `${30 + (index % 4) * 12}%`,
-              background: markerColor(site, spec),
-              color: '#243041',
             }}
           >
-            {markerLabel(siteKindFromSpec(spec))}
+            <img src={siteIconDataUrl(icon, { size: 40 })} alt={site.name} className="h-10 w-10" />
           </button>
         );
       })}
@@ -868,38 +1176,6 @@ function pointForSite(site: GeoSite, locations: Map<string, GeoLocation>): [numb
   return location.geometry.coordinates;
 }
 
-
-// Converter tipo de site (SiteKind) para rótulo de marker no Google Maps.
-function markerLabel(kind: ReturnType<typeof siteKindFromSpec>): string {
-  const labels: Record<string, string> = {
-    CO: 'CO',
-    POP: 'P',
-    CTO: 'CT',
-    PI: 'PI',
-    REGION: 'R',
-    SUBSITE: 'S',
-    SITE: 'S',
-  };
-  return labels[kind] ?? 'S';
-}
-
-// Colorir o marker no mapa por tipo de site + status.
-function markerColor(site: GeoSite, spec?: GeoSpec): string {
-  if (site.status === 'terminated') return '#9CA3AF';
-  if (site.status === 'suspended') return '#F59E0B';
-  if (site.status === 'planned') return '#9B59B6';
-  const kind = siteKindFromSpec(spec);
-  const colors: Record<string, string> = {
-    CO: '#9B59B6',
-    POP: '#004E89',
-    CTO: '#1A9E7D',
-    PI: '#8B7500',
-    REGION: '#5A5A5A',
-    SUBSITE: '#5A5A5A',
-    SITE: '#FFD200',
-  };
-  return colors[kind] ?? '#FFD200';
-}
 
 function isParentAllowed(child?: GeoSpec, parent?: GeoSpec): boolean {
   if (!child || !parent) return true;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { loadResourceWorkspaceSnapshot } from '../services/resourceApi';
-import type { PhysicalResource, LogicalResource } from '../services/resourceApi';
+import type { PhysicalResource, LogicalResource, ResourceWorkspaceSnapshot } from '../services/resourceApi';
 import { isCableResource } from '../utils/geoHierarchy';
 
 export type ResourceInventory = {
@@ -13,6 +13,28 @@ export type ResourceInventory = {
   loading: boolean;
   error: string | null;
 };
+
+// Requisição em voo compartilhada.
+//
+// O workspace de recursos é uma leitura cara (varre todo o inventário) e o
+// backend atende requisições em série: duas chamadas idênticas concorrentes
+// custam o dobro do tempo, não o mesmo. Como o StrictMode monta o efeito duas
+// vezes em dev, sem isto a primeira resposta chegava já descartada por
+// `cancelled` e a árvore só aparecia quando a segunda terminasse — o dobro da
+// espera. Compartilhar a promessa faz as duas montagens usarem a mesma ida à
+// rede, e a montagem que sobrevive recebe o resultado.
+let inFlightInventory: Promise<ResourceWorkspaceSnapshot> | null = null;
+
+function loadInventoryOnce(): Promise<ResourceWorkspaceSnapshot> {
+  if (!inFlightInventory) {
+    inFlightInventory = loadResourceWorkspaceSnapshot({ tab: 'PhysicalResource', limit: 1, offset: 0 }).finally(() => {
+      // Solta a referência para que um remount posterior releia o inventário —
+      // isto é dedupe de concorrência, não cache de dados.
+      inFlightInventory = null;
+    });
+  }
+  return inFlightInventory;
+}
 
 /**
  * Hook que carrega o inventário de recursos (equipamentos + cabos).
@@ -31,7 +53,7 @@ export function useResourceInventory(): ResourceInventory {
     let cancelled = false;
     const load = async () => {
       try {
-        const snapshot = await loadResourceWorkspaceSnapshot({ tab: 'PhysicalResource', limit: 1, offset: 0 });
+        const snapshot = await loadInventoryOnce();
         if (cancelled) return;
         setPhysical(snapshot.physicalResources ?? []);
         setLogical(snapshot.logicalResources ?? []);
@@ -57,60 +79,7 @@ export function useResourceInventory(): ResourceInventory {
   return { physical, logical, all, located, loading, error };
 }
 
-/**
- * Mantido por compatibilidade: expõe apenas os equipamentos posicionáveis no
- * mapa (PhysicalResource com place), como o hook original.
- */
-export function useEquipmentInventory(): { equipment: PhysicalResource[]; loading: boolean; error: string | null } {
-  const { physical, loading, error } = useResourceInventory();
-  const equipment = physical.filter((resource) => resource.place?.id).slice(0, 500);
-  return { equipment, loading, error };
-}
-
-/**
- * Identificar tipo de equipamento a partir de resourceType, resourceSpecificationId ou name.
- */
-export function identifyEquipmentType(resource: { name?: string; resourceType?: string; resourceSpecificationId?: string }): string {
-  const type = resource.resourceType?.toLowerCase() || '';
-  const name = resource.name?.toLowerCase() || '';
-  const specId = resource.resourceSpecificationId?.toLowerCase() || '';
-  const haystack = `${type} ${name} ${specId}`;
-
-  if (haystack.includes('splitter')) return 'Splitter';
-  if (haystack.includes('pole') || haystack.includes('poste')) return 'Pole';
-  if (haystack.includes('olt')) return 'OLT';
-  if (haystack.includes('ont')) return 'ONT';
-  if (haystack.includes('cto')) return 'CTO';
-  if (haystack.includes('cpe')) return 'CPE';
-
-  return 'Unknown';
-}
-
 // Reexporta o classificador de cabo para consumidores do inventário.
+// A classificação por tipo de recurso (ícone, cor, rótulo) vive em
+// `utils/resourceIcon.ts`, que é a fonte única usada pela árvore e pelo mapa.
 export { isCableResource };
-
-/**
- * Obter cor de equipamento por tipo.
- */
-export const equipmentTypeColor: Record<string, string> = {
-  Splitter: '#004E89',  // Azul escuro
-  Pole: '#8B7500',      // Marrom
-  OLT: '#FF6B35',       // Laranja
-  ONT: '#1A9E7D',       // Verde
-  CTO: '#1A9E7D',       // Verde
-  CPE: '#9B59B6',       // Roxo
-  Unknown: '#6B7280',   // Cinza
-};
-
-/**
- * Obter label curto de equipamento por tipo.
- */
-export const equipmentTypeLabel: Record<string, string> = {
-  Splitter: 'SPL',
-  Pole: 'POL',
-  OLT: 'OLT',
-  ONT: 'ONT',
-  CTO: 'CTO',
-  CPE: 'CPE',
-  Unknown: '?',
-};

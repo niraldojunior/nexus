@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronRight, Map, Building2, MapPin, Cable, Router, Tag, Circle } from 'lucide-react';
 import type { HierLevel, HierNode, HierInstance } from '../../utils/geoHierarchy';
+import { ResourceIcon } from '../../components/ResourceIcon';
 
 export type HierarchyTreeViewProps = {
   roots: HierNode[];
@@ -56,7 +57,7 @@ export function HierarchyTreeView({ roots, selectedInstanceKey, onSelectInstance
               <ChevronRight className={`h-3.5 w-3.5 transition ${isOpen ? 'rotate-90' : ''}`} />
             )}
           </span>
-          <NodeIcon level={node.level} label={node.label} />
+          <NodeIcon level={node.level} label={node.label} resourceType={node.resourceType ?? node.instance?.resourceType} />
           <span className="min-w-0 flex-1 truncate text-[0.85rem] font-medium">{node.label}</span>
           {!isLeaf ? (
             <span className="ml-1 shrink-0 rounded-[999px] bg-app-panel px-2 py-0.5 text-[0.68rem] font-semibold text-app-muted">
@@ -87,7 +88,15 @@ const ENTITY_COLOR: Record<string, string> = {
   Cabo: '#1A9E7D',
 };
 
-function NodeIcon({ level, label }: { level: HierLevel; label: string }) {
+function NodeIcon({ level, label, resourceType }: { level: HierLevel; label: string; resourceType?: string }) {
+  // Grupo de tipo e folha de recurso levam o ícone do tipo — o mesmo desenho que
+  // o pin do mapa usa, para o olho ligar árvore e mapa sem legenda.
+  if (resourceType && level === 'tipo') {
+    return <ResourceIcon resource={resourceType} variant="badge" size={20} />;
+  }
+  if (resourceType && level === 'instancia') {
+    return <ResourceIcon resource={resourceType} variant="glyph" size={14} />;
+  }
   if (level === 'entidade') {
     const color = ENTITY_COLOR[label] ?? '#5A5A5A';
     const Icon = label === 'Cabo' ? Cable : label === 'Equipamento' ? Router : Building2;

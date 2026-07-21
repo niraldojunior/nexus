@@ -221,3 +221,49 @@ export function resolvePlaceLabel(place: PlaceReference, directory: GeoDirectory
     resolved: false,
   };
 }
+
+// Resolve uma referência de local para a coordenada [lng, lat] que a representa
+// no mapa. O `place` de um recurso pode ser qualquer um dos três tipos Geo — um
+// equipamento dentro de um CO aponta para o Site (C2), um ponto de planta externa
+// aponta para a Location, e um endereço avulso aponta para o Address. Todos os
+// três precisam virar pin, então a resolução é feita aqui e não no chamador.
+export function resolvePlacePoint(place: PlaceReference, directory: GeoDirectory): [number, number] | null {
+  if (!place?.id) return null;
+
+  const pointOfLocation = (locationId?: string): [number, number] | null => {
+    if (!locationId) return null;
+    const location = directory.locationById.get(locationId);
+    if (!location || location.geometry.type !== 'Point') return null;
+    return location.geometry.coordinates;
+  };
+
+  const direct = pointOfLocation(place.id);
+  if (direct) return direct;
+
+  // Cabo: a geometria é a rota inteira, mas centralizar o mapa e ancorar um
+  // rótulo exigem um ponto só — usa-se o vértice do meio da rota.
+  const route = resolvePlaceRoute(place, directory);
+  if (route) return route[Math.floor(route.length / 2)] ?? null;
+
+  const site = directory.siteById.get(place.id);
+  if (site) return pointOfLocation(site.place?.id);
+
+  const address = directory.addressById.get(place.id);
+  if (address) return pointOfLocation(address.geographicLocationId);
+
+  return null;
+}
+
+// Resolve uma referência de local para a rota (LineString) que ela desenha no
+// mapa. Só cabos e dutos têm rota; para o resto devolve null e o chamador cai no
+// pin de `resolvePlacePoint`.
+export function resolvePlaceRoute(
+  place: PlaceReference,
+  directory: GeoDirectory,
+): Array<[number, number]> | null {
+  if (!place?.id) return null;
+  const location = directory.locationById.get(place.id);
+  if (!location || location.geometry.type !== 'LineString') return null;
+  const coordinates = location.geometry.coordinates;
+  return coordinates.length >= 2 ? coordinates : null;
+}

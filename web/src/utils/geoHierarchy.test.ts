@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { buildGeoDirectory, type GeoDirectory } from './placeLabel';
+import { buildGeoDirectory, resolvePlacePoint, resolvePlaceRoute, type GeoDirectory } from './placeLabel';
 import {
   buildLocationHierarchy,
   childrenAt,
@@ -180,6 +180,64 @@ test('sites terminados são ocultados da árvore', () => {
   // Só o site ativo aparece; o terminado é omitido.
   assert.equal(tipoNode!.children.length, 1);
   assert.equal(tipoNode!.children[0].instance?.id, 'site-co');
+});
+
+test('recurso com place = GeographicSite aninha sob o site (C2)', () => {
+  // Forma canônica após o reparo geográfico: equipamento dentro do CO aponta
+  // direto para o Site, não para uma Location solta.
+  const dir = makeDirectory();
+  const porta: HierResource = {
+    id: 'res-porta',
+    name: 'PortaGPON-0001',
+    '@type': 'PhysicalResource',
+    resourceType: 'Port',
+    place: { id: 'site-co', '@referredType': 'GeographicSite' },
+  };
+  const roots = buildLocationHierarchy(dir, [regionCentro, siteCO], [porta]);
+
+  const path = ['uf:RJ', 'municipio:Niterói', 'localidade:Centro', 'entidade:Equipamento', 'tipo:Port'];
+  const tipoNode = nodeAt(roots, path);
+  assert.ok(tipoNode, 'porta deveria aparecer sob Equipamento → Port');
+  assert.equal(tipoNode!.children.length, 1);
+  assert.equal(tipoNode!.children[0].instance?.id, 'res-porta');
+  assert.equal(tipoNode!.resourceType, 'Port');
+});
+
+test('cabo resolve rota (LineString) e ponto representativo no meio dela', () => {
+  const rota: GeoLocation = {
+    '@type': 'GeographicLocation',
+    id: 'loc-rota',
+    href: '',
+    geometryType: 'LineString',
+    geometry: {
+      type: 'LineString',
+      coordinates: [
+        [-43.1, -22.9],
+        [-43.11, -22.91],
+        [-43.12, -22.92],
+      ],
+    },
+    spatialRef: 'EPSG:4326',
+  };
+  const dir = buildGeoDirectory([], [], [rota], []);
+  const place = { id: 'loc-rota', '@referredType': 'GeographicLocation' };
+
+  assert.deepEqual(resolvePlaceRoute(place, dir), rota.geometry.coordinates);
+  // Sem ponto próprio, o cabo ainda precisa centralizar o mapa: usa o meio da rota.
+  assert.deepEqual(resolvePlacePoint(place, dir), [-43.11, -22.91]);
+});
+
+test('rota degenerada (menos de 2 vértices) não vira polyline', () => {
+  const degenerada: GeoLocation = {
+    '@type': 'GeographicLocation',
+    id: 'loc-degenerada',
+    href: '',
+    geometryType: 'LineString',
+    geometry: { type: 'LineString', coordinates: [[-43.1, -22.9]] },
+    spatialRef: 'EPSG:4326',
+  };
+  const dir = buildGeoDirectory([], [], [degenerada], []);
+  assert.equal(resolvePlaceRoute({ id: 'loc-degenerada' }, dir), null);
 });
 
 test('itens sem geografia caem em buckets "Sem ..."', () => {

@@ -11,8 +11,10 @@
 
 import type { GeoSite } from '../services/geoApi';
 import { siteKindFromSpec, siteKindLabel, type GeoDirectory, type SiteKind } from './placeLabel';
+import { resourceTypeCode } from './resourceIcon';
 
-// Forma mínima de recurso (equipamento/cabo) consumida pela hierarquia.
+// Forma mínima de recurso (equipamento/cabo) como o módulo Geo o enxerga:
+// o suficiente para posicioná-lo, classificá-lo e identificá-lo no mapa.
 // Mantida local para não acoplar a util ao cliente HTTP de resourceApi.
 export type HierResource = {
   id: string;
@@ -21,6 +23,11 @@ export type HierResource = {
   resourceType?: string;
   resourceSpecification?: { id?: string; name?: string; '@referredType'?: string };
   place?: { id: string; '@referredType'?: string };
+  // Identificação de placa/equipamento — exibida no balão do mapa. O dado
+  // completo continua sendo do módulo Resource; aqui é só o cartão de visita.
+  manufacturer?: string;
+  model?: string;
+  serialNumber?: string;
 };
 
 export type HierLevel = 'uf' | 'municipio' | 'localidade' | 'entidade' | 'tipo' | 'instancia';
@@ -36,6 +43,9 @@ export type HierInstance = {
   placeId?: string;
   placeType?: string;
   siteKind: SiteKind | null;
+  // Código de tipo do catálogo (ResourceType.code) — resolve o ícone da folha.
+  // Ausente em instâncias de Local, que se identificam pelo siteKind.
+  resourceType?: string;
 };
 
 export type HierNode = {
@@ -46,6 +56,9 @@ export type HierNode = {
   children: HierNode[];
   // Presente apenas em folhas (level === 'instancia').
   instance?: HierInstance;
+  // Presente em nós de nível 'tipo' que agrupam recursos — dá o ícone do grupo.
+  // Nós de tipo sob 'Local' não têm, pois se identificam pela spec do site.
+  resourceType?: string;
 };
 
 const SEM_UF = 'Sem UF';
@@ -213,6 +226,7 @@ export function buildLocationHierarchy(
       placeId: resource.place?.id,
       placeType: resource.place?.['@referredType'] ?? 'GeographicLocation',
       siteKind: null,
+      resourceType: resourceTypeCode(resource),
     });
   }
 
@@ -275,6 +289,9 @@ function toNodes(root: Map<string, Map<string, Map<string, Map<EntityKind, Map<s
               label: tipo,
               count: instanceNodes.length,
               children: instanceNodes,
+              // Todas as instâncias de um nó de tipo compartilham o mesmo código,
+              // então a primeira basta para dar o ícone do grupo.
+              ...(instances[0]?.resourceType ? { resourceType: instances[0].resourceType } : {}),
             });
           }
 

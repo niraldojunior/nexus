@@ -45,6 +45,16 @@ const SITE_GEO = {
   'POP VPN L3':          { city: 'São Gonçalo',    street: 'Av. Presidente Kennedy, 800',       coord: [-43.0230, -22.8230] },
 };
 
+// Specs de site por papel — CO, POP e o Ponto de instalação do assinante.
+const SPEC_CO = 'Estação (CO)';
+const SPEC_POP = 'POP';
+const SPEC_PI = 'Ponto de instalação';
+
+// Tipos de recurso que ficam do rack para dentro (C2): o `place` deles é o
+// próprio CO/POP. O que não estiver aqui é CPE de assinante e ganha um Ponto de
+// instalação próprio.
+const INSIDE_SITE_TYPES = new Set(['Port', 'Card', 'Shelf', 'OLT', 'Rack']);
+
 async function api(method, path, body) {
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -72,6 +82,7 @@ const cfsByName = new Map(); // name -> { id }
 const specByName = new Map(); // name -> id
 const partyByName = new Map(); // name -> id
 const siteByName = new Map(); // name -> id
+const siteSpecByName = new Map(); // nome da spec de site -> id
 const siteHasPlace = new Set(); // nomes de sites que já têm Location (place)
 const resourceSiteByName = new Map(); // resource name -> site name (âncora geográfica)
 
@@ -86,10 +97,19 @@ async function bootstrapIndexes() {
   for (const s of ws.customerFacingServices ?? []) cfsByName.set(s.name, { id: s.id });
   for (const s of ws.resourceFacingServices ?? []) rfsByName.set(s.name, { id: s.id });
 
+  // Sites terminados são ignorados na indexação: re-execuções antigas deixaram
+  // homônimos soft-terminados (C6) sem coordenada, e prender o seed a um deles
+  // ancorava os serviços num site invisível no mapa e na árvore.
+  const siteSpecs = await api('GET', '/v1/geo/site-specifications');
+  for (const spec of Array.isArray(siteSpecs) ? siteSpecs : []) {
+    if (spec?.name && !siteSpecByName.has(spec.name)) siteSpecByName.set(spec.name, spec.id);
+  }
+
   const sites = await api('GET', '/v1/geo/sites');
   for (const site of Array.isArray(sites) ? sites : []) {
-    if (site?.name && !siteByName.has(site.name)) siteByName.set(site.name, site.id);
-    if (site?.name && site.place?.id) siteHasPlace.add(site.name);
+    if (!site?.name || site.status === 'terminated') continue;
+    if (!siteByName.has(site.name)) siteByName.set(site.name, site.id);
+    if (site.place?.id) siteHasPlace.add(site.name);
   }
 }
 
@@ -166,16 +186,29 @@ async function ensureParty(name) {
   return party.id;
 }
 
+// Reusa a spec de site já cadastrada; só cria se realmente não existir. Antes o
+// índice era populado com uma chave que o bootstrap nunca preenchia, então cada
+// execução duplicava a spec.
+async function ensureSiteSpec(name) {
+  const cached = siteSpecByName.get(name);
+  if (cached) return cached;
+  const spec = await api('POST', '/v1/geo/site-specifications', { name, category: 'Site' });
+  siteSpecByName.set(name, spec.id);
+  return spec.id;
+}
+
+// Cada papel tem a sua spec: sem isso todo site cai em "Ponto de instalação" e o
+// mapa pinta CO e POP como se fossem endereço de cliente.
+function siteSpecNameFor(siteName) {
+  if (siteName.startsWith('CO ')) return SPEC_CO;
+  if (siteName.startsWith('POP ')) return SPEC_POP;
+  return SPEC_PI;
+}
+
 async function ensureSite(name) {
   if (siteByName.has(name)) return siteByName.get(name);
-  const siteSpecName = 'Ponto de instalação';
-  let siteSpecId = specByName.get(`SITE:${siteSpecName}`);
-  if (!siteSpecId) {
-    const s = await api('POST', '/v1/geo/site-specifications', { name: siteSpecName, category: 'Site' });
-    siteSpecId = s.id;
-    specByName.set(`SITE:${siteSpecName}`, siteSpecId);
-  }
-  const site = await api('POST', '/v1/geo/sites', { name, siteSpecificationId: siteSpecId });
+  const siteSpecId = await ensureSiteSpec(siteSpecNameFor(name));
+  const site = await api('POST', '/v1/geo/sites', { name, siteSpecificationId: siteSpecId, status: 'active' });
   siteByName.set(name, site.id);
   created.sites++;
   return site.id;
@@ -196,27 +229,47 @@ async function ensureSiteLocated(name) {
   return siteId;
 }
 
-// Dá a cada equipamento semeado um ponto próprio perto do seu CO/POP, para
-// renderizar como pin no mapa (efeito Fase 4) e aninhar sob RJ → Município →
-// Equipamento na árvore. Idempotente: pula recursos que já apontam para uma
-// GeographicLocation.
-async function locateEquipment() {
+// Ancora cada equipamento no lugar onde ele fisicamente está, sempre via
+// GeographicSite — nunca uma Location solta, que quebraria o vínculo Geo↔Resource
+// e deixaria o recurso rotulado como "Ponto no mapa".
+//
+//   · Porta/placa/rack  → o próprio CO/POP (do rack para dentro, C2).
+//   · ONT e demais CPE  → um Ponto de instalação próprio (Home Connected, C4),
+//                          com coordenada jitterada ao redor do CO que o serve.
+//
+// Idempotente: pula recursos que já apontam para um GeographicSite.
+async function anchorEquipment() {
   const ws = await api('GET', '/v1/resource/workspace?tab=PhysicalResource&limit=1&offset=0');
-  const placeByResourceId = new Map();
-  for (const r of ws.physicalResources ?? []) placeByResourceId.set(r.id, r.place);
+  const byId = new Map();
+  for (const r of ws.physicalResources ?? []) byId.set(r.id, r);
 
   for (const [name, ref] of resourceByName) {
     const siteName = resourceSiteByName.get(name);
     const geo = siteName ? SITE_GEO[siteName] : undefined;
     if (!geo) continue;
-    const place = placeByResourceId.get(ref.id);
-    if (place && place['@referredType'] === 'GeographicLocation') continue;
+    const resource = byId.get(ref.id);
+    if (resource?.place?.['@referredType'] === 'GeographicSite') continue;
+
     try {
-      const locationId = await createLocationPoint(jitterCoord(geo.coord, name));
-      await createRjAddress({ street: geo.street, city: geo.city, locationId });
+      let placeId;
+      if (INSIDE_SITE_TYPES.has(resource?.resourceType)) {
+        placeId = await ensureSite(siteName);
+      } else {
+        const locationId = await createLocationPoint(jitterCoord(geo.coord, name));
+        const addressId = await createRjAddress({ street: geo.street, city: geo.city, locationId });
+        const piSite = await api('POST', '/v1/geo/sites', {
+          name: `PI ${name}`,
+          siteSpecificationId: await ensureSiteSpec(SPEC_PI),
+          placeId: locationId,
+          addressId,
+          status: 'active',
+        });
+        placeId = piSite.id;
+        created.sites++;
+      }
       await api('PATCH', `/tmf-api/resourceInventoryManagement/v4/resource/${ref.id}`, {
-        placeId: locationId,
-        placeType: 'GeographicLocation',
+        placeId,
+        placeType: 'GeographicSite',
       });
       created.equipLocated++;
     } catch (err) {
@@ -409,14 +462,14 @@ async function main() {
   });
 
   // Posiciona os equipamentos no RJ (perto do seu CO/POP) — depois de todos criados.
-  await locateEquipment();
+  await anchorEquipment();
 
   console.log('\n== Resumo ==');
   console.log(`Recursos: ${created.resources} criados, ${reused.resources} reaproveitados`);
   console.log(`RFS:      ${created.rfs} criados, ${reused.rfs} reaproveitados`);
   console.log(`CFS:      ${created.cfs} criados, ${reused.cfs} reaproveitados`);
   console.log(`Specs:    ${created.specs} | Parties: ${created.parties} | Sites: ${created.sites}`);
-  console.log(`Geo RJ:   ${created.sitesLocated} sites posicionados, ${created.equipLocated} equipamentos posicionados`);
+  console.log(`Geo RJ:   ${created.sitesLocated} sites posicionados, ${created.equipLocated} equipamentos ancorados`);
   if (failures.length) {
     console.log(`\nFalhas (${failures.length}):`);
     for (const f of failures) console.log(`  - ${f}`);

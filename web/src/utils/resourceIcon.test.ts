@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   familyColor,
+  isOutdoorResource,
   resourceIconDataUrl,
   resourceIconFor,
   resourceIconSvg,
+  resourcePlant,
   resourceTypeCode,
 } from './resourceIcon';
 
@@ -73,5 +75,36 @@ describe('resourceIconSvg', () => {
     const url = resourceIconDataUrl(resourceIconFor({ resourceType: 'Splitter' }));
     expect(url.startsWith('data:image/svg+xml;charset=UTF-8,')).toBe(true);
     expect(decodeURIComponent(url.split(',')[1])).toContain('<svg');
+  });
+});
+
+describe('resourcePlant', () => {
+  it('classifica a planta externa — o que existe na rua e tem coordenada própria', () => {
+    for (const code of ['CTO', 'Pole', 'Manhole', 'Duct', 'Splitter', 'BackboneCable', 'DropCable', 'Fiber']) {
+      expect(resourcePlant({ resourceType: code })).toBe('outdoor');
+    }
+  });
+
+  it('classifica a planta interna — o que mora no rack da estação', () => {
+    for (const code of ['OLT', 'Card', 'Port', 'Rack', 'Switch', 'Router', 'PowerSupply', 'Jumper', 'PatchCord']) {
+      expect(resourcePlant({ resourceType: code })).toBe('indoor');
+    }
+  });
+
+  it('trata o DIO como planta interna, apesar de passivo', () => {
+    expect(resourceIconFor({ resourceType: 'DIO' }).family).toBe('passive');
+    expect(resourcePlant({ resourceType: 'DIO' })).toBe('indoor');
+  });
+
+  it('separa equipamento de cliente e recurso lógico', () => {
+    expect(resourcePlant({ resourceType: 'ONT' })).toBe('customer');
+    expect(resourcePlant({ resourceType: 'CPE' })).toBe('customer');
+    expect(resourcePlant({ resourceType: 'VLAN' })).toBe('logical');
+  });
+
+  it('mantém o tipo desconhecido visível no mapa', () => {
+    expect(resourcePlant({ name: 'Coisa nova sem catálogo' })).toBe('outdoor');
+    expect(isOutdoorResource({ name: 'Coisa nova sem catálogo' })).toBe(true);
+    expect(isOutdoorResource({ resourceType: 'ONT' })).toBe(false);
   });
 });

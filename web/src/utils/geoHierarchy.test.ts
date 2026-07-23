@@ -1,214 +1,163 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { buildGeoDirectory, resolvePlacePoint, resolvePlaceRoute, type GeoDirectory } from './placeLabel';
 import {
-  buildLocationHierarchy,
-  childrenAt,
+  collapseBranch,
+  defaultExpandedRows,
+  flattenTreeRows,
   isCableResource,
-  nodeAt,
-  type HierResource,
+  type GeoTreeState,
 } from './geoHierarchy';
-import type { GeoAddress, GeoLocation, GeoSite, GeoSpec } from '../services/geoApi';
+import { treeNodePoint, treeNodeRoute, type GeoTreeNode } from '../services/geoTreeApi';
 
-// ---- Fixtures mínimas -------------------------------------------------------
+// ---- Fixtures ---------------------------------------------------------------
 
-const specRegion: GeoSpec = {
-  '@type': 'GeographicSiteSpecification',
-  id: 'spec-region',
-  href: '',
-  name: 'Região',
-  category: 'Region',
-  allowedParentSpecIds: [],
-  allowedChildSpecIds: [],
-};
+const node = (id: string, overrides: Partial<GeoTreeNode> = {}): GeoTreeNode => ({
+  id,
+  kind: 'resource',
+  label: id,
+  hasChildren: false,
+  ...overrides,
+});
 
-const specCO: GeoSpec = {
-  '@type': 'GeographicSiteSpecification',
-  id: 'spec-co',
-  href: '',
-  name: 'Central Office',
-  category: 'Site',
-  allowedParentSpecIds: [],
-  allowedChildSpecIds: [],
-};
+// UF → Município → Estações → Estação → CDOE → splitter, como o servidor entrega.
+function buildState(): GeoTreeState {
+  const nodes: GeoTreeNode[] = [
+    node('uf:RJ', { kind: 'uf', label: 'RJ', hasChildren: true, childCount: 1 }),
+    node('city:RJ|Niterói', { kind: 'city', label: 'Niterói', hasChildren: true, childCount: 1 }),
+    node('group:RJ|Niterói|stations', { kind: 'group', label: 'Estações', hasChildren: true, childCount: 1 }),
+    node('site:est-1', {
+      kind: 'site',
+      label: 'Icaraí (ICI)',
+      refId: 'est-1',
+      referredType: 'GeographicSite',
+      hasChildren: true,
+      geometry: { type: 'Point', coordinates: [-43.1, -22.9] },
+    }),
+    node('resource:cdoe-1', {
+      label: 'CDOE-1108 (ICI)',
+      refId: 'cdoe-1',
+      resourceType: 'CTO',
+      hasChildren: true,
+      geometry: { type: 'Point', coordinates: [-43.11, -22.91] },
+    }),
+    node('resource:spl-1', { label: 'CDOE-1108 · S32_1', refId: 'spl-1', resourceType: 'Splitter' }),
+  ];
 
-const addressNiteroi: GeoAddress = {
-  '@type': 'GeographicAddress',
-  id: 'addr-1',
-  href: '',
-  street: 'Rua X',
-  city: 'Niterói',
-  stateOrProvince: 'RJ',
-  geographicLocationId: 'loc-1',
-};
-
-const locationCO: GeoLocation = {
-  '@type': 'GeographicLocation',
-  id: 'loc-co',
-  href: '',
-  geometryType: 'Point',
-  geometry: { type: 'Point', coordinates: [-43.1, -22.9] },
-  spatialRef: 'EPSG:4326',
-};
-
-const locationEquip: GeoLocation = {
-  '@type': 'GeographicLocation',
-  id: 'loc-equip',
-  href: '',
-  geometryType: 'Point',
-  geometry: { type: 'Point', coordinates: [-43.2, -22.8] },
-  spatialRef: 'EPSG:4326',
-};
-
-// Região "Centro" (Localidade) sob a qual pende a Central Office.
-const regionCentro: GeoSite = {
-  '@type': 'GeographicSite',
-  id: 'site-centro',
-  href: '',
-  name: 'Centro',
-  status: 'active',
-  siteSpecificationId: 'spec-region',
-  siteSpecification: { id: 'spec-region', '@referredType': 'GeographicSiteSpecification' },
-  relatedSite: [],
-  relatedParty: [],
-  characteristic: [],
-};
-
-const siteCO: GeoSite = {
-  '@type': 'GeographicSite',
-  id: 'site-co',
-  href: '',
-  name: 'CO Niterói',
-  status: 'active',
-  siteSpecificationId: 'spec-co',
-  siteSpecification: { id: 'spec-co', '@referredType': 'GeographicSiteSpecification' },
-  place: { id: 'loc-co', '@referredType': 'GeographicLocation' },
-  address: { id: 'addr-1', '@referredType': 'GeographicAddress' },
-  parentSite: { id: 'site-centro', '@referredType': 'GeographicSite' },
-  relatedSite: [],
-  relatedParty: [],
-  characteristic: [],
-};
-
-function makeDirectory(): GeoDirectory {
-  // siteByLocationId precisa mapear a location do equipamento ao Site dono.
-  const dir = buildGeoDirectory(
-    [regionCentro, siteCO],
-    [addressNiteroi],
-    [locationCO, locationEquip],
-    [specRegion, specCO],
-  );
-  // Equipamento posicionado na mesma Central (loc-equip pertence ao site-co).
-  dir.siteByLocationId.set('loc-equip', siteCO);
-  return dir;
+  return {
+    nodesById: Object.fromEntries(nodes.map((item) => [item.id, item])),
+    childIds: {
+      'uf:RJ': ['city:RJ|Niterói'],
+      'city:RJ|Niterói': ['group:RJ|Niterói|stations'],
+      'group:RJ|Niterói|stations': ['site:est-1'],
+      'site:est-1': ['resource:cdoe-1'],
+      'resource:cdoe-1': ['resource:spl-1'],
+    },
+    totals: {
+      'uf:RJ': 1,
+      'city:RJ|Niterói': 1,
+      'group:RJ|Niterói|stations': 1,
+      // A estação tem 3.823 filhos diretos; só 1 veio na primeira página.
+      'site:est-1': 3823,
+      'resource:cdoe-1': 1,
+    },
+    rootIds: ['uf:RJ'],
+  };
 }
 
-const equipOLT: HierResource = {
-  id: 'res-olt',
-  name: 'OLT-01',
-  '@type': 'PhysicalResource',
-  resourceType: 'OLT',
-  place: { id: 'loc-equip', '@referredType': 'GeographicLocation' },
-};
+const rowKeys = (rows: ReturnType<typeof flattenTreeRows>) => rows.map((row) => row.rowKey);
 
-const cableFiber: HierResource = {
-  id: 'res-fiber',
-  name: 'Fibra Feeder 01',
-  '@type': 'PhysicalResource',
-  resourceType: 'BackboneCable',
-  place: { id: 'loc-equip', '@referredType': 'GeographicLocation' },
-};
+// ---- Abertura ---------------------------------------------------------------
 
-// ---- Testes -----------------------------------------------------------------
+test('níveis geográficos abrem por padrão e a estação não', () => {
+  const state = buildState();
+  const expanded = defaultExpandedRows(state);
 
-test('isCableResource distingue cabo de equipamento', () => {
-  assert.equal(isCableResource({ resourceType: 'BackboneCable' }), true);
-  assert.equal(isCableResource({ resourceType: 'DropCable' }), true);
-  assert.equal(isCableResource({ resourceType: 'Fiber' }), true);
-  assert.equal(isCableResource({ resourceType: 'OLT' }), false);
-  assert.equal(isCableResource({ resourceType: 'Splitter' }), false);
+  assert.deepEqual(
+    [...expanded].sort(),
+    ['/uf:RJ', '/uf:RJ/city:RJ|Niterói', '/uf:RJ/city:RJ|Niterói/group:RJ|Niterói|stations'].sort(),
+  );
+
+  const rows = flattenTreeRows(state, expanded, new Set());
+  const last = rows[rows.length - 1];
+  // A estação aparece (e vai ao mapa), mas fechada — seus filhos ficam no banco.
+  assert.equal(last?.rowKey, '/uf:RJ/city:RJ|Niterói/group:RJ|Niterói|stations/site:est-1');
+  assert.equal(last?.expanded, false);
 });
 
-test('buildLocationHierarchy monta UF → Município → Localidade → Entidade → Tipo → instância', () => {
-  const dir = makeDirectory();
-  const roots = buildLocationHierarchy(dir, [regionCentro, siteCO], [equipOLT, cableFiber]);
-
-  // UF derivada do endereço.
-  assert.equal(roots.length, 1);
-  const uf = roots[0];
-  assert.equal(uf.label, 'RJ');
-  assert.equal(uf.count, 3); // 1 local + 1 equip + 1 cabo
-
-  const municipio = childrenAt(roots, [uf.key])[0];
-  assert.equal(municipio.label, 'Niterói');
-
-  const localidade = childrenAt(roots, [uf.key, municipio.key])[0];
-  // Localidade vem da Região ancestral "Centro".
-  assert.equal(localidade.label, 'Centro');
-
-  const entidades = childrenAt(roots, [uf.key, municipio.key, localidade.key]);
-  const entidadeLabels = entidades.map((node) => node.label);
-  assert.deepEqual(entidadeLabels, ['Local', 'Equipamento', 'Cabo']);
+test('nó fechado não revela filhos já carregados', () => {
+  const state = buildState();
+  const rows = flattenTreeRows(state, new Set(['/uf:RJ']), new Set());
+  assert.deepEqual(rowKeys(rows), ['/uf:RJ', '/uf:RJ/city:RJ|Niterói']);
 });
 
-test('folha de instância carrega dados para seleção no mapa', () => {
-  const dir = makeDirectory();
-  const roots = buildLocationHierarchy(dir, [regionCentro, siteCO], [equipOLT]);
-  const path = [
-    'uf:RJ',
-    'municipio:Niterói',
-    'localidade:Centro',
-    'entidade:Local',
-    'tipo:Central Office',
-  ];
-  const tipoNode = nodeAt(roots, path);
-  assert.ok(tipoNode);
-  assert.equal(tipoNode!.children.length, 1);
-  const leaf = tipoNode!.children[0];
-  assert.equal(leaf.level, 'instancia');
-  assert.equal(leaf.instance?.referredType, 'GeographicSite');
-  assert.equal(leaf.instance?.id, 'site-co');
+// ---- Paginação --------------------------------------------------------------
+
+test('remaining conta o que falta buscar, e só em nó aberto', () => {
+  const state = buildState();
+  const stationKey = '/uf:RJ/city:RJ|Niterói/group:RJ|Niterói|stations/site:est-1';
+  const rows = flattenTreeRows(state, new Set([...defaultExpandedRows(state), stationKey]), new Set());
+  const station = rows.find((row) => row.rowKey === stationKey);
+  assert.equal(station?.remaining, 3822);
+  assert.equal(station?.total, 3823);
+
+  const closed = flattenTreeRows(state, defaultExpandedRows(state), new Set());
+  const closedStation = closed.find((row) => row.rowKey === stationKey);
+  assert.equal(closedStation?.remaining, 0);
+  // Fechado ou aberto, o total conhecido do servidor é o mesmo — só `remaining`
+  // some quando fechado (nada para "carregar mais" enquanto não está visível).
+  assert.equal(closedStation?.total, 3823);
 });
 
-test('sites terminados são ocultados da árvore', () => {
-  const dir = makeDirectory();
-  const siteTerminado: GeoSite = { ...siteCO, id: 'site-co-old', name: 'CO Niterói (antigo)', status: 'terminated' };
-  const roots = buildLocationHierarchy(dir, [regionCentro, siteCO, siteTerminado], []);
-  const path = ['uf:RJ', 'municipio:Niterói', 'localidade:Centro', 'entidade:Local', 'tipo:Central Office'];
-  const tipoNode = nodeAt(roots, path);
-  assert.ok(tipoNode);
-  // Só o site ativo aparece; o terminado é omitido.
-  assert.equal(tipoNode!.children.length, 1);
-  assert.equal(tipoNode!.children[0].instance?.id, 'site-co');
+test('nó nunca aberto não tem total (badge só aparece após expandir)', () => {
+  const state = buildState();
+  const stationKey = '/uf:RJ/city:RJ|Niterói/group:RJ|Niterói|stations/site:est-1';
+  const cdoeKey = `${stationKey}/resource:cdoe-1`;
+  const expanded = new Set([...defaultExpandedRows(state), stationKey, cdoeKey]);
+  const rows = flattenTreeRows(state, expanded, new Set());
+  // resource:spl-1 nunca foi expandido (o servidor nunca respondeu por ele) —
+  // sem `state.totals['resource:spl-1']`, a linha não tem total conhecido.
+  const splitter = rows.find((row) => row.node.id === 'resource:spl-1');
+  assert.equal(splitter?.total, undefined);
 });
 
-test('recurso com place = GeographicSite aninha sob o site (C2)', () => {
-  // Forma canônica após o reparo geográfico: equipamento dentro do CO aponta
-  // direto para o Site, não para uma Location solta.
-  const dir = makeDirectory();
-  const porta: HierResource = {
-    id: 'res-porta',
-    name: 'PortaGPON-0001',
-    '@type': 'PhysicalResource',
-    resourceType: 'Port',
-    place: { id: 'site-co', '@referredType': 'GeographicSite' },
-  };
-  const roots = buildLocationHierarchy(dir, [regionCentro, siteCO], [porta]);
-
-  const path = ['uf:RJ', 'municipio:Niterói', 'localidade:Centro', 'entidade:Equipamento', 'tipo:Port'];
-  const tipoNode = nodeAt(roots, path);
-  assert.ok(tipoNode, 'porta deveria aparecer sob Equipamento → Port');
-  assert.equal(tipoNode!.children.length, 1);
-  assert.equal(tipoNode!.children[0].instance?.id, 'res-porta');
-  assert.equal(tipoNode!.resourceType, 'Port');
+test('nó em carga marca loading na própria linha', () => {
+  const state = buildState();
+  const rows = flattenTreeRows(state, defaultExpandedRows(state), new Set(['site:est-1']));
+  assert.equal(rows.find((row) => row.node.id === 'site:est-1')?.loading, true);
 });
 
-test('cabo resolve rota (LineString) e ponto representativo no meio dela', () => {
-  const rota: GeoLocation = {
-    '@type': 'GeographicLocation',
-    id: 'loc-rota',
-    href: '',
-    geometryType: 'LineString',
+// ---- Guarda de ciclo --------------------------------------------------------
+
+test('aresta que volta para um ancestral não repete o item', () => {
+  const state = buildState();
+  // connectedTo é aresta de rede, não de contenção: o splitter aponta de volta
+  // para o CDOE que o contém. Sem a guarda, isto recursaria para sempre.
+  state.childIds['resource:spl-1'] = ['resource:cdoe-1'];
+  state.nodesById['resource:spl-1']!.hasChildren = true;
+
+  const expanded = new Set([
+    ...defaultExpandedRows(state),
+    '/uf:RJ/city:RJ|Niterói/group:RJ|Niterói|stations/site:est-1',
+    '/uf:RJ/city:RJ|Niterói/group:RJ|Niterói|stations/site:est-1/resource:cdoe-1',
+    '/uf:RJ/city:RJ|Niterói/group:RJ|Niterói|stations/site:est-1/resource:cdoe-1/resource:spl-1',
+  ]);
+
+  const rows = flattenTreeRows(state, expanded, new Set());
+  assert.equal(rows.filter((row) => row.node.id === 'resource:cdoe-1').length, 1);
+});
+
+// ---- Recolher ---------------------------------------------------------------
+
+test('recolher um ramo fecha também o que estava aberto abaixo dele', () => {
+  const expanded = new Set(['/uf:RJ', '/uf:RJ/city:A', '/uf:RJ/city:A/site:1', '/uf:SP']);
+  assert.deepEqual([...collapseBranch(expanded, '/uf:RJ')], ['/uf:SP']);
+});
+
+// ---- Geometria dos nós ------------------------------------------------------
+
+test('cabo desenha a rota e centraliza pelo vértice do meio dela', () => {
+  const cabo = node('resource:cabo', {
+    resourceType: 'DistributionCable',
     geometry: {
       type: 'LineString',
       coordinates: [
@@ -217,32 +166,28 @@ test('cabo resolve rota (LineString) e ponto representativo no meio dela', () =>
         [-43.12, -22.92],
       ],
     },
-    spatialRef: 'EPSG:4326',
-  };
-  const dir = buildGeoDirectory([], [], [rota], []);
-  const place = { id: 'loc-rota', '@referredType': 'GeographicLocation' };
+  });
 
-  assert.deepEqual(resolvePlaceRoute(place, dir), rota.geometry.coordinates);
-  // Sem ponto próprio, o cabo ainda precisa centralizar o mapa: usa o meio da rota.
-  assert.deepEqual(resolvePlacePoint(place, dir), [-43.11, -22.91]);
+  assert.deepEqual(treeNodeRoute(cabo)?.length, 3);
+  assert.deepEqual(treeNodePoint(cabo), [-43.11, -22.91]);
 });
 
 test('rota degenerada (menos de 2 vértices) não vira polyline', () => {
-  const degenerada: GeoLocation = {
-    '@type': 'GeographicLocation',
-    id: 'loc-degenerada',
-    href: '',
-    geometryType: 'LineString',
+  const cabo = node('resource:cabo', {
     geometry: { type: 'LineString', coordinates: [[-43.1, -22.9]] },
-    spatialRef: 'EPSG:4326',
-  };
-  const dir = buildGeoDirectory([], [], [degenerada], []);
-  assert.equal(resolvePlaceRoute({ id: 'loc-degenerada' }, dir), null);
+  });
+  assert.equal(treeNodeRoute(cabo), null);
 });
 
-test('itens sem geografia caem em buckets "Sem ..."', () => {
-  const dir = buildGeoDirectory([], [], [], []);
-  const orphan: HierResource = { id: 'r1', name: 'X', resourceType: 'OLT' };
-  const roots = buildLocationHierarchy(dir, [], [orphan]);
-  assert.equal(roots[0].label, 'Sem UF');
+test('nó sem geometria não vai ao mapa', () => {
+  assert.equal(treeNodePoint(node('uf:RJ', { kind: 'uf' })), null);
+});
+
+// ---- Classificação de cabo --------------------------------------------------
+
+test('classifica cabo por resourceType, spec ou nome', () => {
+  assert.equal(isCableResource({ resourceType: 'DropCable' }), true);
+  assert.equal(isCableResource({ resourceSpecification: { name: 'Cabo óptico 24FO' } }), true);
+  assert.equal(isCableResource({ name: 'FIBRA-TRONCO-01' }), true);
+  assert.equal(isCableResource({ resourceType: 'CTO', name: 'CDOE-1108' }), false);
 });

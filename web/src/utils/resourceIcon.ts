@@ -56,6 +56,40 @@ export const familyLabel: Record<ResourceFamily, string> = {
   unknown: 'Tipo não identificado',
 };
 
+// Onde o recurso vive fisicamente. É o que separa o que o mapa e a árvore de
+// Locais mostram (planta externa — o que existe na rua e tem coordenada própria)
+// do que só faz sentido dentro do local que o contém (planta interna e
+// equipamento de cliente), acessível pelo modal do local.
+export type ResourcePlant = 'outdoor' | 'indoor' | 'customer' | 'logical';
+
+export const plantLabel: Record<ResourcePlant, string> = {
+  outdoor: 'Planta externa',
+  indoor: 'Planta interna',
+  customer: 'Equipamento de cliente',
+  logical: 'Recurso lógico',
+};
+
+// A família já responde "onde isto mora" para quase todo tipo — OSP na rua,
+// acesso/transporte no rack da estação, CPE na casa do assinante.
+const FAMILY_PLANT: Record<ResourceFamily, ResourcePlant> = {
+  access: 'indoor',
+  cpe: 'customer',
+  transport: 'indoor',
+  passive: 'outdoor',
+  cableOsp: 'outdoor',
+  cableIsp: 'indoor',
+  logical: 'logical',
+  // Tipo não identificado continua na planta externa: num inventário, esconder o
+  // que não se sabe classificar é pior do que mostrar demais.
+  unknown: 'outdoor',
+};
+
+// Exceções em que o tipo contradiz a família. O DIO é infraestrutura passiva,
+// mas mora no rack da estação — é planta interna.
+const PLANT_BY_CODE: Record<string, ResourcePlant> = {
+  DIO: 'indoor',
+};
+
 // Rótulo em português por código de tipo. Só os que divergem do próprio código.
 const TYPE_LABEL: Record<string, string> = {
   OLT: 'OLT',
@@ -146,10 +180,13 @@ const CODE_ALIAS: Record<string, string> = {
   vrf: 'VRF',
 };
 
+// Aceita tanto o HierResource da árvore quanto o PhysicalResource cru do
+// inventário: a referência de spec dos dois traz `id`/`@referredType`, e sem
+// declará-los aqui o TypeScript recusa o objeto por "weak type detection".
 export type IconResourceLike = {
   name?: string;
   resourceType?: string;
-  resourceSpecification?: { name?: string };
+  resourceSpecification?: { id?: string; name?: string; '@referredType'?: string };
 };
 
 // Resolve o código de tipo do catálogo. `resourceType` já vem com o code em dados
@@ -183,6 +220,17 @@ export function resourceIconFor(resource: IconResourceLike | string | undefined)
     color: familyColor[entry.family],
     label: TYPE_LABEL[code] ?? (code === '__fallback' ? 'Outro' : code),
   };
+}
+
+export function resourcePlant(resource: IconResourceLike | string | undefined): ResourcePlant {
+  const code = resourceTypeCode(resource);
+  return PLANT_BY_CODE[code] ?? FAMILY_PLANT[(ICONS[code] ?? ICONS.__fallback).family];
+}
+
+// Atalho para os dois consumidores que só querem saber se o recurso pertence ao
+// mapa: os pins do Geo e a árvore de Locais.
+export function isOutdoorResource(resource: IconResourceLike | string | undefined): boolean {
+  return resourcePlant(resource) === 'outdoor';
 }
 
 // Forma do fundo do pin. É o que separa as duas famílias de marcador no mapa:

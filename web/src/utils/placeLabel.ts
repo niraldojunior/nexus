@@ -31,8 +31,10 @@ export const siteKindDescription: Record<SiteKind, string> = {
 // Deriva o tipo semântico priorizando a categoria TMF e, dentro de 'Site',
 // refinando pelo nome do tipo. Assim novos tipos cadastrados caem num bucket
 // coerente sem precisar editar código.
-export function siteKindFromSpec(spec?: GeoSpec): SiteKind {
-  if (!spec) return 'SITE';
+// Aceita a spec inteira ou só o par categoria+nome — é o que os nós da árvore de
+// navegação carregam, sem precisar do catálogo completo em memória.
+export function siteKindFromSpec(spec?: { category?: string; name?: string }): SiteKind {
+  if (!spec?.name) return spec?.category === 'SubSite' ? 'SUBSITE' : 'SITE';
   if (spec.category === 'Region') return 'REGION';
   if (spec.category === 'FunctionalGroup') return 'REGION';
   if (spec.category === 'SubSite') return 'SUBSITE';

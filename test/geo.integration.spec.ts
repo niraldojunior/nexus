@@ -156,6 +156,141 @@ test('Geo HTTP integration supports TMF aliases, workspace transaction, status e
   assert.ok((events.body as Array<{ eventType: string }>).some((event) => event.eventType === 'GeographicSiteStatusChangeEvent'));
 });
 
+test('Geo tree serves one level per call, with counts, pagination and child flags', async (t) => {
+  const database = createTestDatabase();
+  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const port = await server.start();
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
+
+  const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
+
+  // Estação com endereço (é dele que saem UF e Município) e ponto próprio.
+  const stationSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+    name: 'Estação',
+    category: 'Site',
+  });
+  const roomSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+    name: 'Sala',
+    category: 'SubSite',
+  });
+  const address = await requestJson(port, 'POST', '/v1/geo/addresses', {
+    street: 'Rua Coronel Moreira Cesar',
+    city: 'Niterói',
+    stateOrProvince: 'RJ',
+    country: 'BR',
+  });
+  const stationPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
+    geometryType: 'Point',
+    geometry: { type: 'Point', coordinates: [-43.107, -22.906] },
+  });
+  const station = await requestJson(port, 'POST', '/v1/geo/sites', {
+    name: 'Icaraí (ICI)',
+    siteSpecificationId: idOf(stationSpec),
+    placeId: idOf(stationPlace),
+    addressId: idOf(address),
+    status: 'active',
+  });
+  const room = await requestJson(port, 'POST', '/v1/geo/sites', {
+    name: 'Sala GPON',
+    siteSpecificationId: idOf(roomSpec),
+    parentSiteId: idOf(station),
+    status: 'active',
+  });
+  assert.equal(room.statusCode, 201);
+
+  // Planta externa: a caixa fica na rua (place = Location própria) e se liga à
+  // estação pela characteristic `servingSite`; o splitter pende da caixa.
+  const resourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
+    name: 'CDOE 1:8',
+    category: 'Infrastructure.Passive',
+    resourceType: 'CTO',
+  });
+  const boxPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
+    geometryType: 'Point',
+    geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
+  });
+  const box = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
+    '@type': 'PhysicalResource',
+    name: 'CDOE-1108',
+    resourceSpecificationId: idOf(resourceSpec),
+    placeId: idOf(boxPlace),
+    placeType: 'GeographicLocation',
+    characteristic: [{ name: 'servingSite', value: idOf(station), valueType: 'string' }],
+  });
+  assert.equal(box.statusCode, 201);
+
+  const splitter = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
+    '@type': 'PhysicalResource',
+    name: 'CDOE-1108 · S32_1',
+    resourceSpecificationId: idOf(resourceSpec),
+    placeId: idOf(boxPlace),
+    placeType: 'GeographicLocation',
+    characteristic: [{ name: 'servingSite', value: idOf(station), valueType: 'string' }],
+  });
+  const link = await requestJson(
+    port,
+    'POST',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(box)}/relationships`,
+    { id: idOf(splitter), relationshipType: 'containsAsChild' },
+  );
+  assert.equal(link.statusCode, 201);
+
+  // Abertura: UF → Município → Estações → Estação, sem contar recursos de
+  // nenhuma delas — a estação nasce com "+" e o volume só chega ao abri-la.
+  const roots = await requestJson(port, 'GET', '/v1/geo/tree/roots');
+  assert.equal(roots.statusCode, 200);
+  const rootNodes = roots.body as Array<Record<string, any>>;
+  assert.deepEqual(
+    rootNodes.map((item) => item.kind),
+    ['uf', 'city', 'group', 'site'],
+  );
+  assert.equal(rootNodes[0]?.label, 'RJ');
+  assert.equal(rootNodes[1]?.label, 'Niterói');
+  assert.equal(rootNodes[2]?.label, 'Estações');
+  const stationNode = rootNodes[3];
+  assert.equal(stationNode?.id, `site:${idOf(station)}`);
+  assert.equal(stationNode?.descendantCount, undefined);
+  assert.equal(stationNode?.hasChildren, true);
+  assert.deepEqual(stationNode?.geometry?.coordinates, [-43.107, -22.906]);
+
+  // Filhos diretos: a sala e a caixa — o splitter não, ele pende da caixa.
+  const children = await requestJson(port, 'GET', `/v1/geo/tree/children?nodeId=site:${idOf(station)}`);
+  assert.equal(children.statusCode, 200);
+  const page = children.body as { total: number; nodes: Array<Record<string, any>> };
+  assert.equal(page.total, 2);
+  assert.deepEqual(
+    page.nodes.map((item) => item.label),
+    ['Sala GPON', 'CDOE-1108'],
+  );
+  // Sala vazia não ganha "+"; caixa com splitter ganha.
+  assert.equal(page.nodes[0]?.hasChildren, false);
+  assert.equal(page.nodes[1]?.hasChildren, true);
+
+  // Paginação: a janela atravessa sub-locais e recursos, e o total não muda.
+  const firstPage = await requestJson(port, 'GET', `/v1/geo/tree/children?nodeId=site:${idOf(station)}&limit=1`);
+  const secondPage = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/tree/children?nodeId=site:${idOf(station)}&limit=1&offset=1`,
+  );
+  assert.equal((firstPage.body as { nodes: unknown[] }).nodes.length, 1);
+  assert.equal((secondPage.body as { total: number }).total, 2);
+  assert.equal((secondPage.body as { nodes: Array<{ label: string }> }).nodes[0]?.label, 'CDOE-1108');
+
+  // Nível seguinte da planta: o splitter que a caixa contém.
+  const boxChildren = await requestJson(port, 'GET', `/v1/geo/tree/children?nodeId=resource:${idOf(box)}`);
+  const boxPage = boxChildren.body as { total: number; nodes: Array<Record<string, any>> };
+  assert.equal(boxPage.total, 1);
+  assert.equal(boxPage.nodes[0]?.label, 'CDOE-1108 · S32_1');
+  assert.equal(boxPage.nodes[0]?.hasChildren, false);
+
+  const missingNode = await requestJson(port, 'GET', '/v1/geo/tree/children');
+  assert.equal(missingNode.statusCode, 400);
+});
+
 test('App exposes health without auth and protected routes reject missing token', async (t) => {
   const database = createTestDatabase();
   const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });

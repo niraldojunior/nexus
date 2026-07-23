@@ -347,6 +347,19 @@ async function ensureResourceSpec(name, category, resourceType) {
   return spec.id;
 }
 
+// Estação que atende a planta externa deste seed. Preenchida assim que a Estação
+// Icaraí existe; ver `servingSiteCharacteristic` abaixo.
+let servingSiteId = null;
+
+// Recurso de planta externa mora na rua: seu `place` é a Location do ponto, não o
+// Site da estação. Sem a characteristic `servingSite` nada o liga à estação, e a
+// árvore de navegação do Geo não consegue expandi-lo a partir dela. Planta interna
+// (place = Site) não precisa: ela já pende do local onde está.
+const servingSiteCharacteristic = (placeType) =>
+  placeType === 'GeographicLocation' && servingSiteId
+    ? [{ name: 'servingSite', value: servingSiteId, valueType: 'string' }]
+    : [];
+
 async function ensureResource({ name, specId, placeId, placeType, serialNumber, model, characteristic = [] }) {
   const found = resourceByName.get(name);
   if (found) {
@@ -361,7 +374,7 @@ async function ensureResource({ name, specId, placeId, placeType, serialNumber, 
     placeType,
     ...(serialNumber ? { serialNumber } : {}),
     ...(model ? { model } : {}),
-    characteristic: [tag(), ...characteristic],
+    characteristic: [tag(), ...servingSiteCharacteristic(placeType), ...characteristic],
   });
   const ref = { id: resource.id, '@type': resource['@type'] };
   resourceByName.set(name, ref);
@@ -471,6 +484,7 @@ async function main() {
     coord: CO_COORD,
     address: CO_ADDRESS,
   });
+  servingSiteId = estacaoId;
   const andarId = await ensureSite({
     name: 'Estação Icaraí — 3º Andar',
     specName: 'Andar',

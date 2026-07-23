@@ -12,6 +12,7 @@ import { prependNexusCopilotContext } from '../../modules/search/nexus-copilot-c
 import { SearchService } from '../../modules/search/service.js';
 import { createNexusMcpModule } from '../../modules/mcp/index.js';
 import type { GeoService } from '../../modules/geo/service.js';
+import type { GeoTreeService } from '../../modules/geo/tree-service.js';
 import type { OrderService } from '../../modules/order/service.js';
 import { createNexusRuntime, DEFAULT_RUNTIME_USER, type NexusRuntime } from '../runtime/nexus-runtime.js';
 import type { PartyService } from '../../modules/party/service.js';
@@ -514,7 +515,7 @@ const routeRequest = async ({
   }
 
   if (url.pathname.startsWith('/v1/geo/') || url.pathname.startsWith('/tmf-api/')) {
-    await routeGeoRequest({ request, response, config, geoService, url });
+    await routeGeoRequest({ request, response, config, geoService, geoTreeService: runtime.geoTreeService, url });
     return;
   }
 
@@ -545,15 +546,42 @@ const routeGeoRequest = async ({
   response,
   config,
   geoService,
+  geoTreeService,
   url,
 }: {
   request: IncomingMessage;
   response: ServerResponse;
   config: AppConfig;
   geoService: GeoService;
+  geoTreeService: GeoTreeService;
   url: URL;
 }): Promise<void> => {
   ensureAuthorized(request, config);
+
+  // Árvore de navegação — um nível por chamada. Vem antes do roteador de
+  // entidades porque `tree` não é uma entidade Geo, é uma projeção de leitura.
+  if (request.method === 'GET' && url.pathname === '/v1/geo/tree/roots') {
+    return sendJson(response, 200, geoTreeService.roots());
+  }
+
+  if (request.method === 'GET' && url.pathname === '/v1/geo/tree/children') {
+    const nodeId = url.searchParams.get('nodeId');
+    if (!nodeId) {
+      throw new AppError('nodeId required', { code: 'GEO_TREE_NODE_REQUIRED', statusCode: 400 });
+    }
+    return sendJson(
+      response,
+      200,
+      geoTreeService.children(nodeId, {
+        ...(parseOptionalNumber(url.searchParams.get('limit')) !== undefined
+          ? { limit: parseOptionalNumber(url.searchParams.get('limit')) as number }
+          : {}),
+        ...(parseOptionalNumber(url.searchParams.get('offset')) !== undefined
+          ? { offset: parseOptionalNumber(url.searchParams.get('offset')) as number }
+          : {}),
+      }),
+    );
+  }
 
   if (request.method === 'POST' && url.pathname === '/v1/geo/workspace/site-at-address') {
     const body = await readBody(request);

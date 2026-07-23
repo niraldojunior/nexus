@@ -208,6 +208,7 @@ export class PostgresGeoRepository implements IGeoRepository {
         street: row.street_name,
         characteristic: JSON.parse(row.characteristics || '[]'),
       }
+      if (row.street_nr) result.streetNr = row.street_nr;
       if (row.city) result.city = row.city;
       if (row.state_or_province) result.stateOrProvince = row.state_or_province;
       if (row.postcode) result.postcode = row.postcode;

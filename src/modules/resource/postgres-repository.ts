@@ -15,6 +15,18 @@ import type {
 import type { IResourceRepository } from './resource-repository-interface.js';
 import { RESOURCE_CATEGORIES, RESOURCE_TYPES } from './catalog.js';
 
+// Nome da characteristic que diz qual GeographicSite atende o recurso — a estação
+// dona da planta externa que fica na rua (o `place` dela é a Location do ponto, não
+// o Site). É extensão V.tal via characteristic, como manda o cânone: a coluna
+// `serving_site_id` abaixo é só armazenamento derivado, para a árvore de navegação
+// do módulo Geo poder expandir uma estação por índice em vez de varrer o JSON.
+const SERVING_SITE_CHARACTERISTIC = 'servingSite';
+
+const servingSiteIdOf = (resource: { characteristic?: Array<{ name: string; value: unknown }> }): string | null => {
+  const found = resource.characteristic?.find((item) => item.name === SERVING_SITE_CHARACTERISTIC);
+  return typeof found?.value === 'string' && found.value.length > 0 ? found.value : null;
+};
+
 export class PostgresResourceRepository implements IResourceRepository {
   public constructor(private readonly db: PostgresDatabase) {
     this.seedResourceCatalog();
@@ -343,10 +355,10 @@ export class PostgresResourceRepository implements IResourceRepository {
     this.db.run(
       `INSERT INTO tmf_physical_resource
        (id, href, name, resource_specification_id, resource_type, status,
-        place_id, place_type, administrative_state, operational_state, usage_state,
+        place_id, place_type, serving_site_id, administrative_state, operational_state, usage_state,
         manufacturer, model, serial_number, part_number, valid_for_start, valid_for_end,
         related_party, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
@@ -355,6 +367,7 @@ export class PostgresResourceRepository implements IResourceRepository {
        status = excluded.status,
        place_id = excluded.place_id,
        place_type = excluded.place_type,
+       serving_site_id = excluded.serving_site_id,
        administrative_state = excluded.administrative_state,
        operational_state = excluded.operational_state,
        usage_state = excluded.usage_state,
@@ -376,6 +389,7 @@ export class PostgresResourceRepository implements IResourceRepository {
         resource.status,
         resource.place?.id ?? null,
         resource.place?.['@referredType'] ?? null,
+        servingSiteIdOf(resource),
         resource.administrativeState,
         resource.operationalState,
         resource.usageState,
@@ -455,10 +469,10 @@ export class PostgresResourceRepository implements IResourceRepository {
     this.db.run(
       `INSERT INTO tmf_logical_resource
        (id, href, name, resource_specification_id, resource_type, status,
-        place_id, place_type, supporting_physical_resource_id,
+        place_id, place_type, serving_site_id, supporting_physical_resource_id,
         administrative_state, operational_state, usage_state,
         related_party, characteristics, valid_for_start, valid_for_end, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
@@ -467,6 +481,7 @@ export class PostgresResourceRepository implements IResourceRepository {
        status = excluded.status,
        place_id = excluded.place_id,
        place_type = excluded.place_type,
+       serving_site_id = excluded.serving_site_id,
        supporting_physical_resource_id = excluded.supporting_physical_resource_id,
        administrative_state = excluded.administrative_state,
        operational_state = excluded.operational_state,
@@ -485,6 +500,7 @@ export class PostgresResourceRepository implements IResourceRepository {
         resource.status,
         resource.place?.id ?? null,
         resource.place?.['@referredType'] ?? null,
+        servingSiteIdOf(resource),
         resource.supportingPhysicalResourceId ?? null,
         resource.administrativeState,
         resource.operationalState,

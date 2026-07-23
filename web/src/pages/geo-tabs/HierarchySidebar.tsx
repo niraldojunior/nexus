@@ -1,15 +1,14 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { GitBranch, ListTree, PanelLeftClose, PanelLeftOpen, RefreshCw, Settings } from 'lucide-react';
-import type { HierNode, HierInstance } from '../../utils/geoHierarchy';
+import type { GeoTreeNode } from '../../services/geoTreeApi';
+import type { GeoTree } from '../../hooks/useGeoTree';
 import { HierarchyTreeView } from './HierarchyTreeView';
 import { HierarchyComboView } from './HierarchyComboView';
 
 export type HierarchySidebarProps = {
-  roots: HierNode[];
-  loading: boolean;
-  selectedInstanceKey: string | null;
-  onSelectInstance: (instance: HierInstance) => void;
-  onReload: () => void;
+  tree: GeoTree;
+  selectedNodeId: string | null;
+  onSelect: (node: GeoTreeNode) => void;
   onOpenTypes: () => void;
 };
 
@@ -20,16 +19,15 @@ type HierView = 'tree' | 'combos';
  * Duas abas internas: Árvore e Combos. Persistente e colapsável; dirige a
  * seleção no mapa.
  */
-export function HierarchySidebar({
-  roots,
-  loading,
-  selectedInstanceKey,
-  onSelectInstance,
-  onReload,
-  onOpenTypes,
-}: HierarchySidebarProps) {
+export function HierarchySidebar({ tree, selectedNodeId, onSelect, onOpenTypes }: HierarchySidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [view, setView] = useState<HierView>('tree');
+
+  // As raízes da cascata de combos são as mesmas UFs da árvore.
+  const rootNodes = useMemo(
+    () => tree.rows.filter((row) => row.depth === 0).map((row) => row.node),
+    [tree.rows],
+  );
 
   if (collapsed) {
     return (
@@ -52,7 +50,7 @@ export function HierarchySidebar({
             <ViewToggleButton active={view === 'tree'} icon={ListTree} label="Árvore" onClick={() => setView('tree')} />
             <ViewToggleButton active={view === 'combos'} icon={GitBranch} label="Combos" onClick={() => setView('combos')} />
           </div>
-          <SidebarIconButton icon={RefreshCw} label="Atualizar" onClick={onReload} spinning={loading} />
+          <SidebarIconButton icon={RefreshCw} label="Atualizar" onClick={tree.reload} spinning={tree.loading} />
           <SidebarIconButton icon={Settings} label="Tipos de local" onClick={onOpenTypes} />
           <SidebarIconButton icon={PanelLeftClose} label="Recolher" onClick={() => setCollapsed(true)} />
         </div>
@@ -60,14 +58,30 @@ export function HierarchySidebar({
 
       {/* Corpo */}
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {loading && !roots.length ? (
+        {tree.error ? (
+          <div className="mb-3 rounded-[14px] border border-red-200 bg-red-50 px-3 py-2 text-[0.82rem] text-red-700">
+            {tree.error}
+          </div>
+        ) : null}
+        {tree.loading && !tree.rows.length ? (
           <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.86rem] text-app-muted">
             Carregando hierarquia…
           </div>
         ) : view === 'tree' ? (
-          <HierarchyTreeView roots={roots} selectedInstanceKey={selectedInstanceKey} onSelectInstance={onSelectInstance} />
+          <HierarchyTreeView
+            rows={tree.rows}
+            selectedNodeId={selectedNodeId}
+            onSelect={onSelect}
+            onToggle={tree.toggle}
+            onLoadMore={tree.loadMore}
+          />
         ) : (
-          <HierarchyComboView roots={roots} onSelectInstance={onSelectInstance} />
+          <HierarchyComboView
+            rootNodes={rootNodes}
+            childrenOf={tree.childrenOf}
+            ensureChildren={tree.ensureChildren}
+            onSelect={onSelect}
+          />
         )}
       </div>
     </aside>

@@ -49,10 +49,14 @@ export const MIGRATIONS_SQL = `
   ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS administrative_state TEXT;
   ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS operational_state TEXT;
   ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS usage_state TEXT;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS serving_site_id TEXT;
+  CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_serving_site ON tmf_physical_resource(serving_site_id);
   ALTER TABLE tmf_resource_specification ADD COLUMN IF NOT EXISTS related_party TEXT;
   ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS place_id TEXT;
   ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS place_type TEXT;
   ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS related_party TEXT;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS serving_site_id TEXT;
+  CREATE INDEX IF NOT EXISTS idx_tmf_logical_resource_serving_site ON tmf_logical_resource(serving_site_id);
   ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS administrative_state TEXT;
   ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS operational_state TEXT;
   ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS usage_state TEXT;

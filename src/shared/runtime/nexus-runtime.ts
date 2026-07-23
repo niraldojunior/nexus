@@ -1,6 +1,7 @@
 import { createCanonicalId } from '../utils/canonical-id.js';
 import { PostgresGeoRepository } from '../../modules/geo/postgres-repository.js';
 import { GeoService } from '../../modules/geo/service.js';
+import { GeoTreeService } from '../../modules/geo/tree-service.js';
 import { OrderService } from '../../modules/order/service.js';
 import { PostgresOrderRepository } from '../../modules/order/postgres-repository.js';
 import { PartyService } from '../../modules/party/service.js';
@@ -40,6 +41,7 @@ export const createNexusRuntime = (db: PostgresDatabase) => {
   const researchRepository = new ResearchRepository(db);
   const geoRepository = new PostgresGeoRepository(db);
   const geoService = new GeoService(geoRepository);
+  const geoTreeService = new GeoTreeService(db);
   const eventRepository = new PostgresEventRepository(db);
   const eventService = new EventService(eventRepository);
   const partyRepository = new PostgresPartyRepository(db);
@@ -151,6 +153,7 @@ export const createNexusRuntime = (db: PostgresDatabase) => {
     searchService,
     geoRepository,
     geoService,
+    geoTreeService,
     eventRepository,
     eventService,
     partyRepository,

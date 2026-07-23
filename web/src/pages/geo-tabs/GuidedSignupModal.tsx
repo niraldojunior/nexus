@@ -1,8 +1,8 @@
 import { useState, useMemo, type FormEvent } from 'react';
 import { Plus, ChevronLeft, MapPin } from 'lucide-react';
-import type { GeoStatus, GeoSpec, GeoSite, GeoAddress, GeoLocation } from '../../services/geoApi';
+import type { GeoStatus, GeoSpec, GeoSite } from '../../services/geoApi';
 import { postJson } from '../../services/geoApi';
-import { siteKindFromSpec, siteKindLabel, siteKindDescription, formatAddress } from '../../utils/placeLabel';
+import { siteKindFromSpec, siteKindLabel, siteKindDescription } from '../../utils/placeLabel';
 
 type Step = 'kind' | 'location' | 'details';
 
@@ -12,8 +12,6 @@ export type GuidedSignupModalProps = {
   specs: GeoSpec[];
   sites: GeoSite[];
   specById: Map<string, GeoSpec>;
-  addressById: Map<string, GeoAddress>;
-  locationById: Map<string, GeoLocation>;
   onClose: () => void;
   onCreated: () => Promise<void>;
 };
@@ -30,8 +28,6 @@ export function GuidedSignupModal({
   specs,
   sites,
   specById,
-  addressById,
-  locationById,
   onClose,
   onCreated,
 }: GuidedSignupModalProps) {
@@ -94,15 +90,15 @@ export function GuidedSignupModal({
           fedByRelationshipType: fedBySiteId ? 'fedBy' : undefined,
         });
       } else {
-        const inheritedAddress = selectedSite?.address ? addressById.get(selectedSite.address.id) : undefined;
-        const inheritedLocation = selectedSite && pointForSite(selectedSite, locationById);
+        // Sub-local sem ponto próprio herda endereço e coordenada do local pai:
+        // uma sala não tem endereço diferente do prédio em que está.
         await postJson('/v1/geo/sites', {
           name,
           status,
           siteSpecificationId,
           parentSiteId: parentSiteId || undefined,
-          addressId: inheritedAddress?.id,
-          placeId: selectedSite?.place?.id ?? (inheritedLocation ? undefined : undefined),
+          addressId: selectedSite?.address?.id,
+          placeId: selectedSite?.place?.id,
         });
       }
       await onCreated();
@@ -326,14 +322,4 @@ function isParentAllowed(child: GeoSpec | undefined, parent: GeoSpec | undefined
   if (!child || !parent) return false;
   if (child.id === parent.id) return false;
   return parent.allowedChildSpecIds.includes(child.id) === false;
-}
-
-function pointForSite(site: GeoSite, locationById: Map<string, GeoLocation>): [number, number] | null {
-  if (site.place?.id) {
-    const location = locationById.get(site.place.id);
-    if (location?.geometry?.coordinates) {
-      return location.geometry.coordinates;
-    }
-  }
-  return null;
 }

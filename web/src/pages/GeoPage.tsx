@@ -13,22 +13,24 @@ import type {
   GeoSpec,
   GeoSite,
   GeoEvent,
-  GeoGeometry,
 } from '../services/geoApi';
 import { getJson, postJson, patchJson } from '../services/geoApi';
+import { siteKindFromSpec, siteKindLabel, formatAddress } from '../utils/placeLabel';
 import {
-  siteKindFromSpec,
-  siteKindLabel,
-  formatAddress,
-  buildGeoDirectory,
-  resolvePlaceLabel,
-  resolvePlacePoint,
-  resolvePlaceRoute,
-} from '../utils/placeLabel';
-import type { GeoDirectory, SiteKind } from '../utils/placeLabel';
-import { buildLocationHierarchy, isCableResource, type HierInstance, type HierResource } from '../utils/geoHierarchy';
-import { useResourceInventory } from '../hooks/useEquipmentInventory';
-import { resourceIconFor, resourceIconDataUrl, resourceTypeCode } from '../utils/resourceIcon';
+  fetchTreeChildren,
+  treeNodePoint,
+  treeNodeRoute,
+  type GeoTreeNode,
+} from '../services/geoTreeApi';
+import { useGeoTree } from '../hooks/useGeoTree';
+import {
+  plantLabel,
+  resourceIconFor,
+  resourceIconDataUrl,
+  resourcePlant,
+  type ResourcePlant,
+} from '../utils/resourceIcon';
+import { ResourceIcon } from '../components/ResourceIcon';
 import { siteIconDataUrl, siteIconFor } from '../utils/siteIcon';
 import { useNavigation } from '../hooks/useNavigation';
 import { GuidedSignupModal, HierarchySidebar } from './geo-tabs';
@@ -39,12 +41,6 @@ declare global {
     __nexusGoogleMapsPromise?: Promise<void>;
   }
 }
-
-type RelatedSite = {
-  id: string;
-  relationshipType: string;
-  '@referredType': 'GeographicSite';
-};
 
 type DraftAddress = {
   street: string;
@@ -60,10 +56,11 @@ type DraftAddress = {
 type DetailTab = 'overview' | 'subsites' | 'topology' | 'lifecycle' | 'resources';
 
 // Conteúdo do balão flutuante ancorado no item clicado no mapa. É montado no
-// GeoPage (que tem o diretório Geo e o inventário) e apenas desenhado pelo
-// painel do mapa — assim o painel não precisa saber o que é Site ou Recurso.
+// GeoPage e apenas desenhado pelo painel do mapa — assim o painel não precisa
+// saber o que é Local e o que é Recurso.
 type MapBalloon = {
-  // `site:<id>` | `resource:<id>` — identifica o alvo e detecta troca de item.
+  // Id do nó da árvore (`site:<id>` | `resource:<id>`): identifica o alvo e
+  // detecta a troca de item.
   key: string;
   point: [number, number];
   // Deslocamento em px do bico do balão em relação à coordenada, para o balão
@@ -76,11 +73,6 @@ type MapBalloon = {
   actionLabel: string;
   onAction: () => void;
 };
-
-const API_HEADERS = () => ({
-  'Content-Type': 'application/json',
-  Authorization: `Bearer ${localStorage.getItem('authToken') ?? 'change-me'}`,
-});
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
@@ -136,72 +128,32 @@ const relationshipTypeLabel = (type: string): string => {
   return labels[type] || type;
 };
 
-const layerOptions = ['CO', 'POP', 'CTO', 'PI', 'Relacoes', 'Sem coordenada'] as const;
-type LayerKey = (typeof layerOptions)[number];
-
-// As camadas cobrem só os tipos de local que ganham pin próprio. Região,
-// Sub-local (andar, sala técnica) e Local genérico não têm chave de camada —
-// antes isto os derrubava do mapa, porque `layers.has(kind)` nunca casava.
-const LAYER_FOR_SITE_KIND: Partial<Record<SiteKind, LayerKey>> = {
-  CO: 'CO',
-  POP: 'POP',
-  CTO: 'CTO',
-  PI: 'PI',
-};
-
 export default function GeoPage() {
   const [sites, setSites] = useState<GeoSite[]>([]);
-  const [addresses, setAddresses] = useState<GeoAddress[]>([]);
-  const [locations, setLocations] = useState<GeoLocation[]>([]);
   const [specs, setSpecs] = useState<GeoSpec[]>([]);
   const [events, setEvents] = useState<GeoEvent[]>([]);
-  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
   const [draftAddress, setDraftAddress] = useState<DraftAddress | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
-  const [layers] = useState<Set<LayerKey>>(() => new Set(layerOptions));
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedResource, setSelectedResource] = useState<HierInstance | null>(null);
   const [focusPoint, setFocusPoint] = useState<[number, number] | null>(null);
-  // Alvo do balão. Estado separado da seleção porque a carga inicial pré-seleciona
-  // o primeiro site — isso posiciona a árvore, mas não deve abrir um balão sozinho.
+  // Nó selecionado na árvore ou no mapa, e alvo do balão. São dois estados porque
+  // a seleção sobrevive ao fechamento do balão.
+  const [selectedNode, setSelectedNode] = useState<GeoTreeNode | null>(null);
   const [balloonKey, setBalloonKey] = useState<string | null>(null);
 
-  const { physical, located, loading: resourcesLoading } = useResourceInventory();
+  const tree = useGeoTree();
   const { navParams, clearNav, goToResource } = useNavigation();
 
-  const locationById = useMemo(() => new Map(locations.map((item) => [item.id, item])), [locations]);
-  const addressById = useMemo(() => new Map(addresses.map((item) => [item.id, item])), [addresses]);
   const specById = useMemo(() => new Map(specs.map((item) => [item.id, item])), [specs]);
   const siteById = useMemo(() => new Map(sites.map((item) => [item.id, item])), [sites]);
+  const selectedSiteId = selectedNode?.referredType === 'GeographicSite' ? selectedNode.refId ?? null : null;
   const selectedSite = selectedSiteId ? siteById.get(selectedSiteId) ?? null : null;
   const [searching, setSearching] = useState(false);
-
-  // Diretório Geo + hierarquia de navegação (UF → Município → … → instância).
-  const directory = useMemo(
-    () => buildGeoDirectory(sites, addresses, locations, specs),
-    [sites, addresses, locations, specs],
-  );
-
-  // Equipamentos posicionáveis no mapa: só entram os que o diretório consegue
-  // resolver para uma coordenada — seja via Site, Location ou Address.
-  const inventoryEquipment = useMemo<HierResource[]>(
-    () => physical.filter((item) => resolvePlacePoint(item.place, directory)).slice(0, 500),
-    [physical, directory],
-  );
-  const hierarchyRoots = useMemo(
-    () => buildLocationHierarchy(directory, sites, located),
-    [directory, sites, located],
-  );
-  const selectedInstanceKey = selectedResource
-    ? `${selectedResource.referredType}:${selectedResource.id}`
-    : selectedSiteId
-      ? `GeographicSite:${selectedSiteId}`
-      : null;
 
   const runAddressSearch = useCallback(async () => {
     const term = query.trim();
@@ -215,21 +167,20 @@ export default function GeoPage() {
     }
   }, [query]);
 
+  // Catálogo de locais: sites e tipos são dezenas de linhas e alimentam os modais
+  // de cadastro e detalhe. O acervo pesado (endereços, geometrias e a planta
+  // inteira) não vem mais por aqui — cada nó da árvore traz a sua geometria, e o
+  // resto se busca por id quando o modal abre.
   const loadGeo = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [siteData, addressData, locationData, specData] = await Promise.all([
+      const [siteData, specData] = await Promise.all([
         getJson<GeoSite[]>('/v1/geo/sites'),
-        getJson<GeoAddress[]>('/v1/geo/addresses'),
-        getJson<GeoLocation[]>('/v1/geo/locations'),
         getJson<GeoSpec[]>('/v1/geo/site-specifications'),
       ]);
       setSites(siteData);
-      setAddresses(addressData);
-      setLocations(locationData);
       setSpecs(specData);
-      setSelectedSiteId((current) => current ?? siteData[0]?.id ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao carregar dados Geo.');
     } finally {
@@ -254,105 +205,50 @@ export default function GeoPage() {
     if (navParams.siteId) {
       const site = sites.find((s) => s.id === navParams.siteId);
       if (site) {
-        setSelectedSiteId(site.id);
+        setSelectedNode(siteNodeOf(site));
         setDetailOpen(true);
         clearNav();
       }
     }
   }, [navParams, sites, clearNav]);
 
-  const visibleSites = useMemo(
-    () =>
-      sites.filter((site) => {
-        const spec = specById.get(site.siteSpecificationId);
-        if (!pointForSite(site, locationById)) return layers.has('Sem coordenada');
-        const layer = LAYER_FOR_SITE_KIND[siteKindFromSpec(spec)];
-        return layer ? layers.has(layer) : true;
-      }),
-    [layers, locationById, sites, specById],
-  );
-
-  const childSites = selectedSite ? sites.filter((site) => site.parentSite?.id === selectedSite.id) : [];
-
-  const selectSite = (site: GeoSite) => {
-    setSelectedSiteId(site.id);
-    setSelectedResource(null);
+  // Seleção — o mesmo caminho para o clique na árvore e no mapa. Centraliza o
+  // mapa, abre o balão, e o detalhe completo sai do botão do balão.
+  const selectNode = useCallback((node: GeoTreeNode) => {
+    setSelectedNode(node);
     setDraftAddress(null);
-    setBalloonKey(`site:${site.id}`);
-    const point = pointForSite(site, locationById);
+    setBalloonKey(node.geometry ? node.id : null);
+    const point = treeNodePoint(node);
     if (point) setFocusPoint(point);
-  };
+  }, []);
 
   // Fecha o balão: clique no mapa fora de qualquer item, X do próprio balão ou Esc.
   const closeBalloon = useCallback(() => setBalloonKey(null), []);
 
   const openDetail = (site: GeoSite, tab: DetailTab = 'overview') => {
-    selectSite(site);
+    setSelectedNode(siteNodeOf(site));
     setDetailTab(tab);
     setDetailOpen(true);
   };
 
-  // Seleção vinda do mapa (pin de equipamento ou traçado de cabo). Converte o
-  // recurso cru na mesma forma que a árvore entrega, para o cartão de detalhe
-  // ser o mesmo nos dois caminhos.
-  const selectResourceFromMap = useCallback((resource: HierResource) => {
-    setSelectedSiteId(null);
-    setBalloonKey(`resource:${resource.id}`);
-    setSelectedResource({
-      id: resource.id,
-      name: resource.name,
-      entity: isCableResource(resource) ? 'Cabo' : 'Equipamento',
-      referredType: resource['@type'] ?? 'PhysicalResource',
-      placeId: resource.place?.id,
-      placeType: resource.place?.['@referredType'],
-      siteKind: null,
-      resourceType: resourceTypeCode(resource),
-    });
-  }, []);
-
-  // Seleção vinda da sidebar de hierarquia (árvore ou combos). Centraliza o mapa
-  // e abre o mesmo balão do clique no pin — a árvore e o mapa são dois caminhos
-  // para a mesma seleção, e o detalhe completo sai do botão do balão.
-  const selectInstance = (instance: HierInstance) => {
-    if (instance.referredType === 'GeographicSite') {
-      const site = siteById.get(instance.id);
-      if (site) selectSite(site);
-      return;
-    }
-    setSelectedResource(instance);
-    setSelectedSiteId(null);
-    setBalloonKey(`resource:${instance.id}`);
-    const point = resolvePlacePoint(
-      instance.placeId ? { id: instance.placeId, '@referredType': instance.placeType } : null,
-      directory,
-    );
-    if (point) setFocusPoint(point);
-  };
-
-  // Monta o conteúdo do balão a partir do alvo selecionado. Fica aqui, e não no
-  // painel do mapa, porque só o GeoPage tem diretório Geo + inventário para
-  // resolver tipo, endereço e local de um item.
+  // Monta o conteúdo do balão a partir do nó selecionado. Fica aqui, e não no
+  // painel do mapa, porque é aqui que se sabe o que fazer com cada tipo de item.
   const balloon = useMemo<MapBalloon | null>(() => {
-    if (!balloonKey) return null;
-    const separator = balloonKey.indexOf(':');
-    const kind = balloonKey.slice(0, separator);
-    const id = balloonKey.slice(separator + 1);
+    const node = tree.mapNodes.find((item) => item.id === balloonKey) ?? null;
+    if (!node || !balloonKey) return null;
+    const point = treeNodePoint(node);
+    if (!point) return null;
 
-    if (kind === 'site') {
-      const site = siteById.get(id);
-      if (!site) return null;
-      const point = pointForSite(site, locationById);
-      if (!point) return null;
-      const spec = specById.get(site.siteSpecificationId);
-      const kindOfSite = siteKindFromSpec(spec);
-      const icon = siteIconFor(kindOfSite, site.status);
-      const address = site.address ? addressById.get(site.address.id) : undefined;
-      const parent = site.parentSite ? siteById.get(site.parentSite.id) : undefined;
+    if (node.kind === 'site') {
+      const site = node.refId ? siteById.get(node.refId) : undefined;
+      const kindOfSite = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
+      const icon = siteIconFor(kindOfSite, (node.status as GeoStatus) ?? 'active');
+      const parent = site?.parentSite ? siteById.get(site.parentSite.id) : undefined;
       // O pin do local é centrado na coordenada e cresce quando selecionado.
       const pinSize = SITE_ICON_SIZE + 8;
       const rows: Array<[string, string]> = [
-        ['Status', statusLabel[site.status]],
-        ['Endereço', address ? formatAddress(address) : 'Sem endereço'],
+        ['Status', statusLabel[(node.status as GeoStatus) ?? 'active']],
+        ['Endereço', node.detail?.address ?? 'Sem endereço'],
       ];
       if (parent) rows.push(['Local pai', parent.name]);
       return {
@@ -360,27 +256,21 @@ export default function GeoPage() {
         point,
         offset: [0, -(pinSize / 2 + 6)],
         iconUrl: siteIconDataUrl(icon, { size: 40 }),
-        eyebrow: spec?.name ?? siteKindLabel[kindOfSite],
-        title: site.name,
+        eyebrow: node.sublabel ?? siteKindLabel[kindOfSite],
+        title: node.label,
         rows,
         actionLabel: 'Ver detalhes do local',
-        onAction: () => openDetail(site),
+        onAction: () => (site ? openDetail(site) : undefined),
       };
     }
 
-    const equip = inventoryEquipment.find((item) => item.id === id);
-    if (!equip) return null;
-    const point = resolvePlacePoint(equip.place, directory);
-    if (!point) return null;
-    const icon = resourceIconFor(equip);
+    const icon = resourceIconFor(node.resourceType ?? '');
     // Cabo não tem pin: o balão nasce sobre o traçado, sem folga de ícone.
-    const isCable = Boolean(resolvePlaceRoute(equip.place, directory));
-    const placeLabel = resolvePlaceLabel(equip.place, directory);
+    const isCable = Boolean(treeNodeRoute(node));
     const rows: Array<[string, string]> = [];
-    if (equip.model) rows.push(['Modelo', equip.model]);
-    if (equip.manufacturer) rows.push(['Fabricante', equip.manufacturer]);
-    if (equip.serialNumber) rows.push(['Nº de série', equip.serialNumber]);
-    if (placeLabel) rows.push(['Local', placeLabel.name]);
+    if (node.detail?.model) rows.push(['Modelo', node.detail.model]);
+    if (node.detail?.manufacturer) rows.push(['Fabricante', node.detail.manufacturer]);
+    if (node.detail?.serialNumber) rows.push(['Nº de série', node.detail.serialNumber]);
     return {
       key: balloonKey,
       point,
@@ -388,22 +278,14 @@ export default function GeoPage() {
       // fica acima e à direita da coordenada — o balão segue o ícone.
       offset: isCable ? [0, -8] : [MARKER_ICON_SIZE / 2, -(MARKER_ICON_SIZE + 4)],
       iconUrl: resourceIconDataUrl(icon, { size: 40 }),
-      eyebrow: icon.label,
-      title: equip.name,
+      eyebrow: node.sublabel ?? icon.label,
+      title: node.label,
       rows,
       actionLabel: 'Abrir no módulo Recursos',
-      onAction: () => goToResource(equip.id),
+      onAction: () => (node.refId ? goToResource(node.refId) : undefined),
     };
-  }, [
-    addressById,
-    balloonKey,
-    directory,
-    goToResource,
-    inventoryEquipment,
-    locationById,
-    siteById,
-    specById,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [balloonKey, goToResource, siteById, tree.mapNodes]);
 
   // Esc fecha o balão — mas só quando nenhum modal está aberto, senão a tecla
   // fecharia os dois de uma vez.
@@ -427,28 +309,21 @@ export default function GeoPage() {
 
         <div className="flex h-full min-h-0">
             <HierarchySidebar
-              roots={hierarchyRoots}
-              loading={resourcesLoading || loading}
-              selectedInstanceKey={selectedInstanceKey}
-              onSelectInstance={selectInstance}
-              onReload={() => void loadGeo()}
+              tree={tree}
+              selectedNodeId={selectedNode?.id ?? null}
+              onSelect={selectNode}
               onOpenTypes={() => setTypeOpen(true)}
             />
             <div className="relative min-h-0 flex-1">
             <GoogleMapPanel
-          sites={visibleSites}
-          specs={specById}
-          locationById={locationById}
-          directory={directory}
-          selectedSiteId={selectedSiteId}
+          nodes={tree.mapNodes}
+          selectedNodeId={selectedNode?.id ?? null}
           draftAddress={draftAddress}
           focusPoint={focusPoint}
           balloon={balloon}
-          onSelectSite={selectSite}
-          onSelectResource={selectResourceFromMap}
+          onSelectNode={selectNode}
           onCloseBalloon={closeBalloon}
           onDraftAddress={setDraftAddress}
-          equipment={inventoryEquipment}
         />
 
         <div className="absolute left-3 top-3 z-30 w-[400px] max-w-[calc(100%-1.5rem)]">
@@ -505,8 +380,6 @@ export default function GeoPage() {
           specs={specs}
           sites={sites}
           specById={specById}
-          addressById={addressById}
-          locationById={locationById}
           onClose={() => setCreateOpen(false)}
           onCreated={async () => {
             setCreateOpen(false);
@@ -520,14 +393,13 @@ export default function GeoPage() {
         <SiteDetailModal
           site={selectedSite}
           tab={detailTab}
-          childSites={childSites}
           sites={sites}
           specById={specById}
           siteById={siteById}
-          addressById={addressById}
-          locationById={locationById}
           events={events}
           onTab={setDetailTab}
+          onOpenSite={(next) => openDetail(next, 'overview')}
+          onOpenResource={goToResource}
           onClose={() => setDetailOpen(false)}
           onChanged={async () => {
             await loadGeo();
@@ -554,39 +426,31 @@ export default function GeoPage() {
   );
 }
 
+// O mapa desenha exatamente os nós visíveis na árvore — expandir um ramo traz
+// seus pins, recolher os leva embora. É o que mantém a legenda (a árvore) e o
+// desenho (o mapa) contando a mesma história.
 function GoogleMapPanel({
-  sites,
-  specs,
-  locationById,
-  directory,
-  selectedSiteId,
+  nodes,
+  selectedNodeId,
   draftAddress,
   focusPoint,
   balloon,
-  onSelectSite,
-  onSelectResource,
+  onSelectNode,
   onCloseBalloon,
   onDraftAddress,
-  equipment = [],
 }: {
-  sites: GeoSite[];
-  specs: Map<string, GeoSpec>;
-  locationById: Map<string, GeoLocation>;
-  directory: GeoDirectory;
-  selectedSiteId: string | null;
+  nodes: GeoTreeNode[];
+  selectedNodeId: string | null;
   draftAddress: DraftAddress | null;
   focusPoint?: [number, number] | null;
   balloon: MapBalloon | null;
-  onSelectSite: (site: GeoSite) => void;
-  onSelectResource: (resource: HierResource) => void;
+  onSelectNode: (node: GeoTreeNode) => void;
   onCloseBalloon: () => void;
   onDraftAddress: (address: DraftAddress) => void;
-  equipment?: HierResource[];
 }) {
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
-  const equipmentMarkersRef = useRef<any[]>([]);
   const cableRoutesRef = useRef<any[]>([]);
   const draftMarkerRef = useRef<any>(null);
   const infoWindowRef = useRef<any>(null);
@@ -638,34 +502,59 @@ function GoogleMapPanel({
       .catch(() => setMapsReady(false));
   }, [onDraftAddress]);
 
+  // Pins dos nós visíveis. Local é quadrado arredondado e recurso é círculo —
+  // é o que deixa dizer "isto é um lugar" e "isto é um equipamento" sem legenda.
   useEffect(() => {
     if (!mapsReady || !mapRef.current) return;
     markersRef.current.forEach((marker) => marker.setMap(null));
     markersRef.current = [];
 
-    for (const site of sites) {
-      const point = pointForSite(site, locationById);
-      if (!point) continue;
-      const spec = specs.get(site.siteSpecificationId);
-      const icon = siteIconFor(siteKindFromSpec(spec), site.status);
-      // O selecionado cresce; o resto fica no tamanho base. Local é quadrado
-      // arredondado, para não se confundir com o círculo dos equipamentos.
-      const size = selectedSiteId === site.id ? SITE_ICON_SIZE + 8 : SITE_ICON_SIZE;
+    for (const node of nodes) {
+      if (node.geometry?.type !== 'Point') continue;
+      const [lng, lat] = node.geometry.coordinates;
+      const selected = node.id === selectedNodeId;
+
+      if (node.kind === 'site') {
+        const kind = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
+        const icon = siteIconFor(kind, (node.status as GeoStatus) ?? 'active');
+        // O selecionado cresce; o resto fica no tamanho base.
+        const size = selected ? SITE_ICON_SIZE + 8 : SITE_ICON_SIZE;
+        const marker = new window.google.maps.Marker({
+          map: mapRef.current,
+          position: { lng, lat },
+          title: `${node.label} · ${icon.label}`,
+          icon: {
+            url: siteIconDataUrl(icon, { size }),
+            scaledSize: new window.google.maps.Size(size, size),
+            anchor: new window.google.maps.Point(size / 2, size / 2),
+          },
+          zIndex: selected ? SITE_MARKER_Z + 1 : SITE_MARKER_Z,
+        });
+        marker.addListener('click', () => onSelectNode(node));
+        markersRef.current.push(marker);
+        continue;
+      }
+
+      const icon = resourceIconFor(node.resourceType ?? '');
+      const size = selected ? MARKER_ICON_SIZE + 6 : MARKER_ICON_SIZE;
       const marker = new window.google.maps.Marker({
         map: mapRef.current,
-        position: { lng: point[0], lat: point[1] },
-        title: `${site.name} · ${icon.label}`,
+        position: { lng, lat },
+        title: `${node.label} · ${icon.label}`,
         icon: {
-          url: siteIconDataUrl(icon, { size }),
+          url: resourceIconDataUrl(icon, { size }),
           scaledSize: new window.google.maps.Size(size, size),
-          anchor: new window.google.maps.Point(size / 2, size / 2),
+          // Âncora no canto inferior-esquerdo: o equipamento fica acima e à
+          // direita da coordenada. Um equipamento dentro de um CO compartilha a
+          // coordenada exata do local, e centrado ficaria escondido atrás do pin.
+          anchor: new window.google.maps.Point(0, size),
         },
-        zIndex: selectedSiteId === site.id ? SITE_MARKER_Z + 1 : SITE_MARKER_Z,
+        zIndex: selected ? EQUIPMENT_MARKER_Z + 1 : EQUIPMENT_MARKER_Z,
       });
-      marker.addListener('click', () => onSelectSite(site));
+      marker.addListener('click', () => onSelectNode(node));
       markersRef.current.push(marker);
     }
-  }, [locationById, mapsReady, onSelectSite, selectedSiteId, sites, specs]);
+  }, [mapsReady, nodes, onSelectNode, selectedNodeId]);
 
   useEffect(() => {
     if (!mapsReady || !mapRef.current || !draftAddress) return;
@@ -695,53 +584,17 @@ function GoogleMapPanel({
     mapRef.current.panTo({ lng, lat });
   }, [focusPoint, mapsReady]);
 
-  // Renderizar equipamentos no mapa
-  useEffect(() => {
-    if (!mapsReady || !mapRef.current) return;
-    equipmentMarkersRef.current.forEach((marker) => marker.setMap(null));
-    equipmentMarkersRef.current = [];
-
-    for (const equip of equipment) {
-      // O place de um equipamento pode ser Site (dentro do CO/POP, C2), Location
-      // (ponto de planta externa) ou Address — resolvePlacePoint cobre os três.
-      const point = resolvePlacePoint(equip.place, directory);
-      if (!point) continue;
-
-      const [lng, lat] = point;
-      // Mesmo glifo e mesma cor de família que a árvore de Locais usa.
-      const icon = resourceIconFor(equip);
-
-      const marker = new window.google.maps.Marker({
-        map: mapRef.current,
-        position: { lng, lat },
-        title: `${equip.name} · ${icon.label}`,
-        icon: {
-          url: resourceIconDataUrl(icon, { size: MARKER_ICON_SIZE }),
-          scaledSize: new window.google.maps.Size(MARKER_ICON_SIZE, MARKER_ICON_SIZE),
-          // Âncora no canto inferior-esquerdo do ícone: o equipamento fica acima e
-          // à direita da coordenada, em vez de centrado nela. Um equipamento dentro
-          // de um CO/PI compartilha a coordenada exata do site, e centrado ele ficaria
-          // escondido atrás do pin do local.
-          anchor: new window.google.maps.Point(0, MARKER_ICON_SIZE),
-        },
-        zIndex: EQUIPMENT_MARKER_Z,
-      });
-      marker.addListener('click', () => onSelectResource(equip));
-      equipmentMarkersRef.current.push(marker);
-    }
-  }, [directory, equipment, mapsReady, onSelectResource]);
-
-  // Renderizar a rota dos cabos. Um cabo não é um ponto: a Location dele é uma
-  // LineString com o traçado real na rua, então vira polyline em vez de pin.
+  // Rota dos cabos. Um cabo não é um ponto: sua geometria é uma LineString com o
+  // traçado real na rua, então vira polyline em vez de pin.
   useEffect(() => {
     if (!mapsReady || !mapRef.current) return;
     cableRoutesRef.current.forEach((line) => line.setMap(null));
     cableRoutesRef.current = [];
 
-    for (const equip of equipment) {
-      const route = resolvePlaceRoute(equip.place, directory);
+    for (const node of nodes) {
+      const route = treeNodeRoute(node);
       if (!route) continue;
-      const icon = resourceIconFor(equip);
+      const icon = resourceIconFor(node.resourceType ?? '');
 
       const line = new window.google.maps.Polyline({
         map: mapRef.current,
@@ -751,10 +604,10 @@ function GoogleMapPanel({
         strokeWeight: CABLE_STROKE_WEIGHT[icon.code] ?? 2.5,
         zIndex: CABLE_ROUTE_Z,
       });
-      line.addListener('click', () => onSelectResource(equip));
+      line.addListener('click', () => onSelectNode(node));
       cableRoutesRef.current.push(line);
     }
-  }, [directory, equipment, mapsReady, onSelectResource]);
+  }, [mapsReady, nodes, onSelectNode]);
 
   // Balão ancorado no item selecionado. Usa o InfoWindow nativo — é o que dá o
   // bico apontando para o pin, o auto-pan quando o balão nasce fora da tela e o
@@ -784,7 +637,7 @@ function GoogleMapPanel({
   useEffect(() => () => infoWindowRef.current?.close(), []);
 
   if (!GOOGLE_MAPS_KEY) {
-    return <FallbackMap sites={sites} specs={specs} locationById={locationById} draftAddress={draftAddress} onSelectSite={onSelectSite} />;
+    return <FallbackMap nodes={nodes} draftAddress={draftAddress} onSelectNode={onSelectNode} />;
   }
 
   return (
@@ -831,42 +684,43 @@ function MapBalloonCard({ balloon }: { balloon: MapBalloon }) {
   );
 }
 
+// Sem chave do Google Maps não há mapa: resta desenhar os mesmos nós em grade,
+// para a navegação continuar utilizável em ambiente sem a chave configurada.
 function FallbackMap({
-  sites,
-  specs,
-  locationById,
+  nodes,
   draftAddress,
-  onSelectSite,
+  onSelectNode,
 }: {
-  sites: GeoSite[];
-  specs: Map<string, GeoSpec>;
-  locationById: Map<string, GeoLocation>;
+  nodes: GeoTreeNode[];
   draftAddress: DraftAddress | null;
-  onSelectSite: (site: GeoSite) => void;
+  onSelectNode: (node: GeoTreeNode) => void;
 }) {
   return (
     <div className="absolute inset-0 h-full w-full bg-[linear-gradient(rgba(215,222,232,0.72)_1px,transparent_1px),linear-gradient(90deg,rgba(215,222,232,0.72)_1px,transparent_1px),linear-gradient(135deg,#dce4ec,#f8fafc_46%,#e7eaf0)] bg-[length:36px_36px,36px_36px,auto]">
       <div className="absolute right-4 top-20 z-20 rounded-[18px] border border-app-border bg-white px-4 py-3 text-[0.84rem] text-app-muted shadow-soft">
         Configure <strong className="text-app-text">VITE_GOOGLE_MAPS_API_KEY</strong> para ativar Google Maps.
       </div>
-      {sites.map((site, index) => {
-        const point = pointForSite(site, locationById);
-        if (!point) return null;
-        const spec = specs.get(site.siteSpecificationId);
-        const icon = siteIconFor(siteKindFromSpec(spec), site.status);
+      {nodes.slice(0, 60).map((node, index) => {
+        const isSite = node.kind === 'site';
+        const icon = isSite
+          ? siteIconFor(siteKindFromSpec({ category: node.siteCategory, name: node.sublabel }), (node.status as GeoStatus) ?? 'active')
+          : resourceIconFor(node.resourceType ?? '');
+        const url = isSite
+          ? siteIconDataUrl(icon as ReturnType<typeof siteIconFor>, { size: 40 })
+          : resourceIconDataUrl(icon as ReturnType<typeof resourceIconFor>, { size: 40 });
         return (
           <button
-            key={site.id}
+            key={node.id}
             type="button"
-            onClick={() => onSelectSite(site)}
-            title={`${site.name} · ${icon.label}`}
+            onClick={() => onSelectNode(node)}
+            title={`${node.label} · ${icon.label}`}
             className="absolute z-20 h-10 w-10 shadow-soft"
             style={{
               left: `${20 + (index % 6) * 10}%`,
               top: `${30 + (index % 4) * 12}%`,
             }}
           >
-            <img src={siteIconDataUrl(icon, { size: 40 })} alt={site.name} className="h-10 w-10" />
+            <img src={url} alt={node.label} className="h-10 w-10" />
           </button>
         );
       })}
@@ -898,78 +752,38 @@ function GoogleAutocompleteBridge({ onAddress }: { onAddress: (address: DraftAdd
   return null;
 }
 
-// Cartão flutuante de detalhe de um recurso (Equipamento/Cabo) selecionado na
-// hierarquia. Recursos completos vivem no módulo Resource — aqui só o resumo +
-// atalho, preservando a fronteira Geo × Resource.
-function ResourceDetailCard({
-  instance,
-  onClose,
-  onOpenResource,
-}: {
-  instance: HierInstance;
-  onClose: () => void;
-  onOpenResource: () => void;
-}) {
-  return (
-    <div className="absolute right-5 top-5 z-30 w-[280px] rounded-[18px] border border-app-border bg-white p-4 shadow-modal">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-app-muted">{instance.entity}</div>
-          <h3 className="mt-0.5 font-display text-[1.05rem] font-semibold text-app-text">{instance.name}</h3>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-full p-1.5 text-app-muted hover:bg-app-accent-soft"
-          aria-label="Fechar detalhe"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-      <button
-        type="button"
-        onClick={onOpenResource}
-        className="geo-btn primary mt-3 w-full justify-center"
-      >
-        Abrir no módulo Recursos
-      </button>
-    </div>
-  );
-}
-
-
 function SiteDetailModal({
   site,
   tab,
-  childSites,
   sites,
   specById,
   siteById,
-  addressById,
-  locationById,
   events,
   onTab,
+  onOpenSite,
+  onOpenResource,
   onClose,
   onChanged,
   onCreateSubSite,
 }: {
   site: GeoSite;
   tab: DetailTab;
-  childSites: GeoSite[];
   sites: GeoSite[];
   specById: Map<string, GeoSpec>;
   siteById: Map<string, GeoSite>;
-  addressById: Map<string, GeoAddress>;
-  locationById: Map<string, GeoLocation>;
   events: GeoEvent[];
   onTab: (tab: DetailTab) => void;
+  onOpenSite: (site: GeoSite) => void;
+  onOpenResource: (resourceId: string) => void;
   onClose: () => void;
   onChanged: () => Promise<void>;
   onCreateSubSite: () => void;
 }) {
   const spec = specById.get(site.siteSpecificationId);
-  const address = site.address ? addressById.get(site.address.id) : undefined;
-  const point = pointForSite(site, locationById);
+  const { address, point } = useSitePlace(site);
+  // O conteúdo do local vem do mesmo endpoint que alimenta a árvore, e só quando
+  // o modal abre: sub-locais e recursos hospedados são os filhos diretos dele.
+  const { subSites, resources } = useSiteChildren(site.id);
   const [relationshipTarget, setRelationshipTarget] = useState('');
   const [relationshipType, setRelationshipType] = useState('fedBy');
   const [nextStatus, setNextStatus] = useState<GeoStatus>(site.status);
@@ -990,16 +804,21 @@ function SiteDetailModal({
 
   return (
     <Modal onClose={onClose} title={site.name} eyebrow={`Site · ${spec?.name ?? 'Tipo nao informado'}`} wide>
+      {/* Sub-locais e Recursos levam contador: eles são a única porta de entrada
+          para o que saiu da árvore, então o número precisa ser visível de fora. */}
       <div className="mb-4 flex flex-wrap gap-2 border-b border-app-border pb-3">
-        {[
-          ['overview', 'Visao geral'],
-          ['subsites', 'Sub-sites'],
-          ['topology', 'Topologia'],
-          ['lifecycle', 'Ciclo de vida'],
-          ['resources', 'Recursos'],
-        ].map(([id, label]) => (
-          <button key={id} type="button" onClick={() => onTab(id as DetailTab)} className={`rounded-[999px] px-3 py-2 text-[0.82rem] font-semibold ${tab === id ? 'bg-app-accent text-app-text' : 'bg-app-accent-soft text-app-muted'}`}>
+        {([
+          ['overview', 'Visao geral', null],
+          ['subsites', 'Sub-locais', subSites.length],
+          ['resources', 'Recursos', resources.length],
+          ['topology', 'Topologia', null],
+          ['lifecycle', 'Ciclo de vida', null],
+        ] as Array<[DetailTab, string, number | null]>).map(([id, label, count]) => (
+          <button key={id} type="button" onClick={() => onTab(id)} className={`flex items-center gap-1.5 rounded-[999px] px-3 py-2 text-[0.82rem] font-semibold ${tab === id ? 'bg-app-accent text-app-text' : 'bg-app-accent-soft text-app-muted'}`}>
             {label}
+            {count ? (
+              <span className="rounded-[999px] bg-white/70 px-1.5 text-[0.68rem] font-semibold text-app-muted">{count}</span>
+            ) : null}
           </button>
         ))}
       </div>
@@ -1017,11 +836,51 @@ function SiteDetailModal({
 
       {tab === 'subsites' ? (
         <div>
-          <div className="mb-3 flex justify-between gap-3">
-            <div className="text-[0.88rem] text-app-muted">Contenção física via site pai.</div>
-            <button type="button" className="geo-btn primary" onClick={onCreateSubSite}><Plus className="h-4 w-4" />Adicionar sub-site</button>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-[0.88rem] text-app-muted">
+              Espaços internos deste local (sala, andar, gaveta). Não aparecem no mapa nem na
+              hierarquia — abrem por aqui.
+            </div>
+            <button type="button" className="geo-btn primary shrink-0" onClick={onCreateSubSite}><Plus className="h-4 w-4" />Adicionar sub-local</button>
           </div>
-          <SimpleRows rows={childSites.map((child) => [child.name, specById.get(child.siteSpecificationId)?.name ?? '-', statusLabel[child.status]])} empty="Este site ainda não possui sub-sites." />
+          {subSites.length ? (
+            <div className="grid gap-2">
+              {subSites.map((child) => (
+                <button
+                  key={child.id}
+                  type="button"
+                  onClick={() => {
+                    const target = child.refId ? siteById.get(child.refId) : undefined;
+                    if (target) onOpenSite(target);
+                  }}
+                  className="flex w-full items-center gap-3 rounded-[18px] border border-app-border px-4 py-3 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
+                >
+                  <img
+                    src={siteIconDataUrl(
+                      siteIconFor(
+                        siteKindFromSpec({ category: child.siteCategory, name: child.sublabel }),
+                        (child.status as GeoStatus) ?? 'active',
+                      ),
+                      { size: 28 },
+                    )}
+                    alt=""
+                    className="h-7 w-7 shrink-0"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[0.9rem] font-semibold text-app-text">{child.label}</span>
+                    <span className="block truncate text-[0.78rem] text-app-muted">
+                      {child.sublabel ?? 'Sub-local'} · {statusLabel[(child.status as GeoStatus) ?? 'active']}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">Abrir</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
+              Este local ainda não possui sub-locais.
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -1054,11 +913,79 @@ function SiteDetailModal({
       ) : null}
 
       {tab === 'resources' ? (
-        <div className="rounded-[18px] border border-app-border bg-app-accent-soft p-4 text-[0.9rem] text-app-muted">
-          Recursos fisicos sao gerenciados pelo modulo Resource (TMF634/639). Esta aba mostra apenas o resumo referencial para preservar a fronteira Geo x Resource.
-        </div>
+        <SiteResourcesTab resources={resources} onOpenResource={onOpenResource} />
       ) : null}
     </Modal>
+  );
+}
+
+// Recursos hospedados no local, agrupados por planta. É aqui que vive tudo que
+// saiu do mapa e da hierarquia: OLT, placa, porta, DIO e o equipamento de
+// cliente. A fronteira Geo × Resource (C3) fica preservada — a lista é
+// referencial e o detalhe abre no módulo Resource.
+function SiteResourcesTab({
+  resources,
+  onOpenResource,
+}: {
+  resources: GeoTreeNode[];
+  onOpenResource: (resourceId: string) => void;
+}) {
+  const groups = useMemo(() => {
+    const byPlant = new Map<ResourcePlant, GeoTreeNode[]>();
+    for (const resource of resources) {
+      const plant = resourcePlant(resource.resourceType ?? '');
+      const list = byPlant.get(plant) ?? [];
+      list.push(resource);
+      byPlant.set(plant, list);
+    }
+    // Ordem de leitura: o que está na rua, o que está no rack, o que está no
+    // cliente, e por último o que não é físico.
+    const order: ResourcePlant[] = ['outdoor', 'indoor', 'customer', 'logical'];
+    return order
+      .map((plant) => ({ plant, items: byPlant.get(plant) ?? [] }))
+      .filter((group) => group.items.length > 0);
+  }, [resources]);
+
+  if (!groups.length) {
+    return (
+      <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
+        Nenhum recurso registrado neste local.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-5">
+      {groups.map(({ plant, items }) => (
+        <section key={plant}>
+          <h4 className="mb-2 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+            {plantLabel[plant]} · {items.length}
+          </h4>
+          <div className="grid gap-2">
+            {items.map((resource) => {
+              const icon = resourceIconFor(resource.resourceType ?? '');
+              return (
+                <button
+                  key={resource.id}
+                  type="button"
+                  onClick={() => (resource.refId ? onOpenResource(resource.refId) : undefined)}
+                  className="flex w-full items-center gap-3 rounded-[18px] border border-app-border px-4 py-2.5 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
+                >
+                  <ResourceIcon resource={resource.resourceType ?? ''} variant="badge" size={26} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[0.9rem] font-semibold text-app-text">{resource.label}</span>
+                    <span className="block truncate text-[0.78rem] text-app-muted">
+                      {[icon.label, resource.detail?.model, resource.detail?.serialNumber].filter(Boolean).join(' · ')}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">Abrir</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
   );
 }
 
@@ -1133,19 +1060,6 @@ function Modal({ children, title, eyebrow, onClose, wide }: { children: ReactNod
   );
 }
 
-function ModalFooter({ onClose, primaryLabel, disabled }: { onClose: () => void; primaryLabel: string; disabled?: boolean }) {
-  return (
-    <div className="mt-5 flex justify-end gap-3 border-t border-app-border pt-4">
-      <button type="button" onClick={onClose} className="geo-btn secondary">Cancelar</button>
-      <button type="submit" disabled={disabled} className="geo-btn primary disabled:cursor-not-allowed disabled:opacity-60">{primaryLabel}</button>
-    </div>
-  );
-}
-
-function FormField({ label, children }: { label: string; children: ReactNode }) {
-  return <label className="grid gap-2 text-[0.78rem] font-semibold uppercase tracking-[0.07em] text-app-muted">{label}{children}</label>;
-}
-
 function Info({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="rounded-[18px] border border-app-border p-4">
@@ -1170,19 +1084,81 @@ function Th({ children }: { children: ReactNode }) {
   return <th className="border-b border-app-border px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">{children}</th>;
 }
 
-function pointForSite(site: GeoSite, locations: Map<string, GeoLocation>): [number, number] | null {
-  const location = site.place ? locations.get(site.place.id) : undefined;
-  if (!location || location.geometry.type !== 'Point') return null;
-  return location.geometry.coordinates;
+// Um GeoSite visto como nó da árvore. Serve os caminhos que chegam ao local por
+// fora da navegação (link vindo de Recursos/Serviços, abertura do modal), para a
+// seleção ter sempre a mesma forma.
+function siteNodeOf(site: GeoSite): GeoTreeNode {
+  return {
+    id: `site:${site.id}`,
+    kind: 'site',
+    label: site.name,
+    refId: site.id,
+    referredType: 'GeographicSite',
+    status: site.status,
+    hasChildren: false,
+  };
+}
+
+// Endereço e coordenada do local aberto. Buscados por id sob demanda: carregar os
+// ~10 mil endereços e geometrias do acervo só para preencher dois campos de um
+// modal era o que fazia a página abrir devagar.
+function useSitePlace(site: GeoSite): { address: GeoAddress | null; point: [number, number] | null } {
+  const [address, setAddress] = useState<GeoAddress | null>(null);
+  const [point, setPoint] = useState<[number, number] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAddress(null);
+    setPoint(null);
+
+    if (site.address?.id) {
+      void getJson<GeoAddress>(`/v1/geo/addresses/${site.address.id}`)
+        .then((data) => !cancelled && setAddress(data))
+        .catch(() => undefined);
+    }
+    if (site.place?.id) {
+      void getJson<GeoLocation>(`/v1/geo/locations/${site.place.id}`)
+        .then((data) => {
+          if (cancelled || data.geometry.type !== 'Point') return;
+          setPoint(data.geometry.coordinates);
+        })
+        .catch(() => undefined);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [site.address?.id, site.place?.id]);
+
+  return { address, point };
+}
+
+// Conteúdo do local: os mesmos filhos diretos que a árvore mostraria, separados
+// em sub-locais e recursos para as duas abas do modal.
+function useSiteChildren(siteId: string): { subSites: GeoTreeNode[]; resources: GeoTreeNode[] } {
+  const [nodes, setNodes] = useState<GeoTreeNode[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setNodes([]);
+    void fetchTreeChildren(`site:${siteId}`)
+      .then((page) => !cancelled && setNodes(page.nodes))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [siteId]);
+
+  return useMemo(
+    () => ({
+      subSites: nodes.filter((node) => node.kind === 'site'),
+      resources: nodes.filter((node) => node.kind === 'resource'),
+    }),
+    [nodes],
+  );
 }
 
 
-function isParentAllowed(child?: GeoSpec, parent?: GeoSpec): boolean {
-  if (!child || !parent) return true;
-  if (child.allowedParentSpecIds.length > 0 && !child.allowedParentSpecIds.includes(parent.id)) return false;
-  if (parent.allowedChildSpecIds.length > 0 && !parent.allowedChildSpecIds.includes(child.id)) return false;
-  return true;
-}
 
 
 function loadGoogleMaps(apiKey: string): Promise<void> {

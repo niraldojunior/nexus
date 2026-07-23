@@ -72,12 +72,23 @@ const MIGRATED_BY = 'estacoes-carregar';
 
 // ------------------------------------------------------------------- infra ---
 
-async function api(method, pathname, body) {
-  const res = await fetch(`${BASE}${pathname}`, {
-    method,
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+// 519 estações × várias chamadas cada é sessão longa o bastante para o
+// backend dev soltar uma conexão (ECONNRESET) sem que isso seja um erro da
+// carga em si — só retenta falha de rede (fetch nem completou), nunca uma
+// resposta HTTP de erro (essa é real e deve estourar).
+async function api(method, pathname, body, attempt = 1) {
+  let res;
+  try {
+    res = await fetch(`${BASE}${pathname}`, {
+      method,
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (err) {
+    if (attempt >= 3) throw err;
+    await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+    return api(method, pathname, body, attempt + 1);
+  }
   const text = await res.text();
   if (!res.ok) throw new Error(`${method} ${pathname} -> ${res.status}: ${text}`);
   return text ? JSON.parse(text) : undefined;
@@ -400,21 +411,24 @@ async function main() {
     const sigla = row['ESTACAO'] || '';
     if (!sigla) continue;
 
-    if (siteBySigla.has(sigla)) {
-      discarded.estacoes++;
-      console.log(`· ${sigla.padEnd(8)} já existe no Nexus — descartada`);
-      continue;
-    }
-
     const ufRaw = (row['UF'] || '').toUpperCase();
     const municipioRaw = titleCase(row['MUNICIPIO'] || '');
     const nome = titleCase(row['NOME'] || sigla);
     const estacaoName = `${nome} (${sigla})`;
+    const salas = parseSalas(row['DESCRICAO_SITES_INTERNOS']);
 
-    if (siteByName.has(estacaoName)) {
+    // Estação já existe (desta carga ou de uma execução anterior interrompida
+    // no meio) — não recria o Site, mas ainda garante as salas: `ensureSala`
+    // já é idempotente por `parentId::nome`, então isto é o que torna a carga
+    // retomável depois de uma falha de rede a meio caminho (ver `api()`).
+    const existingSiteId = siteBySigla.get(sigla) ?? siteByName.get(estacaoName);
+    if (existingSiteId) {
       discarded.estacoes++;
-      siteBySigla.set(sigla, siteByName.get(estacaoName));
-      console.log(`· ${sigla.padEnd(8)} já existe no Nexus (por nome) — descartada`);
+      siteBySigla.set(sigla, existingSiteId);
+      for (const sala of salas) {
+        await ensureSala({ name: sala, specId: specSala, parentSiteId: existingSiteId });
+      }
+      console.log(`· ${sigla.padEnd(8)} já existe no Nexus — descartada (salas conferidas)`);
       continue;
     }
 
@@ -457,8 +471,6 @@ async function main() {
     if (coordSource === 'csv') coordStats.csv++;
     else if (coordSource === 'geocoded') coordStats.geocoded++;
     else coordStats.none++;
-
-    const salas = parseSalas(row['DESCRICAO_SITES_INTERNOS']);
 
     const characteristic = [
       tag(),

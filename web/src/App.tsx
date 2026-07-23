@@ -35,6 +35,7 @@ import {
   settingsSections,
 } from './data/mockData';
 import { sendMessage } from './services/api';
+import { useIsMobile } from './hooks/useIsMobile';
 import { DEFAULT_RESOURCE_CATEGORY_CODE } from './data/resourceCategoryViews';
 import { DEFAULT_SERVICE_CATEGORY_CODE } from './data/serviceCategoryViews';
 import {
@@ -400,6 +401,7 @@ function AssistantEntry({ entry }: { entry: ConversationEntry }) {
 }
 
 function App() {
+  const isMobile = useIsMobile();
   const [currentPage, setCurrentPage] = useState<PageId>('research');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -422,9 +424,10 @@ function App() {
 
   // Menu Locais (Geo) abre com o mapa em foco: recolhe a barra lateral com
   // animação ao entrar e a reabre com animação ao navegar para qualquer outro menu.
+  // No mobile a barra é um drawer sobreposto e começa sempre fechada.
   useEffect(() => {
-    setSidebarCollapsed(currentPage === 'geo');
-  }, [currentPage]);
+    setSidebarCollapsed(isMobile ? true : currentPage === 'geo');
+  }, [currentPage, isMobile]);
 
   useEffect(() => {
     const openConversationFromUrl = () => {
@@ -656,6 +659,7 @@ function App() {
     <div className="flex h-screen bg-app-bg text-app-text">
       <Sidebar
         collapsed={sidebarCollapsed}
+        isMobile={isMobile}
         currentPage={currentPage}
         activeRecentConversationId={activeConversationId}
         activeResearchSessionId={activeResearchSessionId}

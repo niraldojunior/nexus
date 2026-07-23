@@ -23,6 +23,7 @@ import {
   type GeoTreeNode,
 } from '../services/geoTreeApi';
 import { useGeoTree } from '../hooks/useGeoTree';
+import { useIsMobile } from '../hooks/useIsMobile';
 import {
   plantLabel,
   resourceIconFor,
@@ -147,6 +148,7 @@ export default function GeoPage() {
   const [balloonKey, setBalloonKey] = useState<string | null>(null);
 
   const tree = useGeoTree();
+  const isMobile = useIsMobile();
   const { navParams, clearNav, goToResource } = useNavigation();
 
   const specById = useMemo(() => new Map(specs.map((item) => [item.id, item])), [specs]);
@@ -326,7 +328,11 @@ export default function GeoPage() {
           onDraftAddress={setDraftAddress}
         />
 
-        <div className="absolute left-3 top-3 z-30 w-[400px] max-w-[calc(100%-1.5rem)]">
+        <div
+          className={`absolute top-3 z-30 w-[400px] max-w-[calc(100%-1.5rem)] ${
+            isMobile ? 'left-14' : 'left-3'
+          }`}
+        >
           <div className="flex h-12 items-center rounded-2xl border border-app-border bg-white shadow-soft transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15">
             <input
               value={query}

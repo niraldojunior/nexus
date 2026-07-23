@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { GitBranch, ListTree, PanelLeftClose, PanelLeftOpen, RefreshCw, Settings } from 'lucide-react';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import type { GeoTree } from '../../hooks/useGeoTree';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { HierarchyTreeView } from './HierarchyTreeView';
 import { HierarchyComboView } from './HierarchyComboView';
 
@@ -22,6 +23,7 @@ type HierView = 'tree' | 'combos';
 export function HierarchySidebar({ tree, selectedNodeId, onSelect, onOpenTypes }: HierarchySidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [view, setView] = useState<HierView>('tree');
+  const isMobile = useIsMobile();
 
   // As raízes da cascata de combos são as mesmas UFs da árvore.
   const rootNodes = useMemo(
@@ -29,7 +31,26 @@ export function HierarchySidebar({ tree, selectedNodeId, onSelect, onOpenTypes }
     [tree.rows],
   );
 
+  // No mobile o painel fecha assim que um nó é selecionado (mesmo padrão de
+  // drawer sobreposto usado na barra lateral global do app).
+  const handleSelect = (node: GeoTreeNode) => {
+    onSelect(node);
+    if (isMobile) setCollapsed(true);
+  };
+
   if (collapsed) {
+    if (isMobile) {
+      return (
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          className="absolute left-3 top-16 z-30 flex h-10 w-10 items-center justify-center rounded-xl border border-app-border bg-white text-app-text shadow-soft"
+          aria-label="Abrir hierarquia"
+        >
+          <PanelLeftOpen className="h-5 w-5" strokeWidth={1.8} />
+        </button>
+      );
+    }
     return (
       <div className="flex h-full w-11 shrink-0 flex-col items-center gap-2 border-r border-app-border bg-white py-3">
         <SidebarIconButton icon={PanelLeftOpen} label="Abrir hierarquia" onClick={() => setCollapsed(false)} />
@@ -41,50 +62,65 @@ export function HierarchySidebar({ tree, selectedNodeId, onSelect, onOpenTypes }
   }
 
   return (
-    <aside className="flex h-full w-[340px] max-w-[80vw] shrink-0 flex-col border-r border-app-border bg-white">
-      {/* Header — título + toggle de visão + ações, tudo em uma linha */}
-      <div className="flex items-center justify-between gap-2 border-b border-app-border px-3 py-2">
-        <h2 className="font-display text-[0.98rem] font-semibold text-app-text">Hierarquia</h2>
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center rounded-[8px] border border-app-border p-0.5">
-            <ViewToggleButton active={view === 'tree'} icon={ListTree} label="Árvore" onClick={() => setView('tree')} />
-            <ViewToggleButton active={view === 'combos'} icon={GitBranch} label="Combos" onClick={() => setView('combos')} />
+    <>
+      {isMobile ? (
+        <div
+          className="absolute inset-0 z-30 bg-black/40"
+          onClick={() => setCollapsed(true)}
+          aria-hidden="true"
+        />
+      ) : null}
+      <aside
+        className={
+          isMobile
+            ? 'absolute inset-y-0 left-0 z-40 flex w-[340px] max-w-[85vw] flex-col border-r border-app-border bg-white shadow-soft'
+            : 'flex h-full w-[340px] max-w-[80vw] shrink-0 flex-col border-r border-app-border bg-white'
+        }
+      >
+        {/* Header — título + toggle de visão + ações, tudo em uma linha */}
+        <div className="flex items-center justify-between gap-2 border-b border-app-border px-3 py-2">
+          <h2 className="font-display text-[0.98rem] font-semibold text-app-text">Hierarquia</h2>
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center rounded-[8px] border border-app-border p-0.5">
+              <ViewToggleButton active={view === 'tree'} icon={ListTree} label="Árvore" onClick={() => setView('tree')} />
+              <ViewToggleButton active={view === 'combos'} icon={GitBranch} label="Combos" onClick={() => setView('combos')} />
+            </div>
+            <SidebarIconButton icon={RefreshCw} label="Atualizar" onClick={tree.reload} spinning={tree.loading} />
+            <SidebarIconButton icon={Settings} label="Tipos de local" onClick={onOpenTypes} />
+            <SidebarIconButton icon={PanelLeftClose} label="Recolher" onClick={() => setCollapsed(true)} />
           </div>
-          <SidebarIconButton icon={RefreshCw} label="Atualizar" onClick={tree.reload} spinning={tree.loading} />
-          <SidebarIconButton icon={Settings} label="Tipos de local" onClick={onOpenTypes} />
-          <SidebarIconButton icon={PanelLeftClose} label="Recolher" onClick={() => setCollapsed(true)} />
         </div>
-      </div>
 
-      {/* Corpo */}
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {tree.error ? (
-          <div className="mb-3 rounded-[14px] border border-red-200 bg-red-50 px-3 py-2 text-[0.82rem] text-red-700">
-            {tree.error}
-          </div>
-        ) : null}
-        {tree.loading && !tree.rows.length ? (
-          <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.86rem] text-app-muted">
-            Carregando hierarquia…
-          </div>
-        ) : view === 'tree' ? (
-          <HierarchyTreeView
-            rows={tree.rows}
-            selectedNodeId={selectedNodeId}
-            onSelect={onSelect}
-            onToggle={tree.toggle}
-            onLoadMore={tree.loadMore}
-          />
-        ) : (
-          <HierarchyComboView
-            rootNodes={rootNodes}
-            childrenOf={tree.childrenOf}
-            ensureChildren={tree.ensureChildren}
-            onSelect={onSelect}
-          />
-        )}
-      </div>
-    </aside>
+        {/* Corpo */}
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {tree.error ? (
+            <div className="mb-3 rounded-[14px] border border-red-200 bg-red-50 px-3 py-2 text-[0.82rem] text-red-700">
+              {tree.error}
+            </div>
+          ) : null}
+          {tree.loading && !tree.rows.length ? (
+            <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.86rem] text-app-muted">
+              Carregando hierarquia…
+            </div>
+          ) : view === 'tree' ? (
+            <HierarchyTreeView
+              rows={tree.rows}
+              selectedNodeId={selectedNodeId}
+              onSelect={handleSelect}
+              onToggle={tree.toggle}
+              onLoadMore={tree.loadMore}
+            />
+          ) : (
+            <HierarchyComboView
+              rootNodes={rootNodes}
+              childrenOf={tree.childrenOf}
+              ensureChildren={tree.ensureChildren}
+              onSelect={handleSelect}
+            />
+          )}
+        </div>
+      </aside>
+    </>
   );
 }
 

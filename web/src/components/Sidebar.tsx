@@ -25,6 +25,7 @@ type CategoryMenuItem = { code: string; label: string };
 
 interface SidebarProps {
   collapsed: boolean;
+  isMobile?: boolean;
   currentPage: PageId;
   activeRecentConversationId: string | null;
   activeResearchSessionId: string | null;
@@ -68,6 +69,7 @@ const serviceCategoryItems: CategoryMenuItem[] = listServiceCategories(SERVICE_C
 
 export default function Sidebar({
   collapsed,
+  isMobile = false,
   currentPage,
   activeResearchSessionId,
   activeResourceCategory,
@@ -114,26 +116,60 @@ export default function Sidebar({
     },
   };
 
+  // No mobile a sidebar é um drawer sobreposto (sempre com conteúdo completo);
+  // no desktop ela recolhe para um rail fino de ícones. `contentCollapsed` só
+  // é verdadeiro no caso do rail — o drawer mobile nunca esconde os rótulos.
+  const contentCollapsed = !isMobile && collapsed;
+  const closeMobileDrawer = () => {
+    if (isMobile) onToggleCollapse();
+  };
+
   return (
-    <aside
-      className={`flex flex-col overflow-hidden border-r border-app-border bg-app-sidebar shadow-soft transition-[width,min-width] duration-300 ease-in-out ${
-        collapsed ? 'w-[58px] min-w-[58px]' : 'w-[256px] min-w-[256px]'
-      }`}
-    >
+    <>
+      {isMobile && collapsed ? (
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          className="fixed left-3 top-3 z-[60] flex h-10 w-10 items-center justify-center rounded-xl border border-app-border bg-white text-app-text shadow-soft"
+          aria-label="Abrir barra lateral"
+        >
+          <PanelLeftOpen className="h-5 w-5" strokeWidth={1.8} />
+        </button>
+      ) : null}
+
+      {isMobile && !collapsed ? (
+        <div
+          className="fixed inset-0 z-40 bg-black/40"
+          onClick={onToggleCollapse}
+          aria-hidden="true"
+        />
+      ) : null}
+
+      <aside
+        className={
+          isMobile
+            ? `fixed inset-y-0 left-0 z-50 flex w-[256px] max-w-[85vw] flex-col overflow-hidden border-r border-app-border bg-app-sidebar shadow-soft transition-transform duration-300 ease-in-out ${
+                collapsed ? '-translate-x-full' : 'translate-x-0'
+              }`
+            : `flex flex-col overflow-hidden border-r border-app-border bg-app-sidebar shadow-soft transition-[width,min-width] duration-300 ease-in-out ${
+                collapsed ? 'w-[58px] min-w-[58px]' : 'w-[256px] min-w-[256px]'
+              }`
+        }
+      >
       <div
         className={`flex min-h-[53px] items-center pb-3 pt-3 ${
-          collapsed ? 'justify-center px-0' : 'pl-4 pr-[15px]'
+          contentCollapsed ? 'justify-center px-0' : 'pl-4 pr-[15px]'
         }`}
       >
         <button
           type="button"
           className={`overflow-hidden whitespace-nowrap font-display text-[1.75rem] font-semibold leading-none tracking-[-0.03em] text-app-text transition-all duration-200 ease-in-out ${
-            collapsed ? 'max-w-0 opacity-0 pointer-events-none' : 'max-w-[160px] opacity-100'
+            contentCollapsed ? 'max-w-0 opacity-0 pointer-events-none' : 'max-w-[160px] opacity-100'
           }`}
         >
           Nexus
         </button>
-        <div className={`${collapsed ? 'flex items-center' : 'ml-auto flex items-center'}`}>
+        <div className={`${contentCollapsed ? 'flex items-center' : 'ml-auto flex items-center'}`}>
           <button
             type="button"
             onClick={onToggleCollapse}
@@ -159,8 +195,11 @@ export default function Sidebar({
                 active={currentPage === 'research' && activeResearchSessionId === null}
                 icon={Icon}
                 label={label}
-                onClick={onNewResearch}
-                collapsed={collapsed}
+                onClick={() => {
+                  onNewResearch();
+                  closeMobileDrawer();
+                }}
+                collapsed={contentCollapsed}
               />
             ))}
         </nav>
@@ -188,6 +227,7 @@ export default function Sidebar({
                       onClick={() => {
                         if (id === 'conversations') {
                           onSelectPage('conversas');
+                          closeMobileDrawer();
                           return;
                         }
                         if (categoryMenu) {
@@ -195,10 +235,11 @@ export default function Sidebar({
                           return;
                         }
                         onSelectPage(id);
+                        closeMobileDrawer();
                       }}
-                      collapsed={collapsed}
+                      collapsed={contentCollapsed}
                     />
-                    {categoryMenu && categoryMenu.open && !collapsed ? (
+                    {categoryMenu && categoryMenu.open && !contentCollapsed ? (
                       <div className="ml-[35px] mt-1 space-y-1 border-l border-app-border pl-3">
                         {categoryMenu.items.map((item) => {
                           const subItemActive = currentPage === id && categoryMenu.activeCode === item.code;
@@ -206,7 +247,10 @@ export default function Sidebar({
                             <button
                               key={item.code}
                               type="button"
-                              onClick={() => categoryMenu.onSelect(item.code)}
+                              onClick={() => {
+                                categoryMenu.onSelect(item.code);
+                                closeMobileDrawer();
+                              }}
                               className={`flex h-[28px] w-full items-center rounded-[10px] px-3 text-left text-[0.84rem] transition ${
                                 subItemActive
                                   ? 'bg-app-accent-soft font-semibold text-app-text'
@@ -224,7 +268,7 @@ export default function Sidebar({
               })}
           </nav>
 
-          {!collapsed ? (
+          {!contentCollapsed ? (
             <>
               <div className="flex items-center justify-between pb-2 pl-4 pr-[15px] pt-3">
                 <span className="text-[0.8rem] font-medium text-app-muted">
@@ -238,6 +282,7 @@ export default function Sidebar({
                   refreshTrigger={researchSessionRefreshTrigger}
                   onSessionSelected={(sessionId) => {
                     onSelectResearchSession?.(sessionId);
+                    closeMobileDrawer();
                   }}
                 />
               </div>
@@ -248,13 +293,13 @@ export default function Sidebar({
 
       <div
         className={`flex min-h-[56px] border-t border-app-border pl-[15px] pr-[15px] ${
-          collapsed ? 'items-center justify-center' : 'items-center gap-4'
+          contentCollapsed ? 'items-center justify-center' : 'items-center gap-4'
         }`}
       >
         <div className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-app-accent text-app-text">
           <span className="text-[1.12rem] font-medium">N</span>
         </div>
-        {!collapsed ? (
+        {!contentCollapsed ? (
           <>
             <div className="min-w-0 flex-1">
               <div className="truncate text-[0.96rem] font-semibold leading-[1.1] text-app-text">
@@ -264,7 +309,10 @@ export default function Sidebar({
             </div>
             <button
               type="button"
-              onClick={() => onSelectPage('settings')}
+              onClick={() => {
+                onSelectPage('settings');
+                closeMobileDrawer();
+              }}
               className={`rounded-xl border p-1.5 transition ${
                 settingsOpen
                   ? 'border-app-border bg-white text-app-text shadow-soft'
@@ -277,7 +325,8 @@ export default function Sidebar({
           </>
         ) : null}
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 

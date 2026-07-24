@@ -34,6 +34,11 @@ export type ResourceQuery = {
   name?: string;
   status?: ResourceStatus;
   resourceSpecificationId?: string;
+  resourceSpecificationIdIn?: string[];
+  resourceType?: string;
+  resourceTypeIn?: string[];
+  /** Categoria da ResourceSpecification referenciada — resolvida via join/subquery, não é coluna própria do recurso. */
+  category?: string;
   placeId?: string;
   relatedPartyId?: string;
   kind?: ResourceKind;

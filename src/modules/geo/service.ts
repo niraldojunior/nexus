@@ -332,9 +332,10 @@ export class GeoService {
   public getAddress(id: string): GeographicAddress | undefined { return this.repository.getAddress(id); }
   public getSite(id: string): GeographicSite | undefined { return this.repository.getSite(id); }
   public getSpec(id: string): GeographicSiteSpecification | undefined { return this.repository.getSpec(id); }
-  public listLocations(): GeographicLocation[] { return this.repository.listLocations(); }
-  public listAddresses(): GeographicAddress[] { return this.repository.listAddresses(); }
-  public listSites(): GeographicSite[] { return this.repository.listSites(); }
+  public listLocations(query?: { limit?: number; offset?: number }): GeographicLocation[] { return this.repository.listLocations(query); }
+  public listAddresses(query?: { name?: string; limit?: number; offset?: number }): GeographicAddress[] { return this.repository.listAddresses(query); }
+  public listSites(query?: { name?: string; limit?: number; offset?: number }): GeographicSite[] { return this.repository.listSites(query); }
+  public countSites(): number { return this.repository.countSites(); }
   public listSpecs(): GeographicSiteSpecification[] { return this.repository.listSpecs(); }
   public listSiteEvents(siteId: string): GeoEvent[] {
     this.getSiteOrThrow(siteId);

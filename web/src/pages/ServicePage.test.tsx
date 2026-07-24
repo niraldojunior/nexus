@@ -8,6 +8,7 @@ import type {
   ResourceFacingService,
   ServiceSpecification,
 } from '../services/serviceApi';
+import * as resourceApi from '../services/resourceApi';
 import ServicePage from './ServicePage';
 
 const cfsSpec: ServiceSpecification = {
@@ -72,30 +73,19 @@ const cfs: CustomerFacingService = {
   supportingService: [{ id: 'rfs-1', '@referredType': 'ResourceFacingService' }],
 };
 
-const resourceOptions = [
-  {
-    '@type': 'PhysicalResource' as const,
-    id: 'ont-778899',
-    name: 'ONT 778899',
-    resourceSpecificationId: 'spec-ont',
-    status: 'active' as const,
-  },
-];
-
 const loadSnapshotMock = vi.spyOn(serviceApi, 'loadServiceWorkspaceSnapshot');
+const listResourcesMock = vi.spyOn(resourceApi, 'listResources');
 const createServiceMock = vi.spyOn(serviceApi, 'createService');
 const terminateServiceMock = vi.spyOn(serviceApi, 'terminateService');
 const createSpecMock = vi.spyOn(serviceApi, 'createServiceSpecification');
 
 function snapshotFor(overrides: Partial<serviceApi.ServiceWorkspaceSnapshot> = {}) {
   return {
-    items: [],
     serviceSpecificationOptions: serviceSpecifications,
     serviceCategories: [],
     serviceCandidates: [],
     customerFacingServices: [cfs],
     resourceFacingServices: [rfs],
-    resourceOptions,
     ...overrides,
   } as serviceApi.ServiceWorkspaceSnapshot;
 }
@@ -103,6 +93,19 @@ function snapshotFor(overrides: Partial<serviceApi.ServiceWorkspaceSnapshot> = {
 beforeEach(() => {
   vi.clearAllMocks();
   loadSnapshotMock.mockImplementation(async () => snapshotFor());
+  listResourcesMock.mockImplementation(async ({ kind }) =>
+    kind === 'PhysicalResource'
+      ? [
+          {
+            '@type': 'PhysicalResource' as const,
+            id: 'ont-778899',
+            name: 'ONT 778899',
+            resourceSpecificationId: 'spec-ont',
+            status: 'active' as const,
+          },
+        ]
+      : [],
+  );
   createServiceMock.mockResolvedValue(cfs);
   terminateServiceMock.mockResolvedValue(cfs);
   createSpecMock.mockResolvedValue(cfsSpec);
@@ -117,7 +120,7 @@ test('defaults to the Access category and lists both CFS and RFS of that categor
 
   expect(await screen.findByRole('heading', { name: 'Acesso' })).toBeInTheDocument();
   await waitFor(() =>
-    expect(loadSnapshotMock).toHaveBeenCalledWith({ tab: 'CustomerFacingService', limit: 20, offset: 0 }),
+    expect(loadSnapshotMock).toHaveBeenCalledWith({ tab: 'CustomerFacingService', category: 'Access' }),
   );
 
   expect(screen.getByText('Bitstream-GPON-700-ProvedorX-SUB778899')).toBeInTheDocument();
@@ -133,9 +136,7 @@ test('switching to the catalog view lists only specifications of the active cate
   await screen.findByText('Bitstream-GPON-700-ProvedorX-SUB778899');
   await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
 
-  await waitFor(() =>
-    expect(loadSnapshotMock).toHaveBeenCalledWith({ tab: 'ServiceSpecification', limit: 20, offset: 0 }),
-  );
+  await waitFor(() => expect(loadSnapshotMock).toHaveBeenCalledWith({ tab: 'ServiceSpecification' }));
   expect(await screen.findByText('Bitstream GPON 700')).toBeInTheDocument();
   expect(screen.getByText('Acesso GPON')).toBeInTheDocument();
   expect(screen.queryByText('CloudVoIP')).not.toBeInTheDocument();

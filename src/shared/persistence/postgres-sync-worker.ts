@@ -518,6 +518,16 @@ const MIGRATIONS_SQL = `
   ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS related_party TEXT;
   ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS resource_order_item TEXT;
   ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS note TEXT;
+
+  -- place_id/resource_type/name are the columns the resource tree and workspace list
+  -- filters actually query (place_id superseded geographic_location_id — see
+  -- postgres-repository.ts). Added late because place_id itself is a migrated column.
+  CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_place ON tmf_physical_resource(place_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_type ON tmf_physical_resource(resource_type);
+  CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_name ON tmf_physical_resource(name);
+  CREATE INDEX IF NOT EXISTS idx_tmf_logical_resource_place ON tmf_logical_resource(place_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_logical_resource_type ON tmf_logical_resource(resource_type);
+  CREATE INDEX IF NOT EXISTS idx_tmf_logical_resource_name ON tmf_logical_resource(name);
 `;
 
 const SCHEMA_SQL = `

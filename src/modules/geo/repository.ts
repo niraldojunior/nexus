@@ -29,8 +29,11 @@ export class GeoRepository implements IGeoRepository {
     const location = this.locations.get(id);
     return location ? cloneLocation(location) : undefined;
   }
-  public listLocations(): GeographicLocation[] {
-    return [...this.locations.values()].map(cloneLocation);
+  public listLocations(query?: { limit?: number; offset?: number }): GeographicLocation[] {
+    const sorted = [...this.locations.values()].sort((a, b) => a.id.localeCompare(b.id));
+    const offset = query?.offset ?? 0;
+    const sliced = query?.limit !== undefined ? sorted.slice(offset, offset + query.limit) : sorted.slice(offset);
+    return sliced.map(cloneLocation);
   }
 
   public upsertAddress(address: GeographicAddress): GeographicAddress {
@@ -42,8 +45,14 @@ export class GeoRepository implements IGeoRepository {
     const address = this.addresses.get(id);
     return address ? cloneAddress(address) : undefined;
   }
-  public listAddresses(): GeographicAddress[] {
-    return [...this.addresses.values()].map(cloneAddress);
+  public listAddresses(query?: { name?: string; limit?: number; offset?: number }): GeographicAddress[] {
+    const filtered = [...this.addresses.values()].filter(
+      (address) => !query?.name || address.street.toLowerCase().includes(query.name.toLowerCase()),
+    );
+    const sorted = filtered.sort((a, b) => a.street.localeCompare(b.street) || a.id.localeCompare(b.id));
+    const offset = query?.offset ?? 0;
+    const sliced = query?.limit !== undefined ? sorted.slice(offset, offset + query.limit) : sorted.slice(offset);
+    return sliced.map(cloneAddress);
   }
 
   public upsertSite(site: GeographicSite): GeographicSite {
@@ -58,8 +67,18 @@ export class GeoRepository implements IGeoRepository {
     const site = this.sites.get(id);
     return site ? cloneSite(site) : undefined;
   }
-  public listSites(): GeographicSite[] {
-    return [...this.sites.values()].map(cloneSite);
+  public listSites(query?: { name?: string; limit?: number; offset?: number }): GeographicSite[] {
+    const filtered = [...this.sites.values()].filter(
+      (site) => !query?.name || site.name.toLowerCase().includes(query.name.toLowerCase()),
+    );
+    const sorted = filtered.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+    const offset = query?.offset ?? 0;
+    const sliced = query?.limit !== undefined ? sorted.slice(offset, offset + query.limit) : sorted.slice(offset);
+    return sliced.map(cloneSite);
+  }
+
+  public countSites(): number {
+    return this.sites.size;
   }
 
   public upsertSiteRelationship(siteId: string, relationship: GeographicSiteRelationship): GeographicSiteRelationship {

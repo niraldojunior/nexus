@@ -31,7 +31,7 @@ import {
   type ServiceState,
   type ServiceTab,
 } from '../services/serviceApi';
-import type { ResourceEntity } from '../services/resourceApi';
+import { listResources, type ResourceEntity } from '../services/resourceApi';
 import ColumnFilterMenu from '../components/ColumnFilterMenu';
 import Field from '../components/Field';
 import { useGeoDirectory } from '../hooks/useGeoDirectory';
@@ -153,8 +153,8 @@ interface ServicePageProps {
 export default function ServicePage({ category: categoryProp }: ServicePageProps = {}) {
   const category = categoryProp ?? DEFAULT_SERVICE_CATEGORY_CODE;
   const [view, setView] = useState<ServiceView>('inventory');
-  // O Inventário mostra CFS e RFS juntos; a tab só define o recorte pedido ao snapshot, que de todo
-  // modo devolve as coleções completas (mesmo contrato do workspace de Resource).
+  // O Inventário mostra CFS e RFS juntos; a tab só distingue catálogo de inventário — o servidor
+  // sempre devolve CFS+RFS da categoria ativa juntos (ver buildServiceWorkspaceSnapshot).
   const effectiveTab: ServiceTabId = view === 'catalog' ? 'ServiceSpecification' : 'CustomerFacingService';
 
   const [page, setPage] = useState(1);
@@ -165,7 +165,9 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
   const [specificationOptions, setSpecificationOptions] = useState<ServiceSpecification[]>([]);
   const [customerFacingServices, setCustomerFacingServices] = useState<CustomerFacingService[]>([]);
   const [resourceFacingServices, setResourceFacingServices] = useState<ResourceFacingService[]>([]);
-  const [resourceOptions, setResourceOptions] = useState<ResourceEntity[]>([]);
+  // Amostra limitada para o combobox de "recurso de suporte" do modal de RFS — buscada sob demanda
+  // na abertura do modal, nunca a partir do inventário completo de recursos.
+  const [supportingResourceChoices, setSupportingResourceChoices] = useState<ResourceEntity[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modalState, setModalState] = useState<ModalState | null>(null);
@@ -192,9 +194,9 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
 
   const resourcesById = useMemo(() => {
     const map = new Map<string, ResourceEntity>();
-    for (const resource of resourceOptions) map.set(resource.id, resource);
+    for (const resource of supportingResourceChoices) map.set(resource.id, resource);
     return map;
-  }, [resourceOptions]);
+  }, [supportingResourceChoices]);
 
   const servicesById = useMemo(() => {
     const map = new Map<string, ServiceEntity>();
@@ -208,8 +210,9 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
     [resourceFacingServices],
   );
 
-  // O snapshot já traz as coleções completas, então filtramos e paginamos por categoria no cliente
-  // em vez de depender do `items` paginado pelo servidor.
+  // O servidor já escopa CFS/RFS pela categoria ativa (buildServiceWorkspaceSnapshot); este filtro
+  // client-side é só uma segunda passada barata (cobre o fallback categoria-via-spec) sobre um
+  // conjunto que já chegou pequeno — a paginação em si continua no cliente.
   const categoryItems = useMemo<Array<ServiceEntity | ServiceSpecification>>(() => {
     if (view === 'catalog') {
       return specificationOptions.filter((spec) => spec.category === category);
@@ -303,7 +306,9 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
     setIsLoading(true);
     setError(null);
     try {
-      const snapshot = await loadServiceWorkspaceSnapshot({ tab, limit: PAGE_SIZE, offset: 0 });
+      // A categoria é escopada no servidor (evita o full-scan global do inventário); a
+      // paginação/filtro de coluna continua no cliente sobre esse conjunto já bem menor.
+      const snapshot = await loadServiceWorkspaceSnapshot({ tab, ...(tab !== 'ServiceSpecification' ? { category } : {}) });
       setSpecificationOptions(snapshot.serviceSpecificationOptions);
       // O backend não modela `code` em ServiceCategory; a árvore canônica do frontend é a referência
       // de navegação. Só usamos as categorias do servidor se elas trouxerem o código.
@@ -311,7 +316,6 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
       setServiceCategories(named.length ? named : SERVICE_CATEGORY_DEFAULTS);
       setCustomerFacingServices(snapshot.customerFacingServices);
       setResourceFacingServices(snapshot.resourceFacingServices);
-      setResourceOptions(snapshot.resourceOptions);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao carregar Service.');
     } finally {
@@ -319,9 +323,12 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
     }
   };
 
+  // Refaz o fetch quando a aba OU a categoria mudam — antes só a aba disparava, porque o inventário
+  // inteiro (todas as categorias) já tinha chegado de uma vez.
   useEffect(() => {
     void loadWorkspaceData(effectiveTab);
-  }, [effectiveTab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveTab, category]);
 
   useEffect(() => {
     if (!selectAllRef.current) return;
@@ -379,6 +386,27 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
       placeType: entity?.place?.[0]?.['@referredType'] ?? 'GeographicAddress',
     });
   }, [modalState, category]);
+
+  // Busca sob demanda uma amostra de recursos para o combobox de "recurso de suporte" do modal de
+  // RFS — nunca o inventário completo de recursos, que pode ter dezenas de milhares de itens.
+  useEffect(() => {
+    if (!modalState || modalState.tab !== 'ResourceFacingService') return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [physical, logical] = await Promise.all([
+          listResources({ kind: 'PhysicalResource', limit: 100, offset: 0, status: 'active' }),
+          listResources({ kind: 'LogicalResource', limit: 100, offset: 0, status: 'active' }),
+        ]);
+        if (!cancelled) setSupportingResourceChoices([...physical, ...logical]);
+      } catch {
+        // Best-effort: o campo já tolera um id selecionado sem opção correspondente na lista.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [modalState]);
 
   const goToPage = (nextPage: number) => {
     setPage(Math.min(Math.max(1, nextPage), totalPages));
@@ -777,7 +805,7 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
           formState={formState}
           specificationOptions={specificationOptions}
           supportingServiceOptions={supportingServiceOptions}
-          resourceOptions={resourceOptions}
+          resourceOptions={supportingResourceChoices}
           servicesById={servicesById}
           geoDirectory={geoDirectory}
           saving={saving}

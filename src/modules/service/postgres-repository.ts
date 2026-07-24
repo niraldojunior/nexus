@@ -465,26 +465,108 @@ export class PostgresServiceRepository implements IServiceRepository {
     return [...this.listCustomerFacingServicesDirect(query), ...this.listResourceFacingServicesDirect(query)];
   }
 
+  // Sem isso, cada fetch de página (limit=20) varria a tabela inteira e paginava em JS — o mesmo
+  // anti-padrão que tornava /v1/resource/workspace lento, só que aqui nem existia LIMIT no SQL.
+  // placeId/characteristic/supporting* continuam sendo JSON-embutidos, então só dá pra filtrar em
+  // JS — quando algum deles é pedido, cai pro caminho antigo (varredura completa) por segurança.
   private listCustomerFacingServicesDirect(query?: ServiceQuery): CustomerFacingService[] {
-    const rows = this.db.all<any>(
+    if (hasComplexServiceFilter(query)) {
+      const rows = this.db.all<any>(
+        `SELECT id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
+                is_service_enabled, has_started, subscriber_id, supporting_resource_facing_service_id, place, related_party,
+                supporting_services, service_relationships, characteristics, valid_for_start, valid_for_end
+         FROM tmf_customer_facing_service
+         ORDER BY name, id`,
+      );
+      return rows.map((row) => this.mapCustomerFacingService(row)).filter((service) => filterService(service, query));
+    }
+
+    const { conditions, params } = buildServiceConditions(query, { subscriberIdColumn: 'subscriber_id' });
+    const hasLimit = query?.limit !== undefined;
+    const hasOffset = query?.offset !== undefined;
+    const sql = [
       `SELECT id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
               is_service_enabled, has_started, subscriber_id, supporting_resource_facing_service_id, place, related_party,
               supporting_services, service_relationships, characteristics, valid_for_start, valid_for_end
-       FROM tmf_customer_facing_service
-       ORDER BY name, id`,
-    );
-    return rows.map((row) => this.mapCustomerFacingService(row)).filter((service) => filterService(service, query));
+       FROM tmf_customer_facing_service`,
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
+      'ORDER BY name, id',
+      hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
+      hasOffset ? 'OFFSET ?' : '',
+    ]
+      .filter((part) => part.length > 0)
+      .join(' ');
+    if (hasLimit) params.push(query!.limit as number);
+    if (hasOffset) params.push(query!.offset as number);
+
+    const rows = this.db.all<any>(sql, params);
+    return rows.map((row) => this.mapCustomerFacingService(row));
   }
 
   private listResourceFacingServicesDirect(query?: ServiceQuery): ResourceFacingService[] {
-    const rows = this.db.all<any>(
+    if (hasComplexServiceFilter(query)) {
+      const rows = this.db.all<any>(
+        `SELECT id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
+                is_service_enabled, has_started, supporting_resource_id, place, related_party, supporting_resources, supporting_services,
+                service_relationships, characteristics, valid_for_start, valid_for_end
+         FROM tmf_resource_facing_service
+         ORDER BY name, id`,
+      );
+      return rows.map((row) => this.mapResourceFacingService(row)).filter((service) => filterService(service, query));
+    }
+
+    const { conditions, params } = buildServiceConditions(query);
+    const hasLimit = query?.limit !== undefined;
+    const hasOffset = query?.offset !== undefined;
+    const sql = [
       `SELECT id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
               is_service_enabled, has_started, supporting_resource_id, place, related_party, supporting_resources, supporting_services,
               service_relationships, characteristics, valid_for_start, valid_for_end
-       FROM tmf_resource_facing_service
-       ORDER BY name, id`,
-    );
-    return rows.map((row) => this.mapResourceFacingService(row)).filter((service) => filterService(service, query));
+       FROM tmf_resource_facing_service`,
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
+      'ORDER BY name, id',
+      hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
+      hasOffset ? 'OFFSET ?' : '',
+    ]
+      .filter((part) => part.length > 0)
+      .join(' ');
+    if (hasLimit) params.push(query!.limit as number);
+    if (hasOffset) params.push(query!.offset as number);
+
+    const rows = this.db.all<any>(sql, params);
+    return rows.map((row) => this.mapResourceFacingService(row));
+  }
+
+  public countCustomerFacingServices(query?: ServiceQuery): number {
+    if (hasComplexServiceFilter(query)) return this.listCustomerFacingServicesDirect(query).length;
+    const { conditions, params } = buildServiceConditions(query, { subscriberIdColumn: 'subscriber_id' });
+    const sql = [
+      'SELECT COUNT(*) as count FROM tmf_customer_facing_service',
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
+    ]
+      .filter((part) => part.length > 0)
+      .join(' ');
+    const row = this.db.get<{ count: number }>(sql, params);
+    return Number(row?.count ?? 0);
+  }
+
+  public countResourceFacingServices(query?: ServiceQuery): number {
+    if (hasComplexServiceFilter(query)) return this.listResourceFacingServicesDirect(query).length;
+    const { conditions, params } = buildServiceConditions(query);
+    const sql = [
+      'SELECT COUNT(*) as count FROM tmf_resource_facing_service',
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
+    ]
+      .filter((part) => part.length > 0)
+      .join(' ');
+    const row = this.db.get<{ count: number }>(sql, params);
+    return Number(row?.count ?? 0);
+  }
+
+  public countServices(query?: ServiceQuery): number {
+    if (query?.type === 'CustomerFacingService') return this.countCustomerFacingServices(query);
+    if (query?.type === 'ResourceFacingService') return this.countResourceFacingServices(query);
+    return this.countCustomerFacingServices(query) + this.countResourceFacingServices(query);
   }
 
   private mapServiceSpecification(row: {
@@ -666,11 +748,62 @@ const parseServiceRelationships = (jsonValue: string | null | undefined): Servic
   return (JSON.parse(jsonValue) as ServiceRelationship[]).map((item) => ({ ...item }));
 };
 
+// placeId/characteristic*/supporting*/relatedPartyId vivem em colunas JSON — não dá pra filtrar
+// em SQL sem json_extract por item de array, então esses forçam o fallback de varredura completa.
+const hasComplexServiceFilter = (query?: ServiceQuery): boolean =>
+  Boolean(
+    query &&
+      (query.relatedPartyId ||
+        query.placeId ||
+        query.supportingResourceId ||
+        query.supportingServiceId ||
+        query.characteristicName),
+  );
+
+const buildServiceConditions = (
+  query?: ServiceQuery,
+  options?: { subscriberIdColumn?: string },
+): { conditions: string[]; params: Array<string | number> } => {
+  const conditions: string[] = [];
+  const params: Array<string | number> = [];
+
+  if (query?.name) {
+    conditions.push('LOWER(name) LIKE LOWER(?)');
+    params.push(`%${query.name}%`);
+  }
+  if (query?.state) {
+    conditions.push('state = ?');
+    params.push(query.state);
+  }
+  if (query?.serviceSpecificationIdIn && query.serviceSpecificationIdIn.length > 0) {
+    conditions.push(`service_specification_id IN (${query.serviceSpecificationIdIn.map(() => '?').join(', ')})`);
+    params.push(...query.serviceSpecificationIdIn);
+  } else if (query?.serviceSpecificationId) {
+    conditions.push('service_specification_id = ?');
+    params.push(query.serviceSpecificationId);
+  }
+  if (query?.category) {
+    conditions.push('category = ?');
+    params.push(query.category);
+  }
+  if (options?.subscriberIdColumn && query?.subscriberId) {
+    conditions.push(`${options.subscriberIdColumn} = ?`);
+    params.push(query.subscriberId);
+  }
+
+  return { conditions, params };
+};
+
 const filterService = (service: Service, query?: ServiceQuery): boolean => {
   if (!query) return true;
   if (query.name && !service.name.toLowerCase().includes(query.name.toLowerCase())) return false;
   if (query.state && service.state !== query.state) return false;
-  if (query.serviceSpecificationId && service.serviceSpecificationId !== query.serviceSpecificationId) return false;
+  if (query.serviceSpecificationIdIn && query.serviceSpecificationIdIn.length > 0) {
+    if (!query.serviceSpecificationIdIn.includes(service.serviceSpecificationId)) return false;
+  } else if (query.serviceSpecificationId && service.serviceSpecificationId !== query.serviceSpecificationId) {
+    return false;
+  }
+  if (query.category && service.category !== query.category) return false;
   if (query.relatedPartyId && !service.relatedParty.some((item) => item.id === query.relatedPartyId)) return false;
   if (query.placeId && !service.place.some((item) => item.id === query.placeId)) return false;
   if (query.supportingServiceId && !getSupportingServices(service).some((item) => item.id === query.supportingServiceId)) return false;

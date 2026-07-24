@@ -27,6 +27,46 @@ const servingSiteIdOf = (resource: { characteristic?: Array<{ name: string; valu
   return typeof found?.value === 'string' && found.value.length > 0 ? found.value : null;
 };
 
+// Compartilhado entre list*Resources e count*Resources para que a contagem use exatamente
+// os mesmos filtros da listagem (sem limit/offset), evitando total e página divergirem.
+const buildResourceConditions = (query?: ResourceQuery): { conditions: string[]; params: Array<string | number> } => {
+  const conditions: string[] = [];
+  const params: Array<string | number> = [];
+
+  if (query?.name) {
+    conditions.push('LOWER(name) LIKE LOWER(?)');
+    params.push(`%${query.name}%`);
+  }
+  if (query?.status) {
+    conditions.push('status = ?');
+    params.push(query.status);
+  }
+  if (query?.resourceSpecificationIdIn && query.resourceSpecificationIdIn.length > 0) {
+    conditions.push(`resource_specification_id IN (${query.resourceSpecificationIdIn.map(() => '?').join(', ')})`);
+    params.push(...query.resourceSpecificationIdIn);
+  } else if (query?.resourceSpecificationId) {
+    conditions.push('resource_specification_id = ?');
+    params.push(query.resourceSpecificationId);
+  }
+  if (query?.resourceTypeIn && query.resourceTypeIn.length > 0) {
+    conditions.push(`resource_type IN (${query.resourceTypeIn.map(() => '?').join(', ')})`);
+    params.push(...query.resourceTypeIn);
+  } else if (query?.resourceType) {
+    conditions.push('resource_type = ?');
+    params.push(query.resourceType);
+  }
+  if (query?.category) {
+    conditions.push('resource_specification_id IN (SELECT id FROM tmf_resource_specification WHERE category = ?)');
+    params.push(query.category);
+  }
+  if (query?.placeId) {
+    conditions.push('place_id = ?');
+    params.push(query.placeId);
+  }
+
+  return { conditions, params };
+};
+
 export class PostgresResourceRepository implements IResourceRepository {
   public constructor(private readonly db: PostgresDatabase) {
     this.seedResourceCatalog();
@@ -424,25 +464,7 @@ export class PostgresResourceRepository implements IResourceRepository {
   }
 
   public listPhysicalResources(query?: ResourceQuery): PhysicalResource[] {
-    const conditions: string[] = [];
-    const params: Array<string | number> = [];
-
-    if (query?.name) {
-      conditions.push('LOWER(name) LIKE LOWER(?)');
-      params.push(`%${query.name}%`);
-    }
-    if (query?.status) {
-      conditions.push('status = ?');
-      params.push(query.status);
-    }
-    if (query?.resourceSpecificationId) {
-      conditions.push('resource_specification_id = ?');
-      params.push(query.resourceSpecificationId);
-    }
-    if (query?.placeId) {
-      conditions.push('place_id = ?');
-      params.push(query.placeId);
-    }
+    const { conditions, params } = buildResourceConditions(query);
 
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
@@ -462,6 +484,18 @@ export class PostgresResourceRepository implements IResourceRepository {
     const rows = this.db.all<any>(sql, params);
     const relationshipsByResourceId = this.loadResourceRelationshipsByResourceIds(rows.map((row) => row.id));
     return rows.map((row) => this.mapPhysicalResource(row, relationshipsByResourceId.get(row.id)));
+  }
+
+  public countPhysicalResources(query?: ResourceQuery): number {
+    const { conditions, params } = buildResourceConditions(query);
+    const sql = [
+      'SELECT COUNT(*) as count FROM tmf_physical_resource',
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
+    ]
+      .filter((part) => part.length > 0)
+      .join(' ');
+    const row = this.db.get<{ count: number }>(sql, params);
+    return Number(row?.count ?? 0);
   }
 
   public upsertLogicalResource(resource: LogicalResource): LogicalResource {
@@ -531,25 +565,7 @@ export class PostgresResourceRepository implements IResourceRepository {
   }
 
   public listLogicalResources(query?: ResourceQuery): LogicalResource[] {
-    const conditions: string[] = [];
-    const params: Array<string | number> = [];
-
-    if (query?.name) {
-      conditions.push('LOWER(name) LIKE LOWER(?)');
-      params.push(`%${query.name}%`);
-    }
-    if (query?.status) {
-      conditions.push('status = ?');
-      params.push(query.status);
-    }
-    if (query?.resourceSpecificationId) {
-      conditions.push('resource_specification_id = ?');
-      params.push(query.resourceSpecificationId);
-    }
-    if (query?.placeId) {
-      conditions.push('place_id = ?');
-      params.push(query.placeId);
-    }
+    const { conditions, params } = buildResourceConditions(query);
 
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
@@ -569,6 +585,24 @@ export class PostgresResourceRepository implements IResourceRepository {
     const rows = this.db.all<any>(sql, params);
     const relationshipsByResourceId = this.loadResourceRelationshipsByResourceIds(rows.map((row) => row.id));
     return rows.map((row) => this.mapLogicalResource(row, relationshipsByResourceId.get(row.id)));
+  }
+
+  public countLogicalResources(query?: ResourceQuery): number {
+    const { conditions, params } = buildResourceConditions(query);
+    const sql = [
+      'SELECT COUNT(*) as count FROM tmf_logical_resource',
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
+    ]
+      .filter((part) => part.length > 0)
+      .join(' ');
+    const row = this.db.get<{ count: number }>(sql, params);
+    return Number(row?.count ?? 0);
+  }
+
+  public countResources(query?: ResourceQuery): number {
+    if (query?.kind === 'PhysicalResource') return this.countPhysicalResources(query);
+    if (query?.kind === 'LogicalResource') return this.countLogicalResources(query);
+    return this.countPhysicalResources(query) + this.countLogicalResources(query);
   }
 
   public upsertResourceRelationship(resourceId: string, relationship: ResourceRelationship): ResourceRelationship {

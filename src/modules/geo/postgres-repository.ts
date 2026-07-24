@@ -87,12 +87,25 @@ export class PostgresGeoRepository implements IGeoRepository {
     return result;
   }
 
-  public listLocations(): GeographicLocation[] {
-    const rows = this.db.all<any>(
+  public listLocations(query?: { limit?: number; offset?: number }): GeographicLocation[] {
+    const hasLimit = query?.limit !== undefined;
+    const hasOffset = query?.offset !== undefined;
+    const sql = [
       `SELECT id, href, geometry_type, geometry, spatial_ref, accuracy, reference_point,
               valid_for_start, valid_for_end, characteristics
        FROM tmf_geographic_location`,
-    );
+      'ORDER BY id',
+      hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
+      hasOffset ? 'OFFSET ?' : '',
+    ]
+      .filter((part) => part.length > 0)
+      .join(' ');
+
+    const params: number[] = [];
+    if (hasLimit) params.push(query!.limit as number);
+    if (hasOffset) params.push(query!.offset as number);
+
+    const rows = this.db.all<any>(sql, params);
 
     return rows.map((row: any) => {
       const result: GeographicLocation = {
@@ -193,12 +206,33 @@ export class PostgresGeoRepository implements IGeoRepository {
     return result;
   }
 
-  public listAddresses(): GeographicAddress[] {
-    const rows = this.db.all<any>(
+  public listAddresses(query?: { name?: string; limit?: number; offset?: number }): GeographicAddress[] {
+    const conditions: string[] = [];
+    const params: Array<string | number> = [];
+
+    if (query?.name) {
+      conditions.push('LOWER(street_name) LIKE LOWER(?)');
+      params.push(`%${query.name}%`);
+    }
+
+    const hasLimit = query?.limit !== undefined;
+    const hasOffset = query?.offset !== undefined;
+    const sql = [
       `SELECT id, href, street_type, street_name, street_nr, city, state_or_province, postcode, country,
               geographic_location_id, characteristics
        FROM tmf_geographic_address`,
-    );
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
+      'ORDER BY street_name, id',
+      hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
+      hasOffset ? 'OFFSET ?' : '',
+    ]
+      .filter((part) => part.length > 0)
+      .join(' ');
+
+    if (hasLimit) params.push(query!.limit as number);
+    if (hasOffset) params.push(query!.offset as number);
+
+    const rows = this.db.all<any>(sql, params);
 
     return rows.map((row: any) => {
       const result: GeographicAddress = {
@@ -389,12 +423,34 @@ export class PostgresGeoRepository implements IGeoRepository {
     return result;
   }
 
-  public listSites(): GeographicSite[] {
-    const rows = this.db.all<any>(
+  public listSites(query?: { name?: string; limit?: number; offset?: number }): GeographicSite[] {
+    const conditions: string[] = [];
+    const params: Array<string | number> = [];
+
+    if (query?.name) {
+      conditions.push('LOWER(name) LIKE LOWER(?)');
+      params.push(`%${query.name}%`);
+    }
+
+    const hasLimit = query?.limit !== undefined;
+    const hasOffset = query?.offset !== undefined;
+    const sql = [
       `SELECT id, href, name, status, site_specification_id, geographic_location_id,
               geographic_address_id, parent_site_id, related_party, characteristics
        FROM tmf_geographic_site`,
-    );
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
+      'ORDER BY name, id',
+      hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
+      hasOffset ? 'OFFSET ?' : '',
+    ]
+      .filter((part) => part.length > 0)
+      .join(' ');
+
+    if (hasLimit) params.push(query!.limit as number);
+    if (hasOffset) params.push(query!.offset as number);
+
+    const rows = this.db.all<any>(sql, params);
+    const relationshipsBySiteId = this.loadSiteRelationshipsBySiteIds(rows.map((row) => row.id));
 
     return rows.map((row: any) => {
       const result: GeographicSite = {
@@ -408,7 +464,7 @@ export class PostgresGeoRepository implements IGeoRepository {
           id: row.site_specification_id,
           '@referredType': 'GeographicSiteSpecification',
         },
-        relatedSite: this.listSiteRelationships(row.id),
+        relatedSite: relationshipsBySiteId.get(row.id) ?? [],
         relatedParty: JSON.parse(row.related_party || '[]'),
         characteristic: JSON.parse(row.characteristics || '[]'),
       };
@@ -434,6 +490,11 @@ export class PostgresGeoRepository implements IGeoRepository {
 
       return result;
     });
+  }
+
+  public countSites(): number {
+    const row = this.db.get<{ count: number }>(`SELECT COUNT(*) as count FROM tmf_geographic_site`);
+    return Number(row?.count ?? 0);
   }
 
   public upsertSiteRelationship(siteId: string, relationship: GeographicSiteRelationship): GeographicSiteRelationship {
@@ -490,6 +551,41 @@ export class PostgresGeoRepository implements IGeoRepository {
 
       return relationship;
     });
+  }
+
+  private loadSiteRelationshipsBySiteIds(siteIds: string[]): Map<string, GeographicSiteRelationship[]> {
+    if (siteIds.length === 0) {
+      return new Map();
+    }
+
+    const placeholders = siteIds.map(() => '?').join(', ');
+    const rows = this.db.all<any>(
+      `SELECT site_from_id, site_to_id, relationship_type, valid_for_start, valid_for_end
+       FROM tmf_geographic_site_relationship
+       WHERE site_from_id IN (${placeholders})
+       ORDER BY site_from_id, relationship_type, site_to_id`,
+      siteIds,
+    );
+
+    const relationshipsBySiteId = new Map<string, GeographicSiteRelationship[]>();
+    for (const row of rows) {
+      const current = relationshipsBySiteId.get(row.site_from_id) ?? [];
+      const relationship: GeographicSiteRelationship = {
+        id: row.site_to_id,
+        relationshipType: row.relationship_type,
+        '@referredType': 'GeographicSite',
+      };
+      if (row.valid_for_start || row.valid_for_end) {
+        relationship.validFor = {
+          ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
+          ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
+        };
+      }
+      current.push(relationship);
+      relationshipsBySiteId.set(row.site_from_id, current);
+    }
+
+    return relationshipsBySiteId;
   }
 
   public appendEvent(event: GeoEvent): GeoEvent {

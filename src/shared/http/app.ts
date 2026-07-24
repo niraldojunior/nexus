@@ -32,6 +32,8 @@ import type {
   ResourceType,
 } from '../../modules/resource/index.js';
 import type {
+  CustomerFacingService,
+  ResourceFacingService,
   Service,
   ServiceCandidate,
   ServiceCategory,
@@ -80,11 +82,10 @@ type ResourceWorkspaceTab = 'PhysicalResource' | 'LogicalResource' | 'ResourceSp
 
 type ResourceWorkspaceSnapshot = {
   items: Resource[] | ResourceSpecification[];
+  totalCount: number;
   resourceSpecificationOptions: ResourceSpecification[];
   resourceCategories: ResourceCategory[];
   resourceTypes: ResourceType[];
-  physicalResources: Resource[];
-  logicalResources: Resource[];
   manufacturerOptions: Party[];
 };
 
@@ -92,14 +93,18 @@ const RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE = 100;
 
 type ServiceWorkspaceTab = 'CustomerFacingService' | 'ResourceFacingService' | 'ServiceSpecification';
 
+// Ao contrário do Resource (uma aba = um `kind`, paginação por página faz sentido), o Inventário
+// de Service mostra CFS+RFS juntos numa única visão — então aqui o corte que importa é a
+// categoria (server-side, evita o full-scan global) e a paginação/filtro continuam no cliente
+// sobre esse conjunto já bem menor, igual ao catálogo de specs sempre fez.
+const SERVICE_CATEGORY_FETCH_CAP = 2000;
+
 type ServiceWorkspaceSnapshot = {
-  items: Service[] | ServiceSpecification[];
   serviceSpecificationOptions: ServiceSpecification[];
   serviceCategories: ServiceCategory[];
   serviceCandidates: ServiceCandidate[];
-  customerFacingServices: Service[];
-  resourceFacingServices: Service[];
-  resourceOptions: Resource[];
+  customerFacingServices: CustomerFacingService[];
+  resourceFacingServices: ResourceFacingService[];
 };
 
 export const handleHttpRequest = async (dependencies: HttpRequestHandlerDependencies): Promise<void> =>
@@ -244,10 +249,20 @@ const routeRequest = async ({
     const tab = parseResourceWorkspaceTab(url.searchParams.get('tab'));
     const limit = parseOptionalNumber(url.searchParams.get('limit')) ?? 20;
     const offset = parseOptionalNumber(url.searchParams.get('offset')) ?? 0;
+    const resourceSpecificationIdIn = url.searchParams.getAll('resourceSpecificationIdIn');
+    const resourceTypeIn = url.searchParams.getAll('resourceTypeIn');
+    const category = url.searchParams.get('category');
+    const name = url.searchParams.get('name');
     const snapshot = await buildResourceWorkspaceSnapshot({
       tab,
       limit,
       offset,
+      filter: {
+        ...(resourceSpecificationIdIn.length > 0 ? { resourceSpecificationIdIn } : {}),
+        ...(resourceTypeIn.length > 0 ? { resourceTypeIn } : {}),
+        ...(category ? { category } : {}),
+        ...(name ? { name } : {}),
+      },
       resourceService: runtime.resourceService,
       partyService: runtime.partyService,
     });
@@ -258,14 +273,11 @@ const routeRequest = async ({
   if (request.method === 'GET' && url.pathname === '/v1/service/workspace') {
     ensureAuthorized(request, config);
     const tab = parseServiceWorkspaceTab(url.searchParams.get('tab'));
-    const limit = parseOptionalNumber(url.searchParams.get('limit')) ?? 20;
-    const offset = parseOptionalNumber(url.searchParams.get('offset')) ?? 0;
+    const category = url.searchParams.get('category');
     const snapshot = await buildServiceWorkspaceSnapshot({
       tab,
-      limit,
-      offset,
+      ...(category ? { category } : {}),
       serviceService: runtime.serviceService,
-      resourceService: runtime.resourceService,
     });
     sendJson(response, 200, snapshot);
     return;
@@ -613,14 +625,14 @@ const routeGeoRequest = async ({
   if (!route) throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
 
   if (route.resource === 'locations') {
-    if (!route.id && request.method === 'GET') return sendJson(response, 200, geoService.listLocations());
+    if (!route.id && request.method === 'GET') return sendJson(response, 200, geoService.listLocations(parseGeoListQuery(url.searchParams)));
     if (!route.id && request.method === 'POST') return sendJson(response, 201, geoService.createLocation(await readBody(request) as any));
     if (route.id && request.method === 'GET') return sendJsonOrNotFound(response, geoService.getLocation(route.id), 'GEO_LOCATION_NOT_FOUND');
     if (route.id && request.method === 'PATCH') return sendJson(response, 200, geoService.updateLocation(route.id, await readBody(request) as any));
   }
 
   if (route.resource === 'addresses') {
-    if (!route.id && request.method === 'GET') return sendJson(response, 200, geoService.listAddresses());
+    if (!route.id && request.method === 'GET') return sendJson(response, 200, geoService.listAddresses(parseGeoListQuery(url.searchParams)));
     if (!route.id && request.method === 'POST') return sendJson(response, 201, geoService.createAddress(await readBody(request) as any));
     if (route.id && request.method === 'GET') return sendJsonOrNotFound(response, geoService.getAddress(route.id), 'GEO_ADDRESS_NOT_FOUND');
     if (route.id && request.method === 'PATCH') return sendJson(response, 200, geoService.updateAddress(route.id, await readBody(request) as any));
@@ -634,7 +646,7 @@ const routeGeoRequest = async ({
   }
 
   if (route.resource === 'sites') {
-    if (!route.id && request.method === 'GET') return sendJson(response, 200, geoService.listSites());
+    if (!route.id && request.method === 'GET') return sendJson(response, 200, geoService.listSites(parseGeoListQuery(url.searchParams)));
     if (!route.id && request.method === 'POST') return sendJson(response, 201, geoService.createSite(await readBody(request) as any));
     if (route.id && request.method === 'GET') return sendJsonOrNotFound(response, geoService.getSite(route.id), 'GEO_SITE_NOT_FOUND');
     if (route.id && request.method === 'PATCH') return sendJson(response, 200, geoService.updateSite(route.id, await readBody(request) as any));
@@ -1159,6 +1171,19 @@ const parseOptionalNumber = (value: string | null): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+// Sem limit/offset explícitos, mantém o comportamento histórico (lista completa) para não quebrar
+// os consumidores que ainda dependem do catálogo inteiro — a paginação é opt-in por quem pede.
+const parseGeoListQuery = (params: URLSearchParams): { name?: string; limit?: number; offset?: number } => {
+  const query: { name?: string; limit?: number; offset?: number } = {};
+  const name = params.get('name');
+  if (name) query.name = name;
+  const limit = parseOptionalNumber(params.get('limit'));
+  if (limit !== undefined) query.limit = limit;
+  const offset = parseOptionalNumber(params.get('offset'));
+  if (offset !== undefined) query.offset = offset;
+  return query;
+};
+
 const resolvePartyRoute = (pathname: string): PartyRoute | undefined => {
   const base = '/tmf-api/partyManagement/v4/party';
   if (pathname === base) return {};
@@ -1388,59 +1413,51 @@ const parseServiceWorkspaceTab = (value: string | null): ServiceWorkspaceTab => 
 };
 
 /**
- * Snapshot agregado do workspace de Serviços — espelha `buildResourceWorkspaceSnapshot`.
+ * Snapshot agregado do workspace de Serviços.
  *
- * Além da página ativa (`items`), devolve as coleções completas que a UI precisa para resolver
- * vínculos sem round-trips: as specs (usadas para derivar a categoria de cada serviço), os CFS/RFS
- * (filtro client-side e seletor de `supportingService`) e os recursos (seletor de
- * `supportingResource` do RFS).
+ * O Inventário mostra CFS e RFS juntos (não uma aba por `kind`, ao contrário do Resource), então
+ * aqui o corte que vale a pena empurrar pro servidor é a categoria — evita o full-scan global que
+ * varria todo o inventário multi-tenant a cada carregamento de página. Dentro da categoria (um
+ * recorte tipicamente ordens de grandeza menor), paginação e filtro de coluna continuam no
+ * cliente, exatamente como o catálogo de specs sempre funcionou.
  */
 const buildServiceWorkspaceSnapshot = async ({
   tab,
-  limit,
-  offset,
+  category,
   serviceService,
-  resourceService,
 }: {
   tab: ServiceWorkspaceTab;
-  limit: number;
-  offset: number;
+  category?: string;
   serviceService: ServiceService;
-  resourceService: ResourceService;
 }): Promise<ServiceWorkspaceSnapshot> => {
-  const items = getServiceWorkspaceItems(tab, limit, offset, serviceService);
   const serviceSpecificationOptions = loadAllServiceSpecifications(serviceService);
   const serviceCategories = serviceService.listServiceCategories();
   const serviceCandidates = serviceService.listServiceCandidates();
-  const customerFacingServices = loadAllServices(serviceService, 'CustomerFacingService');
-  const resourceFacingServices = loadAllServices(serviceService, 'ResourceFacingService');
-  const resourceOptions = [
-    ...(await loadAllResources(resourceService, 'PhysicalResource')),
-    ...(await loadAllResources(resourceService, 'LogicalResource')),
-  ];
+
+  const isCatalogTab = tab === 'ServiceSpecification';
+  const categoryFilter = category ? { category } : {};
+  const customerFacingServices = isCatalogTab
+    ? []
+    : (serviceService.listServices({
+        type: 'CustomerFacingService',
+        limit: SERVICE_CATEGORY_FETCH_CAP,
+        ...categoryFilter,
+      }) as CustomerFacingService[]);
+  const resourceFacingServices = isCatalogTab
+    ? []
+    : (serviceService.listServices({
+        type: 'ResourceFacingService',
+        limit: SERVICE_CATEGORY_FETCH_CAP,
+        ...categoryFilter,
+      }) as ResourceFacingService[]);
 
   return {
-    items,
     serviceSpecificationOptions,
     serviceCategories,
     serviceCandidates,
     customerFacingServices,
     resourceFacingServices,
-    resourceOptions,
   };
-};
-
-const getServiceWorkspaceItems = (
-  tab: ServiceWorkspaceTab,
-  limit: number,
-  offset: number,
-  serviceService: ServiceService,
-): Service[] | ServiceSpecification[] => {
-  if (tab === 'ServiceSpecification') {
-    return serviceService.listServiceSpecifications({ limit, offset });
-  }
-
-  return serviceService.listServices({ type: tab, limit, offset });
 };
 
 const loadAllServiceSpecifications = (serviceService: ServiceService): ServiceSpecification[] => {
@@ -1456,47 +1473,41 @@ const loadAllServiceSpecifications = (serviceService: ServiceService): ServiceSp
   return collected;
 };
 
-const loadAllServices = (
-  serviceService: ServiceService,
-  type: 'CustomerFacingService' | 'ResourceFacingService',
-): Service[] => {
-  const collected: Service[] = [];
-  for (let offset = 0; ; offset += RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) {
-    const items = serviceService.listServices({ type, limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE, offset });
-    collected.push(...items);
-    if (items.length < RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) break;
-  }
-  return collected;
-};
-
+// `filter` carrega os critérios enviados pelo cliente (categoria já resolvida em
+// resourceSpecificationIdIn, picklists de coluna em resourceTypeIn) — items e totalCount usam
+// exatamente os mesmos critérios, para nunca divergir entre "página atual" e "total".
 const buildResourceWorkspaceSnapshot = async ({
   tab,
   limit,
   offset,
+  filter,
   resourceService,
   partyService,
 }: {
   tab: ResourceWorkspaceTab;
   limit: number;
   offset: number;
+  filter: Pick<ResourceQuery, 'resourceSpecificationIdIn' | 'resourceTypeIn' | 'category' | 'name'>;
   resourceService: ResourceService;
   partyService: PartyService;
 }): Promise<ResourceWorkspaceSnapshot> => {
-  const items = getResourceWorkspaceItems(tab, limit, offset, resourceService);
   const resourceSpecificationOptions = await loadAllResourceSpecifications(resourceService);
   const resourceCategories = resourceService.listResourceCategories();
   const resourceTypes = resourceService.listResourceTypes();
-  const physicalResources = await loadAllResources(resourceService, 'PhysicalResource');
-  const logicalResources = await loadAllResources(resourceService, 'LogicalResource');
   const manufacturerOptions = await loadAllManufacturerOptions(partyService);
+
+  const items = getResourceWorkspaceItems(tab, limit, offset, filter, resourceService);
+  const totalCount =
+    tab === 'ResourceSpecification'
+      ? resourceSpecificationOptions.length
+      : resourceService.countResources({ ...filter, kind: tab, status: 'active' });
 
   return {
     items,
+    totalCount,
     resourceSpecificationOptions,
     resourceCategories,
     resourceTypes,
-    physicalResources,
-    logicalResources,
     manufacturerOptions,
   };
 };
@@ -1505,37 +1516,20 @@ const getResourceWorkspaceItems = (
   tab: ResourceWorkspaceTab,
   limit: number,
   offset: number,
+  filter: Pick<ResourceQuery, 'resourceSpecificationIdIn' | 'resourceTypeIn' | 'category' | 'name'>,
   resourceService: ResourceService,
 ): Resource[] | ResourceSpecification[] => {
   if (tab === 'ResourceSpecification') {
     return resourceService.listResourceSpecifications({ limit, offset });
   }
 
-  return resourceService.listResources({ kind: tab, limit, offset, status: 'active' });
+  return resourceService.listResources({ kind: tab, limit, offset, status: 'active', ...filter });
 };
 
 const loadAllResourceSpecifications = async (resourceService: ResourceService): Promise<ResourceSpecification[]> => {
   const collected: ResourceSpecification[] = [];
   for (let offset = 0; ; offset += RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) {
     const items = resourceService.listResourceSpecifications({ limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE, offset });
-    collected.push(...items);
-    if (items.length < RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) break;
-  }
-  return collected;
-};
-
-const loadAllResources = async (
-  resourceService: ResourceService,
-  kind: 'PhysicalResource' | 'LogicalResource',
-): Promise<Resource[]> => {
-  const collected: Resource[] = [];
-  for (let offset = 0; ; offset += RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) {
-    const items = resourceService.listResources({
-      kind,
-      limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE,
-      offset,
-      status: 'active',
-    });
     collected.push(...items);
     if (items.length < RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) break;
   }
@@ -1592,6 +1586,8 @@ const parseResourceQuery = (params: URLSearchParams): ResourceQuery => {
   }
   const resourceSpecificationId = params.get('resourceSpecificationId');
   if (resourceSpecificationId) query.resourceSpecificationId = resourceSpecificationId;
+  const resourceType = params.get('resourceType');
+  if (resourceType) query.resourceType = resourceType;
   const placeId = params.get('placeId');
   if (placeId) query.placeId = placeId;
   const relatedPartyId = params.get('relatedPartyId');

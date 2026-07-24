@@ -116,23 +116,25 @@ test('TMF634, TMF639 and TMF664 resource endpoints create and activate resources
   assert.equal((invalidResourceSpec.body as { error?: string }).error, 'RESOURCE_REQUIRED_FIELD');
   assert.equal((invalidResourceSpec.body as { message?: string }).message, 'resourceType is required');
 
-  const workspace = await requestJson(port, 'GET', '/v1/resource/workspace?tab=PhysicalResource&limit=20&offset=0');
+  const workspace = await requestJson(
+    port,
+    'GET',
+    '/v1/resource/workspace?tab=PhysicalResource&limit=20&offset=0&category=Equipment.Access',
+  );
   assert.equal(workspace.statusCode, 200);
   const workspaceBody = workspace.body as {
     items: Array<{ id: string }>;
+    totalCount: number;
     resourceSpecificationOptions: Array<{ id: string }>;
     resourceCategories: Array<{ code: string }>;
     resourceTypes: Array<{ code: string }>;
-    physicalResources: Array<{ id: string }>;
-    logicalResources: Array<{ id: string }>;
     manufacturerOptions: Array<{ id: string }>;
   };
   assert.ok(Array.isArray(workspaceBody.items));
+  assert.equal(typeof workspaceBody.totalCount, 'number');
   assert.ok(Array.isArray(workspaceBody.resourceSpecificationOptions));
   assert.ok(Array.isArray(workspaceBody.resourceCategories));
   assert.ok(Array.isArray(workspaceBody.resourceTypes));
-  assert.ok(Array.isArray(workspaceBody.physicalResources));
-  assert.ok(Array.isArray(workspaceBody.logicalResources));
   assert.ok(Array.isArray(workspaceBody.manufacturerOptions));
 
   const deletedSpec = await requestJson(

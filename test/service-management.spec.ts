@@ -135,6 +135,7 @@ test('TMF633 and TMF638 service endpoints create and constrain services', async 
     '@type': 'ResourceFacingService',
     name: 'RFS GPON 1',
     serviceSpecificationId: (rfsSpec.body as { id: string }).id,
+    category: 'Broadband',
     supportingResource: [{ id: (resource.body as { id: string }).id, '@referredType': 'PhysicalResource', role: 'access' }],
     state: 'active',
   });
@@ -145,6 +146,7 @@ test('TMF633 and TMF638 service endpoints create and constrain services', async 
     '@type': 'CustomerFacingService',
     name: 'CFS Bitstream 700',
     serviceSpecificationId: (cfsSpec.body as { id: string }).id,
+    category: 'Broadband',
     subscriberId: 'SUB-778899',
     supportingService: [{ id: (rfs.body as { id: string }).id, '@referredType': 'ResourceFacingService', role: 'access' }],
     relatedParty: [{ id: (party.body as { id: string }).id, '@referredType': 'Organization', role: 'subscriber' }],
@@ -159,18 +161,19 @@ test('TMF633 and TMF638 service endpoints create and constrain services', async 
   assert.ok(Array.isArray(filtered.body));
   assert.equal((filtered.body as Array<{ id: string }>).length, 1);
 
-  const workspace = await requestJson(port, 'GET', '/v1/service/workspace?tab=CustomerFacingService&limit=20&offset=0');
+  const workspace = await requestJson(
+    port,
+    'GET',
+    '/v1/service/workspace?tab=CustomerFacingService&category=Broadband',
+  );
   assert.equal(workspace.statusCode, 200);
   const workspaceBody = workspace.body as {
-    items: Array<{ id: string }>;
     serviceSpecificationOptions: Array<{ id: string }>;
     serviceCategories: Array<{ id: string }>;
     serviceCandidates: Array<{ id: string }>;
     customerFacingServices: Array<{ id: string }>;
     resourceFacingServices: Array<{ id: string }>;
-    resourceOptions: Array<{ id: string }>;
   };
-  assert.ok(Array.isArray(workspaceBody.items));
   assert.ok(Array.isArray(workspaceBody.serviceSpecificationOptions));
   assert.ok(Array.isArray(workspaceBody.serviceCandidates));
   assert.ok(
@@ -178,9 +181,6 @@ test('TMF633 and TMF638 service endpoints create and constrain services', async 
   );
   assert.ok(
     workspaceBody.resourceFacingServices.some((service) => service.id === (rfs.body as { id: string }).id),
-  );
-  assert.ok(
-    workspaceBody.resourceOptions.some((option) => option.id === (resource.body as { id: string }).id),
   );
 
   const invalidCfs = await requestJson(port, 'POST', '/tmf-api/serviceInventoryManagement/v4/service', {

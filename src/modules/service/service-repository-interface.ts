@@ -37,11 +37,14 @@ export interface IServiceRepository {
   upsertCustomerFacingService(service: CustomerFacingService): CustomerFacingService;
   getCustomerFacingService(id: string): CustomerFacingService | undefined;
   listCustomerFacingServices(query?: ServiceQuery): CustomerFacingService[];
+  countCustomerFacingServices(query?: ServiceQuery): number;
 
   upsertResourceFacingService(service: ResourceFacingService): ResourceFacingService;
   getResourceFacingService(id: string): ResourceFacingService | undefined;
   listResourceFacingServices(query?: ServiceQuery): ResourceFacingService[];
+  countResourceFacingServices(query?: ServiceQuery): number;
 
   listServices(query?: ServiceQuery): Service[];
+  countServices(query?: ServiceQuery): number;
 }
 

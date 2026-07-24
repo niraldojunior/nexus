@@ -36,6 +36,8 @@ export class ResourceRepository implements IResourceRepository {
     return fn();
   }
 
+  private readonly categoryOfSpec = (specId: string): string | undefined => this.resourceSpecifications.get(specId)?.category;
+
   public upsertResourceSpecification(spec: ResourceSpecification): ResourceSpecification {
     const stored = cloneResourceSpecification(spec);
     this.resourceSpecifications.set(stored.id, stored);
@@ -104,8 +106,12 @@ export class ResourceRepository implements IResourceRepository {
 
   public listPhysicalResources(query?: ResourceQuery): PhysicalResource[] {
     return [...this.physicalResources.values()]
-      .filter((resource) => filterResource(resource, query))
+      .filter((resource) => filterResource(resource, query, this.categoryOfSpec))
       .map(clonePhysicalResource);
+  }
+
+  public countPhysicalResources(query?: ResourceQuery): number {
+    return [...this.physicalResources.values()].filter((resource) => filterResource(resource, query, this.categoryOfSpec)).length;
   }
 
   public upsertLogicalResource(resource: LogicalResource): LogicalResource {
@@ -124,8 +130,12 @@ export class ResourceRepository implements IResourceRepository {
 
   public listLogicalResources(query?: ResourceQuery): LogicalResource[] {
     return [...this.logicalResources.values()]
-      .filter((resource) => filterResource(resource, query))
+      .filter((resource) => filterResource(resource, query, this.categoryOfSpec))
       .map(cloneLogicalResource);
+  }
+
+  public countLogicalResources(query?: ResourceQuery): number {
+    return [...this.logicalResources.values()].filter((resource) => filterResource(resource, query, this.categoryOfSpec)).length;
   }
 
   public upsertResourceRelationship(resourceId: string, relationship: ResourceRelationship): ResourceRelationship {
@@ -174,6 +184,12 @@ export class ResourceRepository implements IResourceRepository {
     }
 
     return [...this.listPhysicalResources(query), ...this.listLogicalResources(query)];
+  }
+
+  public countResources(query?: ResourceQuery): number {
+    if (query?.kind === 'PhysicalResource') return this.countPhysicalResources(query);
+    if (query?.kind === 'LogicalResource') return this.countLogicalResources(query);
+    return this.countPhysicalResources(query) + this.countLogicalResources(query);
   }
 }
 
@@ -236,11 +252,25 @@ const filterFunctionSpec = (spec: ResourceFunctionSpecification, query?: Resourc
   return true;
 };
 
-const filterResource = (resource: Resource, query?: ResourceQuery): boolean => {
+const filterResource = (
+  resource: Resource,
+  query?: ResourceQuery,
+  categoryOfSpec?: (specId: string) => string | undefined,
+): boolean => {
   if (!query) return true;
   if (query.name && !resource.name.toLowerCase().includes(query.name.toLowerCase())) return false;
   if (query.status && resource.status !== query.status) return false;
-  if (query.resourceSpecificationId && resource.resourceSpecificationId !== query.resourceSpecificationId) return false;
+  if (query.resourceSpecificationIdIn && query.resourceSpecificationIdIn.length > 0) {
+    if (!query.resourceSpecificationIdIn.includes(resource.resourceSpecificationId)) return false;
+  } else if (query.resourceSpecificationId && resource.resourceSpecificationId !== query.resourceSpecificationId) {
+    return false;
+  }
+  if (query.resourceTypeIn && query.resourceTypeIn.length > 0) {
+    if (!query.resourceTypeIn.includes(resource.resourceType)) return false;
+  } else if (query.resourceType && resource.resourceType !== query.resourceType) {
+    return false;
+  }
+  if (query.category && categoryOfSpec?.(resource.resourceSpecificationId) !== query.category) return false;
   if (query.placeId && resource.place?.id !== query.placeId) return false;
   if (query.kind && resource['@type'] !== query.kind) return false;
   if (query.relatedPartyId && !resource.relatedParty.some((item) => item.id === query.relatedPartyId)) return false;

@@ -12,11 +12,11 @@ export interface IGeoRepository {
 
   upsertLocation(location: GeographicLocation): GeographicLocation;
   getLocation(id: string): GeographicLocation | undefined;
-  listLocations(): GeographicLocation[];
+  listLocations(query?: { limit?: number; offset?: number }): GeographicLocation[];
 
   upsertAddress(address: GeographicAddress): GeographicAddress;
   getAddress(id: string): GeographicAddress | undefined;
-  listAddresses(): GeographicAddress[];
+  listAddresses(query?: { name?: string; limit?: number; offset?: number }): GeographicAddress[];
 
   upsertSpec(spec: GeographicSiteSpecification): GeographicSiteSpecification;
   getSpec(id: string): GeographicSiteSpecification | undefined;
@@ -24,7 +24,8 @@ export interface IGeoRepository {
 
   upsertSite(site: GeographicSite): GeographicSite;
   getSite(id: string): GeographicSite | undefined;
-  listSites(): GeographicSite[];
+  listSites(query?: { name?: string; limit?: number; offset?: number }): GeographicSite[];
+  countSites(): number;
 
   upsertSiteRelationship(siteId: string, relationship: GeographicSiteRelationship): GeographicSiteRelationship;
   deleteSiteRelationship(siteId: string, relatedSiteId: string, relationshipType: string): boolean;

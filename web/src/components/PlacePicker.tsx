@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { listPlaceOptions, type GeoDirectory, type PlaceOption } from '../utils/placeLabel';
+import { listPlaceOptions, type GeoDirectory } from '../utils/placeLabel';
 
 export type PlacePickerProps = {
   value: { id: string; '@referredType': string } | null;
@@ -27,11 +27,16 @@ export function PlacePicker({
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const options = directory ? listPlaceOptions(directory) : [];
+  // O diretório (~dezenas de milhares de sites/endereços) só muda quando o cache do
+  // useGeoDirectory recarrega — sem memo isso reconstruía e reordenava a lista inteira a cada
+  // tecla digitada na busca.
+  const options = useMemo(() => (directory ? listPlaceOptions(directory) : []), [directory]);
   const selectedOption = options.find((opt) => opt.id === value?.id);
 
-  const filtered = options.filter((opt) =>
-    opt.search.includes(search.toLowerCase())
+  const searchLower = search.toLowerCase();
+  const filtered = useMemo(
+    () => options.filter((opt) => opt.search.includes(searchLower)),
+    [options, searchLower],
   );
 
   // Fechar ao clicar fora

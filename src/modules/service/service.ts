@@ -450,6 +450,10 @@ export class ServiceService {
     return this.repository.listServices(query);
   }
 
+  public countServices(query?: ServiceQuery): number {
+    return this.repository.countServices(query);
+  }
+
   public getService(id: string): Service | undefined {
     return this.repository.getCustomerFacingService(id) ?? this.repository.getResourceFacingService(id);
   }

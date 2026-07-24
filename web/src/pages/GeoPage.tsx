@@ -35,6 +35,7 @@ import { ResourceIcon } from '../components/ResourceIcon';
 import { siteIconDataUrl, siteIconFor } from '../utils/siteIcon';
 import { useNavigation } from '../hooks/useNavigation';
 import { GuidedSignupModal, HierarchySidebar } from './geo-tabs';
+import { MarkerClusterer } from '@googlemaps/markerclusterer';
 
 declare global {
   interface Window {
@@ -456,8 +457,12 @@ function GoogleMapPanel({
 }) {
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
-  const cableRoutesRef = useRef<any[]>([]);
+  // Marcadores/polylines indexados por id do nó — permite reusar o mesmo objeto entre renders
+  // (só atualizando ícone/posição quando algo muda) em vez de destruir e recriar tudo a cada
+  // seleção, que é o que travava o mapa com muitos pontos expandidos.
+  const markersRef = useRef<Map<string, any>>(new Map());
+  const cableRoutesRef = useRef<Map<string, any>>(new Map());
+  const clustererRef = useRef<any>(null);
   const draftMarkerRef = useRef<any>(null);
   const infoWindowRef = useRef<any>(null);
   // Nó fora da árvore do React: o InfoWindow do Google recebe este elemento como
@@ -467,11 +472,20 @@ function GoogleMapPanel({
   // O balão abre/fecha por callbacks que mudam a cada render; o listener do mapa
   // é registrado uma vez só, então lê sempre a versão atual daqui.
   const closeBalloonRef = useRef(onCloseBalloon);
+  // Idem para o clique nos marcadores: como eles agora são reusados entre renders (não recriados
+  // a cada mudança), o listener de clique — atado uma única vez na criação — precisa ler sempre a
+  // versão atual de `onSelectNode` e do nó (que pode ter sido substituído por um refetch da árvore).
+  const onSelectNodeRef = useRef(onSelectNode);
+  const nodeByIdRef = useRef<Map<string, GeoTreeNode>>(new Map());
   const [mapsReady, setMapsReady] = useState(false);
 
   useEffect(() => {
     closeBalloonRef.current = onCloseBalloon;
   }, [onCloseBalloon]);
+
+  useEffect(() => {
+    onSelectNodeRef.current = onSelectNode;
+  }, [onSelectNode]);
 
   useEffect(() => {
     if (!GOOGLE_MAPS_KEY || !mapEl.current) return;
@@ -510,57 +524,96 @@ function GoogleMapPanel({
 
   // Pins dos nós visíveis. Local é quadrado arredondado e recurso é círculo —
   // é o que deixa dizer "isto é um lugar" e "isto é um equipamento" sem legenda.
+  //
+  // Marcadores são reusados por id (nunca destruídos/recriados à toa) e agrupados por
+  // MarkerClusterer — com dezenas de milhares de recursos, mostrar um marker por ponto sem
+  // agrupamento é o que travava o mapa; selecionar um nó não recriava só ele, recriava todos.
   useEffect(() => {
     if (!mapsReady || !mapRef.current) return;
-    markersRef.current.forEach((marker) => marker.setMap(null));
-    markersRef.current = [];
+
+    const visibleIds = new Set<string>();
+    const activeMarkers: any[] = [];
 
     for (const node of nodes) {
       if (node.geometry?.type !== 'Point') continue;
+      visibleIds.add(node.id);
+      nodeByIdRef.current.set(node.id, node);
       const [lng, lat] = node.geometry.coordinates;
       const selected = node.id === selectedNodeId;
+      const existing = markersRef.current.get(node.id);
 
       if (node.kind === 'site') {
         const kind = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
         const icon = siteIconFor(kind, (node.status as GeoStatus) ?? 'active');
         // O selecionado cresce; o resto fica no tamanho base.
         const size = selected ? SITE_ICON_SIZE + 8 : SITE_ICON_SIZE;
-        const marker = new window.google.maps.Marker({
-          map: mapRef.current,
-          position: { lng, lat },
-          title: `${node.label} · ${icon.label}`,
-          icon: {
-            url: siteIconDataUrl(icon, { size }),
-            scaledSize: new window.google.maps.Size(size, size),
-            anchor: new window.google.maps.Point(size / 2, size / 2),
-          },
-          zIndex: selected ? SITE_MARKER_Z + 1 : SITE_MARKER_Z,
-        });
-        marker.addListener('click', () => onSelectNode(node));
-        markersRef.current.push(marker);
+        const iconOptions = {
+          url: siteIconDataUrl(icon, { size }),
+          scaledSize: new window.google.maps.Size(size, size),
+          anchor: new window.google.maps.Point(size / 2, size / 2),
+        };
+        const zIndex = selected ? SITE_MARKER_Z + 1 : SITE_MARKER_Z;
+        if (existing) {
+          existing.setPosition({ lng, lat });
+          existing.setIcon(iconOptions);
+          existing.setZIndex(zIndex);
+        } else {
+          const marker = new window.google.maps.Marker({
+            position: { lng, lat },
+            title: `${node.label} · ${icon.label}`,
+            icon: iconOptions,
+            zIndex,
+          });
+          marker.addListener('click', () => onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node));
+          markersRef.current.set(node.id, marker);
+        }
+        activeMarkers.push(markersRef.current.get(node.id));
         continue;
       }
 
       const icon = resourceIconFor(node.resourceType ?? '');
       const size = selected ? MARKER_ICON_SIZE + 6 : MARKER_ICON_SIZE;
-      const marker = new window.google.maps.Marker({
-        map: mapRef.current,
-        position: { lng, lat },
-        title: `${node.label} · ${icon.label}`,
-        icon: {
-          url: resourceIconDataUrl(icon, { size }),
-          scaledSize: new window.google.maps.Size(size, size),
-          // Âncora no canto inferior-esquerdo: o equipamento fica acima e à
-          // direita da coordenada. Um equipamento dentro de um CO compartilha a
-          // coordenada exata do local, e centrado ficaria escondido atrás do pin.
-          anchor: new window.google.maps.Point(0, size),
-        },
-        zIndex: selected ? EQUIPMENT_MARKER_Z + 1 : EQUIPMENT_MARKER_Z,
-      });
-      marker.addListener('click', () => onSelectNode(node));
-      markersRef.current.push(marker);
+      const iconOptions = {
+        url: resourceIconDataUrl(icon, { size }),
+        scaledSize: new window.google.maps.Size(size, size),
+        // Âncora no canto inferior-esquerdo: o equipamento fica acima e à
+        // direita da coordenada. Um equipamento dentro de um CO compartilha a
+        // coordenada exata do local, e centrado ficaria escondido atrás do pin.
+        anchor: new window.google.maps.Point(0, size),
+      };
+      const zIndex = selected ? EQUIPMENT_MARKER_Z + 1 : EQUIPMENT_MARKER_Z;
+      if (existing) {
+        existing.setPosition({ lng, lat });
+        existing.setIcon(iconOptions);
+        existing.setZIndex(zIndex);
+      } else {
+        const marker = new window.google.maps.Marker({
+          position: { lng, lat },
+          title: `${node.label} · ${icon.label}`,
+          icon: iconOptions,
+          zIndex,
+        });
+        marker.addListener('click', () => onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node));
+        markersRef.current.set(node.id, marker);
+      }
+      activeMarkers.push(markersRef.current.get(node.id));
     }
-  }, [mapsReady, nodes, onSelectNode, selectedNodeId]);
+
+    // Remove só os marcadores que saíram de vista — o resto continua vivo e é só reposicionado acima.
+    for (const [id, marker] of markersRef.current) {
+      if (!visibleIds.has(id)) {
+        marker.setMap(null);
+        markersRef.current.delete(id);
+        nodeByIdRef.current.delete(id);
+      }
+    }
+
+    if (!clustererRef.current) {
+      clustererRef.current = new MarkerClusterer({ map: mapRef.current });
+    }
+    clustererRef.current.clearMarkers();
+    clustererRef.current.addMarkers(activeMarkers);
+  }, [mapsReady, nodes, selectedNodeId]);
 
   useEffect(() => {
     if (!mapsReady || !mapRef.current || !draftAddress) return;
@@ -590,30 +643,47 @@ function GoogleMapPanel({
     mapRef.current.panTo({ lng, lat });
   }, [focusPoint, mapsReady]);
 
-  // Rota dos cabos. Um cabo não é um ponto: sua geometria é uma LineString com o
-  // traçado real na rua, então vira polyline em vez de pin.
+  // Rota dos cabos. Um cabo não é um ponto: sua geometria é uma LineString com o traçado real na
+  // rua, então vira polyline em vez de pin. Reusada por id pelo mesmo motivo dos marcadores.
   useEffect(() => {
     if (!mapsReady || !mapRef.current) return;
-    cableRoutesRef.current.forEach((line) => line.setMap(null));
-    cableRoutesRef.current = [];
+
+    const visibleIds = new Set<string>();
 
     for (const node of nodes) {
       const route = treeNodeRoute(node);
       if (!route) continue;
+      visibleIds.add(node.id);
+      nodeByIdRef.current.set(node.id, node);
       const icon = resourceIconFor(node.resourceType ?? '');
+      const path = route.map(([lng, lat]) => ({ lng, lat }));
+      const existing = cableRoutesRef.current.get(node.id);
+
+      if (existing) {
+        existing.setPath(path);
+        existing.setOptions({ strokeColor: icon.color, strokeWeight: CABLE_STROKE_WEIGHT[icon.code] ?? 2.5 });
+        continue;
+      }
 
       const line = new window.google.maps.Polyline({
         map: mapRef.current,
-        path: route.map(([lng, lat]) => ({ lng, lat })),
+        path,
         strokeColor: icon.color,
         strokeOpacity: 0.9,
         strokeWeight: CABLE_STROKE_WEIGHT[icon.code] ?? 2.5,
         zIndex: CABLE_ROUTE_Z,
       });
-      line.addListener('click', () => onSelectNode(node));
-      cableRoutesRef.current.push(line);
+      line.addListener('click', () => onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node));
+      cableRoutesRef.current.set(node.id, line);
     }
-  }, [mapsReady, nodes, onSelectNode]);
+
+    for (const [id, line] of cableRoutesRef.current) {
+      if (!visibleIds.has(id)) {
+        line.setMap(null);
+        cableRoutesRef.current.delete(id);
+      }
+    }
+  }, [mapsReady, nodes]);
 
   // Balão ancorado no item selecionado. Usa o InfoWindow nativo — é o que dá o
   // bico apontando para o pin, o auto-pan quando o balão nasce fora da tela e o

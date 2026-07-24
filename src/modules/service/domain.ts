@@ -10,6 +10,8 @@ export type ServiceQuery = {
   state?: ServiceState;
   type?: ServiceKind;
   serviceSpecificationId?: string;
+  serviceSpecificationIdIn?: string[];
+  category?: string;
   subscriberId?: string;
   relatedPartyId?: string;
   placeId?: string;

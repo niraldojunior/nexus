@@ -284,8 +284,17 @@ export function resourceIconSvg(icon: ResourceIcon, options: { size?: number; ri
   });
 }
 
+// O domínio de ícones é pequeno (um por `code` x tamanho x anel), mas o mapa recalcula isto para
+// cada marcador em todo re-render — cachear evita regerar/escapar o mesmo SVG milhares de vezes.
+const resourceIconDataUrlCache = new Map<string, string>();
+
 export function resourceIconDataUrl(icon: ResourceIcon, options?: { size?: number; ring?: boolean }): string {
-  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(resourceIconSvg(icon, options))}`;
+  const key = `${icon.code}:${options?.size ?? ''}:${options?.ring ?? ''}`;
+  const cached = resourceIconDataUrlCache.get(key);
+  if (cached) return cached;
+  const value = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(resourceIconSvg(icon, options))}`;
+  resourceIconDataUrlCache.set(key, value);
+  return value;
 }
 
 export function toDataUrl(svg: string): string {

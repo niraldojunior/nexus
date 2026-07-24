@@ -66,6 +66,15 @@ export function siteIconSvg(icon: SiteIcon, options: { size?: number; badge?: bo
   });
 }
 
+// Mesma lógica de cache de `resourceIconDataUrl`: o mapa recalcula isto por marcador a cada
+// re-render, mas o domínio (kind x status x tamanho) é pequeno e estável.
+const siteIconDataUrlCache = new Map<string, string>();
+
 export function siteIconDataUrl(icon: SiteIcon, options?: { size?: number; badge?: boolean }): string {
-  return toDataUrl(siteIconSvg(icon, options));
+  const key = `${icon.kind}:${icon.color}:${options?.size ?? ''}:${options?.badge ?? ''}`;
+  const cached = siteIconDataUrlCache.get(key);
+  if (cached) return cached;
+  const value = toDataUrl(siteIconSvg(icon, options));
+  siteIconDataUrlCache.set(key, value);
+  return value;
 }

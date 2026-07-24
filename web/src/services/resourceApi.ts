@@ -95,11 +95,10 @@ export type ResourceEntity = PhysicalResource | LogicalResource;
 
 export type ResourceWorkspaceSnapshot = {
   items: ResourceEntity[] | ResourceSpecification[];
+  totalCount: number;
   resourceSpecificationOptions: ResourceSpecification[];
   resourceCategories: ResourceCategory[];
   resourceTypes: ResourceType[];
-  physicalResources: PhysicalResource[];
-  logicalResources: LogicalResource[];
   manufacturerOptions: Party[];
 };
 
@@ -213,16 +212,28 @@ export async function loadResourceWorkspaceSnapshot({
   tab,
   limit,
   offset,
+  category,
+  resourceSpecificationIdIn,
+  resourceTypeIn,
+  name,
 }: {
   tab: ResourceTab;
   limit: number;
   offset: number;
+  category?: string;
+  resourceSpecificationIdIn?: string[];
+  resourceTypeIn?: string[];
+  name?: string;
 }): Promise<ResourceWorkspaceSnapshot> {
   const searchParams = new URLSearchParams({
     tab,
     limit: String(limit),
     offset: String(offset),
   });
+  if (category) searchParams.set('category', category);
+  for (const id of resourceSpecificationIdIn ?? []) searchParams.append('resourceSpecificationIdIn', id);
+  for (const type of resourceTypeIn ?? []) searchParams.append('resourceTypeIn', type);
+  if (name) searchParams.set('name', name);
   return await requestJson<ResourceWorkspaceSnapshot>(`/v1/resource/workspace?${searchParams.toString()}`);
 }
 
@@ -254,13 +265,15 @@ export async function listResources({
   limit,
   offset,
   status,
-}: ListParams & { kind: Exclude<ResourceTab, 'ResourceSpecification'> }): Promise<ResourceEntity[]> {
+  name,
+}: ListParams & { kind: Exclude<ResourceTab, 'ResourceSpecification'>; name?: string }): Promise<ResourceEntity[]> {
   const searchParams = new URLSearchParams({
     kind,
     limit: String(limit),
     offset: String(offset),
   });
   if (status) searchParams.set('status', status);
+  if (name) searchParams.set('name', name);
   return await requestJson<ResourceEntity[]>(`/tmf-api/resourceInventoryManagement/v4/resource?${searchParams.toString()}`);
 }
 

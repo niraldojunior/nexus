@@ -39,14 +39,17 @@ export interface IResourceRepository {
   upsertPhysicalResource(resource: PhysicalResource): PhysicalResource;
   getPhysicalResource(id: string): PhysicalResource | undefined;
   listPhysicalResources(query?: ResourceQuery): PhysicalResource[];
+  countPhysicalResources(query?: ResourceQuery): number;
 
   upsertLogicalResource(resource: LogicalResource): LogicalResource;
   getLogicalResource(id: string): LogicalResource | undefined;
   listLogicalResources(query?: ResourceQuery): LogicalResource[];
+  countLogicalResources(query?: ResourceQuery): number;
 
   upsertResourceRelationship(resourceId: string, relationship: ResourceRelationship): ResourceRelationship;
   deleteResourceRelationship(resourceId: string, relatedResourceId: string, relationshipType: string): boolean;
   listResourceRelationships(resourceId: string): ResourceRelationship[];
 
   listResources(query?: ResourceQuery): Resource[];
+  countResources(query?: ResourceQuery): number;
 }

@@ -3,10 +3,10 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import * as resourceApi from '../services/resourceApi';
-import type { PhysicalResource, ResourceSpecification } from '../services/resourceApi';
+import type { LogicalResource, PhysicalResource, ResourceSpecification } from '../services/resourceApi';
 import ResourcePage from './ResourcePage';
 
-// 25 physical specs so the Equipment.Access inventory paginates client-side (>20 items).
+// 20 physical specs so the Equipment.Access catalog paginates client-side (>20 items with spec-ipam-2).
 const physicalSpecs: ResourceSpecification[] = Array.from({ length: 20 }, (_, index) => ({
   '@type': 'ResourceSpecification' as const,
   id: `spec-${index + 1}`,
@@ -132,8 +132,8 @@ const resourceTypes = [
   },
 ];
 
-// 25 physical resources in Equipment.Access to exercise client-side pagination.
-const physicalResources = Array.from({ length: 25 }, (_, index) => ({
+// 25 physical resources in Equipment.Access (spec-1) to exercise server-side pagination.
+const physicalResources: PhysicalResource[] = Array.from({ length: 25 }, (_, index) => ({
   '@type': 'PhysicalResource' as const,
   id: `phy-${index + 1}`,
   name: `Physical ${index + 1}`,
@@ -147,7 +147,7 @@ const physicalResources = Array.from({ length: 25 }, (_, index) => ({
   place: { id: `site-${index + 1}`, '@referredType': 'GeographicSite' as const },
 }));
 
-const logicalResources = Array.from({ length: 20 }, (_, index) => ({
+const logicalResources: LogicalResource[] = Array.from({ length: 20 }, (_, index) => ({
   '@type': 'LogicalResource' as const,
   id: `log-${index + 1}`,
   name: `Logical ${index + 1}`,
@@ -159,6 +159,7 @@ const logicalResources = Array.from({ length: 20 }, (_, index) => ({
 }));
 
 const loadResourceWorkspaceSnapshotMock = vi.spyOn(resourceApi, 'loadResourceWorkspaceSnapshot');
+const listResourcesMock = vi.spyOn(resourceApi, 'listResources');
 const createResourceSpecificationMock = vi.spyOn(resourceApi, 'createResourceSpecification');
 const updateResourceSpecificationMock = vi.spyOn(resourceApi, 'updateResourceSpecification');
 const deleteResourceSpecificationMock = vi.spyOn(resourceApi, 'deleteResourceSpecification');
@@ -166,17 +167,49 @@ const createResourceMock = vi.spyOn(resourceApi, 'createResource');
 const updateResourceMock = vi.spyOn(resourceApi, 'updateResource');
 const deleteResourceMock = vi.spyOn(resourceApi, 'deleteResource');
 
-function snapshotFor(overrides: Partial<resourceApi.ResourceWorkspaceSnapshot> = {}) {
+type WorkspaceRequest = Parameters<typeof resourceApi.loadResourceWorkspaceSnapshot>[0];
+
+/**
+ * Mini réplica do backend (`buildResourceWorkspaceSnapshot`): aplica categoria/filtros/paginação
+ * sobre os fixtures locais igual o servidor faz sobre o Postgres — os testes passam a exercitar o
+ * contrato real (o que é pedido) em vez de assumir que o array inteiro sempre chega no cliente.
+ */
+function buildSnapshot(
+  request: WorkspaceRequest,
+  pools: { physical?: PhysicalResource[]; logical?: LogicalResource[]; specs?: ResourceSpecification[] } = {},
+): resourceApi.ResourceWorkspaceSnapshot {
+  const specs = pools.specs ?? resourceSpecifications;
+
+  if (request.tab === 'ResourceSpecification') {
+    return {
+      items: [],
+      totalCount: specs.length,
+      resourceSpecificationOptions: specs,
+      resourceCategories,
+      resourceTypes,
+      manufacturerOptions: manufacturerParties,
+    };
+  }
+
+  const specById = new Map(specs.map((spec) => [spec.id, spec]));
+  const pool = request.tab === 'PhysicalResource' ? pools.physical ?? physicalResources : pools.logical ?? logicalResources;
+  const filtered = pool.filter((resource) => {
+    const specId = resource.resourceSpecification?.id ?? resource.resourceSpecificationId;
+    const spec = specById.get(specId);
+    if (request.category && spec?.category !== request.category) return false;
+    if (request.resourceSpecificationIdIn?.length && !request.resourceSpecificationIdIn.includes(specId)) return false;
+    if (request.resourceTypeIn?.length && (!spec || !request.resourceTypeIn.includes(spec.resourceType))) return false;
+    return true;
+  });
+
   return {
-    items: [],
-    resourceSpecificationOptions: resourceSpecifications,
+    items: filtered.slice(request.offset, request.offset + request.limit),
+    totalCount: filtered.length,
+    resourceSpecificationOptions: specs,
     resourceCategories,
     resourceTypes,
-    physicalResources,
-    logicalResources,
     manufacturerOptions: manufacturerParties,
-    ...overrides,
-  } as resourceApi.ResourceWorkspaceSnapshot;
+  };
 }
 
 beforeEach(() => {
@@ -184,7 +217,8 @@ beforeEach(() => {
   for (const spec of resourceSpecifications) {
     delete spec.validFor;
   }
-  loadResourceWorkspaceSnapshotMock.mockImplementation(async () => snapshotFor());
+  loadResourceWorkspaceSnapshotMock.mockImplementation(async (request) => buildSnapshot(request));
+  listResourcesMock.mockResolvedValue([]);
   createResourceSpecificationMock.mockResolvedValue(resourceSpecifications[0]);
   updateResourceSpecificationMock.mockResolvedValue(resourceSpecifications[0]);
   deleteResourceSpecificationMock.mockImplementation(async (id) => {
@@ -211,14 +245,19 @@ test('defaults to the first category and lists its physical inventory', async ()
   expect(screen.getByRole('tab', { name: 'Inventário' })).toHaveAttribute('aria-selected', 'true');
 
   await waitFor(() =>
-    expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({ tab: 'PhysicalResource', limit: 20, offset: 0 }),
+    expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({
+      tab: 'PhysicalResource',
+      limit: 20,
+      offset: 0,
+      category: 'Equipment.Access',
+    }),
   );
   expect((await screen.findAllByText('Physical 1'))[0]).toBeInTheDocument();
   expect(screen.getByRole('columnheader', { name: 'Nome do Modelo' })).toBeInTheDocument();
   expect(screen.getByRole('columnheader', { name: 'Tipo do Recurso' })).toBeInTheDocument();
 });
 
-test('paginates the category inventory client-side without refetching', async () => {
+test('paginates the category inventory server-side, refetching on page change', async () => {
   const user = userEvent.setup();
   render(<ResourcePage category="Equipment.Access" />);
 
@@ -226,37 +265,54 @@ test('paginates the category inventory client-side without refetching', async ()
   expect(screen.getByText('Physical 20')).toBeInTheDocument();
   expect(screen.queryByText('Physical 21')).not.toBeInTheDocument();
 
-  const callsBefore = loadResourceWorkspaceSnapshotMock.mock.calls.length;
   await user.click(screen.getByRole('button', { name: 'Próximo' }));
 
   expect(await screen.findByText('Physical 21')).toBeInTheDocument();
+  expect(screen.queryByText('Physical 1')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Próximo' })).toBeDisabled();
-  // Pagination is local — the full arrays already arrived in the snapshot.
-  expect(loadResourceWorkspaceSnapshotMock.mock.calls.length).toBe(callsBefore);
+  // Paginar agora é sempre um novo fetch — a página inteira nunca fica em memória no cliente.
+  await waitFor(() =>
+    expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({
+      tab: 'PhysicalResource',
+      limit: 20,
+      offset: 20,
+      category: 'Equipment.Access',
+    }),
+  );
 });
 
-test('clicking a filterable header opens a picklist that narrows the inventory', async () => {
+test('clicking a filterable header opens a picklist that narrows the inventory server-side', async () => {
   const user = userEvent.setup();
-  // First five resources become inactive so the Status column has a real domain to filter on.
+  // First five resources use a different spec so the "Nome do Modelo" column has a real domain.
   const mixedPhysical = physicalResources.map((resource, index) => ({
     ...resource,
-    status: (index < 5 ? 'inactive' : 'active') as PhysicalResource['status'],
+    resourceSpecificationId: index < 5 ? 'spec-2' : 'spec-1',
+    resourceSpecification: { id: index < 5 ? 'spec-2' : 'spec-1', '@referredType': 'ResourceSpecification' as const },
   }));
-  loadResourceWorkspaceSnapshotMock.mockImplementation(async () =>
-    snapshotFor({ physicalResources: mixedPhysical }),
+  loadResourceWorkspaceSnapshotMock.mockImplementation(async (request) =>
+    buildSnapshot(request, { physical: mixedPhysical }),
   );
 
   render(<ResourcePage category="Equipment.Access" />);
   await screen.findAllByText('Physical 1');
 
-  await user.click(screen.getByRole('button', { name: 'Status' }));
+  await user.click(screen.getByRole('button', { name: 'Nome do Modelo' }));
 
-  // The picklist offers only the domain of system values present in the column.
-  expect(screen.getByRole('menuitemcheckbox', { name: 'active' })).toBeInTheDocument();
-  await user.click(screen.getByRole('menuitemcheckbox', { name: 'inactive' }));
+  // The picklist offers the specs registered for the category — not a scan of loaded instances.
+  expect(screen.getByRole('menuitemcheckbox', { name: 'Spec 1' })).toBeInTheDocument();
+  await user.click(screen.getByRole('menuitemcheckbox', { name: 'Spec 2' }));
 
-  // Only the five inactive resources remain, on the first page.
-  expect(screen.getByText('Physical 5')).toBeInTheDocument();
+  await waitFor(() =>
+    expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({
+      tab: 'PhysicalResource',
+      limit: 20,
+      offset: 0,
+      category: 'Equipment.Access',
+      resourceSpecificationIdIn: ['spec-2'],
+    }),
+  );
+  // Only the five spec-2 resources remain, on the first page.
+  expect(await screen.findByText('Physical 5')).toBeInTheDocument();
   expect(screen.queryByText('Physical 6')).not.toBeInTheDocument();
   expect(screen.getByText(/de 5 registro\(s\)/)).toBeInTheDocument();
 });
@@ -332,7 +388,12 @@ test('logical category lists logical inventory and its modal scopes specs by cat
 
   expect(await screen.findByRole('heading', { name: 'Endereçamento e IPAM' })).toBeInTheDocument();
   await waitFor(() =>
-    expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({ tab: 'LogicalResource', limit: 20, offset: 0 }),
+    expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({
+      tab: 'LogicalResource',
+      limit: 20,
+      offset: 0,
+      category: 'Logical.IPAM',
+    }),
   );
   expect((await screen.findAllByText('Logical 1'))[0]).toBeInTheDocument();
 
@@ -342,6 +403,8 @@ test('logical category lists logical inventory and its modal scopes specs by cat
   expect(specSelect).toBeInTheDocument();
   expect(screen.getByLabelText(/Recurso Físico Associado/i)).toBeInTheDocument();
   expect(specSelect).toHaveTextContent('Bloco IPAM');
+  // The supporting-physical-resource combobox is fetched on demand, bounded — not from a full inventory in memory.
+  await waitFor(() => expect(listResourcesMock).toHaveBeenCalledWith({ kind: 'PhysicalResource', limit: 200, offset: 0, status: 'active' }));
 });
 
 test('resource specification editor omits Categoria but keeps the Tipo combobox', async () => {
@@ -438,8 +501,8 @@ test('resource specification create requires type and model before submitting', 
 test('bulk selection enables delete and reloads the inventory after deletion', async () => {
   const user = userEvent.setup();
   const inventory: PhysicalResource[] = physicalResources.map((resource) => ({ ...resource }));
-  loadResourceWorkspaceSnapshotMock.mockImplementation(async () =>
-    snapshotFor({ physicalResources: inventory.filter((resource) => resource.status === 'active') }),
+  loadResourceWorkspaceSnapshotMock.mockImplementation(async (request) =>
+    buildSnapshot(request, { physical: inventory.filter((resource) => resource.status === 'active') }),
   );
   deleteResourceMock.mockImplementation(async (id) => {
     const resource = inventory.find((item) => item.id === id);
@@ -465,9 +528,9 @@ test('bulk selection enables delete and reloads the inventory after deletion', a
 test('deleting a resource specification requires confirmation and removes it from the catalog', async () => {
   const user = userEvent.setup();
   const catalog: ResourceSpecification[] = resourceSpecifications.map((spec) => ({ ...spec }));
-  loadResourceWorkspaceSnapshotMock.mockImplementation(async () =>
+  loadResourceWorkspaceSnapshotMock.mockImplementation(async (request) =>
     // The backend excludes soft-terminated specs; mirror that so deletions leave the catalog.
-    snapshotFor({ resourceSpecificationOptions: catalog.filter((spec) => !spec.validFor?.endDateTime) }),
+    buildSnapshot(request, { specs: catalog.filter((spec) => !spec.validFor?.endDateTime) }),
   );
   deleteResourceSpecificationMock.mockImplementation(async (id) => {
     const spec = catalog.find((item) => item.id === id);

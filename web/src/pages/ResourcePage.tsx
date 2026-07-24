@@ -26,6 +26,7 @@ import {
   createResourceSpecification,
   deleteResource,
   deleteResourceSpecification,
+  listResources,
   loadResourceWorkspaceSnapshot,
   updateResource,
   updateResourceSpecification,
@@ -214,8 +215,13 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   const [resourceTypes, setResourceTypes] = useState<ResourceType[]>([]);
   const [resourceSpecificationOptions, setResourceSpecificationOptions] = useState<ResourceSpecification[]>([]);
   const [manufacturerOptions, setManufacturerOptions] = useState<Party[]>([]);
-  const [physicalResourceOptions, setPhysicalResourceOptions] = useState<PhysicalResource[]>([]);
-  const [logicalResourceOptions, setLogicalResourceOptions] = useState<LogicalResource[]>([]);
+  // Página atual + total já filtrados/paginados pelo servidor (PhysicalResource/LogicalResource).
+  // O catálogo (ResourceSpecification) é pequeno o bastante para continuar paginando no cliente.
+  const [items, setItems] = useState<ResourceEntity[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  // Opções limitadas para o combobox "recurso físico de suporte" do modal de LogicalResource —
+  // buscadas sob demanda na abertura do modal, nunca a partir do inventário completo.
+  const [supportingPhysicalResourceChoices, setSupportingPhysicalResourceChoices] = useState<PhysicalResource[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -236,81 +242,90 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   const categoryName = resourceCategories.find((item) => item.code === category)?.name ?? category;
   const CategoryIcon = categoryIconForCode(category);
 
-  const specCategoryById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const spec of resourceSpecificationOptions) map.set(spec.id, spec.category);
-    return map;
-  }, [resourceSpecificationOptions]);
+  // Só a aba de catálogo (ResourceSpecification) ainda pagina/filtra no cliente — é catálogo
+  // (centenas de specs), não inventário (dezenas de milhares de instâncias). PhysicalResource e
+  // LogicalResource usam `items`/`totalCount`, já filtrados e paginados pelo servidor.
+  const isServerPaged = effectiveTab !== 'ResourceSpecification';
 
-  // The workspace snapshot already ships the full resource/spec arrays, so we filter and paginate
-  // by the active category client-side instead of relying on the server-paginated `items`.
-  const categoryItems = useMemo<Array<ResourceEntity | ResourceSpecification>>(() => {
-    if (view === 'catalog') {
-      return resourceSpecificationOptions.filter((spec) => spec.category === category);
-    }
-    const pool: ResourceEntity[] = isPhysicalCategory ? physicalResourceOptions : logicalResourceOptions;
-    return pool.filter((resource) => {
-      const specId = resource.resourceSpecification?.id ?? resource.resourceSpecificationId;
-      return specCategoryById.get(specId) === category;
-    });
-  }, [
-    view,
-    category,
-    isPhysicalCategory,
-    resourceSpecificationOptions,
-    physicalResourceOptions,
-    logicalResourceOptions,
-    specCategoryById,
-  ]);
+  const categoryItems = useMemo<ResourceSpecification[]>(() => {
+    if (view !== 'catalog') return [];
+    return resourceSpecificationOptions.filter((spec) => spec.category === category);
+  }, [view, category, resourceSpecificationOptions]);
 
-  // Valor exibido de uma coluna para um item — usado tanto para montar o domínio do filtro quanto
-  // para aplicá-lo, garantindo que o filtro casa exatamente com o texto renderizado na célula.
+  // Valor exibido de uma coluna de spec — usado tanto para montar o domínio do filtro quanto para
+  // aplicá-lo, garantindo que o filtro casa exatamente com o texto renderizado na célula.
   const filterableColumns = FILTERABLE_COLUMNS[effectiveTab];
-  const columnValueFor = (item: ResourceEntity | ResourceSpecification, key: string): string => {
-    if (effectiveTab === 'ResourceSpecification') {
-      const spec = item as ResourceSpecification;
-      switch (key) {
-        case 'resourceType':
-          return readResourceTypeCode(resourceTypes, spec.resourceType);
-        case 'manufacturer':
-          return readSpecificationManufacturer(spec);
-        case 'lifecycleStatus':
-          return readSpecLifecycleStatus(spec.resourceSpecificationCharacteristic);
-        case 'equipmentFunction':
-          return readSpecCharacteristic(spec.resourceSpecificationCharacteristic, 'equipmentFunction');
-        default:
-          return '-';
-      }
-    }
-    const resourceItem = item as ResourceEntity;
-    const specId = resourceItem.resourceSpecification?.id ?? resourceItem.resourceSpecificationId;
+  const columnValueFor = (spec: ResourceSpecification, key: string): string => {
     switch (key) {
-      case 'spec':
-        return readResourceSpecificationName(resourceSpecificationOptions, specId);
       case 'resourceType':
-        return readResourceSpecificationType(resourceSpecificationOptions, specId);
-      case 'status':
-        return resourceItem.status ?? '-';
+        return readResourceTypeCode(resourceTypes, spec.resourceType);
+      case 'manufacturer':
+        return readSpecificationManufacturer(spec);
+      case 'lifecycleStatus':
+        return readSpecLifecycleStatus(spec.resourceSpecificationCharacteristic);
+      case 'equipmentFunction':
+        return readSpecCharacteristic(spec.resourceSpecificationCharacteristic, 'equipmentFunction');
       default:
         return '-';
     }
   };
 
+  // Para PhysicalResource/LogicalResource o domínio do picklist vem dos catálogos (specs/tipos já
+  // carregados por completo) em vez de escanear o inventário — o inventário nunca fica todo em
+  // memória no cliente.
   const columnDomain = (key: string): string[] => {
-    const values = new Set<string>();
-    for (const item of categoryItems) values.add(columnValueFor(item, key));
-    return [...values].sort((left, right) => left.localeCompare(right, 'pt-BR'));
+    if (view === 'catalog') {
+      const values = new Set<string>();
+      for (const item of categoryItems) values.add(columnValueFor(item, key));
+      return [...values].sort((left, right) => left.localeCompare(right, 'pt-BR'));
+    }
+    if (key === 'spec') {
+      return resourceSpecificationOptions
+        .filter((spec) => spec.category === category)
+        .map((spec) => spec.name)
+        .sort((left, right) => left.localeCompare(right, 'pt-BR'));
+    }
+    if (key === 'resourceType') {
+      return resourceTypes
+        .filter((type) => type.categoryCode === category)
+        .map((type) => type.code)
+        .sort((left, right) => left.localeCompare(right, 'pt-BR'));
+    }
+    if (key === 'status') {
+      // O workspace só traz recursos ativos (status='active' é fixo no backend), então o domínio
+      // hoje é sempre um único valor — igual ao comportamento anterior client-side.
+      return ['active'];
+    }
+    return [];
   };
 
   const filteredItems = useMemo(() => {
+    if (view !== 'catalog') return [];
     const entries = Object.entries(columnFilters).filter(([, values]) => values.size > 0);
     if (!entries.length) return categoryItems;
     return categoryItems.filter((item) =>
       entries.every(([key, values]) => values.has(columnValueFor(item, key))),
     );
-    // columnValueFor deriva de effectiveTab + catálogos, cobertos abaixo.
+    // columnValueFor deriva de resourceTypes, cobertos abaixo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryItems, columnFilters, effectiveTab, resourceTypes, resourceSpecificationOptions]);
+  }, [view, categoryItems, columnFilters, resourceTypes]);
+
+  // Traduz os valores selecionados no picklist (nomes/código exibidos) para os IDs que o servidor
+  // entende — os catálogos completos (specs/tipos) já estão em memória, então isso é barato.
+  const selectedResourceSpecificationIds = (): string[] | undefined => {
+    const selectedNames = columnFilters.spec;
+    if (!selectedNames || selectedNames.size === 0) return undefined;
+    const namesLower = new Set([...selectedNames].map((name) => name.toLowerCase()));
+    return resourceSpecificationOptions
+      .filter((spec) => spec.category === category && namesLower.has(spec.name.toLowerCase()))
+      .map((spec) => spec.id);
+  };
+
+  const selectedResourceTypes = (): string[] | undefined => {
+    const selected = columnFilters.resourceType;
+    if (!selected || selected.size === 0) return undefined;
+    return [...selected];
+  };
 
   const setColumnFilter = (key: string, values: Set<string>) => {
     setColumnFilters((current) => {
@@ -342,10 +357,14 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
     });
   };
 
-  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+  const totalItemCount = isServerPaged ? totalCount : filteredItems.length;
+  const totalPages = Math.max(1, Math.ceil(totalItemCount / PAGE_SIZE));
   const activePage = Math.min(Math.max(1, page), totalPages);
-  const pageItems = filteredItems.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE);
+  const pageItems: Array<ResourceEntity | ResourceSpecification> = isServerPaged
+    ? items
+    : filteredItems.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE);
   const hasMore = activePage < totalPages;
+  const hasActiveColumnFilters = Object.values(columnFilters).some((values) => values.size > 0);
 
   const selectedCategory = resourceCategories.find((item) => item.code === formState.category);
   const visibleTypeOptions = buildTypeOptions(resourceTypes, formState.category);
@@ -373,19 +392,27 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   const selectedCount = selectedIds.size;
   const selectedDeletePreview = selectedOnPage.slice(0, 3).map((item) => item.name).join(', ');
 
-  const loadWorkspaceData = async (tab: ResourceTabId): Promise<void> => {
+  const loadWorkspaceData = async (tab: ResourceTabId, pageNumber: number): Promise<void> => {
     setIsLoading(true);
     setLookupLoading(true);
     setError(null);
     try {
-      const snapshot = await loadResourceWorkspaceSnapshot({ tab, limit: PAGE_SIZE, offset: 0 });
+      const isInstanceTab = tab !== 'ResourceSpecification';
+      const snapshot = await loadResourceWorkspaceSnapshot({
+        tab,
+        limit: PAGE_SIZE,
+        offset: isInstanceTab ? (pageNumber - 1) * PAGE_SIZE : 0,
+        ...(isInstanceTab ? { category } : {}),
+        ...(isInstanceTab ? { resourceSpecificationIdIn: selectedResourceSpecificationIds() } : {}),
+        ...(isInstanceTab && tab === 'PhysicalResource' ? { resourceTypeIn: selectedResourceTypes() } : {}),
+      });
 
       setResourceSpecificationOptions(snapshot.resourceSpecificationOptions);
       setResourceCategories(snapshot.resourceCategories);
       setResourceTypes(snapshot.resourceTypes);
-      setPhysicalResourceOptions(snapshot.physicalResources.filter(isPhysicalResource));
-      setLogicalResourceOptions(snapshot.logicalResources.filter(isLogicalResource));
       setManufacturerOptions(snapshot.manufacturerOptions);
+      setItems(isInstanceTab ? (snapshot.items as ResourceEntity[]) : []);
+      setTotalCount(isInstanceTab ? snapshot.totalCount : 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao carregar Resource.');
     } finally {
@@ -394,9 +421,20 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
     }
   };
 
+  // Refaz o fetch sempre que a aba, a categoria, a página ou os filtros de coluna mudam — a
+  // paginação/filtro de PhysicalResource e LogicalResource agora é sempre resolvida no servidor.
   useEffect(() => {
-    void loadWorkspaceData(effectiveTab);
-  }, [effectiveTab]);
+    void loadWorkspaceData(effectiveTab, page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveTab, category, page, columnFilters]);
+
+  // Se a página atual ficar fora do alcance (ex.: exclusão esvaziou a última página), volta para
+  // a última página válida — o que dispara o efeito acima e refaz o fetch automaticamente.
+  useEffect(() => {
+    if (!isServerPaged) return;
+    const maxPage = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+    if (page > maxPage) setPage(maxPage);
+  }, [isServerPaged, totalCount, page]);
 
   useEffect(() => {
     if (!selectAllRef.current) return;
@@ -479,6 +517,24 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
       supportingPhysicalResourceId: isLogicalResource(entity) ? entity.supportingPhysicalResourceId ?? '' : '',
     });
   }, [modalState, manufacturerOptions, category]);
+
+  // Busca sob demanda uma amostra de recursos físicos para o combobox de "recurso de suporte" do
+  // modal de LogicalResource — nunca o inventário inteiro, que pode ter dezenas de milhares de itens.
+  useEffect(() => {
+    if (!modalState || modalState.tab !== 'LogicalResource') return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const options = await listResources({ kind: 'PhysicalResource', limit: 200, offset: 0, status: 'active' });
+        if (!cancelled) setSupportingPhysicalResourceChoices(options as PhysicalResource[]);
+      } catch {
+        // Best-effort: o campo já tolera um id selecionado sem opção correspondente na lista.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [modalState]);
 
   useEffect(() => {
     if (!modalState || modalState.mode !== 'create') return;
@@ -574,7 +630,7 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   };
 
   const refreshWorkspace = async () => {
-    await loadWorkspaceData(effectiveTab);
+    await loadWorkspaceData(effectiveTab, page);
   };
 
   refreshCatalogRef.current = () => {
@@ -867,13 +923,19 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
             <div className="text-[0.88rem] text-app-muted">
               {selectedCount
                 ? `${selectedCount} selecionados no total`
-                : filteredItems.length
-                  ? `Mostrando ${(activePage - 1) * PAGE_SIZE + 1}–${Math.min(activePage * PAGE_SIZE, filteredItems.length)} de ${filteredItems.length} registro(s)${
-                      filteredItems.length !== categoryItems.length ? ` (filtrado de ${categoryItems.length})` : ''
-                    }`
-                  : categoryItems.length
-                    ? 'Nenhum registro para os filtros aplicados'
-                    : 'Nenhuma seleção ativa'}
+                : isServerPaged
+                  ? totalItemCount
+                    ? `Mostrando ${(activePage - 1) * PAGE_SIZE + 1}–${Math.min(activePage * PAGE_SIZE, totalItemCount)} de ${totalItemCount} registro(s)`
+                    : hasActiveColumnFilters
+                      ? 'Nenhum registro para os filtros aplicados'
+                      : 'Nenhuma seleção ativa'
+                  : filteredItems.length
+                    ? `Mostrando ${(activePage - 1) * PAGE_SIZE + 1}–${Math.min(activePage * PAGE_SIZE, filteredItems.length)} de ${filteredItems.length} registro(s)${
+                        filteredItems.length !== categoryItems.length ? ` (filtrado de ${categoryItems.length})` : ''
+                      }`
+                    : categoryItems.length
+                      ? 'Nenhum registro para os filtros aplicados'
+                      : 'Nenhuma seleção ativa'}
             </div>
             <div className="flex items-center gap-4">
               <div className="text-[0.88rem] text-app-muted">
@@ -924,7 +986,7 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
           resourceTypes={resourceTypes}
           resourceSpecificationOptions={resourceSpecificationOptions}
           manufacturerOptions={manufacturerOptions}
-          physicalResourceOptions={physicalResourceOptions}
+          physicalResourceOptions={supportingPhysicalResourceChoices}
           geoDirectory={geoDirectory}
           lookupLoading={lookupLoading}
           saving={saving}

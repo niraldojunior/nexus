@@ -402,6 +402,10 @@ export class ResourceService {
     return this.repository.listResources(query);
   }
 
+  public countResources(query?: ResourceQuery): number {
+    return this.repository.countResources(query);
+  }
+
   public addResourceRelationship(resourceId: string, input: ResourceRelationship): ResourceRelationship {
     assertName(input.relationshipType, 'relationshipType');
     this.getResourceOrThrow(resourceId);

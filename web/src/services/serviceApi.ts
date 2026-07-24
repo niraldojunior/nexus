@@ -1,4 +1,4 @@
-import type { ResourceCharacteristic, ResourceEntity, TimePeriod } from './resourceApi';
+import type { ResourceCharacteristic, TimePeriod } from './resourceApi';
 
 /**
  * Cliente do Módulo de Serviços (TMF633 Service Catalog + TMF638 Service Inventory).
@@ -130,13 +130,11 @@ export type ResourceFacingService = ServiceBase & {
 export type ServiceEntity = CustomerFacingService | ResourceFacingService;
 
 export type ServiceWorkspaceSnapshot = {
-  items: ServiceEntity[] | ServiceSpecification[];
   serviceSpecificationOptions: ServiceSpecification[];
   serviceCategories: ServiceCategory[];
   serviceCandidates: ServiceCandidate[];
   customerFacingServices: CustomerFacingService[];
   resourceFacingServices: ResourceFacingService[];
-  resourceOptions: ResourceEntity[];
 };
 
 export type ServiceSpecificationPayload = {
@@ -221,18 +219,13 @@ function extractErrorMessage(payload: unknown, status: number): string {
 
 export async function loadServiceWorkspaceSnapshot({
   tab,
-  limit,
-  offset,
+  category,
 }: {
   tab: ServiceTab;
-  limit: number;
-  offset: number;
+  category?: string;
 }): Promise<ServiceWorkspaceSnapshot> {
-  const searchParams = new URLSearchParams({
-    tab,
-    limit: String(limit),
-    offset: String(offset),
-  });
+  const searchParams = new URLSearchParams({ tab });
+  if (category) searchParams.set('category', category);
   return await requestJson<ServiceWorkspaceSnapshot>(`/v1/service/workspace?${searchParams.toString()}`);
 }
 

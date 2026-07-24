@@ -216,14 +216,20 @@ export default function GeoPage() {
   }, [navParams, sites, clearNav]);
 
   // Seleção — o mesmo caminho para o clique na árvore e no mapa. Centraliza o
-  // mapa, abre o balão, e o detalhe completo sai do botão do balão.
-  const selectNode = useCallback((node: GeoTreeNode) => {
-    setSelectedNode(node);
-    setDraftAddress(null);
-    setBalloonKey(node.geometry ? node.id : null);
-    const point = treeNodePoint(node);
-    if (point) setFocusPoint(point);
-  }, []);
+  // mapa, abre o balão, e o detalhe completo sai do botão do balão. Expande o
+  // nó (e seus ancestrais) quando ele tem filhos: nada nasce aberto por padrão,
+  // então é o clique na estação que revela CTOs/Splitters abaixo dela.
+  const selectNode = useCallback(
+    (node: GeoTreeNode) => {
+      setSelectedNode(node);
+      setDraftAddress(null);
+      setBalloonKey(node.geometry ? node.id : null);
+      const point = treeNodePoint(node);
+      if (point) setFocusPoint(point);
+      if (node.hasChildren) tree.expandNode(node.id);
+    },
+    [tree],
+  );
 
   // Fecha o balão: clique no mapa fora de qualquer item, X do próprio balão ou Esc.
   const closeBalloon = useCallback(() => setBalloonKey(null), []);
@@ -433,9 +439,9 @@ export default function GeoPage() {
   );
 }
 
-// O mapa desenha exatamente os nós visíveis na árvore — expandir um ramo traz
-// seus pins, recolher os leva embora. É o que mantém a legenda (a árvore) e o
-// desenho (o mapa) contando a mesma história.
+// O mapa sempre mostra todas as estações (mesmo com o ramo fechado na árvore).
+// Recursos e cabos seguem a árvore — expandir um ramo traz seus pins, recolher
+// os leva embora.
 function GoogleMapPanel({
   nodes,
   selectedNodeId,

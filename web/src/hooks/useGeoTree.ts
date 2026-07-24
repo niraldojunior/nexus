@@ -4,9 +4,9 @@
 // o que o usuário abriu — a abertura traz UF → Município → Estações → Estação, e
 // cada expansão busca no servidor apenas os filhos diretos do nó clicado.
 //
-// Duas saídas alimentam a tela e mantêm a invariante "o mapa mostra o que a árvore
-// mostra": `rows` (as linhas visíveis, já achatadas e indentadas) e `mapNodes`
-// (as mesmas linhas que têm geometria).
+// Duas saídas alimentam a tela: `rows` (as linhas visíveis, já achatadas e
+// indentadas) e `mapNodes` (o que vai para o mapa). Estações sempre aparecem no
+// mapa, mesmo com o ramo fechado na árvore; recursos e cabos seguem a expansão.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -40,6 +40,9 @@ export type GeoTree = {
   childrenOf: (nodeId: string) => GeoTreeNode[];
   ensureChildren: (nodeId: string) => void;
   nodeById: (nodeId: string) => GeoTreeNode | undefined;
+  // Expande um nó e toda a cadeia de ancestrais até a raiz (nunca recolhe) — usado
+  // ao selecionar uma estação, já que nada nasce aberto por padrão.
+  expandNode: (nodeId: string) => void;
 };
 
 export function useGeoTree(): GeoTree {
@@ -113,8 +116,6 @@ export function useGeoTree(): GeoTree {
         for (const [parentId, ids] of Object.entries(childIds)) totals[parentId] = ids.length;
 
         setState({ nodesById, childIds, totals, rootIds });
-        // UF, Município e a pasta Estações já vieram nesta resposta: abri-los não
-        // custa rede e é o que põe as estações no mapa desde a abertura.
         setExpandedRows(defaultExpandedRows({ rootIds, childIds, nodesById }));
       })
       .catch((err) => {
@@ -134,7 +135,19 @@ export function useGeoTree(): GeoTree {
     [state, expandedRows, loadingNodes],
   );
 
-  const mapNodes = useMemo(() => rows.map((row) => row.node).filter((node) => node.geometry), [rows]);
+  const mapNodes = useMemo(() => {
+    const byId = new Map<string, GeoTreeNode>();
+    // Estações sempre no mapa: todas já vieram na resposta de raízes, independente
+    // do que está aberto na árvore.
+    for (const node of Object.values(state.nodesById)) {
+      if (node.kind === 'site' && node.geometry) byId.set(node.id, node);
+    }
+    // Recursos e cabos seguem a árvore: só aparecem quando o ramo está aberto.
+    for (const row of rows) {
+      if (row.node.geometry) byId.set(row.node.id, row.node);
+    }
+    return [...byId.values()];
+  }, [state.nodesById, rows]);
 
   const toggle = useCallback(
     (row: GeoTreeRow) => {
@@ -167,6 +180,38 @@ export function useGeoTree(): GeoTree {
     [state],
   );
 
+  // Filho → pai, invertendo childIds — usado para subir a cadeia de ancestrais
+  // ao expandir um nó selecionado direto (árvore ou mapa).
+  const parentOf = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const [parentId, childIds] of Object.entries(state.childIds)) {
+      for (const childId of childIds) map[childId] = parentId;
+    }
+    return map;
+  }, [state.childIds]);
+
+  const expandNode = useCallback(
+    (nodeId: string) => {
+      const chain: string[] = [nodeId];
+      let current = nodeId;
+      while (parentOf[current]) {
+        current = parentOf[current];
+        chain.unshift(current);
+      }
+      setExpandedRows((prev) => {
+        const next = new Set(prev);
+        let rowKey = '';
+        for (const id of chain) {
+          rowKey = `${rowKey}/${id}`;
+          next.add(rowKey);
+        }
+        return next;
+      });
+      if (!state.childIds[nodeId]) void loadChildren(nodeId, 0);
+    },
+    [parentOf, state.childIds, loadChildren],
+  );
+
   return {
     rows,
     mapNodes,
@@ -183,6 +228,7 @@ export function useGeoTree(): GeoTree {
     childrenOf,
     ensureChildren,
     nodeById: (nodeId: string) => state.nodesById[nodeId],
+    expandNode,
   };
 }
 

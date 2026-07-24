@@ -77,9 +77,9 @@ export function flattenTreeRows(
   return rows;
 }
 
-// Níveis geográficos nascem abertos: eles já vieram na resposta de raízes e é o
-// que revela as estações — o primeiro nível que o usuário de fato navega.
-const AUTO_EXPAND: Array<GeoTreeNode['kind']> = ['uf', 'city', 'group'];
+// Nada nasce aberto: o usuário navega abrindo cada nível pelo "+". As estações
+// continuam aparecendo no mapa mesmo fechadas (ver `mapNodes` em useGeoTree).
+const AUTO_EXPAND: Array<GeoTreeNode['kind']> = [];
 
 export function defaultExpandedRows(state: Pick<GeoTreeState, 'rootIds' | 'childIds' | 'nodesById'>): Set<string> {
   const expanded = new Set<string>();

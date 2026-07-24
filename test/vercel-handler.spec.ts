@@ -30,6 +30,16 @@ test('Vercel handler exports the same normalization behavior from repo root and 
   );
 });
 
+test('Vercel handler preserves routed query parameters, encoding and repeated values', () => {
+  const requestUrl =
+    '/api/server?__nexusPath=/v1/geo/tree/children&nodeId=site%3Ac53c6360-ace0-413d-bfe8-f04471de4952&limit=500&offset=0&include=site&include=resource';
+  const expectedUrl =
+    '/v1/geo/tree/children?nodeId=site%3Ac53c6360-ace0-413d-bfe8-f04471de4952&limit=500&offset=0&include=site&include=resource';
+
+  assert.equal(rootNormalizeRequestUrl(requestUrl), expectedUrl);
+  assert.equal(webNormalizeRequestUrl(requestUrl), expectedUrl);
+});
+
 test('Vercel exposes concrete API entrypoints for root and web deployments', () => {
   for (const config of [
     rootHealthConfig,

@@ -45,7 +45,12 @@ export const normalizeRequestUrl = (rawUrl: string): string => {
   const routedPath = url.searchParams.get('__nexusPath');
   if (routedPath) {
     const routedUrl = new URL(routedPath, 'http://localhost');
-    return `${routedUrl.pathname}${routedUrl.search}`;
+    const forwardedParams = new URLSearchParams(routedUrl.search);
+    for (const [key, value] of url.searchParams) {
+      if (key !== '__nexusPath') forwardedParams.append(key, value);
+    }
+    const forwardedSearch = forwardedParams.toString();
+    return `${routedUrl.pathname}${forwardedSearch ? `?${forwardedSearch}` : ''}`;
   }
 
   const pathname = url.pathname.replace(/^\/api(?=\/|$)/, '') || '/';

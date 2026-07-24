@@ -66,22 +66,34 @@ function buildState(): GeoTreeState {
 
 const rowKeys = (rows: ReturnType<typeof flattenTreeRows>) => rows.map((row) => row.rowKey);
 
+// Monta o Set de rowKeys de uma cadeia de ancestrais, no mesmo formato que
+// `flattenTreeRows`/`defaultExpandedRows` usam (`/uf:RJ/city:.../...`).
+const expandChain = (...ids: string[]): Set<string> => {
+  const keys = new Set<string>();
+  let rowKey = '';
+  for (const id of ids) {
+    rowKey = `${rowKey}/${id}`;
+    keys.add(rowKey);
+  }
+  return keys;
+};
+
+const ufKey = '/uf:RJ';
+const cityKey = `${ufKey}/city:RJ|Niterói`;
+const groupKey = `${cityKey}/group:RJ|Niterói|stations`;
+const stationKey = `${groupKey}/site:est-1`;
+
 // ---- Abertura ---------------------------------------------------------------
 
-test('níveis geográficos abrem por padrão e a estação não', () => {
+test('nada abre por padrão — só a UF aparece, fechada', () => {
   const state = buildState();
   const expanded = defaultExpandedRows(state);
 
-  assert.deepEqual(
-    [...expanded].sort(),
-    ['/uf:RJ', '/uf:RJ/city:RJ|Niterói', '/uf:RJ/city:RJ|Niterói/group:RJ|Niterói|stations'].sort(),
-  );
+  assert.deepEqual([...expanded], []);
 
   const rows = flattenTreeRows(state, expanded, new Set());
-  const last = rows[rows.length - 1];
-  // A estação aparece (e vai ao mapa), mas fechada — seus filhos ficam no banco.
-  assert.equal(last?.rowKey, '/uf:RJ/city:RJ|Niterói/group:RJ|Niterói|stations/site:est-1');
-  assert.equal(last?.expanded, false);
+  assert.deepEqual(rowKeys(rows), [ufKey]);
+  assert.equal(rows[0]?.expanded, false);
 });
 
 test('nó fechado não revela filhos já carregados', () => {
@@ -94,13 +106,12 @@ test('nó fechado não revela filhos já carregados', () => {
 
 test('remaining conta o que falta buscar, e só em nó aberto', () => {
   const state = buildState();
-  const stationKey = '/uf:RJ/city:RJ|Niterói/group:RJ|Niterói|stations/site:est-1';
-  const rows = flattenTreeRows(state, new Set([...defaultExpandedRows(state), stationKey]), new Set());
+  const rows = flattenTreeRows(state, expandChain('uf:RJ', 'city:RJ|Niterói', 'group:RJ|Niterói|stations', 'site:est-1'), new Set());
   const station = rows.find((row) => row.rowKey === stationKey);
   assert.equal(station?.remaining, 3822);
   assert.equal(station?.total, 3823);
 
-  const closed = flattenTreeRows(state, defaultExpandedRows(state), new Set());
+  const closed = flattenTreeRows(state, expandChain('uf:RJ', 'city:RJ|Niterói', 'group:RJ|Niterói|stations'), new Set());
   const closedStation = closed.find((row) => row.rowKey === stationKey);
   assert.equal(closedStation?.remaining, 0);
   // Fechado ou aberto, o total conhecido do servidor é o mesmo — só `remaining`
@@ -110,9 +121,11 @@ test('remaining conta o que falta buscar, e só em nó aberto', () => {
 
 test('nó nunca aberto não tem total (badge só aparece após expandir)', () => {
   const state = buildState();
-  const stationKey = '/uf:RJ/city:RJ|Niterói/group:RJ|Niterói|stations/site:est-1';
   const cdoeKey = `${stationKey}/resource:cdoe-1`;
-  const expanded = new Set([...defaultExpandedRows(state), stationKey, cdoeKey]);
+  const expanded = new Set([
+    ...expandChain('uf:RJ', 'city:RJ|Niterói', 'group:RJ|Niterói|stations', 'site:est-1'),
+    cdoeKey,
+  ]);
   const rows = flattenTreeRows(state, expanded, new Set());
   // resource:spl-1 nunca foi expandido (o servidor nunca respondeu por ele) —
   // sem `state.totals['resource:spl-1']`, a linha não tem total conhecido.
@@ -122,7 +135,8 @@ test('nó nunca aberto não tem total (badge só aparece após expandir)', () =>
 
 test('nó em carga marca loading na própria linha', () => {
   const state = buildState();
-  const rows = flattenTreeRows(state, defaultExpandedRows(state), new Set(['site:est-1']));
+  const expanded = expandChain('uf:RJ', 'city:RJ|Niterói', 'group:RJ|Niterói|stations');
+  const rows = flattenTreeRows(state, expanded, new Set(['site:est-1']));
   assert.equal(rows.find((row) => row.node.id === 'site:est-1')?.loading, true);
 });
 
@@ -135,12 +149,14 @@ test('aresta que volta para um ancestral não repete o item', () => {
   state.childIds['resource:spl-1'] = ['resource:cdoe-1'];
   state.nodesById['resource:spl-1']!.hasChildren = true;
 
-  const expanded = new Set([
-    ...defaultExpandedRows(state),
-    '/uf:RJ/city:RJ|Niterói/group:RJ|Niterói|stations/site:est-1',
-    '/uf:RJ/city:RJ|Niterói/group:RJ|Niterói|stations/site:est-1/resource:cdoe-1',
-    '/uf:RJ/city:RJ|Niterói/group:RJ|Niterói|stations/site:est-1/resource:cdoe-1/resource:spl-1',
-  ]);
+  const expanded = expandChain(
+    'uf:RJ',
+    'city:RJ|Niterói',
+    'group:RJ|Niterói|stations',
+    'site:est-1',
+    'resource:cdoe-1',
+    'resource:spl-1',
+  );
 
   const rows = flattenTreeRows(state, expanded, new Set());
   assert.equal(rows.filter((row) => row.node.id === 'resource:cdoe-1').length, 1);

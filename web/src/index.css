@@ -116,6 +116,12 @@ textarea {
   resize: none;
 }
 
+/* Balão de preview do mapa Geo: some com o X nativo do InfoWindow — o balão só
+   aparece no hover e fecha sozinho quando o mouse sai, então o X é redundante. */
+.gm-style-iw button.gm-ui-hover-effect {
+  display: none !important;
+}
+
 input:focus,
 textarea:focus,
 button:focus-visible {

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { ChevronDown, ChevronRight, Building2, FolderTree, Loader2, Map, Plus } from 'lucide-react';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import type { GeoTreeRow } from '../../utils/geoHierarchy';
@@ -11,6 +12,7 @@ export type HierarchyTreeViewProps = {
   onSelect: (node: GeoTreeNode) => void;
   onToggle: (row: GeoTreeRow) => void;
   onLoadMore: (row: GeoTreeRow) => void;
+  onHover?: (node: GeoTreeNode | null) => void;
 };
 
 /**
@@ -22,7 +24,28 @@ export type HierarchyTreeViewProps = {
  * clique nele que busca o nível seguinte. Clicar no rótulo seleciona o item:
  * centraliza o mapa e abre o balão.
  */
-export function HierarchyTreeView({ rows, selectedNodeId, onSelect, onToggle, onLoadMore }: HierarchyTreeViewProps) {
+export function HierarchyTreeView({ rows, selectedNodeId, onSelect, onToggle, onLoadMore, onHover }: HierarchyTreeViewProps) {
+  const selectedRef = useRef<HTMLDivElement | null>(null);
+  // Última seleção já rolada para a vista. Evita brigar com a rolagem do usuário:
+  // rola uma vez por seleção, e não a cada re-render (abrir outro ramo muda as
+  // linhas, mas não deve puxar a lista de volta ao item selecionado).
+  const scrolledTo = useRef<string | null>(null);
+
+  // Revela o nó escolhido dentro da hierarquia. Ao clicar numa estação no mapa, o
+  // ramo dela é expandido em GeoPage (via expandNode), mas a linha pode nascer
+  // fora da área visível — aqui a sidebar rola até ela. Depende de `rows` porque
+  // a linha só aparece depois que os ancestrais terminam de expandir de forma
+  // assíncrona; assim que ela entra na lista, o efeito roda e rola até ela.
+  useEffect(() => {
+    if (!selectedNodeId) {
+      scrolledTo.current = null;
+      return;
+    }
+    if (scrolledTo.current === selectedNodeId || !selectedRef.current) return;
+    selectedRef.current.scrollIntoView({ block: 'nearest' });
+    scrolledTo.current = selectedNodeId;
+  }, [selectedNodeId, rows]);
+
   if (!rows.length) {
     return (
       <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.86rem] text-app-muted">
@@ -38,9 +61,11 @@ export function HierarchyTreeView({ rows, selectedNodeId, onSelect, onToggle, on
           key={row.rowKey}
           row={row}
           selected={row.node.id === selectedNodeId}
+          rowRef={row.node.id === selectedNodeId ? selectedRef : undefined}
           onSelect={onSelect}
           onToggle={onToggle}
           onLoadMore={onLoadMore}
+          onHover={onHover}
         />
       ))}
     </div>
@@ -50,15 +75,19 @@ export function HierarchyTreeView({ rows, selectedNodeId, onSelect, onToggle, on
 function TreeRow({
   row,
   selected,
+  rowRef,
   onSelect,
   onToggle,
   onLoadMore,
+  onHover,
 }: {
   row: GeoTreeRow;
   selected: boolean;
+  rowRef?: React.Ref<HTMLDivElement>;
   onSelect: (node: GeoTreeNode) => void;
   onToggle: (row: GeoTreeRow) => void;
   onLoadMore: (row: GeoTreeRow) => void;
+  onHover?: (node: GeoTreeNode | null) => void;
 }) {
   const { node, depth } = row;
   const count = node.childCount ?? row.total;
@@ -67,6 +96,7 @@ function TreeRow({
   return (
     <>
       <div
+        ref={rowRef}
         className={`flex w-full items-center gap-1 rounded-[10px] pr-2 transition ${
           selected ? 'bg-app-accent-soft text-app-text' : 'text-app-text hover:bg-app-accent-soft'
         }`}
@@ -94,6 +124,10 @@ function TreeRow({
         <button
           type="button"
           onClick={() => onSelect(node)}
+          onMouseEnter={() => onHover?.(node)}
+          onMouseLeave={() => onHover?.(null)}
+          onFocus={() => onHover?.(node)}
+          onBlur={() => onHover?.(null)}
           title={node.sublabel ? `${node.label} · ${node.sublabel}` : node.label}
           className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left leading-tight"
         >

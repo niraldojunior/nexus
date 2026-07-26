@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  ChevronLeft,
   Plus,
   RefreshCw,
   Search,
@@ -35,6 +36,7 @@ import { ResourceIcon } from '../components/ResourceIcon';
 import { siteIconDataUrl, siteIconFor } from '../utils/siteIcon';
 import { useNavigation } from '../hooks/useNavigation';
 import { GuidedSignupModal, HierarchySidebar } from './geo-tabs';
+import { BottomSheet } from '../components/BottomSheet';
 import { MarkerClusterer } from '@googlemaps/markerclusterer';
 
 declare global {
@@ -57,9 +59,10 @@ type DraftAddress = {
 
 type DetailTab = 'overview' | 'subsites' | 'topology' | 'lifecycle' | 'resources';
 
-// Conteúdo do balão flutuante ancorado no item clicado no mapa. É montado no
-// GeoPage e apenas desenhado pelo painel do mapa — assim o painel não precisa
-// saber o que é Local e o que é Recurso.
+// Conteúdo do balão flutuante de preview, ancorado no item sob o mouse (árvore
+// ou mapa). É montado no GeoPage e apenas desenhado pelo painel do mapa — assim
+// o painel não precisa saber o que é Local e o que é Recurso. É um cartão de
+// visita somente-leitura: o clique (não o hover) é que abre o detalhe completo.
 type MapBalloon = {
   // Id do nó da árvore (`site:<id>` | `resource:<id>`): identifica o alvo e
   // detecta a troca de item.
@@ -72,9 +75,11 @@ type MapBalloon = {
   eyebrow: string;
   title: string;
   rows: Array<[string, string]>;
-  actionLabel: string;
-  onAction: () => void;
 };
+
+// Alvo do painel de detalhe aberto por clique — Site ou Recurso, cada um com o
+// corpo que sabe montar a partir dele (ver SiteDetailBody/ResourceDetailBody).
+type DetailTarget = { kind: 'site'; site: GeoSite } | { kind: 'resource'; node: GeoTreeNode };
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
@@ -143,10 +148,11 @@ export default function GeoPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [focusPoint, setFocusPoint] = useState<[number, number] | null>(null);
-  // Nó selecionado na árvore ou no mapa, e alvo do balão. São dois estados porque
-  // a seleção sobrevive ao fechamento do balão.
+  // Nó selecionado (clique, na árvore ou no mapa) e nó sob o mouse (hover, alvo
+  // do balão de preview). São dois estados independentes: o hover é passageiro
+  // e não mexe na seleção nem no painel de detalhe já aberto.
   const [selectedNode, setSelectedNode] = useState<GeoTreeNode | null>(null);
-  const [balloonKey, setBalloonKey] = useState<string | null>(null);
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
 
   const tree = useGeoTree();
   const isMobile = useIsMobile();
@@ -156,6 +162,14 @@ export default function GeoPage() {
   const siteById = useMemo(() => new Map(sites.map((item) => [item.id, item])), [sites]);
   const selectedSiteId = selectedNode?.referredType === 'GeographicSite' ? selectedNode.refId ?? null : null;
   const selectedSite = selectedSiteId ? siteById.get(selectedSiteId) ?? null : null;
+  const selectedResourceNode = selectedNode?.kind === 'resource' ? selectedNode : null;
+  // Alvo do painel de detalhe — deriva da mesma seleção usada pelo mapa e pela
+  // árvore, então abrir por clique ou por deep-link (navParams) é o mesmo caminho.
+  const detailTarget = useMemo<DetailTarget | null>(() => {
+    if (selectedSite) return { kind: 'site', site: selectedSite };
+    if (selectedResourceNode) return { kind: 'resource', node: selectedResourceNode };
+    return null;
+  }, [selectedSite, selectedResourceNode]);
   const [searching, setSearching] = useState(false);
 
   const runAddressSearch = useCallback(async () => {
@@ -216,23 +230,42 @@ export default function GeoPage() {
   }, [navParams, sites, clearNav]);
 
   // Seleção — o mesmo caminho para o clique na árvore e no mapa. Centraliza o
-  // mapa, abre o balão, e o detalhe completo sai do botão do balão. Expande o
-  // nó (e seus ancestrais) quando ele tem filhos: nada nasce aberto por padrão,
-  // então é o clique na estação que revela CTOs/Splitters abaixo dela.
+  // mapa e expande o nó (e seus ancestrais) quando ele tem filhos: nada nasce
+  // aberto por padrão, então é o clique na estação que revela CTOs/Splitters
+  // abaixo dela. Site e Recurso também abrem o painel de detalhe — dock à
+  // esquerda no desktop, bottom sheet no mobile (ver GeoDetailPanel). Nós de
+  // UF/Município/grupo só navegam a árvore, não têm detalhe próprio.
   const selectNode = useCallback(
     (node: GeoTreeNode) => {
       setSelectedNode(node);
       setDraftAddress(null);
-      setBalloonKey(node.geometry ? node.id : null);
       const point = treeNodePoint(node);
       if (point) setFocusPoint(point);
       if (node.hasChildren) tree.expandNode(node.id);
+      if (node.kind === 'site' || node.kind === 'resource') {
+        setDetailTab('overview');
+        setDetailOpen(true);
+      } else {
+        setDetailOpen(false);
+      }
     },
     [tree],
   );
 
-  // Fecha o balão: clique no mapa fora de qualquer item, X do próprio balão ou Esc.
-  const closeBalloon = useCallback(() => setBalloonKey(null), []);
+  // Some quando o mouse sai do item; sem atraso perceptível, mas absorve o
+  // instante entre uma linha da árvore e a próxima para o balão não piscar.
+  const hoverTimeoutRef = useRef<number | undefined>(undefined);
+  const handleHover = useCallback((node: GeoTreeNode | null) => {
+    if (hoverTimeoutRef.current !== undefined) {
+      window.clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = undefined;
+    }
+    if (node) {
+      setHoverKey(node.geometry ? node.id : null);
+    } else {
+      hoverTimeoutRef.current = window.setTimeout(() => setHoverKey(null), 60);
+    }
+  }, []);
 
   const openDetail = (site: GeoSite, tab: DetailTab = 'overview') => {
     setSelectedNode(siteNodeOf(site));
@@ -240,48 +273,51 @@ export default function GeoPage() {
     setDetailOpen(true);
   };
 
-  // Monta o conteúdo do balão a partir do nó selecionado. Fica aqui, e não no
-  // painel do mapa, porque é aqui que se sabe o que fazer com cada tipo de item.
+  // Monta o conteúdo do balão de preview a partir do nó sob o mouse. Fica aqui,
+  // e não no painel do mapa, porque é aqui que se sabe o que fazer com cada
+  // tipo de item. Puro cartão de visita — tipo, endereço, status e modelo — sem
+  // ação: quem abre o detalhe é o clique, não o hover.
   const balloon = useMemo<MapBalloon | null>(() => {
-    const node = tree.mapNodes.find((item) => item.id === balloonKey) ?? null;
-    if (!node || !balloonKey) return null;
+    const node = tree.mapNodes.find((item) => item.id === hoverKey) ?? null;
+    if (!node || !hoverKey) return null;
+    // O painel de detalhe já mostra tipo/endereço/status do mesmo item — o
+    // balão por cima seria redundante enquanto ele está aberto.
+    if (detailOpen && selectedNode?.id === node.id) return null;
     const point = treeNodePoint(node);
     if (!point) return null;
+    const status = statusLabel[(node.status as GeoStatus) ?? 'active'];
 
     if (node.kind === 'site') {
-      const site = node.refId ? siteById.get(node.refId) : undefined;
       const kindOfSite = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
       const icon = siteIconFor(kindOfSite, (node.status as GeoStatus) ?? 'active');
-      const parent = site?.parentSite ? siteById.get(site.parentSite.id) : undefined;
       // O pin do local é centrado na coordenada e cresce quando selecionado.
       const pinSize = SITE_ICON_SIZE + 8;
       const rows: Array<[string, string]> = [
-        ['Status', statusLabel[(node.status as GeoStatus) ?? 'active']],
         ['Endereço', node.detail?.address ?? 'Sem endereço'],
+        ['Status', status],
       ];
-      if (parent) rows.push(['Local pai', parent.name]);
+      if (node.detail?.model) rows.push(['Modelo', node.detail.model]);
       return {
-        key: balloonKey,
+        key: hoverKey,
         point,
         offset: [0, -(pinSize / 2 + 6)],
         iconUrl: siteIconDataUrl(icon, { size: 40 }),
         eyebrow: node.sublabel ?? siteKindLabel[kindOfSite],
         title: node.label,
         rows,
-        actionLabel: 'Ver detalhes do local',
-        onAction: () => (site ? openDetail(site) : undefined),
       };
     }
 
     const icon = resourceIconFor(node.resourceType ?? '');
     // Cabo não tem pin: o balão nasce sobre o traçado, sem folga de ícone.
     const isCable = Boolean(treeNodeRoute(node));
-    const rows: Array<[string, string]> = [];
+    const rows: Array<[string, string]> = [
+      ['Endereço', node.detail?.address ?? 'Sem endereço'],
+      ['Status', status],
+    ];
     if (node.detail?.model) rows.push(['Modelo', node.detail.model]);
-    if (node.detail?.manufacturer) rows.push(['Fabricante', node.detail.manufacturer]);
-    if (node.detail?.serialNumber) rows.push(['Nº de série', node.detail.serialNumber]);
     return {
-      key: balloonKey,
+      key: hoverKey,
       point,
       // O ícone de equipamento é ancorado no canto inferior-esquerdo, então ele
       // fica acima e à direita da coordenada — o balão segue o ícone.
@@ -290,22 +326,19 @@ export default function GeoPage() {
       eyebrow: node.sublabel ?? icon.label,
       title: node.label,
       rows,
-      actionLabel: 'Abrir no módulo Recursos',
-      onAction: () => (node.refId ? goToResource(node.refId) : undefined),
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [balloonKey, goToResource, siteById, tree.mapNodes]);
+  }, [detailOpen, hoverKey, selectedNode?.id, tree.mapNodes]);
 
-  // Esc fecha o balão — mas só quando nenhum modal está aberto, senão a tecla
-  // fecharia os dois de uma vez.
+  // Esc fecha o painel de detalhe — mas só quando nenhum outro modal está
+  // aberto, senão a tecla fecharia os dois de uma vez.
   useEffect(() => {
-    if (!balloonKey || detailOpen || createOpen || typeOpen) return;
+    if (!detailOpen || createOpen || typeOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeBalloon();
+      if (event.key === 'Escape') setDetailOpen(false);
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [balloonKey, closeBalloon, createOpen, detailOpen, typeOpen]);
+  }, [createOpen, detailOpen, typeOpen]);
 
   return (
     <div className="relative h-full min-h-0 min-w-0 overflow-hidden bg-transparent flex flex-col">
@@ -316,13 +349,41 @@ export default function GeoPage() {
           </div>
         ) : null}
 
-        <div className="flex h-full min-h-0">
+        <div className="relative flex h-full min-h-0">
             <HierarchySidebar
               tree={tree}
               selectedNodeId={selectedNode?.id ?? null}
               onSelect={selectNode}
+              onHover={handleHover}
               onOpenTypes={() => setTypeOpen(true)}
             />
+
+            {detailOpen && detailTarget ? (
+              <GeoDetailPanel
+                isMobile={isMobile}
+                target={detailTarget}
+                tab={detailTab}
+                sites={sites}
+                specById={specById}
+                siteById={siteById}
+                events={events}
+                onTab={setDetailTab}
+                onOpenSite={(next) => openDetail(next, 'overview')}
+                onOpenResource={goToResource}
+                onClose={() => setDetailOpen(false)}
+                onChanged={async () => {
+                  if (!selectedSite) return;
+                  await loadGeo();
+                  const updatedEvents = await getJson<GeoEvent[]>(`/v1/geo/sites/${selectedSite.id}/events`).catch(() => []);
+                  setEvents(updatedEvents);
+                }}
+                onCreateSubSite={() => {
+                  setDetailOpen(false);
+                  setCreateOpen(true);
+                }}
+              />
+            ) : null}
+
             <div className="relative min-h-0 flex-1">
             <GoogleMapPanel
           nodes={tree.mapNodes}
@@ -331,7 +392,8 @@ export default function GeoPage() {
           focusPoint={focusPoint}
           balloon={balloon}
           onSelectNode={selectNode}
-          onCloseBalloon={closeBalloon}
+          onHoverNode={handleHover}
+          onCloseBalloon={() => handleHover(null)}
           onDraftAddress={setDraftAddress}
         />
 
@@ -402,30 +464,6 @@ export default function GeoPage() {
         />
       ) : null}
 
-      {detailOpen && selectedSite ? (
-        <SiteDetailModal
-          site={selectedSite}
-          tab={detailTab}
-          sites={sites}
-          specById={specById}
-          siteById={siteById}
-          events={events}
-          onTab={setDetailTab}
-          onOpenSite={(next) => openDetail(next, 'overview')}
-          onOpenResource={goToResource}
-          onClose={() => setDetailOpen(false)}
-          onChanged={async () => {
-            await loadGeo();
-            const updatedEvents = await getJson<GeoEvent[]>(`/v1/geo/sites/${selectedSite.id}/events`).catch(() => []);
-            setEvents(updatedEvents);
-          }}
-          onCreateSubSite={() => {
-            setDetailOpen(false);
-            setCreateOpen(true);
-          }}
-        />
-      ) : null}
-
       {typeOpen ? (
         <TypeManagementModal
           specs={specs}
@@ -449,6 +487,7 @@ function GoogleMapPanel({
   focusPoint,
   balloon,
   onSelectNode,
+  onHoverNode,
   onCloseBalloon,
   onDraftAddress,
 }: {
@@ -458,6 +497,7 @@ function GoogleMapPanel({
   focusPoint?: [number, number] | null;
   balloon: MapBalloon | null;
   onSelectNode: (node: GeoTreeNode) => void;
+  onHoverNode: (node: GeoTreeNode | null) => void;
   onCloseBalloon: () => void;
   onDraftAddress: (address: DraftAddress) => void;
 }) {
@@ -482,6 +522,7 @@ function GoogleMapPanel({
   // a cada mudança), o listener de clique — atado uma única vez na criação — precisa ler sempre a
   // versão atual de `onSelectNode` e do nó (que pode ter sido substituído por um refetch da árvore).
   const onSelectNodeRef = useRef(onSelectNode);
+  const onHoverNodeRef = useRef(onHoverNode);
   const nodeByIdRef = useRef<Map<string, GeoTreeNode>>(new Map());
   const [mapsReady, setMapsReady] = useState(false);
 
@@ -494,6 +535,10 @@ function GoogleMapPanel({
   }, [onSelectNode]);
 
   useEffect(() => {
+    onHoverNodeRef.current = onHoverNode;
+  }, [onHoverNode]);
+
+  useEffect(() => {
     if (!GOOGLE_MAPS_KEY || !mapEl.current) return;
     void loadGoogleMaps(GOOGLE_MAPS_KEY)
       .then(() => {
@@ -504,6 +549,7 @@ function GoogleMapPanel({
           mapTypeControl: false,
           fullscreenControl: false,
           streetViewControl: false,
+          scaleControl: true,
           styles: MAP_STYLES,
         });
         mapRef.current.addListener('click', (event: any) => {
@@ -571,6 +617,8 @@ function GoogleMapPanel({
             zIndex,
           });
           marker.addListener('click', () => onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node));
+          marker.addListener('mouseover', () => onHoverNodeRef.current(nodeByIdRef.current.get(node.id) ?? node));
+          marker.addListener('mouseout', () => onHoverNodeRef.current(null));
           markersRef.current.set(node.id, marker);
         }
         activeMarkers.push(markersRef.current.get(node.id));
@@ -600,6 +648,8 @@ function GoogleMapPanel({
           zIndex,
         });
         marker.addListener('click', () => onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node));
+        marker.addListener('mouseover', () => onHoverNodeRef.current(nodeByIdRef.current.get(node.id) ?? node));
+        marker.addListener('mouseout', () => onHoverNodeRef.current(null));
         markersRef.current.set(node.id, marker);
       }
       activeMarkers.push(markersRef.current.get(node.id));
@@ -680,6 +730,8 @@ function GoogleMapPanel({
         zIndex: CABLE_ROUTE_Z,
       });
       line.addListener('click', () => onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node));
+      line.addListener('mouseover', () => onHoverNodeRef.current(nodeByIdRef.current.get(node.id) ?? node));
+      line.addListener('mouseout', () => onHoverNodeRef.current(null));
       cableRoutesRef.current.set(node.id, line);
     }
 
@@ -691,14 +743,18 @@ function GoogleMapPanel({
     }
   }, [mapsReady, nodes]);
 
-  // Balão ancorado no item selecionado. Usa o InfoWindow nativo — é o que dá o
-  // bico apontando para o pin, o auto-pan quando o balão nasce fora da tela e o
-  // X de fechar que o usuário já espera do Google Maps.
+  // Balão de preview ancorado no item sob o mouse. Usa o InfoWindow nativo — é o
+  // que dá o bico apontando pro pin e o auto-pan quando ele nasce fora da tela.
+  // Sem cabeçalho/X: é um balão temporário que fecha sozinho no mouse-out, então
+  // o botão de fechar do Google seria redundante (o CSS em index.css cobre
+  // versões da API que ainda desenham o botão apesar de headerDisabled).
   useEffect(() => {
     if (!mapsReady || !mapRef.current) return;
     if (!infoWindowRef.current) {
-      infoWindowRef.current = new window.google.maps.InfoWindow();
-      infoWindowRef.current.addListener('closeclick', () => closeBalloonRef.current());
+      infoWindowRef.current = new window.google.maps.InfoWindow({
+        headerDisabled: true,
+        disableAutoPan: true,
+      });
     }
     const infoWindow = infoWindowRef.current;
 
@@ -730,13 +786,13 @@ function GoogleMapPanel({
   );
 }
 
-// Conteúdo do balão do mapa: identidade do item (tipo + nome + ícone), os campos
-// que o identificam em campo e o atalho para o detalhe completo. O detalhe mora
-// no módulo dono da entidade — aqui é só o cartão de visita.
+// Conteúdo do balão de preview: identidade do item (tipo + nome + ícone) e os
+// campos que o identificam em campo. Puro cartão de visita, sem ação — o
+// detalhe completo mora no painel aberto por clique (ver GeoDetailPanel).
 function MapBalloonCard({ balloon }: { balloon: MapBalloon }) {
   return (
-    <div className="w-[244px] pb-1 pl-1 pt-1">
-      <div className="flex items-start gap-2.5 pr-5">
+    <div className="w-[240px] p-1">
+      <div className="flex items-start gap-2.5">
         <img src={balloon.iconUrl} alt="" className="mt-0.5 h-8 w-8 shrink-0" />
         <div className="min-w-0">
           <div className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
@@ -758,10 +814,6 @@ function MapBalloonCard({ balloon }: { balloon: MapBalloon }) {
           ))}
         </dl>
       ) : null}
-
-      <button type="button" onClick={balloon.onAction} className="geo-btn primary mt-3 w-full justify-center">
-        {balloon.actionLabel}
-      </button>
     </div>
   );
 }
@@ -834,8 +886,13 @@ function GoogleAutocompleteBridge({ onAddress }: { onAddress: (address: DraftAdd
   return null;
 }
 
-function SiteDetailModal({
-  site,
+// Painel de detalhe do item selecionado (Site ou Recurso) — dock deslizante à
+// esquerda no desktop (cobre a hierarquia) e bottom sheet arrastável no mobile.
+// Nasce do clique na árvore ou no mapa (ver selectNode em GeoPage), nunca de um
+// modal: o Google Maps também abre o detalhe do lugar como painel, não popup.
+function GeoDetailPanel({
+  isMobile,
+  target,
   tab,
   sites,
   specById,
@@ -848,7 +905,8 @@ function SiteDetailModal({
   onChanged,
   onCreateSubSite,
 }: {
-  site: GeoSite;
+  isMobile: boolean;
+  target: DetailTarget;
   tab: DetailTab;
   sites: GeoSite[];
   specById: Map<string, GeoSpec>;
@@ -861,10 +919,106 @@ function SiteDetailModal({
   onChanged: () => Promise<void>;
   onCreateSubSite: () => void;
 }) {
+  const eyebrow =
+    target.kind === 'site'
+      ? `Site · ${specById.get(target.site.siteSpecificationId)?.name ?? 'Tipo não informado'}`
+      : target.node.sublabel ?? resourceIconFor(target.node.resourceType ?? '').label;
+  const title = target.kind === 'site' ? target.site.name : target.node.label;
+
+  const body =
+    target.kind === 'site' ? (
+      <SiteDetailBody
+        site={target.site}
+        tab={tab}
+        sites={sites}
+        specById={specById}
+        siteById={siteById}
+        events={events}
+        onTab={onTab}
+        onOpenSite={onOpenSite}
+        onOpenResource={onOpenResource}
+        onChanged={onChanged}
+        onCreateSubSite={onCreateSubSite}
+      />
+    ) : (
+      <ResourceDetailBody node={target.node} onOpenResource={onOpenResource} />
+    );
+
+  const header = (
+    <div className="flex items-center gap-2 border-b border-app-border px-3 py-3">
+      <button
+        type="button"
+        onClick={onClose}
+        className="shrink-0 rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
+        aria-label="Voltar para a hierarquia"
+      >
+        <ChevronLeft className="h-5 w-5" />
+      </button>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+          {eyebrow}
+        </div>
+        <h3 className="truncate font-display text-[1.05rem] font-semibold leading-tight text-app-text">{title}</h3>
+      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        className="shrink-0 rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
+        aria-label="Fechar detalhe"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+
+  if (isMobile) {
+    return (
+      <BottomSheet header={header} onClose={onClose}>
+        <div className="px-4 py-3">{body}</div>
+      </BottomSheet>
+    );
+  }
+
+  return (
+    <div className="absolute inset-y-0 left-0 z-40 flex w-[360px] max-w-[85vw] flex-col border-r border-app-border bg-app-panel shadow-soft-lg">
+      {header}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">{body}</div>
+    </div>
+  );
+}
+
+// Corpo do detalhe de um Site: abas de visão geral, sub-locais, recursos
+// hospedados, topologia e ciclo de vida. Extraído do antigo modal — o cabeçalho
+// (título/eyebrow/fechar) agora é responsabilidade do GeoDetailPanel.
+function SiteDetailBody({
+  site,
+  tab,
+  sites,
+  specById,
+  siteById,
+  events,
+  onTab,
+  onOpenSite,
+  onOpenResource,
+  onChanged,
+  onCreateSubSite,
+}: {
+  site: GeoSite;
+  tab: DetailTab;
+  sites: GeoSite[];
+  specById: Map<string, GeoSpec>;
+  siteById: Map<string, GeoSite>;
+  events: GeoEvent[];
+  onTab: (tab: DetailTab) => void;
+  onOpenSite: (site: GeoSite) => void;
+  onOpenResource: (resourceId: string) => void;
+  onChanged: () => Promise<void>;
+  onCreateSubSite: () => void;
+}) {
   const spec = specById.get(site.siteSpecificationId);
   const { address, point } = useSitePlace(site);
   // O conteúdo do local vem do mesmo endpoint que alimenta a árvore, e só quando
-  // o modal abre: sub-locais e recursos hospedados são os filhos diretos dele.
+  // o painel abre: sub-locais e recursos hospedados são os filhos diretos dele.
   const { subSites, resources } = useSiteChildren(site.id);
   const [relationshipTarget, setRelationshipTarget] = useState('');
   const [relationshipType, setRelationshipType] = useState('fedBy');
@@ -885,7 +1039,7 @@ function SiteDetailModal({
   };
 
   return (
-    <Modal onClose={onClose} title={site.name} eyebrow={`Site · ${spec?.name ?? 'Tipo nao informado'}`} wide>
+    <>
       {/* Sub-locais e Recursos levam contador: eles são a única porta de entrada
           para o que saiu da árvore, então o número precisa ser visível de fora. */}
       <div className="mb-4 flex flex-wrap gap-2 border-b border-app-border pb-3">
@@ -997,8 +1151,114 @@ function SiteDetailModal({
       {tab === 'resources' ? (
         <SiteResourcesTab resources={resources} onOpenResource={onOpenResource} />
       ) : null}
-    </Modal>
+    </>
   );
+}
+
+// Detalhe leve de um recurso (OLT, CTO, porta, cabo…): os campos que o
+// identificam em campo, os recursos que moram dentro dele (ex.: portas de uma
+// placa) e o atalho para o módulo Recursos, dono do cadastro completo. A
+// fronteira Geo × Resource (C3) fica preservada — aqui é referência, não edição.
+function ResourceDetailBody({
+  node,
+  onOpenResource,
+}: {
+  node: GeoTreeNode;
+  onOpenResource: (resourceId: string) => void;
+}) {
+  const icon = resourceIconFor(node.resourceType ?? '');
+  const status = statusLabel[(node.status as GeoStatus) ?? 'active'];
+  const { children, loading } = useResourceChildren(node);
+
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-3 md:grid-cols-2">
+        <Info label="Tipo" value={icon.label} />
+        <Info label="Status" value={status} />
+        <Info label="Endereço" value={node.detail?.address ?? 'Sem endereço'} />
+        {node.detail?.model ? <Info label="Modelo" value={node.detail.model} /> : null}
+        {node.detail?.manufacturer ? <Info label="Fabricante" value={node.detail.manufacturer} /> : null}
+        {node.detail?.serialNumber ? <Info label="Nº de série" value={node.detail.serialNumber} mono /> : null}
+      </div>
+
+      {node.hasChildren ? (
+        <section>
+          <h4 className="mb-2 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+            Recursos internos · {children.length}
+          </h4>
+          {children.length ? (
+            <div className="grid gap-2">
+              {children.map((child) => (
+                <button
+                  key={child.id}
+                  type="button"
+                  onClick={() => (child.refId ? onOpenResource(child.refId) : undefined)}
+                  className="flex w-full items-center gap-3 rounded-[18px] border border-app-border px-4 py-2.5 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
+                >
+                  <ResourceIcon resource={child.resourceType ?? ''} variant="badge" size={26} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[0.9rem] font-semibold text-app-text">{child.label}</span>
+                    <span className="block truncate text-[0.78rem] text-app-muted">
+                      {[resourceIconFor(child.resourceType ?? '').label, child.detail?.model, child.detail?.serialNumber]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">Abrir</span>
+                </button>
+              ))}
+            </div>
+          ) : loading ? (
+            <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
+              Carregando recursos internos…
+            </div>
+          ) : (
+            <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
+              Nenhum recurso interno registrado.
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={() => (node.refId ? onOpenResource(node.refId) : undefined)}
+        className="geo-btn primary w-full justify-center"
+      >
+        Abrir no módulo Recursos
+      </button>
+    </div>
+  );
+}
+
+// Filhos diretos de um recurso (ex.: portas de uma placa, fibras de um cabo).
+// Só busca quando o próprio nó diz ter filhos — a maioria dos recursos é folha,
+// e não vale a pena um round-trip por nada.
+function useResourceChildren(node: GeoTreeNode): { children: GeoTreeNode[]; loading: boolean } {
+  const [nodes, setNodes] = useState<GeoTreeNode[]>([]);
+  const [loading, setLoading] = useState(node.hasChildren);
+
+  useEffect(() => {
+    let cancelled = false;
+    setNodes([]);
+    if (!node.hasChildren) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    void fetchTreeChildren(node.id)
+      .then((page) => {
+        if (cancelled) return;
+        setNodes(page.nodes);
+        setLoading(false);
+      })
+      .catch(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [node.id, node.hasChildren]);
+
+  return { children: nodes, loading };
 }
 
 // Recursos hospedados no local, agrupados por planta. É aqui que vive tudo que

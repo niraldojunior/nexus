@@ -11,6 +11,7 @@ export type HierarchySidebarProps = {
   selectedNodeId: string | null;
   onSelect: (node: GeoTreeNode) => void;
   onOpenTypes: () => void;
+  onHover?: (node: GeoTreeNode | null) => void;
 };
 
 type HierView = 'tree' | 'combos';
@@ -20,7 +21,7 @@ type HierView = 'tree' | 'combos';
  * Duas abas internas: Árvore e Combos. Persistente e colapsável; dirige a
  * seleção no mapa.
  */
-export function HierarchySidebar({ tree, selectedNodeId, onSelect, onOpenTypes }: HierarchySidebarProps) {
+export function HierarchySidebar({ tree, selectedNodeId, onSelect, onOpenTypes, onHover }: HierarchySidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [view, setView] = useState<HierView>('tree');
   const isMobile = useIsMobile();
@@ -109,6 +110,7 @@ export function HierarchySidebar({ tree, selectedNodeId, onSelect, onOpenTypes }
               onSelect={handleSelect}
               onToggle={tree.toggle}
               onLoadMore={tree.loadMore}
+              onHover={onHover}
             />
           ) : (
             <HierarchyComboView

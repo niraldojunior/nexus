@@ -291,6 +291,168 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
   assert.equal(missingNode.statusCode, 400);
 });
 
+test('Geo tree viewport serves passive infra by bounding box, independent of hierarchy state', async (t) => {
+  const database = createTestDatabase();
+  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const port = await server.start();
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
+
+  const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
+
+  const resourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
+    name: 'CDOE 1:8',
+    category: 'Infrastructure.Passive',
+    resourceType: 'CTO',
+  });
+
+  // Caixa pontual e cabo (LineString) nunca expandidos na árvore — o viewport
+  // precisa achá-los só pela geometria, não por nó pai carregado.
+  const boxPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
+    geometryType: 'Point',
+    geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
+  });
+  const box = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
+    '@type': 'PhysicalResource',
+    name: 'CDOE-1108',
+    resourceSpecificationId: idOf(resourceSpec),
+    placeId: idOf(boxPlace),
+    placeType: 'GeographicLocation',
+  });
+  assert.equal(box.statusCode, 201);
+
+  const cablePlace = await requestJson(port, 'POST', '/v1/geo/locations', {
+    geometryType: 'LineString',
+    geometry: {
+      type: 'LineString',
+      coordinates: [
+        [-43.109, -22.908],
+        [-43.107, -22.906],
+      ],
+    },
+  });
+  const cable = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
+    '@type': 'PhysicalResource',
+    name: 'Cabo Primário 01',
+    resourceSpecificationId: idOf(resourceSpec),
+    placeId: idOf(cablePlace),
+    placeType: 'GeographicLocation',
+  });
+  assert.equal(cable.statusCode, 201);
+
+  // Bbox que cobre a região de Icaraí: caixa e cabo voltam, sem expandir nada antes.
+  const insideBbox = await requestJson(
+    port,
+    'GET',
+    '/v1/geo/tree/viewport?minLng=-43.12&minLat=-22.92&maxLng=-43.10&maxLat=-22.90',
+  );
+  assert.equal(insideBbox.statusCode, 200);
+  const insideNodes = insideBbox.body as Array<Record<string, any>>;
+  assert.deepEqual(
+    insideNodes.map((item) => item.label).sort(),
+    ['CDOE-1108', 'Cabo Primário 01'],
+  );
+
+  // Bbox longe da região: nada volta.
+  const outsideBbox = await requestJson(
+    port,
+    'GET',
+    '/v1/geo/tree/viewport?minLng=-43.30&minLat=-23.00&maxLng=-43.25&maxLat=-22.95',
+  );
+  assert.equal(outsideBbox.statusCode, 200);
+  assert.deepEqual(outsideBbox.body, []);
+
+  const missingBounds = await requestJson(port, 'GET', '/v1/geo/tree/viewport?minLng=-43.12');
+  assert.equal(missingBounds.statusCode, 400);
+});
+
+test('Geo tree search finds stations and resources by name, but never sub-sites', async (t) => {
+  const database = createTestDatabase();
+  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const port = await server.start();
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
+
+  const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
+
+  const siteSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+    name: 'Central de Icaraí',
+    category: 'Site',
+  });
+  const subSiteSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+    name: 'Sala Técnica',
+    category: 'SubSite',
+  });
+  const address = await requestJson(port, 'POST', '/v1/geo/addresses', {
+    street: 'Rua Belisário Augusto',
+    city: 'Niterói',
+    stateOrProvince: 'RJ',
+    country: 'BR',
+  });
+  const location = await requestJson(port, 'POST', '/v1/geo/locations', {
+    geometryType: 'Point',
+    geometry: { type: 'Point', coordinates: [-43.107, -22.906] },
+  });
+  const station = await requestJson(port, 'POST', '/v1/geo/sites', {
+    name: 'Estação Icaraí Central',
+    siteSpecificationId: idOf(siteSpec),
+    addressId: idOf(address),
+    placeId: idOf(location),
+    status: 'active',
+  });
+  assert.equal(station.statusCode, 201);
+
+  // Sala é SubSite (interior da estação) — nunca deve voltar na busca (C2/§9 do
+  // AGENTS.md: o usuário só pesquisa locais e recursos, não salas/andares).
+  const room = await requestJson(port, 'POST', '/v1/geo/sites', {
+    name: 'Sala Icaraí Técnica',
+    siteSpecificationId: idOf(subSiteSpec),
+    parentSiteId: idOf(station),
+    status: 'active',
+  });
+  assert.equal(room.statusCode, 201);
+
+  const resourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
+    name: 'CDOE 1:8',
+    category: 'Infrastructure.Passive',
+    resourceType: 'CTO',
+  });
+  const boxPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
+    geometryType: 'Point',
+    geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
+  });
+  const box = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
+    '@type': 'PhysicalResource',
+    name: 'CDOE Icaraí 08',
+    resourceSpecificationId: idOf(resourceSpec),
+    placeId: idOf(boxPlace),
+    placeType: 'GeographicLocation',
+  });
+  assert.equal(box.statusCode, 201);
+
+  const search = await requestJson(port, 'GET', '/v1/geo/tree/search?q=icara');
+  assert.equal(search.statusCode, 200);
+  const results = search.body as Array<Record<string, any>>;
+  assert.deepEqual(
+    results.map((item) => item.label).sort(),
+    ['CDOE Icaraí 08', 'Estação Icaraí Central'],
+  );
+  assert.equal(
+    results.some((item) => item.label === 'Sala Icaraí Técnica'),
+    false,
+  );
+
+  const noMatch = await requestJson(port, 'GET', '/v1/geo/tree/search?q=zzz-nao-existe');
+  assert.deepEqual(noMatch.body, []);
+
+  const emptyTerm = await requestJson(port, 'GET', '/v1/geo/tree/search?q=');
+  assert.deepEqual(emptyTerm.body, []);
+});
+
 test('App exposes health without auth and protected routes reject missing token', async (t) => {
   const database = createTestDatabase();
   const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });

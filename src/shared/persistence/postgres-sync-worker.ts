@@ -528,6 +528,16 @@ const MIGRATIONS_SQL = `
   CREATE INDEX IF NOT EXISTS idx_tmf_logical_resource_place ON tmf_logical_resource(place_id);
   CREATE INDEX IF NOT EXISTS idx_tmf_logical_resource_type ON tmf_logical_resource(resource_type);
   CREATE INDEX IF NOT EXISTS idx_tmf_logical_resource_name ON tmf_logical_resource(name);
+
+  -- Índice de expressão para a busca de infra passiva por bbox do mapa (GeoTreeService
+  -- .resourcesInViewport). Sem ele, cada consulta de viewport faz seq scan de toda a
+  -- tmf_geographic_location parseando o GeoJSON linha a linha (~175 s com dezenas de
+  -- milhares de recursos). Parcial em Point porque só pontos filtram por coordenada direta.
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_location_point_lnglat
+    ON tmf_geographic_location (
+      ((geometry::jsonb->'coordinates'->>0)::float8),
+      ((geometry::jsonb->'coordinates'->>1)::float8)
+    ) WHERE geometry_type = 'Point';
 `;
 
 const SCHEMA_SQL = `

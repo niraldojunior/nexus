@@ -5,8 +5,10 @@
 // cada expansão busca no servidor apenas os filhos diretos do nó clicado.
 //
 // Duas saídas alimentam a tela: `rows` (as linhas visíveis, já achatadas e
-// indentadas) e `mapNodes` (o que vai para o mapa). Estações sempre aparecem no
-// mapa, mesmo com o ramo fechado na árvore; recursos e cabos seguem a expansão.
+// indentadas) e `mapNodes` (as Estações, que servem de âncora sempre visível no
+// mapa). Recursos e cabos (infra passiva) não vêm mais daqui — GeoPage os busca
+// pela região visível do mapa (ver fetchViewportResources em geoTreeApi.ts),
+// independente do que está aberto na árvore.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -135,19 +137,13 @@ export function useGeoTree(): GeoTree {
     [state, expandedRows, loadingNodes],
   );
 
-  const mapNodes = useMemo(() => {
-    const byId = new Map<string, GeoTreeNode>();
-    // Estações sempre no mapa: todas já vieram na resposta de raízes, independente
-    // do que está aberto na árvore.
-    for (const node of Object.values(state.nodesById)) {
-      if (node.kind === 'site' && node.geometry) byId.set(node.id, node);
-    }
-    // Recursos e cabos seguem a árvore: só aparecem quando o ramo está aberto.
-    for (const row of rows) {
-      if (row.node.geometry) byId.set(row.node.id, row.node);
-    }
-    return [...byId.values()];
-  }, [state.nodesById, rows]);
+  // Estações sempre no mapa: todas já vieram na resposta de raízes, independente
+  // do que está aberto na árvore. Infra passiva (recursos e cabos) não entra mais
+  // aqui — vem do viewport do mapa, buscada em GeoPage.
+  const mapNodes = useMemo(
+    () => Object.values(state.nodesById).filter((node) => node.kind === 'site' && node.geometry),
+    [state.nodesById],
+  );
 
   const toggle = useCallback(
     (row: GeoTreeRow) => {

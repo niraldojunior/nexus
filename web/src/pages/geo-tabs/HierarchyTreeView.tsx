@@ -157,7 +157,7 @@ function TreeRow({
   );
 }
 
-function NodeIcon({ node }: { node: GeoTreeNode }) {
+export function NodeIcon({ node }: { node: GeoTreeNode }) {
   // Recurso leva o ícone do seu tipo — o mesmo desenho do pin no mapa, para o
   // olho ligar árvore e mapa sem legenda.
   if (node.kind === 'resource') {

@@ -64,6 +64,35 @@ export const fetchTreeChildren = (
   return getJson<GeoTreeChildrenPage>(`/v1/geo/tree/children?${params.toString()}`);
 };
 
+export type MapBounds = { minLng: number; minLat: number; maxLng: number; maxLat: number };
+
+// Infra passiva (recursos + cabos) dentro da região visível do mapa — usada em escala de
+// detalhe (≤ 200 m), no lugar da expansão da árvore de Hierarquia.
+export const fetchViewportResources = (
+  bounds: MapBounds,
+  options: { limit?: number } = {},
+): Promise<GeoTreeNode[]> => {
+  const params = new URLSearchParams({
+    minLng: String(bounds.minLng),
+    minLat: String(bounds.minLat),
+    maxLng: String(bounds.maxLng),
+    maxLat: String(bounds.maxLat),
+  });
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  return getJson<GeoTreeNode[]>(`/v1/geo/tree/viewport?${params.toString()}`);
+};
+
+// Busca por nome para a barra de pesquisa — Estações e Recursos do inventário (nunca
+// sub-locais/salas). Devolve nós de árvore, então o resultado se seleciona e desenha
+// exatamente como qualquer outro nó (ver selectNode em GeoPage).
+export const fetchTreeSearch = (q: string, options: { limit?: number } = {}): Promise<GeoTreeNode[]> => {
+  const term = q.trim();
+  if (!term) return Promise.resolve([]);
+  const params = new URLSearchParams({ q: term });
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  return getJson<GeoTreeNode[]>(`/v1/geo/tree/search?${params.toString()}`);
+};
+
 // Ponto que representa o nó no mapa. Um cabo não é um ponto: sua geometria é a
 // rota inteira, e o ponto usado para centralizar e ancorar o balão é o vértice
 // do meio dela.

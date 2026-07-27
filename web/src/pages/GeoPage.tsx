@@ -1,12 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  ChevronLeft,
-  Plus,
-  RefreshCw,
-  Search,
-  X,
-} from 'lucide-react';
+import { ChevronLeft, Plus, X } from 'lucide-react';
 import type {
   GeoStatus,
   GeoLocation,
@@ -19,10 +13,19 @@ import { getJson, postJson, patchJson } from '../services/geoApi';
 import { siteKindFromSpec, siteKindLabel, formatAddress } from '../utils/placeLabel';
 import {
   fetchTreeChildren,
+  fetchViewportResources,
   treeNodePoint,
   treeNodeRoute,
   type GeoTreeNode,
+  type MapBounds,
 } from '../services/geoTreeApi';
+import { GOOGLE_MAPS_KEY, loadGoogleMaps, reverseGeocode, type DraftAddress } from '../utils/googleMaps';
+import {
+  mapScaleMeters,
+  readGoogleScaleMeters,
+  PASSIVE_INFRA_MAX_SCALE_METERS,
+  MARKER_CLUSTER_MIN_SCALE_METERS,
+} from '../utils/mapScale';
 import { useGeoTree } from '../hooks/useGeoTree';
 import { useIsMobile } from '../hooks/useIsMobile';
 import {
@@ -33,29 +36,11 @@ import {
   type ResourcePlant,
 } from '../utils/resourceIcon';
 import { ResourceIcon } from '../components/ResourceIcon';
-import { siteIconDataUrl, siteIconFor } from '../utils/siteIcon';
+import { selectionPinDataUrl, siteIconDataUrl, siteIconFor, SELECTION_PIN_ASPECT } from '../utils/siteIcon';
 import { useNavigation } from '../hooks/useNavigation';
-import { GuidedSignupModal, HierarchySidebar } from './geo-tabs';
+import { GeoSearchBar, GuidedSignupModal, HierarchySidebar } from './geo-tabs';
 import { BottomSheet } from '../components/BottomSheet';
 import { MarkerClusterer } from '@googlemaps/markerclusterer';
-
-declare global {
-  interface Window {
-    google?: any;
-    __nexusGoogleMapsPromise?: Promise<void>;
-  }
-}
-
-type DraftAddress = {
-  street: string;
-  streetNr?: string;
-  city?: string;
-  stateOrProvince?: string;
-  postcode?: string;
-  country: string;
-  coordinates: [number, number];
-  label: string;
-};
 
 type DetailTab = 'overview' | 'subsites' | 'topology' | 'lifecycle' | 'resources';
 
@@ -81,8 +66,6 @@ type MapBalloon = {
 // corpo que sabe montar a partir dele (ver SiteDetailBody/ResourceDetailBody).
 type DetailTarget = { kind: 'site'; site: GeoSite } | { kind: 'resource'; node: GeoTreeNode };
 
-const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
-
 // Lado do ícone de equipamento no mapa, em px. Um pouco menor que o pin de site
 // para o equipamento não competir com o local que o contém.
 const MARKER_ICON_SIZE = 26;
@@ -98,6 +81,11 @@ const SITE_MARKER_Z = 500;
 
 // A rota do cabo fica abaixo de todos os pins — é o fundo por onde a rede passa.
 const CABLE_ROUTE_Z = 10;
+
+// O alfinete de seleção fica acima de tudo: precisa vencer local e recurso, que já
+// crescem quando selecionados.
+const SELECTION_PIN_Z = 2000;
+const SELECTION_PIN_HEIGHT = 44;
 
 // Espessura por hierarquia da planta: o feeder é o tronco, o drop é o capilar.
 const CABLE_STROKE_WEIGHT: Record<string, number> = {
@@ -144,6 +132,11 @@ export default function GeoPage() {
   const [typeOpen, setTypeOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
+  // Colapso da hierarquia, hoisted de HierarchySidebar: precisa viver aqui para a
+  // barra de pesquisa decidir se flutua sobre o mapa ou fica dentro da doca (ver
+  // dockPanelOpen), e para não mudar quando o detalhe abre/fecha por cima dela —
+  // é isso que faz a hierarquia "lembrar" o estado de antes ao fechar o detalhe.
+  const [hierarchyCollapsed, setHierarchyCollapsed] = useState(false);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -154,9 +147,59 @@ export default function GeoPage() {
   const [selectedNode, setSelectedNode] = useState<GeoTreeNode | null>(null);
   const [hoverKey, setHoverKey] = useState<string | null>(null);
 
+  // Infra passiva (recursos + cabos) da região visível do mapa — some acima de
+  // PASSIVE_INFRA_MAX_SCALE_METERS (200 m) e é buscada por bbox, não pela árvore.
+  const [viewportInfra, setViewportInfra] = useState<GeoTreeNode[]>([]);
+  const [scaleMeters, setScaleMeters] = useState<number | null>(null);
+  const viewportFetchTokenRef = useRef(0);
+  const viewportDebounceRef = useRef<number | undefined>(undefined);
+  const lastViewportKeyRef = useRef<string | null>(null);
+
+  // Chamado pelo mapa a cada `idle` (fim de pan/zoom) com os limites e a escala atuais.
+  // Debounced e deduplicado por bbox arredondado, para não disparar uma busca a cada
+  // frame de arraste — só quando o usuário para de mexer no mapa.
+  const handleViewportChange = useCallback((bounds: MapBounds, meters: number) => {
+    setScaleMeters(meters);
+    if (viewportDebounceRef.current !== undefined) {
+      window.clearTimeout(viewportDebounceRef.current);
+      viewportDebounceRef.current = undefined;
+    }
+    if (meters > PASSIVE_INFRA_MAX_SCALE_METERS) {
+      lastViewportKeyRef.current = null;
+      setViewportInfra([]);
+      return;
+    }
+    const key = [bounds.minLng, bounds.minLat, bounds.maxLng, bounds.maxLat]
+      .map((value) => value.toFixed(4))
+      .join(',');
+    if (key === lastViewportKeyRef.current) return;
+    viewportDebounceRef.current = window.setTimeout(() => {
+      lastViewportKeyRef.current = key;
+      const token = ++viewportFetchTokenRef.current;
+      void fetchViewportResources(bounds)
+        .then((resources) => {
+          if (viewportFetchTokenRef.current === token) setViewportInfra(resources);
+        })
+        .catch(() => {
+          if (viewportFetchTokenRef.current === token) setViewportInfra([]);
+        });
+    }, 250);
+  }, []);
+
   const tree = useGeoTree();
   const isMobile = useIsMobile();
   const { navParams, clearNav, goToResource } = useNavigation();
+
+  // Infra passiva só entra quando a escala está em ≤ 200 m; Estações (tree.mapNodes)
+  // continuam sempre visíveis, ramo aberto ou não.
+  const passiveInfraVisible = scaleMeters !== null && scaleMeters <= PASSIVE_INFRA_MAX_SCALE_METERS;
+  const mapNodes = useMemo(
+    () => (passiveInfraVisible ? [...tree.mapNodes, ...viewportInfra] : tree.mapNodes),
+    [tree.mapNodes, viewportInfra, passiveInfraVisible],
+  );
+  // Só agrupa acima de 100 m; em ≤ 100 m cada ponto é um ícone individual. Escala ainda
+  // desconhecida (antes do primeiro idle) agrupa por segurança — geralmente é vista aberta.
+  const clusterMarkers = (scaleMeters ?? Infinity) > MARKER_CLUSTER_MIN_SCALE_METERS;
 
   const specById = useMemo(() => new Map(specs.map((item) => [item.id, item])), [specs]);
   const siteById = useMemo(() => new Map(sites.map((item) => [item.id, item])), [sites]);
@@ -170,20 +213,6 @@ export default function GeoPage() {
     if (selectedResourceNode) return { kind: 'resource', node: selectedResourceNode };
     return null;
   }, [selectedSite, selectedResourceNode]);
-  const [searching, setSearching] = useState(false);
-
-  const runAddressSearch = useCallback(async () => {
-    const term = query.trim();
-    if (!term) return;
-    setSearching(true);
-    try {
-      const address = await geocodeAddress(term);
-      if (address) setDraftAddress(address);
-    } finally {
-      setSearching(false);
-    }
-  }, [query]);
-
   // Catálogo de locais: sites e tipos são dezenas de linhas e alimentam os modais
   // de cadastro e detalhe. O acervo pesado (endereços, geometrias e a planta
   // inteira) não vem mais por aqui — cada nó da árvore traz a sua geometria, e o
@@ -224,6 +253,7 @@ export default function GeoPage() {
       if (site) {
         setSelectedNode(siteNodeOf(site));
         setDetailOpen(true);
+        setQuery(site.name);
         clearNav();
       }
     }
@@ -245,12 +275,25 @@ export default function GeoPage() {
       if (node.kind === 'site' || node.kind === 'resource') {
         setDetailTab('overview');
         setDetailOpen(true);
+        // Nome do item vai para a barra de pesquisa — tal como se o usuário tivesse
+        // pesquisado por ele (ver GeoSearchBar).
+        setQuery(node.label);
       } else {
         setDetailOpen(false);
       }
     },
     [tree],
   );
+
+  // Clique fora de qualquer item (vazio do mapa) com uma seleção ativa: tira o
+  // alfinete e fecha o detalhe, igual ao Google Maps. A hierarquia reaparece
+  // sozinha — seu colapso não é tocado por seleção/deseleção (ver selectNode).
+  const onDeselect = useCallback(() => {
+    setSelectedNode(null);
+    setDetailOpen(false);
+    setDraftAddress(null);
+    setQuery('');
+  }, []);
 
   // Some quando o mouse sai do item; sem atraso perceptível, mas absorve o
   // instante entre uma linha da árvore e a próxima para o balão não piscar.
@@ -271,6 +314,7 @@ export default function GeoPage() {
     setSelectedNode(siteNodeOf(site));
     setDetailTab(tab);
     setDetailOpen(true);
+    setQuery(site.name);
   };
 
   // Monta o conteúdo do balão de preview a partir do nó sob o mouse. Fica aqui,
@@ -278,7 +322,7 @@ export default function GeoPage() {
   // tipo de item. Puro cartão de visita — tipo, endereço, status e modelo — sem
   // ação: quem abre o detalhe é o clique, não o hover.
   const balloon = useMemo<MapBalloon | null>(() => {
-    const node = tree.mapNodes.find((item) => item.id === hoverKey) ?? null;
+    const node = mapNodes.find((item) => item.id === hoverKey) ?? null;
     if (!node || !hoverKey) return null;
     // O painel de detalhe já mostra tipo/endereço/status do mesmo item — o
     // balão por cima seria redundante enquanto ele está aberto.
@@ -327,7 +371,7 @@ export default function GeoPage() {
       title: node.label,
       rows,
     };
-  }, [detailOpen, hoverKey, selectedNode?.id, tree.mapNodes]);
+  }, [detailOpen, hoverKey, selectedNode?.id, mapNodes]);
 
   // Esc fecha o painel de detalhe — mas só quando nenhum outro modal está
   // aberto, senão a tecla fecharia os dois de uma vez.
@@ -350,14 +394,6 @@ export default function GeoPage() {
         ) : null}
 
         <div className="relative flex h-full min-h-0">
-            <HierarchySidebar
-              tree={tree}
-              selectedNodeId={selectedNode?.id ?? null}
-              onSelect={selectNode}
-              onHover={handleHover}
-              onOpenTypes={() => setTypeOpen(true)}
-            />
-
             {detailOpen && detailTarget ? (
               <GeoDetailPanel
                 isMobile={isMobile}
@@ -370,7 +406,7 @@ export default function GeoPage() {
                 onTab={setDetailTab}
                 onOpenSite={(next) => openDetail(next, 'overview')}
                 onOpenResource={goToResource}
-                onClose={() => setDetailOpen(false)}
+                onClose={onDeselect}
                 onChanged={async () => {
                   if (!selectedSite) return;
                   await loadGeo();
@@ -381,12 +417,44 @@ export default function GeoPage() {
                   setDetailOpen(false);
                   setCreateOpen(true);
                 }}
+                searchBar={
+                  isMobile ? null : (
+                    <GeoSearchBar
+                      variant="panel"
+                      query={query}
+                      onQueryChange={setQuery}
+                      onSelectNode={selectNode}
+                      onSelectAddress={setDraftAddress}
+                    />
+                  )
+                }
               />
-            ) : null}
+            ) : (
+              <HierarchySidebar
+                tree={tree}
+                selectedNodeId={selectedNode?.id ?? null}
+                onSelect={selectNode}
+                onHover={handleHover}
+                onOpenTypes={() => setTypeOpen(true)}
+                collapsed={hierarchyCollapsed}
+                onCollapsedChange={setHierarchyCollapsed}
+                searchBar={
+                  isMobile || hierarchyCollapsed ? null : (
+                    <GeoSearchBar
+                      variant="panel"
+                      query={query}
+                      onQueryChange={setQuery}
+                      onSelectNode={selectNode}
+                      onSelectAddress={setDraftAddress}
+                    />
+                  )
+                }
+              />
+            )}
 
             <div className="relative min-h-0 flex-1">
             <GoogleMapPanel
-          nodes={tree.mapNodes}
+          nodes={mapNodes}
           selectedNodeId={selectedNode?.id ?? null}
           draftAddress={draftAddress}
           focusPoint={focusPoint}
@@ -395,48 +463,21 @@ export default function GeoPage() {
           onHoverNode={handleHover}
           onCloseBalloon={() => handleHover(null)}
           onDraftAddress={setDraftAddress}
+          onDeselect={onDeselect}
+          onViewportChange={handleViewportChange}
+          clusterMarkers={clusterMarkers}
         />
 
-        <div
-          className={`absolute top-3 z-30 w-[400px] max-w-[calc(100%-1.5rem)] ${
-            isMobile ? 'left-14' : 'left-3'
-          }`}
-        >
-          <div className="flex h-12 items-center rounded-2xl border border-app-border bg-white shadow-soft transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15">
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') void runAddressSearch();
-              }}
-              className="h-full min-w-0 flex-1 rounded-l-2xl bg-transparent pl-4 pr-2 text-[15px] text-app-text placeholder:text-app-muted focus:outline-none"
-              placeholder="Pesquisar no mapa"
-              id="geo-search-input"
-              autoComplete="off"
-            />
-            {query ? (
-              <button
-                type="button"
-                onClick={() => setQuery('')}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-app-muted transition hover:bg-black/5"
-                aria-label="Limpar busca"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            ) : null}
-            <span className="mx-1 h-6 w-px bg-app-border" />
-            <button
-              type="button"
-              onClick={() => void runAddressSearch()}
-              disabled={searching}
-              className="mr-1 flex h-9 w-9 items-center justify-center rounded-full text-[#1a73e8] transition hover:bg-[#1a73e8]/10 disabled:opacity-50"
-              aria-label="Pesquisar endereço"
-            >
-              {searching ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-5 w-5" />}
-            </button>
-          </div>
-          <GoogleAutocompleteBridge onAddress={setDraftAddress} />
-        </div>
+        {isMobile || (!detailOpen && hierarchyCollapsed) ? (
+          <GeoSearchBar
+            variant="floating"
+            isMobile={isMobile}
+            query={query}
+            onQueryChange={setQuery}
+            onSelectNode={selectNode}
+            onSelectAddress={setDraftAddress}
+          />
+        ) : null}
 
         {loading ? (
           <div className="absolute right-5 bottom-5 z-30 rounded-[18px] border border-app-border bg-white/90 px-4 py-3 text-[0.84rem] font-medium text-app-muted shadow-soft backdrop-blur">
@@ -477,9 +518,10 @@ export default function GeoPage() {
   );
 }
 
-// O mapa sempre mostra todas as estações (mesmo com o ramo fechado na árvore).
-// Recursos e cabos seguem a árvore — expandir um ramo traz seus pins, recolher
-// os leva embora.
+// O mapa sempre mostra todas as estações (mesmo com o ramo fechado na árvore). Infra
+// passiva (recursos + cabos) vem de fora, já filtrada por escala/viewport pelo
+// GeoPage — este painel só desenha o que chega em `nodes` e avisa (`onViewportChange`)
+// quando a região visível ou a escala mudam, para o chamador decidir o que buscar.
 function GoogleMapPanel({
   nodes,
   selectedNodeId,
@@ -490,6 +532,9 @@ function GoogleMapPanel({
   onHoverNode,
   onCloseBalloon,
   onDraftAddress,
+  onDeselect,
+  onViewportChange,
+  clusterMarkers,
 }: {
   nodes: GeoTreeNode[];
   selectedNodeId: string | null;
@@ -500,6 +545,9 @@ function GoogleMapPanel({
   onHoverNode: (node: GeoTreeNode | null) => void;
   onCloseBalloon: () => void;
   onDraftAddress: (address: DraftAddress) => void;
+  onDeselect: () => void;
+  onViewportChange: (bounds: MapBounds, scaleMeters: number) => void;
+  clusterMarkers: boolean;
 }) {
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -510,6 +558,7 @@ function GoogleMapPanel({
   const cableRoutesRef = useRef<Map<string, any>>(new Map());
   const clustererRef = useRef<any>(null);
   const draftMarkerRef = useRef<any>(null);
+  const selectionMarkerRef = useRef<any>(null);
   const infoWindowRef = useRef<any>(null);
   // Nó fora da árvore do React: o InfoWindow do Google recebe este elemento como
   // conteúdo e o React desenha dentro dele via portal, mantendo o balão como
@@ -523,6 +572,11 @@ function GoogleMapPanel({
   // versão atual de `onSelectNode` e do nó (que pode ter sido substituído por um refetch da árvore).
   const onSelectNodeRef = useRef(onSelectNode);
   const onHoverNodeRef = useRef(onHoverNode);
+  const onViewportChangeRef = useRef(onViewportChange);
+  // O listener de clique no vazio do mapa também é atado uma única vez — precisa ler
+  // sempre a seleção e o callback de deseleção atuais (ver efeito abaixo).
+  const onDeselectRef = useRef(onDeselect);
+  const selectedNodeIdRef = useRef(selectedNodeId);
   const nodeByIdRef = useRef<Map<string, GeoTreeNode>>(new Map());
   const [mapsReady, setMapsReady] = useState(false);
 
@@ -537,6 +591,18 @@ function GoogleMapPanel({
   useEffect(() => {
     onHoverNodeRef.current = onHoverNode;
   }, [onHoverNode]);
+
+  useEffect(() => {
+    onDeselectRef.current = onDeselect;
+  }, [onDeselect]);
+
+  useEffect(() => {
+    selectedNodeIdRef.current = selectedNodeId;
+  }, [selectedNodeId]);
+
+  useEffect(() => {
+    onViewportChangeRef.current = onViewportChange;
+  }, [onViewportChange]);
 
   useEffect(() => {
     if (!GOOGLE_MAPS_KEY || !mapEl.current) return;
@@ -556,6 +622,13 @@ function GoogleMapPanel({
           // Clique fora de qualquer item: o balão sai. Cliques em marker ou
           // polyline não chegam aqui, então o balão só fecha no vazio do mapa.
           closeBalloonRef.current();
+          // Com uma seleção ativa, o vazio do mapa desseleciona (tira o alfinete e
+          // fecha o detalhe) — igual ao Google Maps. Só sem seleção é que o clique
+          // larga um rascunho de endereço para cadastrar um site novo ali.
+          if (selectedNodeIdRef.current) {
+            onDeselectRef.current();
+            return;
+          }
           const lat = event.latLng.lat();
           const lng = event.latLng.lng();
           reverseGeocode(lat, lng).then((address) => {
@@ -568,6 +641,25 @@ function GoogleMapPanel({
               label: `Ponto selecionado [${lng.toFixed(5)}, ${lat.toFixed(5)}]`,
             });
           });
+        });
+        // `idle` dispara ao fim de todo pan/zoom (não a cada frame) — é aqui que
+        // reportamos a região visível e a escala atual para o chamador decidir se
+        // busca infra passiva por viewport (ver PASSIVE_INFRA_MAX_SCALE_METERS).
+        mapRef.current.addListener('idle', () => {
+          if (!mapRef.current) return;
+          const zoom = mapRef.current.getZoom();
+          const bounds = mapRef.current.getBounds();
+          if (zoom === undefined || zoom === null || !bounds) return;
+          const center = bounds.getCenter();
+          const northEast = bounds.getNorthEast();
+          const southWest = bounds.getSouthWest();
+          // Preferimos o valor exato da barra de escala do Google (o que o usuário vê);
+          // o cálculo por zoom/lat é só fallback se o controle não for encontrado no DOM.
+          const scaleMeters = readGoogleScaleMeters(mapEl.current) ?? mapScaleMeters(zoom, center.lat());
+          onViewportChangeRef.current(
+            { minLng: southWest.lng(), minLat: southWest.lat(), maxLng: northEast.lng(), maxLat: northEast.lat() },
+            scaleMeters,
+          );
         });
         setMapsReady(true);
       })
@@ -667,9 +759,18 @@ function GoogleMapPanel({
     if (!clustererRef.current) {
       clustererRef.current = new MarkerClusterer({ map: mapRef.current });
     }
-    clustererRef.current.clearMarkers();
-    clustererRef.current.addMarkers(activeMarkers);
-  }, [mapsReady, nodes, selectedNodeId]);
+    if (clusterMarkers) {
+      // Acima do limiar de escala: agrupa (clusters azuis). Tira qualquer marker que
+      // estava direto no mapa e deixa o clusterer gerenciar a exibição.
+      for (const marker of activeMarkers) marker.setMap(null);
+      clustererRef.current.clearMarkers();
+      clustererRef.current.addMarkers(activeMarkers);
+    } else {
+      // ≤ 100 m: sem agrupamento — cada ponto é um ícone individual no mapa.
+      clustererRef.current.clearMarkers();
+      for (const marker of activeMarkers) marker.setMap(mapRef.current);
+    }
+  }, [mapsReady, nodes, selectedNodeId, clusterMarkers]);
 
   useEffect(() => {
     if (!mapsReady || !mapRef.current || !draftAddress) return;
@@ -698,6 +799,40 @@ function GoogleMapPanel({
     const [lng, lat] = focusPoint;
     mapRef.current.panTo({ lng, lat });
   }, [focusPoint, mapsReady]);
+
+  // Alfinete do item selecionado — marca sem ambiguidade o que foi clicado por
+  // último (árvore, mapa ou busca), distinto do "+" de rascunho e do pin do
+  // Google. `clickable: false` deixa o clique passar para o marker do próprio
+  // objeto por baixo (reseleção idempotente) em vez de o alfinete capturá-lo.
+  useEffect(() => {
+    if (!mapsReady || !mapRef.current) return;
+    const node = selectedNodeId ? nodeByIdRef.current.get(selectedNodeId) : undefined;
+    const point = node ? treeNodePoint(node) : null;
+    if (!point) {
+      selectionMarkerRef.current?.setMap(null);
+      selectionMarkerRef.current = null;
+      return;
+    }
+    const [lng, lat] = point;
+    const width = Math.round(SELECTION_PIN_HEIGHT * SELECTION_PIN_ASPECT);
+    const iconOptions = {
+      url: selectionPinDataUrl(SELECTION_PIN_HEIGHT),
+      scaledSize: new window.google.maps.Size(width, SELECTION_PIN_HEIGHT),
+      anchor: new window.google.maps.Point(width / 2, SELECTION_PIN_HEIGHT),
+    };
+    if (selectionMarkerRef.current) {
+      selectionMarkerRef.current.setPosition({ lng, lat });
+      selectionMarkerRef.current.setIcon(iconOptions);
+    } else {
+      selectionMarkerRef.current = new window.google.maps.Marker({
+        map: mapRef.current,
+        position: { lng, lat },
+        icon: iconOptions,
+        zIndex: SELECTION_PIN_Z,
+        clickable: false,
+      });
+    }
+  }, [mapsReady, selectedNodeId, nodes]);
 
   // Rota dos cabos. Um cabo não é um ponto: sua geometria é uma LineString com o traçado real na
   // rua, então vira polyline em vez de pin. Reusada por id pelo mesmo motivo dos marcadores.
@@ -865,31 +1000,11 @@ function FallbackMap({
   );
 }
 
-function GoogleAutocompleteBridge({ onAddress }: { onAddress: (address: DraftAddress) => void }) {
-  useEffect(() => {
-    const input = document.getElementById('geo-search-input') as HTMLInputElement | null;
-    if (!GOOGLE_MAPS_KEY || !input) return;
-    void loadGoogleMaps(GOOGLE_MAPS_KEY).then(() => {
-      const autocomplete = new window.google.maps.places.Autocomplete(input, {
-        componentRestrictions: { country: 'br' },
-        fields: ['address_components', 'formatted_address', 'geometry', 'name'],
-      });
-      autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        const location = place.geometry?.location;
-        if (!location) return;
-        onAddress(addressFromGooglePlace(place));
-      });
-    });
-  }, [onAddress]);
-
-  return null;
-}
-
-// Painel de detalhe do item selecionado (Site ou Recurso) — dock deslizante à
-// esquerda no desktop (cobre a hierarquia) e bottom sheet arrastável no mobile.
-// Nasce do clique na árvore ou no mapa (ver selectNode em GeoPage), nunca de um
-// modal: o Google Maps também abre o detalhe do lugar como painel, não popup.
+// Painel de detalhe do item selecionado (Site ou Recurso) — dock à esquerda no
+// desktop (mesma coluna da hierarquia, um painel por vez) e bottom sheet
+// arrastável no mobile. Nasce do clique na árvore, no mapa ou na busca (ver
+// selectNode em GeoPage), nunca de um modal: o Google Maps também abre o
+// detalhe do lugar como painel, não popup.
 function GeoDetailPanel({
   isMobile,
   target,
@@ -904,6 +1019,7 @@ function GeoDetailPanel({
   onClose,
   onChanged,
   onCreateSubSite,
+  searchBar,
 }: {
   isMobile: boolean;
   target: DetailTarget;
@@ -918,6 +1034,7 @@ function GeoDetailPanel({
   onClose: () => void;
   onChanged: () => Promise<void>;
   onCreateSubSite: () => void;
+  searchBar?: ReactNode;
 }) {
   const eyebrow =
     target.kind === 'site'
@@ -980,7 +1097,8 @@ function GeoDetailPanel({
   }
 
   return (
-    <div className="absolute inset-y-0 left-0 z-40 flex w-[360px] max-w-[85vw] flex-col border-r border-app-border bg-app-panel shadow-soft-lg">
+    <div className="flex h-full w-[360px] max-w-[85vw] shrink-0 flex-col border-r border-app-border bg-app-panel">
+      {searchBar}
       {header}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">{body}</div>
     </div>
@@ -1502,79 +1620,3 @@ function useSiteChildren(siteId: string): { subSites: GeoTreeNode[]; resources: 
 
 
 
-
-function loadGoogleMaps(apiKey: string): Promise<void> {
-  if (window.google?.maps) return Promise.resolve();
-  if (window.__nexusGoogleMapsPromise) return window.__nexusGoogleMapsPromise;
-
-  window.__nexusGoogleMapsPromise = new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places`;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Falha ao carregar Google Maps.'));
-    document.head.appendChild(script);
-  });
-
-  return window.__nexusGoogleMapsPromise;
-}
-
-async function reverseGeocode(lat: number, lng: number): Promise<DraftAddress | null> {
-  if (!window.google?.maps) return null;
-  const geocoder = new window.google.maps.Geocoder();
-  const result = await geocoder.geocode({ location: { lat, lng } });
-  const place = result.results?.[0];
-  if (!place) return null;
-  return addressFromGooglePlace({
-    formatted_address: place.formatted_address,
-    address_components: place.address_components,
-    geometry: { location: { lat: () => lat, lng: () => lng } },
-  });
-}
-
-// Geocodifica um texto livre (endereço digitado) em um DraftAddress posicionável no mapa.
-async function geocodeAddress(query: string): Promise<DraftAddress | null> {
-  if (!GOOGLE_MAPS_KEY) return null;
-  await loadGoogleMaps(GOOGLE_MAPS_KEY);
-  if (!window.google?.maps) return null;
-  const geocoder = new window.google.maps.Geocoder();
-  const result = await geocoder.geocode({
-    address: query,
-    componentRestrictions: { country: 'br' },
-  }).catch(() => null);
-  const place = result?.results?.[0];
-  if (!place) return null;
-  const location = place.geometry?.location;
-  return addressFromGooglePlace({
-    formatted_address: place.formatted_address,
-    address_components: place.address_components,
-    name: query,
-    geometry: { location: { lat: () => location.lat(), lng: () => location.lng() } },
-  });
-}
-
-function addressFromGooglePlace(place: any): DraftAddress {
-  const components = place.address_components ?? [];
-  const get = (type: string, short = false) => {
-    const component = components.find((item: any) => item.types?.includes(type));
-    return short ? component?.short_name : component?.long_name;
-  };
-  const lat = place.geometry.location.lat();
-  const lng = place.geometry.location.lng();
-  const route = get('route') ?? place.name ?? 'Endereco selecionado';
-  const streetNr = get('street_number');
-  const city = get('administrative_area_level_2') ?? get('locality');
-  const state = get('administrative_area_level_1', true);
-  const postcode = get('postal_code');
-  return {
-    street: route,
-    streetNr,
-    city,
-    stateOrProvince: state,
-    postcode,
-    country: get('country', true) ?? 'BR',
-    coordinates: [lng, lat],
-    label: place.formatted_address ?? [route, streetNr, city, state].filter(Boolean).join(', '),
-  };
-}

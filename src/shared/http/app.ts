@@ -595,6 +595,38 @@ const routeGeoRequest = async ({
     );
   }
 
+  // Infra passiva por região visível do mapa — fonte usada em escala de detalhe (≤ 200 m),
+  // no lugar da expansão da árvore (ver GeoTreeService.resourcesInViewport).
+  if (request.method === 'GET' && url.pathname === '/v1/geo/tree/viewport') {
+    const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
+    const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
+    const maxLng = parseOptionalNumber(url.searchParams.get('maxLng'));
+    const maxLat = parseOptionalNumber(url.searchParams.get('maxLat'));
+    if (minLng === undefined || minLat === undefined || maxLng === undefined || maxLat === undefined) {
+      throw new AppError('minLng, minLat, maxLng and maxLat are required', {
+        code: 'GEO_TREE_VIEWPORT_BOUNDS_REQUIRED',
+        statusCode: 400,
+      });
+    }
+    const limit = parseOptionalNumber(url.searchParams.get('limit'));
+    return sendJson(
+      response,
+      200,
+      geoTreeService.resourcesInViewport(
+        { minLng, minLat, maxLng, maxLat },
+        limit !== undefined ? { limit } : {},
+      ),
+    );
+  }
+
+  // Busca por nome para a barra de pesquisa unificada — Estações e Recursos (nunca
+  // sub-locais/salas), devolvida como nó de árvore para reusar seleção/mapa/detalhe.
+  if (request.method === 'GET' && url.pathname === '/v1/geo/tree/search') {
+    const term = url.searchParams.get('q') ?? '';
+    const limit = parseOptionalNumber(url.searchParams.get('limit'));
+    return sendJson(response, 200, geoTreeService.search(term, limit !== undefined ? { limit } : {}));
+  }
+
   if (request.method === 'POST' && url.pathname === '/v1/geo/workspace/site-at-address') {
     const body = await readBody(request);
     return sendJson(response, 201, geoService.createSiteAtAddress(body as any));

@@ -78,3 +78,24 @@ export function siteIconDataUrl(icon: SiteIcon, options?: { size?: number; badge
   siteIconDataUrlCache.set(key, value);
   return value;
 }
+
+// Alfinete de seleção no mapa (estilo Google Maps): marca o Site ou Recurso que o
+// usuário clicou por último, sem ambiguidade com o "+" amarelo do rascunho de
+// endereço (círculo) nem com o pin vermelho padrão do Google (outra silhueta e
+// cor). Ponta para baixo, ancorada na coordenada exata do objeto selecionado.
+export const SELECTION_PIN_ASPECT = 24 / 32;
+
+const selectionPinDataUrlCache = new Map<number, string>();
+
+export function selectionPinDataUrl(height: number): string {
+  const cached = selectionPinDataUrlCache.get(height);
+  if (cached) return cached;
+  const width = Math.round(height * SELECTION_PIN_ASPECT);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 24 32" fill="none">` +
+    `<path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 20 12 20s12-11 12-20C24 5.373 18.627 0 12 0Z" fill="#2E3238" stroke="#FFFFFF" stroke-width="1.5"/>` +
+    `<circle cx="12" cy="12" r="4.5" fill="#FFD200"/>` +
+    `</svg>`;
+  const value = toDataUrl(svg);
+  selectionPinDataUrlCache.set(height, value);
+  return value;
+}

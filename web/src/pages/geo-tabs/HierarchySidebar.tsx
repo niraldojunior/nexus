@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { GitBranch, ListTree, PanelLeftClose, PanelLeftOpen, RefreshCw, Settings } from 'lucide-react';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import type { GeoTree } from '../../hooks/useGeoTree';
@@ -12,6 +12,15 @@ export type HierarchySidebarProps = {
   onSelect: (node: GeoTreeNode) => void;
   onOpenTypes: () => void;
   onHover?: (node: GeoTreeNode | null) => void;
+  // Colapso controlado pelo pai: quando o painel de detalhe abre, GeoPage recolhe
+  // a hierarquia para dar lugar a ele (uma doca, um painel por vez) sem perder o
+  // estado anterior — fechar o detalhe restaura este valor tal como estava.
+  collapsed: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
+  // Barra de pesquisa unificada, encaixada no topo do painel quando ele está
+  // expandido (ver GeoPage) — nula quando colapsado ou no mobile, onde a busca
+  // flutua sobre o mapa em vez de morar dentro da doca.
+  searchBar?: ReactNode;
 };
 
 type HierView = 'tree' | 'combos';
@@ -21,8 +30,16 @@ type HierView = 'tree' | 'combos';
  * Duas abas internas: Árvore e Combos. Persistente e colapsável; dirige a
  * seleção no mapa.
  */
-export function HierarchySidebar({ tree, selectedNodeId, onSelect, onOpenTypes, onHover }: HierarchySidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+export function HierarchySidebar({
+  tree,
+  selectedNodeId,
+  onSelect,
+  onOpenTypes,
+  onHover,
+  collapsed,
+  onCollapsedChange,
+  searchBar,
+}: HierarchySidebarProps) {
   const [view, setView] = useState<HierView>('tree');
   const isMobile = useIsMobile();
 
@@ -36,7 +53,7 @@ export function HierarchySidebar({ tree, selectedNodeId, onSelect, onOpenTypes, 
   // drawer sobreposto usado na barra lateral global do app).
   const handleSelect = (node: GeoTreeNode) => {
     onSelect(node);
-    if (isMobile) setCollapsed(true);
+    if (isMobile) onCollapsedChange(true);
   };
 
   if (collapsed) {
@@ -44,7 +61,7 @@ export function HierarchySidebar({ tree, selectedNodeId, onSelect, onOpenTypes, 
       return (
         <button
           type="button"
-          onClick={() => setCollapsed(false)}
+          onClick={() => onCollapsedChange(false)}
           className="absolute left-3 top-16 z-30 flex h-10 w-10 items-center justify-center rounded-xl border border-app-border bg-white text-app-text shadow-soft"
           aria-label="Abrir hierarquia"
         >
@@ -54,7 +71,7 @@ export function HierarchySidebar({ tree, selectedNodeId, onSelect, onOpenTypes, 
     }
     return (
       <div className="flex h-full w-11 shrink-0 flex-col items-center gap-2 border-r border-app-border bg-white py-3">
-        <SidebarIconButton icon={PanelLeftOpen} label="Abrir hierarquia" onClick={() => setCollapsed(false)} />
+        <SidebarIconButton icon={PanelLeftOpen} label="Abrir hierarquia" onClick={() => onCollapsedChange(false)} />
         <span className="mt-1 [writing-mode:vertical-rl] text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-app-muted">
           Hierarquia
         </span>
@@ -67,7 +84,7 @@ export function HierarchySidebar({ tree, selectedNodeId, onSelect, onOpenTypes, 
       {isMobile ? (
         <div
           className="absolute inset-0 z-30 bg-black/40"
-          onClick={() => setCollapsed(true)}
+          onClick={() => onCollapsedChange(true)}
           aria-hidden="true"
         />
       ) : null}
@@ -78,6 +95,7 @@ export function HierarchySidebar({ tree, selectedNodeId, onSelect, onOpenTypes, 
             : 'flex h-full w-[340px] max-w-[80vw] shrink-0 flex-col border-r border-app-border bg-white'
         }
       >
+        {searchBar}
         {/* Header — título + toggle de visão + ações, tudo em uma linha */}
         <div className="flex items-center justify-between gap-2 border-b border-app-border px-3 py-2">
           <h2 className="font-display text-[0.98rem] font-semibold text-app-text">Hierarquia</h2>
@@ -88,7 +106,7 @@ export function HierarchySidebar({ tree, selectedNodeId, onSelect, onOpenTypes, 
             </div>
             <SidebarIconButton icon={RefreshCw} label="Atualizar" onClick={tree.reload} spinning={tree.loading} />
             <SidebarIconButton icon={Settings} label="Tipos de local" onClick={onOpenTypes} />
-            <SidebarIconButton icon={PanelLeftClose} label="Recolher" onClick={() => setCollapsed(true)} />
+            <SidebarIconButton icon={PanelLeftClose} label="Recolher" onClick={() => onCollapsedChange(true)} />
           </div>
         </div>
 

@@ -69,6 +69,15 @@ const GROUP_STATIONS = 'stations';
 export const DEFAULT_TREE_PAGE_SIZE = 500;
 const MAX_TREE_PAGE_SIZE = 2000;
 
+// Teto do viewport do mapa: alto de propósito. Em escala de detalhe (≤ 200 m) a área é
+// pequena, mas um bairro denso já passa de mil recursos (o mais denso do acervo bate ~1,3k
+// em ~2 km²); truncar cedo deixava buracos no mapa. É só uma válvula contra bbox anômalo.
+const VIEWPORT_MAX_RESULTS = 10000;
+
+// Teto da busca por nome (barra de pesquisa) — é autocomplete, não listagem; poucos
+// resultados bastam para o usuário reconhecer o item e clicar.
+const SEARCH_MAX_RESULTS = 20;
+
 type SiteRow = {
   id: string;
   name: string;
@@ -165,6 +174,71 @@ export class GeoTreeService {
     }
 
     return nodes;
+  }
+
+  /**
+   * Infra passiva (recursos Physical/Logical, pontuais ou cabos) dentro de um bbox do
+   * mapa — a fonte do mapa quando a escala está em zoom de detalhe (≤ 200 m), em vez da
+   * expansão da árvore. Um cabo entra se qualquer vértice da rota cair no bbox; um ponto
+   * entra se a própria coordenada cair. `status = 'terminated'` fica de fora (C6).
+   */
+  public resourcesInViewport(
+    bounds: { minLng: number; minLat: number; maxLng: number; maxLat: number },
+    options: { limit?: number } = {},
+  ): GeoTreeNode[] {
+    // Diferente da árvore (paginada de 500), o viewport devolve TUDO que cai na área
+    // visível: um bairro denso passa de mil caixas, e truncar em 500 deixava regiões
+    // inteiras vazias no mapa. Como a busca só roda em escala de detalhe (≤ 200 m), a
+    // própria área limita o volume; VIEWPORT_MAX_RESULTS é só uma válvula de segurança.
+    const limit = clamp(options.limit ?? VIEWPORT_MAX_RESULTS, 1, VIEWPORT_MAX_RESULTS);
+    // Um jogo de 4 (minLng, maxLng, minLat, maxLat) por bloco do UNION ALL em
+    // VIEWPORT_RESOURCE_SOURCE: Physical-ponto, Physical-cabo, Logical-ponto, Logical-cabo
+    // — daí os 4 jogos. Ponto e cabo ficam em blocos separados (não num OR) para o bloco de
+    // ponto poder usar o índice de expressão idx_tmf_geographic_location_point_lnglat.
+    const bboxQuad = [bounds.minLng, bounds.maxLng, bounds.minLat, bounds.maxLat];
+
+    // Sem ORDER BY: o mapa não precisa de ordem, e ordenar por nome enviesava o corte do
+    // LIMIT (devolvia os 500 primeiros nomes, sumindo com bairros inteiros).
+    const rows = this.db.all<ResourceRow>(
+      `SELECT * FROM (${VIEWPORT_RESOURCE_SOURCE}) AS t LIMIT ?`,
+      [...bboxQuad, ...bboxQuad, ...bboxQuad, ...bboxQuad, limit],
+    );
+
+    return this.toResourceNodes(rows);
+  }
+
+  /**
+   * Busca por nome para a barra de pesquisa: Estações (Site, nunca SubSite — sala/andar
+   * não é alvo de busca) e Recursos (physical/logical), por substring case-insensitive.
+   * Devolve `GeoTreeNode[]` para reaproveitar o mesmo desenho de mapa/detalhe/seleção
+   * que a árvore já usa — quem chama trata o resultado como um nó qualquer.
+   */
+  public search(term: string, options: { limit?: number } = {}): GeoTreeNode[] {
+    const trimmed = term.trim();
+    if (!trimmed) return [];
+    const limit = clamp(options.limit ?? SEARCH_MAX_RESULTS, 1, SEARCH_MAX_RESULTS);
+    const like = `%${trimmed}%`;
+
+    const siteRows = this.db.all<SiteRow>(
+      `${SITE_SELECT}
+       WHERE sp.category = 'Site' AND s.status <> 'terminated' AND LOWER(s.name) LIKE LOWER(?)
+       ORDER BY s.name
+       LIMIT ?`,
+      [like, limit],
+    );
+
+    const resourceRows = this.db.all<ResourceRow>(
+      `SELECT * FROM (${SEARCH_RESOURCE_SOURCE}) AS t ORDER BY name LIMIT ?`,
+      [like, like, limit],
+    );
+
+    const nodes: GeoTreeNode[] = [
+      ...siteRows.map((row) => this.toSiteNode(row, { hasChildren: true })),
+      ...this.toResourceNodes(resourceRows),
+    ];
+    nodes.sort((left, right) => collator.compare(left.label, right.label));
+
+    return nodes.slice(0, limit);
   }
 
   public children(nodeId: string, options: { limit?: number; offset?: number } = {}): GeoTreeChildrenPage {
@@ -493,6 +567,59 @@ const SITE_RESOURCE_SOURCE = `
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
    WHERE ${RESOURCE_AT_SITE_WHERE}`;
+
+// Recursos cuja geometria cai num bbox do mapa. Ponto e cabo ficam em blocos separados
+// (não num OR) de propósito: só assim o Postgres consegue usar o índice de expressão
+// idx_tmf_geographic_location_point_lnglat no bloco de ponto — com o OR ele cai num seq
+// scan de toda a tabela de Locations parseando JSON linha a linha. Ponto casa pela própria
+// coordenada; cabo (LineString) casa se qualquer vértice da rota cair no bbox. `l.geometry`
+// é GeoJSON em texto; o worker Postgres deixa os operadores `::jsonb` passarem intactos (só
+// reescreve `json_extract`). Cada bloco leva 4 parâmetros: minLng, maxLng, minLat, maxLat.
+const VIEWPORT_POINT_WHERE = `
+  l.geometry_type = 'Point'
+  AND (l.geometry::jsonb->'coordinates'->>0)::float8 BETWEEN ? AND ?
+  AND (l.geometry::jsonb->'coordinates'->>1)::float8 BETWEEN ? AND ?`;
+
+const VIEWPORT_LINE_WHERE = `
+  l.geometry_type = 'LineString'
+  AND EXISTS (
+    SELECT 1 FROM jsonb_array_elements(l.geometry::jsonb->'coordinates') AS v
+     WHERE (v->>0)::float8 BETWEEN ? AND ?
+       AND (v->>1)::float8 BETWEEN ? AND ?
+  )`;
+
+const viewportBlock = (entity: 'PhysicalResource' | 'LogicalResource', where: string): string => {
+  const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
+  const manufacturer = entity === 'PhysicalResource' ? 'r.manufacturer' : 'NULL';
+  const model = entity === 'PhysicalResource' ? 'r.model' : 'NULL';
+  const serial = entity === 'PhysicalResource' ? 'r.serial_number' : 'NULL';
+  return `
+  SELECT r.id, r.name, '${entity}' AS entity_type, r.resource_type, r.status,
+         rs.name AS spec_name, ${manufacturer} AS manufacturer, ${model} AS model, ${serial} AS serial_number,
+         l.geometry_type, l.geometry
+    FROM ${table} r
+    JOIN tmf_geographic_location l ON l.id = r.place_id
+    LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+   WHERE r.status <> 'terminated' AND (${where})`;
+};
+
+// Ordem dos blocos (e, portanto, dos parâmetros): Physical-ponto, Physical-cabo,
+// Logical-ponto, Logical-cabo — ver resourcesInViewport.
+const VIEWPORT_RESOURCE_SOURCE = [
+  viewportBlock('PhysicalResource', VIEWPORT_POINT_WHERE),
+  viewportBlock('PhysicalResource', VIEWPORT_LINE_WHERE),
+  viewportBlock('LogicalResource', VIEWPORT_POINT_WHERE),
+  viewportBlock('LogicalResource', VIEWPORT_LINE_WHERE),
+].join('\n  UNION ALL\n');
+
+// Recursos (physical/logical) por substring de nome — a busca da barra de pesquisa não
+// se restringe a um site nem a um bbox, então reusa `viewportBlock` só pela forma das
+// colunas, com um WHERE de nome no lugar do de geometria. Um parâmetro por bloco.
+const SEARCH_NAME_WHERE = `LOWER(r.name) LIKE LOWER(?)`;
+const SEARCH_RESOURCE_SOURCE = [
+  viewportBlock('PhysicalResource', SEARCH_NAME_WHERE),
+  viewportBlock('LogicalResource', SEARCH_NAME_WHERE),
+].join('\n  UNION ALL\n');
 
 // Filhos de um recurso: o outro lado das arestas de contenção e conexão.
 const RESOURCE_CHILD_SOURCE = `

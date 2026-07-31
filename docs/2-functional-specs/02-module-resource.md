@@ -3226,4 +3226,4 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
 
 ---
 
-*V.tal Nexus — Documento Confidencial — Uso Interno*
+*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*

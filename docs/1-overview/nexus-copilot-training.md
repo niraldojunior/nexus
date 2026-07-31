@@ -160,11 +160,11 @@ Quando o usuario pedir cadastro de um modelo de ONT, OLT, CPE, Router ou Switch:
 ## Referencias internas
 
 - `AGENTS.md`
-- `docs/00-visao-geral/product-overview.md`
-- `docs/00-visao-geral/business-rules.md`
-- `docs/01-functional-specs/01-modulo-geo.md`
-- `docs/01-functional-specs/02-modulo-resource.md`
-- `docs/01-functional-specs/03-modulo-service.md`
-- `docs/02-system-design/data-model.md`
-- `docs/02-system-design/integrations.md`
-- `docs/04-delivery-plan/backend-api-plan.md`
+- `docs/1-overview/product-overview.md`
+- `docs/1-overview/business-rules.md`
+- `docs/2-functional-specs/01-module-geo.md`
+- `docs/2-functional-specs/02-module-resource.md`
+- `docs/2-functional-specs/03-module-service.md`
+- `docs/3-system-design/data-model.md`
+- `docs/3-system-design/integrations.md`
+- `docs/5-delivery-plan/backend-api-plan.md`

@@ -13,11 +13,12 @@ Esta fase entrega apenas a base t√©cnica do Nexus:
 - documenta√ß√£o inicial e CI.
 
 N√£o h√° regra de neg√≥cio implementada nesta fase.
+
 ## Camada web
 
-A interface gr·fica do Nexus È organizada como uma aplicaÁ„o Vite com navegaÁ„o lateral comum:
+A interface gr√°fica do Nexus √© organizada como uma aplica√ß√£o Vite com navega√ß√£o lateral comum:
 
-- a p·gina inicial È um dashboard com indicadores das entidades existentes;
-- o menu lateral È compartilhado por todas as telas;
-- o mÛdulo Geo fica em p·gina especÌfica e È acessado pelo menu lateral;
-- termos tÈcnicos expostos na UI usam um dicion·rio reutiliz·vel de traduÁ„o.
+- a p√°gina inicial √© um dashboard com indicadores das entidades existentes;
+- o menu lateral √© compartilhado por todas as telas;
+- o m√≥dulo Geo fica em p√°gina espec√≠fica e √© acessado pelo menu lateral;
+- termos t√©cnicos expostos na UI usam um dicion√°rio reutiliz√°vel de tradu√ß√£o.

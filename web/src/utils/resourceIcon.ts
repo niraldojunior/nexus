@@ -32,7 +32,7 @@ export type ResourceIcon = {
   label: string;
 };
 
-// Espelha os tokens do design system (docs/03-design-system/tokens/colors.css).
+// Espelha os tokens do design system (docs/4-design-system/tokens/colors.css).
 // Precisa existir em JS porque o Google Maps só aceita hex literal.
 export const familyColor: Record<ResourceFamily, string> = {
   access: '#3b82f6', // --net-olt

@@ -71,7 +71,7 @@
 
 ### Documentation
 
-**File: `docs/04-delivery-plan/RESEARCH_MODULE_TESTING.md`** (NEW)
+**File: `docs/5-delivery-plan/RESEARCH_MODULE_TESTING.md`** (NEW)
 - Complete testing guide for all endpoints
 - cURL examples for each endpoint
 - Expected response formats
@@ -257,7 +257,7 @@ Replace ChatGPT with internal query provider:
 - `web/src/pages/ResearchHistoryPage.tsx`
 - `web/src/styles/research-chat.css`
 - `web/src/styles/research-history.css`
-- `docs/04-delivery-plan/RESEARCH_MODULE_TESTING.md`
+- `docs/5-delivery-plan/RESEARCH_MODULE_TESTING.md`
 - `scripts/test-research-api.mjs`
 
 ### Modified (4 files)

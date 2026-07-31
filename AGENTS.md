@@ -1,63 +1,101 @@
 # AGENTS.md — Guia para agentes de IA no repositório V.tal Nexus
 
-Este arquivo instrui qualquer agente de IA (Claude e outros) que trabalhe neste repositório. O objetivo é **produzir documentos consistentes com os artefatos já existentes** — mesma anatomia, mesmo cânone arquitetural, mesma terminologia, mesma linguagem visual. Leia este arquivo **antes de criar ou editar qualquer documento ou componente**.
+Este arquivo instrui qualquer agente de IA (Claude Code, Codex e outros) que trabalhe neste repositório. Leia-o **antes de escrever código ou documento**. O objetivo é produzir trabalho consistente com o que já existe — mesmo cânone arquitetural, mesmas convenções de código, mesma terminologia, mesma linguagem visual.
+
+Playbooks detalhados ficam em arquivos separados, lidos **sob demanda** (§9 e §10). Não os carregue sem necessidade.
 
 ---
 
 ## 1. O que é este repositório
 
-Repositório de design e especificação da plataforma **V.tal Nexus** — inventário de rede proprietário da V.tal, alinhado a **TM Forum ODA** (Open Digital Architecture). Contém:
+**V.tal Nexus** — inventário de rede proprietário da V.tal, alinhado a **TM Forum ODA**. O repositório contém as duas metades do produto:
 
-- **Especificações funcionais** por domínio (functional specs / HLDs de módulo)
-- **Design técnico** (arquitetura, modelo de dados, integrações)
-- **Design system** completo (tokens, componentes React, UI kit, guidelines)
-- **Plano de entrega**
+- **Aplicação** — backend TypeScript/Node (`src/`, `api/`) + frontend React/Vite (`web/`), persistindo em Neon Postgres.
+- **Especificação** — HLDs por módulo, design técnico, design system e plano de entrega (`docs/`).
 
 A V.tal é uma **infraestrutura de fibra neutra (wholesale)** — o cliente primário do serviço é, em regra, um **ISP (Tenant)**, não o usuário final. Esta premissa molda todo o domínio de serviço.
 
 ---
 
-## 2. Estrutura do repositório
+## 2. Comandos
 
-```
-AGENTS.md
-README.md
+Node **22+**. Instale com `npm install`, copie `.env.example` para `.env` e ajuste.
 
-docs/
-├── 00-visao-geral/
-│   ├── product-overview.md          # Visão de produto, tríade, módulos, roadmap
-│   ├── business-rules.md            # Regras de negócio transversais e decisões arquiteturais
-│   └── glossary.md                  # Termos técnicos e acrônimos
-│
-├── 01-functional-specs/             # Especificações funcionais por módulo (HLDs)
-│   ├── 01-modulo-geo.md             # Módulo 1 — Geographic · TMF673/674/675
-│   ├── 02-modulo-resource.md        # Módulo 2 — Resource · TMF634/639
-│   └── 03-modulo-service.md         # Módulo 3 — Service · TMF633/638
-│
-├── 02-system-design/
-│   ├── architecture.md
-│   ├── data-model.md
-│   ├── integrations.md
-│   ├── non-functional-requirements.md
-│   └── security.md
-│
-├── 03-design-system/
-│   ├── README.md / SKILL.md
-│   ├── styles.css / Nexus App.html / Nexus Logo*.html
-│   ├── tokens/                      # base · colors · effects · fonts · spacing · typography (CSS+JSON)
-│   ├── guidelines/                  # *.card.html + colors · principles · spacing · typography (MD)
-│   ├── components/                  # *.md specs + core/ (Badge · Button · Card · Input · MetricCard · StatusPill)
-│   ├── ui_kits/nexus/               # Dashboard · Inventory · Login · Shell · Topology · Viability (React)
-│   └── assets/                      # logos, ícones, screenshots
-│
-└── 04-delivery-plan/
-```
+| Comando | O que faz |
+|---|---|
+| `npm run dev` | Stack local completa — backend em `127.0.0.1:4001`, Vite em `127.0.0.1:5200`. **Usa PowerShell** (`start-dev.ps1`); em shell POSIX use `dev:neon` + `web:dev`. |
+| `npm run dev:neon` | Só o backend, contra o Neon de dev |
+| `npm run web:dev` | Só o frontend Vite |
+| `npm run build` | Compila TypeScript para `dist/` |
+| `npm run typecheck` | `tsc --noEmit` na raiz **e** em `web/` |
+| `npm run lint` / `lint:fix` | ESLint |
+| `npm run format` / `format:fix` | Prettier |
+| `npm test` | Suíte completa: unit → integration → regression |
 
-> **Correspondência com document references canônicos:** os document references internos dos HLDs (`VTN-HLD-MOD01-GEO`, `VTN-HLD-MOD02-RES`, `VTN-HLD-MOD03-SVC`) são **preservados dentro de cada arquivo** — eles não mudam com a reorganização de pastas. O número do arquivo (`01-`, `02-`, `03-`) coincide com o número do módulo. O Overview (antes `HLD01`) vive em `docs/00-visao-geral/product-overview.md`.
+O **CI** (`.github/workflows/ci.yml`) roda, nesta ordem: `lint` → `typecheck` → `build` → `test`. Rode ao menos `lint` e `typecheck` antes de considerar uma mudança pronta.
+
+Setup de ambiente, variáveis do Vercel e layout Neon dev/prod: veja o [README.md](README.md).
 
 ---
 
-## 3. A tríade (decore isto)
+## 3. Testes
+
+| Camada | Comando | Runner | Escopo |
+|---|---|---|---|
+| Unit | `npm run test:unit` | Vitest (`vitest.config.ts`) | `test/**/*.spec.ts` + `web/src/**/*.test.tsx` |
+| Integration | `npm run test:integration` | `scripts/run-tests.mjs` sobre o `dist/` | `*.integration.spec.ts`, `*-management.spec.ts` |
+| Regression | `npm run test:regression` | Playwright | E2E de browser |
+
+Arquivo único no Vitest:
+
+```bash
+node --use-system-ca node_modules/vitest/vitest.mjs run --config vitest.config.ts test/geo.unit.spec.ts
+```
+
+**Armadilhas conhecidas — leia antes de debugar:**
+
+- **`--use-system-ca` é obrigatório.** Atrás do proxy TLS corporativo, o Node rejeita a cadeia do Neon sem ele. Já está nos scripts npm; se invocar o Vitest na mão, inclua.
+- **Use sempre o endpoint `-pooler` do Neon nos testes.** O endpoint direto **trava** dentro do worker aninhado do Vitest (o mesmo código roda em ~2s num processo Node standalone). Não é bug de configuração — já foi investigado e descartado.
+- **Cada worker do Vitest tem seu próprio schema** (`nexus_test_w<VITEST_POOL_ID>`), reusado entre testes com `TRUNCATE`. Não escreva teste que dependa de schema limpo por arquivo.
+- **Logs do worker aninhado não aparecem no stdout.** Para depurar persistência, faça um repro standalone contra o `dist/` compilado.
+- **O backend de dev atende requisições em série.** Duas chamadas concorrentes iguais custam o dobro, não o mesmo. Com `React.StrictMode` (double-invoke), hooks que buscam listas caras devem deduplicar a requisição em voo com uma promise compartilhada em nível de módulo — padrão já aplicado em `web/src/hooks/useGeoDirectory.ts` e `useGeoTree.ts`.
+
+---
+
+## 4. Estrutura do repositório
+
+```
+AGENTS.md          # este arquivo — cânone e convenções
+CLAUDE.md          # apenas `@AGENTS.md` (paridade Claude Code / Codex)
+README.md          # setup, env vars, deploy Vercel
+
+src/
+├── modules/       # domínios: geo · resource · service · party · order · search · mcp
+└── shared/        # config · http · persistence · tmf · logging · errors · runtime · ui · utils
+
+api/               # Vercel Functions: /v1, /tmf-api, /health
+web/src/           # React + Vite: pages · components · hooks · services · utils · data
+test/              # vitest (unit/integration) + playwright (regression)
+scripts/           # dev, seed e cargas de seed/migração
+
+docs/
+├── 1-overview/            # product-overview · business-rules · glossary
+├── 2-functional-specs/    # HLDs: 01-module-geo · 02-module-resource · 03-module-service
+│   ├── _spec-template.md      # ← playbook: anatomia de HLD + template de requisito
+│   ├── _benchmark-systems.md  # ← playbook: seção N.9
+│   └── reference-systems/     # fontes: netwin · kuwaiba · netbox
+├── 3-system-design/       # architecture · data-model · integrations · NFR · security
+├── 4-design-system/       # SKILL.md + tokens · guidelines · components · ui_kits · assets
+└── 5-delivery-plan/       # roadmap · backlog · riscos · questões em aberto
+```
+
+**Anatomia de um módulo de domínio** (use `src/modules/geo/` como gabarito): `domain.ts` (tipos e regras) · `repository.ts` + `postgres-repository.ts` (persistência, com interface separada) · `service.ts` (casos de uso) · `ids.ts` · `index.ts` (composição).
+
+> **Document references dos HLDs** (`VTN-HLD-MOD01-GEO`, `-MOD02-RES`, `-MOD03-SVC`) vivem **dentro** de cada arquivo e não mudam com reorganização de pastas. O número do arquivo (`01-`, `02-`, `03-`) é o número do **módulo**, independente do número da pasta.
+
+---
+
+## 5. A tríade (decore isto)
 
 | Pergunta | Módulo | TMF | Pertence a |
 |---|---|---|---|
@@ -69,7 +107,7 @@ Nunca misture as camadas. Um serviço **referencia** recurso (`supportingResourc
 
 ---
 
-## 4. Cânone arquitetural — decisões NÃO-negociáveis
+## 6. Cânone arquitetural — decisões NÃO-negociáveis
 
 Estas decisões estão firmadas. Respeite-as; não as reabra sem pedido explícito do usuário.
 
@@ -82,193 +120,76 @@ Estas decisões estão firmadas. Respeite-as; não as reabra sem pedido explíci
 | **C5** | **Agnóstico à origem — `_origin`** | Nexus gera **UUID v7** próprio. IDs legados ficam em `characteristic` somente-leitura no grupo `_origin` (`_origin.system`, `.id`, `.entity`, `.migratedAt`, `.migratedBy`, `.url?`, `.extra?`). |
 | **C6** | **Soft-delete / soft-terminate** | Nada é excluído fisicamente. Resource → `administrativeState=locked`. Service → `state=terminated`. |
 | **C7** | **Event-driven (TMF688)** | Toda mudança relevante publica evento via outbox pattern, idempotente (UUID v7), schema versionado em Schema Registry. |
-| **C8** | **Multi-tenant / wholesale** | `relatedParty` com Tenant desde a criação. No Service, o subscriber do CFS é tipicamente um Tenant ISP (`modelo_comercial = wholesale | direto`). |
+| **C8** | **Multi-tenant / wholesale** | `relatedParty` com Tenant desde a criação. No Service, o subscriber do CFS é tipicamente um Tenant ISP (`modelo_comercial = wholesale \| direto`). |
 | **C9** | **Catálogos extensíveis via API** | RelationshipTypes e Specifications têm bootstrap canônico + CRUD via API com governança (Audit + TMF688). Sem listas fechadas hardcoded. |
-| **C10** | **Oracle-native + Property Graph** | Stack Oracle 21c/23ai. Path computation (porta OLT→ONT) via Oracle Property Graph sobre o inventário de Resources. |
+| **C10** | **Oracle-native + Property Graph** | Alvo arquitetural: Oracle 21c/23ai, com path computation (porta OLT→ONT) via Property Graph. **A implementação atual roda em Neon Postgres** — trate C10 como destino, não como estado presente. |
 
 ---
 
-## 5. Onde escrever cada tipo de conteúdo
+## 7. Convenções de código
+
+- **TypeScript estrito**, ESM. Prettier e ESLint mandam — não brigue com eles, rode `format:fix` / `lint:fix`.
+- **Domínio isolado da persistência.** Repositório é interface (`*-repository-interface.ts`) com implementação Postgres separada. Não vaze SQL para `service.ts`.
+- **Nomes de arquivo em kebab-case** no backend; **PascalCase** para componentes React.
+- **Entidades e atributos seguem o vocabulário TMF** (C1), inclusive no banco e nas rotas.
+- **Nunca hardcode tokens visuais** (cor, espaçamento, fonte) — use as variáveis CSS do design system.
+- **Segredos nunca entram no repositório.** `.env` está no `.gitignore` e contém `DATABASE_URL*`, `AUTH_TOKEN` e `OPENAI_API_KEY`. Não os imprima em log, output ou commit.
+
+---
+
+## 8. Onde escrever cada tipo de conteúdo
 
 | Tipo de conteúdo | Pasta / arquivo |
 |---|---|
-| Propósito do produto, visão estratégica, tríade, módulos, roadmap | `docs/00-visao-geral/product-overview.md` |
-| Regras de negócio transversais, decisões arquiteturais (C1–C10 e futuras) | `docs/00-visao-geral/business-rules.md` |
-| Glossário de termos e acrônimos | `docs/00-visao-geral/glossary.md` |
-| Especificação funcional de um módulo (HLD) | `docs/01-functional-specs/0N-modulo-<nome>.md` |
-| Arquitetura de sistema, ADRs | `docs/02-system-design/architecture.md` |
-| Modelo de dados canônico, ERD, mapeamentos TMF | `docs/02-system-design/data-model.md` |
-| Integrações com legados e sistemas externos | `docs/02-system-design/integrations.md` |
-| Requisitos não-funcionais (performance, SLA, escala) | `docs/02-system-design/non-functional-requirements.md` |
-| RBAC, multi-tenancy, auditoria, segurança | `docs/02-system-design/security.md` |
-| Tokens, guidelines, componentes, UI | `docs/03-design-system/` (ver §8) |
-| Roadmap detalhado, milestones, critérios de aceite de fase | `docs/04-delivery-plan/` |
+| Propósito do produto, visão estratégica, tríade, módulos, roadmap | `docs/1-overview/product-overview.md` |
+| Regras de negócio transversais, decisões arquiteturais (C1–C10 e futuras) | `docs/1-overview/business-rules.md` |
+| Glossário de termos e acrônimos | `docs/1-overview/glossary.md` |
+| Especificação funcional de um módulo (HLD) | `docs/2-functional-specs/0N-module-<nome>.md` |
+| Arquitetura de sistema, ADRs | `docs/3-system-design/architecture.md` |
+| Modelo de dados canônico, ERD, mapeamentos TMF | `docs/3-system-design/data-model.md` |
+| Integrações com legados e sistemas externos | `docs/3-system-design/integrations.md` |
+| Requisitos não-funcionais (performance, SLA, escala) | `docs/3-system-design/non-functional-requirements.md` |
+| RBAC, multi-tenancy, auditoria, segurança | `docs/3-system-design/security.md` |
+| Tokens, guidelines, componentes, UI | `docs/4-design-system/` (ver §10) |
+| Roadmap detalhado, milestones, critérios de aceite de fase | `docs/5-delivery-plan/` |
 
 > Não crie arquivos fora desta taxonomia sem motivo explícito.
 
 ---
 
-## 6. Anatomia de uma functional spec (HLD de módulo)
+## 9. Escrevendo uma functional spec
 
-Replique **exatamente** esta espinha (vide `02-modulo-resource.md` e `03-modulo-service.md` como gabarito):
+Specs têm anatomia rígida. **Ao criar ou editar um HLD, leia primeiro:**
 
-1. **Cabeçalho** — tabela: Document Reference (`VTN-HLD-MODxx-XXX`), versão, data, âncora, predecessores, TMFCs, Open APIs, requisitos cobertos, status.
-2. **Propósito do módulo** — o que responde; posição na tríade.
-3. **Escopo** — `2.1 Dentro do escopo` / `2.2 Fora do escopo (tratado em outros módulos)`.
-4. **Modelo conceitual TMF** — tabela de entidades + hierarquia de tipos (ASCII) + fronteiras com módulos vizinhos.
-5. **Princípios de design do módulo** — 6–9 princípios curtos.
-6. **Resumo dos requisitos** — blocos (A, B, C…) + tabela completa + ordem de implementação.
-7. **Um bloco por requisito** (ver §7 abaixo).
-8. **Cenários ilustrativos** — 2–3 cenários ASCII end-to-end atravessando os 3 módulos + padrões reaproveitáveis.
-9. **Síntese arquitetural.**
-10. **Contratos com outros módulos** — tabela Módulo × tipo de consumo × detalhe.
-11. **Questões em aberto** — tabela Q-xxx (Aberta / ✅ Decidido) + decisões resolvidas + seção `_origin` com payload de exemplo.
-12. **Controle de revisões.**
-13. Rodapé: `*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*`
-
----
-
-## 7. Template de requisito (9 sub-itens — obrigatório)
-
-Cada `REQ-MODxx-NNN` tem **exatamente** estas 9 sub-seções, nesta ordem:
-
-```
-## N. REQ-MODxx-NNN — <Título>
-> Entidade TMF · Open API TMF · Prioridade · Status
-
-### N.1 Descrição
-### N.2 Racional arquitetural
-### N.3 Mapeamento de atributos TMF        (tabela: Atributo | Tipo | Obrigatório | Observação V.tal)
-### N.4 Exemplo de payload                  (JSON realista com place/supportingResource/supportingService)
-### N.5 Pré-condições
-### N.6 Requisitos Funcionais               (tabela RF-001…: ID | Nome | Descrição)
-### N.7 Regras de Negócio                   (tabela RN-001…: ID | Regra)
-### N.8 Critérios de Aceite                 (tabela CA-001…: ID | Critério | Resultado Esperado)
-### N.9 Mapeamento contra sistemas de referência   (ver §9)
-```
-
-Requisitos **ilustrativos** (serviços ou cenários concretos como GPON, CloudVoIP) usam variante enxuta: Descrição → Racional → Modelagem de referência → Características → RF → CA → Mapeamento.
-
----
-
-## 8. Design system — como trabalhar em `docs/03-design-system/`
-
-### 8.1 Leia o SKILL.md antes de gerar qualquer UI
-
-`docs/03-design-system/SKILL.md` é o guia normativo para geração de interfaces Nexus por agentes de IA. É obrigatório lê-lo antes de criar ou editar qualquer componente, tela ou protótipo.
-
-### 8.2 Tokens (fonte de verdade visual)
-
-Os design tokens vivem em `docs/03-design-system/tokens/`. Nunca hardcode valores de cor, espaçamento, tipografia ou efeito — referencie sempre os tokens:
-
-| Token | Arquivo | Uso |
-|---|---|---|
-| Cores | `tokens/colors.css` / `colors.json` | Paleta completa (brand, network, neutral, status) |
-| Tipografia | `tokens/typography.css` / `typography.json` | Famílias, tamanhos, pesos |
-| Espaçamento | `tokens/spacing.css` / `spacing.json` | Escala de espaço (4px base) |
-| Efeitos | `tokens/effects.css` | Elevação, sombras, radii |
-| Fontes | `tokens/fonts.css` | @font-face e variáveis de família |
-| Base | `tokens/base.css` | Variáveis raiz globais |
-
-### 8.3 Paleta resumida (para referência rápida)
-
-| Papel | Token CSS | Hex |
-|---|---|---|
-| Canvas (fundo da página) | `--color-surface-primary` | `#E5E7EB` |
-| Card (superfície elevada) | `--color-surface-elevated` | `#FFFFFF` |
-| Rail / Sidebar escura | `--color-bg-dark` | `#2E3238` |
-| Accent amarelo | `--color-accent` | ver `colors.css` |
-| Texto primário | `--color-text-primary` | ver `colors.css` |
-
-### 8.4 Componentes core
-
-Implementações React em `docs/03-design-system/components/core/`:
-
-| Componente | Arquivos | Quando usar |
-|---|---|---|
-| `Button` | `Button.jsx` / `.d.ts` / `.prompt.md` | Toda ação primária/secundária |
-| `Card` | `Card.jsx` / … | Container de conteúdo elevado |
-| `Badge` | `Badge.jsx` / … | Status, labels, contadores |
-| `Input` | `Input.jsx` / … | Formulários e filtros |
-| `MetricCard` | `MetricCard.jsx` / … | KPIs e métricas no dashboard |
-| `StatusPill` | `StatusPill.jsx` / … | Estado operacional de entidades |
-
-Consulte o `*.prompt.md` de cada componente para instrução de uso por agente.
-
-### 8.5 UI Kit (telas completas)
-
-`docs/03-design-system/ui_kits/nexus/` contém o kit completo da aplicação:
-
-| Arquivo | Tela |
+| Playbook | Quando |
 |---|---|
-| `Login.jsx` | Autenticação |
-| `Shell.jsx` | Shell, sidebar e navegação global |
-| `Dashboard.jsx` | Dashboard de inventário |
-| `Inventory.jsx` | Listagem e detalhamento de entidades |
-| `Topology.jsx` | Visão topológica de rede |
-| `Viability.jsx` | Consulta de viabilidade (HP/HC) |
-| `shared.jsx` | Componentes compartilhados entre telas |
-| `data.js` | Mock data para prototipagem |
-
-### 8.6 Guidelines
-
-`docs/03-design-system/guidelines/` contém:
-- `*.card.html` — showcases interativos de cada categoria visual (abra no browser para inspecionar)
-- `*.md` — documentação em Markdown: `colors.md`, `typography.md`, `spacing.md`, `principles.md`
-
-### 8.7 Apresentações executivas (PPTX)
-
-Quando gerar slides, aplique o design system V.tal:
-
-- **Canvas:** `#E5E7EB` (surface-primary)
-- **Cards:** brancos com sombra suave
-- **Accent:** amarelo preciso (sem uso decorativo excessivo)
-- **Capa / Encerramento:** rail escuro `#2E3238`
-- **Textura:** dot-grid
-- **Eyebrow labels:** caixa alta com letter-spacing
-- **Barra inferior:** tri-cor
-- **Rodapé:** PÚBLICA
-- **Tom:** defesa de tese (enquadramento estratégico explícito, tradeoffs visíveis) — nunca deck de kickoff
+| `docs/2-functional-specs/_spec-template.md` | Anatomia do documento, template de requisito (9 sub-itens), método de validação |
+| `docs/2-functional-specs/_benchmark-systems.md` | Preencher a seção N.9 (Netwin / Kuwaiba / NetBox) |
 
 ---
 
-## 9. Mapeamento contra sistemas de referência
+## 10. Design system
 
-Toda seção N.9 de requisito traz uma tabela comparando a capacidade nos três inventários de benchmark e a decisão do Nexus. Use os arquivos originais como fonte — não invente comportamento.
+**`docs/4-design-system/SKILL.md` é a fonte normativa** para qualquer UI, componente, tela ou protótipo. É obrigatório lê-lo antes de gerar interface — ele carrega a linguagem visual vigente, que evolui mais rápido que este arquivo.
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
+| Onde | O quê |
+|---|---|
+| `tokens/` | Fonte de verdade visual: `colors` · `typography` · `spacing` · `effects` · `fonts` · `base` (CSS + JSON) |
+| `components/core/` | React: Badge · Button · Card · Input · MetricCard · StatusPill (cada um com `.d.ts` + `.prompt.md`) |
+| `ui_kits/nexus/` | Telas completas: Login · Shell · Dashboard · Inventory · Geo · Topology · Viability (+ `shared.jsx`, `data.js`) |
+| `guidelines/` | `colors` · `typography` · `spacing` · `principles` · `page-chrome` · `presentations` (PPTX) + showcases `*.card.html` |
 
-**O que cada sistema representa:**
-
-- **Netwin (Altice Labs)** — legado primário a substituir. Cobre todos os domínios (Location, OSP, ISP, Network & Services, Provisioning, Reports, Catalogue). O módulo *Network & Services* já separa "serviços de cliente" / "serviços de rede" (proto CFS/RFS); *Resource Provisioning* tem Viabilidade GPON. Referência em `Netwin.md`.
-- **Kuwaiba (open-source)** — metamodelo de classes hierárquicas. *Service Manager* + *Contract Manager*; `GenericService` associado a circuitos via relação `uses`. Não tem split CFS/RFS limpo do SID. Connectivity Manager com path computation. Referência em `Kuwaiba.md`.
-- **NetBox (open-source)** — DCIM/IPAM resource-centric. **Não tem service inventory** (L2VPN/Circuits/Application Services são resource-adjacent). É o contraste que justifica construir domínios de serviço/ordem no Nexus, em vez de esticar uma ferramenta DCIM. Referência em `Netbox.md`.
+Para **código de produção**, a referência canônica de UI é o frontend real em `web/src`, não o UI kit — o kit é material de prototipagem.
 
 ---
 
-## 10. Convenções de escrita e idioma
+## 11. Convenções de escrita e idioma
 
 - **Idioma:** prosa em **português (pt-BR)**; nomes de módulo e termos técnicos em **inglês** (Outside Plant, Inside Plant, Resource Catalog, Service Inventory, Customer Facing Service, Resource Facing Service…); rótulos de camada, status e UI em português.
 - **IDs canônicos:** requisitos `REQ-MODxx-NNN`; questões `Q-xxx`; decisões `D-x` ou `C-x`; funcionais `RF-`; negócio `RN-`; aceite `CA-`.
 - **Formato:** Markdown. Tabelas para mapeamentos; prosa para racional; ASCII art para hierarquias e cenários.
 - **JSON:** realista e válido; sempre com `@type`/`@referredType`; mostre as amarrações canônicas (`place`, `supportingResource`, `supportingService`, `relatedParty`).
 - **Terminologia assumida (sem definir):** OSS/BSS, TM Forum, ODA, GPON/FTTH, HP/HC, EOL/EOF, planta externa/interna, OPEX/CAPEX, dual-running, cutover, CFS/RFS, SubscriberID, SID.
-
----
-
-## 11. Método de validação — "exercitar a tese"
-
-Antes de fechar um requisito ou modelo, **exercite-o contra um cenário operacional real** da V.tal. Se o modelo não sustenta o cenário, ele não está pronto. Cenários validados (já documentados):
-
-| Cenário | Onde está |
-|---|---|
-| Home Passed → Home Connected → ONT → Serviço | `00-visao-geral/product-overview.md` §8.1 |
-| Central Office GPON — hierarquia OLT→Card→Porta→DIO→Cabo→Splitter→CTO→ONT | `02-modulo-resource.md` §31.2 |
-| Cliente corporativo em condomínio empresarial (VRF + CPE + porta) | `02-modulo-resource.md` §31.1 |
-| Banda larga residencial via ISP (wholesale Bitstream) | `03-modulo-service.md` §22.1 |
-| Link dedicado multiponto L3VPN (CFS→RFS acesso+transporte+backbone) | `03-modulo-service.md` §22.2 |
-| CloudVoIP sobre link empresarial (serviceRelationship dependsOn) | `03-modulo-service.md` §22.3 |
 
 ---
 
@@ -303,10 +224,12 @@ Antes de fechar um requisito ou modelo, **exercite-o contra um cenário operacio
 - ❌ Não use DELETE físico (C6).
 - ❌ Não trate o subscriber do CFS como usuário final por default — o default é o ISP/Tenant (C8).
 - ❌ Não reabra decisões ✅ sem pedido explícito.
-- ❌ Não hardcode tokens visuais (cores, espaçamentos, fontes) — sempre use variáveis CSS do design system.
-- ❌ Não crie telas ou componentes sem antes ler `docs/03-design-system/SKILL.md`.
-- ❌ Não crie arquivos fora da taxonomia de pastas definida em §2.
-- ✅ Ao editar uma functional spec, atualize o **Controle de revisões** e reflita no `product-overview.md` (status, questões consolidadas).
+- ❌ Não hardcode tokens visuais — sempre use as variáveis CSS do design system.
+- ❌ Não crie telas ou componentes sem antes ler `docs/4-design-system/SKILL.md`.
+- ❌ Não crie arquivos fora da taxonomia de pastas definida em §4.
+- ❌ Não commite segredos nem imprima o conteúdo de `.env`.
+- ✅ Ao mover ou renomear arquivos em `docs/`, atualize as referências — **há caminhos hardcoded em `src/modules/search/`** que quebram silenciosamente.
+- ✅ Ao editar uma functional spec, atualize o **Controle de revisões** e reflita no `product-overview.md`.
 - ✅ Ao criar/editar componente React, siga os tokens e consulte o `*.prompt.md` correspondente.
 
 ---

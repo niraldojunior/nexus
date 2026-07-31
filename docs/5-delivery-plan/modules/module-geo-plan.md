@@ -1,6 +1,6 @@
 # Plano Técnico do Módulo Geo
 
-> Base documental: `AGENTS.md`, `docs/01-functional-specs/01-modulo-geo.md`, `docs/02-system-design/*`, `docs/03-design-system/*` e `docs/04-delivery-plan/*`.
+> Base documental: `AGENTS.md`, `docs/2-functional-specs/01-module-geo.md`, `docs/3-system-design/*`, `docs/4-design-system/*` e `docs/5-delivery-plan/*`.
 
 ## 1. Objetivo
 
@@ -208,8 +208,8 @@ Este plano define a implementação técnica do **MOD01 - Nexus Geographic** com
 
 | Dependência | Efeito no plano |
 |---|---|
-| `docs/02-system-design/*` | Define arquitetura, persistência, segurança, integrações e NFR do módulo. |
-| `docs/03-design-system/*` | Define componentes, tokens e padrões visuais para as telas Geo. |
+| `docs/3-system-design/*` | Define arquitetura, persistência, segurança, integrações e NFR do módulo. |
+| `docs/4-design-system/*` | Define componentes, tokens e padrões visuais para as telas Geo. |
 | MOD06 Party & Tenant | Habilita `relatedParty` com escopo e governança. |
 | MOD02 Resource | Consome `place` e depende da referência geográfica. |
 | MOD03 Service | Consome address/site para instalação e inventário de serviço. |
@@ -285,8 +285,8 @@ Este plano define a implementação técnica do **MOD01 - Nexus Geographic** com
 | ID | Assunção |
 |---|---|
 | A-001 | O plano considera como bloqueadores as decisões ainda abertas no HLD de MOD01. |
-| A-002 | O módulo usará os padrões de UI e tokens já existentes em `docs/03-design-system`. |
-| A-003 | A implementação deve respeitar o backbone técnico definido em `docs/02-system-design`. |
+| A-002 | O módulo usará os padrões de UI e tokens já existentes em `docs/4-design-system`. |
+| A-003 | A implementação deve respeitar o backbone técnico definido em `docs/3-system-design`. |
 | A-004 | Este documento não resolve a lista de bootstrap de SiteSpecification nem a estratégia de geocodificação; apenas os trata como dependências. |
 
 ---

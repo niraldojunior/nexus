@@ -1567,4 +1567,4 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 
 ---
 
-*V.tal Nexus — Documento Confidencial — Uso Interno*
+*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*

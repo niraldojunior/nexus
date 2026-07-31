@@ -15,13 +15,13 @@ type CuratedAnswer = {
 };
 
 const KNOWLEDGE_FILES = [
-  { title: 'Visao geral do produto', path: 'docs/00-visao-geral/product-overview.md' },
-  { title: 'Regras de negocio', path: 'docs/00-visao-geral/business-rules.md' },
-  { title: 'Glossario', path: 'docs/00-visao-geral/glossary.md' },
-  { title: 'Nexus Copilot', path: 'docs/00-visao-geral/nexus-copilot-training.md' },
-  { title: 'Modulo Geographic', path: 'docs/01-functional-specs/01-modulo-geo.md' },
-  { title: 'Modulo Resource', path: 'docs/01-functional-specs/02-modulo-resource.md' },
-  { title: 'Modulo Service', path: 'docs/01-functional-specs/03-modulo-service.md' },
+  { title: 'Visao geral do produto', path: 'docs/1-overview/product-overview.md' },
+  { title: 'Regras de negocio', path: 'docs/1-overview/business-rules.md' },
+  { title: 'Glossario', path: 'docs/1-overview/glossary.md' },
+  { title: 'Nexus Copilot', path: 'docs/1-overview/nexus-copilot-training.md' },
+  { title: 'Modulo Geographic', path: 'docs/2-functional-specs/01-module-geo.md' },
+  { title: 'Modulo Resource', path: 'docs/2-functional-specs/02-module-resource.md' },
+  { title: 'Modulo Service', path: 'docs/2-functional-specs/03-module-service.md' },
 ] as const;
 
 const STOP_WORDS = new Set([
@@ -42,7 +42,7 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
       '- O que? Modulo 2, Resource. Trata PhysicalResource e LogicalResource.',
       '- Para que / quem? Modulo 3, Service. Trata CFS, RFS e SubscriberID.',
       'Regra de fronteira: Service referencia Resource por `supportingResource`; Resource referencia Geographic por `place`.',
-      'Fontes locais: docs/00-visao-geral/product-overview.md, docs/00-visao-geral/business-rules.md',
+      'Fontes locais: docs/1-overview/product-overview.md, docs/1-overview/business-rules.md',
     ].join('\n'),
   },
   {
@@ -52,7 +52,7 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
       '- Ele representa locais como central, sala, andar, edificio, loja, condominio ou outros recortes espaciais.',
       '- Site nao contem recursos. Os recursos apenas referenciam o Site via `place`.',
       '- A fronteira canonica e o Rack: acima do Rack continua em Geographic; do Rack para dentro vira Resource.',
-      'Fontes locais: docs/01-functional-specs/01-modulo-geo.md, docs/00-visao-geral/business-rules.md',
+      'Fontes locais: docs/2-functional-specs/01-module-geo.md, docs/1-overview/business-rules.md',
     ].join('\n'),
   },
   {
@@ -62,7 +62,7 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
       '- O nome informado vira o nome do modelo no catalogo.',
       '- O fabricante deve ser resolvido automaticamente quando ja existir no inventario; nao faz sentido pedir ID para usuario leigo.',
       '- Para ONT e CPE, a categoria canonica e Equipamentos de Cliente (`Equipment.CustomerPremises`) e o tipo e `ONT`.',
-      'Fontes locais: docs/00-visao-geral/nexus-copilot-training.md, docs/01-functional-specs/02-modulo-resource.md',
+      'Fontes locais: docs/1-overview/nexus-copilot-training.md, docs/2-functional-specs/02-module-resource.md',
     ].join('\n'),
   },
   {
@@ -72,7 +72,7 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
       '- O catalogo nao faz exclusao fisica.',
       '- A resposta precisa ser explicita: se o modelo nao existir, ou houver ambiguidade, diga qual foi a causa.',
       '- Para ONT, CPE, OLT, Router e Switch, a referencia continua sendo o modelo de catalogo; a instancia fisica e outro objeto.',
-      'Fontes locais: docs/00-visao-geral/nexus-copilot-training.md, docs/00-visao-geral/business-rules.md, docs/01-functional-specs/02-modulo-resource.md',
+      'Fontes locais: docs/1-overview/nexus-copilot-training.md, docs/1-overview/business-rules.md, docs/2-functional-specs/02-module-resource.md',
     ].join('\n'),
   },
   {
@@ -81,7 +81,7 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
       'Quando o usuario envia varios modelos em lote, o Nexus deve consolidar a operacao como cadastro em lote e nao parar no primeiro item.',
       '- A confirmacao precisa listar todos os itens do lote antes do commit.',
       '- O retorno final deve refletir o total de modelos processados.',
-      'Fontes locais: docs/00-visao-geral/nexus-copilot-training.md, docs/01-functional-specs/02-modulo-resource.md',
+      'Fontes locais: docs/1-overview/nexus-copilot-training.md, docs/2-functional-specs/02-module-resource.md',
     ].join('\n'),
   },
   {
@@ -91,7 +91,7 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
       '- Ela cobre PhysicalResource e LogicalResource.',
       '- Resource nao contem Geographic. Ele referencia localizacao por `place`.',
       '- Quando um servico depende de infraestrutura, a amarracao correta e `supportingResource` no modulo Service.',
-      'Fontes locais: docs/01-functional-specs/02-modulo-resource.md, docs/00-visao-geral/business-rules.md',
+      'Fontes locais: docs/2-functional-specs/02-module-resource.md, docs/1-overview/business-rules.md',
     ].join('\n'),
   },
   {
@@ -101,7 +101,7 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
       '- CFS representa a visao comercial, normalmente associada ao Tenant/ISP.',
       '- RFS representa a visao tecnica e consome recursos.',
       '- CFS nao referencia Resource diretamente; o encadeamento correto passa pelo RFS.',
-      'Fontes locais: docs/01-functional-specs/03-modulo-service.md, docs/00-visao-geral/business-rules.md',
+      'Fontes locais: docs/2-functional-specs/03-module-service.md, docs/1-overview/business-rules.md',
     ].join('\n'),
   },
   {
@@ -111,7 +111,7 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
       '- HP fica em GeographicAddress no modulo Geographic.',
       '- A elegibilidade e tratada por Service Qualification no modulo Order.',
       '- So Home Connected vira ServiceInstance no modulo Service.',
-      'Fontes locais: docs/00-visao-geral/business-rules.md, docs/00-visao-geral/product-overview.md',
+      'Fontes locais: docs/1-overview/business-rules.md, docs/1-overview/product-overview.md',
     ].join('\n'),
   },
   {
@@ -121,7 +121,7 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
       '- CFS e a camada comercial, ligada ao subscriber, tipicamente um Tenant ISP no modelo wholesale.',
       '- RFS e a camada tecnica, que consome recursos e suporta o CFS.',
       '- CFS nunca referencia Resource diretamente.',
-      'Fontes locais: docs/01-functional-specs/03-modulo-service.md, docs/00-visao-geral/business-rules.md',
+      'Fontes locais: docs/2-functional-specs/03-module-service.md, docs/1-overview/business-rules.md',
     ].join('\n'),
   },
   {
@@ -130,7 +130,7 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
       'Nexus e multi-tenant e wholesale por desenho.',
       '- O Tenant entra desde a criacao em `relatedParty`.',
       '- No modulo Service, o subscriber do CFS e tipicamente um ISP/Tenant, nao o usuario final.',
-      'Fontes locais: docs/00-visao-geral/business-rules.md, docs/00-visao-geral/product-overview.md',
+      'Fontes locais: docs/1-overview/business-rules.md, docs/1-overview/product-overview.md',
     ].join('\n'),
   },
   {
@@ -138,9 +138,9 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
     content: [
       'Nexus Copilot e o agente conversacional especializado do V.tal Nexus.',
       '- Ele responde apenas sobre V.tal, Telecom, inventario, redes, TMF e operacao wholesale.',
-      '- Seu contexto padrao vem de docs/00-visao-geral/nexus-copilot-training.md.',
+      '- Seu contexto padrao vem de docs/1-overview/nexus-copilot-training.md.',
       '- Quando a pergunta sair do escopo, o comportamento correto e recusar e redirecionar.',
-      'Fontes locais: docs/00-visao-geral/nexus-copilot-training.md',
+      'Fontes locais: docs/1-overview/nexus-copilot-training.md',
     ].join('\n'),
   },
   {
@@ -149,7 +149,7 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
       'Rack e a fronteira canonica entre Geographic e Resource.',
       '- Acima do Rack: sala, andar, central e outros recortes continuam em GeographicSite.',
       '- Do Rack para dentro: rack, chassis, placas, portas e demais itens entram como PhysicalResource.',
-      'Fontes locais: docs/00-visao-geral/business-rules.md, docs/01-functional-specs/02-modulo-resource.md',
+      'Fontes locais: docs/1-overview/business-rules.md, docs/2-functional-specs/02-module-resource.md',
     ].join('\n'),
   },
 ];

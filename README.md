@@ -1,113 +1,282 @@
 # V.tal Nexus
 
-Foundation backend for the V.tal Nexus platform. This repository contains only the infrastructure
-layer required to start the project: application bootstrap, configuration, logging, global error
-handling, environment loading, persistence abstractions, and basic test/lint/format/CI setup.
+Inventário de rede da V.tal, alinhado ao modelo **TM Forum ODA**. O repositório contém as duas
+metades do produto: a **aplicação** em execução (backend TypeScript/Node + frontend React/Vite,
+persistindo em Neon Postgres) e a **especificação** que a governa (`docs/`).
 
-No business rules are implemented here.
+A V.tal é uma infraestrutura de fibra neutra (*wholesale*) — o cliente do serviço é, em regra, um
+ISP (Tenant), não o usuário final.
 
-## Local run
+**Módulos de domínio implementados:** Geographic · Resource · Service · Party · Order · Search · MCP.
 
-1. Install Node.js 22+.
-2. Install dependencies with `npm install`.
-3. Copy `.env.example` to `.env` and adjust values.
-4. Run `npm run build`.
-5. Start the local stack with `npm run dev`.
+> Convenções de código, cânone arquitetural e taxonomia de documentação estão em
+> **[AGENTS.md](AGENTS.md)** — leia antes de contribuir.
 
-## Vercel deploy
+---
 
-This repository is configured for automatic deployment on Vercel:
+## Stack
 
-- pushes to `main` create Production Deployments;
-- pull requests and other branches create Preview Deployments;
-- the frontend is built from `web/` and served from `web/dist`;
-- API routes are exposed through Vercel Functions under `/v1`, `/tmf-api`, and `/health`.
+| Camada | Tecnologia |
+|---|---|
+| Backend | Node 22+ · TypeScript 5.9 (ESM) · HTTP nativo |
+| Frontend | React 18 · Vite (rolldown) · Tailwind 3 · Lucide |
+| Banco | Neon Postgres (`@neondatabase/serverless` + `pg`) |
+| Testes | Vitest 4 · Playwright · Testing Library · MSW |
+| Qualidade | ESLint 9 · Prettier 3 · TypeScript strict |
+| Deploy | Vercel (Functions + estático) |
 
-Required environment variables in Vercel:
+---
 
-- `APP_NAME=v-tal-nexus`
-- `AUTH_ENABLED=true`
-- `AUTH_TOKEN=<strong-secret>`
-- `DATABASE_URL_PROD=<neon-production-connection-string>` in the Production scope
-- `DATABASE_URL_DEV=<neon-development-connection-string>` in the Preview scope
-- `OPENAI_API_KEY=<optional>`
-- `OPENAI_MODEL=<optional>`
-- `API_ENDPOINT=<optional>`
-- `VITE_GOOGLE_MAPS_API_KEY=<optional>`
+## Pré-requisitos
 
-Set `DATABASE_URL` only when you want to override the environment-specific selection explicitly.
-For local test isolation, set `DATABASE_URL_TEST` to a Neon/Postgres database when you do not want tests to reuse `DATABASE_URL_DEV`.
+- **Node.js 22+** (definido em `engines`)
+- Uma instância **Neon Postgres** para desenvolvimento — o projeto não sobe banco local
 
-### Recommended Neon layout
+---
 
-| Environment | Vercel scope | Variable used | Database |
+## Setup
+
+```bash
+npm install
+cp .env.example .env     # ajuste os valores (ver "Variáveis de ambiente")
+npm run build
+npm run dev
+```
+
+`npm run dev` sobe a stack completa:
+
+| Serviço | URL |
+|---|---|
+| Backend | `http://127.0.0.1:4001` |
+| Frontend (Vite) | `http://127.0.0.1:5200` |
+
+> **`npm run dev` usa PowerShell** (`start-dev.ps1`) — ele encerra sessões anteriores, libera as
+> portas, faz o build e aguarda o `/health` antes de subir o Vite. Em shell POSIX (Linux, macOS, WSL),
+> use os dois comandos separados: `npm run dev:neon` e, em outro terminal, `npm run web:dev`.
+
+### Rodando as partes isoladamente
+
+```bash
+npm run dev:neon    # só o backend, em watch mode, contra o Neon de dev
+npm run start:neon  # só o backend, execução única (sem watch)
+npm run web:dev     # só o frontend Vite
+```
+
+---
+
+## Variáveis de ambiente
+
+### Aplicação
+
+| Variável | Obrigatória | Padrão | Descrição |
 |---|---|---|---|
-| Local dev | local `.env` | `DATABASE_URL_DEV` | Neon dev |
+| `NODE_ENV` | não | `development` | `development` · `test` · `production` |
+| `PORT` | não | `4001` | Porta do backend |
+| `APP_NAME` | não | `v-tal-nexus` | Nome da aplicação nos logs |
+| `LOG_LEVEL` | não | `info` | `debug` · `info` · `warn` · `error` |
+| `AUTH_ENABLED` | não | `true` | Liga o guard de bearer token |
+| `AUTH_TOKEN` | **sim em produção** | `change-me` | Token do header `Authorization: Bearer <token>` |
+
+### Banco de dados
+
+Ao menos uma connection string do Neon é obrigatória — a aplicação **falha no boot** sem ela. Todas
+precisam começar com `postgres://` ou `postgresql://`.
+
+| Variável | Quando é usada |
+|---|---|
+| `DATABASE_URL` | **Override explícito** — se presente, vence todas as outras |
+| `DATABASE_URL_PROD` | `VERCEL_ENV=production` ou `NODE_ENV=production` |
+| `DATABASE_URL_DEV` | Vercel Preview/Development, e fallback do desenvolvimento local |
+| `DATABASE_URL_TEST` | Preferida em ambiente local/test, para isolar os testes do banco de dev |
+
+A ordem de resolução está em [`src/shared/config/env.ts`](src/shared/config/env.ts). Cada variável
+aceita o alias `NEON_DATABASE_URL_*` (ex.: `NEON_DATABASE_URL_PROD`).
+
+> Use sempre o endpoint **`-pooler`** do Neon. O endpoint direto trava dentro dos workers do Vitest —
+> ver [AGENTS.md](AGENTS.md) §3.
+
+### Integrações opcionais
+
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `OPENAI_API_KEY` | — | Habilita as rotas de research/chat. Sem ela, o Copilot cai em fallback local sobre `docs/` |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Modelo usado nas rotas de chat |
+| `API_ENDPOINT` | `https://api.openai.com/v1` | Endpoint compatível com OpenAI |
+| `VITE_GOOGLE_MAPS_API_KEY` | — | Mapas do módulo Geo (só a JS API está habilitada) |
+
+### Avançadas
+
+Raramente precisam ser ajustadas — têm padrões seguros definidos em `scripts/dev-neon.mjs`:
+`DATABASE_AUTO_SCHEMA`, `DATABASE_BRIDGE_TIMEOUT_MS`, `DATABASE_CONNECTION_TIMEOUT_MS`,
+`DATABASE_BRIDGE_BUFFER_BYTES`, `DATABASE_REUSE_TEST_INSTANCE`.
+
+---
+
+## Scripts
+
+### Desenvolvimento
+
+| Comando | O que faz |
+|---|---|
+| `npm run dev` | Stack completa (backend + Vite). Alias de `dev:local` |
+| `npm run dev:neon` | Backend em watch mode. Alias: `dev:backend` |
+| `npm run start:neon` | Backend, execução única |
+| `npm run web:dev` | Frontend Vite |
+| `npm start` | Servidor estático simples na porta 5200, servindo `web/` com fallback SPA. **Não** é o Vite |
+
+### Build e qualidade
+
+| Comando | O que faz |
+|---|---|
+| `npm run build` | Compila o backend TypeScript para `dist/` |
+| `npm run web:build` | Build de produção do frontend em `web/dist` |
+| `npm run typecheck` | `tsc --noEmit` na raiz **e** em `web/` |
+| `npm run lint` / `lint:fix` | ESLint |
+| `npm run format` / `format:fix` | Prettier |
+| `npm run clean` | Remove `dist/` |
+
+### Testes
+
+| Comando | Runner | Escopo |
+|---|---|---|
+| `npm test` | — | Suíte completa: unit → integration → regression |
+| `npm run test:unit` | Vitest | `test/**/*.spec.ts` e `web/src/**/*.test.tsx` |
+| `npm run test:integration` | Node | Suíte de integração sobre o `dist/` compilado |
+| `npm run test:regression` | Playwright | E2E de browser (requer `npm run browsers:install`) |
+| `npm run test:watch` | Vitest | Modo watch |
+| `npm run test:coverage` | Vitest | Cobertura v8 |
+
+> Armadilhas de teste (obrigatoriedade do `--use-system-ca`, endpoint `-pooler`, schema por worker)
+> estão documentadas em [AGENTS.md](AGENTS.md) §3.
+
+### Utilitários
+
+| Comando | O que faz |
+|---|---|
+| `npm run migrate:neon` | Carga inicial a partir de um snapshot SQLite (ver abaixo) |
+| `npm run mcp:tmf` | Servidor MCP (stdio) expondo as APIs TMF a clientes de IA |
+| `npm run browsers:install` | Instala o Chromium do Playwright |
+
+---
+
+## Estrutura do projeto
+
+```text
+src/
+├── modules/       # domínios: geo · resource · service · party · order · search · mcp
+└── shared/        # config · http · persistence · tmf · logging · errors · runtime · ui · utils
+
+api/               # entrypoints das Vercel Functions
+web/src/           # React: pages · components · hooks · services · utils · data
+test/              # vitest (unit/integration) + playwright (regression)
+scripts/           # dev, seed, cargas e migração
+docs/              # especificação — ver docs/ e AGENTS.md §8
+```
+
+Cada módulo de domínio segue a mesma anatomia: `domain.ts` (tipos e regras), `repository.ts` +
+`postgres-repository.ts` (persistência atrás de interface), `service.ts` (casos de uso) e `index.ts`
+(composição). Use `src/modules/geo/` como gabarito.
+
+---
+
+## API
+
+O backend expõe três superfícies:
+
+| Prefixo | Conteúdo |
+|---|---|
+| `/health` | Health check. **Público** — não exige autenticação |
+| `/v1/*` | API interna do produto: `geo`, `resource/workspace`, `service/workspace`, `research`, `searches`, `users`, `bootstrap`, `chat/completions` |
+| `/tmf-api/*` | Open APIs TM Forum v4 (ver abaixo) |
+
+**Open APIs TMF implementadas:** TMF632 (Party), TMF633/638 (Service Catalog/Inventory),
+TMF634/639 (Resource Catalog/Inventory), TMF641 (Service Ordering), TMF645 (Service Qualification),
+TMF652 (Resource Order), TMF664 (Resource Function Activation), TMF669 (Party Role),
+TMF673/674/675 (Geographic Address/Site/Location) e TMF688 (Event).
+
+### Autenticação
+
+Com `AUTH_ENABLED=true` (padrão), toda rota exceto `/health` exige:
+
+```text
+Authorization: Bearer <AUTH_TOKEN>
+```
+
+---
+
+## Deploy (Vercel)
+
+Deploy automático, configurado em [`vercel.json`](vercel.json):
+
+- push em `main` → **Production**
+- pull requests e demais branches → **Preview**
+- build: `npm run build && npm run web:build`; estático servido de `web/dist`
+- `/v1/*`, `/tmf-api/*` e `/health` são roteados para as Vercel Functions; o resto cai no SPA
+
+### Variáveis a configurar na Vercel
+
+| Escopo | Variáveis |
+|---|---|
+| Production | `DATABASE_URL_PROD`, `AUTH_TOKEN`, `APP_NAME`, `AUTH_ENABLED` |
+| Preview | `DATABASE_URL_DEV`, `AUTH_TOKEN`, `APP_NAME`, `AUTH_ENABLED` |
+| Ambos (opcional) | `OPENAI_API_KEY`, `OPENAI_MODEL`, `API_ENDPOINT`, `VITE_GOOGLE_MAPS_API_KEY` |
+
+Defina `DATABASE_URL` apenas se quiser sobrescrever a seleção por ambiente.
+
+### Layout Neon recomendado
+
+| Ambiente | Escopo Vercel | Variável usada | Banco |
+|---|---|---|---|
+| Dev local | `.env` local | `DATABASE_URL_DEV` | Neon dev |
 | Preview | Vercel Preview | `DATABASE_URL_DEV` | Neon dev |
-| Production | Vercel Production | `DATABASE_URL_PROD` | Neon PRD |
+| Produção | Vercel Production | `DATABASE_URL_PROD` | Neon PRD |
 
-With this layout:
+Com esse layout, branches e previews nunca tocam dados de produção. Para isolar os testes locais do
+banco de dev, aponte `DATABASE_URL_TEST` para um banco separado.
 
-- feature branches and PR previews never touch production data;
-- `main` deploys read/write production data;
-- local development points to Neon dev, not SQLite.
+---
 
-### Development with Neon
+## Carga inicial
 
-Use a local `.env` with `DATABASE_URL_DEV` pointing to your Neon development database:
+Para popular um banco Neon vazio a partir de um snapshot SQLite:
 
-```bash
-npm run dev:local
-```
-
-This command:
-
-- creates `data/` if needed;
-- loads `.env` when present;
-- sets `DATABASE_URL` from `DATABASE_URL_DEV`;
-- builds the app;
-- starts the backend once on `http://127.0.0.1:4001`;
-- starts the Vite frontend on `http://127.0.0.1:5200`.
-
-To run only the backend against the same Neon dev database, use:
-
-```bash
-npm run start:neon
-```
-
-### Initial data load into Neon
-
-When the Neon databases are empty, seed them from the current SQLite snapshot:
-
-```bash
+```powershell
 $env:TARGET_DATABASE_URL='<neon-connection-string>'
 npm run migrate:neon
 ```
 
-Run it once for the dev database and once for the production database if you want both populated from the same SQLite baseline.
+`SOURCE_DATABASE_URL` aponta o SQLite de origem. Rode uma vez por banco (dev e produção) se quiser
+ambos populados a partir da mesma baseline.
 
-## Scripts
+Scripts de carga de dados reais (estações e recursos Netwin, seeds GPON) vivem em `scripts/` e usam
+`NEXUS_API` (padrão `http://127.0.0.1:4001`) e `NEXUS_TOKEN` para falar com o backend em execução.
 
-- `npm run dev` - build and run the local stack: backend on Neon dev, then Vite web after backend health is ready.
-- `npm run dev:backend` - alias for `npm run dev:neon`.
-- `npm run dev:neon` - build and run only the backend in watch mode, using required `DATABASE_URL_DEV`/Neon.
-- `npm run start:neon` - build and run the backend once, using required `DATABASE_URL_DEV`/Neon.
-- `npm run start` - start the Vite web app.
-- `npm run build` - compile TypeScript to `dist/`.
-- `npm run lint` - run ESLint.
-- `npm run format` - check formatting.
-- `npm run test` - run Node test files from `dist/`.
-- `npm run typecheck` - run TypeScript type checking.
+---
 
-## Scope
+## Documentação
 
-This foundation includes:
+| Onde | O quê |
+|---|---|
+| [AGENTS.md](AGENTS.md) | Cânone arquitetural, convenções de código, armadilhas, guardrails |
+| [docs/1-overview/](docs/1-overview/) | Visão de produto, regras de negócio, glossário |
+| [docs/2-functional-specs/](docs/2-functional-specs/) | HLDs por módulo (Geo · Resource · Service) |
+| [docs/3-system-design/](docs/3-system-design/) | Arquitetura, modelo de dados, integrações, NFR, segurança |
+| [docs/4-design-system/](docs/4-design-system/) | Tokens, componentes, UI kit, guidelines |
+| [docs/5-delivery-plan/](docs/5-delivery-plan/) | Roadmap, backlog, riscos, questões em aberto |
 
-- environment configuration;
-- structured logging;
-- HTTP server bootstrap;
-- auth guard middleware driven by a bearer token;
-- global error response mapping;
-- repository port and in-memory persistence adapter;
-- CI workflow for lint, typecheck, build, and tests;
-- initial documentation and repo structure.
+---
+
+## CI
+
+O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) roda em push para `main` e em todo
+pull request, nesta ordem: `lint` → `typecheck` → `build` → `test`.
+
+---
+
+## Licença
+
+`UNLICENSED` — repositório privado, uso interno V.tal.
+
+---
+
+*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*

@@ -6,7 +6,7 @@ export type NexusCopilotChatMessage = {
   content: string;
 };
 
-const CONTEXT_FILE = resolve(process.cwd(), 'docs/00-visao-geral/nexus-copilot-training.md');
+const CONTEXT_FILE = resolve(process.cwd(), 'docs/1-overview/nexus-copilot-training.md');
 const BEHAVIOR_OVERLAY = [
   'Quando o usuario pedir o cadastro de um modelo de equipamento, use linguagem de negocio e nao exponha termos TMF desnecessarios.',
   'Se o usuario informar modelo e fabricante, tente resolver o fabricante existente no inventario automaticamente; nao peca ID de party para usuario leigo.',

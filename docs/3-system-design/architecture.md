@@ -13,13 +13,14 @@ infraestruturais:
 - `test/` para validaÃ§Ã£o da fundaÃ§Ã£o.
 
 O objetivo Ã© preparar o terreno para os mÃ³dulos TMF sem misturar regras de negÃ³cio no bootstrapping.
+
 ## Camada web com Vite
 
 A camada web do Nexus deve ser estruturada com Vite como build tool e dev server, separando claramente:
 
-- `Dashboard` como página inicial;
-- `Geo` como módulo específico acessado pelo menu lateral;
-- shell compartilhado com navegação lateral, header e layout responsivo;
-- dicionário central de termos para tradução de labels técnicos na interface.
+- `Dashboard` como pÃ¡gina inicial;
+- `Geo` como mÃ³dulo especÃ­fico acessado pelo menu lateral;
+- shell compartilhado com navegaÃ§Ã£o lateral, header e layout responsivo;
+- dicionÃ¡rio central de termos para traduÃ§Ã£o de labels tÃ©cnicos na interface.
 
-Essa separação evita acoplamento entre a página inicial de operação e a experiência funcional do módulo Geo.
+Essa separaÃ§Ã£o evita acoplamento entre a pÃ¡gina inicial de operaÃ§Ã£o e a experiÃªncia funcional do mÃ³dulo Geo.

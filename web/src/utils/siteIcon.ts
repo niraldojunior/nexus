@@ -19,7 +19,7 @@ export type SiteIcon = {
   label: string;
 };
 
-// Espelha os tokens do design system (docs/03-design-system/tokens/colors.css).
+// Espelha os tokens do design system (docs/4-design-system/tokens/colors.css).
 // Precisa existir em JS porque o Google Maps só aceita hex literal.
 export const siteKindColor: Record<SiteKind, string> = {
   CO: '#8b5cf6', // --status-purple

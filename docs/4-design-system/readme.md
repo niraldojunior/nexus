@@ -24,9 +24,9 @@ O frontend oficial agora segue a experiência **assistant/workspace** importada 
 
 - Frontend oficial em `web/src`, baseado na UX/UI do Lab001.
 - Direcionadores técnicos do produto Nexus.
-- Tokens em `docs/03-design-system/tokens/`.
-- Componentes e UI kits em `docs/03-design-system/components/` e `docs/03-design-system/ui_kits/`.
-- Guidelines canônicos em `docs/03-design-system/guidelines/`, com destaque para `page-chrome.md` como referência de cabeçalhos e barras de ação.
+- Tokens em `docs/4-design-system/tokens/`.
+- Componentes e UI kits em `docs/4-design-system/components/` e `docs/4-design-system/ui_kits/`.
+- Guidelines canônicos em `docs/4-design-system/guidelines/`, com destaque para `page-chrome.md` como referência de cabeçalhos e barras de ação.
 
 ## Diretrizes-base
 

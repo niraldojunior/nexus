@@ -1,7 +1,7 @@
 import type { ServiceCategory } from '../services/serviceApi';
 
 /**
- * Árvore canônica de ServiceCategory da V.tal (03-modulo-service.md §7.6, RF-004).
+ * Árvore canônica de ServiceCategory da V.tal (03-module-service.md §7.6, RF-004).
  *
  * O Sidebar importa estas categorias estaticamente — o submenu não depende de fetch. O `code` não
  * existe no modelo TMF do backend: é a convenção do frontend que casa com `ServiceSpecification.category`

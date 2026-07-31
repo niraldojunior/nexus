@@ -30,9 +30,10 @@ Node **22+**. Instale com `npm install`, copie `.env.example` para `.env` e ajus
 | `npm run typecheck` | `tsc --noEmit` na raiz **e** em `web/` |
 | `npm run lint` / `lint:fix` | ESLint |
 | `npm run format` / `format:fix` | Prettier |
+| `npm run docs:check` | Valida anatomia, JSON, links e rastreabilidade das functional specs |
 | `npm test` | Suíte completa: unit → integration → regression |
 
-O **CI** (`.github/workflows/ci.yml`) roda, nesta ordem: `lint` → `typecheck` → `build` → `test`. Rode ao menos `lint` e `typecheck` antes de considerar uma mudança pronta.
+O **CI** (`.github/workflows/ci.yml`) roda, nesta ordem: `docs:check` → `lint` → `typecheck` → `build` → `test`. Rode ao menos `docs:check`, `lint` e `typecheck` antes de considerar uma mudança pronta.
 
 Setup de ambiente, variáveis do Vercel e layout Neon dev/prod: veja o [README.md](README.md).
 
@@ -83,7 +84,7 @@ docs/
 ├── 2-functional-specs/    # HLDs: 01-module-geo · 02-module-resource · 03-module-service
 │   ├── _spec-template.md      # ← playbook: anatomia de HLD + template de requisito
 │   ├── _benchmark-systems.md  # ← playbook: seção N.9
-│   └── reference-systems/     # fontes: netwin · kuwaiba · netbox
+│   └── inspirations/          # fontes de benchmark: netwin · kuwaiba · netbox
 ├── 3-system-design/       # architecture · data-model · integrations · NFR · security
 ├── 4-design-system/       # SKILL.md + tokens · guidelines · components · ui_kits · assets
 └── 5-delivery-plan/       # roadmap · backlog · riscos · questões em aberto

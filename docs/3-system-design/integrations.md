@@ -278,7 +278,7 @@ referenciada por `place`).
 |---|---|---|
 | **Google Maps (JS API)** | Renderização do mapa e geocodificação interativa no browser | Somente a JS API está liberada corporativamente. Para massa, o caminho é o Geosite (§7) |
 | **Provedor LLM** | Nexus Copilot | Opcional. Sem `OPENAI_API_KEY`, cai em fallback local sobre `docs/` |
-| **MCP** | Exposição das APIs TMF a clientes de IA | Interno; sujeito ao mesmo RBAC |
+| **MCP** | Exposição das APIs TMF a clientes de IA | Interno; sujeito ao mesmo RBAC e a confirmação explícita antes de writes |
 
 ---
 
@@ -298,20 +298,8 @@ referenciada por `place`).
 
 ## 10. Questões em aberto
 
-> O registro central de governança de questões é
-> [`../1-overview/open-questions.md`](../1-overview/open-questions.md). A tabela abaixo é o recorte
-> das questões de integração.
-
-| ID | Questão | Estado |
-|---|---|---|
-| **Q-INT-002** | CDC do Netwin via GoldenGate ou extração incremental agendada? | 🔴 **Aberta** — decisão adiada |
-| **Q-INT-005** | Mapeamento dos modelos de dados de **Netwin, Geosite Legado e Network Core** para o modelo canônico TMF | 🟠 **Aguardando** os modelos dos legados |
-| Q-INT-001 | Qual serviço de geocodificação? | ✅ Geosite Logradouros é premissa (§7) |
-| Q-INT-003 | Formato e SLA da viabilidade em lote | ✅ Foto diária + evento de divergência (§5.1) |
-| Q-INT-004 | Sistema de provisionamento alvo | ✅ **SIS** (§6) |
-| Q-INT-006 | Conversão do CAD do Geonet para `SDO_GEOMETRY` | ✅ **Sem efeito** — Geonet é cartografia base e não migra |
-| Q-INT-007 | O Geosite devolve procedência e precisão? | ✅ Precisão sim, procedência não (§7.2) |
-| Q-INT-008 | O CAD do Geonet cobre planta ou território? | ✅ Só território/cartografia base (§7.1) |
+O registro único de governança, incluindo Q-INT-002 e Q-INT-005, vive em
+[`../1-overview/open-questions.md`](../1-overview/open-questions.md). Esta seção não replica estados.
 
 ---
 
@@ -322,7 +310,7 @@ referenciada por `place`).
 | [`architecture.md`](architecture.md) | Outbox, Kafka, Apigee, saga de ordens |
 | [`security.md`](security.md) | Identidade, tenant, mTLS |
 | [`data-model.md`](data-model.md) | `_origin`, retenção, particionamento |
-| [`../2-functional-specs/reference-systems/netwin.md`](../2-functional-specs/reference-systems/netwin.md) | Modelo do legado |
+| [`../2-functional-specs/inspirations/netwin.md`](../2-functional-specs/inspirations/netwin.md) | Modelo do legado |
 
 ---
 

@@ -1,69 +1,90 @@
-# Backlog Técnico
+# Backlog técnico
 
-> Priorização: P0 bloqueia MVP/foundation; P1 reduz risco relevante; P2 melhora maturidade ou governança.
+> Estado em julho de 2026. Este backlog registra capacidades de runtime ainda necessárias para aderência aos HLDs. A revisão documental não autoriza a implementação desses itens.
 
-## 1. P0 - Bloqueadores De Foundation
+## 1. Convenções
 
-| ID | Tema | Item | Origem | Dependência | Critério de aceite |
-|---|---|---|---|---|---|
-| P0-001 | Arquitetura | Alinhar `02-system-design` ao cânone Oracle-native, Kafka/outbox, Schema Registry, TMF688 e Property Graph. | INC-005, C7, C10 | Nenhuma | Documento técnico deixa de citar múltiplos backends/RMQ como padrão primário sem decisão explícita. |
-| P0-002 | Eventos | Definir contrato transversal de outbox TMF688. | REQ-MOD01-012, REQ-MOD02-025, REQ-MOD03-016 | P0-001 | Nomes, envelope, versionamento, idempotência, DLQ e retenção documentados. |
-| P0-003 | Dados | Definir modelo físico Oracle para catálogo, inventory, relationships, characteristics e `_origin`. | C1, C5, C10 | P0-001 | Mapeamento cobre Geo, Resource e Service sem campos V.tal hardcoded. |
-| P0-004 | Dados | Definir estratégia SQLite local como adapter de desenvolvimento. | Diretriz de implementação | P0-001 | Limites do SQLite documentados; domínio isolado por portas; produção proibida em SQLite. |
-| P0-005 | Plataforma | Definir pipeline OpenShift não produtivo e produtivo. | Diretriz de implementação | P0-001 | Build, deploy, probes, secrets, env vars, logs e rollback documentados. |
-| P0-006 | Migração | Definir padrão de pipeline `_origin` e relatórios de cobertura. | C5, HLDs MOD01-MOD03 | P0-003 | Consulta por sistema/id legado, migratedBy e relatório por wave especificados. |
-| P0-007 | Catálogo | Fechar bootstrap inicial de SiteSpecification. | Q-GEO-001 | P0-003 | Lista mínima aprovada para CO, POP, armário, ponto de instalação, andar, sala e cage. |
-| P0-008 | Catálogo | Fechar bootstrap inicial de ResourceSpecification. | Q-RES-001 | P0-003 | Modelos MVP de OLT, ONT, switch, roteador, splitter, CTO, cabo e rack definidos. |
-| P0-009 | Plataforma | Definir RBAC/audit mínimo para produção. | C8, MOD08, security.md | P0-001 | Roles mínimas, permissões por módulo, audit trail e role MigrationJob documentados. |
-| P0-010 | NFR | Definir SLOs mínimos de API e eventos. | Q-GEO-008, non-functional-requirements.md | P0-002 | Latência, disponibilidade, throughput e retenção definidos para MVP. |
-| P0-011 | Integração | Definir integração com Geosite Logradouros. | Q-GEO-005 | P0-001 | Decisão API existente vs nova interface registrada. |
-| P0-012 | Graph | Dimensionar Oracle Property Graph. | Q-RES-004 | P0-001 | Licença, volume, índices, benchmark e limite operacional definidos. |
+- **Prioridade:** P0 bloqueia uma regra canônica ou contrato transversal; P1 completa comportamento funcional essencial; P2 amplia escala, operação ou experiência.
+- **Estado:** `Concluído`, `Parcial`, `Pendente` ou `Superado`.
+- **Origem:** o REQ é a chave global; RF e CA são os subitens do próprio requisito indicados na matriz de aderência do HLD.
+- Um item só muda para `Concluído` quando o critério de aceite possui código e teste aprovado.
 
-## 2. P1 - Entrega Funcional E Redução De Risco
+## 2. Geographic (`DEV-GEO-*`)
 
-| ID | Tema | Item | Origem | Dependência | Critério de aceite |
-|---|---|---|---|---|---|
-| P1-001 | Qualidade | Criar suíte dupla de persistência: SQLite local e banco corporativo. | Diretriz de implementação | P0-004/P0-005 | Testes de contrato rodam nos dois adapters; exceções são explícitas. |
-| P1-002 | Geographic | Definir matriz de derivação CN. | Q-GEO-002 | P0-007 | Regra determinística e exceções documentadas. |
-| P1-003 | Geographic | Definir política CLLI. | Q-GEO-003 | P0-007 | Obrigatoriedade por tipo/status de Site aprovada. |
-| P1-004 | Geographic | Definir RelationshipTypes de Site. | Q-GEO-004 | P0-007 | Bootstrap e inversos aprovados. |
-| P1-005 | Geographic | Decidir syncGeoPosition síncrono vs assíncrono. | Q-GEO-007 | P0-002 | Fluxo de UX e consistência documentado. |
-| P1-006 | Geographic | Escolher provedor de geocodificação. | Q-GEO-009 | P0-011 | Custo, licença e fallback definidos. |
-| P1-007 | Resource | Decidir modelagem de fibers internas. | Q-RES-007 | P0-012 | Política 100% vs ocupadas e impacto de volume aprovado. |
-| P1-008 | Resource | Definir carga inicial de IPAM legado. | Q-RES-008 | P0-006 | Fonte, mapeamento e validação de prefix/IP/VRF/VLAN definidos. |
-| P1-009 | Resource | Definir cache de path computation. | Q-RES-010 | P0-012 | TTL, invalidação e rebuild documentados. |
-| P1-010 | Resource | Definir granularidade de energia. | Q-RES-011 | P0-008 | PowerSupply/PowerOutlet/PowerFeed aplicáveis ao MVP. |
-| P1-011 | Service | Fechar ServiceSpecifications do MVP. | Q-SVC-001 | P0-008 | CFS/RFS para FTTH, EILD/L2/L3VPN e CloudVoIP definidos. |
-| P1-012 | Service | Definir SubscriberID Nexus-native. | Q-SVC-002 | MOD06/MOD04 | Formato, autoridade, faixa e convivência legado aprovados. |
-| P1-013 | Service | Decidir granularidade RFS GPON. | Q-SVC-004 | P1-011 | Modelo por assinante ou porta PON agregada aprovado. |
-| P1-014 | Service | Decidir bundle comercial. | Q-SVC-005 | P1-011 | Uso de `isBundle` ou `serviceRelationship` definido. |
-| P1-015 | Service | Definir propagação de estado CFS/RFS/Resource. | Q-SVC-006 | MOD05 | Política automática vs orquestrada aprovada. |
-| P1-016 | UI | Alinhar UI kit à taxonomia Nexus TMF. | INC-006 | P0-007/P0-008 | Navegação e labels usam Geographic, Resource, Service, Order e Party. |
+| ID | Prioridade | Estado | Origem REQ/RF/CA | Comportamento ausente | Contrato afetado | Dependência ou bloqueador | Evidência do estado atual | Critério de aceite testável |
+|---|---|---|---|---|---|---|---|---|
+| DEV-GEO-001 | P1 | Parcial | REQ-MOD01-001, seus RF/CA | Consultas por raio/interseção, índice espacial e export GeoJSON em escala. | TMF675 e repositório Geo | Q-ARQ-001 | `GeoService`, `IGeoRepository`, rotas TMF675 e `geo.unit.spec.ts` cobrem CRUD e geometrias básicas. | Testes de contrato comprovam raio/interseção corretos, paginação determinística e export válido para Point, LineString e Polygon. |
+| DEV-GEO-002 | P1 | Parcial | REQ-MOD01-002, seus RF/CA | Sugestão, normalização e geocodificação de endereço via Geosite, com versionamento. | TMF673 e integração Geosite | Q-GEO-005 | CRUD TMF673 e vínculo Address→Location existem. | Teste integrado cria endereço a partir de sugestão, preserva a fonte e trata indisponibilidade sem criar registro parcial. |
+| DEV-GEO-003 | P0 | Parcial | REQ-MOD01-003 e 009, seus RF/CA | Catálogo extensível de SiteSpecification, lifecycle e `allowedChildren` dinâmico. | TMF674 Catalog e validação de contenção | Q-GEO-001 | CRUD de SiteSpecification existe, mas categorias permanecem fechadas no domínio TypeScript. | Uma nova spec e sua regra pai/filho são criadas por API, auditadas e aplicadas sem alteração de código; ciclo ancestral retorna 409. |
+| DEV-GEO-004 | P1 | Parcial | REQ-MOD01-004–010, seus RF/CA | Hierarquia completa, classificações, filtros, transições, histórico, relações governadas e análise de impacto. | TMF674 Inventory e workspace Geo | Q-GEO-002, Q-GEO-004, Q-GEO-008, Q-GEO-010 | Árvore lazy, busca, relatedSite e eventos básicos estão em `GeoService` e no frontend Geo. | Suíte cobre ciclos, profundidade, filtros combinados, transições inválidas, inversos e impacto, com histórico auditável. |
+| DEV-GEO-005 | P2 | Parcial | REQ-MOD01-011, seus RF/CA | Sincronização de coordenadas, camadas Geosite, proximidade e export PNG/GeoJSON. | `/v1/geo/tree/viewport` e `GeoPage` | Q-GEO-005, Q-GEO-007 | Mapa, árvore sincronizada, cluster e viewport por bbox/escala estão implementados. | E2E comprova seleção bidirecional árvore↔mapa, camadas, proximidade e export fiel ao viewport. |
+| DEV-GEO-006 | P1 | Pendente | REQ-MOD01-002 e 006, seus RF/CA | Importação e alteração em massa com validação por item, idempotência e relatório. | TMF673/674 bulk proposto | DEV-X-001, DEV-X-002 | Não há contrato bulk no backend atual. | Lote misto produz resultado por item, não duplica retry idempotente e publica eventos apenas para commits efetivos. |
 
-## 3. P2 - Maturidade E Governança
+## 3. Resource (`DEV-RES-*`)
 
-| ID | Tema | Item | Origem | Dependência | Critério de aceite |
-|---|---|---|---|---|---|
-| P2-001 | Documentação | Preencher `business-rules.md` com C1-C10 e decisões resolvidas. | INC-001 | Architecture decisions aprovado | Arquivo vira fonte canônica transversal. |
-| P2-002 | Documentação | Preencher `glossary.md`. | INC-002 | HLDs MOD01-MOD03 | Glossário cobre TMF, GPON/FTTH, HP/HC, CFS/RFS, OSP/ISP e termos V.tal. |
-| P2-003 | Documentação | Atualizar Overview com status real do MOD03. | INC-003/INC-004 | Este plano | Overview deixa de marcar MOD03 como não iniciado. |
-| P2-004 | Design system | Corrigir metadados de tokens no manifest/adherence. | Design system discovery | P1-015 | Tipos de token coerentes para automação. |
-| P2-005 | Analytics | Definir modelo de consumo do Data Lake. | MOD07 | P0-002 | Tópicos, retenção, particionamento e lineage definidos. |
-| P2-006 | Process | Modelar BPMN de swap e decommissioning. | Q-RES-009 decidido | MOD05 | Workflows documentados e auditáveis. |
-| P2-007 | Um Telecom | Planejar integração OZMAP/UMBOX. | Overview, `_origin` | P0-004 | Estratégia de coexistência e migração diferida definida. |
+| ID | Prioridade | Estado | Origem REQ/RF/CA | Comportamento ausente | Contrato afetado | Dependência ou bloqueador | Evidência do estado atual | Critério de aceite testável |
+|---|---|---|---|---|---|---|---|---|
+| DEV-RES-001 | P0 | Parcial | REQ-MOD02-001–004, seus RF/CA | Lifecycle e governança completos de category, candidate, specification, characteristics, functions e fabricante PartyRef. | TMF634 e catálogo TMF664 | Q-RES-001, DEV-X-004 | CRUD principal TMF634/664, bootstrap, UI e testes existem; ResourceCategory é somente leitura. | Testes de API governam publicação/versionamento e permitem extensão sem hardcode, auditada por tenant. |
+| DEV-RES-002 | P1 | Parcial | REQ-MOD02-005–011, seus RF/CA | Bulk, histórico e invariantes especializadas de OSP, lifecycle e características validadas. | TMF639 Physical/LogicalResource | Q-RES-007, DEV-RES-006 | CRUD, filtros, paginação, workspace e relações genéricas estão ativos. | Suíte cria e valida poste, duto, CTO, splitter, cabo, fiber e splice; rejeita capacidade, continuidade e transições inválidas. |
+| DEV-RES-003 | P0 | Pendente | REQ-MOD02-012, seus RF/CA | Path computation ponta a ponta, métricas ópticas, raiz comum, cache e visualização. | Endpoint de path proposto; nenhum endpoint está publicado | Q-RES-004, Q-RES-010, DEV-X-005 | Não existe rota ou serviço de path computation. | Grafo de teste OLT→ONT retorna caminho ordenado e métricas; ruptura, ciclo e cache invalidado possuem casos aprovados. |
+| DEV-RES-004 | P1 | Parcial | REQ-MOD02-013–019, seus RF/CA | Rack elevation, slots, cards, ports, energia, conexões e front/rear port com restrições físicas. | TMF639 Inside Plant | MOD05, Q-RES-011, DEV-RES-006 | Resources e relações genéricas representam os objetos, sem invariantes dedicadas. | E2E instala equipamento em U livre, conecta portas/energia e rejeita colisão, incompatibilidade e sobrecapacidade. |
+| DEV-RES-005 | P1 | Parcial | REQ-MOD02-020–023, seus RF/CA | IPAM, VRF/RT, VLAN, ASN e MPLS Label com pools, unicidade e alocação concorrente. | TMF639 LogicalResource | Q-RES-008 | O inventário lógico e a UI persistem tipos genéricos. | Testes concorrentes impedem sobreposição/duplicidade e comprovam allocate, reserve, release e consultas por escopo. |
+| DEV-RES-006 | P0 | Pendente | REQ-MOD02-007, 018 e 024, seus RF/CA | Bootstrap + CRUD de RelationshipType, inversos, simetria, cardinalidade, audit e validação em writes. | ResourceRelationshipType e TMF639 | Q-RES-012, DEV-X-002 | `ResourceService` aceita string livre e o catálogo persistido não possui API de governança. | Tipo criado por API passa a validar relações; tipo inválido falha; inverso/evento/auditoria são comprovados por testes. |
 
-## 4. Control Points Transversais
+## 4. Service (`DEV-SVC-*`)
 
-| Control point | Aplicação | Motivo |
+| ID | Prioridade | Estado | Origem REQ/RF/CA | Comportamento ausente | Contrato afetado | Dependência ou bloqueador | Evidência do estado atual | Critério de aceite testável |
+|---|---|---|---|---|---|---|---|---|
+| DEV-SVC-001 | P0 | Parcial | REQ-MOD03-001–003, seus RF/CA | Lifecycle/versionamento, regras de publicação, characteristics e visibilidade por tenant no catálogo. | TMF633 | Q-SVC-001, DEV-X-004 | CRUD de specification, category e candidate, filtros, UI e testes estão ativos. | Catálogo versionado publica somente candidate válido, aplica tenant e rejeita characteristics fora da spec. |
+| DEV-SVC-002 | P1 | Parcial | REQ-MOD03-004, 005 e 010, seus RF/CA | Bulk, `fields`, histórico semântico, transições/razões e papéis A/Z/re-home. | TMF638 e workspace Service | DEV-X-001, DEV-X-002 | CRUD, filtros, paginação, workspace, UI e eventos básicos existem. | Testes de contrato cobrem bulk idempotente, projeção, histórico, transições e alteração geográfica sem vínculo órfão. |
+| DEV-SVC-003 | P0 | Parcial | REQ-MOD03-006 e 011, seus RF/CA | SubscriberID Nexus-native com autoridade, faixa, unicidade, tenant e reconciliação legado. | TMF638 CFS e Party/Tenant | Q-SVC-002, MOD06 | CFS exige SubscriberID, mas recebe valor externo sem geração/governança nativa. | Criação concorrente nunca duplica ID; tenant e `_origin` ficam rastreáveis; reconciliação detecta conflito. |
+| DEV-SVC-004 | P0 | Parcial | REQ-MOD03-005 e 007–009, seus RF/CA | Invariantes CFS/RFS, capacidade/compartilhamento, ciclos, impacto reverso e propagação de estado. | TMF638, TMF688 e Resource Inventory | Q-SVC-004, Q-SVC-006, Q-SVC-007, MOD05 | O código exige CFS→RFS→Resource e proíbe Resource direto no CFS. | Suíte rejeita ciclo e referência inválida, calcula impacto Resource→RFS→CFS e aplica a política de estado aprovada. |
+| DEV-SVC-005 | P1 | Parcial | REQ-MOD03-012–014, seus RF/CA | Specs, características e cenários completos para Bitstream GPON, EILD/L2/L3VPN e CloudVoIP. | TMF633/638 e contratos de produto | Q-SVC-001, Q-SVC-004, Q-SVC-005 | O modelo genérico e a UI representam os três cenários, sem aceite end-to-end canônico. | Fixtures e E2E criam cada produto com CFS/RFS/Resource/place/Party corretos e validam SLA/bundle/perfis. |
+| DEV-SVC-006 | P0 | Pendente | REQ-MOD03-015, seus RF/CA | Bootstrap + CRUD de RelationshipType, inversos, audit, eventos e validação de serviceRelationship. | TMF638 ServiceRelationshipType | Q-SVC-005, DEV-X-002 | `ServiceService` aceita string livre e não consulta catálogo governado. | Tipo criado por API controla writes; inválido falha; inverso, audit e evento têm testes aprovados. |
+
+## 5. Transversal (`DEV-X-*`)
+
+| ID | Prioridade | Estado | Origem REQ/RF/CA | Comportamento ausente | Contrato afetado | Dependência ou bloqueador | Evidência do estado atual | Critério de aceite testável |
+|---|---|---|---|---|---|---|---|---|
+| DEV-X-001 | P0 | Pendente | C5; REQ-MOD01-001, MOD02-001/005, MOD03-001/004 e seus RF/CA | UUID v7 Nexus-native e grupo `_origin` somente-leitura, pesquisável e auditável. | IDs e characteristics de Geo/Resource/Service | Estratégia de migração | IDs atuais não garantem v7 e `_origin` não possui política transversal implementada. | Testes verificam ordenação temporal v7, importação idempotente e PATCH 403 em `_origin` fora de `MigrationJob`. |
+| DEV-X-002 | P0 | Parcial | C7; REQ-MOD01-012, MOD02-025, MOD03-016 e seus RF/CA | Outbox transacional, relay, Schema Registry, idempotência, DLQ e reprocessamento. | TMF688 transversal | Q-GEO-008; infraestrutura de eventos | `tmf_event` registra e expõe eventos, mas não há outbox/registry/DLQ. | Teste de falha entre commit e publicação não perde evento; retry não duplica; schema incompatível e DLQ são exercitados. |
+| DEV-X-003 | P0 | Parcial | C9; REQ-MOD01-010, seus RF/CA | Catálogo transversal e governado de RelationshipTypes, inclusive Geographic. | Geo/Resource/Service relationships | Q-GEO-004, DEV-RES-006, DEV-SVC-006 | Relações Geo possuem operações, porém os tipos não são administrados por contrato comum. | Bootstrap e CRUD auditado validam tipo, inverso, simetria e cardinalidade nos três módulos. |
+| DEV-X-004 | P0 | Parcial | C8; REQ-MOD02-001/004 e MOD03-002/003/006, seus RF/CA | Isolamento por tenant, RBAC, auditoria e `relatedParty` obrigatório nos writes aplicáveis. | HTTP, persistência e segurança | MOD06/MOD08 | Party lookup existe, mas a autorização/segregação não cobre todos os contratos. | Testes de segurança impedem leitura/write cross-tenant, exigem role e registram ator, tenant e alteração. |
+| DEV-X-005 | P1 | Pendente | C10; REQ-MOD02-012, seus RF/CA | Adapter Oracle e Property Graph para path computation, mantendo domínio portável. | Persistência Resource e graph | Q-ARQ-001, Q-RES-004 | Runtime atual usa Neon Postgres; Oracle é arquitetura-alvo. | Testes de contrato rodam nos adapters aprovados e benchmark atende ao SLO de path sem mudar o domínio. |
+
+## 6. Reconciliação do backlog anterior
+
+| Item anterior | Estado | Destino ou justificativa |
 |---|---|---|
-| Catálogo extensível | SiteSpecification, ResourceSpecification, ServiceSpecification, RelationshipType | Evita listas hardcoded e suporta governança via API. |
-| Eventos/outbox | MOD01, MOD02, MOD03, futuro MOD04-MOD08 | Garante consistência e integração desacoplada. |
-| `_origin` | Geo, Resource, Service, catálogo importado | Sustenta migração, auditoria e dual-running. |
-| RBAC/audit | Todos os writes | Necessário para produção e operação multi-tenant. |
-| Soft-delete/terminate | Geo, Resource, Service | Preserva histórico e evita perda operacional/regulatória. |
-| Portabilidade de persistência | Repositórios e migrations | Permite SQLite local sem comprometer Oracle/banco corporativo. |
-| Deploy OpenShift | Todos os módulos produtivos | Garante runtime corporativo, secrets, health checks, observabilidade e rollback. |
+| P0-001 — alinhar system design ao cânone | Concluído | `docs/3-system-design/` já registra Oracle como alvo e Neon Postgres como estado atual. |
+| P0-002 — contrato transversal de eventos | Parcial | Consolidado em DEV-X-002. |
+| P0-003 — modelo físico Oracle | Pendente | Consolidado em DEV-X-005 e no plano de dados. |
+| P0-004 / P1-001 — SQLite local e suíte dupla | Superado | O baseline atual é Neon Postgres; portabilidade futura permanece em DEV-X-005. |
+| P0-006 — pipeline `_origin` | Pendente | Consolidado em DEV-X-001. |
+| P0-007 / P0-008 — bootstraps Geo/Resource | Parcial | Consolidados em DEV-GEO-003 e DEV-RES-001. |
+| P0-009 — RBAC/audit | Pendente | Consolidado em DEV-X-004. |
+| P0-010 — SLOs | Parcial | Mantido em `non-functional-requirements.md`; critérios específicos aparecem nos DEV afetados. |
+| P0-011 — Geosite Logradouros | Pendente | Consolidado em DEV-GEO-002. |
+| P0-012 / P1-009 — Property Graph e cache | Pendente | Consolidados em DEV-RES-003 e DEV-X-005. |
+| P1-002–P1-006 — decisões Geographic | Parcial | Questões seguem no registro central; implementação em DEV-GEO-002–005. |
+| P1-007–P1-010 — decisões Resource | Parcial | Questões seguem no registro central; implementação em DEV-RES-002–005. |
+| P1-011–P1-015 — decisões Service | Parcial | Questões seguem no registro central; implementação em DEV-SVC-001–005. |
+| P2-001 — preencher business rules | Concluído | C1–C10 estão centralizadas em `business-rules.md`. |
+| P2-002 — preencher glossário | Concluído | Glossário canônico está preenchido. |
+| P2-003 — corrigir status do MOD03 | Concluído | Overview distingue base implementada de aderência completa. |
+| P1-016 / P2-004 — design system | Parcial | A UI de produção é `web/src`; dívida visual permanece fora dos HLDs de domínio. |
+| P0-005, P2-005–P2-007 | Pendente | Permanecem nos planos dos módulos/plataforma correspondentes; não são gaps exclusivos dos 53 requisitos. |
+
+## 7. Pontos de controle transversais
+
+| Ponto de controle | Aplicação | Backlog |
+|---|---|---|
+| Catálogo extensível | Specifications, Characteristics e RelationshipTypes | DEV-GEO-003, DEV-RES-001/006, DEV-SVC-001/006, DEV-X-003 |
+| Eventos/outbox | Geo, Resource, Service e módulos futuros | DEV-X-002 |
+| Identidade e proveniência | Entidades e catálogos importados | DEV-X-001 |
+| RBAC, Audit e multi-tenancy | Todos os writes | DEV-X-004 |
+| Persistência e grafo alvo | Oracle e Property Graph | DEV-X-005, DEV-RES-003 |
 
 ---
 
-*V.tal Nexus - Documento Confidencial - Uso Interno - PÚBLICA*
+*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*

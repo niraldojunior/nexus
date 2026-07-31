@@ -42,6 +42,9 @@ rótulos de UI, status e prosa ficam em **português**.
 | **Soft-terminate** | Encerramento de serviço sem exclusão: Service → `state='terminated'` (C6) |
 | **Outbox pattern** | Publicação de evento na mesma transação da mudança de estado, garantindo atomicidade (C7) |
 | **Property Graph** | Estrutura de grafo para *path computation* (porta OLT → ONT). 📐 Alvo arquitetural (C10) |
+| **Implementação-base** | Conjunto executável de domínio, persistência, API e UI que cobre o fluxo principal, mas não implica aderência integral a todos os RF/RN/CA do HLD |
+| **Aderência ao HLD** | Estado verificado por requisito: `Implementado`, `Parcial`, `Não implementado` ou `Divergente`; `Implementado` exige código e teste para todo comportamento obrigatório |
+| **Maturidade da especificação** | Situação independente da implementação: `Especificado` ou `Bloqueado por Q-*` |
 
 ---
 

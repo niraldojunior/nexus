@@ -1,6 +1,6 @@
 # Dependências Entre Módulos
 
-> Data base: 27/06/2026
+> Data-base: 31/07/2026. A implementação-base de MOD01–MOD04/MOD06 existe; a matriz descreve dependências para aderência completa.
 
 ## 1. Grafo Lógico
 
@@ -24,7 +24,7 @@ Leitura do grafo:
 
 - MOD01 é a fundação geográfica consumida por Resource, Service e Order.
 - MOD02 depende de MOD01 via `place` e é consumido por Service via `supportingResource`.
-- MOD03 depende de MOD01, MOD02 e MOD06; no MVP a validação de MOD06 pode ser diferida conforme D-3.
+- MOD03 depende de MOD01, MOD02 e MOD06; no MVP a validação de MOD06 pode ser diferida conforme D-SVC-003.
 - MOD04 cria/altera Services e executa viabilidade TMF645 sobre Geo + Resource.
 - MOD05 orquestra workflows críticos, principalmente swap, decommissioning e ativações complexas.
 - MOD07 consome eventos TMF688.
@@ -42,7 +42,7 @@ Leitura do grafo:
 | MOD02 Resource | MOD05 Process | Síncrono | Tasks BPMN para swap/decommissioning. | Bloqueia operações críticas automatizadas. |
 | MOD06 Party | MOD01 Geographic | Síncrono | `relatedParty` owner/tenant. | Pode ser mínimo no MVP. |
 | MOD06 Party | MOD02 Resource | Síncrono | manufacturer, vendor, owner, tenant. | Bloqueia governança completa de catálogo e inventário. |
-| MOD06 Party | MOD03 Service | Síncrono | `relatedParty[subscriber]`. | Validação diferida no MVP por D-3. |
+| MOD06 Party | MOD03 Service | Síncrono | `relatedParty[subscriber]`. | Validação diferida no MVP por D-SVC-003. |
 | MOD04 Order | MOD03 Service | Síncrono + eventos | `serviceOrderItem`, criação/alteração de Service. | Bloqueia Service lifecycle automatizado. |
 | MOD05 Process | MOD02/MOD03/MOD04 | Síncrono | Workflow instance e tasks BPMN. | Bloqueia fluxos complexos e aprovação humana. |
 | MOD01-MOD05 | MOD07 Analytics | Assíncrono | TMF688 versionado. | Bloqueia Data Lake, dashboards e SA baseada em evento. |
@@ -60,7 +60,9 @@ Leitura do grafo:
 | TMF688 | Transversal/MOD07 | Analytics, SA, Order, BSS | Eventos por outbox, idempotentes, versionados em Schema Registry. |
 | RBAC/Audit | MOD08 | Todos | Toda escrita relevante exige autorização e audit trail. |
 
-## 4. Caminhos Críticos
+## 4. Caminhos críticos
+
+As datas abaixo eram marcos históricos do plano inicial e precisam de rebaseline pelos donos; o encadeamento técnico permanece válido.
 
 ### Caminho crítico Netwin - Dez/2026
 
@@ -100,7 +102,7 @@ MOD01/MOD02 estáveis
 | DEP-001 | Stack Oracle 21c/23ai + Property Graph dimensionada. | Path computation e escala 22M+ HPs. | C10, Q-RES-004. |
 | DEP-002 | Kafka/outbox/Schema Registry definidos no design técnico. | Eventos TMF688 em produção. | C7, REQ-MOD01-012, REQ-MOD02-025, REQ-MOD03-016. |
 | DEP-003 | Catálogo inicial de SiteSpecification e ResourceSpecification. | Bootstrap MOD01/MOD02. | Q-GEO-001, Q-RES-001. |
-| DEP-004 | Estratégia de Geosite Logradouros e geocodificação. | Address e mapa. | Q-GEO-005, Q-GEO-009. |
+| DEP-004 | Interface do Geosite Logradouros; o provedor já foi decidido em D-GEO-002. | Address e mapa. | Q-GEO-005, D-GEO-002. |
 | DEP-005 | Estratégia IPAM legado. | LogicalResource IP/VRF/VLAN. | Q-RES-008. |
 | DEP-006 | Definição de ServiceSpecification e SubscriberID. | MOD03/MOD04/MOD06. | Q-SVC-001, Q-SVC-002. |
 | DEP-007 | RBAC/audit mínimo. | Produção de qualquer módulo. | C8, MOD08, security.md. |

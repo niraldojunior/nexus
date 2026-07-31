@@ -239,7 +239,7 @@ Replace ChatGPT with internal query provider:
 
 - **Backend**: Node.js + TypeScript
 - **Web Frontend**: React 18 + TypeScript
-- **Database**: SQLite3 + better-sqlite3
+- **Database atual**: Neon Postgres (o registro original deste resumo usava SQLite antes da convergência de persistência)
 - **LLM**: OpenAI API (ChatGPT)
 - **HTTP**: Native fetch API
 - **Styling**: CSS with design system tokens

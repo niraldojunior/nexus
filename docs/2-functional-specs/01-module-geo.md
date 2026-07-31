@@ -9,10 +9,10 @@ TMFC014 · TMF673 / TMF674 / TMF675
 | Campo | Valor |
 |---|---|
 | **Document Reference** | VTN-HLD-MOD01-GEO |
-| **Versão** | 1.0 — draft |
-| **Data** | Junho 2026 |
+| **Versão** | 1.2 — draft |
+| **Data** | Julho 2026 |
 | **Documento âncora** | VTN-HLD-OVERVIEW-001 |
-| **TMFC implementado** | TMFC014 — Geographic Site Mgmt |
+| **TMFC coberto** | TMFC014 — Geographic Site Mgmt |
 | **Open APIs** | TMF673, TMF674, TMF675, TMF688 |
 | **Requisitos cobertos** | REQ-MOD01-001 a REQ-MOD01-012 |
 | **Status** | Em elaboração |
@@ -53,6 +53,25 @@ Este documento se ancora arquiteturalmente no documento de visão geral VTN-HLD-
 - Tenants e responsáveis (Owners) como entidades de Party: **Módulo 6 — Nexus Party & Tenant** (referenciados aqui via relatedParty).
 - Métricas e dashboards de cobertura geográfica: **Módulo 7 — Nexus Analytics & Events**.
 - Auditoria global e RBAC granular: **Módulo 8 — Nexus Platform & Administration**.
+
+### 2.3 Aderência ao codebase atual
+
+O HLD descreve o contrato funcional alvo. A tabela abaixo registra o estado verificado no backend, persistência, frontend e testes em julho de 2026. `Parcial` significa que existe uma base executável, mas ao menos um RF/CA obrigatório, requisito de escala ou regra canônica ainda não está entregue.
+
+| Requisito | Estado | Evidência atual | Gap principal | Bloqueador | Backlog |
+|---|---|---|---|---|---|
+| **REQ-MOD01-001** | Parcial | `GeoService`, `IGeoRepository`, rotas TMF675 e `geo.unit.spec.ts` validam e persistem Point/LineString/Polygon. | Consultas por raio/interseção, export GeoJSON, índice espacial e UUID v7. | Q-ARQ-001 | DEV-GEO-001, DEV-X-001 |
+| **REQ-MOD01-002** | Parcial | CRUD TMF673, vínculo com Location e testes de rota estão ativos. | Sugestão/geocodificação Geosite, versionamento e carga em massa. | Q-GEO-005 | DEV-GEO-002, DEV-GEO-006 |
+| **REQ-MOD01-003** | Parcial | CRUD de SiteSpecification e regras de contenção são exercitados em `geo.unit.spec.ts`. | Categorias continuam fechadas no tipo TypeScript; falta lifecycle e consulta `allowedChildren`. | Q-GEO-001 | DEV-GEO-003 |
+| **REQ-MOD01-004** | Parcial | Região é representável por SiteSpecification e a árvore expõe raízes/filhos paginados. | Filtros próprios, contadores acumulados e invariantes administrativas. | Q-GEO-001, Q-GEO-002 | DEV-GEO-004 |
+| **REQ-MOD01-005** | Parcial | `relatedSite` e specs permitem classificação e agrupamento básico. | `siteType`, consulta de membros, filtros combinados e agregações de grupo. | Q-GEO-004 | DEV-GEO-004 |
+| **REQ-MOD01-006** | Parcial | CRUD TMF674, `/v1/geo/workspace/site-at-address`, busca e frontend Geo estão testados. | Filtros completos, bulk, múltiplos endereços e características governadas pelo catálogo. | Q-GEO-001 | DEV-GEO-004, DEV-GEO-006 |
+| **REQ-MOD01-007** | Parcial | `/v1/geo/tree/roots`, `children` e `search` entregam navegação lazy com contagens. | Árvore completa dedicada, profundidade/ciclos e operações específicas de Sub-Site. | Q-GEO-010 | DEV-GEO-004 |
+| **REQ-MOD01-008** | Parcial | PATCH de status gera TMF688 e `/v1/geo/sites/{id}/events` expõe histórico bruto. | Máquina de transições, `statusDate`, histórico semântico e retenção. | Q-GEO-008 | DEV-GEO-004, DEV-X-002 |
+| **REQ-MOD01-009** | Parcial | `validateContainment` verifica pares pai/filho configurados. | Prevenção de ciclos ancestrais e API dinâmica de filhos permitidos. | Q-GEO-001 | DEV-GEO-003, DEV-GEO-004 |
+| **REQ-MOD01-010** | Parcial | Criação, listagem e remoção de `relatedSite` persistem e publicam eventos. | Tipos governados, inversos automáticos, impact analysis e subgrafo. | Q-GEO-004 | DEV-GEO-004, DEV-X-003 |
+| **REQ-MOD01-011** | Parcial | `GeoPage`, Google Maps, árvore sincronizada, cluster e `/v1/geo/tree/viewport` exibem Sites e infraestrutura passiva por bbox/escala. | Sync de coordenadas, camadas Geosite, proximidade e exportação PNG/GeoJSON. | Q-GEO-005, Q-GEO-007 | DEV-GEO-005 |
+| **REQ-MOD01-012** | Parcial | Mudanças Geo persistem eventos consultáveis e cobertos por testes unitários/integrados. | Outbox transacional, Schema Registry, catálogo público, DLQ e UUID v7. | Q-GEO-008 | DEV-X-002 |
 
 ---
 
@@ -157,7 +176,7 @@ A ordem natural de construção respeita as dependências entre entidades:
 > **Entidade TMF:** GeographicLocation (TMF675)  
 > **Open API TMF:** TMF675 — Geographic Location Management API  
 > **Prioridade:** Alta — entidade fundacional do módulo  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.2 — draft
 
 ### 6.1 Descrição
 
@@ -254,10 +273,10 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Entidade de localização independente** | Não (lat/long no Site) | Atributo de GenericLocation no metamodelo | Campos lat/long no Site | **GeographicLocation como entidade própria conforme TMF675** |
-| **Geometrias complexas (LineString, Polygon)** | Não suporta | Não suporta nativamente | Não suporta | **Suporte nativo via GeoJSON** |
-| **Busca por proximidade** | Sim (Tolerância em m) | Não nativo | Não nativo | **Suporte nativo com distância geodésica** |
-| **Reutilização de localização** | Não | Não | Não | **Localização única referenciada por N entidades** |
+| **Entidade de localização independente** | Não identificado no levantamento | Atributo de GenericLocation no metamodelo | Campos lat/long no Site | **GeographicLocation como entidade própria conforme TMF675** |
+| **Geometrias complexas (LineString, Polygon)** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Suporte nativo via GeoJSON** |
+| **Busca por proximidade** | Sim (Tolerância em m) | Não identificado no levantamento | Não identificado no levantamento | **Suporte nativo com distância geodésica** |
+| **Reutilização de localização** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Localização única referenciada por N entidades** |
 
 
 ---
@@ -267,7 +286,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 > **Entidade TMF:** GeographicAddress (TMF673)  
 > **Open API TMF:** TMF673 — Geographic Address Management API  
 > **Prioridade:** Alta — entidade fundacional do módulo  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.2 — draft
 
 ### 7.1 Descrição
 
@@ -373,10 +392,10 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
 | **Endereço como entidade própria** | Tabela embutida no Site | Atributo de texto no metamodelo | Dois campos texto no Site | **Entidade GeographicAddress conforme TMF673** |
-| **Múltiplos endereços por Site** | Sim (tabela com principal) | Não | Não (2 campos texto) | **Sim — Site referencia N endereços** |
-| **Integração Logradouros** | Sim (Geosite Logradouros) | Não | Não | **Integração reaproveitada via API de sugestão** |
-| **Sub-endereços (apto, sala)** | Texto livre no campo | Não modelado | Texto livre | **Modelado via geographicSubAddress (TMF673)** |
-| **Vinculação com geocodificação** | Não (campos juntos) | Não (atributos separados) | Não (campos juntos) | **Vinculação opcional via referência TMF675** |
+| **Múltiplos endereços por Site** | Sim (tabela com principal) | Não identificado no levantamento | Não identificado no levantamento | **Sim — Site referencia N endereços** |
+| **Integração Logradouros** | Sim (Geosite Logradouros) | Não identificado no levantamento | Não identificado no levantamento | **Integração reaproveitada via API de sugestão** |
+| **Sub-endereços (apto, sala)** | Texto livre no campo | Não identificado no levantamento | Texto livre | **Modelado via geographicSubAddress (TMF673)** |
+| **Vinculação com geocodificação** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Vinculação opcional via referência TMF675** |
 
 
 ---
@@ -386,7 +405,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 > **Entidade TMF:** GeographicSiteSpecification (TMF674)  
 > **Open API TMF:** TMF674 — Geographic Site Management API  
 > **Prioridade:** Alta — pré-requisito de todos os requisitos de Site  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.2 — draft
 
 ### 8.1 Descrição
 
@@ -489,10 +508,10 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Catálogo de tipos formalizado** | Não (campo tipo no formulário) | Sim (Data Model Manager) | Parcial (modelo Django fixo) | **GeographicSiteSpecification conforme TMF674** |
+| **Catálogo de tipos formalizado** | Não identificado no levantamento | Sim (Data Model Manager) | Parcial (modelo Django fixo) | **GeographicSiteSpecification conforme TMF674** |
 | **Atributos customizados por tipo** | Campos hardcoded (CLLI, CN, Anel) | Sim (metamodelo) | Sim (Custom Fields) | **specCharacteristic versionado** |
 | **Regras de contenção configuráveis** | Implícitas no formulário polimórfico | Sim (Containment Manager) | Hardcoded no modelo | **allowedParent/ChildSpec configuráveis** |
-| **Versionamento do catálogo** | Não | Parcial | Não | **validFor + lifecycleStatus** |
+| **Versionamento do catálogo** | Não identificado no levantamento | Parcial | Não identificado no levantamento | **validFor + lifecycleStatus** |
 
 
 ---
@@ -502,7 +521,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 > **Entidade TMF:** GeographicSite com siteType=Region (TMF674)  
 > **Open API TMF:** TMF674 — Geographic Site Management API  
 > **Prioridade:** Alta  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.2 — draft
 
 ### 9.1 Descrição
 
@@ -591,8 +610,8 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 |---|---|---|---|---|
 | **Modelagem de Região** | Campo Região (dropdown) | Subclasse via metamodelo | Entidade Region MPTT | **GeographicSite com category=Region (unificado em TMF674)** |
 | **Hierarquia n-níveis** | Região + Regional (2 nv.) | Sim (metamodelo) | Sim (MPTT) | **Sim (parentSite recursivo)** |
-| **Contagem acumulada** | Não | Não | Sim (site_count) | **Sim (descendantCount endpoint)** |
-| **Hierarquia base pré-populada** | Não | Não | Não | **Sim (Brasil + 27 UFs no bootstrap)** |
+| **Contagem acumulada** | Não identificado no levantamento | Não identificado no levantamento | Sim (site_count) | **Sim (descendantCount endpoint)** |
+| **Hierarquia base pré-populada** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim (Brasil + 27 UFs no bootstrap)** |
 
 
 ---
@@ -602,7 +621,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 > **Entidade TMF:** GeographicSite com siteType (TMF674) + grupo via relatedSite  
 > **Open API TMF:** TMF674 — Geographic Site Management API  
 > **Prioridade:** Média — habilita filtros operacionais e relatórios  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.2 — draft
 
 ### 10.1 Descrição
 
@@ -677,9 +696,9 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Modelagem de Grupo de Site** | Campo tipo (texto) | Não (via metamodelo) | Entidade SiteGroup separada | **GeographicSite com category=FunctionalGroup (unificado em TMF674)** |
-| **Classificação ortogonal** | Não (apenas tipo) | Via metamodelo | Sim (Region + SiteGroup) | **Sim (parentSite + relatedSite)** |
-| **Múltiplos grupos por Site** | Não | Não | Não (1 grupo) | **Sim (relatedSite array)** |
+| **Modelagem de Grupo de Site** | Campo tipo (texto) | Não identificado no levantamento | Entidade SiteGroup separada | **GeographicSite com category=FunctionalGroup (unificado em TMF674)** |
+| **Classificação ortogonal** | Não identificado no levantamento | Via metamodelo | Sim (Region + SiteGroup) | **Sim (parentSite + relatedSite)** |
+| **Múltiplos grupos por Site** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim (relatedSite array)** |
 
 
 ---
@@ -689,7 +708,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 > **Entidade TMF:** GeographicSite (TMF674)  
 > **Open API TMF:** TMF674 — Geographic Site Management API  
 > **Prioridade:** Crítica — entidade central do módulo  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.2 — draft
 
 ### 11.1 Descrição
 
@@ -816,7 +835,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 | **Coordenadas** | Campos lat/long no Site | Atributos lat/long | Campos lat/long | **Referência a GeographicLocation (TMF675)** |
 | **Campos V.tal (CLLI, CN, Anel)** | Campos hardcoded no formulário | Atributos do metamodelo | Custom Fields | **characteristics conforme specCharacteristic** |
 | **Contenção validada** | Implícita no formulário polimórfico | Containment Manager | Hardcoded | **allowedChildSpec validado em runtime** |
-| **Eventos de domínio** | Não | Não | Webhooks (limitado) | **TMF688 Create/Update/StateChange** |
+| **Eventos de domínio** | Não identificado no levantamento | Não identificado no levantamento | Webhooks (limitado) | **TMF688 Create/Update/StateChange** |
 
 
 ---
@@ -826,7 +845,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 > **Entidade TMF:** GeographicSite com category=SubSite (TMF674)  
 > **Open API TMF:** TMF674 — Geographic Site Management API  
 > **Prioridade:** Alta — habilita rastreabilidade física de equipamentos  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.2 — draft
 
 ### 12.1 Descrição
 
@@ -911,10 +930,10 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Modelagem Sub-Site** | Não possui | Subclasse Room/Building | Entidade Location MPTT | **GeographicSite com category=SubSite (unificado)** |
-| **Hierarquia interna** | Não possui | Sim (metamodelo) | Sim (MPTT por Site) | **Sim (parentSite recursivo)** |
-| **Atributos físicos** | Não modelado | Atributo metamodelo (hasRaisedFloor) | Custom Fields | **characteristics (Area, Capacidade, etc.)** |
-| **Integridade cross-obj** | Não aplicável | Não modelada | Sim (validações Django) | **Sim (validado no módulo Resource)** |
+| **Modelagem Sub-Site** | Não identificado no levantamento | Subclasse Room/Building | Entidade Location MPTT | **GeographicSite com category=SubSite (unificado)** |
+| **Hierarquia interna** | Não identificado no levantamento | Sim (metamodelo) | Sim (MPTT por Site) | **Sim (parentSite recursivo)** |
+| **Atributos físicos** | Não identificado no levantamento | Atributo metamodelo (hasRaisedFloor) | Custom Fields | **characteristics (Area, Capacidade, etc.)** |
+| **Integridade cross-obj** | Não identificado no levantamento | Não identificado no levantamento | Sim (validações Django) | **Sim (validado no módulo Resource)** |
 
 
 ---
@@ -924,7 +943,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 > **Entidade TMF:** GeographicSite.status + StateChangeEvent (TMF674 + TMF688)  
 > **Open API TMF:** TMF674 + TMF688 — Event Management  
 > **Prioridade:** Alta  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.2 — draft
 
 ### 13.1 Descrição
 
@@ -950,7 +969,6 @@ Atributos canônicos da entidade GeographicSite.status + StateChangeEvent (TMF67
 Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ```json
-// Exemplo de StateChangeEvent (TMF688) publicado:
 {
   "eventId": "evt-018f8a6e-2c12-7c0a-b1d4-1e7a3b5c9d22",
   "eventType": "GeographicSiteStateChangeEvent",
@@ -1018,11 +1036,11 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Estados de ciclo de vida** | Estado ciclo de vida (texto) | Não modelado | Status com choices | **5 estados canônicos (TMF + V.tal)** |
-| **Histórico de transições** | Não (só estado atual) | Audit Trail global | Não (apenas estado atual) | **Sim via TMF688 StateChangeEvent** |
-| **Matriz de transições** | Não validada | Não modelada | Não validada | **Matriz configurável validada em runtime** |
-| **Guards cross-module** | Não | Não | Não | **Sim (Resource e Service consultam status)** |
-| **Reativação controlada** | Permitido livremente | Não modelada | Permitido livremente | **Requer RBAC + Audit + statusReason** |
+| **Estados de ciclo de vida** | Estado ciclo de vida (texto) | Não identificado no levantamento | Status com choices | **5 estados canônicos (TMF + V.tal)** |
+| **Histórico de transições** | Não identificado no levantamento | Audit Trail global | Não identificado no levantamento | **Sim via TMF688 StateChangeEvent** |
+| **Matriz de transições** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Matriz configurável validada em runtime** |
+| **Guards cross-module** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim (Resource e Service consultam status)** |
+| **Reativação controlada** | Permitido livremente | Não identificado no levantamento | Permitido livremente | **Requer RBAC + Audit + statusReason** |
 
 
 ---
@@ -1032,7 +1050,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 > **Entidade TMF:** allowedParentSpec / allowedChildSpec em SiteSpec (TMF674)  
 > **Open API TMF:** TMF674 — Geographic Site Management API  
 > **Prioridade:** Alta — governança da hierarquia geográfica  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.2 — draft
 
 ### 14.1 Descrição
 
@@ -1057,7 +1075,6 @@ Atributos canônicos da entidade allowedParentSpec / allowedChildSpec em SiteSpe
 Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ```json
-// Exemplo: SiteSpec Floor com regras de contenção
 {
   "id": "spec-floor",
   "name": "Floor",
@@ -1122,8 +1139,8 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 |---|---|---|---|---|
 | **Catálogo de contenção** | Implícito no formulário | Containment Manager (UI) | Hardcoded no model Django | **allowedParent/ChildSpec configuráveis (TMF674)** |
 | **Validação em runtime** | Implícita por tipo | getPossibleChildren API | Save validator | **Validação canônica na criação/edição** |
-| **Prevenção de ciclo** | Não validado | Validado | Validado | **Validado via traversal de parentSite** |
-| **Análise de impacto** | Não possui | Não possui | Não possui | **Sim antes de remoção de regra** |
+| **Prevenção de ciclo** | Não identificado no levantamento | Validado | Validado | **Validado via traversal de parentSite** |
+| **Análise de impacto** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim antes de remoção de regra** |
 
 
 ---
@@ -1133,7 +1150,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 > **Entidade TMF:** relatedSite[] em GeographicSite (TMF674)  
 > **Open API TMF:** TMF674 — Geographic Site Management API  
 > **Prioridade:** Alta — fundação para análise de impacto e desativação segura  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.2 — draft
 
 ### 15.1 Descrição
 
@@ -1161,27 +1178,24 @@ Atributos canônicos da entidade relatedSite[] em GeographicSite (TMF674):
 Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ```json
-// Catálogo: tipos de relação com inversos
 {
-  "RelationshipTypes": [
+  "relationshipTypes": [
     { "code": "feeds",      "inverse": "isFedBy",   "symmetric": false },
     { "code": "isFedBy",    "inverse": "feeds",     "symmetric": false },
     { "code": "peersWith",  "inverse": "peersWith", "symmetric": true  },
     { "code": "memberOf",   "inverse": "contains",  "symmetric": false }
-  ]
-}
-
-// Exemplo em GeographicSite:
-{
-  "id": "site-rj-cabinet-001",
-  "name": "Armario AR-RJ-001",
-  "relatedSite": [
-    { "site": { "id": "site-rj-bot-co-01", "@referredType": "GeographicSite" },
-      "role": "target",
-      "relationshipType": "isFedBy",
-      "description": "Alimentacao GPON via cabo CB-001",
-      "validFor": { "startDateTime": "2025-03-10T00:00:00Z" } }
-  ]
+  ],
+  "geographicSite": {
+    "id": "site-rj-cabinet-001",
+    "name": "Armario AR-RJ-001",
+    "relatedSite": [
+      { "site": { "id": "site-rj-bot-co-01", "@referredType": "GeographicSite" },
+        "role": "target",
+        "relationshipType": "isFedBy",
+        "description": "Alimentacao GPON via cabo CB-001",
+        "validFor": { "startDateTime": "2025-03-10T00:00:00Z" } }
+    ]
+  }
 }
 ```
 
@@ -1236,10 +1250,10 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
 | **Modelagem de relação A↔Z** | Aba Relações (tabela) | Relações especiais entre objetos | Via Circuit Terminations | **relatedSite array (TMF674)** |
-| **Catálogo de tipos de relação** | Dropdown fixo no formulário | Não possui | Não possui | **RelationshipType configurável com pares inversos** |
-| **Relação inversa automática** | Não | Não | Não | **Sim — criada automaticamente** |
-| **Análise de impacto** | Não | Não nativa | Não nativa | **Endpoint /impact com depth configurável** |
-| **Visão em grafo** | Não | Não | Não | **Endpoint /graph com subgrafo** |
+| **Catálogo de tipos de relação** | Dropdown fixo no formulário | Não identificado no levantamento | Não identificado no levantamento | **RelationshipType configurável com pares inversos** |
+| **Relação inversa automática** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim — criada automaticamente** |
+| **Análise de impacto** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Endpoint /impact com depth configurável** |
+| **Visão em grafo** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Endpoint /graph com subgrafo** |
 
 
 ---
@@ -1249,7 +1263,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 > **Entidade TMF:** Não é entidade TMF — funcionalidade de UI sobre TMF674+675  
 > **Open API TMF:** TMF674 + TMF675 (consultas geoespaciais)  
 > **Prioridade:** Alta — diferenciação operacional  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.2 — draft
 
 ### 16.1 Descrição
 
@@ -1259,12 +1273,20 @@ A visão de mapa exibe Sites e (em fases futuras) Resources georreferenciados em
 
 O syncGeoPosition do Kuwaiba é a melhor implementação observada — mover um nó no mapa atualiza coordenadas no inventário de forma transacional. Esta capacidade é reaproveitada no Nexus, com a diferença de que a sincronização atualiza a GeographicLocation referenciada pelo Site (não atributos embutidos), preservando o modelo TMF675. A integração com o Geosite OSP existente da V.tal (que já tem base cartográfica e camadas pré-configuradas) elimina a necessidade de reconstruir essa infraestrutura.
 
+### 16.3 Mapeamento de atributos TMF
+
+| Atributo | Tipo | Obrigatório | Observação V.tal |
+|---|---|:---:|---|
+| `GeographicSite.place` | EntityRef | Sim para exibição | Referência a GeographicLocation; a geometria nunca é embutida no Site. |
+| `GeographicLocation.geometry` | GeoJSON | Sim | Point para Sites; Resources na mesma viewport também podem usar LineString. |
+| `GeographicSite.status` | enum | Sim | Determina status visual e filtros do mapa. |
+| `GeographicSite.siteSpecification` | EntityRef | Sim | Determina classe, ícone e filtros operacionais. |
+
 ### 16.4 Exemplo de payload
 
 Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ```json
-// Resposta /map/sites em GeoJSON FeatureCollection
 {
   "type": "FeatureCollection",
   "features": [
@@ -1331,11 +1353,11 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Visão de mapa nativa** | Sim (Geosite OSP) | Sim (OSP Module) | Não nativa | **Sim (reaproveita Geosite OSP)** |
-| **Sincronização bidirecional** | Não | Sim (syncGeoPosition) | Não | **Sim (atualiza GeographicLocation)** |
-| **Filtros visuais** | Filtros básicos | Filtros básicos | Não nativa | **Filtros combinados completos** |
-| **Clusterização** | Não | Limitada | Não nativa | **Sim (configurável por zoom)** |
-| **Busca por proximidade no mapa** | Sim | Sim | Não nativa | **Sim** |
+| **Visão de mapa nativa** | Sim (Geosite OSP) | Sim (OSP Module) | Não identificado no levantamento | **Sim (reaproveita Geosite OSP)** |
+| **Sincronização bidirecional** | Não identificado no levantamento | Sim (syncGeoPosition) | Não identificado no levantamento | **Sim (atualiza GeographicLocation)** |
+| **Filtros visuais** | Filtros básicos | Filtros básicos | Não identificado no levantamento | **Filtros combinados completos** |
+| **Clusterização** | Não identificado no levantamento | Limitada | Não identificado no levantamento | **Sim (configurável por zoom)** |
+| **Busca por proximidade no mapa** | Sim | Sim | Não identificado no levantamento | **Sim** |
 
 
 ---
@@ -1345,7 +1367,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 > **Entidade TMF:** Event (TMF688) — vários tipos  
 > **Open API TMF:** TMF688 — Event Management API  
 > **Prioridade:** Alta — pré-requisito do módulo Analytics & Events  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.2 — draft
 
 ### 17.1 Descrição
 
@@ -1373,31 +1395,6 @@ Atributos canônicos da entidade Event (TMF688) — vários tipos:
 Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ```json
-// Catálogo de eventos publicados pelo módulo Geographic
-
-// GeographicLocation:
-//   GeographicLocationCreateEvent
-//   GeographicLocationAttributeValueChangeEvent
-//   GeographicLocationDeleteEvent       (soft-delete)
-
-// GeographicAddress:
-//   GeographicAddressCreateEvent
-//   GeographicAddressAttributeValueChangeEvent
-//   GeographicAddressDeleteEvent        (soft-delete)
-
-// GeographicSiteSpecification:
-//   GeographicSiteSpecCreateEvent
-//   GeographicSiteSpecAttributeValueChangeEvent
-//   GeographicSiteSpecContainmentChangeEvent
-
-// GeographicSite (inclui Sub-Sites):
-//   GeographicSiteCreateEvent
-//   GeographicSiteAttributeValueChangeEvent
-//   GeographicSiteStateChangeEvent
-//   GeographicSiteRelationshipChangeEvent
-//   GeographicSiteDeleteEvent           (soft-delete)
-
-// Exemplo de payload (CreateEvent):
 {
   "eventId": "evt-018f8b...",
   "eventType": "GeographicSiteCreateEvent",
@@ -1456,14 +1453,60 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Publicação de eventos canônicos** | Não publica | Não publica | Webhooks (limitado) | **TMF688 nativo em todas as operações** |
-| **Outbox pattern** | N/A | N/A | Não usa | **Sim — consistência transacional** |
-| **Schema Registry** | N/A | N/A | Não usa | **Sim — Avro/JSON Schema versionado** |
-| **Tópicos versionados** | N/A | N/A | Endpoints únicos | **Tópicos por entidade com versão (v1, v2)** |
+| **Publicação de eventos canônicos** | Não identificado no levantamento | Não identificado no levantamento | Webhooks (limitado) | **TMF688 nativo em todas as operações** |
+| **Outbox pattern** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim — consistência transacional** |
+| **Schema Registry** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim — Avro/JSON Schema versionado** |
+| **Tópicos versionados** | Não identificado no levantamento | Não identificado no levantamento | Endpoints únicos | **Tópicos por entidade com versão (v1, v2)** |
 
 ---
 
-## 18. Contratos com outros módulos do Nexus
+## 18. Cenários ilustrativos da modelagem
+
+### 18.1 Cenário A — Home Passed até Home Connected
+
+```text
+GeographicAddress + GeographicLocation (HP)
+  └─ TMF645 consulta viabilidade, sem criar Service
+      └─ contratação cria InstallationPoint (GeographicSite)
+          └─ ONT (PhysicalResource) referencia o endereço via place
+              └─ RFS referencia ONT/porta/VLAN
+                  └─ CFS referencia o RFS e o Tenant ISP
+```
+
+O cenário valida C4, a separação Address/Location/Site e a regra de referência entre Geo, Resource e Service.
+
+### 18.2 Cenário B — Central, sala, Rack e cadeia GPON
+
+```text
+Central (GeographicSite)
+└─ Sala de transmissão (GeographicSite/SubSite)
+   └─ Rack (PhysicalResource) — fronteira C2
+      └─ OLT → Card → Port → DIO → Cable → Splitter → CTO → ONT
+         └─ RFS de acesso → CFS wholesale
+```
+
+O cenário valida a hierarquia de Sub-Sites, a fronteira Geo↔Resource no Rack e a navegação conjunta árvore/mapa já existente no frontend.
+
+### 18.3 Padrões reaproveitáveis
+
+- Address, Location e Site são entidades distintas; referências substituem duplicação.
+- A árvore Geo termina antes do Rack; infraestrutura passiva e equipamentos são Resources.
+- Home Passed permanece em Geo e Qualification; Service só nasce no Home Connected.
+- A viewport pode combinar Sites e Resources sem fundir seus modelos de domínio.
+
+---
+
+## 19. Síntese arquitetural do módulo
+
+- **Geo é a fonte do “onde”.** Address, Location e Site têm identidades e ciclos de vida próprios.
+- **Catálogo governa a estrutura.** SiteSpecification define características e contenção; enums fechados no código são dívida registrada.
+- **Resource apenas referencia Geo.** A ponte canônica é `place`; o Rack permanece a fronteira com o Módulo 2.
+- **Mapa e árvore são projeções.** A UI atual combina hierarquia, busca e viewport sem alterar o contrato TMF.
+- **Escala e confiabilidade ainda são alvo.** Spatial, UUID v7, `_origin` e outbox permanecem no backlog transversal.
+
+---
+
+## 20. Contratos com outros módulos do Nexus
 
 O módulo Geographic é a fundação referenciada por praticamente todos os outros módulos. Os contratos de integração:
 
@@ -1479,22 +1522,27 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 
 ---
 
-## 19. Questões em aberto
+## 21. Questões em aberto
 
-| ID | Questão | Status / Decisão | Responsável |
+| ID | Questão | Status | Responsável |
 |---|---|---|---|
-| **Q-001** | Quais são exatamente os SiteSpecifications pré-populados no bootstrap? Lista canônica V.tal precisa ser fechada (CO, POP, Armário, Ponto de Instalação, Andar, Sala, Cage — outros?). | *Aberta* | *Produto + Engenharia V.tal* |
-| **Q-002** | O cálculo do campo CN é determinístico a partir de Região + Regional, ou tem exceções? Precisa de matriz de derivação documentada. | *Aberta* | *Engenharia V.tal* |
-| **Q-003** | CLLI é obrigatório para todos os Sites de tipo CO ou apenas para subconjunto (por exemplo, apenas centrais ativas em interconexão)? | *Aberta* | *Engenharia V.tal + Regulatório* |
-| **Q-004** | Quais são os RelationshipTypes do catálogo inicial? Lista mínima: feeds/isFedBy, peersWith, memberOf/contains. Há outros tipos críticos V.tal? | *Aberta* | *Operações V.tal* |
-| **Q-005** | A integração com Geosite Logradouros é via API REST existente ou requer expor nova interface no Geosite? | *Aberta* | *Arquitetura + Geosite* |
-| **Q-006** | A migração de Sites do Netwin para o Nexus preserva os IDs existentes ou gera novos UUID? Impacto em referências externas. | ✅ **Decidido (Jun/2026):** o Nexus **sempre gera seus próprios UUIDs v7** como identificadores canônicos. IDs legados são preservados como characteristics do grupo `_origin` na entidade (ver seção 19.1). O Nexus é agnóstico à origem — mesma estrutura serve Netwin, Geosite, NetworkCore, OZMAP ou qualquer outro sistema sem alteração de schema. | *Arquitetura + Migração* |
-| **Q-007** | O syncGeoPosition deve ser síncrono (PATCH com confirmação) ou assíncrono (atualização via evento)? Trade-off de UX vs. performance. | *Aberta* | *Arquitetura Nexus + Produto* |
-| **Q-008** | O catálogo de eventos publicados em produção deve ter quais SLAs de disponibilidade e latência fim-a-fim? | *Aberta* | *Arquitetura + Plataforma* |
-| **Q-009** | Geocodificação automática usa qual provedor (Google, OpenStreetMap, base interna V.tal)? Custo e licenciamento. | *Aberta* | *Produto + GIS V.tal* |
-| **Q-010** | A profundidade máxima da hierarquia de Sub-Sites tem limite prático? Caso de uso típico: CO > Andar > Sala > Cage (4 níveis); algum caso ultrapassa? | *Aberta* | *Engenharia V.tal* |
+| **Q-GEO-001** | Quais são exatamente os SiteSpecifications pré-populados no bootstrap? Lista canônica V.tal precisa ser fechada (CO, POP, Armário, Ponto de Instalação, Andar, Sala, Cage — outros?). | *Aberta* | *Produto + Engenharia V.tal* |
+| **Q-GEO-002** | O cálculo do campo CN é determinístico a partir de Região + Regional, ou tem exceções? Precisa de matriz de derivação documentada. | *Aberta* | *Engenharia V.tal* |
+| **Q-GEO-003** | CLLI é obrigatório para todos os Sites de tipo CO ou apenas para subconjunto (por exemplo, apenas centrais ativas em interconexão)? | *Aberta* | *Engenharia V.tal + Regulatório* |
+| **Q-GEO-004** | Quais são os RelationshipTypes do catálogo inicial? Lista mínima: feeds/isFedBy, peersWith, memberOf/contains. Há outros tipos críticos V.tal? | *Aberta* | *Operações V.tal* |
+| **Q-GEO-005** | A integração com Geosite Logradouros é via API REST existente ou requer expor nova interface no Geosite? | *Aberta* | *Arquitetura + Geosite* |
+| **Q-GEO-007** | O syncGeoPosition deve ser síncrono (PATCH com confirmação) ou assíncrono (atualização via evento)? Trade-off de UX vs. performance. | *Aberta* | *Arquitetura Nexus + Produto* |
+| **Q-GEO-008** | O catálogo de eventos publicados em produção deve ter quais SLAs de disponibilidade e latência fim-a-fim? | *Aberta* | *Arquitetura + Plataforma* |
+| **Q-GEO-010** | A profundidade máxima da hierarquia de Sub-Sites tem limite prático? Caso de uso típico: CO > Andar > Sala > Cage (4 níveis); algum caso ultrapassa? | *Aberta* | *Engenharia V.tal* |
 
-### 19.1 Decisão de migração — Identidade e proveniência de entidades
+### 21.1 Decisões resolvidas
+
+| ID | Decisão | Impacto |
+|---|---|---|
+| **D-GEO-001** | O Nexus gera UUID v7 próprio e preserva IDs legados em `_origin`. | Aplica-se a Site, Address e Location; detalhamento na seção 21.2. |
+| **D-GEO-002** | O provedor de geocodificação é o Geosite Logradouros. | Resolve a antiga Q-GEO-009; a interface técnica continua em Q-GEO-005. |
+
+### 21.2 D-GEO-001 — Identidade e proveniência de entidades
 
 > **Princípio arquitetural (Jun/2026):** O Nexus é agnóstico à origem de seus dados. Todo identificador canônico é UUID v7 gerado pelo próprio Nexus, independente do sistema de origem. IDs legados são preservados como atributos customizados (`characteristic`) no grupo convencional `_origin`, exclusivamente para fins de rastreabilidade histórica, auditoria e suporte ao período de dual-running.
 
@@ -1558,12 +1606,13 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 
 ---
 
-## 20. Controle de revisões
+## 22. Controle de revisões
 
 | Versão | Data | Autor | Descrição |
 |---|---|---|---|
 | 1.0 | Junho 2026 | Produto — V.tal Nexus | Versão inicial do HLD do Módulo 1 — Nexus Geographic, alinhada a TMF673/674/675 e ao documento âncora VTN-HLD-OVERVIEW-001. |
-| 1.1 | Junho 2026 | Produto — V.tal Nexus | Resolução de Q-006 (estratégia de migração): definição do princípio de agnósticidade à origem, grupo canônico `_origin` para todas as entidades geográficas, tabela de sistemas cobertos, payload de exemplo e regras de negócio. Adicionada seção 19.1. |
+| 1.1 | Junho 2026 | Produto — V.tal Nexus | Formalização de D-GEO-001 (estratégia de migração): definição do princípio de agnósticidade à origem, grupo canônico `_origin` para todas as entidades geográficas, tabela de sistemas cobertos, payload de exemplo e regras de negócio. |
+| 1.2 | Julho 2026 | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: matriz de aderência dos 12 requisitos, cenários e síntese arquitetural, anatomia normalizada, JSON válido, questões namespaced e gaps ligados ao backlog `DEV-*`. |
 
 ---
 

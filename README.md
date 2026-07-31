@@ -131,6 +131,7 @@ Raramente precisam ser ajustadas — têm padrões seguros definidos em `scripts
 | `npm run build` | Compila o backend TypeScript para `dist/` |
 | `npm run web:build` | Build de produção do frontend em `web/dist` |
 | `npm run typecheck` | `tsc --noEmit` na raiz **e** em `web/` |
+| `npm run docs:check` | Valida estrutura, JSON, links, benchmark, questões e backlog dos HLDs |
 | `npm run lint` / `lint:fix` | ESLint |
 | `npm run format` / `format:fix` | Prettier |
 | `npm run clean` | Remove `dist/` |

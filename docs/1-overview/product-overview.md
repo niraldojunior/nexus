@@ -52,9 +52,9 @@ A decisão estruturante do Nexus é separar o inventário em três camadas que n
 
 | # | Módulo | Responde | Open APIs | Estado |
 |---|---|---|---|---|
-| 1 | **Geographic** | Onde | TMF673, TMF674, TMF675 | ✅ Implementado |
-| 2 | **Resource** | O que existe | TMF634, TMF639, TMF664 | ✅ Implementado |
-| 3 | **Service** | Para quê / quem | TMF633, TMF638 | ✅ Implementado |
+| 1 | **Geographic** | Onde | TMF673, TMF674, TMF675 | ⚠️ Base implementada; aderência parcial ao HLD 1.2 |
+| 2 | **Resource** | O que existe | TMF634, TMF639, TMF664 | ⚠️ Base implementada; aderência parcial ao HLD 1.3 |
+| 3 | **Service** | Para quê / quem | TMF633, TMF638 | ⚠️ Base implementada; aderência parcial ao HLD 1.1 |
 | 4 | **Order & Fulfillment** | Viabilidade e provisionamento | TMF641, TMF645, TMF652 | ✅ Implementado |
 | 5 | **Process Orchestration** | Fluxo de processo | TMF701 | 📐 Previsto |
 | 6 | **Party & Tenant** | Quem é quem | TMF632, TMF669 | ✅ Implementado |
@@ -62,7 +62,9 @@ A decisão estruturante do Nexus é separar o inventário em três camadas que n
 | — | **Search / Copilot** | Consulta em linguagem natural | — | ✅ Implementado |
 | — | **MCP** | Exposição das APIs TMF a clientes de IA | — | ✅ Implementado |
 
-Legenda: ✅ implementado · ⚠️ parcial · 📐 previsto no design.
+Legenda: ✅ contrato entregue · ⚠️ base executável com gaps rastreados · 📐 previsto no design.
+
+As matrizes `2.3 Aderência ao codebase atual` dos três HLDs são a fonte detalhada por requisito. Elas distinguem maturidade da especificação, cobertura real em código/teste e backlog `DEV-*`.
 
 ---
 
@@ -168,7 +170,8 @@ O cenário que atravessa as três camadas e demonstra por que **Home Passed não
 | Fase | Objetivo | Estado |
 |---|---|---|
 | **Fundação** | Bootstrap, config, persistência, auth, logging, CI | ✅ Concluída |
-| **Tríade** | Geographic, Resource e Service com Open APIs TMF | ✅ Concluída |
+| **Tríade — base** | Geographic, Resource e Service com Open APIs TMF | ✅ Concluída |
+| **Tríade — aderência aos HLDs** | Fechar gaps dos 53 requisitos e decisões pendentes | ⚠️ Em andamento (`DEV-*`) |
 | **Order & Party** | Viabilidade, ordens e multi-tenant | ✅ Concluída |
 | **Carga de dados** | Estações e recursos reais do Netwin | ⚠️ Em andamento |
 | **Convergência ao cânone** | UUID v7, `_origin`, outbox TMF688 | 📐 Pendente |

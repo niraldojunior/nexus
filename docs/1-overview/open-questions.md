@@ -21,7 +21,7 @@
 | Domínio | 🔴 | 🟠 | ✅ |
 |---|---|---|---|
 | Integrações (`Q-INT`) | 1 | 1 | 6 |
-| Geographic (`Q-GEO`) | 8 | — | 1 |
+| Geographic (`Q-GEO`) | 8 | — | — |
 | Resource (`Q-RES`) | 8 | — | — |
 | Service (`Q-SVC`) | 6 | — | — |
 | Arquitetura / Plataforma (`Q-ARQ`) | 3 | — | 2 |
@@ -71,11 +71,12 @@ Detalhamento em [`../3-system-design/architecture.md`](../3-system-design/archit
 | Q-GEO-005 | Integração com Geosite usa API existente ou nova interface? | 🔴 Aberta | Arquitetura + Geosite |
 | Q-GEO-007 | `syncGeoPosition` será síncrono ou assíncrono? | 🔴 Aberta | Arquitetura + Produto |
 | Q-GEO-008 | Quais SLAs de eventos em produção? | 🔴 Aberta | Arquitetura + Plataforma |
-| Q-GEO-009 | Qual provedor de geocodificação automática? | ✅ **Geosite** (ver Q-INT-001) | — |
 | Q-GEO-010 | Existe hierarquia real de Sub-Sites acima de 4 níveis? | 🔴 Aberta | Engenharia |
 
 > **Q-GEO-005 e Q-INT-005 são a mesma conversa** vista por lados diferentes — funcional e técnico.
 > Levar juntas ao time do Geosite.
+>
+> A antiga Q-GEO-009 foi resolvida como **D-GEO-002**: o provedor é o Geosite Logradouros.
 
 ---
 

@@ -40,8 +40,8 @@ da qual todas as outras derivam.
 Misturar as camadas é o erro mais caro do domínio: duplica dado, cria duas fontes de verdade e
 quebra a rastreabilidade entre o que foi vendido e o que está instalado.
 
-Status: ✅ **Implementado** — os módulos `geo`, `resource` e `service` existem em `src/modules/` e
-respeitam as fronteiras.
+Status: ⚠️ **Parcial** — os módulos `geo`, `resource` e `service` e suas proteções centrais existem,
+mas as matrizes dos HLDs registram invariantes especializadas e governança ainda pendentes.
 
 ---
 
@@ -60,7 +60,9 @@ OSS/BSS de parceiros sem tradutor proprietário.
 - Precisa guardar "potência óptica de recepção" numa ONT? É `characteristic`, não coluna.
 - Precisa de um novo tipo de site? É uma `GeographicSiteSpecification` nova, não um `enum` no código.
 
-Status: ✅ **Implementado** — as rotas `/tmf-api/*` expõem 14 Open APIs TMF v4.
+Status: ⚠️ **Parcial** — as rotas `/tmf-api/*` expõem as Open APIs da base, porém ainda existem
+categorias e tipos de relação aceitos como valores fechados/livres no código, em desacordo com a
+extensão integral por catálogo.
 
 ---
 
@@ -203,7 +205,8 @@ cliente final.
 > ❗ Ao modelar qualquer serviço, o **default é ISP/Tenant**. Cliente final é a exceção, e precisa ser
 > explícito.
 
-Status: ✅ **Implementado** — módulo `party` com TMF632/TMF669.
+Status: ⚠️ **Parcial** — o módulo `party` e TMF632/TMF669 existem, mas RBAC, segregação por tenant e
+`relatedParty` obrigatório ainda não cobrem todos os writes (DEV-X-004).
 
 ---
 
@@ -216,8 +219,9 @@ governança (auditoria + evento TMF688). Sem listas fechadas hardcoded no códig
 exige deploy, o inventário fica permanentemente atrasado em relação à realidade de campo — e a
 operação passa a usar planilha paralela, que é o problema que o Nexus existe para resolver.
 
-Status: ✅ **Implementado** — ver `src/modules/resource/catalog.ts` (bootstrap) e as rotas
-`/tmf-api/resourceCatalogManagement/v4/*`.
+Status: ⚠️ **Parcial** — Specifications possuem bootstrap e APIs, mas os catálogos governados de
+RelationshipType e parte dos lifecycles/versionamentos ainda estão pendentes (DEV-X-003,
+DEV-RES-006 e DEV-SVC-006).
 
 ---
 
@@ -254,6 +258,8 @@ Consolidado das divergências apontadas acima, para quem for planejar a evoluç�
 | C7 | Outbox transacional + Schema Registry | Rotas TMF688 sem outbox |
 | C10 | Oracle 21c/23ai + Property Graph | Neon Postgres |
 | C4 | 22M HPs como GeographicAddress | Regra respeitada, carga não feita |
+| C8 | `relatedParty`, RBAC e isolamento por tenant | Party existe; cobertura transversal é parcial |
+| C9 | Catálogos e RelationshipTypes governados | Specifications parciais; tipos de relação sem CRUD completo |
 
 ---
 

@@ -1,138 +1,71 @@
-# Sequência De Implementação
+# Sequência de implementação
 
-> Sequência recomendada para execução técnica. Não altera a arquitetura; organiza a ordem para reduzir risco.
+> Sequência de convergência a partir da implementação-base existente em Neon Postgres. Não é um plano de construção do zero e não altera o cânone C1–C10.
 
-## 1. Princípios Da Sequência
+## 1. Princípios
 
-- Implementar primeiro contratos transversais que todos os módulos usarão.
-- Não iniciar funcionalidades que dependem de decisões P0 abertas.
-- Começar com SQLite para desenvolvimento local isolado, mantendo o banco corporativo como alvo arquitetural.
-- Isolar persistência por portas/adapters para que SQLite não contamine contratos de domínio, APIs TMF ou modelo canônico.
-- Entregar MOD01 e MOD02 antes de aprofundar MOD03.
-- Manter MOD04 como dono de viabilidade/TMF645 para proteger a decisão Home Passed não é Service.
-- Tratar MOD06 como dependência de governança, com validação diferida apenas onde já decidido.
+- Fechar contratos transversais antes de replicar soluções parciais nos módulos.
+- Executar Geographic antes das extensões Resource dependentes de `place`, e Resource antes dos fluxos Service dependentes de `supportingResource`.
+- Tratar perguntas abertas como bloqueadores explícitos; decisões resolvidas usam IDs `D-*`.
+- Manter endpoints propostos fora do runtime até o item `DEV-*` correspondente ser implementado e testado.
+- Preservar Neon Postgres como estado atual e Oracle/Property Graph como alvo C10.
 
-## 2. Ondas Técnicas
+## 2. Ondas
 
-| Onda | Nome | Objetivo | Principais entregas | Saída esperada |
+| Onda | Escopo | Backlog | Dependências | Gate de saída |
 |---|---|---|---|---|
-| Onda 0 | Discovery técnico fechado | Sair da documentação para contratos implementáveis. | ADRs P0, system design alinhado, catálogos MVP, NFRs. | Backlog pronto para execução. |
-| Onda 1A | Foundations locais SQLite | Criar base transversal local e testável. | Configuração, API pattern, migrations SQLite, seeds, repositórios por porta, outbox local, audit mínimo. | Módulos rodam localmente sem dependências corporativas. |
-| Onda 1B | Foundations corporativas | Promover a foundation para banco corporativo e OpenShift não produtivo. | Adapter Oracle/banco corporativo, Kafka/Schema Registry corporativos, secrets, health checks, pipeline OpenShift. | Mesmos testes da Onda 1A passam em staging corporativo. |
-| Onda 2 | MOD01 Geographic foundation | Implementar "onde". | Location, Address, SiteSpecification, Site, SubSite, lifecycle e eventos, primeiro SQLite e depois staging corporativo. | Geo pronto para Resource e Order. |
-| Onda 3 | MOD02 Resource foundation | Implementar "o quê" base. | ResourceSpec, Category, Resource CRUD, lifecycle X.731, containment, OSP/ISP core, primeiro SQLite e depois staging corporativo. | Resource pronto para migração Netwin e Service. |
-| Onda 4 | Eventos e migração MVP | Preparar produção Região 1. | `_origin`, pipelines wave 1, relatórios, dual-running, consumidores mínimos, deploy OpenShift. | MVP MOD01-MOD02 operável em ambiente corporativo. |
-| Onda 5 | MOD03 Service foundation | Implementar "para quê/quem". | ServiceSpec, Service CRUD, lifecycle, CFS/RFS, supportingResource/supportingService, eventos. | Service Inventory pronto para Order/Party. |
-| Onda 6 | MOD04 + MOD06 mínimos | Fechar viabilidade, ordem e tenant. | TMF645, TMF641 mínimo, Party/Tenant, SubscriberID. | Serviço criado por ordem com tenant governado. |
-| Onda 7 | MOD05/MOD07/MOD08 maturidade | Automatizar e governar plataforma. | BPMN, analytics, administração, RBAC avançado, audit reports. | Plataforma completa e preparada para Um Telecom. |
+| 0 | Qualidade documental e baseline | `docs:check` | Nenhuma | 53 REQ no resumo, corpo e matriz; gaps, Q/D e links rastreáveis. |
+| 1 | Identidade, eventos e segurança | DEV-X-001–004 | Q-ARQ-001, MOD06/MOD08 | C5/C7/C8/C9 comprovados em testes transversais. |
+| 2 | Catálogos Geo/Resource/Service | DEV-GEO-003, DEV-RES-001/006, DEV-SVC-001/006 | Q-GEO-001/004, Q-RES-001/012, Q-SVC-001/005 | Extensão por API sem deploy e strings inválidas rejeitadas. |
+| 3 | Geographic | DEV-GEO-001/002/004–006 | Geosite, Q-GEO-002/005/007/008/010 | Consultas, hierarquia, lifecycle, mapa e bulk aprovados. |
+| 4 | Resource sem path | DEV-RES-002/004/005 | Onda 3, Q-RES-007/008/011, MOD05 | OSP, ISP e LogicalResource aprovados em cenários. |
+| 5 | Path e persistência-alvo | DEV-RES-003, DEV-X-005 | Q-RES-004/010, Q-ARQ-001 | OLT→ONT correto e benchmark corporativo aprovado. |
+| 6 | Service | DEV-SVC-002–005 | Ondas 2/4, MOD05/MOD06, Q-SVC-002/004/006/007 | CFS/RFS, SubscriberID, impacto e cenários end-to-end aprovados. |
+| 7 | Migração e operação | Integrações, `_origin`, observabilidade | Ondas 1/3/4/6 | Dry-run, reconciliação, dual-running e rollback aprovados. |
 
-## 3. Sequência Detalhada
+## 3. Ordem dentro de cada domínio
 
-### Onda 0 - Antes de escrever produto
+### 3.1 Geographic
 
-| Ordem | Ação | Dependência |
-|---|---|---|
-| 1 | Aprovar decisões P0 em `architecture-decisions.md`. | Nenhuma |
-| 2 | Reconciliar `02-system-design` com C7 e C10. | ADR-PEND-001 |
-| 3 | Fechar SiteSpec e ResourceSpec MVP. | Q-GEO-001, Q-RES-001 |
-| 4 | Definir NFR de APIs, eventos e migração. | Q-GEO-008 |
-| 5 | Definir estratégia de Geosite/Geocoding e Property Graph. | Q-GEO-005, Q-GEO-009, Q-RES-004 |
+1. SiteSpecification/containment governados (REQ-MOD01-003/009).
+2. Location e Address espaciais/integrados (REQ-MOD01-001/002).
+3. Site, Region, Group e Sub-Site (REQ-MOD01-004–007).
+4. Lifecycle, relações e impacto (REQ-MOD01-008/010).
+5. Mapa/viewport e bulk (REQ-MOD01-011 e gaps de 002/006).
+6. Eventos transacionais (REQ-MOD01-012 via DEV-X-002).
 
-### Onda 1A - Foundations locais SQLite
+### 3.2 Resource
 
-| Ordem | Capability | Critério |
-|---|---|---|
-| 1 | Identidade UUID v7 | IDs gerados pelo backend, sem dependência de ID cliente. |
-| 2 | Portas de repositório | Domínio depende de interfaces; SQLite é adapter local. |
-| 3 | Migrations e seed SQLite | Ambiente local recriável com catálogos mínimos. |
-| 4 | Characteristic engine | Tipos, validadores, mandatory/configurable e `_origin` read-only. |
-| 5 | Catálogo governado | Specs e RelationshipTypes com lifecycle e audit. |
-| 6 | Outbox local | Registra eventos TMF688 em tabela local para teste de envelope e idempotência. |
-| 7 | RBAC/audit mínimo | Roles operacionais, admin de catálogo e MigrationJob simuláveis localmente. |
+1. Catálogo e fabricante PartyRef (REQ-MOD02-001–004).
+2. Inventário/lifecycle/relationship governado (REQ-MOD02-005–007/024).
+3. OSP (REQ-MOD02-008–011).
+4. ISP, energia e conexões (REQ-MOD02-013–019).
+5. IPAM e demais LogicalResources (REQ-MOD02-020–023).
+6. Path computation (REQ-MOD02-012), após grafo e volume dimensionados.
+7. Eventos transacionais (REQ-MOD02-025 via DEV-X-002).
 
-### Onda 1B - Foundations corporativas
+### 3.3 Service
 
-| Ordem | Capability | Critério |
-|---|---|---|
-| 1 | Adapter banco corporativo | Mesmos contratos de repositório passam contra Oracle/banco corporativo. |
-| 2 | Migrations corporativas | DDL compatível com constraints, índices, transações e volumes esperados. |
-| 3 | Outbox corporativo | Integra com Kafka/Schema Registry ou serviços corporativos equivalentes. |
-| 4 | OpenShift não produtivo | Build, deploy, env vars, secrets, probes e logs estruturados funcionando. |
-| 5 | Paridade de testes | Testes do SQLite rodam também contra banco corporativo com suíte de integração. |
+1. Service Catalog governado (REQ-MOD03-001–003).
+2. Inventory, lifecycle e place (REQ-MOD03-004/005/010).
+3. CFS, RFS, supportingResource e supportingService (REQ-MOD03-006–009).
+4. SubscriberID com Party/Tenant (REQ-MOD03-011).
+5. Bitstream, empresarial e CloudVoIP (REQ-MOD03-012–014).
+6. RelationshipType governado (REQ-MOD03-015).
+7. Eventos transacionais (REQ-MOD03-016 via DEV-X-002).
 
-### Onda 2 - Geographic
+## 4. Gates de qualidade
 
-| Ordem | Requisitos | Observação |
-|---|---|---|
-| 1 | REQ-MOD01-001, 002, 003 | Location, Address e SiteSpecification são fundação. |
-| 2 | REQ-MOD01-004, 005, 006, 007 | Região, grupo funcional, Site e Sub-Site. |
-| 3 | REQ-MOD01-008, 009 | Lifecycle e containment. |
-| 4 | REQ-MOD01-010, 011 | Relações A-Z e mapa, respeitando decisões de Geosite/sync. |
-| 5 | REQ-MOD01-012 | Eventos TMF688 do domínio. |
-
-### Onda 3 - Resource
-
-| Ordem | Requisitos | Observação |
-|---|---|---|
-| 1 | REQ-MOD02-001 a 004 | Catálogo e fabricantes como Party referenciada. |
-| 2 | REQ-MOD02-005 a 007 | Resource CRUD, lifecycle e containment. |
-| 3 | REQ-MOD02-008 a 012 | OSP, cabos, emendas e path computation. |
-| 4 | REQ-MOD02-013 a 019 | ISP, rack, equipment, card, port, energia, conexão e DIO. |
-| 5 | REQ-MOD02-020 a 023 | LogicalResources: IPAM, VRF, VLAN, ASN/MPLS. |
-| 6 | REQ-MOD02-024, 025 | RelationshipType e eventos. |
-
-### Onda 4 - Migração e Produção Região 1
-
-| Ordem | Capability | Critério |
-|---|---|---|
-| 1 | Mapping Netwin/Geosite para Nexus | Cobertura por entidade e regra de transformação. |
-| 2 | `_origin` completo | Consulta por sistema/id e migratedBy. |
-| 3 | Dry-run wave 1 | Contagens reconciliadas e erros classificados. |
-| 4 | Dual-running | Cross-reference operacional e suporte a rollback. |
-| 5 | Produção controlada | Observabilidade, audit e suporte operacional ativados. |
-
-### Onda 5 - Service
-
-| Ordem | Requisitos | Observação |
-|---|---|---|
-| 1 | REQ-MOD03-001 a 003 | Service Catalog e candidates. |
-| 2 | REQ-MOD03-004, 005 | Service CRUD e lifecycle. |
-| 3 | REQ-MOD03-006, 007 | CFS e RFS. |
-| 4 | REQ-MOD03-008, 009, 010 | supportingResource, supportingService e place. |
-| 5 | REQ-MOD03-011 | SubscriberID, alinhado ao MOD06/BSS. |
-| 6 | REQ-MOD03-012 a 014 | Serviços ilustrativos FTTH, empresarial e CloudVoIP. |
-| 7 | REQ-MOD03-015, 016 | ServiceRelationship e eventos. |
-
-### Onda 6 - Order e Party mínimos
-
-| Capability | Regra |
+| Gate | Critério |
 |---|---|
-| Party/Tenant | Fonte canônica para subscriber, owner, manufacturer, vendor e tenants. |
-| TMF645 | Viabilidade/Home Passed fica fora do Service Inventory. |
-| TMF641 | Order cria/altera Service e referencia `serviceOrderItem`. |
-| SubscriberID | Nexus-native na Fase 3, com convivência legada definida. |
-
-### Onda 7 - Maturidade
-
-| Capability | Resultado |
-|---|---|
-| MOD05 BPMN | Swap, re-home, decommissioning e suspensões críticas orquestradas. |
-| MOD07 Analytics | Data Lake, dashboards, impacto, churn, ocupação e eventos. |
-| MOD08 Platform | RBAC granular, administração de catálogo, audit reports e governança. |
-| Um Telecom | Integração OZMAP/UMBOX iniciada sem quebrar `_origin`. |
-
-## 4. Gates De Qualidade
-
-| Gate | Quando | Critério |
-|---|---|---|
-| G0 | Antes da Onda 1 | Decisões P0 fechadas. |
-| G1 | Antes da Onda 1B | SQLite local recriável, testes passando e adapters isolados. |
-| G2 | Antes da Onda 2 | Banco corporativo e OpenShift não produtivo executam health check e testes de integração básicos. |
-| G3 | Antes da Onda 3 | Geo cria Site/Address/Location e valida lifecycle em SQLite e staging corporativo. |
-| G4 | Antes da produção | Migração dry-run aprovada, NFR mínimo medido em banco corporativo e deploy OpenShift validado. |
-| G5 | Antes de MOD03 produção | Party/Order mínimos ou validação diferida explicitamente governada. |
-| G6 | Antes de Região 2 | Property Graph e pipeline NetworkCore/Octave validados. |
+| G0 — Documento | `npm run docs:check` aprovado. |
+| G1 — Código | lint, typecheck e build aprovados. |
+| G2 — Contrato | Testes unitários e integrados cobrem RF/RN/CA alterados. |
+| G3 — Fronteiras | CFS→Resource direto, Resource contendo Geo e Service contendo Resource são rejeitados. |
+| G4 — Operação | Eventos, audit, autorização e retries possuem cenários de falha. |
+| G5 — Escala | Teste de volume/concorrência e benchmark do banco alvo atendem NFR aprovado. |
+| G6 — Migração | Contagens, `_origin`, reconciliação, dual-running e rollback aprovados. |
 
 ---
 
-*V.tal Nexus - Documento Confidencial - Uso Interno - PÚBLICA*
+*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*

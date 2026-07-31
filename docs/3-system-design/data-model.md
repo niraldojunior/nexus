@@ -7,6 +7,9 @@
 O modelo segue **TMF-first** (C1): entidade, atributo e relacionamento espelham o SID. Extensão V.tal
 entra como `characteristic` tipada via catálogo — nunca coluna nova.
 
+> Este é o modelo **alvo**, não uma descrição das tabelas já presentes no Neon Postgres. UUID v7,
+> `_origin`, outbox, multi-tenancy completo e Property Graph permanecem rastreados em DEV-X-001–005.
+
 ---
 
 ## 1. Volumetria projetada por tabela

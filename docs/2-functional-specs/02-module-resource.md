@@ -9,11 +9,11 @@ TMFC003 + TMFC024 · TMF634 / TMF639 / TMF688
 | Campo | Valor |
 |---|---|
 | **Document Reference** | VTN-HLD-MOD02-RES |
-| **Versão** | 1.0 — draft |
-| **Data** | Junho 2026 |
+| **Versão** | 1.3 — draft |
+| **Data** | Julho 2026 |
 | **Documento âncora** | VTN-HLD-OVERVIEW-001 |
 | **HLD predecessor** | VTN-HLD-MOD01-GEO (Geographic) |
-| **TMFCs implementados** | TMFC003 — Resource Catalog Mgmt; TMFC024 — Resource Inventory Mgmt |
+| **TMFCs cobertos** | TMFC003 — Resource Catalog Mgmt; TMFC024 — Resource Inventory Mgmt |
 | **Open APIs** | TMF634, TMF639, TMF664, TMF688 |
 | **Requisitos cobertos** | REQ-MOD02-001 a REQ-MOD02-025 |
 | **Status** | Em elaboração |
@@ -51,33 +51,37 @@ Este documento é o segundo HLD de módulo da plataforma e estende o modelo arqu
 - Auditoria global e RBAC granular: **Módulo 8 — Nexus Platform & Administration**.
 - Capacidade de Service Assurance (correlação de alarmes, troubleshooting): consumidor de eventos TMF688 publicados por este módulo, fora do Nexus.
 
-### 2.3 Aderência ao codebase atual (`resource-catalog`)
+### 2.3 Aderência ao codebase atual
 
-O codebase presente neste repositório implementa apenas um subconjunto bem definido do HLD03. Ele cobre o **catálogo TMF634** e a infraestrutura transversal necessária para operar esse catálogo como microserviço NestJS, mas **não** implementa o inventário TMF639 nem os subdomínios físicos e lógicos detalhados nas seções seguintes deste HLD.
+O codebase atual é TypeScript/Node com HTTP nativo, React/Vite e Neon Postgres. Ele já entrega a base TMF634, TMF639 e TMF664; os subdomínios especializados continuam em diferentes graus de aderência ao HLD alvo.
 
-**Cobertura confirmada no código:**
-
-- `ResourceCatalog`, `ResourceCategory` e `ResourceSpecification` com CRUD de criação, consulta, atualização e paginação.
-- `ResourceCandidate` como entidade derivada e sincronizada automaticamente a partir de `ResourceSpecification`.
-- `Hub` para registro e remoção de assinantes de eventos.
-- Persistência com suporte a `MongoDB`, `SQLite` e `memory`.
-- Filtros, validação de payload, paginação e cabeçalhos de resultado.
-- Eventos de catálogo publicados para assinantes via dispatcher/Hub.
-- Controllers HTTP versionados, presenters e use cases separados.
-- Infraestrutura transversal de logger, health check, Swagger, CORS, cache, RMQ e tracing.
-
-**Fora do escopo do codebase atual:**
-
-- CRUD canônico de `Resource` TMF639.
-- Modelagem de `PhysicalResource` e `LogicalResource`.
-- Hierarquia de contenção física, portas, cards, racks, cabos, splices, IPAM, VRF, VLAN, ASN e MPLS.
-- Path computation e catálogos de relacionamento do inventário.
-- Ciclo de vida multi-dimensional X.731 do recurso físico/lógico.
-- Eventos TMF688 do inventário de recursos.
-
-**Conclusão de revisão:**
-
-O HLD03 permanece válido como visão funcional do domínio Resource, mas a implementação disponível neste repositório corresponde, na prática, ao módulo de **Resource Catalog (TMF634)** e à base técnica transversal. As seções de inventário TMF639 devem ser tratadas como evolução futura ou como material de especificação para os próximos projetos, não como entrega atual deste codebase.
+| Requisito | Estado | Evidência atual | Gap principal | Bloqueador | Backlog |
+|---|---|---|---|---|---|
+| **REQ-MOD02-001** | Parcial | `ResourceService`, repositório Postgres, rotas TMF634, UI de catálogo e testes cobrem CRUD de ResourceSpecification. | UUID v7/`_origin`, lifecycle completo, catálogo de characteristics e governança multi-tenant. | Q-RES-001 | DEV-RES-001, DEV-X-001, DEV-X-004 |
+| **REQ-MOD02-002** | Parcial | ResourceCategory hierárquica é persistida no bootstrap e consultável por API/UI. | CRUD governado, versionamento e navegação completa; hoje é somente leitura. | Q-RES-001 | DEV-RES-001 |
+| **REQ-MOD02-003** | Parcial | ResourceFunctionSpecification tem CRUD e TMF664 ativa/suspende/termina Resources. | Templates compostos, parâmetros de ativação e validação contra catálogo. | — | DEV-RES-001 |
+| **REQ-MOD02-004** | Parcial | Manufacturer pode ser resolvido por Party no frontend/MCP e persistido no Resource. | Contrato canônico único de Manufacturer/Vendor como PartyRef e governança de fornecedor. | Q-RES-001 | DEV-RES-001, DEV-X-004 |
+| **REQ-MOD02-005** | Parcial | CRUD físico/lógico, filtros, paginação, workspace, place/Party e testes TMF639 estão ativos. | Bulk, histórico, características validadas, UUID v7 e `_origin`. | — | DEV-RES-002, DEV-X-001 |
+| **REQ-MOD02-006** | Parcial | Estados X.731 básicos, soft-delete e TMF664 são exercitados por testes. | Matriz completa de transições, razões, histórico e concorrência. | — | DEV-RES-002 |
+| **REQ-MOD02-007** | Parcial | ResourceRelationship persiste contenção e o inventário expõe relações. | Regras por Specification, ciclos, capacidade/slot e inversos governados. | Q-RES-012 | DEV-RES-002, DEV-RES-006 |
+| **REQ-MOD02-008** | Parcial | Support Structures são representáveis como PhysicalResource tipado e aparecem no viewport Geo. | Invariantes de poste/duto/manhole, owner/contrato, bulk GeoJSON e mapas específicos. | — | DEV-RES-002 |
+| **REQ-MOD02-009** | Parcial | CTO/Splitter são representáveis por catálogo, characteristics e relações genéricas. | Portas, razão óptica, ocupação, cascata e validações OSP dedicadas. | Q-RES-007 | DEV-RES-002 |
+| **REQ-MOD02-010** | Parcial | Cabos LineString podem ser carregados e exibidos no mapa Geo. | Segments/fibers, ocupação, continuidade, edição e importação geoespacial. | Q-RES-007 | DEV-RES-002 |
+| **REQ-MOD02-011** | Parcial | Splice é representável por Resource/Relationship genéricos. | Entidade operacional, validação de fibras/atenuação e manutenção transacional. | Q-RES-007 | DEV-RES-002 |
+| **REQ-MOD02-012** | Não implementado | Não há rota nem serviço de path computation; Property Graph aparece apenas na documentação. | Path, raiz comum, métricas ópticas, visualização e cache em escala. | Q-RES-004, Q-RES-010 | DEV-RES-003, DEV-X-005 |
+| **REQ-MOD02-013** | Parcial | Rack é representável como PhysicalResource contido em Site. | Elevação em U, face, ocupação, potência e conflitos de posição. | — | DEV-RES-004 |
+| **REQ-MOD02-014** | Parcial | Equipment possui modelo/fabricante/serial, CRUD, UI e resolução por catálogo. | Slots, funções, swap BPMN e regras específicas por classe. | MOD05 | DEV-RES-004 |
+| **REQ-MOD02-015** | Parcial | Card é representável por PhysicalResource e relação de contenção. | Compatibilidade de slot, capacidade e lifecycle dependente do chassis. | — | DEV-RES-004 |
+| **REQ-MOD02-016** | Parcial | Port é representável por catálogo/ResourceRelationship. | Tipo/direção/velocidade, ocupação exclusiva e terminação física. | — | DEV-RES-004 |
+| **REQ-MOD02-017** | Parcial | Power resources podem ser cadastrados genericamente. | Circuitos A/B, carga, capacidade, redundância e impacto de falha. | Q-RES-011 | DEV-RES-004 |
+| **REQ-MOD02-018** | Parcial | Relações `connectedTo` podem ligar Resources. | Endpoints tipados, simetria, exclusividade e continuidade física. | Q-RES-012 | DEV-RES-004, DEV-RES-006 |
+| **REQ-MOD02-019** | Parcial | Front/Rear Port são representáveis por tipos e `mirrorOf`. | Pareamento obrigatório, passagem interna e validação de DIO/DG. | — | DEV-RES-004 |
+| **REQ-MOD02-020** | Parcial | Prefix/IP/Range podem ser LogicalResources e a UI suporta inventário lógico. | Alocação IPAM, sobreposição, hierarquia de prefixos e reserva concorrente. | Q-RES-008 | DEV-RES-005 |
+| **REQ-MOD02-021** | Parcial | VRF e RouteTarget são representáveis por LogicalResource/characteristics. | Unicidade de RD/RT, membership, import/export e consultas específicas. | Q-RES-008 | DEV-RES-005 |
+| **REQ-MOD02-022** | Parcial | VLAN/VLAN Group são representáveis pelo inventário lógico. | Faixas, escopo, alocação, conflitos e vínculo a portas/serviços. | Q-RES-008 | DEV-RES-005 |
+| **REQ-MOD02-023** | Parcial | ASN/MPLS Label são representáveis por LogicalResource. | Pools, alocação, unicidade, escopo e lifecycle próprios. | Q-RES-008 | DEV-RES-005 |
+| **REQ-MOD02-024** | Divergente | Relações têm CRUD, mas `ResourceService` aceita qualquer string; a tabela de catálogo não possui API de governança. | Bootstrap + CRUD de RelationshipType, inversos, simetria, Audit e validação em writes. | Q-RES-012 | DEV-RES-006 |
+| **REQ-MOD02-025** | Parcial | Eventos de catálogo/inventário são persistidos em `tmf_event`, expostos via TMF688 e testados. | Outbox, Schema Registry, catálogo público, DLQ, reprocessamento e UUID v7. | — | DEV-X-002 |
 
 ---
 
@@ -247,7 +251,7 @@ O módulo Resource é composto por 25 requisitos, organizados em 7 blocos funcio
 > **Entidade TMF:** ResourceSpecification (TMF634)  
 > **Open API TMF:** TMF634 — Resource Catalog Management API  
 > **Prioridade:** Crítica — entidade fundacional do catálogo  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 6.1 Descrição
 
@@ -355,7 +359,7 @@ Atributos canônicos da entidade ResourceSpecification (TMF634):
 |---|---|---|---|---|
 | **Catálogo de tipos formal** | Biblioteca de modelos (Catalogue) | Data Model Manager (metamodelo) | Device Types + Module Types | **ResourceSpecification conforme TMF634** |
 | **Atributos técnicos por tipo** | Sim (parametrizado) | Sim (metamodelo) | Sim (custom fields + type) | **resourceSpecCharacteristic canônico** |
-| **Versionamento** | Parcial | Não nativo | Não nativo | **version + validFor explícitos** |
+| **Versionamento** | Parcial | Não identificado no levantamento | Não identificado no levantamento | **version + validFor explícitos** |
 | **Relações entre specs** | Parcial | Sim (containment) | Limitado | **resourceSpecRelationship tipado** |
 | **Anexos (datasheets, fotos)** | Sim | Sim | Sim (limitado) | **attachment com hash de integridade** |
 
@@ -367,7 +371,7 @@ Atributos canônicos da entidade ResourceSpecification (TMF634):
 > **Entidade TMF:** ResourceCategory (TMF634)  
 > **Open API TMF:** TMF634 — Resource Catalog Management API  
 > **Prioridade:** Alta — organiza navegação e filtros do catálogo  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 7.1 Descrição
 
@@ -447,8 +451,8 @@ Atributos canônicos da entidade ResourceCategory (TMF634):
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
 | **Organização hierárquica** | Fixa por dimensões (Catalogue) | Via classes do metamodelo | Por Manufacturer apenas | **ResourceCategory hierárquica e configurável** |
-| **Multi-classificação** | Não | Parcial | Não | **Sim (primária + secundárias)** |
-| **Bootstrap V.tal** | Não aplicável | Não aplicável | Não aplicável | **Categorias-base pré-populadas** |
+| **Multi-classificação** | Não identificado no levantamento | Parcial | Não identificado no levantamento | **Sim (primária + secundárias)** |
+| **Bootstrap V.tal** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Categorias-base pré-populadas** |
 
 
 ---
@@ -458,7 +462,7 @@ Atributos canônicos da entidade ResourceCategory (TMF634):
 > **Entidade TMF:** ResourceFunctionSpecification (TMF634)  
 > **Open API TMF:** TMF634 — Resource Catalog Management API  
 > **Prioridade:** Média — habilita reuso e configuração padronizada  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 8.1 Descrição
 
@@ -554,7 +558,7 @@ Atributos canônicos da entidade ResourceFunctionSpecification (TMF634):
 > **Entidade TMF:** Party com role=manufacturer (TMF632 referenciado)  
 > **Open API TMF:** TMF634 (referência) + TMF632 (Party do Módulo 6)  
 > **Prioridade:** Média — atributo de governança e logística  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 9.1 Descrição
 
@@ -577,7 +581,6 @@ Atributos canônicos da entidade Party com role=manufacturer (TMF632 referenciad
 ### 9.4 Exemplo de payload
 
 ```json
-// ResourceSpec com Manufacturer e Vendor:
 {
   "id": "spec-olt-huawei-ma5800-x17",
   "name": "OLT Huawei MA5800-X17",
@@ -624,7 +627,7 @@ Atributos canônicos da entidade Party com role=manufacturer (TMF632 referenciad
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
 | **Modelagem de fabricante** | Tabela própria | Subclasse de Party metamodelo | Entidade Manufacturer | **Party com role=manufacturer (TMF632 unificado)** |
-| **Vendor (fornecedor) por Resource** | Não nativo | Via atributos custom | Não nativo | **relatedParty com role=vendor** |
+| **Vendor (fornecedor) por Resource** | Não identificado no levantamento | Via atributos custom | Não identificado no levantamento | **relatedParty com role=vendor** |
 
 
 ---
@@ -634,7 +637,7 @@ Atributos canônicos da entidade Party com role=manufacturer (TMF632 referenciad
 > **Entidade TMF:** Resource (PhysicalResource | LogicalResource) (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Crítica — entidade central do módulo de inventário  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 10.1 Descrição
 
@@ -760,7 +763,7 @@ Atributos canônicos da entidade Resource (PhysicalResource | LogicalResource) (
 > **Entidade TMF:** Resource.{resourceStatus, operationalState, administrativeState, usageState} + StateChangeEvent (TMF639 + TMF688)  
 > **Open API TMF:** TMF639 + TMF688  
 > **Prioridade:** Alta  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 11.1 Descrição
 
@@ -786,15 +789,6 @@ Atributos canônicos da entidade Resource.{resourceStatus, operationalState, adm
 ### 11.4 Exemplo de payload
 
 ```json
-// Combinações canônicas exibidas na UI e seus mapeamentos X.731:
-// InOperation       → status:available, op:enable,  adm:unlocked,    usage:active
-// InMaintenance     → status:available, op:enable,  adm:locked,      usage:idle
-// InDefect          → status:alarm,     op:disable, adm:unlocked,    usage:idle
-// Reserved          → status:reserved,  op:enable,  adm:unlocked,    usage:idle
-// Decommissioned    → status:suspended, op:disable, adm:locked,      usage:idle
-// Planned           → status:standby,   op:enable,  adm:unlocked,    usage:idle
-
-// Evento de mudança:
 {
   "eventType": "ResourceStateChangeEvent",
   "eventTime": "2026-06-26T15:30:00Z",
@@ -852,9 +846,9 @@ Atributos canônicos da entidade Resource.{resourceStatus, operationalState, adm
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
 | **Modelagem de estado** | Estado único (texto) | Sem ciclo formal | status único com choices | **X.731 (4 eixos) conforme TMF639** |
-| **Histórico de transições** | Não | Audit Trail global | Não | **StateChangeEvent (TMF688) imutável** |
-| **Combinações canônicas para UI** | N/A | N/A | N/A | **Sim — 6 combinações nomeadas** |
-| **Aprovação para mudanças críticas** | Não | Workflow BPMN possível | Não | **Integração com Process Orchestration** |
+| **Histórico de transições** | Não identificado no levantamento | Audit Trail global | Não identificado no levantamento | **StateChangeEvent (TMF688) imutável** |
+| **Combinações canônicas para UI** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim — 6 combinações nomeadas** |
+| **Aprovação para mudanças críticas** | Não identificado no levantamento | Workflow BPMN possível | Não identificado no levantamento | **Integração com Process Orchestration** |
 
 
 ---
@@ -864,7 +858,7 @@ Atributos canônicos da entidade Resource.{resourceStatus, operationalState, adm
 > **Entidade TMF:** resourceRelationship com type=containsAsChild (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Alta — base para inside plant (rack → equipamento → placa → porta)  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 12.1 Descrição
 
@@ -888,7 +882,6 @@ Atributos canônicos da entidade resourceRelationship com type=containsAsChild (
 ### 12.4 Exemplo de payload
 
 ```json
-// Exemplo: Card GPON contida em OLT (slot 5)
 {
   "id": "res-card-gpon-rj-bot-001-slot-5",
   "name": "Card GPON Slot 5",
@@ -966,7 +959,7 @@ Atributos canônicos da entidade resourceRelationship com type=containsAsChild (
 > **Entidade TMF:** PhysicalResource especializado (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Crítica — fundação da Outside Plant  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 13.1 Descrição
 
@@ -976,7 +969,7 @@ Support Structure é a categoria de PhysicalResource que representa a infraestru
 
 O Netwin trata Suportes (postes, dutos, manholes) como entidades de primeira classe no módulo Outside Plant. Esta abordagem é correta operacionalmente — a operação V.tal opera intensamente sobre postes (compartilhados com concessionárias, com SLA de aluguel) e dutos (limitados em capacidade de cabos por bitola). O Kuwaiba modela tudo via metamodelo (Pole, Manhole, Duct como classes derivadas de InventoryObject). O NetBox não tem modelagem nativa de OSP. O Nexus segue o TMF639 modelando Support Structures como PhysicalResources tipados via ResourceSpecification — categoria Infraestrutura/OSP/SupportStructure no catálogo, com atributos específicos (altura, material, propriedade, capacidade de cabos).
 
-> **Decisão arquitetural Q-005 (Jun/2026):** A fonte de verdade do cadastro de postes — inclusive os de propriedade de terceiros (concessionárias de energia) — fica integralmente na V.tal, sob o Nexus. **Não há integração de sincronização com sistemas de concessionárias.** Postes de terceiros são modelados como Support Structures normais com `owner` (concessionária) e `contractRef` (contrato de aluguel) preenchidos, mas todo o ciclo de vida do cadastro (criação, atualização, desativação) é operado dentro do Nexus. Esta decisão simplifica o MVP: nenhum adapter de integração externa é necessário, e o Nexus permanece como fonte única de verdade para a infraestrutura de OSP.
+> **D-RES-002 (Jun/2026):** A fonte de verdade do cadastro de postes — inclusive os de propriedade de terceiros (concessionárias de energia) — fica integralmente na V.tal, sob o Nexus. **Não há integração de sincronização com sistemas de concessionárias.** Postes de terceiros são modelados como Support Structures normais com `owner` (concessionária) e `contractRef` (contrato de aluguel) preenchidos, mas todo o ciclo de vida do cadastro (criação, atualização, desativação) é operado dentro do Nexus. Esta decisão simplifica o MVP: nenhum adapter de integração externa é necessário, e o Nexus permanece como fonte única de verdade para a infraestrutura de OSP.
 
 ### 13.3 Mapeamento de atributos TMF
 
@@ -992,7 +985,7 @@ Atributos canônicos da entidade PhysicalResource especializado (TMF639):
 ### 13.4 Exemplo de payload
 
 ```json
-// Poste próprio V.tal
+[
 {
   "id": "res-poste-rjbot-0001",
   "@type": "PhysicalResource",
@@ -1011,9 +1004,7 @@ Atributos canônicos da entidade PhysicalResource especializado (TMF639):
     { "name": "cables_atual", "value": 3 },
     { "name": "Sicom_ID",     "value": "VT-POL-123456" }
   ]
-}
-
-// Duto subterrâneo
+},
 {
   "id": "res-duto-rjbot-0001",
   "@type": "PhysicalResource",
@@ -1027,6 +1018,7 @@ Atributos canônicos da entidade PhysicalResource especializado (TMF639):
     { "name": "cables_installed", "value": 2 }
   ]
 }
+]
 ```
 
 ### 13.5 Pré-condições
@@ -1078,11 +1070,11 @@ Atributos canônicos da entidade PhysicalResource especializado (TMF639):
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Modelagem de Support Structures** | Sim (Outside Plant) | Subclasses no metamodelo | Não nativo | **PhysicalResource tipado (TMF639)** |
-| **Propriedade (V.tal/terceiros)** | Sim | Atributo livre | N/A | **characteristic owner + contractRef** |
-| **Capacidade de dutos** | Sim | Atributo do metamodelo | N/A | **characteristic + validação no save** |
-| **Trajeto de dutos no mapa** | Sim (Geosite OSP) | Limitado | N/A | **LineString conforme TMF675** |
-| **Identificadores legados** | IDs internos | Custom attributes | N/A | **Sicom_ID, Geosite_OSP_ID como characteristics** |
+| **Modelagem de Support Structures** | Sim (Outside Plant) | Subclasses no metamodelo | Não identificado no levantamento | **PhysicalResource tipado (TMF639)** |
+| **Propriedade (V.tal/terceiros)** | Sim | Atributo livre | Não identificado no levantamento | **characteristic owner + contractRef** |
+| **Capacidade de dutos** | Sim | Atributo do metamodelo | Não identificado no levantamento | **characteristic + validação no save** |
+| **Trajeto de dutos no mapa** | Sim (Geosite OSP) | Limitado | Não identificado no levantamento | **LineString conforme TMF675** |
+| **Identificadores legados** | IDs internos | Custom attributes | Não identificado no levantamento | **Sicom_ID, Geosite_OSP_ID como characteristics** |
 
 
 ---
@@ -1092,7 +1084,7 @@ Atributos canônicos da entidade PhysicalResource especializado (TMF639):
 > **Entidade TMF:** PhysicalResource passivo georreferenciado (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Crítica — ponto de acesso da rede GPON  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 14.1 Descrição
 
@@ -1116,7 +1108,7 @@ Atributos canônicos da entidade PhysicalResource passivo georreferenciado (TMF6
 ### 14.4 Exemplo de payload
 
 ```json
-// CTO completa com Splitter 1:8 contido
+[
 {
   "id": "res-cto-rjbot-0001",
   "name": "CTO-RJ-BOT-0001",
@@ -1134,9 +1126,7 @@ Atributos canônicos da entidade PhysicalResource passivo georreferenciado (TMF6
     { "relationshipType": "supportedBy",
       "resource": { "id": "res-poste-rjbot-0001", "@referredType": "Resource" } }
   ]
-}
-
-// Splitter 1:8 contido na CTO
+},
 {
   "id": "res-splitter-cto-rjbot-0001",
   "name": "Splitter 1:8 CTO-RJ-BOT-0001",
@@ -1147,6 +1137,7 @@ Atributos canônicos da entidade PhysicalResource passivo georreferenciado (TMF6
       "resource": { "id": "res-cto-rjbot-0001", "@referredType": "Resource" } }
   ]
 }
+]
 ```
 
 ### 14.5 Pré-condições
@@ -1195,10 +1186,10 @@ Atributos canônicos da entidade PhysicalResource passivo georreferenciado (TMF6
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Modelagem de CTO/NAP** | Entidade dedicada (Outside Plant) | PassiveDevice subclass | Não nativo | **PhysicalResource via spec (TMF639)** |
-| **Containment de splitter** | Implícita | Sim (Containment Manager) | N/A | **resourceRelationship containsAsChild** |
-| **Ocupação derivada** | Calculada | Calculada | N/A | **Derivada de portas filhas em tempo real** |
-| **Vínculo a poste** | Sim | Sim (parent in OSP) | N/A | **resourceRelationship supportedBy** |
+| **Modelagem de CTO/NAP** | Entidade dedicada (Outside Plant) | PassiveDevice subclass | Não identificado no levantamento | **PhysicalResource via spec (TMF639)** |
+| **Containment de splitter** | Implícita | Sim (Containment Manager) | Não identificado no levantamento | **resourceRelationship containsAsChild** |
+| **Ocupação derivada** | Calculada | Calculada | Não identificado no levantamento | **Derivada de portas filhas em tempo real** |
+| **Vínculo a poste** | Sim | Sim (parent in OSP) | Não identificado no levantamento | **resourceRelationship supportedBy** |
 
 
 ---
@@ -1208,7 +1199,7 @@ Atributos canônicos da entidade PhysicalResource passivo georreferenciado (TMF6
 > **Entidade TMF:** PhysicalResource Cable + CableSegment (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Crítica — fundação da topologia física  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 15.1 Descrição
 
@@ -1232,7 +1223,6 @@ Atributos canônicos da entidade PhysicalResource Cable + CableSegment (TMF639):
 ### 15.4 Exemplo de payload
 
 ```json
-// Cabo primário CFOA 12F entre Central e Armário
 {
   "id": "res-cabo-cfoa-rjbot-001",
   "name": "CFOA-RJ-BOT-001",
@@ -1309,11 +1299,11 @@ Atributos canônicos da entidade PhysicalResource Cable + CableSegment (TMF639):
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Modelagem de cabo georreferenciado** | Sim (OSP com trajeto) | PhysicalLink georreferenciado | Não nativo | **PhysicalResource + LineString (TMF675)** |
-| **Fibras internas como sub-recursos** | Sim (sub-itens) | Sim (containment) | N/A | **Containment containsAsChild (Fibras)** |
-| **Trajeto sobre suportes** | Sim | Sim | N/A | **passesThrough relationship** |
-| **Validação de capacidade de duto** | Sim | Limitada | N/A | **Validação cross-reference automática** |
-| **Cable Segments com emenda** | Limitado | Sim | N/A | **Segmentos como Resources filhos do cabo macro** |
+| **Modelagem de cabo georreferenciado** | Sim (OSP com trajeto) | PhysicalLink georreferenciado | Não identificado no levantamento | **PhysicalResource + LineString (TMF675)** |
+| **Fibras internas como sub-recursos** | Sim (sub-itens) | Sim (containment) | Não identificado no levantamento | **Containment containsAsChild (Fibras)** |
+| **Trajeto sobre suportes** | Sim | Sim | Não identificado no levantamento | **passesThrough relationship** |
+| **Validação de capacidade de duto** | Sim | Limitada | Não identificado no levantamento | **Validação cross-reference automática** |
+| **Cable Segments com emenda** | Limitado | Sim | Não identificado no levantamento | **Segmentos como Resources filhos do cabo macro** |
 
 
 ---
@@ -1323,7 +1313,7 @@ Atributos canônicos da entidade PhysicalResource Cable + CableSegment (TMF639):
 > **Entidade TMF:** PhysicalResource Splice (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Alta — habilita rastreabilidade ponto-a-ponto  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 16.1 Descrição
 
@@ -1347,7 +1337,6 @@ Atributos canônicos da entidade PhysicalResource Splice (TMF639):
 ### 16.4 Exemplo de payload
 
 ```json
-// Emenda entre fibra 3 do cabo A e fibra 1 do cabo B
 {
   "id": "res-splice-rjbot-emenda-001-s003",
   "name": "Splice 003 - Caixa Emenda 001",
@@ -1412,10 +1401,10 @@ Atributos canônicos da entidade PhysicalResource Splice (TMF639):
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Modelagem de emenda** | Sim (OSP) | PhysicalConnection | Não nativo | **PhysicalResource Splice com 2 endpoints** |
-| **Atenuação medida** | Sim | Atributo livre | N/A | **characteristic com threshold por spec** |
-| **Histórico de emendas** | Limitado | Audit Trail | N/A | **Trail via eventos + characteristic data** |
-| **Validação de fibras livres** | Sim | Limitada | N/A | **Cross-check automático antes do POST** |
+| **Modelagem de emenda** | Sim (OSP) | PhysicalConnection | Não identificado no levantamento | **PhysicalResource Splice com 2 endpoints** |
+| **Atenuação medida** | Sim | Atributo livre | Não identificado no levantamento | **characteristic com threshold por spec** |
+| **Histórico de emendas** | Limitado | Audit Trail | Não identificado no levantamento | **Trail via eventos + characteristic data** |
+| **Validação de fibras livres** | Sim | Limitada | Não identificado no levantamento | **Cross-check automático antes do POST** |
 
 
 ---
@@ -1425,7 +1414,7 @@ Atributos canônicos da entidade PhysicalResource Splice (TMF639):
 > **Entidade TMF:** Função sobre resourceRelationships (não é entidade própria)  
 > **Open API TMF:** TMF639 — Resource Inventory + lógica de path  
 > **Prioridade:** Crítica — habilita troubleshooting e Service Assurance  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 17.1 Descrição
 
@@ -1435,16 +1424,24 @@ O trajeto físico (Path) é o caminho do sinal óptico de um ponto a outro: port
 
 Path computation é o "consultar cadeia de relações" do modelo de inventário — capacidade que o Kuwaiba implementa nativamente via seu modelo de grafo (uma das suas maiores forças). O Netwin oferece consulta limitada. O NetBox tem path navigation para circuits mas não para FTTH. O Nexus implementa path computation como serviço dedicado sobre o TMF639, retornando trajeto completo ou parcial com metadados (atenuação acumulada, distância, número de splices). Esta capacidade é o principal argumento para usar Oracle Property Graph (referenciado na visão geral) — permite queries de grafo nativas com performance adequada para 22M+ HPs e 4M+ HCs.
 
+### 17.3 Mapeamento de atributos TMF
+
+| Atributo | Tipo | Obrigatório | Observação V.tal |
+|---|---|:---:|---|
+| `fromResource.id` | string | Sim | Endpoint inicial do trajeto. |
+| `toResource.id` | string | Não | Endpoint final; quando ausente, a travessia segue até a próxima terminação. |
+| `resourceRelationship.relationshipType` | string | Sim | Somente tipos transitáveis e governados participam do grafo. |
+| `pathItem[]` | array | Sim | Sequência ordenada de Resources e relações atravessadas. |
+| `pathCharacteristic[]` | array | Não | Distância, atenuação, splice count e completude. |
+
 ### 17.4 Exemplo de payload
 
 ```json
-// Request: POST /resource/path
+[
 {
   "from": { "id": "res-port-olt-rjbot-co-01-card0-port0", "@referredType": "Resource" },
   "to":   { "id": "res-ont-cliente-12345", "@referredType": "Resource" }
-}
-
-// Response
+},
 {
   "path": [
     { "resource": { "id": "res-port-olt-rjbot-co-01-card0-port0" }, "type": "Port", "site": "Central RJ Botafogo" },
@@ -1463,6 +1460,7 @@ Path computation é o "consultar cadeia de relações" do modelo de inventário 
   "splice_count": 1,
   "truncated": false
 }
+]
 ```
 
 ### 17.5 Pré-condições
@@ -1510,10 +1508,10 @@ Path computation é o "consultar cadeia de relações" do modelo de inventário 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
 | **Path computation fim-a-fim** | Limitada | Sim (nativo do grafo) | Limitada a circuits | **Sim — sobre Oracle Property Graph** |
-| **Atenuação acumulada** | Manual | Não nativa | N/A | **Calculada em tempo real** |
-| **Raiz comum entre clientes** | Não | Sim | N/A | **Endpoint dedicado /commonRoot** |
-| **Visualização do trajeto no mapa** | Sim (Geosite OSP) | Sim | N/A | **GeoJSON nativo** |
-| **Performance em escala** | Adequada para escala atual | Limitada (Neo4j embarcado) | Não aplicável | **Oracle Property Graph para 22M+ HPs** |
+| **Atenuação acumulada** | Manual | Não identificado no levantamento | Não identificado no levantamento | **Calculada em tempo real** |
+| **Raiz comum entre clientes** | Não identificado no levantamento | Sim | Não identificado no levantamento | **Endpoint dedicado /commonRoot** |
+| **Visualização do trajeto no mapa** | Sim (Geosite OSP) | Sim | Não identificado no levantamento | **GeoJSON nativo** |
+| **Performance em escala** | Adequada para escala atual | Limitada (Neo4j embarcado) | Não identificado no levantamento | **Oracle Property Graph para 22M+ HPs** |
 
 
 ---
@@ -1523,7 +1521,7 @@ Path computation é o "consultar cadeia de relações" do modelo de inventário 
 > **Entidade TMF:** PhysicalResource Rack (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Crítica — fronteira entre Geographic e Inside Plant  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 18.1 Descrição
 
@@ -1616,7 +1614,7 @@ Atributos canônicos da entidade PhysicalResource Rack (TMF639):
 | **Posicionamento em U** | Sim | Sim | Sim (nativo) | **characteristic U_position + U_size** |
 | **Validação de sobreposição** | Limitada | Sim | Sim | **Validação no save** |
 | **Elevation view** | Limitada | Sim | Sim (UI nativa) | **Endpoint /elevation** |
-| **Free space query** | Não | Limitada | Sim | **Endpoint /freeSpace** |
+| **Free space query** | Não identificado no levantamento | Limitada | Sim | **Endpoint /freeSpace** |
 
 
 ---
@@ -1626,7 +1624,7 @@ Atributos canônicos da entidade PhysicalResource Rack (TMF639):
 > **Entidade TMF:** PhysicalResource Equipment (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Crítica — equipamento ativo do inventário  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 19.1 Descrição
 
@@ -1650,7 +1648,7 @@ Atributos canônicos da entidade PhysicalResource Equipment (TMF639):
 ### 19.4 Exemplo de payload
 
 ```json
-// OLT em Rack
+[
 {
   "id": "res-olt-rjbot-co-01",
   "name": "OLT-RJ-BOT-CO-01",
@@ -1672,9 +1670,7 @@ Atributos canônicos da entidade PhysicalResource Equipment (TMF639):
         { "name": "U_size",     "value": 9 }
       ] }
   ]
-}
-
-// ONT no cliente
+},
 {
   "id": "res-ont-cliente-12345",
   "name": "ONT-Cliente-12345",
@@ -1687,6 +1683,7 @@ Atributos canônicos da entidade PhysicalResource Equipment (TMF639):
     { "name": "firmware",        "value": "V5R022C10SPC100" }
   ]
 }
+]
 ```
 
 ### 19.5 Pré-condições
@@ -1707,7 +1704,7 @@ Atributos canônicos da entidade PhysicalResource Equipment (TMF639):
 | **RF-006** | **Contenção de placas** | Equipamentos modulares (OLT chassi, Switch chassi, Router chassi) aceitam Cards como filhos containsAsChild (REQ-MOD02-015). |
 | **RF-007** | **Endereço de gerência** | characteristic IP_management e MAC_management são chaves para integração com sistemas de monitoramento (SNMP, NETCONF). |
 | **RF-008** | **Firmware tracking** | Mudança de firmware é evento auditado (publicação TMF688) com versão anterior e nova. |
-| **RF-009** | **Substituição (swap) via workflow BPMN** | A operação `POST /resource/{id}/swap` inicia um workflow BPMN orquestrado pelo Módulo 5 (Process Orchestration) que executa as etapas: (1) validação de compatibilidade entre equipamento antigo e novo; (2) reserva do equipamento novo; (3) transição do antigo para `shuttingDown`; (4) swap atômico preservando conexões filhas e ligações com Services; (5) ativação do novo (`Active`); (6) transição do antigo para `Retired`. Cada etapa gera Audit Trail e evento TMF688. **Decisão arquitetural Q-009 (Jun/2026):** swap nunca é operação manual — é sempre orquestrada para garantir rastreabilidade e segurança operacional, especialmente em Centrais críticas. |
+| **RF-009** | **Substituição (swap) via workflow BPMN** | A operação `POST /resource/{id}/swap` inicia um workflow BPMN orquestrado pelo Módulo 5 (Process Orchestration) que executa as etapas: (1) validação de compatibilidade entre equipamento antigo e novo; (2) reserva do equipamento novo; (3) transição do antigo para `shuttingDown`; (4) swap atômico preservando conexões filhas e ligações com Services; (5) ativação do novo (`Active`); (6) transição do antigo para `Retired`. Cada etapa gera Audit Trail e evento TMF688. **D-RES-004 (Jun/2026):** swap nunca é operação manual — é sempre orquestrada para garantir rastreabilidade e segurança operacional, especialmente em Centrais críticas. |
 | **RF-010** | **Decommissioning** | Procedimento padronizado: cascade events to dependent services, transition to status=suspended, allow physical removal. |
 
 ### 19.7 Regras de Negócio
@@ -1752,7 +1749,7 @@ Atributos canônicos da entidade PhysicalResource Equipment (TMF639):
 > **Entidade TMF:** PhysicalResource Card (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Alta — granularidade necessária para OLTs e roteadores  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 20.1 Descrição
 
@@ -1844,7 +1841,7 @@ Atributos canônicos da entidade PhysicalResource Card (TMF639):
 > **Entidade TMF:** PhysicalResource Port (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Crítica — ponto de conexão da rede  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 21.1 Descrição
 
@@ -1941,7 +1938,7 @@ Atributos canônicos da entidade PhysicalResource Port (TMF639):
 > **Entidade TMF:** PhysicalResource Power Feed/Outlet (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Média — governança de continuidade e redundância  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 22.1 Descrição
 
@@ -1964,7 +1961,7 @@ Atributos canônicos da entidade PhysicalResource Power Feed/Outlet (TMF639):
 ### 22.4 Exemplo de payload
 
 ```json
-// UPS principal da Central
+[
 {
   "id": "res-ups-rjbot-co-01-principal",
   "name": "UPS Principal RJ-BOT",
@@ -1975,9 +1972,7 @@ Atributos canônicos da entidade PhysicalResource Power Feed/Outlet (TMF639):
     { "name": "capacity_W",   "value": 180000 },
     { "name": "phase",        "value": "three" }
   ]
-}
-
-// PowerOutlet em PDU de Rack
+},
 {
   "id": "res-pdu-outlet-rjbot-rack-n01-c19-01",
   "name": "Outlet C19-01 Rack-N01",
@@ -1992,6 +1987,7 @@ Atributos canônicos da entidade PhysicalResource Power Feed/Outlet (TMF639):
       "resource": { "id": "res-pdu-rjbot-rack-n01-a", "@referredType": "Resource" } }
   ]
 }
+]
 ```
 
 ### 22.5 Pré-condições
@@ -2036,9 +2032,9 @@ Atributos canônicos da entidade PhysicalResource Power Feed/Outlet (TMF639):
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
 | **Modelagem de energia** | Limitada | Limitada | PowerPanel/Feed/Outlet (maduro) | **Adaptação do modelo NetBox ao TMF639** |
-| **Redundância A+B** | Limitada | Não nativa | Sim | **Suportada via 2 PowerPorts** |
-| **Cálculo de carga** | Manual | Não nativa | Sim (loadCalculation) | **Endpoint dedicado** |
-| **Análise de impacto elétrico** | Não | Não | Sim | **Endpoint /impactAnalysis** |
+| **Redundância A+B** | Limitada | Não identificado no levantamento | Sim | **Suportada via 2 PowerPorts** |
+| **Cálculo de carga** | Manual | Não identificado no levantamento | Sim (loadCalculation) | **Endpoint dedicado** |
+| **Análise de impacto elétrico** | Não identificado no levantamento | Não identificado no levantamento | Sim | **Endpoint /impactAnalysis** |
 
 
 ---
@@ -2048,7 +2044,7 @@ Atributos canônicos da entidade PhysicalResource Power Feed/Outlet (TMF639):
 > **Entidade TMF:** PhysicalResource Connection / Patch Cord (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Crítica — habilita topologia ponto a ponto  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 23.1 Descrição
 
@@ -2149,7 +2145,7 @@ Atributos canônicos da entidade PhysicalResource Connection / Patch Cord (TMF63
 > **Entidade TMF:** PhysicalResource Port especializado (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Alta — fronteira entre Inside Plant e Outside Plant  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 24.1 Descrição
 
@@ -2172,7 +2168,6 @@ Atributos canônicos da entidade PhysicalResource Port especializado (TMF639):
 ### 24.4 Exemplo de payload
 
 ```json
-// FrontPort 1 do DIO
 {
   "id": "res-frontport-dio01-rjbot-co-01-001",
   "name": "FrontPort 1 DIO-01",
@@ -2227,7 +2222,7 @@ Atributos canônicos da entidade PhysicalResource Port especializado (TMF639):
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Front/Rear Port** | Não modela explicitamente | Sim (Port com mirror) | Sim (nativo) | **Sim — auto-gerado no DIO** |
+| **Front/Rear Port** | Não identificado no levantamento | Sim (Port com mirror) | Sim (nativo) | **Sim — auto-gerado no DIO** |
 | **Atravessamento no path** | Manual | Automático | Automático | **Automático via mirrorOf** |
 | **Auto-geração com DIO** | Sim | Sim | Sim (template) | **Sim — sem código adicional** |
 
@@ -2239,7 +2234,7 @@ Atributos canônicos da entidade PhysicalResource Port especializado (TMF639):
 > **Entidade TMF:** LogicalResource Prefix/IPAddress (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Crítica — gerência de endereçamento IP  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 25.1 Descrição
 
@@ -2262,7 +2257,7 @@ Atributos canônicos da entidade LogicalResource Prefix/IPAddress (TMF639):
 ### 25.4 Exemplo de payload
 
 ```json
-// Prefix /24 para clientes corporativos
+[
 {
   "id": "res-prefix-200-10-50-0-24",
   "name": "200.10.50.0/24 - Corporate RJ",
@@ -2281,9 +2276,7 @@ Atributos canônicos da entidade LogicalResource Prefix/IPAddress (TMF639):
     { "relationshipType": "withinVRF",
       "resource": { "id": "res-vrf-corporate-rj", "@referredType": "Resource" } }
   ]
-}
-
-// IP atribuído a interface de cliente
+},
 {
   "id": "res-ipaddr-200-10-50-100",
   "name": "200.10.50.100",
@@ -2302,6 +2295,7 @@ Atributos canônicos da entidade LogicalResource Prefix/IPAddress (TMF639):
       "resource": { "id": "res-port-cpe-cliente-67890", "@referredType": "Resource" } }
   ]
 }
+]
 ```
 
 ### 25.5 Pré-condições
@@ -2351,9 +2345,9 @@ Atributos canônicos da entidade LogicalResource Prefix/IPAddress (TMF639):
 |---|---|---|---|---|
 | **IPAM nativo** | Limitado (planilha) | Limitado | Sim — referência | **LogicalResource Prefix/IP (TMF639)** |
 | **Hierarquia automática** | Manual | Manual | Sim (lookup CIDR) | **Sim (lookup automático)** |
-| **Next available** | Não | Não | Sim (UI) | **Endpoint /nextAvailable** |
-| **Utilização** | Manual | Não | Sim (UI) | **Endpoint /utilization** |
-| **Conflito de alocação** | Manual | Não | Sim (validação) | **Validação canônica em VRF** |
+| **Next available** | Não identificado no levantamento | Não identificado no levantamento | Sim (UI) | **Endpoint /nextAvailable** |
+| **Utilização** | Manual | Não identificado no levantamento | Sim (UI) | **Endpoint /utilization** |
+| **Conflito de alocação** | Manual | Não identificado no levantamento | Sim (validação) | **Validação canônica em VRF** |
 
 
 ---
@@ -2363,7 +2357,7 @@ Atributos canônicos da entidade LogicalResource Prefix/IPAddress (TMF639):
 > **Entidade TMF:** LogicalResource VRF e RouteTarget (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Alta — isolamento de tráfego de clientes  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 26.1 Descrição
 
@@ -2443,8 +2437,8 @@ Atributos canônicos da entidade LogicalResource VRF e RouteTarget (TMF639):
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
 | **VRF modelado** | Limitado | Limitado | Sim (nativo) | **LogicalResource VRF (TMF639)** |
-| **Route Target** | Não | Não | Sim | **LogicalResource RT** |
-| **Topologia MPLS** | Não | Não | Limitada | **Endpoint dedicado** |
+| **Route Target** | Não identificado no levantamento | Não identificado no levantamento | Sim | **LogicalResource RT** |
+| **Topologia MPLS** | Não identificado no levantamento | Não identificado no levantamento | Limitada | **Endpoint dedicado** |
 
 
 ---
@@ -2454,7 +2448,7 @@ Atributos canônicos da entidade LogicalResource VRF e RouteTarget (TMF639):
 > **Entidade TMF:** LogicalResource VLAN / VLANGroup (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Alta — segmentação L2  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 27.1 Descrição
 
@@ -2477,7 +2471,7 @@ Atributos canônicos da entidade LogicalResource VLAN / VLANGroup (TMF639):
 ### 27.4 Exemplo de payload
 
 ```json
-// VLAN Group
+[
 {
   "id": "res-vlan-group-mgmt-rj",
   "name": "VLAN Group Management RJ",
@@ -2485,9 +2479,7 @@ Atributos canônicos da entidade LogicalResource VLAN / VLANGroup (TMF639):
   "resourceCharacteristic": [
     { "name": "scope", "value": "region-rj" }
   ]
-}
-
-// VLAN
+},
 {
   "id": "res-vlan-mgmt-rj-100",
   "name": "VLAN 100 - MGMT-RJ",
@@ -2501,6 +2493,7 @@ Atributos canônicos da entidade LogicalResource VLAN / VLANGroup (TMF639):
       "resource": { "id": "res-vlan-group-mgmt-rj", "@referredType": "Resource" } }
   ]
 }
+]
 ```
 
 ### 27.5 Pré-condições
@@ -2541,8 +2534,8 @@ Atributos canônicos da entidade LogicalResource VLAN / VLANGroup (TMF639):
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
 | **VLAN modelado** | Sim | Sim | Sim — referência | **LogicalResource VLAN (TMF639)** |
-| **VLAN Group** | Não | Limitado | Sim | **LogicalResource VLANGroup** |
-| **Range scanner** | Não | Não | Sim | **Endpoint /availableVIDs** |
+| **VLAN Group** | Não identificado no levantamento | Limitado | Sim | **LogicalResource VLANGroup** |
+| **Range scanner** | Não identificado no levantamento | Não identificado no levantamento | Sim | **Endpoint /availableVIDs** |
 
 
 ---
@@ -2552,7 +2545,7 @@ Atributos canônicos da entidade LogicalResource VLAN / VLANGroup (TMF639):
 > **Entidade TMF:** LogicalResource ASN / MPLSLabel (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Média — backbone e MPLS  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 28.1 Descrição
 
@@ -2620,8 +2613,8 @@ Atributos canônicos da entidade LogicalResource ASN / MPLSLabel (TMF639):
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **ASN como recurso** | Não modelado | Não modelado | Sim | **LogicalResource ASN** |
-| **MPLS Label management** | Não modelado | Não modelado | Limitado | **LogicalResource MPLSLabel** |
+| **ASN como recurso** | Não identificado no levantamento | Não identificado no levantamento | Sim | **LogicalResource ASN** |
+| **MPLS Label management** | Não identificado no levantamento | Não identificado no levantamento | Limitado | **LogicalResource MPLSLabel** |
 
 
 ---
@@ -2631,7 +2624,7 @@ Atributos canônicos da entidade LogicalResource ASN / MPLSLabel (TMF639):
 > **Entidade TMF:** resourceRelationship com type catalog (TMF639)  
 > **Open API TMF:** TMF639 — Resource Inventory Management API  
 > **Prioridade:** Alta — governa todas as relações entre Resources  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 29.1 Descrição
 
@@ -2641,7 +2634,7 @@ O catálogo de Resource Relationships define os tipos canônicos de relação en
 
 Sem catálogo formal de relações, as relações tendem a proliferar com nomes inconsistentes, dificultando queries de grafo (REQ-MOD02-012). O Kuwaiba implementa relations especiais com semântica forte. O TMF639 prevê resourceRelationship.relationshipType como string livre — o Nexus formaliza um catálogo controlado de tipos com semânticas definidas. Esta padronização também habilita a UI de criar formulários polimórficos baseados em relação.
 
-> **Decisão arquitetural Q-012 (Jun/2026):** O catálogo de RelationshipType é **extensível via API**, não uma lista fechada no MVP. Segue o mesmo padrão do catálogo de SiteSpecification do Módulo 1 (REQ-MOD01-003): tem um **bootstrap canônico** com os tipos listados na seção 29.1 (containedBy, connectedTo, endpoint_A/Z, mirrorOf, supportedBy, passesThrough, assignedTo, withinVRF, replaces, aliasOf), mas Administradores do Catálogo podem **criar novos RelationshipTypes via API REST** com governança apropriada (Audit Trail + evento TMF688 publicado). Esta decisão preserva a flexibilidade para casos operacionais não previstos no MVP sem comprometer a consistência (tipos novos passam pela mesma validação de unicidade e definição de inverso/simetria).
+> **D-RES-005 (Jun/2026):** O catálogo de RelationshipType é **extensível via API**, não uma lista fechada no MVP. Segue o mesmo padrão do catálogo de SiteSpecification do Módulo 1 (REQ-MOD01-003): tem um **bootstrap canônico** com os tipos listados na seção 29.1 (containedBy, connectedTo, endpoint_A/Z, mirrorOf, supportedBy, passesThrough, assignedTo, withinVRF, replaces, aliasOf), mas Administradores do Catálogo podem **criar novos RelationshipTypes via API REST** com governança apropriada (Audit Trail + evento TMF688 publicado). Esta decisão preserva a flexibilidade para casos operacionais não previstos no MVP sem comprometer a consistência (tipos novos passam pela mesma validação de unicidade e definição de inverso/simetria).
 
 ### 29.3 Mapeamento de atributos TMF
 
@@ -2657,7 +2650,6 @@ Atributos canônicos da entidade resourceRelationship com type catalog (TMF639):
 ### 29.4 Exemplo de payload
 
 ```json
-// Catálogo de tipos canônicos
 {
   "RelationshipTypes": [
     { "code": "containedBy",       "inverse": "containsAsChild",  "symmetric": false, "scope": "physical" },
@@ -2720,9 +2712,9 @@ Atributos canônicos da entidade resourceRelationship com type catalog (TMF639):
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Catálogo formal de relações** | Não | Sim (relations especiais) | Não | **Catálogo controlado com semântica documentada** |
-| **Inverso automático** | Não | Sim | Não | **Automático para tipos assimétricos** |
-| **Grafo nativo** | Não | Sim | Limitado | **Sobre Oracle Property Graph** |
+| **Catálogo formal de relações** | Não identificado no levantamento | Sim (relations especiais) | Não identificado no levantamento | **Catálogo controlado com semântica documentada** |
+| **Inverso automático** | Não identificado no levantamento | Sim | Não identificado no levantamento | **Automático para tipos assimétricos** |
+| **Grafo nativo** | Não identificado no levantamento | Sim | Limitado | **Sobre Oracle Property Graph** |
 
 
 ---
@@ -2732,7 +2724,7 @@ Atributos canônicos da entidade resourceRelationship com type catalog (TMF639):
 > **Entidade TMF:** Event (TMF688)  
 > **Open API TMF:** TMF688 — Event Management API  
 > **Prioridade:** Alta — habilita Service Assurance e Data Lake  
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
 
 ### 30.1 Descrição
 
@@ -2742,33 +2734,22 @@ Toda mudança de estado em Resources publica eventos canônicos TMF688: criaçã
 
 O Resource Domain é o módulo de maior volume de eventos em V.tal — milhões de Resources com mudanças constantes de estado (alarmes, ocupação, conexões). A publicação canônica TMF688 é o que habilita o Nexus a ser fonte de verdade consumida por outros sistemas (alarmes, Service Assurance, BI). Os tópicos são versionados por entidade conforme padrão de eventos do Módulo 1 (REQ-MOD01-012).
 
-> **Decisão arquitetural Q-006 (Jun/2026):** Service Assurance (alarmes correlacionados, troubleshooting reativo) fica em **ferramenta externa específica no MVP** e **não migra para o Nexus** nesta fase. Contudo, este requisito (REQ-MOD02-025) é desenhado para **preparar terreno para a futura migração** quando ela for decidida. O catálogo de eventos publicados (StateChange, RelationshipChange, PathChange, etc.) já cobre as necessidades canônicas de Service Assurance e segue o padrão TMF688, garantindo que o ferramental externo de hoje consome os mesmos eventos que um módulo futuro de Service Assurance interno consumiria amanhã. Nenhuma adaptação arquitetural específica é necessária neste momento — apenas a disciplina de manter o catálogo de eventos completo, versionado e bem documentado.
+> **D-RES-003 (Jun/2026):** Service Assurance (alarmes correlacionados, troubleshooting reativo) fica em **ferramenta externa específica no MVP** e **não migra para o Nexus** nesta fase. Contudo, este requisito (REQ-MOD02-025) é desenhado para **preparar terreno para a futura migração** quando ela for decidida. O catálogo de eventos publicados (StateChange, RelationshipChange, PathChange, etc.) já cobre as necessidades canônicas de Service Assurance e segue o padrão TMF688, garantindo que o ferramental externo de hoje consome os mesmos eventos que um módulo futuro de Service Assurance interno consumiria amanhã. Nenhuma adaptação arquitetural específica é necessária neste momento — apenas a disciplina de manter o catálogo de eventos completo, versionado e bem documentado.
+
+### 30.3 Mapeamento de atributos TMF
+
+| Atributo | Tipo | Obrigatório | Observação V.tal |
+|---|---|:---:|---|
+| `id` | UUID v7 | Sim | Identificador idempotente do evento. |
+| `eventType` | string | Sim | Nome canônico do evento Resource. |
+| `eventTime` | datetime | Sim | Instante UTC da mudança. |
+| `source` | string | Sim | Agregado produtor, como `resource.PhysicalResource`. |
+| `event` | object | Sim | Snapshot ou delta da entidade alterada. |
+| `correlationId` | string | Não | Correlação com Order, workflow ou migração. |
 
 ### 30.4 Exemplo de payload
 
 ```json
-// Catálogo de eventos publicados pelo módulo Resource
-
-// Resource (físico e lógico):
-//   ResourceCreateEvent
-//   ResourceAttributeValueChangeEvent
-//   ResourceStateChangeEvent
-//   ResourceRelationshipChangeEvent
-//   ResourceDeleteEvent (soft)
-
-// Catálogo:
-//   ResourceSpecCreateEvent
-//   ResourceSpecAttributeValueChangeEvent
-//   ResourceCategoryChangeEvent
-
-// Conexões:
-//   ConnectionCreateEvent
-//   ConnectionDeleteEvent
-
-// Eventos de Path (para invalidação de cache):
-//   PathChangeEvent (quando mudança em algum Resource afeta paths cacheados)
-
-// Exemplo de ResourceStateChangeEvent:
 {
   "eventId": "evt-018f8c...",
   "eventType": "ResourceStateChangeEvent",
@@ -2825,10 +2806,10 @@ O Resource Domain é o módulo de maior volume de eventos em V.tal — milhões 
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Eventos canônicos** | Não publica | Não publica | Webhooks limitado | **TMF688 nativo** |
-| **Outbox pattern** | N/A | N/A | N/A | **Sim** |
-| **Schema Registry** | N/A | N/A | N/A | **Avro/JSON versionado** |
-| **Catálogo público** | N/A | N/A | N/A | **GET /events/catalog** |
+| **Eventos canônicos** | Não identificado no levantamento | Não identificado no levantamento | Webhooks limitado | **TMF688 nativo** |
+| **Outbox pattern** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim** |
+| **Schema Registry** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Avro/JSON versionado** |
+| **Catálogo público** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **GET /events/catalog** |
 
 
 ---
@@ -3088,7 +3069,18 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
 
 ---
 
-## 32. Contratos com outros módulos do Nexus
+## 32. Síntese arquitetural do módulo
+
+- **Catálogo + inventário.** TMF634 define tipos; TMF639 instancia PhysicalResource e LogicalResource.
+- **Modelo genérico já executável.** CRUD, filtros, paginação, workspace, relacionamentos e TMF664 existem sobre Neon Postgres.
+- **Especializações são comportamento, não novas tabelas.** OSP, ISP e LogicalResource usam Specifications, characteristics e relações, mas suas invariantes ainda precisam ser construídas.
+- **RelationshipType deve ser governado.** Aceitar strings livres é divergência transitória frente a C9.
+- **Grafo é alvo arquitetural.** Path computation depende de Oracle Property Graph e não está implementado no laboratório.
+- **Eventos ainda não são outbox.** TMF688 existe, porém atomicidade, schema e reprocessamento permanecem no backlog transversal.
+
+---
+
+## 33. Contratos com outros módulos do Nexus
 
 | Módulo | Tipo de consumo | Detalhe |
 |---|---|---|
@@ -3102,36 +3094,32 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
 
 ---
 
-## 33. Questões em aberto
+## 34. Questões em aberto
 
-| ID | Questão | Status / Decisão | Responsável |
+| ID | Questão | Status | Responsável |
 |---|---|---|---|
-| **Q-001** | Catálogo inicial de ResourceSpecifications V.tal: quais modelos exatos de OLT, ONT, Switch, Router são suportados no MVP? Lista canônica precisa ser fechada. | *Aberta* | *Engenharia V.tal + Produto* |
-| **Q-002** | Importação de catálogo NetBox device-type-library para acelerar bootstrap: licenciamento e curadoria. | *Aberta* | *Arquitetura + Engenharia* |
-| **Q-003** | Migração de Resources do Netwin: preserva IDs ou gera novos UUIDs? Estratégia de cross-reference durante dual-running. | ✅ **Decidido (Jun/2026):** o Nexus **sempre gera seus próprios UUIDs v7** como identificadores canônicos. IDs legados são preservados como characteristics do grupo `_origin` na entidade (ver seção 33.2). O Nexus é agnóstico à origem — mesma estrutura serve Netwin, NetworkCore, Geosite, OZMAP ou qualquer outro sistema sem alteração de schema. Decisão alinhada ao princípio estabelecido no Módulo 1 (VTN-HLD-MOD01-GEO seção 19.1). | *Migração* |
-| **Q-004** | Oracle Property Graph: dimensionamento de licença para 22M+ HPs com queries de path em performance. | *Aberta* | *Arquitetura + Plataforma* |
-| **Q-005** | Postes de terceiros (concessionárias): fonte de verdade do cadastro. | ✅ **Decidido (Jun/2026):** o cadastro fica integralmente na V.tal — o Nexus é fonte de verdade. Postes de terceiros são modelados como Support Structures com `owner` (concessionária) e `contractRef` (contrato de aluguel), mas o ciclo de vida do cadastro é gerido pela V.tal, sem integração de sincronização com sistemas das concessionárias. Refletido em REQ-MOD02-008. | *OSP V.tal + Arquitetura* |
-| **Q-006** | Service Assurance (alarmes correlacionados): fronteira com o Nexus. | ✅ **Decidido (Jun/2026):** Service Assurance fica em ferramenta externa específica e **não migra para o Nexus no MVP**. Contudo, o Resource Domain do Nexus **deve estar preparado para futura migração**, publicando eventos TMF688 (REQ-MOD02-025) que possam ser consumidos por Service Assurance hoje (externo) e amanhã (interno ao Nexus). Não há ação imediata além de manter o catálogo de eventos completo e extensível. | *Arquitetura Nexus + Operações* |
-| **Q-007** | Modelagem detalhada de Fibers internas a Cables: 100% das fibras de cada cabo são modeladas, ou apenas as ocupadas? Trade-off de volume vs completude. | *Aberta* | *Arquitetura + OSP V.tal* |
-| **Q-008** | IPAM legado da V.tal (planilhas, sistemas internos): estratégia de carga inicial para MVP. | *Aberta* | *Backbone + Arquitetura* |
-| **Q-009** | Operação de swap de equipamento: workflow automatizado (Módulo 5) ou procedimento manual com Audit? | ✅ **Decidido (Jun/2026):** sim — operação de swap usa **workflow automatizado orquestrado pelo Módulo 5 (Process Orchestration)**, com BPMN definindo etapas (validação, reserva do equipamento novo, transição shuttingDown do antigo, swap atômico preservando conexões, ativação do novo, transição Retired do antigo). Audit Trail é gerado em cada etapa. Refletido em REQ-MOD02-014 RF-009. | *Operações + Produto* |
-| **Q-010** | Cache de paths computados (REQ-MOD02-012): TTL configurável por tipo de path? Política de invalidação em massa. | *Aberta* | *Arquitetura + Performance* |
-| **Q-011** | Modelagem de fontes de equipamento (PowerSupply interno vs PowerOutlet externo): granularidade necessária para Service Assurance? | *Aberta* | *Engenharia + Operações* |
-| **Q-012** | Catálogo de ResourceRelationships: lista fechada no MVP ou extensível via API? | ✅ **Decidido (Jun/2026):** **extensível via API**. Catálogo de RelationshipType segue o mesmo padrão do catálogo de SiteSpecification (Módulo 1, REQ-MOD01-003): tem um bootstrap de tipos canônicos (lista da REQ-MOD02-024), mas Administradores do Catálogo podem criar novos tipos via API com governança (Audit Trail + evento TMF688). Refletido em REQ-MOD02-024. | *Arquitetura* |
+| **Q-RES-001** | Catálogo inicial de ResourceSpecifications V.tal: quais modelos exatos de OLT, ONT, Switch, Router são suportados no MVP? Lista canônica precisa ser fechada. | *Aberta* | *Engenharia V.tal + Produto* |
+| **Q-RES-002** | Importação de catálogo NetBox device-type-library para acelerar bootstrap: licenciamento e curadoria. | *Aberta* | *Arquitetura + Engenharia* |
+| **Q-RES-004** | Oracle Property Graph: dimensionamento de licença para 22M+ HPs com queries de path em performance. | *Aberta* | *Arquitetura + Plataforma* |
+| **Q-RES-007** | Modelagem detalhada de Fibers internas a Cables: 100% das fibras de cada cabo são modeladas, ou apenas as ocupadas? Trade-off de volume vs completude. | *Aberta* | *Arquitetura + OSP V.tal* |
+| **Q-RES-008** | IPAM legado da V.tal (planilhas, sistemas internos): estratégia de carga inicial para MVP. | *Aberta* | *Backbone + Arquitetura* |
+| **Q-RES-010** | Cache de paths computados (REQ-MOD02-012): TTL configurável por tipo de path? Política de invalidação em massa. | *Aberta* | *Arquitetura + Performance* |
+| **Q-RES-011** | Modelagem de fontes de equipamento (PowerSupply interno vs PowerOutlet externo): granularidade necessária para Service Assurance? | *Aberta* | *Engenharia + Operações* |
+| **Q-RES-012** | Quais tipos operacionais adicionais devem complementar o bootstrap canônico de ResourceRelationship? | *Aberta* | *Operações V.tal* |
 
-### 33.1 Decisões resolvidas e seus impactos arquiteturais
+### 34.1 Decisões resolvidas e seus impactos arquiteturais
 
 | Decisão | Requisitos impactados | Mudança aplicada |
 |---|---|---|
-| **Q-005 — Postes próprios na V.tal** | REQ-MOD02-008 | Sem integração externa de sincronização; `owner` e `contractRef` permanecem como characteristics, sem necessidade de adapter de leitura para sistemas de concessionárias. |
-| **Q-006 — Service Assurance externa, preparar para futura migração** | REQ-MOD02-025 | O catálogo de eventos TMF688 já cobre as necessidades futuras de Service Assurance (StateChange, RelationshipChange, PathChange). Nenhum requisito é eliminado; apenas a integração de consumo desses eventos pelo módulo de Service Assurance fica diferida. |
-| **Q-009 — Swap via Módulo 5 (BPMN)** | REQ-MOD02-014 (RF-009 Substituição), REQ-MOD02-019 (swap de DIO) | Operação `/resource/{id}/swap` deixa de ser um endpoint atômico simples — passa a iniciar um workflow BPMN no Módulo 5, que executa as etapas de forma orquestrada e auditável. |
-| **Q-012 — Catálogo de Relationships extensível** | REQ-MOD02-024 | RelationshipType vira entidade com CRUD via API (não mais lista fechada hardcoded). RF-001 do REQ-024 atualizado para refletir governança via Administrador do Catálogo. |
-| **Q-003 — Identidade e proveniência na migração** | REQ-MOD02-001, REQ-MOD02-005 e todos os demais Resources | Nexus gera UUID v7 canônico próprio; IDs legados preservados no grupo `_origin` como characteristics somente-leitura. Ver seção 33.2. |
+| **D-RES-001 — Identidade e proveniência na migração** | REQ-MOD02-001, REQ-MOD02-005 e todos os demais Resources | Nexus gera UUID v7 canônico próprio; IDs legados preservados no grupo `_origin` como characteristics somente-leitura. Ver seção 34.2. |
+| **D-RES-002 — Postes próprios na V.tal** | REQ-MOD02-008 | Sem integração externa de sincronização; `owner` e `contractRef` permanecem como characteristics, sem necessidade de adapter de leitura para sistemas de concessionárias. |
+| **D-RES-003 — Service Assurance externa, preparar para futura migração** | REQ-MOD02-025 | O catálogo de eventos TMF688 já cobre as necessidades futuras de Service Assurance. O consumo permanece externo no MVP. |
+| **D-RES-004 — Swap via Módulo 5 (BPMN)** | REQ-MOD02-014 (RF-009 Substituição), REQ-MOD02-019 (swap de DIO) | `/resource/{id}/swap` inicia workflow no Módulo 5, que executa as etapas de forma orquestrada e auditável. |
+| **D-RES-005 — Catálogo de Relationships extensível** | REQ-MOD02-024 | RelationshipType é entidade com bootstrap + CRUD governado via API, não lista fechada hardcoded. |
 
-### 33.2 Decisão de migração — Identidade e proveniência de Resources
+### 34.2 Decisão de migração — Identidade e proveniência de Resources
 
-> **Princípio arquitetural (Jun/2026):** O Nexus é agnóstico à origem de seus dados. Todo identificador canônico é UUID v7 gerado pelo próprio Nexus, independente do sistema de origem. IDs legados são preservados como atributos customizados (`characteristic`) no grupo convencional `_origin`, exclusivamente para fins de rastreabilidade histórica, auditoria e suporte ao período de dual-running. Este princípio é o mesmo estabelecido para entidades geográficas em VTN-HLD-MOD01-GEO seção 19.1 — é transversal a toda a plataforma Nexus.
+> **Princípio arquitetural (Jun/2026):** O Nexus é agnóstico à origem de seus dados. Todo identificador canônico é UUID v7 gerado pelo próprio Nexus, independente do sistema de origem. IDs legados são preservados como atributos customizados (`characteristic`) no grupo convencional `_origin`, exclusivamente para fins de rastreabilidade histórica, auditoria e suporte ao período de dual-running. Este princípio é o mesmo estabelecido para entidades geográficas em VTN-HLD-MOD01-GEO seção 21.2 — é transversal a toda a plataforma Nexus.
 
 **Sistemas de origem cobertos:**
 
@@ -3216,13 +3204,14 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
 
 ---
 
-## 34. Controle de revisões
+## 35. Controle de revisões
 
 | Versão | Data | Autor | Descrição |
 |---|---|---|---|
 | 1.0 | Junho 2026 | Produto — V.tal Nexus | Versão inicial do HLD do Módulo 2 — Nexus Resource Domain, com 25 requisitos alinhados a TMF634 e TMF639, e seção de cenários ilustrativos (Cliente Corporativo e Central Office). |
-| 1.1 | Junho 2026 | Produto — V.tal Nexus | Incorporação de 4 decisões arquiteturais: Q-005 (postes), Q-006 (Service Assurance), Q-009 (swap via BPMN), Q-012 (catálogo de Relationships extensível). Adicionada seção 33.1. |
-| 1.2 | Junho 2026 | Produto — V.tal Nexus | Resolução de Q-003 (estratégia de migração e identidade): definição do princípio de agnósticidade à origem, grupo canônico `_origin` para todas as entidades de Resource (PhysicalResource, LogicalResource e ResourceSpecification), tabela de sistemas cobertos (Netwin, NetworkCore, Octave EAM, Geosite OSP, OZMAP, UMBOX), payloads de exemplo (OLT e cabo), capacidades habilitadas e regras de negócio. Adicionada seção 33.2. |
+| 1.1 | Junho 2026 | Produto — V.tal Nexus | Incorporação de D-RES-002 (postes), D-RES-003 (Service Assurance), D-RES-004 (swap via BPMN) e D-RES-005 (catálogo de Relationships extensível). |
+| 1.2 | Junho 2026 | Produto — V.tal Nexus | Formalização de D-RES-001 (estratégia de migração e identidade): UUID v7 Nexus-native e grupo `_origin` para PhysicalResource, LogicalResource e ResourceSpecification. |
+| 1.3 | Julho 2026 | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: substitui diagnóstico NestJS obsoleto pela cobertura real TMF634/639/664, adiciona matriz dos 25 requisitos, síntese arquitetural, anatomia/JSON normalizados e gaps ligados ao backlog `DEV-*`. |
 
 ---
 

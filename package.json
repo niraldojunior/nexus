@@ -15,6 +15,7 @@
     "dev:neon": "npm run build && node scripts/dev-neon.mjs",
     "start:neon": "npm run build && node scripts/dev-neon.mjs --start-only",
     "dev:local": "powershell -ExecutionPolicy Bypass -File start-dev.ps1",
+    "docs:check": "node scripts/validate-functional-specs.mjs",
     "migrate:neon": "npm run build && node dist/src/scripts/migrate-sqlite-to-neon.js",
     "mcp:tmf": "npm run build && node dist/src/modules/mcp/stdio-server.js",
     "format": "prettier --check .",

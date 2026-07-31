@@ -7,7 +7,10 @@ Toda seção N.9 de requisito traz uma tabela comparando a capacidade nos três 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
 
-**Use os arquivos originais como fonte — não invente comportamento.** Eles estão em `reference-systems/`.
+**Use os arquivos originais como fonte — não invente comportamento.** Eles estão em `inspirations/`.
+Quando a fonte não demonstrar uma capacidade, escreva **“Não identificado no levantamento”**. Ausência
+no levantamento não prova inexistência no produto; evite `Não`, `Inexistente` ou `N/A` como inferência
+categórica.
 
 ---
 
@@ -15,9 +18,9 @@ Toda seção N.9 de requisito traz uma tabela comparando a capacidade nos três 
 
 | Sistema | Papel no benchmark | Fonte |
 |---|---|---|
-| **Netwin** (Altice Labs) | Legado primário a substituir | `reference-systems/netwin.md` |
-| **Kuwaiba** (open-source) | Metamodelo de classes hierárquicas | `reference-systems/kuwaiba.md` |
-| **NetBox** (open-source) | DCIM/IPAM resource-centric — o contraste | `reference-systems/netbox.md` |
+| **Netwin** (Altice Labs) | Legado primário a substituir | `inspirations/netwin.md` |
+| **Kuwaiba** (open-source) | Metamodelo de classes hierárquicas | `inspirations/kuwaiba.md` |
+| **NetBox** (open-source) | DCIM/IPAM resource-centric — o contraste | `inspirations/netbox.md` |
 
 ### Netwin (Altice Labs)
 
@@ -29,7 +32,9 @@ Metamodelo de classes hierárquicas. *Service Manager* + *Contract Manager*; `Ge
 
 ### NetBox (open-source)
 
-DCIM/IPAM resource-centric. **Não tem service inventory** (L2VPN/Circuits/Application Services são resource-adjacent). É o contraste que justifica construir domínios de serviço/ordem no Nexus, em vez de esticar uma ferramenta DCIM.
+DCIM/IPAM resource-centric. O levantamento identificou L2VPN, Circuits e Application Services como
+objetos adjacentes, mas não um Service Inventory CFS/RFS alinhado ao SID. É o contraste para construir
+domínios de serviço/ordem no Nexus sem esticar uma ferramenta DCIM.
 
 ---
 

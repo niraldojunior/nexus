@@ -10,11 +10,11 @@ TMFC002 + TMFC022 · TMF633 / TMF638 / TMF688
 |---|---|
 | **Document Reference** | VTN-HLD-MOD03-SVC |
 | **Sequência de HLD** | HLD04 (4º documento) · Módulo 3 da arquitetura |
-| **Versão** | 1.0 — draft |
-| **Data** | Junho 2026 |
+| **Versão** | 1.1 — draft |
+| **Data** | Julho 2026 |
 | **Documento âncora** | VTN-HLD-OVERVIEW-001 |
 | **HLDs predecessores** | VTN-HLD-MOD01-GEO (Geographic) · VTN-HLD-MOD02-RES (Resource) |
-| **TMFCs implementados** | TMFC002 — Service Inventory Mgmt; TMFC022 — Service Catalog Mgmt |
+| **TMFCs cobertos** | TMFC002 — Service Inventory Mgmt; TMFC022 — Service Catalog Mgmt |
 | **Open APIs** | TMF633, TMF638, TMF688 |
 | **Requisitos cobertos** | REQ-MOD03-001 a REQ-MOD03-016 |
 | **Status** | Em elaboração |
@@ -45,7 +45,7 @@ Premissa estratégica que molda todo o domínio: a V.tal é uma **infraestrutura
 - O **multi-tenant nativo** (princípio 4.6 do Overview) deixa de ser um detalhe e passa a ser estrutural: o `relatedParty[role=subscriber]` do CFS aponta quase sempre para um Tenant da camada de Party (Módulo 6).
 - O modelo precisa acomodar **os dois mundos simultaneamente**: wholesale (CFS → ISP) e atendimento direto (CFS → cliente corporativo/residencial direto V.tal), sem bifurcar o schema.
 
-Esta dualidade é tratada como decisão arquitetural explícita (seção 33, Decisão D-2).
+Esta dualidade é tratada como decisão arquitetural explícita (seção 25.1, D-SVC-002).
 
 ---
 
@@ -66,13 +66,36 @@ Esta dualidade é tratada como decisão arquitetural explícita (seção 33, Dec
 - Modelagem geoespacial (Site, Address, Location): **Módulo 1 — Nexus Geographic**.
 - Recursos físicos e lógicos (OLT, porta, ONT, VLAN, VRF, IP, circuito físico): **Módulo 2 — Nexus Resource**.
 - **Service Ordering** (TMF641) — captação e decomposição de ordem de serviço: **Módulo 4 — Nexus Order & Fulfillment**.
-- **Service Qualification / Viabilidade / Home Passed** (TMF645): **Módulo 4 — Nexus Order & Fulfillment**. Ver Decisão D-1 (seção 33): Home Passed **não** é instância persistida no Service Inventory.
+- **Service Qualification / Viabilidade / Home Passed** (TMF645): **Módulo 4 — Nexus Order & Fulfillment**. Ver D-SVC-001 (seção 25.1): Home Passed **não** é instância persistida no Service Inventory.
 - **Subscriber/Customer/ISP como entidade Party** (a entidade jurídica, contatos, contrato comercial): **Módulo 6 — Nexus Party & Tenant** (referenciada aqui via `relatedParty`).
 - **Orquestração** de ativação/desativação com aprovação humana e tarefas BPMN: **Módulo 5 — Nexus Process Orchestration**.
 - **Service Assurance** (correlação de alarmes sobre serviço, troubleshooting reativo): externa no MVP — consumidora dos eventos TMF688 publicados por este módulo (Decisão 5.4 do Overview).
 - **Provisionamento físico/lógico efetivo** (configurar a OLT, criar a VLAN no equipamento): **Módulo 4** via TMF664 (Resource Function Activation) sobre o Resource Domain. O Service Domain registra o resultado; não executa a configuração.
 - Dashboards e analytics sobre serviços (penetração, churn, ocupação): **Módulo 7 — Nexus Analytics & Events**.
 - Auditoria global e RBAC granular: **Módulo 8 — Nexus Platform & Administration**.
+
+### 2.3 Aderência ao codebase atual
+
+O backend e o frontend já entregam a base TMF633/TMF638. A aderência abaixo considera também validações CFS/RFS, persistência Postgres, MCP/Copilot e testes; capacidades comerciais especializadas continuam como alvo.
+
+| Requisito | Estado | Evidência atual | Gap principal | Bloqueador | Backlog |
+|---|---|---|---|---|---|
+| **REQ-MOD03-001** | Parcial | CRUD de ServiceSpecification, filtros, workspace, frontend e testes estão ativos. | Lifecycle/versionamento completos, characteristics governadas, UUID v7 e `_origin`. | Q-SVC-001 | DEV-SVC-001, DEV-X-001 |
+| **REQ-MOD03-002** | Parcial | ServiceCategory tem CRUD, parent ref, filtros e persistência. | Árvore expandida, raiz única, ordenação e governança multi-tenant. | Q-SVC-001 | DEV-SVC-001, DEV-X-004 |
+| **REQ-MOD03-003** | Parcial | ServiceCandidate tem CRUD, filtros por spec/categoria/status e eventos. | Regras de publicação, vigência, associação comercial e visibilidade por tenant. | Q-SVC-001 | DEV-SVC-001, DEV-X-004 |
+| **REQ-MOD03-004** | Parcial | CRUD CFS/RFS, filtros, paginação, workspace, UI e MCP são cobertos por testes. | Bulk, expansão `fields`, histórico, UUID v7 e `_origin`. | — | DEV-SVC-002, DEV-X-001 |
+| **REQ-MOD03-005** | Parcial | Estados válidos, PATCH, soft-terminate e eventos estão implementados. | Máquina de transições, razões, propagação e histórico semântico. | Q-SVC-006 | DEV-SVC-002, DEV-SVC-004 |
+| **REQ-MOD03-006** | Parcial | CFS exige SubscriberID e RFS suportante; código/UI/MCP proíbem `supportingResource` direto. | Política completa de Tenant, unicidade e reconciliação do subscriber. | Q-SVC-002 | DEV-SVC-003, DEV-X-004 |
+| **REQ-MOD03-007** | Parcial | RFS exige Resource existente e pode compor outros RFS. | Invariantes técnicas, compartilhamento/capacidade e lifecycle acoplado. | Q-SVC-004 | DEV-SVC-004 |
+| **REQ-MOD03-008** | Parcial | `supportingResource` é validado, persistido e filtrável; CFS direto é rejeitado. | Reverse impact completo, papéis, cardinalidades e reação a eventos Resource. | Q-SVC-007 | DEV-SVC-004 |
+| **REQ-MOD03-009** | Parcial | `supportingService` valida existência e tipo RFS. | Detecção de ciclos, expansão da árvore, compartilhamento e propagação de estado. | Q-SVC-004, Q-SVC-006 | DEV-SVC-004 |
+| **REQ-MOD03-010** | Parcial | `place` é persistido, validado e filtrável com múltiplos papéis. | Semântica A/Z, re-home, cobertura e validação geográfica avançada. | — | DEV-SVC-002 |
+| **REQ-MOD03-011** | Parcial | SubscriberID é obrigatório no CFS e possui filtro dedicado. | Geração Nexus-native, unicidade, faixa, autoridade e convivência legado. | Q-SVC-002 | DEV-SVC-003 |
+| **REQ-MOD03-012** | Parcial | O modelo genérico e a UI suportam CFS Bitstream sobre RFS/Resources GPON. | Specs canônicas, perfil, VLANs, granularidade do RFS e aceite end-to-end. | Q-SVC-001, Q-SVC-004 | DEV-SVC-005 |
+| **REQ-MOD03-013** | Parcial | O modelo suporta CFS multiponto, RFS encadeados, VRF/IP e places A/Z. | Catálogo EILD/L2/L3VPN, SLA, regras multiponto e cenário automatizado. | Q-SVC-001 | DEV-SVC-005 |
+| **REQ-MOD03-014** | Parcial | `serviceRelationship` e LogicalResource E.164 permitem representar CloudVoIP. | Catálogo VoIP, bundle/dependência, características e aceite end-to-end. | Q-SVC-001, Q-SVC-005 | DEV-SVC-005 |
+| **REQ-MOD03-015** | Divergente | Relações têm CRUD, mas `ServiceService` aceita qualquer string e não consulta catálogo governado. | Bootstrap + CRUD de RelationshipType, validação, inversos, Audit e evento. | Q-SVC-005 | DEV-SVC-006 |
+| **REQ-MOD03-016** | Parcial | Eventos de catálogo/inventário são persistidos, consultáveis por TMF688 e testados. | Outbox, Schema Registry, catálogo, DLQ, reprocessamento e UUID v7. | — | DEV-X-002 |
 
 ---
 
@@ -176,7 +199,7 @@ Services não são excluídos fisicamente. Cancelamento transiciona para `termin
 
 ### 4.8 Agnóstico à origem — grupo `_origin`
 
-Idêntico aos Módulos 1 e 2: o Nexus gera UUID v7 próprio; IDs de serviço legados (Netwin Network & Services, UMBOX, OZMAP) são preservados como `characteristic` somente-leitura no grupo `_origin`. Mesma estrutura, sem alteração de schema. Ver seção 33.2.
+Idêntico aos Módulos 1 e 2: o Nexus gera UUID v7 próprio; IDs de serviço legados (Netwin Network & Services, UMBOX, OZMAP) são preservados como `characteristic` somente-leitura no grupo `_origin`. Mesma estrutura, sem alteração de schema. Ver seção 25.2.
 
 ---
 
@@ -221,7 +244,7 @@ O módulo Service é composto por **16 requisitos**, organizados em 5 blocos fun
 4. **Serviços V.tal** (012–014): exercitam o modelo contra os produtos reais.
 5. **Transversais** (015–016): relações e eventos fecham o contrato com os demais módulos.
 
-> **Pré-requisito externo:** o Service Domain depende do **Módulo 6 — Party & Tenant** para `relatedParty[role=subscriber]` (ISP/cliente). No MVP, enquanto o Módulo 6 não está pronto, Subscribers são referenciados por ID com validação diferida (ver Decisão D-3).
+> **Pré-requisito externo:** o Service Domain depende do **Módulo 6 — Party & Tenant** para `relatedParty[role=subscriber]` (ISP/cliente). No MVP, enquanto o Módulo 6 não está pronto, Subscribers são referenciados por ID com validação diferida (ver D-SVC-003).
 
 ---
 
@@ -230,7 +253,7 @@ O módulo Service é composto por **16 requisitos**, organizados em 5 blocos fun
 > **Entidade TMF:** ServiceSpecification (CustomerFacingServiceSpecification | ResourceFacingServiceSpecification) (TMF633)
 > **Open API TMF:** TMF633 — Service Catalog Management API
 > **Prioridade:** Crítica — fundação do catálogo de serviços
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 6.1 Descrição
 
@@ -325,10 +348,10 @@ O TMF633 separa explicitamente CFS Spec (orientada a cliente) de RFS Spec (orien
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Catálogo de serviço** | Catálogo de "Rede e Serviços" (sem CFS/RFS) | Template Manager (GenericService) | **Inexistente** | **TMF633 com CFS Spec + RFS Spec** |
-| **Separação comercial/técnico** | Implícita, não modelada | Não explícita | N/A | **Explícita (SID)** |
-| **SLA na spec** | Atributo livre | Não nativo | N/A | **serviceLevelSpecification** |
-| **Spec → ResourceSpec** | Não tipado | Via "uses" | N/A | **RFS.resourceSpecification (cross-catalog)** |
+| **Catálogo de serviço** | Catálogo de "Rede e Serviços" (sem CFS/RFS) | Template Manager (GenericService) | Não identificado no levantamento | **TMF633 com CFS Spec + RFS Spec** |
+| **Separação comercial/técnico** | Implícita, não modelada | Não identificado no levantamento | Não identificado no levantamento | **Explícita (SID)** |
+| **SLA na spec** | Atributo livre | Não identificado no levantamento | Não identificado no levantamento | **serviceLevelSpecification** |
+| **Spec → ResourceSpec** | Não identificado no levantamento | Via "uses" | Não identificado no levantamento | **RFS.resourceSpecification (cross-catalog)** |
 
 ---
 
@@ -337,7 +360,7 @@ O TMF633 separa explicitamente CFS Spec (orientada a cliente) de RFS Spec (orien
 > **Entidade TMF:** ServiceCategory (TMF633)
 > **Open API TMF:** TMF633
 > **Prioridade:** Alta
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 7.1 Descrição
 
@@ -405,7 +428,7 @@ Categorização é requisito de usabilidade do catálogo (busca, navegação, go
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Categorização de serviço** | Tipificação plana | Hierarquia de classes (metamodelo) | N/A | **ServiceCategory hierárquica (TMF633)** |
+| **Categorização de serviço** | Tipificação plana | Hierarquia de classes (metamodelo) | Não identificado no levantamento | **ServiceCategory hierárquica (TMF633)** |
 
 ---
 
@@ -414,7 +437,7 @@ Categorização é requisito de usabilidade do catálogo (busca, navegação, go
 > **Entidade TMF:** ServiceCandidate (TMF633)
 > **Open API TMF:** TMF633
 > **Prioridade:** Média
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 8.1 Descrição
 
@@ -479,7 +502,7 @@ Nem toda spec ativa é vendável: uma RFS Spec é interna; uma CFS Spec pode exi
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Oferta comercializável** | Não separado da spec | Não nativo | N/A | **ServiceCandidate (TMF633)** |
+| **Oferta comercializável** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **ServiceCandidate (TMF633)** |
 
 ---
 
@@ -488,7 +511,7 @@ Nem toda spec ativa é vendável: uma RFS Spec é interna; uma CFS Spec pode exi
 > **Entidade TMF:** Service (CustomerFacingService | ResourceFacingService) (TMF638)
 > **Open API TMF:** TMF638 — Service Inventory Management API
 > **Prioridade:** Crítica — entidade central do módulo
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 9.1 Descrição
 
@@ -554,7 +577,7 @@ O TMF638 define Service como entidade abstrata com duas especializações (CFS, 
 
 - ServiceSpecification existe e está Active/Launched.
 - Para RFS: os Resources de `supportingResource` existem e estão em estado compatível (Módulo 2).
-- Para CFS: o Subscriber referenciado existe (Módulo 6) — validação diferida no MVP (D-3).
+- Para CFS: o Subscriber referenciado existe (Módulo 6) — validação diferida no MVP (D-SVC-003).
 
 ### 9.6 Requisitos Funcionais
 
@@ -597,9 +620,9 @@ O TMF638 define Service como entidade abstrata com duas especializações (CFS, 
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Instância de serviço** | "Serviços de cliente / de rede" (Network & Services) | GenericService (Service Manager) | **Inexistente** (L2VPN/Circuit como proxy) | **Service CFS/RFS unificado (TMF638)** |
-| **CRUD único CFS+RFS** | Telas separadas | Classe única GenericService | N/A | **/service com @type** |
-| **Soft-terminate** | Estado de ciclo de vida | Delete lógico | N/A | **state=terminated, sem DELETE** |
+| **Instância de serviço** | "Serviços de cliente / de rede" (Network & Services) | GenericService (Service Manager) | L2VPN/Circuit como objeto adjacente; Service TMF não identificado | **Service CFS/RFS unificado (TMF638)** |
+| **CRUD único CFS+RFS** | Telas separadas | Classe única GenericService | Não identificado no levantamento | **/service com @type** |
+| **Soft-terminate** | Estado de ciclo de vida | Delete lógico | Não identificado no levantamento | **state=terminated, sem DELETE** |
 
 ---
 
@@ -608,7 +631,7 @@ O TMF638 define Service como entidade abstrata com duas especializações (CFS, 
 > **Entidade TMF:** Service.state (TMF638)
 > **Open API TMF:** TMF638 + eventos TMF688
 > **Prioridade:** Crítica
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 10.1 Descrição
 
@@ -682,9 +705,9 @@ feasibilityChecked → designed → reserved → inactive → active ───�
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Ciclo de vida de serviço** | Estados próprios | Estado simples | N/A | **TMF638 canônico (6 estados)** |
-| **Suspensão** | Estado dedicado | Manual | N/A | **inactive + suspensionReason** |
-| **Liberação de recurso ao terminar** | Manual | Manual | N/A | **Automática via evento (Módulo 2)** |
+| **Ciclo de vida de serviço** | Estados próprios | Estado simples | Não identificado no levantamento | **TMF638 canônico (6 estados)** |
+| **Suspensão** | Estado dedicado | Manual | Não identificado no levantamento | **inactive + suspensionReason** |
+| **Liberação de recurso ao terminar** | Manual | Manual | Não identificado no levantamento | **Automática via evento (Módulo 2)** |
 
 ---
 
@@ -693,7 +716,7 @@ feasibilityChecked → designed → reserved → inactive → active ───�
 > **Entidade TMF:** CustomerFacingService (TMF638)
 > **Open API TMF:** TMF638
 > **Prioridade:** Crítica
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 11.1 Descrição
 
@@ -764,8 +787,8 @@ Isolar o CFS é o que permite que o contrato comercial sobreviva a mudanças de 
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Serviço de cliente** | "Serviço de cliente" (Network & Services) | Service Manager (cliente) | **Inexistente** | **CFS (TMF638) com SubscriberID** |
-| **Wholesale (cliente = ISP)** | Parcial | Via Contract | N/A | **relatedParty[subscriber]=Tenant ISP** |
+| **Serviço de cliente** | "Serviço de cliente" (Network & Services) | Service Manager (cliente) | Não identificado no levantamento | **CFS (TMF638) com SubscriberID** |
+| **Wholesale (cliente = ISP)** | Parcial | Via Contract | Não identificado no levantamento | **relatedParty[subscriber]=Tenant ISP** |
 
 ---
 
@@ -774,7 +797,7 @@ Isolar o CFS é o que permite que o contrato comercial sobreviva a mudanças de 
 > **Entidade TMF:** ResourceFacingService (TMF638)
 > **Open API TMF:** TMF638
 > **Prioridade:** Crítica
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 12.1 Descrição
 
@@ -850,7 +873,7 @@ O RFS é o que torna o inventário de serviço *acionável* pela operação: é 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
 | **Serviço de rede** | "Serviço de rede" (Network & Services) | GenericService + "uses" circuito | L2VPN / Circuit (resource-adjacent) | **RFS (TMF638) com supportingResource** |
-| **Reuso técnico** | Limitado | Via relacionamento | Não | **RFS compartilhável entre CFS** |
+| **Reuso técnico** | Limitado | Via relacionamento | Não identificado no levantamento | **RFS compartilhável entre CFS** |
 | **Navegação até porta** | Sim (Portas e Serviços) | Via Connectivity | Via cable trace | **supportingResource → path (Módulo 2)** |
 
 ---
@@ -860,7 +883,7 @@ O RFS é o que torna o inventário de serviço *acionável* pela operação: é 
 > **Entidade TMF:** Service.supportingResource (TMF638 → TMF639)
 > **Open API TMF:** TMF638 (referência), TMF639 (alvo)
 > **Prioridade:** Crítica — a ponte entre os domínios
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 13.1 Descrição
 
@@ -930,7 +953,7 @@ GET /service?supportingResource.id=res-port-pon-rj-bot-0-1-3&state=active
 > **Entidade TMF:** Service.supportingService (TMF638)
 > **Open API TMF:** TMF638
 > **Prioridade:** Crítica
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 14.1 Descrição
 
@@ -989,7 +1012,7 @@ CFS  "Link-Dedicado-1G-Acme"
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Composição de serviço** | Plana | Hierarquia parcial | Não | **supportingService (árvore CFS→RFS→RFS)** |
+| **Composição de serviço** | Plana | Hierarquia parcial | Não identificado no levantamento | **supportingService (árvore CFS→RFS→RFS)** |
 
 ---
 
@@ -998,7 +1021,7 @@ CFS  "Link-Dedicado-1G-Acme"
 > **Entidade TMF:** Service.place (TMF638 → TMF673/674/675)
 > **Open API TMF:** TMF638 (referência ao Módulo 1)
 > **Prioridade:** Alta
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 15.1 Descrição
 
@@ -1019,10 +1042,12 @@ Coerência com a Decisão 5.2 do Overview: HC cria o InstallationPoint (Módulo 
 ### 15.4 Exemplo de payload (serviço ponto-a-ponto)
 
 ```json
-"place": [
-  { "role": "endpointA", "@referredType": "GeographicSite", "id": "site-rj-matriz-acme" },
-  { "role": "endpointZ", "@referredType": "GeographicSite", "id": "site-sp-filial-acme" }
-]
+{
+  "place": [
+    { "role": "endpointA", "@referredType": "GeographicSite", "id": "site-rj-matriz-acme" },
+    { "role": "endpointZ", "@referredType": "GeographicSite", "id": "site-sp-filial-acme" }
+  ]
+}
 ```
 
 ### 15.5 Pré-condições
@@ -1065,7 +1090,7 @@ Coerência com a Decisão 5.2 do Overview: HC cria o InstallationPoint (Módulo 
 > **Entidade TMF:** serviceCharacteristic[SubscriberID] (TMF638)
 > **Open API TMF:** TMF638
 > **Prioridade:** Crítica
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 16.1 Descrição
 
@@ -1086,15 +1111,17 @@ O `id` UUID v7 é interno e não-amigável; o BSS e o atendimento precisam de um
 ### 16.4 Exemplo
 
 ```json
-"serviceCharacteristic": [
-  { "name": "SubscriberID", "value": "SUB778899" },
-  { "name": "bssReference", "value": "BSS-CTR-2027-55012" }
-]
+{
+  "serviceCharacteristic": [
+    { "name": "SubscriberID", "value": "SUB778899" },
+    { "name": "bssReference", "value": "BSS-CTR-2027-55012" }
+  ]
+}
 ```
 
 ### 16.5 Pré-condições
 
-- CFS sendo criado. Estratégia de geração de SubscriberID definida (D-4).
+- CFS sendo criado. Estratégia de geração de SubscriberID definida (Q-SVC-002).
 
 ### 16.6 Requisitos Funcionais
 
@@ -1124,7 +1151,7 @@ O `id` UUID v7 é interno e não-amigável; o BSS e o atendimento precisam de um
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Identidade de assinante** | ID de serviço próprio | Via cliente/contrato | N/A | **SubscriberID Nexus-native + `_origin.legacy`** |
+| **Identidade de assinante** | ID de serviço próprio | Via cliente/contrato | Não identificado no levantamento | **SubscriberID Nexus-native + `_origin.legacy`** |
 
 ---
 
@@ -1132,7 +1159,7 @@ O `id` UUID v7 é interno e não-amigável; o BSS e o atendimento precisam de um
 
 > **Entidade TMF:** CFS + RFS (TMF638) — requisito ilustrativo
 > **Prioridade:** Alta — produto core V.tal
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 17.1 Descrição
 
@@ -1190,7 +1217,7 @@ CFS "Bitstream GPON 700M" (wholesale → Tenant Provedor X)   |   CFS "FTTH 700M
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
 | **Banda larga GPON** | FTTH Aprovisionamento / GPON | Via circuito + service | L2VPN proxy | **CFS+RFS GPON (TMF638)** |
-| **Wholesale + varejo** | Parcial | Via contrato | Não | **2 CFS / 1 RFS** |
+| **Wholesale + varejo** | Parcial | Via contrato | Não identificado no levantamento | **2 CFS / 1 RFS** |
 
 ---
 
@@ -1198,7 +1225,7 @@ CFS "Bitstream GPON 700M" (wholesale → Tenant Provedor X)   |   CFS "FTTH 700M
 
 > **Entidade TMF:** CFS + RFS (TMF638) — requisito ilustrativo
 > **Prioridade:** Alta
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 18.1 Descrição
 
@@ -1259,7 +1286,7 @@ CFS "Link-Dedicado-1G-Acme" (SubscriberID SUB-CORP-12345, subscriber: cliente di
 
 > **Entidade TMF:** CFS + RFS (TMF638) — requisito ilustrativo
 > **Prioridade:** Média
-> **Status:** Em levantamento · Versão 1.0 — draft (REQ-001 já citado no Overview seção 7.3)
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 19.1 Descrição
 
@@ -1282,7 +1309,16 @@ CFS "CloudVoIP-10-ramais-Acme" (SubscriberID SUB-VOIP-7788)
  └─ characteristic: plano="Ilimitado Fixo", ramais=10
 ```
 
-### 19.4 Requisitos Funcionais
+### 19.4 Características-chave
+
+| Característica | Camada | Uso |
+|---|---|---|
+| `ramais` / `canais_simultaneos` | CFS/RFS | Capacidade comercial e técnica do serviço de voz. |
+| `codec` | RFS | Perfil técnico negociado no tronco SIP. |
+| `plano` | CFS | Variação comercial governada pela ServiceSpecification. |
+| Faixa E.164 | Resource | LogicalResource referenciado pelo RFS; nunca copiado para o CFS. |
+
+### 19.5 Requisitos Funcionais
 
 | ID | Nome | Descrição |
 |---|---|---|
@@ -1290,20 +1326,20 @@ CFS "CloudVoIP-10-ramais-Acme" (SubscriberID SUB-VOIP-7788)
 | **RF-002** | **Números como recurso** | RFS referencia faixa/números E.164 (LogicalResource, Módulo 2). |
 | **RF-003** | **Suspensão em cascata** | Suspensão do acesso reflete no VoIP conforme política. |
 
-### 19.5 Critérios de Aceite
+### 19.6 Critérios de Aceite
 
 | ID | Critério | Resultado Esperado |
 |---|---|---|
 | **CA-001** | **Dependência** | CFS VoIP referencia CFS acesso via serviceRelationship. |
 | **CA-002** | **Números** | RFS SIP referencia faixa E.164 no Módulo 2. |
 
-### 19.6 Mapeamento contra sistemas de referência
+### 19.7 Mapeamento contra sistemas de referência
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Voz/VoIP** | Serviço de cliente | GenericService | Não | **CFS+RFS VoIP (TMF638)** |
-| **Números E.164** | Recurso lógico | Atributo | Não | **LogicalResource (Módulo 2)** |
-| **Serviço sobre serviço** | Limitado | Via relacionamento | Não | **serviceRelationship dependsOn** |
+| **Voz/VoIP** | Serviço de cliente | GenericService | Não identificado no levantamento | **CFS+RFS VoIP (TMF638)** |
+| **Números E.164** | Recurso lógico | Atributo | Não identificado no levantamento | **LogicalResource (Módulo 2)** |
+| **Serviço sobre serviço** | Limitado | Via relacionamento | Não identificado no levantamento | **serviceRelationship dependsOn** |
 
 ---
 
@@ -1312,7 +1348,7 @@ CFS "CloudVoIP-10-ramais-Acme" (SubscriberID SUB-VOIP-7788)
 > **Entidade TMF:** Service.serviceRelationship (TMF638)
 > **Open API TMF:** TMF638
 > **Prioridade:** Alta
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 20.1 Descrição
 
@@ -1322,7 +1358,14 @@ Define o catálogo de tipos de relação entre serviços (`serviceRelationship`)
 
 Mesmo padrão do catálogo de ResourceRelationships (REQ-MOD02-024, Decisão 5.6 do Overview): bootstrap canônico + extensível via API com governança. `supportingService` é composição estrutural; `serviceRelationship` é semântica de negócio (dependsOn, replaces, aggregates).
 
-### 20.3 Bootstrap canônico de RelationshipTypes (Service)
+### 20.3 Mapeamento de atributos TMF
+
+| Atributo TMF | Tipo | Obrigatório | Observação |
+|---|---|:---:|---|
+| `serviceRelationship[].relationshipType` | string | Sim | Tipo do catálogo (bootstrap ou extensão). |
+| `serviceRelationship[].service.id` | string | Sim | Serviço relacionado. |
+
+Bootstrap canônico de RelationshipTypes:
 
 | Tipo | Semântica |
 |---|---|
@@ -1332,14 +1375,29 @@ Mesmo padrão do catálogo de ResourceRelationships (REQ-MOD02-024, Decisão 5.6
 | `peersWith` | A e B são pares (ex.: redundância). |
 | `backsUp` | A é backup de B. |
 
-### 20.4 Mapeamento de atributos TMF
+### 20.4 Exemplo de payload
 
-| Atributo TMF | Tipo | Obrigatório | Observação |
-|---|---|:---:|---|
-| `serviceRelationship[].relationshipType` | string | Sim | Tipo do catálogo (bootstrap ou extensão). |
-| `serviceRelationship[].service.id` | string | Sim | Serviço relacionado. |
+```json
+{
+  "id": "svc-cloudvoip-acme",
+  "@type": "CustomerFacingService",
+  "serviceRelationship": [
+    {
+      "relationshipType": "dependsOn",
+      "id": "svc-link-dedicado-acme",
+      "@referredType": "CustomerFacingService"
+    }
+  ]
+}
+```
 
-### 20.5 Requisitos Funcionais
+### 20.5 Pré-condições
+
+- O serviço de origem e o serviço relacionado existem.
+- O RelationshipType está ativo no catálogo governado.
+- A relação não cria autorreferência ou ciclo proibido.
+
+### 20.6 Requisitos Funcionais
 
 | ID | Nome | Descrição |
 |---|---|---|
@@ -1347,25 +1405,25 @@ Mesmo padrão do catálogo de ResourceRelationships (REQ-MOD02-024, Decisão 5.6
 | **RF-002** | **Relacionar** | Adicionar serviceRelationship tipado entre serviços. |
 | **RF-003** | **Navegar** | GET serviços relacionados por tipo. |
 
-### 20.6 Regras de Negócio
+### 20.7 Regras de Negócio
 
 | ID | Regra de Negócio |
 |---|---|
 | **RN-001** | relationshipType deve existir no catálogo. |
 | **RN-002** | Novos tipos via Administrador do Catálogo, com governança (Audit + TMF688). |
 
-### 20.7 Critérios de Aceite
+### 20.8 Critérios de Aceite
 
 | ID | Critério | Resultado Esperado |
 |---|---|---|
 | **CA-001** | **Tipado** | Relação com tipo do catálogo é aceita. |
 | **CA-002** | **Extensão** | Novo tipo criado via API gera Audit + evento. |
 
-### 20.8 Mapeamento contra sistemas de referência
+### 20.9 Mapeamento contra sistemas de referência
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Relações de serviço** | Implícitas | Relacionamentos de classe | Não | **Catálogo tipado extensível (TMF638)** |
+| **Relações de serviço** | Implícitas | Relacionamentos de classe | Não identificado no levantamento | **Catálogo tipado extensível (TMF638)** |
 
 ---
 
@@ -1374,7 +1432,7 @@ Mesmo padrão do catálogo de ResourceRelationships (REQ-MOD02-024, Decisão 5.6
 > **Entidade TMF:** Event (TMF688)
 > **Open API TMF:** TMF688 — Event Management
 > **Prioridade:** Crítica
-> **Status:** Em levantamento · Versão 1.0 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.1 — draft
 
 ### 21.1 Descrição
 
@@ -1384,7 +1442,17 @@ Define o catálogo de eventos canônicos publicados pelo Service Domain via outb
 
 É o que torna o Service Domain fonte de verdade do "estado de serviço". Mesmo mecanismo do Módulo 2 (REQ-MOD02-025): outbox transacional, schema versionado, idempotência por UUID v7, catálogo público.
 
-### 21.3 Catálogo de eventos
+### 21.3 Mapeamento de atributos TMF
+
+| Atributo | Tipo | Obrigatório | Observação V.tal |
+|---|---|:---:|---|
+| `eventId` | UUID v7 | Sim | Identificador idempotente. |
+| `eventType` | string | Sim | Tipo canônico de evento Service. |
+| `eventTime` | datetime | Sim | Instante UTC da mudança. |
+| `event.service` | object | Sim | Snapshot ou delta do Service. |
+| `correlationId` | string | Não | Ordem, workflow ou wave de migração relacionada. |
+
+Catálogo de eventos:
 
 | Evento | Quando | Principais consumidores |
 |---|---|---|
@@ -1414,7 +1482,13 @@ Define o catálogo de eventos canônicos publicados pelo Service Domain via outb
 }
 ```
 
-### 21.5 Requisitos Funcionais
+### 21.5 Pré-condições
+
+- A mudança de Service e o evento são produzidos na mesma unidade transacional.
+- O tipo de evento possui schema versionado e compatível.
+- O produtor dispõe de correlationId quando a mudança nasce de Order ou workflow.
+
+### 21.6 Requisitos Funcionais
 
 | ID | Nome | Descrição |
 |---|---|---|
@@ -1423,25 +1497,25 @@ Define o catálogo de eventos canônicos publicados pelo Service Domain via outb
 | **RF-003** | **Catálogo público** | GET /events/catalog com schemas e exemplos. |
 | **RF-004** | **Idempotência** | UUID v7 por evento. |
 
-### 21.6 Regras de Negócio
+### 21.7 Regras de Negócio
 
 | ID | Regra de Negócio |
 |---|---|
 | **RN-001** | Toda mudança relevante publica evento. |
 | **RN-002** | Eventos são imutáveis e idempotentes. |
 
-### 21.7 Critérios de Aceite
+### 21.8 Critérios de Aceite
 
 | ID | Critério | Resultado Esperado |
 |---|---|---|
 | **CA-001** | **Outbox** | Falha de publicação reverte escrita. |
 | **CA-002** | **Catálogo** | GET /events/catalog lista os 5 eventos com schema. |
 
-### 21.8 Mapeamento contra sistemas de referência
+### 21.9 Mapeamento contra sistemas de referência
 
 | Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
 |---|---|---|---|---|
-| **Eventos canônicos** | Não publica | Não publica | Webhooks limitado | **TMF688 nativo (outbox)** |
+| **Eventos canônicos** | Não identificado no levantamento | Não identificado no levantamento | Webhooks limitado | **TMF688 nativo (outbox)** |
 
 ---
 
@@ -1542,7 +1616,7 @@ CFS "CloudVoIP-10ramais-Acme" (SubscriberID SUB-VOIP-7788)
 | **Módulo 2 — Resource** | Síncrono (referência) + Assíncrono (eventos) | RFS referencia Resources via `supportingResource`. Consome ResourceStateChange para análise de impacto. Terminar serviço libera reservas de Resource. |
 | **Módulo 4 — Order & Fulfillment** | Síncrono (origem) + Assíncrono (eventos) | Orders criam/alteram Services (decomposição da ordem). Viabilidade (TMF645/HP) é do Order, não do Service. `serviceOrderItem` referencia o item de ordem. |
 | **Módulo 5 — Process Orchestration** | Síncrono (BPMN tasks) | Ativação/desativação complexa, re-home e suspensão em cascata podem ser orquestrados por BPMN. |
-| **Módulo 6 — Party & Tenant** | Síncrono (referência) | `relatedParty[subscriber]` → Tenant ISP / cliente. Validação de existência (diferida no MVP — D-3). |
+| **Módulo 6 — Party & Tenant** | Síncrono (referência) | `relatedParty[subscriber]` → Tenant ISP / cliente. Validação de existência (diferida no MVP — D-SVC-003). |
 | **Módulo 7 — Analytics & Events** | Assíncrono (consumidor) | Eventos TMF688 do Service consumidos pelo Data Lake (penetração, churn, ocupação). |
 | **Módulo 8 — Platform & Admin** | Síncrono (RBAC, Audit) | RBAC por Tenant e tipo de serviço (ISP enxerga apenas seus CFS). |
 
@@ -1550,26 +1624,25 @@ CFS "CloudVoIP-10ramais-Acme" (SubscriberID SUB-VOIP-7788)
 
 ## 25. Questões em aberto
 
-| ID | Questão | Status / Decisão | Responsável |
+| ID | Questão | Status | Responsável |
 |---|---|---|---|
-| **Q-001** | Catálogo inicial de ServiceSpecifications (CFS+RFS) do MVP: lista canônica fechada (velocidades GPON, variantes empresariais, VoIP). | *Aberta* | *Produto + Engenharia V.tal* |
-| **Q-002** | Geração do SubscriberID: formato, faixa, autoridade emissora (Nexus-native) e convivência com IDs legados de assinante. | *Aberta* | *Produto + BSS* |
-| **Q-003** | Validação de `relatedParty[subscriber]` antes do Módulo 6: diferida com reconciliação, ou Party mínima provisória? | ✅ **Decidido (D-3, Jun/2026):** validação **diferida** no MVP — Subscriber referenciado por ID, reconciliado quando o Módulo 6 entrar (Fase 3). Ver 25.1. | *Arquitetura* |
-| **Q-004** | Granularidade do RFS GPON: um RFS por assinante, ou RFS de "porta PON" agregando assinantes? Trade-off volume vs. fidelidade. | *Aberta* | *Engenharia + Arquitetura* |
-| **Q-005** | Modelagem de bundle comercial (acesso + VoIP + valor agregado): CFS bundle (`isBundle`) ou agregação via serviceRelationship? | *Aberta* | *Produto* |
-| **Q-006** | Propagação de estado CFS↔RFS↔Resource: política de cascata (suspensão, falha) — automática ou orquestrada (Módulo 5)? | *Aberta* | *Operações + Arquitetura* |
-| **Q-007** | Service Assurance sobre serviço: confirmar que impact analysis (reverse trace) atende o consumidor externo de SA no MVP. | *Aberta* | *Arquitetura + Operações* |
+| **Q-SVC-001** | Catálogo inicial de ServiceSpecifications (CFS+RFS) do MVP: lista canônica fechada (velocidades GPON, variantes empresariais, VoIP). | *Aberta* | *Produto + Engenharia V.tal* |
+| **Q-SVC-002** | Geração do SubscriberID: formato, faixa, autoridade emissora (Nexus-native) e convivência com IDs legados de assinante. | *Aberta* | *Produto + BSS* |
+| **Q-SVC-004** | Granularidade do RFS GPON: um RFS por assinante, ou RFS de "porta PON" agregando assinantes? Trade-off volume vs. fidelidade. | *Aberta* | *Engenharia + Arquitetura* |
+| **Q-SVC-005** | Modelagem de bundle comercial (acesso + VoIP + valor agregado): CFS bundle (`isBundle`) ou agregação via serviceRelationship? | *Aberta* | *Produto* |
+| **Q-SVC-006** | Propagação de estado CFS↔RFS↔Resource: política de cascata (suspensão, falha) — automática ou orquestrada (Módulo 5)? | *Aberta* | *Operações + Arquitetura* |
+| **Q-SVC-007** | Service Assurance sobre serviço: confirmar que impact analysis (reverse trace) atende o consumidor externo de SA no MVP. | *Aberta* | *Arquitetura + Operações* |
 
 ### 25.1 Decisões resolvidas e seus impactos arquiteturais
 
 | Decisão | Requisitos impactados | Mudança aplicada |
 |---|---|---|
-| **D-1 — Home Passed não é Service** (reafirma Overview 5.2) | REQ-MOD03-004, 010 | HP/viabilidade fica no Módulo 4 (TMF645) sobre Geo+Resource. Service só nasce no HC. Nenhuma entidade de viabilidade persistida no Service Inventory. |
-| **D-2 — Wholesale como modelo default** | REQ-MOD03-006, 011 | `relatedParty[subscriber]` aponta tipicamente para Tenant ISP. CFS carrega `modelo_comercial` (wholesale\|direto). Mesmo RFS suporta os dois CFS. |
-| **D-3 — Validação de Subscriber diferida** | REQ-MOD03-006 | No MVP, Subscriber é referenciado por ID sem validação síncrona; reconciliação quando o Módulo 6 entrar (Fase 3). |
-| **D-4 — Catálogo de Service Relationships extensível** (mesmo padrão D-5.6 do Overview) | REQ-MOD03-015 | RelationshipType de serviço tem bootstrap canônico + CRUD via API com governança (Audit + TMF688). |
+| **D-SVC-001 — Home Passed não é Service** (reafirma C4) | REQ-MOD03-004, 010 | HP/viabilidade fica no Módulo 4 (TMF645) sobre Geo+Resource. Service só nasce no HC. Nenhuma entidade de viabilidade é persistida no Service Inventory. |
+| **D-SVC-002 — Wholesale como modelo default** | REQ-MOD03-006, 011 | `relatedParty[subscriber]` aponta tipicamente para Tenant ISP. CFS carrega `modelo_comercial` (wholesale\|direto). Mesmo RFS suporta os dois CFS. |
+| **D-SVC-003 — Validação de Subscriber diferida** | REQ-MOD03-006 | No MVP, Subscriber é referenciado por ID sem validação síncrona; reconciliação quando o Módulo 6 entrar (Fase 3). |
+| **D-SVC-004 — Catálogo de Service Relationships extensível** | REQ-MOD03-015 | RelationshipType de serviço tem bootstrap canônico + CRUD via API com governança (Audit + TMF688). |
 
-### 25.2 Decisão de migração — Identidade e proveniência de Services
+### 25.2 D-SVC-005 — Identidade e proveniência de Services
 
 > **Princípio arquitetural (transversal):** idêntico aos Módulos 1 e 2. O Nexus gera UUID v7 canônico próprio para todo Service; IDs de serviço legados são preservados como `characteristic` somente-leitura no grupo `_origin`.
 
@@ -1623,7 +1696,8 @@ CFS "CloudVoIP-10ramais-Acme" (SubscriberID SUB-VOIP-7788)
 
 | Versão | Data | Autor | Descrição |
 |---|---|---|---|
-| 1.0 | Junho 2026 | Produto — V.tal Nexus | Versão inicial do HLD do Módulo 3 — Nexus Service Domain (HLD04), com 16 requisitos alinhados a TMF633 e TMF638, separação CFS/RFS, decisão de wholesale (D-2), reafirmação da fronteira Home Passed (D-1), cenários ilustrativos (residencial wholesale, empresarial multiponto, CloudVoIP) e seção de proveniência `_origin` para serviços. |
+| 1.0 | Junho 2026 | Produto — V.tal Nexus | Versão inicial do HLD do Módulo 3 — Nexus Service Domain (HLD04), com 16 requisitos alinhados a TMF633 e TMF638, separação CFS/RFS, decisão de wholesale e fronteira Home Passed, cenários ilustrativos e proveniência `_origin`. |
+| 1.1 | Julho 2026 | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: adiciona matriz dos 16 requisitos, documenta a base TMF633/638 e o workspace atual, normaliza os requisitos 014–016 e liga os gaps de implementação ao backlog `DEV-*`. |
 
 ---
 

@@ -12,7 +12,8 @@ Replique **exatamente** esta espinha:
 
 1. **Cabeçalho** — tabela: Document Reference (`VTN-HLD-MODxx-XXX`), versão, data, âncora, predecessores, TMFCs, Open APIs, requisitos cobertos, status.
 2. **Propósito do módulo** — o que responde; posição na tríade.
-3. **Escopo** — `2.1 Dentro do escopo` / `2.2 Fora do escopo (tratado em outros módulos)`.
+3. **Escopo e aderência** — `2.1 Dentro do escopo` / `2.2 Fora do escopo` / `2.3 Aderência ao codebase atual`.
+   A matriz 2.3 tem uma linha por REQ e as colunas Estado, Evidência, Gap, Bloqueador e Backlog.
 4. **Modelo conceitual TMF** — tabela de entidades + hierarquia de tipos (ASCII) + fronteiras com módulos vizinhos.
 5. **Princípios de design do módulo** — 6–9 princípios curtos.
 6. **Resumo dos requisitos** — blocos (A, B, C…) + tabela completa + ordem de implementação.
@@ -20,7 +21,7 @@ Replique **exatamente** esta espinha:
 8. **Cenários ilustrativos** — 2–3 cenários ASCII end-to-end atravessando os 3 módulos + padrões reaproveitáveis.
 9. **Síntese arquitetural.**
 10. **Contratos com outros módulos** — tabela Módulo × tipo de consumo × detalhe.
-11. **Questões em aberto** — tabela Q-xxx (Aberta / ✅ Decidido) + decisões resolvidas + seção `_origin` com payload de exemplo.
+11. **Questões e decisões** — apenas perguntas pendentes usam `Q-GEO-*`, `Q-RES-*` ou `Q-SVC-*` e devem existir no registro central. Decisões resolvidas usam `D-*`; um ID Q resolvido não é reutilizado.
 12. **Controle de revisões.**
 13. Rodapé: `*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*`
 
@@ -47,6 +48,14 @@ Cada `REQ-MODxx-NNN` tem **exatamente** estas 9 sub-seções, nesta ordem:
 
 Requisitos **ilustrativos** (serviços ou cenários concretos como GPON, CloudVoIP) usam variante enxuta: Descrição → Racional → Modelagem de referência → Características → RF → CA → Mapeamento.
 
+### 2.1 Estado da especificação e da implementação
+
+- Metadado do requisito: `Status funcional: Especificado` ou `Bloqueado por Q-*`.
+- Matriz 2.3: `Implementado`, `Parcial`, `Não implementado` ou `Divergente`.
+- `Implementado` exige evidência de código **e teste** para todos os comportamentos obrigatórios.
+- Todo gap tem ao menos um item `DEV-*` em `../5-delivery-plan/technical-backlog.md`.
+- Evidências usam arquivo ou símbolo, sem número de linha; UI de produção é verificada em `web/src`.
+
 ---
 
 ## 3. Método de validação — "exercitar a tese"
@@ -70,6 +79,8 @@ Cenários já validados e documentados:
 
 - Atualize o **Controle de revisões** do documento editado.
 - Reflita o impacto no `../1-overview/product-overview.md` (status do módulo, questões consolidadas).
+- Atualize a matriz 2.3, o item `DEV-*` correspondente e o registro central de questões/decisões.
+- Execute `npm run docs:check`; o CI aplica a mesma validação.
 
 ---
 

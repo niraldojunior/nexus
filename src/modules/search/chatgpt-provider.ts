@@ -28,6 +28,27 @@ type OpenAIChatCompletionResponse = {
   };
 };
 
+type OpenAIStreamChunk = {
+  model?: unknown;
+  choices?: Array<{
+    finish_reason?: unknown;
+    delta?: {
+      content?: unknown;
+      tool_calls?: Array<{
+        index?: unknown;
+        id?: string;
+        function?: {
+          name?: string;
+          arguments?: string;
+        };
+      }>;
+    };
+  }>;
+  usage?: {
+    total_tokens?: unknown;
+  };
+};
+
 /**
  * ChatGPT/OpenAI Provider for LLM responses
  * Integrates with OpenAI API
@@ -161,19 +182,19 @@ export class ChatGPTProvider {
         const payload = line.slice(5).trim();
         if (!payload || payload === '[DONE]') continue;
 
-        let chunk: any;
+        let chunk: OpenAIStreamChunk;
         try {
-          chunk = JSON.parse(payload);
+          chunk = JSON.parse(payload) as OpenAIStreamChunk;
         } catch {
           continue;
         }
 
         if (typeof chunk.model === 'string') model = chunk.model;
-        if (chunk.usage?.total_tokens !== undefined) totalTokens = chunk.usage.total_tokens;
+        if (typeof chunk.usage?.total_tokens === 'number') totalTokens = chunk.usage.total_tokens;
 
         const choice = chunk.choices?.[0];
         if (!choice) continue;
-        if (choice.finish_reason) finishReason = choice.finish_reason;
+        if (typeof choice.finish_reason === 'string') finishReason = choice.finish_reason;
 
         const delta = choice.delta ?? {};
         if (typeof delta.content === 'string' && delta.content.length > 0) {

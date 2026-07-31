@@ -425,8 +425,8 @@ const routeRequest = async ({
   if (request.method === 'POST' && url.pathname === '/v1/searches') {
     ensureAuthorized(request, config);
     const body = await readBody(request);
-    const filters = body.filters ? (body.filters as Record<string, any>) : undefined;
-    const results = body.results ? (body.results as Record<string, any>) : undefined;
+    const filters = body.filters ? (body.filters as Record<string, unknown>) : undefined;
+    const results = body.results ? (body.results as Record<string, unknown>) : undefined;
     const search = await searchRepository.create({
       userId: defaultUser.id,
       query: String(body.query),
@@ -454,8 +454,8 @@ const routeRequest = async ({
     if (request.method === 'PUT') {
       ensureAuthorized(request, config);
       const body = await readBody(request);
-      const filters = body.filters ? (body.filters as Record<string, any>) : undefined;
-      const results = body.results ? (body.results as Record<string, any>) : undefined;
+      const filters = body.filters ? (body.filters as Record<string, unknown>) : undefined;
+      const results = body.results ? (body.results as Record<string, unknown>) : undefined;
       const search = await searchRepository.update(searchId, {
         userId: defaultUser.id,
         ...(body.query ? { query: String(body.query) } : {}),
@@ -626,7 +626,7 @@ const routeGeoRequest = async ({
 
   if (request.method === 'POST' && url.pathname === '/v1/geo/workspace/site-at-address') {
     const body = await readBody(request);
-    return sendJson(response, 201, geoService.createSiteAtAddress(body as any));
+    return sendJson(response, 201, geoService.createSiteAtAddress(body as Parameters<typeof geoService.createSiteAtAddress>[0]));
   }
 
   const eventsMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/events$/);
@@ -655,30 +655,30 @@ const routeGeoRequest = async ({
 
   if (route.resource === 'locations') {
     if (!route.id && request.method === 'GET') return sendJson(response, 200, geoService.listLocations(parseGeoListQuery(url.searchParams)));
-    if (!route.id && request.method === 'POST') return sendJson(response, 201, geoService.createLocation(await readBody(request) as any));
+    if (!route.id && request.method === 'POST') return sendJson(response, 201, geoService.createLocation(await readBody(request) as Parameters<typeof geoService.createLocation>[0]));
     if (route.id && request.method === 'GET') return sendJsonOrNotFound(response, geoService.getLocation(route.id), 'GEO_LOCATION_NOT_FOUND');
-    if (route.id && request.method === 'PATCH') return sendJson(response, 200, geoService.updateLocation(route.id, await readBody(request) as any));
+    if (route.id && request.method === 'PATCH') return sendJson(response, 200, geoService.updateLocation(route.id, await readBody(request) as Parameters<typeof geoService.updateLocation>[1]));
   }
 
   if (route.resource === 'addresses') {
     if (!route.id && request.method === 'GET') return sendJson(response, 200, geoService.listAddresses(parseGeoListQuery(url.searchParams)));
-    if (!route.id && request.method === 'POST') return sendJson(response, 201, geoService.createAddress(await readBody(request) as any));
+    if (!route.id && request.method === 'POST') return sendJson(response, 201, geoService.createAddress(await readBody(request) as Parameters<typeof geoService.createAddress>[0]));
     if (route.id && request.method === 'GET') return sendJsonOrNotFound(response, geoService.getAddress(route.id), 'GEO_ADDRESS_NOT_FOUND');
-    if (route.id && request.method === 'PATCH') return sendJson(response, 200, geoService.updateAddress(route.id, await readBody(request) as any));
+    if (route.id && request.method === 'PATCH') return sendJson(response, 200, geoService.updateAddress(route.id, await readBody(request) as Parameters<typeof geoService.updateAddress>[1]));
   }
 
   if (route.resource === 'site-specifications') {
     if (!route.id && request.method === 'GET') return sendJson(response, 200, geoService.listSpecs());
-    if (!route.id && request.method === 'POST') return sendJson(response, 201, geoService.createSpec(await readBody(request) as any));
+    if (!route.id && request.method === 'POST') return sendJson(response, 201, geoService.createSpec(await readBody(request) as Parameters<typeof geoService.createSpec>[0]));
     if (route.id && request.method === 'GET') return sendJsonOrNotFound(response, geoService.getSpec(route.id), 'GEO_SPEC_NOT_FOUND');
-    if (route.id && request.method === 'PATCH') return sendJson(response, 200, geoService.updateSpec(route.id, await readBody(request) as any));
+    if (route.id && request.method === 'PATCH') return sendJson(response, 200, geoService.updateSpec(route.id, await readBody(request) as Parameters<typeof geoService.updateSpec>[1]));
   }
 
   if (route.resource === 'sites') {
     if (!route.id && request.method === 'GET') return sendJson(response, 200, geoService.listSites(parseGeoListQuery(url.searchParams)));
-    if (!route.id && request.method === 'POST') return sendJson(response, 201, geoService.createSite(await readBody(request) as any));
+    if (!route.id && request.method === 'POST') return sendJson(response, 201, geoService.createSite(await readBody(request) as Parameters<typeof geoService.createSite>[0]));
     if (route.id && request.method === 'GET') return sendJsonOrNotFound(response, geoService.getSite(route.id), 'GEO_SITE_NOT_FOUND');
-    if (route.id && request.method === 'PATCH') return sendJson(response, 200, geoService.updateSite(route.id, await readBody(request) as any));
+    if (route.id && request.method === 'PATCH') return sendJson(response, 200, geoService.updateSite(route.id, await readBody(request) as Parameters<typeof geoService.updateSite>[1]));
   }
 
   throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
@@ -737,7 +737,7 @@ const routePartyRequest = async ({
     }
 
     if (!partyRoute.id && request.method === 'POST') {
-      return sendJson(response, 201, partyService.createParty((await readBody(request)) as any));
+      return sendJson(response, 201, partyService.createParty((await readBody(request)) as Parameters<typeof partyService.createParty>[0]));
     }
 
     if (partyRoute.id && request.method === 'GET') {
@@ -745,7 +745,7 @@ const routePartyRequest = async ({
     }
 
     if (partyRoute.id && request.method === 'PATCH') {
-      return sendJson(response, 200, partyService.updateParty(partyRoute.id, (await readBody(request)) as any));
+      return sendJson(response, 200, partyService.updateParty(partyRoute.id, (await readBody(request)) as Parameters<typeof partyService.updateParty>[1]));
     }
 
     if (partyRoute.id && request.method === 'DELETE') {
@@ -760,7 +760,7 @@ const routePartyRequest = async ({
     }
 
     if (!roleRoute.id && request.method === 'POST') {
-      return sendJson(response, 201, partyService.createPartyRole((await readBody(request)) as any));
+      return sendJson(response, 201, partyService.createPartyRole((await readBody(request)) as Parameters<typeof partyService.createPartyRole>[0]));
     }
 
     if (roleRoute.id && request.method === 'GET') {
@@ -768,7 +768,7 @@ const routePartyRequest = async ({
     }
 
     if (roleRoute.id && request.method === 'PATCH') {
-      return sendJson(response, 200, partyService.updatePartyRole(roleRoute.id, (await readBody(request)) as any));
+      return sendJson(response, 200, partyService.updatePartyRole(roleRoute.id, (await readBody(request)) as Parameters<typeof partyService.updatePartyRole>[1]));
     }
 
     if (roleRoute.id && request.method === 'DELETE') {
@@ -805,7 +805,7 @@ const routeResourceRequest = async ({
     }
 
     if (request.method === 'POST' && url.pathname.endsWith('/relationships')) {
-      return sendJson(response, 201, resourceService.addResourceRelationship(route.id, (await readBody(request)) as any));
+      return sendJson(response, 201, resourceService.addResourceRelationship(route.id, (await readBody(request)) as Parameters<typeof resourceService.addResourceRelationship>[1]));
     }
 
     if (request.method === 'DELETE' && route.relationshipId) {
@@ -822,13 +822,13 @@ const routeResourceRequest = async ({
       return sendJson(response, 200, resourceService.listResourceSpecifications(parseResourceSpecificationQuery(url.searchParams)));
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, resourceService.createResourceSpecification((await readBody(request)) as any));
+      return sendJson(response, 201, resourceService.createResourceSpecification((await readBody(request)) as Parameters<typeof resourceService.createResourceSpecification>[0]));
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(response, resourceService.getResourceSpecification(route.id), 'RESOURCE_SPEC_NOT_FOUND');
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, resourceService.updateResourceSpecification(route.id, (await readBody(request)) as any));
+      return sendJson(response, 200, resourceService.updateResourceSpecification(route.id, (await readBody(request)) as Parameters<typeof resourceService.updateResourceSpecification>[1]));
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, resourceService.deleteResourceSpecification(route.id));
@@ -840,13 +840,13 @@ const routeResourceRequest = async ({
       return sendJson(response, 200, resourceService.listResourceFunctionSpecifications(parseResourceFunctionSpecificationQuery(url.searchParams)));
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, resourceService.createResourceFunctionSpecification((await readBody(request)) as any));
+      return sendJson(response, 201, resourceService.createResourceFunctionSpecification((await readBody(request)) as Parameters<typeof resourceService.createResourceFunctionSpecification>[0]));
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(response, resourceService.getResourceFunctionSpecification(route.id), 'RESOURCE_FUNCTION_SPEC_NOT_FOUND');
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, resourceService.updateResourceFunctionSpecification(route.id, (await readBody(request)) as any));
+      return sendJson(response, 200, resourceService.updateResourceFunctionSpecification(route.id, (await readBody(request)) as Parameters<typeof resourceService.updateResourceFunctionSpecification>[1]));
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, resourceService.deleteResourceFunctionSpecification(route.id));
@@ -884,8 +884,8 @@ const routeResourceRequest = async ({
         response,
         201,
         resourceType === 'LogicalResource'
-          ? resourceService.createLogicalResource(body as any)
-          : resourceService.createPhysicalResource(body as any),
+          ? resourceService.createLogicalResource(body as Parameters<typeof resourceService.createLogicalResource>[0])
+          : resourceService.createPhysicalResource(body as Parameters<typeof resourceService.createPhysicalResource>[0]),
       );
     }
     if (route.id && request.method === 'GET') {
@@ -899,8 +899,8 @@ const routeResourceRequest = async ({
         response,
         200,
         current['@type'] === 'LogicalResource'
-          ? resourceService.updateLogicalResource(route.id, body as any)
-          : resourceService.updatePhysicalResource(route.id, body as any),
+          ? resourceService.updateLogicalResource(route.id, body as Parameters<typeof resourceService.updateLogicalResource>[1])
+          : resourceService.updatePhysicalResource(route.id, body as Parameters<typeof resourceService.updatePhysicalResource>[1]),
       );
     }
     if (route.id && request.method === 'DELETE') {
@@ -918,7 +918,7 @@ const routeResourceRequest = async ({
 
   if (route.kind === 'resourceActivation') {
     if (request.method === 'POST') {
-      return sendJson(response, 200, resourceService.activateResource((await readBody(request)) as any));
+      return sendJson(response, 200, resourceService.activateResource((await readBody(request)) as Parameters<typeof resourceService.activateResource>[0]));
     }
   }
 
@@ -951,7 +951,7 @@ const routeServiceRequest = async ({
     }
 
     if (request.method === 'POST' && url.pathname.endsWith('/relationships')) {
-      return sendJson(response, 201, serviceService.addServiceRelationship(route.id, (await readBody(request)) as any));
+      return sendJson(response, 201, serviceService.addServiceRelationship(route.id, (await readBody(request)) as Parameters<typeof serviceService.addServiceRelationship>[1]));
     }
 
     if (request.method === 'DELETE' && route.relationshipId) {
@@ -968,13 +968,13 @@ const routeServiceRequest = async ({
       return sendJson(response, 200, serviceService.listServiceSpecifications(parseServiceSpecificationQuery(url.searchParams)));
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, serviceService.createServiceSpecification((await readBody(request)) as any));
+      return sendJson(response, 201, serviceService.createServiceSpecification((await readBody(request)) as Parameters<typeof serviceService.createServiceSpecification>[0]));
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(response, serviceService.getServiceSpecification(route.id), 'SERVICE_SPEC_NOT_FOUND');
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, serviceService.updateServiceSpecification(route.id, (await readBody(request)) as any));
+      return sendJson(response, 200, serviceService.updateServiceSpecification(route.id, (await readBody(request)) as Parameters<typeof serviceService.updateServiceSpecification>[1]));
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, serviceService.deleteServiceSpecification(route.id));
@@ -986,13 +986,13 @@ const routeServiceRequest = async ({
       return sendJson(response, 200, serviceService.listServiceCategories(parseServiceCategoryQuery(url.searchParams)));
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, serviceService.createServiceCategory((await readBody(request)) as any));
+      return sendJson(response, 201, serviceService.createServiceCategory((await readBody(request)) as Parameters<typeof serviceService.createServiceCategory>[0]));
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(response, serviceService.getServiceCategory(route.id), 'SERVICE_CATEGORY_NOT_FOUND');
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, serviceService.updateServiceCategory(route.id, (await readBody(request)) as any));
+      return sendJson(response, 200, serviceService.updateServiceCategory(route.id, (await readBody(request)) as Parameters<typeof serviceService.updateServiceCategory>[1]));
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, serviceService.deleteServiceCategory(route.id));
@@ -1004,13 +1004,13 @@ const routeServiceRequest = async ({
       return sendJson(response, 200, serviceService.listServiceCandidates(parseServiceCandidateQuery(url.searchParams)));
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, serviceService.createServiceCandidate((await readBody(request)) as any));
+      return sendJson(response, 201, serviceService.createServiceCandidate((await readBody(request)) as Parameters<typeof serviceService.createServiceCandidate>[0]));
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(response, serviceService.getServiceCandidate(route.id), 'SERVICE_CANDIDATE_NOT_FOUND');
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, serviceService.updateServiceCandidate(route.id, (await readBody(request)) as any));
+      return sendJson(response, 200, serviceService.updateServiceCandidate(route.id, (await readBody(request)) as Parameters<typeof serviceService.updateServiceCandidate>[1]));
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, serviceService.deleteServiceCandidate(route.id));
@@ -1022,13 +1022,13 @@ const routeServiceRequest = async ({
       return sendJson(response, 200, serviceService.listServices(parseServiceQuery(url.searchParams)));
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, serviceService.createService((await readBody(request)) as any));
+      return sendJson(response, 201, serviceService.createService((await readBody(request)) as Parameters<typeof serviceService.createService>[0]));
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(response, serviceService.getService(route.id), 'SERVICE_NOT_FOUND');
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, serviceService.updateService(route.id, (await readBody(request)) as any));
+      return sendJson(response, 200, serviceService.updateService(route.id, (await readBody(request)) as Parameters<typeof serviceService.updateService>[1]));
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, serviceService.deleteService(route.id));
@@ -1063,13 +1063,13 @@ const routeOrderRequest = async ({
       return sendJson(response, 200, orderService.listServiceQualifications(parseServiceQualificationQuery(url.searchParams)));
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, orderService.createServiceQualification((await readBody(request)) as any));
+      return sendJson(response, 201, orderService.createServiceQualification((await readBody(request)) as Parameters<typeof orderService.createServiceQualification>[0]));
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(response, orderService.getServiceQualification(route.id), 'SERVICE_QUALIFICATION_NOT_FOUND');
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, orderService.updateServiceQualification(route.id, (await readBody(request)) as any));
+      return sendJson(response, 200, orderService.updateServiceQualification(route.id, (await readBody(request)) as Parameters<typeof orderService.updateServiceQualification>[1]));
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, orderService.deleteServiceQualification(route.id));
@@ -1081,13 +1081,13 @@ const routeOrderRequest = async ({
       return sendJson(response, 200, orderService.listServiceOrders(parseServiceOrderQuery(url.searchParams)));
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, orderService.createServiceOrder((await readBody(request)) as any));
+      return sendJson(response, 201, orderService.createServiceOrder((await readBody(request)) as Parameters<typeof orderService.createServiceOrder>[0]));
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(response, orderService.getServiceOrder(route.id), 'SERVICE_ORDER_NOT_FOUND');
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, orderService.updateServiceOrder(route.id, (await readBody(request)) as any));
+      return sendJson(response, 200, orderService.updateServiceOrder(route.id, (await readBody(request)) as Parameters<typeof orderService.updateServiceOrder>[1]));
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, orderService.cancelServiceOrder(route.id));
@@ -1099,13 +1099,13 @@ const routeOrderRequest = async ({
       return sendJson(response, 200, orderService.listResourceOrders(parseResourceOrderQuery(url.searchParams)));
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, orderService.createResourceOrder((await readBody(request)) as any));
+      return sendJson(response, 201, orderService.createResourceOrder((await readBody(request)) as Parameters<typeof orderService.createResourceOrder>[0]));
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(response, orderService.getResourceOrder(route.id), 'RESOURCE_ORDER_NOT_FOUND');
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, orderService.updateResourceOrder(route.id, (await readBody(request)) as any));
+      return sendJson(response, 200, orderService.updateResourceOrder(route.id, (await readBody(request)) as Parameters<typeof orderService.updateResourceOrder>[1]));
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, orderService.cancelResourceOrder(route.id));
@@ -1895,7 +1895,7 @@ const routeResearchRequest = async ({
   // POST /v1/research/sessions - Create new session
   if (request.method === 'POST' && url.pathname === '/v1/research/sessions') {
     const body = await readBody(request);
-    const sessionInput: any = {
+    const sessionInput: Parameters<SearchService['createSession']>[1] = {
       title: (body.title || 'New Chat') as string,
       model: (body.model || process.env.OPENAI_MODEL || 'gpt-4o-mini') as string,
     };

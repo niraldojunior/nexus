@@ -1,4 +1,4 @@
-import { neon, Pool, types } from '@neondatabase/serverless';
+import { neon, Pool, types, type PoolClient } from '@neondatabase/serverless';
 import { parentPort, workerData } from 'node:worker_threads';
 
 // Postgres returns int8 (bigint) and numeric as strings by default. The repository layer was
@@ -33,7 +33,7 @@ type WorkerRequest =
 type WorkerResponse = { id: string; ok: true; data?: unknown } | { id: string; ok: false; error: string };
 
 type TransactionContext = {
-  client: any;
+  client: PoolClient;
 };
 
 const initData = workerData as WorkerInitData;
@@ -309,7 +309,7 @@ const getPool = (): Pool => {
 
 // Checking out a connection hasn't sent any query yet, so retrying it on a transient
 // WebSocket/network blip is always safe (unlike retrying a query that may have already landed).
-const connectPooled = async (): Promise<any> => withRetry(() => getPool().connect());
+const connectPooled = async (): Promise<PoolClient> => withRetry(() => getPool().connect());
 
 const executePooledQuery = async (queryText: string, queryParams: unknown[]) => {
   const client = await connectPooled();
@@ -342,11 +342,11 @@ const executePooledQuery = async (queryText: string, queryParams: unknown[]) => 
 
 // Opens a transaction (pinning the pooled backend) with search_path scoped to the test schema.
 // `BEGIN; SET LOCAL ...` is one round-trip via the simple-query protocol (no parameters).
-const beginSchemaScope = async (client: any): Promise<void> => {
+const beginSchemaScope = async (client: PoolClient): Promise<void> => {
   await client.query(`BEGIN; SET LOCAL search_path TO ${quoteIdentifier(schemaName as string)}, public`);
 };
 
-const setSearchPath = async (client: any): Promise<void> => {
+const setSearchPath = async (client: PoolClient): Promise<void> => {
   if (!schemaName) return;
   await client.query(`SET search_path TO ${quoteIdentifier(schemaName)}, public`);
 };

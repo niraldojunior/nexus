@@ -3,6 +3,7 @@ import { afterEach, test, vi } from 'vitest';
 import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
 import { PostgresServiceRepository } from '../src/modules/service/postgres-repository.js';
 import { ServiceService } from '../src/modules/service/service.js';
+import type { CreateCustomerFacingServiceInput, Service } from '../src/modules/service/domain.js';
 import { createTestDatabase } from './test-utils.js';
 
 afterEach(() => {
@@ -20,12 +21,12 @@ const setupService = async () => {
   const party = { id: 'party-1', '@referredType': 'Organization', href: '/party/party-1', name: 'ISP Alfa' };
   const site = { id: 'site-1', '@referredType': 'GeographicSite', href: '/site/site-1', name: 'CO Botafogo' };
   const resource = { id: 'resource-1', '@referredType': 'PhysicalResource', href: '/resource/resource-1', name: 'ONT-01' };
-  const serviceMap = new Map<string, { id: string; '@type': 'CustomerFacingService' | 'ResourceFacingService'; href: string; name: string }>();
+  const serviceMap = new Map<string, Service>();
   const service = new ServiceService(repository, eventService as never, {
     lookupParty: (id) => (id === party.id ? party : undefined),
     lookupPlace: (id) => (id === site.id ? site : undefined),
     lookupResource: (id) => (id === resource.id ? resource : undefined),
-    lookupService: (id) => serviceMap.get(id) as any,
+    lookupService: (id) => serviceMap.get(id),
   });
 
   return {
@@ -166,7 +167,7 @@ test('ServiceService rejects invalid service permutations and missing references
           serviceSpecificationId: cfsSpec.id,
           subscriberId: 'SUB-1',
           supportingResource: [{ id: 'resource-1', '@referredType': 'PhysicalResource' }],
-        } as any),
+        } as CreateCustomerFacingServiceInput),
       /CFS cannot reference supportingResource directly/,
     );
     assert.throws(

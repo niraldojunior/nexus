@@ -58,6 +58,15 @@ const requestJson = async (
   });
 };
 
+type GeoTreeResponseNode = {
+  id?: string;
+  kind?: string;
+  label?: string;
+  descendantCount?: number;
+  hasChildren?: boolean;
+  geometry?: { coordinates?: unknown };
+};
+
 test('Geo HTTP integration handles spec, location and site creation', async (t) => {
   const database = createTestDatabase();
   const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
@@ -239,7 +248,7 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
   // nenhuma delas — a estação nasce com "+" e o volume só chega ao abri-la.
   const roots = await requestJson(port, 'GET', '/v1/geo/tree/roots');
   assert.equal(roots.statusCode, 200);
-  const rootNodes = roots.body as Array<Record<string, any>>;
+  const rootNodes = roots.body as GeoTreeResponseNode[];
   assert.deepEqual(
     rootNodes.map((item) => item.kind),
     ['uf', 'city', 'group', 'site'],
@@ -256,7 +265,7 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
   // Filhos diretos: a sala e a caixa — o splitter não, ele pende da caixa.
   const children = await requestJson(port, 'GET', `/v1/geo/tree/children?nodeId=site:${idOf(station)}`);
   assert.equal(children.statusCode, 200);
-  const page = children.body as { total: number; nodes: Array<Record<string, any>> };
+  const page = children.body as { total: number; nodes: GeoTreeResponseNode[] };
   assert.equal(page.total, 2);
   assert.deepEqual(
     page.nodes.map((item) => item.label),
@@ -279,7 +288,7 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
 
   // Nível seguinte da planta: o splitter que a caixa contém.
   const boxChildren = await requestJson(port, 'GET', `/v1/geo/tree/children?nodeId=resource:${idOf(box)}`);
-  const boxPage = boxChildren.body as { total: number; nodes: Array<Record<string, any>> };
+  const boxPage = boxChildren.body as { total: number; nodes: GeoTreeResponseNode[] };
   assert.equal(boxPage.total, 1);
   assert.equal(boxPage.nodes[0]?.label, 'CDOE-1108 · S32_1');
   assert.equal(boxPage.nodes[0]?.hasChildren, false);
@@ -346,7 +355,7 @@ test('Geo tree viewport serves passive infra by bounding box, independent of hie
     '/v1/geo/tree/viewport?minLng=-43.12&minLat=-22.92&maxLng=-43.10&maxLat=-22.90',
   );
   assert.equal(insideBbox.statusCode, 200);
-  const insideNodes = insideBbox.body as Array<Record<string, any>>;
+  const insideNodes = insideBbox.body as GeoTreeResponseNode[];
   assert.deepEqual(
     insideNodes.map((item) => item.label).sort(),
     ['CDOE-1108', 'Cabo Primário 01'],
@@ -433,7 +442,7 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
 
   const search = await requestJson(port, 'GET', '/v1/geo/tree/search?q=icara');
   assert.equal(search.statusCode, 200);
-  const results = search.body as Array<Record<string, any>>;
+  const results = search.body as GeoTreeResponseNode[];
   assert.deepEqual(
     results.map((item) => item.label).sort(),
     ['CDOE Icaraí 08', 'Estação Icaraí Central'],

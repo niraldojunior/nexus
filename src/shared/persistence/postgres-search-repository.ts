@@ -1,20 +1,31 @@
 import { PostgresDatabase } from './postgres-database.js';
 import { randomUUID } from 'node:crypto';
 
+// Linha crua de `searches`. As consultas usam alias, entao os nomes ja chegam em
+// camelCase; `filters` e `results` sao JSON serializado em texto.
+type SearchRow = {
+  id: string;
+  userId: string;
+  query: string;
+  filters: string | null;
+  results: string | null;
+  createdAt: string;
+};
+
 export type SearchRecord = {
   id: string;
   userId: string;
   query: string;
-  filters?: Record<string, any>;
-  results?: Record<string, any>;
+  filters?: Record<string, unknown>;
+  results?: Record<string, unknown>;
   createdAt: string;
 };
 
 export type NewSearchInput = {
   userId: string;
   query: string;
-  filters?: Record<string, any>;
-  results?: Record<string, any>;
+  filters?: Record<string, unknown>;
+  results?: Record<string, unknown>;
 };
 
 export class PostgresSearchRepository {
@@ -51,7 +62,7 @@ export class PostgresSearchRepository {
   }
 
   getById(id: string): SearchRecord | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<SearchRow>(
       `SELECT id, user_id AS userId, query, filters, results, created_at AS createdAt
        FROM searches WHERE id = ?`,
       [id],
@@ -72,7 +83,7 @@ export class PostgresSearchRepository {
   }
 
   listByUserId(userId: string): SearchRecord[] {
-    const rows = this.db.all<any>(
+    const rows = this.db.all<SearchRow>(
       `SELECT id, user_id AS userId, query, filters, results, created_at AS createdAt
        FROM searches WHERE user_id = ? ORDER BY created_at DESC`,
       [userId],
@@ -92,7 +103,7 @@ export class PostgresSearchRepository {
   }
 
   list(): SearchRecord[] {
-    const rows = this.db.all<any>(
+    const rows = this.db.all<SearchRow>(
       `SELECT id, user_id AS userId, query, filters, results, created_at AS createdAt
        FROM searches ORDER BY created_at DESC`,
     );

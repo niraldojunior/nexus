@@ -13,7 +13,7 @@ interface ResearchSession {
   model?: string;
   temperature?: number;
   maxTokens?: number;
-  messages?: any[];
+  messages?: unknown[];
   createdAt: string;
   updatedAt: string;
 }

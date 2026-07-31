@@ -1,9 +1,85 @@
 // Carregamento e helpers da Google Maps JavaScript API (Geocoder + Places), compartilhados
 // entre o mapa (GoogleMapPanel) e a barra de pesquisa (GeoSearchBar) em GeoPage.
 
+export type GoogleLatLng = { lat: () => number; lng: () => number };
+export type GoogleMapMouseEvent = { latLng: GoogleLatLng };
+export type GoogleMapBounds = {
+  getCenter: () => GoogleLatLng;
+  getNorthEast: () => GoogleLatLng;
+  getSouthWest: () => GoogleLatLng;
+};
+export type GoogleMapInstance = {
+  addListener: (eventName: string, listener: (event: GoogleMapMouseEvent) => void) => void;
+  getBounds: () => GoogleMapBounds | undefined;
+  getZoom: () => number | undefined;
+  panTo: (position: { lat: number; lng: number }) => void;
+};
+export type GoogleMarkerInstance = {
+  addListener: (eventName: string, listener: () => void) => void;
+  setIcon: (icon: unknown) => void;
+  setMap: (map: GoogleMapInstance | null) => void;
+  setPosition: (position: { lat: number; lng: number }) => void;
+  setZIndex: (zIndex: number) => void;
+};
+export type GooglePolylineInstance = {
+  addListener: (eventName: string, listener: () => void) => void;
+  setMap: (map: GoogleMapInstance | null) => void;
+  setOptions: (options: Record<string, unknown>) => void;
+  setPath: (path: Array<{ lat: number; lng: number }>) => void;
+};
+export type GoogleInfoWindowInstance = {
+  close: () => void;
+  open: (options: { map: GoogleMapInstance }) => void;
+  setContent: (content: Node) => void;
+  setOptions: (options: Record<string, unknown>) => void;
+  setPosition: (position: { lat: number; lng: number }) => void;
+};
+
+type GoogleAddressComponent = {
+  long_name?: string;
+  short_name?: string;
+  types?: string[];
+};
+type GooglePlace = {
+  address_components?: GoogleAddressComponent[];
+  formatted_address?: string;
+  geometry?: { location?: GoogleLatLng };
+  name?: string;
+};
+type GooglePlaceWithGeometry = GooglePlace & { geometry: { location: GoogleLatLng } };
+type GooglePlacePrediction = { place_id: string; description: string };
+type GoogleMapsApi = {
+  maps: {
+    Geocoder: new () => {
+      geocode: (request: Record<string, unknown>) => Promise<{ results?: GooglePlace[] }>;
+    };
+    Map: new (element: HTMLElement, options: Record<string, unknown>) => GoogleMapInstance;
+    Marker: new (options: Record<string, unknown>) => GoogleMarkerInstance;
+    Polyline: new (options: Record<string, unknown>) => GooglePolylineInstance;
+    InfoWindow: new (options: Record<string, unknown>) => GoogleInfoWindowInstance;
+    Size: new (width: number, height: number) => unknown;
+    Point: new (x: number, y: number) => unknown;
+    SymbolPath: { CIRCLE: unknown };
+    places?: {
+      AutocompleteService: new () => {
+        getPlacePredictions: (
+          request: Record<string, unknown>,
+          callback: (predictions: GooglePlacePrediction[] | null) => void,
+        ) => void;
+      };
+      PlacesService: new (element: HTMLElement) => {
+        getDetails: (
+          request: Record<string, unknown>,
+          callback: (result: GooglePlace | null, status: string) => void,
+        ) => void;
+      };
+    };
+  };
+};
+
 declare global {
   interface Window {
-    google?: any;
+    google?: GoogleMapsApi;
     __nexusGoogleMapsPromise?: Promise<void>;
   }
 }
@@ -66,6 +142,7 @@ export async function geocodeAddress(query: string): Promise<DraftAddress | null
   const place = result?.results?.[0];
   if (!place) return null;
   const location = place.geometry?.location;
+  if (!location) return null;
   return addressFromGooglePlace({
     formatted_address: place.formatted_address,
     address_components: place.address_components,
@@ -74,10 +151,10 @@ export async function geocodeAddress(query: string): Promise<DraftAddress | null
   });
 }
 
-export function addressFromGooglePlace(place: any): DraftAddress {
+export function addressFromGooglePlace(place: GooglePlaceWithGeometry): DraftAddress {
   const components = place.address_components ?? [];
   const get = (type: string, short = false) => {
-    const component = components.find((item: any) => item.types?.includes(type));
+    const component = components.find((item) => item.types?.includes(type));
     return short ? component?.short_name : component?.long_name;
   };
   const lat = place.geometry.location.lat();
@@ -106,12 +183,13 @@ export type AddressPrediction = { placeId: string; description: string };
 export async function fetchAddressPredictions(query: string): Promise<AddressPrediction[]> {
   if (!GOOGLE_MAPS_KEY || !query.trim()) return [];
   await loadGoogleMaps(GOOGLE_MAPS_KEY);
-  if (!window.google?.maps?.places) return [];
-  const service = new window.google.maps.places.AutocompleteService();
-  const result = await new Promise<any[]>((resolve) => {
+  const places = window.google?.maps.places;
+  if (!places) return [];
+  const service = new places.AutocompleteService();
+  const result = await new Promise<GooglePlacePrediction[]>((resolve) => {
     service.getPlacePredictions(
       { input: query, componentRestrictions: { country: 'br' } },
-      (predictions: any[] | null) => resolve(predictions ?? []),
+      (predictions) => resolve(predictions ?? []),
     );
   }).catch(() => []);
   return result.map((prediction) => ({ placeId: prediction.place_id, description: prediction.description }));
@@ -124,15 +202,16 @@ let placesServiceDiv: HTMLDivElement | null = null;
 export async function fetchPlaceDetails(placeId: string): Promise<DraftAddress | null> {
   if (!GOOGLE_MAPS_KEY) return null;
   await loadGoogleMaps(GOOGLE_MAPS_KEY);
-  if (!window.google?.maps?.places) return null;
+  const places = window.google?.maps.places;
+  if (!places) return null;
   if (!placesServiceDiv) placesServiceDiv = document.createElement('div');
-  const service = new window.google.maps.places.PlacesService(placesServiceDiv);
-  const place = await new Promise<any>((resolve) => {
+  const service = new places.PlacesService(placesServiceDiv);
+  const place = await new Promise<GooglePlace | null>((resolve) => {
     service.getDetails(
       { placeId, fields: ['address_components', 'formatted_address', 'geometry', 'name'] },
-      (result: any, status: string) => resolve(status === 'OK' ? result : null),
+      (result, status) => resolve(status === 'OK' ? result : null),
     );
   }).catch(() => null);
   if (!place?.geometry?.location) return null;
-  return addressFromGooglePlace(place);
+  return addressFromGooglePlace(place as GooglePlaceWithGeometry);
 }

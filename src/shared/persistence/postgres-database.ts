@@ -73,15 +73,15 @@ export class PostgresDatabase {
     PostgresDatabase.instances.delete(this.dbPath);
   }
 
-  run(sql: string, params?: any[]): RunResult {
+  run(sql: string, params?: unknown[]): RunResult {
     return this.getBridge().run(sql, params ?? []);
   }
 
-  get<T>(sql: string, params?: any[]): T | undefined {
+  get<T>(sql: string, params?: unknown[]): T | undefined {
     return this.getBridge().get<T>(sql, params ?? []);
   }
 
-  all<T>(sql: string, params?: any[]): T[] {
+  all<T>(sql: string, params?: unknown[]): T[] {
     return this.getBridge().all<T>(sql, params ?? []);
   }
 

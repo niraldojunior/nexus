@@ -19,7 +19,17 @@ import {
   type GeoTreeNode,
   type MapBounds,
 } from '../services/geoTreeApi';
-import { GOOGLE_MAPS_KEY, loadGoogleMaps, reverseGeocode, type DraftAddress } from '../utils/googleMaps';
+import {
+  GOOGLE_MAPS_KEY,
+  loadGoogleMaps,
+  reverseGeocode,
+  type DraftAddress,
+  type GoogleInfoWindowInstance,
+  type GoogleMapInstance,
+  type GoogleMapMouseEvent,
+  type GoogleMarkerInstance,
+  type GooglePolylineInstance,
+} from '../utils/googleMaps';
 import {
   mapScaleMeters,
   readGoogleScaleMeters,
@@ -550,16 +560,16 @@ function GoogleMapPanel({
   clusterMarkers: boolean;
 }) {
   const mapEl = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<any>(null);
+  const mapRef = useRef<GoogleMapInstance | null>(null);
   // Marcadores/polylines indexados por id do nó — permite reusar o mesmo objeto entre renders
   // (só atualizando ícone/posição quando algo muda) em vez de destruir e recriar tudo a cada
   // seleção, que é o que travava o mapa com muitos pontos expandidos.
-  const markersRef = useRef<Map<string, any>>(new Map());
-  const cableRoutesRef = useRef<Map<string, any>>(new Map());
-  const clustererRef = useRef<any>(null);
-  const draftMarkerRef = useRef<any>(null);
-  const selectionMarkerRef = useRef<any>(null);
-  const infoWindowRef = useRef<any>(null);
+  const markersRef = useRef<Map<string, GoogleMarkerInstance>>(new Map());
+  const cableRoutesRef = useRef<Map<string, GooglePolylineInstance>>(new Map());
+  const clustererRef = useRef<MarkerClusterer | null>(null);
+  const draftMarkerRef = useRef<GoogleMarkerInstance | null>(null);
+  const selectionMarkerRef = useRef<GoogleMarkerInstance | null>(null);
+  const infoWindowRef = useRef<GoogleInfoWindowInstance | null>(null);
   // Nó fora da árvore do React: o InfoWindow do Google recebe este elemento como
   // conteúdo e o React desenha dentro dele via portal, mantendo o balão como
   // componente normal (com handlers) em vez de HTML em string.
@@ -608,8 +618,9 @@ function GoogleMapPanel({
     if (!GOOGLE_MAPS_KEY || !mapEl.current) return;
     void loadGoogleMaps(GOOGLE_MAPS_KEY)
       .then(() => {
-        if (!mapEl.current || mapRef.current) return;
-        mapRef.current = new window.google.maps.Map(mapEl.current, {
+        const maps = window.google?.maps;
+        if (!mapEl.current || mapRef.current || !maps) return;
+        mapRef.current = new maps.Map(mapEl.current, {
           center: DEFAULT_CENTER,
           zoom: 15,
           mapTypeControl: false,
@@ -618,7 +629,7 @@ function GoogleMapPanel({
           scaleControl: true,
           styles: MAP_STYLES,
         });
-        mapRef.current.addListener('click', (event: any) => {
+        mapRef.current.addListener('click', (event: GoogleMapMouseEvent) => {
           // Clique fora de qualquer item: o balão sai. Cliques em marker ou
           // polyline não chegam aqui, então o balão só fecha no vazio do mapa.
           closeBalloonRef.current();
@@ -673,10 +684,11 @@ function GoogleMapPanel({
   // MarkerClusterer — com dezenas de milhares de recursos, mostrar um marker por ponto sem
   // agrupamento é o que travava o mapa; selecionar um nó não recriava só ele, recriava todos.
   useEffect(() => {
-    if (!mapsReady || !mapRef.current) return;
+    const maps = window.google?.maps;
+    if (!mapsReady || !mapRef.current || !maps) return;
 
     const visibleIds = new Set<string>();
-    const activeMarkers: any[] = [];
+    const activeMarkers: GoogleMarkerInstance[] = [];
 
     for (const node of nodes) {
       if (node.geometry?.type !== 'Point') continue;
@@ -693,8 +705,8 @@ function GoogleMapPanel({
         const size = selected ? SITE_ICON_SIZE + 8 : SITE_ICON_SIZE;
         const iconOptions = {
           url: siteIconDataUrl(icon, { size }),
-          scaledSize: new window.google.maps.Size(size, size),
-          anchor: new window.google.maps.Point(size / 2, size / 2),
+          scaledSize: new maps.Size(size, size),
+          anchor: new maps.Point(size / 2, size / 2),
         };
         const zIndex = selected ? SITE_MARKER_Z + 1 : SITE_MARKER_Z;
         if (existing) {
@@ -702,7 +714,7 @@ function GoogleMapPanel({
           existing.setIcon(iconOptions);
           existing.setZIndex(zIndex);
         } else {
-          const marker = new window.google.maps.Marker({
+          const marker = new maps.Marker({
             position: { lng, lat },
             title: `${node.label} · ${icon.label}`,
             icon: iconOptions,
@@ -713,7 +725,8 @@ function GoogleMapPanel({
           marker.addListener('mouseout', () => onHoverNodeRef.current(null));
           markersRef.current.set(node.id, marker);
         }
-        activeMarkers.push(markersRef.current.get(node.id));
+        const markerForNode = markersRef.current.get(node.id);
+        if (markerForNode) activeMarkers.push(markerForNode);
         continue;
       }
 
@@ -721,11 +734,11 @@ function GoogleMapPanel({
       const size = selected ? MARKER_ICON_SIZE + 6 : MARKER_ICON_SIZE;
       const iconOptions = {
         url: resourceIconDataUrl(icon, { size }),
-        scaledSize: new window.google.maps.Size(size, size),
+        scaledSize: new maps.Size(size, size),
         // Âncora no canto inferior-esquerdo: o equipamento fica acima e à
         // direita da coordenada. Um equipamento dentro de um CO compartilha a
         // coordenada exata do local, e centrado ficaria escondido atrás do pin.
-        anchor: new window.google.maps.Point(0, size),
+        anchor: new maps.Point(0, size),
       };
       const zIndex = selected ? EQUIPMENT_MARKER_Z + 1 : EQUIPMENT_MARKER_Z;
       if (existing) {
@@ -733,7 +746,7 @@ function GoogleMapPanel({
         existing.setIcon(iconOptions);
         existing.setZIndex(zIndex);
       } else {
-        const marker = new window.google.maps.Marker({
+        const marker = new maps.Marker({
           position: { lng, lat },
           title: `${node.label} · ${icon.label}`,
           icon: iconOptions,
@@ -744,7 +757,8 @@ function GoogleMapPanel({
         marker.addListener('mouseout', () => onHoverNodeRef.current(null));
         markersRef.current.set(node.id, marker);
       }
-      activeMarkers.push(markersRef.current.get(node.id));
+      const markerForNode = markersRef.current.get(node.id);
+      if (markerForNode) activeMarkers.push(markerForNode);
     }
 
     // Remove só os marcadores que saíram de vista — o resto continua vivo e é só reposicionado acima.
@@ -773,16 +787,17 @@ function GoogleMapPanel({
   }, [mapsReady, nodes, selectedNodeId, clusterMarkers]);
 
   useEffect(() => {
-    if (!mapsReady || !mapRef.current || !draftAddress) return;
+    const maps = window.google?.maps;
+    if (!mapsReady || !mapRef.current || !draftAddress || !maps) return;
     const [lng, lat] = draftAddress.coordinates;
     if (draftMarkerRef.current) draftMarkerRef.current.setMap(null);
-    draftMarkerRef.current = new window.google.maps.Marker({
+    draftMarkerRef.current = new maps.Marker({
       map: mapRef.current,
       position: { lng, lat },
       title: draftAddress.label,
       label: '+',
       icon: {
-        path: window.google.maps.SymbolPath.CIRCLE,
+        path: maps.SymbolPath.CIRCLE,
         fillColor: '#FFD200',
         fillOpacity: 1,
         strokeColor: '#243041',
@@ -805,7 +820,8 @@ function GoogleMapPanel({
   // Google. `clickable: false` deixa o clique passar para o marker do próprio
   // objeto por baixo (reseleção idempotente) em vez de o alfinete capturá-lo.
   useEffect(() => {
-    if (!mapsReady || !mapRef.current) return;
+    const maps = window.google?.maps;
+    if (!mapsReady || !mapRef.current || !maps) return;
     const node = selectedNodeId ? nodeByIdRef.current.get(selectedNodeId) : undefined;
     const point = node ? treeNodePoint(node) : null;
     if (!point) {
@@ -817,14 +833,14 @@ function GoogleMapPanel({
     const width = Math.round(SELECTION_PIN_HEIGHT * SELECTION_PIN_ASPECT);
     const iconOptions = {
       url: selectionPinDataUrl(SELECTION_PIN_HEIGHT),
-      scaledSize: new window.google.maps.Size(width, SELECTION_PIN_HEIGHT),
-      anchor: new window.google.maps.Point(width / 2, SELECTION_PIN_HEIGHT),
+      scaledSize: new maps.Size(width, SELECTION_PIN_HEIGHT),
+      anchor: new maps.Point(width / 2, SELECTION_PIN_HEIGHT),
     };
     if (selectionMarkerRef.current) {
       selectionMarkerRef.current.setPosition({ lng, lat });
       selectionMarkerRef.current.setIcon(iconOptions);
     } else {
-      selectionMarkerRef.current = new window.google.maps.Marker({
+      selectionMarkerRef.current = new maps.Marker({
         map: mapRef.current,
         position: { lng, lat },
         icon: iconOptions,
@@ -837,7 +853,8 @@ function GoogleMapPanel({
   // Rota dos cabos. Um cabo não é um ponto: sua geometria é uma LineString com o traçado real na
   // rua, então vira polyline em vez de pin. Reusada por id pelo mesmo motivo dos marcadores.
   useEffect(() => {
-    if (!mapsReady || !mapRef.current) return;
+    const maps = window.google?.maps;
+    if (!mapsReady || !mapRef.current || !maps) return;
 
     const visibleIds = new Set<string>();
 
@@ -856,7 +873,7 @@ function GoogleMapPanel({
         continue;
       }
 
-      const line = new window.google.maps.Polyline({
+      const line = new maps.Polyline({
         map: mapRef.current,
         path,
         strokeColor: icon.color,
@@ -884,9 +901,10 @@ function GoogleMapPanel({
   // o botão de fechar do Google seria redundante (o CSS em index.css cobre
   // versões da API que ainda desenham o botão apesar de headerDisabled).
   useEffect(() => {
-    if (!mapsReady || !mapRef.current) return;
+    const maps = window.google?.maps;
+    if (!mapsReady || !mapRef.current || !maps) return;
     if (!infoWindowRef.current) {
-      infoWindowRef.current = new window.google.maps.InfoWindow({
+      infoWindowRef.current = new maps.InfoWindow({
         headerDisabled: true,
         disableAutoPan: true,
       });
@@ -901,7 +919,7 @@ function GoogleMapPanel({
     const [lng, lat] = balloon.point;
     infoWindow.setContent(balloonNode);
     infoWindow.setOptions({
-      pixelOffset: new window.google.maps.Size(balloon.offset[0], balloon.offset[1]),
+      pixelOffset: new maps.Size(balloon.offset[0], balloon.offset[1]),
     });
     infoWindow.setPosition({ lng, lat });
     infoWindow.open({ map: mapRef.current });
@@ -1617,6 +1635,4 @@ function useSiteChildren(siteId: string): { subSites: GeoTreeNode[]; resources: 
     [nodes],
   );
 }
-
-
 

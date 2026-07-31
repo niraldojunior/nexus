@@ -259,7 +259,6 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
     if (!entries.length) return categoryItems;
     return categoryItems.filter((item) => entries.every(([key, values]) => values.has(columnValueFor(item, key))));
     // columnValueFor deriva de view + catálogos, cobertos abaixo.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoryItems, columnFilters, view, specificationsById]);
 
   const setColumnFilter = (key: string, values: Set<string>) => {
@@ -327,7 +326,6 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
   // inteiro (todas as categorias) já tinha chegado de uma vez.
   useEffect(() => {
     void loadWorkspaceData(effectiveTab);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveTab, category]);
 
   useEffect(() => {

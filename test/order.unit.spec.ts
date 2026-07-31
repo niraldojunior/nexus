@@ -5,6 +5,46 @@ import { PostgresOrderRepository } from '../src/modules/order/postgres-repositor
 import { OrderService } from '../src/modules/order/service.js';
 import { createTestDatabase } from './test-utils.js';
 
+type TestPlaceReference = { id: string; '@referredType': string };
+type TestResourceInput = {
+  name?: string | undefined;
+  status?: string | undefined;
+  resourceSpecificationId?: string | undefined;
+  placeId?: string | undefined;
+  placeType?: string | undefined;
+  supportingPhysicalResourceId?: string | undefined;
+};
+type TestResourceQuery = { placeId?: string; status?: string };
+type TestResource = {
+  '@type': 'PhysicalResource' | 'LogicalResource';
+  id: string;
+  href: string;
+  name?: string | undefined;
+  status?: string | undefined;
+  resourceSpecificationId?: string | undefined;
+  place: TestPlaceReference[];
+  supportingPhysicalResourceId?: string | undefined;
+};
+type TestServiceInput = {
+  '@type'?: 'CustomerFacingService' | 'ResourceFacingService';
+  name?: string | undefined;
+  state?: string | undefined;
+  serviceSpecificationId?: string | undefined;
+  supportingService?: unknown[] | undefined;
+  supportingResource?: unknown[] | undefined;
+  relatedParty?: unknown[] | undefined;
+  place?: unknown[] | undefined;
+  serviceCharacteristic?: unknown[] | undefined;
+  subscriberId?: string | undefined;
+  serviceRelationship?: unknown[] | undefined;
+};
+type TestService = Required<Pick<TestServiceInput, 'supportingService' | 'supportingResource' | 'relatedParty' | 'place' | 'serviceCharacteristic' | 'serviceRelationship'>> &
+  TestServiceInput & {
+    '@type': 'CustomerFacingService' | 'ResourceFacingService';
+    id: string;
+    href: string;
+  };
+
 afterEach(() => {
   PostgresDatabase.resetForTesting();
   vi.restoreAllMocks();
@@ -24,13 +64,13 @@ const setupOrder = async () => {
   const location = { id: 'loc-1', '@referredType': 'GeographicLocation', href: '/location/loc-1', name: 'Ponto' };
 
   const geoStore = new Map([site, address, location].map((item) => [item.id, item] as const));
-  const resourceStore = new Map<string, any>();
-  const serviceStore = new Map<string, any>();
+  const resourceStore = new Map<string, TestResource>();
+  const serviceStore = new Map<string, TestService>();
 
   const resourceService = {
-    createPhysicalResource: vi.fn((input: any) => {
-      const resource = {
-        '@type': 'PhysicalResource',
+    createPhysicalResource: vi.fn((input: TestResourceInput) => {
+      const resource: TestResource = {
+        '@type': 'PhysicalResource' as const,
         id: `resource-${resourceStore.size + 1}`,
         href: `/resource/${resourceStore.size + 1}`,
         name: input.name,
@@ -41,9 +81,9 @@ const setupOrder = async () => {
       resourceStore.set(resource.id, resource);
       return resource;
     }),
-    createLogicalResource: vi.fn((input: any) => {
-      const resource = {
-        '@type': 'LogicalResource',
+    createLogicalResource: vi.fn((input: TestResourceInput) => {
+      const resource: TestResource = {
+        '@type': 'LogicalResource' as const,
         id: `resource-${resourceStore.size + 1}`,
         href: `/resource/${resourceStore.size + 1}`,
         name: input.name,
@@ -55,54 +95,54 @@ const setupOrder = async () => {
       resourceStore.set(resource.id, resource);
       return resource;
     }),
-    updatePhysicalResource: vi.fn((id: string, input: any) => {
-      const current = resourceStore.get(id);
+    updatePhysicalResource: vi.fn((id: string, input: Partial<TestResourceInput>) => {
+      const current = resourceStore.get(id)!;
       const updated = { ...current, ...input, id };
       resourceStore.set(id, updated);
       return updated;
     }),
-    updateLogicalResource: vi.fn((id: string, input: any) => {
-      const current = resourceStore.get(id);
+    updateLogicalResource: vi.fn((id: string, input: Partial<TestResourceInput>) => {
+      const current = resourceStore.get(id)!;
       const updated = { ...current, ...input, id };
       resourceStore.set(id, updated);
       return updated;
     }),
     deletePhysicalResource: vi.fn((id: string) => {
-      const current = resourceStore.get(id);
+      const current = resourceStore.get(id)!;
       const updated = { ...current, status: 'terminated' };
       resourceStore.set(id, updated);
       return updated;
     }),
     deleteLogicalResource: vi.fn((id: string) => {
-      const current = resourceStore.get(id);
+      const current = resourceStore.get(id)!;
       const updated = { ...current, status: 'terminated' };
       resourceStore.set(id, updated);
       return updated;
     }),
     getResource: vi.fn((id: string) => resourceStore.get(id)),
-    listPhysicalResources: vi.fn((query: any) =>
+    listPhysicalResources: vi.fn((query: TestResourceQuery) =>
       [...resourceStore.values()].filter(
         (resource) =>
           resource['@type'] === 'PhysicalResource' &&
-          (query?.placeId ? resource.place?.some((item: any) => item.id === query.placeId) : true) &&
+          (query?.placeId ? resource.place.some((item) => item.id === query.placeId) : true) &&
           (query?.status ? resource.status === query.status : true),
       ),
     ),
-    listLogicalResources: vi.fn((query: any) =>
+    listLogicalResources: vi.fn((query: TestResourceQuery) =>
       [...resourceStore.values()].filter(
         (resource) =>
           resource['@type'] === 'LogicalResource' &&
-          (query?.placeId ? resource.place?.some((item: any) => item.id === query.placeId) : true) &&
+          (query?.placeId ? resource.place.some((item) => item.id === query.placeId) : true) &&
           (query?.status ? resource.status === query.status : true),
       ),
     ),
   };
 
   const service = {
-    createService: vi.fn((input: any) => {
+    createService: vi.fn((input: TestServiceInput) => {
       const type = input['@type'] ?? (input.subscriberId ? 'CustomerFacingService' : 'ResourceFacingService');
       const id = `service-${serviceStore.size + 1}`;
-      const created = {
+      const created: TestService = {
         '@type': type,
         id,
         href: `/service/${serviceStore.size + 1}`,
@@ -120,14 +160,14 @@ const setupOrder = async () => {
       serviceStore.set(id, created);
       return created;
     }),
-    updateService: vi.fn((id: string, input: any) => {
-      const current = serviceStore.get(id);
+    updateService: vi.fn((id: string, input: Partial<TestServiceInput>) => {
+      const current = serviceStore.get(id)!;
       const updated = { ...current, ...input, id };
       serviceStore.set(id, updated);
       return updated;
     }),
     deleteService: vi.fn((id: string) => {
-      const current = serviceStore.get(id);
+      const current = serviceStore.get(id)!;
       const updated = { ...current, state: 'terminated' };
       serviceStore.set(id, updated);
       return updated;

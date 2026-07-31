@@ -4,6 +4,7 @@ import type { ResearchSession, ResearchMessage, AddMessageInput } from './domain
 /**
  * SQLite Repository for Research/Chat Sessions
  */
+import type { ResearchMessageRow, ResearchSessionRow } from './rows.js';
 export class PostgresSearchRepository {
   constructor(private readonly db: PostgresDatabase) {}
 
@@ -36,7 +37,7 @@ export class PostgresSearchRepository {
   }
 
   public getSession(id: string): ResearchSession | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<ResearchSessionRow>(
       `SELECT id, href, user_id, title, description, context, status, model, temperature, max_tokens, created_at, updated_at
        FROM research_session WHERE id = ?`,
       [id],
@@ -52,12 +53,12 @@ export class PostgresSearchRepository {
       href: row.href,
       userId: row.user_id,
       title: row.title,
-      description: row.description,
-      context: row.context,
+      ...(row.description !== null ? { description: row.description } : {}),
+      ...(row.context !== null ? { context: row.context } : {}),
       status: row.status,
-      model: row.model,
-      temperature: row.temperature,
-      maxTokens: row.max_tokens,
+      ...(row.model !== null ? { model: row.model } : {}),
+      ...(row.temperature !== null ? { temperature: row.temperature } : {}),
+      ...(row.max_tokens !== null ? { maxTokens: row.max_tokens } : {}),
       messages,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -65,7 +66,7 @@ export class PostgresSearchRepository {
   }
 
   public listSessionsByUser(userId: string, limit = 50): ResearchSession[] {
-    const rows = this.db.all<any>(
+    const rows = this.db.all<ResearchSessionRow>(
       `SELECT id, href, user_id, title, description, context, status, model, temperature, max_tokens, created_at, updated_at
        FROM research_session WHERE user_id = ? AND status != 'deleted'
        ORDER BY created_at DESC
@@ -81,12 +82,12 @@ export class PostgresSearchRepository {
         href: row.href,
         userId: row.user_id,
         title: row.title,
-        description: row.description,
-        context: row.context,
+        ...(row.description !== null ? { description: row.description } : {}),
+        ...(row.context !== null ? { context: row.context } : {}),
         status: row.status,
-        model: row.model,
-        temperature: row.temperature,
-        maxTokens: row.max_tokens,
+        ...(row.model !== null ? { model: row.model } : {}),
+        ...(row.temperature !== null ? { temperature: row.temperature } : {}),
+        ...(row.max_tokens !== null ? { maxTokens: row.max_tokens } : {}),
         messages,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
@@ -127,7 +128,7 @@ export class PostgresSearchRepository {
   }
 
   public getMessage(id: string): ResearchMessage | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<ResearchMessageRow>(
       `SELECT id, research_session_id, role, content, tokens_used, metadata, created_at
        FROM research_message WHERE id = ?`,
       [id],
@@ -141,14 +142,14 @@ export class PostgresSearchRepository {
       researchSessionId: row.research_session_id,
       role: row.role,
       content: row.content,
-      tokensUsed: row.tokens_used,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      ...(row.tokens_used !== null ? { tokensUsed: row.tokens_used } : {}),
+      ...(row.metadata !== null ? { metadata: JSON.parse(row.metadata) as Record<string, unknown> } : {}),
       createdAt: row.created_at,
     };
   }
 
   private getSessionMessages(sessionId: string): ResearchMessage[] {
-    const rows = this.db.all<any>(
+    const rows = this.db.all<ResearchMessageRow>(
       `SELECT id, research_session_id, role, content, tokens_used, metadata, created_at
        FROM research_message WHERE research_session_id = ?
        ORDER BY created_at ASC`,
@@ -161,8 +162,8 @@ export class PostgresSearchRepository {
       researchSessionId: row.research_session_id,
       role: row.role,
       content: row.content,
-      tokensUsed: row.tokens_used,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      ...(row.tokens_used !== null ? { tokensUsed: row.tokens_used } : {}),
+      ...(row.metadata !== null ? { metadata: JSON.parse(row.metadata) as Record<string, unknown> } : {}),
       createdAt: row.created_at,
     }));
   }

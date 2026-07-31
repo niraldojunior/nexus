@@ -307,7 +307,6 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
       entries.every(([key, values]) => values.has(columnValueFor(item, key))),
     );
     // columnValueFor deriva de resourceTypes, cobertos abaixo.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, categoryItems, columnFilters, resourceTypes]);
 
   // Traduz os valores selecionados no picklist (nomes/código exibidos) para os IDs que o servidor
@@ -425,7 +424,6 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   // paginação/filtro de PhysicalResource e LogicalResource agora é sempre resolvida no servidor.
   useEffect(() => {
     void loadWorkspaceData(effectiveTab, page);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveTab, category, page, columnFilters]);
 
   // Se a página atual ficar fora do alcance (ex.: exclusão esvaziou a última página), volta para

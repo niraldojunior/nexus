@@ -77,9 +77,9 @@ export async function sendResearchMessageStream(
       const eventLine = rawEvent.split('\n').find((line) => line.startsWith('event:'));
       const eventType = eventLine?.slice('event:'.length).trim() ?? 'message';
 
-      let data: any;
+      let data: Record<string, unknown>;
       try {
-        data = JSON.parse(dataLine.slice('data:'.length).trim());
+        data = JSON.parse(dataLine.slice('data:'.length).trim()) as Record<string, unknown>;
       } catch {
         continue;
       }

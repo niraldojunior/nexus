@@ -1,6 +1,17 @@
 import { PostgresDatabase } from './postgres-database.js';
 import { randomUUID } from 'node:crypto';
 
+// Linha crua de `users`. As consultas usam alias (`external_id AS externalId`),
+// entao os nomes ja chegam em camelCase; `email` e a unica coluna anulavel.
+type UserRow = {
+  id: string;
+  externalId: string;
+  name: string;
+  email: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type UserRecord = {
   id: string;
   externalId: string;
@@ -43,7 +54,7 @@ export class PostgresUserRepository {
   }
 
   getById(id: string): UserRecord | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<UserRow>(
       `SELECT id, external_id AS externalId, name, email, created_at AS createdAt, updated_at AS updatedAt
        FROM users WHERE id = ?`,
       [id],
@@ -64,16 +75,29 @@ export class PostgresUserRepository {
   }
 
   getByExternalId(externalId: string): UserRecord | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<UserRow>(
       `SELECT id, external_id AS externalId, name, email, created_at AS createdAt, updated_at AS updatedAt
        FROM users WHERE external_id = ?`,
       [externalId],
     );
-    return row as UserRecord | undefined;
+    if (!row) return undefined;
+
+    // `email` e anulavel no banco, mas opcional no dominio: devolver a linha crua
+    // vazaria `email: null` para um campo tipado `email?: string`.
+    const record: UserRecord = {
+      id: row.id,
+      externalId: row.externalId,
+      name: row.name,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+    if (row.email) record.email = row.email;
+
+    return record;
   }
 
   list(): UserRecord[] {
-    const rows = this.db.all<any>(
+    const rows = this.db.all<UserRow>(
       `SELECT id, external_id AS externalId, name, email, created_at AS createdAt, updated_at AS updatedAt
        FROM users ORDER BY created_at DESC`,
     );

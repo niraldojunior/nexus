@@ -38,7 +38,10 @@ export class SearchService {
   ): Promise<ResearchSession> {
     const id = createCanonicalId();
     const now = new Date().toISOString();
-    const sessionData: any = {
+    const sessionData: Omit<ResearchSession, 'createdAt' | 'updatedAt'> & {
+      createdAt: string;
+      updatedAt: string;
+    } = {
       '@type': 'ResearchSession',
       id,
       href: `/v1/search/sessions/${id}`,
@@ -154,7 +157,7 @@ export class SearchService {
     }
 
     // Add assistant message - build object conditionally
-    const assistantMsgInput: any = {
+    const assistantMsgInput: AddMessageInput & { id: string } = {
       id: createCanonicalId(),
       role: 'assistant',
       content: llmResponse.content,

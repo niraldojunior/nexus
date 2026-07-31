@@ -13,15 +13,11 @@ import type {
   ResourceOrderItem,
   ResourceOrderQuery,
   ResourceOrderPayload,
-  ResourceOrderState,
   ServiceOrder,
   ServiceOrderItem,
   ServiceOrderQuery,
-  ServiceOrderState,
   ServiceQualification,
-  ServiceQualificationItem,
   ServiceQualificationQuery,
-  ServiceQualificationState,
   UpdateServiceOrderInput,
   UpdateServiceQualificationInput,
   UpdateResourceOrderInput,
@@ -31,8 +27,6 @@ import type { CreateServiceInput, UpdateServiceInput } from '../service/index.js
 import type {
   CreateLogicalResourceInput,
   CreatePhysicalResourceInput,
-  LogicalResource,
-  PhysicalResource,
   Resource,
   UpdateLogicalResourceInput,
   UpdatePhysicalResourceInput,
@@ -340,7 +334,10 @@ export class OrderService {
     };
   }
 
-  private evaluateQualification(placeId: string | undefined, serviceSpecificationId: string | undefined): { qualified: boolean; reason?: string } {
+  // `_serviceSpecificationId` ainda nao participa da decisao: a qualificacao hoje olha so o lugar e
+  // a existencia de recurso ativo. O parametro fica na assinatura porque a regra alvo (TMF645) deve
+  // considerar a especificacao do servico pedido.
+  private evaluateQualification(placeId: string | undefined, _serviceSpecificationId: string | undefined): { qualified: boolean; reason?: string } {
     if (!placeId) {
       return { qualified: false, reason: 'placeId required' };
     }

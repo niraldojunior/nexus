@@ -1,8 +1,5 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { createApp } from '../src/shared/http/app.js';
 import { createTestDatabase as createPostgresTestDatabase } from './test-utils.js';

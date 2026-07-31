@@ -1,16 +1,10 @@
 import type {
-  CreateServiceOrderInput,
-  CreateServiceQualificationInput,
-  CreateResourceOrderInput,
   ServiceOrder,
   ServiceOrderQuery,
   ServiceQualification,
   ServiceQualificationQuery,
   ResourceOrder,
   ResourceOrderQuery,
-  UpdateServiceOrderInput,
-  UpdateServiceQualificationInput,
-  UpdateResourceOrderInput,
 } from './domain.js';
 
 export interface IOrderRepository {

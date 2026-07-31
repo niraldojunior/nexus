@@ -2,19 +2,16 @@ import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import type { EventService, RelatedParty } from '../../shared/tmf/index.js';
 import type {
-  AdministrativeState,
   CreateLogicalResourceInput,
   CreatePhysicalResourceInput,
   CreateResourceFunctionSpecificationInput,
   CreateResourceSpecificationInput,
   LogicalResource,
-  OperationalState,
   PhysicalResource,
   Resource,
   ResourceFunctionActivationInput,
   ResourceFunctionSpecification,
   ResourceFunctionSpecificationQuery,
-  ResourceKind,
   ResourceQuery,
   ResourceRelationship,
   ResourceCategory,
@@ -22,7 +19,6 @@ import type {
   ResourceSpecification,
   ResourceSpecificationQuery,
   ResourceStatus,
-  UsageState,
   UpdateLogicalResourceInput,
   UpdatePhysicalResourceInput,
   UpdateResourceFunctionSpecificationInput,

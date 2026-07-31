@@ -1,8 +1,4 @@
 import type {
-  CreateServiceCandidateInput,
-  CreateServiceCategoryInput,
-  CreateServiceSpecificationInput,
-  CreateServiceInput,
   CustomerFacingService,
   ResourceFacingService,
   Service,
@@ -13,10 +9,6 @@ import type {
   ServiceQuery,
   ServiceSpecification,
   ServiceSpecificationQuery,
-  UpdateServiceCandidateInput,
-  UpdateServiceCategoryInput,
-  UpdateServiceInput,
-  UpdateServiceSpecificationInput,
 } from './domain.js';
 
 export interface IServiceRepository {

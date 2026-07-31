@@ -111,7 +111,7 @@ const main = async (): Promise<void> => {
     let request: JsonRpcRequest;
     try {
       request = JSON.parse(line) as JsonRpcRequest;
-    } catch (error) {
+    } catch {
       writeMessage({
         jsonrpc: '2.0',
         id: null,

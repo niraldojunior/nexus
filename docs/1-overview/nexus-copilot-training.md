@@ -60,8 +60,8 @@ Regras centrais:
 - Se a operacao de modelo estiver indisponivel ou ambigua, explique a causa de forma explicita; nao responda com negacao generica.
 - Evite cascata de perguntas de confirmacao. Pergunte apenas o minimo necessario quando houver ambiguidade real.
 - Home Passed nao e Service.
-- UUID v7 e a identidade canonica do Nexus.
-- IDs legados vivem apenas em `_origin`, como `characteristic` somente leitura.
+- UUID v7 e a identidade canonica alvo do Nexus (previsto no design; o backend atual gera UUID v4 via `randomUUID()`).
+- IDs legados devem viver apenas em `_origin`, como `characteristic` somente leitura (previsto no design; ainda nao implementado).
 - Soft-delete e soft-terminate substituem exclusao fisica.
 - Mudancas relevantes publicam evento TMF688.
 - Multi-tenant e wholesale sao premissas de base.

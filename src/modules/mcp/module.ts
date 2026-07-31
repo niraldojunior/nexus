@@ -219,15 +219,6 @@ export class McpToolRegistry {
   }
 }
 
-const pagingSchema: JsonSchema = {
-  type: 'object',
-  properties: {
-    limit: { type: 'integer' },
-    offset: { type: 'integer' },
-  },
-  additionalProperties: true,
-};
-
 const entityRefArraySchema: JsonSchema = {
   type: 'array',
   items: {

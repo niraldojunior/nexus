@@ -12,8 +12,16 @@ import type {
   ServiceRelationship,
   ServiceSpecification,
   ServiceSpecificationQuery,
+  ServiceState,
 } from './domain.js';
 import type { IServiceRepository } from './service-repository-interface.js';
+import type {
+  CustomerFacingServiceRow,
+  ResourceFacingServiceRow,
+  ServiceCandidateRow,
+  ServiceCategoryRow,
+  ServiceSpecificationRow,
+} from './rows.js';
 
 export class PostgresServiceRepository implements IServiceRepository {
   public constructor(private readonly db: PostgresDatabase) {}
@@ -57,17 +65,7 @@ export class PostgresServiceRepository implements IServiceRepository {
   }
 
   public getServiceSpecification(id: string): ServiceSpecification | undefined {
-    const row = this.db.get<{
-      id: string;
-      href: string;
-      name: string;
-      category: string;
-      service_type: 'CFS' | 'RFS' | 'Other';
-      description?: string | null;
-      valid_for_start?: string | null;
-      valid_for_end?: string | null;
-      characteristics?: string | null;
-    }>(
+    const row = this.db.get<ServiceSpecificationRow>(
       `SELECT id, href, name, category, service_type, description, valid_for_start, valid_for_end, characteristics
        FROM tmf_service_specification
        WHERE id = ?`,
@@ -109,7 +107,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     if (hasLimit) params.push(query.limit as number);
     if (hasOffset) params.push(query.offset as number);
 
-    const rows = this.db.all<any>(sql, params);
+    const rows = this.db.all<ServiceSpecificationRow>(sql, params);
     return rows.map((row) => this.mapServiceSpecification(row));
   }
 
@@ -146,16 +144,7 @@ export class PostgresServiceRepository implements IServiceRepository {
   }
 
   public getServiceCategory(id: string): ServiceCategory | undefined {
-    const row = this.db.get<{
-      id: string;
-      href: string;
-      name: string;
-      description?: string | null;
-      parent_category_id?: string | null;
-      valid_for_start?: string | null;
-      valid_for_end?: string | null;
-      characteristics?: string | null;
-    }>(
+    const row = this.db.get<ServiceCategoryRow>(
       `SELECT id, href, name, description, parent_category_id, valid_for_start, valid_for_end, characteristics
        FROM tmf_service_category
        WHERE id = ?`,
@@ -193,7 +182,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     if (hasLimit) params.push(query.limit as number);
     if (hasOffset) params.push(query.offset as number);
 
-    const rows = this.db.all<any>(sql, params);
+    const rows = this.db.all<ServiceCategoryRow>(sql, params);
     return rows.map((row) => this.mapServiceCategory(row));
   }
 
@@ -234,18 +223,7 @@ export class PostgresServiceRepository implements IServiceRepository {
   }
 
   public getServiceCandidate(id: string): ServiceCandidate | undefined {
-    const row = this.db.get<{
-      id: string;
-      href: string;
-      name: string;
-      description?: string | null;
-      service_specification_id: string;
-      service_category_id?: string | null;
-      status: 'active' | 'inactive' | 'terminated';
-      valid_for_start?: string | null;
-      valid_for_end?: string | null;
-      characteristics?: string | null;
-    }>(
+    const row = this.db.get<ServiceCandidateRow>(
       `SELECT id, href, name, description, service_specification_id, service_category_id, status, valid_for_start, valid_for_end, characteristics
        FROM tmf_service_candidate
        WHERE id = ?`,
@@ -291,7 +269,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     if (hasLimit) params.push(query.limit as number);
     if (hasOffset) params.push(query.offset as number);
 
-    const rows = this.db.all<any>(sql, params);
+    const rows = this.db.all<ServiceCandidateRow>(sql, params);
     return rows.map((row) => this.mapServiceCandidate(row));
   }
 
@@ -358,7 +336,7 @@ export class PostgresServiceRepository implements IServiceRepository {
   }
 
   public getCustomerFacingService(id: string): CustomerFacingService | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<CustomerFacingServiceRow>(
       `SELECT id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
               is_service_enabled, has_started, subscriber_id, supporting_resource_facing_service_id, place, related_party,
               supporting_services, service_relationships, characteristics, valid_for_start, valid_for_end
@@ -437,7 +415,7 @@ export class PostgresServiceRepository implements IServiceRepository {
   }
 
   public getResourceFacingService(id: string): ResourceFacingService | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<ResourceFacingServiceRow>(
       `SELECT id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
               is_service_enabled, has_started, supporting_resource_id, place, related_party, supporting_resources, supporting_services,
               service_relationships, characteristics, valid_for_start, valid_for_end
@@ -471,7 +449,7 @@ export class PostgresServiceRepository implements IServiceRepository {
   // JS — quando algum deles é pedido, cai pro caminho antigo (varredura completa) por segurança.
   private listCustomerFacingServicesDirect(query?: ServiceQuery): CustomerFacingService[] {
     if (hasComplexServiceFilter(query)) {
-      const rows = this.db.all<any>(
+      const rows = this.db.all<CustomerFacingServiceRow>(
         `SELECT id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
                 is_service_enabled, has_started, subscriber_id, supporting_resource_facing_service_id, place, related_party,
                 supporting_services, service_relationships, characteristics, valid_for_start, valid_for_end
@@ -499,13 +477,13 @@ export class PostgresServiceRepository implements IServiceRepository {
     if (hasLimit) params.push(query!.limit as number);
     if (hasOffset) params.push(query!.offset as number);
 
-    const rows = this.db.all<any>(sql, params);
+    const rows = this.db.all<CustomerFacingServiceRow>(sql, params);
     return rows.map((row) => this.mapCustomerFacingService(row));
   }
 
   private listResourceFacingServicesDirect(query?: ServiceQuery): ResourceFacingService[] {
     if (hasComplexServiceFilter(query)) {
-      const rows = this.db.all<any>(
+      const rows = this.db.all<ResourceFacingServiceRow>(
         `SELECT id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
                 is_service_enabled, has_started, supporting_resource_id, place, related_party, supporting_resources, supporting_services,
                 service_relationships, characteristics, valid_for_start, valid_for_end
@@ -533,7 +511,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     if (hasLimit) params.push(query!.limit as number);
     if (hasOffset) params.push(query!.offset as number);
 
-    const rows = this.db.all<any>(sql, params);
+    const rows = this.db.all<ResourceFacingServiceRow>(sql, params);
     return rows.map((row) => this.mapResourceFacingService(row));
   }
 
@@ -569,17 +547,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     return this.countCustomerFacingServices(query) + this.countResourceFacingServices(query);
   }
 
-  private mapServiceSpecification(row: {
-    id: string;
-    href: string;
-    name: string;
-    category: string;
-    service_type: 'CFS' | 'RFS' | 'Other';
-    description?: string | null;
-    valid_for_start?: string | null;
-    valid_for_end?: string | null;
-    characteristics?: string | null;
-  }): ServiceSpecification {
+  private mapServiceSpecification(row: ServiceSpecificationRow): ServiceSpecification {
     const spec: ServiceSpecification = {
       '@type': 'ServiceSpecification',
       id: row.id,
@@ -601,16 +569,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     return spec;
   }
 
-  private mapServiceCategory(row: {
-    id: string;
-    href: string;
-    name: string;
-    description?: string | null;
-    parent_category_id?: string | null;
-    valid_for_start?: string | null;
-    valid_for_end?: string | null;
-    characteristics?: string | null;
-  }): ServiceCategory {
+  private mapServiceCategory(row: ServiceCategoryRow): ServiceCategory {
     const category: ServiceCategory = {
       '@type': 'ServiceCategory',
       id: row.id,
@@ -630,18 +589,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     return category;
   }
 
-  private mapServiceCandidate(row: {
-    id: string;
-    href: string;
-    name: string;
-    description?: string | null;
-    service_specification_id: string;
-    service_category_id?: string | null;
-    status: 'active' | 'inactive' | 'terminated';
-    valid_for_start?: string | null;
-    valid_for_end?: string | null;
-    characteristics?: string | null;
-  }): ServiceCandidate {
+  private mapServiceCandidate(row: ServiceCandidateRow): ServiceCandidate {
     const candidate: ServiceCandidate = {
       '@type': 'ServiceCandidate',
       id: row.id,
@@ -663,7 +611,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     return candidate;
   }
 
-  private mapCustomerFacingService(row: any): CustomerFacingService {
+  private mapCustomerFacingService(row: CustomerFacingServiceRow): CustomerFacingService {
     return {
       '@type': 'CustomerFacingService',
       id: row.id,
@@ -696,7 +644,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     };
   }
 
-  private mapResourceFacingService(row: any): ResourceFacingService {
+  private mapResourceFacingService(row: ResourceFacingServiceRow): ResourceFacingService {
     return {
       '@type': 'ResourceFacingService',
       id: row.id,
@@ -713,7 +661,9 @@ export class PostgresServiceRepository implements IServiceRepository {
       isServiceEnabled: intToBoolean(row.is_service_enabled),
       hasStarted: intToBoolean(row.has_started),
       supportingResource: parseServiceRefs(row.supporting_resources, row.supporting_resource_id),
-      supportingService: parseServiceRefs(row.supporting_services, row.supporting_resource_facing_service_id),
+      // Sem fallback: `supporting_resource_facing_service_id` e coluna do CFS e nunca foi trazida
+      // pelo SELECT do RFS — o argumento anterior era sempre undefined.
+      supportingService: parseServiceRefs(row.supporting_services),
       relatedParty: JSON.parse(row.related_party || '[]'),
       place: JSON.parse(row.place || '[]'),
       serviceRelationship: parseServiceRelationships(row.service_relationships),
@@ -830,7 +780,7 @@ const getCharacteristicValue = (items: Array<{ name: string; value: unknown }>, 
   return item?.value;
 };
 
-const normalizeState = (state?: string): any => {
+const normalizeState = (state?: string | null): ServiceState => {
   if (
     state === 'feasibilityChecked' ||
     state === 'designed' ||

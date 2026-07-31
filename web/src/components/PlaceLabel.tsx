@@ -1,5 +1,5 @@
 import { MapPin, Network, Layers, Building2 } from 'lucide-react';
-import { resolvePlaceLabel, siteKindLabel, type GeoDirectory, type PlaceReference } from '../utils/placeLabel';
+import { resolvePlaceLabel, type GeoDirectory, type PlaceReference } from '../utils/placeLabel';
 
 export type PlaceLabelProps = {
   place: PlaceReference;
@@ -33,6 +33,9 @@ export function PlaceLabel({ place, directory }: PlaceLabelProps) {
     : resolved.kind === 'CO' ? '#9B59B6'
     : '#5A5A5A';
 
+  // Linha secundária = Tipo · Endereço, mesmo formato do `sublabel` de PlaceOption.
+  const sublabel = [resolved.typeLabel, resolved.address].filter(Boolean).join(' · ');
+
   return (
     <div className="flex items-center gap-2" title={`ID: ${resolved.id}`}>
       {IconForKind && (
@@ -47,9 +50,9 @@ export function PlaceLabel({ place, directory }: PlaceLabelProps) {
         <div className="truncate text-[0.88rem] font-semibold text-app-text">
           {resolved.name}
         </div>
-        {resolved.sublabel && (
+        {sublabel && (
           <div className="truncate text-[0.75rem] text-app-muted">
-            {resolved.sublabel}
+            {sublabel}
           </div>
         )}
       </div>

@@ -1,8 +1,6 @@
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import type { EventService, RelatedParty } from '../../shared/tmf/index.js';
-import type { GeoService } from '../geo/service.js';
-import type { ResourceService } from '../resource/service.js';
 import type {
   CreateServiceCandidateInput,
   CreateServiceCategoryInput,
@@ -462,7 +460,7 @@ export class ServiceService {
     assertName(relationship.relationshipType, 'relationshipType');
     const current = this.getServiceOrThrow(serviceId);
     this.getServiceOrThrow(relationship.id);
-    const updated = this.updateService(serviceId, {
+    this.updateService(serviceId, {
       serviceRelationship: [...current.serviceRelationship.filter((item) => !(item.id === relationship.id && item.relationshipType === relationship.relationshipType)), relationship],
     } as UpdateServiceInput);
     this.emit('ServiceRelationshipCreateEvent', serviceId, current['@type'], { serviceId, relationship });

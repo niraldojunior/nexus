@@ -8,6 +8,14 @@ import type {
   GeographicSiteSpecification,
 } from './domain.js';
 import type { IGeoRepository } from './geo-repository-interface.js';
+import type {
+  EventRow,
+  GeographicAddressRow,
+  GeographicLocationRow,
+  GeographicSiteRelationshipRow,
+  GeographicSiteRow,
+  GeographicSiteSpecificationRow,
+} from './rows.js';
 
 export class PostgresGeoRepository implements IGeoRepository {
   constructor(private db: PostgresDatabase) {}
@@ -56,7 +64,7 @@ export class PostgresGeoRepository implements IGeoRepository {
   }
 
   public getLocation(id: string): GeographicLocation | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<GeographicLocationRow>(
       `SELECT id, href, geometry_type, geometry, spatial_ref, accuracy, reference_point,
               valid_for_start, valid_for_end, characteristics
        FROM tmf_geographic_location WHERE id = ?`,
@@ -105,9 +113,9 @@ export class PostgresGeoRepository implements IGeoRepository {
     if (hasLimit) params.push(query!.limit as number);
     if (hasOffset) params.push(query!.offset as number);
 
-    const rows = this.db.all<any>(sql, params);
+    const rows = this.db.all<GeographicLocationRow>(sql, params);
 
-    return rows.map((row: any) => {
+    return rows.map((row) => {
       const result: GeographicLocation = {
         '@type': 'GeographicLocation',
         id: row.id,
@@ -173,7 +181,7 @@ export class PostgresGeoRepository implements IGeoRepository {
   }
 
   public getAddress(id: string): GeographicAddress | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<GeographicAddressRow>(
       `SELECT id, href, street_type, street_name, street_nr, city, state_or_province, postcode, country,
               geographic_location_id, characteristics
        FROM tmf_geographic_address WHERE id = ?`,
@@ -232,9 +240,9 @@ export class PostgresGeoRepository implements IGeoRepository {
     if (hasLimit) params.push(query!.limit as number);
     if (hasOffset) params.push(query!.offset as number);
 
-    const rows = this.db.all<any>(sql, params);
+    const rows = this.db.all<GeographicAddressRow>(sql, params);
 
-    return rows.map((row: any) => {
+    return rows.map((row) => {
       const result: GeographicAddress = {
         '@type': 'GeographicAddress',
         id: row.id,
@@ -293,7 +301,7 @@ export class PostgresGeoRepository implements IGeoRepository {
   }
 
   public getSpec(id: string): GeographicSiteSpecification | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<GeographicSiteSpecificationRow>(
       `SELECT id, href, name, category, allowed_parent_spec_ids, allowed_child_spec_ids,
               characteristics
        FROM tmf_geographic_site_specification WHERE id = ?`,
@@ -315,7 +323,7 @@ export class PostgresGeoRepository implements IGeoRepository {
   }
 
   public listSpecs(): GeographicSiteSpecification[] {
-    const rows = this.db.all<any>(
+    const rows = this.db.all<GeographicSiteSpecificationRow>(
       `SELECT id, href, name, category, allowed_parent_spec_ids, allowed_child_spec_ids,
               characteristics
        FROM tmf_geographic_site_specification`,
@@ -374,7 +382,7 @@ export class PostgresGeoRepository implements IGeoRepository {
   }
 
   public getSite(id: string): GeographicSite | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<GeographicSiteRow>(
       `SELECT id, href, name, status, site_specification_id, geographic_location_id,
               geographic_address_id, parent_site_id, related_party, characteristics
        FROM tmf_geographic_site WHERE id = ?`,
@@ -449,10 +457,10 @@ export class PostgresGeoRepository implements IGeoRepository {
     if (hasLimit) params.push(query!.limit as number);
     if (hasOffset) params.push(query!.offset as number);
 
-    const rows = this.db.all<any>(sql, params);
+    const rows = this.db.all<GeographicSiteRow>(sql, params);
     const relationshipsBySiteId = this.loadSiteRelationshipsBySiteIds(rows.map((row) => row.id));
 
-    return rows.map((row: any) => {
+    return rows.map((row) => {
       const result: GeographicSite = {
         '@type': 'GeographicSite',
         id: row.id,
@@ -527,7 +535,7 @@ export class PostgresGeoRepository implements IGeoRepository {
   }
 
   public listSiteRelationships(siteId: string): GeographicSiteRelationship[] {
-    const rows = this.db.all<any>(
+    const rows = this.db.all<Omit<GeographicSiteRelationshipRow, 'site_from_id'>>(
       `SELECT site_to_id, relationship_type, valid_for_start, valid_for_end
        FROM tmf_geographic_site_relationship
        WHERE site_from_id = ?
@@ -559,7 +567,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     }
 
     const placeholders = siteIds.map(() => '?').join(', ');
-    const rows = this.db.all<any>(
+    const rows = this.db.all<GeographicSiteRelationshipRow>(
       `SELECT site_from_id, site_to_id, relationship_type, valid_for_start, valid_for_end
        FROM tmf_geographic_site_relationship
        WHERE site_from_id IN (${placeholders})
@@ -606,7 +614,7 @@ export class PostgresGeoRepository implements IGeoRepository {
   }
 
   public listEventsForEntity(entityId: string): GeoEvent[] {
-    const rows = this.db.all<any>(
+    const rows = this.db.all<EventRow>(
       `SELECT id, event_type, event_time, source, event_data, correlation_id
        FROM tmf_event
        WHERE json_extract(event_data, '$.entityId') = ?

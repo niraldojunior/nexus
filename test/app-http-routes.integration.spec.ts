@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { requestJson, startHttpTestApp } from './test-utils.js';
+import { startHttpTestApp } from './test-utils.js';
 
 test('App bootstrap and entity creation routes', async (t) => {
   const app = await startHttpTestApp('nexus-app-bootstrap-');

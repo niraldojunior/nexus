@@ -79,7 +79,7 @@ test/              # vitest (unit/integration) + playwright (regression)
 scripts/           # dev, seed e cargas de seed/migração
 
 docs/
-├── 1-overview/            # product-overview · business-rules · glossary
+├── 1-overview/            # product-overview · business-rules · glossary · open-questions
 ├── 2-functional-specs/    # HLDs: 01-module-geo · 02-module-resource · 03-module-service
 │   ├── _spec-template.md      # ← playbook: anatomia de HLD + template de requisito
 │   ├── _benchmark-systems.md  # ← playbook: seção N.9
@@ -110,6 +110,10 @@ Nunca misture as camadas. Um serviço **referencia** recurso (`supportingResourc
 ## 6. Cânone arquitetural — decisões NÃO-negociáveis
 
 Estas decisões estão firmadas. Respeite-as; não as reabra sem pedido explícito do usuário.
+
+> Tabela compacta para consulta rápida. A **forma longa** — com racional, exemplos, casos de borda e
+> o status real de cada decisão no código — está em `docs/1-overview/business-rules.md`. Consulte-a
+> antes de decidir qualquer coisa que dependa do *porquê* de uma regra.
 
 | # | Decisão | Regra prática |
 |---|---|---|
@@ -144,6 +148,7 @@ Estas decisões estão firmadas. Respeite-as; não as reabra sem pedido explíci
 | Propósito do produto, visão estratégica, tríade, módulos, roadmap | `docs/1-overview/product-overview.md` |
 | Regras de negócio transversais, decisões arquiteturais (C1–C10 e futuras) | `docs/1-overview/business-rules.md` |
 | Glossário de termos e acrônimos | `docs/1-overview/glossary.md` |
+| **Questão em aberto / decisão pendente** | `docs/1-overview/open-questions.md` — **registro único**; não crie listas paralelas |
 | Especificação funcional de um módulo (HLD) | `docs/2-functional-specs/0N-module-<nome>.md` |
 | Arquitetura de sistema, ADRs | `docs/3-system-design/architecture.md` |
 | Modelo de dados canônico, ERD, mapeamentos TMF | `docs/3-system-design/data-model.md` |

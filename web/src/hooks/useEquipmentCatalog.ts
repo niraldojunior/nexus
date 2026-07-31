@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import { listResourceSpecifications } from '../services/resourceApi';
 import type { ResourceSpecification } from '../services/resourceApi';
 
-type EquipmentKind = 'Splitter' | 'Pole' | 'OLT' | 'ONT' | 'CTO' | 'CPE';
-
 /**
  * Hook para carregar especificações de equipamentos disponíveis.
  * Filtra por categorias de infraestrutura passiva e equipamentos.
@@ -16,7 +14,8 @@ export function useEquipmentCatalog() {
   useEffect(() => {
     const load = async () => {
       try {
-        const specs = await listResourceSpecifications();
+        // Catálogo completo para o picker — mesmo teto usado nos demais seletores.
+        const specs = await listResourceSpecifications({ limit: 200, offset: 0 });
         // Filtrar apenas equipamentos de planta externa (splitter, poste, etc.)
         const filtered = specs.filter((spec) => {
           const cat = spec.category.toLowerCase();

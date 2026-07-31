@@ -149,7 +149,7 @@ function parseSalas(raw) {
 // Leitor de CSV com `;` e BOM, tolerante a CRLF. As linhas desta base não têm
 // campo com `;` interno nem aspas, então um split direto basta.
 function parseCsv(text) {
-  const clean = text.replace(/^﻿/, '');
+  const clean = text.replace(/^\uFEFF/, '');
   const lines = clean.split(/\r?\n/).filter((l) => l.trim().length > 0);
   const header = lines[0].split(';').map((h) => h.trim());
   return lines.slice(1).map((line) => {

@@ -25,9 +25,13 @@ type BridgeEnvelope = {
 const STATUS_INDEX = 0;
 const LENGTH_INDEX = 1;
 
-// Status values written by the worker.
+// Status values written by the worker. STATUS_OK/STATUS_ERROR are never read here — the bridge only
+// waits for "no longer pending" and then inspects the payload — but they are kept so this file
+// documents the whole wire protocol shared with postgres-sync-worker.ts.
 const STATUS_PENDING = 0;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const STATUS_OK = 1;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const STATUS_ERROR = 2;
 const STATUS_OVERFLOW = 3;
 

@@ -34,7 +34,6 @@ import type {
 import type {
   CustomerFacingService,
   ResourceFacingService,
-  Service,
   ServiceCandidate,
   ServiceCategory,
   ServiceQuery,
@@ -42,7 +41,6 @@ import type {
   ServiceSpecificationQuery,
   ServiceCategoryQuery,
   ServiceCandidateQuery,
-  ServiceRelationship,
 } from '../../modules/service/index.js';
 import type {
   ResourceOrderQuery,
@@ -200,7 +198,6 @@ const routeRequest = async ({
   config,
   logger,
   repository,
-  db,
   runtime,
 }: RouteDependencies): Promise<void> => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);

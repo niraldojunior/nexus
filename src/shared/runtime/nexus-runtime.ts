@@ -71,8 +71,7 @@ export const createNexusRuntime = (db: PostgresDatabase) => {
     },
   });
   const serviceRepository = new PostgresServiceRepository(db);
-  let serviceService: ServiceService;
-  serviceService = new ServiceService(serviceRepository, eventService, {
+  const serviceService: ServiceService = new ServiceService(serviceRepository, eventService, {
     lookupParty: (id) => {
       const party = partyService.getParty(id);
       if (!party) return undefined;

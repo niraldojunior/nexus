@@ -67,6 +67,7 @@ const buildResourceConditions = (query?: ResourceQuery): { conditions: string[];
   return { conditions, params };
 };
 
+import type { LogicalResourceRow, PhysicalResourceRow } from './rows.js';
 export class PostgresResourceRepository implements IResourceRepository {
   public constructor(private readonly db: PostgresDatabase) {
     this.seedResourceCatalog();
@@ -450,7 +451,7 @@ export class PostgresResourceRepository implements IResourceRepository {
   }
 
   public getPhysicalResource(id: string): PhysicalResource | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<PhysicalResourceRow>(
       `SELECT id, href, name, resource_specification_id, resource_type, status,
               place_id, place_type, administrative_state, operational_state, usage_state,
               manufacturer, model, serial_number, part_number, valid_for_start, valid_for_end,
@@ -481,7 +482,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     if (hasLimit) params.push(query.limit as number);
     if (hasOffset) params.push(query.offset as number);
 
-    const rows = this.db.all<any>(sql, params);
+    const rows = this.db.all<PhysicalResourceRow>(sql, params);
     const relationshipsByResourceId = this.loadResourceRelationshipsByResourceIds(rows.map((row) => row.id));
     return rows.map((row) => this.mapPhysicalResource(row, relationshipsByResourceId.get(row.id)));
   }
@@ -552,7 +553,7 @@ export class PostgresResourceRepository implements IResourceRepository {
   }
 
   public getLogicalResource(id: string): LogicalResource | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<LogicalResourceRow>(
       `SELECT id, href, name, resource_specification_id, resource_type, status, place_id, place_type,
               supporting_physical_resource_id, administrative_state, operational_state, usage_state,
               related_party, characteristics, valid_for_start, valid_for_end
@@ -582,7 +583,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     if (hasLimit) params.push(query.limit as number);
     if (hasOffset) params.push(query.offset as number);
 
-    const rows = this.db.all<any>(sql, params);
+    const rows = this.db.all<LogicalResourceRow>(sql, params);
     const relationshipsByResourceId = this.loadResourceRelationshipsByResourceIds(rows.map((row) => row.id));
     return rows.map((row) => this.mapLogicalResource(row, relationshipsByResourceId.get(row.id)));
   }
@@ -811,7 +812,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     return spec;
   }
 
-  private mapPhysicalResource(row: any, resourceRelationships: ResourceRelationship[] = this.listResourceRelationships(row.id)): PhysicalResource {
+  private mapPhysicalResource(row: PhysicalResourceRow, resourceRelationships: ResourceRelationship[] = this.listResourceRelationships(row.id)): PhysicalResource {
     const resource: PhysicalResource = {
       '@type': 'PhysicalResource',
       id: row.id,
@@ -849,7 +850,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     return resource;
   }
 
-  private mapLogicalResource(row: any, resourceRelationships: ResourceRelationship[] = this.listResourceRelationships(row.id)): LogicalResource {
+  private mapLogicalResource(row: LogicalResourceRow, resourceRelationships: ResourceRelationship[] = this.listResourceRelationships(row.id)): LogicalResource {
     const resource: LogicalResource = {
       '@type': 'LogicalResource',
       id: row.id,

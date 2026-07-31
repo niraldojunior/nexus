@@ -3,7 +3,6 @@ import { ChevronLeft } from 'lucide-react';
 import type { GeoLocation, GeoSite } from '../../services/geoApi';
 import { createResource } from '../../services/resourceApi';
 import type { ResourceSpecification } from '../../services/resourceApi';
-import { equipmentKindLabel, equipmentKindDescription, equipmentKindColor } from '../../hooks/useEquipmentCatalog';
 
 type Step = 'type' | 'location' | 'details';
 
@@ -24,7 +23,6 @@ export function AddEquipmentModal({
   draftAddress,
   selectedSite,
   equipment,
-  locationById,
   onClose,
   onCreated,
 }: AddEquipmentModalProps) {

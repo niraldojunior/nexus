@@ -1,8 +1,4 @@
 import type {
-  CreateLogicalResourceInput,
-  CreatePhysicalResourceInput,
-  CreateResourceFunctionSpecificationInput,
-  CreateResourceSpecificationInput,
   LogicalResource,
   PhysicalResource,
   ResourceCategory,
@@ -14,10 +10,6 @@ import type {
   ResourceType,
   ResourceSpecification,
   ResourceSpecificationQuery,
-  UpdateLogicalResourceInput,
-  UpdatePhysicalResourceInput,
-  UpdateResourceFunctionSpecificationInput,
-  UpdateResourceSpecificationInput,
 } from './domain.js';
 
 export interface IResourceRepository {

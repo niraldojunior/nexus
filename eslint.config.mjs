@@ -11,7 +11,7 @@ export default [
     ignores: ['docs/4-design-system/**', 'dist/**', 'web/dist/**', 'node_modules/**'],
   },
   {
-    files: ['**/*.{ts,mts,cts,js,mjs,cjs}'],
+    files: ['**/*.{ts,tsx,mts,cts,js,mjs,cjs,jsx}'],
     languageOptions: {
       globals: {
         ...globals.node,
@@ -19,6 +19,17 @@ export default [
     },
     rules: {
       'no-console': 'off',
+      // O prefixo `_` marca um binding deliberadamente nao usado (parametro exigido
+      // pela assinatura, descarte de destructuring, erro capturado e ignorado).
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+        },
+      ],
     },
   },
   {

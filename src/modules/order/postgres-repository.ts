@@ -9,6 +9,7 @@ import type {
 } from './domain.js';
 import type { IOrderRepository } from './order-repository-interface.js';
 
+import type { ResourceOrderRow, ServiceOrderRow, ServiceQualificationRow } from './rows.js';
 export class PostgresOrderRepository implements IOrderRepository {
   public constructor(private readonly db: PostgresDatabase) {}
 
@@ -51,7 +52,7 @@ export class PostgresOrderRepository implements IOrderRepository {
   }
 
   public getServiceQualification(id: string): ServiceQualification | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<ServiceQualificationRow>(
       `SELECT id, href, state, place, related_party, service_characteristic, service_qualification_item, valid_for_start, valid_for_end
        FROM tmf_service_qualification
        WHERE id = ?`,
@@ -63,7 +64,7 @@ export class PostgresOrderRepository implements IOrderRepository {
 
   public listServiceQualifications(query?: ServiceQualificationQuery): ServiceQualification[] {
     const rows = this.db
-      .all<any>(
+      .all<ServiceQualificationRow>(
         'SELECT id, href, state, place, related_party, service_characteristic, service_qualification_item, valid_for_start, valid_for_end FROM tmf_service_qualification ORDER BY id',
       )
       .map((row) => this.mapQualification(row))
@@ -107,7 +108,7 @@ export class PostgresOrderRepository implements IOrderRepository {
   }
 
   public getServiceOrder(id: string): ServiceOrder | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<ServiceOrderRow>(
       `SELECT id, href, state, description, related_party, service_order_item, note, valid_for_start, valid_for_end
        FROM tmf_service_order
        WHERE id = ?`,
@@ -119,7 +120,7 @@ export class PostgresOrderRepository implements IOrderRepository {
 
   public listServiceOrders(query?: ServiceOrderQuery): ServiceOrder[] {
     const rows = this.db
-      .all<any>(
+      .all<ServiceOrderRow>(
         'SELECT id, href, state, description, related_party, service_order_item, note, valid_for_start, valid_for_end FROM tmf_service_order ORDER BY id',
       )
       .map((row) => this.mapOrder(row))
@@ -163,7 +164,7 @@ export class PostgresOrderRepository implements IOrderRepository {
   }
 
   public getResourceOrder(id: string): ResourceOrder | undefined {
-    const row = this.db.get<any>(
+    const row = this.db.get<ResourceOrderRow>(
       `SELECT id, href, state, description, related_party, resource_order_item, note, valid_for_start, valid_for_end
        FROM tmf_resource_order
        WHERE id = ?`,
@@ -175,7 +176,7 @@ export class PostgresOrderRepository implements IOrderRepository {
 
   public listResourceOrders(query?: ResourceOrderQuery): ResourceOrder[] {
     const rows = this.db
-      .all<any>(
+      .all<ResourceOrderRow>(
         'SELECT id, href, state, description, related_party, resource_order_item, note, valid_for_start, valid_for_end FROM tmf_resource_order ORDER BY id',
       )
       .map((row) => this.mapResourceOrder(row))
@@ -184,7 +185,7 @@ export class PostgresOrderRepository implements IOrderRepository {
     return paginate(rows, query?.limit, query?.offset);
   }
 
-  private mapQualification(row: any): ServiceQualification {
+  private mapQualification(row: ServiceQualificationRow): ServiceQualification {
     return {
       '@type': 'ServiceQualification',
       id: row.id,
@@ -205,7 +206,7 @@ export class PostgresOrderRepository implements IOrderRepository {
     };
   }
 
-  private mapOrder(row: any): ServiceOrder {
+  private mapOrder(row: ServiceOrderRow): ServiceOrder {
     return {
       '@type': 'ServiceOrder',
       id: row.id,
@@ -226,7 +227,7 @@ export class PostgresOrderRepository implements IOrderRepository {
     };
   }
 
-  private mapResourceOrder(row: any): ResourceOrder {
+  private mapResourceOrder(row: ResourceOrderRow): ResourceOrder {
     return {
       '@type': 'ResourceOrder',
       id: row.id,

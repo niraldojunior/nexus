@@ -1,0 +1,137 @@
+# Questões em Aberto — Registro de Governança
+
+> **Fonte única** de acompanhamento das decisões pendentes do V.tal Nexus. Consolida as questões dos
+> HLDs de módulo, do system design e do plano de entrega.
+>
+> Regra: uma questão vive **aqui**. Os documentos de origem podem referenciá-la pelo ID, mas não
+> mantêm listas paralelas — duas listas divergem, e a divergência silenciosa é pior que a ausência.
+
+**Atualizado em:** 31/07/2026
+
+---
+
+## 1. Painel
+
+| Estado | Significado |
+|---|---|
+| 🔴 **Aberta** | Sem decisão; alguém precisa decidir |
+| 🟠 **Aguardando** | Depende de insumo externo (documento, acesso, terceiro) |
+| ✅ **Decidida** | Resolvida; mantida no registro para rastreabilidade |
+
+| Domínio | 🔴 | 🟠 | ✅ |
+|---|---|---|---|
+| Integrações (`Q-INT`) | 1 | 1 | 6 |
+| Geographic (`Q-GEO`) | 8 | — | 1 |
+| Resource (`Q-RES`) | 8 | — | — |
+| Service (`Q-SVC`) | 6 | — | — |
+| Arquitetura / Plataforma (`Q-ARQ`) | 3 | — | 2 |
+
+---
+
+## 2. Integrações
+
+| ID | Questão | Estado | Responsável |
+|---|---|---|---|
+| **Q-INT-002** | CDC do Netwin via **GoldenGate** ou extração incremental agendada? A pergunta de fundo é *quão fresco* o Nexus precisa estar durante o dual-running | 🔴 **Aberta** | Arquitetura + DBA |
+| **Q-INT-005** | Mapeamento dos modelos de dados de **Netwin, Geosite Legado e Network Core** para o modelo canônico TMF | 🟠 **Aguardando** modelos dos legados | Arquitetura + Migração |
+| Q-INT-001 | Qual serviço de geocodificação? | ✅ **Geosite Logradouros** é premissa | — |
+| Q-INT-003 | Formato e SLA da viabilidade em lote | ✅ **Foto diária** dos 22M + evento de divergência em tópico | — |
+| Q-INT-004 | Sistema de provisionamento alvo | ✅ **SIS** — já abstrai gerências, AAA e IMS | — |
+| Q-INT-006 | Conversão do CAD do Geonet para `SDO_GEOMETRY` | ✅ **Sem efeito** — Geonet não migra | — |
+| Q-INT-007 | O Geosite devolve procedência e precisão da coordenada? | ✅ **Precisão sim, procedência não** | — |
+| Q-INT-008 | O CAD do Geonet cobre planta ou território? | ✅ **Só cartografia base**; cobertura vem do Netwin | — |
+
+Detalhamento em [`../3-system-design/integrations.md`](../3-system-design/integrations.md).
+
+---
+
+## 3. Arquitetura e plataforma
+
+| ID | Questão | Estado | Responsável |
+|---|---|---|---|
+| **Q-ARQ-001** | Aprovar o esforço de converter as **5 interfaces de repositório para assíncronas** (`Promise`). É pré-condição de toda a escala — sem isso, HPA multiplica pods sem multiplicar vazão | 🔴 **Aberta** | Arquitetura + Engenharia |
+| **Q-ARQ-002** | Confirmar com Privacidade que o Nexus é **operador** (não controlador) na cadeia LGPD | 🔴 **Aberta** | Jurídico / Privacidade |
+| **Q-ARQ-003** | Criar `docs/3-system-design/adr/` para decisões novas, em vez de expandir a tabela C1–C10? | 🔴 **Aberta** | Arquitetura |
+| Q-ARQ-004 | Banco, aplicação, cache, mensageria e gateway alvo | ✅ **Oracle · OpenShift · Redis · Kafka · Apigee** | — |
+| Q-ARQ-005 | Vercel + Neon é destino ou laboratório? | ✅ **Laboratório temporário** | — |
+
+Detalhamento em [`../3-system-design/architecture.md`](../3-system-design/architecture.md) e
+[`../3-system-design/security.md`](../3-system-design/security.md).
+
+---
+
+## 4. MOD01 — Geographic
+
+| ID | Questão | Estado | Responsável |
+|---|---|---|---|
+| Q-GEO-001 | Quais SiteSpecifications entram no bootstrap? | 🔴 Aberta | Produto + Engenharia |
+| Q-GEO-002 | CN é determinístico por Região + Regional ou tem exceções? | 🔴 Aberta | Engenharia |
+| Q-GEO-003 | CLLI é obrigatório para todos os COs ou subconjunto? | 🔴 Aberta | Engenharia + Regulatório |
+| Q-GEO-004 | Quais RelationshipTypes geográficos além do bootstrap mínimo? | 🔴 Aberta | Operações |
+| Q-GEO-005 | Integração com Geosite usa API existente ou nova interface? | 🔴 Aberta | Arquitetura + Geosite |
+| Q-GEO-007 | `syncGeoPosition` será síncrono ou assíncrono? | 🔴 Aberta | Arquitetura + Produto |
+| Q-GEO-008 | Quais SLAs de eventos em produção? | 🔴 Aberta | Arquitetura + Plataforma |
+| Q-GEO-009 | Qual provedor de geocodificação automática? | ✅ **Geosite** (ver Q-INT-001) | — |
+| Q-GEO-010 | Existe hierarquia real de Sub-Sites acima de 4 níveis? | 🔴 Aberta | Engenharia |
+
+> **Q-GEO-005 e Q-INT-005 são a mesma conversa** vista por lados diferentes — funcional e técnico.
+> Levar juntas ao time do Geosite.
+
+---
+
+## 5. MOD02 — Resource
+
+| ID | Questão | Estado | Responsável |
+|---|---|---|---|
+| Q-RES-001 | Quais ResourceSpecifications entram no MVP? | 🔴 Aberta | Engenharia + Produto |
+| Q-RES-002 | Importar NetBox device-type-library? | 🔴 Aberta | Arquitetura |
+| Q-RES-004 | Oracle Property Graph e licença para 22M+ HPs | 🔴 Aberta | Arquitetura + Plataforma |
+| Q-RES-007 | Fibers internas a Cables: todas ou apenas ocupadas? | 🔴 Aberta | Arquitetura + OSP |
+| Q-RES-008 | Estratégia de carga inicial de IPAM legado | 🔴 Aberta | Backbone + Arquitetura |
+| Q-RES-010 | Cache de paths: TTL e invalidação | 🔴 Aberta | Arquitetura + Performance |
+| Q-RES-011 | PowerSupply interno vs PowerOutlet externo | 🔴 Aberta | Engenharia + Operações |
+| Q-RES-012 | Tipos operacionais adicionais de ResourceRelationship | 🔴 Aberta | Operações |
+
+---
+
+## 6. MOD03 — Service
+
+| ID | Questão | Estado | Responsável |
+|---|---|---|---|
+| Q-SVC-001 | Catálogo inicial de ServiceSpecifications CFS/RFS | 🔴 Aberta | Produto + Engenharia |
+| Q-SVC-002 | Formato, faixa e autoridade do SubscriberID | 🔴 Aberta | Produto + BSS |
+| Q-SVC-004 | Granularidade do RFS GPON (por assinante vs porta PON) | 🔴 Aberta | Engenharia + Arquitetura |
+| Q-SVC-005 | Modelagem de bundle comercial | 🔴 Aberta | Produto |
+| Q-SVC-006 | Propagação de estado CFS-RFS-Resource | 🔴 Aberta | Operações + Arquitetura |
+| Q-SVC-007 | Impact analysis atende Service Assurance externo no MVP? | 🔴 Aberta | Arquitetura + Operações |
+
+---
+
+## 7. Prioridade recomendada
+
+Ordenado por **quanto bloqueia**, não por facilidade:
+
+| # | Questão | Por que primeiro |
+|---|---|---|
+| 1 | **Q-ARQ-001** | Sem o refactor assíncrono, nenhum alvo de escala é atingível — trava tudo |
+| 2 | **Q-INT-005** | Carga inicial dos 22M depende dos modelos dos três legados |
+| 3 | Q-RES-004 | Sem Property Graph dimensionado, o path computation em escala fica em risco |
+| 4 | Q-GEO-001 + Q-RES-001 | Sem catálogo inicial não há instância confiável nem migração |
+| 5 | Q-GEO-005 | Address e sugestão de logradouro dependem da interface do Geosite |
+| 6 | Q-GEO-008 | Eventos são transversais; NFR precisa vir antes da produção |
+| 7 | Q-SVC-001 + Q-SVC-002 | Service e Order dependem disso na Fase 3 |
+
+---
+
+## 8. Referências
+
+| Onde | O quê |
+|---|---|
+| [`business-rules.md`](business-rules.md) | Decisões já firmadas (C1–C10) |
+| [`../2-functional-specs/`](../2-functional-specs/) | HLDs — origem das questões `Q-GEO`, `Q-RES`, `Q-SVC` |
+| [`../3-system-design/`](../3-system-design/) | Origem das questões `Q-INT` e `Q-ARQ` |
+| [`../5-delivery-plan/`](../5-delivery-plan/) | Roadmap e fases bloqueadas |
+
+---
+
+*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*

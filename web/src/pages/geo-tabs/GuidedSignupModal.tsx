@@ -1,8 +1,8 @@
 import { useState, useMemo, type FormEvent } from 'react';
-import { Plus, ChevronLeft, MapPin } from 'lucide-react';
+import { ChevronLeft, MapPin } from 'lucide-react';
 import type { GeoStatus, GeoSpec, GeoSite } from '../../services/geoApi';
 import { postJson } from '../../services/geoApi';
-import { siteKindFromSpec, siteKindLabel, siteKindDescription } from '../../utils/placeLabel';
+import { siteKindFromSpec, siteKindLabel, siteKindDescription, type SiteKind } from '../../utils/placeLabel';
 
 type Step = 'kind' | 'location' | 'details';
 
@@ -33,7 +33,7 @@ export function GuidedSignupModal({
 }: GuidedSignupModalProps) {
   const [step, setStep] = useState<Step>('kind');
   const [siteSpecificationId, setSiteSpecificationId] = useState(specs[0]?.id ?? '');
-  const [name, setName] = useState(draftAddress ? `${siteKindLabel(siteKindFromSpec(specById.get(siteSpecificationId)))?.split('/')[0]} - ${draftAddress.street}` : '');
+  const [name, setName] = useState(draftAddress ? `${siteKindLabel[siteKindFromSpec(specById.get(siteSpecificationId))].split('/')[0].trim()} - ${draftAddress.street}` : '');
   const [status, setStatus] = useState<GeoStatus>('planned');
   const [parentSiteId, setParentSiteId] = useState(selectedSite?.id ?? '');
   const [fedBySiteId, setFedBySiteId] = useState('');
@@ -48,7 +48,7 @@ export function GuidedSignupModal({
   );
 
   const specsByKind = useMemo(() => {
-    const map = new Map<string, GeoSpec[]>();
+    const map = new Map<SiteKind, GeoSpec[]>();
     specs.forEach((spec) => {
       const kind = siteKindFromSpec(spec);
       if (!map.has(kind)) map.set(kind, []);
@@ -150,10 +150,10 @@ export function GuidedSignupModal({
                     }`}
                   >
                     <div className="text-[0.95rem] font-semibold text-app-text">
-                      {siteKindLabel(kind)?.split('/')[0] || kind}
+                      {siteKindLabel[kind]?.split('/')[0].trim() || kind}
                     </div>
                     <div className="mt-1 text-[0.75rem] text-app-muted">
-                      {siteKindDescription(kind)}
+                      {siteKindDescription[kind]}
                     </div>
                   </button>
                 );

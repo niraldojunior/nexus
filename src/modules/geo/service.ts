@@ -302,6 +302,9 @@ const CATALOG_ROLE = 'catalog.admin';
 const PLATFORM_ROLE = 'platform.admin';
 const MIGRATION_ROLE = 'migration.job';
 
+const BULK_MODES: GeoBulkMode[] = ['validateOnly', 'atomic', 'bestEffort'];
+const BULK_MAX_ITEMS = 1000;
+
 const SITE_STATUS_TRANSITIONS: Record<GeoSiteStatus, GeoSiteStatus[]> = {
   Planned: ['InConstruction', 'Active', 'Retired'],
   InConstruction: ['Active', 'InDeactivation', 'Retired'],
@@ -2030,10 +2033,11 @@ export class GeoService {
       country: normalizedCountry,
       ...(normalizedPostcode ? { postcode: normalizedPostcode } : {}),
     };
+    const existingId = this.findAddressByOrigin(origin, context)?.id;
     return {
       item,
       origin,
-      existingId: this.findAddressByOrigin(origin, context)?.id,
+      ...(existingId ? { existingId } : {}),
       warnings,
     };
   }
@@ -2066,10 +2070,11 @@ export class GeoService {
     }
     const warnings: string[] = [];
     const origin = extractBulkOrigin(input.characteristic ?? [], 'Site', warnings);
+    const existingId = this.findSiteByOrigin(origin, context)?.id;
     return {
       item: input,
       origin,
-      existingId: this.findSiteByOrigin(origin, context)?.id,
+      ...(existingId ? { existingId } : {}),
       warnings,
     };
   }
@@ -2246,7 +2251,9 @@ export class GeoService {
     if (!characteristics || characteristics.length === 0) return;
     const writesOrigin = characteristics.some((item) => item.name.startsWith('_origin.'));
     if (!writesOrigin) return;
-    if (context.roles.includes(MIGRATION_ROLE) || context.roles.includes(PLATFORM_ROLE)) return;
+    // Deliberately not honouring PLATFORM_ROLE: `_origin` is written only by an authenticated
+    // migration job, so a platform admin acting by hand is rejected like any other operator.
+    if (context.roles.includes(MIGRATION_ROLE)) return;
     throw new AppError('_origin characteristics are migration-only', {
       code: 'GEO_ORIGIN_WRITE_FORBIDDEN',
       statusCode: 403,
@@ -2824,6 +2831,83 @@ const normalizeRelationshipCode = (code: string): string => {
   const trimmed = code.trim();
   if (trimmed === 'isFedBy') return 'fedBy';
   return trimmed;
+};
+
+const normalizeIdempotencyKey = (key: string | undefined): string => {
+  const trimmed = key?.trim();
+  if (!trimmed) {
+    throw new AppError('bulk operations require an idempotency key', {
+      code: 'GEO_BULK_IDEMPOTENCY_KEY_REQUIRED',
+      statusCode: 400,
+    });
+  }
+  return trimmed;
+};
+
+const resolveBulkMode = (input: GeoBulkInput<unknown>): GeoBulkMode => {
+  if (input.mode !== undefined) {
+    if (!BULK_MODES.includes(input.mode)) {
+      throw new AppError('invalid bulk mode', {
+        code: 'GEO_BULK_MODE_INVALID',
+        statusCode: 400,
+      });
+    }
+    return input.mode;
+  }
+  if (input.validateOnly) return 'validateOnly';
+  if (input.atomic) return 'atomic';
+  return 'bestEffort';
+};
+
+const normalizeBulkItems = <TItem>(items: TItem[]): TItem[] => {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new AppError('bulk job requires at least one item', {
+      code: 'GEO_BULK_ITEMS_REQUIRED',
+      statusCode: 400,
+    });
+  }
+  if (items.length > BULK_MAX_ITEMS) {
+    throw new AppError(`bulk job accepts at most ${BULK_MAX_ITEMS} items`, {
+      code: 'GEO_BULK_ITEMS_LIMIT_EXCEEDED',
+      statusCode: 400,
+    });
+  }
+  return [...items];
+};
+
+const readOriginText = (characteristics: Characteristic[], name: string): string => {
+  const found = characteristics.find(
+    (characteristic) => characteristic.name.trim().toLowerCase() === name,
+  );
+  if (found === undefined || found.value === null || typeof found.value === 'object') return '';
+  return String(found.value).trim();
+};
+
+const extractBulkOrigin = (
+  characteristics: Characteristic[],
+  defaultEntity: string,
+  warnings: string[],
+): BulkOrigin => {
+  const system = readOriginText(characteristics, '_origin.system');
+  const id = readOriginText(characteristics, '_origin.id');
+  const entity = readOriginText(characteristics, '_origin.entity') || defaultEntity;
+  if (!system || !id) {
+    warnings.push('item sem _origin.system/_origin.id: deduplicação por origem indisponível');
+  }
+  return { system, entity, id };
+};
+
+const originMatches = (
+  characteristics: Characteristic[] | undefined,
+  origin: BulkOrigin,
+): boolean => {
+  if (!origin.system || !origin.id) return false;
+  const candidate = extractBulkOrigin(characteristics ?? [], origin.entity, []);
+  return (
+    candidate.system === origin.system &&
+    candidate.id === origin.id &&
+    candidate.entity === origin.entity
+  );
 };
 
 const normalizeCountry = (value?: string): string => (value ?? 'BR').trim().toUpperCase();

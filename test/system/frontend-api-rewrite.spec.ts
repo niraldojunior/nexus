@@ -66,9 +66,15 @@ test('frontend rewrites API calls to /api in the browser runtime', async ({ page
 
   await expect(page.getByText('Nenhuma conversa ainda')).toBeVisible();
 
+  // "Recursos" apenas abre as categorias na navegação; a página só carrega ao escolher uma.
   await page.getByRole('navigation').getByRole('button', { name: 'Recursos' }).click();
-  await expect(page.getByRole('heading', { name: 'Recursos Físicos' })).toBeVisible();
+  await page.getByRole('navigation').getByRole('button', { name: 'Acesso', exact: true }).click();
+  // O catálogo é stubado vazio acima, então o título cai no code da categoria em vez do
+  // nome amigável ("Equipamentos de Acesso") que a app resolveria com dados reais.
+  await expect(page.getByRole('heading', { name: 'Equipment.Access' })).toBeVisible();
 
   expect(seenUrls).toContain('/api/v1/research/sessions');
-  expect(seenUrls).toContain('/api/v1/resource/workspace?tab=PhysicalResource&limit=20&offset=0');
+  expect(seenUrls).toContain(
+    '/api/v1/resource/workspace?tab=PhysicalResource&limit=20&offset=0&category=Equipment.Access',
+  );
 });

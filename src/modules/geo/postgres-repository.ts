@@ -655,14 +655,14 @@ export class PostgresGeoRepository implements IGeoRepository {
     const now = new Date().toISOString();
     this.db.run(
       `INSERT INTO tmf_geographic_relationship_type
-       (id, href, code, name, inverse_code, symmetric, allowed_source_categories, allowed_target_categories,
+       (id, href, code, name, inverse_code, is_symmetric, allowed_source_categories, allowed_target_categories,
         cardinality, lifecycle_status, is_bootstrap, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(code) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
        inverse_code = excluded.inverse_code,
-       symmetric = excluded.symmetric,
+       is_symmetric = excluded.is_symmetric,
        allowed_source_categories = excluded.allowed_source_categories,
        allowed_target_categories = excluded.allowed_target_categories,
        cardinality = excluded.cardinality,
@@ -691,7 +691,7 @@ export class PostgresGeoRepository implements IGeoRepository {
 
   public getRelationshipType(code: string): GeographicRelationshipType | undefined {
     const row = this.db.get<GeographicRelationshipTypeRow>(
-      `SELECT id, href, code, name, inverse_code, symmetric, allowed_source_categories, allowed_target_categories,
+      `SELECT id, href, code, name, inverse_code, is_symmetric, allowed_source_categories, allowed_target_categories,
               cardinality, lifecycle_status, is_bootstrap
        FROM tmf_geographic_relationship_type
        WHERE LOWER(code) = LOWER(?)`,
@@ -721,7 +721,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      `SELECT id, href, code, name, inverse_code, symmetric, allowed_source_categories, allowed_target_categories,
+      `SELECT id, href, code, name, inverse_code, is_symmetric, allowed_source_categories, allowed_target_categories,
               cardinality, lifecycle_status, is_bootstrap
        FROM tmf_geographic_relationship_type`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
@@ -1315,7 +1315,7 @@ export class PostgresGeoRepository implements IGeoRepository {
       code: row.code,
       name: row.name,
       inverseCode: row.inverse_code,
-      symmetric: Boolean(row.symmetric),
+      symmetric: Boolean(row.is_symmetric),
       allowedSourceCategories: JSON.parse(row.allowed_source_categories || '[]'),
       allowedTargetCategories: JSON.parse(row.allowed_target_categories || '[]'),
       cardinality: JSON.parse(row.cardinality || '{}'),

@@ -248,6 +248,43 @@ O desenho alvo completo sobre essa stack está em
 
 ---
 
+## Fidelidade física — princípio transversal (candidato a C11)
+
+**Regra.** Todo objeto que a operação cadastra corresponde a algo que existe no mundo físico e que
+alguém pode tocar em campo. Arestas de grafo, trechos, vãos e adjacências são **derivados** das
+entidades reais e de suas relações — nunca cadastrados como entidade própria. Se um modelo exige
+inventar um registro apenas para amarrar outros dois, o modelo está errado.
+
+**Origem.** Consulta operacional com a área de rede externa, acesso e backbone, registrada em
+[`../2-functional-specs/inspirations/geosite-legado.md`](../2-functional-specs/inspirations/geosite-legado.md).
+O sistema legado de planta externa exige cadastrar **arcos** — a aresta do grafo — para representar
+infraestrutura subterrânea. A avaliação da operação foi direta: *"o arco nem existe"*.
+
+**Racional.** O custo de uma entidade artificial não é só de usabilidade. Ela cria uma classe de
+inconsistência em que o objeto inventado está cadastrado e o objeto real não — o inventário passa em
+toda validação de campo obrigatório e mesmo assim não descreve a rede. Foi exatamente o caso relatado:
+caixas e arcos cadastrados, linha de duto ausente.
+
+**Como se aplica.** Não substitui C1 (o vocabulário continua sendo o TMF) nem C2 (a fronteira
+Geo↔Resource continua no Rack). Atua sobre o que se pede ao usuário: a amarração sai da relação entre
+objetos reais, e o que é aresta vira consulta computada. Materializações concretas:
+
+| Onde | O que muda |
+|---|---|
+| `REQ-MOD02-026` | Banco de dutos ⊃ duto ⊃ sub-duto ⊃ cabo, com endpoints em caixas reais; trecho A↔Z é derivado |
+| `REQ-MOD02-012` | Grafo de path computation montado a partir de contenção e endpoints; nenhuma rota cria aresta |
+| `REQ-MOD02-027` | Ocupação e completude são detectadas, não digitadas |
+| `01-module-geo.md` §4.7 e `02-module-resource.md` §4.8 | Princípio declarado nos dois módulos |
+
+Status: 📐 **Previsto no design** — declarado nos HLDs 1 e 2; a implementação está nos itens
+`DEV-RES-007` e `DEV-RES-008`.
+
+> A promoção deste princípio a **C11** — e a consequente atualização da tabela do `AGENTS.md` —
+> depende de Q-ARQ-003, que decide se decisões novas expandem a lista C1–C10 ou passam a viver em
+> `docs/3-system-design/adr/`. Até lá, ele vale como princípio transversal registrado aqui.
+
+---
+
 ## Resumo do descompasso cânone × código
 
 Consolidado das divergências apontadas acima, para quem for planejar a evolução:

@@ -2,6 +2,7 @@ import { Worker } from 'node:worker_threads';
 import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCanonicalId } from '../utils/canonical-id.js';
+import { MIGRATIONS_SQL, SCHEMA_SQL, transformSchemaSql } from './schema.js';
 
 type BridgeRequest =
   | { type: 'initialize' }
@@ -97,6 +98,11 @@ export class PostgresSyncBridge {
         connectionString,
         controlBuffer: this.controlBuffer,
         dataBuffer: this.dataBuffer,
+        // The worker runs as a raw entry point (as .ts under Vitest), where a relative
+        // `./schema.js` import does not resolve. Reading the canonical DDL here and handing it
+        // over keeps schema.ts the single source of truth for the runtime schema.
+        schemaSql: transformSchemaSql(SCHEMA_SQL),
+        migrationsSql: MIGRATIONS_SQL,
       },
       transferList: [],
     });

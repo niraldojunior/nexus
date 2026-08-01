@@ -10,8 +10,8 @@ TMFC002 + TMFC022 · TMF633 / TMF638 / TMF688
 |---|---|
 | **Document Reference** | VTN-HLD-MOD03-SVC |
 | **Sequência de HLD** | HLD04 (4º documento) · Módulo 3 da arquitetura |
-| **Versão** | 1.1 — draft |
-| **Data** | Julho 2026 |
+| **Versão** | 1.2 — draft |
+| **Data** | Agosto 2026 |
 | **Documento âncora** | VTN-HLD-OVERVIEW-001 |
 | **HLDs predecessores** | VTN-HLD-MOD01-GEO (Geographic) · VTN-HLD-MOD02-RES (Resource) |
 | **TMFCs cobertos** | TMFC002 — Service Inventory Mgmt; TMFC022 — Service Catalog Mgmt |
@@ -87,7 +87,7 @@ O backend e o frontend já entregam a base TMF633/TMF638. A aderência abaixo co
 | **REQ-MOD03-005** | Parcial | Estados válidos, PATCH, soft-terminate e eventos estão implementados. | Máquina de transições, razões, propagação e histórico semântico. | Q-SVC-006 | DEV-SVC-002, DEV-SVC-004 |
 | **REQ-MOD03-006** | Parcial | CFS exige SubscriberID e RFS suportante; código/UI/MCP proíbem `supportingResource` direto. | Política completa de Tenant, unicidade e reconciliação do subscriber. | Q-SVC-002 | DEV-SVC-003, DEV-X-004 |
 | **REQ-MOD03-007** | Parcial | RFS exige Resource existente e pode compor outros RFS. | Invariantes técnicas, compartilhamento/capacidade e lifecycle acoplado. | Q-SVC-004 | DEV-SVC-004 |
-| **REQ-MOD03-008** | Parcial | `supportingResource` é validado, persistido e filtrável; CFS direto é rejeitado. | Reverse impact completo, papéis, cardinalidades e reação a eventos Resource. | Q-SVC-007 | DEV-SVC-004 |
+| **REQ-MOD03-008** | Parcial | `supportingResource` é validado, persistido e filtrável; CFS direto é rejeitado. | Reverse impact completo, papéis, cardinalidades, reação a eventos Resource e o trace composto até o ativo civil (RF-005/RF-006). | Q-SVC-007 | DEV-SVC-004, DEV-RES-003 |
 | **REQ-MOD03-009** | Parcial | `supportingService` valida existência e tipo RFS. | Detecção de ciclos, expansão da árvore, compartilhamento e propagação de estado. | Q-SVC-004, Q-SVC-006 | DEV-SVC-004 |
 | **REQ-MOD03-010** | Parcial | `place` é persistido, validado e filtrável com múltiplos papéis. | Semântica A/Z, re-home, cobertura e validação geográfica avançada. | — | DEV-SVC-002 |
 | **REQ-MOD03-011** | Parcial | SubscriberID é obrigatório no CFS e possui filtro dedicado. | Geração Nexus-native, unicidade, faixa, autoridade e convivência legado. | Q-SVC-002 | DEV-SVC-003 |
@@ -922,6 +922,10 @@ GET /service?supportingResource.id=res-port-pon-rj-bot-0-1-3&state=active
 | **RF-002** | **Forward trace** | GET serviço → recursos de suporte (com papel). |
 | **RF-003** | **Reverse trace** | GET por supportingResource → serviços impactados. |
 | **RF-004** | **Consistência por evento** | Consumir ResourceStateChange/Delete (Módulo 2) e marcar serviços impactados. |
+| **RF-005** | **Trace físico completo** | Encadear serviço → RFS → recursos → trajeto óptico → **trajeto civil** (cabo, duto, banco de dutos, caixa, poste), compondo com REQ-MOD02-012 RF-010. Responde "que ativos físicos, até a infraestrutura civil, sustentam este serviço". |
+| **RF-006** | **Impacto reverso a partir de ativo civil** | A partir de uma caixa, duto, banco de dutos ou poste, listar os CFS afetados — passando por REQ-MOD02-012 RF-011 e pelo reverse trace deste requisito. Responde "que clientes caem se esta caixa for arrancada". |
+
+> **A rastreabilidade que a operação pede é mais longa que a ponte Service↔Resource.** `supportingResource` liga o RFS ao recurso de rede; a pergunta operacional real vai até o ativo civil que sustenta aquele recurso. Nenhum dos dois lados resolve isso sozinho: o Módulo 3 conhece o serviço e o recurso, o Módulo 2 conhece o trajeto e a infraestrutura. O trace completo é a composição das duas consultas, e não justifica duplicar modelagem em nenhum dos lados.
 
 ### 13.7 Regras de Negócio
 
@@ -930,6 +934,8 @@ GET /service?supportingResource.id=res-port-pon-rj-bot-0-1-3&state=active
 | **RN-001** | supportingResource só em RFS (CFS é indireto, via RFS). |
 | **RN-002** | Vincular recurso inexistente é rejeitado (422). |
 | **RN-003** | Delete/suspensão de Resource com serviço ativo dependente gera evento de alerta (não bloqueia no Módulo 2, mas sinaliza). |
+| **RN-004** | O trace físico e o impacto reverso são **consultas compostas**: o Módulo 3 não copia trajeto, geometria nem atributo de infraestrutura para dentro do Service. |
+| **RN-005** | Trecho sem infraestrutura declarada aparece no resultado como lacuna explícita — o impacto nunca é inferido para preencher buraco de inventário. |
 
 ### 13.8 Critérios de Aceite
 
@@ -938,6 +944,9 @@ GET /service?supportingResource.id=res-port-pon-rj-bot-0-1-3&state=active
 | **CA-001** | **Validação** | Vincular Resource inexistente retorna 422. |
 | **CA-002** | **Reverse trace** | GET por recurso lista serviços ativos dependentes. |
 | **CA-003** | **Propagação** | ResourceStateChange (down) marca serviços como impactados. |
+| **CA-004** | **Trace físico completo** | Consulta a partir de um CFS FTTH devolve RFS, porta PON, cabo, fibra, CTO e a infraestrutura civil do percurso (duto, banco, caixas, postes), em ordem. |
+| **CA-005** | **Impacto de ativo civil** | Consulta a partir de uma caixa subterrânea devolve a lista de CFS afetados, com contagem por Tenant. |
+| **CA-006** | **Lacuna explícita** | Serviço cujo cabo não tem apoio declarado em parte do percurso devolve o trace com o trecho marcado como lacuna, sem interromper a resposta. |
 
 ### 13.9 Mapeamento contra sistemas de referência
 
@@ -945,6 +954,7 @@ GET /service?supportingResource.id=res-port-pon-rj-bot-0-1-3&state=active
 |---|---|---|---|---|
 | **Serviço → recurso** | Portas e Serviços | "uses" (Service → circuit) | Indireto (L2VPN termination) | **supportingResource (referência por ID)** |
 | **Impacto reverso** | Relatório | Manual | Limitado | **Reverse trace por query/evento** |
+| **Serviço → ativo civil (cabo, duto, caixa)** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Consulta composta com REQ-MOD02-012 — sem duplicar modelagem** |
 
 ---
 
@@ -1698,6 +1708,7 @@ CFS "CloudVoIP-10ramais-Acme" (SubscriberID SUB-VOIP-7788)
 |---|---|---|---|
 | 1.0 | Junho 2026 | Produto — V.tal Nexus | Versão inicial do HLD do Módulo 3 — Nexus Service Domain (HLD04), com 16 requisitos alinhados a TMF633 e TMF638, separação CFS/RFS, decisão de wholesale e fronteira Home Passed, cenários ilustrativos e proveniência `_origin`. |
 | 1.1 | Julho 2026 | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: adiciona matriz dos 16 requisitos, documenta a base TMF633/638 e o workspace atual, normaliza os requisitos 014–016 e liga os gaps de implementação ao backlog `DEV-*`. |
+| 1.2 | Agosto 2026 | Produto — V.tal Nexus | Incorporação da consulta operacional de OSP (`inspirations/geosite-legado.md`): REQ-MOD03-008 ganha o trace físico completo até o ativo civil (RF-005) e o impacto reverso a partir de caixa, duto ou poste (RF-006), como consultas compostas com REQ-MOD02-012 — sem duplicar modelagem de infraestrutura no Service Domain. |
 
 ---
 

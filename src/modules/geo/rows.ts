@@ -106,7 +106,7 @@ export type GeographicRelationshipTypeRow = {
   code: string;
   name: string;
   inverse_code: string;
-  symmetric: number | null;
+  is_symmetric: number | null;
   allowed_source_categories: string | null;
   allowed_target_categories: string | null;
   cardinality: string | null;

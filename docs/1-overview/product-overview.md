@@ -52,9 +52,9 @@ A decisão estruturante do Nexus é separar o inventário em três camadas que n
 
 | # | Módulo | Responde | Open APIs | Estado |
 |---|---|---|---|---|
-| 1 | **Geographic** | Onde | TMF673, TMF674, TMF675 | ⚠️ Base implementada; aderência parcial ao HLD 1.2 |
-| 2 | **Resource** | O que existe | TMF634, TMF639, TMF664 | ⚠️ Base implementada; aderência parcial ao HLD 1.3 |
-| 3 | **Service** | Para quê / quem | TMF633, TMF638 | ⚠️ Base implementada; aderência parcial ao HLD 1.1 |
+| 1 | **Geographic** | Onde | TMF673, TMF674, TMF675 | ⚠️ Base implementada; aderência parcial ao HLD 1.3 |
+| 2 | **Resource** | O que existe | TMF634, TMF639, TMF664 | ⚠️ Base implementada; aderência parcial ao HLD 1.4 |
+| 3 | **Service** | Para quê / quem | TMF633, TMF638 | ⚠️ Base implementada; aderência parcial ao HLD 1.2 |
 | 4 | **Order & Fulfillment** | Viabilidade e provisionamento | TMF641, TMF645, TMF652 | ✅ Implementado |
 | 5 | **Process Orchestration** | Fluxo de processo | TMF701 | 📐 Previsto |
 | 6 | **Party & Tenant** | Quem é quem | TMF632, TMF669 | ✅ Implementado |
@@ -162,6 +162,7 @@ O cenário que atravessa as três camadas e demonstra por que **Home Passed não
 | Banda larga residencial via ISP (wholesale Bitstream) | [`03-module-service.md`](../2-functional-specs/03-module-service.md) §22.1 |
 | Link dedicado multiponto L3VPN (CFS→RFS acesso+transporte+backbone) | [`03-module-service.md`](../2-functional-specs/03-module-service.md) §22.2 |
 | CloudVoIP sobre link empresarial (`serviceRelationship dependsOn`) | [`03-module-service.md`](../2-functional-specs/03-module-service.md) §22.3 |
+| Infraestrutura subterrânea — caixa → banco de dutos → duto → cabo, com trecho derivado e sem entidade artificial | [`02-module-resource.md`](../2-functional-specs/02-module-resource.md) §31.8 |
 
 ---
 
@@ -171,7 +172,7 @@ O cenário que atravessa as três camadas e demonstra por que **Home Passed não
 |---|---|---|
 | **Fundação** | Bootstrap, config, persistência, auth, logging, CI | ✅ Concluída |
 | **Tríade — base** | Geographic, Resource e Service com Open APIs TMF | ✅ Concluída |
-| **Tríade — aderência aos HLDs** | Fechar gaps dos 53 requisitos e decisões pendentes | ⚠️ Em andamento (`DEV-*`) |
+| **Tríade — aderência aos HLDs** | Fechar gaps dos 57 requisitos e decisões pendentes | ⚠️ Em andamento (`DEV-*`) |
 | **Order & Party** | Viabilidade, ordens e multi-tenant | ✅ Concluída |
 | **Carga de dados** | Estações e recursos reais do Netwin | ⚠️ Em andamento |
 | **Convergência ao cânone** | UUID v7, `_origin`, outbox TMF688 | 📐 Pendente |

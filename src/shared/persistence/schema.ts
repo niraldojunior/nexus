@@ -50,6 +50,10 @@ export const TABLE_NAMES = [
 
 // Column migrations added after the base schema so databases created before these columns get
 // upgraded. Postgres supports ADD COLUMN IF NOT EXISTS natively, so this is idempotent.
+//
+// Order matters where a CHECK constraint is being replaced: drop the old constraint *before* the
+// UPDATE that rewrites the values, otherwise the rewrite is rejected by the constraint it is meant
+// to replace (see tmf_geographic_site_status_check below).
 export const MIGRATIONS_SQL = `
   ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS place_id TEXT;
   ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS place_type TEXT;
@@ -131,11 +135,11 @@ export const MIGRATIONS_SQL = `
   ALTER TABLE tmf_geographic_site ADD COLUMN IF NOT EXISTS status_date TIMESTAMPTZ;
   ALTER TABLE tmf_geographic_site ADD COLUMN IF NOT EXISTS status_reason TEXT;
   ALTER TABLE tmf_geographic_site ADD COLUMN IF NOT EXISTS site_addresses TEXT;
+  ALTER TABLE tmf_geographic_site DROP CONSTRAINT IF EXISTS tmf_geographic_site_status_check;
   UPDATE tmf_geographic_site SET status = 'Planned' WHERE status = 'planned';
   UPDATE tmf_geographic_site SET status = 'Active' WHERE status = 'active';
   UPDATE tmf_geographic_site SET status = 'InDeactivation' WHERE status = 'suspended';
   UPDATE tmf_geographic_site SET status = 'Retired' WHERE status = 'terminated';
-  ALTER TABLE tmf_geographic_site DROP CONSTRAINT IF EXISTS tmf_geographic_site_status_check;
   ALTER TABLE tmf_geographic_site
     ADD CONSTRAINT tmf_geographic_site_status_check
     CHECK(status IN ('Planned', 'InConstruction', 'Active', 'InDeactivation', 'Retired'));
@@ -166,7 +170,7 @@ export const MIGRATIONS_SQL = `
     code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     inverse_code TEXT NOT NULL,
-    symmetric INTEGER NOT NULL DEFAULT 0,
+    is_symmetric INTEGER NOT NULL DEFAULT 0,
     allowed_source_categories TEXT,
     allowed_target_categories TEXT,
     cardinality TEXT,
@@ -444,7 +448,7 @@ export const SCHEMA_SQL = `
         code TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
         inverse_code TEXT NOT NULL,
-        symmetric INTEGER NOT NULL DEFAULT 0,
+        is_symmetric INTEGER NOT NULL DEFAULT 0,
         allowed_source_categories TEXT,
         allowed_target_categories TEXT,
         cardinality TEXT,

@@ -72,6 +72,8 @@ Cenários já validados e documentados:
 | Banda larga residencial via ISP (wholesale Bitstream) | `03-module-service.md` §22.1 |
 | Link dedicado multiponto L3VPN (CFS→RFS acesso+transporte+backbone) | `03-module-service.md` §22.2 |
 | CloudVoIP sobre link empresarial (serviceRelationship dependsOn) | `03-module-service.md` §22.3 |
+| Infraestrutura subterrânea — caixa → banco de dutos → duto → cabo, sem entidade intermediária | `02-module-resource.md` §31.8 |
+| Traçado de linha de duto no navegador, com snap em caixas existentes | `01-module-geo.md` §18.8 |
 
 ---
 

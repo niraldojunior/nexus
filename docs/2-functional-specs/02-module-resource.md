@@ -715,7 +715,11 @@ Atributos canônicos da entidade Resource (PhysicalResource | LogicalResource) (
     { "name": "Serial",         "value": "HW2024001234" },
     { "name": "Tecnologia",     "value": "GPON" },
     { "name": "MAC_Management", "value": "00:1A:2B:3C:4D:5E" },
-    { "name": "Firmware",       "value": "V800R022C00SPC100" }
+    { "name": "Firmware",       "value": "V800R022C00SPC100" },
+    { "name": "_asset.system",  "value": "SAP" },
+    { "name": "_asset.id",      "value": "100045321" },
+    { "name": "_asset.class",   "value": "EQUIP-TRANSMISSAO" },
+    { "name": "_asset.syncedAt","value": "2026-07-28T02:10:00Z" }
   ],
   "relatedParty": [
     { "party": { "id": "party-huawei",   "@referredType": "Organization" }, "role": "manufacturer" },
@@ -1045,10 +1049,14 @@ Atributos canônicos da entidade PhysicalResource especializado (TMF639):
   "resourceSpecification": { "id": "spec-duto-pvc-100mm" },
   "place": { "id": "loc-linestring-rjbot-duto-001", "@referredType": "GeographicLocation" },
   "resourceCharacteristic": [
-    { "name": "diametro_mm",      "value": 100 },
-    { "name": "comprimento_m",    "value": 800 },
-    { "name": "capacity_cables",  "value": 4 },
-    { "name": "cables_installed", "value": 2 }
+    { "name": "diametro_mm",   "value": 100 },
+    { "name": "comprimento_m", "value": 800 }
+  ],
+  "resourceRelationship": [
+    { "relationshipType": "endpointA",
+      "resource": { "id": "res-caixa-rjbot-0021", "@referredType": "Resource" } },
+    { "relationshipType": "endpointZ",
+      "resource": { "id": "res-caixa-rjbot-0022", "@referredType": "Resource" } }
   ]
 }
 ]
@@ -1067,10 +1075,10 @@ Atributos canônicos da entidade PhysicalResource especializado (TMF639):
 | **RF-001** | **Criar Support Structure** | POST /resource com spec do tipo SupportStructure, place obrigatório (Point/LineString), characteristics conforme spec. |
 | **RF-002** | **Tipos canônicos V.tal** | Catálogo pré-populado: Poste-Eucalipto-10m, Poste-Concreto-12m, Poste-Concessionária-9m, Manhole-AT-Padrão, Manhole-Comercial, Duto-PVC-100mm, Duto-PEAD-50mm, Torre-Triangular-30m, Torre-Monopolo-25m, Caixa-Emenda-Aérea-FOSC, Caixa-Emenda-Subterrânea. |
 | **RF-003** | **Propriedade e SLA** | Suportar characteristic owner (V.tal | Light | Enel | Cemig | CPFL | Equatorial | outras concessionárias) e contractRef para postes alugados. |
-| **RF-004** | **Capacidade física** | Para dutos: characteristic capacity_cables (número máximo de cabos) e cables_installed (atual). Para postes: max_cables. |
-| **RF-005** | **Validação de capacidade** | Bloquear passagem de novo cabo (REQ-MOD02-010) em duto com capacity_cables atingida. |
+| **RF-004** | **Capacidade física** | Para postes: characteristic max_cables e cables_atual. Para dutos, capacidade e ocupação **não são characteristics digitadas** — são derivadas da contenção definida em REQ-MOD02-026. |
+| **RF-005** | **Validação de capacidade** | Bloquear passagem de novo cabo (REQ-MOD02-010) quando a via estiver ocupada, conforme RN-005 de REQ-MOD02-026. |
 | **RF-006** | **Identificadores externos** | Manter integração com sistemas legados via characteristic Sicom_ID, Geosite_OSP_ID, Concessionária_TAG. |
-| **RF-007** | **Trajeto de dutos** | Para dutos, place=LineString com sequência de coordenadas; ferramenta de digitalização sobre mapa. |
+| **RF-007** | **Trajeto de dutos** | Para dutos, place=LineString com sequência de coordenadas, traçada no editor geoespacial do navegador (REQ-MOD01-013) ou importada como GeoJSON. |
 | **RF-008** | **Cadastro em massa** | Importar lote de postes/dutos via CSV/GeoJSON com validação geométrica e de catálogo. |
 | **RF-009** | **Visualização no mapa** | Renderizar Support Structures no mapa com ícones diferenciados por tipo (REQ-MOD01-011). |
 | **RF-010** | **Inventário compartilhado** | Listar todos os cabos que passam por uma estrutura: GET /resource/{id}/supports. |
@@ -1081,11 +1089,12 @@ Atributos canônicos da entidade PhysicalResource especializado (TMF639):
 |---|---|
 | **RN-001** | place é obrigatório para Support Structures — recurso de OSP sem georreferenciamento é inválido. |
 | **RN-002** | Postes de terceiros (owner != V.tal) exigem contractRef para faturamento de aluguel. |
-| **RN-003** | Duto com cables_installed = capacity_cables não aceita novos cabos — exigir expansão ou novo duto. |
+| **RN-003** | Duto sem via livre não aceita novos cabos — exigir expansão, sub-duto ou novo duto. A contagem de ocupação é derivada (REQ-MOD02-026 RN-004), nunca mantida à mão. |
 | **RN-004** | Excluir Support Structure com cabos passando é bloqueado — exigir realocação dos cabos primeiro. |
 | **RN-005** | Caixa de emenda só pode existir em pontos onde há cabo passando ou planejado. |
 | **RN-006** | Sicom_ID e Geosite_OSP_ID são únicos quando informados (rastreabilidade com sistemas legados). |
 | **RN-007** | Toda alteração geográfica (mover poste) gera evento crítico e exige Audit Trail. |
+| **RN-008** | Support Structure linear (duto, banco de dutos) exige endpoints A e Z apontando para estruturas reais — ver REQ-MOD02-026 RN-001 e RN-002. Estrutura linear sem extremidades é detectada como finding pelo REQ-MOD02-027. |
 
 ### 13.8 Critérios de Aceite
 
@@ -1093,8 +1102,8 @@ Atributos canônicos da entidade PhysicalResource especializado (TMF639):
 |---|---|---|
 | **CA-001** | **Criar poste próprio** | POST com spec=Poste-Eucalipto-10m, place=Point, characteristic=[{altura:10},{material:eucalipto},{owner:V.tal}] retorna 201. |
 | **CA-002** | **Criar poste de terceiro** | POST com owner=Light + contractRef preenchido é aceito; sem contractRef retorna 400. |
-| **CA-003** | **Criar duto com trajeto** | POST com spec=Duto-PVC-100mm, place=LineString com 5 pontos, capacity=4 retorna 201. |
-| **CA-004** | **Capacidade esgotada** | Tentativa de adicionar 5º cabo a duto com capacity_cables=4 retorna 409 com mensagem específica. |
+| **CA-003** | **Criar duto com trajeto** | POST com spec=Duto-PVC-100mm, place=LineString com 5 pontos e endpoints A/Z em caixas existentes retorna 201; sem endpoint retorna 422 (REQ-MOD02-026 CA-002). |
+| **CA-004** | **Capacidade esgotada** | Tentativa de adicionar cabo em duto sem via livre retorna 409, com a ocupação derivada na mensagem. |
 | **CA-005** | **Bloqueio de exclusão** | DELETE em poste com cabos passando retorna 409 com lista de cabos. |
 | **CA-006** | **Importação em lote** | POST /resource/bulk com 500 postes em GeoJSON retorna relatório com sucessos/falhas detalhados. |
 | **CA-007** | **Visualização** | GET /map/resources?type=SupportStructure&bbox=... retorna FeatureCollection com postes/manholes/dutos. |
@@ -1105,7 +1114,7 @@ Atributos canônicos da entidade PhysicalResource especializado (TMF639):
 |---|---|---|---|---|
 | **Modelagem de Support Structures** | Sim (Outside Plant) | Subclasses no metamodelo | Não identificado no levantamento | **PhysicalResource tipado (TMF639)** |
 | **Propriedade (V.tal/terceiros)** | Sim | Atributo livre | Não identificado no levantamento | **characteristic owner + contractRef** |
-| **Capacidade de dutos** | Sim | Atributo do metamodelo | Não identificado no levantamento | **characteristic + validação no save** |
+| **Capacidade de dutos** | Sim | Atributo do metamodelo | Não identificado no levantamento | **Derivada da contenção (REQ-MOD02-026), somente-leitura** |
 | **Trajeto de dutos no mapa** | Sim (Geosite OSP) | Limitado | Não identificado no levantamento | **LineString conforme TMF675** |
 | **Identificadores legados** | IDs internos | Custom attributes | Não identificado no levantamento | **Sicom_ID, Geosite_OSP_ID como characteristics** |
 
@@ -1304,6 +1313,10 @@ Atributos canônicos da entidade PhysicalResource Cable + CableSegment (TMF639):
 | **RF-008** | **Visualização no mapa** | Renderizar cabos como linhas no mapa, com cores diferenciadas por tipo e status. |
 | **RF-009** | **Cálculo de ocupação de fibras** | GET /resource/{cableId}/fibers/availability retorna fibras livres vs ocupadas no cabo. |
 | **RF-010** | **Substituição de cabo** | Operação especial replace que substitui um cabo por outro preservando conexões nas portas. |
+| **RF-011** | **Trajeto de infraestrutura** | Expor, além do traçado geográfico (LineString), a sequência ordenada de infraestrutura atravessada — postes, caixas, bancos de dutos, dutos e sub-dutos (REQ-MOD02-026): `GET /resource/{cableId}/infra-path`. |
+| **RF-012** | **Lacunas de apoio** | Identificar trechos do cabo sem infraestrutura de apoio declarada, alimentando a regra correspondente do motor de integridade (REQ-MOD02-027). |
+
+> **Dois trajetos, não um.** O `place` LineString diz **por onde o cabo passa no mapa**; o trajeto de infraestrutura diz **em que ele se apoia**. Um cabo pode estar desenhado corretamente e ainda assim não ter duto nem poste declarado em parte do percurso — é uma lacuna de inventário, não um erro de geometria, e só a segunda visão a revela.
 
 ### 15.7 Regras de Negócio
 
@@ -1316,6 +1329,8 @@ Atributos canônicos da entidade PhysicalResource Cable + CableSegment (TMF639):
 | **RN-005** | Mudança de trajeto (place) de cabo Active emite warning crítico. |
 | **RN-006** | Suporte da Cable Segments: cabo macro é Resource pai; cada segmento é Resource filho com trajeto parcial. |
 | **RN-007** | Comprimento (m) deve ser consistente com a soma dos comprimentos do LineString — validação tolerante a ±5%. |
+| **RN-008** | Cabo subterrâneo se apoia em duto ou sub-duto (`containedBy`), nunca diretamente no banco de dutos — a via é a unidade de ocupação (REQ-MOD02-026). |
+| **RN-009** | Cabo com `place` desenhado e sem infraestrutura de apoio em algum trecho é aceito no cadastro, mas gera finding de completude (REQ-MOD02-027) — o dado parcial é registrado, não escondido. |
 
 ### 15.8 Critérios de Aceite
 
@@ -1327,6 +1342,8 @@ Atributos canônicos da entidade PhysicalResource Cable + CableSegment (TMF639):
 | **CA-004** | **Bloqueio de exclusão** | DELETE em cabo com fibras conectadas a ONTs retorna 409. |
 | **CA-005** | **Ocupação de fibras** | GET /resource/{cableId}/fibers retorna lista com status de cada fibra. |
 | **CA-006** | **Substituição** | POST /resource/{cableId}/replace com novo cabo preserva conexões nas portas finais. |
+| **CA-007** | **Trajeto de infraestrutura** | `GET /resource/{cableId}/infra-path` devolve, em ordem, caixa → banco → duto → caixa do percurso subterrâneo e os postes do trecho aéreo. |
+| **CA-008** | **Lacuna de apoio** | Cabo com 300 m de traçado e apoio declarado em apenas 200 m gera finding com o trecho sem infraestrutura identificado. |
 
 ### 15.9 Mapeamento contra sistemas de referência
 
@@ -1514,6 +1531,10 @@ Path computation é o "consultar cadeia de relações" do modelo de inventário 
 | **RF-007** | **Detecção de raiz comum** | Endpoint POST /resource/path/commonRoot retorna a raiz comum entre N clientes (útil em incidentes massivos). |
 | **RF-008** | **Cache e performance** | Trajetos frequentes (Central→ONT por cliente) podem ser cacheados; invalidação em mudanças de qualquer Resource do trajeto. |
 | **RF-009** | **Limite de profundidade** | Parâmetro maxHops para limitar travessia em queries de grafo (evita loops e queries pesadas). |
+| **RF-010** | **Trajeto civil do caminho** | Para um trajeto óptico calculado, devolver a infraestrutura civil correspondente: caixas, bancos de dutos, dutos, sub-dutos e postes atravessados, na ordem do percurso (REQ-MOD02-026). |
+| **RF-011** | **Impacto reverso de ativo civil** | A partir de uma caixa, banco, duto ou poste, listar os trajetos que o atravessam — insumo direto da análise de impacto do Módulo 3 (REQ-MOD03-008). |
+
+> **O grafo é derivado, não cadastrado.** Nenhuma aresta é persistida como entidade. Os vértices são os Resources reais e as arestas saem de `containedBy`, `connectedTo`, `endpointA`/`endpointZ` e `splice`. É a materialização do princípio §4.8: não existe objeto de cadastro cuja única razão de ser seja ligar outros dois. Isso vale igualmente para o trajeto civil — o trecho entre duas caixas é computado, não registrado.
 
 ### 17.7 Regras de Negócio
 
@@ -1524,6 +1545,8 @@ Path computation é o "consultar cadeia de relações" do modelo de inventário 
 | **RN-003** | Atenuação total é soma de: atenuacao_dB de splices + (distancia_m / 1000) * atenuacao_por_km da spec do cabo. |
 | **RN-004** | Cache de paths tem TTL máximo de 5 minutos; invalidação imediata em eventos de mudança nos Resources envolvidos. |
 | **RN-005** | maxHops padrão = 50 (suficiente para FTTH típico); queries excedendo retornam erro 414 com indicação. |
+| **RN-006** | O trajeto civil é derivado do apoio declarado dos cabos do caminho; trecho sem apoio declarado aparece como lacuna explícita, nunca é preenchido por inferência. |
+| **RN-007** | Nenhuma rota do módulo cria, edita ou exclui aresta, trecho ou adjacência — o contrato expõe apenas leitura computada (§4.8). |
 
 ### 17.8 Critérios de Aceite
 
@@ -1535,6 +1558,8 @@ Path computation é o "consultar cadeia de relações" do modelo de inventário 
 | **CA-004** | **Visualização** | GET /resource/path/visualize retorna GeoJSON com elementos do trajeto. |
 | **CA-005** | **Raiz comum** | POST /resource/path/commonRoot com 5 IDs de ONTs retorna a CTO/cabo comum mais próximo. |
 | **CA-006** | **Performance** | Path típico de 8 saltos resolvido em < 500ms (95p) com Oracle Property Graph. |
+| **CA-007** | **Trajeto civil** | O mesmo path OLT→ONT devolve, sob demanda, a lista ordenada de caixas, bancos, dutos e postes atravessados, com as lacunas de apoio marcadas. |
+| **CA-008** | **Impacto de caixa** | Consulta a partir de uma caixa subterrânea lista os trajetos que passam por ela; a mesma consulta encadeada ao Módulo 3 devolve os serviços afetados. |
 
 ### 17.9 Mapeamento contra sistemas de referência
 
@@ -2878,7 +2903,7 @@ A consulta operacional registrada em `inspirations/geosite-legado.md` é explíc
 
 O Netwin e o NOSSIS (`netwin.md`, `nossis.md`) trabalham com banco de dutos, linha de duto, caixa subterrânea e cabo — todos com correspondência física, o que motivou a avaliação de que "tudo aqui existe". O Kuwaiba obtém efeito semelhante por metamodelo, com contêineres físicos e containment. O Nexus adota o princípio §4.8: a hierarquia de contenção `banco ⊃ duto ⊃ sub-duto ⊃ cabo` é declarada, e **tudo que é aresta é derivado** — trecho, adjacência entre caixas e grafo de infraestrutura para path computation (REQ-MOD02-012) saem da contenção mais os endpoints, sem nenhum registro intermediário.
 
-A ocupação segue o princípio §4.10: `vias_ocupadas` não é campo digitado, e sim contagem dos cabos contidos — o que elimina por construção a divergência entre contador e realidade que aparece em REQ-MOD02-008 quando `cables_installed` é mantido à mão.
+A ocupação segue o princípio §4.10: `vias_ocupadas` não é campo digitado, e sim contagem dos cabos contidos. Contador mantido à mão diverge da realidade na primeira operação que alguém esquece de refletir; contador derivado não tem como divergir — por isso REQ-MOD02-008 passou a delegar capacidade e ocupação de duto a este requisito.
 
 ### 31.3 Mapeamento de atributos TMF
 
@@ -3576,6 +3601,8 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
 | **Q-RES-010** | Cache de paths computados (REQ-MOD02-012): TTL configurável por tipo de path? Política de invalidação em massa. | *Aberta* | *Arquitetura + Performance* |
 | **Q-RES-011** | Modelagem de fontes de equipamento (PowerSupply interno vs PowerOutlet externo): granularidade necessária para Service Assurance? | *Aberta* | *Engenharia + Operações* |
 | **Q-RES-012** | Quais tipos operacionais adicionais devem complementar o bootstrap canônico de ResourceRelationship? | *Aberta* | *Operações V.tal* |
+| **Q-RES-013** | Qual a autoridade do dado de ativo corporativo no grupo `_asset`: o SAP escreve no Nexus, o Nexus consulta o SAP sob demanda, ou a referência é frouxa e sem sincronização? A resposta define se existe integração ou apenas correlação. | *Aberta* | *Arquitetura + Patrimônio V.tal* |
+| **Q-RES-014** | Sub-duto é Resource próprio contido no duto, ou characteristic de subdivisão do duto? Recurso próprio dá ocupação e reserva por sub-duto ao custo de multiplicar o volume de registros na escala nacional. | *Aberta* | *OSP + Arquitetura* |
 
 ### 37.1 Decisões resolvidas e seus impactos arquiteturais
 
@@ -3682,6 +3709,7 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
 | 1.1 | Junho 2026 | Produto — V.tal Nexus | Incorporação de D-RES-002 (postes), D-RES-003 (Service Assurance), D-RES-004 (swap via BPMN) e D-RES-005 (catálogo de Relationships extensível). |
 | 1.2 | Junho 2026 | Produto — V.tal Nexus | Formalização de D-RES-001 (estratégia de migração e identidade): UUID v7 Nexus-native e grupo `_origin` para PhysicalResource, LogicalResource e ResourceSpecification. |
 | 1.3 | Julho 2026 | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: substitui diagnóstico NestJS obsoleto pela cobertura real TMF634/639/664, adiciona matriz dos 25 requisitos, síntese arquitetural, anatomia/JSON normalizados e gaps ligados ao backlog `DEV-*`. |
+| 1.4 | Agosto 2026 | Produto — V.tal Nexus | Incorporação da consulta operacional de OSP (`inspirations/geosite-legado.md`): princípios 4.8 a 4.11; novos REQ-MOD02-026 (banco de dutos, duto, sub-duto e trecho derivado), REQ-MOD02-027 (integridade e completude) e REQ-MOD02-028 (cadastro composto por template); grupo `_asset` em REQ-MOD02-005; trajeto de infraestrutura em REQ-MOD02-010; trajeto civil e impacto reverso em REQ-MOD02-012; Q-RES-013 e Q-RES-014; backlog DEV-RES-007 a DEV-RES-009. |
 
 ---
 

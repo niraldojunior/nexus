@@ -13,8 +13,8 @@ const specs = [
     prefix: 'REQ-MOD01-',
     questionPrefix: 'Q-GEO-',
     decisionPrefix: 'D-GEO-',
-    count: 12,
-    version: '1.2',
+    count: 13,
+    version: '1.3',
     illustrative: new Set(),
   },
   {
@@ -22,8 +22,8 @@ const specs = [
     prefix: 'REQ-MOD02-',
     questionPrefix: 'Q-RES-',
     decisionPrefix: 'D-RES-',
-    count: 25,
-    version: '1.3',
+    count: 28,
+    version: '1.4',
     illustrative: new Set(),
   },
   {
@@ -32,7 +32,7 @@ const specs = [
     questionPrefix: 'Q-SVC-',
     decisionPrefix: 'D-SVC-',
     count: 16,
-    version: '1.1',
+    version: '1.2',
     illustrative: new Set(['REQ-MOD03-012', 'REQ-MOD03-013', 'REQ-MOD03-014']),
   },
 ];
@@ -263,5 +263,5 @@ if (errors.length > 0) {
   for (const error of errors) console.error(`- ${error}`);
   process.exitCode = 1;
 } else {
-  console.log('Functional specs válidas: 53 requisitos, matrizes, JSON, links, benchmarks e backlog conferidos.');
+  console.log('Functional specs válidas: 57 requisitos, matrizes, JSON, links, benchmarks e backlog conferidos.');
 }

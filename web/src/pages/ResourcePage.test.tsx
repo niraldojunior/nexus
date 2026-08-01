@@ -353,7 +353,8 @@ test('physical create modal assumes the page category and hides the Categoria fi
   expect(screen.queryByLabelText(/^Categoria$/i)).not.toBeInTheDocument();
   expect(screen.getByLabelText(/^Tipo do Recurso$/i)).toBeInTheDocument();
   expect(screen.getByRole('combobox', { name: /Modelo/i })).toBeInTheDocument();
-  expect(screen.getByLabelText(/Tipo de Local/i)).toHaveAttribute('readonly');
+  // O tipo do local deixou de ser um campo: o PlacePicker o deriva do local escolhido.
+  expect(screen.getByLabelText(/^Local$/i)).toHaveTextContent('Selecione um local…');
 });
 
 test('physical model selection auto-populates manufacturer from the selected specification', async () => {

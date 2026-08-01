@@ -266,9 +266,15 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
     name: 'Estação',
     category: 'Site',
   });
+  // A contenção precisa ser declarada nos dois lados do catálogo: sem isso a criação da
+  // sala é recusada com 409 GEO_SPEC_CONTAINMENT_NOT_ALLOWED.
   const roomSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
     name: 'Sala',
     category: 'SubSite',
+    allowedParentSpecIds: [idOf(stationSpec)],
+  });
+  await requestJson(port, 'PATCH', `/v1/geo/site-specifications/${idOf(stationSpec)}`, {
+    allowedChildSpecIds: [idOf(roomSpec)],
   });
   const address = await requestJson(port, 'POST', '/v1/geo/addresses', {
     street: 'Rua Coronel Moreira Cesar',
@@ -515,9 +521,15 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
     name: 'Central de Icaraí',
     category: 'Site',
   });
+  // A contenção precisa ser declarada nos dois lados do catálogo (ver 'Geo tree serves one
+  // level per call').
   const subSiteSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
     name: 'Sala Técnica',
     category: 'SubSite',
+    allowedParentSpecIds: [idOf(siteSpec)],
+  });
+  await requestJson(port, 'PATCH', `/v1/geo/site-specifications/${idOf(siteSpec)}`, {
+    allowedChildSpecIds: [idOf(subSiteSpec)],
   });
   const address = await requestJson(port, 'POST', '/v1/geo/addresses', {
     street: 'Rua Belisário Augusto',

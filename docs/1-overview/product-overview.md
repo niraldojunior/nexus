@@ -157,8 +157,8 @@ O cenário que atravessa as três camadas e demonstra por que **Home Passed não
 
 | Cenário | Onde está detalhado |
 |---|---|
-| Central Office GPON — OLT→Placa→Porta→DIO→Cabo→Splitter→CTO→ONT | [`02-module-resource.md`](../2-functional-specs/02-module-resource.md) §31.2 |
-| Cliente corporativo em condomínio empresarial (VRF + CPE + porta) | [`02-module-resource.md`](../2-functional-specs/02-module-resource.md) §31.1 |
+| Central Office GPON — OLT→Placa→Porta→DIO→Cabo→Splitter→CTO→ONT | [`02-module-resource.md`](../2-functional-specs/02-module-resource.md) §34.2 |
+| Cliente corporativo em condomínio empresarial (VRF + CPE + porta) | [`02-module-resource.md`](../2-functional-specs/02-module-resource.md) §34.1 |
 | Banda larga residencial via ISP (wholesale Bitstream) | [`03-module-service.md`](../2-functional-specs/03-module-service.md) §22.1 |
 | Link dedicado multiponto L3VPN (CFS→RFS acesso+transporte+backbone) | [`03-module-service.md`](../2-functional-specs/03-module-service.md) §22.2 |
 | CloudVoIP sobre link empresarial (`serviceRelationship dependsOn`) | [`03-module-service.md`](../2-functional-specs/03-module-service.md) §22.3 |

@@ -1,20 +1,34 @@
 import { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
 import type {
   GeographicAddress,
+  GeoAuditLog,
+  GeoBulkJob,
+  GeoBulkJobResult,
   GeoEvent,
   GeographicLocation,
+  GeographicRelationshipType,
   GeographicSite,
+  GeographicSiteReferences,
   GeographicSiteRelationship,
   GeographicSiteSpecification,
+  GeographicSiteSpecificationRef,
+  GeographicSiteStatusHistoryEntry,
+  GeoOutboxMessage,
 } from './domain.js';
-import type { IGeoRepository } from './geo-repository-interface.js';
+import type { GeoTenantScope, IGeoRepository } from './geo-repository-interface.js';
 import type {
   EventRow,
+  GeoAuditLogRow,
+  GeoBulkJobResultRow,
+  GeoBulkJobRow,
   GeographicAddressRow,
   GeographicLocationRow,
+  GeographicRelationshipTypeRow,
   GeographicSiteRelationshipRow,
   GeographicSiteRow,
+  GeographicSiteSpecificationContainmentRuleRow,
   GeographicSiteSpecificationRow,
+  GeographicSiteStatusHistoryRow,
 } from './rows.js';
 
 export class PostgresGeoRepository implements IGeoRepository {
@@ -24,17 +38,17 @@ export class PostgresGeoRepository implements IGeoRepository {
     return this.db.transaction(fn);
   }
 
-  // Geographic Locations
   public upsertLocation(location: GeographicLocation): GeographicLocation {
     const now = new Date().toISOString();
 
     this.db.run(
       `INSERT INTO tmf_geographic_location 
-       (id, href, geometry_type, geometry, spatial_ref, accuracy, reference_point, 
+       (id, href, tenant_id, geometry_type, geometry, spatial_ref, accuracy, reference_point, 
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
+       tenant_id = excluded.tenant_id,
        geometry_type = excluded.geometry_type,
        geometry = excluded.geometry,
        spatial_ref = excluded.spatial_ref,
@@ -47,6 +61,7 @@ export class PostgresGeoRepository implements IGeoRepository {
       [
         location.id,
         location.href,
+        location.tenantId ?? 'default',
         location.geometryType,
         JSON.stringify(location.geometry),
         location.spatialRef,
@@ -63,12 +78,18 @@ export class PostgresGeoRepository implements IGeoRepository {
     return this.getLocation(location.id)!;
   }
 
-  public getLocation(id: string): GeographicLocation | undefined {
+  public getLocation(id: string, scope?: GeoTenantScope): GeographicLocation | undefined {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
     const row = this.db.get<GeographicLocationRow>(
-      `SELECT id, href, geometry_type, geometry, spatial_ref, accuracy, reference_point,
+      `SELECT id, href, tenant_id, geometry_type, geometry, spatial_ref, accuracy, reference_point,
               valid_for_start, valid_for_end, characteristics
-       FROM tmf_geographic_location WHERE id = ?`,
-      [id],
+       FROM tmf_geographic_location WHERE ${conditions.join(' AND ')}`,
+      params,
     );
 
     if (!row) return undefined;
@@ -77,6 +98,7 @@ export class PostgresGeoRepository implements IGeoRepository {
       '@type': 'GeographicLocation',
       id: row.id,
       href: row.href,
+      tenantId: row.tenant_id ?? 'default',
       geometryType: row.geometry_type,
       geometry: JSON.parse(row.geometry),
       spatialRef: row.spatial_ref,
@@ -95,61 +117,46 @@ export class PostgresGeoRepository implements IGeoRepository {
     return result;
   }
 
-  public listLocations(query?: { limit?: number; offset?: number }): GeographicLocation[] {
+  public listLocations(
+    query?: GeoTenantScope & { limit?: number; offset?: number },
+  ): GeographicLocation[] {
+    const conditions: string[] = [];
+    const params: Array<string | number> = [];
+    if (query?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(query.tenantId);
+    }
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      `SELECT id, href, geometry_type, geometry, spatial_ref, accuracy, reference_point,
+      `SELECT id, href, tenant_id, geometry_type, geometry, spatial_ref, accuracy, reference_point,
               valid_for_start, valid_for_end, characteristics
        FROM tmf_geographic_location`,
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
       hasOffset ? 'OFFSET ?' : '',
     ]
-      .filter((part) => part.length > 0)
+      .filter(Boolean)
       .join(' ');
 
-    const params: number[] = [];
     if (hasLimit) params.push(query!.limit as number);
     if (hasOffset) params.push(query!.offset as number);
 
-    const rows = this.db.all<GeographicLocationRow>(sql, params);
-
-    return rows.map((row) => {
-      const result: GeographicLocation = {
-        '@type': 'GeographicLocation',
-        id: row.id,
-        href: row.href,
-        geometryType: row.geometry_type,
-        geometry: JSON.parse(row.geometry),
-        spatialRef: row.spatial_ref,
-        characteristic: JSON.parse(row.characteristics || '[]'),
-      };
-
-      if (row.accuracy) result.accuracy = row.accuracy;
-      if (row.reference_point) result.referencePoint = row.reference_point;
-      if (row.valid_for_start || row.valid_for_end) {
-        result.validFor = {
-          ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
-          ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
-        };
-      }
-
-      return result;
-    });
+    return this.db.all<GeographicLocationRow>(sql, params).map((row) => this.mapLocationRow(row));
   }
 
-  // Geographic Addresses
   public upsertAddress(address: GeographicAddress): GeographicAddress {
     const now = new Date().toISOString();
 
     this.db.run(
       `INSERT INTO tmf_geographic_address
-       (id, href, street_type, street_name, street_nr, city, state_or_province, postcode, country,
-        geographic_location_id, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
+        geographic_location_id, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
+       tenant_id = excluded.tenant_id,
        street_type = excluded.street_type,
        street_name = excluded.street_name,
        street_nr = excluded.street_nr,
@@ -158,11 +165,14 @@ export class PostgresGeoRepository implements IGeoRepository {
        postcode = excluded.postcode,
        country = excluded.country,
        geographic_location_id = excluded.geographic_location_id,
+       valid_for_start = excluded.valid_for_start,
+       valid_for_end = excluded.valid_for_end,
        characteristics = excluded.characteristics,
        updated_at = excluded.updated_at`,
       [
         address.id,
         address.href,
+        address.tenantId ?? 'default',
         null,
         address.street,
         address.streetNr || null,
@@ -171,6 +181,8 @@ export class PostgresGeoRepository implements IGeoRepository {
         address.postcode || null,
         address.country || null,
         address.geographicLocationId || null,
+        address.validFor?.startDateTime || null,
+        address.validFor?.endDateTime || null,
         JSON.stringify(address.characteristic),
         now,
         now,
@@ -180,44 +192,33 @@ export class PostgresGeoRepository implements IGeoRepository {
     return this.getAddress(address.id)!;
   }
 
-  public getAddress(id: string): GeographicAddress | undefined {
+  public getAddress(id: string, scope?: GeoTenantScope): GeographicAddress | undefined {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
     const row = this.db.get<GeographicAddressRow>(
-      `SELECT id, href, street_type, street_name, street_nr, city, state_or_province, postcode, country,
-              geographic_location_id, characteristics
-       FROM tmf_geographic_address WHERE id = ?`,
-      [id],
+      `SELECT id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
+              geographic_location_id, valid_for_start, valid_for_end, characteristics
+       FROM tmf_geographic_address WHERE ${conditions.join(' AND ')}`,
+      params,
     );
 
-    if (!row) return undefined;
-
-    const result: GeographicAddress = {
-      '@type': 'GeographicAddress',
-      id: row.id,
-      href: row.href,
-      street: row.street_name,
-      characteristic: JSON.parse(row.characteristics || '[]'),
-    };
-
-    if (row.street_nr) result.streetNr = row.street_nr;
-    if (row.city) result.city = row.city;
-    if (row.state_or_province) result.stateOrProvince = row.state_or_province;
-    if (row.postcode) result.postcode = row.postcode;
-    if (row.country) result.country = row.country;
-    if (row.geographic_location_id) {
-      result.geographicLocationId = row.geographic_location_id;
-      result.place = {
-        id: row.geographic_location_id,
-        '@referredType': 'GeographicLocation',
-      };
-    }
-
-    return result;
+    return row ? this.mapAddressRow(row) : undefined;
   }
 
-  public listAddresses(query?: { name?: string; limit?: number; offset?: number }): GeographicAddress[] {
+  public listAddresses(
+    query?: GeoTenantScope & { name?: string; limit?: number; offset?: number },
+  ): GeographicAddress[] {
     const conditions: string[] = [];
     const params: Array<string | number> = [];
 
+    if (query?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(query.tenantId);
+    }
     if (query?.name) {
       conditions.push('LOWER(street_name) LIKE LOWER(?)');
       params.push(`%${query.name}%`);
@@ -226,72 +227,59 @@ export class PostgresGeoRepository implements IGeoRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      `SELECT id, href, street_type, street_name, street_nr, city, state_or_province, postcode, country,
-              geographic_location_id, characteristics
+      `SELECT id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
+              geographic_location_id, valid_for_start, valid_for_end, characteristics
        FROM tmf_geographic_address`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY street_name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
       hasOffset ? 'OFFSET ?' : '',
     ]
-      .filter((part) => part.length > 0)
+      .filter(Boolean)
       .join(' ');
 
     if (hasLimit) params.push(query!.limit as number);
     if (hasOffset) params.push(query!.offset as number);
 
-    const rows = this.db.all<GeographicAddressRow>(sql, params);
-
-    return rows.map((row) => {
-      const result: GeographicAddress = {
-        '@type': 'GeographicAddress',
-        id: row.id,
-        href: row.href,
-        street: row.street_name,
-        characteristic: JSON.parse(row.characteristics || '[]'),
-      }
-      if (row.street_nr) result.streetNr = row.street_nr;
-      if (row.city) result.city = row.city;
-      if (row.state_or_province) result.stateOrProvince = row.state_or_province;
-      if (row.postcode) result.postcode = row.postcode;
-      if (row.country) result.country = row.country;
-      if (row.geographic_location_id) {
-        result.geographicLocationId = row.geographic_location_id;
-        result.place = {
-          id: row.geographic_location_id,
-          '@referredType': 'GeographicLocation',
-        };
-      }
-
-      return result;
-    });
+    return this.db.all<GeographicAddressRow>(sql, params).map((row) => this.mapAddressRow(row));
   }
 
-  // Geographic Site Specifications
   public upsertSpec(spec: GeographicSiteSpecification): GeographicSiteSpecification {
     const now = new Date().toISOString();
 
     this.db.run(
       `INSERT INTO tmf_geographic_site_specification
-       (id, href, name, category, allowed_parent_spec_ids, allowed_child_spec_ids,
-        characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, href, name, code, category, lifecycle_status, description, allowed_parent_spec_ids, allowed_child_spec_ids,
+        valid_for_start, valid_for_end, characteristics, is_bootstrap, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
+       code = excluded.code,
        category = excluded.category,
+       lifecycle_status = excluded.lifecycle_status,
+       description = excluded.description,
        allowed_parent_spec_ids = excluded.allowed_parent_spec_ids,
        allowed_child_spec_ids = excluded.allowed_child_spec_ids,
+       valid_for_start = excluded.valid_for_start,
+       valid_for_end = excluded.valid_for_end,
        characteristics = excluded.characteristics,
+       is_bootstrap = excluded.is_bootstrap,
        updated_at = excluded.updated_at`,
       [
         spec.id,
         spec.href,
         spec.name,
+        spec.code,
         spec.category,
+        spec.lifecycleStatus,
+        spec.description || null,
         JSON.stringify(spec.allowedParentSpecIds),
         JSON.stringify(spec.allowedChildSpecIds),
+        spec.validFor?.startDateTime || null,
+        spec.validFor?.endDateTime || null,
         JSON.stringify(spec.specCharacteristic),
+        spec._bootstrapProtected ? 1 : 0,
         now,
         now,
       ],
@@ -302,76 +290,176 @@ export class PostgresGeoRepository implements IGeoRepository {
 
   public getSpec(id: string): GeographicSiteSpecification | undefined {
     const row = this.db.get<GeographicSiteSpecificationRow>(
-      `SELECT id, href, name, category, allowed_parent_spec_ids, allowed_child_spec_ids,
-              characteristics
-       FROM tmf_geographic_site_specification WHERE id = ?`,
+      `SELECT id, href, name, code, category, lifecycle_status, description,
+              allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
+              characteristics, is_bootstrap
+       FROM tmf_geographic_site_specification
+       WHERE id = ?`,
       [id],
     );
 
     if (!row) return undefined;
-
-    return {
-      '@type': 'GeographicSiteSpecification',
-      id: row.id,
-      href: row.href,
-      name: row.name,
-      category: row.category,
-      allowedParentSpecIds: JSON.parse(row.allowed_parent_spec_ids || '[]'),
-      allowedChildSpecIds: JSON.parse(row.allowed_child_spec_ids || '[]'),
-      specCharacteristic: JSON.parse(row.characteristics || '[]'),
-    };
+    return this.hydrateSpecs([row]).get(row.id);
   }
 
-  public listSpecs(): GeographicSiteSpecification[] {
-    const rows = this.db.all<GeographicSiteSpecificationRow>(
-      `SELECT id, href, name, category, allowed_parent_spec_ids, allowed_child_spec_ids,
-              characteristics
-       FROM tmf_geographic_site_specification`,
+  public getSpecByCode(code: string): GeographicSiteSpecification | undefined {
+    const row = this.db.get<GeographicSiteSpecificationRow>(
+      `SELECT id, href, name, code, category, lifecycle_status, description,
+              allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
+              characteristics, is_bootstrap
+       FROM tmf_geographic_site_specification
+       WHERE LOWER(code) = LOWER(?)`,
+      [code.trim()],
     );
 
-    return rows.map((row) => ({
-      '@type': 'GeographicSiteSpecification',
-      id: row.id,
-      href: row.href,
-      name: row.name,
-      category: row.category,
-      allowedParentSpecIds: JSON.parse(row.allowed_parent_spec_ids || '[]'),
-      allowedChildSpecIds: JSON.parse(row.allowed_child_spec_ids || '[]'),
-      specCharacteristic: JSON.parse(row.characteristics || '[]'),
-    }));
+    if (!row) return undefined;
+    return this.hydrateSpecs([row]).get(row.id);
   }
 
-  // Geographic Sites
+  public listSpecs(query?: {
+    name?: string;
+    code?: string;
+    category?: GeographicSiteSpecification['category'];
+    lifecycleStatus?: GeographicSiteSpecification['lifecycleStatus'];
+    limit?: number;
+    offset?: number;
+  }): GeographicSiteSpecification[] {
+    const conditions: string[] = [];
+    const params: Array<string | number> = [];
+
+    if (query?.name) {
+      conditions.push('LOWER(name) LIKE LOWER(?)');
+      params.push(`%${query.name}%`);
+    }
+    if (query?.code) {
+      conditions.push('LOWER(code) LIKE LOWER(?)');
+      params.push(`%${query.code}%`);
+    }
+    if (query?.category) {
+      conditions.push('category = ?');
+      params.push(query.category);
+    }
+    if (query?.lifecycleStatus) {
+      conditions.push('lifecycle_status = ?');
+      params.push(query.lifecycleStatus);
+    }
+
+    const hasLimit = query?.limit !== undefined;
+    const hasOffset = query?.offset !== undefined;
+    const sql = [
+      `SELECT id, href, name, code, category, lifecycle_status, description,
+              allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
+              characteristics, is_bootstrap
+       FROM tmf_geographic_site_specification`,
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
+      'ORDER BY name, id',
+      hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
+      hasOffset ? 'OFFSET ?' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    if (hasLimit) params.push(query!.limit as number);
+    if (hasOffset) params.push(query!.offset as number);
+
+    const rows = this.db.all<GeographicSiteSpecificationRow>(sql, params);
+    return [...this.hydrateSpecs(rows).values()];
+  }
+
+  public syncSpecContainmentRules(
+    specId: string,
+    input: {
+      allowedParentSpecIds: string[];
+      allowedChildSpecIds: string[];
+      protectedParentSpecIds?: string[];
+      protectedChildSpecIds?: string[];
+    },
+  ): void {
+    if (input.allowedParentSpecIds.length === 0) {
+      this.db.run(`DELETE FROM tmf_geographic_site_spec_containment_rule WHERE child_spec_id = ?`, [
+        specId,
+      ]);
+    } else {
+      this.db.run(
+        `DELETE FROM tmf_geographic_site_spec_containment_rule
+         WHERE child_spec_id = ? AND parent_spec_id NOT IN (${input.allowedParentSpecIds.map(() => '?').join(', ')})`,
+        [specId, ...input.allowedParentSpecIds],
+      );
+    }
+    if (input.allowedChildSpecIds.length === 0) {
+      this.db.run(
+        `DELETE FROM tmf_geographic_site_spec_containment_rule WHERE parent_spec_id = ?`,
+        [specId],
+      );
+    } else {
+      this.db.run(
+        `DELETE FROM tmf_geographic_site_spec_containment_rule
+         WHERE parent_spec_id = ? AND child_spec_id NOT IN (${input.allowedChildSpecIds.map(() => '?').join(', ')})`,
+        [specId, ...input.allowedChildSpecIds],
+      );
+    }
+
+    for (const parentSpecId of input.allowedParentSpecIds) {
+      this.db.run(
+        `INSERT INTO tmf_geographic_site_spec_containment_rule
+         (parent_spec_id, child_spec_id, valid_for_start, valid_for_end, is_protected)
+         VALUES (?, ?, NULL, NULL, ?)
+         ON CONFLICT(parent_spec_id, child_spec_id) DO UPDATE SET
+         is_protected = excluded.is_protected`,
+        [parentSpecId, specId, (input.protectedParentSpecIds ?? []).includes(parentSpecId) ? 1 : 0],
+      );
+    }
+
+    for (const childSpecId of input.allowedChildSpecIds) {
+      this.db.run(
+        `INSERT INTO tmf_geographic_site_spec_containment_rule
+         (parent_spec_id, child_spec_id, valid_for_start, valid_for_end, is_protected)
+         VALUES (?, ?, NULL, NULL, ?)
+         ON CONFLICT(parent_spec_id, child_spec_id) DO UPDATE SET
+         is_protected = excluded.is_protected`,
+        [specId, childSpecId, (input.protectedChildSpecIds ?? []).includes(childSpecId) ? 1 : 0],
+      );
+    }
+  }
+
   public upsertSite(site: GeographicSite): GeographicSite {
     const now = new Date().toISOString();
 
     this.db.run(
       `INSERT INTO tmf_geographic_site
-       (id, href, name, status, site_specification_id, geographic_location_id,
-        geographic_address_id, parent_site_id, related_party,
+       (id, href, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id,
+        geographic_address_id, parent_site_id, related_party, site_addresses,
         characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
+       tenant_id = excluded.tenant_id,
        name = excluded.name,
        status = excluded.status,
+       status_date = excluded.status_date,
+       status_reason = excluded.status_reason,
        site_specification_id = excluded.site_specification_id,
        geographic_location_id = excluded.geographic_location_id,
        geographic_address_id = excluded.geographic_address_id,
        parent_site_id = excluded.parent_site_id,
        related_party = excluded.related_party,
+       site_addresses = excluded.site_addresses,
        characteristics = excluded.characteristics,
        updated_at = excluded.updated_at`,
       [
         site.id,
         site.href,
+        site.tenantId ?? 'default',
         site.name,
         site.status,
+        site.statusDate || null,
+        site.statusReason || null,
         site.siteSpecificationId,
         site.place?.id || null,
         site.address?.id || null,
         site.parentSite?.id || null,
         JSON.stringify(site.relatedParty),
+        JSON.stringify(site.siteAddress ?? []),
         JSON.stringify(site.characteristic),
         now,
         now,
@@ -381,77 +469,95 @@ export class PostgresGeoRepository implements IGeoRepository {
     return this.getSite(site.id)!;
   }
 
-  public getSite(id: string): GeographicSite | undefined {
+  public getSite(id: string, scope?: GeoTenantScope): GeographicSite | undefined {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
     const row = this.db.get<GeographicSiteRow>(
-      `SELECT id, href, name, status, site_specification_id, geographic_location_id,
-              geographic_address_id, parent_site_id, related_party, characteristics
-       FROM tmf_geographic_site WHERE id = ?`,
-      [id],
+      `SELECT id, href, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id,
+              geographic_address_id, parent_site_id, related_party, site_addresses, characteristics
+       FROM tmf_geographic_site WHERE ${conditions.join(' AND ')}`,
+      params,
     );
 
     if (!row) return undefined;
-
-    const result: GeographicSite = {
-      '@type': 'GeographicSite',
-      id: row.id,
-      href: row.href,
-      name: row.name,
-      status: row.status,
-      siteSpecificationId: row.site_specification_id,
-      siteSpecification: {
-        id: row.site_specification_id,
-        '@referredType': 'GeographicSiteSpecification',
-      },
-      relatedSite: [],
-      relatedParty: JSON.parse(row.related_party || '[]'),
-      characteristic: JSON.parse(row.characteristics || '[]'),
-    };
-
-    if (row.geographic_location_id) {
-      result.place = {
-        id: row.geographic_location_id,
-        '@referredType': 'GeographicLocation',
-      };
-    }
-    if (row.geographic_address_id) {
-      result.address = {
-        id: row.geographic_address_id,
-        '@referredType': 'GeographicAddress',
-      };
-    }
-    if (row.parent_site_id) {
-      result.parentSite = {
-        id: row.parent_site_id,
-        '@referredType': 'GeographicSite',
-      };
-    }
-
-    result.relatedSite = this.listSiteRelationships(row.id);
-
-    return result;
+    return this.mapSiteRow(row, this.listSiteRelationships(row.id));
   }
 
-  public listSites(query?: { name?: string; limit?: number; offset?: number }): GeographicSite[] {
+  public listSites(
+    query?: GeoTenantScope & {
+      name?: string;
+      status?: GeographicSite['status'];
+      siteSpecificationId?: string;
+      parentSiteId?: string | null;
+      descendantOfSiteId?: string;
+      characteristicName?: string;
+      characteristicValue?: string;
+      limit?: number;
+      offset?: number;
+    },
+  ): GeographicSite[] {
     const conditions: string[] = [];
-    const params: Array<string | number> = [];
+    const params: Array<string | number | null> = [];
 
+    if (query?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(query.tenantId);
+    }
     if (query?.name) {
       conditions.push('LOWER(name) LIKE LOWER(?)');
       params.push(`%${query.name}%`);
+    }
+    if (query?.status) {
+      conditions.push('status = ?');
+      params.push(query.status);
+    }
+    if (query?.siteSpecificationId) {
+      conditions.push('site_specification_id = ?');
+      params.push(query.siteSpecificationId);
+    }
+    if (query?.descendantOfSiteId) {
+      const descendantIds = this.collectDescendantSiteIds(query.descendantOfSiteId, query);
+      if (descendantIds.length === 0) {
+        conditions.push('1 = 0');
+      } else {
+        conditions.push(`id IN (${descendantIds.map(() => '?').join(', ')})`);
+        params.push(...descendantIds);
+      }
+    }
+    if (query?.characteristicName) {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM jsonb_array_elements(characteristics::jsonb) AS c
+         WHERE LOWER(c->>'name') = LOWER(?)
+           ${query.characteristicValue !== undefined ? "AND c->>'value' = ?" : ''}
+      )`);
+      params.push(query.characteristicName);
+      if (query.characteristicValue !== undefined) params.push(query.characteristicValue);
+    }
+    if (query?.parentSiteId !== undefined) {
+      if (query.parentSiteId === null) {
+        conditions.push('parent_site_id IS NULL');
+      } else {
+        conditions.push('parent_site_id = ?');
+        params.push(query.parentSiteId);
+      }
     }
 
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      `SELECT id, href, name, status, site_specification_id, geographic_location_id,
-              geographic_address_id, parent_site_id, related_party, characteristics
+      `SELECT id, href, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id,
+              geographic_address_id, parent_site_id, related_party, site_addresses, characteristics
        FROM tmf_geographic_site`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
       hasOffset ? 'OFFSET ?' : '',
     ]
-      .filter((part) => part.length > 0)
+      .filter(Boolean)
       .join(' ');
 
     if (hasLimit) params.push(query!.limit as number);
@@ -459,53 +565,41 @@ export class PostgresGeoRepository implements IGeoRepository {
 
     const rows = this.db.all<GeographicSiteRow>(sql, params);
     const relationshipsBySiteId = this.loadSiteRelationshipsBySiteIds(rows.map((row) => row.id));
-
-    return rows.map((row) => {
-      const result: GeographicSite = {
-        '@type': 'GeographicSite',
-        id: row.id,
-        href: row.href,
-        name: row.name,
-        status: row.status,
-        siteSpecificationId: row.site_specification_id,
-        siteSpecification: {
-          id: row.site_specification_id,
-          '@referredType': 'GeographicSiteSpecification',
-        },
-        relatedSite: relationshipsBySiteId.get(row.id) ?? [],
-        relatedParty: JSON.parse(row.related_party || '[]'),
-        characteristic: JSON.parse(row.characteristics || '[]'),
-      };
-
-      if (row.geographic_location_id) {
-        result.place = {
-          id: row.geographic_location_id,
-          '@referredType': 'GeographicLocation',
-        };
-      }
-      if (row.geographic_address_id) {
-        result.address = {
-          id: row.geographic_address_id,
-          '@referredType': 'GeographicAddress',
-        };
-      }
-      if (row.parent_site_id) {
-        result.parentSite = {
-          id: row.parent_site_id,
-          '@referredType': 'GeographicSite',
-        };
-      }
-
-      return result;
-    });
+    return rows.map((row) => this.mapSiteRow(row, relationshipsBySiteId.get(row.id) ?? []));
   }
 
-  public countSites(): number {
-    const row = this.db.get<{ count: number }>(`SELECT COUNT(*) as count FROM tmf_geographic_site`);
+  public countSites(scope?: GeoTenantScope): number {
+    const conditions: string[] = [];
+    const params: string[] = [];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
+    const row = this.db.get<{ count: number }>(
+      `SELECT COUNT(*) as count FROM tmf_geographic_site ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}`,
+      params,
+    );
     return Number(row?.count ?? 0);
   }
 
-  public upsertSiteRelationship(siteId: string, relationship: GeographicSiteRelationship): GeographicSiteRelationship {
+  public countSitesBySpecificationId(specificationId: string, scope?: GeoTenantScope): number {
+    const conditions = ['site_specification_id = ?'];
+    const params: string[] = [specificationId];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
+    const row = this.db.get<{ count: number }>(
+      `SELECT COUNT(*) as count FROM tmf_geographic_site WHERE ${conditions.join(' AND ')}`,
+      params,
+    );
+    return Number(row?.count ?? 0);
+  }
+
+  public upsertSiteRelationship(
+    siteId: string,
+    relationship: GeographicSiteRelationship,
+  ): GeographicSiteRelationship {
     this.db.run(
       `INSERT INTO tmf_geographic_site_relationship
        (site_from_id, site_to_id, relationship_type, valid_for_start, valid_for_end)
@@ -525,11 +619,20 @@ export class PostgresGeoRepository implements IGeoRepository {
     return relationship;
   }
 
-  public deleteSiteRelationship(siteId: string, relatedSiteId: string, relationshipType: string): boolean {
+  public endSiteRelationship(
+    siteId: string,
+    relatedSiteId: string,
+    relationshipType: string,
+    endedAt: string,
+  ): boolean {
     const result = this.db.run(
-      `DELETE FROM tmf_geographic_site_relationship
-       WHERE site_from_id = ? AND site_to_id = ? AND relationship_type = ?`,
-      [siteId, relatedSiteId, relationshipType],
+      `UPDATE tmf_geographic_site_relationship
+          SET valid_for_end = ?
+        WHERE site_from_id = ?
+          AND site_to_id = ?
+          AND relationship_type = ?
+          AND valid_for_end IS NULL`,
+      [endedAt, siteId, relatedSiteId, relationshipType],
     );
     return result.changes > 0;
   }
@@ -543,57 +646,266 @@ export class PostgresGeoRepository implements IGeoRepository {
       [siteId],
     );
 
-    return rows.map((row) => {
-      const relationship: GeographicSiteRelationship = {
-        id: row.site_to_id,
-        relationshipType: row.relationship_type,
-        '@referredType': 'GeographicSite',
-      };
-
-      if (row.valid_for_start || row.valid_for_end) {
-        relationship.validFor = {
-          ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
-          ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
-        };
-      }
-
-      return relationship;
-    });
+    return rows.map((row) => this.mapRelationshipRow(row));
   }
 
-  private loadSiteRelationshipsBySiteIds(siteIds: string[]): Map<string, GeographicSiteRelationship[]> {
-    if (siteIds.length === 0) {
-      return new Map();
-    }
-
-    const placeholders = siteIds.map(() => '?').join(', ');
-    const rows = this.db.all<GeographicSiteRelationshipRow>(
-      `SELECT site_from_id, site_to_id, relationship_type, valid_for_start, valid_for_end
-       FROM tmf_geographic_site_relationship
-       WHERE site_from_id IN (${placeholders})
-       ORDER BY site_from_id, relationship_type, site_to_id`,
-      siteIds,
+  public upsertRelationshipType(
+    relationshipType: GeographicRelationshipType,
+  ): GeographicRelationshipType {
+    const now = new Date().toISOString();
+    this.db.run(
+      `INSERT INTO tmf_geographic_relationship_type
+       (id, href, code, name, inverse_code, symmetric, allowed_source_categories, allowed_target_categories,
+        cardinality, lifecycle_status, is_bootstrap, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(code) DO UPDATE SET
+       href = excluded.href,
+       name = excluded.name,
+       inverse_code = excluded.inverse_code,
+       symmetric = excluded.symmetric,
+       allowed_source_categories = excluded.allowed_source_categories,
+       allowed_target_categories = excluded.allowed_target_categories,
+       cardinality = excluded.cardinality,
+       lifecycle_status = excluded.lifecycle_status,
+       is_bootstrap = excluded.is_bootstrap,
+       updated_at = excluded.updated_at`,
+      [
+        relationshipType.id,
+        relationshipType.href,
+        relationshipType.code,
+        relationshipType.name,
+        relationshipType.inverseCode,
+        relationshipType.symmetric ? 1 : 0,
+        JSON.stringify(relationshipType.allowedSourceCategories),
+        JSON.stringify(relationshipType.allowedTargetCategories),
+        JSON.stringify(relationshipType.cardinality ?? {}),
+        relationshipType.lifecycleStatus,
+        relationshipType._bootstrapProtected ? 1 : 0,
+        now,
+        now,
+      ],
     );
 
-    const relationshipsBySiteId = new Map<string, GeographicSiteRelationship[]>();
-    for (const row of rows) {
-      const current = relationshipsBySiteId.get(row.site_from_id) ?? [];
-      const relationship: GeographicSiteRelationship = {
-        id: row.site_to_id,
-        relationshipType: row.relationship_type,
-        '@referredType': 'GeographicSite',
-      };
-      if (row.valid_for_start || row.valid_for_end) {
-        relationship.validFor = {
-          ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
-          ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
-        };
-      }
-      current.push(relationship);
-      relationshipsBySiteId.set(row.site_from_id, current);
+    return this.getRelationshipType(relationshipType.code)!;
+  }
+
+  public getRelationshipType(code: string): GeographicRelationshipType | undefined {
+    const row = this.db.get<GeographicRelationshipTypeRow>(
+      `SELECT id, href, code, name, inverse_code, symmetric, allowed_source_categories, allowed_target_categories,
+              cardinality, lifecycle_status, is_bootstrap
+       FROM tmf_geographic_relationship_type
+       WHERE LOWER(code) = LOWER(?)`,
+      [code.trim()],
+    );
+
+    return row ? this.mapRelationshipTypeRow(row) : undefined;
+  }
+
+  public listRelationshipTypes(query?: {
+    code?: string;
+    lifecycleStatus?: GeographicRelationshipType['lifecycleStatus'];
+    limit?: number;
+    offset?: number;
+  }): GeographicRelationshipType[] {
+    const conditions: string[] = [];
+    const params: Array<string | number> = [];
+    if (query?.code) {
+      conditions.push('LOWER(code) LIKE LOWER(?)');
+      params.push(`%${query.code}%`);
+    }
+    if (query?.lifecycleStatus) {
+      conditions.push('lifecycle_status = ?');
+      params.push(query.lifecycleStatus);
     }
 
-    return relationshipsBySiteId;
+    const hasLimit = query?.limit !== undefined;
+    const hasOffset = query?.offset !== undefined;
+    const sql = [
+      `SELECT id, href, code, name, inverse_code, symmetric, allowed_source_categories, allowed_target_categories,
+              cardinality, lifecycle_status, is_bootstrap
+       FROM tmf_geographic_relationship_type`,
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
+      'ORDER BY code',
+      hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
+      hasOffset ? 'OFFSET ?' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    if (hasLimit) params.push(query!.limit as number);
+    if (hasOffset) params.push(query!.offset as number);
+    return this.db
+      .all<GeographicRelationshipTypeRow>(sql, params)
+      .map((row) => this.mapRelationshipTypeRow(row));
+  }
+
+  public appendSiteStatusHistory(
+    entry: GeographicSiteStatusHistoryEntry,
+  ): GeographicSiteStatusHistoryEntry {
+    this.db.run(
+      `INSERT INTO tmf_geographic_site_status_history
+       (id, site_id, tenant_id, from_status, to_status, status_date, status_reason, actor_sub, trace_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        entry.id,
+        entry.siteId,
+        entry.tenantId,
+        entry.fromStatus ?? null,
+        entry.toStatus,
+        entry.statusDate,
+        entry.statusReason ?? null,
+        entry.actorSub,
+        entry.traceId,
+      ],
+    );
+    return entry;
+  }
+
+  public listSiteStatusHistory(
+    siteId: string,
+    scope?: GeoTenantScope,
+  ): GeographicSiteStatusHistoryEntry[] {
+    const conditions = ['site_id = ?'];
+    const params: Array<string | number> = [siteId];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
+    const rows = this.db.all<GeographicSiteStatusHistoryRow>(
+      `SELECT id, site_id, tenant_id, from_status, to_status, status_date, status_reason, actor_sub, trace_id
+       FROM tmf_geographic_site_status_history
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY status_date DESC, id DESC`,
+      params,
+    );
+    return rows.map((row) => ({
+      '@type': 'GeographicSiteStatusHistoryEntry',
+      id: row.id,
+      siteId: row.site_id,
+      tenantId: row.tenant_id,
+      ...(row.from_status ? { fromStatus: row.from_status } : {}),
+      toStatus: row.to_status,
+      statusDate: row.status_date,
+      ...(row.status_reason ? { statusReason: row.status_reason } : {}),
+      actorSub: row.actor_sub,
+      traceId: row.trace_id,
+    }));
+  }
+
+  public getSiteReferences(siteId: string, scope?: GeoTenantScope): GeographicSiteReferences {
+    const tenantFilter = scope?.tenantId ? 'AND tenant_id = ?' : '';
+    const tenantParams = scope?.tenantId ? [scope.tenantId] : [];
+    const activeChildSiteCount = Number(
+      this.db.get<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM tmf_geographic_site
+          WHERE parent_site_id = ? AND status <> 'Retired' ${tenantFilter}`,
+        [siteId, ...tenantParams],
+      )?.count ?? 0,
+    );
+    const activeRelationshipCount = Number(
+      this.db.get<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM tmf_geographic_site_relationship
+          WHERE site_from_id = ? AND valid_for_end IS NULL`,
+        [siteId],
+      )?.count ?? 0,
+    );
+    const activeResourceCount = Number(
+      this.db.get<{ count: number }>(
+        `SELECT
+           (SELECT COUNT(*) FROM tmf_physical_resource WHERE status <> 'terminated' AND (place_id = ? OR serving_site_id = ?)) +
+           (SELECT COUNT(*) FROM tmf_logical_resource WHERE status <> 'terminated' AND (place_id = ? OR serving_site_id = ?)) AS count`,
+        [siteId, siteId, siteId, siteId],
+      )?.count ?? 0,
+    );
+    const activeServiceCount = Number(
+      this.db.get<{ count: number }>(
+        `SELECT
+           (SELECT COUNT(*) FROM tmf_customer_facing_service WHERE COALESCE(state, status) <> 'terminated' AND place LIKE ?) +
+           (SELECT COUNT(*) FROM tmf_resource_facing_service WHERE COALESCE(state, status) <> 'terminated' AND place LIKE ?) AS count`,
+        [`%${siteId}%`, `%${siteId}%`],
+      )?.count ?? 0,
+    );
+    const activeOrderCount = Number(
+      this.db.get<{ count: number }>(
+        `SELECT
+           (SELECT COUNT(*) FROM tmf_service_order WHERE state NOT IN ('completed', 'cancelled', 'failed') AND service_order_item LIKE ?) +
+           (SELECT COUNT(*) FROM tmf_resource_order WHERE state NOT IN ('completed', 'cancelled', 'failed') AND resource_order_item LIKE ?) AS count`,
+        [`%${siteId}%`, `%${siteId}%`],
+      )?.count ?? 0,
+    );
+
+    return {
+      siteId,
+      activeChildSiteCount,
+      activeRelationshipCount,
+      activeResourceCount,
+      activeServiceCount,
+      activeOrderCount,
+      blocking:
+        activeChildSiteCount +
+          activeRelationshipCount +
+          activeResourceCount +
+          activeServiceCount +
+          activeOrderCount >
+        0,
+    };
+  }
+
+  public countSiteDescendants(siteId: string, scope?: GeoTenantScope): number {
+    return this.collectDescendantSiteIds(siteId, scope).length;
+  }
+
+  public appendAudit(audit: GeoAuditLog): GeoAuditLog {
+    this.db.run(
+      `INSERT INTO tmf_audit_log
+       (id, tenant_id, actor_sub, action, entity_type, entity_id, event_time, before_state, after_state, trace_id, source_ip)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        audit.id,
+        audit.tenantId,
+        audit.actorSub,
+        audit.action,
+        audit.entityType,
+        audit.entityId,
+        audit.eventTime,
+        audit.before ? JSON.stringify(audit.before) : null,
+        audit.after ? JSON.stringify(audit.after) : null,
+        audit.traceId,
+        audit.sourceIp ?? null,
+      ],
+    );
+    return audit;
+  }
+
+  public listAuditForEntity(entityId: string, scope?: GeoTenantScope): GeoAuditLog[] {
+    const conditions = ['entity_id = ?'];
+    const params: Array<string | number> = [entityId];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
+    const rows = this.db.all<GeoAuditLogRow>(
+      `SELECT id, tenant_id, actor_sub, action, entity_type, entity_id, event_time,
+              before_state, after_state, trace_id, source_ip
+       FROM tmf_audit_log
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY event_time DESC, id DESC`,
+      params,
+    );
+    return rows.map((row) => ({
+      '@type': 'GeoAuditLog',
+      id: row.id,
+      tenantId: row.tenant_id,
+      actorSub: row.actor_sub,
+      action: row.action,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      eventTime: row.event_time,
+      before: row.before_state ? JSON.parse(row.before_state) : null,
+      after: row.after_state ? JSON.parse(row.after_state) : null,
+      traceId: row.trace_id,
+      ...(row.source_ip ? { sourceIp: row.source_ip } : {}),
+    }));
   }
 
   public appendEvent(event: GeoEvent): GeoEvent {
@@ -613,6 +925,24 @@ export class PostgresGeoRepository implements IGeoRepository {
     return event;
   }
 
+  public appendOutbox(message: GeoOutboxMessage): GeoOutboxMessage {
+    this.db.run(
+      `INSERT INTO tmf_outbox (id, tenant_id, event_id, topic, payload, status, created_at, published_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        message.id,
+        message.tenantId,
+        message.eventId,
+        message.topic,
+        JSON.stringify(message.payload),
+        message.status,
+        message.createdAt,
+        message.publishedAt ?? null,
+      ],
+    );
+    return message;
+  }
+
   public listEventsForEntity(entityId: string): GeoEvent[] {
     const rows = this.db.all<EventRow>(
       `SELECT id, event_type, event_time, source, event_data, correlation_id
@@ -622,18 +952,446 @@ export class PostgresGeoRepository implements IGeoRepository {
       [entityId],
     );
 
-    return rows.map((row) => {
-      const event: GeoEvent = {
-        '@type': 'Event',
-        id: row.id,
-        eventType: row.event_type,
-        eventTime: row.event_time,
-        source: row.source,
-        eventData: JSON.parse(row.event_data || '{}'),
-      };
+    return rows.map((row) => ({
+      '@type': 'Event',
+      id: row.id,
+      eventType: row.event_type,
+      eventTime: row.event_time,
+      source: row.source,
+      eventData: JSON.parse(row.event_data || '{}'),
+      ...(row.correlation_id ? { correlationId: row.correlation_id } : {}),
+    }));
+  }
 
-      if (row.correlation_id) event.correlationId = row.correlation_id;
-      return event;
-    });
+  public upsertBulkJob(job: GeoBulkJob): GeoBulkJob {
+    this.db.run(
+      `INSERT INTO tmf_geo_bulk_job
+       (id, tenant_id, target, mode, idempotency_key, status, submitted_at, started_at,
+        completed_at, total, success_count, error_count, warning_count, actor_sub, trace_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+       status = excluded.status,
+       completed_at = excluded.completed_at,
+       total = excluded.total,
+       success_count = excluded.success_count,
+       error_count = excluded.error_count,
+       warning_count = excluded.warning_count,
+       trace_id = excluded.trace_id`,
+      [
+        job.id,
+        job.tenantId,
+        job.target,
+        job.mode,
+        job.idempotencyKey,
+        job.status,
+        job.submittedAt,
+        job.startedAt,
+        job.completedAt ?? null,
+        job.total,
+        job.successCount,
+        job.errorCount,
+        job.warningCount,
+        job.actorSub,
+        job.traceId,
+      ],
+    );
+    return this.getBulkJob(job.id)!;
+  }
+
+  public getBulkJob(id: string, scope?: GeoTenantScope): GeoBulkJob | undefined {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
+    const row = this.db.get<GeoBulkJobRow>(
+      `SELECT id, tenant_id, target, mode, idempotency_key, status, submitted_at, started_at,
+              completed_at, total, success_count, error_count, warning_count, actor_sub, trace_id
+       FROM tmf_geo_bulk_job
+       WHERE ${conditions.join(' AND ')}`,
+      params,
+    );
+    return row ? mapBulkJobRow(row) : undefined;
+  }
+
+  public getBulkJobByIdempotencyKey(
+    tenantId: string,
+    idempotencyKey: string,
+    target?: GeoBulkJob['target'],
+  ): GeoBulkJob | undefined {
+    const conditions = ['tenant_id = ?', 'idempotency_key = ?'];
+    const params: Array<string | number> = [tenantId, idempotencyKey];
+    if (target) {
+      conditions.push('target = ?');
+      params.push(target);
+    }
+    const row = this.db.get<GeoBulkJobRow>(
+      `SELECT id, tenant_id, target, mode, idempotency_key, status, submitted_at, started_at,
+              completed_at, total, success_count, error_count, warning_count, actor_sub, trace_id
+       FROM tmf_geo_bulk_job
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY submitted_at DESC
+       LIMIT 1`,
+      params,
+    );
+    return row ? mapBulkJobRow(row) : undefined;
+  }
+
+  public appendBulkJobResult(result: GeoBulkJobResult): GeoBulkJobResult {
+    this.db.run(
+      `INSERT INTO tmf_geo_bulk_job_result
+       (id, job_id, tenant_id, item_index, status, entity_id, legacy_system, legacy_entity,
+        legacy_id, error_code, message, warnings)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(job_id, item_index) DO UPDATE SET
+       status = excluded.status,
+       entity_id = excluded.entity_id,
+       legacy_system = excluded.legacy_system,
+       legacy_entity = excluded.legacy_entity,
+       legacy_id = excluded.legacy_id,
+       error_code = excluded.error_code,
+       message = excluded.message,
+       warnings = excluded.warnings`,
+      [
+        result.id,
+        result.jobId,
+        result.tenantId,
+        result.index,
+        result.status,
+        result.entityId ?? null,
+        result.legacySystem ?? null,
+        result.legacyEntity ?? null,
+        result.legacyId ?? null,
+        result.errorCode ?? null,
+        result.message ?? null,
+        JSON.stringify(result.warnings),
+      ],
+    );
+    return result;
+  }
+
+  public listBulkJobResults(
+    jobId: string,
+    scope?: GeoTenantScope & { limit?: number; offset?: number },
+  ): GeoBulkJobResult[] {
+    const conditions = ['job_id = ?'];
+    const params: Array<string | number> = [jobId];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
+    const hasLimit = scope?.limit !== undefined;
+    const hasOffset = scope?.offset !== undefined;
+    const sql = [
+      `SELECT id, job_id, tenant_id, item_index, status, entity_id, legacy_system,
+              legacy_entity, legacy_id, error_code, message, warnings
+       FROM tmf_geo_bulk_job_result`,
+      `WHERE ${conditions.join(' AND ')}`,
+      'ORDER BY item_index, id',
+      hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
+      hasOffset ? 'OFFSET ?' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    if (hasLimit) params.push(scope!.limit as number);
+    if (hasOffset) params.push(scope!.offset as number);
+    return this.db.all<GeoBulkJobResultRow>(sql, params).map(mapBulkJobResultRow);
+  }
+
+  private hydrateSpecs(
+    rows: GeographicSiteSpecificationRow[],
+  ): Map<string, GeographicSiteSpecification> {
+    if (rows.length === 0) return new Map();
+
+    const ids = rows.map((row) => row.id);
+    const placeholders = ids.map(() => '?').join(', ');
+    const ruleRows = this.db.all<GeographicSiteSpecificationContainmentRuleRow>(
+      `SELECT parent_spec_id, child_spec_id, valid_for_start, valid_for_end, is_protected
+       FROM tmf_geographic_site_spec_containment_rule
+       WHERE parent_spec_id IN (${placeholders}) OR child_spec_id IN (${placeholders})`,
+      [...ids, ...ids],
+    );
+
+    const referencedIds = new Set<string>();
+    for (const ruleRow of ruleRows) {
+      referencedIds.add(ruleRow.parent_spec_id);
+      referencedIds.add(ruleRow.child_spec_id);
+    }
+
+    const referencedRows =
+      referencedIds.size > 0
+        ? this.db.all<GeographicSiteSpecificationRow>(
+            `SELECT id, href, name, code, category, lifecycle_status, description,
+                    allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
+                    characteristics, is_bootstrap
+             FROM tmf_geographic_site_specification
+             WHERE id IN (${[...referencedIds].map(() => '?').join(', ')})`,
+            [...referencedIds],
+          )
+        : [];
+
+    const rowById = new Map<string, GeographicSiteSpecificationRow>();
+    for (const row of [...rows, ...referencedRows]) {
+      rowById.set(row.id, row);
+    }
+
+    const specs = new Map<string, GeographicSiteSpecification>();
+    for (const row of rows) {
+      const parentRules = ruleRows.filter((ruleRow) => ruleRow.child_spec_id === row.id);
+      const childRules = ruleRows.filter((ruleRow) => ruleRow.parent_spec_id === row.id);
+      const allowedParentSpec = parentRules
+        .map((ruleRow) => rowById.get(ruleRow.parent_spec_id))
+        .filter((item): item is GeographicSiteSpecificationRow => item !== undefined)
+        .map((item) => this.mapSpecRefRow(item));
+      const allowedChildSpec = childRules
+        .map((ruleRow) => rowById.get(ruleRow.child_spec_id))
+        .filter((item): item is GeographicSiteSpecificationRow => item !== undefined)
+        .map((item) => this.mapSpecRefRow(item));
+
+      specs.set(row.id, {
+        '@type': 'GeographicSiteSpecification',
+        id: row.id,
+        href: row.href,
+        name: row.name,
+        code: row.code,
+        category: row.category,
+        lifecycleStatus: row.lifecycle_status,
+        ...(row.description ? { description: row.description } : {}),
+        ...(row.valid_for_start || row.valid_for_end
+          ? {
+              validFor: {
+                ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
+                ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
+              },
+            }
+          : {}),
+        specCharacteristic: JSON.parse(row.characteristics || '[]'),
+        allowedParentSpec,
+        allowedChildSpec,
+        allowedParentSpecIds: allowedParentSpec.map((item) => item.id),
+        allowedChildSpecIds: allowedChildSpec.map((item) => item.id),
+        _bootstrapProtected: Boolean(row.is_bootstrap),
+        _protectedAllowedParentSpecIds: parentRules
+          .filter((ruleRow) => Boolean(ruleRow.is_protected))
+          .map((ruleRow) => ruleRow.parent_spec_id),
+        _protectedAllowedChildSpecIds: childRules
+          .filter((ruleRow) => Boolean(ruleRow.is_protected))
+          .map((ruleRow) => ruleRow.child_spec_id),
+      });
+    }
+
+    return specs;
+  }
+
+  private loadSiteRelationshipsBySiteIds(
+    siteIds: string[],
+  ): Map<string, GeographicSiteRelationship[]> {
+    if (siteIds.length === 0) return new Map();
+
+    const rows = this.db.all<GeographicSiteRelationshipRow>(
+      `SELECT site_from_id, site_to_id, relationship_type, valid_for_start, valid_for_end
+       FROM tmf_geographic_site_relationship
+       WHERE site_from_id IN (${siteIds.map(() => '?').join(', ')})
+       ORDER BY site_from_id, relationship_type, site_to_id`,
+      siteIds,
+    );
+
+    const relationshipsBySiteId = new Map<string, GeographicSiteRelationship[]>();
+    for (const row of rows) {
+      const current = relationshipsBySiteId.get(row.site_from_id) ?? [];
+      current.push(this.mapRelationshipRow(row));
+      relationshipsBySiteId.set(row.site_from_id, current);
+    }
+    return relationshipsBySiteId;
+  }
+
+  private mapLocationRow(row: GeographicLocationRow): GeographicLocation {
+    const result: GeographicLocation = {
+      '@type': 'GeographicLocation',
+      id: row.id,
+      href: row.href,
+      tenantId: row.tenant_id ?? 'default',
+      geometryType: row.geometry_type,
+      geometry: JSON.parse(row.geometry),
+      spatialRef: row.spatial_ref,
+      characteristic: JSON.parse(row.characteristics || '[]'),
+    };
+    if (row.accuracy) result.accuracy = row.accuracy;
+    if (row.reference_point) result.referencePoint = row.reference_point;
+    if (row.valid_for_start || row.valid_for_end) {
+      result.validFor = {
+        ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
+        ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
+      };
+    }
+    return result;
+  }
+
+  private mapAddressRow(row: GeographicAddressRow): GeographicAddress {
+    const result: GeographicAddress = {
+      '@type': 'GeographicAddress',
+      id: row.id,
+      href: row.href,
+      tenantId: row.tenant_id ?? 'default',
+      street: row.street_name,
+      characteristic: JSON.parse(row.characteristics || '[]'),
+    };
+    if (row.street_nr) result.streetNr = row.street_nr;
+    if (row.city) result.city = row.city;
+    if (row.state_or_province) result.stateOrProvince = row.state_or_province;
+    if (row.postcode) result.postcode = row.postcode;
+    if (row.country) result.country = row.country;
+    if (row.geographic_location_id) {
+      result.geographicLocationId = row.geographic_location_id;
+      result.place = { id: row.geographic_location_id, '@referredType': 'GeographicLocation' };
+    }
+    if (row.valid_for_start || row.valid_for_end) {
+      result.validFor = {
+        ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
+        ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
+      };
+    }
+    return result;
+  }
+
+  private mapSiteRow(
+    row: GeographicSiteRow,
+    relatedSite: GeographicSiteRelationship[],
+  ): GeographicSite {
+    const result: GeographicSite = {
+      '@type': 'GeographicSite',
+      id: row.id,
+      href: row.href,
+      tenantId: row.tenant_id ?? 'default',
+      name: row.name,
+      status: row.status,
+      ...(row.status_date ? { statusDate: row.status_date } : {}),
+      ...(row.status_reason ? { statusReason: row.status_reason } : {}),
+      siteSpecificationId: row.site_specification_id,
+      siteSpecification: {
+        id: row.site_specification_id,
+        '@referredType': 'GeographicSiteSpecification',
+      },
+      relatedSite,
+      relatedParty: JSON.parse(row.related_party || '[]'),
+      siteAddress: JSON.parse(row.site_addresses || '[]'),
+      characteristic: JSON.parse(row.characteristics || '[]'),
+    };
+    if (row.geographic_location_id) {
+      result.place = { id: row.geographic_location_id, '@referredType': 'GeographicLocation' };
+    }
+    if (row.geographic_address_id) {
+      result.address = { id: row.geographic_address_id, '@referredType': 'GeographicAddress' };
+    }
+    if (row.parent_site_id) {
+      result.parentSite = { id: row.parent_site_id, '@referredType': 'GeographicSite' };
+    }
+    return result;
+  }
+
+  private mapRelationshipRow(
+    row: Omit<GeographicSiteRelationshipRow, 'site_from_id'> | GeographicSiteRelationshipRow,
+  ): GeographicSiteRelationship {
+    const relationship: GeographicSiteRelationship = {
+      id: row.site_to_id,
+      relationshipType: row.relationship_type,
+      '@referredType': 'GeographicSite',
+    };
+    if (row.valid_for_start || row.valid_for_end) {
+      relationship.validFor = {
+        ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
+        ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
+      };
+    }
+    return relationship;
+  }
+
+  private mapRelationshipTypeRow(row: GeographicRelationshipTypeRow): GeographicRelationshipType {
+    return {
+      '@type': 'GeographicRelationshipType',
+      id: row.id,
+      href: row.href,
+      code: row.code,
+      name: row.name,
+      inverseCode: row.inverse_code,
+      symmetric: Boolean(row.symmetric),
+      allowedSourceCategories: JSON.parse(row.allowed_source_categories || '[]'),
+      allowedTargetCategories: JSON.parse(row.allowed_target_categories || '[]'),
+      cardinality: JSON.parse(row.cardinality || '{}'),
+      lifecycleStatus: row.lifecycle_status,
+      _bootstrapProtected: Boolean(row.is_bootstrap),
+    };
+  }
+
+  private collectDescendantSiteIds(siteId: string, scope?: GeoTenantScope): string[] {
+    const result: string[] = [];
+    const queue = [siteId];
+    while (queue.length > 0) {
+      const parentId = queue.shift() as string;
+      const conditions = ['parent_site_id = ?'];
+      const params: string[] = [parentId];
+      if (scope?.tenantId) {
+        conditions.push('tenant_id = ?');
+        params.push(scope.tenantId);
+      }
+      const rows = this.db.all<{ id: string }>(
+        `SELECT id FROM tmf_geographic_site WHERE ${conditions.join(' AND ')} ORDER BY id`,
+        params,
+      );
+      for (const row of rows) {
+        if (!result.includes(row.id)) {
+          result.push(row.id);
+          queue.push(row.id);
+        }
+      }
+    }
+    return result;
+  }
+
+  private mapSpecRefRow(row: GeographicSiteSpecificationRow): GeographicSiteSpecificationRef {
+    return {
+      id: row.id,
+      href: row.href,
+      name: row.name,
+      code: row.code,
+      category: row.category,
+      '@referredType': 'GeographicSiteSpecification',
+    };
   }
 }
+
+const mapBulkJobRow = (row: GeoBulkJobRow): GeoBulkJob => ({
+  '@type': 'GeoBulkJob',
+  id: row.id,
+  tenantId: row.tenant_id,
+  target: row.target,
+  mode: row.mode,
+  idempotencyKey: row.idempotency_key,
+  status: row.status,
+  submittedAt: row.submitted_at,
+  startedAt: row.started_at,
+  ...(row.completed_at ? { completedAt: row.completed_at } : {}),
+  total: Number(row.total),
+  successCount: Number(row.success_count),
+  errorCount: Number(row.error_count),
+  warningCount: Number(row.warning_count),
+  actorSub: row.actor_sub,
+  traceId: row.trace_id,
+});
+
+const mapBulkJobResultRow = (row: GeoBulkJobResultRow): GeoBulkJobResult => ({
+  '@type': 'GeoBulkJobResult',
+  id: row.id,
+  jobId: row.job_id,
+  tenantId: row.tenant_id,
+  index: Number(row.item_index),
+  status: row.status,
+  ...(row.entity_id ? { entityId: row.entity_id } : {}),
+  ...(row.legacy_system ? { legacySystem: row.legacy_system } : {}),
+  ...(row.legacy_entity ? { legacyEntity: row.legacy_entity } : {}),
+  ...(row.legacy_id ? { legacyId: row.legacy_id } : {}),
+  ...(row.error_code ? { errorCode: row.error_code } : {}),
+  ...(row.message ? { message: row.message } : {}),
+  warnings: JSON.parse(row.warnings || '[]'),
+});

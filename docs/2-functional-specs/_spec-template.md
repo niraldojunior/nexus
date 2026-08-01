@@ -67,8 +67,8 @@ Cenários já validados e documentados:
 | Cenário | Onde está |
 |---|---|
 | Home Passed → Home Connected → ONT → Serviço | `../1-overview/product-overview.md` §8.1 |
-| Central Office GPON — hierarquia OLT→Card→Porta→DIO→Cabo→Splitter→CTO→ONT | `02-module-resource.md` §31.2 |
-| Cliente corporativo em condomínio empresarial (VRF + CPE + porta) | `02-module-resource.md` §31.1 |
+| Central Office GPON — hierarquia OLT→Card→Porta→DIO→Cabo→Splitter→CTO→ONT | `02-module-resource.md` §34.2 |
+| Cliente corporativo em condomínio empresarial (VRF + CPE + porta) | `02-module-resource.md` §34.1 |
 | Banda larga residencial via ISP (wholesale Bitstream) | `03-module-service.md` §22.1 |
 | Link dedicado multiponto L3VPN (CFS→RFS acesso+transporte+backbone) | `03-module-service.md` §22.2 |
 | CloudVoIP sobre link empresarial (serviceRelationship dependsOn) | `03-module-service.md` §22.3 |

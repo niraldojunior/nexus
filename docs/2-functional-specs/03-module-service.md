@@ -1233,7 +1233,7 @@ Modela serviços empresariais: link dedicado (EILD), L2VPN (transporte ethernet)
 
 ### 18.2 Racional arquitetural
 
-Demonstra a composição CFS→RFS-acesso + RFS-transporte, com RFS de backbone compartilhado, e o uso de Resources lógicos (VRF, IP, circuito) do Módulo 2. Reaproveita o cenário Acme do HLD03 (seção 31.1), agora com a decomposição de serviço completa.
+Demonstra a composição CFS→RFS-acesso + RFS-transporte, com RFS de backbone compartilhado, e o uso de Resources lógicos (VRF, IP, circuito) do Módulo 2. Reaproveita o cenário Acme do HLD02 (seção 34.1), agora com a decomposição de serviço completa.
 
 ### 18.3 Modelagem de referência
 
@@ -1557,7 +1557,7 @@ CFS "Bitstream-GPON-700-ProvedorX-SUB778899"  (state: active)
 
 ### 22.2 Cenário B — Cliente corporativo, link dedicado multiponto
 
-**Contexto:** Empresa **Acme** (cliente direto V.tal) contrata link dedicado 1G entre matriz (RJ) e filial (SP), com L3VPN. Reaproveita o cenário Acme do HLD03 (seção 31.1), agora com a decomposição de serviço.
+**Contexto:** Empresa **Acme** (cliente direto V.tal) contrata link dedicado 1G entre matriz (RJ) e filial (SP), com L3VPN. Reaproveita o cenário Acme do HLD02 (seção 34.1), agora com a decomposição de serviço.
 
 ```
 CFS "Link-Dedicado-1G-Acme"  (SubscriberID SUB-CORP-12345 · subscriber: Acme direto)

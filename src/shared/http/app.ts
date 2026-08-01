@@ -1,7 +1,10 @@
 ﻿import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import type { AppConfig } from '../config/env.js';
 import { AppError } from '../errors/app-error.js';
-import { forbiddenError, unauthorizedError } from '../errors/http-errors.js';
+import {
+  buildRequestContext,
+  ensureAuthorized as ensureRequestAuthorized,
+} from './request-context.js';
 import type { Logger } from '../logging/logger.js';
 import { InMemoryEntityRepository } from '../persistence/in-memory-entity-repository.js';
 import { PostgresDatabase } from '../persistence/postgres-database.js';
@@ -14,11 +17,21 @@ import { createNexusMcpModule } from '../../modules/mcp/index.js';
 import type { GeoService } from '../../modules/geo/service.js';
 import type { GeoTreeService } from '../../modules/geo/tree-service.js';
 import type { OrderService } from '../../modules/order/service.js';
-import { createNexusRuntime, DEFAULT_RUNTIME_USER, type NexusRuntime } from '../runtime/nexus-runtime.js';
+import {
+  createNexusRuntime,
+  DEFAULT_RUNTIME_USER,
+  type NexusRuntime,
+} from '../runtime/nexus-runtime.js';
 import type { PartyService } from '../../modules/party/service.js';
 import type { ResourceService } from '../../modules/resource/service.js';
 import type { ServiceService } from '../../modules/service/service.js';
-import type { AddMessageInput, LLMRequest, LLMResponse, ResearchMessage, ResearchSession } from '../../modules/search/domain.js';
+import type {
+  AddMessageInput,
+  LLMRequest,
+  LLMResponse,
+  ResearchMessage,
+  ResearchSession,
+} from '../../modules/search/domain.js';
 import type { TmfEventQuery } from '../tmf/index.js';
 import type { EventService } from '../tmf/index.js';
 import type { Party, PartyQuery, PartyRoleQuery } from '../../modules/party/index.js';
@@ -89,7 +102,8 @@ type ResourceWorkspaceSnapshot = {
 
 const RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE = 100;
 
-type ServiceWorkspaceTab = 'CustomerFacingService' | 'ResourceFacingService' | 'ServiceSpecification';
+type ServiceWorkspaceTab =
+  'CustomerFacingService' | 'ResourceFacingService' | 'ServiceSpecification';
 
 // Ao contrário do Resource (uma aba = um `kind`, paginação por página faz sentido), o Inventário
 // de Service mostra CFS+RFS juntos numa única visão — então aqui o corte que importa é a
@@ -105,8 +119,9 @@ type ServiceWorkspaceSnapshot = {
   resourceFacingServices: ResourceFacingService[];
 };
 
-export const handleHttpRequest = async (dependencies: HttpRequestHandlerDependencies): Promise<void> =>
-  routeRequest(dependencies);
+export const handleHttpRequest = async (
+  dependencies: HttpRequestHandlerDependencies,
+): Promise<void> => routeRequest(dependencies);
 
 export const createApp = ({ config, logger }: AppDependencies) => {
   const repository = new InMemoryEntityRepository();
@@ -206,14 +221,8 @@ const routeRequest = async ({
   const userRepository = runtime.userRepository;
   const searchRepository = runtime.searchRepository;
   const researchRepository = runtime.researchRepository;
-  const {
-    geoService,
-    eventService,
-    partyService,
-    resourceService,
-    serviceService,
-    orderService,
-  } = runtime;
+  const { geoService, eventService, partyService, resourceService, serviceService, orderService } =
+    runtime;
   const apiKey = process.env.OPENAI_API_KEY;
   const apiEndpoint = process.env.API_ENDPOINT || 'https://api.openai.com/v1';
   const chatGptProvider = apiKey ? new ChatGPTProvider(apiKey, apiEndpoint) : null;
@@ -489,7 +498,9 @@ const routeRequest = async ({
 
   if (
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceSpecification') ||
-    url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceFunctionSpecification') ||
+    url.pathname.startsWith(
+      '/tmf-api/resourceCatalogManagement/v4/resourceFunctionSpecification',
+    ) ||
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceCategory') ||
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceType') ||
     url.pathname.startsWith('/tmf-api/resourceInventoryManagement/v4/resource') ||
@@ -518,26 +529,36 @@ const routeRequest = async ({
     return;
   }
 
-  if (url.pathname.startsWith('/tmf-api/partyManagement/v4/party') || url.pathname.startsWith('/tmf-api/partyRoleManagement/v4/partyRole')) {
+  if (
+    url.pathname.startsWith('/tmf-api/partyManagement/v4/party') ||
+    url.pathname.startsWith('/tmf-api/partyRoleManagement/v4/partyRole')
+  ) {
     await routePartyRequest({ request, response, config, partyService, url });
     return;
   }
 
   if (url.pathname.startsWith('/v1/geo/') || url.pathname.startsWith('/tmf-api/')) {
-    await routeGeoRequest({ request, response, config, geoService, geoTreeService: runtime.geoTreeService, url });
+    await routeGeoRequest({
+      request,
+      response,
+      config,
+      geoService,
+      geoTreeService: runtime.geoTreeService,
+      url,
+    });
     return;
   }
 
   if (url.pathname.startsWith('/v1/research/')) {
     const llmToolCatalog = buildLlmToolCatalog(mcpModule);
-    await routeResearchRequest({ 
-    request,
-    response,
-    config,
-    runtime,
-    defaultUser,
-    searchService,
-    researchRepository,
+    await routeResearchRequest({
+      request,
+      response,
+      config,
+      runtime,
+      defaultUser,
+      searchService,
+      researchRepository,
       chatGptProvider,
       localKnowledgeProvider,
       mcpModule,
@@ -565,7 +586,7 @@ const routeGeoRequest = async ({
   geoTreeService: GeoTreeService;
   url: URL;
 }): Promise<void> => {
-  ensureAuthorized(request, config);
+  const geoContext = await buildRequestContext(request, config);
 
   // Árvore de navegação — um nível por chamada. Vem antes do roteador de
   // entidades porque `tree` não é uma entidade Geo, é uma projeção de leitura.
@@ -599,7 +620,12 @@ const routeGeoRequest = async ({
     const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
     const maxLng = parseOptionalNumber(url.searchParams.get('maxLng'));
     const maxLat = parseOptionalNumber(url.searchParams.get('maxLat'));
-    if (minLng === undefined || minLat === undefined || maxLng === undefined || maxLat === undefined) {
+    if (
+      minLng === undefined ||
+      minLat === undefined ||
+      maxLng === undefined ||
+      maxLat === undefined
+    ) {
       throw new AppError('minLng, minLat, maxLng and maxLat are required', {
         code: 'GEO_TREE_VIEWPORT_BOUNDS_REQUIRED',
         statusCode: 400,
@@ -621,20 +647,126 @@ const routeGeoRequest = async ({
   if (request.method === 'GET' && url.pathname === '/v1/geo/tree/search') {
     const term = url.searchParams.get('q') ?? '';
     const limit = parseOptionalNumber(url.searchParams.get('limit'));
-    return sendJson(response, 200, geoTreeService.search(term, limit !== undefined ? { limit } : {}));
+    return sendJson(
+      response,
+      200,
+      geoTreeService.search(term, limit !== undefined ? { limit } : {}),
+    );
   }
 
   if (request.method === 'POST' && url.pathname === '/v1/geo/workspace/site-at-address') {
     const body = await readBody(request);
-    return sendJson(response, 201, geoService.createSiteAtAddress(body as Parameters<typeof geoService.createSiteAtAddress>[0]));
+    return sendJson(
+      response,
+      201,
+      geoService.createSiteAtAddress(
+        body as Parameters<typeof geoService.createSiteAtAddress>[0],
+        geoContext,
+      ),
+    );
+  }
+
+  if (request.method === 'POST' && url.pathname === '/v1/geo/site-specifications/bootstrap') {
+    return sendJson(response, 200, geoService.ensureBootstrapSpecifications(geoContext));
+  }
+
+  if (request.method === 'POST' && url.pathname === '/v1/geo/relationship-types/bootstrap') {
+    return sendJson(response, 200, geoService.ensureBootstrapRelationshipTypes(geoContext));
   }
 
   const eventsMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/events$/);
   if (eventsMatch && request.method === 'GET') {
-    return sendJson(response, 200, geoService.listSiteEvents(decodeURIComponent(eventsMatch[1] ?? '')));
+    return sendJson(
+      response,
+      200,
+      geoService.listSiteEvents(decodeURIComponent(eventsMatch[1] ?? ''), geoContext),
+    );
+  }
+
+  const historyMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/history$/);
+  if (historyMatch && request.method === 'GET') {
+    return sendJson(
+      response,
+      200,
+      geoService.listSiteHistory(decodeURIComponent(historyMatch[1] ?? ''), geoContext),
+    );
+  }
+
+  const auditMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/audit$/);
+  if (auditMatch && request.method === 'GET') {
+    return sendJson(
+      response,
+      200,
+      geoService.listSiteAudit(decodeURIComponent(auditMatch[1] ?? ''), geoContext),
+    );
+  }
+
+  const referencesMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/references$/);
+  if (referencesMatch && request.method === 'GET') {
+    return sendJson(
+      response,
+      200,
+      geoService.getSiteReferences(decodeURIComponent(referencesMatch[1] ?? ''), geoContext),
+    );
+  }
+
+  const deactivationImpactMatch = url.pathname.match(
+    /^\/v1\/geo\/sites\/([^/]+)\/deactivation-impact$/,
+  );
+  if (deactivationImpactMatch && request.method === 'GET') {
+    return sendJson(
+      response,
+      200,
+      geoService.getSiteDeactivationImpact(
+        decodeURIComponent(deactivationImpactMatch[1] ?? ''),
+        geoContext,
+      ),
+    );
+  }
+
+  const descendantCountMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/descendant-count$/);
+  if (descendantCountMatch && request.method === 'GET') {
+    return sendJson(
+      response,
+      200,
+      geoService.countSiteDescendants(
+        decodeURIComponent(descendantCountMatch[1] ?? ''),
+        geoContext,
+      ),
+    );
+  }
+
+  const siteTreeMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/tree$/);
+  if (siteTreeMatch && request.method === 'GET') {
+    return sendJson(
+      response,
+      200,
+      geoService.getSiteTree(decodeURIComponent(siteTreeMatch[1] ?? ''), geoContext),
+    );
+  }
+
+  const siteTransitionMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/transitions$/);
+  if (siteTransitionMatch && request.method === 'POST') {
+    const body = await readBody(request);
+    return sendJson(
+      response,
+      200,
+      geoService.transitionSite(
+        decodeURIComponent(siteTransitionMatch[1] ?? ''),
+        body as Parameters<typeof geoService.transitionSite>[1],
+        geoContext,
+      ),
+    );
   }
 
   const relationshipMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/relationships$/);
+  if (relationshipMatch && request.method === 'GET') {
+    return sendJson(
+      response,
+      200,
+      geoService.listSiteRelationships(decodeURIComponent(relationshipMatch[1] ?? ''), geoContext),
+    );
+  }
   if (relationshipMatch && request.method === 'POST') {
     const body = await readBody(request);
     const siteId = decodeURIComponent(relationshipMatch[1] ?? '');
@@ -646,6 +778,183 @@ const routeGeoRequest = async ({
         String(body.relatedSiteId ?? body.id ?? ''),
         String(body.relationshipType ?? ''),
         body.validFor as { startDateTime?: string; endDateTime?: string } | undefined,
+        geoContext,
+      ),
+    );
+  }
+
+  if (relationshipMatch && request.method === 'DELETE') {
+    const body = await readBody(request);
+    const siteId = decodeURIComponent(relationshipMatch[1] ?? '');
+    return sendJson(response, 200, {
+      removed: geoService.removeSiteRelationship(
+        siteId,
+        String(body.relatedSiteId ?? body.id ?? ''),
+        String(body.relationshipType ?? ''),
+        geoContext,
+      ),
+    });
+  }
+
+  const relationshipTypeRoute = url.pathname.match(/^\/v1\/geo\/relationship-types(?:\/([^/]+))?$/);
+  if (relationshipTypeRoute) {
+    const code = relationshipTypeRoute[1]
+      ? decodeURIComponent(relationshipTypeRoute[1])
+      : undefined;
+    if (!code && request.method === 'GET') {
+      return sendJson(
+        response,
+        200,
+        geoService.listRelationshipTypes(
+          parseGeoRelationshipTypeListQuery(url.searchParams),
+          geoContext,
+        ),
+      );
+    }
+    if (!code && request.method === 'POST') {
+      return sendJson(
+        response,
+        201,
+        geoService.createRelationshipType(
+          (await readBody(request)) as Parameters<typeof geoService.createRelationshipType>[0],
+          geoContext,
+        ),
+      );
+    }
+    if (code && request.method === 'GET') {
+      return sendJsonOrNotFound(
+        response,
+        geoService.getRelationshipType(code, geoContext),
+        'GEO_RELATIONSHIP_TYPE_NOT_FOUND',
+      );
+    }
+    if (code && request.method === 'PATCH') {
+      return sendJson(
+        response,
+        200,
+        geoService.updateRelationshipType(
+          code,
+          (await readBody(request)) as Parameters<typeof geoService.updateRelationshipType>[1],
+          geoContext,
+        ),
+      );
+    }
+    if (code && request.method === 'DELETE') {
+      return sendJson(response, 200, geoService.retireRelationshipType(code, geoContext));
+    }
+  }
+
+  if (request.method === 'POST' && url.pathname === '/v1/geo/locations/intersections') {
+    const body = await readBody(request);
+    return sendJson(
+      response,
+      200,
+      geoService.findLocationIntersections(
+        (body.geometry ?? body) as Parameters<typeof geoService.findLocationIntersections>[0],
+        geoContext,
+      ),
+    );
+  }
+
+  const locationReferencesMatch = url.pathname.match(/^\/v1\/geo\/locations\/([^/]+)\/references$/);
+  if (locationReferencesMatch && request.method === 'GET') {
+    return sendJson(
+      response,
+      200,
+      geoService.getLocationReferences(
+        decodeURIComponent(locationReferencesMatch[1] ?? ''),
+        geoContext,
+      ),
+    );
+  }
+
+  if (request.method === 'GET' && url.pathname === '/v1/geo/addresses/suggest') {
+    return sendJson(
+      response,
+      200,
+      geoService.suggestAddresses(url.searchParams.get('q') ?? '', geoContext),
+    );
+  }
+
+  if (request.method === 'POST' && url.pathname === '/v1/geo/addresses/normalize') {
+    return sendJson(
+      response,
+      200,
+      geoService.normalizeAddress(await readBody(request), geoContext),
+    );
+  }
+
+  const addressGeocodeMatch = url.pathname.match(/^\/v1\/geo\/addresses\/([^/]+)\/geocode$/);
+  if (addressGeocodeMatch && request.method === 'POST') {
+    return sendJson(
+      response,
+      200,
+      geoService.geocodeAddress(decodeURIComponent(addressGeocodeMatch[1] ?? ''), geoContext),
+    );
+  }
+
+  const addressVersionsMatch = url.pathname.match(/^\/v1\/geo\/addresses\/([^/]+)\/versions$/);
+  if (addressVersionsMatch && request.method === 'GET') {
+    return sendJson(
+      response,
+      200,
+      geoService.listAddressVersions(decodeURIComponent(addressVersionsMatch[1] ?? ''), geoContext),
+    );
+  }
+
+  const addressReferencesMatch = url.pathname.match(/^\/v1\/geo\/addresses\/([^/]+)\/references$/);
+  if (addressReferencesMatch && request.method === 'GET') {
+    return sendJson(
+      response,
+      200,
+      geoService.getAddressReferences(
+        decodeURIComponent(addressReferencesMatch[1] ?? ''),
+        geoContext,
+      ),
+    );
+  }
+
+  const allowedChildrenMatch = url.pathname.match(
+    /^\/(?:v1\/geo\/site-specifications|tmf-api\/geographicSiteManagement\/v4\/geographicSiteSpecification)\/([^/]+)\/allowedChildren$/,
+  );
+  if (allowedChildrenMatch && request.method === 'GET') {
+    return sendJson(
+      response,
+      200,
+      geoService.getAllowedChildren(decodeURIComponent(allowedChildrenMatch[1] ?? '')),
+    );
+  }
+
+  const containmentImpactMatch = url.pathname.match(
+    /^\/v1\/geo\/site-specifications\/([^/]+)\/containment-impact$/,
+  );
+  if (containmentImpactMatch && request.method === 'POST') {
+    const body = await readBody(request);
+    const impactInput: Parameters<typeof geoService.analyzeContainmentImpact>[1] = {};
+    if (body.allowedParentSpec !== undefined) {
+      impactInput.allowedParentSpec = body.allowedParentSpec as Exclude<
+        Parameters<typeof geoService.analyzeContainmentImpact>[1]['allowedParentSpec'],
+        undefined
+      >;
+    }
+    if (body.allowedChildSpec !== undefined) {
+      impactInput.allowedChildSpec = body.allowedChildSpec as Exclude<
+        Parameters<typeof geoService.analyzeContainmentImpact>[1]['allowedChildSpec'],
+        undefined
+      >;
+    }
+    if (body.allowedParentSpecIds !== undefined) {
+      impactInput.allowedParentSpecIds = body.allowedParentSpecIds as string[];
+    }
+    if (body.allowedChildSpecIds !== undefined) {
+      impactInput.allowedChildSpecIds = body.allowedChildSpecIds as string[];
+    }
+    return sendJson(
+      response,
+      200,
+      geoService.analyzeContainmentImpact(
+        decodeURIComponent(containmentImpactMatch[1] ?? ''),
+        impactInput,
       ),
     );
   }
@@ -654,31 +963,157 @@ const routeGeoRequest = async ({
   if (!route) throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
 
   if (route.resource === 'locations') {
-    if (!route.id && request.method === 'GET') return sendJson(response, 200, geoService.listLocations(parseGeoListQuery(url.searchParams)));
-    if (!route.id && request.method === 'POST') return sendJson(response, 201, geoService.createLocation(await readBody(request) as Parameters<typeof geoService.createLocation>[0]));
-    if (route.id && request.method === 'GET') return sendJsonOrNotFound(response, geoService.getLocation(route.id), 'GEO_LOCATION_NOT_FOUND');
-    if (route.id && request.method === 'PATCH') return sendJson(response, 200, geoService.updateLocation(route.id, await readBody(request) as Parameters<typeof geoService.updateLocation>[1]));
+    if (!route.id && request.method === 'GET') {
+      const spatialQuery = parseGeoLocationSpatialQuery(url.searchParams);
+      const locations = spatialQuery
+        ? geoService.listLocationsSpatial(spatialQuery, geoContext)
+        : geoService.listLocations(parseGeoListQuery(url.searchParams), geoContext);
+      if ((request.headers.accept ?? '').includes('application/geo+json')) {
+        return sendJson(response, 200, geoService.locationsToFeatureCollection(locations));
+      }
+      return sendJson(response, 200, locations);
+    }
+    if (!route.id && request.method === 'POST')
+      return sendJson(
+        response,
+        201,
+        geoService.createLocation(
+          (await readBody(request)) as Parameters<typeof geoService.createLocation>[0],
+          geoContext,
+        ),
+      );
+    if (route.id && request.method === 'GET')
+      return sendJsonOrNotFound(
+        response,
+        geoService.getLocation(route.id, geoContext),
+        'GEO_LOCATION_NOT_FOUND',
+      );
+    if (route.id && request.method === 'PATCH')
+      return sendJson(
+        response,
+        200,
+        geoService.updateLocation(
+          route.id,
+          (await readBody(request)) as Parameters<typeof geoService.updateLocation>[1],
+          geoContext,
+        ),
+      );
+    if (route.id && request.method === 'DELETE')
+      return sendJson(response, 200, geoService.terminateLocation(route.id, geoContext));
   }
 
   if (route.resource === 'addresses') {
-    if (!route.id && request.method === 'GET') return sendJson(response, 200, geoService.listAddresses(parseGeoListQuery(url.searchParams)));
-    if (!route.id && request.method === 'POST') return sendJson(response, 201, geoService.createAddress(await readBody(request) as Parameters<typeof geoService.createAddress>[0]));
-    if (route.id && request.method === 'GET') return sendJsonOrNotFound(response, geoService.getAddress(route.id), 'GEO_ADDRESS_NOT_FOUND');
-    if (route.id && request.method === 'PATCH') return sendJson(response, 200, geoService.updateAddress(route.id, await readBody(request) as Parameters<typeof geoService.updateAddress>[1]));
+    if (!route.id && request.method === 'GET')
+      return sendJson(
+        response,
+        200,
+        geoService.listAddresses(parseGeoListQuery(url.searchParams), geoContext),
+      );
+    if (!route.id && request.method === 'POST')
+      return sendJson(
+        response,
+        201,
+        geoService.createAddress(
+          (await readBody(request)) as Parameters<typeof geoService.createAddress>[0],
+          geoContext,
+        ),
+      );
+    if (route.id && request.method === 'GET')
+      return sendJsonOrNotFound(
+        response,
+        geoService.getAddress(route.id, geoContext),
+        'GEO_ADDRESS_NOT_FOUND',
+      );
+    if (route.id && request.method === 'PATCH')
+      return sendJson(
+        response,
+        200,
+        geoService.updateAddress(
+          route.id,
+          (await readBody(request)) as Parameters<typeof geoService.updateAddress>[1],
+          geoContext,
+        ),
+      );
+    if (route.id && request.method === 'DELETE')
+      return sendJson(response, 200, geoService.terminateAddress(route.id, geoContext));
   }
 
   if (route.resource === 'site-specifications') {
-    if (!route.id && request.method === 'GET') return sendJson(response, 200, geoService.listSpecs());
-    if (!route.id && request.method === 'POST') return sendJson(response, 201, geoService.createSpec(await readBody(request) as Parameters<typeof geoService.createSpec>[0]));
-    if (route.id && request.method === 'GET') return sendJsonOrNotFound(response, geoService.getSpec(route.id), 'GEO_SPEC_NOT_FOUND');
-    if (route.id && request.method === 'PATCH') return sendJson(response, 200, geoService.updateSpec(route.id, await readBody(request) as Parameters<typeof geoService.updateSpec>[1]));
+    if (!route.id && request.method === 'GET')
+      return sendJson(
+        response,
+        200,
+        geoService.listSpecs(parseGeoSpecificationListQuery(url.searchParams), geoContext),
+      );
+    if (!route.id && request.method === 'POST')
+      return sendJson(
+        response,
+        201,
+        geoService.createSpec(
+          (await readBody(request)) as Parameters<typeof geoService.createSpec>[0],
+          geoContext,
+        ),
+      );
+    if (route.id && request.method === 'GET')
+      return sendJsonOrNotFound(
+        response,
+        geoService.getSpec(route.id, geoContext),
+        'GEO_SPEC_NOT_FOUND',
+      );
+    if (route.id && request.method === 'PATCH')
+      return sendJson(
+        response,
+        200,
+        geoService.updateSpec(
+          route.id,
+          (await readBody(request)) as Parameters<typeof geoService.updateSpec>[1],
+          geoContext,
+        ),
+      );
+    if (route.id && request.method === 'DELETE')
+      return sendJson(response, 200, geoService.retireSpec(route.id, geoContext));
   }
 
   if (route.resource === 'sites') {
-    if (!route.id && request.method === 'GET') return sendJson(response, 200, geoService.listSites(parseGeoListQuery(url.searchParams)));
-    if (!route.id && request.method === 'POST') return sendJson(response, 201, geoService.createSite(await readBody(request) as Parameters<typeof geoService.createSite>[0]));
-    if (route.id && request.method === 'GET') return sendJsonOrNotFound(response, geoService.getSite(route.id), 'GEO_SITE_NOT_FOUND');
-    if (route.id && request.method === 'PATCH') return sendJson(response, 200, geoService.updateSite(route.id, await readBody(request) as Parameters<typeof geoService.updateSite>[1]));
+    if (!route.id && request.method === 'GET')
+      return sendJson(
+        response,
+        200,
+        geoService.listSites(parseGeoListQuery(url.searchParams), geoContext),
+      );
+    if (!route.id && request.method === 'POST')
+      return sendJson(
+        response,
+        201,
+        geoService.createSite(
+          (await readBody(request)) as Parameters<typeof geoService.createSite>[0],
+          geoContext,
+        ),
+      );
+    if (route.id && request.method === 'GET')
+      return sendJsonOrNotFound(
+        response,
+        geoService.getSite(route.id, geoContext),
+        'GEO_SITE_NOT_FOUND',
+      );
+    if (route.id && request.method === 'PATCH') {
+      const body = (await readBody(request)) as Parameters<typeof geoService.updateSite>[1];
+      if (
+        body.status !== undefined &&
+        Object.keys(body).every((key) => ['status', 'statusReason', 'statusDate'].includes(key))
+      ) {
+        return sendJson(
+          response,
+          200,
+          geoService.transitionSite(
+            route.id,
+            body as Parameters<typeof geoService.transitionSite>[1],
+            geoContext,
+          ),
+        );
+      }
+      return sendJson(response, 200, geoService.updateSite(route.id, body, geoContext));
+    }
   }
 
   throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
@@ -737,15 +1172,32 @@ const routePartyRequest = async ({
     }
 
     if (!partyRoute.id && request.method === 'POST') {
-      return sendJson(response, 201, partyService.createParty((await readBody(request)) as Parameters<typeof partyService.createParty>[0]));
+      return sendJson(
+        response,
+        201,
+        partyService.createParty(
+          (await readBody(request)) as Parameters<typeof partyService.createParty>[0],
+        ),
+      );
     }
 
     if (partyRoute.id && request.method === 'GET') {
-      return sendJsonOrNotFound(response, partyService.getParty(partyRoute.id), 'TMF_PARTY_NOT_FOUND');
+      return sendJsonOrNotFound(
+        response,
+        partyService.getParty(partyRoute.id),
+        'TMF_PARTY_NOT_FOUND',
+      );
     }
 
     if (partyRoute.id && request.method === 'PATCH') {
-      return sendJson(response, 200, partyService.updateParty(partyRoute.id, (await readBody(request)) as Parameters<typeof partyService.updateParty>[1]));
+      return sendJson(
+        response,
+        200,
+        partyService.updateParty(
+          partyRoute.id,
+          (await readBody(request)) as Parameters<typeof partyService.updateParty>[1],
+        ),
+      );
     }
 
     if (partyRoute.id && request.method === 'DELETE') {
@@ -756,19 +1208,40 @@ const routePartyRequest = async ({
   const roleRoute = resolvePartyRoleRoute(url.pathname);
   if (roleRoute) {
     if (!roleRoute.id && request.method === 'GET') {
-      return sendJson(response, 200, partyService.listPartyRoles(parsePartyRoleQuery(url.searchParams)));
+      return sendJson(
+        response,
+        200,
+        partyService.listPartyRoles(parsePartyRoleQuery(url.searchParams)),
+      );
     }
 
     if (!roleRoute.id && request.method === 'POST') {
-      return sendJson(response, 201, partyService.createPartyRole((await readBody(request)) as Parameters<typeof partyService.createPartyRole>[0]));
+      return sendJson(
+        response,
+        201,
+        partyService.createPartyRole(
+          (await readBody(request)) as Parameters<typeof partyService.createPartyRole>[0],
+        ),
+      );
     }
 
     if (roleRoute.id && request.method === 'GET') {
-      return sendJsonOrNotFound(response, partyService.getPartyRole(roleRoute.id), 'TMF_PARTY_ROLE_NOT_FOUND');
+      return sendJsonOrNotFound(
+        response,
+        partyService.getPartyRole(roleRoute.id),
+        'TMF_PARTY_ROLE_NOT_FOUND',
+      );
     }
 
     if (roleRoute.id && request.method === 'PATCH') {
-      return sendJson(response, 200, partyService.updatePartyRole(roleRoute.id, (await readBody(request)) as Parameters<typeof partyService.updatePartyRole>[1]));
+      return sendJson(
+        response,
+        200,
+        partyService.updatePartyRole(
+          roleRoute.id,
+          (await readBody(request)) as Parameters<typeof partyService.updatePartyRole>[1],
+        ),
+      );
     }
 
     if (roleRoute.id && request.method === 'DELETE') {
@@ -799,36 +1272,79 @@ const routeResourceRequest = async ({
     throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
   }
 
-  if (route.id && (url.pathname.endsWith('/relationships') || url.pathname.includes('/relationships/'))) {
+  if (
+    route.id &&
+    (url.pathname.endsWith('/relationships') || url.pathname.includes('/relationships/'))
+  ) {
     if (request.method === 'GET' && url.pathname.endsWith('/relationships')) {
       return sendJson(response, 200, resourceService.listResourceRelationships(route.id));
     }
 
     if (request.method === 'POST' && url.pathname.endsWith('/relationships')) {
-      return sendJson(response, 201, resourceService.addResourceRelationship(route.id, (await readBody(request)) as Parameters<typeof resourceService.addResourceRelationship>[1]));
+      return sendJson(
+        response,
+        201,
+        resourceService.addResourceRelationship(
+          route.id,
+          (await readBody(request)) as Parameters<
+            typeof resourceService.addResourceRelationship
+          >[1],
+        ),
+      );
     }
 
     if (request.method === 'DELETE' && route.relationshipId) {
       return sendJson(
         response,
         200,
-        resourceService.removeResourceRelationship(route.id, route.relationshipId, route.relationshipType ?? 'containsAsChild'),
+        resourceService.removeResourceRelationship(
+          route.id,
+          route.relationshipId,
+          route.relationshipType ?? 'containsAsChild',
+        ),
       );
     }
   }
 
   if (route.kind === 'resourceSpecification') {
     if (!route.id && request.method === 'GET') {
-      return sendJson(response, 200, resourceService.listResourceSpecifications(parseResourceSpecificationQuery(url.searchParams)));
+      return sendJson(
+        response,
+        200,
+        resourceService.listResourceSpecifications(
+          parseResourceSpecificationQuery(url.searchParams),
+        ),
+      );
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, resourceService.createResourceSpecification((await readBody(request)) as Parameters<typeof resourceService.createResourceSpecification>[0]));
+      return sendJson(
+        response,
+        201,
+        resourceService.createResourceSpecification(
+          (await readBody(request)) as Parameters<
+            typeof resourceService.createResourceSpecification
+          >[0],
+        ),
+      );
     }
     if (route.id && request.method === 'GET') {
-      return sendJsonOrNotFound(response, resourceService.getResourceSpecification(route.id), 'RESOURCE_SPEC_NOT_FOUND');
+      return sendJsonOrNotFound(
+        response,
+        resourceService.getResourceSpecification(route.id),
+        'RESOURCE_SPEC_NOT_FOUND',
+      );
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, resourceService.updateResourceSpecification(route.id, (await readBody(request)) as Parameters<typeof resourceService.updateResourceSpecification>[1]));
+      return sendJson(
+        response,
+        200,
+        resourceService.updateResourceSpecification(
+          route.id,
+          (await readBody(request)) as Parameters<
+            typeof resourceService.updateResourceSpecification
+          >[1],
+        ),
+      );
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, resourceService.deleteResourceSpecification(route.id));
@@ -837,16 +1353,43 @@ const routeResourceRequest = async ({
 
   if (route.kind === 'resourceFunctionSpecification') {
     if (!route.id && request.method === 'GET') {
-      return sendJson(response, 200, resourceService.listResourceFunctionSpecifications(parseResourceFunctionSpecificationQuery(url.searchParams)));
+      return sendJson(
+        response,
+        200,
+        resourceService.listResourceFunctionSpecifications(
+          parseResourceFunctionSpecificationQuery(url.searchParams),
+        ),
+      );
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, resourceService.createResourceFunctionSpecification((await readBody(request)) as Parameters<typeof resourceService.createResourceFunctionSpecification>[0]));
+      return sendJson(
+        response,
+        201,
+        resourceService.createResourceFunctionSpecification(
+          (await readBody(request)) as Parameters<
+            typeof resourceService.createResourceFunctionSpecification
+          >[0],
+        ),
+      );
     }
     if (route.id && request.method === 'GET') {
-      return sendJsonOrNotFound(response, resourceService.getResourceFunctionSpecification(route.id), 'RESOURCE_FUNCTION_SPEC_NOT_FOUND');
+      return sendJsonOrNotFound(
+        response,
+        resourceService.getResourceFunctionSpecification(route.id),
+        'RESOURCE_FUNCTION_SPEC_NOT_FOUND',
+      );
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, resourceService.updateResourceFunctionSpecification(route.id, (await readBody(request)) as Parameters<typeof resourceService.updateResourceFunctionSpecification>[1]));
+      return sendJson(
+        response,
+        200,
+        resourceService.updateResourceFunctionSpecification(
+          route.id,
+          (await readBody(request)) as Parameters<
+            typeof resourceService.updateResourceFunctionSpecification
+          >[1],
+        ),
+      );
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, resourceService.deleteResourceFunctionSpecification(route.id));
@@ -858,7 +1401,9 @@ const routeResourceRequest = async ({
       return sendJson(response, 200, resourceService.listResourceCategories());
     }
     if (route.id && request.method === 'GET') {
-      const category = resourceService.listResourceCategories().find((item) => item.id === route.id || item.code === route.id);
+      const category = resourceService
+        .listResourceCategories()
+        .find((item) => item.id === route.id || item.code === route.id);
       return sendJsonOrNotFound(response, category, 'RESOURCE_CATEGORY_NOT_FOUND');
     }
   }
@@ -868,44 +1413,69 @@ const routeResourceRequest = async ({
       return sendJson(response, 200, resourceService.listResourceTypes());
     }
     if (route.id && request.method === 'GET') {
-      const resourceType = resourceService.listResourceTypes().find((item) => item.id === route.id || item.code === route.id);
+      const resourceType = resourceService
+        .listResourceTypes()
+        .find((item) => item.id === route.id || item.code === route.id);
       return sendJsonOrNotFound(response, resourceType, 'RESOURCE_TYPE_NOT_FOUND');
     }
   }
 
   if (route.kind === 'resource') {
     if (!route.id && request.method === 'GET') {
-      return sendJson(response, 200, resourceService.listResources(parseResourceQuery(url.searchParams)));
+      return sendJson(
+        response,
+        200,
+        resourceService.listResources(parseResourceQuery(url.searchParams)),
+      );
     }
     if (!route.id && request.method === 'POST') {
       const body = await readBody(request);
-      const resourceType = body['@type'] === 'LogicalResource' || body.supportingPhysicalResourceId ? 'LogicalResource' : 'PhysicalResource';
+      const resourceType =
+        body['@type'] === 'LogicalResource' || body.supportingPhysicalResourceId
+          ? 'LogicalResource'
+          : 'PhysicalResource';
       return sendJson(
         response,
         201,
         resourceType === 'LogicalResource'
-          ? resourceService.createLogicalResource(body as Parameters<typeof resourceService.createLogicalResource>[0])
-          : resourceService.createPhysicalResource(body as Parameters<typeof resourceService.createPhysicalResource>[0]),
+          ? resourceService.createLogicalResource(
+              body as Parameters<typeof resourceService.createLogicalResource>[0],
+            )
+          : resourceService.createPhysicalResource(
+              body as Parameters<typeof resourceService.createPhysicalResource>[0],
+            ),
       );
     }
     if (route.id && request.method === 'GET') {
-      return sendJsonOrNotFound(response, resourceService.getResource(route.id), 'RESOURCE_NOT_FOUND');
+      return sendJsonOrNotFound(
+        response,
+        resourceService.getResource(route.id),
+        'RESOURCE_NOT_FOUND',
+      );
     }
     if (route.id && request.method === 'PATCH') {
       const body = await readBody(request);
       const current = resourceService.getResource(route.id);
-      if (!current) throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
+      if (!current)
+        throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
       return sendJson(
         response,
         200,
         current['@type'] === 'LogicalResource'
-          ? resourceService.updateLogicalResource(route.id, body as Parameters<typeof resourceService.updateLogicalResource>[1])
-          : resourceService.updatePhysicalResource(route.id, body as Parameters<typeof resourceService.updatePhysicalResource>[1]),
+          ? resourceService.updateLogicalResource(
+              route.id,
+              body as Parameters<typeof resourceService.updateLogicalResource>[1],
+            )
+          : resourceService.updatePhysicalResource(
+              route.id,
+              body as Parameters<typeof resourceService.updatePhysicalResource>[1],
+            ),
       );
     }
     if (route.id && request.method === 'DELETE') {
       const current = resourceService.getResource(route.id);
-      if (!current) throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
+      if (!current)
+        throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
       return sendJson(
         response,
         200,
@@ -918,7 +1488,13 @@ const routeResourceRequest = async ({
 
   if (route.kind === 'resourceActivation') {
     if (request.method === 'POST') {
-      return sendJson(response, 200, resourceService.activateResource((await readBody(request)) as Parameters<typeof resourceService.activateResource>[0]));
+      return sendJson(
+        response,
+        200,
+        resourceService.activateResource(
+          (await readBody(request)) as Parameters<typeof resourceService.activateResource>[0],
+        ),
+      );
     }
   }
 
@@ -945,36 +1521,75 @@ const routeServiceRequest = async ({
     throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
   }
 
-  if (route.id && (url.pathname.endsWith('/relationships') || url.pathname.includes('/relationships/'))) {
+  if (
+    route.id &&
+    (url.pathname.endsWith('/relationships') || url.pathname.includes('/relationships/'))
+  ) {
     if (request.method === 'GET' && url.pathname.endsWith('/relationships')) {
       return sendJson(response, 200, serviceService.listServiceRelationships(route.id));
     }
 
     if (request.method === 'POST' && url.pathname.endsWith('/relationships')) {
-      return sendJson(response, 201, serviceService.addServiceRelationship(route.id, (await readBody(request)) as Parameters<typeof serviceService.addServiceRelationship>[1]));
+      return sendJson(
+        response,
+        201,
+        serviceService.addServiceRelationship(
+          route.id,
+          (await readBody(request)) as Parameters<typeof serviceService.addServiceRelationship>[1],
+        ),
+      );
     }
 
     if (request.method === 'DELETE' && route.relationshipId) {
       return sendJson(
         response,
         200,
-        serviceService.removeServiceRelationship(route.id, route.relationshipId, route.relationshipType ?? 'dependsOn'),
+        serviceService.removeServiceRelationship(
+          route.id,
+          route.relationshipId,
+          route.relationshipType ?? 'dependsOn',
+        ),
       );
     }
   }
 
   if (route.kind === 'serviceSpecification') {
     if (!route.id && request.method === 'GET') {
-      return sendJson(response, 200, serviceService.listServiceSpecifications(parseServiceSpecificationQuery(url.searchParams)));
+      return sendJson(
+        response,
+        200,
+        serviceService.listServiceSpecifications(parseServiceSpecificationQuery(url.searchParams)),
+      );
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, serviceService.createServiceSpecification((await readBody(request)) as Parameters<typeof serviceService.createServiceSpecification>[0]));
+      return sendJson(
+        response,
+        201,
+        serviceService.createServiceSpecification(
+          (await readBody(request)) as Parameters<
+            typeof serviceService.createServiceSpecification
+          >[0],
+        ),
+      );
     }
     if (route.id && request.method === 'GET') {
-      return sendJsonOrNotFound(response, serviceService.getServiceSpecification(route.id), 'SERVICE_SPEC_NOT_FOUND');
+      return sendJsonOrNotFound(
+        response,
+        serviceService.getServiceSpecification(route.id),
+        'SERVICE_SPEC_NOT_FOUND',
+      );
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, serviceService.updateServiceSpecification(route.id, (await readBody(request)) as Parameters<typeof serviceService.updateServiceSpecification>[1]));
+      return sendJson(
+        response,
+        200,
+        serviceService.updateServiceSpecification(
+          route.id,
+          (await readBody(request)) as Parameters<
+            typeof serviceService.updateServiceSpecification
+          >[1],
+        ),
+      );
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, serviceService.deleteServiceSpecification(route.id));
@@ -983,16 +1598,37 @@ const routeServiceRequest = async ({
 
   if (route.kind === 'serviceCategory') {
     if (!route.id && request.method === 'GET') {
-      return sendJson(response, 200, serviceService.listServiceCategories(parseServiceCategoryQuery(url.searchParams)));
+      return sendJson(
+        response,
+        200,
+        serviceService.listServiceCategories(parseServiceCategoryQuery(url.searchParams)),
+      );
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, serviceService.createServiceCategory((await readBody(request)) as Parameters<typeof serviceService.createServiceCategory>[0]));
+      return sendJson(
+        response,
+        201,
+        serviceService.createServiceCategory(
+          (await readBody(request)) as Parameters<typeof serviceService.createServiceCategory>[0],
+        ),
+      );
     }
     if (route.id && request.method === 'GET') {
-      return sendJsonOrNotFound(response, serviceService.getServiceCategory(route.id), 'SERVICE_CATEGORY_NOT_FOUND');
+      return sendJsonOrNotFound(
+        response,
+        serviceService.getServiceCategory(route.id),
+        'SERVICE_CATEGORY_NOT_FOUND',
+      );
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, serviceService.updateServiceCategory(route.id, (await readBody(request)) as Parameters<typeof serviceService.updateServiceCategory>[1]));
+      return sendJson(
+        response,
+        200,
+        serviceService.updateServiceCategory(
+          route.id,
+          (await readBody(request)) as Parameters<typeof serviceService.updateServiceCategory>[1],
+        ),
+      );
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, serviceService.deleteServiceCategory(route.id));
@@ -1001,16 +1637,37 @@ const routeServiceRequest = async ({
 
   if (route.kind === 'serviceCandidate') {
     if (!route.id && request.method === 'GET') {
-      return sendJson(response, 200, serviceService.listServiceCandidates(parseServiceCandidateQuery(url.searchParams)));
+      return sendJson(
+        response,
+        200,
+        serviceService.listServiceCandidates(parseServiceCandidateQuery(url.searchParams)),
+      );
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, serviceService.createServiceCandidate((await readBody(request)) as Parameters<typeof serviceService.createServiceCandidate>[0]));
+      return sendJson(
+        response,
+        201,
+        serviceService.createServiceCandidate(
+          (await readBody(request)) as Parameters<typeof serviceService.createServiceCandidate>[0],
+        ),
+      );
     }
     if (route.id && request.method === 'GET') {
-      return sendJsonOrNotFound(response, serviceService.getServiceCandidate(route.id), 'SERVICE_CANDIDATE_NOT_FOUND');
+      return sendJsonOrNotFound(
+        response,
+        serviceService.getServiceCandidate(route.id),
+        'SERVICE_CANDIDATE_NOT_FOUND',
+      );
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, serviceService.updateServiceCandidate(route.id, (await readBody(request)) as Parameters<typeof serviceService.updateServiceCandidate>[1]));
+      return sendJson(
+        response,
+        200,
+        serviceService.updateServiceCandidate(
+          route.id,
+          (await readBody(request)) as Parameters<typeof serviceService.updateServiceCandidate>[1],
+        ),
+      );
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, serviceService.deleteServiceCandidate(route.id));
@@ -1019,16 +1676,33 @@ const routeServiceRequest = async ({
 
   if (route.kind === 'service') {
     if (!route.id && request.method === 'GET') {
-      return sendJson(response, 200, serviceService.listServices(parseServiceQuery(url.searchParams)));
+      return sendJson(
+        response,
+        200,
+        serviceService.listServices(parseServiceQuery(url.searchParams)),
+      );
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, serviceService.createService((await readBody(request)) as Parameters<typeof serviceService.createService>[0]));
+      return sendJson(
+        response,
+        201,
+        serviceService.createService(
+          (await readBody(request)) as Parameters<typeof serviceService.createService>[0],
+        ),
+      );
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(response, serviceService.getService(route.id), 'SERVICE_NOT_FOUND');
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, serviceService.updateService(route.id, (await readBody(request)) as Parameters<typeof serviceService.updateService>[1]));
+      return sendJson(
+        response,
+        200,
+        serviceService.updateService(
+          route.id,
+          (await readBody(request)) as Parameters<typeof serviceService.updateService>[1],
+        ),
+      );
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, serviceService.deleteService(route.id));
@@ -1060,16 +1734,41 @@ const routeOrderRequest = async ({
 
   if (route.kind === 'serviceQualification') {
     if (!route.id && request.method === 'GET') {
-      return sendJson(response, 200, orderService.listServiceQualifications(parseServiceQualificationQuery(url.searchParams)));
+      return sendJson(
+        response,
+        200,
+        orderService.listServiceQualifications(parseServiceQualificationQuery(url.searchParams)),
+      );
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, orderService.createServiceQualification((await readBody(request)) as Parameters<typeof orderService.createServiceQualification>[0]));
+      return sendJson(
+        response,
+        201,
+        orderService.createServiceQualification(
+          (await readBody(request)) as Parameters<
+            typeof orderService.createServiceQualification
+          >[0],
+        ),
+      );
     }
     if (route.id && request.method === 'GET') {
-      return sendJsonOrNotFound(response, orderService.getServiceQualification(route.id), 'SERVICE_QUALIFICATION_NOT_FOUND');
+      return sendJsonOrNotFound(
+        response,
+        orderService.getServiceQualification(route.id),
+        'SERVICE_QUALIFICATION_NOT_FOUND',
+      );
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, orderService.updateServiceQualification(route.id, (await readBody(request)) as Parameters<typeof orderService.updateServiceQualification>[1]));
+      return sendJson(
+        response,
+        200,
+        orderService.updateServiceQualification(
+          route.id,
+          (await readBody(request)) as Parameters<
+            typeof orderService.updateServiceQualification
+          >[1],
+        ),
+      );
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, orderService.deleteServiceQualification(route.id));
@@ -1078,16 +1777,37 @@ const routeOrderRequest = async ({
 
   if (route.kind === 'serviceOrder') {
     if (!route.id && request.method === 'GET') {
-      return sendJson(response, 200, orderService.listServiceOrders(parseServiceOrderQuery(url.searchParams)));
+      return sendJson(
+        response,
+        200,
+        orderService.listServiceOrders(parseServiceOrderQuery(url.searchParams)),
+      );
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, orderService.createServiceOrder((await readBody(request)) as Parameters<typeof orderService.createServiceOrder>[0]));
+      return sendJson(
+        response,
+        201,
+        orderService.createServiceOrder(
+          (await readBody(request)) as Parameters<typeof orderService.createServiceOrder>[0],
+        ),
+      );
     }
     if (route.id && request.method === 'GET') {
-      return sendJsonOrNotFound(response, orderService.getServiceOrder(route.id), 'SERVICE_ORDER_NOT_FOUND');
+      return sendJsonOrNotFound(
+        response,
+        orderService.getServiceOrder(route.id),
+        'SERVICE_ORDER_NOT_FOUND',
+      );
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, orderService.updateServiceOrder(route.id, (await readBody(request)) as Parameters<typeof orderService.updateServiceOrder>[1]));
+      return sendJson(
+        response,
+        200,
+        orderService.updateServiceOrder(
+          route.id,
+          (await readBody(request)) as Parameters<typeof orderService.updateServiceOrder>[1],
+        ),
+      );
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, orderService.cancelServiceOrder(route.id));
@@ -1096,16 +1816,37 @@ const routeOrderRequest = async ({
 
   if (route.kind === 'resourceOrder') {
     if (!route.id && request.method === 'GET') {
-      return sendJson(response, 200, orderService.listResourceOrders(parseResourceOrderQuery(url.searchParams)));
+      return sendJson(
+        response,
+        200,
+        orderService.listResourceOrders(parseResourceOrderQuery(url.searchParams)),
+      );
     }
     if (!route.id && request.method === 'POST') {
-      return sendJson(response, 201, orderService.createResourceOrder((await readBody(request)) as Parameters<typeof orderService.createResourceOrder>[0]));
+      return sendJson(
+        response,
+        201,
+        orderService.createResourceOrder(
+          (await readBody(request)) as Parameters<typeof orderService.createResourceOrder>[0],
+        ),
+      );
     }
     if (route.id && request.method === 'GET') {
-      return sendJsonOrNotFound(response, orderService.getResourceOrder(route.id), 'RESOURCE_ORDER_NOT_FOUND');
+      return sendJsonOrNotFound(
+        response,
+        orderService.getResourceOrder(route.id),
+        'RESOURCE_ORDER_NOT_FOUND',
+      );
     }
     if (route.id && request.method === 'PATCH') {
-      return sendJson(response, 200, orderService.updateResourceOrder(route.id, (await readBody(request)) as Parameters<typeof orderService.updateResourceOrder>[1]));
+      return sendJson(
+        response,
+        200,
+        orderService.updateResourceOrder(
+          route.id,
+          (await readBody(request)) as Parameters<typeof orderService.updateResourceOrder>[1],
+        ),
+      );
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, orderService.cancelResourceOrder(route.id));
@@ -1202,10 +1943,190 @@ const parseOptionalNumber = (value: string | null): number | undefined => {
 
 // Sem limit/offset explícitos, mantém o comportamento histórico (lista completa) para não quebrar
 // os consumidores que ainda dependem do catálogo inteiro — a paginação é opt-in por quem pede.
-const parseGeoListQuery = (params: URLSearchParams): { name?: string; limit?: number; offset?: number } => {
+const parseGeoListQuery = (
+  params: URLSearchParams,
+): {
+  name?: string;
+  status?:
+    | 'Planned'
+    | 'InConstruction'
+    | 'Active'
+    | 'InDeactivation'
+    | 'Retired'
+    | 'planned'
+    | 'active'
+    | 'suspended'
+    | 'terminated';
+  siteSpecificationId?: string;
+  parentSiteId?: string | null;
+  descendantOfSiteId?: string;
+  characteristicName?: string;
+  characteristicValue?: string;
+  limit?: number;
+  offset?: number;
+} => {
   const query: { name?: string; limit?: number; offset?: number } = {};
   const name = params.get('name');
   if (name) query.name = name;
+  const status = params.get('status');
+  if (
+    status === 'Planned' ||
+    status === 'InConstruction' ||
+    status === 'Active' ||
+    status === 'InDeactivation' ||
+    status === 'Retired' ||
+    status === 'planned' ||
+    status === 'active' ||
+    status === 'suspended' ||
+    status === 'terminated'
+  ) {
+    (query as { status?: typeof status }).status = status;
+  }
+  const siteSpecificationId = params.get('siteSpecificationId');
+  if (siteSpecificationId) {
+    (query as { siteSpecificationId?: string }).siteSpecificationId = siteSpecificationId;
+  }
+  if (params.has('parentSiteId')) {
+    const value = params.get('parentSiteId');
+    (query as { parentSiteId?: string | null }).parentSiteId =
+      value && value.trim().length > 0 ? value : null;
+  }
+  const descendantOfSiteId = params.get('descendantOfSiteId');
+  if (descendantOfSiteId) {
+    (query as { descendantOfSiteId?: string }).descendantOfSiteId = descendantOfSiteId;
+  }
+  const characteristicName = params.get('characteristicName');
+  if (characteristicName) {
+    (query as { characteristicName?: string }).characteristicName = characteristicName;
+  }
+  const characteristicValue = params.get('characteristicValue');
+  if (characteristicValue !== null) {
+    (query as { characteristicValue?: string }).characteristicValue = characteristicValue;
+  }
+  const limit = parseOptionalNumber(params.get('limit'));
+  if (limit !== undefined) query.limit = limit;
+  const offset = parseOptionalNumber(params.get('offset'));
+  if (offset !== undefined) query.offset = offset;
+  return query;
+};
+
+const parseGeoRelationshipTypeListQuery = (
+  params: URLSearchParams,
+): {
+  code?: string;
+  lifecycleStatus?: 'Active' | 'Retired';
+  limit?: number;
+  offset?: number;
+} => {
+  const query: {
+    code?: string;
+    lifecycleStatus?: 'Active' | 'Retired';
+    limit?: number;
+    offset?: number;
+  } = {};
+  const code = params.get('code');
+  if (code) query.code = code;
+  const lifecycleStatus = params.get('lifecycleStatus');
+  if (lifecycleStatus === 'Active' || lifecycleStatus === 'Retired')
+    query.lifecycleStatus = lifecycleStatus;
+  const limit = parseOptionalNumber(params.get('limit'));
+  if (limit !== undefined) query.limit = limit;
+  const offset = parseOptionalNumber(params.get('offset'));
+  if (offset !== undefined) query.offset = offset;
+  return query;
+};
+
+const parseGeoLocationSpatialQuery = (
+  params: URLSearchParams,
+):
+  | {
+      bbox?: { minLng: number; minLat: number; maxLng: number; maxLat: number };
+      near?: { lng: number; lat: number; radiusMeters: number };
+      limit?: number;
+      offset?: number;
+    }
+  | undefined => {
+  const limit = parseOptionalNumber(params.get('limit'));
+  const offset = parseOptionalNumber(params.get('offset'));
+  const query: {
+    bbox?: { minLng: number; minLat: number; maxLng: number; maxLat: number };
+    near?: { lng: number; lat: number; radiusMeters: number };
+    limit?: number;
+    offset?: number;
+  } = {};
+
+  const bbox = params.get('bbox');
+  if (bbox) {
+    const values = bbox.split(',').map((item) => Number(item));
+    if (values.length !== 4 || values.some((item) => !Number.isFinite(item))) {
+      throw new AppError('bbox must be minLng,minLat,maxLng,maxLat', {
+        code: 'GEO_LOCATION_BBOX_INVALID',
+        statusCode: 400,
+      });
+    }
+    const [minLng, minLat, maxLng, maxLat] = values as [number, number, number, number];
+    query.bbox = { minLng, minLat, maxLng, maxLat };
+  }
+
+  const near = params.get('near');
+  if (near) {
+    const values = near.split(',').map((item) => Number(item));
+    const radiusMeters =
+      parseOptionalNumber(params.get('radius')) ?? parseOptionalNumber(params.get('radiusMeters'));
+    if (
+      values.length !== 2 ||
+      values.some((item) => !Number.isFinite(item)) ||
+      radiusMeters === undefined
+    ) {
+      throw new AppError('near must be lng,lat and radius must be provided', {
+        code: 'GEO_LOCATION_NEAR_INVALID',
+        statusCode: 400,
+      });
+    }
+    const [lng, lat] = values as [number, number];
+    query.near = { lng, lat, radiusMeters };
+  }
+
+  if (limit !== undefined) query.limit = limit;
+  if (offset !== undefined) query.offset = offset;
+  return query.bbox || query.near ? query : undefined;
+};
+
+const parseGeoSpecificationListQuery = (
+  params: URLSearchParams,
+): {
+  name?: string;
+  code?: string;
+  category?: 'Region' | 'FunctionalGroup' | 'Site' | 'SubSite';
+  lifecycleStatus?: 'Active' | 'Retired';
+  limit?: number;
+  offset?: number;
+} => {
+  const query: {
+    name?: string;
+    code?: string;
+    category?: 'Region' | 'FunctionalGroup' | 'Site' | 'SubSite';
+    lifecycleStatus?: 'Active' | 'Retired';
+    limit?: number;
+    offset?: number;
+  } = {};
+  const name = params.get('name');
+  if (name) query.name = name;
+  const code = params.get('code');
+  if (code) query.code = code;
+  const category = params.get('category');
+  if (
+    category === 'Region' ||
+    category === 'FunctionalGroup' ||
+    category === 'Site' ||
+    category === 'SubSite'
+  ) {
+    query.category = category;
+  }
+  const lifecycleStatus = params.get('lifecycleStatus');
+  if (lifecycleStatus === 'Active' || lifecycleStatus === 'Retired') {
+    query.lifecycleStatus = lifecycleStatus;
+  }
   const limit = parseOptionalNumber(params.get('limit'));
   if (limit !== undefined) query.limit = limit;
   const offset = parseOptionalNumber(params.get('offset'));
@@ -1298,13 +2219,16 @@ const resolveResourceRoute = (pathname: string): ResourceRoute | undefined => {
   if (pathname === `${catalogBase}/resourceSpecification`) return { kind: 'resourceSpecification' };
   if (pathname.startsWith(`${catalogBase}/resourceSpecification/`)) {
     const id = pathname.slice(`${catalogBase}/resourceSpecification/`.length);
-    if (id && !id.includes('/')) return { kind: 'resourceSpecification', id: decodeURIComponent(id) };
+    if (id && !id.includes('/'))
+      return { kind: 'resourceSpecification', id: decodeURIComponent(id) };
   }
 
-  if (pathname === `${catalogBase}/resourceFunctionSpecification`) return { kind: 'resourceFunctionSpecification' };
+  if (pathname === `${catalogBase}/resourceFunctionSpecification`)
+    return { kind: 'resourceFunctionSpecification' };
   if (pathname.startsWith(`${catalogBase}/resourceFunctionSpecification/`)) {
     const id = pathname.slice(`${catalogBase}/resourceFunctionSpecification/`.length);
-    if (id && !id.includes('/')) return { kind: 'resourceFunctionSpecification', id: decodeURIComponent(id) };
+    if (id && !id.includes('/'))
+      return { kind: 'resourceFunctionSpecification', id: decodeURIComponent(id) };
   }
 
   if (pathname === `${catalogBase}/resourceCategory`) return { kind: 'resourceCategory' };
@@ -1349,7 +2273,8 @@ const resolveServiceRoute = (pathname: string): ServiceRoute | undefined => {
   if (pathname === `${catalogBase}/serviceSpecification`) return { kind: 'serviceSpecification' };
   if (pathname.startsWith(`${catalogBase}/serviceSpecification/`)) {
     const id = pathname.slice(`${catalogBase}/serviceSpecification/`.length);
-    if (id && !id.includes('/')) return { kind: 'serviceSpecification', id: decodeURIComponent(id) };
+    if (id && !id.includes('/'))
+      return { kind: 'serviceSpecification', id: decodeURIComponent(id) };
   }
 
   if (pathname === `${catalogBase}/serviceCategory`) return { kind: 'serviceCategory' };
@@ -1389,7 +2314,8 @@ const resolveOrderRoute = (pathname: string): OrderRoute | undefined => {
   if (pathname === qualificationBase) return { kind: 'serviceQualification' };
   if (pathname.startsWith(`${qualificationBase}/`)) {
     const id = pathname.slice(`${qualificationBase}/`.length);
-    if (id && !id.includes('/')) return { kind: 'serviceQualification', id: decodeURIComponent(id) };
+    if (id && !id.includes('/'))
+      return { kind: 'serviceQualification', id: decodeURIComponent(id) };
   }
 
   if (pathname === orderBase) return { kind: 'serviceOrder' };
@@ -1555,10 +2481,15 @@ const getResourceWorkspaceItems = (
   return resourceService.listResources({ kind: tab, limit, offset, status: 'active', ...filter });
 };
 
-const loadAllResourceSpecifications = async (resourceService: ResourceService): Promise<ResourceSpecification[]> => {
+const loadAllResourceSpecifications = async (
+  resourceService: ResourceService,
+): Promise<ResourceSpecification[]> => {
   const collected: ResourceSpecification[] = [];
   for (let offset = 0; ; offset += RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) {
-    const items = resourceService.listResourceSpecifications({ limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE, offset });
+    const items = resourceService.listResourceSpecifications({
+      limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE,
+      offset,
+    });
     collected.push(...items);
     if (items.length < RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) break;
   }
@@ -1589,12 +2520,14 @@ const loadAllManufacturerOptions = async (partyService: PartyService): Promise<P
     if (items.length < RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) break;
   }
 
-  return [...new Map(collected.map((party) => [party.id, party] as const)).values()].sort((left, right) =>
-    left.name.localeCompare(right.name),
+  return [...new Map(collected.map((party) => [party.id, party] as const)).values()].sort(
+    (left, right) => left.name.localeCompare(right.name),
   );
 };
 
-const parseResourceFunctionSpecificationQuery = (params: URLSearchParams): ResourceFunctionSpecificationQuery => {
+const parseResourceFunctionSpecificationQuery = (
+  params: URLSearchParams,
+): ResourceFunctionSpecificationQuery => {
   const query: ResourceFunctionSpecificationQuery = {};
   const name = params.get('name');
   if (name) query.name = name;
@@ -1610,7 +2543,12 @@ const parseResourceQuery = (params: URLSearchParams): ResourceQuery => {
   const name = params.get('name');
   if (name) query.name = name;
   const status = params.get('status');
-  if (status === 'active' || status === 'inactive' || status === 'suspended' || status === 'terminated') {
+  if (
+    status === 'active' ||
+    status === 'inactive' ||
+    status === 'suspended' ||
+    status === 'terminated'
+  ) {
     query.status = status;
   }
   const resourceSpecificationId = params.get('resourceSpecificationId');
@@ -1784,7 +2722,9 @@ const parseResourceOrderQuery = (params: URLSearchParams): ResourceOrderQuery =>
 };
 
 const resolveGeoEntityRoute = (pathname: string): GeoEntityRoute | undefined => {
-  const v1Match = pathname.match(/^\/v1\/geo\/(locations|addresses|site-specifications|sites)(?:\/([^/]+))?$/);
+  const v1Match = pathname.match(
+    /^\/v1\/geo\/(locations|addresses|site-specifications|sites)(?:\/([^/]+))?$/,
+  );
   if (v1Match) {
     return {
       resource: v1Match[1] as GeoEntityRoute['resource'],
@@ -1795,7 +2735,10 @@ const resolveGeoEntityRoute = (pathname: string): GeoEntityRoute | undefined => 
   const tmfRoutes: Array<{ path: string; resource: GeoEntityRoute['resource'] }> = [
     { path: '/tmf-api/geographicLocationManagement/v4/geographicLocation', resource: 'locations' },
     { path: '/tmf-api/geographicAddressManagement/v4/geographicAddress', resource: 'addresses' },
-    { path: '/tmf-api/geographicSiteManagement/v4/geographicSiteSpecification', resource: 'site-specifications' },
+    {
+      path: '/tmf-api/geographicSiteManagement/v4/geographicSiteSpecification',
+      resource: 'site-specifications',
+    },
     { path: '/tmf-api/geographicSiteManagement/v4/geographicSite', resource: 'sites' },
   ];
 
@@ -1920,12 +2863,16 @@ const routeResearchRequest = async ({
   // POST /v1/research/sessions/:id/confirmations - Confirm a pending MCP mutation
   if (request.method === 'POST' && url.pathname.includes('/confirmations')) {
     const sessionId = url.pathname.split('/')[4];
-    if (!sessionId) throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
+    if (!sessionId)
+      throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
 
     const body = await readBody(request);
     const confirmationToken = body.confirmationToken as string;
     if (!confirmationToken) {
-      throw new AppError('confirmationToken required', { code: 'INVALID_CONFIRMATION_TOKEN', statusCode: 400 });
+      throw new AppError('confirmationToken required', {
+        code: 'INVALID_CONFIRMATION_TOKEN',
+        statusCode: 400,
+      });
     }
 
     const session = await searchService.getSession(sessionId);
@@ -1933,10 +2880,16 @@ const routeResearchRequest = async ({
 
     const pendingConfirmation = mcpModule.confirmations.get(confirmationToken);
     if (!pendingConfirmation) {
-      throw new AppError('confirmation token not found', { code: 'MCP_CONFIRMATION_NOT_FOUND', statusCode: 404 });
+      throw new AppError('confirmation token not found', {
+        code: 'MCP_CONFIRMATION_NOT_FOUND',
+        statusCode: 404,
+      });
     }
 
-    const pendingSessionId = typeof pendingConfirmation.context.sessionId === 'string' ? pendingConfirmation.context.sessionId : undefined;
+    const pendingSessionId =
+      typeof pendingConfirmation.context.sessionId === 'string'
+        ? pendingConfirmation.context.sessionId
+        : undefined;
     if (pendingSessionId !== sessionId) {
       throw new AppError('confirmation token does not belong to this session', {
         code: 'MCP_CONFIRMATION_SESSION_MISMATCH',
@@ -1944,7 +2897,10 @@ const routeResearchRequest = async ({
       });
     }
 
-    const commitToolName = buildConfirmationCommitToolName(pendingConfirmation.domain, pendingConfirmation.operation);
+    const commitToolName = buildConfirmationCommitToolName(
+      pendingConfirmation.domain,
+      pendingConfirmation.operation,
+    );
     const commitResult = await mcpModule.registry.executeTool(
       commitToolName,
       { confirmationToken },
@@ -1964,9 +2920,15 @@ const routeResearchRequest = async ({
           domain: pendingConfirmation.domain,
           operation: pendingConfirmation.operation,
           confirmationToken,
-          ...(typeof pendingConfirmation.summary === 'string' ? { summary: pendingConfirmation.summary } : {}),
-          ...(typeof pendingConfirmation.expiresAt === 'string' ? { expiresAt: pendingConfirmation.expiresAt } : {}),
-          ...(Array.isArray((pendingConfirmation as { items?: unknown[] }).items) ? { items: (pendingConfirmation as { items?: unknown[] }).items } : {}),
+          ...(typeof pendingConfirmation.summary === 'string'
+            ? { summary: pendingConfirmation.summary }
+            : {}),
+          ...(typeof pendingConfirmation.expiresAt === 'string'
+            ? { expiresAt: pendingConfirmation.expiresAt }
+            : {}),
+          ...(Array.isArray((pendingConfirmation as { items?: unknown[] }).items)
+            ? { items: (pendingConfirmation as { items?: unknown[] }).items }
+            : {}),
         },
       },
     });
@@ -1985,7 +2947,8 @@ const routeResearchRequest = async ({
   // GET /v1/research/sessions/:id - Get session with messages
   if (request.method === 'GET' && url.pathname.startsWith('/v1/research/sessions/')) {
     const sessionId = url.pathname.split('/').pop();
-    if (!sessionId) throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
+    if (!sessionId)
+      throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
     const session = await searchService.getSession(sessionId);
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
     return sendJson(response, 200, session);
@@ -1994,11 +2957,13 @@ const routeResearchRequest = async ({
   // POST /v1/research/sessions/:id/messages/stream - Send message and stream the LLM response via SSE
   if (request.method === 'POST' && url.pathname.endsWith('/messages/stream')) {
     const sessionId = url.pathname.split('/')[4]; // /v1/research/sessions/{id}/messages/stream
-    if (!sessionId) throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
+    if (!sessionId)
+      throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
 
     const body = await readBody(request);
     const userMessage = body.message as string;
-    if (!userMessage) throw new AppError('message required', { code: 'INVALID_MESSAGE', statusCode: 400 });
+    if (!userMessage)
+      throw new AppError('message required', { code: 'INVALID_MESSAGE', statusCode: 400 });
 
     const session = await searchService.getSession(sessionId);
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
@@ -2009,7 +2974,7 @@ const routeResearchRequest = async ({
     response.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
-      'Connection': 'keep-alive',
+      Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     });
 
@@ -2017,16 +2982,18 @@ const routeResearchRequest = async ({
       response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
 
-    const llmProvider = createLlmProvider(chatGptProvider, localKnowledgeProvider, llmToolCatalog, session);
+    const llmProvider = createLlmProvider(
+      chatGptProvider,
+      localKnowledgeProvider,
+      llmToolCatalog,
+      session,
+    );
 
     // Streaming responses must never throw past this point: headers are already sent, so any
     // failure has to be reported as an `error` SSE event instead of the normal AppError path.
     try {
-      const { userMessage: userMsg, assistantMessage } = await searchService.addMessageAndGetResponse(
-        sessionId,
-        userMessage,
-        llmProvider,
-        {
+      const { userMessage: userMsg, assistantMessage } =
+        await searchService.addMessageAndGetResponse(sessionId, userMessage, llmProvider, {
           ...(chatGptProvider
             ? {
                 tools: llmToolCatalog.tools,
@@ -2044,8 +3011,7 @@ const routeResearchRequest = async ({
             : {}),
           onDelta: (text) => sendEvent('delta', { text }),
           signal: abortController.signal,
-        },
-      );
+        });
       sendEvent('done', { userMessage: userMsg, assistantMessage });
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -2059,16 +3025,23 @@ const routeResearchRequest = async ({
   // POST /v1/research/sessions/:id/messages - Send message and get LLM response
   if (request.method === 'POST' && url.pathname.includes('/messages')) {
     const sessionId = url.pathname.split('/')[4]; // /v1/research/sessions/{id}/messages
-    if (!sessionId) throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
+    if (!sessionId)
+      throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
 
     const body = await readBody(request);
     const userMessage = body.message as string;
-    if (!userMessage) throw new AppError('message required', { code: 'INVALID_MESSAGE', statusCode: 400 });
+    if (!userMessage)
+      throw new AppError('message required', { code: 'INVALID_MESSAGE', statusCode: 400 });
 
     const session = await searchService.getSession(sessionId);
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
 
-    const llmProvider = createLlmProvider(chatGptProvider, localKnowledgeProvider, llmToolCatalog, session);
+    const llmProvider = createLlmProvider(
+      chatGptProvider,
+      localKnowledgeProvider,
+      llmToolCatalog,
+      session,
+    );
 
     const { userMessage: userMsg, assistantMessage } = await searchService.addMessageAndGetResponse(
       sessionId,
@@ -2098,12 +3071,20 @@ const routeResearchRequest = async ({
   }
 
   // PUT /v1/research/sessions/:id - Update session title
-  if (request.method === 'PUT' && url.pathname.startsWith('/v1/research/sessions/') && !url.pathname.includes('/messages')) {
+  if (
+    request.method === 'PUT' &&
+    url.pathname.startsWith('/v1/research/sessions/') &&
+    !url.pathname.includes('/messages')
+  ) {
     const sessionId = url.pathname.split('/').pop();
-    if (!sessionId) throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
-    
+    if (!sessionId)
+      throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
+
     const body = await readBody(request);
-    const updated = await searchService.updateSessionTitle(sessionId, (body.title || 'Untitled') as string);
+    const updated = await searchService.updateSessionTitle(
+      sessionId,
+      (body.title || 'Untitled') as string,
+    );
     if (!updated) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
     return sendJson(response, 200, updated);
   }
@@ -2111,8 +3092,9 @@ const routeResearchRequest = async ({
   // DELETE /v1/research/sessions/:id - Archive session
   if (request.method === 'DELETE' && url.pathname.startsWith('/v1/research/sessions/')) {
     const sessionId = url.pathname.split('/').pop();
-    if (!sessionId) throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
-    
+    if (!sessionId)
+      throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
+
     const archived = await searchService.archiveSession(sessionId);
     if (!archived) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
     return sendJson(response, 200, archived);
@@ -2122,10 +3104,7 @@ const routeResearchRequest = async ({
 };
 
 const ensureAuthorized = (request: IncomingMessage, config: AppConfig): void => {
-  if (!config.authEnabled) return;
-  const header = request.headers.authorization;
-  if (!header) throw unauthorizedError();
-  if (header !== `Bearer ${config.authToken}`) throw forbiddenError();
+  ensureRequestAuthorized(request, config);
 };
 
 const readBody = async (request: IncomingMessage): Promise<Record<string, unknown>> => {
@@ -2166,7 +3145,9 @@ const parseOpenAIChatRequest = (
         content: String(message.content ?? ''),
       };
     })
-    .filter((message): message is OpenAIChatMessage => message !== null && message.content.length > 0);
+    .filter(
+      (message): message is OpenAIChatMessage => message !== null && message.content.length > 0,
+    );
 
   if (messages.length === 0) {
     return null;
@@ -2216,7 +3197,8 @@ const buildLlmToolCatalog = (
   };
 };
 
-const buildConfirmationCommitToolName = (domain: string, operation: string): string => `${domain}.commit_${operation}`;
+const buildConfirmationCommitToolName = (domain: string, operation: string): string =>
+  `${domain}.commit_${operation}`;
 
 const buildConfirmationOperationLabel = (operation: string): string => {
   if (operation === 'create_equipment_model') return 'cadastro';
@@ -2234,7 +3216,10 @@ const buildConfirmationOutcomeMessage = (
   commitResult: { ok: boolean; data: unknown; error?: { code?: string; message?: string } },
 ): string => {
   if (commitResult.ok) {
-    if (pendingConfirmation.domain === 'resource' && pendingConfirmation.operation === 'create_equipment_models') {
+    if (
+      pendingConfirmation.domain === 'resource' &&
+      pendingConfirmation.operation === 'create_equipment_models'
+    ) {
       const resource = commitResult.data as {
         items?: Array<{
           name?: string;
@@ -2244,7 +3229,9 @@ const buildConfirmationOutcomeMessage = (
       };
       const items = resource.items ?? [];
       const first = items[0];
-      const manufacturer = first?.relatedParty?.find((party) => party.role === 'manufacturer')?.name;
+      const manufacturer = first?.relatedParty?.find(
+        (party) => party.role === 'manufacturer',
+      )?.name;
       const modelCount = items.length || (pendingConfirmation.summary ? 1 : 0);
       if (manufacturer && modelCount > 0 && first?.resourceType) {
         return `${modelCount} modelos de ${first.resourceType} da ${manufacturer} cadastrados com sucesso.`;
@@ -2255,24 +3242,34 @@ const buildConfirmationOutcomeMessage = (
       return 'Cadastro em lote confirmado com sucesso.';
     }
 
-    if (pendingConfirmation.domain === 'resource' && pendingConfirmation.operation === 'create_equipment_model') {
+    if (
+      pendingConfirmation.domain === 'resource' &&
+      pendingConfirmation.operation === 'create_equipment_model'
+    ) {
       const resource = commitResult.data as {
         name?: string;
         relatedParty?: Array<{ name?: string; role?: string }>;
       };
-      const manufacturer = resource.relatedParty?.find((party) => party.role === 'manufacturer')?.name;
+      const manufacturer = resource.relatedParty?.find(
+        (party) => party.role === 'manufacturer',
+      )?.name;
       const modelName = resource.name ?? pendingConfirmation.summary ?? 'modelo de equipamento';
       return manufacturer
         ? `Modelo ${modelName} da ${manufacturer} cadastrado com sucesso.`
         : `Modelo ${modelName} cadastrado com sucesso.`;
     }
 
-    if (pendingConfirmation.domain === 'resource' && pendingConfirmation.operation === 'delete_equipment_model') {
+    if (
+      pendingConfirmation.domain === 'resource' &&
+      pendingConfirmation.operation === 'delete_equipment_model'
+    ) {
       const resource = commitResult.data as {
         name?: string;
         relatedParty?: Array<{ name?: string; role?: string }>;
       };
-      const manufacturer = resource.relatedParty?.find((party) => party.role === 'manufacturer')?.name;
+      const manufacturer = resource.relatedParty?.find(
+        (party) => party.role === 'manufacturer',
+      )?.name;
       const modelName = resource.name ?? pendingConfirmation.summary ?? 'modelo de equipamento';
       return manufacturer
         ? `Modelo ${modelName} da ${manufacturer} removido do catalogo com sucesso.`
@@ -2313,21 +3310,13 @@ const buildConfirmationOutcomeMessage = (
   }
 };
 
-const sendJson = (
-  response: ServerResponse,
-  statusCode: number,
-  payload: unknown,
-): void => {
+const sendJson = (response: ServerResponse, statusCode: number, payload: unknown): void => {
   response.statusCode = statusCode;
   response.setHeader('content-type', 'application/json; charset=utf-8');
   response.end(JSON.stringify(payload));
 };
 
-const sendJsonOrNotFound = (
-  response: ServerResponse,
-  payload: unknown,
-  code: string,
-): void => {
+const sendJsonOrNotFound = (response: ServerResponse, payload: unknown, code: string): void => {
   if (!payload) {
     throw new AppError('entity not found', { code, statusCode: 404 });
   }
@@ -2388,7 +3377,11 @@ const buildLegacyUiNoticeHtml = (appName: string): string => `<!doctype html>
 </html>`;
 
 const escapeHtml = (value: string): string =>
-  value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char] ?? char));
+  value.replace(
+    /[&<>"']/g,
+    (char) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char,
+  );
 
 const redactDatabaseUrl = (value: string): string => {
   try {

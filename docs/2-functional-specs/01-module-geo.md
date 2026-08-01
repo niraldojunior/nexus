@@ -9,12 +9,12 @@ TMFC014 · TMF673 / TMF674 / TMF675
 | Campo | Valor |
 |---|---|
 | **Document Reference** | VTN-HLD-MOD01-GEO |
-| **Versão** | 1.2 — draft |
-| **Data** | Julho 2026 |
+| **Versão** | 1.3 — draft |
+| **Data** | Agosto 2026 |
 | **Documento âncora** | VTN-HLD-OVERVIEW-001 |
 | **TMFC coberto** | TMFC014 — Geographic Site Mgmt |
 | **Open APIs** | TMF673, TMF674, TMF675, TMF688 |
-| **Requisitos cobertos** | REQ-MOD01-001 a REQ-MOD01-012 |
+| **Requisitos cobertos** | REQ-MOD01-001 a REQ-MOD01-013 |
 | **Status** | Em elaboração |
 
 ---
@@ -41,6 +41,7 @@ Este documento se ancora arquiteturalmente no documento de visão geral VTN-HLD-
 - Ciclo de vida formal de Sites com histórico via TMF688 StateChangeEvent.
 - Relações topológicas A↔Z entre Sites via relatedSite.
 - Visão de mapa georreferenciado com sincronização bidirecional.
+- Digitalização e edição de geometria (Point, LineString, Polygon) no navegador, sem cliente desktop.
 - Publicação canônica de eventos TMF688 para todas as mudanças relevantes.
 
 ### 2.2 Fora do escopo (tratado em outros módulos)
@@ -72,6 +73,7 @@ O HLD descreve o contrato funcional alvo. A tabela abaixo registra o estado veri
 | **REQ-MOD01-010** | Parcial | Criação, listagem e remoção de `relatedSite` persistem e publicam eventos. | Tipos governados, inversos automáticos, impact analysis e subgrafo. | Q-GEO-004 | DEV-GEO-004, DEV-X-003 |
 | **REQ-MOD01-011** | Parcial | `GeoPage`, Google Maps, árvore sincronizada, cluster e `/v1/geo/tree/viewport` exibem Sites e infraestrutura passiva por bbox/escala. | Sync de coordenadas, camadas Geosite, proximidade e exportação PNG/GeoJSON. | Q-GEO-005, Q-GEO-007 | DEV-GEO-005 |
 | **REQ-MOD01-012** | Parcial | Mudanças Geo persistem eventos consultáveis e cobertos por testes unitários/integrados. | Outbox transacional, Schema Registry, catálogo público, DLQ e UUID v7. | Q-GEO-008 | DEV-X-002 |
+| **REQ-MOD01-013** | Não implementado | `GeoPage` e o mapa exibem e selecionam feições; nenhuma tela cria ou altera vértices. | Editor de geometria completo: desenho, vértices, snap, split/merge, rascunho, import e histórico. | Q-GEO-011 | DEV-GEO-007, DEV-GEO-005 |
 
 ---
 
@@ -137,11 +139,21 @@ O histórico de transições de status não é uma tabela dedicada — é a sequ
 
 Sites podem ter relatedParty com Tenants distintos; visibilidade e operação de Sites são governadas por RBAC granular do módulo Platform & Administration. Tenants enxergam apenas Sites e relações dentro do seu escopo autorizado.
 
+### 4.7 Fidelidade física — zero entidades artificiais
+
+Todo objeto que o usuário cadastra corresponde a algo que existe no mundo: um site, um endereço, uma geometria. Adjacências, trechos e arestas de grafo são **derivados** das entidades e de suas relações — nunca cadastrados como objeto próprio. Se o modelo exige inventar um registro apenas para amarrar outros dois, o modelo está errado.
+
+O contraexemplo está documentado em `inspirations/geosite-legado.md`: para representar infraestrutura subterrânea, o sistema legado exige cadastrar *arcos* — arestas do grafo expostas como objeto de cadastro. Nas palavras da operação, "o arco nem existe". A consequência prática é dupla: complexidade de cadastro e uma classe de inconsistência silenciosa, em que os objetos artificiais existem e o objeto real não.
+
+### 4.8 Operação 100% web, sem cliente desktop
+
+Toda operação de cadastro do módulo — inclusive digitalização de geometria — é executável no navegador, sem instalação, plugin ou licença por estação. Nenhum requisito pode depender de ferramenta externa para completar um fluxo. O critério de aceite de qualquer funcionalidade geoespacial inclui a execução em navegador padrão (REQ-MOD01-013).
+
 ---
 
 ## 5. Resumo dos requisitos do módulo
 
-O módulo Geographic é composto por 12 requisitos, organizados conforme o fluxo natural de modelagem TMF: primeiro as entidades geoespaciais base (Location, Address), depois o catálogo (SiteSpecification), depois as instâncias (Region, Site, Sub-Site, ciclo de vida), depois as relações (contenção, topologia A↔Z) e finalmente as funcionalidades transversais (mapa, eventos).
+O módulo Geographic é composto por 13 requisitos, organizados conforme o fluxo natural de modelagem TMF: primeiro as entidades geoespaciais base (Location, Address), depois o catálogo (SiteSpecification), depois as instâncias (Region, Site, Sub-Site, ciclo de vida), depois as relações (contenção, topologia A↔Z) e finalmente as funcionalidades transversais (mapa, eventos, edição geoespacial).
 
 | ID | Título | Entidade TMF principal |
 |---|---|---|
@@ -157,6 +169,7 @@ O módulo Geographic é composto por 12 requisitos, organizados conforme o fluxo
 | **REQ-MOD01-010** | Relações Topológicas A↔Z entre Sites | *relatedSite[] em GeographicSite (TMF674)* |
 | **REQ-MOD01-011** | Visão de Mapa Georreferenciado | *Não é entidade TMF — funcionalidade de UI sobre TMF674+675* |
 | **REQ-MOD01-012** | Eventos de Domínio do Módulo Geographic | *Event (TMF688) — vários tipos* |
+| **REQ-MOD01-013** | Digitalização e edição de geometria no navegador | *GeographicLocation (TMF675) — operação de edição* |
 
 ### 5.1 Ordem de implementação sugerida
 
@@ -165,7 +178,7 @@ A ordem natural de construção respeita as dependências entre entidades:
 - **Camada 1 (fundação geoespacial):** REQ-001 (Location) + REQ-002 (Address) + REQ-003 (SiteSpec). Sem estas três, nenhuma instância de Site pode existir.
 - **Camada 2 (instâncias hierárquicas):** REQ-004 (Região) + REQ-005 (Grupo Funcional) + REQ-006 (Site) + REQ-007 (Sub-Site). É a operação CRUD efetiva sobre Sites.
 - **Camada 3 (governança):** REQ-008 (Ciclo de Vida) + REQ-009 (Contenção). Endurece a operação do dia a dia.
-- **Camada 4 (topologia e visualização):** REQ-010 (Relações A↔Z) + REQ-011 (Mapa). Eleva a operação para análise topológica.
+- **Camada 4 (topologia e visualização):** REQ-010 (Relações A↔Z) + REQ-011 (Mapa) + REQ-013 (Edição de geometria). Eleva a operação para análise topológica e torna o cadastro geoespacial autossuficiente no navegador.
 - **Camada 5 (interoperabilidade):** REQ-012 (Eventos). Habilita módulos downstream e Data Lake — pode ser implementado em paralelo às camadas 2-4.
 
 
@@ -1320,7 +1333,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 | **RF-003** | **Bounding box dinâmico** | Carregar apenas Sites visíveis na viewport atual do mapa para performance em alta densidade. |
 | **RF-004** | **Cluster em zoom-out** | Agrupar marcadores próximos em clusters numerados quando zoom < threshold configurável. |
 | **RF-005** | **Detalhamento por clique** | Clique no marcador exibe popup com name, type, status, code, atributos principais e link para detalhamento. |
-| **RF-006** | **Sincronização bidirecional** | Permitir mover marcador no mapa para atualizar coordenadas; alterações em formulário refletem em tempo real no mapa. |
+| **RF-006** | **Sincronização bidirecional** | Permitir mover marcador no mapa para atualizar coordenadas; alterações em formulário refletem em tempo real no mapa. Criação e edição de vértices de LineString/Polygon são tratadas em REQ-MOD01-013. |
 | **RF-007** | **Camadas de visualização** | Suportar camadas configuráveis: hierarquia geográfica (limites de Regiões), Sites por tipo, relações topológicas como linhas. |
 | **RF-008** | **Busca por proximidade** | Tool de medição: clicar em ponto para listar Sites dentro de raio configurável. |
 | **RF-009** | **Exportação** | Exportar visão atual como imagem (PNG) ou dados (GeoJSON). |
@@ -1330,7 +1343,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 | ID | Regra de Negócio |
 |---|---|
-| **RN-001** | Sites sem place válido não aparecem no mapa, mas são listados em relatório de completude. |
+| **RN-001** | Sites sem place válido não aparecem no mapa e são detectados pela regra "Site sem place" do motor de integridade (REQ-MOD02-027), não por um relatório próprio do mapa. |
 | **RN-002** | A sincronização bidirecional atualiza a GeographicLocation referenciada pelo Site, não atributos do Site diretamente. |
 | **RN-003** | Movimentação de Site no mapa exige confirmação se o Site tem status=Active (mudança de coordenadas de Site ativo é evento crítico). |
 | **RN-004** | A viewport é limitada à área de operação V.tal (Brasil + ajustes futuros); pan além desses limites é restrito. |
@@ -1460,9 +1473,134 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ---
 
-## 18. Cenários ilustrativos da modelagem
+## 18. REQ-MOD01-013 — Digitalização e edição de geometria no navegador
 
-### 18.1 Cenário A — Home Passed até Home Connected
+> **Entidade TMF:** GeographicLocation (TMF675)  
+> **Open API TMF:** TMF675 — Geographic Location Management API  
+> **Prioridade:** Alta — remove a dependência de cliente desktop na operação de campo  
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.3 — draft
+
+### 18.1 Descrição
+
+O módulo Geographic provê a ferramenta de **desenho e edição de geometria dentro do navegador**: traçar uma linha de duto, corrigir o trajeto de um cabo, ajustar o polígono de uma área de cobertura, reposicionar um ponto. A edição incide sempre sobre a `GeographicLocation` referenciada pela entidade — Site (REQ-MOD01-006) ou Resource de OSP (REQ-MOD02-008, REQ-MOD02-010, REQ-MOD02-026) — e nunca sobre atributos embutidos na entidade que a referencia.
+
+Este requisito é a contraparte de edição do REQ-MOD01-011: o mapa exibe e reposiciona marcadores; aqui a geometria é criada e alterada vértice a vértice, incluindo LineString e Polygon.
+
+### 18.2 Racional arquitetural
+
+A consulta operacional registrada em `inspirations/geosite-legado.md` documenta um caso concreto: uma demanda em Minas Gerais parou porque desenhar uma linha de duto não estava disponível no cliente web do Geosite-Legado e o cliente desktop exigia instalação e licença. A fronteira web/desktop não caiu sobre um recurso acessório — caiu sobre digitalização de geometria, que é operação corriqueira de planta externa.
+
+Daí o princípio §4.8: nenhum fluxo de cadastro pode depender de software instalado por estação. A consequência de modelagem é que a edição de geometria precisa ser um **contrato de API sobre TMF675**, não um recurso de uma ferramenta específica: a mesma operação é executável pela interface web, por integração ou por carga em massa (REQ-MOD01-002, REQ-MOD02-028).
+
+O Kuwaiba oferece o `syncGeoPosition` (mover um nó atualiza a coordenada de forma transacional) — reaproveitado no REQ-MOD01-011 para Point. Este requisito estende o mesmo princípio transacional para geometrias de mais de um vértice, onde a operação relevante deixa de ser "mover" e passa a ser "traçar, dividir, emendar e corrigir".
+
+### 18.3 Mapeamento de atributos TMF
+
+| Atributo | Tipo | Obrigatório | Observação V.tal |
+|---|---|:---:|---|
+| `GeographicLocation.geometry` | GeoJSON | Sim | Point, LineString ou Polygon. Alvo único da edição. |
+| `GeographicLocation.geometryType` | enum | Sim | Não pode mudar de tipo em edição — mudar de LineString para Polygon exige nova Location. |
+| `GeographicLocation.accuracy` | string | Não | Passa a `desenho-manual` quando os vértices vêm do editor, distinguindo de coordenada levantada em campo. |
+| `GeographicLocation.spatialRef` | string | Sim | Sempre WGS84 (EPSG:4326); conversão de outros sistemas é responsabilidade do import. |
+| `GeographicLocation.validFor` | TimePeriod | Não | Encerramento da geometria anterior quando a edição é versionada. |
+
+### 18.4 Exemplo de payload
+
+```json
+[
+{
+  "id": "loc-linestring-mg-duto-0042",
+  "@type": "GeographicLocation",
+  "geometryType": "LineString",
+  "spatialRef": "EPSG:4326",
+  "accuracy": "desenho-manual",
+  "geometry": {
+    "type": "LineString",
+    "coordinates": [
+      [-43.9412, -19.9218],
+      [-43.9407, -19.9221],
+      [-43.9399, -19.9226],
+      [-43.9391, -19.9230]
+    ]
+  },
+  "validFor": { "startDateTime": "2026-08-01T14:20:00Z" }
+},
+{
+  "editSession": {
+    "targetLocation": "loc-linestring-mg-duto-0042",
+    "snappedTo": [
+      { "id": "res-caixa-mg-bh-0117", "@referredType": "Resource", "vertexIndex": 0 },
+      { "id": "res-caixa-mg-bh-0118", "@referredType": "Resource", "vertexIndex": 3 }
+    ],
+    "reason": "cadastro de duto novo — projeto BH-2026-114",
+    "draft": false
+  }
+}
+]
+```
+
+### 18.5 Pré-condições
+
+- O usuário possui permissão de edição geoespacial sobre o tipo de entidade alvo (RBAC do Módulo 8).
+- A `GeographicLocation` alvo existe (REQ-MOD01-001) ou está sendo criada no mesmo fluxo.
+- A base cartográfica está disponível para referência visual (REQ-MOD01-011).
+
+### 18.6 Requisitos Funcionais
+
+| ID | Nome | Descrição |
+|---|---|---|
+| **RF-001** | **Desenhar geometria** | Criar Point, LineString e Polygon no mapa, vértice a vértice, gerando a GeographicLocation correspondente. |
+| **RF-002** | **Editar vértices** | Inserir, mover e remover vértices de geometria existente, preservando o `id` da Location. |
+| **RF-003** | **Snap a feições existentes** | Ancorar vértice em Site, poste, caixa ou vértice de outra geometria, com tolerância configurável em metros. |
+| **RF-004** | **Split e merge de LineString** | Dividir uma linha em duas Locations num vértice escolhido e emendar duas linhas contíguas em uma. |
+| **RF-005** | **Medição durante o traçado** | Exibir comprimento acumulado e por segmento enquanto o usuário desenha. |
+| **RF-006** | **Undo / redo** | Desfazer e refazer operações dentro da sessão de edição antes de salvar. |
+| **RF-007** | **Rascunho** | Salvar a geometria como rascunho não publicado, retomável depois, sem afetar a Location vigente. |
+| **RF-008** | **Import de geometria** | Colar ou importar GeoJSON e WKT, com validação e relatório por feição. |
+| **RF-009** | **Motivo e histórico** | Registrar motivo da alteração e preservar a geometria anterior consultável. |
+| **RF-010** | **Edição sem instalação** | Todo o fluxo executa em navegador padrão, sem plugin, applet, cliente desktop ou licença por estação. |
+
+### 18.7 Regras de Negócio
+
+| ID | Regra de Negócio |
+|---|---|
+| **RN-001** | Geometria inválida é rejeitada no save: LineString com menos de 2 vértices, Polygon não fechado, auto-interseção e coordenada fora dos limites de operação. |
+| **RN-002** | A edição altera a `GeographicLocation`; a entidade que a referencia (Site ou Resource) não tem geometria própria. |
+| **RN-003** | Editar geometria de entidade com status `Active` exige motivo declarado e publica `AttributeValueChangeEvent` (TMF688). |
+| **RN-004** | Toda edição registra ator, timestamp, geometria anterior e motivo — Audit Trail obrigatório, sem exceção para carga em massa. |
+| **RN-005** | O tipo de geometria é imutável na edição; converter Point em LineString exige criar nova Location e reapontar a referência. |
+| **RN-006** | Rascunho não participa de consultas operacionais, mapa público nem cálculo de trajeto até ser publicado. |
+| **RN-007** | Import assume WGS84; arquivo em outro sistema de referência é rejeitado com mensagem explícita, nunca reprojetado silenciosamente. |
+| **RN-008** | Snap não move a feição ancorada — apenas copia sua coordenada para o vértice em edição. |
+
+### 18.8 Critérios de Aceite
+
+| ID | Critério | Resultado Esperado |
+|---|---|---|
+| **CA-001** | **Traçar linha de duto** | Desenhar LineString de 6 vértices com snap em duas caixas subterrâneas, salvar e reabrir devolve os mesmos vértices — usando apenas o navegador, sem instalação. |
+| **CA-002** | **Geometria inválida** | Salvar LineString com auto-interseção retorna 422 com o índice do segmento problemático. |
+| **CA-003** | **Split** | Dividir uma linha de 800 m em um vértice gera duas Locations cuja soma de comprimento equivale à original. |
+| **CA-004** | **Edição de entidade ativa** | Editar geometria de Site `Active` sem motivo retorna 400; com motivo, publica AttributeValueChangeEvent. |
+| **CA-005** | **Rascunho** | Geometria salva como rascunho não aparece no mapa operacional e é retomável na sessão seguinte. |
+| **CA-006** | **Import GeoJSON** | Import de arquivo com 50 feições devolve relatório por item, aceitando as válidas e listando as rejeitadas com o motivo. |
+| **CA-007** | **Histórico** | Após duas edições, a consulta de histórico devolve as duas geometrias anteriores com ator, motivo e timestamp. |
+
+### 18.9 Mapeamento contra sistemas de referência
+
+| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
+|---|---|---|---|---|
+| **Digitalização de geometria** | Sim, via GISMaps (Outside Plant / OSP) | Sim, no módulo OSP | Não identificado no levantamento | **Editor nativo web sobre TMF675, sem cliente instalado** |
+| **Edição de vértices de LineString** | Sim (traçado de rede exterior) | Não identificado no levantamento | Não identificado no levantamento | **Sim, com split, merge e undo/redo** |
+| **Snap a feições existentes** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim, tolerância configurável em metros** |
+| **Sincronização mapa ↔ inventário** | Não identificado no levantamento | Sim (`syncGeoPosition`) | Não identificado no levantamento | **Sim, transacional sobre GeographicLocation** |
+| **Rascunho antes de publicar** | Estado de projeto no cadastro | Não identificado no levantamento | Não identificado no levantamento | **Sim, invisível à operação até publicar** |
+| **Import GeoJSON/WKT** | Data Manager (importação) | Não identificado no levantamento | Sim, via API/scripts | **Sim, com relatório por feição e SRID fixo** |
+
+---
+
+## 19. Cenários ilustrativos da modelagem
+
+### 19.1 Cenário A — Home Passed até Home Connected
 
 ```text
 GeographicAddress + GeographicLocation (HP)
@@ -1475,7 +1613,7 @@ GeographicAddress + GeographicLocation (HP)
 
 O cenário valida C4, a separação Address/Location/Site e a regra de referência entre Geo, Resource e Service.
 
-### 18.2 Cenário B — Central, sala, Rack e cadeia GPON
+### 19.2 Cenário B — Central, sala, Rack e cadeia GPON
 
 ```text
 Central (GeographicSite)
@@ -1487,7 +1625,7 @@ Central (GeographicSite)
 
 O cenário valida a hierarquia de Sub-Sites, a fronteira Geo↔Resource no Rack e a navegação conjunta árvore/mapa já existente no frontend.
 
-### 18.3 Padrões reaproveitáveis
+### 19.3 Padrões reaproveitáveis
 
 - Address, Location e Site são entidades distintas; referências substituem duplicação.
 - A árvore Geo termina antes do Rack; infraestrutura passiva e equipamentos são Resources.
@@ -1496,7 +1634,7 @@ O cenário valida a hierarquia de Sub-Sites, a fronteira Geo↔Resource no Rack 
 
 ---
 
-## 19. Síntese arquitetural do módulo
+## 20. Síntese arquitetural do módulo
 
 - **Geo é a fonte do “onde”.** Address, Location e Site têm identidades e ciclos de vida próprios.
 - **Catálogo governa a estrutura.** SiteSpecification define características e contenção; enums fechados no código são dívida registrada.
@@ -1506,7 +1644,7 @@ O cenário valida a hierarquia de Sub-Sites, a fronteira Geo↔Resource no Rack 
 
 ---
 
-## 20. Contratos com outros módulos do Nexus
+## 21. Contratos com outros módulos do Nexus
 
 O módulo Geographic é a fundação referenciada por praticamente todos os outros módulos. Os contratos de integração:
 
@@ -1522,7 +1660,7 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 
 ---
 
-## 21. Questões em aberto
+## 22. Questões em aberto
 
 | ID | Questão | Status | Responsável |
 |---|---|---|---|
@@ -1534,15 +1672,16 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 | **Q-GEO-007** | O syncGeoPosition deve ser síncrono (PATCH com confirmação) ou assíncrono (atualização via evento)? Trade-off de UX vs. performance. | *Aberta* | *Arquitetura Nexus + Produto* |
 | **Q-GEO-008** | O catálogo de eventos publicados em produção deve ter quais SLAs de disponibilidade e latência fim-a-fim? | *Aberta* | *Arquitetura + Plataforma* |
 | **Q-GEO-010** | A profundidade máxima da hierarquia de Sub-Sites tem limite prático? Caso de uso típico: CO > Andar > Sala > Cage (4 níveis); algum caso ultrapassa? | *Aberta* | *Engenharia V.tal* |
+| **Q-GEO-011** | A edição de geometria no navegador (REQ-MOD01-013) exige workflow de aprovação no Módulo 5, ou bastam RBAC, motivo declarado e Audit Trail? A resposta muda o custo do editor e o tempo de resposta da operação de campo. | *Aberta* | *Operações V.tal + Arquitetura* |
 
-### 21.1 Decisões resolvidas
+### 22.1 Decisões resolvidas
 
 | ID | Decisão | Impacto |
 |---|---|---|
-| **D-GEO-001** | O Nexus gera UUID v7 próprio e preserva IDs legados em `_origin`. | Aplica-se a Site, Address e Location; detalhamento na seção 21.2. |
+| **D-GEO-001** | O Nexus gera UUID v7 próprio e preserva IDs legados em `_origin`. | Aplica-se a Site, Address e Location; detalhamento na seção 22.2. |
 | **D-GEO-002** | O provedor de geocodificação é o Geosite Logradouros. | Resolve a antiga Q-GEO-009; a interface técnica continua em Q-GEO-005. |
 
-### 21.2 D-GEO-001 — Identidade e proveniência de entidades
+### 22.2 D-GEO-001 — Identidade e proveniência de entidades
 
 > **Princípio arquitetural (Jun/2026):** O Nexus é agnóstico à origem de seus dados. Todo identificador canônico é UUID v7 gerado pelo próprio Nexus, independente do sistema de origem. IDs legados são preservados como atributos customizados (`characteristic`) no grupo convencional `_origin`, exclusivamente para fins de rastreabilidade histórica, auditoria e suporte ao período de dual-running.
 
@@ -1606,13 +1745,14 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 
 ---
 
-## 22. Controle de revisões
+## 23. Controle de revisões
 
 | Versão | Data | Autor | Descrição |
 |---|---|---|---|
 | 1.0 | Junho 2026 | Produto — V.tal Nexus | Versão inicial do HLD do Módulo 1 — Nexus Geographic, alinhada a TMF673/674/675 e ao documento âncora VTN-HLD-OVERVIEW-001. |
 | 1.1 | Junho 2026 | Produto — V.tal Nexus | Formalização de D-GEO-001 (estratégia de migração): definição do princípio de agnósticidade à origem, grupo canônico `_origin` para todas as entidades geográficas, tabela de sistemas cobertos, payload de exemplo e regras de negócio. |
 | 1.2 | Julho 2026 | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: matriz de aderência dos 12 requisitos, cenários e síntese arquitetural, anatomia normalizada, JSON válido, questões namespaced e gaps ligados ao backlog `DEV-*`. |
+| 1.3 | Agosto 2026 | Produto — V.tal Nexus | Incorporação da consulta operacional de OSP (`inspirations/geosite-legado.md`): princípios 4.7 (fidelidade física — zero entidades artificiais) e 4.8 (operação 100% web), novo REQ-MOD01-013 (digitalização e edição de geometria no navegador), Q-GEO-011, RN-001 do mapa redirecionada ao motor de integridade (REQ-MOD02-027) e backlog DEV-GEO-007. |
 
 ---
 

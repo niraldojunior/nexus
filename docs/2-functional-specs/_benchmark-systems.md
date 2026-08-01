@@ -22,6 +22,15 @@ categórica.
 | **Kuwaiba** (open-source) | Metamodelo de classes hierárquicas | `inspirations/kuwaiba.md` |
 | **NetBox** (open-source) | DCIM/IPAM resource-centric — o contraste | `inspirations/netbox.md` |
 
+### Fontes complementares (não viram coluna)
+
+| Fonte | Papel | Como usar |
+|---|---|---|
+| `inspirations/nossis.md` | **NOSSIS One Inventory** (Altice Labs) — evolução direta do Netwin, com a mesma base funcional declarada. É o sistema referido como "Networks" nas consultas com a operação. | Lê-se **junto com `netwin.md`** ao preencher a coluna **Netwin**. Quando as duas fontes divergirem, registre a divergência na célula em vez de escolher uma. |
+| `inspirations/geosite-legado.md` | **Geosite-Legado** — inventário georreferenciado de planta externa; entra como **anti-referência**, derivada de consulta operacional, não de levantamento de telas. | Alimenta o racional **N.2** e a coluna **Decisão Nexus**. Nunca vira coluna própria: a fonte registra percepção de operação, não comportamento verificado. |
+
+O cabeçalho das tabelas N.9 permanece com as quatro colunas acima — não o altere.
+
 ### Netwin (Altice Labs)
 
 Legado primário a substituir. Cobre todos os domínios (Location, OSP, ISP, Network & Services, Provisioning, Reports, Catalogue). O módulo *Network & Services* já separa "serviços de cliente" / "serviços de rede" (proto CFS/RFS); *Resource Provisioning* tem Viabilidade GPON.

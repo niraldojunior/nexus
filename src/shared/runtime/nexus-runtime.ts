@@ -14,7 +14,10 @@ import { ServiceService } from '../../modules/service/service.js';
 import { PostgresServiceRepository } from '../../modules/service/postgres-repository.js';
 import { PostgresDatabase } from '../persistence/postgres-database.js';
 import { PostgresSearchRepository } from '../persistence/postgres-search-repository.js';
-import { PostgresUserRepository, type UserRecord } from '../persistence/postgres-user-repository.js';
+import {
+  PostgresUserRepository,
+  type UserRecord,
+} from '../persistence/postgres-user-repository.js';
 import { EventService, PostgresEventRepository } from '../tmf/index.js';
 
 export type NexusRuntimeUser = UserRecord;
@@ -41,6 +44,8 @@ export const createNexusRuntime = (db: PostgresDatabase) => {
   const researchRepository = new ResearchRepository(db);
   const geoRepository = new PostgresGeoRepository(db);
   const geoService = new GeoService(geoRepository);
+  geoService.ensureBootstrapSpecifications();
+  geoService.ensureBootstrapRelationshipTypes();
   const geoTreeService = new GeoTreeService(db);
   const eventRepository = new PostgresEventRepository(db);
   const eventService = new EventService(eventRepository);

@@ -9,13 +9,13 @@ TMFC003 + TMFC024 · TMF634 / TMF639 / TMF688
 | Campo | Valor |
 |---|---|
 | **Document Reference** | VTN-HLD-MOD02-RES |
-| **Versão** | 1.3 — draft |
-| **Data** | Julho 2026 |
+| **Versão** | 1.4 — draft |
+| **Data** | Agosto 2026 |
 | **Documento âncora** | VTN-HLD-OVERVIEW-001 |
 | **HLD predecessor** | VTN-HLD-MOD01-GEO (Geographic) |
 | **TMFCs cobertos** | TMFC003 — Resource Catalog Mgmt; TMFC024 — Resource Inventory Mgmt |
 | **Open APIs** | TMF634, TMF639, TMF664, TMF688 |
-| **Requisitos cobertos** | REQ-MOD02-001 a REQ-MOD02-025 |
+| **Requisitos cobertos** | REQ-MOD02-001 a REQ-MOD02-028 |
 | **Status** | Em elaboração |
 
 ---
@@ -34,11 +34,11 @@ Este documento é o segundo HLD de módulo da plataforma e estende o modelo arqu
 
 - **Catálogo de Recursos (TMF634):** Resource Specifications, Resource Categories, Resource Function Specifications, Manufacturers/Vendors.
 - **Resource Inventory base (TMF639):** CRUD canônico de Resource, ciclo de vida operacional X.731, hierarquia de contenção física.
-- **Outside Plant georreferenciada:** Support Structures (postes, dutos, manholes, torres, caixas de emenda), Passive Devices (CTOs, NAPs, splitters externos), Cables/Cable Segments, Splices, Path computation fim-a-fim.
+- **Outside Plant georreferenciada:** Support Structures (postes, dutos, manholes, torres, caixas de emenda), infraestrutura subterrânea (banco de dutos, duto, sub-duto), Passive Devices (CTOs, NAPs, splitters externos), Cables/Cable Segments, Splices, Path computation fim-a-fim (óptico e civil).
 - **Inside Plant:** Racks, Equipment (OLTs, switches, routers, servidores, ONTs/CPEs), Cards/Módulos, Ports, Power Feeds e Outlets.
 - **Conectividade física:** Conexões (jumpers, patch cords, cable terminations), Front Ports/Rear Ports em DIOs.
 - **Recursos lógicos:** IPAM (Prefix, IP Address), VRF, Route Targets, VLAN, VLAN Group, ASN, MPLS Labels.
-- **Transversais:** Catálogo formal de Resource Relationships, eventos de domínio TMF688.
+- **Transversais:** Catálogo formal de Resource Relationships, eventos de domínio TMF688, integridade e completude do inventário, materialização de recursos compostos a partir do catálogo.
 
 ### 2.2 Fora do escopo (tratado em outros módulos)
 
@@ -50,6 +50,7 @@ Este documento é o segundo HLD de módulo da plataforma e estende o modelo arqu
 - Dashboards e analytics sobre Resources: **Módulo 7 — Nexus Analytics & Events**.
 - Auditoria global e RBAC granular: **Módulo 8 — Nexus Platform & Administration**.
 - Capacidade de Service Assurance (correlação de alarmes, troubleshooting): consumidor de eventos TMF688 publicados por este módulo, fora do Nexus.
+- Gestão de estoque, armazém e contabilização de ativo: permanecem no ERP/SAP. O Nexus **referencia** o ativo corporativo pelo grupo `_asset` (REQ-MOD02-005) e não replica saldo, movimentação nem depreciação.
 
 ### 2.3 Aderência ao codebase atual
 
@@ -82,6 +83,9 @@ O codebase atual é TypeScript/Node com HTTP nativo, React/Vite e Neon Postgres.
 | **REQ-MOD02-023** | Parcial | ASN/MPLS Label são representáveis por LogicalResource. | Pools, alocação, unicidade, escopo e lifecycle próprios. | Q-RES-008 | DEV-RES-005 |
 | **REQ-MOD02-024** | Divergente | Relações têm CRUD, mas `ResourceService` aceita qualquer string; a tabela de catálogo não possui API de governança. | Bootstrap + CRUD de RelationshipType, inversos, simetria, Audit e validação em writes. | Q-RES-012 | DEV-RES-006 |
 | **REQ-MOD02-025** | Parcial | Eventos de catálogo/inventário são persistidos em `tmf_event`, expostos via TMF688 e testados. | Outbox, Schema Registry, catálogo público, DLQ, reprocessamento e UUID v7. | — | DEV-X-002 |
+| **REQ-MOD02-026** | Não implementado | Duto existe apenas como Support Structure plana, com capacidade e ocupação digitadas em characteristics. | Contenção banco→duto→sub-duto→cabo, endpoints A/Z obrigatórios, trecho derivado e ocupação calculada. | Q-RES-014 | DEV-RES-007, DEV-RES-002 |
+| **REQ-MOD02-027** | Não implementado | Só existem validações de escrita; nenhuma rotina varre a base já carregada por script ou migração. | Catálogo de regras por API, varredura agendada, findings com ciclo de vida, score e evento TMF688. | — | DEV-RES-008, DEV-X-002 |
+| **REQ-MOD02-028** | Não implementado | Criar recurso composto exige uma chamada por objeto; a Specification não declara composição. | `childTemplate[]`, materialização transacional, pré-visualização e import em massa idempotente. | Q-RES-001 | DEV-RES-009, DEV-RES-001 |
 
 ---
 
@@ -189,21 +193,39 @@ Toda mudança publica evento TMF688 transacional (outbox pattern). Esta capacida
 
 Resources não são excluídos fisicamente — apenas administrativamente desativados (administrativeState=locked, status=suspended). Esta política preserva histórico para auditoria, troubleshooting e analytics retrospectiva.
 
+### 4.8 Fidelidade física — zero entidades artificiais
+
+Todo objeto que a operação cadastra tem correspondência com algo que existe em campo e que um técnico pode tocar: poste, caixa, banco de dutos, duto, cabo, fibra, placa, porta. Arestas de grafo, trechos, vãos e adjacências são **derivados** da contenção e dos endpoints — nunca cadastrados como entidade própria.
+
+O contraexemplo está em `inspirations/geosite-legado.md`: o sistema legado expõe o **arco** — a aresta do grafo — como objeto de cadastro, e a operação resume o efeito em "o arco nem existe". O custo não é apenas de usabilidade: cria uma classe de inconsistência em que o objeto artificial está lá e o objeto real não. Quando um modelo exige inventar um registro para amarrar outros dois, o modelo está errado — a amarração deve sair da relação entre os objetos reais.
+
+### 4.9 Operação 100% web, sem cliente desktop
+
+Nenhum fluxo de cadastro de Resource depende de software instalado por estação. Isso vale inclusive para o traçado de cabos e dutos, que usa o editor geoespacial do Módulo 1 (REQ-MOD01-013). O critério é operacional: uma demanda de campo não pode parar por instalação ou licença de cliente pesado.
+
+### 4.10 Ocupação e topologia são derivadas, nunca digitadas
+
+Contadores de ocupação — vias de duto, portas de CTO, U de rack, fibras de cabo — são calculados a partir dos filhos e das conexões, e são somente-leitura na API. Contador digitado à mão diverge da realidade na primeira operação que alguém esquece de refletir; contador derivado não tem como divergir.
+
+### 4.11 Cadastro composto em uma transação
+
+O caminho feliz de um objeto composto — CTO com splitter e portas, banco de dutos com suas vias, cabo com suas fibras — é **uma** operação, não uma sequência de chamadas que o operador precisa memorizar na ordem certa. A composição é declarada no catálogo (REQ-MOD02-028) e materializada através das mesmas validações do cadastro manual.
+
 ---
 
 ## 5. Resumo dos requisitos do módulo
 
-O módulo Resource é composto por 25 requisitos, organizados em 7 blocos funcionais:
+O módulo Resource é composto por 28 requisitos, organizados em 7 blocos funcionais:
 
 | Bloco | Requisitos |
 |---|---|
 | **A — Catálogo (TMF634)** | REQ-MOD02-001 a 004 |
 | **B — Resource Inventory base (TMF639)** | REQ-MOD02-005 a 007 |
-| **C — Outside Plant georreferenciada** | REQ-MOD02-008 a 012 |
+| **C — Outside Plant georreferenciada** | REQ-MOD02-008 a 012 e 026 |
 | **D — Inside Plant** | REQ-MOD02-013 a 017 |
 | **E — Conectividade física** | REQ-MOD02-018 a 019 |
 | **F — Recursos lógicos** | REQ-MOD02-020 a 023 |
-| **G — Transversais (Relationships + Eventos)** | REQ-MOD02-024 a 025 |
+| **G — Transversais (Relationships, Eventos, Integridade e Templates)** | REQ-MOD02-024, 025, 027 e 028 |
 
 ### 5.1 Tabela completa dos requisitos
 
@@ -234,14 +256,18 @@ O módulo Resource é composto por 25 requisitos, organizados em 7 blocos funcio
 | **REQ-MOD02-023** | ASN e MPLS Label | *LogicalResource ASN / MPLSLabel (TMF639)* |
 | **REQ-MOD02-024** | Resource Relationship (catálogo de relações tipadas) | *resourceRelationship com type catalog (TMF639)* |
 | **REQ-MOD02-025** | Eventos de domínio do Resource | *Event (TMF688)* |
+| **REQ-MOD02-026** | Infraestrutura subterrânea: banco de dutos, duto, sub-duto e trecho | *PhysicalResource especializado (TMF639)* |
+| **REQ-MOD02-027** | Integridade e completude do inventário físico | *Função sobre TMF639 com publicação TMF688* |
+| **REQ-MOD02-028** | Cadastro composto por template (materialização automática) | *ResourceSpecification (TMF634) → PhysicalResource (TMF639)* |
 
 ### 5.2 Ordem de implementação sugerida
 
 - **Fase 1 — Catálogo + Inventário base:** REQ-001 a 007. Sem catálogo populado e CRUD canônico, nenhuma instância pode existir.
 - **Fase 2 — Inside Plant:** REQ-013 a 017 + 018 e 019. Cobre Centrais e POPs — operação imediata pós-migração do NetworkCore.
-- **Fase 3 — Outside Plant:** REQ-008 a 012. Cobre planta externa GPON — habilita rastreabilidade e troubleshooting fim-a-fim.
+- **Fase 3 — Outside Plant:** REQ-008 a 012 + 026. Cobre planta externa GPON e a infraestrutura civil que a sustenta — habilita rastreabilidade e troubleshooting fim-a-fim.
 - **Fase 4 — Recursos lógicos:** REQ-020 a 023. Habilita serviços L3VPN, segmentação L2 e MPLS.
-- **Fase 5 — Transversais:** REQ-024 e 025 são implementados em paralelo às fases anteriores (são habilitadores).
+- **Fase 5 — Transversais:** REQ-024, 025 e 028 são implementados em paralelo às fases anteriores (são habilitadores). REQ-028 antecipa ganho já na Fase 1, ao reduzir o custo de cadastro e de carga inicial.
+- **Fase 6 — Integridade:** REQ-027 entra quando houver massa carregada para varrer — na prática, junto com a primeira onda de migração.
 
 
 ---
@@ -718,6 +744,9 @@ Atributos canônicos da entidade Resource (PhysicalResource | LogicalResource) (
 | **RF-008** | **Importação em massa** | POST /resource/bulk para criação em lote com validação completa e relatório de sucesso/falha por item. |
 | **RF-009** | **Histórico de estados** | Endpoint GET /resource/{id}/history retorna sequência de mudanças (via Event Store). |
 | **RF-010** | **Eventos** | Publicar TMF688: ResourceCreateEvent, ResourceAttributeValueChangeEvent, ResourceStateChangeEvent, ResourceDeleteEvent. |
+| **RF-011** | **Referência de ativo corporativo** | Manter o grupo de characteristics `_asset` (`_asset.system`, `_asset.id`, `_asset.class`, `_asset.syncedAt`) apontando para o registro do ativo no ERP (SAP), pesquisável como qualquer characteristic. |
+
+> **`_asset` não é `_origin`.** `_origin` (C5, D-RES-001) registra **de onde o dado veio** na migração e é imutável depois da carga. `_asset` registra **qual ativo corporativo** corresponde ao recurso — é uma referência viva, que pode ser criada, corrigida e ressincronizada ao longo da vida do recurso. Um mesmo Resource pode ter `_origin` de um legado e `_asset` do SAP ao mesmo tempo, e nenhum dos dois é fonte de verdade técnica. A autoridade e a direção da sincronização estão em aberto — ver Q-RES-013.
 
 ### 10.7 Regras de Negócio
 
@@ -730,6 +759,9 @@ Atributos canônicos da entidade Resource (PhysicalResource | LogicalResource) (
 | **RN-005** | Mudança de place de Resource Active emite warning se houver dependências (conexões físicas ativas). |
 | **RN-006** | Toda criação, alteração e mudança de estado publica evento TMF688 e gera Audit Trail. |
 | **RN-007** | code, quando informado, deve ser único dentro da mesma ResourceSpecification. |
+| **RN-008** | `_asset.*` é opcional: recurso sem ativo corporativo associado é válido e não bloqueia nenhum fluxo técnico. |
+| **RN-009** | `_asset.*` nunca é fonte de verdade técnica — divergência entre ERP e inventário é registrada como finding (REQ-MOD02-027), não resolvida por sobrescrita automática. |
+| **RN-010** | `_asset.id`, quando informado, é único por `_asset.system` — dois recursos não referenciam o mesmo ativo corporativo. |
 
 ### 10.8 Critérios de Aceite
 
@@ -744,6 +776,7 @@ Atributos canônicos da entidade Resource (PhysicalResource | LogicalResource) (
 | **CA-007** | **Filtro por Site** | GET /resource?place.id={siteId}&include=descendants retorna Resources do Site e sub-sites. |
 | **CA-008** | **Importação em massa** | POST /resource/bulk com 1000 itens retorna relatório com sucessos e falhas detalhadas. |
 | **CA-009** | **Evento publicado** | Criação publica ResourceCreateEvent em resource.{type}.v1 (ex.: resource.physical.v1). |
+| **CA-010** | **Referência de ativo** | Criar Resource com `_asset.system=SAP` e `_asset.id=100045321` permite consultá-lo por essa chave; repetir o mesmo `_asset.id` em outro Resource retorna 409. |
 
 ### 10.9 Mapeamento contra sistemas de referência
 
@@ -2814,11 +2847,448 @@ O Resource Domain é o módulo de maior volume de eventos em V.tal — milhões 
 
 ---
 
-## 31. Cenários ilustrativos da modelagem
+## 31. REQ-MOD02-026 — Infraestrutura subterrânea: banco de dutos, duto, sub-duto e trecho
+
+> **Entidade TMF:** PhysicalResource especializado (TMF639)  
+> **Open API TMF:** TMF639 — Resource Inventory Management API  
+> **Prioridade:** Crítica — é a infraestrutura civil que sustenta toda a rede subterrânea  
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.4 — draft
+
+### 31.1 Descrição
+
+Modela a infraestrutura civil subterrânea na forma em que ela existe em campo: um **banco de dutos** é a estrutura construída entre duas caixas (manhole, handhole ou caixa subterrânea); dentro dele correm **dutos**; dentro de um duto podem correr **sub-dutos**; e é dentro de um duto ou sub-duto que o **cabo** passa.
+
+```
+Caixa A  ├────────── Banco de dutos ──────────┤  Caixa Z
+              │
+              ├── Duto 1 ── Sub-duto 1.1 ── Cabo CFOA-001
+              │           └─ Sub-duto 1.2 ── (livre)
+              ├── Duto 2 ── Cabo CFOI-114
+              ├── Duto 3 ── (livre / reservado projeto BH-2026-114)
+              └── Duto 4 ── (livre)
+```
+
+O **trecho** — o par ordenado (Caixa A, Caixa Z) — não é uma entidade cadastrável. Ele é derivado dos endpoints do banco de dutos. A mesma regra vale para a rede aérea: o vão entre dois postes é derivado do apoio do cabo, não cadastrado à parte.
+
+Este requisito aprofunda REQ-MOD02-008, que trata Support Structures de forma genérica, e é pré-requisito da ocupação declarada em REQ-MOD02-010 (Cable).
+
+### 31.2 Racional arquitetural
+
+A consulta operacional registrada em `inspirations/geosite-legado.md` é explícita sobre o modo de falhar: para representar infraestrutura subterrânea, o sistema legado exige cadastrar caixas, cadastrar **arcos**, associar cabos aos arcos e desenhar linhas de duto. O arco é a aresta do grafo exposta como objeto de cadastro — "o arco nem existe". Duas consequências foram relatadas: complexidade de cadastro e uma inconsistência silenciosa em que caixas e arcos existem e a linha de duto, que é o objeto real, não.
+
+O Netwin e o NOSSIS (`netwin.md`, `nossis.md`) trabalham com banco de dutos, linha de duto, caixa subterrânea e cabo — todos com correspondência física, o que motivou a avaliação de que "tudo aqui existe". O Kuwaiba obtém efeito semelhante por metamodelo, com contêineres físicos e containment. O Nexus adota o princípio §4.8: a hierarquia de contenção `banco ⊃ duto ⊃ sub-duto ⊃ cabo` é declarada, e **tudo que é aresta é derivado** — trecho, adjacência entre caixas e grafo de infraestrutura para path computation (REQ-MOD02-012) saem da contenção mais os endpoints, sem nenhum registro intermediário.
+
+A ocupação segue o princípio §4.10: `vias_ocupadas` não é campo digitado, e sim contagem dos cabos contidos — o que elimina por construção a divergência entre contador e realidade que aparece em REQ-MOD02-008 quando `cables_installed` é mantido à mão.
+
+### 31.3 Mapeamento de atributos TMF
+
+Atributos canônicos da entidade PhysicalResource especializado (TMF639):
+
+| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
+|---|---|:---:|---|
+| `resourceSpecification` | EntityRef | Sim | Tipo: `BancoDutos-4vias`, `BancoDutos-6vias`, `Duto-PEAD-40mm`, `Duto-PVC-100mm`, `SubDuto-32mm`. |
+| `place` | EntityRef | Sim | GeographicLocation LineString para banco e duto; o duto filho herda a geometria do banco salvo override. |
+| `resourceRelationship` | array | Sim | `containedBy` para a hierarquia (duto→banco, sub-duto→duto, cabo→duto/sub-duto) e `endpointA`/`endpointZ` para as caixas. |
+| `resourceCharacteristic` | array | Não | `diametro_mm`, `material`, `profundidade_m`, `vias_totais`, `vias_ocupadas` (derivado), `ocupacao_pct` (derivado), `projeto_reserva`. |
+| `administrativeState` | enum | Sim | Soft-delete conforme C6 — `locked` em vez de exclusão física. |
+
+### 31.4 Exemplo de payload
+
+```json
+[
+{
+  "id": "res-banco-mg-bh-0042",
+  "@type": "PhysicalResource",
+  "name": "Banco de dutos BH-CX0117→CX0118",
+  "resourceSpecification": { "id": "spec-banco-dutos-4vias" },
+  "place": { "id": "loc-linestring-mg-duto-0042", "@referredType": "GeographicLocation" },
+  "resourceStatus": "available",
+  "operationalState": "enable",
+  "administrativeState": "unlocked",
+  "resourceCharacteristic": [
+    { "name": "vias_totais",     "value": 4 },
+    { "name": "profundidade_m",  "value": 1.2 },
+    { "name": "vias_ocupadas",   "value": 2 },
+    { "name": "ocupacao_pct",    "value": 50 }
+  ],
+  "resourceRelationship": [
+    { "relationshipType": "endpointA",
+      "resource": { "id": "res-caixa-mg-bh-0117", "@referredType": "Resource" } },
+    { "relationshipType": "endpointZ",
+      "resource": { "id": "res-caixa-mg-bh-0118", "@referredType": "Resource" } }
+  ]
+},
+{
+  "id": "res-duto-mg-bh-0042-v1",
+  "@type": "PhysicalResource",
+  "name": "Duto 1 — Banco BH-CX0117→CX0118",
+  "resourceSpecification": { "id": "spec-duto-pead-40mm" },
+  "place": { "id": "loc-linestring-mg-duto-0042", "@referredType": "GeographicLocation" },
+  "resourceCharacteristic": [
+    { "name": "diametro_mm", "value": 40 }
+  ],
+  "resourceRelationship": [
+    { "relationshipType": "containedBy",
+      "resource": { "id": "res-banco-mg-bh-0042", "@referredType": "Resource" } }
+  ]
+},
+{
+  "id": "res-cabo-cfoa-001",
+  "@type": "PhysicalResource",
+  "name": "CFOA-001",
+  "resourceRelationship": [
+    { "relationshipType": "containedBy",
+      "resource": { "id": "res-duto-mg-bh-0042-v1", "@referredType": "Resource" } }
+  ]
+},
+{
+  "trechoDerivado": {
+    "from": { "id": "res-caixa-mg-bh-0117", "@referredType": "Resource" },
+    "to":   { "id": "res-caixa-mg-bh-0118", "@referredType": "Resource" },
+    "via":  { "id": "res-banco-mg-bh-0042", "@referredType": "Resource" },
+    "comprimento_m": 312,
+    "cabos": ["res-cabo-cfoa-001", "res-cabo-cfoi-114"],
+    "observacao": "Objeto de resposta computado; nao existe registro persistido de trecho."
+  }
+}
+]
+```
+
+### 31.5 Pré-condições
+
+- As caixas (manhole, handhole, caixa subterrânea) já existem como Support Structures (REQ-MOD02-008).
+- As ResourceSpecifications de banco, duto e sub-duto estão Active no catálogo (REQ-MOD02-001).
+- A GeographicLocation LineString do banco existe (REQ-MOD01-001), traçada no navegador (REQ-MOD01-013) ou importada.
+
+### 31.6 Requisitos Funcionais
+
+| ID | Nome | Descrição |
+|---|---|---|
+| **RF-001** | **Criar banco de dutos** | POST com spec, place LineString e endpoints A/Z apontando para caixas existentes. |
+| **RF-002** | **Materializar vias** | Criar o banco já com seus N dutos filhos em uma operação, conforme o template da spec (REQ-MOD02-028). |
+| **RF-003** | **Sub-duto** | Permitir sub-dutos contidos em um duto, com a mesma semântica de ocupação. |
+| **RF-004** | **Passar cabo** | Registrar `containedBy` do cabo no duto ou sub-duto, validando via livre e compatibilidade de diâmetro. |
+| **RF-005** | **Trecho derivado** | `GET /resource/{caixa}/trechos` devolve os pares A↔Z com banco, comprimento e cabos — computado, sem entidade persistida. |
+| **RF-006** | **Ocupação derivada** | `vias_ocupadas` e `ocupacao_pct` são calculados a partir dos filhos; nunca aceitos no payload de escrita. |
+| **RF-007** | **Consulta por infraestrutura** | "Que cabos passam por este banco/duto/caixa" e a inversa "por onde passa este cabo", em ambos os sentidos. |
+| **RF-008** | **Reserva de via** | Reservar duto ou sub-duto para um projeto, com identificação do projeto e prazo, sem ocupá-lo fisicamente. |
+| **RF-009** | **Transição aéreo ↔ subterrâneo** | Representar a passagem poste → caixa na mesma cadeia de apoio do cabo, sem quebrar a continuidade do trajeto. |
+| **RF-010** | **Ocupação para planejamento** | Consulta agregada de ocupação por trecho, Região e Site, para decidir expansão civil. |
+| **RF-011** | **Cadastro em massa** | Importar bancos, dutos e caixas via CSV/GeoJSON com validação de endpoints e relatório por item. |
+
+### 31.7 Regras de Negócio
+
+| ID | Regra de Negócio |
+|---|---|
+| **RN-001** | Banco de dutos sem `endpointA` **e** `endpointZ` é inválido — é exatamente a inconsistência relatada na operação legada (caixa cadastrada, infraestrutura entre elas ausente). |
+| **RN-002** | Endpoints apontam para Support Structures reais (caixa, manhole, handhole, poste). Não é permitido criar objeto intermediário para servir de extremidade. |
+| **RN-003** | Trecho, adjacência e aresta de grafo são derivados; a API não expõe criação, edição ou exclusão de trecho. |
+| **RN-004** | `vias_ocupadas` e `ocupacao_pct` são somente-leitura; tentativa de escrita retorna 400. |
+| **RN-005** | Cabo só entra em duto ou sub-duto com via livre; excedente retorna 409 com a ocupação atual. |
+| **RN-006** | O duto filho herda a geometria do banco; override exige geometria própria explícita e é registrado em Audit Trail. |
+| **RN-007** | Excluir banco, duto ou sub-duto com cabo contido é bloqueado; desativação usa `administrativeState=locked` (C6). |
+| **RN-008** | Sub-duto só existe contido em duto; duto só existe contido em banco, salvo duto isolado declarado explicitamente pela spec. |
+| **RN-009** | Reserva de via tem prazo; expirada, a via volta a livre e o evento é publicado (TMF688). |
+
+### 31.8 Critérios de Aceite
+
+| ID | Critério | Resultado Esperado |
+|---|---|---|
+| **CA-001** | **Cenário da operação** | Cadastrar duas caixas subterrâneas, um banco de 4 vias entre elas e passar 2 cabos; `GET /resource/{caixa}/trechos` devolve o trecho A↔Z com os dois cabos — sem nenhum registro intermediário criado. |
+| **CA-002** | **Endpoint ausente** | POST de banco sem `endpointZ` retorna 422 com a mensagem apontando o endpoint faltante. |
+| **CA-003** | **Ocupação derivada** | Após passar o 2º cabo, `vias_ocupadas` = 2 e `ocupacao_pct` = 50 sem nenhuma escrita nesses campos. |
+| **CA-004** | **Ocupação escrita** | PATCH com `vias_ocupadas` no payload retorna 400. |
+| **CA-005** | **Via esgotada** | Passar o 5º cabo em banco de 4 vias sem sub-dutos retorna 409 com a ocupação atual. |
+| **CA-006** | **Trecho não cadastrável** | POST em qualquer rota de trecho retorna 404/405 — a entidade não existe no contrato. |
+| **CA-007** | **Sub-duto** | Duto de 40 mm com 2 sub-dutos aceita 1 cabo por sub-duto e reporta ocupação em ambos os níveis. |
+| **CA-008** | **Bloqueio de exclusão** | DELETE em duto com cabo contido retorna 409 com a lista de cabos. |
+| **CA-009** | **Reserva** | Via reservada para projeto não aceita cabo de outro projeto e volta a livre ao expirar, publicando evento. |
+
+### 31.9 Mapeamento contra sistemas de referência
+
+| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
+|---|---|---|---|---|
+| **Banco de dutos como objeto** | Sim (Outside Plant) | Subclasse de contêiner físico no metamodelo | Não identificado no levantamento | **PhysicalResource tipado por spec (TMF639)** |
+| **Duto e sub-duto** | Sim | Containment do metamodelo | Não identificado no levantamento | **Contenção `banco ⊃ duto ⊃ sub-duto ⊃ cabo`** |
+| **Trecho entre caixas** | Linha de duto entre caixas | Derivado do containment e dos endpoints | Não identificado no levantamento | **Derivado dos endpoints — nunca cadastrado** |
+| **Entidade intermediária de aresta** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Proibida por princípio (§4.8)** |
+| **Ocupação de vias** | Sim | Atributo do metamodelo | Não identificado no levantamento | **Derivada dos filhos, somente-leitura** |
+| **Reserva de recurso** | Sim (reserva e alocação) | Não identificado no levantamento | Não identificado no levantamento | **Sim, com projeto e prazo** |
+
+---
+
+## 32. REQ-MOD02-027 — Integridade e completude do inventário físico
+
+> **Entidade TMF:** função sobre TMF639 com publicação TMF688  
+> **Open API TMF:** TMF639 (leitura) + TMF688 (eventos)  
+> **Prioridade:** Alta — é o que impede o inventário de "fechar" formalmente estando furado  
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.4 — draft
+
+### 32.1 Descrição
+
+Motor de regras que varre o inventário já persistido e produz **findings**: registros que violam uma invariante do modelo mesmo tendo passado por todas as validações de escrita. O motor tem catálogo de regras administrável por API, execução sob demanda e agendada, escopo por Região, Site ou tenant, e um score de completude por recorte.
+
+O módulo Geographic não tem motor próprio: suas regras (Site sem `place`, Address sem Location) são registradas neste catálogo, conforme RN-001 de REQ-MOD01-011.
+
+### 32.2 Racional arquitetural
+
+Há dois tempos distintos de verificação, e confundi-los é a origem do problema relatado:
+
+| Tempo | Mecanismo | Alcance |
+|---|---|---|
+| **Escrita** | Validação transacional (RN dos demais requisitos) | Só o que passa pela API a partir de agora |
+| **Varredura** | Este requisito | Tudo que já está na base, inclusive carga legada e migração |
+
+O caso documentado em `inspirations/geosite-legado.md` — caixas cadastradas, arcos cadastrados, linha de duto ausente — é indetectável por validação de escrita: o registro nasceu de carga em massa, de migração ou de uma regra que só passou a existir depois. Nenhum campo obrigatório está vazio; o que falta é uma entidade inteira. Sem varredura, a lacuna só aparece quando alguém vai a campo.
+
+A operação também declarou "redução de inconsistências cadastrais" e "facilidade para auditoria e rastreabilidade" como requisitos do inventário definitivo. O motor entrega os dois: o finding é rastreável, tem dono e tem ciclo de vida.
+
+O catálogo de regras segue C9 — regra é dado, não código. Uma regra nova entra por API e vale na varredura seguinte, sem release.
+
+### 32.3 Mapeamento de atributos TMF
+
+| Atributo | Tipo | Obrigatório | Observação V.tal |
+|---|---|:---:|---|
+| `ruleId` | string | Sim | Identificador estável da regra (ex.: `OSP-DUCT-NO-ENDPOINT`). |
+| `scope` | object | Sim | Módulo, tipo de recurso e filtro opcional por Região/Site/tenant. |
+| `severity` | enum | Sim | `bloqueante` \| `alta` \| `media`. |
+| `expression` | string | Sim | Predicado avaliado sobre o inventário; regra é dado, não código (C9). |
+| `remediationHint` | string | Sim | O que a operação deve fazer para resolver — sem isso o finding vira ruído. |
+| `owner` | EntityRef | Sim | Party responsável pelo tratamento (Módulo 6). |
+| `enabled` | boolean | Sim | Regra desabilitada preserva o histórico dos findings já abertos. |
+| `finding.state` | enum | Sim | `aberto` \| `em-tratamento` \| `dispensado` \| `resolvido`. |
+| `finding.justification` | string | Condicional | Obrigatório quando `state=dispensado`. |
+
+### 32.4 Exemplo de payload
+
+```json
+[
+{
+  "ruleId": "OSP-DUCT-NO-ENDPOINT",
+  "name": "Banco de dutos sem endpoint A ou Z",
+  "scope": { "module": "MOD02", "resourceType": "BancoDutos" },
+  "severity": "alta",
+  "expression": "resourceRelationship[endpointA] is null or resourceRelationship[endpointZ] is null",
+  "remediationHint": "Associar as caixas de extremidade; se a infraestrutura nao existe em campo, desativar o banco (administrativeState=locked).",
+  "owner": { "id": "party-eng-osp-mg", "@referredType": "Organization" },
+  "enabled": true
+},
+{
+  "findingId": "fnd-018fb2c9-4a71-7c02-9d55-6e21b0aa77e1",
+  "ruleId": "OSP-DUCT-NO-ENDPOINT",
+  "resource": { "id": "res-banco-mg-bh-0042", "@referredType": "Resource" },
+  "detectedAt": "2026-08-01T03:14:00Z",
+  "severity": "alta",
+  "state": "aberto",
+  "scanId": "scan-2026-08-01-mg",
+  "site": { "id": "site-mg-bh-co-03", "@referredType": "GeographicSite" }
+},
+{
+  "completenessScore": {
+    "scope": { "region": "MG" },
+    "score": 0.94,
+    "findingsByseverity": { "alta": 12, "media": 41 },
+    "computedAt": "2026-08-01T03:20:00Z"
+  }
+}
+]
+```
+
+### 32.5 Pré-condições
+
+- O catálogo de regras foi inicializado com o conjunto canônico (RF-002).
+- O inventário alvo existe; a varredura opera sobre réplica de leitura ou janela de baixa carga (RN-006).
+- Party responsável cadastrada para atribuição de dono do finding.
+
+### 32.6 Requisitos Funcionais
+
+| ID | Nome | Descrição |
+|---|---|---|
+| **RF-001** | **Catálogo administrável** | CRUD de regra por API com governança e auditoria (C9), sem lista fechada em código. |
+| **RF-002** | **Regras canônicas de bootstrap** | Conjunto inicial: recurso de OSP sem `place`; banco/duto sem endpoint A ou Z; cabo sem infraestrutura de apoio em algum trecho; CTO sem splitter contido; porta conectada a recurso `locked`/`terminated`; fibra emendada sem continuidade até uma terminação; Support Structure órfã; e as regras Geo — Site sem `place`, Address sem Location, Site `Active` sem recurso contido. |
+| **RF-003** | **Varredura sob demanda e agendada** | Disparar scan por API ou agenda, com escopo por Região, Site, tipo ou tenant. |
+| **RF-004** | **Ciclo de vida do finding** | Consultar, atribuir, tratar, dispensar com justificativa e resolver; reincidência reabre o mesmo `ruleId` para o mesmo recurso. |
+| **RF-005** | **Score de completude** | Calcular e expor score por Região, Site, tipo de recurso e tenant, com série histórica. |
+| **RF-006** | **Evento de severidade alta** | Publicar TMF688 ao abrir finding `alta` ou `bloqueante`, para consumo do Módulo 7 e das áreas de operação. |
+| **RF-007** | **Exportação** | Exportar findings e score em CSV/XLSX para tratamento em campo. |
+| **RF-008** | **Rastreabilidade da migração** | Filtrar findings por `_origin.system`, isolando o que veio de cada legado por onda de migração. |
+
+### 32.7 Regras de Negócio
+
+| ID | Regra de Negócio |
+|---|---|
+| **RN-001** | O motor **não corrige** dado automaticamente. Corrigir sem análise apaga o sintoma e preserva a causa — tipicamente um erro de mapeamento na migração. |
+| **RN-002** | Dispensar finding exige justificativa e ator identificado; dispensa não apaga o registro. |
+| **RN-003** | Desabilitar regra não apaga findings já abertos; eles seguem consultáveis com a marca da regra desabilitada. |
+| **RN-004** | Finding resolvido é preservado para série histórica e auditoria (C6 — nada é excluído fisicamente). |
+| **RN-005** | Regra sem `remediationHint` e sem `owner` não pode ser habilitada — finding sem destinatário é ruído. |
+| **RN-006** | A varredura é somente-leitura e não pode degradar o SLA transacional; executa em réplica de leitura ou janela definida. |
+| **RN-007** | O score de completude é sempre publicado com o escopo e o timestamp; comparação entre escopos diferentes é inválida. |
+
+### 32.8 Critérios de Aceite
+
+| ID | Critério | Resultado Esperado |
+|---|---|---|
+| **CA-001** | **O caso relatado** | Massa contendo caixas e um banco de dutos sem `endpointZ` gera finding `OSP-DUCT-NO-ENDPOINT` com severidade alta e publica TMF688. |
+| **CA-002** | **Regra por API** | Regra criada por API é aplicada na varredura seguinte sem alteração de código nem release. |
+| **CA-003** | **Score** | Após a detecção, o score da Região cai; após a correção e novo scan, retorna ao valor anterior. |
+| **CA-004** | **Dispensa** | Dispensar finding sem justificativa retorna 400; com justificativa, registra ator e motivo. |
+| **CA-005** | **Sem correção automática** | Nenhuma varredura altera recurso: o diff do inventário antes e depois do scan é vazio. |
+| **CA-006** | **Reincidência** | Recurso corrigido e novamente violado reabre finding do mesmo `ruleId`, com histórico encadeado. |
+| **CA-007** | **Regras Geo** | Site `Active` sem `place` aparece nos findings do mesmo motor, sem endpoint próprio no Módulo 1. |
+| **CA-008** | **Filtro por origem** | Consulta por `_origin.system=Netwin` isola os findings da onda de migração correspondente. |
+
+### 32.9 Mapeamento contra sistemas de referência
+
+| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
+|---|---|---|---|---|
+| **Detecção de inconsistência pós-carga** | Reports e indicadores de monitorização do cadastro | Não identificado no levantamento | Não identificado no levantamento | **Motor de varredura com catálogo de regras** |
+| **Regras administráveis sem release** | Não identificado no levantamento | Metamodelo administrável (classes e atributos) | Validações no modelo de dados | **Regra é dado (C9), criada por API** |
+| **Ciclo de vida do achado** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Finding com estado, dono e justificativa** |
+| **Score de completude** | Indicadores de cadastro | Não identificado no levantamento | Não identificado no levantamento | **Score por Região/Site/tipo, com histórico** |
+| **Correção automática** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Deliberadamente ausente — detectar, não corrigir** |
+
+---
+
+## 33. REQ-MOD02-028 — Cadastro composto por template (materialização automática)
+
+> **Entidade TMF:** ResourceSpecification (TMF634) → PhysicalResource (TMF639)  
+> **Open API TMF:** TMF634 (template) + TMF639 (instâncias)  
+> **Prioridade:** Alta — reduz o cadastro de um objeto composto de dez chamadas a uma  
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.4 — draft
+
+### 33.1 Descrição
+
+Permite que uma ResourceSpecification declare a composição do recurso — `childTemplate[]` — e que a criação de uma instância **materialize os filhos em uma única transação**: a CTO nasce com seu splitter e suas 16 portas; o banco de dutos nasce com suas 4 vias; o cabo nasce com suas N fibras. O mesmo template governa a importação em massa.
+
+### 33.2 Racional arquitetural
+
+Hoje, CA-001 de REQ-MOD02-009 descreve o cadastro de uma CTO como POST da CTO, POST do splitter e oito POSTs de porta: dez chamadas, em ordem obrigatória, com conhecimento prévio do modelo. É precisamente a fricção que a operação atribui ao inventário legado — "facilidade para carga de informações" e "simplificação dos processos de cadastro" aparecem entre as necessidades declaradas em `inspirations/geosite-legado.md`, e a simplicidade operacional é o motivo pelo qual o NOSSIS foi citado como referência positiva.
+
+A informação necessária já existe: a Specification (REQ-MOD02-001) e a Resource Function Specification (REQ-MOD02-003) descrevem o que o recurso contém, e as regras de contenção (REQ-MOD02-007) dizem o que pode conter o quê. O que falta é materializar. O princípio §4.11 fixa a consequência: o caminho feliz de um objeto composto é uma operação, e a composição vem do catálogo — não da memória do operador.
+
+Materialização não cria exceção às invariantes: o template é executado **através** das mesmas validações do cadastro manual, nunca ao lado delas.
+
+### 33.3 Mapeamento de atributos TMF
+
+| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
+|---|---|:---:|---|
+| `resourceSpecification.childTemplate[].specification` | EntityRef | Sim | Spec do filho a materializar; precisa ser permitida pela regra de contenção (REQ-MOD02-007). |
+| `resourceSpecification.childTemplate[].quantity` | integer | Sim | Quantidade a criar; aceita expressão sobre characteristic do pai (ex.: `vias_totais`). |
+| `resourceSpecification.childTemplate[].namePattern` | string | Sim | Padrão de nomenclatura com índice (ex.: `{parent.name}/P{index:02}`). |
+| `resourceSpecification.childTemplate[].characteristic` | array | Não | Valores default aplicados a cada filho materializado. |
+| `resourceSpecification.childTemplate[].childTemplate` | array | Não | Aninhamento: CTO → splitter → portas em um único nível de declaração. |
+| `resource.materializedFrom` | EntityRef | Não | Registra o template e a versão que originaram a instância, para auditoria. |
+
+### 33.4 Exemplo de payload
+
+```json
+[
+{
+  "id": "spec-cto-furukawa-16p",
+  "@type": "ResourceSpecification",
+  "name": "CTO Furukawa 16P",
+  "lifecycleStatus": "Active",
+  "childTemplate": [
+    {
+      "specification": { "id": "spec-splitter-plc-1x16" },
+      "quantity": 1,
+      "namePattern": "Splitter 1:16 {parent.name}",
+      "childTemplate": [
+        {
+          "specification": { "id": "spec-port-optica" },
+          "quantity": 16,
+          "namePattern": "{parent.name}/P{index:02}",
+          "characteristic": [ { "name": "tipo_conector", "value": "SC/APC" } ]
+        }
+      ]
+    }
+  ]
+},
+{
+  "request": {
+    "name": "CTO-MG-BH-0117",
+    "resourceSpecification": { "id": "spec-cto-furukawa-16p" },
+    "place": { "id": "loc-point-cto-mg-bh-0117", "@referredType": "GeographicLocation" },
+    "materialize": true,
+    "preview": false
+  }
+},
+{
+  "response": {
+    "created": 18,
+    "root": { "id": "res-cto-mg-bh-0117", "@referredType": "Resource" },
+    "children": [
+      { "id": "res-splitter-mg-bh-0117", "name": "Splitter 1:16 CTO-MG-BH-0117" },
+      { "id": "res-port-mg-bh-0117-p01", "name": "CTO-MG-BH-0117/P01" },
+      { "id": "res-port-mg-bh-0117-p16", "name": "CTO-MG-BH-0117/P16" }
+    ],
+    "materializedFrom": { "id": "spec-cto-furukawa-16p", "version": "2.1" }
+  }
+}
+]
+```
+
+### 33.5 Pré-condições
+
+- A ResourceSpecification do pai e as dos filhos estão Active (REQ-MOD02-001).
+- As regras de contenção permitem cada par pai/filho declarado (REQ-MOD02-007).
+- O usuário tem permissão de criação sobre todos os tipos envolvidos.
+
+### 33.6 Requisitos Funcionais
+
+| ID | Nome | Descrição |
+|---|---|---|
+| **RF-001** | **Declarar composição** | Definir `childTemplate[]` na Specification, com aninhamento, quantidade, nomenclatura e defaults. |
+| **RF-002** | **Materializar em uma transação** | Criar o recurso e toda a sua árvore de filhos em uma operação atômica. |
+| **RF-003** | **Pré-visualização** | `preview=true` devolve a árvore que seria criada, com nomes resolvidos, sem persistir nada. |
+| **RF-004** | **Quantidade derivada** | Resolver `quantity` a partir de characteristic do pai (ex.: banco com `vias_totais=4` materializa 4 dutos). |
+| **RF-005** | **Nomenclatura configurável** | Aplicar `namePattern` com índice, nome do pai e characteristics, sem código específico por tipo. |
+| **RF-006** | **Import em massa com template** | Aceitar CSV/GeoJSON de pais e materializar os filhos de cada um, com relatório por item. |
+| **RF-007** | **Idempotência** | Retry de import não duplica instâncias já materializadas, usando chave de idempotência por item. |
+| **RF-008** | **Auditoria de origem** | Registrar em `materializedFrom` o template e a versão usados na materialização. |
+
+### 33.7 Regras de Negócio
+
+| ID | Regra de Negócio |
+|---|---|
+| **RN-001** | A materialização respeita as regras de contenção e todas as invariantes do cadastro manual — nunca as contorna. |
+| **RN-002** | Filhos herdam tenant, `place` e `_origin` do pai, salvo override explícito no template. |
+| **RN-003** | Falha em qualquer filho aborta a instância inteira; materialização parcial nunca é persistida. |
+| **RN-004** | Alterar o template não re-materializa instâncias existentes; a mudança vale para as próximas criações. |
+| **RN-005** | O resultado da materialização é idêntico ao do caminho manual equivalente — não existe atributo que só o template consiga produzir. |
+| **RN-006** | Excluir filho materializado segue as regras do próprio tipo (C6), sem tratamento especial por ter vindo de template. |
+| **RN-007** | Template com aninhamento acima do limite configurado é rejeitado na publicação da spec, não na criação da instância. |
+
+### 33.8 Critérios de Aceite
+
+| ID | Critério | Resultado Esperado |
+|---|---|---|
+| **CA-001** | **CTO em uma chamada** | POST único com `materialize=true` cria CTO-16P, splitter e 16 portas nomeadas; o objeto resultante é idêntico ao obtido pelas 10 chamadas manuais. |
+| **CA-002** | **Pré-visualização** | `preview=true` devolve os 18 objetos previstos com nomes resolvidos e não persiste nada. |
+| **CA-003** | **Quantidade derivada** | Banco com `vias_totais=4` materializa exatamente 4 dutos (REQ-MOD02-026). |
+| **CA-004** | **Atomicidade** | Falha na criação do 12º filho não deixa nenhum objeto persistido — nem o pai. |
+| **CA-005** | **Import idempotente** | Import de 500 CTOs devolve relatório por item; o retry do mesmo arquivo não cria duplicata. |
+| **CA-006** | **Contenção respeitada** | Template que declara filho proibido pela regra de contenção é rejeitado na publicação da spec. |
+| **CA-007** | **Auditoria** | O recurso criado expõe `materializedFrom` com spec e versão. |
+
+### 33.9 Mapeamento contra sistemas de referência
+
+| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
+|---|---|---|---|---|
+| **Template de equipamento** | Sim (Catalogue e templates de equipamentos) | Sim (metamodelo com containment e templates) | Sim (device types com component templates) | **`childTemplate[]` na ResourceSpecification (TMF634)** |
+| **Materialização de filhos na criação** | Sim, via templates do catálogo | Sim | Sim, ao instanciar device type | **Sim, transacional, com pré-visualização** |
+| **Quantidade derivada de characteristic** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim (ex.: `vias_totais` do banco de dutos)** |
+| **Import em massa com template** | Data Manager / carregamento massivo | Não identificado no levantamento | Sim, via API e scripts | **Sim, com relatório por item e idempotência** |
+| **Atomicidade da materialização** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Tudo ou nada por instância** |
+
+---
+
+## 34. Cenários ilustrativos da modelagem
 
 Esta seção apresenta dois cenários completos para validar como o modelo do Módulo 2 (Resource Domain) opera em conjunto com o Módulo 1 (Geographic) na prática operacional V.tal. Os cenários atravessam catálogo, instâncias, relações de contenção, georreferenciamento e ciclo de vida.
 
-### 31.1 Cenário A — Cliente corporativo em condomínio empresarial
+### 34.1 Cenário A — Cliente corporativo em condomínio empresarial
 
 **Contexto:** Cliente corporativo (Empresa Acme) com escritório no Edifício Corporate Tower, Andar 12, Sala 1201 — Rio de Janeiro. Foi contratado serviço FTTH Empresarial 1Gbps com CPE Cisco ISR 1100 dedicado.
 
@@ -2908,7 +3378,7 @@ ServiceInstance "FTTH-Empresarial-1G-Acme-12345" (TMF638)
 5. A VRF do cliente isola seu endereçamento de outros clientes — pode usar 192.168.x.x internamente sem conflito.
 6. O Service Domain (Módulo 3) é quem amarra tudo via supportingResource — referenciando os Resources que materializam o serviço.
 
-### 31.2 Cenário B — Central de telecomunicações (Central Office GPON)
+### 34.2 Cenário B — Central de telecomunicações (Central Office GPON)
 
 **Contexto:** Central Botafogo (Rio de Janeiro) — Central Office de produção da V.tal, com OLTs GPON alimentando dezenas de armários e milhares de clientes FTTH residenciais e empresariais.
 
@@ -3043,7 +3513,7 @@ ONT Cliente XYZ (PhysicalResource, spec: ONT-Huawei-HG8145X6)
 6. **Energia rastreada:** o UPS Principal alimenta os Racks de Equipment via cadeia PowerFeed → PDU → PowerOutlet → PowerPort. Em caso de falha do UPS, query `/resource/{ups}/impactAnalysis` retorna todos os Resources afetados.
 7. **Path computation fim-a-fim:** consulta `POST /resource/path` com from=Port-OLT-0/0/0 e to=ONT-Cliente-XYZ retorna toda a cadeia (~10 hops), com total_distance, total_attenuation e splice_count calculados em tempo real.
 
-### 31.3 Comparação dos dois cenários
+### 34.3 Comparação dos dois cenários
 
 | Aspecto | Cenário A (Cliente Corporativo) | Cenário B (Central Office) |
 |---|---|---|
@@ -3056,7 +3526,7 @@ ONT Cliente XYZ (PhysicalResource, spec: ONT-Huawei-HG8145X6)
 | **Volume típico** | Centenas de milhares (HCs corporativos) | Centenas de Centrais |
 | **Frequência de mudança** | Alta (contratos novos, expansões) | Baixa (estrutura estável, equipamentos evoluem) |
 
-### 31.4 Padrões reaproveitáveis
+### 34.4 Padrões reaproveitáveis
 
 Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando que o modelo Nexus se sustenta em escala e diversidade operacional:
 
@@ -3069,7 +3539,7 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
 
 ---
 
-## 32. Síntese arquitetural do módulo
+## 35. Síntese arquitetural do módulo
 
 - **Catálogo + inventário.** TMF634 define tipos; TMF639 instancia PhysicalResource e LogicalResource.
 - **Modelo genérico já executável.** CRUD, filtros, paginação, workspace, relacionamentos e TMF664 existem sobre Neon Postgres.
@@ -3080,7 +3550,7 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
 
 ---
 
-## 33. Contratos com outros módulos do Nexus
+## 36. Contratos com outros módulos do Nexus
 
 | Módulo | Tipo de consumo | Detalhe |
 |---|---|---|
@@ -3094,7 +3564,7 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
 
 ---
 
-## 34. Questões em aberto
+## 37. Questões em aberto
 
 | ID | Questão | Status | Responsável |
 |---|---|---|---|
@@ -3107,17 +3577,17 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
 | **Q-RES-011** | Modelagem de fontes de equipamento (PowerSupply interno vs PowerOutlet externo): granularidade necessária para Service Assurance? | *Aberta* | *Engenharia + Operações* |
 | **Q-RES-012** | Quais tipos operacionais adicionais devem complementar o bootstrap canônico de ResourceRelationship? | *Aberta* | *Operações V.tal* |
 
-### 34.1 Decisões resolvidas e seus impactos arquiteturais
+### 37.1 Decisões resolvidas e seus impactos arquiteturais
 
 | Decisão | Requisitos impactados | Mudança aplicada |
 |---|---|---|
-| **D-RES-001 — Identidade e proveniência na migração** | REQ-MOD02-001, REQ-MOD02-005 e todos os demais Resources | Nexus gera UUID v7 canônico próprio; IDs legados preservados no grupo `_origin` como characteristics somente-leitura. Ver seção 34.2. |
+| **D-RES-001 — Identidade e proveniência na migração** | REQ-MOD02-001, REQ-MOD02-005 e todos os demais Resources | Nexus gera UUID v7 canônico próprio; IDs legados preservados no grupo `_origin` como characteristics somente-leitura. Ver seção 37.2. |
 | **D-RES-002 — Postes próprios na V.tal** | REQ-MOD02-008 | Sem integração externa de sincronização; `owner` e `contractRef` permanecem como characteristics, sem necessidade de adapter de leitura para sistemas de concessionárias. |
 | **D-RES-003 — Service Assurance externa, preparar para futura migração** | REQ-MOD02-025 | O catálogo de eventos TMF688 já cobre as necessidades futuras de Service Assurance. O consumo permanece externo no MVP. |
 | **D-RES-004 — Swap via Módulo 5 (BPMN)** | REQ-MOD02-014 (RF-009 Substituição), REQ-MOD02-019 (swap de DIO) | `/resource/{id}/swap` inicia workflow no Módulo 5, que executa as etapas de forma orquestrada e auditável. |
 | **D-RES-005 — Catálogo de Relationships extensível** | REQ-MOD02-024 | RelationshipType é entidade com bootstrap + CRUD governado via API, não lista fechada hardcoded. |
 
-### 34.2 Decisão de migração — Identidade e proveniência de Resources
+### 37.2 Decisão de migração — Identidade e proveniência de Resources
 
 > **Princípio arquitetural (Jun/2026):** O Nexus é agnóstico à origem de seus dados. Todo identificador canônico é UUID v7 gerado pelo próprio Nexus, independente do sistema de origem. IDs legados são preservados como atributos customizados (`characteristic`) no grupo convencional `_origin`, exclusivamente para fins de rastreabilidade histórica, auditoria e suporte ao período de dual-running. Este princípio é o mesmo estabelecido para entidades geográficas em VTN-HLD-MOD01-GEO seção 21.2 — é transversal a toda a plataforma Nexus.
 
@@ -3204,7 +3674,7 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
 
 ---
 
-## 35. Controle de revisões
+## 38. Controle de revisões
 
 | Versão | Data | Autor | Descrição |
 |---|---|---|---|

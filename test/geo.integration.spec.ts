@@ -37,7 +37,9 @@ const requestJson = async (
         method,
         headers: {
           authorization: 'Bearer secret',
-          ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {}),
+          ...(payload
+            ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
+            : {}),
         },
       },
       (res) => {
@@ -69,7 +71,10 @@ type GeoTreeResponseNode = {
 
 test('Geo HTTP integration handles spec, location and site creation', async (t) => {
   const database = createTestDatabase();
-  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
   const port = await server.start();
   t.after(async () => {
     await server.stop();
@@ -104,17 +109,25 @@ test('Geo HTTP integration handles spec, location and site creation', async (t) 
 
 test('Geo HTTP integration supports TMF aliases, workspace transaction, status event and relatedSite', async (t) => {
   const database = createTestDatabase();
-  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
   const port = await server.start();
   t.after(async () => {
     await server.stop();
     database.cleanup();
   });
 
-  const spec = await requestJson(port, 'POST', '/tmf-api/geographicSiteManagement/v4/geographicSiteSpecification', {
-    name: 'Ponto de Instalacao',
-    category: 'SubSite',
-  });
+  const spec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/geographicSiteManagement/v4/geographicSiteSpecification',
+    {
+      name: 'Ponto de Instalacao',
+      category: 'Site',
+    },
+  );
   assert.equal(spec.statusCode, 201);
 
   const feederSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
@@ -149,22 +162,97 @@ test('Geo HTTP integration supports TMF aliases, workspace transaction, status e
   });
   assert.equal(workspace.statusCode, 201);
   assert.equal((workspace.body as { site: { '@type': string } }).site['@type'], 'GeographicSite');
-  assert.equal((workspace.body as { site: { relatedSite: Array<{ relationshipType: string }> } }).site.relatedSite[0]?.relationshipType, 'fedBy');
+  assert.equal(
+    (workspace.body as { site: { relatedSite: Array<{ relationshipType: string }> } }).site
+      .relatedSite[0]?.relationshipType,
+    'fedBy',
+  );
 
   const siteId = (workspace.body as { site: { id: string } }).site.id;
-  const patch = await requestJson(port, 'PATCH', `/tmf-api/geographicSiteManagement/v4/geographicSite/${siteId}`, {
-    status: 'active',
-  });
+  const patch = await requestJson(
+    port,
+    'PATCH',
+    `/tmf-api/geographicSiteManagement/v4/geographicSite/${siteId}`,
+    {
+      status: 'active',
+    },
+  );
   assert.equal(patch.statusCode, 200);
 
   const events = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}/events`);
   assert.equal(events.statusCode, 200);
-  assert.ok((events.body as Array<{ eventType: string }>).some((event) => event.eventType === 'GeographicSiteStatusChangeEvent'));
+  assert.ok(
+    (events.body as Array<{ eventType: string }>).some(
+      (event) => event.eventType === 'GeographicSiteStatusChangeEvent',
+    ),
+  );
+});
+
+test('Geo HTTP integration exposes bootstrap, allowedChildren and containment impact', async (t) => {
+  const database = createTestDatabase();
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
+  const port = await server.start();
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
+
+  const bootstrap = await requestJson(port, 'POST', '/v1/geo/site-specifications/bootstrap');
+  assert.equal(bootstrap.statusCode, 200);
+  assert.equal((bootstrap.body as { specs: unknown[] }).specs.length, 9);
+
+  const regionSpecs = await requestJson(port, 'GET', '/v1/geo/site-specifications?code=REGION');
+  const centralSpecs = await requestJson(port, 'GET', '/v1/geo/site-specifications?code=CO');
+  assert.equal(regionSpecs.statusCode, 200);
+  assert.equal(centralSpecs.statusCode, 200);
+
+  const regionSpecId = (regionSpecs.body as Array<{ id: string }>)[0]?.id;
+  const centralSpecId = (centralSpecs.body as Array<{ id: string }>)[0]?.id;
+  assert.ok(regionSpecId);
+  assert.ok(centralSpecId);
+
+  const allowedChildren = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/site-specifications/${regionSpecId}/allowedChildren`,
+  );
+  assert.equal(allowedChildren.statusCode, 200);
+  assert.ok((allowedChildren.body as Array<{ code: string }>).some((item) => item.code === 'CO'));
+
+  const region = await requestJson(port, 'POST', '/v1/geo/sites', {
+    name: 'RJ',
+    siteSpecificationId: regionSpecId,
+  });
+  assert.equal(region.statusCode, 201);
+
+  const central = await requestJson(port, 'POST', '/v1/geo/sites', {
+    name: 'CO Botafogo',
+    siteSpecificationId: centralSpecId,
+    parentSiteId: (region.body as { id: string }).id,
+  });
+  assert.equal(central.statusCode, 201);
+
+  const impact = await requestJson(
+    port,
+    'POST',
+    `/v1/geo/site-specifications/${regionSpecId}/containment-impact`,
+    {
+      allowedChildSpecIds: [],
+    },
+  );
+  assert.equal(impact.statusCode, 200);
+  assert.equal((impact.body as { blocking: boolean }).blocking, true);
 });
 
 test('Geo tree serves one level per call, with counts, pagination and child flags', async (t) => {
   const database = createTestDatabase();
-  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
   const port = await server.start();
   t.after(async () => {
     await server.stop();
@@ -209,11 +297,16 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
 
   // Planta externa: a caixa fica na rua (place = Location própria) e se liga à
   // estação pela characteristic `servingSite`; o splitter pende da caixa.
-  const resourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
-    name: 'CDOE 1:8',
-    category: 'Infrastructure.Passive',
-    resourceType: 'CTO',
-  });
+  const resourceSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    {
+      name: 'CDOE 1:8',
+      category: 'Infrastructure.Passive',
+      resourceType: 'CTO',
+    },
+  );
   const boxPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
     geometryType: 'Point',
     geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
@@ -228,14 +321,19 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
   });
   assert.equal(box.statusCode, 201);
 
-  const splitter = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'PhysicalResource',
-    name: 'CDOE-1108 · S32_1',
-    resourceSpecificationId: idOf(resourceSpec),
-    placeId: idOf(boxPlace),
-    placeType: 'GeographicLocation',
-    characteristic: [{ name: 'servingSite', value: idOf(station), valueType: 'string' }],
-  });
+  const splitter = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceInventoryManagement/v4/resource',
+    {
+      '@type': 'PhysicalResource',
+      name: 'CDOE-1108 · S32_1',
+      resourceSpecificationId: idOf(resourceSpec),
+      placeId: idOf(boxPlace),
+      placeType: 'GeographicLocation',
+      characteristic: [{ name: 'servingSite', value: idOf(station), valueType: 'string' }],
+    },
+  );
   const link = await requestJson(
     port,
     'POST',
@@ -263,7 +361,11 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
   assert.deepEqual(stationNode?.geometry?.coordinates, [-43.107, -22.906]);
 
   // Filhos diretos: a sala e a caixa — o splitter não, ele pende da caixa.
-  const children = await requestJson(port, 'GET', `/v1/geo/tree/children?nodeId=site:${idOf(station)}`);
+  const children = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/tree/children?nodeId=site:${idOf(station)}`,
+  );
   assert.equal(children.statusCode, 200);
   const page = children.body as { total: number; nodes: GeoTreeResponseNode[] };
   assert.equal(page.total, 2);
@@ -276,7 +378,11 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
   assert.equal(page.nodes[1]?.hasChildren, true);
 
   // Paginação: a janela atravessa sub-locais e recursos, e o total não muda.
-  const firstPage = await requestJson(port, 'GET', `/v1/geo/tree/children?nodeId=site:${idOf(station)}&limit=1`);
+  const firstPage = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/tree/children?nodeId=site:${idOf(station)}&limit=1`,
+  );
   const secondPage = await requestJson(
     port,
     'GET',
@@ -284,10 +390,17 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
   );
   assert.equal((firstPage.body as { nodes: unknown[] }).nodes.length, 1);
   assert.equal((secondPage.body as { total: number }).total, 2);
-  assert.equal((secondPage.body as { nodes: Array<{ label: string }> }).nodes[0]?.label, 'CDOE-1108');
+  assert.equal(
+    (secondPage.body as { nodes: Array<{ label: string }> }).nodes[0]?.label,
+    'CDOE-1108',
+  );
 
   // Nível seguinte da planta: o splitter que a caixa contém.
-  const boxChildren = await requestJson(port, 'GET', `/v1/geo/tree/children?nodeId=resource:${idOf(box)}`);
+  const boxChildren = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/tree/children?nodeId=resource:${idOf(box)}`,
+  );
   const boxPage = boxChildren.body as { total: number; nodes: GeoTreeResponseNode[] };
   assert.equal(boxPage.total, 1);
   assert.equal(boxPage.nodes[0]?.label, 'CDOE-1108 · S32_1');
@@ -299,7 +412,10 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
 
 test('Geo tree viewport serves passive infra by bounding box, independent of hierarchy state', async (t) => {
   const database = createTestDatabase();
-  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
   const port = await server.start();
   t.after(async () => {
     await server.stop();
@@ -308,11 +424,16 @@ test('Geo tree viewport serves passive infra by bounding box, independent of hie
 
   const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
 
-  const resourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
-    name: 'CDOE 1:8',
-    category: 'Infrastructure.Passive',
-    resourceType: 'CTO',
-  });
+  const resourceSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    {
+      name: 'CDOE 1:8',
+      category: 'Infrastructure.Passive',
+      resourceType: 'CTO',
+    },
+  );
 
   // Caixa pontual e cabo (LineString) nunca expandidos na árvore — o viewport
   // precisa achá-los só pela geometria, não por nó pai carregado.
@@ -339,13 +460,18 @@ test('Geo tree viewport serves passive infra by bounding box, independent of hie
       ],
     },
   });
-  const cable = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'PhysicalResource',
-    name: 'Cabo Primário 01',
-    resourceSpecificationId: idOf(resourceSpec),
-    placeId: idOf(cablePlace),
-    placeType: 'GeographicLocation',
-  });
+  const cable = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceInventoryManagement/v4/resource',
+    {
+      '@type': 'PhysicalResource',
+      name: 'Cabo Primário 01',
+      resourceSpecificationId: idOf(resourceSpec),
+      placeId: idOf(cablePlace),
+      placeType: 'GeographicLocation',
+    },
+  );
   assert.equal(cable.statusCode, 201);
 
   // Bbox que cobre a região de Icaraí: caixa e cabo voltam, sem expandir nada antes.
@@ -356,10 +482,7 @@ test('Geo tree viewport serves passive infra by bounding box, independent of hie
   );
   assert.equal(insideBbox.statusCode, 200);
   const insideNodes = insideBbox.body as GeoTreeResponseNode[];
-  assert.deepEqual(
-    insideNodes.map((item) => item.label).sort(),
-    ['CDOE-1108', 'Cabo Primário 01'],
-  );
+  assert.deepEqual(insideNodes.map((item) => item.label).sort(), ['CDOE-1108', 'Cabo Primário 01']);
 
   // Bbox longe da região: nada volta.
   const outsideBbox = await requestJson(
@@ -376,7 +499,10 @@ test('Geo tree viewport serves passive infra by bounding box, independent of hie
 
 test('Geo tree search finds stations and resources by name, but never sub-sites', async (t) => {
   const database = createTestDatabase();
-  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
   const port = await server.start();
   t.after(async () => {
     await server.stop();
@@ -422,11 +548,16 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
   });
   assert.equal(room.statusCode, 201);
 
-  const resourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
-    name: 'CDOE 1:8',
-    category: 'Infrastructure.Passive',
-    resourceType: 'CTO',
-  });
+  const resourceSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    {
+      name: 'CDOE 1:8',
+      category: 'Infrastructure.Passive',
+      resourceType: 'CTO',
+    },
+  );
   const boxPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
     geometryType: 'Point',
     geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
@@ -443,10 +574,10 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
   const search = await requestJson(port, 'GET', '/v1/geo/tree/search?q=icara');
   assert.equal(search.statusCode, 200);
   const results = search.body as GeoTreeResponseNode[];
-  assert.deepEqual(
-    results.map((item) => item.label).sort(),
-    ['CDOE Icaraí 08', 'Estação Icaraí Central'],
-  );
+  assert.deepEqual(results.map((item) => item.label).sort(), [
+    'CDOE Icaraí 08',
+    'Estação Icaraí Central',
+  ]);
   assert.equal(
     results.some((item) => item.label === 'Sala Icaraí Técnica'),
     false,
@@ -461,7 +592,10 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
 
 test('App exposes health without auth and protected routes reject missing token', async (t) => {
   const database = createTestDatabase();
-  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
   const port = await server.start();
   t.after(async () => {
     await server.stop();
@@ -474,7 +608,12 @@ test('App exposes health without auth and protected routes reject missing token'
       (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-        res.on('end', () => resolve({ statusCode: res.statusCode ?? 0, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) }));
+        res.on('end', () =>
+          resolve({
+            statusCode: res.statusCode ?? 0,
+            body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+          }),
+        );
       },
     );
     req.on('error', reject);
@@ -484,18 +623,25 @@ test('App exposes health without auth and protected routes reject missing token'
   assert.equal(health.statusCode, 200);
   assert.equal((health.body as { status: string }).status, 'ok');
 
-  const protectedRoute = await new Promise<{ statusCode: number; body: unknown }>((resolve, reject) => {
-    const req = http.request(
-      { hostname: '127.0.0.1', port, path: '/v1/bootstrap', method: 'GET' },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-        res.on('end', () => resolve({ statusCode: res.statusCode ?? 0, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) }));
-      },
-    );
-    req.on('error', reject);
-    req.end();
-  });
+  const protectedRoute = await new Promise<{ statusCode: number; body: unknown }>(
+    (resolve, reject) => {
+      const req = http.request(
+        { hostname: '127.0.0.1', port, path: '/v1/bootstrap', method: 'GET' },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+          res.on('end', () =>
+            resolve({
+              statusCode: res.statusCode ?? 0,
+              body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+            }),
+          );
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    },
+  );
 
   assert.equal(protectedRoute.statusCode, 401);
   assert.equal((protectedRoute.body as { error: string }).error, 'AUTH_REQUIRED');
@@ -503,7 +649,10 @@ test('App exposes health without auth and protected routes reject missing token'
 
 test('App root returns Nexus shell html', async (t) => {
   const database = createTestDatabase();
-  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
   const port = await server.start();
   t.after(async () => {
     await server.stop();
@@ -511,14 +660,13 @@ test('App root returns Nexus shell html', async (t) => {
   });
 
   const html = await new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
-    const req = http.request(
-      { hostname: '127.0.0.1', port, path: '/', method: 'GET' },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-        res.on('end', () => resolve({ statusCode: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }));
-      },
-    );
+    const req = http.request({ hostname: '127.0.0.1', port, path: '/', method: 'GET' }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      res.on('end', () =>
+        resolve({ statusCode: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }),
+      );
+    });
     req.on('error', reject);
     req.end();
   });

@@ -221,7 +221,7 @@ export class GeoTreeService {
 
     const siteRows = this.db.all<SiteRow>(
       `${SITE_SELECT}
-       WHERE sp.category = 'Site' AND s.status <> 'terminated' AND LOWER(s.name) LIKE LOWER(?)
+       WHERE sp.category = 'Site' AND s.status NOT IN ('Retired', 'terminated') AND LOWER(s.name) LIKE LOWER(?)
        ORDER BY s.name
        LIMIT ?`,
       [like, limit],
@@ -241,7 +241,10 @@ export class GeoTreeService {
     return nodes.slice(0, limit);
   }
 
-  public children(nodeId: string, options: { limit?: number; offset?: number } = {}): GeoTreeChildrenPage {
+  public children(
+    nodeId: string,
+    options: { limit?: number; offset?: number } = {},
+  ): GeoTreeChildrenPage {
     const limit = clamp(options.limit ?? DEFAULT_TREE_PAGE_SIZE, 1, MAX_TREE_PAGE_SIZE);
     const offset = Math.max(0, options.offset ?? 0);
     const parsed = parseNodeId(nodeId);
@@ -307,7 +310,11 @@ export class GeoTreeService {
     };
   }
 
-  private stationsOfGroup(rest: string, limit: number, offset: number): { nodes: GeoTreeNode[]; total: number } {
+  private stationsOfGroup(
+    rest: string,
+    limit: number,
+    offset: number,
+  ): { nodes: GeoTreeNode[]; total: number } {
     const [uf, city] = splitPair(rest);
     const all = sortRows(
       this.listStationRows().filter(
@@ -332,7 +339,11 @@ export class GeoTreeService {
    *   (c) planta externa da estação (`servingSite`) que ainda não é filha de
    *       outro recurso — é a raiz de cada ramo da rede na rua.
    */
-  private childrenOfSite(siteId: string, limit: number, offset: number): { nodes: GeoTreeNode[]; total: number } {
+  private childrenOfSite(
+    siteId: string,
+    limit: number,
+    offset: number,
+  ): { nodes: GeoTreeNode[]; total: number } {
     const site = this.db.get<{ id: string; geographic_location_id: string | null }>(
       'SELECT id, geographic_location_id FROM tmf_geographic_site WHERE id = ?',
       [siteId],
@@ -341,7 +352,7 @@ export class GeoTreeService {
 
     const subSites = this.db.all<SiteRow>(
       `${SITE_SELECT}
-       WHERE s.parent_site_id = ? AND s.status <> 'terminated'
+       WHERE s.parent_site_id = ? AND s.status NOT IN ('Retired', 'terminated')
        ORDER BY s.name`,
       [siteId],
     );
@@ -349,10 +360,10 @@ export class GeoTreeService {
     const resourceParams = [siteId, site.geographic_location_id ?? '', siteId];
     const total =
       subSites.length +
-      (this.db.get<{ n: number }>(
-        `SELECT count(*) AS n FROM (${SITE_RESOURCE_SOURCE}) AS t`,
-        [...resourceParams, ...resourceParams],
-      )?.n ?? 0);
+      (this.db.get<{ n: number }>(`SELECT count(*) AS n FROM (${SITE_RESOURCE_SOURCE}) AS t`, [
+        ...resourceParams,
+        ...resourceParams,
+      ])?.n ?? 0);
 
     // Sub-locais primeiro (o interior do local), depois a planta. A janela de
     // paginação atravessa os dois grupos, por isso o offset desconta os sites.
@@ -381,12 +392,16 @@ export class GeoTreeService {
 
   // -------------------------------------------------- filhos de um Recurso ---
 
-  private childrenOfResource(resourceId: string, limit: number, offset: number): { nodes: GeoTreeNode[]; total: number } {
+  private childrenOfResource(
+    resourceId: string,
+    limit: number,
+    offset: number,
+  ): { nodes: GeoTreeNode[]; total: number } {
     const total =
-      this.db.get<{ n: number }>(
-        `SELECT count(*) AS n FROM (${RESOURCE_CHILD_SOURCE}) AS t`,
-        [resourceId, resourceId],
-      )?.n ?? 0;
+      this.db.get<{ n: number }>(`SELECT count(*) AS n FROM (${RESOURCE_CHILD_SOURCE}) AS t`, [
+        resourceId,
+        resourceId,
+      ])?.n ?? 0;
 
     const rows = this.db.all<ResourceRow>(
       `SELECT * FROM (${RESOURCE_CHILD_SOURCE}) AS t ORDER BY name, id LIMIT ? OFFSET ?`,
@@ -450,7 +465,7 @@ export class GeoTreeService {
   private listStationRows(): SiteRow[] {
     return this.db.all<SiteRow>(
       `${SITE_SELECT}
-       WHERE sp.category = 'Site' AND s.status <> 'terminated'
+       WHERE sp.category = 'Site' AND s.status NOT IN ('Retired', 'terminated')
        ORDER BY s.name`,
     );
   }
@@ -473,7 +488,7 @@ export class GeoTreeService {
     // (1) sub-locais
     for (const row of this.db.all<{ id: string }>(
       `SELECT DISTINCT parent_site_id AS id FROM tmf_geographic_site
-        WHERE parent_site_id IN (${placeholders(siteIds)}) AND status <> 'terminated'`,
+        WHERE parent_site_id IN (${placeholders(siteIds)}) AND status NOT IN ('Retired', 'terminated')`,
       siteIds,
     )) {
       withChildren.add(row.id);

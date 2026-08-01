@@ -11,8 +11,11 @@ export const TABLE_NAMES = [
   'tmf_geographic_location',
   'tmf_geographic_address',
   'tmf_geographic_site_specification',
+  'tmf_geographic_site_spec_containment_rule',
   'tmf_geographic_site',
+  'tmf_geographic_site_status_history',
   'tmf_geographic_site_relationship',
+  'tmf_geographic_relationship_type',
   'tmf_resource_specification',
   'tmf_resource_category',
   'tmf_resource_type',
@@ -34,6 +37,10 @@ export const TABLE_NAMES = [
   'tmf_party_role',
   'tmf_party_relationship',
   'tmf_event',
+  'tmf_audit_log',
+  'tmf_outbox',
+  'tmf_geo_bulk_job',
+  'tmf_geo_bulk_job_result',
   'research_session',
   'research_message',
   'mcp_confirmation',
@@ -100,6 +107,147 @@ export const MIGRATIONS_SQL = `
   ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS related_party TEXT;
   ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS resource_order_item TEXT;
   ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS note TEXT;
+  ALTER TABLE tmf_geographic_site_specification ADD COLUMN IF NOT EXISTS code TEXT;
+  ALTER TABLE tmf_geographic_site_specification ADD COLUMN IF NOT EXISTS lifecycle_status TEXT;
+  ALTER TABLE tmf_geographic_site_specification ADD COLUMN IF NOT EXISTS is_bootstrap INTEGER DEFAULT 0;
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_specification_code ON tmf_geographic_site_specification(code);
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_specification_lifecycle ON tmf_geographic_site_specification(lifecycle_status);
+  CREATE TABLE IF NOT EXISTS tmf_geographic_site_spec_containment_rule (
+    parent_spec_id TEXT NOT NULL,
+    child_spec_id TEXT NOT NULL,
+    valid_for_start DATETIME,
+    valid_for_end DATETIME,
+    is_protected INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (parent_spec_id, child_spec_id),
+    FOREIGN KEY (parent_spec_id) REFERENCES tmf_geographic_site_specification(id),
+    FOREIGN KEY (child_spec_id) REFERENCES tmf_geographic_site_specification(id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_geo_spec_containment_parent ON tmf_geographic_site_spec_containment_rule(parent_spec_id, child_spec_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_geo_spec_containment_child ON tmf_geographic_site_spec_containment_rule(child_spec_id, parent_spec_id);
+
+  ALTER TABLE tmf_geographic_location ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_geographic_site ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_geographic_site ADD COLUMN IF NOT EXISTS status_date TIMESTAMPTZ;
+  ALTER TABLE tmf_geographic_site ADD COLUMN IF NOT EXISTS status_reason TEXT;
+  ALTER TABLE tmf_geographic_site ADD COLUMN IF NOT EXISTS site_addresses TEXT;
+  UPDATE tmf_geographic_site SET status = 'Planned' WHERE status = 'planned';
+  UPDATE tmf_geographic_site SET status = 'Active' WHERE status = 'active';
+  UPDATE tmf_geographic_site SET status = 'InDeactivation' WHERE status = 'suspended';
+  UPDATE tmf_geographic_site SET status = 'Retired' WHERE status = 'terminated';
+  ALTER TABLE tmf_geographic_site DROP CONSTRAINT IF EXISTS tmf_geographic_site_status_check;
+  ALTER TABLE tmf_geographic_site
+    ADD CONSTRAINT tmf_geographic_site_status_check
+    CHECK(status IN ('Planned', 'InConstruction', 'Active', 'InDeactivation', 'Retired'));
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_location_tenant ON tmf_geographic_location(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_tenant ON tmf_geographic_address(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_tenant ON tmf_geographic_site(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_tenant_status ON tmf_geographic_site(tenant_id, status);
+
+  CREATE TABLE IF NOT EXISTS tmf_geographic_site_status_history (
+    id TEXT PRIMARY KEY,
+    site_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    from_status TEXT,
+    to_status TEXT NOT NULL,
+    status_date TIMESTAMPTZ NOT NULL,
+    status_reason TEXT,
+    actor_sub TEXT NOT NULL,
+    trace_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (site_id) REFERENCES tmf_geographic_site(id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_geo_site_history_site ON tmf_geographic_site_status_history(site_id, status_date DESC);
+  CREATE INDEX IF NOT EXISTS idx_tmf_geo_site_history_tenant ON tmf_geographic_site_status_history(tenant_id);
+
+  CREATE TABLE IF NOT EXISTS tmf_geographic_relationship_type (
+    id TEXT PRIMARY KEY,
+    href TEXT NOT NULL,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    inverse_code TEXT NOT NULL,
+    symmetric INTEGER NOT NULL DEFAULT 0,
+    allowed_source_categories TEXT,
+    allowed_target_categories TEXT,
+    cardinality TEXT,
+    lifecycle_status TEXT NOT NULL DEFAULT 'Active' CHECK(lifecycle_status IN ('Active', 'Retired')),
+    is_bootstrap INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_relationship_type_code ON tmf_geographic_relationship_type(code);
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_relationship_type_lifecycle ON tmf_geographic_relationship_type(lifecycle_status);
+
+  CREATE TABLE IF NOT EXISTS tmf_audit_log (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    actor_sub TEXT NOT NULL,
+    action TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    event_time TIMESTAMPTZ NOT NULL,
+    before_state TEXT,
+    after_state TEXT,
+    trace_id TEXT NOT NULL,
+    source_ip TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_audit_log_entity ON tmf_audit_log(entity_type, entity_id, event_time DESC);
+  CREATE INDEX IF NOT EXISTS idx_tmf_audit_log_tenant ON tmf_audit_log(tenant_id, event_time DESC);
+  CREATE INDEX IF NOT EXISTS idx_tmf_audit_log_trace ON tmf_audit_log(trace_id);
+
+  CREATE TABLE IF NOT EXISTS tmf_outbox (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'published', 'failed')),
+    created_at TIMESTAMPTZ NOT NULL,
+    published_at TIMESTAMPTZ
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_outbox_status_created ON tmf_outbox(status, created_at);
+  CREATE INDEX IF NOT EXISTS idx_tmf_outbox_tenant ON tmf_outbox(tenant_id);
+
+  CREATE TABLE IF NOT EXISTS tmf_geo_bulk_job (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    target TEXT NOT NULL CHECK(target IN ('Address', 'Site')),
+    mode TEXT NOT NULL CHECK(mode IN ('validateOnly', 'atomic', 'bestEffort')),
+    idempotency_key TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('running', 'completed', 'failed')),
+    submitted_at TIMESTAMPTZ NOT NULL,
+    started_at TIMESTAMPTZ NOT NULL,
+    completed_at TIMESTAMPTZ,
+    total INTEGER NOT NULL,
+    success_count INTEGER NOT NULL DEFAULT 0,
+    error_count INTEGER NOT NULL DEFAULT 0,
+    warning_count INTEGER NOT NULL DEFAULT 0,
+    actor_sub TEXT NOT NULL,
+    trace_id TEXT NOT NULL,
+    UNIQUE(tenant_id, target, idempotency_key)
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_geo_bulk_job_tenant_status ON tmf_geo_bulk_job(tenant_id, status, submitted_at DESC);
+
+  CREATE TABLE IF NOT EXISTS tmf_geo_bulk_job_result (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    item_index INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('validated', 'created', 'reused', 'failed')),
+    entity_id TEXT,
+    legacy_system TEXT,
+    legacy_entity TEXT,
+    legacy_id TEXT,
+    error_code TEXT,
+    message TEXT,
+    warnings TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(job_id, item_index),
+    FOREIGN KEY (job_id) REFERENCES tmf_geo_bulk_job(id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_geo_bulk_job_result_job ON tmf_geo_bulk_job_result(job_id, item_index);
+  CREATE INDEX IF NOT EXISTS idx_tmf_geo_bulk_job_result_tenant ON tmf_geo_bulk_job_result(tenant_id);
 
   -- place_id/resource_type/name are the columns the resource tree and workspace list
   -- filters actually query (place_id superseded geographic_location_id — see
@@ -150,6 +298,7 @@ export const SCHEMA_SQL = `
       CREATE TABLE IF NOT EXISTS tmf_geographic_location (
         id TEXT PRIMARY KEY,
         href TEXT NOT NULL,
+        tenant_id TEXT NOT NULL DEFAULT 'default',
         geometry_type TEXT NOT NULL CHECK(geometry_type IN ('Point', 'LineString', 'Polygon')),
         geometry TEXT NOT NULL,
         spatial_ref TEXT DEFAULT 'EPSG:4326',
@@ -162,11 +311,13 @@ export const SCHEMA_SQL = `
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_location_valid_for ON tmf_geographic_location(valid_for_start, valid_for_end);
+      CREATE INDEX IF NOT EXISTS idx_tmf_geographic_location_tenant ON tmf_geographic_location(tenant_id);
 
       -- TMF673: Geographic Address (endereço postal estruturado)
       CREATE TABLE IF NOT EXISTS tmf_geographic_address (
         id TEXT PRIMARY KEY,
         href TEXT NOT NULL,
+        tenant_id TEXT NOT NULL DEFAULT 'default',
         street_type TEXT,
         street_name TEXT NOT NULL,
         street_nr TEXT,
@@ -186,37 +337,60 @@ export const SCHEMA_SQL = `
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_location ON tmf_geographic_address(geographic_location_id);
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_city_postcode ON tmf_geographic_address(city, postcode);
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_street_name ON tmf_geographic_address(street_name);
+      CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_tenant ON tmf_geographic_address(tenant_id);
 
       -- TMF674: Geographic Site Specification (catálogo de tipos de site)
       CREATE TABLE IF NOT EXISTS tmf_geographic_site_specification (
         id TEXT PRIMARY KEY,
         href TEXT NOT NULL,
         name TEXT NOT NULL,
+        code TEXT NOT NULL,
         category TEXT NOT NULL,
+        lifecycle_status TEXT NOT NULL DEFAULT 'Active',
         description TEXT,
         allowed_parent_spec_ids TEXT,
         allowed_child_spec_ids TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
         characteristics TEXT,
+        is_bootstrap INTEGER NOT NULL DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_specification_name_category ON tmf_geographic_site_specification(name, category);
+      CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_specification_code ON tmf_geographic_site_specification(code);
+      CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_specification_lifecycle ON tmf_geographic_site_specification(lifecycle_status);
+
+      CREATE TABLE IF NOT EXISTS tmf_geographic_site_spec_containment_rule (
+        parent_spec_id TEXT NOT NULL,
+        child_spec_id TEXT NOT NULL,
+        valid_for_start DATETIME,
+        valid_for_end DATETIME,
+        is_protected INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (parent_spec_id, child_spec_id),
+        FOREIGN KEY (parent_spec_id) REFERENCES tmf_geographic_site_specification(id),
+        FOREIGN KEY (child_spec_id) REFERENCES tmf_geographic_site_specification(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_geo_spec_containment_parent ON tmf_geographic_site_spec_containment_rule(parent_spec_id, child_spec_id);
+      CREATE INDEX IF NOT EXISTS idx_tmf_geo_spec_containment_child ON tmf_geographic_site_spec_containment_rule(child_spec_id, parent_spec_id);
 
       -- TMF674: Geographic Site (entidade central: Centro, POP, Sala, Armário, etc.)
       CREATE TABLE IF NOT EXISTS tmf_geographic_site (
         id TEXT PRIMARY KEY,
         href TEXT NOT NULL,
+        tenant_id TEXT NOT NULL DEFAULT 'default',
         name TEXT NOT NULL,
         site_specification_id TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'planned' CHECK(status IN ('planned', 'active', 'suspended', 'terminated')),
+        status TEXT NOT NULL DEFAULT 'Planned' CHECK(status IN ('Planned', 'InConstruction', 'Active', 'InDeactivation', 'Retired')),
+        status_date DATETIME,
+        status_reason TEXT,
         geographic_location_id TEXT,
         geographic_address_id TEXT,
         parent_site_id TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
         related_party TEXT,
+        site_addresses TEXT,
         characteristics TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -231,6 +405,24 @@ export const SCHEMA_SQL = `
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_parent ON tmf_geographic_site(parent_site_id);
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_status ON tmf_geographic_site(status);
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_name ON tmf_geographic_site(name);
+      CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_tenant ON tmf_geographic_site(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_tenant_status ON tmf_geographic_site(tenant_id, status);
+
+      CREATE TABLE IF NOT EXISTS tmf_geographic_site_status_history (
+        id TEXT PRIMARY KEY,
+        site_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        from_status TEXT,
+        to_status TEXT NOT NULL,
+        status_date DATETIME NOT NULL,
+        status_reason TEXT,
+        actor_sub TEXT NOT NULL,
+        trace_id TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (site_id) REFERENCES tmf_geographic_site(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_geo_site_history_site ON tmf_geographic_site_status_history(site_id, status_date DESC);
+      CREATE INDEX IF NOT EXISTS idx_tmf_geo_site_history_tenant ON tmf_geographic_site_status_history(tenant_id);
 
       -- Geographic Site Relationship (topologia A→Z)
       CREATE TABLE IF NOT EXISTS tmf_geographic_site_relationship (
@@ -245,6 +437,24 @@ export const SCHEMA_SQL = `
       );
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_relationship ON tmf_geographic_site_relationship(site_from_id, site_to_id);
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_relationship_reverse ON tmf_geographic_site_relationship(site_to_id, site_from_id);
+
+      CREATE TABLE IF NOT EXISTS tmf_geographic_relationship_type (
+        id TEXT PRIMARY KEY,
+        href TEXT NOT NULL,
+        code TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        inverse_code TEXT NOT NULL,
+        symmetric INTEGER NOT NULL DEFAULT 0,
+        allowed_source_categories TEXT,
+        allowed_target_categories TEXT,
+        cardinality TEXT,
+        lifecycle_status TEXT NOT NULL DEFAULT 'Active' CHECK(lifecycle_status IN ('Active', 'Retired')),
+        is_bootstrap INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_geographic_relationship_type_code ON tmf_geographic_relationship_type(code);
+      CREATE INDEX IF NOT EXISTS idx_tmf_geographic_relationship_type_lifecycle ON tmf_geographic_relationship_type(lifecycle_status);
 
       -- ========== MODULE 2: RESOURCE (TMF634/639) ==========
 
@@ -622,6 +832,77 @@ export const SCHEMA_SQL = `
       CREATE INDEX IF NOT EXISTS idx_tmf_event_source ON tmf_event(source);
       CREATE INDEX IF NOT EXISTS idx_tmf_event_correlation ON tmf_event(correlation_id);
       CREATE INDEX IF NOT EXISTS idx_tmf_event_entity ON tmf_event(json_extract(event_data, '$.entityId'));
+
+      CREATE TABLE IF NOT EXISTS tmf_audit_log (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        actor_sub TEXT NOT NULL,
+        action TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        event_time DATETIME NOT NULL,
+        before_state TEXT,
+        after_state TEXT,
+        trace_id TEXT NOT NULL,
+        source_ip TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_audit_log_entity ON tmf_audit_log(entity_type, entity_id, event_time DESC);
+      CREATE INDEX IF NOT EXISTS idx_tmf_audit_log_tenant ON tmf_audit_log(tenant_id, event_time DESC);
+      CREATE INDEX IF NOT EXISTS idx_tmf_audit_log_trace ON tmf_audit_log(trace_id);
+
+      CREATE TABLE IF NOT EXISTS tmf_outbox (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        topic TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'published', 'failed')),
+        created_at DATETIME NOT NULL,
+        published_at DATETIME
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_outbox_status_created ON tmf_outbox(status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_tmf_outbox_tenant ON tmf_outbox(tenant_id);
+
+      CREATE TABLE IF NOT EXISTS tmf_geo_bulk_job (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        target TEXT NOT NULL CHECK(target IN ('Address', 'Site')),
+        mode TEXT NOT NULL CHECK(mode IN ('validateOnly', 'atomic', 'bestEffort')),
+        idempotency_key TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('running', 'completed', 'failed')),
+        submitted_at DATETIME NOT NULL,
+        started_at DATETIME NOT NULL,
+        completed_at DATETIME,
+        total INTEGER NOT NULL,
+        success_count INTEGER NOT NULL DEFAULT 0,
+        error_count INTEGER NOT NULL DEFAULT 0,
+        warning_count INTEGER NOT NULL DEFAULT 0,
+        actor_sub TEXT NOT NULL,
+        trace_id TEXT NOT NULL,
+        UNIQUE(tenant_id, target, idempotency_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_geo_bulk_job_tenant_status ON tmf_geo_bulk_job(tenant_id, status, submitted_at DESC);
+
+      CREATE TABLE IF NOT EXISTS tmf_geo_bulk_job_result (
+        id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        item_index INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('validated', 'created', 'reused', 'failed')),
+        entity_id TEXT,
+        legacy_system TEXT,
+        legacy_entity TEXT,
+        legacy_id TEXT,
+        error_code TEXT,
+        message TEXT,
+        warnings TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(job_id, item_index),
+        FOREIGN KEY (job_id) REFERENCES tmf_geo_bulk_job(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_geo_bulk_job_result_job ON tmf_geo_bulk_job_result(job_id, item_index);
+      CREATE INDEX IF NOT EXISTS idx_tmf_geo_bulk_job_result_tenant ON tmf_geo_bulk_job_result(tenant_id);
 
       -- ========== SEARCH/CHAT MODULE ==========
 

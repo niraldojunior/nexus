@@ -518,6 +518,23 @@ const MIGRATIONS_SQL = `
   ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS related_party TEXT;
   ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS resource_order_item TEXT;
   ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS note TEXT;
+  ALTER TABLE tmf_geographic_site_specification ADD COLUMN IF NOT EXISTS code TEXT;
+  ALTER TABLE tmf_geographic_site_specification ADD COLUMN IF NOT EXISTS lifecycle_status TEXT;
+  ALTER TABLE tmf_geographic_site_specification ADD COLUMN IF NOT EXISTS is_bootstrap INTEGER DEFAULT 0;
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_specification_code ON tmf_geographic_site_specification(code);
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_specification_lifecycle ON tmf_geographic_site_specification(lifecycle_status);
+  CREATE TABLE IF NOT EXISTS tmf_geographic_site_spec_containment_rule (
+    parent_spec_id TEXT NOT NULL,
+    child_spec_id TEXT NOT NULL,
+    valid_for_start DATETIME,
+    valid_for_end DATETIME,
+    is_protected INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (parent_spec_id, child_spec_id),
+    FOREIGN KEY (parent_spec_id) REFERENCES tmf_geographic_site_specification(id),
+    FOREIGN KEY (child_spec_id) REFERENCES tmf_geographic_site_specification(id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_geo_spec_containment_parent ON tmf_geographic_site_spec_containment_rule(parent_spec_id, child_spec_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_geo_spec_containment_child ON tmf_geographic_site_spec_containment_rule(child_spec_id, parent_spec_id);
 
   -- place_id/resource_type/name are the columns the resource tree and workspace list
   -- filters actually query (place_id superseded geographic_location_id — see
@@ -610,17 +627,35 @@ const SCHEMA_SQL = `
         id TEXT PRIMARY KEY,
         href TEXT NOT NULL,
         name TEXT NOT NULL,
+        code TEXT NOT NULL,
         category TEXT NOT NULL,
+        lifecycle_status TEXT NOT NULL DEFAULT 'Active',
         description TEXT,
         allowed_parent_spec_ids TEXT,
         allowed_child_spec_ids TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
         characteristics TEXT,
+        is_bootstrap INTEGER NOT NULL DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_specification_name_category ON tmf_geographic_site_specification(name, category);
+      CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_specification_code ON tmf_geographic_site_specification(code);
+      CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_specification_lifecycle ON tmf_geographic_site_specification(lifecycle_status);
+
+      CREATE TABLE IF NOT EXISTS tmf_geographic_site_spec_containment_rule (
+        parent_spec_id TEXT NOT NULL,
+        child_spec_id TEXT NOT NULL,
+        valid_for_start DATETIME,
+        valid_for_end DATETIME,
+        is_protected INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (parent_spec_id, child_spec_id),
+        FOREIGN KEY (parent_spec_id) REFERENCES tmf_geographic_site_specification(id),
+        FOREIGN KEY (child_spec_id) REFERENCES tmf_geographic_site_specification(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_geo_spec_containment_parent ON tmf_geographic_site_spec_containment_rule(parent_spec_id, child_spec_id);
+      CREATE INDEX IF NOT EXISTS idx_tmf_geo_spec_containment_child ON tmf_geographic_site_spec_containment_rule(child_spec_id, parent_spec_id);
 
       -- TMF674: Geographic Site (entidade central: Centro, POP, Sala, Armário, etc.)
       CREATE TABLE IF NOT EXISTS tmf_geographic_site (

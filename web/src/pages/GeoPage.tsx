@@ -50,6 +50,8 @@ import { selectionPinDataUrl, siteIconDataUrl, siteIconFor, SELECTION_PIN_ASPECT
 import { useNavigation } from '../hooks/useNavigation';
 import { GeoSearchBar, GuidedSignupModal, HierarchySidebar } from './geo-tabs';
 import { BottomSheet } from '../components/BottomSheet';
+import { GoogleStreetViewLink } from '../components/GoogleStreetViewLink';
+import { streetViewTargetsForGeometry } from '../utils/googleMapsLink';
 import { MarkerClusterer } from '@googlemaps/markerclusterer';
 
 type DetailTab = 'overview' | 'subsites' | 'topology' | 'lifecycle' | 'resources';
@@ -1200,7 +1202,10 @@ function SiteDetailBody({
           <Info label="Tipo" value={`${spec?.name ?? '-'} · ${spec?.category ?? '-'}`} />
           <Info label="Status" value={statusLabel[site.status]} />
           <Info label="Endereço" value={address ? formatAddress(address) : 'Sem endereço'} />
-          <Info label="Localização" value={point ? `[${point[0].toFixed(5)}, ${point[1].toFixed(5)}]` : 'Não localizado'} />
+          <Info
+            label="Localização"
+            value={point ? <CoordinateStreetView point={point} /> : 'Não localizado'}
+          />
           <Info label="ParentSite" value={site.parentSite ? siteById.get(site.parentSite.id)?.name ?? site.parentSite.id : 'Nenhum'} />
           <Info label="ID" value={site.id} mono />
         </div>
@@ -1304,6 +1309,7 @@ function ResourceDetailBody({
 }) {
   const icon = resourceIconFor(node.resourceType ?? '');
   const status = statusLabel[(node.status as GeoStatus) ?? 'active'];
+  const streetViewTargets = streetViewTargetsForGeometry(node.geometry);
   const { children, loading } = useResourceChildren(node);
 
   return (
@@ -1312,6 +1318,13 @@ function ResourceDetailBody({
         <Info label="Tipo" value={icon.label} />
         <Info label="Status" value={status} />
         <Info label="Endereço" value={node.detail?.address ?? 'Sem endereço'} />
+        {streetViewTargets.map((target) => (
+          <Info
+            key={`${target.label ?? 'ponto'}:${target.point.join(',')}`}
+            label={target.label ? `Localização · ${target.label}` : 'Localização'}
+            value={<CoordinateStreetView point={target.point} />}
+          />
+        ))}
         {node.detail?.model ? <Info label="Modelo" value={node.detail.model} /> : null}
         {node.detail?.manufacturer ? <Info label="Fabricante" value={node.detail.manufacturer} /> : null}
         {node.detail?.serialNumber ? <Info label="Nº de série" value={node.detail.serialNumber} mono /> : null}
@@ -1538,7 +1551,16 @@ function Modal({ children, title, eyebrow, onClose, wide }: { children: ReactNod
   );
 }
 
-function Info({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function CoordinateStreetView({ point }: { point: [number, number] }) {
+  return (
+    <span className="flex items-center gap-2">
+      <span className="font-mono">[{point[0].toFixed(5)}, {point[1].toFixed(5)}]</span>
+      <GoogleStreetViewLink point={point} />
+    </span>
+  );
+}
+
+function Info({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div className="rounded-[18px] border border-app-border p-4">
       <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">{label}</div>

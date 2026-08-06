@@ -19,7 +19,7 @@ test('Resource repository persists validFor when a resource specification is ter
     const appendEvent = vi.fn(() => undefined);
     const service = new ResourceService(repository, { appendEvent } as never);
 
-    const created = service.createResourceSpecification({
+    const created = await service.createResourceSpecification({
       name: 'OLT MA5800',
       category: 'Equipment.Access',
       resourceType: 'OLT',
@@ -27,14 +27,25 @@ test('Resource repository persists validFor when a resource specification is ter
 
     assert.equal(created.validFor, undefined);
 
-    const terminated = service.deleteResourceSpecification(created.id);
+    const terminated = await service.deleteResourceSpecification(created.id);
     assert.ok(terminated.validFor?.endDateTime);
 
-    const persisted = repository.getResourceSpecification(created.id);
+    const persisted = await repository.getResourceSpecification(created.id);
     assert.ok(persisted?.validFor?.endDateTime);
     assert.equal(persisted?.validFor?.endDateTime, terminated.validFor?.endDateTime);
-    assert.equal(repository.listResourceSpecifications({ category: 'Equipment.Access' }).length, 0);
-    assert.equal(repository.listResourceSpecifications({ category: 'Equipment.Access', includeEnded: true }).length, 1);
+    assert.equal(
+      (await repository.listResourceSpecifications({ category: 'Equipment.Access' })).length,
+      0,
+    );
+    assert.equal(
+      (
+        await repository.listResourceSpecifications({
+          category: 'Equipment.Access',
+          includeEnded: true,
+        })
+      ).length,
+      1,
+    );
   } finally {
     PostgresDatabase.resetForTesting();
     cleanup();
@@ -51,7 +62,7 @@ test('Resource repository persists resource specification characteristics and re
     const appendEvent = vi.fn(() => undefined);
     const service = new ResourceService(repository, { appendEvent } as never);
 
-    const created = service.createResourceSpecification({
+    const created = await service.createResourceSpecification({
       name: 'CPE',
       category: 'Equipment.CustomerPremises',
       resourceType: 'CPE',
@@ -62,7 +73,7 @@ test('Resource repository persists resource specification characteristics and re
       relatedParty: [{ id: 'party-1', '@referredType': 'Organization', role: 'manufacturer' }],
     });
 
-    const persisted = repository.getResourceSpecification(created.id);
+    const persisted = await repository.getResourceSpecification(created.id);
     assert.equal(persisted?.resourceSpecificationCharacteristic.length, 2);
     assert.equal(persisted?.resourceSpecificationCharacteristic[0]?.name, 'manufacturer');
     assert.equal(persisted?.relatedParty.length, 1);

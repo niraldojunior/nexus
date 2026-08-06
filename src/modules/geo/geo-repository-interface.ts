@@ -1,3 +1,5 @@
+type Awaitable<T> = T | Promise<T>;
+
 import type {
   GeographicAddress,
   GeoAuditLog,
@@ -19,21 +21,21 @@ export type GeoTenantScope = {
 };
 
 export interface IGeoRepository {
-  transaction<T>(fn: () => T): T;
+  transaction<T>(fn: () => Awaitable<T>): Awaitable<T>;
 
-  upsertLocation(location: GeographicLocation): GeographicLocation;
-  getLocation(id: string, scope?: GeoTenantScope): GeographicLocation | undefined;
-  listLocations(query?: GeoTenantScope & { limit?: number; offset?: number }): GeographicLocation[];
+  upsertLocation(location: GeographicLocation): Awaitable<GeographicLocation>;
+  getLocation(id: string, scope?: GeoTenantScope): Awaitable<GeographicLocation | undefined>;
+  listLocations(query?: GeoTenantScope & { limit?: number; offset?: number }): Awaitable<GeographicLocation[]>;
 
-  upsertAddress(address: GeographicAddress): GeographicAddress;
-  getAddress(id: string, scope?: GeoTenantScope): GeographicAddress | undefined;
+  upsertAddress(address: GeographicAddress): Awaitable<GeographicAddress>;
+  getAddress(id: string, scope?: GeoTenantScope): Awaitable<GeographicAddress | undefined>;
   listAddresses(
     query?: GeoTenantScope & { name?: string; limit?: number; offset?: number },
-  ): GeographicAddress[];
+  ): Awaitable<GeographicAddress[]>;
 
-  upsertSpec(spec: GeographicSiteSpecification): GeographicSiteSpecification;
-  getSpec(id: string): GeographicSiteSpecification | undefined;
-  getSpecByCode(code: string): GeographicSiteSpecification | undefined;
+  upsertSpec(spec: GeographicSiteSpecification): Awaitable<GeographicSiteSpecification>;
+  getSpec(id: string): Awaitable<GeographicSiteSpecification | undefined>;
+  getSpecByCode(code: string): Awaitable<GeographicSiteSpecification | undefined>;
   listSpecs(query?: {
     name?: string;
     code?: string;
@@ -41,7 +43,7 @@ export interface IGeoRepository {
     lifecycleStatus?: GeographicSiteSpecification['lifecycleStatus'];
     limit?: number;
     offset?: number;
-  }): GeographicSiteSpecification[];
+  }): Awaitable<GeographicSiteSpecification[]>;
   syncSpecContainmentRules(
     specId: string,
     input: {
@@ -50,10 +52,10 @@ export interface IGeoRepository {
       protectedParentSpecIds?: string[];
       protectedChildSpecIds?: string[];
     },
-  ): void;
+  ): Awaitable<void>;
 
-  upsertSite(site: GeographicSite): GeographicSite;
-  getSite(id: string, scope?: GeoTenantScope): GeographicSite | undefined;
+  upsertSite(site: GeographicSite): Awaitable<GeographicSite>;
+  getSite(id: string, scope?: GeoTenantScope): Awaitable<GeographicSite | undefined>;
   listSites(
     query?: GeoTenantScope & {
       name?: string;
@@ -66,54 +68,54 @@ export interface IGeoRepository {
       limit?: number;
       offset?: number;
     },
-  ): GeographicSite[];
-  countSites(scope?: GeoTenantScope): number;
-  countSitesBySpecificationId(specificationId: string, scope?: GeoTenantScope): number;
+  ): Awaitable<GeographicSite[]>;
+  countSites(scope?: GeoTenantScope): Awaitable<number>;
+  countSitesBySpecificationId(specificationId: string, scope?: GeoTenantScope): Awaitable<number>;
 
   upsertSiteRelationship(
     siteId: string,
     relationship: GeographicSiteRelationship,
-  ): GeographicSiteRelationship;
+  ): Awaitable<GeographicSiteRelationship>;
   endSiteRelationship(
     siteId: string,
     relatedSiteId: string,
     relationshipType: string,
     endedAt: string,
-  ): boolean;
-  listSiteRelationships(siteId: string): GeographicSiteRelationship[];
+  ): Awaitable<boolean>;
+  listSiteRelationships(siteId: string): Awaitable<GeographicSiteRelationship[]>;
 
-  upsertRelationshipType(relationshipType: GeographicRelationshipType): GeographicRelationshipType;
-  getRelationshipType(code: string): GeographicRelationshipType | undefined;
+  upsertRelationshipType(relationshipType: GeographicRelationshipType): Awaitable<GeographicRelationshipType>;
+  getRelationshipType(code: string): Awaitable<GeographicRelationshipType | undefined>;
   listRelationshipTypes(query?: {
     code?: string;
     lifecycleStatus?: GeographicRelationshipType['lifecycleStatus'];
     limit?: number;
     offset?: number;
-  }): GeographicRelationshipType[];
+  }): Awaitable<GeographicRelationshipType[]>;
 
   appendSiteStatusHistory(
     entry: GeographicSiteStatusHistoryEntry,
-  ): GeographicSiteStatusHistoryEntry;
-  listSiteStatusHistory(siteId: string, scope?: GeoTenantScope): GeographicSiteStatusHistoryEntry[];
-  getSiteReferences(siteId: string, scope?: GeoTenantScope): GeographicSiteReferences;
-  countSiteDescendants(siteId: string, scope?: GeoTenantScope): number;
+  ): Awaitable<GeographicSiteStatusHistoryEntry>;
+  listSiteStatusHistory(siteId: string, scope?: GeoTenantScope): Awaitable<GeographicSiteStatusHistoryEntry[]>;
+  getSiteReferences(siteId: string, scope?: GeoTenantScope): Awaitable<GeographicSiteReferences>;
+  countSiteDescendants(siteId: string, scope?: GeoTenantScope): Awaitable<number>;
 
-  appendAudit(audit: GeoAuditLog): GeoAuditLog;
-  listAuditForEntity(entityId: string, scope?: GeoTenantScope): GeoAuditLog[];
-  appendEvent(event: GeoEvent): GeoEvent;
-  appendOutbox(message: GeoOutboxMessage): GeoOutboxMessage;
-  listEventsForEntity(entityId: string): GeoEvent[];
+  appendAudit(audit: GeoAuditLog): Awaitable<GeoAuditLog>;
+  listAuditForEntity(entityId: string, scope?: GeoTenantScope): Awaitable<GeoAuditLog[]>;
+  appendEvent(event: GeoEvent): Awaitable<GeoEvent>;
+  appendOutbox(message: GeoOutboxMessage): Awaitable<GeoOutboxMessage>;
+  listEventsForEntity(entityId: string): Awaitable<GeoEvent[]>;
 
-  upsertBulkJob(job: GeoBulkJob): GeoBulkJob;
-  getBulkJob(id: string, scope?: GeoTenantScope): GeoBulkJob | undefined;
+  upsertBulkJob(job: GeoBulkJob): Awaitable<GeoBulkJob>;
+  getBulkJob(id: string, scope?: GeoTenantScope): Awaitable<GeoBulkJob | undefined>;
   getBulkJobByIdempotencyKey(
     tenantId: string,
     idempotencyKey: string,
     target?: GeoBulkJob['target'],
-  ): GeoBulkJob | undefined;
-  appendBulkJobResult(result: GeoBulkJobResult): GeoBulkJobResult;
+  ): Awaitable<GeoBulkJob | undefined>;
+  appendBulkJobResult(result: GeoBulkJobResult): Awaitable<GeoBulkJobResult>;
   listBulkJobResults(
     jobId: string,
     scope?: GeoTenantScope & { limit?: number; offset?: number },
-  ): GeoBulkJobResult[];
+  ): Awaitable<GeoBulkJobResult[]>;
 }

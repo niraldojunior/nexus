@@ -9,7 +9,7 @@ TMFC014 · TMF673 / TMF674 / TMF675
 | Campo | Valor |
 |---|---|
 | **Document Reference** | VTN-HLD-MOD01-GEO |
-| **Versão** | 1.3 — draft |
+| **Versão** | 1.4 — draft |
 | **Data** | Agosto 2026 |
 | **Documento âncora** | VTN-HLD-OVERVIEW-001 |
 | **TMFC coberto** | TMFC014 — Geographic Site Mgmt |
@@ -927,6 +927,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 | **RN-004** | Nome do Sub-Site é único dentro do mesmo parentSite. |
 | **RN-005** | Excluir Sub-Site com Resources é bloqueado; permite-se transição para Retired. |
 | **RN-006** | Toda alteração gera evento TMF688 e Audit Trail. |
+| **RN-007** | Sub-Sites não figuram no mapa nem na árvore de navegação de Locais; são acessados pelo painel de detalhe do Site pai, na aba "Sub-locais". A mesma regra vale para o recurso `Splitter` (Módulo 2 — Resource): ele reaproveita a Location da caixa que o contém e some do mapa/árvore, listado no painel de detalhe do recurso pai como "Recursos internos". A árvore faz *pass-through* sobre o Splitter — o que pende dele sobe um nível, para nada ficar inalcançável pela navegação. |
 
 ### 12.8 Critérios de Aceite
 
@@ -1753,6 +1754,7 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 | 1.1 | Junho 2026 | Produto — V.tal Nexus | Formalização de D-GEO-001 (estratégia de migração): definição do princípio de agnósticidade à origem, grupo canônico `_origin` para todas as entidades geográficas, tabela de sistemas cobertos, payload de exemplo e regras de negócio. |
 | 1.2 | Julho 2026 | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: matriz de aderência dos 12 requisitos, cenários e síntese arquitetural, anatomia normalizada, JSON válido, questões namespaced e gaps ligados ao backlog `DEV-*`. |
 | 1.3 | Agosto 2026 | Produto — V.tal Nexus | Incorporação da consulta operacional de OSP (`inspirations/geosite-legado.md`): princípios 4.7 (fidelidade física — zero entidades artificiais) e 4.8 (operação 100% web), novo REQ-MOD01-013 (digitalização e edição de geometria no navegador), Q-GEO-011, RN-001 do mapa redirecionada ao motor de integridade (REQ-MOD02-027) e backlog DEV-GEO-007. |
+| 1.4 | Agosto 2026 | Engenharia — V.tal Nexus | Novo RN-007 (§12.7): mapa e árvore de navegação escondem Sub-Site e o recurso `Splitter` (Módulo 2), com pass-through do splitter para o primeiro descendente visível; os dois continuam acessíveis pelo painel de detalhe do local/recurso pai. `GeoTreeService.children` ganha o parâmetro `scope` (`'tree'` default para navegação, `'all'` para os painéis de detalhe). |
 
 ---
 

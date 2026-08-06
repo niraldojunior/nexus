@@ -1,8 +1,14 @@
-import type { Characteristic, EntityRef, RelatedParty, TimePeriod } from '../../shared/tmf/index.js';
+import type {
+  Characteristic,
+  EntityRef,
+  RelatedParty,
+  TimePeriod,
+} from '../../shared/tmf/index.js';
 
 export type ServiceKind = 'CustomerFacingService' | 'ResourceFacingService';
 export type ServiceSpecificationType = 'CFS' | 'RFS' | 'Other';
-export type ServiceState = 'feasibilityChecked' | 'designed' | 'reserved' | 'inactive' | 'active' | 'terminated';
+export type ServiceState =
+  'feasibilityChecked' | 'designed' | 'reserved' | 'inactive' | 'active' | 'terminated';
 export type ServiceStatus = 'active' | 'inactive' | 'suspended' | 'terminated';
 
 export type ServiceQuery = {
@@ -194,8 +200,14 @@ export type CreateResourceFacingServiceInput = ServiceBaseInput & {
   supportingService?: ServiceReference[];
 };
 
-export type CreateServiceInput = CreateCustomerFacingServiceInput | CreateResourceFacingServiceInput;
+export type CreateServiceInput =
+  CreateCustomerFacingServiceInput | CreateResourceFacingServiceInput;
 
-export type UpdateCustomerFacingServiceInput = Partial<Omit<CreateCustomerFacingServiceInput, '@type'>>;
-export type UpdateResourceFacingServiceInput = Partial<Omit<CreateResourceFacingServiceInput, '@type'>>;
-export type UpdateServiceInput = UpdateCustomerFacingServiceInput | UpdateResourceFacingServiceInput;
+export type UpdateCustomerFacingServiceInput = Partial<
+  Omit<CreateCustomerFacingServiceInput, '@type'>
+>;
+export type UpdateResourceFacingServiceInput = Partial<
+  Omit<CreateResourceFacingServiceInput, '@type'>
+>;
+export type UpdateServiceInput =
+  UpdateCustomerFacingServiceInput | UpdateResourceFacingServiceInput;

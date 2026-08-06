@@ -3,27 +3,34 @@ import { MapPin, RefreshCw, Search, X } from 'lucide-react';
 import { fetchTreeSearch, type GeoTreeNode } from '../../services/geoTreeApi';
 import {
   fetchAddressPredictions,
-  fetchPlaceDetails,
   geocodeAddress,
+  resolveAddressByPlaceId,
   type AddressPrediction,
   type DraftAddress,
 } from '../../utils/googleMaps';
 import { NodeIcon } from './HierarchyTreeView';
 
+export type AddressSearchError = { term: string; status: string; message: string };
+
 export type GeoSearchBarProps = {
   query: string;
   onQueryChange: (value: string) => void;
   onSelectNode: (node: GeoTreeNode) => void;
-  onSelectAddress: (address: DraftAddress) => void;
+  // Endereço resolvido (Enter em texto livre ou clique numa sugestão) — os dois
+  // caminhos convergem para o mesmo GeocodeOutcome (ver googleMaps.ts).
+  onAddressFound: (address: DraftAddress) => void;
+  // Falha ao resolver o endereço (ex.: sem correspondência, API indisponível) — o
+  // chamador decide como mostrar (ver modal de erro em GeoPage).
+  onAddressError: (error: AddressSearchError) => void;
   // 'floating' flutua sobre o mapa (nenhum painel aberto); 'panel' vive encaixada
-  // no topo da doca (hierarquia ou detalhe aberto) — mesmo padrão do Google Maps.
-  variant: 'floating' | 'panel';
+  // no topo da doca (hierarquia ou detalhe aberto); 'overlay' flutua sobre a foto de
+  // Street View no topo de um painel (ver StreetViewHero) — mesmo padrão do Google Maps.
+  variant: 'floating' | 'panel' | 'overlay';
   isMobile?: boolean;
 };
 
 type SearchOption =
-  | { type: 'node'; node: GeoTreeNode }
-  | { type: 'address'; prediction: AddressPrediction };
+  { type: 'node'; node: GeoTreeNode } | { type: 'address'; prediction: AddressPrediction };
 
 const DEBOUNCE_MS = 250;
 
@@ -31,10 +38,18 @@ const DEBOUNCE_MS = 250;
  * Barra de pesquisa unificada da página Geo: autocomplete de locais/recursos do
  * inventário (via `fetchTreeSearch`) lado a lado com endereços (Google Places),
  * num único dropdown — estilo Google Maps. Quem decide o que fazer com a escolha
- * é o chamador (`onSelectNode` seleciona no mapa/árvore; `onSelectAddress` larga
- * o rascunho de endereço para cadastro).
+ * é o chamador (`onSelectNode` seleciona no mapa/árvore; `onAddressFound` abre o
+ * painel de consulta do endereço; `onAddressError` mostra o motivo da falha).
  */
-export function GeoSearchBar({ query, onQueryChange, onSelectNode, onSelectAddress, variant, isMobile }: GeoSearchBarProps) {
+export function GeoSearchBar({
+  query,
+  onQueryChange,
+  onSelectNode,
+  onAddressFound,
+  onAddressError,
+  variant,
+  isMobile,
+}: GeoSearchBarProps) {
   const [open, setOpen] = useState(false);
   const [nodeResults, setNodeResults] = useState<GeoTreeNode[]>([]);
   const [addressResults, setAddressResults] = useState<AddressPrediction[]>([]);
@@ -53,12 +68,14 @@ export function GeoSearchBar({ query, onQueryChange, onSelectNode, onSelectAddre
     }
     debounceRef.current = window.setTimeout(() => {
       const token = ++requestTokenRef.current;
-      void Promise.all([fetchTreeSearch(term), fetchAddressPredictions(term)]).then(([nodes, addresses]) => {
-        if (requestTokenRef.current !== token) return;
-        setNodeResults(nodes);
-        setAddressResults(addresses);
-        setHighlighted(0);
-      });
+      void Promise.all([fetchTreeSearch(term), fetchAddressPredictions(term)]).then(
+        ([nodes, addresses]) => {
+          if (requestTokenRef.current !== token) return;
+          setNodeResults(nodes);
+          setAddressResults(addresses);
+          setHighlighted(0);
+        },
+      );
     }, DEBOUNCE_MS);
     return () => {
       if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
@@ -75,17 +92,33 @@ export function GeoSearchBar({ query, onQueryChange, onSelectNode, onSelectAddre
 
   const showDropdown = open && query.trim().length > 0 && options.length > 0;
 
+  // Fecha e esvazia os resultados — não basta fechar (`setOpen(false)`): o balão de
+  // preview do mapa (InfoWindow nativo do Google) devolve o foco ao input ao fechar,
+  // o que reaciona `onFocus` abaixo. Sem limpar `nodeResults`/`addressResults`, esse
+  // refoco indevido reabria a picklist com o resultado antigo da seleção já feita.
+  const closeDropdown = () => {
+    setOpen(false);
+    setNodeResults([]);
+    setAddressResults([]);
+  };
+
   const selectNode = (node: GeoTreeNode) => {
     onSelectNode(node);
-    setOpen(false);
+    closeDropdown();
   };
 
   const selectAddress = async (prediction: AddressPrediction) => {
     setResolving(true);
-    const address = await fetchPlaceDetails(prediction.placeId);
+    const outcome = await resolveAddressByPlaceId(prediction.placeId);
     setResolving(false);
-    if (address) onSelectAddress(address);
-    setOpen(false);
+    if (outcome.ok) onAddressFound(outcome.address);
+    else
+      onAddressError({
+        term: prediction.description,
+        status: outcome.status,
+        message: outcome.message,
+      });
+    closeDropdown();
   };
 
   const selectOption = async (option: SearchOption) => {
@@ -99,10 +132,11 @@ export function GeoSearchBar({ query, onQueryChange, onSelectNode, onSelectAddre
     const term = query.trim();
     if (!term) return;
     setResolving(true);
-    const address = await geocodeAddress(term);
+    const outcome = await geocodeAddress(term);
     setResolving(false);
-    if (address) onSelectAddress(address);
-    setOpen(false);
+    if (outcome.ok) onAddressFound(outcome.address);
+    else onAddressError({ term, status: outcome.status, message: outcome.message });
+    closeDropdown();
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -127,118 +161,139 @@ export function GeoSearchBar({ query, onQueryChange, onSelectNode, onSelectAddre
     }
   };
 
-  const shellClass =
+  const shellBase =
     variant === 'panel'
-      ? 'flex h-11 items-center rounded-xl border border-app-border bg-white transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15'
-      : 'flex h-12 items-center rounded-2xl border border-app-border bg-white shadow-soft transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15';
+      ? 'flex h-11 items-center border border-app-border bg-white transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15'
+      : 'flex h-12 items-center border border-app-border bg-white shadow-soft transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15';
+  // Cantos do bloco de sugestões combinam com o da caixa de busca (12px no painel,
+  // 16px flutuando/sobre a foto) — com a borda de baixo da caixa e a de cima da
+  // lista removidas quando aberta, os dois viram visualmente um componente só,
+  // sem costura dupla nem raio de canto descasado (estilo Google Maps).
+  const shellRadiusClass = variant === 'panel' ? 'rounded-xl' : 'rounded-2xl';
+  const shellRadiusOpenClass = variant === 'panel' ? 'rounded-t-xl' : 'rounded-t-2xl';
+  const dropdownRadiusClass = variant === 'panel' ? 'rounded-b-xl' : 'rounded-b-2xl';
+  const shellClass = `${shellBase} ${showDropdown ? `${shellRadiusOpenClass} border-b-0` : shellRadiusClass}`;
 
   const wrapperClass =
     variant === 'panel'
-      ? 'relative w-full border-b border-app-border p-3'
-      : `absolute top-3 z-30 ${
-          isMobile ? 'left-14 right-3' : 'left-3 w-[400px] max-w-[calc(100%-1.5rem)]'
-        }`;
+      ? 'w-full border-b border-app-border p-3'
+      : variant === 'overlay'
+        ? 'w-full p-3'
+        : `absolute top-3 z-30 ${
+            isMobile ? 'left-14 right-3' : 'left-3 w-[400px] max-w-[calc(100%-1.5rem)]'
+          }`;
 
   return (
     <div className={wrapperClass}>
-      <div className={shellClass}>
-        <input
-          value={query}
-          onChange={(event) => {
-            onQueryChange(event.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => {
-            if (query.trim()) setOpen(true);
-          }}
-          onKeyDown={handleKeyDown}
-          className="h-full min-w-0 flex-1 rounded-l-2xl bg-transparent pl-4 pr-2 text-[15px] text-app-text placeholder:text-app-muted focus:outline-none"
-          placeholder="Pesquisar local, recurso ou endereço"
-          id="geo-search-input"
-          autoComplete="off"
-        />
-        {query ? (
+      {/* Contexto de posicionamento próprio (em vez de no wrapper, que tem padding
+          nas variantes 'panel'/'overlay') — garante que a lista se alinhe exatamente
+          às bordas da caixa de busca, e não às do wrapper com padding. */}
+      <div className="relative">
+        <div className={shellClass}>
+          <input
+            value={query}
+            onChange={(event) => {
+              onQueryChange(event.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => {
+              if (query.trim()) setOpen(true);
+            }}
+            onKeyDown={handleKeyDown}
+            className="h-full min-w-0 flex-1 rounded-l-2xl bg-transparent pl-4 pr-2 text-[15px] text-app-text placeholder:text-app-muted focus:outline-none"
+            placeholder="Pesquisar local, recurso ou endereço"
+            id="geo-search-input"
+            autoComplete="off"
+          />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => {
+                onQueryChange('');
+                setNodeResults([]);
+                setAddressResults([]);
+                setOpen(false);
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-app-muted transition hover:bg-black/5"
+              aria-label="Limpar busca"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
+          <span className="mx-1 h-6 w-px bg-app-border" />
           <button
             type="button"
-            onClick={() => {
-              onQueryChange('');
-              setNodeResults([]);
-              setAddressResults([]);
-              setOpen(false);
-            }}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-app-muted transition hover:bg-black/5"
-            aria-label="Limpar busca"
+            onClick={() => void runFallbackAddressSearch()}
+            disabled={resolving}
+            className="mr-1 flex h-9 w-9 items-center justify-center rounded-full text-[#1a73e8] transition hover:bg-[#1a73e8]/10 disabled:opacity-50"
+            aria-label="Pesquisar"
           >
-            <X className="h-4 w-4" />
+            {resolving ? (
+              <RefreshCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <Search className="h-5 w-5" />
+            )}
           </button>
-        ) : null}
-        <span className="mx-1 h-6 w-px bg-app-border" />
-        <button
-          type="button"
-          onClick={() => void runFallbackAddressSearch()}
-          disabled={resolving}
-          className="mr-1 flex h-9 w-9 items-center justify-center rounded-full text-[#1a73e8] transition hover:bg-[#1a73e8]/10 disabled:opacity-50"
-          aria-label="Pesquisar"
-        >
-          {resolving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-5 w-5" />}
-        </button>
-      </div>
+        </div>
 
-      {showDropdown ? (
-        <div
-          onMouseDown={(event) => event.preventDefault()}
-          className="absolute left-0 right-0 top-[calc(100%+6px)] z-40 max-h-80 overflow-y-auto rounded-2xl border border-app-border bg-white shadow-soft-lg"
-        >
-          {nodeResults.length ? (
-            <div>
-              <div className="px-3 pt-2 pb-1 text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-                Locais e recursos
-              </div>
-              {nodeResults.map((node, index) => (
-                <button
-                  key={node.id}
-                  type="button"
-                  onClick={() => selectNode(node)}
-                  className={optionClass(index === highlighted)}
-                >
-                  <NodeIcon node={node} />
-                  <span className="min-w-0 flex-1 text-left">
-                    <span className="block truncate text-[0.86rem] text-app-text">{node.label}</span>
-                    {node.sublabel || node.detail?.address ? (
-                      <span className="block truncate text-[0.72rem] text-app-muted">
-                        {[node.sublabel, node.detail?.address].filter(Boolean).join(' · ')}
-                      </span>
-                    ) : null}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-          {addressResults.length ? (
-            <div>
-              <div className="px-3 pt-2 pb-1 text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-                Endereços
-              </div>
-              {addressResults.map((prediction, index) => {
-                const flatIndex = nodeResults.length + index;
-                return (
+        {showDropdown ? (
+          <div
+            onMouseDown={(event) => event.preventDefault()}
+            className={`absolute left-0 right-0 top-full z-40 max-h-80 overflow-y-auto border border-t-0 border-app-border bg-white shadow-soft-lg ${dropdownRadiusClass}`}
+          >
+            {nodeResults.length ? (
+              <div>
+                <div className="px-3 pt-2 pb-1 text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+                  Locais e recursos
+                </div>
+                {nodeResults.map((node, index) => (
                   <button
-                    key={prediction.placeId}
+                    key={node.id}
                     type="button"
-                    onClick={() => void selectAddress(prediction)}
-                    className={optionClass(flatIndex === highlighted)}
+                    onClick={() => selectNode(node)}
+                    className={optionClass(index === highlighted)}
                   >
-                    <MapPin className="h-4 w-4 shrink-0 text-app-muted" />
-                    <span className="min-w-0 flex-1 truncate text-left text-[0.86rem] text-app-text">
-                      {prediction.description}
+                    <NodeIcon node={node} />
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="block truncate text-[0.86rem] text-app-text">
+                        {node.label}
+                      </span>
+                      {node.sublabel || node.detail?.address ? (
+                        <span className="block truncate text-[0.72rem] text-app-muted">
+                          {[node.sublabel, node.detail?.address].filter(Boolean).join(' · ')}
+                        </span>
+                      ) : null}
                     </span>
                   </button>
-                );
-              })}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+                ))}
+              </div>
+            ) : null}
+            {addressResults.length ? (
+              <div>
+                <div className="px-3 pt-2 pb-1 text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+                  Endereços
+                </div>
+                {addressResults.map((prediction, index) => {
+                  const flatIndex = nodeResults.length + index;
+                  return (
+                    <button
+                      key={prediction.placeId}
+                      type="button"
+                      onClick={() => void selectAddress(prediction)}
+                      className={optionClass(flatIndex === highlighted)}
+                    >
+                      <MapPin className="h-4 w-4 shrink-0 text-app-muted" />
+                      <span className="min-w-0 flex-1 truncate text-left text-[0.86rem] text-app-text">
+                        {prediction.description}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

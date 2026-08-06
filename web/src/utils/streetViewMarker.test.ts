@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { resourceIconDataUrl, resourceIconFor } from './resourceIcon';
-import { siteIconDataUrl, siteIconFor } from './siteIcon';
-import { resourceStreetViewMarker, siteStreetViewMarker } from './streetViewMarker';
+import { selectionPinDataUrl, siteIconDataUrl, siteIconFor } from './siteIcon';
+import {
+  addressStreetViewMarker,
+  resourceStreetViewMarker,
+  siteStreetViewMarker,
+} from './streetViewMarker';
 
 describe('siteStreetViewMarker', () => {
   it('reutiliza o ícone, status e nome do Site selecionado', () => {
@@ -45,5 +49,22 @@ describe('resourceStreetViewMarker', () => {
         point,
       ).iconUrl,
     ).toBe(resourceIconDataUrl(resourceIconFor('TIPO_DESCONHECIDO'), { size: 40 }));
+  });
+});
+
+describe('addressStreetViewMarker', () => {
+  it('usa o alfinete de seleção do mapa como ícone', () => {
+    const coordinates: [number, number] = [-43.1079841, -22.8985597];
+
+    expect(
+      addressStreetViewMarker({
+        label: 'R. Dr. Paulo César, 155 - Santa Rosa, Niterói - RJ, 24220-400, Brasil',
+        coordinates,
+      }),
+    ).toEqual({
+      point: coordinates,
+      title: 'R. Dr. Paulo César, 155 - Santa Rosa, Niterói - RJ, 24220-400, Brasil',
+      iconUrl: selectionPinDataUrl(40),
+    });
   });
 });

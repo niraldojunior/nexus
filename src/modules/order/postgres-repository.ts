@@ -1,4 +1,4 @@
-import { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
+import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 import type {
   ResourceOrder,
   ResourceOrderQuery,
@@ -11,15 +11,17 @@ import type { IOrderRepository } from './order-repository-interface.js';
 
 import type { ResourceOrderRow, ServiceOrderRow, ServiceQualificationRow } from './rows.js';
 export class PostgresOrderRepository implements IOrderRepository {
-  public constructor(private readonly db: PostgresDatabase) {}
+  public constructor(private readonly db: DatabaseClient) {}
 
-  public transaction<T>(fn: () => T): T {
-    return this.db.transaction(fn);
+  public transaction<T>(fn: () => T | Promise<T>): Promise<T> {
+    return this.db.transaction(async () => await fn());
   }
 
-  public upsertServiceQualification(qualification: ServiceQualification): ServiceQualification {
+  public async upsertServiceQualification(
+    qualification: ServiceQualification,
+  ): Promise<ServiceQualification> {
     const now = new Date().toISOString();
-    this.db.run(
+    await this.db.run(
       `INSERT INTO tmf_service_qualification
        (id, href, state, place, related_party, service_characteristic, service_qualification_item, valid_for_start, valid_for_end, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -48,11 +50,11 @@ export class PostgresOrderRepository implements IOrderRepository {
       ],
     );
 
-    return this.getServiceQualification(qualification.id) ?? qualification;
+    return (await this.getServiceQualification(qualification.id)) ?? qualification;
   }
 
-  public getServiceQualification(id: string): ServiceQualification | undefined {
-    const row = this.db.get<ServiceQualificationRow>(
+  public async getServiceQualification(id: string): Promise<ServiceQualification | undefined> {
+    const row = await this.db.get<ServiceQualificationRow>(
       `SELECT id, href, state, place, related_party, service_characteristic, service_qualification_item, valid_for_start, valid_for_end
        FROM tmf_service_qualification
        WHERE id = ?`,
@@ -62,20 +64,23 @@ export class PostgresOrderRepository implements IOrderRepository {
     return row ? this.mapQualification(row) : undefined;
   }
 
-  public listServiceQualifications(query?: ServiceQualificationQuery): ServiceQualification[] {
-    const rows = this.db
-      .all<ServiceQualificationRow>(
+  public async listServiceQualifications(
+    query?: ServiceQualificationQuery,
+  ): Promise<ServiceQualification[]> {
+    const rows = (
+      await this.db.all<ServiceQualificationRow>(
         'SELECT id, href, state, place, related_party, service_characteristic, service_qualification_item, valid_for_start, valid_for_end FROM tmf_service_qualification ORDER BY id',
       )
+    )
       .map((row) => this.mapQualification(row))
       .filter((qualification) => filterQualification(qualification, query));
 
     return paginate(rows, query?.limit, query?.offset);
   }
 
-  public upsertServiceOrder(order: ServiceOrder): ServiceOrder {
+  public async upsertServiceOrder(order: ServiceOrder): Promise<ServiceOrder> {
     const now = new Date().toISOString();
-    this.db.run(
+    await this.db.run(
       `INSERT INTO tmf_service_order
        (id, href, state, description, related_party, service_order_item, note, valid_for_start, valid_for_end, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -104,11 +109,11 @@ export class PostgresOrderRepository implements IOrderRepository {
       ],
     );
 
-    return this.getServiceOrder(order.id) ?? order;
+    return (await this.getServiceOrder(order.id)) ?? order;
   }
 
-  public getServiceOrder(id: string): ServiceOrder | undefined {
-    const row = this.db.get<ServiceOrderRow>(
+  public async getServiceOrder(id: string): Promise<ServiceOrder | undefined> {
+    const row = await this.db.get<ServiceOrderRow>(
       `SELECT id, href, state, description, related_party, service_order_item, note, valid_for_start, valid_for_end
        FROM tmf_service_order
        WHERE id = ?`,
@@ -118,20 +123,21 @@ export class PostgresOrderRepository implements IOrderRepository {
     return row ? this.mapOrder(row) : undefined;
   }
 
-  public listServiceOrders(query?: ServiceOrderQuery): ServiceOrder[] {
-    const rows = this.db
-      .all<ServiceOrderRow>(
+  public async listServiceOrders(query?: ServiceOrderQuery): Promise<ServiceOrder[]> {
+    const rows = (
+      await this.db.all<ServiceOrderRow>(
         'SELECT id, href, state, description, related_party, service_order_item, note, valid_for_start, valid_for_end FROM tmf_service_order ORDER BY id',
       )
+    )
       .map((row) => this.mapOrder(row))
       .filter((order) => filterOrder(order, query));
 
     return paginate(rows, query?.limit, query?.offset);
   }
 
-  public upsertResourceOrder(order: ResourceOrder): ResourceOrder {
+  public async upsertResourceOrder(order: ResourceOrder): Promise<ResourceOrder> {
     const now = new Date().toISOString();
-    this.db.run(
+    await this.db.run(
       `INSERT INTO tmf_resource_order
        (id, href, state, description, related_party, resource_order_item, note, valid_for_start, valid_for_end, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -160,11 +166,11 @@ export class PostgresOrderRepository implements IOrderRepository {
       ],
     );
 
-    return this.getResourceOrder(order.id) ?? order;
+    return (await this.getResourceOrder(order.id)) ?? order;
   }
 
-  public getResourceOrder(id: string): ResourceOrder | undefined {
-    const row = this.db.get<ResourceOrderRow>(
+  public async getResourceOrder(id: string): Promise<ResourceOrder | undefined> {
+    const row = await this.db.get<ResourceOrderRow>(
       `SELECT id, href, state, description, related_party, resource_order_item, note, valid_for_start, valid_for_end
        FROM tmf_resource_order
        WHERE id = ?`,
@@ -174,11 +180,12 @@ export class PostgresOrderRepository implements IOrderRepository {
     return row ? this.mapResourceOrder(row) : undefined;
   }
 
-  public listResourceOrders(query?: ResourceOrderQuery): ResourceOrder[] {
-    const rows = this.db
-      .all<ResourceOrderRow>(
+  public async listResourceOrders(query?: ResourceOrderQuery): Promise<ResourceOrder[]> {
+    const rows = (
+      await this.db.all<ResourceOrderRow>(
         'SELECT id, href, state, description, related_party, resource_order_item, note, valid_for_start, valid_for_end FROM tmf_resource_order ORDER BY id',
       )
+    )
       .map((row) => this.mapResourceOrder(row))
       .filter((order) => filterResourceOrder(order, query));
 
@@ -223,7 +230,7 @@ export class PostgresOrderRepository implements IOrderRepository {
               ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
             },
           }
-      : {}),
+        : {}),
     };
   }
 
@@ -249,7 +256,10 @@ export class PostgresOrderRepository implements IOrderRepository {
   }
 }
 
-const filterQualification = (qualification: ServiceQualification, query?: ServiceQualificationQuery): boolean => {
+const filterQualification = (
+  qualification: ServiceQualification,
+  query?: ServiceQualificationQuery,
+): boolean => {
   if (!query) return true;
   if (query.state && qualification.state !== query.state) return false;
   if (query.placeId && !qualification.place.some((item) => item.id === query.placeId)) return false;
@@ -265,17 +275,20 @@ const filterQualification = (qualification: ServiceQualification, query?: Servic
 const filterOrder = (order: ServiceOrder, query?: ServiceOrderQuery): boolean => {
   if (!query) return true;
   if (query.state && order.state !== query.state) return false;
-  if (query.relatedPartyId && !order.relatedParty.some((item) => item.id === query.relatedPartyId)) return false;
+  if (query.relatedPartyId && !order.relatedParty.some((item) => item.id === query.relatedPartyId))
+    return false;
   return true;
 };
 
 const filterResourceOrder = (order: ResourceOrder, query?: ResourceOrderQuery): boolean => {
   if (!query) return true;
   if (query.state && order.state !== query.state) return false;
-  if (query.relatedPartyId && !order.relatedParty.some((item) => item.id === query.relatedPartyId)) return false;
+  if (query.relatedPartyId && !order.relatedParty.some((item) => item.id === query.relatedPartyId))
+    return false;
   if (query.resourceId) {
     const matches = order.resourceOrderItem.some(
-      (item) => item.resourceId === query.resourceId || item.resourceResult?.id === query.resourceId,
+      (item) =>
+        item.resourceId === query.resourceId || item.resourceResult?.id === query.resourceId,
     );
     if (!matches) return false;
   }

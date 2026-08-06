@@ -1,12 +1,19 @@
-import type { Characteristic, EntityRef, RelatedParty, TimePeriod } from '../../shared/tmf/index.js';
+import type {
+  Characteristic,
+  EntityRef,
+  RelatedParty,
+  TimePeriod,
+} from '../../shared/tmf/index.js';
 import type { CreateServiceInput, Service, UpdateServiceInput } from '../service/index.js';
 import type { Resource } from '../resource/index.js';
 
 export type ServiceQualificationState = 'done' | 'terminated';
 export type ServiceQualificationResultState = 'qualified' | 'unqualified';
-export type ServiceOrderState = 'acknowledged' | 'inProgress' | 'completed' | 'failed' | 'cancelled';
+export type ServiceOrderState =
+  'acknowledged' | 'inProgress' | 'completed' | 'failed' | 'cancelled';
 export type ServiceOrderAction = 'add' | 'modify' | 'delete';
-export type ResourceOrderState = 'acknowledged' | 'inProgress' | 'completed' | 'failed' | 'cancelled';
+export type ResourceOrderState =
+  'acknowledged' | 'inProgress' | 'completed' | 'failed' | 'cancelled';
 export type ResourceOrderAction = 'add' | 'modify' | 'delete';
 export type ResourceOrderPayload = {
   '@type': 'PhysicalResource' | 'LogicalResource';

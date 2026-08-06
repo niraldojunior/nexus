@@ -1,4 +1,4 @@
-import { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
+import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 import type {
   GeographicAddress,
   GeoAuditLog,
@@ -32,16 +32,16 @@ import type {
 } from './rows.js';
 
 export class PostgresGeoRepository implements IGeoRepository {
-  constructor(private db: PostgresDatabase) {}
+  constructor(private db: DatabaseClient) {}
 
-  public transaction<T>(fn: () => T): T {
-    return this.db.transaction(fn);
+  public transaction<T>(fn: () => T | Promise<T>): Promise<T> {
+    return this.db.transaction(async () => await fn());
   }
 
-  public upsertLocation(location: GeographicLocation): GeographicLocation {
+  public async upsertLocation(location: GeographicLocation): Promise<GeographicLocation> {
     const now = new Date().toISOString();
 
-    this.db.run(
+    await this.db.run(
       `INSERT INTO tmf_geographic_location 
        (id, href, tenant_id, geometry_type, geometry, spatial_ref, accuracy, reference_point, 
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
@@ -75,17 +75,20 @@ export class PostgresGeoRepository implements IGeoRepository {
       ],
     );
 
-    return this.getLocation(location.id)!;
+    return (await this.getLocation(location.id))!;
   }
 
-  public getLocation(id: string, scope?: GeoTenantScope): GeographicLocation | undefined {
+  public async getLocation(
+    id: string,
+    scope?: GeoTenantScope,
+  ): Promise<GeographicLocation | undefined> {
     const conditions = ['id = ?'];
     const params: Array<string | number> = [id];
     if (scope?.tenantId) {
       conditions.push('tenant_id = ?');
       params.push(scope.tenantId);
     }
-    const row = this.db.get<GeographicLocationRow>(
+    const row = await this.db.get<GeographicLocationRow>(
       `SELECT id, href, tenant_id, geometry_type, geometry, spatial_ref, accuracy, reference_point,
               valid_for_start, valid_for_end, characteristics
        FROM tmf_geographic_location WHERE ${conditions.join(' AND ')}`,
@@ -117,9 +120,9 @@ export class PostgresGeoRepository implements IGeoRepository {
     return result;
   }
 
-  public listLocations(
+  public async listLocations(
     query?: GeoTenantScope & { limit?: number; offset?: number },
-  ): GeographicLocation[] {
+  ): Promise<GeographicLocation[]> {
     const conditions: string[] = [];
     const params: Array<string | number> = [];
     if (query?.tenantId) {
@@ -143,13 +146,15 @@ export class PostgresGeoRepository implements IGeoRepository {
     if (hasLimit) params.push(query!.limit as number);
     if (hasOffset) params.push(query!.offset as number);
 
-    return this.db.all<GeographicLocationRow>(sql, params).map((row) => this.mapLocationRow(row));
+    return (await this.db.all<GeographicLocationRow>(sql, params)).map((row) =>
+      this.mapLocationRow(row),
+    );
   }
 
-  public upsertAddress(address: GeographicAddress): GeographicAddress {
+  public async upsertAddress(address: GeographicAddress): Promise<GeographicAddress> {
     const now = new Date().toISOString();
 
-    this.db.run(
+    await this.db.run(
       `INSERT INTO tmf_geographic_address
        (id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
         geographic_location_id, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
@@ -189,17 +194,20 @@ export class PostgresGeoRepository implements IGeoRepository {
       ],
     );
 
-    return this.getAddress(address.id)!;
+    return (await this.getAddress(address.id))!;
   }
 
-  public getAddress(id: string, scope?: GeoTenantScope): GeographicAddress | undefined {
+  public async getAddress(
+    id: string,
+    scope?: GeoTenantScope,
+  ): Promise<GeographicAddress | undefined> {
     const conditions = ['id = ?'];
     const params: Array<string | number> = [id];
     if (scope?.tenantId) {
       conditions.push('tenant_id = ?');
       params.push(scope.tenantId);
     }
-    const row = this.db.get<GeographicAddressRow>(
+    const row = await this.db.get<GeographicAddressRow>(
       `SELECT id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
               geographic_location_id, valid_for_start, valid_for_end, characteristics
        FROM tmf_geographic_address WHERE ${conditions.join(' AND ')}`,
@@ -209,9 +217,9 @@ export class PostgresGeoRepository implements IGeoRepository {
     return row ? this.mapAddressRow(row) : undefined;
   }
 
-  public listAddresses(
+  public async listAddresses(
     query?: GeoTenantScope & { name?: string; limit?: number; offset?: number },
-  ): GeographicAddress[] {
+  ): Promise<GeographicAddress[]> {
     const conditions: string[] = [];
     const params: Array<string | number> = [];
 
@@ -241,13 +249,15 @@ export class PostgresGeoRepository implements IGeoRepository {
     if (hasLimit) params.push(query!.limit as number);
     if (hasOffset) params.push(query!.offset as number);
 
-    return this.db.all<GeographicAddressRow>(sql, params).map((row) => this.mapAddressRow(row));
+    return (await this.db.all<GeographicAddressRow>(sql, params)).map((row) =>
+      this.mapAddressRow(row),
+    );
   }
 
-  public upsertSpec(spec: GeographicSiteSpecification): GeographicSiteSpecification {
+  public async upsertSpec(spec: GeographicSiteSpecification): Promise<GeographicSiteSpecification> {
     const now = new Date().toISOString();
 
-    this.db.run(
+    await this.db.run(
       `INSERT INTO tmf_geographic_site_specification
        (id, href, name, code, category, lifecycle_status, description, allowed_parent_spec_ids, allowed_child_spec_ids,
         valid_for_start, valid_for_end, characteristics, is_bootstrap, created_at, updated_at)
@@ -285,11 +295,11 @@ export class PostgresGeoRepository implements IGeoRepository {
       ],
     );
 
-    return this.getSpec(spec.id)!;
+    return (await this.getSpec(spec.id))!;
   }
 
-  public getSpec(id: string): GeographicSiteSpecification | undefined {
-    const row = this.db.get<GeographicSiteSpecificationRow>(
+  public async getSpec(id: string): Promise<GeographicSiteSpecification | undefined> {
+    const row = await this.db.get<GeographicSiteSpecificationRow>(
       `SELECT id, href, name, code, category, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
               characteristics, is_bootstrap
@@ -299,11 +309,11 @@ export class PostgresGeoRepository implements IGeoRepository {
     );
 
     if (!row) return undefined;
-    return this.hydrateSpecs([row]).get(row.id);
+    return (await this.hydrateSpecs([row])).get(row.id);
   }
 
-  public getSpecByCode(code: string): GeographicSiteSpecification | undefined {
-    const row = this.db.get<GeographicSiteSpecificationRow>(
+  public async getSpecByCode(code: string): Promise<GeographicSiteSpecification | undefined> {
+    const row = await this.db.get<GeographicSiteSpecificationRow>(
       `SELECT id, href, name, code, category, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
               characteristics, is_bootstrap
@@ -313,17 +323,17 @@ export class PostgresGeoRepository implements IGeoRepository {
     );
 
     if (!row) return undefined;
-    return this.hydrateSpecs([row]).get(row.id);
+    return (await this.hydrateSpecs([row])).get(row.id);
   }
 
-  public listSpecs(query?: {
+  public async listSpecs(query?: {
     name?: string;
     code?: string;
     category?: GeographicSiteSpecification['category'];
     lifecycleStatus?: GeographicSiteSpecification['lifecycleStatus'];
     limit?: number;
     offset?: number;
-  }): GeographicSiteSpecification[] {
+  }): Promise<GeographicSiteSpecification[]> {
     const conditions: string[] = [];
     const params: Array<string | number> = [];
 
@@ -362,11 +372,11 @@ export class PostgresGeoRepository implements IGeoRepository {
     if (hasLimit) params.push(query!.limit as number);
     if (hasOffset) params.push(query!.offset as number);
 
-    const rows = this.db.all<GeographicSiteSpecificationRow>(sql, params);
-    return [...this.hydrateSpecs(rows).values()];
+    const rows = await this.db.all<GeographicSiteSpecificationRow>(sql, params);
+    return [...(await this.hydrateSpecs(rows)).values()];
   }
 
-  public syncSpecContainmentRules(
+  public async syncSpecContainmentRules(
     specId: string,
     input: {
       allowedParentSpecIds: string[];
@@ -374,25 +384,26 @@ export class PostgresGeoRepository implements IGeoRepository {
       protectedParentSpecIds?: string[];
       protectedChildSpecIds?: string[];
     },
-  ): void {
+  ): Promise<void> {
     if (input.allowedParentSpecIds.length === 0) {
-      this.db.run(`DELETE FROM tmf_geographic_site_spec_containment_rule WHERE child_spec_id = ?`, [
-        specId,
-      ]);
+      await this.db.run(
+        `DELETE FROM tmf_geographic_site_spec_containment_rule WHERE child_spec_id = ?`,
+        [specId],
+      );
     } else {
-      this.db.run(
+      await this.db.run(
         `DELETE FROM tmf_geographic_site_spec_containment_rule
          WHERE child_spec_id = ? AND parent_spec_id NOT IN (${input.allowedParentSpecIds.map(() => '?').join(', ')})`,
         [specId, ...input.allowedParentSpecIds],
       );
     }
     if (input.allowedChildSpecIds.length === 0) {
-      this.db.run(
+      await this.db.run(
         `DELETE FROM tmf_geographic_site_spec_containment_rule WHERE parent_spec_id = ?`,
         [specId],
       );
     } else {
-      this.db.run(
+      await this.db.run(
         `DELETE FROM tmf_geographic_site_spec_containment_rule
          WHERE parent_spec_id = ? AND child_spec_id NOT IN (${input.allowedChildSpecIds.map(() => '?').join(', ')})`,
         [specId, ...input.allowedChildSpecIds],
@@ -400,7 +411,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     }
 
     for (const parentSpecId of input.allowedParentSpecIds) {
-      this.db.run(
+      await this.db.run(
         `INSERT INTO tmf_geographic_site_spec_containment_rule
          (parent_spec_id, child_spec_id, valid_for_start, valid_for_end, is_protected)
          VALUES (?, ?, NULL, NULL, ?)
@@ -411,7 +422,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     }
 
     for (const childSpecId of input.allowedChildSpecIds) {
-      this.db.run(
+      await this.db.run(
         `INSERT INTO tmf_geographic_site_spec_containment_rule
          (parent_spec_id, child_spec_id, valid_for_start, valid_for_end, is_protected)
          VALUES (?, ?, NULL, NULL, ?)
@@ -422,10 +433,10 @@ export class PostgresGeoRepository implements IGeoRepository {
     }
   }
 
-  public upsertSite(site: GeographicSite): GeographicSite {
+  public async upsertSite(site: GeographicSite): Promise<GeographicSite> {
     const now = new Date().toISOString();
 
-    this.db.run(
+    await this.db.run(
       `INSERT INTO tmf_geographic_site
        (id, href, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id,
         geographic_address_id, parent_site_id, related_party, site_addresses,
@@ -466,17 +477,17 @@ export class PostgresGeoRepository implements IGeoRepository {
       ],
     );
 
-    return this.getSite(site.id)!;
+    return (await this.getSite(site.id))!;
   }
 
-  public getSite(id: string, scope?: GeoTenantScope): GeographicSite | undefined {
+  public async getSite(id: string, scope?: GeoTenantScope): Promise<GeographicSite | undefined> {
     const conditions = ['id = ?'];
     const params: Array<string | number> = [id];
     if (scope?.tenantId) {
       conditions.push('tenant_id = ?');
       params.push(scope.tenantId);
     }
-    const row = this.db.get<GeographicSiteRow>(
+    const row = await this.db.get<GeographicSiteRow>(
       `SELECT id, href, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id,
               geographic_address_id, parent_site_id, related_party, site_addresses, characteristics
        FROM tmf_geographic_site WHERE ${conditions.join(' AND ')}`,
@@ -484,10 +495,10 @@ export class PostgresGeoRepository implements IGeoRepository {
     );
 
     if (!row) return undefined;
-    return this.mapSiteRow(row, this.listSiteRelationships(row.id));
+    return this.mapSiteRow(row, await this.listSiteRelationships(row.id));
   }
 
-  public listSites(
+  public async listSites(
     query?: GeoTenantScope & {
       name?: string;
       status?: GeographicSite['status'];
@@ -499,7 +510,7 @@ export class PostgresGeoRepository implements IGeoRepository {
       limit?: number;
       offset?: number;
     },
-  ): GeographicSite[] {
+  ): Promise<GeographicSite[]> {
     const conditions: string[] = [];
     const params: Array<string | number | null> = [];
 
@@ -520,7 +531,7 @@ export class PostgresGeoRepository implements IGeoRepository {
       params.push(query.siteSpecificationId);
     }
     if (query?.descendantOfSiteId) {
-      const descendantIds = this.collectDescendantSiteIds(query.descendantOfSiteId, query);
+      const descendantIds = await this.collectDescendantSiteIds(query.descendantOfSiteId, query);
       if (descendantIds.length === 0) {
         conditions.push('1 = 0');
       } else {
@@ -563,44 +574,49 @@ export class PostgresGeoRepository implements IGeoRepository {
     if (hasLimit) params.push(query!.limit as number);
     if (hasOffset) params.push(query!.offset as number);
 
-    const rows = this.db.all<GeographicSiteRow>(sql, params);
-    const relationshipsBySiteId = this.loadSiteRelationshipsBySiteIds(rows.map((row) => row.id));
+    const rows = await this.db.all<GeographicSiteRow>(sql, params);
+    const relationshipsBySiteId = await this.loadSiteRelationshipsBySiteIds(
+      rows.map((row) => row.id),
+    );
     return rows.map((row) => this.mapSiteRow(row, relationshipsBySiteId.get(row.id) ?? []));
   }
 
-  public countSites(scope?: GeoTenantScope): number {
+  public async countSites(scope?: GeoTenantScope): Promise<number> {
     const conditions: string[] = [];
     const params: string[] = [];
     if (scope?.tenantId) {
       conditions.push('tenant_id = ?');
       params.push(scope.tenantId);
     }
-    const row = this.db.get<{ count: number }>(
+    const row = await this.db.get<{ count: number }>(
       `SELECT COUNT(*) as count FROM tmf_geographic_site ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}`,
       params,
     );
     return Number(row?.count ?? 0);
   }
 
-  public countSitesBySpecificationId(specificationId: string, scope?: GeoTenantScope): number {
+  public async countSitesBySpecificationId(
+    specificationId: string,
+    scope?: GeoTenantScope,
+  ): Promise<number> {
     const conditions = ['site_specification_id = ?'];
     const params: string[] = [specificationId];
     if (scope?.tenantId) {
       conditions.push('tenant_id = ?');
       params.push(scope.tenantId);
     }
-    const row = this.db.get<{ count: number }>(
+    const row = await this.db.get<{ count: number }>(
       `SELECT COUNT(*) as count FROM tmf_geographic_site WHERE ${conditions.join(' AND ')}`,
       params,
     );
     return Number(row?.count ?? 0);
   }
 
-  public upsertSiteRelationship(
+  public async upsertSiteRelationship(
     siteId: string,
     relationship: GeographicSiteRelationship,
-  ): GeographicSiteRelationship {
-    this.db.run(
+  ): Promise<GeographicSiteRelationship> {
+    await this.db.run(
       `INSERT INTO tmf_geographic_site_relationship
        (site_from_id, site_to_id, relationship_type, valid_for_start, valid_for_end)
        VALUES (?, ?, ?, ?, ?)
@@ -619,13 +635,13 @@ export class PostgresGeoRepository implements IGeoRepository {
     return relationship;
   }
 
-  public endSiteRelationship(
+  public async endSiteRelationship(
     siteId: string,
     relatedSiteId: string,
     relationshipType: string,
     endedAt: string,
-  ): boolean {
-    const result = this.db.run(
+  ): Promise<boolean> {
+    const result = await this.db.run(
       `UPDATE tmf_geographic_site_relationship
           SET valid_for_end = ?
         WHERE site_from_id = ?
@@ -637,8 +653,8 @@ export class PostgresGeoRepository implements IGeoRepository {
     return result.changes > 0;
   }
 
-  public listSiteRelationships(siteId: string): GeographicSiteRelationship[] {
-    const rows = this.db.all<Omit<GeographicSiteRelationshipRow, 'site_from_id'>>(
+  public async listSiteRelationships(siteId: string): Promise<GeographicSiteRelationship[]> {
+    const rows = await this.db.all<Omit<GeographicSiteRelationshipRow, 'site_from_id'>>(
       `SELECT site_to_id, relationship_type, valid_for_start, valid_for_end
        FROM tmf_geographic_site_relationship
        WHERE site_from_id = ?
@@ -649,11 +665,11 @@ export class PostgresGeoRepository implements IGeoRepository {
     return rows.map((row) => this.mapRelationshipRow(row));
   }
 
-  public upsertRelationshipType(
+  public async upsertRelationshipType(
     relationshipType: GeographicRelationshipType,
-  ): GeographicRelationshipType {
+  ): Promise<GeographicRelationshipType> {
     const now = new Date().toISOString();
-    this.db.run(
+    await this.db.run(
       `INSERT INTO tmf_geographic_relationship_type
        (id, href, code, name, inverse_code, is_symmetric, allowed_source_categories, allowed_target_categories,
         cardinality, lifecycle_status, is_bootstrap, created_at, updated_at)
@@ -686,11 +702,11 @@ export class PostgresGeoRepository implements IGeoRepository {
       ],
     );
 
-    return this.getRelationshipType(relationshipType.code)!;
+    return (await this.getRelationshipType(relationshipType.code))!;
   }
 
-  public getRelationshipType(code: string): GeographicRelationshipType | undefined {
-    const row = this.db.get<GeographicRelationshipTypeRow>(
+  public async getRelationshipType(code: string): Promise<GeographicRelationshipType | undefined> {
+    const row = await this.db.get<GeographicRelationshipTypeRow>(
       `SELECT id, href, code, name, inverse_code, is_symmetric, allowed_source_categories, allowed_target_categories,
               cardinality, lifecycle_status, is_bootstrap
        FROM tmf_geographic_relationship_type
@@ -701,12 +717,12 @@ export class PostgresGeoRepository implements IGeoRepository {
     return row ? this.mapRelationshipTypeRow(row) : undefined;
   }
 
-  public listRelationshipTypes(query?: {
+  public async listRelationshipTypes(query?: {
     code?: string;
     lifecycleStatus?: GeographicRelationshipType['lifecycleStatus'];
     limit?: number;
     offset?: number;
-  }): GeographicRelationshipType[] {
+  }): Promise<GeographicRelationshipType[]> {
     const conditions: string[] = [];
     const params: Array<string | number> = [];
     if (query?.code) {
@@ -734,15 +750,15 @@ export class PostgresGeoRepository implements IGeoRepository {
 
     if (hasLimit) params.push(query!.limit as number);
     if (hasOffset) params.push(query!.offset as number);
-    return this.db
-      .all<GeographicRelationshipTypeRow>(sql, params)
-      .map((row) => this.mapRelationshipTypeRow(row));
+    return (await this.db.all<GeographicRelationshipTypeRow>(sql, params)).map((row) =>
+      this.mapRelationshipTypeRow(row),
+    );
   }
 
-  public appendSiteStatusHistory(
+  public async appendSiteStatusHistory(
     entry: GeographicSiteStatusHistoryEntry,
-  ): GeographicSiteStatusHistoryEntry {
-    this.db.run(
+  ): Promise<GeographicSiteStatusHistoryEntry> {
+    await this.db.run(
       `INSERT INTO tmf_geographic_site_status_history
        (id, site_id, tenant_id, from_status, to_status, status_date, status_reason, actor_sub, trace_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -761,17 +777,17 @@ export class PostgresGeoRepository implements IGeoRepository {
     return entry;
   }
 
-  public listSiteStatusHistory(
+  public async listSiteStatusHistory(
     siteId: string,
     scope?: GeoTenantScope,
-  ): GeographicSiteStatusHistoryEntry[] {
+  ): Promise<GeographicSiteStatusHistoryEntry[]> {
     const conditions = ['site_id = ?'];
     const params: Array<string | number> = [siteId];
     if (scope?.tenantId) {
       conditions.push('tenant_id = ?');
       params.push(scope.tenantId);
     }
-    const rows = this.db.all<GeographicSiteStatusHistoryRow>(
+    const rows = await this.db.all<GeographicSiteStatusHistoryRow>(
       `SELECT id, site_id, tenant_id, from_status, to_status, status_date, status_reason, actor_sub, trace_id
        FROM tmf_geographic_site_status_history
        WHERE ${conditions.join(' AND ')}
@@ -792,45 +808,58 @@ export class PostgresGeoRepository implements IGeoRepository {
     }));
   }
 
-  public getSiteReferences(siteId: string, scope?: GeoTenantScope): GeographicSiteReferences {
+  public async getSiteReferences(
+    siteId: string,
+    scope?: GeoTenantScope,
+  ): Promise<GeographicSiteReferences> {
     const tenantFilter = scope?.tenantId ? 'AND tenant_id = ?' : '';
     const tenantParams = scope?.tenantId ? [scope.tenantId] : [];
     const activeChildSiteCount = Number(
-      this.db.get<{ count: number }>(
-        `SELECT COUNT(*) AS count FROM tmf_geographic_site
+      (
+        await this.db.get<{ count: number }>(
+          `SELECT COUNT(*) AS count FROM tmf_geographic_site
           WHERE parent_site_id = ? AND status <> 'Retired' ${tenantFilter}`,
-        [siteId, ...tenantParams],
+          [siteId, ...tenantParams],
+        )
       )?.count ?? 0,
     );
     const activeRelationshipCount = Number(
-      this.db.get<{ count: number }>(
-        `SELECT COUNT(*) AS count FROM tmf_geographic_site_relationship
+      (
+        await this.db.get<{ count: number }>(
+          `SELECT COUNT(*) AS count FROM tmf_geographic_site_relationship
           WHERE site_from_id = ? AND valid_for_end IS NULL`,
-        [siteId],
+          [siteId],
+        )
       )?.count ?? 0,
     );
     const activeResourceCount = Number(
-      this.db.get<{ count: number }>(
-        `SELECT
+      (
+        await this.db.get<{ count: number }>(
+          `SELECT
            (SELECT COUNT(*) FROM tmf_physical_resource WHERE status <> 'terminated' AND (place_id = ? OR serving_site_id = ?)) +
            (SELECT COUNT(*) FROM tmf_logical_resource WHERE status <> 'terminated' AND (place_id = ? OR serving_site_id = ?)) AS count`,
-        [siteId, siteId, siteId, siteId],
+          [siteId, siteId, siteId, siteId],
+        )
       )?.count ?? 0,
     );
     const activeServiceCount = Number(
-      this.db.get<{ count: number }>(
-        `SELECT
+      (
+        await this.db.get<{ count: number }>(
+          `SELECT
            (SELECT COUNT(*) FROM tmf_customer_facing_service WHERE COALESCE(state, status) <> 'terminated' AND place LIKE ?) +
            (SELECT COUNT(*) FROM tmf_resource_facing_service WHERE COALESCE(state, status) <> 'terminated' AND place LIKE ?) AS count`,
-        [`%${siteId}%`, `%${siteId}%`],
+          [`%${siteId}%`, `%${siteId}%`],
+        )
       )?.count ?? 0,
     );
     const activeOrderCount = Number(
-      this.db.get<{ count: number }>(
-        `SELECT
+      (
+        await this.db.get<{ count: number }>(
+          `SELECT
            (SELECT COUNT(*) FROM tmf_service_order WHERE state NOT IN ('completed', 'cancelled', 'failed') AND service_order_item LIKE ?) +
            (SELECT COUNT(*) FROM tmf_resource_order WHERE state NOT IN ('completed', 'cancelled', 'failed') AND resource_order_item LIKE ?) AS count`,
-        [`%${siteId}%`, `%${siteId}%`],
+          [`%${siteId}%`, `%${siteId}%`],
+        )
       )?.count ?? 0,
     );
 
@@ -851,12 +880,12 @@ export class PostgresGeoRepository implements IGeoRepository {
     };
   }
 
-  public countSiteDescendants(siteId: string, scope?: GeoTenantScope): number {
-    return this.collectDescendantSiteIds(siteId, scope).length;
+  public async countSiteDescendants(siteId: string, scope?: GeoTenantScope): Promise<number> {
+    return (await this.collectDescendantSiteIds(siteId, scope)).length;
   }
 
-  public appendAudit(audit: GeoAuditLog): GeoAuditLog {
-    this.db.run(
+  public async appendAudit(audit: GeoAuditLog): Promise<GeoAuditLog> {
+    await this.db.run(
       `INSERT INTO tmf_audit_log
        (id, tenant_id, actor_sub, action, entity_type, entity_id, event_time, before_state, after_state, trace_id, source_ip)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -877,14 +906,17 @@ export class PostgresGeoRepository implements IGeoRepository {
     return audit;
   }
 
-  public listAuditForEntity(entityId: string, scope?: GeoTenantScope): GeoAuditLog[] {
+  public async listAuditForEntity(
+    entityId: string,
+    scope?: GeoTenantScope,
+  ): Promise<GeoAuditLog[]> {
     const conditions = ['entity_id = ?'];
     const params: Array<string | number> = [entityId];
     if (scope?.tenantId) {
       conditions.push('tenant_id = ?');
       params.push(scope.tenantId);
     }
-    const rows = this.db.all<GeoAuditLogRow>(
+    const rows = await this.db.all<GeoAuditLogRow>(
       `SELECT id, tenant_id, actor_sub, action, entity_type, entity_id, event_time,
               before_state, after_state, trace_id, source_ip
        FROM tmf_audit_log
@@ -908,8 +940,8 @@ export class PostgresGeoRepository implements IGeoRepository {
     }));
   }
 
-  public appendEvent(event: GeoEvent): GeoEvent {
-    this.db.run(
+  public async appendEvent(event: GeoEvent): Promise<GeoEvent> {
+    await this.db.run(
       `INSERT INTO tmf_event (id, event_type, event_time, source, event_data, correlation_id)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [
@@ -925,8 +957,8 @@ export class PostgresGeoRepository implements IGeoRepository {
     return event;
   }
 
-  public appendOutbox(message: GeoOutboxMessage): GeoOutboxMessage {
-    this.db.run(
+  public async appendOutbox(message: GeoOutboxMessage): Promise<GeoOutboxMessage> {
+    await this.db.run(
       `INSERT INTO tmf_outbox (id, tenant_id, event_id, topic, payload, status, created_at, published_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -943,8 +975,8 @@ export class PostgresGeoRepository implements IGeoRepository {
     return message;
   }
 
-  public listEventsForEntity(entityId: string): GeoEvent[] {
-    const rows = this.db.all<EventRow>(
+  public async listEventsForEntity(entityId: string): Promise<GeoEvent[]> {
+    const rows = await this.db.all<EventRow>(
       `SELECT id, event_type, event_time, source, event_data, correlation_id
        FROM tmf_event
        WHERE json_extract(event_data, '$.entityId') = ?
@@ -963,8 +995,8 @@ export class PostgresGeoRepository implements IGeoRepository {
     }));
   }
 
-  public upsertBulkJob(job: GeoBulkJob): GeoBulkJob {
-    this.db.run(
+  public async upsertBulkJob(job: GeoBulkJob): Promise<GeoBulkJob> {
+    await this.db.run(
       `INSERT INTO tmf_geo_bulk_job
        (id, tenant_id, target, mode, idempotency_key, status, submitted_at, started_at,
         completed_at, total, success_count, error_count, warning_count, actor_sub, trace_id)
@@ -995,17 +1027,17 @@ export class PostgresGeoRepository implements IGeoRepository {
         job.traceId,
       ],
     );
-    return this.getBulkJob(job.id)!;
+    return (await this.getBulkJob(job.id))!;
   }
 
-  public getBulkJob(id: string, scope?: GeoTenantScope): GeoBulkJob | undefined {
+  public async getBulkJob(id: string, scope?: GeoTenantScope): Promise<GeoBulkJob | undefined> {
     const conditions = ['id = ?'];
     const params: Array<string | number> = [id];
     if (scope?.tenantId) {
       conditions.push('tenant_id = ?');
       params.push(scope.tenantId);
     }
-    const row = this.db.get<GeoBulkJobRow>(
+    const row = await this.db.get<GeoBulkJobRow>(
       `SELECT id, tenant_id, target, mode, idempotency_key, status, submitted_at, started_at,
               completed_at, total, success_count, error_count, warning_count, actor_sub, trace_id
        FROM tmf_geo_bulk_job
@@ -1015,18 +1047,18 @@ export class PostgresGeoRepository implements IGeoRepository {
     return row ? mapBulkJobRow(row) : undefined;
   }
 
-  public getBulkJobByIdempotencyKey(
+  public async getBulkJobByIdempotencyKey(
     tenantId: string,
     idempotencyKey: string,
     target?: GeoBulkJob['target'],
-  ): GeoBulkJob | undefined {
+  ): Promise<GeoBulkJob | undefined> {
     const conditions = ['tenant_id = ?', 'idempotency_key = ?'];
     const params: Array<string | number> = [tenantId, idempotencyKey];
     if (target) {
       conditions.push('target = ?');
       params.push(target);
     }
-    const row = this.db.get<GeoBulkJobRow>(
+    const row = await this.db.get<GeoBulkJobRow>(
       `SELECT id, tenant_id, target, mode, idempotency_key, status, submitted_at, started_at,
               completed_at, total, success_count, error_count, warning_count, actor_sub, trace_id
        FROM tmf_geo_bulk_job
@@ -1038,8 +1070,8 @@ export class PostgresGeoRepository implements IGeoRepository {
     return row ? mapBulkJobRow(row) : undefined;
   }
 
-  public appendBulkJobResult(result: GeoBulkJobResult): GeoBulkJobResult {
-    this.db.run(
+  public async appendBulkJobResult(result: GeoBulkJobResult): Promise<GeoBulkJobResult> {
+    await this.db.run(
       `INSERT INTO tmf_geo_bulk_job_result
        (id, job_id, tenant_id, item_index, status, entity_id, legacy_system, legacy_entity,
         legacy_id, error_code, message, warnings)
@@ -1071,10 +1103,10 @@ export class PostgresGeoRepository implements IGeoRepository {
     return result;
   }
 
-  public listBulkJobResults(
+  public async listBulkJobResults(
     jobId: string,
     scope?: GeoTenantScope & { limit?: number; offset?: number },
-  ): GeoBulkJobResult[] {
+  ): Promise<GeoBulkJobResult[]> {
     const conditions = ['job_id = ?'];
     const params: Array<string | number> = [jobId];
     if (scope?.tenantId) {
@@ -1096,17 +1128,17 @@ export class PostgresGeoRepository implements IGeoRepository {
       .join(' ');
     if (hasLimit) params.push(scope!.limit as number);
     if (hasOffset) params.push(scope!.offset as number);
-    return this.db.all<GeoBulkJobResultRow>(sql, params).map(mapBulkJobResultRow);
+    return (await this.db.all<GeoBulkJobResultRow>(sql, params)).map(mapBulkJobResultRow);
   }
 
-  private hydrateSpecs(
+  private async hydrateSpecs(
     rows: GeographicSiteSpecificationRow[],
-  ): Map<string, GeographicSiteSpecification> {
+  ): Promise<Map<string, GeographicSiteSpecification>> {
     if (rows.length === 0) return new Map();
 
     const ids = rows.map((row) => row.id);
     const placeholders = ids.map(() => '?').join(', ');
-    const ruleRows = this.db.all<GeographicSiteSpecificationContainmentRuleRow>(
+    const ruleRows = await this.db.all<GeographicSiteSpecificationContainmentRuleRow>(
       `SELECT parent_spec_id, child_spec_id, valid_for_start, valid_for_end, is_protected
        FROM tmf_geographic_site_spec_containment_rule
        WHERE parent_spec_id IN (${placeholders}) OR child_spec_id IN (${placeholders})`,
@@ -1121,7 +1153,7 @@ export class PostgresGeoRepository implements IGeoRepository {
 
     const referencedRows =
       referencedIds.size > 0
-        ? this.db.all<GeographicSiteSpecificationRow>(
+        ? await this.db.all<GeographicSiteSpecificationRow>(
             `SELECT id, href, name, code, category, lifecycle_status, description,
                     allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
                     characteristics, is_bootstrap
@@ -1184,12 +1216,12 @@ export class PostgresGeoRepository implements IGeoRepository {
     return specs;
   }
 
-  private loadSiteRelationshipsBySiteIds(
+  private async loadSiteRelationshipsBySiteIds(
     siteIds: string[],
-  ): Map<string, GeographicSiteRelationship[]> {
+  ): Promise<Map<string, GeographicSiteRelationship[]>> {
     if (siteIds.length === 0) return new Map();
 
-    const rows = this.db.all<GeographicSiteRelationshipRow>(
+    const rows = await this.db.all<GeographicSiteRelationshipRow>(
       `SELECT site_from_id, site_to_id, relationship_type, valid_for_start, valid_for_end
        FROM tmf_geographic_site_relationship
        WHERE site_from_id IN (${siteIds.map(() => '?').join(', ')})
@@ -1324,7 +1356,10 @@ export class PostgresGeoRepository implements IGeoRepository {
     };
   }
 
-  private collectDescendantSiteIds(siteId: string, scope?: GeoTenantScope): string[] {
+  private async collectDescendantSiteIds(
+    siteId: string,
+    scope?: GeoTenantScope,
+  ): Promise<string[]> {
     const result: string[] = [];
     const queue = [siteId];
     while (queue.length > 0) {
@@ -1335,7 +1370,7 @@ export class PostgresGeoRepository implements IGeoRepository {
         conditions.push('tenant_id = ?');
         params.push(scope.tenantId);
       }
-      const rows = this.db.all<{ id: string }>(
+      const rows = await this.db.all<{ id: string }>(
         `SELECT id FROM tmf_geographic_site WHERE ${conditions.join(' AND ')} ORDER BY id`,
         params,
       );

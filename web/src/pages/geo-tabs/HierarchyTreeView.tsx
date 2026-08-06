@@ -31,18 +31,20 @@ export function HierarchyTreeView({ rows, selectedNodeId, onSelect, onToggle, on
   // linhas, mas não deve puxar a lista de volta ao item selecionado).
   const scrolledTo = useRef<string | null>(null);
 
-  // Revela o nó escolhido dentro da hierarquia. Ao clicar numa estação no mapa, o
-  // ramo dela é expandido em GeoPage (via expandNode), mas a linha pode nascer
-  // fora da área visível — aqui a sidebar rola até ela. Depende de `rows` porque
-  // a linha só aparece depois que os ancestrais terminam de expandir de forma
-  // assíncrona; assim que ela entra na lista, o efeito roda e rola até ela.
+  // Revela o nó escolhido dentro da hierarquia. Ao clicar num item no mapa, o ramo
+  // dele é carregado e expandido em GeoPage (via revealNode), mas a linha pode
+  // nascer fora da área visível — aqui a sidebar rola até ela, centralizada na
+  // vertical para o item ficar no meio do painel, com o contexto acima e abaixo à
+  // vista. Depende de `rows` porque a linha só aparece depois que os ancestrais
+  // terminam de carregar/expandir de forma assíncrona; assim que ela entra na
+  // lista, o efeito roda e rola até ela.
   useEffect(() => {
     if (!selectedNodeId) {
       scrolledTo.current = null;
       return;
     }
     if (scrolledTo.current === selectedNodeId || !selectedRef.current) return;
-    selectedRef.current.scrollIntoView({ block: 'nearest' });
+    selectedRef.current.scrollIntoView({ block: 'center' });
     scrolledTo.current = selectedNodeId;
   }, [selectedNodeId, rows]);
 
@@ -161,7 +163,13 @@ export function NodeIcon({ node }: { node: GeoTreeNode }) {
   // Recurso leva o ícone do seu tipo — o mesmo desenho do pin no mapa, para o
   // olho ligar árvore e mapa sem legenda.
   if (node.kind === 'resource') {
-    return <ResourceIcon resource={node.resourceType ?? ''} variant="badge" size={20} />;
+    return (
+      <ResourceIcon
+        resource={{ resourceType: node.resourceType ?? '', status: node.status }}
+        variant="badge"
+        size={20}
+      />
+    );
   }
   if (node.kind === 'site') {
     const kind = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });

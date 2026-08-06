@@ -1,4 +1,4 @@
-import { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
+import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 import type {
   LogicalResource,
   PhysicalResource,
@@ -22,14 +22,18 @@ import { RESOURCE_CATEGORIES, RESOURCE_TYPES } from './catalog.js';
 // do módulo Geo poder expandir uma estação por índice em vez de varrer o JSON.
 const SERVING_SITE_CHARACTERISTIC = 'servingSite';
 
-const servingSiteIdOf = (resource: { characteristic?: Array<{ name: string; value: unknown }> }): string | null => {
+const servingSiteIdOf = (resource: {
+  characteristic?: Array<{ name: string; value: unknown }>;
+}): string | null => {
   const found = resource.characteristic?.find((item) => item.name === SERVING_SITE_CHARACTERISTIC);
   return typeof found?.value === 'string' && found.value.length > 0 ? found.value : null;
 };
 
 // Compartilhado entre list*Resources e count*Resources para que a contagem use exatamente
 // os mesmos filtros da listagem (sem limit/offset), evitando total e página divergirem.
-const buildResourceConditions = (query?: ResourceQuery): { conditions: string[]; params: Array<string | number> } => {
+const buildResourceConditions = (
+  query?: ResourceQuery,
+): { conditions: string[]; params: Array<string | number> } => {
   const conditions: string[] = [];
   const params: Array<string | number> = [];
 
@@ -42,7 +46,9 @@ const buildResourceConditions = (query?: ResourceQuery): { conditions: string[];
     params.push(query.status);
   }
   if (query?.resourceSpecificationIdIn && query.resourceSpecificationIdIn.length > 0) {
-    conditions.push(`resource_specification_id IN (${query.resourceSpecificationIdIn.map(() => '?').join(', ')})`);
+    conditions.push(
+      `resource_specification_id IN (${query.resourceSpecificationIdIn.map(() => '?').join(', ')})`,
+    );
     params.push(...query.resourceSpecificationIdIn);
   } else if (query?.resourceSpecificationId) {
     conditions.push('resource_specification_id = ?');
@@ -56,7 +62,9 @@ const buildResourceConditions = (query?: ResourceQuery): { conditions: string[];
     params.push(query.resourceType);
   }
   if (query?.category) {
-    conditions.push('resource_specification_id IN (SELECT id FROM tmf_resource_specification WHERE category = ?)');
+    conditions.push(
+      'resource_specification_id IN (SELECT id FROM tmf_resource_specification WHERE category = ?)',
+    );
     params.push(query.category);
   }
   if (query?.placeId) {
@@ -69,19 +77,21 @@ const buildResourceConditions = (query?: ResourceQuery): { conditions: string[];
 
 import type { LogicalResourceRow, PhysicalResourceRow } from './rows.js';
 export class PostgresResourceRepository implements IResourceRepository {
-  public constructor(private readonly db: PostgresDatabase) {
-    this.seedResourceCatalog();
+  public constructor(private readonly db: DatabaseClient) {}
+
+  public transaction<T>(fn: () => T | Promise<T>): Promise<T> {
+    return this.db.transaction(async () => await fn());
   }
 
-  public transaction<T>(fn: () => T): T {
-    return this.db.transaction(fn);
+  public initialize(): Promise<void> {
+    return this.seedResourceCatalog();
   }
 
-  private seedResourceCatalog(): void {
+  private async seedResourceCatalog(): Promise<void> {
     const now = new Date().toISOString();
-    this.db.transaction(() => {
+    await this.db.transaction(async () => {
       for (const category of RESOURCE_CATEGORIES) {
-        this.db.run(
+        await this.db.run(
           `INSERT INTO tmf_resource_category (id, href, code, name, parent_category_code, description, status, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(code) DO UPDATE SET
@@ -106,7 +116,7 @@ export class PostgresResourceRepository implements IResourceRepository {
       }
 
       for (const type of RESOURCE_TYPES) {
-        this.db.run(
+        await this.db.run(
           `INSERT INTO tmf_resource_type (id, href, code, name, category_code, description, status, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(code) DO UPDATE SET
@@ -132,8 +142,8 @@ export class PostgresResourceRepository implements IResourceRepository {
     });
   }
 
-  public getResourceCategory(code: string): ResourceCategory | undefined {
-    const row = this.db.get<{
+  public async getResourceCategory(code: string): Promise<ResourceCategory | undefined> {
+    const row = await this.db.get<{
       id: string;
       href: string;
       code: string;
@@ -151,8 +161,8 @@ export class PostgresResourceRepository implements IResourceRepository {
     return row ? this.mapResourceCategory(row) : undefined;
   }
 
-  public listResourceCategories(): ResourceCategory[] {
-    const rows = this.db.all<{
+  public async listResourceCategories(): Promise<ResourceCategory[]> {
+    const rows = await this.db.all<{
       id: string;
       href: string;
       code: string;
@@ -168,8 +178,8 @@ export class PostgresResourceRepository implements IResourceRepository {
     return rows.map((row) => this.mapResourceCategory(row));
   }
 
-  public getResourceType(code: string): ResourceType | undefined {
-    const row = this.db.get<{
+  public async getResourceType(code: string): Promise<ResourceType | undefined> {
+    const row = await this.db.get<{
       id: string;
       href: string;
       code: string;
@@ -187,8 +197,8 @@ export class PostgresResourceRepository implements IResourceRepository {
     return row ? this.mapResourceType(row) : undefined;
   }
 
-  public listResourceTypes(): ResourceType[] {
-    const rows = this.db.all<{
+  public async listResourceTypes(): Promise<ResourceType[]> {
+    const rows = await this.db.all<{
       id: string;
       href: string;
       code: string;
@@ -204,9 +214,11 @@ export class PostgresResourceRepository implements IResourceRepository {
     return rows.map((row) => this.mapResourceType(row));
   }
 
-  public upsertResourceSpecification(spec: ResourceSpecification): ResourceSpecification {
+  public async upsertResourceSpecification(
+    spec: ResourceSpecification,
+  ): Promise<ResourceSpecification> {
     const now = new Date().toISOString();
-    this.db.run(
+    await this.db.run(
       `INSERT INTO tmf_resource_specification
        (id, href, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -237,11 +249,11 @@ export class PostgresResourceRepository implements IResourceRepository {
       ],
     );
 
-    return this.getResourceSpecification(spec.id) ?? spec;
+    return (await this.getResourceSpecification(spec.id)) ?? spec;
   }
 
-  public getResourceSpecification(id: string): ResourceSpecification | undefined {
-    const row = this.db.get<{
+  public async getResourceSpecification(id: string): Promise<ResourceSpecification | undefined> {
+    const row = await this.db.get<{
       id: string;
       href: string;
       name: string;
@@ -262,7 +274,9 @@ export class PostgresResourceRepository implements IResourceRepository {
     return row ? this.mapSpec(row) : undefined;
   }
 
-  public listResourceSpecifications(query?: ResourceSpecificationQuery): ResourceSpecification[] {
+  public async listResourceSpecifications(
+    query?: ResourceSpecificationQuery,
+  ): Promise<ResourceSpecification[]> {
     const conditions: string[] = [];
     const params: Array<string | number> = [];
 
@@ -297,7 +311,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     if (hasLimit) params.push(query.limit as number);
     if (hasOffset) params.push(query.offset as number);
 
-    const rows = this.db.all<{
+    const rows = await this.db.all<{
       id: string;
       href: string;
       name: string;
@@ -313,9 +327,11 @@ export class PostgresResourceRepository implements IResourceRepository {
     return rows.map((row) => this.mapSpec(row));
   }
 
-  public upsertResourceFunctionSpecification(spec: ResourceFunctionSpecification): ResourceFunctionSpecification {
+  public async upsertResourceFunctionSpecification(
+    spec: ResourceFunctionSpecification,
+  ): Promise<ResourceFunctionSpecification> {
     const now = new Date().toISOString();
-    this.db.run(
+    await this.db.run(
       `INSERT INTO tmf_resource_function_specification
        (id, href, name, description, characteristics, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -336,11 +352,13 @@ export class PostgresResourceRepository implements IResourceRepository {
       ],
     );
 
-    return this.getResourceFunctionSpecification(spec.id) ?? spec;
+    return (await this.getResourceFunctionSpecification(spec.id)) ?? spec;
   }
 
-  public getResourceFunctionSpecification(id: string): ResourceFunctionSpecification | undefined {
-    const row = this.db.get<{
+  public async getResourceFunctionSpecification(
+    id: string,
+  ): Promise<ResourceFunctionSpecification | undefined> {
+    const row = await this.db.get<{
       id: string;
       href: string;
       name: string;
@@ -356,7 +374,9 @@ export class PostgresResourceRepository implements IResourceRepository {
     return row ? this.mapFunctionSpec(row) : undefined;
   }
 
-  public listResourceFunctionSpecifications(query?: ResourceFunctionSpecificationQuery): ResourceFunctionSpecification[] {
+  public async listResourceFunctionSpecifications(
+    query?: ResourceFunctionSpecificationQuery,
+  ): Promise<ResourceFunctionSpecification[]> {
     const conditions: string[] = [];
     const params: Array<string | number> = [];
 
@@ -380,7 +400,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     if (hasLimit) params.push(query.limit as number);
     if (hasOffset) params.push(query.offset as number);
 
-    const rows = this.db.all<{
+    const rows = await this.db.all<{
       id: string;
       href: string;
       name: string;
@@ -391,9 +411,9 @@ export class PostgresResourceRepository implements IResourceRepository {
     return rows.map((row) => this.mapFunctionSpec(row));
   }
 
-  public upsertPhysicalResource(resource: PhysicalResource): PhysicalResource {
+  public async upsertPhysicalResource(resource: PhysicalResource): Promise<PhysicalResource> {
     const now = new Date().toISOString();
-    this.db.run(
+    await this.db.run(
       `INSERT INTO tmf_physical_resource
        (id, href, name, resource_specification_id, resource_type, status,
         place_id, place_type, serving_site_id, administrative_state, operational_state, usage_state,
@@ -447,11 +467,11 @@ export class PostgresResourceRepository implements IResourceRepository {
       ],
     );
 
-    return this.getPhysicalResource(resource.id) ?? resource;
+    return (await this.getPhysicalResource(resource.id)) ?? resource;
   }
 
-  public getPhysicalResource(id: string): PhysicalResource | undefined {
-    const row = this.db.get<PhysicalResourceRow>(
+  public async getPhysicalResource(id: string): Promise<PhysicalResource | undefined> {
+    const row = await this.db.get<PhysicalResourceRow>(
       `SELECT id, href, name, resource_specification_id, resource_type, status,
               place_id, place_type, administrative_state, operational_state, usage_state,
               manufacturer, model, serial_number, part_number, valid_for_start, valid_for_end,
@@ -461,10 +481,12 @@ export class PostgresResourceRepository implements IResourceRepository {
       [id],
     );
 
-    return row ? this.mapPhysicalResource(row) : undefined;
+    return row
+      ? this.mapPhysicalResource(row, await this.listResourceRelationships(row.id))
+      : undefined;
   }
 
-  public listPhysicalResources(query?: ResourceQuery): PhysicalResource[] {
+  public async listPhysicalResources(query?: ResourceQuery): Promise<PhysicalResource[]> {
     const { conditions, params } = buildResourceConditions(query);
 
     const hasLimit = query?.limit !== undefined;
@@ -482,12 +504,16 @@ export class PostgresResourceRepository implements IResourceRepository {
     if (hasLimit) params.push(query.limit as number);
     if (hasOffset) params.push(query.offset as number);
 
-    const rows = this.db.all<PhysicalResourceRow>(sql, params);
-    const relationshipsByResourceId = this.loadResourceRelationshipsByResourceIds(rows.map((row) => row.id));
-    return rows.map((row) => this.mapPhysicalResource(row, relationshipsByResourceId.get(row.id)));
+    const rows = await this.db.all<PhysicalResourceRow>(sql, params);
+    const relationshipsByResourceId = await this.loadResourceRelationshipsByResourceIds(
+      rows.map((row) => row.id),
+    );
+    return rows.map((row) =>
+      this.mapPhysicalResource(row, relationshipsByResourceId.get(row.id) ?? []),
+    );
   }
 
-  public countPhysicalResources(query?: ResourceQuery): number {
+  public async countPhysicalResources(query?: ResourceQuery): Promise<number> {
     const { conditions, params } = buildResourceConditions(query);
     const sql = [
       'SELECT COUNT(*) as count FROM tmf_physical_resource',
@@ -495,13 +521,13 @@ export class PostgresResourceRepository implements IResourceRepository {
     ]
       .filter((part) => part.length > 0)
       .join(' ');
-    const row = this.db.get<{ count: number }>(sql, params);
+    const row = await this.db.get<{ count: number }>(sql, params);
     return Number(row?.count ?? 0);
   }
 
-  public upsertLogicalResource(resource: LogicalResource): LogicalResource {
+  public async upsertLogicalResource(resource: LogicalResource): Promise<LogicalResource> {
     const now = new Date().toISOString();
-    this.db.run(
+    await this.db.run(
       `INSERT INTO tmf_logical_resource
        (id, href, name, resource_specification_id, resource_type, status,
         place_id, place_type, serving_site_id, supporting_physical_resource_id,
@@ -549,11 +575,11 @@ export class PostgresResourceRepository implements IResourceRepository {
       ],
     );
 
-    return this.getLogicalResource(resource.id) ?? resource;
+    return (await this.getLogicalResource(resource.id)) ?? resource;
   }
 
-  public getLogicalResource(id: string): LogicalResource | undefined {
-    const row = this.db.get<LogicalResourceRow>(
+  public async getLogicalResource(id: string): Promise<LogicalResource | undefined> {
+    const row = await this.db.get<LogicalResourceRow>(
       `SELECT id, href, name, resource_specification_id, resource_type, status, place_id, place_type,
               supporting_physical_resource_id, administrative_state, operational_state, usage_state,
               related_party, characteristics, valid_for_start, valid_for_end
@@ -562,10 +588,12 @@ export class PostgresResourceRepository implements IResourceRepository {
       [id],
     );
 
-    return row ? this.mapLogicalResource(row) : undefined;
+    return row
+      ? this.mapLogicalResource(row, await this.listResourceRelationships(row.id))
+      : undefined;
   }
 
-  public listLogicalResources(query?: ResourceQuery): LogicalResource[] {
+  public async listLogicalResources(query?: ResourceQuery): Promise<LogicalResource[]> {
     const { conditions, params } = buildResourceConditions(query);
 
     const hasLimit = query?.limit !== undefined;
@@ -583,12 +611,16 @@ export class PostgresResourceRepository implements IResourceRepository {
     if (hasLimit) params.push(query.limit as number);
     if (hasOffset) params.push(query.offset as number);
 
-    const rows = this.db.all<LogicalResourceRow>(sql, params);
-    const relationshipsByResourceId = this.loadResourceRelationshipsByResourceIds(rows.map((row) => row.id));
-    return rows.map((row) => this.mapLogicalResource(row, relationshipsByResourceId.get(row.id)));
+    const rows = await this.db.all<LogicalResourceRow>(sql, params);
+    const relationshipsByResourceId = await this.loadResourceRelationshipsByResourceIds(
+      rows.map((row) => row.id),
+    );
+    return rows.map((row) =>
+      this.mapLogicalResource(row, relationshipsByResourceId.get(row.id) ?? []),
+    );
   }
 
-  public countLogicalResources(query?: ResourceQuery): number {
+  public async countLogicalResources(query?: ResourceQuery): Promise<number> {
     const { conditions, params } = buildResourceConditions(query);
     const sql = [
       'SELECT COUNT(*) as count FROM tmf_logical_resource',
@@ -596,18 +628,21 @@ export class PostgresResourceRepository implements IResourceRepository {
     ]
       .filter((part) => part.length > 0)
       .join(' ');
-    const row = this.db.get<{ count: number }>(sql, params);
+    const row = await this.db.get<{ count: number }>(sql, params);
     return Number(row?.count ?? 0);
   }
 
-  public countResources(query?: ResourceQuery): number {
-    if (query?.kind === 'PhysicalResource') return this.countPhysicalResources(query);
-    if (query?.kind === 'LogicalResource') return this.countLogicalResources(query);
-    return this.countPhysicalResources(query) + this.countLogicalResources(query);
+  public async countResources(query?: ResourceQuery): Promise<number> {
+    if (query?.kind === 'PhysicalResource') return await this.countPhysicalResources(query);
+    if (query?.kind === 'LogicalResource') return await this.countLogicalResources(query);
+    return (await this.countPhysicalResources(query)) + (await this.countLogicalResources(query));
   }
 
-  public upsertResourceRelationship(resourceId: string, relationship: ResourceRelationship): ResourceRelationship {
-    this.db.run(
+  public async upsertResourceRelationship(
+    resourceId: string,
+    relationship: ResourceRelationship,
+  ): Promise<ResourceRelationship> {
+    await this.db.run(
       `INSERT INTO tmf_resource_relationship
        (resource_from_id, resource_to_id, relationship_type, valid_for_start, valid_for_end)
        VALUES (?, ?, ?, ?, ?)
@@ -626,8 +661,12 @@ export class PostgresResourceRepository implements IResourceRepository {
     return relationship;
   }
 
-  public deleteResourceRelationship(resourceId: string, relatedResourceId: string, relationshipType: string): boolean {
-    const result = this.db.run(
+  public async deleteResourceRelationship(
+    resourceId: string,
+    relatedResourceId: string,
+    relationshipType: string,
+  ): Promise<boolean> {
+    const result = await this.db.run(
       `DELETE FROM tmf_resource_relationship
        WHERE resource_from_id = ? AND resource_to_id = ? AND relationship_type = ?`,
       [resourceId, relatedResourceId, relationshipType],
@@ -635,8 +674,8 @@ export class PostgresResourceRepository implements IResourceRepository {
     return result.changes > 0;
   }
 
-  public listResourceRelationships(resourceId: string): ResourceRelationship[] {
-    const rows = this.db.all<{
+  public async listResourceRelationships(resourceId: string): Promise<ResourceRelationship[]> {
+    const rows = await this.db.all<{
       resource_to_id: string;
       relationship_type: string;
       valid_for_start?: string | null;
@@ -660,17 +699,19 @@ export class PostgresResourceRepository implements IResourceRepository {
               ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
             },
           }
-      : {}),
+        : {}),
     }));
   }
 
-  private loadResourceRelationshipsByResourceIds(resourceIds: string[]): Map<string, ResourceRelationship[]> {
+  private async loadResourceRelationshipsByResourceIds(
+    resourceIds: string[],
+  ): Promise<Map<string, ResourceRelationship[]>> {
     if (resourceIds.length === 0) {
       return new Map();
     }
 
     const placeholders = resourceIds.map(() => '?').join(', ');
-    const rows = this.db.all<{
+    const rows = await this.db.all<{
       resource_from_id: string;
       resource_to_id: string;
       relationship_type: string;
@@ -706,16 +747,19 @@ export class PostgresResourceRepository implements IResourceRepository {
     return relationshipsByResourceId;
   }
 
-  public listResources(query?: ResourceQuery): Resource[] {
+  public async listResources(query?: ResourceQuery): Promise<Resource[]> {
     if (query?.kind === 'PhysicalResource') {
-      return this.listPhysicalResources(query);
+      return await this.listPhysicalResources(query);
     }
 
     if (query?.kind === 'LogicalResource') {
-      return this.listLogicalResources(query);
+      return await this.listLogicalResources(query);
     }
 
-    return [...this.listPhysicalResources(query), ...this.listLogicalResources(query)];
+    return [
+      ...(await this.listPhysicalResources(query)),
+      ...(await this.listLogicalResources(query)),
+    ];
   }
 
   private mapSpec(row: {
@@ -737,7 +781,9 @@ export class PostgresResourceRepository implements IResourceRepository {
       name: row.name,
       category: row.category,
       resourceType: row.resource_type,
-      resourceSpecificationCharacteristic: JSON.parse(row.characteristics || '[]') as ResourceSpecification['resourceSpecificationCharacteristic'],
+      resourceSpecificationCharacteristic: JSON.parse(
+        row.characteristics || '[]',
+      ) as ResourceSpecification['resourceSpecificationCharacteristic'],
       relatedParty: JSON.parse(row.related_party || '[]') as ResourceSpecification['relatedParty'],
     };
 
@@ -805,21 +851,29 @@ export class PostgresResourceRepository implements IResourceRepository {
       id: row.id,
       href: row.href,
       name: row.name,
-      resourceFunctionSpecificationCharacteristic: JSON.parse(row.characteristics || '[]') as ResourceFunctionSpecification['resourceFunctionSpecificationCharacteristic'],
+      resourceFunctionSpecificationCharacteristic: JSON.parse(
+        row.characteristics || '[]',
+      ) as ResourceFunctionSpecification['resourceFunctionSpecificationCharacteristic'],
     };
 
     if (row.description) spec.description = row.description;
     return spec;
   }
 
-  private mapPhysicalResource(row: PhysicalResourceRow, resourceRelationships: ResourceRelationship[] = this.listResourceRelationships(row.id)): PhysicalResource {
+  private mapPhysicalResource(
+    row: PhysicalResourceRow,
+    resourceRelationships: ResourceRelationship[],
+  ): PhysicalResource {
     const resource: PhysicalResource = {
       '@type': 'PhysicalResource',
       id: row.id,
       href: row.href,
       name: row.name,
       resourceSpecificationId: row.resource_specification_id,
-      resourceSpecification: { id: row.resource_specification_id, '@referredType': 'ResourceSpecification' },
+      resourceSpecification: {
+        id: row.resource_specification_id,
+        '@referredType': 'ResourceSpecification',
+      },
       resourceType: row.resource_type,
       status: row.status,
       administrativeState: row.administrative_state ?? 'unlocked',
@@ -850,14 +904,20 @@ export class PostgresResourceRepository implements IResourceRepository {
     return resource;
   }
 
-  private mapLogicalResource(row: LogicalResourceRow, resourceRelationships: ResourceRelationship[] = this.listResourceRelationships(row.id)): LogicalResource {
+  private mapLogicalResource(
+    row: LogicalResourceRow,
+    resourceRelationships: ResourceRelationship[],
+  ): LogicalResource {
     const resource: LogicalResource = {
       '@type': 'LogicalResource',
       id: row.id,
       href: row.href,
       name: row.name,
       resourceSpecificationId: row.resource_specification_id,
-      resourceSpecification: { id: row.resource_specification_id, '@referredType': 'ResourceSpecification' },
+      resourceSpecification: {
+        id: row.resource_specification_id,
+        '@referredType': 'ResourceSpecification',
+      },
       resourceType: row.resource_type,
       status: row.status,
       administrativeState: row.administrative_state ?? 'unlocked',

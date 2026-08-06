@@ -1,5 +1,5 @@
 ﻿import { createServer, IncomingMessage, ServerResponse } from 'node:http';
-import type { AppConfig } from '../config/env.js';
+import { databaseConfigOf, type AppConfig } from '../config/env.js';
 import { AppError } from '../errors/app-error.js';
 import {
   buildRequestContext,
@@ -7,7 +7,8 @@ import {
 } from './request-context.js';
 import type { Logger } from '../logging/logger.js';
 import { InMemoryEntityRepository } from '../persistence/in-memory-entity-repository.js';
-import { PostgresDatabase } from '../persistence/postgres-database.js';
+import type { DatabaseClient } from '../persistence/database-client.js';
+import { createDatabaseClient } from '../persistence/database-factory.js';
 import { createCanonicalId } from '../utils/canonical-id.js';
 import { ChatGPTProvider } from '../../modules/search/chatgpt-provider.js';
 import { LocalKnowledgeProvider } from '../../modules/search/local-knowledge-provider.js';
@@ -125,24 +126,28 @@ export const handleHttpRequest = async (
 
 export const createApp = ({ config, logger }: AppDependencies) => {
   const repository = new InMemoryEntityRepository();
-  const db = PostgresDatabase.getInstance(config.databaseUrl);
+  const databaseConfig = databaseConfigOf(config);
+  const db = createDatabaseClient(databaseConfig);
   // The runtime builds every repository and runs their seeds, which over a Postgres/Neon
   // backend means dozens of network round-trips. Build it ONCE at startup and reuse it for
   // every request instead of rebuilding per request (which made each request take seconds).
-  let runtime: NexusRuntime | null = null;
+  let runtimePromise: Promise<NexusRuntime> | null = null;
 
   const server = createServer((request, response) => {
-    const activeRuntime = runtime ?? (runtime = createNexusRuntime(db));
+    const activeRuntime = runtimePromise ?? (runtimePromise = createNexusRuntime(db));
     const startedAt = Date.now();
-    void routeRequest({
-      request,
-      response,
-      config,
-      logger,
-      repository,
-      db,
-      runtime: activeRuntime,
-    })
+    void activeRuntime
+      .then((runtime) =>
+        routeRequest({
+          request,
+          response,
+          config,
+          logger,
+          repository,
+          db,
+          runtime,
+        }),
+      )
       .catch((error: unknown) => handleHttpError({ error, logger, response }))
       .finally(() => {
         const durationMs = Date.now() - startedAt;
@@ -163,9 +168,10 @@ export const createApp = ({ config, logger }: AppDependencies) => {
   return {
     start: async (): Promise<number> => {
       await db.initialize();
-      logger.info({ databaseUrl: redactDatabaseUrl(config.databaseUrl) }, 'database initialized');
+      logger.info({ databaseProvider: databaseConfig.provider }, 'database initialized');
       const runtimeStartedAt = Date.now();
-      runtime = createNexusRuntime(db);
+      runtimePromise = createNexusRuntime(db);
+      const runtime = await runtimePromise;
       logger.info({ durationMs: Date.now() - runtimeStartedAt }, 'runtime initialized');
 
       if (runtime.defaultUser.externalId === DEFAULT_RUNTIME_USER.externalId) {
@@ -186,12 +192,12 @@ export const createApp = ({ config, logger }: AppDependencies) => {
       return port;
     },
     stop: async (): Promise<void> => {
-      runtime = null;
+      runtimePromise = null;
       // db.close() already removes just this instance from the static map. Calling
       // PostgresDatabase.resetForTesting() here would additionally tear down every other
       // instance still registered — including one from a test whose async teardown is
       // still in flight — leaving it with a null bridge ("Database not initialized").
-      db.close();
+      await db.close();
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
       });
@@ -203,7 +209,7 @@ type RouteDependencies = AppDependencies & {
   request: IncomingMessage;
   response: ServerResponse;
   repository: InMemoryEntityRepository;
-  db: PostgresDatabase;
+  db: DatabaseClient;
   runtime: NexusRuntime;
 };
 
@@ -609,8 +615,22 @@ const routeGeoRequest = async ({
         ...(parseOptionalNumber(url.searchParams.get('offset')) !== undefined
           ? { offset: parseOptionalNumber(url.searchParams.get('offset')) as number }
           : {}),
+        // Default 'tree' (navegação, esconde item interno); painel de detalhe pede
+        // 'all' explicitamente. Qualquer outro valor cai no default.
+        scope: url.searchParams.get('scope') === 'all' ? 'all' : 'tree',
       }),
     );
+  }
+
+  // Caminho da raiz até um nó — usado para revelar na árvore um Site/Recurso
+  // selecionado por fora dela (clique no mapa, resultado de busca), que pode nunca
+  // ter passado por uma expansão manual (ver GeoTreeService.pathTo).
+  if (request.method === 'GET' && url.pathname === '/v1/geo/tree/path') {
+    const nodeId = url.searchParams.get('nodeId');
+    if (!nodeId) {
+      throw new AppError('nodeId required', { code: 'GEO_TREE_NODE_REQUIRED', statusCode: 400 });
+    }
+    return sendJson(response, 200, { nodeId, path: geoTreeService.pathTo(nodeId) });
   }
 
   // Infra passiva por região visível do mapa — fonte usada em escala de detalhe (≤ 200 m),
@@ -965,9 +985,9 @@ const routeGeoRequest = async ({
   if (route.resource === 'locations') {
     if (!route.id && request.method === 'GET') {
       const spatialQuery = parseGeoLocationSpatialQuery(url.searchParams);
-      const locations = spatialQuery
+      const locations = await (spatialQuery
         ? geoService.listLocationsSpatial(spatialQuery, geoContext)
-        : geoService.listLocations(parseGeoListQuery(url.searchParams), geoContext);
+        : geoService.listLocations(parseGeoListQuery(url.searchParams), geoContext));
       if ((request.headers.accept ?? '').includes('application/geo+json')) {
         return sendJson(response, 200, geoService.locationsToFeatureCollection(locations));
       }
@@ -1401,9 +1421,9 @@ const routeResourceRequest = async ({
       return sendJson(response, 200, resourceService.listResourceCategories());
     }
     if (route.id && request.method === 'GET') {
-      const category = resourceService
-        .listResourceCategories()
-        .find((item) => item.id === route.id || item.code === route.id);
+      const category = (await resourceService.listResourceCategories()).find(
+        (item) => item.id === route.id || item.code === route.id,
+      );
       return sendJsonOrNotFound(response, category, 'RESOURCE_CATEGORY_NOT_FOUND');
     }
   }
@@ -1413,9 +1433,9 @@ const routeResourceRequest = async ({
       return sendJson(response, 200, resourceService.listResourceTypes());
     }
     if (route.id && request.method === 'GET') {
-      const resourceType = resourceService
-        .listResourceTypes()
-        .find((item) => item.id === route.id || item.code === route.id);
+      const resourceType = (await resourceService.listResourceTypes()).find(
+        (item) => item.id === route.id || item.code === route.id,
+      );
       return sendJsonOrNotFound(response, resourceType, 'RESOURCE_TYPE_NOT_FOUND');
     }
   }
@@ -1455,7 +1475,7 @@ const routeResourceRequest = async ({
     }
     if (route.id && request.method === 'PATCH') {
       const body = await readBody(request);
-      const current = resourceService.getResource(route.id);
+      const current = await resourceService.getResource(route.id);
       if (!current)
         throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
       return sendJson(
@@ -1473,7 +1493,7 @@ const routeResourceRequest = async ({
       );
     }
     if (route.id && request.method === 'DELETE') {
-      const current = resourceService.getResource(route.id);
+      const current = await resourceService.getResource(route.id);
       if (!current)
         throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
       return sendJson(
@@ -2385,26 +2405,26 @@ const buildServiceWorkspaceSnapshot = async ({
   category?: string;
   serviceService: ServiceService;
 }): Promise<ServiceWorkspaceSnapshot> => {
-  const serviceSpecificationOptions = loadAllServiceSpecifications(serviceService);
-  const serviceCategories = serviceService.listServiceCategories();
-  const serviceCandidates = serviceService.listServiceCandidates();
+  const serviceSpecificationOptions = await loadAllServiceSpecifications(serviceService);
+  const serviceCategories = await serviceService.listServiceCategories();
+  const serviceCandidates = await serviceService.listServiceCandidates();
 
   const isCatalogTab = tab === 'ServiceSpecification';
   const categoryFilter = category ? { category } : {};
   const customerFacingServices = isCatalogTab
     ? []
-    : (serviceService.listServices({
+    : ((await serviceService.listServices({
         type: 'CustomerFacingService',
         limit: SERVICE_CATEGORY_FETCH_CAP,
         ...categoryFilter,
-      }) as CustomerFacingService[]);
+      })) as CustomerFacingService[]);
   const resourceFacingServices = isCatalogTab
     ? []
-    : (serviceService.listServices({
+    : ((await serviceService.listServices({
         type: 'ResourceFacingService',
         limit: SERVICE_CATEGORY_FETCH_CAP,
         ...categoryFilter,
-      }) as ResourceFacingService[]);
+      })) as ResourceFacingService[]);
 
   return {
     serviceSpecificationOptions,
@@ -2415,10 +2435,12 @@ const buildServiceWorkspaceSnapshot = async ({
   };
 };
 
-const loadAllServiceSpecifications = (serviceService: ServiceService): ServiceSpecification[] => {
+const loadAllServiceSpecifications = async (
+  serviceService: ServiceService,
+): Promise<ServiceSpecification[]> => {
   const collected: ServiceSpecification[] = [];
   for (let offset = 0; ; offset += RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) {
-    const items = serviceService.listServiceSpecifications({
+    const items = await serviceService.listServiceSpecifications({
       limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE,
       offset,
     });
@@ -2447,15 +2469,15 @@ const buildResourceWorkspaceSnapshot = async ({
   partyService: PartyService;
 }): Promise<ResourceWorkspaceSnapshot> => {
   const resourceSpecificationOptions = await loadAllResourceSpecifications(resourceService);
-  const resourceCategories = resourceService.listResourceCategories();
-  const resourceTypes = resourceService.listResourceTypes();
+  const resourceCategories = await resourceService.listResourceCategories();
+  const resourceTypes = await resourceService.listResourceTypes();
   const manufacturerOptions = await loadAllManufacturerOptions(partyService);
 
-  const items = getResourceWorkspaceItems(tab, limit, offset, filter, resourceService);
+  const items = await getResourceWorkspaceItems(tab, limit, offset, filter, resourceService);
   const totalCount =
     tab === 'ResourceSpecification'
       ? resourceSpecificationOptions.length
-      : resourceService.countResources({ ...filter, kind: tab, status: 'active' });
+      : await resourceService.countResources({ ...filter, kind: tab, status: 'active' });
 
   return {
     items,
@@ -2467,13 +2489,13 @@ const buildResourceWorkspaceSnapshot = async ({
   };
 };
 
-const getResourceWorkspaceItems = (
+const getResourceWorkspaceItems = async (
   tab: ResourceWorkspaceTab,
   limit: number,
   offset: number,
   filter: Pick<ResourceQuery, 'resourceSpecificationIdIn' | 'resourceTypeIn' | 'category' | 'name'>,
   resourceService: ResourceService,
-): Resource[] | ResourceSpecification[] => {
+): Promise<Resource[] | ResourceSpecification[]> => {
   if (tab === 'ResourceSpecification') {
     return resourceService.listResourceSpecifications({ limit, offset });
   }
@@ -2486,7 +2508,7 @@ const loadAllResourceSpecifications = async (
 ): Promise<ResourceSpecification[]> => {
   const collected: ResourceSpecification[] = [];
   for (let offset = 0; ; offset += RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) {
-    const items = resourceService.listResourceSpecifications({
+    const items = await resourceService.listResourceSpecifications({
       limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE,
       offset,
     });
@@ -2499,7 +2521,7 @@ const loadAllResourceSpecifications = async (
 const loadAllManufacturerOptions = async (partyService: PartyService): Promise<Party[]> => {
   const collected: Party[] = [];
   for (let offset = 0; ; offset += RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) {
-    const items = partyService.listPartyRoles({
+    const items = await partyService.listPartyRoles({
       limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE,
       offset,
       status: 'active',
@@ -2878,7 +2900,7 @@ const routeResearchRequest = async ({
     const session = await searchService.getSession(sessionId);
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
 
-    const pendingConfirmation = mcpModule.confirmations.get(confirmationToken);
+    const pendingConfirmation = await mcpModule.confirmations.get(confirmationToken);
     if (!pendingConfirmation) {
       throw new AppError('confirmation token not found', {
         code: 'MCP_CONFIRMATION_NOT_FOUND',
@@ -3310,13 +3332,23 @@ const buildConfirmationOutcomeMessage = (
   }
 };
 
-const sendJson = (response: ServerResponse, statusCode: number, payload: unknown): void => {
+const sendJson = async (
+  response: ServerResponse,
+  statusCode: number,
+  payload: unknown,
+): Promise<void> => {
+  payload = await Promise.resolve(payload);
   response.statusCode = statusCode;
   response.setHeader('content-type', 'application/json; charset=utf-8');
   response.end(JSON.stringify(payload));
 };
 
-const sendJsonOrNotFound = (response: ServerResponse, payload: unknown, code: string): void => {
+const sendJsonOrNotFound = async (
+  response: ServerResponse,
+  payload: unknown,
+  code: string,
+): Promise<void> => {
+  payload = await Promise.resolve(payload);
   if (!payload) {
     throw new AppError('entity not found', { code, statusCode: 404 });
   }
@@ -3382,17 +3414,6 @@ const escapeHtml = (value: string): string =>
     (char) =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char,
   );
-
-const redactDatabaseUrl = (value: string): string => {
-  try {
-    const url = new URL(value);
-    if (url.password) url.password = '***';
-    if (url.username) url.username = '***';
-    return url.toString();
-  } catch {
-    return value.startsWith('sqlite://') ? value : '<redacted>';
-  }
-};
 
 export const handleHttpError = ({
   error,

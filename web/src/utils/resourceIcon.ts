@@ -186,7 +186,22 @@ const CODE_ALIAS: Record<string, string> = {
 export type IconResourceLike = {
   name?: string;
   resourceType?: string;
+  status?: string;
   resourceSpecification?: { id?: string; name?: string; '@referredType'?: string };
+};
+
+// Legenda de cor por status — hoje só para CTO (o resto da família Infraestrutura
+// passiva continua na cor da família). Suspenso grita vermelho, ativo é o verde
+// escuro que diferencia "atendendo" de qualquer outro estado; os demais (planned,
+// terminated…) caem no laranja padrão da família.
+const CTO_STATUS_COLOR: Partial<Record<string, string>> = {
+  suspended: '#ef4444', // --status-red
+  active: '#047857', // --status-green-dark
+};
+
+const resolveIconColor = (code: string, family: ResourceFamily, status: string | undefined): string => {
+  const override = code === 'CTO' && status ? CTO_STATUS_COLOR[status] : undefined;
+  return override ?? familyColor[family];
 };
 
 // Resolve o código de tipo do catálogo. `resourceType` já vem com o code em dados
@@ -212,12 +227,13 @@ export function resourceTypeCode(resource: IconResourceLike | string | undefined
 export function resourceIconFor(resource: IconResourceLike | string | undefined): ResourceIcon {
   const code = resourceTypeCode(resource);
   const entry = ICONS[code] ?? ICONS.__fallback;
+  const status = typeof resource === 'object' ? resource?.status : undefined;
   return {
     code,
     family: entry.family,
     glyph: entry.glyph,
     node: entry.node,
-    color: familyColor[entry.family],
+    color: resolveIconColor(code, entry.family, status),
     label: TYPE_LABEL[code] ?? (code === '__fallback' ? 'Outro' : code),
   };
 }
@@ -284,12 +300,15 @@ export function resourceIconSvg(icon: ResourceIcon, options: { size?: number; ri
   });
 }
 
-// O domínio de ícones é pequeno (um por `code` x tamanho x anel), mas o mapa recalcula isto para
-// cada marcador em todo re-render — cachear evita regerar/escapar o mesmo SVG milhares de vezes.
+// O domínio de ícones é pequeno (um por `code` x cor x tamanho x anel), mas o mapa
+// recalcula isto para cada marcador em todo re-render — cachear evita regerar/escapar
+// o mesmo SVG milhares de vezes. A cor entra na chave porque não é mais 1:1 com o
+// `code`: CTO varia de cor por status (ver resolveIconColor) — sem a cor aqui, o
+// primeiro CTO desenhado "vencia" o cache e todos os outros saíam com a cor dele.
 const resourceIconDataUrlCache = new Map<string, string>();
 
 export function resourceIconDataUrl(icon: ResourceIcon, options?: { size?: number; ring?: boolean }): string {
-  const key = `${icon.code}:${options?.size ?? ''}:${options?.ring ?? ''}`;
+  const key = `${icon.code}:${icon.color}:${options?.size ?? ''}:${options?.ring ?? ''}`;
   const cached = resourceIconDataUrlCache.get(key);
   if (cached) return cached;
   const value = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(resourceIconSvg(icon, options))}`;

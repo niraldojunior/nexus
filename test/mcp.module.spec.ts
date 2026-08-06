@@ -13,7 +13,7 @@ const createFixture = async () => {
   const database = createTestDatabase('nexus-mcp-unit-');
   const sqlite = PostgresDatabase.getInstance(database.databaseUrl);
   await sqlite.initialize();
-  const runtime = createNexusRuntime(sqlite);
+  const runtime = await createNexusRuntime(sqlite);
   const module = createNexusMcpModule(runtime);
   const context = runtime.createToolContext({ executionMode: 'internal-http' });
 
@@ -64,7 +64,7 @@ test('MCP prepare/commit flow persists confirmation tokens and executes mutation
   const fixture = await createFixture();
 
   try {
-    const spec = fixture.runtime.geoService.createSpec({
+    const spec = await fixture.runtime.geoService.createSpec({
       name: 'Central Office',
       category: 'Site',
     });
@@ -92,7 +92,7 @@ test('MCP prepare/commit flow persists confirmation tokens and executes mutation
 
     assert.equal(committed.ok, true);
     assert.equal((committed.data as { name: string }).name, 'CO Botafogo');
-    assert.equal(fixture.runtime.geoService.listSites().length, 1);
+    assert.equal((await fixture.runtime.geoService.listSites()).length, 1);
   } finally {
     fixture.cleanup();
   }
@@ -106,7 +106,7 @@ test('MCP exposes and executes resource specification creation', async () => {
     assert.ok(tools.some((tool) => tool.name === 'resource.create_resource_specification'));
     assert.ok(tools.some((tool) => tool.name === 'resource.commit_create_resource_specification'));
 
-    const vendor = fixture.runtime.partyService.createParty({
+    const vendor = await fixture.runtime.partyService.createParty({
       name: 'HUAWEI',
       partyType: 'Organization',
     });
@@ -182,11 +182,21 @@ test('MCP cadastra modelo de equipamento resolvendo fabricante por nome', async 
     assert.equal((committed.data as { name: string }).name, 'F6201BV9.3.12');
     assert.equal((committed.data as { category: string }).category, 'Equipment.CustomerPremises');
     assert.equal((committed.data as { resourceType: string }).resourceType, 'ONT');
-    assert.equal((committed.data as { relatedParty?: Array<{ name?: string; role?: string }> }).relatedParty?.[0]?.role, 'manufacturer');
-    assert.equal((committed.data as { relatedParty?: Array<{ name?: string }> }).relatedParty?.[0]?.name, 'HUAWEI');
     assert.equal(
-      (committed.data as { resourceSpecificationCharacteristic?: Array<{ name: string; value: unknown }> })
-        .resourceSpecificationCharacteristic?.find((item) => item.name === 'model')?.value,
+      (committed.data as { relatedParty?: Array<{ name?: string; role?: string }> })
+        .relatedParty?.[0]?.role,
+      'manufacturer',
+    );
+    assert.equal(
+      (committed.data as { relatedParty?: Array<{ name?: string }> }).relatedParty?.[0]?.name,
+      'HUAWEI',
+    );
+    assert.equal(
+      (
+        committed.data as {
+          resourceSpecificationCharacteristic?: Array<{ name: string; value: unknown }>;
+        }
+      ).resourceSpecificationCharacteristic?.find((item) => item.name === 'model')?.value,
       'F6201BV9.3.12',
     );
   } finally {
@@ -224,7 +234,9 @@ test('MCP cadastra modelos de equipamento em lote', async () => {
     );
 
     assert.equal(committed.ok, true);
-    const items = (committed.data as { items: Array<{ name: string; relatedParty?: Array<{ name?: string }> }> }).items;
+    const items = (
+      committed.data as { items: Array<{ name: string; relatedParty?: Array<{ name?: string }> }> }
+    ).items;
     assert.equal(items.length, 3);
     assert.deepEqual(
       items.map((item) => item.name),
@@ -240,12 +252,12 @@ test('MCP remove modelo de equipamento como soft-delete com fabricante resolvido
   const fixture = await createFixture();
 
   try {
-    const manufacturer = fixture.runtime.partyService.createParty({
+    const manufacturer = await fixture.runtime.partyService.createParty({
       name: 'ZTE',
       partyType: 'Organization',
     });
 
-    const created = fixture.runtime.resourceService.createResourceSpecification({
+    const created = await fixture.runtime.resourceService.createResourceSpecification({
       name: 'F6201BV9.3.12',
       category: 'Equipment.CustomerPremises',
       resourceType: 'ONT',
@@ -286,9 +298,14 @@ test('MCP remove modelo de equipamento como soft-delete com fabricante resolvido
     assert.equal((committed.data as { id: string }).id, created.id);
     assert.ok((committed.data as { validFor?: { endDateTime?: string } }).validFor?.endDateTime);
 
-    const activeList = fixture.runtime.resourceService.listResourceSpecifications({ name: 'F6201BV9.3.12' });
+    const activeList = await fixture.runtime.resourceService.listResourceSpecifications({
+      name: 'F6201BV9.3.12',
+    });
     assert.equal(activeList.length, 0);
-    const allList = fixture.runtime.resourceService.listResourceSpecifications({ name: 'F6201BV9.3.12', includeEnded: true });
+    const allList = await fixture.runtime.resourceService.listResourceSpecifications({
+      name: 'F6201BV9.3.12',
+      includeEnded: true,
+    });
     assert.equal(allList.length, 1);
   } finally {
     fixture.cleanup();
@@ -335,7 +352,7 @@ test('MCP rejects invalid CFS preparation that references supportingResource dir
   const fixture = await createFixture();
 
   try {
-    const cfsSpec = fixture.runtime.serviceService.createServiceSpecification({
+    const cfsSpec = await fixture.runtime.serviceService.createServiceSpecification({
       name: 'Bitstream GPON',
       category: 'Broadband',
       serviceType: 'CFS',

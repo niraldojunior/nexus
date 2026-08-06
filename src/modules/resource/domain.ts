@@ -149,7 +149,8 @@ export type CreateResourceFunctionSpecificationInput = {
   resourceFunctionSpecificationCharacteristic?: Characteristic[];
 };
 
-export type UpdateResourceFunctionSpecificationInput = Partial<CreateResourceFunctionSpecificationInput>;
+export type UpdateResourceFunctionSpecificationInput =
+  Partial<CreateResourceFunctionSpecificationInput>;
 
 export type CreatePhysicalResourceInput = {
   name: string;

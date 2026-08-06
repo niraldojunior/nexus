@@ -7,19 +7,21 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test('PartyRepository clones stored entities and filters by canonical queries', () => {
+test('PartyRepository clones stored entities and filters by canonical queries', async () => {
   const repository = new PartyRepository();
 
-  const party = repository.upsertParty({
+  const party = await repository.upsertParty({
     '@type': 'Organization',
     id: 'party-1',
     href: '/party/party-1',
     name: 'ISP Alfa',
     status: 'active',
     partyType: 'Organization',
-    partyCharacteristic: [{ name: 'documentNumber', value: '12.345.678/0001-90', valueType: 'string' }],
+    partyCharacteristic: [
+      { name: 'documentNumber', value: '12.345.678/0001-90', valueType: 'string' },
+    ],
   });
-  const role = repository.upsertPartyRole({
+  const role = await repository.upsertPartyRole({
     '@type': 'PartyRole',
     id: 'role-1',
     href: '/party-role/role-1',
@@ -40,7 +42,7 @@ test('PartyRepository clones stored entities and filters by canonical queries', 
   assert.equal(repository.listPartyRoles({ partyId: 'party-1', name: 'sub' }).length, 1);
   assert.equal(repository.listPartyRoles({ status: 'active' }).length, 1);
 
-  const relationship = repository.upsertPartyRelationship({
+  const relationship = await repository.upsertPartyRelationship({
     partyFromId: 'party-1',
     partyToId: 'party-2',
     relationshipType: 'subsidiary',
@@ -53,57 +55,73 @@ test('PartyRepository clones stored entities and filters by canonical queries', 
   assert.equal(repository.deletePartyRelationship('party-1', 'party-2', 'subsidiary'), false);
 });
 
-test('PartyService creates, updates and terminates parties and roles', () => {
+test('PartyService creates, updates and terminates parties and roles', async () => {
   const repository = new PartyRepository();
   const eventService = { appendEvent: vi.fn(() => undefined) };
   const service = new PartyService(repository, eventService as never);
 
-  assert.throws(() => service.createParty({ name: '   ' }), /name is required/);
+  await assert.rejects(() => service.createParty({ name: '   ' }), /name is required/);
 
-  const createdParty = service.createParty({
+  const createdParty = await service.createParty({
     name: ' ISP Alfa ',
     partyType: 'Organization',
     status: 'active',
-    partyCharacteristic: [{ name: 'documentNumber', value: '12.345.678/0001-90', valueType: 'string' }],
+    partyCharacteristic: [
+      { name: 'documentNumber', value: '12.345.678/0001-90', valueType: 'string' },
+    ],
     validFor: { startDateTime: '2026-07-07T10:00:00.000Z' },
   });
   assert.equal(createdParty.name, 'ISP Alfa');
   assert.equal(createdParty.partyType, 'Organization');
   assert.equal(createdParty.validFor?.startDateTime, '2026-07-07T10:00:00.000Z');
-  assert.equal((eventService.appendEvent as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.eventType, 'PartyCreateEvent');
+  assert.equal(
+    (eventService.appendEvent as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.eventType,
+    'PartyCreateEvent',
+  );
 
-  const updatedParty = service.updateParty(createdParty.id, {
+  const updatedParty = await service.updateParty(createdParty.id, {
     name: ' ISP Beta ',
-    partyCharacteristic: [{ name: 'documentNumber', value: '98.765.432/0001-11', valueType: 'string' }],
+    partyCharacteristic: [
+      { name: 'documentNumber', value: '98.765.432/0001-11', valueType: 'string' },
+    ],
   });
   assert.equal(updatedParty.name, 'ISP Beta');
-  assert.equal((eventService.appendEvent as ReturnType<typeof vi.fn>).mock.calls[1]?.[0]?.eventType, 'PartyAttributeValueChangeEvent');
+  assert.equal(
+    (eventService.appendEvent as ReturnType<typeof vi.fn>).mock.calls[1]?.[0]?.eventType,
+    'PartyAttributeValueChangeEvent',
+  );
 
-  const terminatedParty = service.deleteParty(createdParty.id);
+  const terminatedParty = await service.deleteParty(createdParty.id);
   assert.equal(terminatedParty.status, 'terminated');
   assert.equal(terminatedParty.validFor?.startDateTime, '2026-07-07T10:00:00.000Z');
   assert.ok(terminatedParty.validFor?.endDateTime);
 
-  assert.throws(() => service.updateParty('missing', { name: 'x' }), /party not found/);
+  await assert.rejects(() => service.updateParty('missing', { name: 'x' }), /party not found/);
 
-  const role = service.createPartyRole({
+  const role = await service.createPartyRole({
     partyId: createdParty.id,
     name: ' subscriber ',
     partyRoleCharacteristic: [{ name: 'level', value: 'gold', valueType: 'string' }],
   });
   assert.equal(role.name, 'subscriber');
   assert.equal(role.party.id, createdParty.id);
-  assert.equal((eventService.appendEvent as ReturnType<typeof vi.fn>).mock.calls[3]?.[0]?.eventType, 'PartyRoleCreateEvent');
+  assert.equal(
+    (eventService.appendEvent as ReturnType<typeof vi.fn>).mock.calls[3]?.[0]?.eventType,
+    'PartyRoleCreateEvent',
+  );
 
-  assert.throws(() => service.createPartyRole({ partyId: 'missing', name: 'subscriber' }), /party not found/);
-  assert.throws(() => service.updatePartyRole(role.id, { name: ' ' }), /name is required/);
+  await assert.rejects(
+    () => service.createPartyRole({ partyId: 'missing', name: 'subscriber' }),
+    /party not found/,
+  );
+  await assert.rejects(() => service.updatePartyRole(role.id, { name: ' ' }), /name is required/);
 
-  const updatedRole = service.updatePartyRole(role.id, { name: 'reseller' });
+  const updatedRole = await service.updatePartyRole(role.id, { name: 'reseller' });
   assert.equal(updatedRole.name, 'reseller');
 
-  const terminatedRole = service.deletePartyRole(role.id);
+  const terminatedRole = await service.deletePartyRole(role.id);
   assert.equal(terminatedRole.status, 'terminated');
   assert.ok(terminatedRole.validFor?.endDateTime);
 
-  assert.throws(() => service.deletePartyRole('missing'), /party role not found/);
+  await assert.rejects(() => service.deletePartyRole('missing'), /party role not found/);
 });

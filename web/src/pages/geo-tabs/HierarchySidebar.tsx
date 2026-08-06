@@ -70,7 +70,7 @@ export function HierarchySidebar({
       );
     }
     return (
-      <div className="flex h-full w-11 shrink-0 flex-col items-center gap-2 border-r border-app-border bg-white py-3">
+      <div className="flex h-full w-11 shrink-0 flex-col items-center gap-2 border-r border-app-border bg-white py-3 shadow-dock">
         <SidebarIconButton icon={PanelLeftOpen} label="Abrir hierarquia" onClick={() => onCollapsedChange(false)} />
         <span className="mt-1 [writing-mode:vertical-rl] text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-app-muted">
           Hierarquia
@@ -91,8 +91,8 @@ export function HierarchySidebar({
       <aside
         className={
           isMobile
-            ? 'absolute inset-y-0 left-0 z-40 flex w-[340px] max-w-[85vw] flex-col border-r border-app-border bg-white shadow-soft'
-            : 'flex h-full w-[340px] max-w-[80vw] shrink-0 flex-col border-r border-app-border bg-white'
+            ? 'absolute inset-y-0 left-0 z-40 flex w-[374px] max-w-[85vw] flex-col border-r border-app-border bg-white shadow-dock'
+            : 'flex h-full w-[374px] max-w-[80vw] shrink-0 flex-col border-r border-app-border bg-white shadow-dock'
         }
       >
         {searchBar}

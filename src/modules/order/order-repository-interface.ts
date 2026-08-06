@@ -1,3 +1,5 @@
+type Awaitable<T> = T | Promise<T>;
+
 import type {
   ServiceOrder,
   ServiceOrderQuery,
@@ -8,17 +10,17 @@ import type {
 } from './domain.js';
 
 export interface IOrderRepository {
-  transaction<T>(fn: () => T): T;
+  transaction<T>(fn: () => Awaitable<T>): Awaitable<T>;
 
-  upsertServiceQualification(qualification: ServiceQualification): ServiceQualification;
-  getServiceQualification(id: string): ServiceQualification | undefined;
-  listServiceQualifications(query?: ServiceQualificationQuery): ServiceQualification[];
+  upsertServiceQualification(qualification: ServiceQualification): Awaitable<ServiceQualification>;
+  getServiceQualification(id: string): Awaitable<ServiceQualification | undefined>;
+  listServiceQualifications(query?: ServiceQualificationQuery): Awaitable<ServiceQualification[]>;
 
-  upsertServiceOrder(order: ServiceOrder): ServiceOrder;
-  getServiceOrder(id: string): ServiceOrder | undefined;
-  listServiceOrders(query?: ServiceOrderQuery): ServiceOrder[];
+  upsertServiceOrder(order: ServiceOrder): Awaitable<ServiceOrder>;
+  getServiceOrder(id: string): Awaitable<ServiceOrder | undefined>;
+  listServiceOrders(query?: ServiceOrderQuery): Awaitable<ServiceOrder[]>;
 
-  upsertResourceOrder(order: ResourceOrder): ResourceOrder;
-  getResourceOrder(id: string): ResourceOrder | undefined;
-  listResourceOrders(query?: ResourceOrderQuery): ResourceOrder[];
+  upsertResourceOrder(order: ResourceOrder): Awaitable<ResourceOrder>;
+  getResourceOrder(id: string): Awaitable<ResourceOrder | undefined>;
+  listResourceOrders(query?: ResourceOrderQuery): Awaitable<ResourceOrder[]>;
 }

@@ -8,11 +8,13 @@ export type GoogleMapBounds = {
   getNorthEast: () => GoogleLatLng;
   getSouthWest: () => GoogleLatLng;
 };
+export type GoogleMapTypeId = 'roadmap' | 'satellite' | 'hybrid' | 'terrain';
 export type GoogleMapInstance = {
   addListener: (eventName: string, listener: (event: GoogleMapMouseEvent) => void) => void;
   getBounds: () => GoogleMapBounds | undefined;
   getZoom: () => number | undefined;
   panTo: (position: { lat: number; lng: number }) => void;
+  setMapTypeId: (mapTypeId: GoogleMapTypeId) => void;
 };
 export type GoogleStreetViewPanoramaInstance = {
   setVisible: (visible: boolean) => void;
@@ -52,8 +54,9 @@ type GoogleAddressComponent = {
 type GooglePlace = {
   address_components?: GoogleAddressComponent[];
   formatted_address?: string;
-  geometry?: { location?: GoogleLatLng };
+  geometry?: { location?: GoogleLatLng; location_type?: string };
   name?: string;
+  place_id?: string;
 };
 type GooglePlaceWithGeometry = GooglePlace & { geometry: { location: GoogleLatLng } };
 type GooglePlacePrediction = { place_id: string; description: string };
@@ -115,7 +118,37 @@ export type DraftAddress = {
   country: string;
   coordinates: [number, number];
   label: string;
+  // Preenchidos apenas quando a resolução veio do Geocoder/Places do Google —
+  // ausentes num rascunho criado a partir de clique no mapa (ver reverseGeocode).
+  placeId?: string;
+  precision?: string;
 };
+
+// Resultado tipado da geocodificação: em vez de engolir a falha num `null`, carrega o
+// status devolvido pelo Google para o chamador poder mostrar o erro ao usuário.
+export type GeocodeOutcome =
+  | { ok: true; address: DraftAddress }
+  | { ok: false; status: string; message: string };
+
+const GEOCODE_ERROR_MESSAGES: Record<string, string> = {
+  ZERO_RESULTS: 'Nenhum endereço encontrado para esta pesquisa.',
+  REQUEST_DENIED: 'O serviço de geocodificação do Google não está habilitado para esta chave.',
+  OVER_QUERY_LIMIT: 'Limite de consultas ao Google Maps excedido. Tente novamente em instantes.',
+  INVALID_REQUEST: 'Pesquisa inválida.',
+  UNKNOWN_ERROR: 'Erro desconhecido ao consultar o Google Maps.',
+  NO_API_KEY: 'Chave do Google Maps não configurada.',
+  NETWORK_ERROR: 'Falha ao carregar o Google Maps.',
+};
+
+export function geocodeErrorMessage(status: string): string {
+  return GEOCODE_ERROR_MESSAGES[status] ?? `Erro ao consultar o Google Maps (${status}).`;
+}
+
+function geocodeOutcomeFromCatch(error: unknown): { ok: false; status: string; message: string } {
+  const status =
+    (error as { code?: string })?.code ?? (error as { status?: string })?.status ?? 'UNKNOWN_ERROR';
+  return { ok: false, status, message: geocodeErrorMessage(status) };
+}
 
 export const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
@@ -150,27 +183,84 @@ export async function reverseGeocode(lat: number, lng: number): Promise<DraftAdd
 }
 
 // Geocodifica um texto livre (endereço digitado) em um DraftAddress posicionável no mapa.
-export async function geocodeAddress(query: string): Promise<DraftAddress | null> {
-  if (!GOOGLE_MAPS_KEY) return null;
-  await loadGoogleMaps(GOOGLE_MAPS_KEY);
-  if (!window.google?.maps) return null;
+// Devolve o status do Google em caso de falha (ver GeocodeOutcome) em vez de engolir o erro —
+// é o que permite ao chamador mostrar por que a pesquisa não achou nada.
+export async function geocodeAddress(query: string): Promise<GeocodeOutcome> {
+  if (!GOOGLE_MAPS_KEY) {
+    return { ok: false, status: 'NO_API_KEY', message: geocodeErrorMessage('NO_API_KEY') };
+  }
+  await loadGoogleMaps(GOOGLE_MAPS_KEY).catch(() => undefined);
+  if (!window.google?.maps) {
+    return { ok: false, status: 'NETWORK_ERROR', message: geocodeErrorMessage('NETWORK_ERROR') };
+  }
   const geocoder = new window.google.maps.Geocoder();
-  const result = await geocoder
-    .geocode({
+  try {
+    const result = await geocoder.geocode({
       address: query,
       componentRestrictions: { country: 'br' },
-    })
-    .catch(() => null);
-  const place = result?.results?.[0];
-  if (!place) return null;
-  const location = place.geometry?.location;
-  if (!location) return null;
-  return addressFromGooglePlace({
-    formatted_address: place.formatted_address,
-    address_components: place.address_components,
-    name: query,
-    geometry: { location: { lat: () => location.lat(), lng: () => location.lng() } },
-  });
+    });
+    const place = result.results?.[0];
+    const location = place?.geometry?.location;
+    if (!place || !location) {
+      return { ok: false, status: 'ZERO_RESULTS', message: geocodeErrorMessage('ZERO_RESULTS') };
+    }
+    return {
+      ok: true,
+      address: addressFromGooglePlace({
+        formatted_address: place.formatted_address,
+        address_components: place.address_components,
+        name: query,
+        place_id: place.place_id,
+        geometry: {
+          location: { lat: () => location.lat(), lng: () => location.lng() },
+          location_type: place.geometry?.location_type,
+        },
+      }),
+    };
+  } catch (error) {
+    return geocodeOutcomeFromCatch(error);
+  }
+}
+
+// Resolve o endereço escolhido no dropdown de sugestões (AutocompleteService) pelo seu
+// placeId. Tenta o Geocoder primeiro — é o caminho que também traz a Precisão
+// (`location_type`) — e cai para o Places Details (fetchPlaceDetails) se o Geocoder
+// falhar por qualquer motivo: a Geocoding API pode estar desabilitada nesta chave (ver
+// memória do projeto "google-maps-apis-desabilitadas"), enquanto o Places Details é o
+// que já alimenta o dropdown e continua disponível.
+export async function resolveAddressByPlaceId(placeId: string): Promise<GeocodeOutcome> {
+  if (!GOOGLE_MAPS_KEY) {
+    return { ok: false, status: 'NO_API_KEY', message: geocodeErrorMessage('NO_API_KEY') };
+  }
+  await loadGoogleMaps(GOOGLE_MAPS_KEY).catch(() => undefined);
+  const maps = window.google?.maps;
+  if (maps) {
+    try {
+      const geocoder = new maps.Geocoder();
+      const result = await geocoder.geocode({ placeId });
+      const place = result.results?.[0];
+      const location = place?.geometry?.location;
+      if (place && location) {
+        return {
+          ok: true,
+          address: addressFromGooglePlace({
+            formatted_address: place.formatted_address,
+            address_components: place.address_components,
+            place_id: place.place_id ?? placeId,
+            geometry: {
+              location: { lat: () => location.lat(), lng: () => location.lng() },
+              location_type: place.geometry?.location_type,
+            },
+          }),
+        };
+      }
+    } catch {
+      // cai no fallback abaixo
+    }
+  }
+  const details = await fetchPlaceDetails(placeId);
+  if (details) return { ok: true, address: details };
+  return { ok: false, status: 'ZERO_RESULTS', message: geocodeErrorMessage('ZERO_RESULTS') };
 }
 
 export function addressFromGooglePlace(place: GooglePlaceWithGeometry): DraftAddress {
@@ -195,6 +285,8 @@ export function addressFromGooglePlace(place: GooglePlaceWithGeometry): DraftAdd
     country: get('country', true) ?? 'BR',
     coordinates: [lng, lat],
     label: place.formatted_address ?? [route, streetNr, city, state].filter(Boolean).join(', '),
+    placeId: place.place_id,
+    precision: place.geometry.location_type,
   };
 }
 
@@ -233,10 +325,10 @@ export async function fetchPlaceDetails(placeId: string): Promise<DraftAddress |
   const service = new places.PlacesService(placesServiceDiv);
   const place = await new Promise<GooglePlace | null>((resolve) => {
     service.getDetails(
-      { placeId, fields: ['address_components', 'formatted_address', 'geometry', 'name'] },
+      { placeId, fields: ['address_components', 'formatted_address', 'geometry', 'name', 'place_id'] },
       (result, status) => resolve(status === 'OK' ? result : null),
     );
   }).catch(() => null);
   if (!place?.geometry?.location) return null;
-  return addressFromGooglePlace(place as GooglePlaceWithGeometry);
+  return addressFromGooglePlace({ ...place, place_id: place.place_id ?? placeId } as GooglePlaceWithGeometry);
 }

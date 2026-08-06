@@ -18,7 +18,10 @@ export class ResourceRepository implements IResourceRepository {
   private readonly resourceCategories = new Map<string, ResourceCategory>();
   private readonly resourceTypes = new Map<string, ResourceType>();
   private readonly resourceSpecifications = new Map<string, ResourceSpecification>();
-  private readonly resourceFunctionSpecifications = new Map<string, ResourceFunctionSpecification>();
+  private readonly resourceFunctionSpecifications = new Map<
+    string,
+    ResourceFunctionSpecification
+  >();
   private readonly physicalResources = new Map<string, PhysicalResource>();
   private readonly logicalResources = new Map<string, LogicalResource>();
   private readonly relationships = new Map<string, ResourceRelationship[]>();
@@ -36,7 +39,8 @@ export class ResourceRepository implements IResourceRepository {
     return fn();
   }
 
-  private readonly categoryOfSpec = (specId: string): string | undefined => this.resourceSpecifications.get(specId)?.category;
+  private readonly categoryOfSpec = (specId: string): string | undefined =>
+    this.resourceSpecifications.get(specId)?.category;
 
   public upsertResourceSpecification(spec: ResourceSpecification): ResourceSpecification {
     const stored = cloneResourceSpecification(spec);
@@ -55,7 +59,9 @@ export class ResourceRepository implements IResourceRepository {
       .map(cloneResourceSpecification);
   }
 
-  public upsertResourceFunctionSpecification(spec: ResourceFunctionSpecification): ResourceFunctionSpecification {
+  public upsertResourceFunctionSpecification(
+    spec: ResourceFunctionSpecification,
+  ): ResourceFunctionSpecification {
     const stored = cloneResourceFunctionSpecification(spec);
     this.resourceFunctionSpecifications.set(stored.id, stored);
     return cloneResourceFunctionSpecification(stored);
@@ -66,7 +72,9 @@ export class ResourceRepository implements IResourceRepository {
     return spec ? cloneResourceFunctionSpecification(spec) : undefined;
   }
 
-  public listResourceFunctionSpecifications(query?: ResourceFunctionSpecificationQuery): ResourceFunctionSpecification[] {
+  public listResourceFunctionSpecifications(
+    query?: ResourceFunctionSpecificationQuery,
+  ): ResourceFunctionSpecification[] {
     return [...this.resourceFunctionSpecifications.values()]
       .filter((spec) => filterFunctionSpec(spec, query))
       .map(cloneResourceFunctionSpecification);
@@ -93,7 +101,9 @@ export class ResourceRepository implements IResourceRepository {
   public upsertPhysicalResource(resource: PhysicalResource): PhysicalResource {
     const stored = clonePhysicalResource({
       ...resource,
-      resourceRelationship: resource.resourceRelationship.length ? resource.resourceRelationship : this.listResourceRelationships(resource.id),
+      resourceRelationship: resource.resourceRelationship.length
+        ? resource.resourceRelationship
+        : this.listResourceRelationships(resource.id),
     });
     this.physicalResources.set(stored.id, stored);
     return clonePhysicalResource(stored);
@@ -111,13 +121,17 @@ export class ResourceRepository implements IResourceRepository {
   }
 
   public countPhysicalResources(query?: ResourceQuery): number {
-    return [...this.physicalResources.values()].filter((resource) => filterResource(resource, query, this.categoryOfSpec)).length;
+    return [...this.physicalResources.values()].filter((resource) =>
+      filterResource(resource, query, this.categoryOfSpec),
+    ).length;
   }
 
   public upsertLogicalResource(resource: LogicalResource): LogicalResource {
     const stored = cloneLogicalResource({
       ...resource,
-      resourceRelationship: resource.resourceRelationship.length ? resource.resourceRelationship : this.listResourceRelationships(resource.id),
+      resourceRelationship: resource.resourceRelationship.length
+        ? resource.resourceRelationship
+        : this.listResourceRelationships(resource.id),
     });
     this.logicalResources.set(stored.id, stored);
     return cloneLogicalResource(stored);
@@ -135,14 +149,20 @@ export class ResourceRepository implements IResourceRepository {
   }
 
   public countLogicalResources(query?: ResourceQuery): number {
-    return [...this.logicalResources.values()].filter((resource) => filterResource(resource, query, this.categoryOfSpec)).length;
+    return [...this.logicalResources.values()].filter((resource) =>
+      filterResource(resource, query, this.categoryOfSpec),
+    ).length;
   }
 
-  public upsertResourceRelationship(resourceId: string, relationship: ResourceRelationship): ResourceRelationship {
+  public upsertResourceRelationship(
+    resourceId: string,
+    relationship: ResourceRelationship,
+  ): ResourceRelationship {
     const current = this.relationships.get(resourceId) ?? [];
     const next = [
       ...current.filter(
-        (item) => !(item.id === relationship.id && item.relationshipType === relationship.relationshipType),
+        (item) =>
+          !(item.id === relationship.id && item.relationshipType === relationship.relationshipType),
       ),
       cloneRelationship(relationship),
     ];
@@ -163,9 +183,15 @@ export class ResourceRepository implements IResourceRepository {
     return cloneRelationship(relationship);
   }
 
-  public deleteResourceRelationship(resourceId: string, relatedResourceId: string, relationshipType: string): boolean {
+  public deleteResourceRelationship(
+    resourceId: string,
+    relatedResourceId: string,
+    relationshipType: string,
+  ): boolean {
     const current = this.relationships.get(resourceId) ?? [];
-    const next = current.filter((item) => !(item.id === relatedResourceId && item.relationshipType === relationshipType));
+    const next = current.filter(
+      (item) => !(item.id === relatedResourceId && item.relationshipType === relationshipType),
+    );
     this.relationships.set(resourceId, next);
     return next.length !== current.length;
   }
@@ -195,14 +221,20 @@ export class ResourceRepository implements IResourceRepository {
 
 const cloneResourceSpecification = (spec: ResourceSpecification): ResourceSpecification => ({
   ...spec,
-  resourceSpecificationCharacteristic: spec.resourceSpecificationCharacteristic.map((item) => ({ ...item })),
+  resourceSpecificationCharacteristic: spec.resourceSpecificationCharacteristic.map((item) => ({
+    ...item,
+  })),
   relatedParty: spec.relatedParty.map((item) => ({ ...item })),
   ...(spec.validFor ? { validFor: { ...spec.validFor } } : {}),
 });
 
-const cloneResourceFunctionSpecification = (spec: ResourceFunctionSpecification): ResourceFunctionSpecification => ({
+const cloneResourceFunctionSpecification = (
+  spec: ResourceFunctionSpecification,
+): ResourceFunctionSpecification => ({
   ...spec,
-  resourceFunctionSpecificationCharacteristic: spec.resourceFunctionSpecificationCharacteristic.map((item) => ({ ...item })),
+  resourceFunctionSpecificationCharacteristic: spec.resourceFunctionSpecificationCharacteristic.map(
+    (item) => ({ ...item }),
+  ),
   ...(spec.validFor ? { validFor: { ...spec.validFor } } : {}),
 });
 
@@ -246,7 +278,10 @@ const filterSpec = (spec: ResourceSpecification, query?: ResourceSpecificationQu
   return true;
 };
 
-const filterFunctionSpec = (spec: ResourceFunctionSpecification, query?: ResourceFunctionSpecificationQuery): boolean => {
+const filterFunctionSpec = (
+  spec: ResourceFunctionSpecification,
+  query?: ResourceFunctionSpecificationQuery,
+): boolean => {
   if (!query) return true;
   if (query.name && !spec.name.toLowerCase().includes(query.name.toLowerCase())) return false;
   return true;
@@ -262,7 +297,10 @@ const filterResource = (
   if (query.status && resource.status !== query.status) return false;
   if (query.resourceSpecificationIdIn && query.resourceSpecificationIdIn.length > 0) {
     if (!query.resourceSpecificationIdIn.includes(resource.resourceSpecificationId)) return false;
-  } else if (query.resourceSpecificationId && resource.resourceSpecificationId !== query.resourceSpecificationId) {
+  } else if (
+    query.resourceSpecificationId &&
+    resource.resourceSpecificationId !== query.resourceSpecificationId
+  ) {
     return false;
   }
   if (query.resourceTypeIn && query.resourceTypeIn.length > 0) {
@@ -270,9 +308,14 @@ const filterResource = (
   } else if (query.resourceType && resource.resourceType !== query.resourceType) {
     return false;
   }
-  if (query.category && categoryOfSpec?.(resource.resourceSpecificationId) !== query.category) return false;
+  if (query.category && categoryOfSpec?.(resource.resourceSpecificationId) !== query.category)
+    return false;
   if (query.placeId && resource.place?.id !== query.placeId) return false;
   if (query.kind && resource['@type'] !== query.kind) return false;
-  if (query.relatedPartyId && !resource.relatedParty.some((item) => item.id === query.relatedPartyId)) return false;
+  if (
+    query.relatedPartyId &&
+    !resource.relatedParty.some((item) => item.id === query.relatedPartyId)
+  )
+    return false;
   return true;
 };

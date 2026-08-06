@@ -85,3 +85,43 @@ test('database url helpers identify Neon and reject sqlite as the default stack'
   assert.equal(isPostgresDatabaseUrl('postgres://example'), true);
   assert.equal(isPostgresDatabaseUrl('sqlite://./data/nexus.db'), false);
 });
+
+test('loadConfig selects Oracle without consulting PostgreSQL variables', () => {
+  const config = loadConfig({
+    DATABASE_PROVIDER: 'oracle',
+    ORACLE_CONNECT_STRING: 'oracle.example:1521/NEXUS',
+    ORACLE_USER: 'nexus_runtime',
+    ORACLE_PASSWORD: 'secret-from-environment',
+    DATABASE_POOL_MIN: '1',
+    DATABASE_POOL_MAX: '8',
+  });
+
+  assert.equal(config.database?.provider, 'oracle');
+  if (config.database?.provider !== 'oracle') throw new Error('Oracle config expected');
+  assert.equal(config.database.connectString, 'oracle.example:1521/NEXUS');
+  assert.equal(config.database.pool.min, 1);
+  assert.equal(config.database.pool.max, 8);
+});
+
+test('loadConfig rejects incomplete Oracle configuration and invalid providers', () => {
+  assert.throws(
+    () => loadConfig({ DATABASE_PROVIDER: 'oracle', ORACLE_USER: 'nexus_runtime' }),
+    /ORACLE_CONNECT_STRING/,
+  );
+  assert.throws(
+    () => loadConfig({ DATABASE_PROVIDER: 'mysql', DATABASE_URL: 'postgresql://dev.example' }),
+    /DATABASE_PROVIDER/,
+  );
+});
+
+test('loadConfig prohibits automatic schema changes in production', () => {
+  assert.throws(
+    () =>
+      loadConfig({
+        NODE_ENV: 'production',
+        DATABASE_AUTO_SCHEMA: 'true',
+        DATABASE_URL_PROD: 'postgresql://prod.example',
+      }),
+    /not allowed in production/,
+  );
+});

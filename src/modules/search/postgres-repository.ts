@@ -1,4 +1,4 @@
-import { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
+import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 import type { ResearchSession, ResearchMessage, AddMessageInput } from './domain.js';
 
 /**
@@ -6,14 +6,14 @@ import type { ResearchSession, ResearchMessage, AddMessageInput } from './domain
  */
 import type { ResearchMessageRow, ResearchSessionRow } from './rows.js';
 export class PostgresSearchRepository {
-  constructor(private readonly db: PostgresDatabase) {}
+  constructor(private readonly db: DatabaseClient) {}
 
   // ============ RESEARCH SESSIONS ============
 
-  public createSession(session: Omit<ResearchSession, 'createdAt' | 'updatedAt'>): ResearchSession {
+  public async createSession(session: Omit<ResearchSession, 'createdAt' | 'updatedAt'>): Promise<ResearchSession> {
     const now = new Date().toISOString();
 
-    this.db.run(
+    await this.db.run(
       `INSERT INTO research_session
        (id, href, user_id, title, description, context, status, model, temperature, max_tokens, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -33,11 +33,11 @@ export class PostgresSearchRepository {
       ],
     );
 
-    return this.getSession(session.id)!;
+    return (await this.getSession(session.id))!;
   }
 
-  public getSession(id: string): ResearchSession | undefined {
-    const row = this.db.get<ResearchSessionRow>(
+  public async getSession(id: string): Promise<ResearchSession | undefined> {
+    const row = await this.db.get<ResearchSessionRow>(
       `SELECT id, href, user_id, title, description, context, status, model, temperature, max_tokens, created_at, updated_at
        FROM research_session WHERE id = ?`,
       [id],
@@ -45,7 +45,7 @@ export class PostgresSearchRepository {
 
     if (!row) return undefined;
 
-    const messages = this.getSessionMessages(id);
+    const messages = await this.getSessionMessages(id);
 
     return {
       '@type': 'ResearchSession',
@@ -65,8 +65,8 @@ export class PostgresSearchRepository {
     };
   }
 
-  public listSessionsByUser(userId: string, limit = 50): ResearchSession[] {
-    const rows = this.db.all<ResearchSessionRow>(
+  public async listSessionsByUser(userId: string, limit = 50): Promise<ResearchSession[]> {
+    const rows = await this.db.all<ResearchSessionRow>(
       `SELECT id, href, user_id, title, description, context, status, model, temperature, max_tokens, created_at, updated_at
        FROM research_session WHERE user_id = ? AND status != 'deleted'
        ORDER BY created_at DESC
@@ -74,8 +74,8 @@ export class PostgresSearchRepository {
       [userId, limit],
     );
 
-    return rows.map((row) => {
-      const messages = this.getSessionMessages(row.id);
+    return Promise.all(rows.map(async (row) => {
+      const messages = await this.getSessionMessages(row.id);
       return {
         '@type': 'ResearchSession',
         id: row.id,
@@ -92,25 +92,25 @@ export class PostgresSearchRepository {
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
-    });
+    }));
   }
 
-  public updateSessionTitle(sessionId: string, title: string): ResearchSession | undefined {
+  public async updateSessionTitle(sessionId: string, title: string): Promise<ResearchSession | undefined> {
     const now = new Date().toISOString();
-    this.db.run(`UPDATE research_session SET title = ?, updated_at = ? WHERE id = ?`, [title, now, sessionId]);
-    return this.getSession(sessionId);
+    await this.db.run(`UPDATE research_session SET title = ?, updated_at = ? WHERE id = ?`, [title, now, sessionId]);
+    return await this.getSession(sessionId);
   }
 
-  public archiveSession(sessionId: string): ResearchSession | undefined {
+  public async archiveSession(sessionId: string): Promise<ResearchSession | undefined> {
     const now = new Date().toISOString();
-    this.db.run(`UPDATE research_session SET status = 'archived', updated_at = ? WHERE id = ?`, [now, sessionId]);
-    return this.getSession(sessionId);
+    await this.db.run(`UPDATE research_session SET status = 'archived', updated_at = ? WHERE id = ?`, [now, sessionId]);
+    return await this.getSession(sessionId);
   }
 
   // ============ RESEARCH MESSAGES ============
 
-  public addMessage(sessionId: string, message: AddMessageInput & { id: string }): ResearchMessage {
-    this.db.run(
+  public async addMessage(sessionId: string, message: AddMessageInput & { id: string }): Promise<ResearchMessage> {
+    await this.db.run(
       `INSERT INTO research_message (id, research_session_id, role, content, tokens_used, metadata, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -124,11 +124,11 @@ export class PostgresSearchRepository {
       ],
     );
 
-    return this.getMessage(message.id)!;
+    return (await this.getMessage(message.id))!;
   }
 
-  public getMessage(id: string): ResearchMessage | undefined {
-    const row = this.db.get<ResearchMessageRow>(
+  public async getMessage(id: string): Promise<ResearchMessage | undefined> {
+    const row = await this.db.get<ResearchMessageRow>(
       `SELECT id, research_session_id, role, content, tokens_used, metadata, created_at
        FROM research_message WHERE id = ?`,
       [id],
@@ -148,8 +148,8 @@ export class PostgresSearchRepository {
     };
   }
 
-  private getSessionMessages(sessionId: string): ResearchMessage[] {
-    const rows = this.db.all<ResearchMessageRow>(
+  private async getSessionMessages(sessionId: string): Promise<ResearchMessage[]> {
+    const rows = await this.db.all<ResearchMessageRow>(
       `SELECT id, research_session_id, role, content, tokens_used, metadata, created_at
        FROM research_message WHERE research_session_id = ?
        ORDER BY created_at ASC`,

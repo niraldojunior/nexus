@@ -1,17 +1,23 @@
+type Awaitable<T> = T | Promise<T>;
+
 import type { Party, PartyQuery, PartyRelationship, PartyRole, PartyRoleQuery } from './domain.js';
 
 export interface IPartyRepository {
-  transaction<T>(fn: () => T): T;
+  transaction<T>(fn: () => Awaitable<T>): Awaitable<T>;
 
-  upsertParty(party: Party): Party;
-  getParty(id: string): Party | undefined;
-  listParties(query?: PartyQuery): Party[];
+  upsertParty(party: Party): Awaitable<Party>;
+  getParty(id: string): Awaitable<Party | undefined>;
+  listParties(query?: PartyQuery): Awaitable<Party[]>;
 
-  upsertPartyRole(role: PartyRole): PartyRole;
-  getPartyRole(id: string): PartyRole | undefined;
-  listPartyRoles(query?: PartyRoleQuery): PartyRole[];
+  upsertPartyRole(role: PartyRole): Awaitable<PartyRole>;
+  getPartyRole(id: string): Awaitable<PartyRole | undefined>;
+  listPartyRoles(query?: PartyRoleQuery): Awaitable<PartyRole[]>;
 
-  upsertPartyRelationship(relationship: PartyRelationship): PartyRelationship;
-  deletePartyRelationship(partyFromId: string, partyToId: string, relationshipType: string): boolean;
-  listPartyRelationships(partyId: string): PartyRelationship[];
+  upsertPartyRelationship(relationship: PartyRelationship): Awaitable<PartyRelationship>;
+  deletePartyRelationship(
+    partyFromId: string,
+    partyToId: string,
+    relationshipType: string,
+  ): Awaitable<boolean>;
+  listPartyRelationships(partyId: string): Awaitable<PartyRelationship[]>;
 }

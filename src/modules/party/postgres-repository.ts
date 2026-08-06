@@ -1,4 +1,4 @@
-import { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
+import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 import type { Party, PartyQuery, PartyRelationship, PartyRole, PartyRoleQuery } from './domain.js';
 import type { IPartyRepository } from './party-repository-interface.js';
 
@@ -15,22 +15,24 @@ const MANUFACTURER_BOOTSTRAP = [
 ] as const;
 
 export class PostgresPartyRepository implements IPartyRepository {
-  public constructor(private readonly db: PostgresDatabase) {
-    this.seedManufacturerParties();
+  public constructor(private readonly db: DatabaseClient) {}
+
+  public transaction<T>(fn: () => T | Promise<T>): Promise<T> {
+    return this.db.transaction(async () => await fn());
   }
 
-  public transaction<T>(fn: () => T): T {
-    return this.db.transaction(fn);
+  public initialize(): Promise<void> {
+    return this.seedManufacturerParties();
   }
 
-  private seedManufacturerParties(): void {
+  private async seedManufacturerParties(): Promise<void> {
     const now = new Date().toISOString();
-    this.db.transaction(() => {
+    await this.db.transaction(async () => {
       for (const name of MANUFACTURER_BOOTSTRAP) {
         const slug = slugify(name);
         const partyId = `party-${slug}`;
         const roleId = `party-role-${slug}-manufacturer`;
-        this.db.run(
+        await this.db.run(
           `INSERT INTO tmf_party
            (id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -56,7 +58,7 @@ export class PostgresPartyRepository implements IPartyRepository {
             now,
           ],
         );
-        this.db.run(
+        await this.db.run(
           `INSERT INTO tmf_party_role
            (id, href, name, party_id, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -86,9 +88,9 @@ export class PostgresPartyRepository implements IPartyRepository {
     });
   }
 
-  public upsertParty(party: Party): Party {
+  public async upsertParty(party: Party): Promise<Party> {
     const now = new Date().toISOString();
-    this.db.run(
+    await this.db.run(
       `INSERT INTO tmf_party
        (id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -115,11 +117,11 @@ export class PostgresPartyRepository implements IPartyRepository {
       ],
     );
 
-    return this.getParty(party.id) ?? party;
+    return (await this.getParty(party.id)) ?? party;
   }
 
-  public getParty(id: string): Party | undefined {
-    const row = this.db.get<{
+  public async getParty(id: string): Promise<Party | undefined> {
+    const row = await this.db.get<{
       id: string;
       href: string;
       name: string;
@@ -138,7 +140,7 @@ export class PostgresPartyRepository implements IPartyRepository {
     return row ? this.mapParty(row) : undefined;
   }
 
-  public listParties(query?: PartyQuery): Party[] {
+  public async listParties(query?: PartyQuery): Promise<Party[]> {
     const conditions: string[] = [];
     const params: Array<string | number> = [];
 
@@ -173,7 +175,7 @@ export class PostgresPartyRepository implements IPartyRepository {
     if (hasLimit) params.push(query.limit as number);
     if (hasOffset) params.push(query.offset as number);
 
-    const rows = this.db.all<{
+    const rows = await this.db.all<{
       id: string;
       href: string;
       name: string;
@@ -184,12 +186,14 @@ export class PostgresPartyRepository implements IPartyRepository {
       characteristics?: string | null;
     }>(sql, params);
 
-    return rows.map((row) => this.mapParty(row)).filter((party) => filterPartyDocument(party, query?.document));
+    return rows
+      .map((row) => this.mapParty(row))
+      .filter((party) => filterPartyDocument(party, query?.document));
   }
 
-  public upsertPartyRole(role: PartyRole): PartyRole {
+  public async upsertPartyRole(role: PartyRole): Promise<PartyRole> {
     const now = new Date().toISOString();
-    this.db.run(
+    await this.db.run(
       `INSERT INTO tmf_party_role
        (id, href, name, party_id, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -216,11 +220,11 @@ export class PostgresPartyRepository implements IPartyRepository {
       ],
     );
 
-    return this.getPartyRole(role.id) ?? role;
+    return (await this.getPartyRole(role.id)) ?? role;
   }
 
-  public getPartyRole(id: string): PartyRole | undefined {
-    const row = this.db.get<{
+  public async getPartyRole(id: string): Promise<PartyRole | undefined> {
+    const row = await this.db.get<{
       id: string;
       href: string;
       name: string;
@@ -244,7 +248,7 @@ export class PostgresPartyRepository implements IPartyRepository {
     return row ? this.mapRole(row) : undefined;
   }
 
-  public listPartyRoles(query?: PartyRoleQuery): PartyRole[] {
+  public async listPartyRoles(query?: PartyRoleQuery): Promise<PartyRole[]> {
     const conditions: string[] = [];
     const params: Array<string | number> = [];
 
@@ -282,7 +286,7 @@ export class PostgresPartyRepository implements IPartyRepository {
     if (hasLimit) params.push(query.limit as number);
     if (hasOffset) params.push(query.offset as number);
 
-    const rows = this.db.all<{
+    const rows = await this.db.all<{
       id: string;
       href: string;
       name: string;
@@ -299,8 +303,10 @@ export class PostgresPartyRepository implements IPartyRepository {
     return rows.map((row) => this.mapRole(row));
   }
 
-  public upsertPartyRelationship(relationship: PartyRelationship): PartyRelationship {
-    this.db.run(
+  public async upsertPartyRelationship(
+    relationship: PartyRelationship,
+  ): Promise<PartyRelationship> {
+    await this.db.run(
       `INSERT INTO tmf_party_relationship
        (party_from_id, party_to_id, relationship_type, valid_for_start, valid_for_end)
        VALUES (?, ?, ?, ?, ?)
@@ -319,8 +325,12 @@ export class PostgresPartyRepository implements IPartyRepository {
     return relationship;
   }
 
-  public deletePartyRelationship(partyFromId: string, partyToId: string, relationshipType: string): boolean {
-    const result = this.db.run(
+  public async deletePartyRelationship(
+    partyFromId: string,
+    partyToId: string,
+    relationshipType: string,
+  ): Promise<boolean> {
+    const result = await this.db.run(
       `DELETE FROM tmf_party_relationship
        WHERE party_from_id = ? AND party_to_id = ? AND relationship_type = ?`,
       [partyFromId, partyToId, relationshipType],
@@ -328,8 +338,8 @@ export class PostgresPartyRepository implements IPartyRepository {
     return result.changes > 0;
   }
 
-  public listPartyRelationships(partyId: string): PartyRelationship[] {
-    const rows = this.db.all<{
+  public async listPartyRelationships(partyId: string): Promise<PartyRelationship[]> {
+    const rows = await this.db.all<{
       party_from_id: string;
       party_to_id: string;
       relationship_type: string;
@@ -414,7 +424,9 @@ export class PostgresPartyRepository implements IPartyRepository {
         href: row.party_href,
         name: row.party_name,
       },
-      partyRoleCharacteristic: JSON.parse(row.characteristics || '[]') as PartyRole['partyRoleCharacteristic'],
+      partyRoleCharacteristic: JSON.parse(
+        row.characteristics || '[]',
+      ) as PartyRole['partyRoleCharacteristic'],
     };
 
     if (row.valid_for_start || row.valid_for_end) {

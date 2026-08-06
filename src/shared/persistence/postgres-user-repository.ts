@@ -1,4 +1,4 @@
-import { PostgresDatabase } from './postgres-database.js';
+import type { DatabaseClient } from './database-client.js';
 import { randomUUID } from 'node:crypto';
 
 // Linha crua de `users`. As consultas usam alias (`external_id AS externalId`),
@@ -28,13 +28,13 @@ export type NewUserInput = {
 };
 
 export class PostgresUserRepository {
-  constructor(private db: PostgresDatabase) {}
+  constructor(private db: DatabaseClient) {}
 
-  create(input: NewUserInput): UserRecord {
+  async create(input: NewUserInput): Promise<UserRecord> {
     const id = randomUUID();
     const now = new Date().toISOString();
 
-    this.db.run(
+    await this.db.run(
       `INSERT INTO users (id, external_id, name, email, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [id, input.externalId, input.name, input.email || null, now, now],
@@ -53,8 +53,8 @@ export class PostgresUserRepository {
     return record;
   }
 
-  getById(id: string): UserRecord | undefined {
-    const row = this.db.get<UserRow>(
+  async getById(id: string): Promise<UserRecord | undefined> {
+    const row = await this.db.get<UserRow>(
       `SELECT id, external_id AS externalId, name, email, created_at AS createdAt, updated_at AS updatedAt
        FROM users WHERE id = ?`,
       [id],
@@ -74,8 +74,8 @@ export class PostgresUserRepository {
     return record;
   }
 
-  getByExternalId(externalId: string): UserRecord | undefined {
-    const row = this.db.get<UserRow>(
+  async getByExternalId(externalId: string): Promise<UserRecord | undefined> {
+    const row = await this.db.get<UserRow>(
       `SELECT id, external_id AS externalId, name, email, created_at AS createdAt, updated_at AS updatedAt
        FROM users WHERE external_id = ?`,
       [externalId],
@@ -96,8 +96,8 @@ export class PostgresUserRepository {
     return record;
   }
 
-  list(): UserRecord[] {
-    const rows = this.db.all<UserRow>(
+  async list(): Promise<UserRecord[]> {
+    const rows = await this.db.all<UserRow>(
       `SELECT id, external_id AS externalId, name, email, created_at AS createdAt, updated_at AS updatedAt
        FROM users ORDER BY created_at DESC`,
     );
@@ -114,28 +114,28 @@ export class PostgresUserRepository {
     });
   }
 
-  update(id: string, input: Partial<NewUserInput>): UserRecord | undefined {
-    const existing = this.getById(id);
+  async update(id: string, input: Partial<NewUserInput>): Promise<UserRecord | undefined> {
+    const existing = await this.getById(id);
     if (!existing) return undefined;
 
     const now = new Date().toISOString();
-    this.db.run(
-      `UPDATE users SET name = ?, email = ?, updated_at = ? WHERE id = ?`,
-      [input.name || existing.name, input.email || existing.email || null, now, id],
-    );
+    await this.db.run(`UPDATE users SET name = ?, email = ?, updated_at = ? WHERE id = ?`, [
+      input.name || existing.name,
+      input.email || existing.email || null,
+      now,
+      id,
+    ]);
 
-    return this.getById(id);
+    return await this.getById(id);
   }
 
-  delete(id: string): boolean {
-    const result = this.db.run(`DELETE FROM users WHERE id = ?`, [id]);
+  async delete(id: string): Promise<boolean> {
+    const result = await this.db.run(`DELETE FROM users WHERE id = ?`, [id]);
     return result.changes > 0;
   }
 
-  count(): number {
-    const result = this.db.get<{ count: number }>(
-      `SELECT COUNT(*) as count FROM users`,
-    );
+  async count(): Promise<number> {
+    const result = await this.db.get<{ count: number }>(`SELECT COUNT(*) as count FROM users`);
     return result?.count || 0;
   }
 }

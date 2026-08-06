@@ -1,3 +1,5 @@
+type Awaitable<T> = T | Promise<T>;
+
 import type { TmfEvent, TmfEventQuery } from './types.js';
 
 export type AppendEventInput = Omit<TmfEvent, '@type' | 'id' | 'eventTime'> & {
@@ -6,7 +8,7 @@ export type AppendEventInput = Omit<TmfEvent, '@type' | 'id' | 'eventTime'> & {
 };
 
 export interface IEventRepository {
-  appendEvent(event: TmfEvent): TmfEvent;
-  getEvent(id: string): TmfEvent | undefined;
-  listEvents(query?: TmfEventQuery): TmfEvent[];
+  appendEvent(event: TmfEvent): Awaitable<TmfEvent>;
+  getEvent(id: string): Awaitable<TmfEvent | undefined>;
+  listEvents(query?: TmfEventQuery): Awaitable<TmfEvent[]>;
 }

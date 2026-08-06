@@ -54,6 +54,24 @@ describe('resourceIconFor', () => {
     expect(resourceIconFor({ resourceType: 'Port' }).label).toBe('Porta');
     expect(resourceIconFor({ resourceType: 'DropCable' }).label).toBe('Cabo drop');
   });
+
+  it('legenda a CTO por status: vermelho suspenso, verde escuro ativo, laranja no resto', () => {
+    expect(resourceIconFor({ resourceType: 'CTO', status: 'suspended' }).color).toBe('#ef4444');
+    expect(resourceIconFor({ resourceType: 'CTO', status: 'active' }).color).toBe('#047857');
+    expect(resourceIconFor({ resourceType: 'CTO', status: 'planned' }).color).toBe(familyColor.passive);
+    expect(resourceIconFor({ resourceType: 'CTO', status: 'terminated' }).color).toBe(familyColor.passive);
+    expect(resourceIconFor({ resourceType: 'CTO' }).color).toBe(familyColor.passive);
+  });
+
+  it('não estende a legenda de status a outros tipos passivos', () => {
+    expect(resourceIconFor({ resourceType: 'Splitter', status: 'active' }).color).toBe(familyColor.passive);
+    expect(resourceIconFor({ resourceType: 'DIO', status: 'suspended' }).color).toBe(familyColor.passive);
+  });
+
+  it('ignora status quando o recurso é passado só como código de tipo (string)', () => {
+    // A forma string não carrega status — cai sempre na cor padrão da família.
+    expect(resourceIconFor('CTO').color).toBe(familyColor.passive);
+  });
 });
 
 describe('resourceIconSvg', () => {
@@ -75,6 +93,22 @@ describe('resourceIconSvg', () => {
     const url = resourceIconDataUrl(resourceIconFor({ resourceType: 'Splitter' }));
     expect(url.startsWith('data:image/svg+xml;charset=UTF-8,')).toBe(true);
     expect(decodeURIComponent(url.split(',')[1])).toContain('<svg');
+  });
+
+  it('não deixa o cache por code+tamanho misturar a cor de duas CTOs com status diferente', () => {
+    // Regressão: o cache de resourceIconDataUrl era chaveado só por code+tamanho+anel.
+    // Como CTO passou a variar de cor por status (mesmo code, cores diferentes), o
+    // primeiro data-URL gerado "vencia" o cache e todo CTO seguinte saía com a cor
+    // errada — era isso que fazia toda CTO aparecer verde no mapa.
+    const active = resourceIconDataUrl(resourceIconFor({ resourceType: 'CTO', status: 'active' }));
+    const suspended = resourceIconDataUrl(resourceIconFor({ resourceType: 'CTO', status: 'suspended' }));
+    const other = resourceIconDataUrl(resourceIconFor({ resourceType: 'CTO', status: 'planned' }));
+
+    expect(decodeURIComponent(active)).toContain('#047857');
+    expect(decodeURIComponent(suspended)).toContain('#ef4444');
+    expect(decodeURIComponent(other)).toContain(familyColor.passive);
+    expect(active).not.toBe(suspended);
+    expect(active).not.toBe(other);
   });
 });
 

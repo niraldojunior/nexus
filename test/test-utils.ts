@@ -7,7 +7,7 @@ import { TABLE_NAMES } from '../src/shared/persistence/schema.js';
 
 loadEnv();
 
-const reuseInstance = process.env.DATABASE_REUSE_TEST_INSTANCE === 'true';
+const reuseInstance = (): boolean => process.env.DATABASE_REUSE_TEST_INSTANCE === 'true';
 // Every test file assigned to the same Vitest worker shares one schema, so the schema, its DDL and
 // the DB connection are set up once per worker instead of once per test. VITEST_POOL_ID is the pool
 // slot (1..maxThreads), stable for the worker's lifetime and unique across concurrent workers —
@@ -32,10 +32,10 @@ const TRUNCATE_SQL = `TRUNCATE TABLE ${TABLE_NAMES.map((table) => `"${table}"`).
 
 // Called from the global afterEach (test/setup.ts). Wipes the shared schema's data so the next test
 // starts clean. Best-effort: a test may have created the schema without yet running the DDL.
-export const truncateTestSchema = (): void => {
-  if (!reuseInstance || !schemaReady || !workerDatabaseUrl) return;
+export const truncateTestSchema = async (): Promise<void> => {
+  if (!reuseInstance() || !schemaReady || !workerDatabaseUrl) return;
   try {
-    PostgresDatabase.getInstance(workerDatabaseUrl).exec(TRUNCATE_SQL);
+    await PostgresDatabase.getInstance(workerDatabaseUrl).exec(TRUNCATE_SQL);
   } catch {
     // Ignore: schema/tables may not exist yet, or the instance was closed by an HTTP-app test.
   }
@@ -58,16 +58,20 @@ export const createTestConfig = (port: number, databaseUrl: string) => ({
   port,
 });
 
-export const createTestDatabase = (prefix: string): { databaseUrl: string; cleanup: () => void } => {
+export const createTestDatabase = (
+  prefix: string,
+): { databaseUrl: string; cleanup: () => void } => {
   const postgresUrl = resolvePostgresUrl();
 
   if (!isPostgresDatabaseUrl(postgresUrl)) {
-    throw new Error('DATABASE_URL_TEST, NEON_DATABASE_URL_TEST, DATABASE_URL_DEV or NEON_DATABASE_URL_DEV must point to Neon/Postgres for integration tests.');
+    throw new Error(
+      'DATABASE_URL_TEST, NEON_DATABASE_URL_TEST, DATABASE_URL_DEV or NEON_DATABASE_URL_DEV must point to Neon/Postgres for integration tests.',
+    );
   }
 
   process.env.DATABASE_AUTO_SCHEMA = process.env.DATABASE_AUTO_SCHEMA ?? 'true';
 
-  if (reuseInstance) {
+  if (reuseInstance()) {
     // Reuse mode: one stable schema per worker, created once and reused across every test. Data is
     // cleared by the global afterEach TRUNCATE; the schema is dropped once at end of run
     // (test/global-setup.ts). cleanup() is therefore a no-op kept for call-site compatibility.
@@ -102,7 +106,8 @@ export const createTestDatabase = (prefix: string): { databaseUrl: string; clean
 };
 
 const createSchemaName = (prefix: string): string => {
-  const normalizedPrefix = prefix.replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_+|_+$/g, '') || 'nexus_test';
+  const normalizedPrefix =
+    prefix.replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_+|_+$/g, '') || 'nexus_test';
   const suffix = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
   return `${normalizedPrefix}_${suffix}`.slice(0, 63);
 };
@@ -129,7 +134,9 @@ export const requestJson = async (
         method,
         headers: {
           authorization: 'Bearer secret',
-          ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {}),
+          ...(payload
+            ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
+            : {}),
         },
       },
       (res) => {
@@ -152,12 +159,16 @@ export const requestJson = async (
 
 export const startHttpTestApp = async (prefix: string) => {
   const database = createTestDatabase(prefix);
-  const server = createApp({ config: createTestConfig(0, database.databaseUrl), logger: createTestLogger() });
+  const server = createApp({
+    config: createTestConfig(0, database.databaseUrl),
+    logger: createTestLogger(),
+  });
   const port = await server.start();
 
   return {
     port,
-    requestJson: (method: string, path: string, body?: unknown) => requestJson(port, method, path, body),
+    requestJson: (method: string, path: string, body?: unknown) =>
+      requestJson(port, method, path, body),
     cleanup: async () => {
       await server.stop();
       database.cleanup();

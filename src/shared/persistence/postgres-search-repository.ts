@@ -1,4 +1,4 @@
-import { PostgresDatabase } from './postgres-database.js';
+import type { DatabaseClient } from './database-client.js';
 import { randomUUID } from 'node:crypto';
 
 // Linha crua de `searches`. As consultas usam alias, entao os nomes ja chegam em
@@ -29,13 +29,13 @@ export type NewSearchInput = {
 };
 
 export class PostgresSearchRepository {
-  constructor(private db: PostgresDatabase) {}
+  constructor(private db: DatabaseClient) {}
 
-  create(input: NewSearchInput): SearchRecord {
+  async create(input: NewSearchInput): Promise<SearchRecord> {
     const id = randomUUID();
     const now = new Date().toISOString();
 
-    this.db.run(
+    await this.db.run(
       `INSERT INTO searches (id, user_id, query, filters, results, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [
@@ -61,8 +61,8 @@ export class PostgresSearchRepository {
     return record;
   }
 
-  getById(id: string): SearchRecord | undefined {
-    const row = this.db.get<SearchRow>(
+  async getById(id: string): Promise<SearchRecord | undefined> {
+    const row = await this.db.get<SearchRow>(
       `SELECT id, user_id AS userId, query, filters, results, created_at AS createdAt
        FROM searches WHERE id = ?`,
       [id],
@@ -82,8 +82,8 @@ export class PostgresSearchRepository {
     return record;
   }
 
-  listByUserId(userId: string): SearchRecord[] {
-    const rows = this.db.all<SearchRow>(
+  async listByUserId(userId: string): Promise<SearchRecord[]> {
+    const rows = await this.db.all<SearchRow>(
       `SELECT id, user_id AS userId, query, filters, results, created_at AS createdAt
        FROM searches WHERE user_id = ? ORDER BY created_at DESC`,
       [userId],
@@ -102,8 +102,8 @@ export class PostgresSearchRepository {
     });
   }
 
-  list(): SearchRecord[] {
-    const rows = this.db.all<SearchRow>(
+  async list(): Promise<SearchRecord[]> {
+    const rows = await this.db.all<SearchRow>(
       `SELECT id, user_id AS userId, query, filters, results, created_at AS createdAt
        FROM searches ORDER BY created_at DESC`,
     );
@@ -121,42 +121,45 @@ export class PostgresSearchRepository {
     });
   }
 
-  update(id: string, input: Partial<NewSearchInput>): SearchRecord | undefined {
-    const existing = this.getById(id);
+  async update(id: string, input: Partial<NewSearchInput>): Promise<SearchRecord | undefined> {
+    const existing = await this.getById(id);
     if (!existing) return undefined;
 
-    this.db.run(
-      `UPDATE searches SET query = ?, filters = ?, results = ? WHERE id = ?`,
-      [
-        input.query || existing.query,
-        input.filters ? JSON.stringify(input.filters) : (existing.filters ? JSON.stringify(existing.filters) : null),
-        input.results ? JSON.stringify(input.results) : (existing.results ? JSON.stringify(existing.results) : null),
-        id,
-      ],
-    );
+    await this.db.run(`UPDATE searches SET query = ?, filters = ?, results = ? WHERE id = ?`, [
+      input.query || existing.query,
+      input.filters
+        ? JSON.stringify(input.filters)
+        : existing.filters
+          ? JSON.stringify(existing.filters)
+          : null,
+      input.results
+        ? JSON.stringify(input.results)
+        : existing.results
+          ? JSON.stringify(existing.results)
+          : null,
+      id,
+    ]);
 
-    return this.getById(id);
+    return await this.getById(id);
   }
 
-  delete(id: string): boolean {
-    const result = this.db.run(`DELETE FROM searches WHERE id = ?`, [id]);
+  async delete(id: string): Promise<boolean> {
+    const result = await this.db.run(`DELETE FROM searches WHERE id = ?`, [id]);
     return result.changes > 0;
   }
 
-  deleteByUserId(userId: string): number {
-    const result = this.db.run(`DELETE FROM searches WHERE user_id = ?`, [userId]);
+  async deleteByUserId(userId: string): Promise<number> {
+    const result = await this.db.run(`DELETE FROM searches WHERE user_id = ?`, [userId]);
     return result.changes;
   }
 
-  count(): number {
-    const result = this.db.get<{ count: number }>(
-      `SELECT COUNT(*) as count FROM searches`,
-    );
+  async count(): Promise<number> {
+    const result = await this.db.get<{ count: number }>(`SELECT COUNT(*) as count FROM searches`);
     return result?.count || 0;
   }
 
-  countByUserId(userId: string): number {
-    const result = this.db.get<{ count: number }>(
+  async countByUserId(userId: string): Promise<number> {
+    const result = await this.db.get<{ count: number }>(
       `SELECT COUNT(*) as count FROM searches WHERE user_id = ?`,
       [userId],
     );

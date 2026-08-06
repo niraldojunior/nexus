@@ -1,7 +1,16 @@
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import type { EventService } from '../../shared/tmf/index.js';
-import type { CreatePartyInput, CreatePartyRoleInput, Party, PartyQuery, PartyRole, PartyRoleQuery, UpdatePartyInput, UpdatePartyRoleInput } from './domain.js';
+import type {
+  CreatePartyInput,
+  CreatePartyRoleInput,
+  Party,
+  PartyQuery,
+  PartyRole,
+  PartyRoleQuery,
+  UpdatePartyInput,
+  UpdatePartyRoleInput,
+} from './domain.js';
 import type { IPartyRepository } from './party-repository-interface.js';
 
 export class PartyService {
@@ -10,7 +19,7 @@ export class PartyService {
     private readonly eventService: EventService,
   ) {}
 
-  public createParty(input: CreatePartyInput): Party {
+  public async createParty(input: CreatePartyInput): Promise<Party> {
     assertName(input.name);
     const partyType = input.partyType ?? 'Organization';
     const id = createCanonicalId();
@@ -25,17 +34,17 @@ export class PartyService {
       ...(input.validFor ? { validFor: input.validFor } : {}),
     };
 
-    const stored = this.repository.upsertParty(party);
+    const stored = await this.repository.upsertParty(party);
 
-    this.emit('PartyCreateEvent', stored.id, stored);
+    await this.emit('PartyCreateEvent', stored.id, stored);
     return stored;
   }
 
-  public updateParty(id: string, input: UpdatePartyInput): Party {
-    const current = this.getPartyOrThrow(id);
+  public async updateParty(id: string, input: UpdatePartyInput): Promise<Party> {
+    const current = await this.getPartyOrThrow(id);
     if (input.name !== undefined) assertName(input.name);
 
-    const updated = this.repository.upsertParty({
+    const updated = await this.repository.upsertParty({
       ...current,
       name: input.name !== undefined ? input.name.trim() : current.name,
       partyType: input.partyType ?? current.partyType,
@@ -44,33 +53,33 @@ export class PartyService {
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
     });
 
-    this.emit('PartyAttributeValueChangeEvent', updated.id, updated);
+    await this.emit('PartyAttributeValueChangeEvent', updated.id, updated);
     return updated;
   }
 
-  public deleteParty(id: string): Party {
-    const current = this.getPartyOrThrow(id);
+  public async deleteParty(id: string): Promise<Party> {
+    const current = await this.getPartyOrThrow(id);
     const endedAt = new Date().toISOString();
-    const terminated = this.repository.upsertParty({
+    const terminated = await this.repository.upsertParty({
       ...current,
       status: 'terminated',
       validFor: buildTimePeriod(current.validFor?.startDateTime, endedAt),
     });
-    this.emit('PartyAttributeValueChangeEvent', terminated.id, terminated);
+    await this.emit('PartyAttributeValueChangeEvent', terminated.id, terminated);
     return terminated;
   }
 
-  public getParty(id: string): Party | undefined {
-    return this.repository.getParty(id);
+  public async getParty(id: string): Promise<Party | undefined> {
+    return await this.repository.getParty(id);
   }
 
-  public listParties(query?: PartyQuery): Party[] {
-    return this.repository.listParties(query);
+  public async listParties(query?: PartyQuery): Promise<Party[]> {
+    return await this.repository.listParties(query);
   }
 
-  public createPartyRole(input: CreatePartyRoleInput): PartyRole {
+  public async createPartyRole(input: CreatePartyRoleInput): Promise<PartyRole> {
     assertName(input.name);
-    const party = this.getPartyOrThrow(input.partyId);
+    const party = await this.getPartyOrThrow(input.partyId);
     const id = createCanonicalId();
     const role: PartyRole = {
       '@type': 'PartyRole',
@@ -89,16 +98,16 @@ export class PartyService {
       ...(input.validFor ? { validFor: input.validFor } : {}),
     };
 
-    const stored = this.repository.upsertPartyRole(role);
-    this.emit('PartyRoleCreateEvent', stored.id, stored);
+    const stored = await this.repository.upsertPartyRole(role);
+    await this.emit('PartyRoleCreateEvent', stored.id, stored);
     return stored;
   }
 
-  public updatePartyRole(id: string, input: UpdatePartyRoleInput): PartyRole {
-    const current = this.getPartyRoleOrThrow(id);
+  public async updatePartyRole(id: string, input: UpdatePartyRoleInput): Promise<PartyRole> {
+    const current = await this.getPartyRoleOrThrow(id);
     if (input.name !== undefined) assertName(input.name);
 
-    const updated = this.repository.upsertPartyRole({
+    const updated = await this.repository.upsertPartyRole({
       ...current,
       name: input.name !== undefined ? input.name.trim() : current.name,
       status: input.status ?? current.status,
@@ -106,31 +115,35 @@ export class PartyService {
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
     });
 
-    this.emit('PartyRoleAttributeValueChangeEvent', updated.id, updated);
+    await this.emit('PartyRoleAttributeValueChangeEvent', updated.id, updated);
     return updated;
   }
 
-  public deletePartyRole(id: string): PartyRole {
-    const current = this.getPartyRoleOrThrow(id);
-    const terminated = this.repository.upsertPartyRole({
+  public async deletePartyRole(id: string): Promise<PartyRole> {
+    const current = await this.getPartyRoleOrThrow(id);
+    const terminated = await this.repository.upsertPartyRole({
       ...current,
       status: 'terminated',
       validFor: buildTimePeriod(current.validFor?.startDateTime, new Date().toISOString()),
     });
-    this.emit('PartyRoleAttributeValueChangeEvent', terminated.id, terminated);
+    await this.emit('PartyRoleAttributeValueChangeEvent', terminated.id, terminated);
     return terminated;
   }
 
-  public getPartyRole(id: string): PartyRole | undefined {
-    return this.repository.getPartyRole(id);
+  public async getPartyRole(id: string): Promise<PartyRole | undefined> {
+    return await this.repository.getPartyRole(id);
   }
 
-  public listPartyRoles(query?: PartyRoleQuery): PartyRole[] {
-    return this.repository.listPartyRoles(query);
+  public async listPartyRoles(query?: PartyRoleQuery): Promise<PartyRole[]> {
+    return await this.repository.listPartyRoles(query);
   }
 
-  private emit(eventType: string, entityId: string, payload: Party | PartyRole): void {
-    this.eventService.appendEvent({
+  private async emit(
+    eventType: string,
+    entityId: string,
+    payload: Party | PartyRole,
+  ): Promise<void> {
+    await this.eventService.appendEvent({
       eventType,
       source: `party.${payload['@type']}`,
       correlationId: entityId,
@@ -142,15 +155,20 @@ export class PartyService {
     });
   }
 
-  private getPartyOrThrow(id: string): Party {
-    const party = this.repository.getParty(id);
-    if (!party) throw new AppError('party not found', { code: 'TMF_PARTY_NOT_FOUND', statusCode: 404 });
+  private async getPartyOrThrow(id: string): Promise<Party> {
+    const party = await this.repository.getParty(id);
+    if (!party)
+      throw new AppError('party not found', { code: 'TMF_PARTY_NOT_FOUND', statusCode: 404 });
     return party;
   }
 
-  private getPartyRoleOrThrow(id: string): PartyRole {
-    const role = this.repository.getPartyRole(id);
-    if (!role) throw new AppError('party role not found', { code: 'TMF_PARTY_ROLE_NOT_FOUND', statusCode: 404 });
+  private async getPartyRoleOrThrow(id: string): Promise<PartyRole> {
+    const role = await this.repository.getPartyRole(id);
+    if (!role)
+      throw new AppError('party role not found', {
+        code: 'TMF_PARTY_ROLE_NOT_FOUND',
+        statusCode: 404,
+      });
     return role;
   }
 }
@@ -161,7 +179,10 @@ const assertName = (value: unknown): void => {
   }
 };
 
-const buildTimePeriod = (startDateTime: string | undefined, endDateTime: string): { startDateTime?: string; endDateTime: string } => {
+const buildTimePeriod = (
+  startDateTime: string | undefined,
+  endDateTime: string,
+): { startDateTime?: string; endDateTime: string } => {
   const period: { startDateTime?: string; endDateTime: string } = { endDateTime };
   if (startDateTime) {
     period.startDateTime = startDateTime;

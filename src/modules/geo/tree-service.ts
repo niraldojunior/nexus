@@ -5,18 +5,29 @@
 // Existe separado de `GeoService`/`IGeoRepository` de propósito: a consulta cruza
 // os módulos Geo (Site/Address/Location) e Resource (planta e grafo de
 // relacionamentos), e é uma projeção de leitura — não faz parte do contrato TMF de
-// nenhum dos dois. Por isso fala com o `PostgresDatabase` direto, como os demais
+// nenhum dos dois. Por isso fala com o `DatabaseClient` direto, como os demais
 // `Postgres*Repository`, e o `GeoRepository` em memória dos testes unitários não
 // precisa implementá-la.
 //
 // A regra que rege tudo aqui é: **um nível por chamada**. A árvore inteira tem
 // dezenas de milhares de recursos; a UI só pede os filhos diretos do nó que o
 // usuário expandiu, e `hasChildren` sai de um EXISTS para o "+" custar barato.
+//
+// Dois itens são "internos" — têm existência própria no acervo, mas não no mapa nem
+// na árvore: Splitter (reaproveita a Location da caixa que o contém, C2) e Sub-Site
+// (sala/andar dentro de uma Estação). Os dois continuam acessíveis pelo painel de
+// detalhe (`scope: 'all'`); a navegação (`scope: 'tree'`, o default) esconde os
+// dois — e, para o Splitter, faz *pass-through*: o que pende dele (cabo secundário,
+// CTO…) sobe um nível, para nada ficar inalcançável pela árvore.
 
-import type { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
+import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 import type { GeoJSONGeometry } from './domain.js';
 
 export type GeoTreeNodeKind = 'uf' | 'city' | 'group' | 'site' | 'resource';
+
+// 'tree' (default) — navegação: esconde item interno (Splitter, Sub-Site).
+// 'all' — painel de detalhe: devolve tudo, sem filtro.
+export type GeoTreeScope = 'tree' | 'all';
 
 export type GeoTreeNode = {
   // Chave estável e auto-descritiva — é ela que a UI devolve em `nodeId` para
@@ -61,6 +72,23 @@ export type GeoTreeChildrenPage = {
 // (porta → cabo primário → splitter → cabo secundário → CTO → drop → ONT).
 // `mountedOn` fica de fora: o poste sustenta o CDOE, não é filho dele.
 const TREE_EDGE_TYPES = ['containsAsChild', 'connectedTo'] as const;
+
+// Code do catálogo TMF634 (ver `src/modules/resource/catalog.ts`) que não tem
+// existência própria na navegação: o Splitter reaproveita a Location da caixa que
+// o contém, então um pin dele no mapa cairia em cima do pin da caixa. Se algum dia
+// entrar um segundo tipo interno, os predicados abaixo (marcados "— Splitter")
+// precisam virar um IN (...) em vez do `= 'Splitter'` literal.
+const INTERNAL_RESOURCE_TYPE = 'Splitter';
+
+// Profundidade máxima da cadeia de itens internos ao fazer pass-through (splitter →
+// splitter → …). Splitter encadeado direto em outro splitter é exceção de dado, não
+// a regra — a guarda existe só para a CTE recursiva nunca rodar sem teto.
+const PASS_THROUGH_MAX_DEPTH = 4;
+
+// Teto de saltos ao subir o grafo em `pathTo` — porta→cabo→splitter→cabo→CTO→drop→ONT
+// já é uma cadeia longa de verdade; isto é só a válvula contra um `connectedTo` cíclico
+// nos dados fazendo a recursão nunca terminar.
+const PATH_MAX_DEPTH = 100;
 
 const SEM_UF = 'Sem UF';
 const SEM_MUNICIPIO = 'Sem município';
@@ -107,7 +135,7 @@ type ResourceRow = {
 };
 
 export class GeoTreeService {
-  public constructor(private readonly db: PostgresDatabase) {}
+  public constructor(private readonly db: DatabaseClient) {}
 
   /**
    * Abertura da página: UF → Município → pasta Estações → Estação, de uma vez.
@@ -115,8 +143,8 @@ export class GeoTreeService {
    * pedir isso em quatro idas ao servidor só adicionaria latência. Vem em lista
    * plana com `parentId`, para o cliente indexar sem recursão.
    */
-  public roots(): Array<GeoTreeNode & { parentId: string | null }> {
-    const stations = this.listStationRows();
+  public async roots(): Promise<Array<GeoTreeNode & { parentId: string | null }>> {
+    const stations = await this.listStationRows();
 
     const byUf = new Map<string, Map<string, SiteRow[]>>();
     for (const station of stations) {
@@ -180,12 +208,13 @@ export class GeoTreeService {
    * Infra passiva (recursos Physical/Logical, pontuais ou cabos) dentro de um bbox do
    * mapa — a fonte do mapa quando a escala está em zoom de detalhe (≤ 200 m), em vez da
    * expansão da árvore. Um cabo entra se qualquer vértice da rota cair no bbox; um ponto
-   * entra se a própria coordenada cair. `status = 'terminated'` fica de fora (C6).
+   * entra se a própria coordenada cair. `status = 'terminated'` fica de fora (C6), e
+   * Splitter também — ele não tem ponto próprio no mapa (mora na Location da caixa).
    */
-  public resourcesInViewport(
+  public async resourcesInViewport(
     bounds: { minLng: number; minLat: number; maxLng: number; maxLat: number },
     options: { limit?: number } = {},
-  ): GeoTreeNode[] {
+  ): Promise<GeoTreeNode[]> {
     // Diferente da árvore (paginada de 500), o viewport devolve TUDO que cai na área
     // visível: um bairro denso passa de mil caixas, e truncar em 500 deixava regiões
     // inteiras vazias no mapa. Como a busca só roda em escala de detalhe (≤ 200 m), a
@@ -199,27 +228,29 @@ export class GeoTreeService {
 
     // Sem ORDER BY: o mapa não precisa de ordem, e ordenar por nome enviesava o corte do
     // LIMIT (devolvia os 500 primeiros nomes, sumindo com bairros inteiros).
-    const rows = this.db.all<ResourceRow>(
+    const rows = await this.db.all<ResourceRow>(
       `SELECT * FROM (${VIEWPORT_RESOURCE_SOURCE}) AS t LIMIT ?`,
       [...bboxQuad, ...bboxQuad, ...bboxQuad, ...bboxQuad, limit],
     );
 
-    return this.toResourceNodes(rows);
+    return await this.toResourceNodes(rows, 'tree');
   }
 
   /**
    * Busca por nome para a barra de pesquisa: Estações (Site, nunca SubSite — sala/andar
-   * não é alvo de busca) e Recursos (physical/logical), por substring case-insensitive.
-   * Devolve `GeoTreeNode[]` para reaproveitar o mesmo desenho de mapa/detalhe/seleção
-   * que a árvore já usa — quem chama trata o resultado como um nó qualquer.
+   * não é alvo de busca) e Recursos (physical/logical, Splitter incluso — diferente do
+   * mapa e da árvore, buscar pelo nome do splitter continua encontrando-o), por substring
+   * case-insensitive. Devolve `GeoTreeNode[]` para reaproveitar o mesmo desenho de
+   * mapa/detalhe/seleção que a árvore já usa — quem chama trata o resultado como um nó
+   * qualquer.
    */
-  public search(term: string, options: { limit?: number } = {}): GeoTreeNode[] {
+  public async search(term: string, options: { limit?: number } = {}): Promise<GeoTreeNode[]> {
     const trimmed = term.trim();
     if (!trimmed) return [];
     const limit = clamp(options.limit ?? SEARCH_MAX_RESULTS, 1, SEARCH_MAX_RESULTS);
     const like = `%${trimmed}%`;
 
-    const siteRows = this.db.all<SiteRow>(
+    const siteRows = await this.db.all<SiteRow>(
       `${SITE_SELECT}
        WHERE sp.category = 'Site' AND s.status NOT IN ('Retired', 'terminated') AND LOWER(s.name) LIKE LOWER(?)
        ORDER BY s.name
@@ -227,40 +258,91 @@ export class GeoTreeService {
       [like, limit],
     );
 
-    const resourceRows = this.db.all<ResourceRow>(
+    const resourceRows = await this.db.all<ResourceRow>(
       `SELECT * FROM (${SEARCH_RESOURCE_SOURCE}) AS t ORDER BY name LIMIT ?`,
       [like, like, limit],
     );
 
     const nodes: GeoTreeNode[] = [
       ...siteRows.map((row) => this.toSiteNode(row, { hasChildren: true })),
-      ...this.toResourceNodes(resourceRows),
+      ...(await this.toResourceNodes(resourceRows, 'tree')),
     ];
     nodes.sort((left, right) => collator.compare(left.label, right.label));
 
     return nodes.slice(0, limit);
   }
 
-  public children(
-    nodeId: string,
-    options: { limit?: number; offset?: number } = {},
-  ): GeoTreeChildrenPage {
-    const limit = clamp(options.limit ?? DEFAULT_TREE_PAGE_SIZE, 1, MAX_TREE_PAGE_SIZE);
-    const offset = Math.max(0, options.offset ?? 0);
+  /**
+   * Caminho da raiz até um nó (`uf → city → group → site → resource → …`), na forma que
+   * o cliente devolve em `expandedRows` para revelar o nó na árvore.
+   *
+   * Existe porque `roots()` pré-carrega o caminho inteiro de toda Estação (é a mesma
+   * consulta que monta UF/Município/grupo), mas Recurso nunca vem pré-carregado — só
+   * entra no estado do cliente quando um nível é expandido manualmente. Selecionar um
+   * recurso pelo mapa ou pela busca não passa por isso, então sem este método o cliente
+   * não tem como saber a que Estação (e a que cadeia de recursos) ele pertence.
+   *
+   * Sobe o grafo de posse: `place`/`servingSite` para achar o Site dono, ou a aresta de
+   * entrada (`containsAsChild`/`connectedTo`) para achar o recurso pai — e recursa. Um
+   * ancestral interno (Splitter) é pulado do caminho devolvido, espelhando o
+   * *pass-through* de `childrenOfResource` em `scope: 'tree'`: o cliente nunca precisa
+   * expandir um nó que a árvore não mostra.
+   */
+  public async pathTo(nodeId: string, depth = 0): Promise<string[] | null> {
+    if (depth > PATH_MAX_DEPTH) return null;
     const parsed = parseNodeId(nodeId);
 
-    const page = ((): { nodes: GeoTreeNode[]; total: number } => {
+    if (parsed.kind === 'site') {
+      return await this.sitePathPrefix(parsed.rest);
+    }
+
+    if (parsed.kind === 'resource') {
+      const resourceId = parsed.rest;
+      const directSite = await this.findDirectOwningSite(resourceId);
+      if (directSite) {
+        const prefix = await this.sitePathPrefix(directSite);
+        return prefix ? [...prefix, nodeId] : null;
+      }
+
+      const parentEdge = await this.db.get<{ resource_from_id: string }>(
+        `SELECT resource_from_id FROM tmf_resource_relationship
+          WHERE resource_to_id = ? AND relationship_type IN ('containsAsChild', 'connectedTo')
+          LIMIT 1`,
+        [resourceId],
+      );
+      if (!parentEdge) return null; // órfão — nenhum Site nem recurso pai o sustenta
+
+      const parentPath = await this.pathTo(`resource:${parentEdge.resource_from_id}`, depth + 1);
+      if (!parentPath) return null;
+      const parentIsInternal = await this.isInternalResource(parentEdge.resource_from_id);
+      const base = parentIsInternal ? parentPath.slice(0, -1) : parentPath;
+      return [...base, nodeId];
+    }
+
+    return null;
+  }
+
+  public async children(
+    nodeId: string,
+    options: { limit?: number; offset?: number; scope?: GeoTreeScope } = {},
+  ): Promise<GeoTreeChildrenPage> {
+    const limit = clamp(options.limit ?? DEFAULT_TREE_PAGE_SIZE, 1, MAX_TREE_PAGE_SIZE);
+    const offset = Math.max(0, options.offset ?? 0);
+    const scope: GeoTreeScope = options.scope ?? 'tree';
+    const parsed = parseNodeId(nodeId);
+
+    const page = await (async (): Promise<{ nodes: GeoTreeNode[]; total: number }> => {
       switch (parsed.kind) {
         case 'uf':
-          return this.citiesOfUf(parsed.rest);
+          return await this.citiesOfUf(parsed.rest);
         case 'city':
-          return this.groupsOfCity(parsed.rest);
+          return await this.groupsOfCity(parsed.rest);
         case 'group':
-          return this.stationsOfGroup(parsed.rest, limit, offset);
+          return await this.stationsOfGroup(parsed.rest, limit, offset);
         case 'site':
-          return this.childrenOfSite(parsed.rest, limit, offset);
+          return await this.childrenOfSite(parsed.rest, limit, offset, scope);
         case 'resource':
-          return this.childrenOfResource(parsed.rest, limit, offset);
+          return await this.childrenOfResource(parsed.rest, limit, offset, scope);
         default:
           return { nodes: [], total: 0 };
       }
@@ -271,8 +353,10 @@ export class GeoTreeService {
 
   // ------------------------------------------------------------- níveis geo ---
 
-  private citiesOfUf(uf: string): { nodes: GeoTreeNode[]; total: number } {
-    const stations = this.listStationRows().filter((row) => (row.uf?.trim() || SEM_UF) === uf);
+  private async citiesOfUf(uf: string): Promise<{ nodes: GeoTreeNode[]; total: number }> {
+    const stations = (await this.listStationRows()).filter(
+      (row) => (row.uf?.trim() || SEM_UF) === uf,
+    );
     const cities = new Map<string, number>();
     for (const station of stations) {
       const city = station.city?.trim() || SEM_MUNICIPIO;
@@ -290,9 +374,9 @@ export class GeoTreeService {
     return { nodes, total: nodes.length };
   }
 
-  private groupsOfCity(rest: string): { nodes: GeoTreeNode[]; total: number } {
+  private async groupsOfCity(rest: string): Promise<{ nodes: GeoTreeNode[]; total: number }> {
     const [uf, city] = splitPair(rest);
-    const stations = this.listStationRows().filter(
+    const stations = (await this.listStationRows()).filter(
       (row) => (row.uf?.trim() || SEM_UF) === uf && (row.city?.trim() || SEM_MUNICIPIO) === city,
     );
 
@@ -310,14 +394,14 @@ export class GeoTreeService {
     };
   }
 
-  private stationsOfGroup(
+  private async stationsOfGroup(
     rest: string,
     limit: number,
     offset: number,
-  ): { nodes: GeoTreeNode[]; total: number } {
+  ): Promise<{ nodes: GeoTreeNode[]; total: number }> {
     const [uf, city] = splitPair(rest);
     const all = sortRows(
-      this.listStationRows().filter(
+      (await this.listStationRows()).filter(
         (row) => (row.uf?.trim() || SEM_UF) === uf && (row.city?.trim() || SEM_MUNICIPIO) === city,
       ),
     );
@@ -338,32 +422,42 @@ export class GeoTreeService {
    *   (b) `place` = a Location do Site;
    *   (c) planta externa da estação (`servingSite`) que ainda não é filha de
    *       outro recurso — é a raiz de cada ramo da rede na rua.
+   *
+   * Em `scope: 'tree'`, sub-locais nem entram na consulta — são um item interno,
+   * acessíveis só pela aba "Sub-locais" do painel de detalhe (`scope: 'all'`).
    */
-  private childrenOfSite(
+  private async childrenOfSite(
     siteId: string,
     limit: number,
     offset: number,
-  ): { nodes: GeoTreeNode[]; total: number } {
-    const site = this.db.get<{ id: string; geographic_location_id: string | null }>(
+    scope: GeoTreeScope,
+  ): Promise<{ nodes: GeoTreeNode[]; total: number }> {
+    const site = await this.db.get<{ id: string; geographic_location_id: string | null }>(
       'SELECT id, geographic_location_id FROM tmf_geographic_site WHERE id = ?',
       [siteId],
     );
     if (!site) return { nodes: [], total: 0 };
 
-    const subSites = this.db.all<SiteRow>(
-      `${SITE_SELECT}
-       WHERE s.parent_site_id = ? AND s.status NOT IN ('Retired', 'terminated')
-       ORDER BY s.name`,
-      [siteId],
-    );
+    const subSites =
+      scope === 'tree'
+        ? []
+        : await this.db.all<SiteRow>(
+            `${SITE_SELECT}
+             WHERE s.parent_site_id = ? AND s.status NOT IN ('Retired', 'terminated')
+             ORDER BY s.name`,
+            [siteId],
+          );
 
+    const resourceSource = siteResourceSource(scope);
     const resourceParams = [siteId, site.geographic_location_id ?? '', siteId];
     const total =
       subSites.length +
-      (this.db.get<{ n: number }>(`SELECT count(*) AS n FROM (${SITE_RESOURCE_SOURCE}) AS t`, [
-        ...resourceParams,
-        ...resourceParams,
-      ])?.n ?? 0);
+      ((
+        await this.db.get<{ n: number }>(`SELECT count(*) AS n FROM (${resourceSource}) AS t`, [
+          ...resourceParams,
+          ...resourceParams,
+        ])
+      )?.n ?? 0);
 
     // Sub-locais primeiro (o interior do local), depois a planta. A janela de
     // paginação atravessa os dois grupos, por isso o offset desconta os sites.
@@ -373,18 +467,18 @@ export class GeoTreeService {
 
     const nodes: GeoTreeNode[] = [];
     if (siteSlice.length > 0) {
-      const withChildren = this.sitesWithChildren(siteSlice);
+      const withChildren = await this.sitesWithChildren(siteSlice);
       for (const row of siteSlice) {
         nodes.push(this.toSiteNode(row, { hasChildren: withChildren.has(row.id) }));
       }
     }
 
     if (resourceLimit > 0) {
-      const rows = this.db.all<ResourceRow>(
-        `SELECT * FROM (${SITE_RESOURCE_SOURCE}) AS t ORDER BY name, id LIMIT ? OFFSET ?`,
+      const rows = await this.db.all<ResourceRow>(
+        `SELECT * FROM (${resourceSource}) AS t ORDER BY name, id LIMIT ? OFFSET ?`,
         [...resourceParams, ...resourceParams, resourceLimit, resourceOffset],
       );
-      nodes.push(...this.toResourceNodes(rows));
+      nodes.push(...(await this.toResourceNodes(rows, scope)));
     }
 
     return { nodes, total };
@@ -392,23 +486,38 @@ export class GeoTreeService {
 
   // -------------------------------------------------- filhos de um Recurso ---
 
-  private childrenOfResource(
+  /**
+   * Filhos diretos de um recurso. Em `scope: 'tree'`, faz *pass-through* sobre
+   * cadeias de item interno (splitter → splitter → …): o primeiro descendente
+   * visível de cada ramo sobe para este nível, para a árvore nunca ficar com um
+   * "+" que abre em nada.
+   */
+  private async childrenOfResource(
     resourceId: string,
     limit: number,
     offset: number,
-  ): { nodes: GeoTreeNode[]; total: number } {
-    const total =
-      this.db.get<{ n: number }>(`SELECT count(*) AS n FROM (${RESOURCE_CHILD_SOURCE}) AS t`, [
-        resourceId,
-        resourceId,
-      ])?.n ?? 0;
+    scope: GeoTreeScope,
+  ): Promise<{ nodes: GeoTreeNode[]; total: number }> {
+    // DISTINCT só entra em 'tree': o pass-through pode alcançar o mesmo descendente por
+    // mais de um splitter da cadeia (diamante raro, mas possível), e as colunas vêm
+    // idênticas nas duas vezes — dedup por igualdade de linha basta.
+    const source =
+      scope === 'tree'
+        ? `SELECT DISTINCT * FROM (${RESOURCE_CHILD_TREE_SOURCE}) AS dedup`
+        : RESOURCE_CHILD_SOURCE;
+    const countParams = scope === 'tree' ? [resourceId] : [resourceId, resourceId];
+    const rowParams = scope === 'tree' ? [resourceId] : [resourceId, resourceId];
 
-    const rows = this.db.all<ResourceRow>(
-      `SELECT * FROM (${RESOURCE_CHILD_SOURCE}) AS t ORDER BY name, id LIMIT ? OFFSET ?`,
-      [resourceId, resourceId, limit, offset],
+    const total =
+      (await this.db.get<{ n: number }>(`SELECT count(*) AS n FROM (${source}) AS t`, countParams))
+        ?.n ?? 0;
+
+    const rows = await this.db.all<ResourceRow>(
+      `SELECT * FROM (${source}) AS t ORDER BY name, id LIMIT ? OFFSET ?`,
+      [...rowParams, limit, offset],
     );
 
-    return { nodes: this.toResourceNodes(rows), total };
+    return { nodes: await this.toResourceNodes(rows, scope), total };
   }
 
   // ----------------------------------------------------------- montagem -----
@@ -431,8 +540,11 @@ export class GeoTreeService {
     return node;
   }
 
-  private toResourceNodes(rows: ResourceRow[]): GeoTreeNode[] {
-    const childCounts = this.countResourceChildren(rows.map((row) => row.id));
+  private async toResourceNodes(rows: ResourceRow[], scope: GeoTreeScope): Promise<GeoTreeNode[]> {
+    const childCounts = await this.countResourceChildren(
+      rows.map((row) => row.id),
+      scope,
+    );
 
     return rows.map((row) => {
       const node: GeoTreeNode = {
@@ -462,20 +574,94 @@ export class GeoTreeService {
   // Estação = GeographicSite de categoria 'Site' (Região é caminho, Sub-local é
   // interior). UF/Município saem do endereço da própria estação; sem endereço,
   // ela cai nos baldes "Sem …" em vez de sumir da navegação.
-  private listStationRows(): SiteRow[] {
-    return this.db.all<SiteRow>(
+  private async listStationRows(): Promise<SiteRow[]> {
+    return await this.db.all<SiteRow>(
       `${SITE_SELECT}
        WHERE sp.category = 'Site' AND s.status NOT IN ('Retired', 'terminated')
        ORDER BY s.name`,
     );
   }
 
+  // Trecho fixo do caminho — igual ao que roots()/citiesOfUf constroem — para o Site
+  // (Estação) dono da UF/Município dele. Usado por pathTo tanto para o próprio Site
+  // quanto como base de qualquer recurso que pertença a ele.
+  private async sitePathPrefix(siteId: string): Promise<string[] | null> {
+    const row = await this.db.get<{ id: string; city: string | null; uf: string | null }>(
+      `SELECT s.id, a.city, a.state_or_province AS uf
+         FROM tmf_geographic_site s
+         LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id
+        WHERE s.id = ?`,
+      [siteId],
+    );
+    if (!row) return null;
+    const uf = row.uf?.trim() || SEM_UF;
+    const city = row.city?.trim() || SEM_MUNICIPIO;
+    return [
+      `uf:${uf}`,
+      `city:${uf}|${city}`,
+      `group:${uf}|${city}|${GROUP_STATIONS}`,
+      `site:${row.id}`,
+    ];
+  }
+
+  // Site dono do recurso, se a filiação for direta (mesmas três formas de
+  // RESOURCE_AT_SITE_WHERE, na direção inversa: dado o recurso, qual é o Site).
+  // `null` quando o recurso pende de outro recurso — pathTo então sobe pela aresta.
+  private async findDirectOwningSite(resourceId: string): Promise<string | null> {
+    const resource =
+      (await this.db.get<{ place_id: string | null; serving_site_id: string | null }>(
+        'SELECT place_id, serving_site_id FROM tmf_physical_resource WHERE id = ?',
+        [resourceId],
+      )) ??
+      (await this.db.get<{ place_id: string | null; serving_site_id: string | null }>(
+        'SELECT place_id, serving_site_id FROM tmf_logical_resource WHERE id = ?',
+        [resourceId],
+      ));
+    if (!resource) return null;
+
+    if (resource.place_id) {
+      const byOwnId = await this.db.get<{ id: string }>(
+        'SELECT id FROM tmf_geographic_site WHERE id = ?',
+        [resource.place_id],
+      );
+      if (byOwnId) return byOwnId.id;
+      const byLocationId = await this.db.get<{ id: string }>(
+        'SELECT id FROM tmf_geographic_site WHERE geographic_location_id = ?',
+        [resource.place_id],
+      );
+      if (byLocationId) return byLocationId.id;
+    }
+
+    if (resource.serving_site_id) {
+      const incoming = await this.db.get<{ n: number }>(
+        `SELECT count(*) AS n FROM tmf_resource_relationship
+          WHERE resource_to_id = ? AND relationship_type IN ('containsAsChild', 'connectedTo')`,
+        [resourceId],
+      );
+      if (!incoming || Number(incoming.n) === 0) return resource.serving_site_id;
+    }
+
+    return null;
+  }
+
+  // Splitter é sempre PhysicalResource (categoria Infrastructure.Passive no catálogo).
+  private async isInternalResource(resourceId: string): Promise<boolean> {
+    const row = await this.db.get<{ n: number }>(
+      `SELECT count(*) AS n FROM tmf_physical_resource WHERE id = ? AND resource_type = ?`,
+      [resourceId, INTERNAL_RESOURCE_TYPE],
+    );
+    return Number(row?.n ?? 0) > 0;
+  }
+
   /**
    * Quais destes locais têm ao menos um filho — é o que decide o "+" na árvore.
    * Responde a página inteira em três consultas (uma por forma de filiação), e
    * não uma por local: uma estação com 12 salas não pode custar 24 idas ao banco.
+   *
+   * Só é chamada para sub-locais já carregados (`scope: 'all'` — em `'tree'` a
+   * lista de sub-locais nunca é buscada), então não precisa filtrar item interno.
    */
-  private sitesWithChildren(sites: SiteRow[]): Set<string> {
+  private async sitesWithChildren(sites: SiteRow[]): Promise<Set<string>> {
     const withChildren = new Set<string>();
     if (sites.length === 0) return withChildren;
 
@@ -486,7 +672,7 @@ export class GeoTreeService {
     }
 
     // (1) sub-locais
-    for (const row of this.db.all<{ id: string }>(
+    for (const row of await this.db.all<{ id: string }>(
       `SELECT DISTINCT parent_site_id AS id FROM tmf_geographic_site
         WHERE parent_site_id IN (${placeholders(siteIds)}) AND status NOT IN ('Retired', 'terminated')`,
       siteIds,
@@ -496,7 +682,7 @@ export class GeoTreeService {
 
     // (2) recursos cujo place é o próprio local ou a Location dele
     const placeIds = [...siteIds, ...siteByLocationId.keys()];
-    for (const row of this.db.all<{ id: string }>(
+    for (const row of await this.db.all<{ id: string }>(
       `SELECT DISTINCT place_id AS id FROM tmf_physical_resource WHERE place_id IN (${placeholders(placeIds)})
        UNION
        SELECT DISTINCT place_id AS id FROM tmf_logical_resource WHERE place_id IN (${placeholders(placeIds)})`,
@@ -506,7 +692,7 @@ export class GeoTreeService {
     }
 
     // (3) planta externa da estação que ainda não pende de outro recurso
-    for (const row of this.db.all<{ id: string }>(
+    for (const row of await this.db.all<{ id: string }>(
       `SELECT DISTINCT r.serving_site_id AS id
          FROM tmf_physical_resource r
         WHERE r.serving_site_id IN (${placeholders(siteIds)})
@@ -523,18 +709,59 @@ export class GeoTreeService {
     return withChildren;
   }
 
-  private countResourceChildren(resourceIds: string[]): Map<string, number> {
+  private async countResourceChildren(
+    resourceIds: string[],
+    scope: GeoTreeScope,
+  ): Promise<Map<string, number>> {
     const counts = new Map<string, number>();
     if (resourceIds.length === 0) return counts;
-    const rows = this.db.all<{ resource_from_id: string; n: number }>(
-      `SELECT resource_from_id, count(*) AS n
-       FROM tmf_resource_relationship
-       WHERE resource_from_id IN (${placeholders(resourceIds)})
-         AND relationship_type IN (${placeholders([...TREE_EDGE_TYPES])})
-       GROUP BY resource_from_id`,
+
+    if (scope === 'all') {
+      const rows = await this.db.all<{ resource_from_id: string; n: number }>(
+        `SELECT resource_from_id, count(*) AS n
+         FROM tmf_resource_relationship
+         WHERE resource_from_id IN (${placeholders(resourceIds)})
+           AND relationship_type IN (${placeholders([...TREE_EDGE_TYPES])})
+         GROUP BY resource_from_id`,
+        [...resourceIds, ...TREE_EDGE_TYPES],
+      );
+      for (const row of rows) counts.set(row.resource_from_id, Number(row.n));
+      return counts;
+    }
+
+    // scope 'tree': mesmo pass-through de childrenOfResource, mas em lote — anda a
+    // partir de cada id da lista e, sempre que o nó alcançado for interno (Splitter),
+    // continua descendo a partir dele; o que sobra na fronteira (visível, depth ≥ 1)
+    // é o que conta como filho de cada raiz.
+    const rows = await this.db.all<{ root_id: string; n: number }>(
+      `WITH RECURSIVE frontier(root_id, node_id, depth) AS (
+         SELECT v.id, v.id, 0 FROM (VALUES ${resourceIds.map(() => '(?)').join(', ')}) AS v(id)
+         UNION ALL
+         SELECT f.root_id, e.resource_to_id, f.depth + 1
+           FROM frontier f
+           JOIN tmf_resource_relationship e
+             ON e.resource_from_id = f.node_id
+            AND e.relationship_type IN (${placeholders([...TREE_EDGE_TYPES])})
+          WHERE f.depth < ${PASS_THROUGH_MAX_DEPTH}
+            AND (
+              f.depth = 0
+              OR EXISTS (
+                SELECT 1 FROM tmf_physical_resource p
+                 WHERE p.id = f.node_id AND p.resource_type = '${INTERNAL_RESOURCE_TYPE}'
+              )
+            )
+       )
+       SELECT root_id, count(DISTINCT node_id) AS n
+         FROM frontier
+        WHERE depth >= 1
+          AND NOT EXISTS (
+            SELECT 1 FROM tmf_physical_resource p
+             WHERE p.id = frontier.node_id AND p.resource_type = '${INTERNAL_RESOURCE_TYPE}'
+          )
+        GROUP BY root_id`,
       [...resourceIds, ...TREE_EDGE_TYPES],
     );
-    for (const row of rows) counts.set(row.resource_from_id, Number(row.n));
+    for (const row of rows) counts.set(row.root_id, Number(row.n));
     return counts;
   }
 }
@@ -566,14 +793,23 @@ const RESOURCE_AT_SITE_WHERE = `
     )
   )`;
 
-const SITE_RESOURCE_SOURCE = `
+// Predicado que exclui item interno (Splitter — ver INTERNAL_RESOURCE_TYPE) da
+// fonte. Só entra em `scope: 'tree'`; em `scope: 'all'` fica vazio.
+const hideInternalResourceSql = (scope: GeoTreeScope): string =>
+  scope === 'tree' ? `AND r.resource_type IS DISTINCT FROM 'Splitter'` : '';
+
+// Recursos pendendo direto de um Site, por escopo — mesmas colunas e parâmetros nas
+// duas variantes, só muda o filtro de item interno (sem placeholder extra).
+const siteResourceSource = (scope: GeoTreeScope): string => {
+  const extra = hideInternalResourceSql(scope);
+  return `
   SELECT r.id, r.name, 'PhysicalResource' AS entity_type, r.resource_type, r.status,
          rs.name AS spec_name, r.manufacturer, r.model, r.serial_number,
          l.geometry_type, l.geometry
     FROM tmf_physical_resource r
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
-   WHERE ${RESOURCE_AT_SITE_WHERE}
+   WHERE (${RESOURCE_AT_SITE_WHERE}) ${extra}
   UNION ALL
   SELECT r.id, r.name, 'LogicalResource' AS entity_type, r.resource_type, r.status,
          rs.name AS spec_name, NULL AS manufacturer, NULL AS model, NULL AS serial_number,
@@ -581,7 +817,8 @@ const SITE_RESOURCE_SOURCE = `
     FROM tmf_logical_resource r
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
-   WHERE ${RESOURCE_AT_SITE_WHERE}`;
+   WHERE (${RESOURCE_AT_SITE_WHERE}) ${extra}`;
+};
 
 // Recursos cuja geometria cai num bbox do mapa. Ponto e cabo ficam em blocos separados
 // (não num OR) de propósito: só assim o Postgres consegue usar o índice de expressão
@@ -590,13 +827,17 @@ const SITE_RESOURCE_SOURCE = `
 // coordenada; cabo (LineString) casa se qualquer vértice da rota cair no bbox. `l.geometry`
 // é GeoJSON em texto; o worker Postgres deixa os operadores `::jsonb` passarem intactos (só
 // reescreve `json_extract`). Cada bloco leva 4 parâmetros: minLng, maxLng, minLat, maxLat.
+// Splitter fica de fora dos dois blocos: não tem ponto próprio no mapa (mora na Location
+// da caixa que o contém) e usado só aqui — a busca (`SEARCH_NAME_WHERE`) não herda o filtro.
 const VIEWPORT_POINT_WHERE = `
   l.geometry_type = 'Point'
+  AND r.resource_type IS DISTINCT FROM 'Splitter'
   AND (l.geometry::jsonb->'coordinates'->>0)::float8 BETWEEN ? AND ?
   AND (l.geometry::jsonb->'coordinates'->>1)::float8 BETWEEN ? AND ?`;
 
 const VIEWPORT_LINE_WHERE = `
   l.geometry_type = 'LineString'
+  AND r.resource_type IS DISTINCT FROM 'Splitter'
   AND EXISTS (
     SELECT 1 FROM jsonb_array_elements(l.geometry::jsonb->'coordinates') AS v
      WHERE (v->>0)::float8 BETWEEN ? AND ?
@@ -629,14 +870,16 @@ const VIEWPORT_RESOURCE_SOURCE = [
 
 // Recursos (physical/logical) por substring de nome — a busca da barra de pesquisa não
 // se restringe a um site nem a um bbox, então reusa `viewportBlock` só pela forma das
-// colunas, com um WHERE de nome no lugar do de geometria. Um parâmetro por bloco.
+// colunas, com um WHERE de nome no lugar do de geometria. Um parâmetro por bloco. Sem
+// filtro de item interno: Splitter continua encontrável pelo nome (ver `search`).
 const SEARCH_NAME_WHERE = `LOWER(r.name) LIKE LOWER(?)`;
 const SEARCH_RESOURCE_SOURCE = [
   viewportBlock('PhysicalResource', SEARCH_NAME_WHERE),
   viewportBlock('LogicalResource', SEARCH_NAME_WHERE),
 ].join('\n  UNION ALL\n');
 
-// Filhos de um recurso: o outro lado das arestas de contenção e conexão.
+// Filhos de um recurso: o outro lado das arestas de contenção e conexão. Usada em
+// `scope: 'all'` (painel de detalhe) — devolve tudo, Splitter incluso.
 const RESOURCE_CHILD_SOURCE = `
   SELECT r.id, r.name, 'PhysicalResource' AS entity_type, r.resource_type, r.status,
          rs.name AS spec_name, r.manufacturer, r.model, r.serial_number,
@@ -657,6 +900,48 @@ const RESOURCE_CHILD_SOURCE = `
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
    WHERE e.resource_from_id = ?
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')`;
+
+// Filhos de um recurso em `scope: 'tree'`, com *pass-through* sobre item interno: a CTE
+// `hidden_chain` anda a partir do recurso pedido (`?`) e só continua descendo enquanto o
+// nó alcançado for Splitter (guarda de profundidade PASS_THROUGH_MAX_DEPTH). A consulta
+// principal pega os filhos de QUALQUER id da cadeia (o próprio recurso ou um splitter dela)
+// e descarta Splitter do resultado — sobra só o primeiro descendente visível de cada ramo.
+const RESOURCE_CHILD_TREE_SOURCE = `
+  WITH RECURSIVE hidden_chain(id, depth) AS (
+    SELECT CAST(? AS text), 0
+    UNION ALL
+    SELECT e.resource_to_id, h.depth + 1
+      FROM hidden_chain h
+      JOIN tmf_resource_relationship e
+        ON e.resource_from_id = h.id
+       AND e.relationship_type IN ('containsAsChild', 'connectedTo')
+     WHERE h.depth < ${PASS_THROUGH_MAX_DEPTH}
+       AND EXISTS (
+         SELECT 1 FROM tmf_physical_resource p
+          WHERE p.id = e.resource_to_id AND p.resource_type = '${INTERNAL_RESOURCE_TYPE}'
+       )
+  )
+  SELECT r.id, r.name, 'PhysicalResource' AS entity_type, r.resource_type, r.status,
+         rs.name AS spec_name, r.manufacturer, r.model, r.serial_number,
+         l.geometry_type, l.geometry
+    FROM tmf_resource_relationship e
+    JOIN tmf_physical_resource r ON r.id = e.resource_to_id
+    LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
+   WHERE e.resource_from_id IN (SELECT id FROM hidden_chain)
+     AND e.relationship_type IN ('containsAsChild', 'connectedTo')
+     AND r.resource_type IS DISTINCT FROM '${INTERNAL_RESOURCE_TYPE}'
+  UNION ALL
+  SELECT r.id, r.name, 'LogicalResource' AS entity_type, r.resource_type, r.status,
+         rs.name AS spec_name, NULL AS manufacturer, NULL AS model, NULL AS serial_number,
+         l.geometry_type, l.geometry
+    FROM tmf_resource_relationship e
+    JOIN tmf_logical_resource r ON r.id = e.resource_to_id
+    LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
+   WHERE e.resource_from_id IN (SELECT id FROM hidden_chain)
+     AND e.relationship_type IN ('containsAsChild', 'connectedTo')
+     AND r.resource_type IS DISTINCT FROM '${INTERNAL_RESOURCE_TYPE}'`;
 
 // --------------------------------------------------------------- helpers ----
 

@@ -1,12 +1,12 @@
-import type { PostgresDatabase } from '../persistence/postgres-database.js';
+import type { DatabaseClient } from '../persistence/database-client.js';
 import type { IEventRepository } from './event-repository.js';
 import type { TmfEvent, TmfEventQuery } from './types.js';
 
 export class PostgresEventRepository implements IEventRepository {
-  public constructor(private readonly db: PostgresDatabase) {}
+  public constructor(private readonly db: DatabaseClient) {}
 
-  public appendEvent(event: TmfEvent): TmfEvent {
-    this.db.run(
+  public async appendEvent(event: TmfEvent): Promise<TmfEvent> {
+    await this.db.run(
       `INSERT INTO tmf_event (id, event_type, event_time, source, event_data, correlation_id)
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
@@ -25,11 +25,11 @@ export class PostgresEventRepository implements IEventRepository {
       ],
     );
 
-    return this.getEvent(event.id) ?? event;
+    return (await this.getEvent(event.id)) ?? event;
   }
 
-  public getEvent(id: string): TmfEvent | undefined {
-    const row = this.db.get<{
+  public async getEvent(id: string): Promise<TmfEvent | undefined> {
+    const row = await this.db.get<{
       id: string;
       event_type: string;
       event_time: string;
@@ -46,7 +46,7 @@ export class PostgresEventRepository implements IEventRepository {
     return row ? this.mapRow(row) : undefined;
   }
 
-  public listEvents(query?: TmfEventQuery): TmfEvent[] {
+  public async listEvents(query?: TmfEventQuery): Promise<TmfEvent[]> {
     const conditions: string[] = [];
     const params: Array<string | number> = [];
 
@@ -89,7 +89,7 @@ export class PostgresEventRepository implements IEventRepository {
     if (hasLimit) params.push(query.limit as number);
     if (hasOffset) params.push(query.offset as number);
 
-    const rows = this.db.all<{
+    const rows = await this.db.all<{
       id: string;
       event_type: string;
       event_time: string;

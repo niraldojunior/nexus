@@ -3,7 +3,7 @@ import { test, vi } from 'vitest';
 import { EventService } from '../src/shared/tmf/event-service.js';
 
 const createRepository = () => {
-  const events = new Map<string, ReturnType<EventService['appendEvent']>>();
+  const events = new Map<string, Awaited<ReturnType<EventService['appendEvent']>>>();
   return {
     appendEvent: vi.fn((event) => {
       events.set(event.id, event);
@@ -14,12 +14,12 @@ const createRepository = () => {
   };
 };
 
-test('EventService trims canonical fields, clones event data and delegates persistence', () => {
+test('EventService trims canonical fields, clones event data and delegates persistence', async () => {
   const repository = createRepository();
   const service = new EventService(repository);
   const payload = { entityId: 'geo-1', nested: { status: 'active' } };
 
-  const event = service.appendEvent({
+  const event = await service.appendEvent({
     id: 'event-1',
     eventType: '  GeographicSiteCreatedEvent  ',
     source: '  geo-service  ',
@@ -40,12 +40,12 @@ test('EventService trims canonical fields, clones event data and delegates persi
   assert.equal(repository.appendEvent.mock.calls.length, 1);
 });
 
-test('EventService rejects malformed event payloads', () => {
+test('EventService rejects malformed event payloads', async () => {
   const service = new EventService(createRepository());
 
-  assert.throws(
-    () =>
-      service.appendEvent({
+  await assert.rejects(
+    async () =>
+      await service.appendEvent({
         eventType: ' ',
         source: 'geo-service',
         eventData: {},
@@ -53,9 +53,9 @@ test('EventService rejects malformed event payloads', () => {
     /eventType is required/,
   );
 
-  assert.throws(
-    () =>
-      service.appendEvent({
+  await assert.rejects(
+    async () =>
+      await service.appendEvent({
         eventType: 'Created',
         source: ' ',
         eventData: {},
@@ -63,9 +63,9 @@ test('EventService rejects malformed event payloads', () => {
     /source is required/,
   );
 
-  assert.throws(
-    () =>
-      service.appendEvent({
+  await assert.rejects(
+    async () =>
+      await service.appendEvent({
         eventType: 'Created',
         source: 'geo-service',
         eventData: [] as unknown as Record<string, unknown>,

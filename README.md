@@ -4,7 +4,7 @@ Inventário de rede da V.tal, alinhado ao modelo **TM Forum ODA**. O repositóri
 metades do produto: a **aplicação** em execução (backend TypeScript/Node + frontend React/Vite,
 persistindo em Neon Postgres) e a **especificação** que a governa (`docs/`).
 
-A V.tal é uma infraestrutura de fibra neutra (*wholesale*) — o cliente do serviço é, em regra, um
+A V.tal é uma infraestrutura de fibra neutra (_wholesale_) — o cliente do serviço é, em regra, um
 ISP (Tenant), não o usuário final.
 
 **Módulos de domínio implementados:** Geographic · Resource · Service · Party · Order · Search · MCP.
@@ -16,14 +16,14 @@ ISP (Tenant), não o usuário final.
 
 ## Stack
 
-| Camada | Tecnologia |
-|---|---|
-| Backend | Node 22+ · TypeScript 5.9 (ESM) · HTTP nativo |
-| Frontend | React 18 · Vite (rolldown) · Tailwind 3 · Lucide |
-| Banco | Neon Postgres (`@neondatabase/serverless` + `pg`) |
-| Testes | Vitest 4 · Playwright · Testing Library · MSW |
-| Qualidade | ESLint 9 · Prettier 3 · TypeScript strict |
-| Deploy | Vercel (Functions + estático) |
+| Camada    | Tecnologia                                                    |
+| --------- | ------------------------------------------------------------- |
+| Backend   | Node 22+ · TypeScript 5.9 (ESM) · HTTP nativo                 |
+| Frontend  | React 18 · Vite (rolldown) · Tailwind 3 · Lucide              |
+| Banco     | PostgreSQL/Neon ou Oracle 21c/23ai Thin (`DATABASE_PROVIDER`) |
+| Testes    | Vitest 4 · Playwright · Testing Library · MSW                 |
+| Qualidade | ESLint 9 · Prettier 3 · TypeScript strict                     |
+| Deploy    | Vercel (Functions + estático)                                 |
 
 ---
 
@@ -45,9 +45,9 @@ npm run dev
 
 `npm run dev` sobe a stack completa:
 
-| Serviço | URL |
-|---|---|
-| Backend | `http://127.0.0.1:4001` |
+| Serviço         | URL                     |
+| --------------- | ----------------------- |
+| Backend         | `http://127.0.0.1:4001` |
 | Frontend (Vite) | `http://127.0.0.1:5200` |
 
 > **`npm run dev` usa PowerShell** (`start-dev.ps1`) — ele encerra sessões anteriores, libera as
@@ -68,25 +68,42 @@ npm run web:dev     # só o frontend Vite
 
 ### Aplicação
 
-| Variável | Obrigatória | Padrão | Descrição |
-|---|---|---|---|
-| `NODE_ENV` | não | `development` | `development` · `test` · `production` |
-| `PORT` | não | `4001` | Porta do backend |
-| `APP_NAME` | não | `v-tal-nexus` | Nome da aplicação nos logs |
-| `LOG_LEVEL` | não | `info` | `debug` · `info` · `warn` · `error` |
-| `AUTH_ENABLED` | não | `true` | Liga o guard de bearer token |
-| `AUTH_TOKEN` | **sim em produção** | `change-me` | Token do header `Authorization: Bearer <token>` |
+| Variável       | Obrigatória         | Padrão        | Descrição                                       |
+| -------------- | ------------------- | ------------- | ----------------------------------------------- |
+| `NODE_ENV`     | não                 | `development` | `development` · `test` · `production`           |
+| `PORT`         | não                 | `4001`        | Porta do backend                                |
+| `APP_NAME`     | não                 | `v-tal-nexus` | Nome da aplicação nos logs                      |
+| `LOG_LEVEL`    | não                 | `info`        | `debug` · `info` · `warn` · `error`             |
+| `AUTH_ENABLED` | não                 | `true`        | Liga o guard de bearer token                    |
+| `AUTH_TOKEN`   | **sim em produção** | `change-me`   | Token do header `Authorization: Bearer <token>` |
 
 ### Banco de dados
+
+`DATABASE_PROVIDER=postgres|oracle` seleciona um único provider no boot (`postgres` por padrão).
+A configuração incompleta ou a indisponibilidade do provider selecionado interrompe a inicialização;
+o Nexus não tenta o outro banco silenciosamente.
+
+Com `DATABASE_PROVIDER=oracle`, informe `ORACLE_CONNECT_STRING`, `ORACLE_USER` e
+`ORACLE_PASSWORD`. O driver `node-oracledb` opera em Thin mode, sem Oracle Client. Nos dois
+providers, o pool usa `DATABASE_POOL_MIN`, `DATABASE_POOL_MAX`, `DATABASE_POOL_INCREMENT`,
+`DATABASE_QUEUE_TIMEOUT_MS` e `DATABASE_CONNECTION_TIMEOUT_MS`.
+
+Em produção o boot somente valida `schema_migrations`; aplique DDL antecipadamente com
+`npm run db:migrate`. `DATABASE_AUTO_SCHEMA=true` é aceito apenas em desenvolvimento/teste.
+
+Para o cutover, `npm run migrate:postgres-to-oracle -- --dry-run|--resume|--verify-only` usa
+`SOURCE_DATABASE_URL`, `TARGET_ORACLE_CONNECT_STRING`, `TARGET_ORACLE_USER`,
+`TARGET_ORACLE_PASSWORD` e `MIGRATION_BATCH_SIZE` (padrão `1000`). O relatório contém somente
+contagens e hashes normalizados, nunca credenciais ou conteúdo dos registros.
 
 Ao menos uma connection string do Neon é obrigatória — a aplicação **falha no boot** sem ela. Todas
 precisam começar com `postgres://` ou `postgresql://`.
 
-| Variável | Quando é usada |
-|---|---|
-| `DATABASE_URL` | **Override explícito** — se presente, vence todas as outras |
-| `DATABASE_URL_PROD` | `VERCEL_ENV=production` ou `NODE_ENV=production` |
-| `DATABASE_URL_DEV` | Vercel Preview/Development, e fallback do desenvolvimento local |
+| Variável            | Quando é usada                                                          |
+| ------------------- | ----------------------------------------------------------------------- |
+| `DATABASE_URL`      | **Override explícito** — se presente, vence todas as outras             |
+| `DATABASE_URL_PROD` | `VERCEL_ENV=production` ou `NODE_ENV=production`                        |
+| `DATABASE_URL_DEV`  | Vercel Preview/Development, e fallback do desenvolvimento local         |
 | `DATABASE_URL_TEST` | Preferida em ambiente local/test, para isolar os testes do banco de dev |
 
 A ordem de resolução está em [`src/shared/config/env.ts`](src/shared/config/env.ts). Cada variável
@@ -97,12 +114,12 @@ aceita o alias `NEON_DATABASE_URL_*` (ex.: `NEON_DATABASE_URL_PROD`).
 
 ### Integrações opcionais
 
-| Variável | Padrão | Descrição |
-|---|---|---|
-| `OPENAI_API_KEY` | — | Habilita as rotas de research/chat. Sem ela, o Copilot cai em fallback local sobre `docs/` |
-| `OPENAI_MODEL` | `gpt-4o-mini` | Modelo usado nas rotas de chat |
-| `API_ENDPOINT` | `https://api.openai.com/v1` | Endpoint compatível com OpenAI |
-| `VITE_GOOGLE_MAPS_API_KEY` | — | Mapas do módulo Geo (só a JS API está habilitada) |
+| Variável                   | Padrão                      | Descrição                                                                                  |
+| -------------------------- | --------------------------- | ------------------------------------------------------------------------------------------ |
+| `OPENAI_API_KEY`           | —                           | Habilita as rotas de research/chat. Sem ela, o Copilot cai em fallback local sobre `docs/` |
+| `OPENAI_MODEL`             | `gpt-4o-mini`               | Modelo usado nas rotas de chat                                                             |
+| `API_ENDPOINT`             | `https://api.openai.com/v1` | Endpoint compatível com OpenAI                                                             |
+| `VITE_GOOGLE_MAPS_API_KEY` | —                           | Mapas do módulo Geo (só a JS API está habilitada)                                          |
 
 ### Avançadas
 
@@ -116,47 +133,47 @@ Raramente precisam ser ajustadas — têm padrões seguros definidos em `scripts
 
 ### Desenvolvimento
 
-| Comando | O que faz |
-|---|---|
-| `npm run dev` | Stack completa (backend + Vite). Alias de `dev:local` |
-| `npm run dev:neon` | Backend em watch mode. Alias: `dev:backend` |
-| `npm run start:neon` | Backend, execução única |
-| `npm run web:dev` | Frontend Vite |
-| `npm start` | Servidor estático simples na porta 5200, servindo `web/` com fallback SPA. **Não** é o Vite |
+| Comando              | O que faz                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------- |
+| `npm run dev`        | Stack completa (backend + Vite). Alias de `dev:local`                                       |
+| `npm run dev:neon`   | Backend em watch mode. Alias: `dev:backend`                                                 |
+| `npm run start:neon` | Backend, execução única                                                                     |
+| `npm run web:dev`    | Frontend Vite                                                                               |
+| `npm start`          | Servidor estático simples na porta 5200, servindo `web/` com fallback SPA. **Não** é o Vite |
 
 ### Build e qualidade
 
-| Comando | O que faz |
-|---|---|
-| `npm run build` | Compila o backend TypeScript para `dist/` |
-| `npm run web:build` | Build de produção do frontend em `web/dist` |
-| `npm run typecheck` | `tsc --noEmit` na raiz **e** em `web/` |
-| `npm run docs:check` | Valida estrutura, JSON, links, benchmark, questões e backlog dos HLDs |
-| `npm run lint` / `lint:fix` | ESLint |
-| `npm run format` / `format:fix` | Prettier |
-| `npm run clean` | Remove `dist/` |
+| Comando                         | O que faz                                                             |
+| ------------------------------- | --------------------------------------------------------------------- |
+| `npm run build`                 | Compila o backend TypeScript para `dist/`                             |
+| `npm run web:build`             | Build de produção do frontend em `web/dist`                           |
+| `npm run typecheck`             | `tsc --noEmit` na raiz **e** em `web/`                                |
+| `npm run docs:check`            | Valida estrutura, JSON, links, benchmark, questões e backlog dos HLDs |
+| `npm run lint` / `lint:fix`     | ESLint                                                                |
+| `npm run format` / `format:fix` | Prettier                                                              |
+| `npm run clean`                 | Remove `dist/`                                                        |
 
 ### Testes
 
-| Comando | Runner | Escopo |
-|---|---|---|
-| `npm test` | — | Suíte completa: unit → integration → regression |
-| `npm run test:unit` | Vitest | `test/**/*.spec.ts` e `web/src/**/*.test.tsx` |
-| `npm run test:integration` | Node | Suíte de integração sobre o `dist/` compilado |
-| `npm run test:regression` | Playwright | E2E de browser (requer `npm run browsers:install`) |
-| `npm run test:watch` | Vitest | Modo watch |
-| `npm run test:coverage` | Vitest | Cobertura v8 |
+| Comando                    | Runner     | Escopo                                             |
+| -------------------------- | ---------- | -------------------------------------------------- |
+| `npm test`                 | —          | Suíte completa: unit → integration → regression    |
+| `npm run test:unit`        | Vitest     | `test/**/*.spec.ts` e `web/src/**/*.test.tsx`      |
+| `npm run test:integration` | Node       | Suíte de integração sobre o `dist/` compilado      |
+| `npm run test:regression`  | Playwright | E2E de browser (requer `npm run browsers:install`) |
+| `npm run test:watch`       | Vitest     | Modo watch                                         |
+| `npm run test:coverage`    | Vitest     | Cobertura v8                                       |
 
 > Armadilhas de teste (obrigatoriedade do `--use-system-ca`, endpoint `-pooler`, schema por worker)
 > estão documentadas em [AGENTS.md](AGENTS.md) §3.
 
 ### Utilitários
 
-| Comando | O que faz |
-|---|---|
-| `npm run migrate:neon` | Carga inicial a partir de um snapshot SQLite (ver abaixo) |
-| `npm run mcp:tmf` | Servidor MCP (stdio) expondo as APIs TMF a clientes de IA |
-| `npm run browsers:install` | Instala o Chromium do Playwright |
+| Comando                    | O que faz                                                 |
+| -------------------------- | --------------------------------------------------------- |
+| `npm run migrate:neon`     | Carga inicial a partir de um snapshot SQLite (ver abaixo) |
+| `npm run mcp:tmf`          | Servidor MCP (stdio) expondo as APIs TMF a clientes de IA |
+| `npm run browsers:install` | Instala o Chromium do Playwright                          |
 
 ---
 
@@ -184,11 +201,11 @@ Cada módulo de domínio segue a mesma anatomia: `domain.ts` (tipos e regras), `
 
 O backend expõe três superfícies:
 
-| Prefixo | Conteúdo |
-|---|---|
-| `/health` | Health check. **Público** — não exige autenticação |
-| `/v1/*` | API interna do produto: `geo`, `resource/workspace`, `service/workspace`, `research`, `searches`, `users`, `bootstrap`, `chat/completions` |
-| `/tmf-api/*` | Open APIs TM Forum v4 (ver abaixo) |
+| Prefixo      | Conteúdo                                                                                                                                   |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/health`    | Health check. **Público** — não exige autenticação                                                                                         |
+| `/v1/*`      | API interna do produto: `geo`, `resource/workspace`, `service/workspace`, `research`, `searches`, `users`, `bootstrap`, `chat/completions` |
+| `/tmf-api/*` | Open APIs TM Forum v4 (ver abaixo)                                                                                                         |
 
 **Open APIs TMF implementadas:** TMF632 (Party), TMF633/638 (Service Catalog/Inventory),
 TMF634/639 (Resource Catalog/Inventory), TMF641 (Service Ordering), TMF645 (Service Qualification),
@@ -216,21 +233,21 @@ Deploy automático, configurado em [`vercel.json`](vercel.json):
 
 ### Variáveis a configurar na Vercel
 
-| Escopo | Variáveis |
-|---|---|
-| Production | `DATABASE_URL_PROD`, `AUTH_TOKEN`, `APP_NAME`, `AUTH_ENABLED` |
-| Preview | `DATABASE_URL_DEV`, `AUTH_TOKEN`, `APP_NAME`, `AUTH_ENABLED` |
+| Escopo           | Variáveis                                                                    |
+| ---------------- | ---------------------------------------------------------------------------- |
+| Production       | `DATABASE_URL_PROD`, `AUTH_TOKEN`, `APP_NAME`, `AUTH_ENABLED`                |
+| Preview          | `DATABASE_URL_DEV`, `AUTH_TOKEN`, `APP_NAME`, `AUTH_ENABLED`                 |
 | Ambos (opcional) | `OPENAI_API_KEY`, `OPENAI_MODEL`, `API_ENDPOINT`, `VITE_GOOGLE_MAPS_API_KEY` |
 
 Defina `DATABASE_URL` apenas se quiser sobrescrever a seleção por ambiente.
 
 ### Layout Neon recomendado
 
-| Ambiente | Escopo Vercel | Variável usada | Banco |
-|---|---|---|---|
-| Dev local | `.env` local | `DATABASE_URL_DEV` | Neon dev |
-| Preview | Vercel Preview | `DATABASE_URL_DEV` | Neon dev |
-| Produção | Vercel Production | `DATABASE_URL_PROD` | Neon PRD |
+| Ambiente  | Escopo Vercel     | Variável usada      | Banco    |
+| --------- | ----------------- | ------------------- | -------- |
+| Dev local | `.env` local      | `DATABASE_URL_DEV`  | Neon dev |
+| Preview   | Vercel Preview    | `DATABASE_URL_DEV`  | Neon dev |
+| Produção  | Vercel Production | `DATABASE_URL_PROD` | Neon PRD |
 
 Com esse layout, branches e previews nunca tocam dados de produção. Para isolar os testes locais do
 banco de dev, aponte `DATABASE_URL_TEST` para um banco separado.
@@ -256,14 +273,14 @@ Scripts de carga de dados reais (estações e recursos Netwin, seeds GPON) vivem
 
 ## Documentação
 
-| Onde | O quê |
-|---|---|
-| [AGENTS.md](AGENTS.md) | Cânone arquitetural, convenções de código, armadilhas, guardrails |
-| [docs/1-overview/](docs/1-overview/) | Visão de produto, regras de negócio, glossário |
-| [docs/2-functional-specs/](docs/2-functional-specs/) | HLDs por módulo (Geo · Resource · Service) |
-| [docs/3-system-design/](docs/3-system-design/) | Arquitetura, modelo de dados, integrações, NFR, segurança |
-| [docs/4-design-system/](docs/4-design-system/) | Tokens, componentes, UI kit, guidelines |
-| [docs/5-delivery-plan/](docs/5-delivery-plan/) | Roadmap, backlog, riscos, questões em aberto |
+| Onde                                                 | O quê                                                             |
+| ---------------------------------------------------- | ----------------------------------------------------------------- |
+| [AGENTS.md](AGENTS.md)                               | Cânone arquitetural, convenções de código, armadilhas, guardrails |
+| [docs/1-overview/](docs/1-overview/)                 | Visão de produto, regras de negócio, glossário                    |
+| [docs/2-functional-specs/](docs/2-functional-specs/) | HLDs por módulo (Geo · Resource · Service)                        |
+| [docs/3-system-design/](docs/3-system-design/)       | Arquitetura, modelo de dados, integrações, NFR, segurança         |
+| [docs/4-design-system/](docs/4-design-system/)       | Tokens, componentes, UI kit, guidelines                           |
+| [docs/5-delivery-plan/](docs/5-delivery-plan/)       | Roadmap, backlog, riscos, questões em aberto                      |
 
 ---
 
@@ -280,4 +297,4 @@ pull request, nesta ordem: `lint` → `typecheck` → `build` → `test`.
 
 ---
 
-*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*
+_V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA_

@@ -1,3 +1,5 @@
+type Awaitable<T> = T | Promise<T>;
+
 import type {
   CustomerFacingService,
   ResourceFacingService,
@@ -12,31 +14,30 @@ import type {
 } from './domain.js';
 
 export interface IServiceRepository {
-  transaction<T>(fn: () => T): T;
+  transaction<T>(fn: () => Awaitable<T>): Awaitable<T>;
 
-  upsertServiceSpecification(spec: ServiceSpecification): ServiceSpecification;
-  getServiceSpecification(id: string): ServiceSpecification | undefined;
-  listServiceSpecifications(query?: ServiceSpecificationQuery): ServiceSpecification[];
+  upsertServiceSpecification(spec: ServiceSpecification): Awaitable<ServiceSpecification>;
+  getServiceSpecification(id: string): Awaitable<ServiceSpecification | undefined>;
+  listServiceSpecifications(query?: ServiceSpecificationQuery): Awaitable<ServiceSpecification[]>;
 
-  upsertServiceCategory(category: ServiceCategory): ServiceCategory;
-  getServiceCategory(id: string): ServiceCategory | undefined;
-  listServiceCategories(query?: ServiceCategoryQuery): ServiceCategory[];
+  upsertServiceCategory(category: ServiceCategory): Awaitable<ServiceCategory>;
+  getServiceCategory(id: string): Awaitable<ServiceCategory | undefined>;
+  listServiceCategories(query?: ServiceCategoryQuery): Awaitable<ServiceCategory[]>;
 
-  upsertServiceCandidate(candidate: ServiceCandidate): ServiceCandidate;
-  getServiceCandidate(id: string): ServiceCandidate | undefined;
-  listServiceCandidates(query?: ServiceCandidateQuery): ServiceCandidate[];
+  upsertServiceCandidate(candidate: ServiceCandidate): Awaitable<ServiceCandidate>;
+  getServiceCandidate(id: string): Awaitable<ServiceCandidate | undefined>;
+  listServiceCandidates(query?: ServiceCandidateQuery): Awaitable<ServiceCandidate[]>;
 
-  upsertCustomerFacingService(service: CustomerFacingService): CustomerFacingService;
-  getCustomerFacingService(id: string): CustomerFacingService | undefined;
-  listCustomerFacingServices(query?: ServiceQuery): CustomerFacingService[];
-  countCustomerFacingServices(query?: ServiceQuery): number;
+  upsertCustomerFacingService(service: CustomerFacingService): Awaitable<CustomerFacingService>;
+  getCustomerFacingService(id: string): Awaitable<CustomerFacingService | undefined>;
+  listCustomerFacingServices(query?: ServiceQuery): Awaitable<CustomerFacingService[]>;
+  countCustomerFacingServices(query?: ServiceQuery): Awaitable<number>;
 
-  upsertResourceFacingService(service: ResourceFacingService): ResourceFacingService;
-  getResourceFacingService(id: string): ResourceFacingService | undefined;
-  listResourceFacingServices(query?: ServiceQuery): ResourceFacingService[];
-  countResourceFacingServices(query?: ServiceQuery): number;
+  upsertResourceFacingService(service: ResourceFacingService): Awaitable<ResourceFacingService>;
+  getResourceFacingService(id: string): Awaitable<ResourceFacingService | undefined>;
+  listResourceFacingServices(query?: ServiceQuery): Awaitable<ResourceFacingService[]>;
+  countResourceFacingServices(query?: ServiceQuery): Awaitable<number>;
 
-  listServices(query?: ServiceQuery): Service[];
-  countServices(query?: ServiceQuery): number;
+  listServices(query?: ServiceQuery): Awaitable<Service[]>;
+  countServices(query?: ServiceQuery): Awaitable<number>;
 }
-

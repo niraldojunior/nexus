@@ -55,21 +55,21 @@ test('PostgresEventRepository persists, updates and queries TMF688 events', asyn
       correlationId: 'corr-2',
     });
 
-    const fetched = repository.getEvent('event-1');
+    const fetched = await repository.getEvent('event-1');
     assert.equal(fetched?.eventType, 'GeographicSiteRetiredEvent');
     assert.equal(fetched?.correlationId, 'corr-2');
     assert.equal(fetched?.eventData.status, 'retired');
 
-    const filtered = repository.listEvents({ source: 'geo-service', correlationId: 'corr-2' });
+    const filtered = await repository.listEvents({ source: 'geo-service', correlationId: 'corr-2' });
     assert.equal(filtered.length, 1);
     assert.equal(filtered[0]?.id, 'event-1');
 
-    const ordered = repository.listEvents({ limit: 2 });
+    const ordered = await repository.listEvents({ limit: 2 });
     assert.equal(ordered.length, 2);
     assert.equal(ordered[0]?.id, 'event-1');
     assert.equal(ordered[1]?.id, 'event-2');
 
-    const offset = repository.listEvents({ limit: 1, offset: 1 });
+    const offset = await repository.listEvents({ limit: 1, offset: 1 });
     assert.equal(offset.length, 1);
     assert.equal(offset[0]?.id, 'event-2');
   } finally {

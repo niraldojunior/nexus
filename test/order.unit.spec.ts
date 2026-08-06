@@ -38,7 +38,17 @@ type TestServiceInput = {
   subscriberId?: string | undefined;
   serviceRelationship?: unknown[] | undefined;
 };
-type TestService = Required<Pick<TestServiceInput, 'supportingService' | 'supportingResource' | 'relatedParty' | 'place' | 'serviceCharacteristic' | 'serviceRelationship'>> &
+type TestService = Required<
+  Pick<
+    TestServiceInput,
+    | 'supportingService'
+    | 'supportingResource'
+    | 'relatedParty'
+    | 'place'
+    | 'serviceCharacteristic'
+    | 'serviceRelationship'
+  >
+> &
   TestServiceInput & {
     '@type': 'CustomerFacingService' | 'ResourceFacingService';
     id: string;
@@ -58,10 +68,30 @@ const setupOrder = async () => {
   const appendEvent = vi.fn(() => undefined);
   const eventService = { appendEvent };
 
-  const party = { id: 'party-1', '@referredType': 'Organization', href: '/party/party-1', name: 'ISP Alfa' };
-  const site = { id: 'site-1', '@referredType': 'GeographicSite', href: '/site/site-1', name: 'CO Botafogo' };
-  const address = { id: 'addr-1', '@referredType': 'GeographicAddress', href: '/address/addr-1', name: 'Rua A' };
-  const location = { id: 'loc-1', '@referredType': 'GeographicLocation', href: '/location/loc-1', name: 'Ponto' };
+  const party = {
+    id: 'party-1',
+    '@referredType': 'Organization',
+    href: '/party/party-1',
+    name: 'ISP Alfa',
+  };
+  const site = {
+    id: 'site-1',
+    '@referredType': 'GeographicSite',
+    href: '/site/site-1',
+    name: 'CO Botafogo',
+  };
+  const address = {
+    id: 'addr-1',
+    '@referredType': 'GeographicAddress',
+    href: '/address/addr-1',
+    name: 'Rua A',
+  };
+  const location = {
+    id: 'loc-1',
+    '@referredType': 'GeographicLocation',
+    href: '/location/loc-1',
+    name: 'Ponto',
+  };
 
   const geoStore = new Map([site, address, location].map((item) => [item.id, item] as const));
   const resourceStore = new Map<string, TestResource>();
@@ -76,7 +106,9 @@ const setupOrder = async () => {
         name: input.name,
         status: input.status ?? 'active',
         resourceSpecificationId: input.resourceSpecificationId,
-        place: input.placeId ? [{ id: input.placeId, '@referredType': input.placeType ?? 'GeographicSite' }] : [],
+        place: input.placeId
+          ? [{ id: input.placeId, '@referredType': input.placeType ?? 'GeographicSite' }]
+          : [],
       };
       resourceStore.set(resource.id, resource);
       return resource;
@@ -89,7 +121,9 @@ const setupOrder = async () => {
         name: input.name,
         status: input.status ?? 'active',
         resourceSpecificationId: input.resourceSpecificationId,
-        place: input.placeId ? [{ id: input.placeId, '@referredType': input.placeType ?? 'GeographicSite' }] : [],
+        place: input.placeId
+          ? [{ id: input.placeId, '@referredType': input.placeType ?? 'GeographicSite' }]
+          : [],
         supportingPhysicalResourceId: input.supportingPhysicalResourceId,
       };
       resourceStore.set(resource.id, resource);
@@ -140,7 +174,8 @@ const setupOrder = async () => {
 
   const service = {
     createService: vi.fn((input: TestServiceInput) => {
-      const type = input['@type'] ?? (input.subscriberId ? 'CustomerFacingService' : 'ResourceFacingService');
+      const type =
+        input['@type'] ?? (input.subscriberId ? 'CustomerFacingService' : 'ResourceFacingService');
       const id = `service-${serviceStore.size + 1}`;
       const created: TestService = {
         '@type': type,
@@ -188,14 +223,38 @@ const setupOrder = async () => {
     partyService: {} as never,
   });
 
-  return { database, repository, appendEvent, order, party, site, address, location, resourceService, service, serviceStore, resourceStore };
+  return {
+    database,
+    repository,
+    appendEvent,
+    order,
+    party,
+    site,
+    address,
+    location,
+    resourceService,
+    service,
+    serviceStore,
+    resourceStore,
+  };
 };
 
 test('OrderService qualifies places and executes service/resource orders', async () => {
-  const { database, order, appendEvent, party, site, address, location, resourceService, serviceStore, resourceStore } = await setupOrder();
+  const {
+    database,
+    order,
+    appendEvent,
+    party,
+    site,
+    address,
+    location,
+    resourceService,
+    serviceStore,
+    resourceStore,
+  } = await setupOrder();
 
   try {
-    const activeResource = resourceService.createPhysicalResource({
+    const activeResource = await resourceService.createPhysicalResource({
       name: 'ONT-01',
       resourceSpecificationId: 'spec-1',
       placeId: site.id,
@@ -204,7 +263,7 @@ test('OrderService qualifies places and executes service/resource orders', async
     });
     resourceStore.set(activeResource.id, activeResource);
 
-    const siteQualification = order.createServiceQualification({
+    const siteQualification = await order.createServiceQualification({
       placeId: site.id,
       serviceSpecificationId: 'svc-spec-1',
       relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'requestor' }],
@@ -212,19 +271,19 @@ test('OrderService qualifies places and executes service/resource orders', async
     assert.equal(siteQualification.place[0]?.id, site.id);
     assert.equal(siteQualification.serviceQualificationItem[0]?.eligibility, 'qualified');
 
-    const addressQualification = order.createServiceQualification({ placeId: address.id });
-    const locationQualification = order.createServiceQualification({ placeId: location.id });
+    const addressQualification = await order.createServiceQualification({ placeId: address.id });
+    const locationQualification = await order.createServiceQualification({ placeId: location.id });
     assert.equal(addressQualification.place[0]?.id, address.id);
     assert.equal(locationQualification.place[0]?.id, location.id);
 
-    const missingPlace = order.createServiceQualification({ placeId: 'missing' });
+    const missingPlace = await order.createServiceQualification({ placeId: 'missing' });
     assert.equal(missingPlace.serviceQualificationItem[0]?.eligibility, 'unqualified');
     assert.equal(missingPlace.serviceQualificationItem[0]?.reason, 'placeId required');
 
-    const noPlace = order.createServiceQualification({});
+    const noPlace = await order.createServiceQualification({});
     assert.equal(noPlace.serviceQualificationItem[0]?.reason, 'placeId required');
 
-    const serviceOrder = order.createServiceOrder({
+    const serviceOrder = await order.createServiceOrder({
       relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'subscriber' }],
       serviceOrderItem: [
         {
@@ -249,11 +308,14 @@ test('OrderService qualifies places and executes service/resource orders', async
     });
     assert.equal(serviceOrder.state, 'completed');
     assert.equal(serviceOrder.serviceOrderItem.length, 3);
-    assert.equal(serviceOrder.serviceOrderItem[0]?.serviceResult?.['@type'], 'CustomerFacingService');
+    assert.equal(
+      serviceOrder.serviceOrderItem[0]?.serviceResult?.['@type'],
+      'CustomerFacingService',
+    );
     assert.equal(serviceOrder.serviceOrderItem[2]?.serviceResult?.state, 'terminated');
     assert.equal(serviceStore.size, 1);
 
-    const resourceOrder = order.createResourceOrder({
+    const resourceOrder = await order.createResourceOrder({
       relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'requestor' }],
       resourceOrderItem: [
         {
@@ -285,21 +347,37 @@ test('OrderService qualifies places and executes service/resource orders', async
     assert.equal(resourceOrder.resourceOrderItem[0]?.resourceResult?.['@type'], 'PhysicalResource');
     assert.equal(resourceOrder.resourceOrderItem[2]?.resourceResult?.status, 'terminated');
 
-    const serviceOrderList = order.listServiceOrders({ relatedPartyId: party.id });
-    const resourceOrderList = order.listResourceOrders({ relatedPartyId: party.id, resourceId: activeResource.id });
-    const qualificationList = order.listServiceQualifications({ placeId: site.id, serviceSpecificationId: 'svc-spec-1' });
+    const serviceOrderList = await order.listServiceOrders({ relatedPartyId: party.id });
+    const resourceOrderList = await order.listResourceOrders({
+      relatedPartyId: party.id,
+      resourceId: activeResource.id,
+    });
+    const qualificationList = await order.listServiceQualifications({
+      placeId: site.id,
+      serviceSpecificationId: 'svc-spec-1',
+    });
     assert.equal(serviceOrderList.length, 1);
     assert.equal(resourceOrderList.length, 1);
     assert.equal(qualificationList.length, 1);
 
-    const updatedQualification = order.updateServiceQualification(siteQualification.id, { state: 'terminated' });
+    const updatedQualification = await order.updateServiceQualification(siteQualification.id, {
+      state: 'terminated',
+    });
     assert.equal(updatedQualification.state, 'terminated');
-    const cancelledServiceOrder = order.cancelServiceOrder(serviceOrder.id);
-    const cancelledResourceOrder = order.cancelResourceOrder(resourceOrder.id);
+    const cancelledServiceOrder = await order.cancelServiceOrder(serviceOrder.id);
+    const cancelledResourceOrder = await order.cancelResourceOrder(resourceOrder.id);
     assert.equal(cancelledServiceOrder.state, 'cancelled');
     assert.equal(cancelledResourceOrder.state, 'cancelled');
-    assert.ok((appendEvent.mock.calls as unknown as Array<[ { eventType?: string } ]>).some((call) => call[0]?.eventType === 'ServiceOrderCreateEvent'));
-    assert.ok((appendEvent.mock.calls as unknown as Array<[ { eventType?: string } ]>).some((call) => call[0]?.eventType === 'ResourceOrderCreateEvent'));
+    assert.ok(
+      (appendEvent.mock.calls as unknown as Array<[{ eventType?: string }]>).some(
+        (call) => call[0]?.eventType === 'ServiceOrderCreateEvent',
+      ),
+    );
+    assert.ok(
+      (appendEvent.mock.calls as unknown as Array<[{ eventType?: string }]>).some(
+        (call) => call[0]?.eventType === 'ResourceOrderCreateEvent',
+      ),
+    );
   } finally {
     PostgresDatabase.resetForTesting();
     database.cleanup();
@@ -310,18 +388,57 @@ test('OrderService rejects invalid order permutations and unknown references', a
   const { database, order } = await setupOrder();
 
   try {
-    assert.throws(() => order.createServiceOrder({ serviceOrderItem: [] }), /serviceOrderItem required/);
-    assert.throws(() => order.createResourceOrder({ resourceOrderItem: [] }), /resourceOrderItem required/);
-    assert.throws(() => order.createServiceOrder({ serviceOrderItem: [{ action: 'add' as const }] }), /service payload required/);
-    assert.throws(() => order.createServiceOrder({ serviceOrderItem: [{ action: 'modify' as const, serviceId: 'x' }] }), /serviceId and service payload required/);
-    assert.throws(() => order.createServiceOrder({ serviceOrderItem: [{ action: 'delete' as const }] }), /serviceId required/);
-    assert.throws(() => order.createResourceOrder({ resourceOrderItem: [{ action: 'add' as const }] }), /resource payload required/);
-    assert.throws(() => order.createResourceOrder({ resourceOrderItem: [{ action: 'modify' as const, resourceId: 'x' }] }), /resource not found/);
-    assert.throws(() => order.createResourceOrder({ resourceOrderItem: [{ action: 'delete' as const, resourceId: 'missing' }] }), /resource not found/);
-    assert.throws(() => order.deleteServiceQualification('missing'), /service qualification not found/);
-    assert.throws(() => order.updateServiceQualification('missing', { state: 'terminated' }), /service qualification not found/);
-    assert.throws(() => order.cancelServiceOrder('missing'), /service order not found/);
-    assert.throws(() => order.cancelResourceOrder('missing'), /resource order not found/);
+    await assert.rejects(
+      () => order.createServiceOrder({ serviceOrderItem: [] }),
+      /serviceOrderItem required/,
+    );
+    await assert.rejects(
+      () => order.createResourceOrder({ resourceOrderItem: [] }),
+      /resourceOrderItem required/,
+    );
+    await assert.rejects(
+      () => order.createServiceOrder({ serviceOrderItem: [{ action: 'add' as const }] }),
+      /service payload required/,
+    );
+    await assert.rejects(
+      () =>
+        order.createServiceOrder({
+          serviceOrderItem: [{ action: 'modify' as const, serviceId: 'x' }],
+        }),
+      /serviceId and service payload required/,
+    );
+    await assert.rejects(
+      () => order.createServiceOrder({ serviceOrderItem: [{ action: 'delete' as const }] }),
+      /serviceId required/,
+    );
+    await assert.rejects(
+      () => order.createResourceOrder({ resourceOrderItem: [{ action: 'add' as const }] }),
+      /resource payload required/,
+    );
+    await assert.rejects(
+      () =>
+        order.createResourceOrder({
+          resourceOrderItem: [{ action: 'modify' as const, resourceId: 'x' }],
+        }),
+      /resource not found/,
+    );
+    await assert.rejects(
+      () =>
+        order.createResourceOrder({
+          resourceOrderItem: [{ action: 'delete' as const, resourceId: 'missing' }],
+        }),
+      /resource not found/,
+    );
+    await assert.rejects(
+      () => order.deleteServiceQualification('missing'),
+      /service qualification not found/,
+    );
+    await assert.rejects(
+      () => order.updateServiceQualification('missing', { state: 'terminated' }),
+      /service qualification not found/,
+    );
+    await assert.rejects(() => order.cancelServiceOrder('missing'), /service order not found/);
+    await assert.rejects(() => order.cancelResourceOrder('missing'), /resource order not found/);
   } finally {
     PostgresDatabase.resetForTesting();
     database.cleanup();

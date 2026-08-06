@@ -1,9 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { loadConfig } from '../config/env.js';
+import { databaseConfigOf, loadConfig } from '../config/env.js';
 import { handleHttpError, handleHttpRequest } from './app.js';
 import { createLogger } from '../logging/logger.js';
 import { InMemoryEntityRepository } from '../persistence/in-memory-entity-repository.js';
-import { PostgresDatabase } from '../persistence/postgres-database.js';
+import { createDatabaseClient } from '../persistence/database-factory.js';
 import { createNexusRuntime, type NexusRuntime } from '../runtime/nexus-runtime.js';
 
 export const config = {
@@ -14,15 +14,19 @@ export const config = {
 const appConfig = loadConfig(process.env);
 const logger = createLogger(appConfig.logLevel);
 const repository = new InMemoryEntityRepository();
-const db = PostgresDatabase.getInstance(appConfig.databaseUrl);
+const db = createDatabaseClient(databaseConfigOf(appConfig));
 const initialized = db.initialize();
 // Build the runtime once per cold start and reuse it; building it per request runs the
 // repository seeds (many DB round-trips) on every invocation.
-let runtime: NexusRuntime | null = null;
+let runtimePromise: Promise<NexusRuntime> | null = null;
 
-export const handler = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+export const handler = async (
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> => {
   await initialized;
-  runtime ??= createNexusRuntime(db);
+  runtimePromise ??= createNexusRuntime(db);
+  const runtime = await runtimePromise;
   request.url = normalizeRequestUrl(request.url ?? '/');
 
   try {

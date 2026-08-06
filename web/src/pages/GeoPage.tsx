@@ -1,6 +1,34 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, Plus, X } from 'lucide-react';
+import {
+  Activity,
+  Barcode,
+  Boxes,
+  Building,
+  Building2,
+  ChevronLeft,
+  Cpu,
+  Crosshair,
+  Factory,
+  Hash,
+  History,
+  Info as InfoIcon,
+  Loader2,
+  MapPin,
+  Network,
+  Plus,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import type {
   GeoStatus,
   GeoLocation,
@@ -46,10 +74,28 @@ import {
   type ResourcePlant,
 } from '../utils/resourceIcon';
 import { ResourceIcon } from '../components/ResourceIcon';
-import { selectionPinDataUrl, siteIconDataUrl, siteIconFor, SELECTION_PIN_ASPECT } from '../utils/siteIcon';
+import {
+  selectionPinDataUrl,
+  siteIconDataUrl,
+  siteIconFor,
+  SELECTION_PIN_ASPECT,
+} from '../utils/siteIcon';
 import { useNavigation } from '../hooks/useNavigation';
-import { GeoSearchBar, GuidedSignupModal, HierarchySidebar } from './geo-tabs';
+import {
+  AddressDetailPanel,
+  BASE_MAP_LAYERS,
+  CoordinateStreetView,
+  GeoSearchBar,
+  GuidedSignupModal,
+  HierarchySidebar,
+  IconInfoRow,
+  MapBaseLayerSelector,
+  PanelBarButton,
+  StatusBadge,
+  type AddressSearchError,
+} from './geo-tabs';
 import { BottomSheet } from '../components/BottomSheet';
+import { StreetViewHero } from '../components/StreetViewHero';
 import { GoogleStreetViewButton } from '../components/GoogleStreetViewButton';
 import { streetViewTargetsForGeometry } from '../utils/streetViewTargets';
 import { resourceStreetViewMarker, siteStreetViewMarker } from '../utils/streetViewMarker';
@@ -142,6 +188,17 @@ export default function GeoPage() {
   const [specs, setSpecs] = useState<GeoSpec[]>([]);
   const [events, setEvents] = useState<GeoEvent[]>([]);
   const [draftAddress, setDraftAddress] = useState<DraftAddress | null>(null);
+  // Endereço resolvido pela busca (Google) ou por clique no mapa (reverse geocode) —
+  // ocupa a mesma doca dos painéis de detalhe, nunca junto com eles (ver
+  // selectNode/onDeselect/openDetail, que sempre zeram um ao abrir o outro). `source`
+  // decide qual marcador o mapa desenha: busca ganha o alfinete de seleção
+  // (`addressPoint`), clique no mapa já tem o círculo "+" do `draftAddress` — os dois
+  // juntos duplicariam o marcador na mesma coordenada (ver GoogleMapPanel).
+  const [addressLookup, setAddressLookup] = useState<{
+    address: DraftAddress;
+    source: 'search' | 'map';
+  } | null>(null);
+  const [addressError, setAddressError] = useState<AddressSearchError | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -217,8 +274,9 @@ export default function GeoPage() {
 
   const specById = useMemo(() => new Map(specs.map((item) => [item.id, item])), [specs]);
   const siteById = useMemo(() => new Map(sites.map((item) => [item.id, item])), [sites]);
-  const selectedSiteId = selectedNode?.referredType === 'GeographicSite' ? selectedNode.refId ?? null : null;
-  const selectedSite = selectedSiteId ? siteById.get(selectedSiteId) ?? null : null;
+  const selectedSiteId =
+    selectedNode?.referredType === 'GeographicSite' ? (selectedNode.refId ?? null) : null;
+  const selectedSite = selectedSiteId ? (siteById.get(selectedSiteId) ?? null) : null;
   const selectedResourceNode = selectedNode?.kind === 'resource' ? selectedNode : null;
   // Alvo do painel de detalhe — deriva da mesma seleção usada pelo mapa e pela
   // árvore, então abrir por clique ou por deep-link (navParams) é o mesmo caminho.
@@ -266,6 +324,7 @@ export default function GeoPage() {
       const site = sites.find((s) => s.id === navParams.siteId);
       if (site) {
         setSelectedNode(siteNodeOf(site));
+        setAddressLookup(null);
         setDetailOpen(true);
         setQuery(site.name);
         clearNav();
@@ -274,18 +333,21 @@ export default function GeoPage() {
   }, [navParams, sites, clearNav]);
 
   // Seleção — o mesmo caminho para o clique na árvore e no mapa. Centraliza o
-  // mapa e expande o nó (e seus ancestrais) quando ele tem filhos: nada nasce
-  // aberto por padrão, então é o clique na estação que revela CTOs/Splitters
-  // abaixo dela. Site e Recurso também abrem o painel de detalhe — dock à
-  // esquerda no desktop, bottom sheet no mobile (ver GeoDetailPanel). Nós de
-  // UF/Município/grupo só navegam a árvore, não têm detalhe próprio.
+  // mapa e revela o nó na hierarquia: nada nasce aberto por padrão, então é a
+  // seleção que carrega e abre a cadeia de ancestrais até ele (ver revealNode).
+  // Vale para folha também — um recurso sem filhos precisa aparecer selecionado na
+  // árvore, mesmo sem nada para expandir abaixo. Site e Recurso também abrem o
+  // painel de detalhe — dock à esquerda no desktop, bottom sheet no mobile (ver
+  // GeoDetailPanel). Nós de UF/Município/grupo só navegam a árvore, não têm
+  // detalhe próprio.
   const selectNode = useCallback(
     (node: GeoTreeNode) => {
       setSelectedNode(node);
       setDraftAddress(null);
+      setAddressLookup(null);
       const point = treeNodePoint(node);
       if (point) setFocusPoint(point);
-      if (node.hasChildren) tree.expandNode(node.id);
+      tree.revealNode(node.id, { expandSelf: node.hasChildren });
       if (node.kind === 'site' || node.kind === 'resource') {
         setDetailTab('overview');
         setDetailOpen(true);
@@ -306,7 +368,37 @@ export default function GeoPage() {
     setSelectedNode(null);
     setDetailOpen(false);
     setDraftAddress(null);
+    setAddressLookup(null);
     setQuery('');
+  }, []);
+
+  // Endereço resolvido pela busca (Enter em texto livre ou clique numa sugestão do
+  // dropdown) — os dois caminhos convergem aqui. Some qualquer seleção de nó em
+  // curso (mesma doca, um painel por vez) e centraliza o mapa no ponto encontrado.
+  const onAddressFound = useCallback((address: DraftAddress) => {
+    setSelectedNode(null);
+    setDetailOpen(false);
+    setDraftAddress(null);
+    setAddressError(null);
+    setAddressLookup({ address, source: 'search' });
+    setFocusPoint(address.coordinates);
+    setQuery(address.label);
+  }, []);
+
+  const onAddressError = useCallback((err: AddressSearchError) => {
+    setAddressError(err);
+  }, []);
+
+  // Clique no mapa (vazio, sem seleção ativa) — o mesmo reverse geocode que já
+  // largava o "+" de rascunho (`draftAddress`, usado pelo GuidedSignupModal para
+  // cadastrar um site ali) agora também abre o painel de endereço na doca. O mapa só
+  // desenha o "+" para essa origem (`source: 'map'`) — o alfinete de seleção fica
+  // reservado à busca, para não duplicar marcador na mesma coordenada (ver
+  // GoogleMapPanel e a prop `addressPoint`).
+  const onMapAddressFound = useCallback((address: DraftAddress) => {
+    setDraftAddress(address);
+    setAddressLookup({ address, source: 'map' });
+    setQuery(address.label);
   }, []);
 
   // Some quando o mouse sai do item; sem atraso perceptível, mas absorve o
@@ -326,6 +418,7 @@ export default function GeoPage() {
 
   const openDetail = (site: GeoSite, tab: DetailTab = 'overview') => {
     setSelectedNode(siteNodeOf(site));
+    setAddressLookup(null);
     setDetailTab(tab);
     setDetailOpen(true);
     setQuery(site.name);
@@ -366,7 +459,7 @@ export default function GeoPage() {
       };
     }
 
-    const icon = resourceIconFor(node.resourceType ?? '');
+    const icon = resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
     // Cabo não tem pin: o balão nasce sobre o traçado, sem folga de ícone.
     const isCable = Boolean(treeNodeRoute(node));
     const rows: Array<[string, string]> = [
@@ -390,13 +483,13 @@ export default function GeoPage() {
   // Esc fecha o painel de detalhe — mas só quando nenhum outro modal está
   // aberto, senão a tecla fecharia os dois de uma vez.
   useEffect(() => {
-    if (!detailOpen || createOpen || typeOpen) return;
+    if (!detailOpen || createOpen || typeOpen || addressError) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setDetailOpen(false);
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [createOpen, detailOpen, typeOpen]);
+  }, [addressError, createOpen, detailOpen, typeOpen]);
 
   return (
     <div className="relative h-full min-h-0 min-w-0 overflow-hidden bg-transparent flex flex-col">
@@ -408,99 +501,126 @@ export default function GeoPage() {
         ) : null}
 
         <div className="relative flex h-full min-h-0">
-            {detailOpen && detailTarget ? (
-              <GeoDetailPanel
-                isMobile={isMobile}
-                target={detailTarget}
-                tab={detailTab}
-                sites={sites}
-                specById={specById}
-                siteById={siteById}
-                events={events}
-                onTab={setDetailTab}
-                onOpenSite={(next) => openDetail(next, 'overview')}
-                onOpenResource={goToResource}
-                onClose={onDeselect}
-                onChanged={async () => {
-                  if (!selectedSite) return;
-                  await loadGeo();
-                  const updatedEvents = await getJson<GeoEvent[]>(`/v1/geo/sites/${selectedSite.id}/events`).catch(() => []);
-                  setEvents(updatedEvents);
-                }}
-                onCreateSubSite={() => {
-                  setDetailOpen(false);
-                  setCreateOpen(true);
-                }}
-                searchBar={
-                  isMobile ? null : (
-                    <GeoSearchBar
-                      variant="panel"
-                      query={query}
-                      onQueryChange={setQuery}
-                      onSelectNode={selectNode}
-                      onSelectAddress={setDraftAddress}
-                    />
-                  )
-                }
-              />
-            ) : (
-              <HierarchySidebar
-                tree={tree}
-                selectedNodeId={selectedNode?.id ?? null}
-                onSelect={selectNode}
-                onHover={handleHover}
-                onOpenTypes={() => setTypeOpen(true)}
-                collapsed={hierarchyCollapsed}
-                onCollapsedChange={setHierarchyCollapsed}
-                searchBar={
-                  isMobile || hierarchyCollapsed ? null : (
-                    <GeoSearchBar
-                      variant="panel"
-                      query={query}
-                      onQueryChange={setQuery}
-                      onSelectNode={selectNode}
-                      onSelectAddress={setDraftAddress}
-                    />
-                  )
-                }
-              />
-            )}
+          {addressLookup ? (
+            <AddressDetailPanel
+              isMobile={isMobile}
+              address={addressLookup.address}
+              onClose={onDeselect}
+              searchBar={
+                isMobile ? null : (
+                  <GeoSearchBar
+                    variant="overlay"
+                    query={query}
+                    onQueryChange={setQuery}
+                    onSelectNode={selectNode}
+                    onAddressFound={onAddressFound}
+                    onAddressError={onAddressError}
+                  />
+                )
+              }
+            />
+          ) : detailOpen && detailTarget ? (
+            <GeoDetailPanel
+              isMobile={isMobile}
+              target={detailTarget}
+              tab={detailTab}
+              sites={sites}
+              specById={specById}
+              siteById={siteById}
+              events={events}
+              onTab={setDetailTab}
+              onOpenSite={(next) => openDetail(next, 'overview')}
+              onOpenResource={goToResource}
+              // Voltar só fecha o painel — a seleção fica de pé, então a hierarquia
+              // reaparece já expandida e rolada até o nó (ver HierarchyTreeView), com
+              // o alfinete ainda no mapa. Fechar (X) desfaz a seleção por completo.
+              onBack={() => setDetailOpen(false)}
+              onClose={onDeselect}
+              onChanged={async () => {
+                if (!selectedSite) return;
+                await loadGeo();
+                const updatedEvents = await getJson<GeoEvent[]>(
+                  `/v1/geo/sites/${selectedSite.id}/events`,
+                ).catch(() => []);
+                setEvents(updatedEvents);
+              }}
+              onCreateSubSite={() => {
+                setDetailOpen(false);
+                setCreateOpen(true);
+              }}
+              searchBar={
+                isMobile ? null : (
+                  <GeoSearchBar
+                    variant="overlay"
+                    query={query}
+                    onQueryChange={setQuery}
+                    onSelectNode={selectNode}
+                    onAddressFound={onAddressFound}
+                    onAddressError={onAddressError}
+                  />
+                )
+              }
+            />
+          ) : (
+            <HierarchySidebar
+              tree={tree}
+              selectedNodeId={selectedNode?.id ?? null}
+              onSelect={selectNode}
+              onHover={handleHover}
+              onOpenTypes={() => setTypeOpen(true)}
+              collapsed={hierarchyCollapsed}
+              onCollapsedChange={setHierarchyCollapsed}
+              searchBar={
+                isMobile || hierarchyCollapsed ? null : (
+                  <GeoSearchBar
+                    variant="panel"
+                    query={query}
+                    onQueryChange={setQuery}
+                    onSelectNode={selectNode}
+                    onAddressFound={onAddressFound}
+                    onAddressError={onAddressError}
+                  />
+                )
+              }
+            />
+          )}
 
-            <div className="relative min-h-0 flex-1">
+          <div className="relative min-h-0 flex-1">
             <GoogleMapPanel
-          nodes={mapNodes}
-          selectedNodeId={selectedNode?.id ?? null}
-          draftAddress={draftAddress}
-          focusPoint={focusPoint}
-          balloon={balloon}
-          onSelectNode={selectNode}
-          onHoverNode={handleHover}
-          onCloseBalloon={() => handleHover(null)}
-          onDraftAddress={setDraftAddress}
-          onDeselect={onDeselect}
-          onViewportChange={handleViewportChange}
-          clusterMarkers={clusterMarkers}
-        />
+              nodes={mapNodes}
+              selectedNodeId={selectedNode?.id ?? null}
+              draftAddress={draftAddress}
+              addressPoint={addressLookup?.source === 'search' ? addressLookup.address.coordinates : null}
+              focusPoint={focusPoint}
+              balloon={balloon}
+              onSelectNode={selectNode}
+              onHoverNode={handleHover}
+              onCloseBalloon={() => handleHover(null)}
+              onDraftAddress={onMapAddressFound}
+              onDeselect={onDeselect}
+              onViewportChange={handleViewportChange}
+              clusterMarkers={clusterMarkers}
+            />
 
-        {isMobile || (!detailOpen && hierarchyCollapsed) ? (
-          <GeoSearchBar
-            variant="floating"
-            isMobile={isMobile}
-            query={query}
-            onQueryChange={setQuery}
-            onSelectNode={selectNode}
-            onSelectAddress={setDraftAddress}
-          />
-        ) : null}
+            {isMobile || (!detailOpen && !addressLookup && hierarchyCollapsed) ? (
+              <GeoSearchBar
+                variant="floating"
+                isMobile={isMobile}
+                query={query}
+                onQueryChange={setQuery}
+                onSelectNode={selectNode}
+                onAddressFound={onAddressFound}
+                onAddressError={onAddressError}
+              />
+            ) : null}
 
-        {loading ? (
-          <div className="absolute right-5 bottom-5 z-30 rounded-[18px] border border-app-border bg-white/90 px-4 py-3 text-[0.84rem] font-medium text-app-muted shadow-soft backdrop-blur">
-            Carregando dados Geo...
+            {loading ? (
+              <div className="absolute right-5 bottom-5 z-30 rounded-[18px] border border-app-border bg-white/90 px-4 py-3 text-[0.84rem] font-medium text-app-muted shadow-soft backdrop-blur">
+                Carregando dados Geo...
+              </div>
+            ) : null}
           </div>
-        ) : null}
-
-            </div>
-          </div>
+        </div>
       </main>
 
       {createOpen ? (
@@ -528,6 +648,18 @@ export default function GeoPage() {
           }}
         />
       ) : null}
+
+      {addressError ? (
+        <Modal onClose={() => setAddressError(null)} title="Endereço não encontrado" eyebrow="Pesquisa">
+          <div className="grid gap-3">
+            <p className="text-[0.9rem] leading-snug text-app-text">
+              Não foi possível localizar <strong>&ldquo;{addressError.term}&rdquo;</strong>.{' '}
+              {addressError.message}
+            </p>
+            <p className="font-mono text-[0.76rem] text-app-muted">{addressError.status}</p>
+          </div>
+        </Modal>
+      ) : null}
     </div>
   );
 }
@@ -536,10 +668,11 @@ export default function GeoPage() {
 // passiva (recursos + cabos) vem de fora, já filtrada por escala/viewport pelo
 // GeoPage — este painel só desenha o que chega em `nodes` e avisa (`onViewportChange`)
 // quando a região visível ou a escala mudam, para o chamador decidir o que buscar.
-function GoogleMapPanel({
+export function GoogleMapPanel({
   nodes,
   selectedNodeId,
   draftAddress,
+  addressPoint,
   focusPoint,
   balloon,
   onSelectNode,
@@ -553,6 +686,10 @@ function GoogleMapPanel({
   nodes: GeoTreeNode[];
   selectedNodeId: string | null;
   draftAddress: DraftAddress | null;
+  // Endereço resolvido pela busca (ver AddressDetailPanel) — cravado com o mesmo
+  // alfinete de seleção, na ausência de um nó selecionado (os dois nunca coexistem,
+  // ver onAddressFound/selectNode em GeoPage).
+  addressPoint?: [number, number] | null;
   focusPoint?: [number, number] | null;
   balloon: MapBalloon | null;
   onSelectNode: (node: GeoTreeNode) => void;
@@ -593,6 +730,9 @@ function GoogleMapPanel({
   const selectedNodeIdRef = useRef(selectedNodeId);
   const nodeByIdRef = useRef<Map<string, GeoTreeNode>>(new Map());
   const [mapsReady, setMapsReady] = useState(false);
+  const [baseLayerId, setBaseLayerId] = useState(BASE_MAP_LAYERS[0]?.id ?? 'roadmap');
+  const selectedBaseLayer =
+    BASE_MAP_LAYERS.find((layer) => layer.id === baseLayerId) ?? BASE_MAP_LAYERS[0];
 
   useEffect(() => {
     closeBalloonRef.current = onCloseBalloon;
@@ -627,6 +767,7 @@ function GoogleMapPanel({
         mapRef.current = new maps.Map(mapEl.current, {
           center: DEFAULT_CENTER,
           zoom: 15,
+          mapTypeId: selectedBaseLayer.googleMapTypeId,
           mapTypeControl: false,
           fullscreenControl: false,
           streetViewControl: false,
@@ -647,14 +788,16 @@ function GoogleMapPanel({
           const lat = event.latLng.lat();
           const lng = event.latLng.lng();
           reverseGeocode(lat, lng).then((address) => {
-            onDraftAddress(address ?? {
-              street: 'Ponto selecionado no mapa',
-              city: 'Niteroi',
-              stateOrProvince: 'RJ',
-              country: 'BR',
-              coordinates: [lng, lat],
-              label: `Ponto selecionado [${lng.toFixed(5)}, ${lat.toFixed(5)}]`,
-            });
+            onDraftAddress(
+              address ?? {
+                street: 'Ponto selecionado no mapa',
+                city: 'Niteroi',
+                stateOrProvince: 'RJ',
+                country: 'BR',
+                coordinates: [lng, lat],
+                label: `Ponto selecionado [${lng.toFixed(5)}, ${lat.toFixed(5)}]`,
+              },
+            );
           });
         });
         // `idle` dispara ao fim de todo pan/zoom (não a cada frame) — é aqui que
@@ -670,16 +813,27 @@ function GoogleMapPanel({
           const southWest = bounds.getSouthWest();
           // Preferimos o valor exato da barra de escala do Google (o que o usuário vê);
           // o cálculo por zoom/lat é só fallback se o controle não for encontrado no DOM.
-          const scaleMeters = readGoogleScaleMeters(mapEl.current) ?? mapScaleMeters(zoom, center.lat());
+          const scaleMeters =
+            readGoogleScaleMeters(mapEl.current) ?? mapScaleMeters(zoom, center.lat());
           onViewportChangeRef.current(
-            { minLng: southWest.lng(), minLat: southWest.lat(), maxLng: northEast.lng(), maxLat: northEast.lat() },
+            {
+              minLng: southWest.lng(),
+              minLat: southWest.lat(),
+              maxLng: northEast.lng(),
+              maxLat: northEast.lat(),
+            },
             scaleMeters,
           );
         });
         setMapsReady(true);
       })
       .catch(() => setMapsReady(false));
-  }, [onDraftAddress]);
+  }, [onDraftAddress, selectedBaseLayer.googleMapTypeId]);
+
+  useEffect(() => {
+    if (!mapsReady || !mapRef.current || !selectedBaseLayer) return;
+    mapRef.current.setMapTypeId(selectedBaseLayer.googleMapTypeId);
+  }, [mapsReady, selectedBaseLayer]);
 
   // Pins dos nós visíveis. Local é quadrado arredondado e recurso é círculo —
   // é o que deixa dizer "isto é um lugar" e "isto é um equipamento" sem legenda.
@@ -724,8 +878,12 @@ function GoogleMapPanel({
             icon: iconOptions,
             zIndex,
           });
-          marker.addListener('click', () => onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node));
-          marker.addListener('mouseover', () => onHoverNodeRef.current(nodeByIdRef.current.get(node.id) ?? node));
+          marker.addListener('click', () =>
+            onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node),
+          );
+          marker.addListener('mouseover', () =>
+            onHoverNodeRef.current(nodeByIdRef.current.get(node.id) ?? node),
+          );
           marker.addListener('mouseout', () => onHoverNodeRef.current(null));
           markersRef.current.set(node.id, marker);
         }
@@ -734,7 +892,7 @@ function GoogleMapPanel({
         continue;
       }
 
-      const icon = resourceIconFor(node.resourceType ?? '');
+      const icon = resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
       const size = selected ? MARKER_ICON_SIZE + 6 : MARKER_ICON_SIZE;
       const iconOptions = {
         url: resourceIconDataUrl(icon, { size }),
@@ -756,8 +914,12 @@ function GoogleMapPanel({
           icon: iconOptions,
           zIndex,
         });
-        marker.addListener('click', () => onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node));
-        marker.addListener('mouseover', () => onHoverNodeRef.current(nodeByIdRef.current.get(node.id) ?? node));
+        marker.addListener('click', () =>
+          onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node),
+        );
+        marker.addListener('mouseover', () =>
+          onHoverNodeRef.current(nodeByIdRef.current.get(node.id) ?? node),
+        );
         marker.addListener('mouseout', () => onHoverNodeRef.current(null));
         markersRef.current.set(node.id, marker);
       }
@@ -822,12 +984,14 @@ function GoogleMapPanel({
   // Alfinete do item selecionado — marca sem ambiguidade o que foi clicado por
   // último (árvore, mapa ou busca), distinto do "+" de rascunho e do pin do
   // Google. `clickable: false` deixa o clique passar para o marker do próprio
-  // objeto por baixo (reseleção idempotente) em vez de o alfinete capturá-lo.
+  // objeto por baixo (reseleção idempotente) em vez de o alfinete capturá-lo. Na
+  // ausência de nó selecionado, cai para `addressPoint` — o endereço encontrado pela
+  // busca ganha o mesmo alfinete, sem ícone próprio de local/recurso por baixo.
   useEffect(() => {
     const maps = window.google?.maps;
     if (!mapsReady || !mapRef.current || !maps) return;
     const node = selectedNodeId ? nodeByIdRef.current.get(selectedNodeId) : undefined;
-    const point = node ? treeNodePoint(node) : null;
+    const point = node ? treeNodePoint(node) : (addressPoint ?? null);
     if (!point) {
       selectionMarkerRef.current?.setMap(null);
       selectionMarkerRef.current = null;
@@ -835,10 +999,19 @@ function GoogleMapPanel({
     }
     const [lng, lat] = point;
     const width = Math.round(SELECTION_PIN_HEIGHT * SELECTION_PIN_ASPECT);
+    // O ícone de equipamento é ancorado no canto inferior-esquerdo, não no centro (ver o
+    // efeito de marcadores acima) — sem essa mesma correção, a ponta do alfinete cairia
+    // no canto do ícone em vez do seu centro visual. Local não precisa: seu ícone já é
+    // centrado na coordenada, então a ponta cai certa sem ajuste.
+    const isPointResource = node?.kind === 'resource' && node.geometry?.type === 'Point';
+    const resourceSize = MARKER_ICON_SIZE + 6; // tamanho do ícone quando selecionado
+    const anchor = isPointResource
+      ? new maps.Point(width / 2 - resourceSize / 2, SELECTION_PIN_HEIGHT + resourceSize / 2)
+      : new maps.Point(width / 2, SELECTION_PIN_HEIGHT);
     const iconOptions = {
       url: selectionPinDataUrl(SELECTION_PIN_HEIGHT),
       scaledSize: new maps.Size(width, SELECTION_PIN_HEIGHT),
-      anchor: new maps.Point(width / 2, SELECTION_PIN_HEIGHT),
+      anchor,
     };
     if (selectionMarkerRef.current) {
       selectionMarkerRef.current.setPosition({ lng, lat });
@@ -852,7 +1025,7 @@ function GoogleMapPanel({
         clickable: false,
       });
     }
-  }, [mapsReady, selectedNodeId, nodes]);
+  }, [mapsReady, selectedNodeId, nodes, addressPoint]);
 
   // Rota dos cabos. Um cabo não é um ponto: sua geometria é uma LineString com o traçado real na
   // rua, então vira polyline em vez de pin. Reusada por id pelo mesmo motivo dos marcadores.
@@ -867,13 +1040,16 @@ function GoogleMapPanel({
       if (!route) continue;
       visibleIds.add(node.id);
       nodeByIdRef.current.set(node.id, node);
-      const icon = resourceIconFor(node.resourceType ?? '');
+      const icon = resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
       const path = route.map(([lng, lat]) => ({ lng, lat }));
       const existing = cableRoutesRef.current.get(node.id);
 
       if (existing) {
         existing.setPath(path);
-        existing.setOptions({ strokeColor: icon.color, strokeWeight: CABLE_STROKE_WEIGHT[icon.code] ?? 2.5 });
+        existing.setOptions({
+          strokeColor: icon.color,
+          strokeWeight: CABLE_STROKE_WEIGHT[icon.code] ?? 2.5,
+        });
         continue;
       }
 
@@ -885,8 +1061,12 @@ function GoogleMapPanel({
         strokeWeight: CABLE_STROKE_WEIGHT[icon.code] ?? 2.5,
         zIndex: CABLE_ROUTE_Z,
       });
-      line.addListener('click', () => onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node));
-      line.addListener('mouseover', () => onHoverNodeRef.current(nodeByIdRef.current.get(node.id) ?? node));
+      line.addListener('click', () =>
+        onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node),
+      );
+      line.addListener('mouseover', () =>
+        onHoverNodeRef.current(nodeByIdRef.current.get(node.id) ?? node),
+      );
       line.addListener('mouseout', () => onHoverNodeRef.current(null));
       cableRoutesRef.current.set(node.id, line);
     }
@@ -938,6 +1118,7 @@ function GoogleMapPanel({
   return (
     <>
       <div ref={mapEl} className="absolute inset-0 h-full w-full" />
+      <MapBaseLayerSelector value={baseLayerId} onChange={setBaseLayerId} />
       {balloon ? createPortal(<MapBalloonCard balloon={balloon} />, balloonNode) : null}
     </>
   );
@@ -955,7 +1136,9 @@ function MapBalloonCard({ balloon }: { balloon: MapBalloon }) {
           <div className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
             {balloon.eyebrow}
           </div>
-          <h3 className="font-display text-[1rem] font-semibold leading-tight text-app-text">{balloon.title}</h3>
+          <h3 className="font-display text-[1rem] font-semibold leading-tight text-app-text">
+            {balloon.title}
+          </h3>
         </div>
       </div>
 
@@ -989,13 +1172,17 @@ function FallbackMap({
   return (
     <div className="absolute inset-0 h-full w-full bg-[linear-gradient(rgba(215,222,232,0.72)_1px,transparent_1px),linear-gradient(90deg,rgba(215,222,232,0.72)_1px,transparent_1px),linear-gradient(135deg,#dce4ec,#f8fafc_46%,#e7eaf0)] bg-[length:36px_36px,36px_36px,auto]">
       <div className="absolute right-4 top-20 z-20 rounded-[18px] border border-app-border bg-white px-4 py-3 text-[0.84rem] text-app-muted shadow-soft">
-        Configure <strong className="text-app-text">VITE_GOOGLE_MAPS_API_KEY</strong> para ativar Google Maps.
+        Configure <strong className="text-app-text">VITE_GOOGLE_MAPS_API_KEY</strong> para ativar
+        Google Maps.
       </div>
       {nodes.slice(0, 60).map((node, index) => {
         const isSite = node.kind === 'site';
         const icon = isSite
-          ? siteIconFor(siteKindFromSpec({ category: node.siteCategory, name: node.sublabel }), (node.status as GeoStatus) ?? 'active')
-          : resourceIconFor(node.resourceType ?? '');
+          ? siteIconFor(
+              siteKindFromSpec({ category: node.siteCategory, name: node.sublabel }),
+              (node.status as GeoStatus) ?? 'active',
+            )
+          : resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
         const url = isSite
           ? siteIconDataUrl(icon as ReturnType<typeof siteIconFor>, { size: 40 })
           : resourceIconDataUrl(icon as ReturnType<typeof resourceIconFor>, { size: 40 });
@@ -1016,7 +1203,9 @@ function FallbackMap({
         );
       })}
       {draftAddress ? (
-        <div className="absolute left-[54%] top-[52%] z-20 flex h-10 w-10 items-center justify-center rounded-[14px] border-2 border-app-text bg-app-accent font-bold shadow-soft">+</div>
+        <div className="absolute left-[54%] top-[52%] z-20 flex h-10 w-10 items-center justify-center rounded-[14px] border-2 border-app-text bg-app-accent font-bold shadow-soft">
+          +
+        </div>
       ) : null}
     </div>
   );
@@ -1038,6 +1227,7 @@ function GeoDetailPanel({
   onTab,
   onOpenSite,
   onOpenResource,
+  onBack,
   onClose,
   onChanged,
   onCreateSubSite,
@@ -1053,6 +1243,7 @@ function GeoDetailPanel({
   onTab: (tab: DetailTab) => void;
   onOpenSite: (site: GeoSite) => void;
   onOpenResource: (resourceId: string) => void;
+  onBack: () => void;
   onClose: () => void;
   onChanged: () => Promise<void>;
   onCreateSubSite: () => void;
@@ -1061,13 +1252,33 @@ function GeoDetailPanel({
   const eyebrow =
     target.kind === 'site'
       ? `Site · ${specById.get(target.site.siteSpecificationId)?.name ?? 'Tipo não informado'}`
-      : target.node.sublabel ?? resourceIconFor(target.node.resourceType ?? '').label;
+      : (target.node.sublabel ?? resourceIconFor(target.node.resourceType ?? '').label);
   const title = target.kind === 'site' ? target.site.name : target.node.label;
+
+  // Hoisted de SiteDetailBody: o hero (foto do topo) precisa do ponto do Site aqui
+  // no painel, então a busca por endereço/geometria sob demanda mora neste nível
+  // para os dois (hero e corpo) lerem o mesmo resultado, sem buscar duas vezes — o
+  // backend de dev atende requisições em série (ver AGENTS.md).
+  const { address: siteAddress, point: sitePoint } = useSitePlace(
+    target.kind === 'site' ? target.site : null,
+  );
+  const resourcePoint =
+    target.kind === 'resource' ? streetViewTargetsForGeometry(target.node.geometry)[0]?.point : undefined;
+  const heroMarker: StreetViewMarker | null =
+    target.kind === 'site'
+      ? sitePoint
+        ? siteStreetViewMarker(target.site, specById.get(target.site.siteSpecificationId), sitePoint)
+        : null
+      : resourcePoint
+        ? resourceStreetViewMarker(target.node, resourcePoint)
+        : null;
 
   const body =
     target.kind === 'site' ? (
       <SiteDetailBody
         site={target.site}
+        address={siteAddress}
+        point={sitePoint}
         tab={tab}
         sites={sites}
         specById={specById}
@@ -1084,20 +1295,22 @@ function GeoDetailPanel({
     );
 
   const header = (
-    <div className="flex items-center gap-2 border-b border-app-border px-3 py-3">
+    <div className="flex items-start gap-2 border-b border-app-border px-3 py-3">
       <button
         type="button"
-        onClick={onClose}
+        onClick={onBack}
         className="shrink-0 rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
         aria-label="Voltar para a hierarquia"
       >
         <ChevronLeft className="h-5 w-5" />
       </button>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+        <div className="break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.08em] text-app-muted [overflow-wrap:anywhere]">
           {eyebrow}
         </div>
-        <h3 className="truncate font-display text-[1.05rem] font-semibold leading-tight text-app-text">{title}</h3>
+        <h3 className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text [overflow-wrap:anywhere]">
+          {title}
+        </h3>
       </div>
       <button
         type="button"
@@ -1112,17 +1325,27 @@ function GeoDetailPanel({
 
   if (isMobile) {
     return (
-      <BottomSheet header={header} onClose={onClose}>
-        <div className="px-4 py-3">{body}</div>
+      <BottomSheet
+        header={
+          <>
+            <StreetViewHero marker={heroMarker} />
+            {header}
+          </>
+        }
+        onClose={onClose}
+      >
+        <div className="min-w-0 overflow-x-hidden px-4 py-3">{body}</div>
       </BottomSheet>
     );
   }
 
   return (
-    <div className="flex h-full w-[360px] max-w-[85vw] shrink-0 flex-col border-r border-app-border bg-app-panel">
-      {searchBar}
+    <div className="flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-x-hidden border-r border-app-border bg-app-panel shadow-dock">
+      <StreetViewHero marker={heroMarker} overlay={searchBar} />
       {header}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">{body}</div>
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-3">
+        {body}
+      </div>
     </div>
   );
 }
@@ -1132,6 +1355,8 @@ function GeoDetailPanel({
 // (título/eyebrow/fechar) agora é responsabilidade do GeoDetailPanel.
 function SiteDetailBody({
   site,
+  address,
+  point,
   tab,
   sites,
   specById,
@@ -1144,6 +1369,8 @@ function SiteDetailBody({
   onCreateSubSite,
 }: {
   site: GeoSite;
+  address: GeoAddress | null;
+  point: [number, number] | null;
   tab: DetailTab;
   sites: GeoSite[];
   specById: Map<string, GeoSpec>;
@@ -1156,10 +1383,9 @@ function SiteDetailBody({
   onCreateSubSite: () => void;
 }) {
   const spec = specById.get(site.siteSpecificationId);
-  const { address, point } = useSitePlace(site);
   // O conteúdo do local vem do mesmo endpoint que alimenta a árvore, e só quando
   // o painel abre: sub-locais e recursos hospedados são os filhos diretos dele.
-  const { subSites, resources } = useSiteChildren(site.id);
+  const { subSites, resources, loading: childrenLoading } = useSiteChildren(site.id);
   const [relationshipTarget, setRelationshipTarget] = useState('');
   const [relationshipType, setRelationshipType] = useState('fedBy');
   const [nextStatus, setNextStatus] = useState<GeoStatus>(site.status);
@@ -1178,51 +1404,85 @@ function SiteDetailBody({
     await onChanged();
   };
 
+  const siteMarker = point ? siteStreetViewMarker(site, spec, point) : null;
+
   return (
     <>
-      {/* Sub-locais e Recursos levam contador: eles são a única porta de entrada
-          para o que saiu da árvore, então o número precisa ser visível de fora. */}
-      <div className="mb-4 flex flex-wrap gap-2 border-b border-app-border pb-3">
-        {([
-          ['overview', 'Visao geral', null],
-          ['subsites', 'Sub-locais', subSites.length],
-          ['resources', 'Recursos', resources.length],
-          ['topology', 'Topologia', null],
-          ['lifecycle', 'Ciclo de vida', null],
-        ] as Array<[DetailTab, string, number | null]>).map(([id, label, count]) => (
-          <button key={id} type="button" onClick={() => onTab(id)} className={`flex items-center gap-1.5 rounded-[999px] px-3 py-2 text-[0.82rem] font-semibold ${tab === id ? 'bg-app-accent text-app-text' : 'bg-app-accent-soft text-app-muted'}`}>
-            {label}
-            {count ? (
-              <span className="rounded-[999px] bg-white/70 px-1.5 text-[0.68rem] font-semibold text-app-muted">{count}</span>
-            ) : null}
-          </button>
+      {/* Barra de ações abaixo do título, estilo Google Maps: ícone em cima,
+          rótulo embaixo. Sub-locais e Recursos levam contador — eles são a
+          única porta de entrada para o que saiu da árvore, então o número
+          precisa ser visível de fora. Street View fica ao lado da coordenada
+          (ver aba Visão geral), não solto na barra. */}
+      <div className="mb-4 flex flex-wrap gap-1 border-b border-app-border pb-3">
+        {(
+          [
+            ['overview', 'Visão geral', InfoIcon, null],
+            ['subsites', 'Sub-locais', Building2, subSites.length],
+            ['resources', 'Recursos', Boxes, resources.length],
+            ['topology', 'Topologia', Network, null],
+            ['lifecycle', 'Ciclo de vida', History, null],
+          ] as Array<[DetailTab, string, LucideIcon, number | null]>
+        ).map(([id, label, icon, count]) => (
+          <PanelBarButton
+            key={id}
+            icon={icon}
+            label={label}
+            badge={count}
+            active={tab === id}
+            onClick={() => onTab(id)}
+          />
         ))}
       </div>
 
       {tab === 'overview' ? (
-        <div className="grid gap-4 md:grid-cols-2">
-          <Info label="Tipo" value={`${spec?.name ?? '-'} · ${spec?.category ?? '-'}`} />
-          <Info label="Status" value={statusLabel[site.status]} />
-          <Info label="Endereço" value={address ? formatAddress(address) : 'Sem endereço'} />
-          <Info
-            label="Localização"
-            value={point ? <CoordinateStreetView marker={siteStreetViewMarker(site, spec, point)} /> : 'Não localizado'}
+        <div className="grid gap-1">
+          <IconInfoRow icon={Activity} hint="Status" value={<StatusBadge status={site.status} />} />
+          <IconInfoRow icon={MapPin} hint="Endereço" value={address ? formatAddress(address) : 'Sem endereço'} />
+          <IconInfoRow
+            icon={Crosshair}
+            hint="Localização"
+            value={
+              siteMarker ? (
+                <span className="inline-flex max-w-full flex-wrap items-center gap-1.5">
+                  <CoordinateStreetView marker={siteMarker} />
+                  <GoogleStreetViewButton marker={siteMarker} />
+                </span>
+              ) : (
+                'Não localizado'
+              )
+            }
           />
-          <Info label="ParentSite" value={site.parentSite ? siteById.get(site.parentSite.id)?.name ?? site.parentSite.id : 'Nenhum'} />
-          <Info label="ID" value={site.id} mono />
+          <IconInfoRow
+            icon={Building}
+            hint="ParentSite"
+            value={
+              site.parentSite
+                ? (siteById.get(site.parentSite.id)?.name ?? site.parentSite.id)
+                : 'Nenhum'
+            }
+          />
+          <IconInfoRow icon={Hash} hint="ID" value={site.id} mono />
         </div>
       ) : null}
 
       {tab === 'subsites' ? (
         <div>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="text-[0.88rem] text-app-muted">
-              Espaços internos deste local (sala, andar, gaveta). Não aparecem no mapa nem na
-              hierarquia — abrem por aqui.
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div className="min-w-0 break-words text-[0.82rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
+              Espaços internos do site (sala, andar, gaveta, etc)
             </div>
-            <button type="button" className="geo-btn primary shrink-0" onClick={onCreateSubSite}><Plus className="h-4 w-4" />Adicionar sub-local</button>
+            <button
+              type="button"
+              className="geo-btn primary shrink-0"
+              onClick={onCreateSubSite}
+              aria-label="Adicionar sub-local"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
           </div>
-          {subSites.length ? (
+          {childrenLoading ? (
+            <LoadingRow label="Carregando sub-locais…" />
+          ) : subSites.length ? (
             <div className="grid gap-2">
               {subSites.map((child) => (
                 <button
@@ -1232,7 +1492,7 @@ function SiteDetailBody({
                     const target = child.refId ? siteById.get(child.refId) : undefined;
                     if (target) onOpenSite(target);
                   }}
-                  className="flex w-full items-center gap-3 rounded-[18px] border border-app-border px-4 py-3 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
+                  className="flex w-full min-w-0 items-start gap-2.5 rounded-[14px] border border-app-border px-3 py-2.5 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
                 >
                   <img
                     src={siteIconDataUrl(
@@ -1246,12 +1506,17 @@ function SiteDetailBody({
                     className="h-7 w-7 shrink-0"
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[0.9rem] font-semibold text-app-text">{child.label}</span>
-                    <span className="block truncate text-[0.78rem] text-app-muted">
-                      {child.sublabel ?? 'Sub-local'} · {statusLabel[(child.status as GeoStatus) ?? 'active']}
+                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">
+                      {child.label}
+                    </span>
+                    <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
+                      {child.sublabel ?? 'Sub-local'} ·{' '}
+                      {statusLabel[(child.status as GeoStatus) ?? 'active']}
                     </span>
                   </span>
-                  <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">Abrir</span>
+                  <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">
+                    Abrir
+                  </span>
                 </button>
               ))}
             </div>
@@ -1265,34 +1530,86 @@ function SiteDetailBody({
 
       {tab === 'topology' ? (
         <div className="grid gap-4">
-          <SimpleRows rows={site.relatedSite.map((rel) => [relationshipTypeLabel(rel.relationshipType), siteById.get(rel.id)?.name ?? rel.id, rel.id])} empty="Sem relações topológicas." />
-          <div className="grid gap-3 rounded-[18px] border border-app-border p-4 md:grid-cols-[1fr_1fr_auto]">
-            <select value={relationshipType} onChange={(event) => setRelationshipType(event.target.value)} className="geo-input">
-              {['fedBy', 'feeds', 'nearby', 'contains'].map((value) => <option key={value} value={value}>{relationshipTypeLabel(value)}</option>)}
+          <SimpleRows
+            rows={site.relatedSite.map((rel) => [
+              relationshipTypeLabel(rel.relationshipType),
+              siteById.get(rel.id)?.name ?? rel.id,
+              rel.id,
+            ])}
+            empty="Sem relações topológicas."
+          />
+          <div className="grid min-w-0 gap-2 rounded-[14px] border border-app-border p-3">
+            <select
+              value={relationshipType}
+              onChange={(event) => setRelationshipType(event.target.value)}
+              className="geo-input"
+            >
+              {['fedBy', 'feeds', 'nearby', 'contains'].map((value) => (
+                <option key={value} value={value}>
+                  {relationshipTypeLabel(value)}
+                </option>
+              ))}
             </select>
-            <select value={relationshipTarget} onChange={(event) => setRelationshipTarget(event.target.value)} className="geo-input">
+            <select
+              value={relationshipTarget}
+              onChange={(event) => setRelationshipTarget(event.target.value)}
+              className="geo-input"
+            >
               <option value="">Site relacionado</option>
-              {sites.filter((item) => item.id !== site.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              {sites
+                .filter((item) => item.id !== site.id)
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
             </select>
-            <button type="button" className="geo-btn primary justify-center" onClick={() => void addRelationship()}>Adicionar</button>
+            <button
+              type="button"
+              className="geo-btn primary justify-center"
+              onClick={() => void addRelationship()}
+            >
+              Adicionar
+            </button>
           </div>
         </div>
       ) : null}
 
       {tab === 'lifecycle' ? (
         <div className="grid gap-4">
-          <div className="grid gap-3 rounded-[18px] border border-app-border p-4 md:grid-cols-[1fr_auto]">
-            <select value={nextStatus} onChange={(event) => setNextStatus(event.target.value as GeoStatus)} className="geo-input">
-              {Object.entries(statusLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          <div className="grid min-w-0 gap-2 rounded-[14px] border border-app-border p-3">
+            <select
+              value={nextStatus}
+              onChange={(event) => setNextStatus(event.target.value as GeoStatus)}
+              className="geo-input"
+            >
+              {Object.entries(statusLabel).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
             </select>
-            <button type="button" className="geo-btn primary justify-center" onClick={() => void changeStatus()}>Mudar status</button>
+            <button
+              type="button"
+              className="geo-btn primary justify-center"
+              onClick={() => void changeStatus()}
+            >
+              Mudar status
+            </button>
           </div>
-          <SimpleRows rows={events.map((event) => [new Date(event.eventTime).toLocaleString('pt-BR'), event.eventType, event.source])} empty="Sem eventos registrados." />
+          <SimpleRows
+            rows={events.map((event) => [
+              new Date(event.eventTime).toLocaleString('pt-BR'),
+              event.eventType,
+              event.source,
+            ])}
+            empty="Sem eventos registrados."
+          />
         </div>
       ) : null}
 
       {tab === 'resources' ? (
-        <SiteResourcesTab resources={resources} onOpenResource={onOpenResource} />
+        <SiteResourcesTab resources={resources} loading={childrenLoading} onOpenResource={onOpenResource} />
       ) : null}
     </>
   );
@@ -1309,95 +1626,126 @@ function ResourceDetailBody({
   node: GeoTreeNode;
   onOpenResource: (resourceId: string) => void;
 }) {
-  const icon = resourceIconFor(node.resourceType ?? '');
-  const status = statusLabel[(node.status as GeoStatus) ?? 'active'];
+  const resourceStatus = (node.status as GeoStatus) ?? 'active';
   const streetViewTargets = streetViewTargetsForGeometry(node.geometry);
   const { children, loading } = useResourceChildren(node);
+  const [tab, setTab] = useState<'overview' | 'subresources'>('overview');
 
   return (
-    <div className="grid gap-5">
-      <div className="grid gap-3 md:grid-cols-2">
-        <Info label="Tipo" value={icon.label} />
-        <Info label="Status" value={status} />
-        <Info label="Endereço" value={node.detail?.address ?? 'Sem endereço'} />
-        {streetViewTargets.map((target) => (
-          <Info
-            key={`${target.label ?? 'ponto'}:${target.point.join(',')}`}
-            label={target.label ? `Localização · ${target.label}` : 'Localização'}
-            value={<CoordinateStreetView marker={resourceStreetViewMarker(node, target.point)} />}
-          />
-        ))}
-        {node.detail?.model ? <Info label="Modelo" value={node.detail.model} /> : null}
-        {node.detail?.manufacturer ? <Info label="Fabricante" value={node.detail.manufacturer} /> : null}
-        {node.detail?.serialNumber ? <Info label="Nº de série" value={node.detail.serialNumber} mono /> : null}
+    <div className="grid gap-4">
+      {/* Barra de ações abaixo do título, mesmo padrão do Site: Recursos
+          internos leva contador — mesma lógica de Sub-locais/Recursos no
+          Site, é a porta de entrada para o que mora dentro deste recurso
+          (ex.: portas de uma placa). Street View fica ao lado de cada
+          coordenada, não solto na barra. */}
+      <div className="flex flex-wrap gap-1 border-b border-app-border pb-3">
+        <PanelBarButton
+          icon={InfoIcon}
+          label="Visão geral"
+          active={tab === 'overview'}
+          onClick={() => setTab('overview')}
+        />
+        <PanelBarButton
+          icon={Boxes}
+          label="Recursos internos"
+          badge={children.length}
+          active={tab === 'subresources'}
+          onClick={() => setTab('subresources')}
+        />
       </div>
 
-      {node.hasChildren ? (
-        <section>
-          <h4 className="mb-2 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-            Recursos internos · {children.length}
-          </h4>
-          {children.length ? (
+      {tab === 'overview' ? (
+        <div className="grid gap-1">
+          <IconInfoRow icon={Activity} hint="Status" value={<StatusBadge status={resourceStatus} />} />
+          <IconInfoRow icon={MapPin} hint="Endereço" value={node.detail?.address ?? 'Sem endereço'} />
+          {streetViewTargets.map((target) => {
+            const marker = resourceStreetViewMarker(node, target.point);
+            return (
+              <IconInfoRow
+                key={`${target.label ?? 'ponto'}:${target.point.join(',')}`}
+                icon={Crosshair}
+                hint={target.label ? `Localização · ${target.label}` : 'Localização'}
+                value={
+                  <span className="inline-flex max-w-full flex-wrap items-center gap-1.5">
+                    <CoordinateStreetView marker={marker} />
+                    <GoogleStreetViewButton marker={marker} />
+                  </span>
+                }
+              />
+            );
+          })}
+          {node.detail?.model ? <IconInfoRow icon={Cpu} hint="Modelo" value={node.detail.model} /> : null}
+          {node.detail?.manufacturer ? (
+            <IconInfoRow icon={Factory} hint="Fabricante" value={node.detail.manufacturer} />
+          ) : null}
+          {node.detail?.serialNumber ? (
+            <IconInfoRow icon={Barcode} hint="Nº de série" value={node.detail.serialNumber} mono />
+          ) : null}
+        </div>
+      ) : null}
+
+      {tab === 'subresources' ? (
+        <div>
+          {loading ? (
+            <LoadingRow label="Carregando recursos internos…" />
+          ) : children.length ? (
             <div className="grid gap-2">
               {children.map((child) => (
                 <button
                   key={child.id}
                   type="button"
                   onClick={() => (child.refId ? onOpenResource(child.refId) : undefined)}
-                  className="flex w-full items-center gap-3 rounded-[18px] border border-app-border px-4 py-2.5 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
+                  className="flex w-full min-w-0 items-start gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
                 >
-                  <ResourceIcon resource={child.resourceType ?? ''} variant="badge" size={26} />
+                  <ResourceIcon
+                    resource={{ resourceType: child.resourceType ?? '', status: child.status }}
+                    variant="badge"
+                    size={26}
+                  />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[0.9rem] font-semibold text-app-text">{child.label}</span>
-                    <span className="block truncate text-[0.78rem] text-app-muted">
-                      {[resourceIconFor(child.resourceType ?? '').label, child.detail?.model, child.detail?.serialNumber]
+                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">
+                      {child.label}
+                    </span>
+                    <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
+                      {[
+                        resourceIconFor({ resourceType: child.resourceType ?? '', status: child.status }).label,
+                        child.detail?.model,
+                        child.detail?.serialNumber,
+                      ]
                         .filter(Boolean)
                         .join(' · ')}
                     </span>
                   </span>
-                  <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">Abrir</span>
+                  <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">
+                    Abrir
+                  </span>
                 </button>
               ))}
             </div>
-          ) : loading ? (
-            <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
-              Carregando recursos internos…
-            </div>
           ) : (
             <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
-              Nenhum recurso interno registrado.
+              Este recurso ainda não possui recursos internos.
             </div>
           )}
-        </section>
+        </div>
       ) : null}
-
-      <button
-        type="button"
-        onClick={() => (node.refId ? onOpenResource(node.refId) : undefined)}
-        className="geo-btn primary w-full justify-center"
-      >
-        Abrir no módulo Recursos
-      </button>
     </div>
   );
 }
 
-// Filhos diretos de um recurso (ex.: portas de uma placa, fibras de um cabo).
-// Só busca quando o próprio nó diz ter filhos — a maioria dos recursos é folha,
-// e não vale a pena um round-trip por nada.
+// Filhos diretos de um recurso (ex.: portas de uma placa, fibras de um cabo, ou o
+// splitter de uma CDOE). Sempre busca com `scope: 'all'` — `node.hasChildren` reflete
+// o escopo de árvore (com pass-through sobre item interno), então uma CDOE cujo único
+// filho é um splitter chega aqui com `hasChildren: false` mesmo tendo o quê mostrar.
 function useResourceChildren(node: GeoTreeNode): { children: GeoTreeNode[]; loading: boolean } {
   const [nodes, setNodes] = useState<GeoTreeNode[]>([]);
-  const [loading, setLoading] = useState(node.hasChildren);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setNodes([]);
-    if (!node.hasChildren) {
-      setLoading(false);
-      return;
-    }
     setLoading(true);
-    void fetchTreeChildren(node.id)
+    void fetchTreeChildren(node.id, { scope: 'all' })
       .then((page) => {
         if (cancelled) return;
         setNodes(page.nodes);
@@ -1407,7 +1755,7 @@ function useResourceChildren(node: GeoTreeNode): { children: GeoTreeNode[]; load
     return () => {
       cancelled = true;
     };
-  }, [node.id, node.hasChildren]);
+  }, [node.id]);
 
   return { children: nodes, loading };
 }
@@ -1418,9 +1766,11 @@ function useResourceChildren(node: GeoTreeNode): { children: GeoTreeNode[]; load
 // referencial e o detalhe abre no módulo Resource.
 function SiteResourcesTab({
   resources,
+  loading,
   onOpenResource,
 }: {
   resources: GeoTreeNode[];
+  loading: boolean;
   onOpenResource: (resourceId: string) => void;
 }) {
   const groups = useMemo(() => {
@@ -1439,6 +1789,10 @@ function SiteResourcesTab({
       .filter((group) => group.items.length > 0);
   }, [resources]);
 
+  if (loading) {
+    return <LoadingRow label="Carregando recursos…" />;
+  }
+
   if (!groups.length) {
     return (
       <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
@@ -1448,30 +1802,40 @@ function SiteResourcesTab({
   }
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-4">
       {groups.map(({ plant, items }) => (
         <section key={plant}>
-          <h4 className="mb-2 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+          <h4 className="mb-1.5 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
             {plantLabel[plant]} · {items.length}
           </h4>
           <div className="grid gap-2">
             {items.map((resource) => {
-              const icon = resourceIconFor(resource.resourceType ?? '');
+              const icon = resourceIconFor({ resourceType: resource.resourceType ?? '', status: resource.status });
               return (
                 <button
                   key={resource.id}
                   type="button"
                   onClick={() => (resource.refId ? onOpenResource(resource.refId) : undefined)}
-                  className="flex w-full items-center gap-3 rounded-[18px] border border-app-border px-4 py-2.5 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
+                  className="flex w-full min-w-0 items-start gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
                 >
-                  <ResourceIcon resource={resource.resourceType ?? ''} variant="badge" size={26} />
+                  <ResourceIcon
+                    resource={{ resourceType: resource.resourceType ?? '', status: resource.status }}
+                    variant="badge"
+                    size={26}
+                  />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[0.9rem] font-semibold text-app-text">{resource.label}</span>
-                    <span className="block truncate text-[0.78rem] text-app-muted">
-                      {[icon.label, resource.detail?.model, resource.detail?.serialNumber].filter(Boolean).join(' · ')}
+                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">
+                      {resource.label}
+                    </span>
+                    <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
+                      {[icon.label, resource.detail?.model, resource.detail?.serialNumber]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </span>
                   </span>
-                  <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">Abrir</span>
+                  <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">
+                    Abrir
+                  </span>
                 </button>
               );
             })}
@@ -1482,7 +1846,15 @@ function SiteResourcesTab({
   );
 }
 
-function TypeManagementModal({ specs, onClose, onChanged }: { specs: GeoSpec[]; onClose: () => void; onChanged: () => Promise<void> }) {
+function TypeManagementModal({
+  specs,
+  onClose,
+  onChanged,
+}: {
+  specs: GeoSpec[];
+  onClose: () => void;
+  onChanged: () => Promise<void>;
+}) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<GeoSpec['category']>('Site');
   const [saving, setSaving] = useState(false);
@@ -1504,30 +1876,71 @@ function TypeManagementModal({ specs, onClose, onChanged }: { specs: GeoSpec[]; 
     <Modal onClose={onClose} title="Tipos de Site" eyebrow="Catalogo">
       <div className="mb-4 max-h-[260px] overflow-auto rounded-[18px] border border-app-border">
         <table className="w-full border-collapse text-left">
-          <thead><tr><Th>Nome</Th><Th>Categoria</Th><Th>Filhos permitidos</Th></tr></thead>
+          <thead>
+            <tr>
+              <Th>Nome</Th>
+              <Th>Categoria</Th>
+              <Th>Filhos permitidos</Th>
+            </tr>
+          </thead>
           <tbody>
             {specs.map((spec) => (
               <tr key={spec.id} className="border-t border-app-border">
-                <td className="px-4 py-3 text-[0.88rem] font-semibold text-app-text">{spec.name}</td>
+                <td className="px-4 py-3 text-[0.88rem] font-semibold text-app-text">
+                  {spec.name}
+                </td>
                 <td className="px-4 py-3 text-[0.84rem] text-app-muted">{spec.category}</td>
-                <td className="px-4 py-3 text-[0.84rem] text-app-muted">{spec.allowedChildSpecIds.length || '-'}</td>
+                <td className="px-4 py-3 text-[0.84rem] text-app-muted">
+                  {spec.allowedChildSpecIds.length || '-'}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       <form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_180px_auto]">
-        <input value={name} onChange={(event) => setName(event.target.value)} className="geo-input" placeholder="ex: Central Office" />
-        <select value={category} onChange={(event) => setCategory(event.target.value as GeoSpec['category'])} className="geo-input">
-          {['Region', 'FunctionalGroup', 'Site', 'SubSite'].map((item) => <option key={item} value={item}>{item}</option>)}
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          className="geo-input"
+          placeholder="ex: Central Office"
+        />
+        <select
+          value={category}
+          onChange={(event) => setCategory(event.target.value as GeoSpec['category'])}
+          className="geo-input"
+        >
+          {['Region', 'FunctionalGroup', 'Site', 'SubSite'].map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
         </select>
-        <button type="submit" className="geo-btn primary justify-center" disabled={saving || !name.trim()}>Criar</button>
+        <button
+          type="submit"
+          className="geo-btn primary justify-center"
+          disabled={saving || !name.trim()}
+        >
+          Criar
+        </button>
       </form>
     </Modal>
   );
 }
 
-function Modal({ children, title, eyebrow, onClose, wide }: { children: ReactNode; title: string; eyebrow: string; onClose: () => void; wide?: boolean }) {
+function Modal({
+  children,
+  title,
+  eyebrow,
+  onClose,
+  wide,
+}: {
+  children: ReactNode;
+  title: string;
+  eyebrow: string;
+  onClose: () => void;
+  wide?: boolean;
+}) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -1538,53 +1951,81 @@ function Modal({ children, title, eyebrow, onClose, wide }: { children: ReactNod
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-6">
-      <div className={`max-h-[90vh] overflow-auto rounded-[26px] border border-app-border bg-white p-5 shadow-modal ${wide ? 'w-full max-w-[920px]' : 'w-full max-w-[720px]'}`}>
+      <div
+        className={`max-h-[90vh] overflow-auto rounded-[26px] border border-app-border bg-white p-5 shadow-modal ${wide ? 'w-full max-w-[920px]' : 'w-full max-w-[720px]'}`}
+      >
         <div className="mb-4 flex items-start justify-between gap-4 border-b border-app-border pb-4">
           <div>
-            <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">{eyebrow}</div>
-            <h3 className="mt-1 font-display text-[1.35rem] font-semibold text-app-text">{title}</h3>
+            <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+              {eyebrow}
+            </div>
+            <h3 className="mt-1 font-display text-[1.35rem] font-semibold text-app-text">
+              {title}
+            </h3>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"><X className="h-5 w-5" /></button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
         {children}
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }
 
-function CoordinateStreetView({ marker }: { marker: StreetViewMarker }) {
-  const { point } = marker;
+// Estado de carregamento sob demanda (sub-locais, recursos do site, recursos
+// internos de um recurso): sem isto a lista vazia por um instante era
+// indistinguível de "não tem nada aqui", e a UI parecia travada.
+function LoadingRow({ label }: { label: string }) {
   return (
-    <span className="flex items-center gap-2">
-      <span className="font-mono">[{point[0].toFixed(5)}, {point[1].toFixed(5)}]</span>
-      <GoogleStreetViewButton marker={marker} />
-    </span>
-  );
-}
-
-function Info({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
-  return (
-    <div className="rounded-[18px] border border-app-border p-4">
-      <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">{label}</div>
-      <div className={`mt-1 text-[0.9rem] text-app-text ${mono ? 'font-mono' : ''}`}>{value}</div>
+    <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
+      <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+      {label}
     </div>
   );
 }
 
 function SimpleRows({ rows, empty }: { rows: string[][]; empty: string }) {
-  if (!rows.length) return <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">{empty}</div>;
+  if (!rows.length)
+    return (
+      <div className="rounded-[14px] border border-dashed border-app-border p-3 text-[0.84rem] text-app-muted">
+        {empty}
+      </div>
+    );
   return (
-    <div className="overflow-auto rounded-[18px] border border-app-border">
-      <table className="w-full border-collapse text-left">
-        <tbody>{rows.map((row) => <tr key={row.join('|')} className="border-b border-app-border last:border-b-0">{row.map((cell, index) => <td key={`${cell}-${index}`} className="px-4 py-3 text-[0.86rem] text-app-muted first:font-semibold first:text-app-text">{cell}</td>)}</tr>)}</tbody>
-      </table>
+    <div className="grid min-w-0 rounded-[14px] border border-app-border">
+      {rows.map((row) => (
+        <div
+          key={row.join('|')}
+          className="grid min-w-0 gap-1 border-b border-app-border px-3 py-2.5 last:border-b-0"
+        >
+          {row.map((cell, index) => (
+            <div
+              key={`${cell}-${index}`}
+              className={`min-w-0 break-words text-[0.82rem] leading-snug [overflow-wrap:anywhere] ${
+                index === 0 ? 'font-semibold text-app-text' : 'text-app-muted'
+              }`}
+            >
+              {cell}
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
 
 function Th({ children }: { children: ReactNode }) {
-  return <th className="border-b border-app-border px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">{children}</th>;
+  return (
+    <th className="border-b border-app-border px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+      {children}
+    </th>
+  );
 }
 
 // Um GeoSite visto como nó da árvore. Serve os caminhos que chegam ao local por
@@ -1604,8 +2045,13 @@ function siteNodeOf(site: GeoSite): GeoTreeNode {
 
 // Endereço e coordenada do local aberto. Buscados por id sob demanda: carregar os
 // ~10 mil endereços e geometrias do acervo só para preencher dois campos de um
-// modal era o que fazia a página abrir devagar.
-function useSitePlace(site: GeoSite): { address: GeoAddress | null; point: [number, number] | null } {
+// modal era o que fazia a página abrir devagar. `site` nulo (alvo é Recurso, não
+// Site) é um no-op — hoisted para GeoDetailPanel, que atende os dois, então só
+// busca quando o alvo realmente é um Site (ver GeoDetailPanel).
+function useSitePlace(site: GeoSite | null): {
+  address: GeoAddress | null;
+  point: [number, number] | null;
+} {
   const [address, setAddress] = useState<GeoAddress | null>(null);
   const [point, setPoint] = useState<[number, number] | null>(null);
 
@@ -1614,12 +2060,12 @@ function useSitePlace(site: GeoSite): { address: GeoAddress | null; point: [numb
     setAddress(null);
     setPoint(null);
 
-    if (site.address?.id) {
+    if (site?.address?.id) {
       void getJson<GeoAddress>(`/v1/geo/addresses/${site.address.id}`)
         .then((data) => !cancelled && setAddress(data))
         .catch(() => undefined);
     }
-    if (site.place?.id) {
+    if (site?.place?.id) {
       void getJson<GeoLocation>(`/v1/geo/locations/${site.place.id}`)
         .then((data) => {
           if (cancelled || data.geometry.type !== 'Point') return;
@@ -1631,22 +2077,29 @@ function useSitePlace(site: GeoSite): { address: GeoAddress | null; point: [numb
     return () => {
       cancelled = true;
     };
-  }, [site.address?.id, site.place?.id]);
+  }, [site?.address?.id, site?.place?.id]);
 
   return { address, point };
 }
 
 // Conteúdo do local: os mesmos filhos diretos que a árvore mostraria, separados
 // em sub-locais e recursos para as duas abas do modal.
-function useSiteChildren(siteId: string): { subSites: GeoTreeNode[]; resources: GeoTreeNode[] } {
+function useSiteChildren(
+  siteId: string,
+): { subSites: GeoTreeNode[]; resources: GeoTreeNode[]; loading: boolean } {
   const [nodes, setNodes] = useState<GeoTreeNode[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setNodes([]);
-    void fetchTreeChildren(`site:${siteId}`)
+    setLoading(true);
+    // scope 'all': as abas Sub-locais e Recursos são a porta de entrada declarada para
+    // o que a árvore e o mapa escondem (sala/andar e Splitter) — precisam ver tudo.
+    void fetchTreeChildren(`site:${siteId}`, { scope: 'all' })
       .then((page) => !cancelled && setNodes(page.nodes))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
@@ -1656,8 +2109,8 @@ function useSiteChildren(siteId: string): { subSites: GeoTreeNode[]; resources: 
     () => ({
       subSites: nodes.filter((node) => node.kind === 'site'),
       resources: nodes.filter((node) => node.kind === 'resource'),
+      loading,
     }),
-    [nodes],
+    [nodes, loading],
   );
 }
-

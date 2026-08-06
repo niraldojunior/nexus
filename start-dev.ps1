@@ -10,7 +10,7 @@ $backendPort = 4001
 $webPort = 5200
 
 # Padrões de linha de comando que identificam nossos processos de dev.
-$backendPattern = 'dist\\src\\main\.js|dev-neon\.mjs'
+$backendPattern = 'dist\\src\\main\.js|dev-(neon|database)\.mjs'
 $webPattern = 'web:dev|web\\vite\.config\.mjs|vite\.js'
 
 function Stop-DevProcesses {
@@ -53,10 +53,10 @@ Stop-DevProcesses -CommandLinePattern $webPattern -Ports @($webPort) -Label 'web
 Write-Host "== Build =="
 npm run build
 
-Write-Host "== Subindo backend (Neon) =="
+Write-Host "== Subindo backend (provider de DATABASE_PROVIDER) =="
 $backend = Start-Process -WindowStyle Hidden `
   -FilePath npm.cmd `
-  -ArgumentList 'run','start:neon' `
+  -ArgumentList 'run','start:db' `
   -WorkingDirectory $PSScriptRoot `
   -RedirectStandardOutput "$PSScriptRoot\.tmp-dev-backend.log" `
   -RedirectStandardError "$PSScriptRoot\.tmp-dev-backend.err" `

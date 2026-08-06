@@ -68,7 +68,12 @@ export const RESOURCE_TYPES: ResourceType[] = [
   resourceType('rt-manhole', 'Manhole', 'Manhole', 'Infrastructure.Passive'),
   resourceType('rt-fiber', 'Fiber', 'Fiber', 'Cable.OutsidePlant'),
   resourceType('rt-drop-cable', 'DropCable', 'Drop Cable', 'Cable.OutsidePlant'),
-  resourceType('rt-distribution-cable', 'DistributionCable', 'Distribution Cable', 'Cable.OutsidePlant'),
+  resourceType(
+    'rt-distribution-cable',
+    'DistributionCable',
+    'Distribution Cable',
+    'Cable.OutsidePlant',
+  ),
   resourceType('rt-backbone-cable', 'BackboneCable', 'Backbone Cable', 'Cable.OutsidePlant'),
   resourceType('rt-patch-cord', 'PatchCord', 'Patch Cord', 'Cable.InsidePlant'),
   resourceType('rt-jumper', 'Jumper', 'Jumper', 'Cable.InsidePlant'),

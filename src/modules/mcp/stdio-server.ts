@@ -1,9 +1,9 @@
 import { config as loadEnv } from 'dotenv';
 import { createInterface } from 'node:readline';
-import { loadConfig } from '../../shared/config/env.js';
+import { databaseConfigOf, loadConfig } from '../../shared/config/env.js';
 import { createLogger } from '../../shared/logging/logger.js';
-import { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
-import { createNexusRuntime } from '../../shared/runtime/nexus-runtime.js';
+import { createDatabaseClient } from '../../shared/persistence/database-factory.js';
+import { createNexusRuntime, type NexusRuntime } from '../../shared/runtime/nexus-runtime.js';
 import { createNexusMcpModule } from './module.js';
 
 type JsonRpcRequest = {
@@ -16,7 +16,7 @@ loadEnv();
 
 const config = loadConfig(process.env);
 const logger = createLogger(config.logLevel);
-const db = PostgresDatabase.getInstance(config.databaseUrl);
+const db = createDatabaseClient(databaseConfigOf(config));
 
 const writeMessage = (payload: unknown): void => {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
@@ -25,7 +25,7 @@ const writeMessage = (payload: unknown): void => {
 const handleRequest = async (
   request: JsonRpcRequest,
   module: ReturnType<typeof createNexusMcpModule>,
-  runtime: ReturnType<typeof createNexusRuntime>,
+  runtime: NexusRuntime,
 ): Promise<void> => {
   const id = request.id ?? null;
   const method = request.method;
@@ -74,7 +74,9 @@ const handleRequest = async (
   if (method === 'tools/call') {
     const name = typeof request.params?.name === 'string' ? request.params.name : '';
     const argumentsInput =
-      request.params && typeof request.params.arguments === 'object' && request.params.arguments !== null
+      request.params &&
+      typeof request.params.arguments === 'object' &&
+      request.params.arguments !== null
         ? (request.params.arguments as Record<string, unknown>)
         : {};
     const result = await module.registry.executeTool(
@@ -99,7 +101,7 @@ const handleRequest = async (
 
 const main = async (): Promise<void> => {
   await db.initialize();
-  const runtime = createNexusRuntime(db);
+  const runtime = await createNexusRuntime(db);
   const module = createNexusMcpModule(runtime);
   const reader = createInterface({
     input: process.stdin,

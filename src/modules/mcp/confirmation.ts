@@ -1,4 +1,4 @@
-import type { PostgresDatabase } from '../../shared/persistence/postgres-database.js';
+import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 
 export type PendingMcpConfirmation = {
@@ -15,12 +15,12 @@ export type PendingMcpConfirmation = {
 };
 
 export class PostgresMcpConfirmationRepository {
-  public constructor(private readonly db: PostgresDatabase) {}
+  public constructor(private readonly db: DatabaseClient) {}
 
-  public create(input: Omit<PendingMcpConfirmation, 'token' | 'createdAt'> & { token?: string; createdAt?: string }): PendingMcpConfirmation {
+  public async create(input: Omit<PendingMcpConfirmation, 'token' | 'createdAt'> & { token?: string; createdAt?: string }): Promise<PendingMcpConfirmation> {
     const createdAt = input.createdAt ?? new Date().toISOString();
     const token = input.token ?? createCanonicalId();
-    this.db.run(
+    await this.db.run(
       `INSERT INTO mcp_confirmation
        (token, domain, operation, payload, summary, warnings, context, created_at, expires_at, consumed_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -48,11 +48,11 @@ export class PostgresMcpConfirmationRepository {
       ],
     );
 
-    return this.get(token)!;
+    return (await this.get(token))!;
   }
 
-  public get(token: string): PendingMcpConfirmation | undefined {
-    const row = this.db.get<{
+  public async get(token: string): Promise<PendingMcpConfirmation | undefined> {
+    const row = await this.db.get<{
       token: string;
       domain: string;
       operation: string;
@@ -85,17 +85,17 @@ export class PostgresMcpConfirmationRepository {
     };
   }
 
-  public consume(token: string, consumedAt = new Date().toISOString()): PendingMcpConfirmation | undefined {
-    const current = this.get(token);
+  public async consume(token: string, consumedAt = new Date().toISOString()): Promise<PendingMcpConfirmation | undefined> {
+    const current = await this.get(token);
     if (!current) return undefined;
 
-    this.db.run(
+    await this.db.run(
       `UPDATE mcp_confirmation
        SET consumed_at = ?
        WHERE token = ?`,
       [consumedAt, token],
     );
 
-    return this.get(token);
+    return await this.get(token);
   }
 }

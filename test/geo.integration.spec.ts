@@ -302,8 +302,9 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
   assert.equal(room.statusCode, 201);
 
   // Planta externa: a caixa fica na rua (place = Location própria) e se liga à
-  // estação pela characteristic `servingSite`; o splitter pende da caixa.
-  const resourceSpec = await requestJson(
+  // estação pela characteristic `servingSite`; o splitter pende da caixa e reaproveita
+  // a mesma Location (é o mesmo ponto físico — não tem pin próprio no mapa).
+  const boxSpec = await requestJson(
     port,
     'POST',
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
@@ -313,6 +314,26 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
       resourceType: 'CTO',
     },
   );
+  const splitterSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    {
+      name: 'Splitter óptico 1:8',
+      category: 'Infrastructure.Passive',
+      resourceType: 'Splitter',
+    },
+  );
+  const cableSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    {
+      name: 'Cabo secundário 6FO',
+      category: 'Cable.OutsidePlant',
+      resourceType: 'DistributionCable',
+    },
+  );
   const boxPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
     geometryType: 'Point',
     geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
@@ -320,7 +341,7 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
   const box = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
     '@type': 'PhysicalResource',
     name: 'CDOE-1108',
-    resourceSpecificationId: idOf(resourceSpec),
+    resourceSpecificationId: idOf(boxSpec),
     placeId: idOf(boxPlace),
     placeType: 'GeographicLocation',
     characteristic: [{ name: 'servingSite', value: idOf(station), valueType: 'string' }],
@@ -334,19 +355,53 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
     {
       '@type': 'PhysicalResource',
       name: 'CDOE-1108 · S32_1',
-      resourceSpecificationId: idOf(resourceSpec),
+      resourceSpecificationId: idOf(splitterSpec),
       placeId: idOf(boxPlace),
       placeType: 'GeographicLocation',
       characteristic: [{ name: 'servingSite', value: idOf(station), valueType: 'string' }],
     },
   );
-  const link = await requestJson(
+  assert.equal(splitter.statusCode, 201);
+  const containsLink = await requestJson(
     port,
     'POST',
     `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(box)}/relationships`,
     { id: idOf(splitter), relationshipType: 'containsAsChild' },
   );
-  assert.equal(link.statusCode, 201);
+  assert.equal(containsLink.statusCode, 201);
+
+  // O splitter alimenta um cabo secundário — é o que a árvore de navegação deve
+  // mostrar direto sob a caixa, pulando o splitter (pass-through).
+  const cablePlace = await requestJson(port, 'POST', '/v1/geo/locations', {
+    geometryType: 'LineString',
+    geometry: {
+      type: 'LineString',
+      coordinates: [
+        [-43.108, -22.907],
+        [-43.109, -22.908],
+      ],
+    },
+  });
+  const secondaryCable = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceInventoryManagement/v4/resource',
+    {
+      '@type': 'PhysicalResource',
+      name: 'Cabo Secundário 01',
+      resourceSpecificationId: idOf(cableSpec),
+      placeId: idOf(cablePlace),
+      placeType: 'GeographicLocation',
+    },
+  );
+  assert.equal(secondaryCable.statusCode, 201);
+  const connectedLink = await requestJson(
+    port,
+    'POST',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(splitter)}/relationships`,
+    { id: idOf(secondaryCable), relationshipType: 'connectedTo' },
+  );
+  assert.equal(connectedLink.statusCode, 201);
 
   // Abertura: UF → Município → Estações → Estação, sem contar recursos de
   // nenhuma delas — a estação nasce com "+" e o volume só chega ao abri-la.
@@ -366,7 +421,8 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
   assert.equal(stationNode?.hasChildren, true);
   assert.deepEqual(stationNode?.geometry?.coordinates, [-43.107, -22.906]);
 
-  // Filhos diretos: a sala e a caixa — o splitter não, ele pende da caixa.
+  // Escopo de navegação (default): a sala é item interno e some por completo — só
+  // a caixa aparece.
   const children = await requestJson(
     port,
     'GET',
@@ -374,34 +430,52 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
   );
   assert.equal(children.statusCode, 200);
   const page = children.body as { total: number; nodes: GeoTreeResponseNode[] };
-  assert.equal(page.total, 2);
+  assert.equal(page.total, 1);
   assert.deepEqual(
     page.nodes.map((item) => item.label),
+    ['CDOE-1108'],
+  );
+  // A caixa ganha "+": mesmo com o splitter escondido, o pass-through acha o cabo.
+  assert.equal(page.nodes[0]?.hasChildren, true);
+
+  // Escopo de detalhe (`scope=all`): sala e caixa voltam as duas, sem filtro.
+  const childrenAll = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/tree/children?nodeId=site:${idOf(station)}&scope=all`,
+  );
+  assert.equal(childrenAll.statusCode, 200);
+  const pageAll = childrenAll.body as { total: number; nodes: GeoTreeResponseNode[] };
+  assert.equal(pageAll.total, 2);
+  assert.deepEqual(
+    pageAll.nodes.map((item) => item.label),
     ['Sala GPON', 'CDOE-1108'],
   );
-  // Sala vazia não ganha "+"; caixa com splitter ganha.
-  assert.equal(page.nodes[0]?.hasChildren, false);
-  assert.equal(page.nodes[1]?.hasChildren, true);
+  // Sala vazia não ganha "+"; caixa com splitter ganha (splitter tem 1 filho direto).
+  assert.equal(pageAll.nodes[0]?.hasChildren, false);
+  assert.equal(pageAll.nodes[1]?.hasChildren, true);
 
-  // Paginação: a janela atravessa sub-locais e recursos, e o total não muda.
+  // Paginação em `scope=all`: a janela atravessa sub-locais e recursos, e o total
+  // não muda.
   const firstPage = await requestJson(
     port,
     'GET',
-    `/v1/geo/tree/children?nodeId=site:${idOf(station)}&limit=1`,
+    `/v1/geo/tree/children?nodeId=site:${idOf(station)}&limit=1&scope=all`,
   );
   const secondPage = await requestJson(
     port,
     'GET',
-    `/v1/geo/tree/children?nodeId=site:${idOf(station)}&limit=1&offset=1`,
+    `/v1/geo/tree/children?nodeId=site:${idOf(station)}&limit=1&offset=1&scope=all`,
   );
-  assert.equal((firstPage.body as { nodes: unknown[] }).nodes.length, 1);
+  assert.equal((firstPage.body as { nodes: Array<{ label: string }> }).nodes[0]?.label, 'Sala GPON');
   assert.equal((secondPage.body as { total: number }).total, 2);
   assert.equal(
     (secondPage.body as { nodes: Array<{ label: string }> }).nodes[0]?.label,
     'CDOE-1108',
   );
 
-  // Nível seguinte da planta: o splitter que a caixa contém.
+  // Nível seguinte da planta em escopo de navegação: o splitter não aparece — o
+  // cabo secundário que ele alimenta sobe direto para este nível (pass-through).
   const boxChildren = await requestJson(
     port,
     'GET',
@@ -409,11 +483,174 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
   );
   const boxPage = boxChildren.body as { total: number; nodes: GeoTreeResponseNode[] };
   assert.equal(boxPage.total, 1);
-  assert.equal(boxPage.nodes[0]?.label, 'CDOE-1108 · S32_1');
+  assert.equal(boxPage.nodes[0]?.label, 'Cabo Secundário 01');
   assert.equal(boxPage.nodes[0]?.hasChildren, false);
+
+  // O mesmo nível em `scope=all`: o splitter aparece, com "+" (tem o cabo como filho).
+  const boxChildrenAll = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/tree/children?nodeId=resource:${idOf(box)}&scope=all`,
+  );
+  const boxPageAll = boxChildrenAll.body as { total: number; nodes: GeoTreeResponseNode[] };
+  assert.equal(boxPageAll.total, 1);
+  assert.equal(boxPageAll.nodes[0]?.label, 'CDOE-1108 · S32_1');
+  assert.equal(boxPageAll.nodes[0]?.hasChildren, true);
 
   const missingNode = await requestJson(port, 'GET', '/v1/geo/tree/children');
   assert.equal(missingNode.statusCode, 400);
+
+  // Caminho até a Estação — é o que o cliente expande para revelar o nó na árvore.
+  const stationPath = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/tree/path?nodeId=site:${idOf(station)}`,
+  );
+  assert.equal(stationPath.statusCode, 200);
+  assert.deepEqual((stationPath.body as { path: string[] }).path, [
+    'uf:RJ',
+    'city:RJ|Niterói',
+    'group:RJ|Niterói|stations',
+    `site:${idOf(station)}`,
+  ]);
+
+  // Caminho até a caixa: planta externa presa à estação por `servingSite`.
+  const boxPath = await requestJson(port, 'GET', `/v1/geo/tree/path?nodeId=resource:${idOf(box)}`);
+  assert.deepEqual((boxPath.body as { path: string[] }).path, [
+    'uf:RJ',
+    'city:RJ|Niterói',
+    'group:RJ|Niterói|stations',
+    `site:${idOf(station)}`,
+    `resource:${idOf(box)}`,
+  ]);
+
+  // Caminho até o cabo secundário: ele pende do splitter, que é item interno — o
+  // caminho devolvido pula o splitter, espelhando o pass-through da árvore.
+  const cablePath = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/tree/path?nodeId=resource:${idOf(secondaryCable)}`,
+  );
+  assert.deepEqual((cablePath.body as { path: string[] }).path, [
+    'uf:RJ',
+    'city:RJ|Niterói',
+    'group:RJ|Niterói|stations',
+    `site:${idOf(station)}`,
+    `resource:${idOf(box)}`,
+    `resource:${idOf(secondaryCable)}`,
+  ]);
+
+  const missingPathNode = await requestJson(port, 'GET', '/v1/geo/tree/path');
+  assert.equal(missingPathNode.statusCode, 400);
+});
+
+test('Geo tree pass-through skips a chain of hidden splitters to the first visible descendant', async (t) => {
+  const database = createTestDatabase();
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
+  const port = await server.start();
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
+
+  const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
+
+  const boxSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    { name: 'CDOE 1:8', category: 'Infrastructure.Passive', resourceType: 'CTO' },
+  );
+  const splitterSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    { name: 'Splitter óptico 1:8', category: 'Infrastructure.Passive', resourceType: 'Splitter' },
+  );
+  const cableSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    { name: 'Cabo secundário 6FO', category: 'Cable.OutsidePlant', resourceType: 'DistributionCable' },
+  );
+  const place = await requestJson(port, 'POST', '/v1/geo/locations', {
+    geometryType: 'Point',
+    geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
+  });
+
+  const box = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
+    '@type': 'PhysicalResource',
+    name: 'CDOE-2201',
+    resourceSpecificationId: idOf(boxSpec),
+    placeId: idOf(place),
+    placeType: 'GeographicLocation',
+  });
+  assert.equal(box.statusCode, 201);
+  // Caixa → splitter A (containsAsChild) → splitter B (connectedTo, cascata rara mas
+  // possível) → cabo (connectedTo). Dois saltos internos seguidos.
+  const splitterA = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
+    '@type': 'PhysicalResource',
+    name: 'CDOE-2201 · S1',
+    resourceSpecificationId: idOf(splitterSpec),
+    placeId: idOf(place),
+    placeType: 'GeographicLocation',
+  });
+  assert.equal(splitterA.statusCode, 201);
+  const splitterB = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
+    '@type': 'PhysicalResource',
+    name: 'CDOE-2201 · S1 · S1',
+    resourceSpecificationId: idOf(splitterSpec),
+    placeId: idOf(place),
+    placeType: 'GeographicLocation',
+  });
+  assert.equal(splitterB.statusCode, 201);
+  const cable = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
+    '@type': 'PhysicalResource',
+    name: 'Cabo Secundário 02',
+    resourceSpecificationId: idOf(cableSpec),
+    placeId: idOf(place),
+    placeType: 'GeographicLocation',
+  });
+  assert.equal(cable.statusCode, 201);
+
+  const boxSplitterLink = await requestJson(
+    port,
+    'POST',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(box)}/relationships`,
+    { id: idOf(splitterA), relationshipType: 'containsAsChild' },
+  );
+  assert.equal(boxSplitterLink.statusCode, 201);
+  const splitterSplitterLink = await requestJson(
+    port,
+    'POST',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(splitterA)}/relationships`,
+    { id: idOf(splitterB), relationshipType: 'connectedTo' },
+  );
+  assert.equal(splitterSplitterLink.statusCode, 201);
+  const splitterCableLink = await requestJson(
+    port,
+    'POST',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(splitterB)}/relationships`,
+    { id: idOf(cable), relationshipType: 'connectedTo' },
+  );
+  assert.equal(splitterCableLink.statusCode, 201);
+
+  const boxChildren = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/tree/children?nodeId=resource:${idOf(box)}`,
+  );
+  const boxPage = boxChildren.body as { total: number; nodes: GeoTreeResponseNode[] };
+  // Os dois splitters somem; só o cabo do fim da cadeia sobe para este nível, uma
+  // única vez (sem duplicar por causa dos dois saltos internos).
+  assert.equal(boxPage.total, 1);
+  assert.deepEqual(
+    boxPage.nodes.map((item) => item.label),
+    ['Cabo Secundário 02'],
+  );
 });
 
 test('Geo tree viewport serves passive infra by bounding box, independent of hierarchy state', async (t) => {
@@ -480,7 +717,25 @@ test('Geo tree viewport serves passive infra by bounding box, independent of hie
   );
   assert.equal(cable.statusCode, 201);
 
-  // Bbox que cobre a região de Icaraí: caixa e cabo voltam, sem expandir nada antes.
+  // Splitter na mesma Location da caixa (reaproveita o ponto físico dela) — não deve
+  // ganhar pin próprio no mapa.
+  const splitterSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    { name: 'Splitter óptico 1:8', category: 'Infrastructure.Passive', resourceType: 'Splitter' },
+  );
+  const splitter = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
+    '@type': 'PhysicalResource',
+    name: 'CDOE-1108 · S32_1',
+    resourceSpecificationId: idOf(splitterSpec),
+    placeId: idOf(boxPlace),
+    placeType: 'GeographicLocation',
+  });
+  assert.equal(splitter.statusCode, 201);
+
+  // Bbox que cobre a região de Icaraí: caixa e cabo voltam, sem expandir nada antes;
+  // o splitter fica de fora — não tem ponto próprio no mapa.
   const insideBbox = await requestJson(
     port,
     'GET',
@@ -583,11 +838,29 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
   });
   assert.equal(box.statusCode, 201);
 
+  // Splitter dentro da caixa: some do mapa e da árvore, mas continua encontrável
+  // pelo nome — diferente da sala, ele não é filtrado da busca.
+  const splitterSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    { name: 'Splitter óptico 1:8', category: 'Infrastructure.Passive', resourceType: 'Splitter' },
+  );
+  const splitter = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
+    '@type': 'PhysicalResource',
+    name: 'CDOE Icaraí 08 · Splitter',
+    resourceSpecificationId: idOf(splitterSpec),
+    placeId: idOf(boxPlace),
+    placeType: 'GeographicLocation',
+  });
+  assert.equal(splitter.statusCode, 201);
+
   const search = await requestJson(port, 'GET', '/v1/geo/tree/search?q=icara');
   assert.equal(search.statusCode, 200);
   const results = search.body as GeoTreeResponseNode[];
   assert.deepEqual(results.map((item) => item.label).sort(), [
     'CDOE Icaraí 08',
+    'CDOE Icaraí 08 · Splitter',
     'Estação Icaraí Central',
   ]);
   assert.equal(

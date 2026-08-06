@@ -26,7 +26,7 @@ test('PostgresSearchRepository persiste, recarrega e arquiva sessões e mensagen
   const { sqlite, repository, cleanup } = await setupRepository();
 
   try {
-    const created = repository.createSession({
+    const created = await repository.createSession({
       '@type': 'ResearchSession',
       id: 'session-1',
       href: '/v1/search/sessions/session-1',
@@ -45,9 +45,9 @@ test('PostgresSearchRepository persiste, recarrega e arquiva sessões e mensagen
     assert.equal(created.model, 'gpt-4o-mini');
     assert.equal(created.temperature, 0.4);
     assert.equal(created.maxTokens, 500);
-    assert.equal(repository.getSession('missing'), undefined);
+    assert.equal(await repository.getSession('missing'), undefined);
 
-    const storedMessage = repository.addMessage('session-1', {
+    const storedMessage = await repository.addMessage('session-1', {
       id: 'message-1',
       role: 'user',
       content: 'Como validar a triade?',
@@ -58,19 +58,19 @@ test('PostgresSearchRepository persiste, recarrega e arquiva sessões e mensagen
     assert.equal(storedMessage.researchSessionId, 'session-1');
     assert.equal(storedMessage.tokensUsed, 18);
     assert.deepEqual(storedMessage.metadata, { intent: 'coverage' });
-    assert.equal(repository.getMessage('missing'), undefined);
+    assert.equal(await repository.getMessage('missing'), undefined);
 
-    const session = repository.getSession('session-1');
+    const session = await repository.getSession('session-1');
     assert.equal(session?.messages?.length, 1);
     assert.equal(session?.messages?.[0]?.id, 'message-1');
 
-    const renamed = repository.updateSessionTitle('session-1', 'Sessão atualizada');
+    const renamed = await repository.updateSessionTitle('session-1', 'Sessão atualizada');
     assert.equal(renamed?.title, 'Sessão atualizada');
 
-    const archived = repository.archiveSession('session-1');
+    const archived = await repository.archiveSession('session-1');
     assert.equal(archived?.status, 'archived');
 
-    sqlite.run(
+    await sqlite.run(
       `INSERT INTO research_session
        (id, href, user_id, title, status, created_at, updated_at)
        VALUES (?, ?, ?, ?, 'deleted', ?, ?)`,
@@ -84,7 +84,7 @@ test('PostgresSearchRepository persiste, recarrega e arquiva sessões e mensagen
       ],
     );
 
-    const sessions = repository.listSessionsByUser('tenant-1');
+    const sessions = await repository.listSessionsByUser('tenant-1');
     assert.equal(sessions.length, 1);
     assert.equal(sessions[0]?.id, 'session-1');
     assert.equal(sessions[0]?.status, 'archived');
@@ -119,7 +119,7 @@ test('PostgresSearchRepository lista várias sessões por usuário com limite', 
       updatedAt: '2026-01-02T00:00:00.000Z',
     } as never);
 
-    const sessions = repository.listSessionsByUser('tenant-2', 1);
+    const sessions = await repository.listSessionsByUser('tenant-2', 1);
     assert.equal(sessions.length, 1);
     assert.equal(sessions[0]?.userId, 'tenant-2');
   } finally {

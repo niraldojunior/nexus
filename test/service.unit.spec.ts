@@ -18,9 +18,24 @@ const setupService = async () => {
   const repository = new PostgresServiceRepository(sqlite);
   const appendEvent = vi.fn(() => undefined);
   const eventService = { appendEvent };
-  const party = { id: 'party-1', '@referredType': 'Organization', href: '/party/party-1', name: 'ISP Alfa' };
-  const site = { id: 'site-1', '@referredType': 'GeographicSite', href: '/site/site-1', name: 'CO Botafogo' };
-  const resource = { id: 'resource-1', '@referredType': 'PhysicalResource', href: '/resource/resource-1', name: 'ONT-01' };
+  const party = {
+    id: 'party-1',
+    '@referredType': 'Organization',
+    href: '/party/party-1',
+    name: 'ISP Alfa',
+  };
+  const site = {
+    id: 'site-1',
+    '@referredType': 'GeographicSite',
+    href: '/site/site-1',
+    name: 'CO Botafogo',
+  };
+  const resource = {
+    id: 'resource-1',
+    '@referredType': 'PhysicalResource',
+    href: '/resource/resource-1',
+    name: 'ONT-01',
+  };
   const serviceMap = new Map<string, Service>();
   const service = new ServiceService(repository, eventService as never, {
     lookupParty: (id) => (id === party.id ? party : undefined),
@@ -42,50 +57,86 @@ const setupService = async () => {
 };
 
 test('ServiceService creates and queries service catalog and inventory records', async () => {
-  const { database, service, appendEvent, party, site, resource, serviceMap } = await setupService();
+  const { database, service, appendEvent, party, site, resource, serviceMap } =
+    await setupService();
 
   try {
-    assert.throws(() => service.createServiceSpecification({ name: ' ', category: 'Broadband', serviceType: 'CFS' }), /name is required/);
-    assert.throws(() => service.createServiceSpecification({
-      name: 'Bitstream',
-      category: 'Broadband',
-      serviceType: 'CFS',
-      relatedParty: [{ id: 'missing', '@referredType': 'Organization' }],
-    }), /related party not found/);
+    await assert.rejects(
+      () =>
+        service.createServiceSpecification({
+          name: ' ',
+          category: 'Broadband',
+          serviceType: 'CFS',
+        }),
+      /name is required/,
+    );
+    await assert.rejects(
+      () =>
+        service.createServiceSpecification({
+          name: 'Bitstream',
+          category: 'Broadband',
+          serviceType: 'CFS',
+          relatedParty: [{ id: 'missing', '@referredType': 'Organization' }],
+        }),
+      /related party not found/,
+    );
 
-    const cfsSpec = service.createServiceSpecification({
+    const cfsSpec = await service.createServiceSpecification({
       name: 'Bitstream GPON',
       category: 'Broadband',
       serviceType: 'CFS',
       relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'owner' }],
     });
-    const rfsSpec = service.createServiceSpecification({
+    const rfsSpec = await service.createServiceSpecification({
       name: 'GPON Access',
       category: 'Broadband',
       serviceType: 'RFS',
     });
-    const category = service.createServiceCategory({ name: 'Access', description: 'Acesso' });
-    const childCategory = service.createServiceCategory({ name: 'FTTH', parentCategoryId: category.id });
-    const candidate = service.createServiceCandidate({
+    const category = await service.createServiceCategory({ name: 'Access', description: 'Acesso' });
+    const childCategory = await service.createServiceCategory({
+      name: 'FTTH',
+      parentCategoryId: category.id,
+    });
+    const candidate = await service.createServiceCandidate({
       name: 'Candidate',
       serviceSpecificationId: cfsSpec.id,
       serviceCategoryId: category.id,
       description: 'desc',
     });
 
-    assert.equal((appendEvent.mock.calls as unknown as Array<[ { eventType?: string } ]>)[0]?.[0]?.eventType, 'ServiceSpecificationCreateEvent');
+    assert.equal(
+      (appendEvent.mock.calls as unknown as Array<[{ eventType?: string }]>)[0]?.[0]?.eventType,
+      'ServiceSpecificationCreateEvent',
+    );
     assert.equal(category.name, 'Access');
     assert.equal(childCategory.parentServiceCategory?.id, category.id);
     assert.equal(candidate.serviceCategory?.id, category.id);
-    assert.equal(service.listServiceSpecifications({ category: 'Broadband', serviceType: 'CFS' }).length, 1);
-    assert.equal(service.listServiceCategories({ parentCategoryId: category.id }).length, 1);
-    assert.equal(service.listServiceCandidates({ serviceSpecificationId: cfsSpec.id, serviceCategoryId: category.id }).length, 1);
+    assert.equal(
+      (await service.listServiceSpecifications({ category: 'Broadband', serviceType: 'CFS' }))
+        .length,
+      1,
+    );
+    assert.equal(
+      (await service.listServiceCategories({ parentCategoryId: category.id })).length,
+      1,
+    );
+    assert.equal(
+      (
+        await service.listServiceCandidates({
+          serviceSpecificationId: cfsSpec.id,
+          serviceCategoryId: category.id,
+        })
+      ).length,
+      1,
+    );
 
-    const rfs = service.createService({
+    const rfs = await service.createService({
       '@type': 'ResourceFacingService',
       name: 'RFS GPON 1',
       serviceSpecificationId: rfsSpec.id,
-      supportingResource: [{ id: resource.id, '@referredType': 'PhysicalResource', role: 'access' }],
+      supportingResource: [
+        { id: resource.id, '@referredType': 'PhysicalResource', role: 'access' },
+      ],
       relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'operations' }],
       place: [{ id: site.id, '@referredType': 'GeographicSite', role: 'installationAddress' }],
       serviceCharacteristic: [{ name: 'AccessType', value: 'GPON', valueType: 'string' }],
@@ -94,7 +145,7 @@ test('ServiceService creates and queries service catalog and inventory records',
     assert.equal(rfs['@type'], 'ResourceFacingService');
     assert.equal(rfs.supportingResource[0]?.id, resource.id);
 
-    const cfs = service.createService({
+    const cfs = await service.createService({
       '@type': 'CustomerFacingService',
       name: 'CFS GPON 1',
       serviceSpecificationId: cfsSpec.id,
@@ -107,11 +158,36 @@ test('ServiceService creates and queries service catalog and inventory records',
     serviceMap.set(cfs.id, cfs);
     assert.equal(cfs['@type'], 'CustomerFacingService');
     assert.equal(cfs.supportingService[0]?.id, rfs.id);
-    assert.equal(service.listServices({ type: 'CustomerFacingService', subscriberId: 'SUB-778899', placeId: site.id }).length, 1);
-    assert.equal(service.listServices({ type: 'ResourceFacingService', supportingResourceId: resource.id }).length, 1);
-    assert.equal(service.listServices({ characteristicName: 'SubscriberID', characteristicValue: 'SUB-778899' }).length, 1);
+    assert.equal(
+      (
+        await service.listServices({
+          type: 'CustomerFacingService',
+          subscriberId: 'SUB-778899',
+          placeId: site.id,
+        })
+      ).length,
+      1,
+    );
+    assert.equal(
+      (
+        await service.listServices({
+          type: 'ResourceFacingService',
+          supportingResourceId: resource.id,
+        })
+      ).length,
+      1,
+    );
+    assert.equal(
+      (
+        await service.listServices({
+          characteristicName: 'SubscriberID',
+          characteristicValue: 'SUB-778899',
+        })
+      ).length,
+      1,
+    );
 
-    const updatedCfs = service.updateService(cfs.id, {
+    const updatedCfs = await service.updateService(cfs.id, {
       name: ' CFS GPON 1A ',
       state: 'inactive',
       relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'subscriber' }],
@@ -119,33 +195,37 @@ test('ServiceService creates and queries service catalog and inventory records',
     assert.equal(updatedCfs.name, 'CFS GPON 1A');
     assert.equal(updatedCfs.state, 'inactive');
 
-    const updatedRfs = service.updateService(rfs.id, {
+    const updatedRfs = await service.updateService(rfs.id, {
       state: 'active',
       serviceCharacteristic: [{ name: 'AccessType', value: 'GPON', valueType: 'string' }],
     });
     assert.equal(updatedRfs['@type'], 'ResourceFacingService');
     assert.equal(updatedRfs.state, 'active');
 
-    const terminatedCfs = service.deleteService(cfs.id);
-    const terminatedRfs = service.deleteService(rfs.id);
+    const terminatedCfs = await service.deleteService(cfs.id);
+    const terminatedRfs = await service.deleteService(rfs.id);
     assert.equal(terminatedCfs.state, 'terminated');
     assert.equal(terminatedRfs.state, 'terminated');
 
-    const rel = service.addServiceRelationship(cfs.id, {
+    const rel = await service.addServiceRelationship(cfs.id, {
       id: rfs.id,
       relationshipType: 'dependsOn',
       '@referredType': 'Service',
     });
     assert.equal(rel.relationshipType, 'dependsOn');
-    assert.equal(service.listServiceRelationships(cfs.id).length, 1);
-    assert.equal(service.removeServiceRelationship(cfs.id, rfs.id, 'dependsOn'), true);
-    assert.equal(service.removeServiceRelationship(cfs.id, rfs.id, 'dependsOn'), false);
+    assert.equal((await service.listServiceRelationships(cfs.id)).length, 1);
+    assert.equal(await service.removeServiceRelationship(cfs.id, rfs.id, 'dependsOn'), true);
+    assert.equal(await service.removeServiceRelationship(cfs.id, rfs.id, 'dependsOn'), false);
 
-    assert.equal(service.getService(cfs.id)?.id, cfs.id);
-    assert.equal(service.getService(rfs.id)?.id, rfs.id);
-    assert.equal(service.listServiceCandidates({ status: 'active' }).length, 1);
-    assert.equal(service.listServiceSpecifications({ serviceType: 'CFS' }).length, 1);
-    assert.ok((appendEvent.mock.calls as unknown as Array<[ { eventType?: string } ]>).some((call) => call[0]?.eventType === 'ServiceCreateEvent'));
+    assert.equal((await service.getService(cfs.id))?.id, cfs.id);
+    assert.equal((await service.getService(rfs.id))?.id, rfs.id);
+    assert.equal((await service.listServiceCandidates({ status: 'active' })).length, 1);
+    assert.equal((await service.listServiceSpecifications({ serviceType: 'CFS' })).length, 1);
+    assert.ok(
+      (appendEvent.mock.calls as unknown as Array<[{ eventType?: string }]>).some(
+        (call) => call[0]?.eventType === 'ServiceCreateEvent',
+      ),
+    );
   } finally {
     PostgresDatabase.resetForTesting();
     database.cleanup();
@@ -156,12 +236,20 @@ test('ServiceService rejects invalid service permutations and missing references
   const { database, service } = await setupService();
 
   try {
-    const cfsSpec = service.createServiceSpecification({ name: 'Bitstream', category: 'Broadband', serviceType: 'CFS' });
-    const rfsSpec = service.createServiceSpecification({ name: 'Access', category: 'Broadband', serviceType: 'RFS' });
+    const cfsSpec = await service.createServiceSpecification({
+      name: 'Bitstream',
+      category: 'Broadband',
+      serviceType: 'CFS',
+    });
+    const rfsSpec = await service.createServiceSpecification({
+      name: 'Access',
+      category: 'Broadband',
+      serviceType: 'RFS',
+    });
 
-    assert.throws(
-      () =>
-        service.createCustomerFacingService({
+    await assert.rejects(
+      async () =>
+        await service.createCustomerFacingService({
           '@type': 'CustomerFacingService',
           name: 'Invalid',
           serviceSpecificationId: cfsSpec.id,
@@ -170,9 +258,9 @@ test('ServiceService rejects invalid service permutations and missing references
         } as CreateCustomerFacingServiceInput),
       /CFS cannot reference supportingResource directly/,
     );
-    assert.throws(
-      () =>
-        service.createService({
+    await assert.rejects(
+      async () =>
+        await service.createService({
           '@type': 'CustomerFacingService',
           name: 'Invalid',
           serviceSpecificationId: cfsSpec.id,
@@ -180,9 +268,9 @@ test('ServiceService rejects invalid service permutations and missing references
         }),
       /CFS requires supportingService/,
     );
-    assert.throws(
-      () =>
-        service.createService({
+    await assert.rejects(
+      async () =>
+        await service.createService({
           '@type': 'CustomerFacingService',
           name: 'Invalid',
           serviceSpecificationId: rfsSpec.id,
@@ -191,9 +279,9 @@ test('ServiceService rejects invalid service permutations and missing references
         }),
       /serviceSpecification type mismatch/,
     );
-    assert.throws(
-      () =>
-        service.createService({
+    await assert.rejects(
+      async () =>
+        await service.createService({
           '@type': 'ResourceFacingService',
           name: 'Invalid RFS',
           serviceSpecificationId: rfsSpec.id,
@@ -201,9 +289,9 @@ test('ServiceService rejects invalid service permutations and missing references
         }),
       /RFS requires supportingResource/,
     );
-    assert.throws(
-      () =>
-        service.createService({
+    await assert.rejects(
+      async () =>
+        await service.createService({
           '@type': 'ResourceFacingService',
           name: 'Invalid RFS',
           serviceSpecificationId: rfsSpec.id,
@@ -211,9 +299,20 @@ test('ServiceService rejects invalid service permutations and missing references
         }),
       /supporting resource not found/,
     );
-    assert.throws(() => service.updateService('missing', { state: 'active' }), /service not found/);
-    assert.throws(() => service.deleteService('missing'), /service not found/);
-    assert.throws(() => service.addServiceRelationship('missing', { id: 'x', relationshipType: 'dependsOn', '@referredType': 'Service' }), /service not found/);
+    await assert.rejects(
+      () => service.updateService('missing', { state: 'active' }),
+      /service not found/,
+    );
+    await assert.rejects(() => service.deleteService('missing'), /service not found/);
+    await assert.rejects(
+      () =>
+        service.addServiceRelationship('missing', {
+          id: 'x',
+          relationshipType: 'dependsOn',
+          '@referredType': 'Service',
+        }),
+      /service not found/,
+    );
   } finally {
     PostgresDatabase.resetForTesting();
     database.cleanup();

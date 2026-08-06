@@ -16,6 +16,6 @@ process.env.DATABASE_CONNECTION_TIMEOUT_MS = process.env.DATABASE_CONNECTION_TIM
 
 // Reset data between tests without recreating the schema: one TRUNCATE covering every table (1
 // round-trip). No-op until a test in this worker has actually initialized the shared schema.
-afterEach(() => {
-  truncateTestSchema();
+afterEach(async () => {
+  await truncateTestSchema();
 });

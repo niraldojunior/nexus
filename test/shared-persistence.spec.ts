@@ -23,12 +23,12 @@ const setupDatabase = async () => {
   };
 };
 
-test('InMemoryEntityRepository cria, conta e entrega listas independentes', () => {
+test('InMemoryEntityRepository cria, conta e entrega listas independentes', async () => {
   const repository = new InMemoryEntityRepository();
-  const first = repository.create({ label: 'bootstrap' });
-  const second = repository.create({ label: 'shadow' });
+  const first = await repository.create({ label: 'bootstrap' });
+  const second = await repository.create({ label: 'shadow' });
 
-  const snapshot = repository.list();
+  const snapshot = await repository.list();
   snapshot.pop();
 
   assert.equal(repository.count(), 2);
@@ -42,23 +42,23 @@ test('PostgresUserRepository persiste e atualiza usuários', async () => {
 
   try {
     const repository = new PostgresUserRepository(sqlite);
-    const created = repository.create({
+    const created = await repository.create({
       externalId: 'ext-1',
       name: 'Operações',
       email: 'ops@vtal.com',
     });
 
     assert.equal(created.externalId, 'ext-1');
-    assert.equal(repository.count(), 1);
-    assert.equal(repository.getById(created.id)?.name, 'Operações');
-    assert.equal(repository.getByExternalId('ext-1')?.email, 'ops@vtal.com');
-    assert.equal(repository.list()[0]?.id, created.id);
+    assert.equal(await repository.count(), 1);
+    assert.equal((await repository.getById(created.id))?.name, 'Operações');
+    assert.equal((await repository.getByExternalId('ext-1'))?.email, 'ops@vtal.com');
+    assert.equal((await repository.list())[0]?.id, created.id);
 
-    const updated = repository.update(created.id, { name: 'Operações NOC' });
+    const updated = await repository.update(created.id, { name: 'Operações NOC' });
     assert.equal(updated?.name, 'Operações NOC');
-    assert.equal(repository.delete(created.id), true);
-    assert.equal(repository.count(), 0);
-    assert.equal(repository.getById(created.id), undefined);
+    assert.equal(await repository.delete(created.id), true);
+    assert.equal(await repository.count(), 0);
+    assert.equal(await repository.getById(created.id), undefined);
   } finally {
     cleanup();
   }
@@ -69,43 +69,43 @@ test('PostgresSearchRepository persiste filtros, resultados e remoção em lote'
 
   try {
     const users = new PostgresUserRepository(sqlite);
-    const userOne = users.create({ externalId: 'user-1', name: 'Tenant One' });
-    const userTwo = users.create({ externalId: 'user-2', name: 'Tenant Two' });
+    const userOne = await users.create({ externalId: 'user-1', name: 'Tenant One' });
+    const userTwo = await users.create({ externalId: 'user-2', name: 'Tenant Two' });
 
     const repository = new SharedSqliteSearchRepository(sqlite);
-    const first = repository.create({
+    const first = await repository.create({
       userId: userOne.id,
       query: 'geographic site',
       filters: { domain: 'geo' },
       results: { total: 2 },
     });
-    const second = repository.create({
+    const second = await repository.create({
       userId: userOne.id,
       query: 'service inventory',
       results: { total: 1 },
     });
-    repository.create({
+    await repository.create({
       userId: userTwo.id,
       query: 'resource inventory',
     });
 
-    assert.equal(repository.count(), 3);
-    assert.equal(repository.countByUserId(userOne.id), 2);
-    assert.equal(repository.getById(first.id)?.filters?.domain, 'geo');
-    assert.equal(repository.getById(second.id)?.results?.total, 1);
-    assert.equal(repository.listByUserId(userOne.id).length, 2);
-    assert.ok(repository.list().some((entry) => entry.userId === userTwo.id));
+    assert.equal(await repository.count(), 3);
+    assert.equal(await repository.countByUserId(userOne.id), 2);
+    assert.equal((await repository.getById(first.id))?.filters?.domain, 'geo');
+    assert.equal((await repository.getById(second.id))?.results?.total, 1);
+    assert.equal((await repository.listByUserId(userOne.id)).length, 2);
+    assert.ok((await repository.list()).some((entry) => entry.userId === userTwo.id));
 
-    const updated = repository.update(first.id, {
+    const updated = await repository.update(first.id, {
       query: 'geographic site updated',
       filters: { domain: 'geo', scope: 'site' },
     });
     assert.equal(updated?.query, 'geographic site updated');
     assert.equal(updated?.filters?.scope, 'site');
-    assert.equal(repository.delete(second.id), true);
-    assert.equal(repository.deleteByUserId(userTwo.id), 1);
-    assert.equal(repository.count(), 1);
-    assert.equal(repository.update('missing', { query: 'noop' }), undefined);
+    assert.equal(await repository.delete(second.id), true);
+    assert.equal(await repository.deleteByUserId(userTwo.id), 1);
+    assert.equal(await repository.count(), 1);
+    assert.equal(await repository.update('missing', { query: 'noop' }), undefined);
   } finally {
     cleanup();
   }

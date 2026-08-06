@@ -12,6 +12,10 @@ import { getJson, type GeoGeometry } from './geoApi';
 
 export type GeoTreeNodeKind = 'uf' | 'city' | 'group' | 'site' | 'resource';
 
+// 'tree' (default) — navegação (mapa + Hierarquia): esconde item interno (Splitter,
+// Sub-Site). 'all' — painéis de detalhe: devolve tudo, sem filtro.
+export type GeoTreeScope = 'tree' | 'all';
+
 export type GeoTreeNode = {
   // Chave estável e auto-descritiva; é ela que se devolve ao servidor para
   // expandir. `uf:RJ`, `city:RJ|Niterói`, `site:<uuid>`, `resource:<uuid>`.
@@ -56,11 +60,14 @@ export const fetchTreeRoots = () => getJson<GeoTreeRootNode[]>('/v1/geo/tree/roo
 
 export const fetchTreeChildren = (
   nodeId: string,
-  options: { limit?: number; offset?: number } = {},
+  options: { limit?: number; offset?: number; scope?: GeoTreeScope } = {},
 ): Promise<GeoTreeChildrenPage> => {
   const params = new URLSearchParams({ nodeId });
   params.set('limit', String(options.limit ?? TREE_PAGE_SIZE));
   params.set('offset', String(options.offset ?? 0));
+  // Só serializa quando 'all': o caminho quente é a navegação (scope 'tree', o
+  // default do servidor), e não vale sujar a URL dele.
+  if (options.scope === 'all') params.set('scope', 'all');
   return getJson<GeoTreeChildrenPage>(`/v1/geo/tree/children?${params.toString()}`);
 };
 
@@ -92,6 +99,15 @@ export const fetchTreeSearch = (q: string, options: { limit?: number } = {}): Pr
   if (options.limit !== undefined) params.set('limit', String(options.limit));
   return getJson<GeoTreeNode[]>(`/v1/geo/tree/search?${params.toString()}`);
 };
+
+// Caminho da raiz até um nó (`['uf:RJ', 'city:RJ|Niterói', 'group:…', 'site:…', 'resource:…']`).
+// Estação já vem inteira em `roots`, mas Recurso não: selecionado pelo mapa ou pela busca,
+// ele não tem ancestral nenhum carregado no cliente — é isto que diz onde ele mora para a
+// árvore poder expandir até ele. `null` quando o nó não pende de Site nem de outro recurso.
+export const fetchTreePath = (nodeId: string): Promise<string[] | null> =>
+  getJson<{ nodeId: string; path: string[] | null }>(
+    `/v1/geo/tree/path?nodeId=${encodeURIComponent(nodeId)}`,
+  ).then((result) => result.path);
 
 // Ponto que representa o nó no mapa. Um cabo não é um ponto: sua geometria é a
 // rota inteira, e o ponto usado para centralizar e ancorar o balão é o vértice

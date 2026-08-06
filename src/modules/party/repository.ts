@@ -22,9 +22,7 @@ export class PartyRepository implements IPartyRepository {
   }
 
   public listParties(query?: PartyQuery): Party[] {
-    return [...this.parties.values()]
-      .filter((party) => filterParty(party, query))
-      .map(cloneParty);
+    return [...this.parties.values()].filter((party) => filterParty(party, query)).map(cloneParty);
   }
 
   public upsertPartyRole(role: PartyRole): PartyRole {
@@ -39,9 +37,7 @@ export class PartyRepository implements IPartyRepository {
   }
 
   public listPartyRoles(query?: PartyRoleQuery): PartyRole[] {
-    return [...this.roles.values()]
-      .filter((role) => filterRole(role, query))
-      .map(clonePartyRole);
+    return [...this.roles.values()].filter((role) => filterRole(role, query)).map(clonePartyRole);
   }
 
   public upsertPartyRelationship(relationship: PartyRelationship): PartyRelationship {
@@ -49,7 +45,10 @@ export class PartyRepository implements IPartyRepository {
     const next = [
       ...current.filter(
         (item) =>
-          !(item.partyToId === relationship.partyToId && item.relationshipType === relationship.relationshipType),
+          !(
+            item.partyToId === relationship.partyToId &&
+            item.relationshipType === relationship.relationshipType
+          ),
       ),
       cloneRelationship(relationship),
     ];
@@ -57,7 +56,11 @@ export class PartyRepository implements IPartyRepository {
     return cloneRelationship(relationship);
   }
 
-  public deletePartyRelationship(partyFromId: string, partyToId: string, relationshipType: string): boolean {
+  public deletePartyRelationship(
+    partyFromId: string,
+    partyToId: string,
+    relationshipType: string,
+  ): boolean {
     const current = this.relationships.get(partyFromId) ?? [];
     const next = current.filter(
       (item) => !(item.partyToId === partyToId && item.relationshipType === relationshipType),

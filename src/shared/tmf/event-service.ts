@@ -5,7 +5,7 @@ import type { TmfEvent, TmfEventQuery } from './types.js';
 export class EventService {
   public constructor(private readonly repository: IEventRepository) {}
 
-  public appendEvent(input: AppendEventInput): TmfEvent {
+  public async appendEvent(input: AppendEventInput): Promise<TmfEvent> {
     this.assertEventShape(input.eventType, input.source, input.eventData);
 
     const event: TmfEvent = {
@@ -18,18 +18,22 @@ export class EventService {
       ...(input.correlationId ? { correlationId: input.correlationId.trim() } : {}),
     };
 
-    return this.repository.appendEvent(event);
+    return await this.repository.appendEvent(event);
   }
 
-  public getEvent(id: string): TmfEvent | undefined {
-    return this.repository.getEvent(id);
+  public async getEvent(id: string): Promise<TmfEvent | undefined> {
+    return await this.repository.getEvent(id);
   }
 
-  public listEvents(query?: TmfEventQuery): TmfEvent[] {
-    return this.repository.listEvents(query);
+  public async listEvents(query?: TmfEventQuery): Promise<TmfEvent[]> {
+    return await this.repository.listEvents(query);
   }
 
-  private assertEventShape(eventType: string, source: string, eventData: Record<string, unknown>): void {
+  private assertEventShape(
+    eventType: string,
+    source: string,
+    eventData: Record<string, unknown>,
+  ): void {
     if (typeof eventType !== 'string' || eventType.trim().length === 0) {
       throw new Error('eventType is required');
     }

@@ -2,11 +2,22 @@ import { AppError } from '../../shared/errors/app-error.js';
 import type { NexusRuntime } from '../../shared/runtime/nexus-runtime.js';
 import type { Characteristic, TmfEventQuery } from '../../shared/tmf/index.js';
 import type { CreatePartyInput, CreatePartyRoleInput, PartyQuery } from '../party/index.js';
-import type { CreatePhysicalResourceInput, CreateLogicalResourceInput, CreateResourceSpecificationInput, ResourceFunctionActivationInput, ResourceQuery } from '../resource/index.js';
+import type {
+  CreatePhysicalResourceInput,
+  CreateLogicalResourceInput,
+  CreateResourceSpecificationInput,
+  ResourceFunctionActivationInput,
+  ResourceQuery,
+} from '../resource/index.js';
 import type { CreateServiceInput, ServiceQuery } from '../service/index.js';
-import type { CreateResourceOrderInput, CreateServiceOrderInput, CreateServiceQualificationInput } from '../order/index.js';
+import type {
+  CreateResourceOrderInput,
+  CreateServiceOrderInput,
+  CreateServiceQualificationInput,
+} from '../order/index.js';
 import { type JsonSchema, validateJsonSchema } from './schema.js';
 import { PostgresMcpConfirmationRepository } from './confirmation.js';
+import { OracleMcpConfirmationRepository } from './oracle-confirmation.js';
 import type { PendingMcpConfirmation } from './confirmation.js';
 
 export type McpToolContext = ReturnType<NexusRuntime['createToolContext']>;
@@ -31,7 +42,10 @@ export type McpToolDefinition = {
   description: string;
   inputSchema: JsonSchema;
   exposeToModel?: boolean;
-  handler: (input: Record<string, unknown>, context: McpToolContext) => Promise<McpToolResult> | McpToolResult;
+  handler: (
+    input: Record<string, unknown>,
+    context: McpToolContext,
+  ) => Promise<McpToolResult> | McpToolResult;
 };
 
 const SOURCE = 'nexus-tmf-mcp' as const;
@@ -55,35 +69,60 @@ type PrepareResult = {
 export class McpToolRegistry {
   private readonly tools = new Map<string, McpToolDefinition>();
 
-  public constructor(private readonly runtime: NexusRuntime, private readonly confirmations: PostgresMcpConfirmationRepository) {}
+  public constructor(
+    private readonly runtime: NexusRuntime,
+    private readonly confirmations: PostgresMcpConfirmationRepository,
+  ) {}
 
   public register(tool: McpToolDefinition): void {
     this.tools.set(tool.name, tool);
   }
 
   public listTools(options: { exposeToModelOnly?: boolean } = {}): McpToolDefinition[] {
-    return [...this.tools.values()].filter((tool) => !options.exposeToModelOnly || tool.exposeToModel !== false);
+    return [...this.tools.values()].filter(
+      (tool) => !options.exposeToModelOnly || tool.exposeToModel !== false,
+    );
   }
 
-  public executeTool(name: string, input: Record<string, unknown>, context: McpToolContext): Promise<McpToolResult> | McpToolResult {
+  public async executeTool(
+    name: string,
+    input: Record<string, unknown>,
+    context: McpToolContext,
+  ): Promise<McpToolResult> {
     const tool = this.tools.get(name);
     if (!tool) {
-      return this.errorResult('mcp', 'execute_tool', context, 'MCP_TOOL_NOT_FOUND', `tool ${name} not found`);
+      return this.errorResult(
+        'mcp',
+        'execute_tool',
+        context,
+        'MCP_TOOL_NOT_FOUND',
+        `tool ${name} not found`,
+      );
     }
 
     const validationErrors = validateJsonSchema(input, tool.inputSchema);
     if (validationErrors.length > 0) {
-      return this.errorResult(tool.name.split('.')[0] ?? 'mcp', tool.name.split('.').slice(1).join('.'), context, 'MCP_INVALID_PAYLOAD', 'tool payload validation failed', validationErrors);
+      return this.errorResult(
+        tool.name.split('.')[0] ?? 'mcp',
+        tool.name.split('.').slice(1).join('.'),
+        context,
+        'MCP_INVALID_PAYLOAD',
+        'tool payload validation failed',
+        validationErrors,
+      );
     }
 
     try {
-      return tool.handler(input, context);
+      return await tool.handler(input, context);
     } catch (error) {
       return this.normalizeError(tool.name, context, error);
     }
   }
 
-  public toModelTools(): Array<{ type: 'function'; function: { name: string; description: string; parameters: JsonSchema } }> {
+  public toModelTools(): Array<{
+    type: 'function';
+    function: { name: string; description: string; parameters: JsonSchema };
+  }> {
     return this.listTools({ exposeToModelOnly: true }).map((tool) => ({
       type: 'function',
       function: {
@@ -106,7 +145,13 @@ export class McpToolRegistry {
     }
 
     const message = error instanceof Error ? error.message : String(error);
-    return this.errorResult(name.split('.')[0] ?? 'mcp', name.split('.').slice(1).join('.'), context, 'MCP_TOOL_FAILED', message);
+    return this.errorResult(
+      name.split('.')[0] ?? 'mcp',
+      name.split('.').slice(1).join('.'),
+      context,
+      'MCP_TOOL_FAILED',
+      message,
+    );
   }
 
   private errorResult(
@@ -133,16 +178,16 @@ export class McpToolRegistry {
     };
   }
 
-  public prepareMutation(
+  public async prepareMutation(
     domain: string,
     operation: string,
     payload: Record<string, unknown>,
     context: McpToolContext,
-    prepare: () => PrepareResult,
-  ): McpToolResult {
-    const prepared = prepare();
+    prepare: () => Promise<PrepareResult> | PrepareResult,
+  ): Promise<McpToolResult> {
+    const prepared = await prepare();
     const createdAt = new Date();
-    const pending = this.confirmations.create({
+    const pending = await this.confirmations.create({
       domain,
       operation,
       payload,
@@ -159,42 +204,84 @@ export class McpToolRegistry {
       expiresAt: new Date(createdAt.getTime() + DEFAULT_CONFIRMATION_TTL_MS).toISOString(),
     });
 
-    return this.successResult(domain, operation, context, {
-      confirmationToken: pending.token,
-      summary: pending.summary,
-      expiresAt: pending.expiresAt,
-      payload,
-    }, pending.warnings);
+    return this.successResult(
+      domain,
+      operation,
+      context,
+      {
+        confirmationToken: pending.token,
+        summary: pending.summary,
+        expiresAt: pending.expiresAt,
+        payload,
+      },
+      pending.warnings,
+    );
   }
 
-  public commitMutation<T>(
+  public async commitMutation<T>(
     domain: string,
     operation: string,
     confirmationToken: string,
     context: McpToolContext,
-    commit: (pending: PendingMcpConfirmation) => T,
-  ): McpToolResult {
-    const pending = this.confirmations.get(confirmationToken);
+    commit: (pending: PendingMcpConfirmation) => Promise<T> | T,
+  ): Promise<McpToolResult> {
+    const pending = await this.confirmations.get(confirmationToken);
     if (!pending) {
-      return this.errorResult(domain, operation, context, 'MCP_CONFIRMATION_NOT_FOUND', 'confirmation token not found');
+      return this.errorResult(
+        domain,
+        operation,
+        context,
+        'MCP_CONFIRMATION_NOT_FOUND',
+        'confirmation token not found',
+      );
     }
     if (pending.operation !== operation || pending.domain !== domain) {
-      return this.errorResult(domain, operation, context, 'MCP_CONFIRMATION_OPERATION_MISMATCH', 'confirmation token does not match the requested operation');
+      return this.errorResult(
+        domain,
+        operation,
+        context,
+        'MCP_CONFIRMATION_OPERATION_MISMATCH',
+        'confirmation token does not match the requested operation',
+      );
     }
     if (pending.consumedAt) {
-      return this.errorResult(domain, operation, context, 'MCP_CONFIRMATION_ALREADY_CONSUMED', 'confirmation token already consumed');
+      return this.errorResult(
+        domain,
+        operation,
+        context,
+        'MCP_CONFIRMATION_ALREADY_CONSUMED',
+        'confirmation token already consumed',
+      );
     }
     if (new Date(pending.expiresAt).getTime() < Date.now()) {
-      return this.errorResult(domain, operation, context, 'MCP_CONFIRMATION_EXPIRED', 'confirmation token expired');
+      return this.errorResult(
+        domain,
+        operation,
+        context,
+        'MCP_CONFIRMATION_EXPIRED',
+        'confirmation token expired',
+      );
     }
 
-    const consumed = this.confirmations.consume(confirmationToken);
+    const consumed = await this.confirmations.consume(confirmationToken);
     if (!consumed) {
-      return this.errorResult(domain, operation, context, 'MCP_CONFIRMATION_NOT_FOUND', 'confirmation token not found');
+      return this.errorResult(
+        domain,
+        operation,
+        context,
+        'MCP_CONFIRMATION_NOT_FOUND',
+        'confirmation token not found',
+      );
     }
 
     try {
-      return this.successResult(domain, operation, context, commit(consumed), pending.warnings);
+      return this.successResult(
+        domain,
+        operation,
+        context,
+        await commit(consumed),
+        pending.warnings,
+      );
     } catch (error) {
       return this.normalizeError(`${domain}.${operation}`, context, error);
     }
@@ -250,7 +337,10 @@ const characteristicArraySchema: JsonSchema = {
 };
 
 export const createNexusMcpModule = (runtime: NexusRuntime) => {
-  const confirmations = new PostgresMcpConfirmationRepository(runtime.db);
+  const confirmations =
+    runtime.db.provider === 'oracle'
+      ? new OracleMcpConfirmationRepository(runtime.db)
+      : new PostgresMcpConfirmationRepository(runtime.db);
   const registry = new McpToolRegistry(runtime, confirmations);
 
   const querySiteSchema: JsonSchema = {
@@ -303,7 +393,10 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     properties: {
       name: { type: 'string' },
       '@type': { type: 'string', enum: ['CustomerFacingService', 'ResourceFacingService'] },
-      state: { type: 'string', enum: ['feasibilityChecked', 'designed', 'reserved', 'inactive', 'active', 'terminated'] },
+      state: {
+        type: 'string',
+        enum: ['feasibilityChecked', 'designed', 'reserved', 'inactive', 'active', 'terminated'],
+      },
       subscriberId: { type: 'string' },
       relatedPartyId: { type: 'string' },
       placeId: { type: 'string' },
@@ -346,17 +439,31 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
 
   registry.register({
     name: 'geo.list_sites',
-    description: 'Lista Geographic Sites do inventario Nexus com filtros por id, nome, status e relacionamentos.',
+    description:
+      'Lista Geographic Sites do inventario Nexus com filtros por id, nome, status e relacionamentos.',
     inputSchema: querySiteSchema,
-    handler: (input, context) => {
+    handler: async (input, context) => {
       const items = paginate(
-        runtime.geoService.listSites().filter((site) => {
+        (await runtime.geoService.listSites()).filter((site) => {
           if (typeof input.id === 'string' && site.id !== input.id) return false;
-          if (typeof input.name === 'string' && !site.name.toLowerCase().includes(input.name.toLowerCase())) return false;
-          if (typeof input.siteSpecificationId === 'string' && site.siteSpecificationId !== input.siteSpecificationId) return false;
-          if (typeof input.parentSiteId === 'string' && site.parentSite?.id !== input.parentSiteId) return false;
+          if (
+            typeof input.name === 'string' &&
+            !site.name.toLowerCase().includes(input.name.toLowerCase())
+          )
+            return false;
+          if (
+            typeof input.siteSpecificationId === 'string' &&
+            site.siteSpecificationId !== input.siteSpecificationId
+          )
+            return false;
+          if (typeof input.parentSiteId === 'string' && site.parentSite?.id !== input.parentSiteId)
+            return false;
           if (typeof input.placeId === 'string' && site.place?.id !== input.placeId) return false;
-          if (typeof input.relatedPartyId === 'string' && !site.relatedParty.some((item) => item.id === input.relatedPartyId)) return false;
+          if (
+            typeof input.relatedPartyId === 'string' &&
+            !site.relatedParty.some((item) => item.id === input.relatedPartyId)
+          )
+            return false;
           if (typeof input.status === 'string' && site.status !== input.status) return false;
           return true;
         }),
@@ -379,21 +486,40 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       required: ['id'],
       additionalProperties: false,
     },
-    handler: (input, context) => registry.successResult('geo', 'get_site', context, runtime.geoService.getSite(String(input.id)) ?? null),
+    handler: async (input, context) =>
+      registry.successResult(
+        'geo',
+        'get_site',
+        context,
+        (await runtime.geoService.getSite(String(input.id))) ?? null,
+      ),
   });
 
   registry.register({
     name: 'geo.list_addresses',
     description: 'Lista Geographic Addresses do inventario Nexus.',
     inputSchema: queryAddressSchema,
-    handler: (input, context) => {
+    handler: async (input, context) => {
       const items = paginate(
-        runtime.geoService.listAddresses().filter((address) => {
+        (await runtime.geoService.listAddresses()).filter((address) => {
           if (typeof input.id === 'string' && address.id !== input.id) return false;
-          if (typeof input.street === 'string' && !address.street.toLowerCase().includes(input.street.toLowerCase())) return false;
-          if (typeof input.city === 'string' && (address.city ?? '').toLowerCase() !== input.city.toLowerCase()) return false;
-          if (typeof input.postcode === 'string' && address.postcode !== input.postcode) return false;
-          if (typeof input.geographicLocationId === 'string' && address.geographicLocationId !== input.geographicLocationId) return false;
+          if (
+            typeof input.street === 'string' &&
+            !address.street.toLowerCase().includes(input.street.toLowerCase())
+          )
+            return false;
+          if (
+            typeof input.city === 'string' &&
+            (address.city ?? '').toLowerCase() !== input.city.toLowerCase()
+          )
+            return false;
+          if (typeof input.postcode === 'string' && address.postcode !== input.postcode)
+            return false;
+          if (
+            typeof input.geographicLocationId === 'string' &&
+            address.geographicLocationId !== input.geographicLocationId
+          )
+            return false;
           return true;
         }),
         input,
@@ -414,7 +540,13 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       required: ['id'],
       additionalProperties: false,
     },
-    handler: (input, context) => registry.successResult('geo', 'get_address', context, runtime.geoService.getAddress(String(input.id)) ?? null),
+    handler: async (input, context) =>
+      registry.successResult(
+        'geo',
+        'get_address',
+        context,
+        (await runtime.geoService.getAddress(String(input.id))) ?? null,
+      ),
   });
 
   const createSitePayloadSchema: JsonSchema = {
@@ -458,13 +590,20 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     schema: JsonSchema,
     domain: string,
     operation: string,
-    prepare: (payload: Record<string, unknown>) => PrepareResult,
+    prepare: (payload: Record<string, unknown>) => Promise<PrepareResult> | PrepareResult,
   ) => {
     registry.register({
       name,
       description,
       inputSchema: schema,
-      handler: (input, context) => registry.prepareMutation(domain, operation, input.payload as Record<string, unknown>, context, () => prepare(input.payload as Record<string, unknown>)),
+      handler: (input, context) =>
+        registry.prepareMutation(
+          domain,
+          operation,
+          input.payload as Record<string, unknown>,
+          context,
+          () => prepare(input.payload as Record<string, unknown>),
+        ),
     });
   };
 
@@ -474,30 +613,54 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createSitePayloadSchema,
     'geo',
     'create_site',
-    (payload) => {
+    async (payload) => {
       const typedPayload = payload as Record<string, unknown>;
-      if (!runtime.geoService.getSpec(String(typedPayload.siteSpecificationId))) {
-        throw new AppError('site specification not found', { code: 'GEO_SPEC_NOT_FOUND', statusCode: 404 });
+      if (!(await runtime.geoService.getSpec(String(typedPayload.siteSpecificationId)))) {
+        throw new AppError('site specification not found', {
+          code: 'GEO_SPEC_NOT_FOUND',
+          statusCode: 404,
+        });
       }
-      if (typedPayload.placeId && !runtime.geoService.getLocation(String(typedPayload.placeId))) {
-        throw new AppError('geographic location not found', { code: 'GEO_LOCATION_NOT_FOUND', statusCode: 404 });
+      if (
+        typedPayload.placeId &&
+        !(await runtime.geoService.getLocation(String(typedPayload.placeId)))
+      ) {
+        throw new AppError('geographic location not found', {
+          code: 'GEO_LOCATION_NOT_FOUND',
+          statusCode: 404,
+        });
       }
-      if (typedPayload.addressId && !runtime.geoService.getAddress(String(typedPayload.addressId))) {
-        throw new AppError('geographic address not found', { code: 'GEO_ADDRESS_NOT_FOUND', statusCode: 404 });
+      if (
+        typedPayload.addressId &&
+        !(await runtime.geoService.getAddress(String(typedPayload.addressId)))
+      ) {
+        throw new AppError('geographic address not found', {
+          code: 'GEO_ADDRESS_NOT_FOUND',
+          statusCode: 404,
+        });
       }
-      if (typedPayload.parentSiteId && !runtime.geoService.getSite(String(typedPayload.parentSiteId))) {
-        throw new AppError('geographic site not found', { code: 'GEO_SITE_NOT_FOUND', statusCode: 404 });
+      if (
+        typedPayload.parentSiteId &&
+        !(await runtime.geoService.getSite(String(typedPayload.parentSiteId)))
+      ) {
+        throw new AppError('geographic site not found', {
+          code: 'GEO_SITE_NOT_FOUND',
+          statusCode: 404,
+        });
       }
       return {
         summary: `Site ${String(typedPayload.name)} sera criado com specification ${String(typedPayload.siteSpecificationId)}.`,
-        warnings: typedPayload.relatedParty ? [] : ['Nenhum relatedParty informado para o novo Site.'],
+        warnings: typedPayload.relatedParty
+          ? []
+          : ['Nenhum relatedParty informado para o novo Site.'],
       };
     },
   );
 
   registry.register({
     name: 'geo.commit_create_site',
-    description: 'Confirma e executa a criacao de um Geographic Site usando confirmationToken valido.',
+    description:
+      'Confirma e executa a criacao de um Geographic Site usando confirmationToken valido.',
     inputSchema: {
       type: 'object',
       properties: { confirmationToken: { type: 'string' } },
@@ -505,24 +668,32 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       additionalProperties: false,
     },
     handler: (input, context) =>
-      registry.commitMutation('geo', 'create_site', String(input.confirmationToken), context, (pending) =>
-        runtime.geoService.createSite(pending.payload as unknown as {
-          name: string;
-          siteSpecificationId: string;
-          status?: 'planned' | 'active' | 'suspended' | 'terminated';
-          placeId?: string;
-          addressId?: string;
-          parentSiteId?: string;
-          relatedParty?: Array<{ id: string; role?: string }>;
-          characteristic?: Characteristic[];
-          relatedSite?: Array<{ id: string; relationshipType: string }>;
-        }),
+      registry.commitMutation(
+        'geo',
+        'create_site',
+        String(input.confirmationToken),
+        context,
+        (pending) =>
+          runtime.geoService.createSite(
+            pending.payload as unknown as {
+              name: string;
+              siteSpecificationId: string;
+              status?: 'planned' | 'active' | 'suspended' | 'terminated';
+              placeId?: string;
+              addressId?: string;
+              parentSiteId?: string;
+              relatedParty?: Array<{ id: string; role?: string }>;
+              characteristic?: Characteristic[];
+              relatedSite?: Array<{ id: string; relationshipType: string }>;
+            },
+          ),
       ),
   });
 
   registry.register({
     name: 'resource.list_resource_specifications',
-    description: 'Lista ResourceSpecifications do catalogo de recursos (modelos cadastrados via TMF634). Use esta ferramenta para saber quais modelos/tipos de recurso existem no catalogo antes de criar instancias.',
+    description:
+      'Lista ResourceSpecifications do catalogo de recursos (modelos cadastrados via TMF634). Use esta ferramenta para saber quais modelos/tipos de recurso existem no catalogo antes de criar instancias.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -534,15 +705,24 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       },
       additionalProperties: false,
     },
-    handler: (input, context) => {
-      const query: { name?: string; category?: string; resourceType?: string; limit?: number; offset?: number } = {};
+    handler: async (input, context) => {
+      const query: {
+        name?: string;
+        category?: string;
+        resourceType?: string;
+        limit?: number;
+        offset?: number;
+      } = {};
       if (typeof input.name === 'string') query.name = input.name;
       if (typeof input.category === 'string') query.category = input.category;
       if (typeof input.resourceType === 'string') query.resourceType = input.resourceType;
       if (typeof input.limit === 'number') query.limit = input.limit;
       if (typeof input.offset === 'number') query.offset = input.offset;
-      const items = runtime.resourceService.listResourceSpecifications(query);
-      return registry.successResult('resource', 'list_resource_specifications', context, { items, count: items.length });
+      const items = await runtime.resourceService.listResourceSpecifications(query);
+      return registry.successResult('resource', 'list_resource_specifications', context, {
+        items,
+        count: items.length,
+      });
     },
   });
 
@@ -555,32 +735,49 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       required: ['id'],
       additionalProperties: false,
     },
-    handler: (input, context) =>
-      registry.successResult('resource', 'get_resource_specification', context, runtime.resourceService.getResourceSpecification(String(input.id)) ?? null),
+    handler: async (input, context) =>
+      registry.successResult(
+        'resource',
+        'get_resource_specification',
+        context,
+        (await runtime.resourceService.getResourceSpecification(String(input.id))) ?? null,
+      ),
   });
 
   registry.register({
     name: 'resource.list_resources',
     description: 'Lista PhysicalResource e LogicalResource do inventario com filtros TMF.',
     inputSchema: resourceQuerySchema,
-    handler: (input, context) => {
+    handler: async (input, context) => {
       const query: ResourceQuery = {};
       if (typeof input.name === 'string') query.name = input.name;
-      if (input.kind === 'PhysicalResource' || input.kind === 'LogicalResource') query.kind = input.kind;
-      if (input.status === 'active' || input.status === 'inactive' || input.status === 'suspended' || input.status === 'terminated') query.status = input.status;
-      if (typeof input.resourceSpecificationId === 'string') query.resourceSpecificationId = input.resourceSpecificationId;
+      if (input.kind === 'PhysicalResource' || input.kind === 'LogicalResource')
+        query.kind = input.kind;
+      if (
+        input.status === 'active' ||
+        input.status === 'inactive' ||
+        input.status === 'suspended' ||
+        input.status === 'terminated'
+      )
+        query.status = input.status;
+      if (typeof input.resourceSpecificationId === 'string')
+        query.resourceSpecificationId = input.resourceSpecificationId;
       if (typeof input.placeId === 'string') query.placeId = input.placeId;
       if (typeof input.relatedPartyId === 'string') query.relatedPartyId = input.relatedPartyId;
       if (typeof input.limit === 'number') query.limit = input.limit;
       if (typeof input.offset === 'number') query.offset = input.offset;
-      const items = runtime.resourceService.listResources(query);
-      return registry.successResult('resource', 'list_resources', context, { items, count: items.length });
+      const items = await runtime.resourceService.listResources(query);
+      return registry.successResult('resource', 'list_resources', context, {
+        items,
+        count: items.length,
+      });
     },
   });
 
   registry.register({
     name: 'resource.list_resource_categories',
-    description: 'Lista ResourceCategory do catalogo de recursos (TMF634). Use para resolver categorias canônicas antes de criar ResourceSpecification.',
+    description:
+      'Lista ResourceCategory do catalogo de recursos (TMF634). Use para resolver categorias canônicas antes de criar ResourceSpecification.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -589,20 +786,29 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       },
       additionalProperties: false,
     },
-    handler: (input, context) => {
+    handler: async (input, context) => {
       const name = typeof input.name === 'string' ? input.name.trim().toLowerCase() : '';
-      const status = input.status === 'active' || input.status === 'inactive' ? input.status : undefined;
-      const items = runtime.resourceService
-        .listResourceCategories()
-        .filter((item) => (!name || item.name.toLowerCase().includes(name) || item.code.toLowerCase().includes(name)))
+      const status =
+        input.status === 'active' || input.status === 'inactive' ? input.status : undefined;
+      const items = (await runtime.resourceService.listResourceCategories())
+        .filter(
+          (item) =>
+            !name ||
+            item.name.toLowerCase().includes(name) ||
+            item.code.toLowerCase().includes(name),
+        )
         .filter((item) => !status || item.status === status);
-      return registry.successResult('resource', 'list_resource_categories', context, { items, count: items.length });
+      return registry.successResult('resource', 'list_resource_categories', context, {
+        items,
+        count: items.length,
+      });
     },
   });
 
   registry.register({
     name: 'resource.list_resource_types',
-    description: 'Lista ResourceType do catalogo de recursos (TMF634). Use para resolver tipos canônicos antes de criar ResourceSpecification.',
+    description:
+      'Lista ResourceType do catalogo de recursos (TMF634). Use para resolver tipos canônicos antes de criar ResourceSpecification.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -612,16 +818,24 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       },
       additionalProperties: false,
     },
-    handler: (input, context) => {
+    handler: async (input, context) => {
       const name = typeof input.name === 'string' ? input.name.trim().toLowerCase() : '';
       const categoryCode = typeof input.categoryCode === 'string' ? input.categoryCode.trim() : '';
-      const status = input.status === 'active' || input.status === 'inactive' ? input.status : undefined;
-      const items = runtime.resourceService
-        .listResourceTypes()
-        .filter((item) => (!name || item.name.toLowerCase().includes(name) || item.code.toLowerCase().includes(name)))
-        .filter((item) => (!categoryCode || item.categoryCode === categoryCode))
+      const status =
+        input.status === 'active' || input.status === 'inactive' ? input.status : undefined;
+      const items = (await runtime.resourceService.listResourceTypes())
+        .filter(
+          (item) =>
+            !name ||
+            item.name.toLowerCase().includes(name) ||
+            item.code.toLowerCase().includes(name),
+        )
+        .filter((item) => !categoryCode || item.categoryCode === categoryCode)
         .filter((item) => !status || item.status === status);
-      return registry.successResult('resource', 'list_resource_types', context, { items, count: items.length });
+      return registry.successResult('resource', 'list_resource_types', context, {
+        items,
+        count: items.length,
+      });
     },
   });
 
@@ -634,7 +848,13 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       required: ['id'],
       additionalProperties: false,
     },
-    handler: (input, context) => registry.successResult('resource', 'get_resource', context, runtime.resourceService.getResource(String(input.id)) ?? null),
+    handler: async (input, context) =>
+      registry.successResult(
+        'resource',
+        'get_resource',
+        context,
+        (await runtime.resourceService.getResource(String(input.id))) ?? null,
+      ),
   });
 
   const createPhysicalResourceSchema: JsonSchema = {
@@ -672,10 +892,17 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createPhysicalResourceSchema,
     'resource',
     'create_physical_resource',
-    (payload) => {
+    async (payload) => {
       const typedPayload = payload as CreatePhysicalResourceInput;
-      if (!runtime.resourceService.getResourceSpecification(typedPayload.resourceSpecificationId)) {
-        throw new AppError('resource specification not found', { code: 'RESOURCE_SPEC_NOT_FOUND', statusCode: 404 });
+      if (
+        !(await runtime.resourceService.getResourceSpecification(
+          typedPayload.resourceSpecificationId,
+        ))
+      ) {
+        throw new AppError('resource specification not found', {
+          code: 'RESOURCE_SPEC_NOT_FOUND',
+          statusCode: 404,
+        });
       }
       if (typedPayload.placeId) {
         const placeExists =
@@ -683,12 +910,18 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           runtime.geoService.getAddress(typedPayload.placeId) ||
           runtime.geoService.getLocation(typedPayload.placeId);
         if (!placeExists) {
-          throw new AppError('place not found', { code: 'RESOURCE_PLACE_NOT_FOUND', statusCode: 404 });
+          throw new AppError('place not found', {
+            code: 'RESOURCE_PLACE_NOT_FOUND',
+            statusCode: 404,
+          });
         }
       }
       for (const party of typedPayload.relatedParty ?? []) {
-        if (!runtime.partyService.getParty(party.id)) {
-          throw new AppError('related party not found', { code: 'RESOURCE_PARTY_NOT_FOUND', statusCode: 404 });
+        if (!(await runtime.partyService.getParty(party.id))) {
+          throw new AppError('related party not found', {
+            code: 'RESOURCE_PARTY_NOT_FOUND',
+            statusCode: 404,
+          });
         }
       }
       return {
@@ -707,8 +940,15 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       additionalProperties: false,
     },
     handler: (input, context) =>
-      registry.commitMutation('resource', 'create_physical_resource', String(input.confirmationToken), context, (pending) =>
-        runtime.resourceService.createPhysicalResource(pending.payload as CreatePhysicalResourceInput),
+      registry.commitMutation(
+        'resource',
+        'create_physical_resource',
+        String(input.confirmationToken),
+        context,
+        (pending) =>
+          runtime.resourceService.createPhysicalResource(
+            pending.payload as CreatePhysicalResourceInput,
+          ),
       ),
   });
 
@@ -739,26 +979,38 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createResourceSpecificationSchema,
     'resource',
     'create_resource_specification',
-    (payload) => {
+    async (payload) => {
       const typedPayload = payload as CreateResourceSpecificationInput;
-      const category = runtime.resourceService
-        .listResourceCategories()
-        .find((item) => item.code === typedPayload.category || item.id === typedPayload.category);
+      const category = (await runtime.resourceService.listResourceCategories()).find(
+        (item) => item.code === typedPayload.category || item.id === typedPayload.category,
+      );
       if (!category) {
-        throw new AppError('resource category not found', { code: 'RESOURCE_CATEGORY_NOT_FOUND', statusCode: 404 });
+        throw new AppError('resource category not found', {
+          code: 'RESOURCE_CATEGORY_NOT_FOUND',
+          statusCode: 404,
+        });
       }
       if (category.status !== 'active') {
-        throw new AppError('resource category is inactive', { code: 'RESOURCE_CATEGORY_INACTIVE', statusCode: 409 });
+        throw new AppError('resource category is inactive', {
+          code: 'RESOURCE_CATEGORY_INACTIVE',
+          statusCode: 409,
+        });
       }
 
-      const resourceType = runtime.resourceService
-        .listResourceTypes()
-        .find((item) => item.code === typedPayload.resourceType || item.id === typedPayload.resourceType);
+      const resourceType = (await runtime.resourceService.listResourceTypes()).find(
+        (item) => item.code === typedPayload.resourceType || item.id === typedPayload.resourceType,
+      );
       if (!resourceType) {
-        throw new AppError('resource type not found', { code: 'RESOURCE_TYPE_NOT_FOUND', statusCode: 404 });
+        throw new AppError('resource type not found', {
+          code: 'RESOURCE_TYPE_NOT_FOUND',
+          statusCode: 404,
+        });
       }
       if (resourceType.status !== 'active') {
-        throw new AppError('resource type is inactive', { code: 'RESOURCE_TYPE_INACTIVE', statusCode: 409 });
+        throw new AppError('resource type is inactive', {
+          code: 'RESOURCE_TYPE_INACTIVE',
+          statusCode: 409,
+        });
       }
       if (resourceType.categoryCode !== category.code) {
         throw new AppError('resource type is not allowed for category', {
@@ -767,14 +1019,19 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         });
       }
       for (const party of typedPayload.relatedParty ?? []) {
-        if (!runtime.partyService.getParty(party.id)) {
-          throw new AppError('related party not found', { code: 'RESOURCE_PARTY_NOT_FOUND', statusCode: 404 });
+        if (!(await runtime.partyService.getParty(party.id))) {
+          throw new AppError('related party not found', {
+            code: 'RESOURCE_PARTY_NOT_FOUND',
+            statusCode: 404,
+          });
         }
       }
 
       return {
         summary: `ResourceSpecification ${typedPayload.name} sera criada como ${resourceType.code} em ${category.code}.`,
-        warnings: typedPayload.relatedParty?.length ? [] : ['Nenhum relatedParty informado para o ResourceSpecification.'],
+        warnings: typedPayload.relatedParty?.length
+          ? []
+          : ['Nenhum relatedParty informado para o ResourceSpecification.'],
       };
     },
   );
@@ -789,8 +1046,15 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       additionalProperties: false,
     },
     handler: (input, context) =>
-      registry.commitMutation('resource', 'create_resource_specification', String(input.confirmationToken), context, (pending) =>
-      runtime.resourceService.createResourceSpecification(pending.payload as CreateResourceSpecificationInput),
+      registry.commitMutation(
+        'resource',
+        'create_resource_specification',
+        String(input.confirmationToken),
+        context,
+        (pending) =>
+          runtime.resourceService.createResourceSpecification(
+            pending.payload as CreateResourceSpecificationInput,
+          ),
       ),
   });
 
@@ -827,8 +1091,8 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createEquipmentModelSchema,
     'resource',
     'create_equipment_model',
-    (payload) => {
-      const prepared = prepareEquipmentModel(runtime, payload as EquipmentModelInput);
+    async (payload) => {
+      const prepared = await prepareEquipmentModel(runtime, payload as EquipmentModelInput);
 
       return {
         summary: `Modelo de ${prepared.catalogEntry.label} ${prepared.model} da ${prepared.manufacturer.name} sera criado no catalogo.`,
@@ -839,7 +1103,8 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
 
   registry.register({
     name: 'resource.commit_create_equipment_model',
-    description: 'Confirma e executa o cadastro de um modelo de equipamento no catalogo de recursos.',
+    description:
+      'Confirma e executa o cadastro de um modelo de equipamento no catalogo de recursos.',
     inputSchema: {
       type: 'object',
       properties: { confirmationToken: { type: 'string' } },
@@ -847,10 +1112,21 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       additionalProperties: false,
     },
     handler: (input, context) =>
-      registry.commitMutation('resource', 'create_equipment_model', String(input.confirmationToken), context, (pending) => {
-        const prepared = prepareEquipmentModel(runtime, pending.payload as EquipmentModelInput);
-        return runtime.resourceService.createResourceSpecification(buildEquipmentModelSpecificationInput(prepared));
-      }),
+      registry.commitMutation(
+        'resource',
+        'create_equipment_model',
+        String(input.confirmationToken),
+        context,
+        async (pending) => {
+          const prepared = await prepareEquipmentModel(
+            runtime,
+            pending.payload as EquipmentModelInput,
+          );
+          return runtime.resourceService.createResourceSpecification(
+            buildEquipmentModelSpecificationInput(prepared),
+          );
+        },
+      ),
   });
 
   const createEquipmentModelsSchema: JsonSchema = {
@@ -896,7 +1172,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createEquipmentModelsSchema,
     'resource',
     'create_equipment_models',
-    (payload) => {
+    async (payload) => {
       const typedPayload = payload as { items: EquipmentModelInput[] };
       if (typedPayload.items.length === 0) {
         throw new AppError('batch is empty', {
@@ -904,7 +1180,9 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           statusCode: 422,
         });
       }
-      const items = typedPayload.items.map((item) => prepareEquipmentModel(runtime, item));
+      const items = await Promise.all(
+        typedPayload.items.map((item) => prepareEquipmentModel(runtime, item)),
+      );
       const duplicateKeys = new Set<string>();
 
       for (const item of items) {
@@ -927,7 +1205,8 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
 
   registry.register({
     name: 'resource.commit_create_equipment_models',
-    description: 'Confirma e executa o cadastro em lote de modelos de equipamento no catalogo de recursos.',
+    description:
+      'Confirma e executa o cadastro em lote de modelos de equipamento no catalogo de recursos.',
     inputSchema: {
       type: 'object',
       properties: { confirmationToken: { type: 'string' } },
@@ -935,15 +1214,29 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       additionalProperties: false,
     },
     handler: (input, context) =>
-      registry.commitMutation('resource', 'create_equipment_models', String(input.confirmationToken), context, (pending) => {
-        const payload = pending.payload as { items: EquipmentModelInput[] };
-        const items = payload.items.map((item) => prepareEquipmentModel(runtime, item));
-        const createdItems = items.map((item) => runtime.resourceService.createResourceSpecification(buildEquipmentModelSpecificationInput(item)));
+      registry.commitMutation(
+        'resource',
+        'create_equipment_models',
+        String(input.confirmationToken),
+        context,
+        async (pending) => {
+          const payload = pending.payload as { items: EquipmentModelInput[] };
+          const items = await Promise.all(
+            payload.items.map((item) => prepareEquipmentModel(runtime, item)),
+          );
+          const createdItems = await Promise.all(
+            items.map((item) =>
+              runtime.resourceService.createResourceSpecification(
+                buildEquipmentModelSpecificationInput(item),
+              ),
+            ),
+          );
 
-        return {
-          items: createdItems,
-        };
-      }),
+          return {
+            items: createdItems,
+          };
+        },
+      ),
   });
 
   const deleteEquipmentModelSchema: JsonSchema = {
@@ -970,14 +1263,14 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     deleteEquipmentModelSchema,
     'resource',
     'delete_equipment_model',
-    (payload) => {
+    async (payload) => {
       const typedPayload = payload as {
         model: string;
         manufacturerName: string;
         equipmentType?: keyof typeof EQUIPMENT_MODEL_CATALOG;
       };
 
-      const match = findEquipmentModelSpecification(runtime, typedPayload);
+      const match = await findEquipmentModelSpecification(runtime, typedPayload);
       if (!match) {
         throw new AppError('equipment model not found', {
           code: 'RESOURCE_EQUIPMENT_MODEL_NOT_FOUND',
@@ -1000,7 +1293,8 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
 
   registry.register({
     name: 'resource.commit_delete_equipment_model',
-    description: 'Confirma e executa a remocao logica de um modelo de equipamento no catalogo de recursos.',
+    description:
+      'Confirma e executa a remocao logica de um modelo de equipamento no catalogo de recursos.',
     inputSchema: {
       type: 'object',
       properties: { confirmationToken: { type: 'string' } },
@@ -1008,23 +1302,31 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       additionalProperties: false,
     },
     handler: (input, context) =>
-      registry.commitMutation('resource', 'delete_equipment_model', String(input.confirmationToken), context, (pending) => {
-        const payload = pending.payload as {
-          model: string;
-          manufacturerName: string;
-          equipmentType?: keyof typeof EQUIPMENT_MODEL_CATALOG;
-        };
+      registry.commitMutation(
+        'resource',
+        'delete_equipment_model',
+        String(input.confirmationToken),
+        context,
+        async (pending) => {
+          const payload = pending.payload as {
+            model: string;
+            manufacturerName: string;
+            equipmentType?: keyof typeof EQUIPMENT_MODEL_CATALOG;
+          };
 
-        const match = findEquipmentModelSpecification(runtime, payload);
-        if (!match || match.state === 'alreadyRemoved') {
-          throw new AppError('equipment model not found', {
-            code: !match ? 'RESOURCE_EQUIPMENT_MODEL_NOT_FOUND' : 'RESOURCE_EQUIPMENT_MODEL_ALREADY_REMOVED',
-            statusCode: !match ? 404 : 409,
-          });
-        }
+          const match = await findEquipmentModelSpecification(runtime, payload);
+          if (!match || match.state === 'alreadyRemoved') {
+            throw new AppError('equipment model not found', {
+              code: !match
+                ? 'RESOURCE_EQUIPMENT_MODEL_NOT_FOUND'
+                : 'RESOURCE_EQUIPMENT_MODEL_ALREADY_REMOVED',
+              statusCode: !match ? 404 : 409,
+            });
+          }
 
-        return runtime.resourceService.deleteResourceSpecification(match.spec.id);
-      }),
+          return runtime.resourceService.deleteResourceSpecification(match.spec.id);
+        },
+      ),
   });
 
   const createLogicalResourceSchema: JsonSchema = {
@@ -1059,17 +1361,31 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createLogicalResourceSchema,
     'resource',
     'create_logical_resource',
-    (payload) => {
+    async (payload) => {
       const typedPayload = payload as CreateLogicalResourceInput;
-      if (!runtime.resourceService.getResourceSpecification(typedPayload.resourceSpecificationId)) {
-        throw new AppError('resource specification not found', { code: 'RESOURCE_SPEC_NOT_FOUND', statusCode: 404 });
+      if (
+        !(await runtime.resourceService.getResourceSpecification(
+          typedPayload.resourceSpecificationId,
+        ))
+      ) {
+        throw new AppError('resource specification not found', {
+          code: 'RESOURCE_SPEC_NOT_FOUND',
+          statusCode: 404,
+        });
       }
-      if (typedPayload.supportingPhysicalResourceId && !runtime.resourceService.getPhysicalResource(typedPayload.supportingPhysicalResourceId)) {
+      if (
+        typedPayload.supportingPhysicalResourceId &&
+        !(await runtime.resourceService.getPhysicalResource(
+          typedPayload.supportingPhysicalResourceId,
+        ))
+      ) {
         throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
       }
       return {
         summary: `LogicalResource ${typedPayload.name} sera criado com specification ${typedPayload.resourceSpecificationId}.`,
-        warnings: typedPayload.supportingPhysicalResourceId ? [] : ['Nenhum supportingPhysicalResourceId informado para o LogicalResource.'],
+        warnings: typedPayload.supportingPhysicalResourceId
+          ? []
+          : ['Nenhum supportingPhysicalResourceId informado para o LogicalResource.'],
       };
     },
   );
@@ -1084,8 +1400,15 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       additionalProperties: false,
     },
     handler: (input, context) =>
-      registry.commitMutation('resource', 'create_logical_resource', String(input.confirmationToken), context, (pending) =>
-        runtime.resourceService.createLogicalResource(pending.payload as CreateLogicalResourceInput),
+      registry.commitMutation(
+        'resource',
+        'create_logical_resource',
+        String(input.confirmationToken),
+        context,
+        (pending) =>
+          runtime.resourceService.createLogicalResource(
+            pending.payload as CreateLogicalResourceInput,
+          ),
       ),
   });
 
@@ -1113,9 +1436,9 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     activationSchema,
     'resource',
     'activate_resource_function',
-    (payload) => {
+    async (payload) => {
       const typedPayload = payload as ResourceFunctionActivationInput;
-      const current = runtime.resourceService.getResource(typedPayload.resourceId);
+      const current = await runtime.resourceService.getResource(typedPayload.resourceId);
       if (!current) {
         throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
       }
@@ -1135,8 +1458,15 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       additionalProperties: false,
     },
     handler: (input, context) =>
-      registry.commitMutation('resource', 'activate_resource_function', String(input.confirmationToken), context, (pending) =>
-        runtime.resourceService.activateResource(pending.payload as ResourceFunctionActivationInput),
+      registry.commitMutation(
+        'resource',
+        'activate_resource_function',
+        String(input.confirmationToken),
+        context,
+        (pending) =>
+          runtime.resourceService.activateResource(
+            pending.payload as ResourceFunctionActivationInput,
+          ),
       ),
   });
 
@@ -1144,10 +1474,11 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     name: 'service.list_services',
     description: 'Lista CFS e RFS do inventario com filtros TMF.',
     inputSchema: serviceQuerySchema,
-    handler: (input, context) => {
+    handler: async (input, context) => {
       const query: ServiceQuery = {};
       if (typeof input.name === 'string') query.name = input.name;
-      if (input['@type'] === 'CustomerFacingService' || input['@type'] === 'ResourceFacingService') query.type = input['@type'];
+      if (input['@type'] === 'CustomerFacingService' || input['@type'] === 'ResourceFacingService')
+        query.type = input['@type'];
       if (
         input.state === 'feasibilityChecked' ||
         input.state === 'designed' ||
@@ -1161,13 +1492,19 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       if (typeof input.subscriberId === 'string') query.subscriberId = input.subscriberId;
       if (typeof input.relatedPartyId === 'string') query.relatedPartyId = input.relatedPartyId;
       if (typeof input.placeId === 'string') query.placeId = input.placeId;
-      if (typeof input.serviceSpecificationId === 'string') query.serviceSpecificationId = input.serviceSpecificationId;
-      if (typeof input.supportingResourceId === 'string') query.supportingResourceId = input.supportingResourceId;
-      if (typeof input.supportingServiceId === 'string') query.supportingServiceId = input.supportingServiceId;
+      if (typeof input.serviceSpecificationId === 'string')
+        query.serviceSpecificationId = input.serviceSpecificationId;
+      if (typeof input.supportingResourceId === 'string')
+        query.supportingResourceId = input.supportingResourceId;
+      if (typeof input.supportingServiceId === 'string')
+        query.supportingServiceId = input.supportingServiceId;
       if (typeof input.limit === 'number') query.limit = input.limit;
       if (typeof input.offset === 'number') query.offset = input.offset;
-      const items = runtime.serviceService.listServices(query);
-      return registry.successResult('service', 'list_services', context, { items, count: items.length });
+      const items = await runtime.serviceService.listServices(query);
+      return registry.successResult('service', 'list_services', context, {
+        items,
+        count: items.length,
+      });
     },
   });
 
@@ -1180,7 +1517,13 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       required: ['id'],
       additionalProperties: false,
     },
-    handler: (input, context) => registry.successResult('service', 'get_service', context, runtime.serviceService.getService(String(input.id)) ?? null),
+    handler: async (input, context) =>
+      registry.successResult(
+        'service',
+        'get_service',
+        context,
+        (await runtime.serviceService.getService(String(input.id))) ?? null,
+      ),
   });
 
   const createCfsSchema: JsonSchema = {
@@ -1194,7 +1537,17 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           serviceSpecificationId: { type: 'string' },
           subscriberId: { type: 'string' },
           serviceType: { type: 'string' },
-          state: { type: 'string', enum: ['feasibilityChecked', 'designed', 'reserved', 'inactive', 'active', 'terminated'] },
+          state: {
+            type: 'string',
+            enum: [
+              'feasibilityChecked',
+              'designed',
+              'reserved',
+              'inactive',
+              'active',
+              'terminated',
+            ],
+          },
           category: { type: 'string' },
           relatedParty: entityRefArraySchema,
           place: entityRefArraySchema,
@@ -1228,22 +1581,40 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createCfsSchema,
     'service',
     'create_cfs',
-    (payload) => {
-      const typedPayload = payload as CreateServiceInput & { subscriberId: string; supportingService?: Array<{ id: string }>; supportingResource?: Array<{ id: string }> };
-      const spec = runtime.serviceService.getServiceSpecification(typedPayload.serviceSpecificationId);
+    async (payload) => {
+      const typedPayload = payload as CreateServiceInput & {
+        subscriberId: string;
+        supportingService?: Array<{ id: string }>;
+        supportingResource?: Array<{ id: string }>;
+      };
+      const spec = await runtime.serviceService.getServiceSpecification(
+        typedPayload.serviceSpecificationId,
+      );
       if (!spec) {
-        throw new AppError('service specification not found', { code: 'SERVICE_SPEC_NOT_FOUND', statusCode: 404 });
+        throw new AppError('service specification not found', {
+          code: 'SERVICE_SPEC_NOT_FOUND',
+          statusCode: 404,
+        });
       }
       if (spec.serviceType !== 'CFS') {
-        throw new AppError('serviceSpecification type mismatch', { code: 'SERVICE_SPEC_TYPE_MISMATCH', statusCode: 422 });
+        throw new AppError('serviceSpecification type mismatch', {
+          code: 'SERVICE_SPEC_TYPE_MISMATCH',
+          statusCode: 422,
+        });
       }
       if (typedPayload.supportingResource && typedPayload.supportingResource.length > 0) {
-        throw new AppError('CFS cannot reference supportingResource directly', { code: 'SERVICE_CFS_SUPPORTING_RESOURCE', statusCode: 422 });
+        throw new AppError('CFS cannot reference supportingResource directly', {
+          code: 'SERVICE_CFS_SUPPORTING_RESOURCE',
+          statusCode: 422,
+        });
       }
       for (const reference of typedPayload.supportingService ?? []) {
-        const supporting = runtime.serviceService.getService(reference.id);
+        const supporting = await runtime.serviceService.getService(reference.id);
         if (!supporting || supporting['@type'] !== 'ResourceFacingService') {
-          throw new AppError('supporting service type mismatch', { code: 'SERVICE_SUPPORTING_SERVICE_TYPE_MISMATCH', statusCode: 422 });
+          throw new AppError('supporting service type mismatch', {
+            code: 'SERVICE_SUPPORTING_SERVICE_TYPE_MISMATCH',
+            statusCode: 422,
+          });
         }
       }
       return {
@@ -1262,8 +1633,15 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       additionalProperties: false,
     },
     handler: (input, context) =>
-      registry.commitMutation('service', 'create_cfs', String(input.confirmationToken), context, (pending) =>
-        runtime.serviceService.createCustomerFacingService(pending.payload as unknown as CreateServiceInput),
+      registry.commitMutation(
+        'service',
+        'create_cfs',
+        String(input.confirmationToken),
+        context,
+        (pending) =>
+          runtime.serviceService.createCustomerFacingService(
+            pending.payload as unknown as CreateServiceInput,
+          ),
       ),
   });
 
@@ -1277,7 +1655,17 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           name: { type: 'string' },
           serviceSpecificationId: { type: 'string' },
           serviceType: { type: 'string' },
-          state: { type: 'string', enum: ['feasibilityChecked', 'designed', 'reserved', 'inactive', 'active', 'terminated'] },
+          state: {
+            type: 'string',
+            enum: [
+              'feasibilityChecked',
+              'designed',
+              'reserved',
+              'inactive',
+              'active',
+              'terminated',
+            ],
+          },
           category: { type: 'string' },
           relatedParty: entityRefArraySchema,
           place: entityRefArraySchema,
@@ -1312,21 +1700,38 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createRfsSchema,
     'service',
     'create_rfs',
-    (payload) => {
-      const typedPayload = payload as CreateServiceInput & { supportingResource?: Array<{ id: string }>; subscriberId?: string };
-      const spec = runtime.serviceService.getServiceSpecification(typedPayload.serviceSpecificationId);
+    async (payload) => {
+      const typedPayload = payload as CreateServiceInput & {
+        supportingResource?: Array<{ id: string }>;
+        subscriberId?: string;
+      };
+      const spec = await runtime.serviceService.getServiceSpecification(
+        typedPayload.serviceSpecificationId,
+      );
       if (!spec) {
-        throw new AppError('service specification not found', { code: 'SERVICE_SPEC_NOT_FOUND', statusCode: 404 });
+        throw new AppError('service specification not found', {
+          code: 'SERVICE_SPEC_NOT_FOUND',
+          statusCode: 404,
+        });
       }
       if (spec.serviceType !== 'RFS') {
-        throw new AppError('serviceSpecification type mismatch', { code: 'SERVICE_SPEC_TYPE_MISMATCH', statusCode: 422 });
+        throw new AppError('serviceSpecification type mismatch', {
+          code: 'SERVICE_SPEC_TYPE_MISMATCH',
+          statusCode: 422,
+        });
       }
       if (typedPayload.subscriberId) {
-        throw new AppError('resource facing service cannot have subscriberId', { code: 'SERVICE_RFS_SUBSCRIBER_NOT_ALLOWED', statusCode: 422 });
+        throw new AppError('resource facing service cannot have subscriberId', {
+          code: 'SERVICE_RFS_SUBSCRIBER_NOT_ALLOWED',
+          statusCode: 422,
+        });
       }
       for (const reference of typedPayload.supportingResource ?? []) {
-        if (!runtime.resourceService.getResource(reference.id)) {
-          throw new AppError('supporting resource not found', { code: 'SERVICE_SUPPORTING_RESOURCE_NOT_FOUND', statusCode: 422 });
+        if (!(await runtime.resourceService.getResource(reference.id))) {
+          throw new AppError('supporting resource not found', {
+            code: 'SERVICE_SUPPORTING_RESOURCE_NOT_FOUND',
+            statusCode: 422,
+          });
         }
       }
       return {
@@ -1345,8 +1750,15 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       additionalProperties: false,
     },
     handler: (input, context) =>
-      registry.commitMutation('service', 'create_rfs', String(input.confirmationToken), context, (pending) =>
-        runtime.serviceService.createResourceFacingService(pending.payload as unknown as CreateServiceInput),
+      registry.commitMutation(
+        'service',
+        'create_rfs',
+        String(input.confirmationToken),
+        context,
+        (pending) =>
+          runtime.serviceService.createResourceFacingService(
+            pending.payload as unknown as CreateServiceInput,
+          ),
       ),
   });
 
@@ -1411,10 +1823,13 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createServiceOrderSchema,
     'order',
     'create_service_order',
-    (payload) => {
+    async (payload) => {
       const typedPayload = payload as CreateServiceOrderInput;
       if ((typedPayload.serviceOrderItem ?? []).length === 0) {
-        throw new AppError('serviceOrderItem required', { code: 'SERVICE_ORDER_ITEM_REQUIRED', statusCode: 422 });
+        throw new AppError('serviceOrderItem required', {
+          code: 'SERVICE_ORDER_ITEM_REQUIRED',
+          statusCode: 422,
+        });
       }
       return {
         summary: `Service Order preparado com ${typedPayload.serviceOrderItem.length} item(ns).`,
@@ -1432,8 +1847,13 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       additionalProperties: false,
     },
     handler: (input, context) =>
-      registry.commitMutation('order', 'create_service_order', String(input.confirmationToken), context, (pending) =>
-        runtime.orderService.createServiceOrder(pending.payload as CreateServiceOrderInput),
+      registry.commitMutation(
+        'order',
+        'create_service_order',
+        String(input.confirmationToken),
+        context,
+        (pending) =>
+          runtime.orderService.createServiceOrder(pending.payload as CreateServiceOrderInput),
       ),
   });
 
@@ -1474,10 +1894,13 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createResourceOrderSchema,
     'order',
     'create_resource_order',
-    (payload) => {
+    async (payload) => {
       const typedPayload = payload as CreateResourceOrderInput;
       if ((typedPayload.resourceOrderItem ?? []).length === 0) {
-        throw new AppError('resourceOrderItem required', { code: 'RESOURCE_ORDER_ITEM_REQUIRED', statusCode: 422 });
+        throw new AppError('resourceOrderItem required', {
+          code: 'RESOURCE_ORDER_ITEM_REQUIRED',
+          statusCode: 422,
+        });
       }
       return {
         summary: `Resource Order preparado com ${typedPayload.resourceOrderItem.length} item(ns).`,
@@ -1495,8 +1918,13 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       additionalProperties: false,
     },
     handler: (input, context) =>
-      registry.commitMutation('order', 'create_resource_order', String(input.confirmationToken), context, (pending) =>
-        runtime.orderService.createResourceOrder(pending.payload as CreateResourceOrderInput),
+      registry.commitMutation(
+        'order',
+        'create_resource_order',
+        String(input.confirmationToken),
+        context,
+        (pending) =>
+          runtime.orderService.createResourceOrder(pending.payload as CreateResourceOrderInput),
       ),
   });
 
@@ -1504,16 +1932,21 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     name: 'party.list_parties',
     description: 'Lista parties do inventario TMF.',
     inputSchema: partyQuerySchema,
-    handler: (input, context) => {
+    handler: async (input, context) => {
       const query: PartyQuery = {};
       if (typeof input.name === 'string') query.name = input.name;
       if (typeof input.document === 'string') query.document = input.document;
-      if (input.partyType === 'Organization' || input.partyType === 'Individual') query.partyType = input.partyType;
-      if (input.status === 'active' || input.status === 'inactive' || input.status === 'terminated') query.status = input.status;
+      if (input.partyType === 'Organization' || input.partyType === 'Individual')
+        query.partyType = input.partyType;
+      if (input.status === 'active' || input.status === 'inactive' || input.status === 'terminated')
+        query.status = input.status;
       if (typeof input.limit === 'number') query.limit = input.limit;
       if (typeof input.offset === 'number') query.offset = input.offset;
-      const items = runtime.partyService.listParties(query);
-      return registry.successResult('party', 'list_parties', context, { items, count: items.length });
+      const items = await runtime.partyService.listParties(query);
+      return registry.successResult('party', 'list_parties', context, {
+        items,
+        count: items.length,
+      });
     },
   });
 
@@ -1526,7 +1959,13 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       required: ['id'],
       additionalProperties: false,
     },
-    handler: (input, context) => registry.successResult('party', 'get_party', context, runtime.partyService.getParty(String(input.id)) ?? null),
+    handler: async (input, context) =>
+      registry.successResult(
+        'party',
+        'get_party',
+        context,
+        (await runtime.partyService.getParty(String(input.id))) ?? null,
+      ),
   });
 
   const createPartySchema: JsonSchema = {
@@ -1569,8 +2008,12 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       additionalProperties: false,
     },
     handler: (input, context) =>
-      registry.commitMutation('party', 'create_party', String(input.confirmationToken), context, (pending) =>
-        runtime.partyService.createParty(pending.payload as CreatePartyInput),
+      registry.commitMutation(
+        'party',
+        'create_party',
+        String(input.confirmationToken),
+        context,
+        (pending) => runtime.partyService.createParty(pending.payload as CreatePartyInput),
       ),
   });
 
@@ -1599,9 +2042,9 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createPartyRoleSchema,
     'party',
     'create_party_role',
-    (payload) => {
+    async (payload) => {
       const typedPayload = payload as CreatePartyRoleInput;
-      if (!runtime.partyService.getParty(typedPayload.partyId)) {
+      if (!(await runtime.partyService.getParty(typedPayload.partyId))) {
         throw new AppError('party not found', { code: 'TMF_PARTY_NOT_FOUND', statusCode: 404 });
       }
       return {
@@ -1620,8 +2063,12 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       additionalProperties: false,
     },
     handler: (input, context) =>
-      registry.commitMutation('party', 'create_party_role', String(input.confirmationToken), context, (pending) =>
-        runtime.partyService.createPartyRole(pending.payload as CreatePartyRoleInput),
+      registry.commitMutation(
+        'party',
+        'create_party_role',
+        String(input.confirmationToken),
+        context,
+        (pending) => runtime.partyService.createPartyRole(pending.payload as CreatePartyRoleInput),
       ),
   });
 
@@ -1629,7 +2076,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     name: 'event.list_events',
     description: 'Lista eventos TMF688 publicados pelo backend local.',
     inputSchema: eventQuerySchema,
-    handler: (input, context) => {
+    handler: async (input, context) => {
       const query: TmfEventQuery = {};
       if (typeof input.eventType === 'string') query.eventType = input.eventType;
       if (typeof input.source === 'string') query.source = input.source;
@@ -1638,10 +2085,15 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       if (typeof input.to === 'string') query.to = input.to;
       if (typeof input.limit === 'number') query.limit = input.limit;
       if (typeof input.offset === 'number') query.offset = input.offset;
-      const events = runtime.eventService
-        .listEvents(query)
-        .filter((event) => typeof input.entityId !== 'string' || String(event.eventData.entityId ?? '') === input.entityId);
-      return registry.successResult('event', 'list_events', context, { items: events, count: events.length });
+      const events = (await runtime.eventService.listEvents(query)).filter(
+        (event) =>
+          typeof input.entityId !== 'string' ||
+          String(event.eventData.entityId ?? '') === input.entityId,
+      );
+      return registry.successResult('event', 'list_events', context, {
+        items: events,
+        count: events.length,
+      });
     },
   });
 
@@ -1654,7 +2106,13 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       required: ['id'],
       additionalProperties: false,
     },
-    handler: (input, context) => registry.successResult('event', 'get_event', context, runtime.eventService.getEvent(String(input.id)) ?? null),
+    handler: async (input, context) =>
+      registry.successResult(
+        'event',
+        'get_event',
+        context,
+        (await runtime.eventService.getEvent(String(input.id))) ?? null,
+      ),
   });
 
   return {
@@ -1725,24 +2183,40 @@ type EquipmentModelLookupResult =
       label: string;
     };
 
-const resolveManufacturerParty = (runtime: NexusRuntime, manufacturerName: string): ManufacturerPartyReference => {
+const resolveManufacturerParty = async (
+  runtime: NexusRuntime,
+  manufacturerName: string,
+): Promise<ManufacturerPartyReference> => {
   const normalizedName = normalizeSearchText(manufacturerName);
   if (!normalizedName) {
-    throw new AppError('manufacturer name is required', { code: 'RESOURCE_MANUFACTURER_NAME_REQUIRED', statusCode: 422 });
+    throw new AppError('manufacturer name is required', {
+      code: 'RESOURCE_MANUFACTURER_NAME_REQUIRED',
+      statusCode: 422,
+    });
   }
 
-  const manufacturerRoles = runtime.partyService
-    .listPartyRoles({ name: 'manufacturer', status: 'active', limit: 1000, offset: 0 })
+  const manufacturerRoles = (
+    await runtime.partyService.listPartyRoles({
+      name: 'manufacturer',
+      status: 'active',
+      limit: 1000,
+      offset: 0,
+    })
+  )
     .map((role) => toManufacturerPartyReference(role.party))
     .filter((party): party is ManufacturerPartyReference => party !== null);
 
-  const exactRoleMatches = manufacturerRoles.filter((party) => normalizeSearchText(party.name ?? '') === normalizedName);
+  const exactRoleMatches = manufacturerRoles.filter(
+    (party) => normalizeSearchText(party.name ?? '') === normalizedName,
+  );
   if (exactRoleMatches.length === 1) {
     const match = exactRoleMatches[0];
     if (match) return match;
   }
 
-  const partialRoleMatches = manufacturerRoles.filter((party) => normalizeSearchText(party.name ?? '').includes(normalizedName));
+  const partialRoleMatches = manufacturerRoles.filter((party) =>
+    normalizeSearchText(party.name ?? '').includes(normalizedName),
+  );
   const roleMatches = exactRoleMatches.length > 0 ? exactRoleMatches : partialRoleMatches;
   if (roleMatches.length === 1) {
     const match = roleMatches[0];
@@ -1755,9 +2229,20 @@ const resolveManufacturerParty = (runtime: NexusRuntime, manufacturerName: strin
     });
   }
 
-  const partyMatches = runtime.partyService
-    .listParties({ name: manufacturerName, partyType: 'Organization', status: 'active', limit: 1000, offset: 0 })
-    .filter((party) => normalizeSearchText(party.name) === normalizedName || normalizeSearchText(party.name).includes(normalizedName))
+  const partyMatches = (
+    await runtime.partyService.listParties({
+      name: manufacturerName,
+      partyType: 'Organization',
+      status: 'active',
+      limit: 1000,
+      offset: 0,
+    })
+  )
+    .filter(
+      (party) =>
+        normalizeSearchText(party.name) === normalizedName ||
+        normalizeSearchText(party.name).includes(normalizedName),
+    )
     .map((party) => ({
       id: party.id,
       '@referredType': party.partyType,
@@ -1789,7 +2274,9 @@ const normalizeEquipmentModelInput = (input: EquipmentModelInput): EquipmentMode
   ...(input.description !== undefined ? { description: input.description.trim() } : {}),
   ...(input.equipmentCode !== undefined ? { equipmentCode: input.equipmentCode.trim() } : {}),
   ...(input.skuId !== undefined ? { skuId: input.skuId.trim() } : {}),
-  ...(input.homologationDate !== undefined ? { homologationDate: input.homologationDate.trim() } : {}),
+  ...(input.homologationDate !== undefined
+    ? { homologationDate: input.homologationDate.trim() }
+    : {}),
   ...(input.lifecycleStatus !== undefined ? { lifecycleStatus: input.lifecycleStatus.trim() } : {}),
   ...(input.stockable !== undefined ? { stockable: input.stockable } : {}),
   ...(input.discontinued !== undefined ? { discontinued: input.discontinued } : {}),
@@ -1797,7 +2284,10 @@ const normalizeEquipmentModelInput = (input: EquipmentModelInput): EquipmentMode
   ...(input.supportsVoice !== undefined ? { supportsVoice: input.supportsVoice } : {}),
 });
 
-const prepareEquipmentModel = (runtime: NexusRuntime, input: EquipmentModelInput): PreparedEquipmentModel => {
+const prepareEquipmentModel = async (
+  runtime: NexusRuntime,
+  input: EquipmentModelInput,
+): Promise<PreparedEquipmentModel> => {
   const normalized = normalizeEquipmentModelInput(input);
   const catalogEntry = EQUIPMENT_MODEL_CATALOG[normalized.equipmentType];
   if (!catalogEntry) {
@@ -1807,7 +2297,7 @@ const prepareEquipmentModel = (runtime: NexusRuntime, input: EquipmentModelInput
     });
   }
 
-  const manufacturer = resolveManufacturerParty(runtime, normalized.manufacturerName);
+  const manufacturer = await resolveManufacturerParty(runtime, normalized.manufacturerName);
   return {
     ...normalized,
     manufacturer,
@@ -1815,7 +2305,9 @@ const prepareEquipmentModel = (runtime: NexusRuntime, input: EquipmentModelInput
   };
 };
 
-const buildEquipmentModelSpecificationInput = (item: PreparedEquipmentModel): CreateResourceSpecificationInput => ({
+const buildEquipmentModelSpecificationInput = (
+  item: PreparedEquipmentModel,
+): CreateResourceSpecificationInput => ({
   name: item.model,
   category: item.catalogEntry.category,
   resourceType: item.catalogEntry.resourceType,
@@ -1841,7 +2333,10 @@ const buildEquipmentModelBatchSummary = (items: PreparedEquipmentModel[]): strin
     return 'Nenhum modelo informado.';
   }
 
-  const sameManufacturer = items.every((item) => normalizeSearchText(item.manufacturer.name) === normalizeSearchText(first.manufacturer.name));
+  const sameManufacturer = items.every(
+    (item) =>
+      normalizeSearchText(item.manufacturer.name) === normalizeSearchText(first.manufacturer.name),
+  );
   const sameType = items.every((item) => item.equipmentType === first.equipmentType);
 
   if (sameManufacturer && sameType) {
@@ -1855,18 +2350,20 @@ const buildEquipmentModelBatchSummary = (items: PreparedEquipmentModel[]): strin
   return `${items.length} modelos de equipamento serao criados no catalogo.`;
 };
 
-const findEquipmentModelSpecification = (
+const findEquipmentModelSpecification = async (
   runtime: NexusRuntime,
   input: {
     model: string;
     manufacturerName: string;
     equipmentType?: keyof typeof EQUIPMENT_MODEL_CATALOG;
   },
-): EquipmentModelLookupResult | undefined => {
+): Promise<EquipmentModelLookupResult | undefined> => {
   const normalizedModel = normalizeSearchText(input.model);
-  const manufacturer = resolveManufacturerParty(runtime, input.manufacturerName);
-  const catalogEntry = input.equipmentType ? EQUIPMENT_MODEL_CATALOG[input.equipmentType] : undefined;
-  const specs = runtime.resourceService.listResourceSpecifications({
+  const manufacturer = await resolveManufacturerParty(runtime, input.manufacturerName);
+  const catalogEntry = input.equipmentType
+    ? EQUIPMENT_MODEL_CATALOG[input.equipmentType]
+    : undefined;
+  const specs = await runtime.resourceService.listResourceSpecifications({
     name: input.model,
     includeEnded: true,
   });
@@ -1875,7 +2372,10 @@ const findEquipmentModelSpecification = (
     if (normalizeSearchText(spec.name) !== normalizedModel) {
       return false;
     }
-    if (catalogEntry && (spec.category !== catalogEntry.category || spec.resourceType !== catalogEntry.resourceType)) {
+    if (
+      catalogEntry &&
+      (spec.category !== catalogEntry.category || spec.resourceType !== catalogEntry.resourceType)
+    ) {
       return false;
     }
 
@@ -1884,7 +2384,8 @@ const findEquipmentModelSpecification = (
       return false;
     }
 
-    const manufacturerNameMatches = normalizeSearchText(specManufacturer.name ?? '') === normalizeSearchText(manufacturer.name);
+    const manufacturerNameMatches =
+      normalizeSearchText(specManufacturer.name ?? '') === normalizeSearchText(manufacturer.name);
     const manufacturerIdMatches = specManufacturer.id === manufacturer.id;
     return manufacturerNameMatches || manufacturerIdMatches;
   });
@@ -1925,19 +2426,17 @@ const findEquipmentModelSpecification = (
   return undefined;
 };
 
-const buildEquipmentModelCharacteristics = (
-  input: {
-    model: string;
-    equipmentCode?: string;
-    skuId?: string;
-    homologationDate?: string;
-    lifecycleStatus?: string;
-    stockable?: boolean;
-    discontinued?: boolean;
-    supportsSdWan?: boolean;
-    supportsVoice?: boolean;
-  },
-): Characteristic[] => {
+const buildEquipmentModelCharacteristics = (input: {
+  model: string;
+  equipmentCode?: string;
+  skuId?: string;
+  homologationDate?: string;
+  lifecycleStatus?: string;
+  stockable?: boolean;
+  discontinued?: boolean;
+  supportsSdWan?: boolean;
+  supportsVoice?: boolean;
+}): Characteristic[] => {
   const characteristics: Characteristic[] = [
     {
       name: 'model',
@@ -1948,28 +2447,68 @@ const buildEquipmentModelCharacteristics = (
   ];
 
   if (input.equipmentCode?.trim()) {
-    characteristics.push({ name: 'equipmentCode', value: input.equipmentCode.trim(), valueType: 'string' as const, group: 'identification' });
+    characteristics.push({
+      name: 'equipmentCode',
+      value: input.equipmentCode.trim(),
+      valueType: 'string' as const,
+      group: 'identification',
+    });
   }
   if (input.skuId?.trim()) {
-    characteristics.push({ name: 'skuId', value: input.skuId.trim(), valueType: 'string' as const, group: 'commercial' });
+    characteristics.push({
+      name: 'skuId',
+      value: input.skuId.trim(),
+      valueType: 'string' as const,
+      group: 'commercial',
+    });
   }
   if (input.homologationDate?.trim()) {
-    characteristics.push({ name: 'homologationDate', value: input.homologationDate.trim(), valueType: 'date' as const, group: 'commercial' });
+    characteristics.push({
+      name: 'homologationDate',
+      value: input.homologationDate.trim(),
+      valueType: 'date' as const,
+      group: 'commercial',
+    });
   }
   if (input.lifecycleStatus?.trim()) {
-    characteristics.push({ name: 'lifecycleStatus', value: input.lifecycleStatus.trim(), valueType: 'string' as const, group: 'lifecycle' });
+    characteristics.push({
+      name: 'lifecycleStatus',
+      value: input.lifecycleStatus.trim(),
+      valueType: 'string' as const,
+      group: 'lifecycle',
+    });
   }
   if (input.stockable !== undefined) {
-    characteristics.push({ name: 'stockable', value: input.stockable, valueType: 'boolean' as const, group: 'capability' });
+    characteristics.push({
+      name: 'stockable',
+      value: input.stockable,
+      valueType: 'boolean' as const,
+      group: 'capability',
+    });
   }
   if (input.discontinued !== undefined) {
-    characteristics.push({ name: 'discontinued', value: input.discontinued, valueType: 'boolean' as const, group: 'lifecycle' });
+    characteristics.push({
+      name: 'discontinued',
+      value: input.discontinued,
+      valueType: 'boolean' as const,
+      group: 'lifecycle',
+    });
   }
   if (input.supportsSdWan !== undefined) {
-    characteristics.push({ name: 'supportsSdWan', value: input.supportsSdWan, valueType: 'boolean' as const, group: 'capability' });
+    characteristics.push({
+      name: 'supportsSdWan',
+      value: input.supportsSdWan,
+      valueType: 'boolean' as const,
+      group: 'capability',
+    });
   }
   if (input.supportsVoice !== undefined) {
-    characteristics.push({ name: 'supportsVoice', value: input.supportsVoice, valueType: 'boolean' as const, group: 'capability' });
+    characteristics.push({
+      name: 'supportsVoice',
+      value: input.supportsVoice,
+      valueType: 'boolean' as const,
+      group: 'capability',
+    });
   }
 
   return characteristics;
@@ -1982,7 +2521,9 @@ const normalizeSearchText = (value: string): string =>
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
 
-const toManufacturerPartyReference = (party: { id: string; '@referredType': string; href?: string; name?: string } | undefined): ManufacturerPartyReference | null => {
+const toManufacturerPartyReference = (
+  party: { id: string; '@referredType': string; href?: string; name?: string } | undefined,
+): ManufacturerPartyReference | null => {
   if (!party || party['@referredType'] !== 'Organization') {
     return null;
   }

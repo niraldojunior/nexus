@@ -1,3 +1,5 @@
+type Awaitable<T> = T | Promise<T>;
+
 import type {
   LogicalResource,
   PhysicalResource,
@@ -13,35 +15,50 @@ import type {
 } from './domain.js';
 
 export interface IResourceRepository {
-  transaction<T>(fn: () => T): T;
+  transaction<T>(fn: () => Awaitable<T>): Awaitable<T>;
 
-  upsertResourceSpecification(spec: ResourceSpecification): ResourceSpecification;
-  getResourceSpecification(id: string): ResourceSpecification | undefined;
-  listResourceSpecifications(query?: ResourceSpecificationQuery): ResourceSpecification[];
+  upsertResourceSpecification(spec: ResourceSpecification): Awaitable<ResourceSpecification>;
+  getResourceSpecification(id: string): Awaitable<ResourceSpecification | undefined>;
+  listResourceSpecifications(
+    query?: ResourceSpecificationQuery,
+  ): Awaitable<ResourceSpecification[]>;
 
-  upsertResourceFunctionSpecification(spec: ResourceFunctionSpecification): ResourceFunctionSpecification;
-  getResourceFunctionSpecification(id: string): ResourceFunctionSpecification | undefined;
-  listResourceFunctionSpecifications(query?: ResourceFunctionSpecificationQuery): ResourceFunctionSpecification[];
+  upsertResourceFunctionSpecification(
+    spec: ResourceFunctionSpecification,
+  ): Awaitable<ResourceFunctionSpecification>;
+  getResourceFunctionSpecification(
+    id: string,
+  ): Awaitable<ResourceFunctionSpecification | undefined>;
+  listResourceFunctionSpecifications(
+    query?: ResourceFunctionSpecificationQuery,
+  ): Awaitable<ResourceFunctionSpecification[]>;
 
-  getResourceCategory(code: string): ResourceCategory | undefined;
-  listResourceCategories(): ResourceCategory[];
-  getResourceType(code: string): ResourceType | undefined;
-  listResourceTypes(): ResourceType[];
+  getResourceCategory(code: string): Awaitable<ResourceCategory | undefined>;
+  listResourceCategories(): Awaitable<ResourceCategory[]>;
+  getResourceType(code: string): Awaitable<ResourceType | undefined>;
+  listResourceTypes(): Awaitable<ResourceType[]>;
 
-  upsertPhysicalResource(resource: PhysicalResource): PhysicalResource;
-  getPhysicalResource(id: string): PhysicalResource | undefined;
-  listPhysicalResources(query?: ResourceQuery): PhysicalResource[];
-  countPhysicalResources(query?: ResourceQuery): number;
+  upsertPhysicalResource(resource: PhysicalResource): Awaitable<PhysicalResource>;
+  getPhysicalResource(id: string): Awaitable<PhysicalResource | undefined>;
+  listPhysicalResources(query?: ResourceQuery): Awaitable<PhysicalResource[]>;
+  countPhysicalResources(query?: ResourceQuery): Awaitable<number>;
 
-  upsertLogicalResource(resource: LogicalResource): LogicalResource;
-  getLogicalResource(id: string): LogicalResource | undefined;
-  listLogicalResources(query?: ResourceQuery): LogicalResource[];
-  countLogicalResources(query?: ResourceQuery): number;
+  upsertLogicalResource(resource: LogicalResource): Awaitable<LogicalResource>;
+  getLogicalResource(id: string): Awaitable<LogicalResource | undefined>;
+  listLogicalResources(query?: ResourceQuery): Awaitable<LogicalResource[]>;
+  countLogicalResources(query?: ResourceQuery): Awaitable<number>;
 
-  upsertResourceRelationship(resourceId: string, relationship: ResourceRelationship): ResourceRelationship;
-  deleteResourceRelationship(resourceId: string, relatedResourceId: string, relationshipType: string): boolean;
-  listResourceRelationships(resourceId: string): ResourceRelationship[];
+  upsertResourceRelationship(
+    resourceId: string,
+    relationship: ResourceRelationship,
+  ): Awaitable<ResourceRelationship>;
+  deleteResourceRelationship(
+    resourceId: string,
+    relatedResourceId: string,
+    relationshipType: string,
+  ): Awaitable<boolean>;
+  listResourceRelationships(resourceId: string): Awaitable<ResourceRelationship[]>;
 
-  listResources(query?: ResourceQuery): Resource[];
-  countResources(query?: ResourceQuery): number;
+  listResources(query?: ResourceQuery): Awaitable<Resource[]>;
+  countResources(query?: ResourceQuery): Awaitable<number>;
 }

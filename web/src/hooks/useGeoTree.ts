@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchTreeChildren,
+  fetchTreePath,
   fetchTreeRoots,
   TREE_PAGE_SIZE,
   type GeoTreeNode,
@@ -42,9 +43,10 @@ export type GeoTree = {
   childrenOf: (nodeId: string) => GeoTreeNode[];
   ensureChildren: (nodeId: string) => void;
   nodeById: (nodeId: string) => GeoTreeNode | undefined;
-  // Expande um nó e toda a cadeia de ancestrais até a raiz (nunca recolhe) — usado
-  // ao selecionar uma estação, já que nada nasce aberto por padrão.
-  expandNode: (nodeId: string) => void;
+  // Revela um nó: carrega e expande toda a cadeia de ancestrais até a raiz (nunca
+  // recolhe) — usado ao selecionar um item pelo mapa ou pela busca, já que nada nasce
+  // aberto por padrão. `expandSelf` abre também o próprio nó, quando ele tem filhos.
+  revealNode: (nodeId: string, options?: { expandSelf?: boolean }) => void;
 };
 
 export function useGeoTree(): GeoTree {
@@ -58,6 +60,12 @@ export function useGeoTree(): GeoTree {
   // Dedupe de requisição em voo. O backend atende em série e o StrictMode monta o
   // efeito duas vezes: sem isto, a mesma expansão custaria o dobro do tempo.
   const inFlight = useRef(new Map<string, Promise<void>>());
+
+  // `revealNode` percorre a cadeia de forma assíncrona e precisa enxergar o que já foi
+  // carregado *durante* o próprio percurso — o `state` fechado no callback nasceria
+  // velho no primeiro await.
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   const loadChildren = useCallback(async (nodeId: string, offset: number): Promise<void> => {
     const key = `${nodeId}@${offset}`;
@@ -176,36 +184,60 @@ export function useGeoTree(): GeoTree {
     [state],
   );
 
-  // Filho → pai, invertendo childIds — usado para subir a cadeia de ancestrais
-  // ao expandir um nó selecionado direto (árvore ou mapa).
-  const parentOf = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const [parentId, childIds] of Object.entries(state.childIds)) {
-      for (const childId of childIds) map[childId] = parentId;
-    }
-    return map;
-  }, [state.childIds]);
+  /**
+   * Revela um nó na árvore: expande toda a cadeia de ancestrais e carrega, de cima
+   * para baixo, os níveis que ainda não vieram — para o nó existir como linha.
+   *
+   * O caminho vem do servidor (`/v1/geo/tree/path`), não do estado local. Estação dá
+   * para resolver aqui, porque `roots()` já traz UF/Município/grupo de todas elas; um
+   * Recurso, não: selecionado pelo mapa ou pela busca, ele chega sem nenhum ancestral
+   * carregado, e a cadeia (estação → caixa → … → ele) só o banco conhece. A cadeia local
+   * fica como fallback para o caso de a chamada falhar.
+   */
+  const revealNode = useCallback(
+    (nodeId: string, options: { expandSelf?: boolean } = {}) => {
+      void (async () => {
+        let chain = await fetchTreePath(nodeId).catch(() => null);
 
-  const expandNode = useCallback(
-    (nodeId: string) => {
-      const chain: string[] = [nodeId];
-      let current = nodeId;
-      while (parentOf[current]) {
-        current = parentOf[current];
-        chain.unshift(current);
-      }
-      setExpandedRows((prev) => {
-        const next = new Set(prev);
-        let rowKey = '';
-        for (const id of chain) {
-          rowKey = `${rowKey}/${id}`;
-          next.add(rowKey);
+        if (!chain?.length) {
+          // Fallback: sobe pelo que já está carregado (childIds invertido).
+          const parents: Record<string, string> = {};
+          for (const [parentId, childIds] of Object.entries(stateRef.current.childIds)) {
+            for (const childId of childIds) parents[childId] = parentId;
+          }
+          const local = [nodeId];
+          let current = nodeId;
+          while (parents[current]) {
+            current = parents[current];
+            local.unshift(current);
+          }
+          chain = local;
         }
-        return next;
-      });
-      if (!state.childIds[nodeId]) void loadChildren(nodeId, 0);
+
+        // Sequencial de propósito: o filho seguinte só aparece no estado depois que o
+        // pai foi buscado, então não dá para disparar os níveis em paralelo.
+        for (let index = 0; index < chain.length - 1; index += 1) {
+          const parentId = chain[index]!;
+          if (!stateRef.current.childIds[parentId]) await loadChildren(parentId, 0);
+        }
+        if (options.expandSelf && !stateRef.current.childIds[nodeId]) {
+          await loadChildren(nodeId, 0);
+        }
+
+        setExpandedRows((prev) => {
+          const next = new Set(prev);
+          let rowKey = '';
+          for (const id of chain) {
+            rowKey = `${rowKey}/${id}`;
+            // O próprio nó só abre se tiver filhos; folha fica apenas revelada.
+            if (id === nodeId && !options.expandSelf) break;
+            next.add(rowKey);
+          }
+          return next;
+        });
+      })();
     },
-    [parentOf, state.childIds, loadChildren],
+    [loadChildren],
   );
 
   return {
@@ -224,7 +256,7 @@ export function useGeoTree(): GeoTree {
     childrenOf,
     ensureChildren,
     nodeById: (nodeId: string) => state.nodesById[nodeId],
-    expandNode,
+    revealNode,
   };
 }
 

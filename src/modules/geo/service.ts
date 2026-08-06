@@ -316,11 +316,11 @@ const SITE_STATUS_TRANSITIONS: Record<GeoSiteStatus, GeoSiteStatus[]> = {
 export class GeoService {
   public constructor(private readonly repository: IGeoRepository) {}
 
-  public ensureBootstrapSpecifications(context?: RequestContext): {
+  public async ensureBootstrapSpecifications(context?: RequestContext): Promise<{
     created: number;
     updated: number;
     specs: GeographicSiteSpecification[];
-  } {
+  }> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, CATALOG_ROLE);
     let created = 0;
@@ -328,10 +328,10 @@ export class GeoService {
     const codeToSpec = new Map<string, GeographicSiteSpecification>();
 
     for (const definition of BOOTSTRAP_SPECIFICATIONS) {
-      const existing = this.repository.getSpecByCode(definition.code);
+      const existing = await this.repository.getSpecByCode(definition.code);
       if (!existing) {
         created += 1;
-        const createdSpec = this.repository.upsertSpec(
+        const createdSpec = await this.repository.upsertSpec(
           this.buildSpecRecord({
             id: createCanonicalId(),
             name: definition.name,
@@ -351,7 +351,7 @@ export class GeoService {
       }
 
       updated += 1;
-      const updatedSpec = this.repository.upsertSpec(
+      const updatedSpec = await this.repository.upsertSpec(
         this.buildSpecRecord({
           id: existing.id,
           name: definition.name,
@@ -371,24 +371,27 @@ export class GeoService {
 
     for (const definition of BOOTSTRAP_SPECIFICATIONS) {
       const spec =
-        codeToSpec.get(definition.code) ?? this.repository.getSpecByCode(definition.code);
+        codeToSpec.get(definition.code) ?? (await this.repository.getSpecByCode(definition.code));
       if (!spec) continue;
-      this.repository.syncSpecContainmentRules(spec.id, {
-        allowedParentSpecIds: definition.allowedParentCodes
-          .map((code) => codeToSpec.get(code)?.id ?? this.repository.getSpecByCode(code)?.id)
-          .filter((value): value is string => Boolean(value)),
-        allowedChildSpecIds: definition.allowedChildCodes
-          .map((code) => codeToSpec.get(code)?.id ?? this.repository.getSpecByCode(code)?.id)
-          .filter((value): value is string => Boolean(value)),
-        protectedParentSpecIds: definition.allowedParentCodes
-          .map((code) => codeToSpec.get(code)?.id ?? this.repository.getSpecByCode(code)?.id)
-          .filter((value): value is string => Boolean(value)),
-        protectedChildSpecIds: definition.allowedChildCodes
-          .map((code) => codeToSpec.get(code)?.id ?? this.repository.getSpecByCode(code)?.id)
-          .filter((value): value is string => Boolean(value)),
+      const resolveSpecIds = async (codes: readonly string[]): Promise<string[]> =>
+        (
+          await Promise.all(
+            codes.map(
+              async (code) =>
+                codeToSpec.get(code)?.id ?? (await this.repository.getSpecByCode(code))?.id,
+            ),
+          )
+        ).filter((value): value is string => Boolean(value));
+      const allowedParentSpecIds = await resolveSpecIds(definition.allowedParentCodes);
+      const allowedChildSpecIds = await resolveSpecIds(definition.allowedChildCodes);
+      await this.repository.syncSpecContainmentRules(spec.id, {
+        allowedParentSpecIds,
+        allowedChildSpecIds,
+        protectedParentSpecIds: allowedParentSpecIds,
+        protectedChildSpecIds: allowedChildSpecIds,
       });
-      this.repository.upsertSpec({
-        ...this.getSpecOrThrow(spec.id),
+      await this.repository.upsertSpec({
+        ...(await this.getSpecOrThrow(spec.id)),
         _bootstrapProtected: true,
       });
     }
@@ -396,18 +399,21 @@ export class GeoService {
     return {
       created,
       updated,
-      specs: this.listSpecs(),
+      specs: await this.listSpecs(),
     };
   }
 
-  public createLocation(input: LocationInput, context?: RequestContext): GeographicLocation {
+  public async createLocation(
+    input: LocationInput,
+    context?: RequestContext,
+  ): Promise<GeographicLocation> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, WRITE_ROLE);
     this.assertOriginWriteAllowed(ctx, input.characteristic ?? []);
     validateGeometry(input.geometryType, input.geometry);
     const id = createCanonicalId();
-    return this.repository.transaction(() => {
-      const location = this.repository.upsertLocation({
+    return await this.repository.transaction(async () => {
+      const location = await this.repository.upsertLocation({
         '@type': 'GeographicLocation',
         id,
         href: `/tmf-api/geographicLocationManagement/v4/geographicLocation/${id}`,
@@ -420,7 +426,7 @@ export class GeoService {
         ...(input.validFor ? { validFor: input.validFor } : {}),
         characteristic: input.characteristic ?? [],
       });
-      this.recordMutation(
+      await this.recordMutation(
         ctx,
         'create',
         'GeographicLocation',
@@ -433,21 +439,21 @@ export class GeoService {
     });
   }
 
-  public updateLocation(
+  public async updateLocation(
     id: string,
     input: Partial<LocationInput>,
     context?: RequestContext,
-  ): GeographicLocation {
+  ): Promise<GeographicLocation> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, WRITE_ROLE);
     this.assertOriginWriteAllowed(ctx, input.characteristic);
-    const current = this.getLocationOrThrow(id, ctx);
+    const current = await this.getLocationOrThrow(id, ctx);
     const geometryType = input.geometryType ?? current.geometryType;
     const geometry = input.geometry ?? current.geometry;
     validateGeometry(geometryType, geometry);
 
-    return this.repository.transaction(() => {
-      const updated = this.repository.upsertLocation({
+    return await this.repository.transaction(async () => {
+      const updated = await this.repository.upsertLocation({
         ...current,
         tenantId: current.tenantId ?? ctx.tenantId,
         geometryType,
@@ -464,7 +470,7 @@ export class GeoService {
           : optional('validFor', current.validFor)),
         characteristic: input.characteristic ?? current.characteristic,
       });
-      this.recordMutation(
+      await this.recordMutation(
         ctx,
         'update',
         'GeographicLocation',
@@ -477,19 +483,22 @@ export class GeoService {
     });
   }
 
-  public createAddress(input: AddressInput, context?: RequestContext): GeographicAddress {
+  public async createAddress(
+    input: AddressInput,
+    context?: RequestContext,
+  ): Promise<GeographicAddress> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, WRITE_ROLE);
     this.assertOriginWriteAllowed(ctx, input.characteristic ?? []);
     assertRequiredString(input.street, 'street');
     const id = createCanonicalId();
     const location = input.geographicLocationId
-      ? this.getLocationOrThrow(input.geographicLocationId, ctx)
+      ? await this.getLocationOrThrow(input.geographicLocationId, ctx)
       : undefined;
     const normalizedCountry = normalizeCountry(input.country);
     const normalizedPostcode = normalizePostcode(input.postcode, normalizedCountry);
-    return this.repository.transaction(() => {
-      const address = this.repository.upsertAddress({
+    return await this.repository.transaction(async () => {
+      const address = await this.repository.upsertAddress({
         '@type': 'GeographicAddress',
         id,
         href: `/tmf-api/geographicAddressManagement/v4/geographicAddress/${id}`,
@@ -507,7 +516,7 @@ export class GeoService {
         ...(input.validFor ? { validFor: input.validFor } : {}),
         characteristic: input.characteristic ?? [],
       });
-      this.recordMutation(
+      await this.recordMutation(
         ctx,
         'create',
         'GeographicAddress',
@@ -520,17 +529,17 @@ export class GeoService {
     });
   }
 
-  public updateAddress(
+  public async updateAddress(
     id: string,
     input: Partial<AddressInput>,
     context?: RequestContext,
-  ): GeographicAddress {
+  ): Promise<GeographicAddress> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, WRITE_ROLE);
     this.assertOriginWriteAllowed(ctx, input.characteristic);
-    const current = this.getAddressOrThrow(id, ctx);
+    const current = await this.getAddressOrThrow(id, ctx);
     const locationId = input.geographicLocationId ?? current.geographicLocationId;
-    const location = locationId ? this.getLocationOrThrow(locationId, ctx) : undefined;
+    const location = locationId ? await this.getLocationOrThrow(locationId, ctx) : undefined;
     if (input.street !== undefined) assertRequiredString(input.street, 'street');
     const normalizedCountry =
       input.country !== undefined ? normalizeCountry(input.country) : current.country;
@@ -539,8 +548,8 @@ export class GeoService {
         ? normalizePostcode(input.postcode, normalizedCountry)
         : current.postcode;
 
-    return this.repository.transaction(() => {
-      const updated = this.repository.upsertAddress({
+    return await this.repository.transaction(async () => {
+      const updated = await this.repository.upsertAddress({
         ...current,
         tenantId: current.tenantId ?? ctx.tenantId,
         street: input.street ?? current.street,
@@ -570,7 +579,7 @@ export class GeoService {
           : optional('validFor', current.validFor)),
         characteristic: input.characteristic ?? current.characteristic,
       });
-      this.recordMutation(
+      await this.recordMutation(
         ctx,
         'update',
         'GeographicAddress',
@@ -583,14 +592,17 @@ export class GeoService {
     });
   }
 
-  public createSpec(input: SpecInput, context?: RequestContext): GeographicSiteSpecification {
+  public async createSpec(
+    input: SpecInput,
+    context?: RequestContext,
+  ): Promise<GeographicSiteSpecification> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, CATALOG_ROLE);
     assertRequiredString(input.name, 'name');
     validateSpecCategory(input.category);
 
     const code = normalizeSpecificationCode(input.code ?? input.name);
-    if (this.repository.getSpecByCode(code)) {
+    if (await this.repository.getSpecByCode(code)) {
       throw new AppError('site specification code already exists', {
         code: 'GEO_SPEC_CODE_DUPLICATE',
         statusCode: 409,
@@ -605,13 +617,13 @@ export class GeoService {
       input.allowedChildSpec,
       input.allowedChildSpecIds,
     );
-    validateReferencedSpecs(allowedParentSpecIds, this.getSpecOrThrow.bind(this));
-    validateReferencedSpecs(allowedChildSpecIds, this.getSpecOrThrow.bind(this));
+    await validateReferencedSpecs(allowedParentSpecIds, this.getSpecOrThrow.bind(this));
+    await validateReferencedSpecs(allowedChildSpecIds, this.getSpecOrThrow.bind(this));
 
     const id = createCanonicalId();
     const characteristics = normalizeSpecCharacteristics(input.specCharacteristic ?? []);
-    return this.repository.transaction(() => {
-      const spec = this.repository.upsertSpec(
+    return await this.repository.transaction(async () => {
+      const spec = await this.repository.upsertSpec(
         this.buildSpecRecord({
           id,
           name: input.name,
@@ -625,12 +637,12 @@ export class GeoService {
           allowedChildSpecIds,
         }),
       );
-      this.repository.syncSpecContainmentRules(spec.id, {
+      await this.repository.syncSpecContainmentRules(spec.id, {
         allowedParentSpecIds,
         allowedChildSpecIds,
       });
-      const stored = this.getSpecOrThrow(spec.id);
-      this.recordMutation(
+      const stored = await this.getSpecOrThrow(spec.id);
+      await this.recordMutation(
         ctx,
         'create',
         'GeographicSiteSpecification',
@@ -643,14 +655,14 @@ export class GeoService {
     });
   }
 
-  public updateSpec(
+  public async updateSpec(
     id: string,
     input: Partial<SpecInput>,
     context?: RequestContext,
-  ): GeographicSiteSpecification {
+  ): Promise<GeographicSiteSpecification> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, CATALOG_ROLE);
-    const current = this.getSpecOrThrow(id);
+    const current = await this.getSpecOrThrow(id);
     if (input.name !== undefined) assertRequiredString(input.name, 'name');
     if (input.category !== undefined && input.category !== current.category) {
       throw new AppError('site specification category is immutable', {
@@ -675,10 +687,18 @@ export class GeoService {
       input.allowedChildSpecIds,
       current.allowedChildSpecIds,
     );
-    validateReferencedSpecs(nextAllowedParentSpecIds, this.getSpecOrThrow.bind(this), current.id);
-    validateReferencedSpecs(nextAllowedChildSpecIds, this.getSpecOrThrow.bind(this), current.id);
+    await validateReferencedSpecs(
+      nextAllowedParentSpecIds,
+      this.getSpecOrThrow.bind(this),
+      current.id,
+    );
+    await validateReferencedSpecs(
+      nextAllowedChildSpecIds,
+      this.getSpecOrThrow.bind(this),
+      current.id,
+    );
 
-    const impact = this.analyzeContainmentImpact(id, {
+    const impact = await this.analyzeContainmentImpact(id, {
       allowedParentSpecIds: nextAllowedParentSpecIds,
       allowedChildSpecIds: nextAllowedChildSpecIds,
     });
@@ -719,10 +739,10 @@ export class GeoService {
     const nextCharacteristics = normalizeSpecCharacteristics(
       input.specCharacteristic ?? current.specCharacteristic,
     );
-    this.validateSpecificationChangeAgainstSites(current, nextCharacteristics);
+    await this.validateSpecificationChangeAgainstSites(current, nextCharacteristics);
 
-    return this.repository.transaction(() => {
-      const updated = this.repository.upsertSpec(
+    return await this.repository.transaction(async () => {
+      const updated = await this.repository.upsertSpec(
         this.buildSpecRecord({
           id: current.id,
           name: input.name ?? current.name,
@@ -747,7 +767,7 @@ export class GeoService {
             : {}),
         }),
       );
-      this.repository.syncSpecContainmentRules(updated.id, {
+      await this.repository.syncSpecContainmentRules(updated.id, {
         allowedParentSpecIds: nextAllowedParentSpecIds,
         allowedChildSpecIds: nextAllowedChildSpecIds,
         ...(current._protectedAllowedParentSpecIds
@@ -757,8 +777,8 @@ export class GeoService {
           ? { protectedChildSpecIds: current._protectedAllowedChildSpecIds }
           : {}),
       });
-      const stored = this.getSpecOrThrow(updated.id);
-      this.recordMutation(
+      const stored = await this.getSpecOrThrow(updated.id);
+      await this.recordMutation(
         ctx,
         'update',
         'GeographicSiteSpecification',
@@ -773,8 +793,11 @@ export class GeoService {
     });
   }
 
-  public retireSpec(id: string, context?: RequestContext): GeographicSiteSpecification {
-    const spec = this.getSpecOrThrow(id);
+  public async retireSpec(
+    id: string,
+    context?: RequestContext,
+  ): Promise<GeographicSiteSpecification> {
+    const spec = await this.getSpecOrThrow(id);
     if (spec._bootstrapProtected) {
       throw new AppError('bootstrap specification cannot be retired', {
         code: 'GEO_SPEC_BOOTSTRAP_PROTECTED',
@@ -782,7 +805,7 @@ export class GeoService {
       });
     }
 
-    const retired = this.updateSpec(
+    const retired = await this.updateSpec(
       id,
       {
         lifecycleStatus: 'Retired',
@@ -796,14 +819,14 @@ export class GeoService {
     return retired;
   }
 
-  public getAllowedChildren(specId: string): GeographicSiteSpecificationRef[] {
-    const spec = this.getSpecOrThrow(specId);
+  public async getAllowedChildren(specId: string): Promise<GeographicSiteSpecificationRef[]> {
+    const spec = await this.getSpecOrThrow(specId);
     return spec.allowedChildSpec.filter(
-      (child) => this.getSpecOrThrow(child.id).lifecycleStatus === 'Active',
+      async (child) => (await this.getSpecOrThrow(child.id)).lifecycleStatus === 'Active',
     );
   }
 
-  public analyzeContainmentImpact(
+  public async analyzeContainmentImpact(
     specId: string,
     input: {
       allowedParentSpec?: SpecRefInput[];
@@ -811,8 +834,8 @@ export class GeoService {
       allowedParentSpecIds?: string[];
       allowedChildSpecIds?: string[];
     },
-  ): ContainmentImpact {
-    const current = this.getSpecOrThrow(specId);
+  ): Promise<ContainmentImpact> {
+    const current = await this.getSpecOrThrow(specId);
     const nextAllowedParentSpecIds = resolveSpecIdList(
       input.allowedParentSpec,
       input.allowedParentSpecIds,
@@ -831,14 +854,14 @@ export class GeoService {
       (item) => !nextAllowedChildSpecIds.includes(item),
     );
 
-    const sitesOfSpec = this.repository.listSites({ siteSpecificationId: specId });
+    const sitesOfSpec = await this.repository.listSites({ siteSpecificationId: specId });
     const impactedSiteIds = new Set<string>();
     let impactedParentAssignments = 0;
     let impactedChildAssignments = 0;
 
     for (const site of sitesOfSpec) {
       const parentSpecId = site.parentSite
-        ? this.getSiteOrThrow(site.parentSite.id).siteSpecificationId
+        ? (await this.getSiteOrThrow(site.parentSite.id)).siteSpecificationId
         : undefined;
       if (parentSpecId && removedAllowedParentSpecIds.includes(parentSpecId)) {
         impactedParentAssignments += 1;
@@ -847,13 +870,13 @@ export class GeoService {
     }
 
     if (removedAllowedChildSpecIds.length > 0) {
-      const children = this.repository.listSites();
+      const children = await this.repository.listSites();
       for (const childSite of children) {
         if (
           childSite.parentSite?.id &&
           removedAllowedChildSpecIds.includes(childSite.siteSpecificationId)
         ) {
-          const parentSite = this.getSiteOrThrow(childSite.parentSite.id);
+          const parentSite = await this.getSiteOrThrow(childSite.parentSite.id);
           if (parentSite.siteSpecificationId === specId) {
             impactedChildAssignments += 1;
             impactedSiteIds.add(parentSite.id);
@@ -874,7 +897,7 @@ export class GeoService {
     };
   }
 
-  public createSite(input: SiteInput, context?: RequestContext): GeographicSite {
+  public async createSite(input: SiteInput, context?: RequestContext): Promise<GeographicSite> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, WRITE_ROLE);
     this.assertOriginWriteAllowed(ctx, input.characteristic ?? []);
@@ -882,11 +905,11 @@ export class GeoService {
     const status = normalizeSiteStatus(input.status ?? 'Planned');
     validateStatus(status);
 
-    const spec = this.getSpecOrThrow(input.siteSpecificationId);
+    const spec = await this.getSpecOrThrow(input.siteSpecificationId);
     ensureSpecificationActive(spec);
 
     const parentSite = input.parentSiteId
-      ? this.getSiteOrThrow(input.parentSiteId, ctx)
+      ? await this.getSiteOrThrow(input.parentSiteId, ctx)
       : undefined;
     if (spec.category === 'SubSite' && !parentSite) {
       throw new AppError('sub-site requires parent site', {
@@ -895,19 +918,21 @@ export class GeoService {
       });
     }
     if (parentSite) {
-      this.assertNoParentCycle(undefined, parentSite.id);
-      this.validateContainment(spec, parentSite);
+      await this.assertNoParentCycle(undefined, parentSite.id);
+      await this.validateContainment(spec, parentSite);
       this.validateStatusCompatibleWithAncestors(status, parentSite);
     }
-    this.assertSiteNameAvailable(input.name, spec, parentSite?.id, undefined, ctx);
+    await this.assertSiteNameAvailable(input.name, spec, parentSite?.id, undefined, ctx);
 
     const characteristic = this.normalizeSiteCharacteristics(spec, input.characteristic ?? []);
-    const place = input.placeId ? this.getLocationOrThrow(input.placeId, ctx) : undefined;
-    const address = input.addressId ? this.getAddressOrThrow(input.addressId, ctx) : undefined;
+    const place = input.placeId ? await this.getLocationOrThrow(input.placeId, ctx) : undefined;
+    const address = input.addressId
+      ? await this.getAddressOrThrow(input.addressId, ctx)
+      : undefined;
     const siteAddress = this.normalizeSiteAddresses(input.siteAddress, address);
     const id = createCanonicalId();
-    return this.repository.transaction(() => {
-      const site = this.repository.upsertSite({
+    return await this.repository.transaction(async () => {
+      const site = await this.repository.upsertSite({
         '@type': 'GeographicSite',
         id,
         href: `/tmf-api/geographicSiteManagement/v4/geographicSite/${id}`,
@@ -931,7 +956,7 @@ export class GeoService {
         relatedParty: normalizeSiteRelatedParty(input.relatedParty, ctx),
         characteristic,
       });
-      this.repository.appendSiteStatusHistory({
+      await this.repository.appendSiteStatusHistory({
         '@type': 'GeographicSiteStatusHistoryEntry',
         id: createCanonicalId(),
         siteId: site.id,
@@ -942,7 +967,7 @@ export class GeoService {
         traceId: ctx.traceId,
       });
       for (const relationship of input.relatedSite ?? []) {
-        this.addSiteRelationship(
+        await this.addSiteRelationship(
           site.id,
           relationship.id,
           relationship.relationshipType,
@@ -951,8 +976,8 @@ export class GeoService {
         );
       }
 
-      const stored = this.getSiteOrThrow(site.id, ctx);
-      this.recordMutation(
+      const stored = await this.getSiteOrThrow(site.id, ctx);
+      await this.recordMutation(
         ctx,
         'create',
         'GeographicSite',
@@ -965,27 +990,27 @@ export class GeoService {
     });
   }
 
-  public updateSite(
+  public async updateSite(
     id: string,
     input: Partial<SiteInput>,
     context?: RequestContext,
-  ): GeographicSite {
+  ): Promise<GeographicSite> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, WRITE_ROLE);
     this.assertOriginWriteAllowed(ctx, input.characteristic);
-    const current = this.getSiteOrThrow(id, ctx);
+    const current = await this.getSiteOrThrow(id, ctx);
     if (input.name !== undefined) assertRequiredString(input.name, 'name');
 
     const status = input.status !== undefined ? normalizeSiteStatus(input.status) : current.status;
     validateStatus(status);
     const spec = input.siteSpecificationId
-      ? this.getSpecOrThrow(input.siteSpecificationId)
-      : this.getSpecOrThrow(current.siteSpecificationId);
+      ? await this.getSpecOrThrow(input.siteSpecificationId)
+      : await this.getSpecOrThrow(current.siteSpecificationId);
     ensureSpecificationActive(spec);
 
     const parentSiteId =
       input.parentSiteId !== undefined ? input.parentSiteId : current.parentSite?.id;
-    const parentSite = parentSiteId ? this.getSiteOrThrow(parentSiteId, ctx) : undefined;
+    const parentSite = parentSiteId ? await this.getSiteOrThrow(parentSiteId, ctx) : undefined;
     if (parentSite?.id === id) {
       throw new AppError('site cannot be its own parent', {
         code: 'GEO_PARENT_SELF_REFERENCE',
@@ -993,8 +1018,8 @@ export class GeoService {
       });
     }
     if (parentSite) {
-      this.assertNoParentCycle(id, parentSite.id);
-      this.validateContainment(spec, parentSite);
+      await this.assertNoParentCycle(id, parentSite.id);
+      await this.validateContainment(spec, parentSite);
       this.validateStatusCompatibleWithAncestors(status, parentSite);
     }
     if (current.status !== status) {
@@ -1007,14 +1032,20 @@ export class GeoService {
       });
     }
     if (current.parentSite?.id !== parentSite?.id) {
-      this.assertSubSiteMoveAllowed(current, parentSite, ctx);
+      await this.assertSubSiteMoveAllowed(current, parentSite, ctx);
     }
-    this.assertSiteNameAvailable(input.name ?? current.name, spec, parentSite?.id, current.id, ctx);
+    await this.assertSiteNameAvailable(
+      input.name ?? current.name,
+      spec,
+      parentSite?.id,
+      current.id,
+      ctx,
+    );
 
     const placeId = input.placeId !== undefined ? input.placeId : current.place?.id;
-    const place = placeId ? this.getLocationOrThrow(placeId, ctx) : undefined;
+    const place = placeId ? await this.getLocationOrThrow(placeId, ctx) : undefined;
     const addressId = input.addressId !== undefined ? input.addressId : current.address?.id;
-    const address = addressId ? this.getAddressOrThrow(addressId, ctx) : undefined;
+    const address = addressId ? await this.getAddressOrThrow(addressId, ctx) : undefined;
     const siteAddress = this.normalizeSiteAddresses(
       input.siteAddress,
       address,
@@ -1025,12 +1056,12 @@ export class GeoService {
       input.characteristic ?? current.characteristic,
     );
 
-    return this.repository.transaction(() => {
+    return await this.repository.transaction(async () => {
       const statusDate =
         current.status !== status
           ? (input.statusDate ?? new Date().toISOString())
           : current.statusDate;
-      const updated = this.repository.upsertSite({
+      const updated = await this.repository.upsertSite({
         ...current,
         tenantId: current.tenantId ?? ctx.tenantId,
         name: input.name ?? current.name,
@@ -1058,7 +1089,7 @@ export class GeoService {
         relatedSite: current.relatedSite,
       });
       if (current.status !== updated.status) {
-        this.repository.appendSiteStatusHistory({
+        await this.repository.appendSiteStatusHistory({
           '@type': 'GeographicSiteStatusHistoryEntry',
           id: createCanonicalId(),
           siteId: updated.id,
@@ -1072,7 +1103,7 @@ export class GeoService {
         });
       }
 
-      this.recordMutation(
+      await this.recordMutation(
         ctx,
         current.status !== updated.status ? 'transition' : 'update',
         'GeographicSite',
@@ -1087,19 +1118,21 @@ export class GeoService {
     });
   }
 
-  public transitionSite(
+  public async transitionSite(
     id: string,
     input: SiteTransitionInput,
     context?: RequestContext,
-  ): GeographicSite {
+  ): Promise<GeographicSite> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, WRITE_ROLE);
-    const current = this.getSiteOrThrow(id, ctx);
+    const current = await this.getSiteOrThrow(id, ctx);
     const toStatus = normalizeSiteStatus(input.status);
     validateStatus(toStatus);
     this.validateStatusTransition(current.status, toStatus, input.statusReason, ctx);
 
-    const references = this.repository.getSiteReferences(current.id, { tenantId: ctx.tenantId });
+    const references = await this.repository.getSiteReferences(current.id, {
+      tenantId: ctx.tenantId,
+    });
     if ((toStatus === 'InDeactivation' || toStatus === 'Retired') && references.blocking) {
       throw new AppError('site has active dependencies', {
         code: 'GEO_SITE_DEACTIVATION_BLOCKED',
@@ -1108,13 +1141,13 @@ export class GeoService {
     }
 
     const parentSite = current.parentSite
-      ? this.getSiteOrThrow(current.parentSite.id, ctx)
+      ? await this.getSiteOrThrow(current.parentSite.id, ctx)
       : undefined;
     if (parentSite) this.validateStatusCompatibleWithAncestors(toStatus, parentSite);
 
-    return this.repository.transaction(() => {
+    return await this.repository.transaction(async () => {
       const statusDate = input.statusDate ?? new Date().toISOString();
-      const updated = this.repository.upsertSite({
+      const updated = await this.repository.upsertSite({
         ...current,
         status: toStatus,
         statusDate,
@@ -1122,7 +1155,7 @@ export class GeoService {
           ? { statusReason: input.statusReason }
           : optional('statusReason', current.statusReason)),
       });
-      this.repository.appendSiteStatusHistory({
+      await this.repository.appendSiteStatusHistory({
         '@type': 'GeographicSiteStatusHistoryEntry',
         id: createCanonicalId(),
         siteId: updated.id,
@@ -1134,7 +1167,7 @@ export class GeoService {
         actorSub: ctx.actorSub,
         traceId: ctx.traceId,
       });
-      this.recordMutation(
+      await this.recordMutation(
         ctx,
         'transition',
         'GeographicSite',
@@ -1147,22 +1180,22 @@ export class GeoService {
     });
   }
 
-  public createSiteAtAddress(
+  public async createSiteAtAddress(
     input: SiteAtAddressInput,
     context?: RequestContext,
-  ): { location: GeographicLocation; address: GeographicAddress; site: GeographicSite } {
+  ): Promise<{ location: GeographicLocation; address: GeographicAddress; site: GeographicSite }> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, WRITE_ROLE);
-    return this.repository.transaction(() => {
-      const location = this.createLocation(input.location, ctx);
-      const address = this.createAddress(
+    return await this.repository.transaction(async () => {
+      const location = await this.createLocation(input.location, ctx);
+      const address = await this.createAddress(
         {
           ...input.address,
           geographicLocationId: location.id,
         },
         ctx,
       );
-      const site = this.createSite(
+      const site = await this.createSite(
         {
           ...input.site,
           placeId: location.id,
@@ -1172,7 +1205,7 @@ export class GeoService {
       );
 
       if (input.fedBySiteId) {
-        this.addSiteRelationship(
+        await this.addSiteRelationship(
           site.id,
           input.fedBySiteId,
           input.fedByRelationshipType ?? 'fedBy',
@@ -1184,73 +1217,76 @@ export class GeoService {
       return {
         location,
         address,
-        site: this.getSiteOrThrow(site.id),
+        site: await this.getSiteOrThrow(site.id),
       };
     });
   }
 
-  public submitAddressBulk(
+  public async submitAddressBulk(
     input: GeoBulkInput<AddressInput>,
     idempotencyKey: string | undefined,
     context?: RequestContext,
-  ): GeoBulkSubmission {
+  ): Promise<GeoBulkSubmission> {
     const ctx = this.resolveContext(context);
-    return this.executeBulk(
+    return await this.executeBulk(
       'Address',
       input,
       idempotencyKey,
       ctx,
-      (item) => this.prepareAddressBulkItem(item, ctx),
-      (item) => this.createAddress(item, ctx),
+      async (item) => await this.prepareAddressBulkItem(item, ctx),
+      async (item) => await this.createAddress(item, ctx),
     );
   }
 
-  public submitSiteBulk(
+  public async submitSiteBulk(
     input: GeoBulkInput<SiteInput>,
     idempotencyKey: string | undefined,
     context?: RequestContext,
-  ): GeoBulkSubmission {
+  ): Promise<GeoBulkSubmission> {
     const ctx = this.resolveContext(context);
-    return this.executeBulk(
+    return await this.executeBulk(
       'Site',
       input,
       idempotencyKey,
       ctx,
-      (item) => this.prepareSiteBulkItem(item, ctx),
-      (item) => this.createSite(item, ctx),
+      async (item) => await this.prepareSiteBulkItem(item, ctx),
+      async (item) => await this.createSite(item, ctx),
     );
   }
 
-  public getBulkJob(jobId: string, context?: RequestContext): GeoBulkJob | undefined {
+  public async getBulkJob(
+    jobId: string,
+    context?: RequestContext,
+  ): Promise<GeoBulkJob | undefined> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    return this.repository.getBulkJob(jobId, { tenantId: ctx.tenantId });
+    return await this.repository.getBulkJob(jobId, { tenantId: ctx.tenantId });
   }
 
-  public listBulkJobResults(
+  public async listBulkJobResults(
     jobId: string,
     query?: { limit?: number; offset?: number },
     context?: RequestContext,
-  ): GeoBulkJobResult[] {
+  ): Promise<GeoBulkJobResult[]> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    const job = this.repository.getBulkJob(jobId, { tenantId: ctx.tenantId });
+    const job = await this.repository.getBulkJob(jobId, { tenantId: ctx.tenantId });
     if (!job) {
       throw new AppError('bulk job not found', {
         code: 'GEO_BULK_JOB_NOT_FOUND',
         statusCode: 404,
       });
     }
-    return this.repository.listBulkJobResults(jobId, { ...query, tenantId: ctx.tenantId });
+    return await this.repository.listBulkJobResults(jobId, { ...query, tenantId: ctx.tenantId });
   }
 
-  public addSiteRelationship(
+  public async addSiteRelationship(
     siteId: string,
     relatedSiteId: string,
     relationshipType: string,
     validFor?: TimePeriod,
     context?: RequestContext,
-  ): GeographicSiteRelationship {
+  ): Promise<GeographicSiteRelationship> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, WRITE_ROLE);
     const normalizedType = normalizeRelationshipCode(relationshipType);
@@ -1261,38 +1297,38 @@ export class GeoService {
         statusCode: 409,
       });
     }
-    const site = this.getSiteOrThrow(siteId, ctx);
-    const relatedSite = this.getSiteOrThrow(relatedSiteId, ctx);
-    const relationshipTypeRecord = this.getRelationshipTypeOrThrow(normalizedType);
+    const site = await this.getSiteOrThrow(siteId, ctx);
+    const relatedSite = await this.getSiteOrThrow(relatedSiteId, ctx);
+    const relationshipTypeRecord = await this.getRelationshipTypeOrThrow(normalizedType);
     if (relationshipTypeRecord.lifecycleStatus !== 'Active') {
       throw new AppError('relationship type is retired', {
         code: 'GEO_RELATIONSHIP_TYPE_RETIRED',
         statusCode: 409,
       });
     }
-    this.validateRelationshipCategories(site, relatedSite, relationshipTypeRecord);
+    await this.validateRelationshipCategories(site, relatedSite, relationshipTypeRecord);
 
-    return this.repository.transaction(() => {
-      const relationship = this.repository.upsertSiteRelationship(siteId, {
+    return await this.repository.transaction(async () => {
+      const relationship = await this.repository.upsertSiteRelationship(siteId, {
         id: relatedSiteId,
         relationshipType: relationshipTypeRecord.code,
         '@referredType': 'GeographicSite',
         ...(validFor ? { validFor } : {}),
       });
-      const inverse = this.getRelationshipTypeOrThrow(relationshipTypeRecord.inverseCode);
-      this.repository.upsertSiteRelationship(relatedSiteId, {
+      const inverse = await this.getRelationshipTypeOrThrow(relationshipTypeRecord.inverseCode);
+      await this.repository.upsertSiteRelationship(relatedSiteId, {
         id: siteId,
         relationshipType: inverse.code,
         '@referredType': 'GeographicSite',
         ...(validFor ? { validFor } : {}),
       });
-      this.recordMutation(
+      await this.recordMutation(
         ctx,
         'createRelationship',
         'GeographicSite',
         siteId,
         site,
-        this.getSiteOrThrow(siteId, ctx),
+        await this.getSiteOrThrow(siteId, ctx),
         'GeographicSiteRelationshipCreateEvent',
         {
           siteId,
@@ -1303,35 +1339,35 @@ export class GeoService {
     });
   }
 
-  public removeSiteRelationship(
+  public async removeSiteRelationship(
     siteId: string,
     relatedSiteId: string,
     relationshipType: string,
     context?: RequestContext,
-  ): boolean {
+  ): Promise<boolean> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, WRITE_ROLE);
     const normalizedType = normalizeRelationshipCode(relationshipType);
-    const current = this.getSiteOrThrow(siteId, ctx);
-    this.getSiteOrThrow(relatedSiteId, ctx);
-    const type = this.getRelationshipTypeOrThrow(normalizedType);
+    const current = await this.getSiteOrThrow(siteId, ctx);
+    await this.getSiteOrThrow(relatedSiteId, ctx);
+    const type = await this.getRelationshipTypeOrThrow(normalizedType);
     const endedAt = new Date().toISOString();
-    return this.repository.transaction(() => {
-      const removed = this.repository.endSiteRelationship(
+    return await this.repository.transaction(async () => {
+      const removed = await this.repository.endSiteRelationship(
         siteId,
         relatedSiteId,
         type.code,
         endedAt,
       );
-      this.repository.endSiteRelationship(relatedSiteId, siteId, type.inverseCode, endedAt);
+      await this.repository.endSiteRelationship(relatedSiteId, siteId, type.inverseCode, endedAt);
       if (removed) {
-        this.recordMutation(
+        await this.recordMutation(
           ctx,
           'endRelationship',
           'GeographicSite',
           siteId,
           current,
-          this.getSiteOrThrow(siteId, ctx),
+          await this.getSiteOrThrow(siteId, ctx),
           'GeographicSiteRelationshipDeleteEvent',
           {
             siteId,
@@ -1344,20 +1380,20 @@ export class GeoService {
     });
   }
 
-  public ensureBootstrapRelationshipTypes(context?: RequestContext): {
+  public async ensureBootstrapRelationshipTypes(context?: RequestContext): Promise<{
     created: number;
     updated: number;
     relationshipTypes: GeographicRelationshipType[];
-  } {
+  }> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, CATALOG_ROLE);
     let created = 0;
     let updated = 0;
     for (const definition of BOOTSTRAP_RELATIONSHIP_TYPES) {
-      const existing = this.repository.getRelationshipType(definition.code);
+      const existing = await this.repository.getRelationshipType(definition.code);
       if (existing) updated += 1;
       else created += 1;
-      this.repository.upsertRelationshipType(
+      await this.repository.upsertRelationshipType(
         this.buildRelationshipTypeRecord({
           id: existing?.id ?? createCanonicalId(),
           code: definition.code,
@@ -1375,19 +1411,19 @@ export class GeoService {
     return {
       created,
       updated,
-      relationshipTypes: this.listRelationshipTypes(undefined, ctx),
+      relationshipTypes: await this.listRelationshipTypes(undefined, ctx),
     };
   }
 
-  public createRelationshipType(
+  public async createRelationshipType(
     input: RelationshipTypeInput,
     context?: RequestContext,
-  ): GeographicRelationshipType {
+  ): Promise<GeographicRelationshipType> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, CATALOG_ROLE);
     const code = normalizeRelationshipCode(input.code);
     assertRequiredString(code, 'code');
-    if (this.repository.getRelationshipType(code)) {
+    if (await this.repository.getRelationshipType(code)) {
       throw new AppError('relationship type code already exists', {
         code: 'GEO_RELATIONSHIP_TYPE_CODE_DUPLICATE',
         statusCode: 409,
@@ -1404,9 +1440,9 @@ export class GeoService {
       ...(input.cardinality ? { cardinality: input.cardinality } : {}),
       lifecycleStatus: input.lifecycleStatus ?? 'Active',
     });
-    return this.repository.transaction(() => {
-      const stored = this.repository.upsertRelationshipType(record);
-      this.recordMutation(
+    return await this.repository.transaction(async () => {
+      const stored = await this.repository.upsertRelationshipType(record);
+      await this.recordMutation(
         ctx,
         'create',
         'GeographicRelationshipType',
@@ -1419,14 +1455,14 @@ export class GeoService {
     });
   }
 
-  public updateRelationshipType(
+  public async updateRelationshipType(
     code: string,
     input: Partial<RelationshipTypeInput>,
     context?: RequestContext,
-  ): GeographicRelationshipType {
+  ): Promise<GeographicRelationshipType> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, CATALOG_ROLE);
-    const current = this.getRelationshipTypeOrThrow(code);
+    const current = await this.getRelationshipTypeOrThrow(code);
     if (input.code && normalizeRelationshipCode(input.code) !== current.code) {
       throw new AppError('relationship type code is immutable', {
         code: 'GEO_RELATIONSHIP_TYPE_CODE_IMMUTABLE',
@@ -1451,9 +1487,9 @@ export class GeoService {
         ? { bootstrapProtected: current._bootstrapProtected }
         : {}),
     });
-    return this.repository.transaction(() => {
-      const stored = this.repository.upsertRelationshipType(updated);
-      this.recordMutation(
+    return await this.repository.transaction(async () => {
+      const stored = await this.repository.upsertRelationshipType(updated);
+      await this.recordMutation(
         ctx,
         'update',
         'GeographicRelationshipType',
@@ -1466,21 +1502,21 @@ export class GeoService {
     });
   }
 
-  public retireRelationshipType(
+  public async retireRelationshipType(
     code: string,
     context?: RequestContext,
-  ): GeographicRelationshipType {
-    const current = this.getRelationshipTypeOrThrow(code);
+  ): Promise<GeographicRelationshipType> {
+    const current = await this.getRelationshipTypeOrThrow(code);
     if (current._bootstrapProtected) {
       throw new AppError('bootstrap relationship type cannot be retired', {
         code: 'GEO_RELATIONSHIP_TYPE_BOOTSTRAP_PROTECTED',
         statusCode: 409,
       });
     }
-    return this.updateRelationshipType(code, { lifecycleStatus: 'Retired' }, context);
+    return await this.updateRelationshipType(code, { lifecycleStatus: 'Retired' }, context);
   }
 
-  public listRelationshipTypes(
+  public async listRelationshipTypes(
     query?: {
       code?: string;
       lifecycleStatus?: GeographicRelationshipType['lifecycleStatus'];
@@ -1488,57 +1524,66 @@ export class GeoService {
       offset?: number;
     },
     context?: RequestContext,
-  ): GeographicRelationshipType[] {
+  ): Promise<GeographicRelationshipType[]> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    return this.repository.listRelationshipTypes(query);
+    return await this.repository.listRelationshipTypes(query);
   }
 
-  public getRelationshipType(
+  public async getRelationshipType(
     code: string,
     context?: RequestContext,
-  ): GeographicRelationshipType | undefined {
+  ): Promise<GeographicRelationshipType | undefined> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    return this.repository.getRelationshipType(normalizeRelationshipCode(code));
+    return await this.repository.getRelationshipType(normalizeRelationshipCode(code));
   }
 
-  public getLocation(id: string, context?: RequestContext): GeographicLocation | undefined {
+  public async getLocation(
+    id: string,
+    context?: RequestContext,
+  ): Promise<GeographicLocation | undefined> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    return this.repository.getLocation(id, { tenantId: ctx.tenantId });
+    return await this.repository.getLocation(id, { tenantId: ctx.tenantId });
   }
-  public getAddress(id: string, context?: RequestContext): GeographicAddress | undefined {
+  public async getAddress(
+    id: string,
+    context?: RequestContext,
+  ): Promise<GeographicAddress | undefined> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    return this.repository.getAddress(id, { tenantId: ctx.tenantId });
+    return await this.repository.getAddress(id, { tenantId: ctx.tenantId });
   }
-  public getSite(id: string, context?: RequestContext): GeographicSite | undefined {
+  public async getSite(id: string, context?: RequestContext): Promise<GeographicSite | undefined> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    return this.repository.getSite(id, { tenantId: ctx.tenantId });
+    return await this.repository.getSite(id, { tenantId: ctx.tenantId });
   }
-  public getSpec(id: string, context?: RequestContext): GeographicSiteSpecification | undefined {
+  public async getSpec(
+    id: string,
+    context?: RequestContext,
+  ): Promise<GeographicSiteSpecification | undefined> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    return this.repository.getSpec(id);
+    return await this.repository.getSpec(id);
   }
-  public listLocations(
+  public async listLocations(
     query?: { limit?: number; offset?: number },
     context?: RequestContext,
-  ): GeographicLocation[] {
+  ): Promise<GeographicLocation[]> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    return this.repository.listLocations({ ...query, tenantId: ctx.tenantId });
+    return await this.repository.listLocations({ ...query, tenantId: ctx.tenantId });
   }
 
-  public listLocationsSpatial(
+  public async listLocationsSpatial(
     query: LocationSpatialQuery,
     context?: RequestContext,
-  ): GeographicLocation[] {
+  ): Promise<GeographicLocation[]> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    const candidates = this.repository.listLocations({ tenantId: ctx.tenantId });
+    const candidates = await this.repository.listLocations({ tenantId: ctx.tenantId });
     const filtered = candidates
       .map((location) => ({
         location,
@@ -1598,36 +1643,36 @@ export class GeoService {
     };
   }
 
-  public findLocationIntersections(
+  public async findLocationIntersections(
     polygon: GeoJSONGeometry,
     context?: RequestContext,
-  ): GeographicLocation[] {
+  ): Promise<GeographicLocation[]> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
     validateGeometry('Polygon', polygon);
-    return this.repository
-      .listLocations({ tenantId: ctx.tenantId })
-      .filter((location) => geometryIntersectsPolygon(location.geometry, polygon));
+    return (await this.repository.listLocations({ tenantId: ctx.tenantId })).filter((location) =>
+      geometryIntersectsPolygon(location.geometry, polygon),
+    );
   }
 
-  public getLocationReferences(
+  public async getLocationReferences(
     locationId: string,
     context?: RequestContext,
-  ): {
+  ): Promise<{
     locationId: string;
     activeAddressCount: number;
     activeSiteCount: number;
     blocking: boolean;
-  } {
+  }> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    this.getLocationOrThrow(locationId, ctx);
-    const activeAddressCount = this.repository
-      .listAddresses({ tenantId: ctx.tenantId })
-      .filter((address) => address.geographicLocationId === locationId).length;
-    const activeSiteCount = this.repository
-      .listSites({ tenantId: ctx.tenantId })
-      .filter((site) => site.place?.id === locationId && site.status !== 'Retired').length;
+    await this.getLocationOrThrow(locationId, ctx);
+    const activeAddressCount = (
+      await this.repository.listAddresses({ tenantId: ctx.tenantId })
+    ).filter((address) => address.geographicLocationId === locationId).length;
+    const activeSiteCount = (await this.repository.listSites({ tenantId: ctx.tenantId })).filter(
+      (site) => site.place?.id === locationId && site.status !== 'Retired',
+    ).length;
     return {
       locationId,
       activeAddressCount,
@@ -1636,19 +1681,22 @@ export class GeoService {
     };
   }
 
-  public terminateLocation(locationId: string, context?: RequestContext): GeographicLocation {
+  public async terminateLocation(
+    locationId: string,
+    context?: RequestContext,
+  ): Promise<GeographicLocation> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, WRITE_ROLE);
-    const current = this.getLocationOrThrow(locationId, ctx);
-    const references = this.getLocationReferences(locationId, ctx);
+    const current = await this.getLocationOrThrow(locationId, ctx);
+    const references = await this.getLocationReferences(locationId, ctx);
     if (references.blocking) {
       throw new AppError('geographic location has active references', {
         code: 'GEO_LOCATION_REFERENCES_ACTIVE',
         statusCode: 409,
       });
     }
-    return this.repository.transaction(() => {
-      const updated = this.repository.upsertLocation({
+    return await this.repository.transaction(async () => {
+      const updated = await this.repository.upsertLocation({
         ...current,
         validFor: {
           ...(current.validFor?.startDateTime
@@ -1657,7 +1705,7 @@ export class GeoService {
           endDateTime: current.validFor?.endDateTime ?? new Date().toISOString(),
         },
       });
-      this.recordMutation(
+      await this.recordMutation(
         ctx,
         'terminate',
         'GeographicLocation',
@@ -1669,13 +1717,13 @@ export class GeoService {
       return updated;
     });
   }
-  public listAddresses(
+  public async listAddresses(
     query?: { name?: string; limit?: number; offset?: number },
     context?: RequestContext,
-  ): GeographicAddress[] {
+  ): Promise<GeographicAddress[]> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    return this.repository.listAddresses({ ...query, tenantId: ctx.tenantId });
+    return await this.repository.listAddresses({ ...query, tenantId: ctx.tenantId });
   }
 
   public normalizeAddress(
@@ -1724,38 +1772,44 @@ export class GeoService {
     });
   }
 
-  public listAddressVersions(addressId: string, context?: RequestContext): GeographicAddress[] {
-    const ctx = this.resolveContext(context);
-    this.assertRole(ctx, READ_ROLE);
-    return [this.getAddressOrThrow(addressId, ctx)];
-  }
-
-  public getAddressReferences(
+  public async listAddressVersions(
     addressId: string,
     context?: RequestContext,
-  ): { addressId: string; activeSiteCount: number; blocking: boolean } {
+  ): Promise<GeographicAddress[]> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    this.getAddressOrThrow(addressId, ctx);
-    const activeSiteCount = this.repository
-      .listSites({ tenantId: ctx.tenantId })
-      .filter((site) => site.address?.id === addressId && site.status !== 'Retired').length;
+    return [await this.getAddressOrThrow(addressId, ctx)];
+  }
+
+  public async getAddressReferences(
+    addressId: string,
+    context?: RequestContext,
+  ): Promise<{ addressId: string; activeSiteCount: number; blocking: boolean }> {
+    const ctx = this.resolveContext(context);
+    this.assertRole(ctx, READ_ROLE);
+    await this.getAddressOrThrow(addressId, ctx);
+    const activeSiteCount = (await this.repository.listSites({ tenantId: ctx.tenantId })).filter(
+      (site) => site.address?.id === addressId && site.status !== 'Retired',
+    ).length;
     return { addressId, activeSiteCount, blocking: activeSiteCount > 0 };
   }
 
-  public terminateAddress(addressId: string, context?: RequestContext): GeographicAddress {
+  public async terminateAddress(
+    addressId: string,
+    context?: RequestContext,
+  ): Promise<GeographicAddress> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, WRITE_ROLE);
-    const current = this.getAddressOrThrow(addressId, ctx);
-    const references = this.getAddressReferences(addressId, ctx);
+    const current = await this.getAddressOrThrow(addressId, ctx);
+    const references = await this.getAddressReferences(addressId, ctx);
     if (references.blocking) {
       throw new AppError('geographic address has active references', {
         code: 'GEO_ADDRESS_REFERENCES_ACTIVE',
         statusCode: 409,
       });
     }
-    return this.repository.transaction(() => {
-      const updated = this.repository.upsertAddress({
+    return await this.repository.transaction(async () => {
+      const updated = await this.repository.upsertAddress({
         ...current,
         validFor: {
           ...(current.validFor?.startDateTime
@@ -1764,7 +1818,7 @@ export class GeoService {
           endDateTime: current.validFor?.endDateTime ?? new Date().toISOString(),
         },
       });
-      this.recordMutation(
+      await this.recordMutation(
         ctx,
         'terminate',
         'GeographicAddress',
@@ -1777,7 +1831,7 @@ export class GeoService {
     });
   }
 
-  public listSites(
+  public async listSites(
     query?: {
       name?: string;
       status?: GeoSiteStatus | GeoSiteStatusAlias;
@@ -1790,7 +1844,7 @@ export class GeoService {
       offset?: number;
     },
     context?: RequestContext,
-  ): GeographicSite[] {
+  ): Promise<GeographicSite[]> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
     const { status, ...rest } = query ?? {};
@@ -1799,14 +1853,14 @@ export class GeoService {
       ...(status ? { status: normalizeSiteStatus(status) } : {}),
       tenantId: ctx.tenantId,
     };
-    return this.repository.listSites(normalizedQuery);
+    return await this.repository.listSites(normalizedQuery);
   }
-  public countSites(context?: RequestContext): number {
+  public async countSites(context?: RequestContext): Promise<number> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    return this.repository.countSites({ tenantId: ctx.tenantId });
+    return await this.repository.countSites({ tenantId: ctx.tenantId });
   }
-  public listSpecs(
+  public async listSpecs(
     query?: {
       name?: string;
       code?: string;
@@ -1816,97 +1870,111 @@ export class GeoService {
       offset?: number;
     },
     context?: RequestContext,
-  ): GeographicSiteSpecification[] {
+  ): Promise<GeographicSiteSpecification[]> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    return this.repository.listSpecs(query);
+    return await this.repository.listSpecs(query);
   }
-  public listSiteEvents(siteId: string, context?: RequestContext): GeoEvent[] {
+  public async listSiteEvents(siteId: string, context?: RequestContext): Promise<GeoEvent[]> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    this.getSiteOrThrow(siteId, ctx);
-    return this.repository.listEventsForEntity(siteId);
+    await this.getSiteOrThrow(siteId, ctx);
+    return await this.repository.listEventsForEntity(siteId);
   }
 
-  public listSiteHistory(
+  public async listSiteHistory(
     siteId: string,
     context?: RequestContext,
-  ): GeographicSiteStatusHistoryEntry[] {
+  ): Promise<GeographicSiteStatusHistoryEntry[]> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    this.getSiteOrThrow(siteId, ctx);
-    return this.repository.listSiteStatusHistory(siteId, { tenantId: ctx.tenantId });
+    await this.getSiteOrThrow(siteId, ctx);
+    return await this.repository.listSiteStatusHistory(siteId, { tenantId: ctx.tenantId });
   }
 
-  public listSiteAudit(siteId: string, context?: RequestContext): GeoAuditLog[] {
+  public async listSiteAudit(siteId: string, context?: RequestContext): Promise<GeoAuditLog[]> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    this.getSiteOrThrow(siteId, ctx);
-    return this.repository.listAuditForEntity(siteId, { tenantId: ctx.tenantId });
+    await this.getSiteOrThrow(siteId, ctx);
+    return await this.repository.listAuditForEntity(siteId, { tenantId: ctx.tenantId });
   }
 
-  public getSiteReferences(siteId: string, context?: RequestContext): GeographicSiteReferences {
-    const ctx = this.resolveContext(context);
-    this.assertRole(ctx, READ_ROLE);
-    this.getSiteOrThrow(siteId, ctx);
-    return this.repository.getSiteReferences(siteId, { tenantId: ctx.tenantId });
-  }
-
-  public getSiteDeactivationImpact(
+  public async getSiteReferences(
     siteId: string,
     context?: RequestContext,
-  ): GeographicSiteReferences {
-    return this.getSiteReferences(siteId, context);
-  }
-
-  public countSiteDescendants(
-    siteId: string,
-    context?: RequestContext,
-  ): { siteId: string; descendantCount: number } {
+  ): Promise<GeographicSiteReferences> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    this.getSiteOrThrow(siteId, ctx);
+    await this.getSiteOrThrow(siteId, ctx);
+    return await this.repository.getSiteReferences(siteId, { tenantId: ctx.tenantId });
+  }
+
+  public async getSiteDeactivationImpact(
+    siteId: string,
+    context?: RequestContext,
+  ): Promise<GeographicSiteReferences> {
+    return await this.getSiteReferences(siteId, context);
+  }
+
+  public async countSiteDescendants(
+    siteId: string,
+    context?: RequestContext,
+  ): Promise<{ siteId: string; descendantCount: number }> {
+    const ctx = this.resolveContext(context);
+    this.assertRole(ctx, READ_ROLE);
+    await this.getSiteOrThrow(siteId, ctx);
     return {
       siteId,
-      descendantCount: this.repository.countSiteDescendants(siteId, { tenantId: ctx.tenantId }),
+      descendantCount: await this.repository.countSiteDescendants(siteId, {
+        tenantId: ctx.tenantId,
+      }),
     };
   }
 
-  public getSiteTree(siteId: string, context?: RequestContext): SiteTreeNode {
+  public async getSiteTree(siteId: string, context?: RequestContext): Promise<SiteTreeNode> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    const site = this.getSiteOrThrow(siteId, ctx);
-    const children = this.repository
-      .listSites({ parentSiteId: siteId, tenantId: ctx.tenantId })
-      .map((child) => this.getSiteTree(child.id, ctx));
+    const site = await this.getSiteOrThrow(siteId, ctx);
+    const children = await Promise.all(
+      (await this.repository.listSites({ parentSiteId: siteId, tenantId: ctx.tenantId })).map(
+        async (child) => await this.getSiteTree(child.id, ctx),
+      ),
+    );
     return { site, children };
   }
 
-  public listSiteRelationships(
+  public async listSiteRelationships(
     siteId: string,
     context?: RequestContext,
-  ): GeographicSiteRelationship[] {
+  ): Promise<GeographicSiteRelationship[]> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    this.getSiteOrThrow(siteId, ctx);
-    return this.repository.listSiteRelationships(siteId);
+    await this.getSiteOrThrow(siteId, ctx);
+    return await this.repository.listSiteRelationships(siteId);
   }
 
-  private executeBulk<TItem extends { characteristic?: Characteristic[] }, TEntity extends { id: string }>(
+  private async executeBulk<
+    TItem extends { characteristic?: Characteristic[] },
+    TEntity extends { id: string },
+  >(
     target: GeoBulkTarget,
     input: GeoBulkInput<TItem>,
     idempotencyKey: string | undefined,
     context: RequestContext,
-    prepareItem: (item: TItem) => PreparedBulkItem<TItem>,
-    persistItem: (item: TItem) => TEntity,
-  ): GeoBulkSubmission {
+    prepareItem: (item: TItem) => Promise<PreparedBulkItem<TItem>>,
+    persistItem: (item: TItem) => Promise<TEntity>,
+  ): Promise<GeoBulkSubmission> {
     this.assertBulkAllowed(context);
     const key = normalizeIdempotencyKey(idempotencyKey);
-    const existingJob = this.repository.getBulkJobByIdempotencyKey(context.tenantId, key, target);
+    const existingJob = await this.repository.getBulkJobByIdempotencyKey(
+      context.tenantId,
+      key,
+      target,
+    );
     if (existingJob) {
       return {
         job: existingJob,
-        results: this.repository.listBulkJobResults(existingJob.id, {
+        results: await this.repository.listBulkJobResults(existingJob.id, {
           tenantId: context.tenantId,
         }),
       };
@@ -1915,7 +1983,7 @@ export class GeoService {
     const mode = resolveBulkMode(input);
     const items = normalizeBulkItems(input.items);
     const now = new Date().toISOString();
-    let job = this.repository.upsertBulkJob({
+    let job = await this.repository.upsertBulkJob({
       '@type': 'GeoBulkJob',
       id: createCanonicalId(),
       tenantId: context.tenantId,
@@ -1933,13 +2001,16 @@ export class GeoService {
       traceId: context.traceId,
     });
 
-    const prepared = items.map((item, index) => {
+    const prepared: Array<
+      { index: number; prepared: PreparedBulkItem<TItem> } | { index: number; error: unknown }
+    > = [];
+    for (const [index, item] of items.entries()) {
       try {
-        return { index, prepared: prepareItem(item) };
+        prepared.push({ index, prepared: await prepareItem(item) });
       } catch (error) {
-        return { index, error };
+        prepared.push({ index, error });
       }
-    });
+    }
 
     const results: GeoBulkJobResult[] = [];
     for (const item of prepared) {
@@ -1964,7 +2035,7 @@ export class GeoService {
           );
         }
       }
-      return this.completeBulkJob(job, results);
+      return await this.completeBulkJob(job, results);
     }
 
     for (const item of prepared) {
@@ -1979,7 +2050,7 @@ export class GeoService {
         continue;
       }
       try {
-        const entity = persistItem(preparedItem.item);
+        const entity = await persistItem(preparedItem.item);
         results.push(
           this.buildBulkSuccessResult(job, item.index, preparedItem, 'created', entity.id),
         );
@@ -2010,20 +2081,21 @@ export class GeoService {
       }
     }
 
-    job = this.completeBulkJob(job, results).job;
+    job = (await this.completeBulkJob(job, results)).job;
     return {
       job,
-      results: this.repository.listBulkJobResults(job.id, { tenantId: context.tenantId }),
+      results: await this.repository.listBulkJobResults(job.id, { tenantId: context.tenantId }),
     };
   }
 
-  private prepareAddressBulkItem(
+  private async prepareAddressBulkItem(
     input: AddressInput,
     context: RequestContext,
-  ): PreparedBulkItem<AddressInput> {
+  ): Promise<PreparedBulkItem<AddressInput>> {
     this.assertOriginWriteAllowed(context, input.characteristic ?? []);
     assertRequiredString(input.street, 'street');
-    if (input.geographicLocationId) this.getLocationOrThrow(input.geographicLocationId, context);
+    if (input.geographicLocationId)
+      await this.getLocationOrThrow(input.geographicLocationId, context);
     const warnings: string[] = [];
     const origin = extractBulkOrigin(input.characteristic ?? [], 'Address', warnings);
     const normalizedCountry = normalizeCountry(input.country);
@@ -2033,7 +2105,7 @@ export class GeoService {
       country: normalizedCountry,
       ...(normalizedPostcode ? { postcode: normalizedPostcode } : {}),
     };
-    const existingId = this.findAddressByOrigin(origin, context)?.id;
+    const existingId = (await this.findAddressByOrigin(origin, context))?.id;
     return {
       item,
       origin,
@@ -2042,21 +2114,21 @@ export class GeoService {
     };
   }
 
-  private prepareSiteBulkItem(
+  private async prepareSiteBulkItem(
     input: SiteInput,
     context: RequestContext,
-  ): PreparedBulkItem<SiteInput> {
+  ): Promise<PreparedBulkItem<SiteInput>> {
     this.assertOriginWriteAllowed(context, input.characteristic ?? []);
     assertRequiredString(input.name, 'name');
     assertRequiredString(input.siteSpecificationId, 'siteSpecificationId');
-    const spec = this.getSpecOrThrow(input.siteSpecificationId);
+    const spec = await this.getSpecOrThrow(input.siteSpecificationId);
     ensureSpecificationActive(spec);
     const status = normalizeSiteStatus(input.status ?? 'Planned');
     validateStatus(status);
-    if (input.placeId) this.getLocationOrThrow(input.placeId, context);
-    if (input.addressId) this.getAddressOrThrow(input.addressId, context);
+    if (input.placeId) await this.getLocationOrThrow(input.placeId, context);
+    if (input.addressId) await this.getAddressOrThrow(input.addressId, context);
     const parentSite = input.parentSiteId
-      ? this.getSiteOrThrow(input.parentSiteId, context)
+      ? await this.getSiteOrThrow(input.parentSiteId, context)
       : undefined;
     if (spec.category === 'SubSite' && !parentSite) {
       throw new AppError('sub-site requires parent site', {
@@ -2065,12 +2137,12 @@ export class GeoService {
       });
     }
     if (parentSite) {
-      this.validateContainment(spec, parentSite);
+      await this.validateContainment(spec, parentSite);
       this.validateStatusCompatibleWithAncestors(status, parentSite);
     }
     const warnings: string[] = [];
     const origin = extractBulkOrigin(input.characteristic ?? [], 'Site', warnings);
-    const existingId = this.findSiteByOrigin(origin, context)?.id;
+    const existingId = (await this.findSiteByOrigin(origin, context))?.id;
     return {
       item: input,
       origin,
@@ -2079,17 +2151,26 @@ export class GeoService {
     };
   }
 
-  private completeBulkJob(job: GeoBulkJob, results: GeoBulkJobResult[]): GeoBulkSubmission {
-    const orderedResults = [...results].sort((a, b) => a.index - b.index || a.id.localeCompare(b.id));
+  private async completeBulkJob(
+    job: GeoBulkJob,
+    results: GeoBulkJobResult[],
+  ): Promise<GeoBulkSubmission> {
+    const orderedResults = [...results].sort(
+      (a, b) => a.index - b.index || a.id.localeCompare(b.id),
+    );
     for (const result of orderedResults) {
-      this.repository.appendBulkJobResult(result);
+      await this.repository.appendBulkJobResult(result);
     }
     const successCount = orderedResults.filter((result) => result.status !== 'failed').length;
     const errorCount = orderedResults.length - successCount;
-    const warningCount = orderedResults.reduce((count, result) => count + result.warnings.length, 0);
-    const completed = this.repository.upsertBulkJob({
+    const warningCount = orderedResults.reduce(
+      (count, result) => count + result.warnings.length,
+      0,
+    );
+    const completed = await this.repository.upsertBulkJob({
       ...job,
-      status: errorCount === orderedResults.length && orderedResults.length > 0 ? 'failed' : 'completed',
+      status:
+        errorCount === orderedResults.length && orderedResults.length > 0 ? 'failed' : 'completed',
       completedAt: new Date().toISOString(),
       successCount,
       errorCount,
@@ -2097,7 +2178,9 @@ export class GeoService {
     });
     return {
       job: completed,
-      results: this.repository.listBulkJobResults(completed.id, { tenantId: completed.tenantId }),
+      results: await this.repository.listBulkJobResults(completed.id, {
+        tenantId: completed.tenantId,
+      }),
     };
   }
 
@@ -2151,19 +2234,22 @@ export class GeoService {
     };
   }
 
-  private findAddressByOrigin(
+  private async findAddressByOrigin(
     origin: BulkOrigin,
     context: RequestContext,
-  ): GeographicAddress | undefined {
-    return this.repository
-      .listAddresses({ tenantId: context.tenantId })
-      .find((address) => originMatches(address.characteristic, origin));
+  ): Promise<GeographicAddress | undefined> {
+    return (await this.repository.listAddresses({ tenantId: context.tenantId })).find((address) =>
+      originMatches(address.characteristic, origin),
+    );
   }
 
-  private findSiteByOrigin(origin: BulkOrigin, context: RequestContext): GeographicSite | undefined {
-    return this.repository
-      .listSites({ tenantId: context.tenantId })
-      .find((site) => originMatches(site.characteristic, origin));
+  private async findSiteByOrigin(
+    origin: BulkOrigin,
+    context: RequestContext,
+  ): Promise<GeographicSite | undefined> {
+    return (await this.repository.listSites({ tenantId: context.tenantId })).find((site) =>
+      originMatches(site.characteristic, origin),
+    );
   }
 
   private assertBulkAllowed(context: RequestContext): void {
@@ -2174,8 +2260,11 @@ export class GeoService {
     });
   }
 
-  private getLocationOrThrow(id: string, context?: RequestContext): GeographicLocation {
-    const location = this.repository.getLocation(
+  private async getLocationOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<GeographicLocation> {
+    const location = await this.repository.getLocation(
       id,
       context ? { tenantId: context.tenantId } : undefined,
     );
@@ -2187,8 +2276,11 @@ export class GeoService {
     return location;
   }
 
-  private getAddressOrThrow(id: string, context?: RequestContext): GeographicAddress {
-    const address = this.repository.getAddress(
+  private async getAddressOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<GeographicAddress> {
+    const address = await this.repository.getAddress(
       id,
       context ? { tenantId: context.tenantId } : undefined,
     );
@@ -2200,8 +2292,8 @@ export class GeoService {
     return address;
   }
 
-  private getSpecOrThrow(id: string): GeographicSiteSpecification {
-    const spec = this.repository.getSpec(id);
+  private async getSpecOrThrow(id: string): Promise<GeographicSiteSpecification> {
+    const spec = await this.repository.getSpec(id);
     if (!spec)
       throw new AppError('site specification not found', {
         code: 'GEO_SPEC_NOT_FOUND',
@@ -2210,8 +2302,11 @@ export class GeoService {
     return spec;
   }
 
-  private getSiteOrThrow(id: string, context?: RequestContext): GeographicSite {
-    const site = this.repository.getSite(id, context ? { tenantId: context.tenantId } : undefined);
+  private async getSiteOrThrow(id: string, context?: RequestContext): Promise<GeographicSite> {
+    const site = await this.repository.getSite(
+      id,
+      context ? { tenantId: context.tenantId } : undefined,
+    );
     if (!site)
       throw new AppError('geographic site not found', {
         code: 'GEO_SITE_NOT_FOUND',
@@ -2220,9 +2315,9 @@ export class GeoService {
     return site;
   }
 
-  private getRelationshipTypeOrThrow(code: string): GeographicRelationshipType {
+  private async getRelationshipTypeOrThrow(code: string): Promise<GeographicRelationshipType> {
     const normalizedCode = normalizeRelationshipCode(code);
-    const relationshipType = this.repository.getRelationshipType(normalizedCode);
+    const relationshipType = await this.repository.getRelationshipType(normalizedCode);
     if (!relationshipType) {
       throw new AppError('relationship type not found', {
         code: 'GEO_RELATIONSHIP_TYPE_NOT_FOUND',
@@ -2260,7 +2355,7 @@ export class GeoService {
     });
   }
 
-  private recordMutation(
+  private async recordMutation(
     context: RequestContext,
     action: string,
     entityType: string,
@@ -2269,8 +2364,8 @@ export class GeoService {
     after: unknown,
     eventType: string,
     eventPayload: unknown = after,
-  ): GeoEvent {
-    const event = this.emitEvent(eventType, entityId, entityType, eventPayload, context);
+  ): Promise<GeoEvent> {
+    const event = await this.emitEvent(eventType, entityId, entityType, eventPayload, context);
     const audit: GeoAuditLog = {
       '@type': 'GeoAuditLog',
       id: createCanonicalId(),
@@ -2285,7 +2380,7 @@ export class GeoService {
       traceId: context.traceId,
       ...(context.sourceIp ? { sourceIp: context.sourceIp } : {}),
     };
-    this.repository.appendAudit(audit);
+    await this.repository.appendAudit(audit);
 
     const outbox: GeoOutboxMessage = {
       '@type': 'OutboxMessage',
@@ -2297,7 +2392,7 @@ export class GeoService {
       status: 'pending',
       createdAt: event.eventTime,
     };
-    this.repository.appendOutbox(outbox);
+    await this.repository.appendOutbox(outbox);
     return event;
   }
 
@@ -2331,13 +2426,13 @@ export class GeoService {
     };
   }
 
-  private validateRelationshipCategories(
+  private async validateRelationshipCategories(
     source: GeographicSite,
     target: GeographicSite,
     relationshipType: GeographicRelationshipType,
-  ): void {
-    const sourceSpec = this.getSpecOrThrow(source.siteSpecificationId);
-    const targetSpec = this.getSpecOrThrow(target.siteSpecificationId);
+  ): Promise<void> {
+    const sourceSpec = await this.getSpecOrThrow(source.siteSpecificationId);
+    const targetSpec = await this.getSpecOrThrow(target.siteSpecificationId);
     if (
       relationshipType.allowedSourceCategories.length > 0 &&
       !relationshipType.allowedSourceCategories.includes(sourceSpec.category)
@@ -2392,15 +2487,15 @@ export class GeoService {
     }
   }
 
-  private assertSiteNameAvailable(
+  private async assertSiteNameAvailable(
     name: string,
     spec: GeographicSiteSpecification,
     parentSiteId: string | undefined,
     currentSiteId: string | undefined,
     context: RequestContext,
-  ): void {
+  ): Promise<void> {
     const normalized = name.trim().toLowerCase();
-    const candidates = this.repository.listSites({ tenantId: context.tenantId });
+    const candidates = await this.repository.listSites({ tenantId: context.tenantId });
     const duplicate = candidates.find((site) => {
       if (site.id === currentSiteId || site.status === 'Retired') return false;
       if (site.name.trim().toLowerCase() !== normalized) return false;
@@ -2433,15 +2528,15 @@ export class GeoService {
     }
   }
 
-  private assertSubSiteMoveAllowed(
+  private async assertSubSiteMoveAllowed(
     current: GeographicSite,
     nextParent: GeographicSite | undefined,
     context: RequestContext,
-  ): void {
-    const currentSpec = this.getSpecOrThrow(current.siteSpecificationId);
+  ): Promise<void> {
+    const currentSpec = await this.getSpecOrThrow(current.siteSpecificationId);
     if (currentSpec.category !== 'SubSite' || !current.parentSite?.id || !nextParent?.id) return;
-    const currentRoot = this.getRootSiteId(current.parentSite.id, context);
-    const nextRoot = this.getRootSiteId(nextParent.id, context);
+    const currentRoot = await this.getRootSiteId(current.parentSite.id, context);
+    const nextRoot = await this.getRootSiteId(nextParent.id, context);
     if (currentRoot !== nextRoot) {
       throw new AppError('moving sub-site between root sites is blocked in MVP', {
         code: 'GEO_SUBSITE_MOVE_BETWEEN_ROOTS_BLOCKED',
@@ -2450,10 +2545,10 @@ export class GeoService {
     }
   }
 
-  private getRootSiteId(siteId: string, context: RequestContext): string {
-    let cursor = this.getSiteOrThrow(siteId, context);
+  private async getRootSiteId(siteId: string, context: RequestContext): Promise<string> {
+    let cursor = await this.getSiteOrThrow(siteId, context);
     while (cursor.parentSite?.id) {
-      cursor = this.getSiteOrThrow(cursor.parentSite.id, context);
+      cursor = await this.getSiteOrThrow(cursor.parentSite.id, context);
     }
     return cursor.id;
   }
@@ -2516,8 +2611,11 @@ export class GeoService {
     };
   }
 
-  private validateContainment(spec: GeographicSiteSpecification, parentSite: GeographicSite): void {
-    const parentSpec = this.getSpecOrThrow(parentSite.siteSpecificationId);
+  private async validateContainment(
+    spec: GeographicSiteSpecification,
+    parentSite: GeographicSite,
+  ): Promise<void> {
+    const parentSpec = await this.getSpecOrThrow(parentSite.siteSpecificationId);
     const specAllowedParent = spec.allowedParentSpecIds.includes(parentSpec.id);
     const parentAllowedChild = parentSpec.allowedChildSpecIds.includes(spec.id);
 
@@ -2529,7 +2627,10 @@ export class GeoService {
     }
   }
 
-  private assertNoParentCycle(siteId: string | undefined, parentSiteId: string): void {
+  private async assertNoParentCycle(
+    siteId: string | undefined,
+    parentSiteId: string,
+  ): Promise<void> {
     if (!siteId) return;
     const visited = new Set<string>([siteId]);
     let cursor: string | undefined = parentSiteId;
@@ -2541,7 +2642,7 @@ export class GeoService {
         });
       }
       visited.add(cursor);
-      cursor = this.getSiteOrThrow(cursor).parentSite?.id;
+      cursor = (await this.getSiteOrThrow(cursor)).parentSite?.id;
     }
   }
 
@@ -2598,17 +2699,17 @@ export class GeoService {
     return [...byName.values()];
   }
 
-  private validateSpecificationChangeAgainstSites(
+  private async validateSpecificationChangeAgainstSites(
     current: GeographicSiteSpecification,
     nextCharacteristics: GeographicSiteSpecificationCharacteristic[],
-  ): void {
+  ): Promise<void> {
     const currentByName = new Map(
       current.specCharacteristic.map((item) => [item.name.trim().toLowerCase(), item]),
     );
     const nextByName = new Map(
       nextCharacteristics.map((item) => [item.name.trim().toLowerCase(), item]),
     );
-    const sites = this.repository.listSites({ siteSpecificationId: current.id });
+    const sites = await this.repository.listSites({ siteSpecificationId: current.id });
 
     for (const [key, nextDefinition] of nextByName) {
       const currentDefinition = currentByName.get(key);
@@ -2662,14 +2763,14 @@ export class GeoService {
     }
   }
 
-  private emitEvent(
+  private async emitEvent(
     eventType: string,
     entityId: string,
     entityType: string,
     payload: unknown,
     context: RequestContext = DEFAULT_CONTEXT,
-  ): GeoEvent {
-    return this.repository.appendEvent({
+  ): Promise<GeoEvent> {
+    return await this.repository.appendEvent({
       '@type': 'Event',
       id: createCanonicalId(),
       eventType,
@@ -2912,7 +3013,10 @@ const originMatches = (
 
 const normalizeCountry = (value?: string): string => (value ?? 'BR').trim().toUpperCase();
 
-const normalizePostcode = (value: string | undefined, country: string | undefined): string | undefined => {
+const normalizePostcode = (
+  value: string | undefined,
+  country: string | undefined,
+): string | undefined => {
   if (!value) return undefined;
   if ((country ?? 'BR').trim().toUpperCase() === 'BR') return normalizeBrazilianPostcode(value);
   return value.trim();
@@ -3153,13 +3257,13 @@ const resolveSpecIdList = (
   return [...unique];
 };
 
-const validateReferencedSpecs = (
+const validateReferencedSpecs = async (
   ids: string[],
-  lookup: (id: string) => GeographicSiteSpecification,
+  lookup: (id: string) => Promise<GeographicSiteSpecification>,
   _currentSpecId?: string,
-): void => {
+): Promise<void> => {
   for (const id of ids) {
-    lookup(id);
+    await lookup(id);
   }
 };
 

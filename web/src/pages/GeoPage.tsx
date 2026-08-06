@@ -50,8 +50,10 @@ import { selectionPinDataUrl, siteIconDataUrl, siteIconFor, SELECTION_PIN_ASPECT
 import { useNavigation } from '../hooks/useNavigation';
 import { GeoSearchBar, GuidedSignupModal, HierarchySidebar } from './geo-tabs';
 import { BottomSheet } from '../components/BottomSheet';
-import { GoogleStreetViewLink } from '../components/GoogleStreetViewLink';
-import { streetViewTargetsForGeometry } from '../utils/googleMapsLink';
+import { GoogleStreetViewButton } from '../components/GoogleStreetViewButton';
+import { streetViewTargetsForGeometry } from '../utils/streetViewTargets';
+import { resourceStreetViewMarker, siteStreetViewMarker } from '../utils/streetViewMarker';
+import type { StreetViewMarker } from '../utils/streetViewPanorama';
 import { MarkerClusterer } from '@googlemaps/markerclusterer';
 
 type DetailTab = 'overview' | 'subsites' | 'topology' | 'lifecycle' | 'resources';
@@ -1204,7 +1206,7 @@ function SiteDetailBody({
           <Info label="Endereço" value={address ? formatAddress(address) : 'Sem endereço'} />
           <Info
             label="Localização"
-            value={point ? <CoordinateStreetView point={point} /> : 'Não localizado'}
+            value={point ? <CoordinateStreetView marker={siteStreetViewMarker(site, spec, point)} /> : 'Não localizado'}
           />
           <Info label="ParentSite" value={site.parentSite ? siteById.get(site.parentSite.id)?.name ?? site.parentSite.id : 'Nenhum'} />
           <Info label="ID" value={site.id} mono />
@@ -1322,7 +1324,7 @@ function ResourceDetailBody({
           <Info
             key={`${target.label ?? 'ponto'}:${target.point.join(',')}`}
             label={target.label ? `Localização · ${target.label}` : 'Localização'}
-            value={<CoordinateStreetView point={target.point} />}
+            value={<CoordinateStreetView marker={resourceStreetViewMarker(node, target.point)} />}
           />
         ))}
         {node.detail?.model ? <Info label="Modelo" value={node.detail.model} /> : null}
@@ -1551,11 +1553,12 @@ function Modal({ children, title, eyebrow, onClose, wide }: { children: ReactNod
   );
 }
 
-function CoordinateStreetView({ point }: { point: [number, number] }) {
+function CoordinateStreetView({ marker }: { marker: StreetViewMarker }) {
+  const { point } = marker;
   return (
     <span className="flex items-center gap-2">
       <span className="font-mono">[{point[0].toFixed(5)}, {point[1].toFixed(5)}]</span>
-      <GoogleStreetViewLink point={point} />
+      <GoogleStreetViewButton marker={marker} />
     </span>
   );
 }

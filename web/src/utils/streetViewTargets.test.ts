@@ -1,25 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { buildGoogleMapsStreetViewUrl, streetViewTargetsForGeometry } from './googleMapsLink';
+import { isValidStreetViewPoint, streetViewTargetsForGeometry } from './streetViewTargets';
 
-describe('buildGoogleMapsStreetViewUrl', () => {
-  it('abre o panorama do Google Maps no ponto informado', () => {
-    const href = buildGoogleMapsStreetViewUrl([-43.1108, -22.9108]);
-
-    expect(href).not.toBeNull();
-    const url = new URL(href!);
-    expect(url.origin).toBe('https://www.google.com');
-    expect(url.pathname).toBe('/maps/@');
-    expect(url.searchParams.get('api')).toBe('1');
-    expect(url.searchParams.get('map_action')).toBe('pano');
-    expect(url.searchParams.get('viewpoint')).toBe('-22.9108,-43.1108');
-  });
-
-  it('não cria link quando a coordenada é inválida', () => {
-    expect(buildGoogleMapsStreetViewUrl(null)).toBeNull();
-    expect(buildGoogleMapsStreetViewUrl([Number.NaN, -22.9])).toBeNull();
-    expect(buildGoogleMapsStreetViewUrl([-43.1, Number.POSITIVE_INFINITY])).toBeNull();
-    expect(buildGoogleMapsStreetViewUrl([181, 0])).toBeNull();
-    expect(buildGoogleMapsStreetViewUrl([0, 91])).toBeNull();
+describe('isValidStreetViewPoint', () => {
+  it('aceita somente longitude e latitude finitas dentro dos limites geográficos', () => {
+    expect(isValidStreetViewPoint([-43.1108, -22.9108])).toBe(true);
+    expect(isValidStreetViewPoint(null)).toBe(false);
+    expect(isValidStreetViewPoint([Number.NaN, -22.9])).toBe(false);
+    expect(isValidStreetViewPoint([-43.1, Number.POSITIVE_INFINITY])).toBe(false);
+    expect(isValidStreetViewPoint([181, 0])).toBe(false);
+    expect(isValidStreetViewPoint([0, 91])).toBe(false);
   });
 });
 

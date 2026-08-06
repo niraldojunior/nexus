@@ -14,12 +14,21 @@ export type GoogleMapInstance = {
   getZoom: () => number | undefined;
   panTo: (position: { lat: number; lng: number }) => void;
 };
+export type GoogleStreetViewPanoramaInstance = {
+  setVisible: (visible: boolean) => void;
+};
 export type GoogleMarkerInstance = {
   addListener: (eventName: string, listener: () => void) => void;
   setIcon: (icon: unknown) => void;
-  setMap: (map: GoogleMapInstance | null) => void;
+  setMap: (map: GoogleMapInstance | GoogleStreetViewPanoramaInstance | null) => void;
   setPosition: (position: { lat: number; lng: number }) => void;
   setZIndex: (zIndex: number) => void;
+};
+export type GoogleStreetViewPanoramaData = {
+  location?: {
+    latLng?: GoogleLatLng;
+    pano?: string;
+  };
 };
 export type GooglePolylineInstance = {
   addListener: (eventName: string, listener: () => void) => void;
@@ -57,9 +66,22 @@ type GoogleMapsApi = {
     Marker: new (options: Record<string, unknown>) => GoogleMarkerInstance;
     Polyline: new (options: Record<string, unknown>) => GooglePolylineInstance;
     InfoWindow: new (options: Record<string, unknown>) => GoogleInfoWindowInstance;
+    StreetViewService: new () => {
+      getPanorama: (
+        request: { location: { lat: number; lng: number }; radius: number },
+        callback: (data: GoogleStreetViewPanoramaData | null, status: string) => void,
+      ) => void;
+    };
+    StreetViewPanorama: new (
+      element: HTMLElement,
+      options: Record<string, unknown>,
+    ) => GoogleStreetViewPanoramaInstance;
     Size: new (width: number, height: number) => unknown;
     Point: new (x: number, y: number) => unknown;
     SymbolPath: { CIRCLE: unknown };
+    event: {
+      clearInstanceListeners: (instance: object) => void;
+    };
     places?: {
       AutocompleteService: new () => {
         getPlacePredictions: (
@@ -192,7 +214,10 @@ export async function fetchAddressPredictions(query: string): Promise<AddressPre
       (predictions) => resolve(predictions ?? []),
     );
   }).catch(() => []);
-  return result.map((prediction) => ({ placeId: prediction.place_id, description: prediction.description }));
+  return result.map((prediction) => ({
+    placeId: prediction.place_id,
+    description: prediction.description,
+  }));
 }
 
 let placesServiceDiv: HTMLDivElement | null = null;

@@ -11,6 +11,7 @@ import {
 import { createPortal } from 'react-dom';
 import {
   Activity,
+  Ban,
   Barcode,
   Boxes,
   Building,
@@ -18,6 +19,7 @@ import {
   ChevronLeft,
   Cpu,
   Crosshair,
+  Database,
   Factory,
   Hash,
   History,
@@ -61,6 +63,8 @@ import {
 import {
   mapScaleMeters,
   readGoogleScaleMeters,
+  zoomForScaleMeters,
+  DEVICE_LOCATION_SCALE_METERS,
   PASSIVE_INFRA_MAX_SCALE_METERS,
   MARKER_CLUSTER_MIN_SCALE_METERS,
 } from '../utils/mapScale';
@@ -90,9 +94,11 @@ import {
   HierarchySidebar,
   IconInfoRow,
   MapBaseLayerSelector,
+  MapLocateButton,
   PanelBarButton,
   StatusBadge,
   type AddressSearchError,
+  type DeviceLocation,
   type DropSimulation,
 } from './geo-tabs';
 import {
@@ -106,7 +112,6 @@ import {
 } from '../utils/dropSimulation';
 import { BottomSheet } from '../components/BottomSheet';
 import { StreetViewHero } from '../components/StreetViewHero';
-import { GoogleStreetViewButton } from '../components/GoogleStreetViewButton';
 import { streetViewTargetsForGeometry } from '../utils/streetViewTargets';
 import { resourceStreetViewMarker, siteStreetViewMarker } from '../utils/streetViewMarker';
 import type { StreetViewMarker } from '../utils/streetViewPanorama';
@@ -151,6 +156,10 @@ const SITE_MARKER_Z = 500;
 
 // A rota do cabo fica abaixo de todos os pins — é o fundo por onde a rede passa.
 const CABLE_ROUTE_Z = 10;
+
+// O ponto "minha localização" fica acima de tudo, inclusive do alfinete de seleção: é
+// referência do usuário no mundo, não do inventário.
+const USER_LOCATION_Z = 2500;
 
 // O alfinete de seleção fica acima de tudo: precisa vencer local e recurso, que já
 // crescem quando selecionados.
@@ -549,6 +558,7 @@ export default function GeoPage() {
                     onSelectNode={selectNode}
                     onAddressFound={onAddressFound}
                     onAddressError={onAddressError}
+                    onClear={onDeselect}
                   />
                 )
               }
@@ -565,9 +575,11 @@ export default function GeoPage() {
               onTab={setDetailTab}
               onOpenSite={(next) => openDetail(next, 'overview')}
               onOpenResource={goToResource}
-              // Voltar só fecha o painel — a seleção fica de pé, então a hierarquia
-              // reaparece já expandida e rolada até o nó (ver HierarchyTreeView), com
-              // o alfinete ainda no mapa. Fechar (X) desfaz a seleção por completo.
+              // Voltar (‹) só fecha o painel — a seleção fica de pé, então a
+              // hierarquia reaparece já expandida e rolada até o nó (ver
+              // HierarchyTreeView), com o alfinete ainda no mapa. Desfazer a seleção
+              // por completo é o X da barra de pesquisa (onClear) e, no mobile,
+              // arrastar a folha para baixo (onClose).
               onBack={() => setDetailOpen(false)}
               onClose={onDeselect}
               onChanged={async () => {
@@ -591,6 +603,7 @@ export default function GeoPage() {
                     onSelectNode={selectNode}
                     onAddressFound={onAddressFound}
                     onAddressError={onAddressError}
+                    onClear={onDeselect}
                   />
                 )
               }
@@ -613,6 +626,7 @@ export default function GeoPage() {
                     onSelectNode={selectNode}
                     onAddressFound={onAddressFound}
                     onAddressError={onAddressError}
+                    onClear={onDeselect}
                   />
                 )
               }
@@ -624,7 +638,9 @@ export default function GeoPage() {
               nodes={mapNodes}
               selectedNodeId={selectedNode?.id ?? null}
               draftAddress={draftAddress}
-              addressPoint={addressLookup?.source === 'search' ? addressLookup.address.coordinates : null}
+              addressPoint={
+                addressLookup?.source === 'search' ? addressLookup.address.coordinates : null
+              }
               dropSimulation={dropSimulation}
               focusPoint={focusPoint}
               balloon={balloon}
@@ -646,6 +662,7 @@ export default function GeoPage() {
                 onSelectNode={selectNode}
                 onAddressFound={onAddressFound}
                 onAddressError={onAddressError}
+                onClear={onDeselect}
               />
             ) : null}
 
@@ -685,7 +702,11 @@ export default function GeoPage() {
       ) : null}
 
       {addressError ? (
-        <Modal onClose={() => setAddressError(null)} title="Endereço não encontrado" eyebrow="Pesquisa">
+        <Modal
+          onClose={() => setAddressError(null)}
+          title="Endereço não encontrado"
+          eyebrow="Pesquisa"
+        >
           <div className="grid gap-3">
             <p className="text-[0.9rem] leading-snug text-app-text">
               Não foi possível localizar <strong>&ldquo;{addressError.term}&rdquo;</strong>.{' '}
@@ -749,6 +770,10 @@ export function GoogleMapPanel({
   const clustererRef = useRef<MarkerClusterer | null>(null);
   const draftMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const selectionMarkerRef = useRef<GoogleMarkerInstance | null>(null);
+  // Ponto azul "minha localização", cravado quando o usuário pede a geolocalização do
+  // dispositivo (ver MapLocateButton). Vive fora do fluxo de nós/seleção — não é
+  // inventário, é a posição real de quem está olhando o mapa.
+  const userLocationMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   // Três peças da simulação de drop: o traço sólido de base, o pontilhado que anda por
   // cima dele e a pílula com a metragem no meio do caminho.
   const dropBaseRef = useRef<GooglePolylineInstance | null>(null);
@@ -1271,6 +1296,48 @@ export function GoogleMapPanel({
   }, [balloon, balloonNode, mapsReady]);
 
   useEffect(() => () => infoWindowRef.current?.close(), []);
+  useEffect(
+    () => () => {
+      userLocationMarkerRef.current?.setMap(null);
+      userLocationMarkerRef.current = null;
+    },
+    [],
+  );
+
+  // Geolocalização do dispositivo (ver MapLocateButton): salta o mapa para a posição real
+  // do usuário com zoom de rua (~DEVICE_LOCATION_SCALE_METERS na barra de escala) e crava
+  // o ponto azul de "minha localização", distinto dos pins de inventário e do alfinete.
+  const handleDeviceLocate = useCallback(
+    ({ lat, lng }: DeviceLocation) => {
+      const maps = window.google?.maps;
+      if (!mapsReady || !mapRef.current || !maps) return;
+      mapRef.current.setZoom(zoomForScaleMeters(DEVICE_LOCATION_SCALE_METERS, lat));
+      mapRef.current.panTo({ lat, lng });
+      const dotIcon = {
+        path: maps.SymbolPath.CIRCLE,
+        fillColor: '#1a73e8',
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeWeight: 3,
+        scale: 7,
+      };
+      if (userLocationMarkerRef.current) {
+        userLocationMarkerRef.current.setPosition({ lat, lng });
+        userLocationMarkerRef.current.setIcon(dotIcon);
+        userLocationMarkerRef.current.setMap(mapRef.current);
+      } else {
+        userLocationMarkerRef.current = new maps.Marker({
+          map: mapRef.current,
+          position: { lat, lng },
+          title: 'Minha localização',
+          icon: dotIcon,
+          zIndex: USER_LOCATION_Z,
+          clickable: false,
+        });
+      }
+    },
+    [mapsReady],
+  );
 
   if (!GOOGLE_MAPS_KEY) {
     return <FallbackMap nodes={nodes} draftAddress={draftAddress} onSelectNode={onSelectNode} />;
@@ -1280,6 +1347,7 @@ export function GoogleMapPanel({
     <>
       <div ref={mapEl} className="absolute inset-0 h-full w-full" />
       <MapBaseLayerSelector value={baseLayerId} onChange={setBaseLayerId} />
+      <MapLocateButton onLocate={handleDeviceLocate} />
       {balloon ? createPortal(<MapBalloonCard balloon={balloon} />, balloonNode) : null}
     </>
   );
@@ -1424,11 +1492,17 @@ function GeoDetailPanel({
     target.kind === 'site' ? target.site : null,
   );
   const resourcePoint =
-    target.kind === 'resource' ? streetViewTargetsForGeometry(target.node.geometry)[0]?.point : undefined;
+    target.kind === 'resource'
+      ? streetViewTargetsForGeometry(target.node.geometry)[0]?.point
+      : undefined;
   const heroMarker: StreetViewMarker | null =
     target.kind === 'site'
       ? sitePoint
-        ? siteStreetViewMarker(target.site, specById.get(target.site.siteSpecificationId), sitePoint)
+        ? siteStreetViewMarker(
+            target.site,
+            specById.get(target.site.siteSpecificationId),
+            sitePoint,
+          )
         : null
       : resourcePoint
         ? resourceStreetViewMarker(target.node, resourcePoint)
@@ -1456,7 +1530,7 @@ function GeoDetailPanel({
     );
 
   const header = (
-    <div className="flex items-start gap-2 border-b border-app-border px-3 py-3">
+    <div className="flex items-start gap-2 border-y border-app-border px-3 py-3">
       <button
         type="button"
         onClick={onBack}
@@ -1473,41 +1547,29 @@ function GeoDetailPanel({
           {title}
         </h3>
       </div>
-      <button
-        type="button"
-        onClick={onClose}
-        className="shrink-0 rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
-        aria-label="Fechar detalhe"
-      >
-        <X className="h-4 w-4" />
-      </button>
     </div>
   );
 
   if (isMobile) {
     return (
-      <BottomSheet
-        header={
-          <>
-            <StreetViewHero marker={heroMarker} />
-            {header}
-          </>
-        }
-        onClose={onClose}
-      >
+      <BottomSheet onClose={onClose}>
+        {/* Foto, título e corpo rolam juntos dentro da folha (ver BottomSheet). */}
+        <StreetViewHero marker={heroMarker} />
+        {header}
         <div className="min-w-0 overflow-x-hidden px-4 py-3">{body}</div>
       </BottomSheet>
     );
   }
 
   return (
-    <div className="flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-x-hidden border-r border-app-border bg-app-panel shadow-dock">
-      {header}
-      {/* Cabeçalho (título + fechar) fixo; a foto de Street View e o corpo rolam
-          juntos, para o conteúdo usar toda a altura do painel — não só a metade
-          abaixo da foto. Mesmo padrão no painel de Endereço. */}
+    <div className="relative flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-x-hidden border-r border-app-border bg-app-panel shadow-dock">
+      {/* Barra de pesquisa ancorada no topo, flutuando sobre o conteúdo; a foto de
+          Street View, o título e o corpo rolam por baixo dela — estilo Google Maps.
+          Mesmo padrão no painel de Endereço. */}
+      {searchBar ? <div className="absolute inset-x-0 top-0 z-30">{searchBar}</div> : null}
       <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
-        <StreetViewHero marker={heroMarker} overlay={searchBar} />
+        <StreetViewHero marker={heroMarker} />
+        {header}
         <div className="px-3 py-3">{body}</div>
       </div>
     </div>
@@ -1572,8 +1634,7 @@ function SiteDetailBody({
   // `_origin.extra` é somente-leitura, gravado por cargas de migração (ver
   // scripts/estacoes_carregar.mjs) — nunca editável pela UI (C5, service.ts).
   const siteOriginExtra = site.characteristic.find((c) => c.name === '_origin.extra')?.value as
-    | { sistemaOrigem?: string }
-    | undefined;
+    { sistemaOrigem?: string } | undefined;
 
   return (
     <>
@@ -1606,20 +1667,15 @@ function SiteDetailBody({
       {tab === 'overview' ? (
         <div className="grid gap-1">
           <IconInfoRow icon={Activity} hint="Status" value={<StatusBadge status={site.status} />} />
-          <IconInfoRow icon={MapPin} hint="Endereço" value={address ? formatAddress(address) : 'Sem endereço'} />
+          <IconInfoRow
+            icon={MapPin}
+            hint="Endereço"
+            value={address ? formatAddress(address) : 'Sem endereço'}
+          />
           <IconInfoRow
             icon={Crosshair}
             hint="Localização"
-            value={
-              siteMarker ? (
-                <span className="inline-flex max-w-full flex-wrap items-center gap-1.5">
-                  <CoordinateStreetView marker={siteMarker} />
-                  <GoogleStreetViewButton marker={siteMarker} />
-                </span>
-              ) : (
-                'Não localizado'
-              )
-            }
+            value={siteMarker ? <CoordinateStreetView marker={siteMarker} /> : 'Não localizado'}
           />
           <IconInfoRow
             icon={Building}
@@ -1632,7 +1688,11 @@ function SiteDetailBody({
           />
           <IconInfoRow icon={Hash} hint="ID" value={site.id} mono />
           {siteOriginExtra?.sistemaOrigem ? (
-            <IconInfoRow icon={InfoIcon} hint="Sistema de origem" value={siteOriginExtra.sistemaOrigem} />
+            <IconInfoRow
+              icon={InfoIcon}
+              hint="Sistema de origem"
+              value={siteOriginExtra.sistemaOrigem}
+            />
           ) : null}
         </div>
       ) : null}
@@ -1781,7 +1841,11 @@ function SiteDetailBody({
       ) : null}
 
       {tab === 'resources' ? (
-        <SiteResourcesTab resources={resources} loading={childrenLoading} onOpenResource={onOpenResource} />
+        <SiteResourcesTab
+          resources={resources}
+          loading={childrenLoading}
+          onOpenResource={onOpenResource}
+        />
       ) : null}
     </>
   );
@@ -1828,30 +1892,42 @@ function ResourceDetailBody({
 
       {tab === 'overview' ? (
         <div className="grid gap-1">
-          <IconInfoRow icon={Activity} hint="Status" value={<StatusBadge status={resourceStatus} />} />
-          <IconInfoRow icon={MapPin} hint="Endereço" value={node.detail?.address ?? 'Sem endereço'} />
-          {streetViewTargets.map((target) => {
-            const marker = resourceStreetViewMarker(node, target.point);
-            return (
-              <IconInfoRow
-                key={`${target.label ?? 'ponto'}:${target.point.join(',')}`}
-                icon={Crosshair}
-                hint={target.label ? `Localização · ${target.label}` : 'Localização'}
-                value={
-                  <span className="inline-flex max-w-full flex-wrap items-center gap-1.5">
-                    <CoordinateStreetView marker={marker} />
-                    <GoogleStreetViewButton marker={marker} />
-                  </span>
-                }
-              />
-            );
-          })}
-          {node.detail?.model ? <IconInfoRow icon={Cpu} hint="Modelo" value={node.detail.model} /> : null}
+          <IconInfoRow
+            icon={Activity}
+            hint="Status"
+            value={<StatusBadge status={resourceStatus} />}
+          />
+          {node.detail?.substatus ? (
+            <IconInfoRow icon={Ban} hint="Substatus" value={node.detail.substatus} />
+          ) : null}
+          <IconInfoRow
+            icon={MapPin}
+            hint="Endereço"
+            value={node.detail?.address ?? 'Sem endereço'}
+          />
+          {streetViewTargets.map((target) => (
+            <IconInfoRow
+              key={`${target.label ?? 'ponto'}:${target.point.join(',')}`}
+              icon={Crosshair}
+              hint={target.label ? `Localização · ${target.label}` : 'Localização'}
+              value={<CoordinateStreetView marker={resourceStreetViewMarker(node, target.point)} />}
+            />
+          ))}
+          {node.detail?.model ? (
+            <IconInfoRow icon={Cpu} hint="Modelo" value={node.detail.model} />
+          ) : null}
           {node.detail?.manufacturer ? (
             <IconInfoRow icon={Factory} hint="Fabricante" value={node.detail.manufacturer} />
           ) : null}
           {node.detail?.serialNumber ? (
             <IconInfoRow icon={Barcode} hint="Nº de série" value={node.detail.serialNumber} mono />
+          ) : null}
+          {node.detail?.sourceSystem ? (
+            <IconInfoRow
+              icon={Database}
+              hint="Sistema de origem"
+              value={node.detail.sourceSystem}
+            />
           ) : null}
         </div>
       ) : null}
@@ -1880,7 +1956,10 @@ function ResourceDetailBody({
                     </span>
                     <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
                       {[
-                        resourceIconFor({ resourceType: child.resourceType ?? '', status: child.status }).label,
+                        resourceIconFor({
+                          resourceType: child.resourceType ?? '',
+                          status: child.status,
+                        }).label,
                         child.detail?.model,
                         child.detail?.serialNumber,
                       ]
@@ -1982,7 +2061,10 @@ function SiteResourcesTab({
           </h4>
           <div className="grid gap-2">
             {items.map((resource) => {
-              const icon = resourceIconFor({ resourceType: resource.resourceType ?? '', status: resource.status });
+              const icon = resourceIconFor({
+                resourceType: resource.resourceType ?? '',
+                status: resource.status,
+              });
               return (
                 <button
                   key={resource.id}
@@ -1991,7 +2073,10 @@ function SiteResourcesTab({
                   className="flex w-full min-w-0 items-start gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
                 >
                   <ResourceIcon
-                    resource={{ resourceType: resource.resourceType ?? '', status: resource.status }}
+                    resource={{
+                      resourceType: resource.resourceType ?? '',
+                      status: resource.status,
+                    }}
                     variant="badge"
                     size={26}
                   />
@@ -2256,9 +2341,11 @@ function useSitePlace(site: GeoSite | null): {
 
 // Conteúdo do local: os mesmos filhos diretos que a árvore mostraria, separados
 // em sub-locais e recursos para as duas abas do modal.
-function useSiteChildren(
-  siteId: string,
-): { subSites: GeoTreeNode[]; resources: GeoTreeNode[]; loading: boolean } {
+function useSiteChildren(siteId: string): {
+  subSites: GeoTreeNode[];
+  resources: GeoTreeNode[];
+  loading: boolean;
+} {
   const [nodes, setNodes] = useState<GeoTreeNode[]>([]);
   const [loading, setLoading] = useState(true);
 

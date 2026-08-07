@@ -20,6 +20,10 @@ export type DropSimulation = {
   approximate: boolean;
 };
 
+// Traçado resolvido de uma CDO — a parte da simulação que custa uma chamada à Routes
+// API (ou o segmento direto, quando não há rota a pé). É o que fica em cache por CDO.
+type DropResolution = { path: LngLat[]; distanceMeters: number; approximate: boolean };
+
 export type ViabilityTabProps = {
   origin: LngLat;
   onSimulate: (simulation: DropSimulation | null) => void;
@@ -51,64 +55,85 @@ export function ViabilityTab({ origin, onSimulate }: ViabilityTabProps) {
   const { status, candidates, error } = useAddressViability(origin, true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
-  // Traçado já resolvido por CDO — reclicar não paga outra chamada à Routes API.
-  const pathCache = useRef<Map<string, LngLat[]>>(new Map());
+  // Traçado já resolvido por CDO — reclicar (ou o double-mount do StrictMode) não paga
+  // outra chamada à Routes API. Guarda a *promessa* do traçado, não só o resultado: as
+  // duas montagens do StrictMode disparam a auto-seleção antes de a primeira resolver,
+  // e compartilhar a promessa em voo é o que mantém uma única chamada à API.
+  const resolutionCache = useRef<Map<string, Promise<DropResolution>>>(new Map());
 
   // A simulação pertence ao endereço que a gerou: sair da aba, trocar de endereço ou
   // fechar o painel tem de apagá-la do mapa, senão sobra um drop pendurado num ponto
-  // que não está mais selecionado. O callback vai por ref para a limpeza rodar só na
-  // desmontagem de verdade, mesmo que o pai troque a identidade da função.
+  // que não está mais selecionado. `mountedRef` impede que um traçado que resolve
+  // depois da desmontagem *de verdade* ressuscite o drop; no double-mount do StrictMode
+  // ele volta a true a tempo de a simulação ser redesenhada. O callback vai por ref
+  // para a limpeza rodar mesmo que o pai troque a identidade da função.
   const onSimulateRef = useRef(onSimulate);
   onSimulateRef.current = onSimulate;
-  useEffect(() => () => onSimulateRef.current(null), []);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      onSimulateRef.current(null);
+    };
+  }, []);
 
   const select = useCallback(
-    async (candidate: ViabilityCandidate) => {
+    (candidate: ViabilityCandidate) => {
       const id = candidate.node.id;
       setSelectedId(id);
 
-      const cached = pathCache.current.get(id);
-      if (cached) {
-        onSimulate({
-          candidateId: id,
-          origin,
-          path: cached,
-          distanceMeters: candidate.distanceMeters,
-          approximate: candidate.mode === 'straight',
-        });
-        return;
+      let resolution = resolutionCache.current.get(id);
+      if (!resolution) {
+        if (candidate.mode === 'straight') {
+          // Sem rota a pé conhecida não vale bater na API — o segmento direto é a
+          // representação honesta do que se sabe.
+          resolution = Promise.resolve<DropResolution>({
+            path: [origin, candidate.point],
+            distanceMeters: candidate.distanceMeters,
+            approximate: true,
+          });
+        } else {
+          setPendingId(id);
+          resolution = (async (): Promise<DropResolution> => {
+            const route = await computeWalkRoute(origin, candidate.point);
+            return {
+              path: route?.path ?? [origin, candidate.point],
+              distanceMeters: route?.distanceMeters ?? candidate.distanceMeters,
+              approximate: !route,
+            };
+          })();
+        }
+        resolutionCache.current.set(id, resolution);
       }
 
-      // Sem rota a pé conhecida não vale bater na API de novo — o segmento direto é a
-      // representação honesta do que se sabe.
-      if (candidate.mode === 'straight') {
-        const path: LngLat[] = [origin, candidate.point];
-        pathCache.current.set(id, path);
-        onSimulate({
-          candidateId: id,
-          origin,
-          path,
-          distanceMeters: candidate.distanceMeters,
-          approximate: true,
-        });
-        return;
-      }
-
-      setPendingId(id);
-      const route = await computeWalkRoute(origin, candidate.point);
-      setPendingId((current) => (current === id ? null : current));
-      const path = route?.path ?? [origin, candidate.point];
-      pathCache.current.set(id, path);
-      onSimulate({
-        candidateId: id,
-        origin,
-        path,
-        distanceMeters: route?.distanceMeters ?? candidate.distanceMeters,
-        approximate: !route,
+      // O estabelecimento do drop vai por microtask (sempre, mesmo no caso síncrono da
+      // linha reta): assim ele pousa *depois* da limpeza on-unmount do double-mount do
+      // StrictMode, redesenhando a simulação em vez de deixá-la apagada.
+      void resolution.then((resolved) => {
+        if (!mountedRef.current) return;
+        setPendingId((current) => (current === id ? null : current));
+        onSimulateRef.current({ candidateId: id, origin, ...resolved });
       });
     },
-    [onSimulate, origin],
+    [origin],
   );
+
+  // Abrir a aba já calcula a viabilidade e, assim que a lista chega, seleciona a
+  // primeira CDO (a mais perto a pé) — o drop nasce desenhado e a rota já animando, sem
+  // exigir clique. Continua respeitando a escolha do usuário: se ele trocou de CDO, é
+  // essa que o efeito reestabelece a cada montagem. Refs em vez de deps para não
+  // refazer a seleção a cada re-render do pai.
+  const selectRef = useRef(select);
+  selectRef.current = select;
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  useEffect(() => {
+    if (status !== 'ready' || !candidates.length) return;
+    const target =
+      candidates.find((candidate) => candidate.node.id === selectedIdRef.current) ?? candidates[0];
+    void selectRef.current(target);
+  }, [status, candidates]);
 
   if (status === 'loading' || status === 'idle') {
     return (

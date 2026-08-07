@@ -42,6 +42,22 @@ export function mapScaleMeters(zoom: number, latDeg: number): number {
   return largestNiceValue(metersPerPixel(zoom, latDeg) * SCALE_BAR_MAX_PX);
 }
 
+// Escala-alvo ao saltar para a localização do dispositivo: ~50 m enquadra o quarteirão
+// ao redor do usuário (ver zoomForScaleMeters e MapLocateButton).
+export const DEVICE_LOCATION_SCALE_METERS = 50;
+
+// Inverso de mapScaleMeters, sem o arredondamento "nice value": o zoom (fracionário, que o
+// Google Maps aceita) para o qual a barra de escala representaria ~`meters` metros na
+// latitude dada. Usado para enquadrar a localização do dispositivo num raio de rua.
+export function zoomForScaleMeters(meters: number, latDeg: number): number {
+  const metersPerPixelTarget = meters / SCALE_BAR_MAX_PX;
+  const raw = Math.log2(
+    (EARTH_METERS_PER_PIXEL_AT_ZOOM_0 * Math.cos((latDeg * Math.PI) / 180)) / metersPerPixelTarget,
+  );
+  // Limita à faixa útil do Google Maps (0–22); a 50 m cai perto de 17–18.
+  return Math.min(21, Math.max(1, raw));
+}
+
 // Lê o valor da barra de escala nativa do Google (ex.: "100 m", "1 km") direto do DOM.
 // É exatamente o número que o usuário vê no canto do mapa e sobre o qual as regras de
 // escala (200 m / 100 m) são definidas — replicar o cálculo do Google por zoom+px erra por

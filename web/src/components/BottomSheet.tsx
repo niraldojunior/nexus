@@ -15,15 +15,15 @@ const SNAPS: Snap[] = ['peek', 'mid', 'full'];
 /**
  * Painel inferior arrastável (mobile), com pontos de encaixe peek/mid/full.
  * Arrastar a alça abaixo do peek fecha o painel. Sem véu escuro sobre o mapa —
- * o Google Maps também não escurece o mapa ao abrir o detalhe.
+ * o Google Maps também não escurece o mapa ao abrir o detalhe. Todo o conteúdo
+ * (foto, título e corpo) mora no `children` e rola junto — a folha não fixa nada
+ * no topo, para o `mid` continuar mostrando o que importa.
  */
 export function BottomSheet({
-  header,
   children,
   onClose,
   initialSnap = 'mid',
 }: {
-  header?: ReactNode;
   children: ReactNode;
   onClose: () => void;
   initialSnap?: Snap;
@@ -85,7 +85,6 @@ export function BottomSheet({
       >
         <span className="h-1.5 w-10 rounded-full bg-app-border" />
       </div>
-      {header}
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
     </div>
   );

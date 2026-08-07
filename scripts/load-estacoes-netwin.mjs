@@ -40,8 +40,7 @@ const BASE = process.env.NEXUS_API || 'http://127.0.0.1:4001';
 const TOKEN = process.env.NEXUS_TOKEN || 'change-me';
 const SEED_TAG = 'estacoes-netwin';
 
-const DEFAULT_CSV =
-  'C:/Users/VT158145/OneDrive - V.tal/Estudos/NEXUS/estacoes_niteroi.csv';
+const DEFAULT_CSV = 'legacy-data/estacoes_niteroi.csv';
 
 const fileArgIdx = process.argv.indexOf('--file');
 const CSV_PATH = fileArgIdx >= 0 ? process.argv[fileArgIdx + 1] : DEFAULT_CSV;

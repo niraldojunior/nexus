@@ -14,6 +14,7 @@ export type GoogleMapInstance = {
   getBounds: () => GoogleMapBounds | undefined;
   getZoom: () => number | undefined;
   panTo: (position: { lat: number; lng: number }) => void;
+  setZoom: (zoom: number) => void;
   setMapTypeId: (mapTypeId: GoogleMapTypeId) => void;
 };
 export type GoogleStreetViewPanoramaInstance = {
@@ -127,8 +128,7 @@ export type DraftAddress = {
 // Resultado tipado da geocodificação: em vez de engolir a falha num `null`, carrega o
 // status devolvido pelo Google para o chamador poder mostrar o erro ao usuário.
 export type GeocodeOutcome =
-  | { ok: true; address: DraftAddress }
-  | { ok: false; status: string; message: string };
+  { ok: true; address: DraftAddress } | { ok: false; status: string; message: string };
 
 const GEOCODE_ERROR_MESSAGES: Record<string, string> = {
   ZERO_RESULTS: 'Nenhum endereço encontrado para esta pesquisa.',
@@ -325,10 +325,16 @@ export async function fetchPlaceDetails(placeId: string): Promise<DraftAddress |
   const service = new places.PlacesService(placesServiceDiv);
   const place = await new Promise<GooglePlace | null>((resolve) => {
     service.getDetails(
-      { placeId, fields: ['address_components', 'formatted_address', 'geometry', 'name', 'place_id'] },
+      {
+        placeId,
+        fields: ['address_components', 'formatted_address', 'geometry', 'name', 'place_id'],
+      },
       (result, status) => resolve(status === 'OK' ? result : null),
     );
   }).catch(() => null);
   if (!place?.geometry?.location) return null;
-  return addressFromGooglePlace({ ...place, place_id: place.place_id ?? placeId } as GooglePlaceWithGeometry);
+  return addressFromGooglePlace({
+    ...place,
+    place_id: place.place_id ?? placeId,
+  } as GooglePlaceWithGeometry);
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ImageOff } from 'lucide-react';
 import { fetchStreetViewAvailability, streetViewStaticUrl } from '../utils/streetViewStatic';
 import { isValidStreetViewPoint } from '../utils/streetViewTargets';
@@ -11,17 +11,11 @@ const HERO_HEIGHT = 416;
 /**
  * Foto de Street View no topo de um painel de detalhe (Site, Recurso ou Endereço) —
  * estilo Google Maps. Altura fixa mesmo sem foto (loading, sem cobertura ou API
- * desabilitada), para a barra de pesquisa (`overlay`) não pular de lugar ao trocar
- * de item. Clicar na foto abre o mesmo modal interativo usado pelo botão de
- * Streetview dos painéis (ver GoogleStreetViewButton).
+ * desabilitada), para a foto não pular de lugar sob a barra de pesquisa ancorada
+ * ao trocar de item. Clicar na foto abre o modal interativo de Street View — é a
+ * única porta para o panorama nos painéis (ver GoogleStreetViewModal).
  */
-export function StreetViewHero({
-  marker,
-  overlay,
-}: {
-  marker: StreetViewMarker | null;
-  overlay?: ReactNode;
-}) {
+export function StreetViewHero({ marker }: { marker: StreetViewMarker | null }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const requestTokenRef = useRef(0);
@@ -57,7 +51,6 @@ export function StreetViewHero({
           </div>
         )}
       </div>
-      {overlay ? <div className="absolute inset-x-0 top-0 z-20">{overlay}</div> : null}
       {modalOpen && marker ? (
         <GoogleStreetViewModal marker={marker} onClose={() => setModalOpen(false)} />
       ) : null}

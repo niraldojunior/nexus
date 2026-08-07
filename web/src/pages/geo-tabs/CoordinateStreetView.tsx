@@ -1,8 +1,8 @@
 import type { StreetViewMarker } from '../../utils/streetViewPanorama';
 
 // Campo "Localização" dos painéis de detalhe (Site, Recurso, Endereço): coordenada
-// `[lng, lat]` com 5 casas. O botão de Street View mora na barra de ações abaixo
-// do título (ver PanelBarButton), não mais aqui.
+// `[lng, lat]` com 5 casas. A porta para o Street View é a própria foto no topo do
+// painel (ver StreetViewHero), não mais um botão aqui no campo.
 export function CoordinateStreetView({ marker }: { marker: StreetViewMarker }) {
   const { point } = marker;
   return (

@@ -2,7 +2,7 @@
 /**
  * Carga de recursos físicos (planta externa) do Netwin no inventário do Nexus.
  *
- * Layout padrão: `scripts/recursos_niteroi.csv` — export do Netwin, `;`,
+ * Layout padrão: `legacy-data/recursos_niteroi.csv` — export do Netwin, `;`,
  * **ISO-8859-1** (atenção: o export de estações é UTF-8; este é latin-1).
  *
  * Estrutura da origem (deduzida e validada contra os 24.598 registros):
@@ -42,9 +42,27 @@
  * via **não publica eventos TMF688** (C7) — é carga inicial de migração, não
  * mudança operacional.
  *
+ * Status/substatus (STATUS + ds_estado_controle da origem — ver resolveStatus):
+ *   · "Em Serviço" sem controle → active (Ativo), sem substatus;
+ *   · qualquer outro caso       → suspended (Bloqueado), com substatus recebendo
+ *     o ds_estado_controle (vazio quando a origem não traz nada).
+ *   O substatus é gravado como characteristic de topo (C1) e é o que o painel
+ *   do Geo exibe.
+ *
+ * Recursos sem estação: linhas cuja ESTACAO veio vazia (o conversor as rotula
+ *   "SEM ESTAÇÃO (SEM)") NÃO são descartadas. O site sentinela é criado sob
+ *   demanda e vira o nó agrupador na árvore; splitters órfãos (sem caixa) entram
+ *   como recurso avulso, com Location própria. Nenhum recurso fica de fora.
+ *
+ * TRUNCATE: por padrão a carga zera as tabelas de recurso antes de gravar
+ *   (tmf_physical_resource, tmf_logical_resource e as duas de relationship —
+ *   não toca no catálogo de specs nem nas tabelas de Geo). Use --no-truncate
+ *   para a carga incremental idempotente antiga (pela chave natural em _origin).
+ *
  * Uso:
  *   node scripts/load-recursos-netwin.mjs                  # dry-run (padrão)
- *   node scripts/load-recursos-netwin.mjs --apply          # grava
+ *   node scripts/load-recursos-netwin.mjs --apply          # zera + grava
+ *   node scripts/load-recursos-netwin.mjs --apply --no-truncate   # incremental
  *   node scripts/load-recursos-netwin.mjs --file outro.csv --apply
  */
 
@@ -62,23 +80,81 @@ const argOf = (flag, fallback) => {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback;
 };
 
-const CSV_PATH = argOf('--file', 'scripts/recursos_niteroi.csv');
+const CSV_PATH = argOf('--file', 'legacy-data/recursos_niteroi.csv');
 const APPLY = has('--apply');
+// Toda carga zera as tabelas de recurso antes de gravar (autorizado pelo
+// usuário) — é o comportamento padrão. `--no-truncate` desativa para uma carga
+// incremental idempotente (o modo antigo, pela chave natural em _origin.id).
+const TRUNCATE = !has('--no-truncate');
 const DB_URL = process.env.DATABASE_URL_DEV ?? process.env.DATABASE_URL;
 
 const MIGRATED_AT = new Date().toISOString();
 const MIGRATED_BY = 'load-recursos-netwin';
 const SEED_TAG = 'recursos-netwin';
 
+// Nó agrupador para recursos cuja ESTACAO veio vazia na origem (o conversor os
+// rotula "SEM ESTAÇÃO (SEM)"). O site é criado sob demanda para que NENHUM
+// recurso deixe de ser carregado por falta de estação. `siglaOf` extrai "SEM".
+const ORPHAN_SIGLA = 'SEM';
+const ORPHAN_SITE_NAME = 'SEM ESTAÇÃO (SEM)';
+
 // Tipos de caixa (agrupadores). Tudo que não é SPLITTER é caixa.
 const BOX_TYPES = new Set(['CDOE', 'CDOI', 'CEO', 'CEOS', 'Indefinido']);
 
-// STATUS do Netwin → status canônico do inventário.
-const STATUS_MAP = {
-  'Em Serviço': 'active',
-  'Fora de Serviço': 'inactive',
-  Bloqueado: 'suspended',
-};
+// Tabelas de recurso zeradas antes de cada carga (autorizado pelo usuário). NÃO
+// inclui o catálogo (tmf_resource_specification) — é compartilhado e a carga o
+// reusa — nem as tabelas de Geo (Location/Address), que são responsabilidade do
+// truncate-geo-sites.mjs. As quatro entram num único TRUNCATE: o Postgres
+// resolve as FKs entre elas (logical→physical, relationship→physical) e nenhuma
+// outra tabela referencia recurso por FK, então não precisa de CASCADE.
+const RESOURCE_TABLES = [
+  'tmf_resource_relationship',
+  'tmf_resource_relationship_generic',
+  'tmf_logical_resource',
+  'tmf_physical_resource',
+];
+
+// ------------------------------------------------------------ status/substatus
+
+// Normaliza SÓ para comparar o STATUS de origem: tira acento, baixa a caixa e
+// colapsa espaço. Robusto a "Em Serviço" / "Em servico" / bytes mal decodados —
+// o \ufffd (caractere de substituição de um decode ruim) é descartado antes.
+const foldStatus = (raw) =>
+  String(raw ?? '')
+    .replace(/\ufffd/g, '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+// Limpa um texto que será GRAVADO (substatus e afins) preservando acento:
+// descarta o \ufffd de decode ruim, troca controles (que quebrariam JSON/UI) por
+// espaço e colapsa espaços. Devolve '' quando não sobra nada.
+const cleanText = (raw) =>
+  String(raw ?? '')
+    .replace(/\ufffd/g, '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+// Regra de status/substatus a partir de STATUS + ds_estado_controle do Netwin
+// (o campo que o usuário chama de "ds_status_controle" — é o único de controle):
+//   · "Em Serviço" sem controle            → active (Ativo), sem substatus
+//   · "Em Serviço" com controle            → suspended (Bloqueado) + substatus
+//   · "Fora de Serviço" (com/sem controle) → suspended (Bloqueado), substatus = controle
+//   · "Bloqueado"      (com/sem controle)  → suspended (Bloqueado), substatus = controle
+// Ou seja: só "Em Serviço" limpo fica Ativo; todo o resto é Bloqueado, e o
+// substatus recebe o ds_estado_controle (vazio quando a origem não traz nada).
+// 'suspended' é o status canônico do inventário rotulado "Suspenso"/"Bloqueado".
+function resolveStatus(statusRaw, controleRaw) {
+  const substatus = cleanText(controleRaw);
+  if (foldStatus(statusRaw) === 'em servico' && !substatus) {
+    return { status: 'active', substatus: '' };
+  }
+  return { status: 'suspended', substatus };
+}
 
 // O endereço do Netwin vem sem acento ("NITEROI"). Sem canonizar, a árvore de
 // Locais abre um município "Niteroi" ao lado do "Niterói" das estações e a
@@ -94,8 +170,11 @@ const canonCity = (raw) => {
 };
 
 // Limites de sanidade para o RJ — pega coordenada que o parser não recuperou.
-const LAT_RANGE = [-23.5, -20.5];
-const LNG_RANGE = [-44.5, -42.5];
+// Caixa do estado inteiro (extração RJ real: LAT -23.22..-21.70, LNG -44.72..-41.28).
+// A faixa antiga [-23.5,-20.5]/[-44.5,-42.5] era calibrada para Niterói e descartava
+// ~12% dos pontos numa carga estadual (Região dos Lagos, Norte Fluminense, oeste).
+const LAT_RANGE = [-23.5, -20.7];
+const LNG_RANGE = [-45.0, -40.9];
 
 // --------------------------------------------------------------- parsing -----
 
@@ -181,6 +260,16 @@ function readCsv(path) {
 // carregado por load-estacoes-netwin.mjs, cujo nome é "Fonseca (FSA)".
 const siglaOf = (estacao) => (String(estacao ?? '').match(/\(([^)]+)\)\s*$/) || [])[1] ?? null;
 
+// Sigla PRIMÁRIA para vincular o recurso. ~0,04% das linhas são caixas entre
+// duas estações (CEO de enlace), com a estação-par embutida: "COLEGIO,IRAJA I
+// (COL,IRJ)". Usa-se a 1ª sigla ("COL") — o par completo fica em
+// _origin.extra.estacao. Sem isto essas linhas abortariam por "estação não
+// encontrada". Nomes de site na base não têm vírgula, então siglaOf(site) é neutro.
+const primarySigla = (estacao) => {
+  const s = siglaOf(estacao);
+  return s ? s.split(',')[0].trim() : s;
+};
+
 // ----------------------------------------------------------------- model -----
 
 function buildModel(rows) {
@@ -190,7 +279,7 @@ function buildModel(rows) {
 
   for (const [i, row] of rows.entries()) {
     const linha = i + 2; // +1 cabeçalho, +1 base-1
-    const sigla = siglaOf(row.ESTACAO);
+    const sigla = primarySigla(row.ESTACAO);
     const lat = parseCoord(row.LAT);
     const lng = parseCoord(row.LONG);
     const tipo = row.Tipo2 || 'Indefinido';
@@ -307,9 +396,12 @@ async function bulkInsert(client, table, columns, rows, { onConflict = '' } = {}
 // tem `place` próprio (a Location do ponto), então sem esta characteristic nada
 // liga o CDOE à sua estação — e é ela que a árvore de navegação do Geo expande.
 // A coluna `serving_site_id` abaixo é o espelho indexado dessa verdade.
-const originChars = (naturalKey, entity, extra, servingSiteId) => [
+// `substatus` é extensão V.tal (C1) — entra como characteristic de topo (sem
+// grupo), só quando há valor; é o que o painel do Geo lê (via tree-service).
+const originChars = (naturalKey, entity, extra, servingSiteId, substatus) => [
   { name: 'seed', value: SEED_TAG, valueType: 'string' },
   ...(servingSiteId ? [{ name: 'servingSite', value: servingSiteId, valueType: 'string' }] : []),
+  ...(substatus ? [{ name: 'substatus', value: substatus, valueType: 'string' }] : []),
   { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
   { group: '_origin', name: 'id', value: naturalKey, valueType: 'string' },
   { group: '_origin', name: 'entity', value: entity, valueType: 'string' },
@@ -335,7 +427,7 @@ async function main() {
     if (problems.length > 10) console.log(`    ... +${problems.length - 10}`);
   }
   if (orphans.length) {
-    console.log(`\n⚠ ${orphans.length} splitter(s) sem caixa correspondente — não serão carregados.`);
+    console.log(`\nℹ ${orphans.length} splitter(s) sem caixa correspondente — carregados como recurso avulso (Location própria, sob o nó da estação/agrupador).`);
     for (const o of orphans.slice(0, 5)) console.log('   ', o.boxKey, '/', o.nome);
   }
 
@@ -358,11 +450,25 @@ async function main() {
     }
 
     const siglas = [...new Set(boxes.map((b) => b.sigla))];
-    const semSite = siglas.filter((s) => !siteBySigla.has(s));
+    // A sigla sentinela (recursos sem estação de origem) não precisa existir de
+    // antemão: o nó agrupador é criado sob demanda logo abaixo.
+    const semSite = siglas.filter((s) => s !== ORPHAN_SIGLA && !siteBySigla.has(s));
     if (semSite.length) {
       throw new Error(
         `estação não encontrada na base para a(s) sigla(s): ${semSite.join(', ')} — rode load-estacoes-netwin.mjs antes`,
       );
+    }
+
+    // Nó agrupador "SEM ESTAÇÃO (SEM)": criado sob demanda quando algum recurso
+    // (caixa ou splitter órfão) veio sem estação — para nenhum ficar de fora.
+    const usaNoOrfao =
+      boxes.some((b) => b.sigla === ORPHAN_SIGLA) ||
+      orphans.some((s) => s.sigla === ORPHAN_SIGLA);
+    let orphanSiteId = siteBySigla.get(ORPHAN_SIGLA) ?? null;
+    const criarNoOrfao = usaNoOrfao && !orphanSiteId;
+    if (criarNoOrfao) {
+      orphanSiteId = randomUUID();
+      siteBySigla.set(ORPHAN_SIGLA, orphanSiteId);
     }
 
     const { rows: specRows } = await client.query(
@@ -370,20 +476,24 @@ async function main() {
     );
     const specByName = new Map(specRows.map((r) => [r.name, r.id]));
 
-    // Índice do que já foi carregado, pela chave natural em _origin.id.
-    const { rows: existingRows } = await client.query(
-      `SELECT id, characteristics FROM tmf_physical_resource WHERE characteristics LIKE '%"Netwin"%'`,
-    );
+    // Índice do que já foi carregado, pela chave natural em _origin.id. Com
+    // TRUNCATE ligado (padrão) a base de recursos é zerada antes de gravar, então
+    // tudo conta como novo e nem consultamos o estado atual — o índice fica vazio.
     const idByNaturalKey = new Map();
-    for (const r of existingRows) {
-      let chars;
-      try {
-        chars = JSON.parse(r.characteristics || '[]');
-      } catch {
-        continue;
+    if (!TRUNCATE) {
+      const { rows: existingRows } = await client.query(
+        `SELECT id, characteristics FROM tmf_physical_resource WHERE characteristics LIKE '%"Netwin"%'`,
+      );
+      for (const r of existingRows) {
+        let chars;
+        try {
+          chars = JSON.parse(r.characteristics || '[]');
+        } catch {
+          continue;
+        }
+        const k = chars.find((c) => c.group === '_origin' && c.name === 'id')?.value;
+        if (typeof k === 'string') idByNaturalKey.set(k, r.id);
       }
-      const k = chars.find((c) => c.group === '_origin' && c.name === 'id')?.value;
-      if (typeof k === 'string') idByNaturalKey.set(k, r.id);
     }
 
     const novasCaixas = boxes.filter((b) => !idByNaturalKey.has(b.key));
@@ -391,16 +501,28 @@ async function main() {
     const novosSplitters = splittersValidos.filter(
       (s) => !idByNaturalKey.has(`${s.boxKey}|${s.nome}`),
     );
+    // Splitters órfãos (sem caixa) — não são descartados: carregam avulsos.
+    const novosOrfaos = orphans.filter(
+      (s) => !idByNaturalKey.has(`${s.boxKey}|${s.nome}`),
+    );
 
     console.log('\nEstado da base:');
     console.log(`  estações resolvidas : ${siglas.length}/${siglas.length}`);
     console.log(`  já carregados       : ${idByNaturalKey.size}`);
+    if (TRUNCATE) {
+      console.log(
+        `\n⚠ TRUNCATE ligado (padrão): as tabelas de recurso serão zeradas antes da carga —\n` +
+        `   ${RESOURCE_TABLES.join(', ')}.\n` +
+        `   (catálogo de specs e tabelas de Geo não são tocados; use --no-truncate para carga incremental.)`,
+      );
+    }
     console.log('\nA criar:');
+    console.log(`  GeographicSite (nó órfão): ${criarNoOrfao ? 1 : 0}`);
     console.log(`  ResourceSpecification : ${[...new Set(boxes.map((b) => b.tipo)), 'Splitter'].filter((n) => !specByName.has(n)).length}`);
-    console.log(`  GeographicLocation    : ${novasCaixas.length}`);
+    console.log(`  GeographicLocation    : ${novasCaixas.length + novosOrfaos.length}  (${novasCaixas.length} caixas + ${novosOrfaos.length} splitters órfãos)`);
     console.log(`  GeographicAddress     : ${novasCaixas.filter((b) => b.endereco).length}`);
-    console.log(`  PhysicalResource      : ${novasCaixas.length + novosSplitters.length}` +
-      ` (${novasCaixas.length} caixas + ${novosSplitters.length} splitters)`);
+    console.log(`  PhysicalResource      : ${novasCaixas.length + novosSplitters.length + novosOrfaos.length}` +
+      ` (${novasCaixas.length} caixas + ${novosSplitters.length} splitters + ${novosOrfaos.length} órfãos)`);
     console.log(`  Relacionamentos       : ${novosSplitters.length} (containsAsChild)`);
 
     if (!APPLY) {
@@ -410,6 +532,47 @@ async function main() {
 
     // ---- gravação ----
     await client.query('BEGIN');
+
+    // 0. Zera as tabelas de recurso (autorizado). Um único statement resolve as
+    // FKs internas; RESTART IDENTITY por higiene (não há serial em uso aqui). O
+    // catálogo de specs fica de pé — a etapa 1 reusa as specs existentes.
+    if (TRUNCATE) {
+      await client.query(`TRUNCATE TABLE ${RESOURCE_TABLES.join(', ')} RESTART IDENTITY`);
+      console.log(`\nTRUNCATE: ${RESOURCE_TABLES.length} tabelas de recurso zeradas.`);
+    }
+
+    // 0b. Nó agrupador para recursos sem estação de origem (criado sob demanda).
+    // O TRUNCATE acima não toca em Geo, então o site sobrevive entre execuções e
+    // é reusado (idempotente). Reaproveita a site-spec "Estação" do load-estacoes.
+    if (criarNoOrfao) {
+      const { rows: specSite } = await client.query(
+        `SELECT id FROM tmf_geographic_site_specification WHERE name = 'Estação' LIMIT 1`,
+      );
+      const siteSpecId = specSite[0]?.id;
+      if (!siteSpecId) {
+        throw new Error(
+          "site-specification 'Estação' não encontrada — rode load-estacoes-netwin.mjs antes",
+        );
+      }
+      await client.query(
+        `INSERT INTO tmf_geographic_site
+           (id, href, tenant_id, name, site_specification_id, status, characteristics)
+         VALUES ($1, $2, 'default', $3, $4, 'Active', $5)`,
+        [
+          orphanSiteId,
+          `/tmf-api/geographicSiteManagement/v4/geographicSite/${orphanSiteId}`,
+          ORPHAN_SITE_NAME,
+          siteSpecId,
+          JSON.stringify([
+            { name: 'seed', value: SEED_TAG, valueType: 'string' },
+            { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
+            { group: '_origin', name: 'entity', value: 'EstacaoVirtual', valueType: 'string' },
+            { group: '_origin', name: 'migratedBy', value: MIGRATED_BY, valueType: 'string' },
+          ]),
+        ],
+      );
+      console.log(`\nNó agrupador criado: "${ORPHAN_SITE_NAME}".`);
+    }
 
     // 1. Specs (uma por tipo de caixa + Splitter), reaproveitando as existentes.
     const specIdFor = new Map();
@@ -474,13 +637,14 @@ async function main() {
           characteristics: '[]',
         });
       }
+      const { status, substatus } = resolveStatus(b.row.STATUS, b.row.ds_estado_controle);
       boxResources.push({
         id: b.resourceId,
         href: `/tmf-api/resourceInventoryManagement/v4/resource/${b.resourceId}`,
         name: b.displayName,
         resource_specification_id: specIdFor.get(b.tipo),
         resource_type: 'CTO',
-        status: STATUS_MAP[b.row.STATUS] ?? 'active',
+        status,
         // `place_id`/`place_type` são as colunas que o repositório de recursos
         // realmente lê (vêm de migration); `geographic_location_id` é a coluna
         // original e continua preenchida pelo índice/FK de geo. Gravar só a
@@ -498,12 +662,63 @@ async function main() {
             tipo: b.tipo,
             codigoPonto: b.row.CODIGO_EQUIPAMENTO,
             tipoOrigem: b.row.TIPO,
-            statusOrigem: b.row.STATUS,
-            grupoOperacional: b.row.ds_grupo_operacional,
-            estadoControle: b.row.ds_estado_controle,
+            statusOrigem: cleanText(b.row.STATUS),
+            grupoOperacional: cleanText(b.row.ds_grupo_operacional),
+            estadoControle: substatus,
             dataEstadoControle: b.row.dt_data_estado_controle,
             bairro: b.endereco?.locality ?? null,
-          }, siteBySigla.get(b.sigla)),
+          }, siteBySigla.get(b.sigla), substatus),
+        ),
+      });
+    }
+
+    // 2b. Splitters órfãos: recurso avulso com Location própria, sob o nó
+    // agrupador (ou a própria estação, quando a caixa some mas a sigla existe).
+    // Sem caixa não há `containsAsChild` — vira raiz de ramo, como a planta
+    // externa que ainda não pende de outro recurso (tree-service).
+    const orphanResources = [];
+    for (const s of novosOrfaos) {
+      const locId = randomUUID();
+      const parent = cleanText(s.row.CODIGO_EQUIPAMENTO);
+      const display = `${parent ? `${parent} · ` : ''}${s.nome} (${s.sigla})`;
+      locations.push({
+        id: locId,
+        href: `/tmf-api/geographicLocationManagement/v4/geographicLocation/${locId}`,
+        geometry_type: 'Point',
+        geometry: JSON.stringify({ type: 'Point', coordinates: [s.lng, s.lat] }),
+        spatial_ref: 'EPSG:4326',
+        reference_point: display,
+        characteristics: '[]',
+      });
+      const id = randomUUID();
+      const naturalKey = `${s.boxKey}|${s.nome}`;
+      const { status, substatus } = resolveStatus(s.row.STATUS, s.row.ds_estado_controle);
+      orphanResources.push({
+        id,
+        href: `/tmf-api/resourceInventoryManagement/v4/resource/${id}`,
+        name: display,
+        resource_specification_id: specIdFor.get('Splitter'),
+        resource_type: 'Splitter',
+        status,
+        place_id: locId,
+        place_type: 'GeographicLocation',
+        geographic_location_id: locId,
+        serving_site_id: siteBySigla.get(s.sigla) ?? null,
+        manufacturer: s.row.FABRICANTE || null,
+        model: s.row.MODELO || null,
+        characteristics: JSON.stringify(
+          originChars(naturalKey, 'Equipamento', {
+            estacao: s.row.ESTACAO,
+            sigla: s.sigla,
+            tipo: 'SPLITTER',
+            caixa: s.row.CODIGO_EQUIPAMENTO,
+            orfao: true,
+            tipoOrigem: s.row.TIPO,
+            statusOrigem: cleanText(s.row.STATUS),
+            grupoOperacional: cleanText(s.row.ds_grupo_operacional),
+            estadoControle: substatus,
+            dataEstadoControle: s.row.dt_data_estado_controle,
+          }, siteBySigla.get(s.sigla), substatus),
         ),
       });
     }
@@ -535,13 +750,14 @@ async function main() {
       if (!caixaId) continue;
       const id = randomUUID();
       const naturalKey = `${s.boxKey}|${s.nome}`;
+      const { status, substatus } = resolveStatus(s.row.STATUS, s.row.ds_estado_controle);
       splitterResources.push({
         id,
         href: `/tmf-api/resourceInventoryManagement/v4/resource/${id}`,
         name: `${caixa?.displayName ?? s.box.displayName} · ${s.nome}`,
         resource_specification_id: specIdFor.get('Splitter'),
         resource_type: 'Splitter',
-        status: STATUS_MAP[s.row.STATUS] ?? 'active',
+        status,
         place_id: caixa?.locationId ?? null,
         place_type: caixa?.locationId ? 'GeographicLocation' : null,
         geographic_location_id: caixa?.locationId ?? null,
@@ -555,11 +771,11 @@ async function main() {
             tipo: 'SPLITTER',
             caixa: s.row.CODIGO_EQUIPAMENTO,
             tipoOrigem: s.row.TIPO,
-            statusOrigem: s.row.STATUS,
-            grupoOperacional: s.row.ds_grupo_operacional,
-            estadoControle: s.row.ds_estado_controle,
+            statusOrigem: cleanText(s.row.STATUS),
+            grupoOperacional: cleanText(s.row.ds_grupo_operacional),
+            estadoControle: substatus,
             dataEstadoControle: s.row.dt_data_estado_controle,
-          }, siteBySigla.get(s.sigla)),
+          }, siteBySigla.get(s.sigla), substatus),
         ),
       });
       relationships.push({
@@ -570,6 +786,8 @@ async function main() {
     }
 
     await bulkInsert(client, 'tmf_physical_resource', boxCols, splitterResources);
+    // Splitters órfãos avulsos (sem relacionamento containsAsChild).
+    await bulkInsert(client, 'tmf_physical_resource', boxCols, orphanResources);
     await bulkInsert(
       client,
       'tmf_resource_relationship',
@@ -582,7 +800,8 @@ async function main() {
     const { rows: [check] } = await client.query(
       `SELECT count(*)::int AS n FROM tmf_physical_resource WHERE characteristics LIKE '%"Netwin"%'`,
     );
-    const esperado = idByNaturalKey.size + boxResources.length + splitterResources.length;
+    const esperado =
+      idByNaturalKey.size + boxResources.length + splitterResources.length + orphanResources.length;
     if (check.n !== esperado) {
       await client.query('ROLLBACK');
       throw new Error(`conferência falhou: base tem ${check.n} recursos, esperado ${esperado} — ROLLBACK`);
@@ -596,6 +815,7 @@ async function main() {
     console.log(`  addresses       : ${addresses.length}`);
     console.log(`  caixas          : ${boxResources.length}`);
     console.log(`  splitters       : ${splitterResources.length}`);
+    console.log(`  splitters órfãos: ${orphanResources.length}  (avulsos, sob o nó agrupador)`);
     console.log(`  relacionamentos : ${relationships.length}`);
     console.log(`  total recursos na base: ${check.n}`);
   } finally {

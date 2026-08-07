@@ -8,12 +8,10 @@ import {
   Route,
   Tag,
   Target,
-  X,
 } from 'lucide-react';
 import type { DraftAddress } from '../../utils/googleMaps';
 import { BottomSheet } from '../../components/BottomSheet';
 import { StreetViewHero } from '../../components/StreetViewHero';
-import { GoogleStreetViewButton } from '../../components/GoogleStreetViewButton';
 import { addressStreetViewMarker } from '../../utils/streetViewMarker';
 import { CoordinateStreetView } from './CoordinateStreetView';
 import { IconInfoRow } from './IconInfoRow';
@@ -30,9 +28,11 @@ const noop = () => {};
 export type AddressDetailPanelProps = {
   isMobile: boolean;
   address: DraftAddress;
+  // Fecha o painel: no mobile é o único fechar (arrastar a folha para baixo). No
+  // desktop, quem fecha é o X da barra de pesquisa ancorada (ver onClear em GeoPage).
   onClose: () => void;
-  // Barra de pesquisa unificada, sobreposta à foto de Street View no topo do painel
-  // (desktop) — mesmo padrão dos painéis de Site e Recurso em GeoPage.
+  // Barra de pesquisa unificada, ancorada no topo do painel (desktop), flutuando
+  // sobre o conteúdo que rola por baixo — mesmo padrão dos painéis de Site e Recurso.
   searchBar?: ReactNode;
   // Simulação do drop entre este endereço e a CDO escolhida na aba Viabilidade. Sobe
   // para o GeoPage porque quem desenha é o mapa, não o painel.
@@ -91,12 +91,7 @@ export function AddressDetailPanel({
           <IconInfoRow
             icon={Crosshair}
             hint="Localização"
-            value={
-              <span className="inline-flex max-w-full flex-wrap items-center gap-1.5">
-                <CoordinateStreetView marker={marker} />
-                <GoogleStreetViewButton marker={marker} />
-              </span>
-            }
+            value={<CoordinateStreetView marker={marker} />}
           />
           <IconInfoRow icon={Target} hint="Precisão" value={<PrecisionBadge locationType={address.precision} />} />
           <IconInfoRow icon={Tag} hint="Place ID (Google Maps)" value={address.placeId ?? '-'} mono />
@@ -108,50 +103,36 @@ export function AddressDetailPanel({
   );
 
   const header = (
-    <div className="flex items-start gap-2 border-b border-app-border px-3 py-3">
-      <div className="min-w-0 flex-1">
-        <div className="break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.08em] text-app-muted [overflow-wrap:anywhere]">
-          Endereço
-        </div>
-        <h3 className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text [overflow-wrap:anywhere]">
-          {title}
-        </h3>
+    <div className="border-y border-app-border px-3 py-3">
+      <div className="break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.08em] text-app-muted [overflow-wrap:anywhere]">
+        Endereço
       </div>
-      <button
-        type="button"
-        onClick={onClose}
-        className="shrink-0 rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
-        aria-label="Fechar detalhe"
-      >
-        <X className="h-4 w-4" />
-      </button>
+      <h3 className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text [overflow-wrap:anywhere]">
+        {title}
+      </h3>
     </div>
   );
 
   if (isMobile) {
     return (
-      <BottomSheet
-        header={
-          <>
-            <StreetViewHero marker={marker} />
-            {header}
-          </>
-        }
-        onClose={onClose}
-      >
+      <BottomSheet onClose={onClose}>
+        {/* Foto, título e corpo rolam juntos dentro da folha (ver BottomSheet). */}
+        <StreetViewHero marker={marker} />
+        {header}
         <div className="min-w-0 overflow-x-hidden px-4 py-3">{body}</div>
       </BottomSheet>
     );
   }
 
   return (
-    <div className="flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-x-hidden border-r border-app-border bg-app-panel shadow-dock">
-      {header}
-      {/* Cabeçalho (título + fechar) fixo; a foto de Street View e o corpo rolam
-          juntos, para o conteúdo usar toda a altura do painel — não só a metade
-          abaixo da foto. Mesmo padrão no painel de Site/Recurso (ver GeoPage). */}
+    <div className="relative flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-x-hidden border-r border-app-border bg-app-panel shadow-dock">
+      {/* Barra de pesquisa ancorada no topo, flutuando sobre o conteúdo; a foto de
+          Street View, o título e o corpo rolam por baixo dela — estilo Google Maps.
+          Mesmo padrão no painel de Site/Recurso (ver GeoPage). */}
+      {searchBar ? <div className="absolute inset-x-0 top-0 z-30">{searchBar}</div> : null}
       <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
-        <StreetViewHero marker={marker} overlay={searchBar} />
+        <StreetViewHero marker={marker} />
+        {header}
         <div className="px-3 py-3">{body}</div>
       </div>
     </div>

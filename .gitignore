@@ -7,3 +7,6 @@ coverage
 .tmp*.log
 .tmp*.err
 backups
+
+# Dados legados de migração (entrada/saída das cargas Netwin) — não versionar
+/legacy-data/

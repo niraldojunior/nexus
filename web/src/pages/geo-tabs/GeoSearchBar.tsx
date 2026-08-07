@@ -22,9 +22,15 @@ export type GeoSearchBarProps = {
   // Falha ao resolver o endereço (ex.: sem correspondência, API indisponível) — o
   // chamador decide como mostrar (ver modal de erro em GeoPage).
   onAddressError: (error: AddressSearchError) => void;
+  // Clicar no X da caixa não só limpa o texto: é o gesto de desseleção — fecha o
+  // painel aberto, tira o alfinete do mapa e devolve a hierarquia (ver onDeselect em
+  // GeoPage). Sem ele, o botão só apaga o texto e os resultados. Opcional para a
+  // barra funcionar isolada (testes, usos sem painel).
+  onClear?: () => void;
   // 'floating' flutua sobre o mapa (nenhum painel aberto); 'panel' vive encaixada
-  // no topo da doca (hierarquia ou detalhe aberto); 'overlay' flutua sobre a foto de
-  // Street View no topo de um painel (ver StreetViewHero) — mesmo padrão do Google Maps.
+  // no topo da doca (hierarquia ou detalhe aberto); 'overlay' fica ancorada no topo
+  // de um painel, flutuando sobre o conteúdo que rola por baixo — mesmo padrão do
+  // Google Maps.
   variant: 'floating' | 'panel' | 'overlay';
   isMobile?: boolean;
 };
@@ -47,6 +53,7 @@ export function GeoSearchBar({
   onSelectNode,
   onAddressFound,
   onAddressError,
+  onClear,
   variant,
   isMobile,
 }: GeoSearchBarProps) {
@@ -213,6 +220,11 @@ export function GeoSearchBar({
                 setNodeResults([]);
                 setAddressResults([]);
                 setOpen(false);
+                // Além de limpar o texto, desseleciona: fecha o painel aberto e tira
+                // o alfinete do mapa (ver onDeselect em GeoPage). onQueryChange('')
+                // acima fica redundante quando onClear já zera a query, mas mantém a
+                // barra utilizável quando o chamador não passa onClear.
+                onClear?.();
               }}
               className="flex h-8 w-8 items-center justify-center rounded-full text-app-muted transition hover:bg-black/5"
               aria-label="Limpar busca"

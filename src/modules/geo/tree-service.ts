@@ -56,6 +56,11 @@ export type GeoTreeNode = {
     model?: string;
     serialNumber?: string;
     address?: string;
+    // Detalhe do estado do recurso (ds_estado_controle na origem Netwin) —
+    // extensão V.tal (C1), guardada como characteristic e exibida no painel.
+    substatus?: string;
+    // Sistema legado de origem do recurso (`_origin.system`, C5) — ex.: "Netwin".
+    sourceSystem?: string;
   };
 };
 
@@ -130,6 +135,8 @@ type ResourceRow = {
   manufacturer: string | null;
   model: string | null;
   serial_number: string | null;
+  substatus: string | null;
+  source_system: string | null;
   geometry_type: string | null;
   geometry: string | null;
 };
@@ -564,6 +571,8 @@ export class GeoTreeService {
       if (row.manufacturer) detail.manufacturer = row.manufacturer;
       if (row.model) detail.model = row.model;
       if (row.serial_number) detail.serialNumber = row.serial_number;
+      if (row.substatus) detail.substatus = row.substatus;
+      if (row.source_system) detail.sourceSystem = row.source_system;
       if (Object.keys(detail).length > 0) node.detail = detail;
       return node;
     });
@@ -798,6 +807,22 @@ const RESOURCE_AT_SITE_WHERE = `
 const hideInternalResourceSql = (scope: GeoTreeScope): string =>
   scope === 'tree' ? `AND r.resource_type IS DISTINCT FROM 'Splitter'` : '';
 
+// Substatus é extensão V.tal (C1): vive numa characteristic de topo (sem grupo),
+// não em coluna. Extraímos SÓ o valor como escalar — payload minúsculo — em vez
+// de trafegar o blob inteiro de `characteristics` em cada linha da árvore/mapa. O
+// worker Postgres deixa `::jsonb`/`jsonb_array_elements` passarem intactos (mesmo
+// caminho do bloco de viewport); NULLIF protege contra characteristics vazio.
+const RESOURCE_SUBSTATUS_SQL =
+  `(SELECT ce->>'value' FROM jsonb_array_elements(NULLIF(r.characteristics, '')::jsonb) AS ce ` +
+  `WHERE ce->>'name' = 'substatus' AND ce->>'group' IS NULL LIMIT 1)`;
+
+// Sistema de origem do recurso (C5): vive no grupo `_origin` (`_origin.system`),
+// gravado pelas cargas de migração — "Netwin" hoje, outros no futuro. Mesmo
+// padrão escalar do substatus (só o valor, não o blob de characteristics).
+const RESOURCE_SOURCE_SYSTEM_SQL =
+  `(SELECT ce->>'value' FROM jsonb_array_elements(NULLIF(r.characteristics, '')::jsonb) AS ce ` +
+  `WHERE ce->>'name' = 'system' AND ce->>'group' = '_origin' LIMIT 1)`;
+
 // Recursos pendendo direto de um Site, por escopo — mesmas colunas e parâmetros nas
 // duas variantes, só muda o filtro de item interno (sem placeholder extra).
 const siteResourceSource = (scope: GeoTreeScope): string => {
@@ -805,6 +830,8 @@ const siteResourceSource = (scope: GeoTreeScope): string => {
   return `
   SELECT r.id, r.name, 'PhysicalResource' AS entity_type, r.resource_type, r.status,
          rs.name AS spec_name, r.manufacturer, r.model, r.serial_number,
+         ${RESOURCE_SUBSTATUS_SQL} AS substatus,
+         ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
     FROM tmf_physical_resource r
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
@@ -813,6 +840,8 @@ const siteResourceSource = (scope: GeoTreeScope): string => {
   UNION ALL
   SELECT r.id, r.name, 'LogicalResource' AS entity_type, r.resource_type, r.status,
          rs.name AS spec_name, NULL AS manufacturer, NULL AS model, NULL AS serial_number,
+         NULL AS substatus,
+         ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
     FROM tmf_logical_resource r
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
@@ -849,9 +878,12 @@ const viewportBlock = (entity: 'PhysicalResource' | 'LogicalResource', where: st
   const manufacturer = entity === 'PhysicalResource' ? 'r.manufacturer' : 'NULL';
   const model = entity === 'PhysicalResource' ? 'r.model' : 'NULL';
   const serial = entity === 'PhysicalResource' ? 'r.serial_number' : 'NULL';
+  const substatus = entity === 'PhysicalResource' ? RESOURCE_SUBSTATUS_SQL : 'NULL';
   return `
   SELECT r.id, r.name, '${entity}' AS entity_type, r.resource_type, r.status,
          rs.name AS spec_name, ${manufacturer} AS manufacturer, ${model} AS model, ${serial} AS serial_number,
+         ${substatus} AS substatus,
+         ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
     FROM ${table} r
     JOIN tmf_geographic_location l ON l.id = r.place_id
@@ -883,6 +915,8 @@ const SEARCH_RESOURCE_SOURCE = [
 const RESOURCE_CHILD_SOURCE = `
   SELECT r.id, r.name, 'PhysicalResource' AS entity_type, r.resource_type, r.status,
          rs.name AS spec_name, r.manufacturer, r.model, r.serial_number,
+         ${RESOURCE_SUBSTATUS_SQL} AS substatus,
+         ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
     FROM tmf_resource_relationship e
     JOIN tmf_physical_resource r ON r.id = e.resource_to_id
@@ -893,6 +927,8 @@ const RESOURCE_CHILD_SOURCE = `
   UNION ALL
   SELECT r.id, r.name, 'LogicalResource' AS entity_type, r.resource_type, r.status,
          rs.name AS spec_name, NULL AS manufacturer, NULL AS model, NULL AS serial_number,
+         NULL AS substatus,
+         ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
     FROM tmf_resource_relationship e
     JOIN tmf_logical_resource r ON r.id = e.resource_to_id
@@ -923,6 +959,8 @@ const RESOURCE_CHILD_TREE_SOURCE = `
   )
   SELECT r.id, r.name, 'PhysicalResource' AS entity_type, r.resource_type, r.status,
          rs.name AS spec_name, r.manufacturer, r.model, r.serial_number,
+         ${RESOURCE_SUBSTATUS_SQL} AS substatus,
+         ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
     FROM tmf_resource_relationship e
     JOIN tmf_physical_resource r ON r.id = e.resource_to_id
@@ -934,6 +972,8 @@ const RESOURCE_CHILD_TREE_SOURCE = `
   UNION ALL
   SELECT r.id, r.name, 'LogicalResource' AS entity_type, r.resource_type, r.status,
          rs.name AS spec_name, NULL AS manufacturer, NULL AS model, NULL AS serial_number,
+         NULL AS substatus,
+         ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
     FROM tmf_resource_relationship e
     JOIN tmf_logical_resource r ON r.id = e.resource_to_id

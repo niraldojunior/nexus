@@ -13,8 +13,5 @@ export { CoordinateStreetView } from './CoordinateStreetView';
 export { PrecisionBadge } from './PrecisionBadge';
 export { StatusBadge } from './StatusBadge';
 export { PanelBarButton } from './PanelBarButton';
-export {
-  MapBaseLayerSelector,
-  BASE_MAP_LAYERS,
-  type MapBaseLayer,
-} from './MapBaseLayerSelector';
+export { MapBaseLayerSelector, BASE_MAP_LAYERS, type MapBaseLayer } from './MapBaseLayerSelector';
+export { MapLocateButton, type DeviceLocation } from './MapLocateButton';

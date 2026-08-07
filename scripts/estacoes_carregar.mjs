@@ -96,7 +96,7 @@ const TOKEN = process.env.NEXUS_TOKEN || 'change-me';
 const SEED_TAG = 'estacoes-carregar';
 const DB_URL = process.env.DATABASE_URL_DEV || process.env.DATABASE_URL;
 
-const DEFAULT_CSV = join(__dirname, 'estacoes_vtal_2026-08-07.csv');
+const DEFAULT_CSV = join(__dirname, '..', 'legacy-data', 'estacoes_vtal_2026-08-07.csv');
 
 const args = process.argv.slice(2);
 const fileArgIdx = args.indexOf('--file');

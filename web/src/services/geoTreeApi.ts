@@ -39,6 +39,10 @@ export type GeoTreeNode = {
     model?: string;
     serialNumber?: string;
     address?: string;
+    // Detalhe do estado (ds_estado_controle na origem) — só vem em recurso Bloqueado.
+    substatus?: string;
+    // Sistema legado de origem do recurso (`_origin.system`) — ex.: "Netwin".
+    sourceSystem?: string;
   };
 };
 

@@ -59,4 +59,27 @@ describe('GeoSearchBar', () => {
 
     expect(screen.queryByText('Estação Icaraí')).not.toBeInTheDocument();
   });
+
+  it('o X da caixa limpa o texto e chama onClear (desseleção)', async () => {
+    mocks.fetchTreeSearch.mockResolvedValue([]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+    const onQueryChange = vi.fn();
+    const onClear = vi.fn();
+
+    render(
+      <GeoSearchBar
+        variant="overlay"
+        query="Icarai"
+        onQueryChange={onQueryChange}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+        onClear={onClear}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Limpar busca'));
+    expect(onQueryChange).toHaveBeenCalledWith('');
+    expect(onClear).toHaveBeenCalledTimes(1);
+  });
 });

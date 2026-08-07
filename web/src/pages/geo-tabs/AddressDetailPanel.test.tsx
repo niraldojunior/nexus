@@ -48,7 +48,10 @@ describe('AddressDetailPanel', () => {
     ).toBeInTheDocument();
     // Localização unificada: [lng, lat] com 5 casas, igual aos painéis de Site/Recurso.
     expect(screen.getByText('[-43.10798, -22.89856]')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Abrir Streetview/ })).toBeInTheDocument();
+    // A porta para o Street View é a foto do topo (StreetViewHero); aqui ela está
+    // mockada como indisponível, então não há botão de Street View no painel — o
+    // antigo bonequinho no campo Localização saiu (ver CoordinateStreetView).
+    expect(screen.queryByRole('button', { name: /Streetview/ })).not.toBeInTheDocument();
     // Precisão vira badge com a qualidade e o código cru do Google juntos.
     expect(screen.getByText('Alta - ROOFTOP')).toBeInTheDocument();
     expect(screen.getByText('ChIJkUT-yu-DmQAREfIQzEVzYOU')).toBeInTheDocument();

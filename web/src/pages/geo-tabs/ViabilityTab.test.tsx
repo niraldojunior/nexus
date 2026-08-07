@@ -58,12 +58,15 @@ const ready = (candidates: ViabilityCandidate[]): UseAddressViabilityResult => (
 beforeEach(() => {
   useAddressViability.mockReset();
   computeWalkRoute.mockReset();
+  // Padrão inócuo: sem rota a pé conhecida, a auto-seleção cai no segmento direto.
+  computeWalkRoute.mockResolvedValue(null);
 });
 
 afterEach(cleanup);
 
 describe('ViabilityTab', () => {
-  it('lista as CDOs na ordem recebida, com distância e rótulo de status', () => {
+  it('lista as CDOs na ordem recebida, com distância e rótulo de status', async () => {
+    const onSimulate = vi.fn();
     useAddressViability.mockReturnValue(
       ready([
         candidate('CDOE-3701 (FSA)', 'active', 118, 'walk'),
@@ -72,7 +75,7 @@ describe('ViabilityTab', () => {
       ]),
     );
 
-    render(<ViabilityTab origin={ORIGIN} onSimulate={vi.fn()} />);
+    render(<ViabilityTab origin={ORIGIN} onSimulate={onSimulate} />);
 
     const items = screen.getAllByRole('button');
     expect(items).toHaveLength(3);
@@ -84,29 +87,41 @@ describe('ViabilityTab', () => {
     expect(screen.getByText(/^Ativa/)).toBeInTheDocument();
     expect(screen.getByText(/^Suspensa/)).toBeInTheDocument();
     expect(screen.getByText(/^Indefinida/)).toBeInTheDocument();
+
+    // A primeira CDO já entra selecionada, sem clique do usuário.
+    await waitFor(() => expect(items[0]).toHaveAttribute('aria-pressed', 'true'));
+    expect(items[1]).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('marca com "linha reta" e "≈" a CDO sem rota a pé', () => {
+  it('marca com "linha reta" e "≈" a CDO sem rota a pé', async () => {
+    const onSimulate = vi.fn();
     useAddressViability.mockReturnValue(ready([candidate('CDOE-2401', 'active', 287, 'straight')]));
 
-    render(<ViabilityTab origin={ORIGIN} onSimulate={vi.fn()} />);
+    render(<ViabilityTab origin={ORIGIN} onSimulate={onSimulate} />);
 
     expect(screen.getByText(/linha reta/)).toBeInTheDocument();
     expect(screen.getByText(/≈/)).toBeInTheDocument();
+    await waitFor(() => expect(onSimulate).toHaveBeenCalled());
   });
 
-  it('busca o traçado e devolve a simulação ao clicar numa CDO com rota a pé', async () => {
+  it('ao abrir, auto-seleciona a primeira CDO e devolve a simulação com o traçado a pé', async () => {
     const path: Array<[number, number]> = [ORIGIN, [-43.1081, -22.8988], [-43.108, -22.899]];
     computeWalkRoute.mockResolvedValue({ distanceMeters: 118, durationSeconds: 95, path });
     useAddressViability.mockReturnValue(ready([candidate('CDOE-3701', 'active', 118, 'walk')]));
     const onSimulate = vi.fn();
 
     render(<ViabilityTab origin={ORIGIN} onSimulate={onSimulate} />);
-    await userEvent.click(screen.getByRole('button', { name: /CDOE-3701/ }));
 
-    await waitFor(() => expect(onSimulate).toHaveBeenCalledTimes(1));
-    expect(onSimulate).toHaveBeenCalledWith(
-      expect.objectContaining({ path, distanceMeters: 118, approximate: false }),
+    // Sem clique: a auto-seleção já busca o traçado e devolve a simulação.
+    await waitFor(() =>
+      expect(onSimulate).toHaveBeenCalledWith(
+        expect.objectContaining({ path, distanceMeters: 118, approximate: false }),
+      ),
+    );
+    expect(computeWalkRoute).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: /CDOE-3701/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
     );
 
     // Reclicar não paga outra chamada à Routes API — o traçado fica em cache.
@@ -115,25 +130,28 @@ describe('ViabilityTab', () => {
     expect(computeWalkRoute).toHaveBeenCalledTimes(1);
   });
 
-  it('simula o segmento direto, sem chamar a API, quando a CDO caiu na linha reta', async () => {
+  it('auto-seleciona a CDO de linha reta com o segmento direto, sem chamar a API', async () => {
     const target: [number, number] = [-43.108, -22.899];
     useAddressViability.mockReturnValue(ready([candidate('CDOE-2401', 'active', 287, 'straight')]));
     const onSimulate = vi.fn();
 
     render(<ViabilityTab origin={ORIGIN} onSimulate={onSimulate} />);
-    await userEvent.click(screen.getByRole('button', { name: /CDOE-2401/ }));
 
-    await waitFor(() => expect(onSimulate).toHaveBeenCalled());
-    expect(onSimulate).toHaveBeenCalledWith(
-      expect.objectContaining({ path: [ORIGIN, target], approximate: true }),
+    await waitFor(() =>
+      expect(onSimulate).toHaveBeenCalledWith(
+        expect.objectContaining({ path: [ORIGIN, target], approximate: true }),
+      ),
     );
     expect(computeWalkRoute).not.toHaveBeenCalled();
   });
 
   it('mostra o estado vazio quando não há CDO no raio', () => {
+    const onSimulate = vi.fn();
     useAddressViability.mockReturnValue(ready([]));
-    render(<ViabilityTab origin={ORIGIN} onSimulate={vi.fn()} />);
+    render(<ViabilityTab origin={ORIGIN} onSimulate={onSimulate} />);
     expect(screen.getByText(/Nenhuma CDO num raio de 300 m/)).toBeInTheDocument();
+    // Sem candidata, nada é auto-selecionado nem simulado.
+    expect(onSimulate).not.toHaveBeenCalled();
   });
 
   it('apaga a simulação do mapa ao se desmontar', () => {

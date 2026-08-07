@@ -939,7 +939,7 @@ export class GeoService {
         tenantId: ctx.tenantId,
         name: input.name,
         status,
-        statusDate: new Date().toISOString(),
+        statusDate: input.statusDate ?? new Date().toISOString(),
         siteSpecificationId: spec.id,
         siteSpecification: { id: spec.id, '@referredType': 'GeographicSiteSpecification' },
         ...(place
@@ -2495,7 +2495,10 @@ export class GeoService {
     context: RequestContext,
   ): Promise<void> {
     const normalized = name.trim().toLowerCase();
-    const candidates = await this.repository.listSites({ tenantId: context.tenantId });
+    // Filtra por nome antes de trazer para JS — sem isto, cada criação/atualização de
+    // Site varre a tabela inteira do tenant (com join de relationships) só pra checar
+    // duplicidade, o que vira O(n²) em qualquer carga em lote (ver scripts/estacoes_carregar.mjs).
+    const candidates = await this.repository.listSites({ tenantId: context.tenantId, name });
     const duplicate = candidates.find((site) => {
       if (site.id === currentSiteId || site.status === 'Retired') return false;
       if (site.name.trim().toLowerCase() !== normalized) return false;

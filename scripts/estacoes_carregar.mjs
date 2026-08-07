@@ -2,10 +2,14 @@
 /**
  * Carga nacional de estações da V.tal no inventário Geo do Nexus.
  *
- * Origem: `estacoes_carregar-23-07.csv` — base de todas as estações em uso da
+ * Origem: `estacoes_vtal_2026-08-07.csv` — base de todas as estações em uso da
  * V.tal (519 linhas). 7 delas (Niterói/São Gonçalo) já foram carregadas antes
  * por `load-estacoes-netwin.mjs`; este script as identifica pela sigla
- * (`ESTACAO`) e descarta a inclusão, seguindo para a próxima.
+ * (`ESTACAO`) e, ao reexecutar, bate todos os campos e atualiza os que
+ * estiverem divergentes do CSV (ver `extraDiffers`).
+ *
+ * O CSV inclui a coluna `SISTEMA_ORIGEM` que indica o sistema de origem do
+ * registro dentro do Netwin; o valor é gravado em `_origin.extra.sistemaOrigem`.
  *
  * Modelagem — como isto se encaixa no cânone (ver AGENTS.md §3–§4):
  *
@@ -21,10 +25,25 @@
  *   com endereço próprio (C2 — acima do Rack é GeographicSite).
  *
  *   · C5 — o Nexus gera UUID próprio; a sigla Netwin (`ESTACAO`) e demais
- *     campos do CSV ficam em `characteristic` somente-leitura no grupo
- *     `_origin`. Nada de campo hardcoded.
+ *     campos do CSV ficam em `characteristic` somente-leitura, nome plano
+ *     `_origin.<campo>` (ex. `_origin.system`, `_origin.extra`) — desde a
+ *     governança endurecida em 01/08 (`normalizeSiteCharacteristics`,
+ *     src/modules/geo/service.ts), só o `name` iniciar com `_origin.` isenta
+ *     a characteristic de precisar estar declarada na spec do Site; o
+ *     formato antigo `{ group: '_origin', name: '<campo>' }` (usado por
+ *     `load-estacoes-netwin.mjs` até 23/07) não passa mais e estoura
+ *     `GEO_SITE_CHARACTERISTIC_UNDEFINED`. `bootstrap()` ainda lê o formato
+ *     antigo para reconhecer as 7 estações legadas de Niterói.
  *   · C6 — nada é excluído; a carga é idempotente por sigla e só cria o que
  *     falta.
+ *
+ * `statusDate` do Site é a `DATA_ATIVACAO` real do CSV (parseada em ISO 8601),
+ * não a data da carga — sem isso o Site nasce com "ativo desde hoje", o que
+ * distorce qualquer leitura histórica (idade da planta, SLA de ativação).
+ * Requer o fix em `service.ts` (`createSite` honrar `input.statusDate`); antes
+ * dele a API ignorava esse campo e sempre gravava `new Date()`. Linha sem data
+ * de ativação reconhecível (`0`, valor corrompido) cai no default da API
+ * (now) — fica registrada em `_origin.extra.dataAtivacao` do mesmo jeito.
  *
  * Coordenada da estação — "prefira a coordenada própria; se ela for
  * inconsistente, geoespacialize o endereço":
@@ -34,38 +53,58 @@
  *      basta estar "dentro do Brasil": uma coordenada de outra região não
  *      passa. Coordenada fora da caixa da UF é descartada como inconsistente.
  *   3. Se não sobrar coordenada válida e houver endereço textual de verdade,
- *      tenta geocodificar via Nominatim (OpenStreetMap, sem chave). Falha de
- *      geocodificação (rede/serviço indisponível) não é fatal: a estação é
- *      criada sem `place`, só sem pino no mapa.
+ *      tenta geocodificar via Google Geocoding API (mesma chave do frontend,
+ *      `VITE_GOOGLE_MAPS_API_KEY`/`GOOGLE_MAPS_API_KEY` no `.env`). Falta de
+ *      chave ou falha de geocodificação (rede/serviço indisponível) não é
+ *      fatal: a estação é criada sem `place`, só sem pino no mapa.
  *   O ponto escolhido (`csv` ou `geocoded`) fica registrado em
  *   `_origin.extra.coordSource`.
  *
- * Uso (backend dev no ar em http://127.0.0.1:4001):
+ * Uso via API (backend dev no ar em http://127.0.0.1:4001) — mais lento, mas
+ * publica eventos TMF688 e passa por toda a governança do backend:
  *   node scripts/estacoes_carregar.mjs
  *   node scripts/estacoes_carregar.mjs --file "caminho/estacoes.csv"
  *   node scripts/estacoes_carregar.mjs --no-geocode   (pula a etapa de rede)
  *
- * Variáveis de ambiente:
- *   NEXUS_API    (default http://127.0.0.1:4001)
- *   NEXUS_TOKEN  (default change-me)
+ * Uso via SQL direto (não precisa do backend no ar; ver bloco "modo --fast"
+ * mais abaixo para o tradeoff — não publica eventos nem grava audit log):
+ *   node scripts/estacoes_carregar.mjs --fast            # dry-run, mostra o plano
+ *   node scripts/estacoes_carregar.mjs --fast --apply     # grava
+ *
+ * Variáveis de ambiente (lidas também do `.env` na raiz do repo):
+ *   NEXUS_API             (default http://127.0.0.1:4001) — modo API
+ *   NEXUS_TOKEN           (default change-me) — modo API
+ *   DATABASE_URL_DEV      (ou DATABASE_URL) — modo --fast, endpoint -pooler
+ *   GOOGLE_MAPS_API_KEY   (fallback: VITE_GOOGLE_MAPS_API_KEY) — só usada se
+ *                         sobrar coordenada para geocodificar; sem ela, a
+ *                         etapa 3 é pulada como se fosse --no-geocode.
  */
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { config as loadEnv } from 'dotenv';
+import pg from 'pg';
+import { createCanonicalId } from '../dist/src/shared/utils/canonical-id.js';
+
+loadEnv({ quiet: true });
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const BASE = process.env.NEXUS_API || 'http://127.0.0.1:4001';
 const TOKEN = process.env.NEXUS_TOKEN || 'change-me';
 const SEED_TAG = 'estacoes-carregar';
+const DB_URL = process.env.DATABASE_URL_DEV || process.env.DATABASE_URL;
 
-const DEFAULT_CSV = join(__dirname, 'estacoes_carregar-23-07.csv');
+const DEFAULT_CSV = join(__dirname, 'estacoes_vtal_2026-08-07.csv');
 
 const args = process.argv.slice(2);
 const fileArgIdx = args.indexOf('--file');
 const CSV_PATH = fileArgIdx >= 0 ? args[fileArgIdx + 1] : DEFAULT_CSV;
 const GEOCODE_ENABLED = !args.includes('--no-geocode');
+const FAST = args.includes('--fast');
+const APPLY_FAST = args.includes('--apply');
+const RESET = args.includes('--reset');
 
 const MIGRATED_AT = new Date().toISOString();
 const MIGRATED_BY = 'estacoes-carregar';
@@ -94,27 +133,64 @@ async function api(method, pathname, body, attempt = 1) {
   return text ? JSON.parse(text) : undefined;
 }
 
-const tag = () => ({ name: 'seed', value: SEED_TAG, valueType: 'string' });
+const tag = () => ({ name: '_origin.seed', value: SEED_TAG, valueType: 'string' });
 
 // --------------------------------------------------------------- parsing -----
 
-// O export vem em Latin-1/CP1252 (byte único para acento: "ENDEREÇO" chega
-// como 0xC7), não UTF-8 — ler como utf8 produz "ENDERE�O" e corrompe todo
-// texto acentuado do arquivo. Mesmo decodificado corretamente, alguns nomes
-// de sala ainda carregam o artefato de duplo-encoding já visto na carga
-// anterior ("1Â° ANDAR"); `fixMojibake` cuida disso à parte.
-const BOM = String.fromCharCode(0xfeff);
-
+// O export é UTF-8 (com ou sem BOM). Bytes inválidos em UTF-8 — como o 0xC7
+// do campo ENDEREÇO no header — viram U+FFFD, tratado pelo lookup de coluna
+// `row['ENDERE\uFFFDO']`. Nomes antigos ainda podem ter artefatos de
+// duplo-encoding ("1Â° ANDAR"); `fixMojibake` cuida disso à parte.
 function readCsvText(path) {
-  const text = readFileSync(path).toString('latin1');
-  return text.startsWith(BOM) ? text.slice(BOM.length) : text;
+  const buf = readFileSync(path);
+  // Descarta UTF-8 BOM se presente
+  const start = (buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) ? 3 : 0;
+  return buf.slice(start).toString('utf8');
+}
+
+// CP1252 0x80–0x9F mapeiam para Unicode fora do range Latin-1 direto.
+// Necessário para reverter mojibake: bytes UTF-8 lidos como CP1252 → string
+// com esses chars especiais → `fixCp1252Mojibake` desfaz.
+const CP1252_UNICODE = new Map([
+  [0x80,0x20AC],[0x82,0x201A],[0x83,0x0192],[0x84,0x201E],[0x85,0x2026],
+  [0x86,0x2020],[0x87,0x2021],[0x88,0x02C6],[0x89,0x2030],[0x8A,0x0160],
+  [0x8B,0x2039],[0x8C,0x0152],[0x8E,0x017D],[0x91,0x2018],[0x92,0x2019],
+  [0x93,0x201C],[0x94,0x201D],[0x95,0x2022],[0x96,0x2013],[0x97,0x2014],
+  [0x98,0x02DC],[0x99,0x2122],[0x9A,0x0161],[0x9B,0x203A],[0x9C,0x0153],
+  [0x9E,0x017E],[0x9F,0x0178],
+]);
+const UNICODE_TO_CP1252 = new Map([...CP1252_UNICODE].map(([k,v]) => [v,k]));
+
+// CP1252 tem 5 posições sem caractere atribuído em 0x80–0x9F (0x81, 0x8D, 0x8F,
+// 0x90, 0x9D). O decoder windows-1252 do WHATWG (usado por navegador/Node ao
+// reinterpretar bytes UTF-8 como CP1252 na origem do mojibake) não erra nessas
+// posições: cai direto pro codepoint igual ao byte, o mesmo que faria Latin-1.
+// Ex.: "Icaraí" (U+00CD) em UTF-8 é [0xC3, 0x8D]; reinterpretado como CP1252 e
+// re-exportado em UTF-8 vira "Ã" (U+00C3) + U+008D — esse 2º codepoint é
+// exatamente um desses "buracos" do CP1252. Sem tratar isso aqui, a função
+// desistia (`return str`) e "Icaraí (ICI)" ficava "IcaraÃ (ICI)".
+const CP1252_GAPS = new Set([0x81, 0x8D, 0x8F, 0x90, 0x9D]);
+
+// Tenta reverter double-encoding CP1252→UTF-8 (bytes UTF-8 armazenados como
+// texto CP1252, depois re-exportados). Devolve o original se não conseguir.
+function fixCp1252Mojibake(str) {
+  const bytes = [];
+  for (const ch of str) {
+    const cp = ch.codePointAt(0);
+    if (cp <= 0x7F)                          { bytes.push(cp); continue; }
+    if (cp >= 0xA0 && cp <= 0xFF)            { bytes.push(cp); continue; }
+    if (CP1252_GAPS.has(cp))                 { bytes.push(cp); continue; }
+    const b = UNICODE_TO_CP1252.get(cp);
+    if (b !== undefined)                     { bytes.push(b);  continue; }
+    return str; // codepoint não mapeável → não é mojibake CP1252
+  }
+  const decoded = Buffer.from(bytes).toString('utf8');
+  return decoded.includes('\uFFFD') ? str : decoded;
 }
 
 function fixMojibake(raw) {
-  return String(raw ?? '')
-    .replace(/Â(?=[º°ª])/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const s = String(raw ?? '').replace(/Â(?=[º°ª])/g, '').replace(/\s+/g, ' ').trim();
+  return fixCp1252Mojibake(s);
 }
 
 const CONNECTORS = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'di', 'del']);
@@ -152,6 +228,39 @@ function parseEndereco(raw) {
   const tail = parts[3] ?? '';
   const postcode = (tail.match(/(\d{8})\s*$/) || [])[1];
   return { street, streetNr, bairro, postcode };
+}
+
+// ESTADO do CSV é o status do site no Netwin, não estado (UF) — nome infeliz
+// da origem. Valores confirmados na base atual (519 linhas): "Instalado"
+// (703 ocorrências) e "Em Projeto" (4 ocorrências); mapeados para os status
+// canônicos de GeographicSite (service.ts): "Instalado" = Ativo = 'Active',
+// "Em Projeto" = Em Implantação = 'InConstruction'. Valor não reconhecido cai
+// em 'Planned' (mais conservador que assumir Active) e fica registrado como
+// aviso — não é fatal, mas não deve acontecer silenciosamente.
+const ESTADO_TO_STATUS = {
+  instalado: 'Active',
+  'em projeto': 'InConstruction',
+};
+
+function resolveSiteStatus(estadoRaw, sigla) {
+  const key = String(estadoRaw ?? '').trim().toLowerCase();
+  const status = ESTADO_TO_STATUS[key];
+  if (!status) {
+    console.log(`  ⚠ ${sigla}: ESTADO "${estadoRaw}" não reconhecido — usando status 'Planned'`);
+    return 'Planned';
+  }
+  return status;
+}
+
+// "2016-08-21 15:07:06 UTC" → ISO 8601. Algumas linhas trazem lixo neste campo
+// (`0`, ou o valor de ESTADO vazando por desalinhamento de coluna, ex.
+// "Instalado") — `Date` aceita o formato "UTC" nativamente, então basta
+// rejeitar o que não vira uma data válida.
+function parseActivationDate(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s || s === '0') return null;
+  const date = new Date(s);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 // Lista de salas separada por vírgula — nomes normalizados, vazios/"0"/"Não"
@@ -280,35 +389,34 @@ function resolveCsvCoord(rawLat, rawLng, uf) {
 
 // ------------------------------------------------------------- geocoding -----
 
-// Nominatim (OpenStreetMap) — não exige chave, mas pede User-Agent
-// identificável e no máximo ~1 req/s. Usado só como fallback (~poucas dezenas
+// Google Geocoding API — mesma chave do frontend (`VITE_GOOGLE_MAPS_API_KEY`
+// no `.env`; habilitada para Geocoding em 06/08, ver memória de projeto
+// "google-maps-apis-desabilitadas"). Usado só como fallback (~poucas dezenas
 // de linhas) quando a coordenada do CSV não sobreviveu à validação de UF.
-// Indisponibilidade de rede/serviço não é erro fatal: a estação segue sem
-// `place`, e a exclusão fica registrada no resumo final.
-let lastGeocodeAt = 0;
-async function geocodeAddress(query, uf) {
-  if (!GEOCODE_ENABLED) return null;
-  const wait = 1100 - (Date.now() - lastGeocodeAt);
-  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-  lastGeocodeAt = Date.now();
+// Sem chave configurada ou indisponibilidade de rede/serviço não é erro
+// fatal: a estação segue sem `place`, e a exclusão fica registrada no
+// resumo final.
+const GOOGLE_MAPS_API_KEY =
+  process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
-  const url = new URL('https://nominatim.openstreetmap.org/search');
-  url.searchParams.set('format', 'jsonv2');
-  url.searchParams.set('limit', '1');
-  url.searchParams.set('countrycodes', 'br');
-  url.searchParams.set('q', `${query}, Brasil`);
+async function geocodeAddress(query, uf) {
+  if (!GEOCODE_ENABLED || !GOOGLE_MAPS_API_KEY) return null;
+
+  const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+  url.searchParams.set('address', `${query}, Brasil`);
+  url.searchParams.set('region', 'br');
+  url.searchParams.set('components', 'country:BR');
+  url.searchParams.set('key', GOOGLE_MAPS_API_KEY);
 
   try {
-    const res = await fetch(url, {
-      headers: { 'user-agent': 'vtal-nexus-estacoes-carregar/1.0 (uso interno)' },
-      signal: AbortSignal.timeout(8000),
-    });
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) return null;
-    const results = await res.json();
-    const hit = results?.[0];
-    if (!hit) return null;
-    const lat = Number(hit.lat);
-    const lng = Number(hit.lon);
+    const data = await res.json();
+    if (data.status !== 'OK') return null;
+    const location = data.results?.[0]?.geometry?.location;
+    if (!location) return null;
+    const lat = Number(location.lat);
+    const lng = Number(location.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
     const bbox = UF_BBOX[uf];
     if (bbox && !inBbox(lat, lng, bbox)) return null;
@@ -323,9 +431,11 @@ async function geocodeAddress(query, uf) {
 const siteSpecByName = new Map();
 const siteBySigla = new Map(); // `_origin.extra.sigla` — chave primária de dedupe
 const siteByName = new Map(); // fallback: nome gerado "<Nome> (<Sigla>)"
+const siteFullBySigla = new Map(); // sigla → { id, characteristic } — para comparação e PATCH
 const childByKey = new Map(); // `${parentId}::${nome}` -> Sala existente
 
 const created = { estacoes: 0, salas: 0 };
+const updated = { estacoes: 0 };
 const discarded = { estacoes: 0 };
 const coordStats = { csv: 0, geocoded: 0, none: 0 };
 
@@ -341,13 +451,37 @@ async function bootstrap() {
     if (!siteByName.has(site.name)) siteByName.set(site.name, site.id);
     if (site.parentSite?.id) childByKey.set(`${site.parentSite.id}::${site.name}`, site.id);
 
-    const extra = (site.characteristic ?? []).find((c) => c.group === '_origin' && c.name === 'extra');
+    // Aceita os dois formatos: legado (`group: '_origin', name: 'extra'`, usado
+    // pelas 7 estações de Niterói carregadas antes da governança de
+    // characteristics endurecer em 01/08) e o atual (`name: '_origin.extra'`,
+    // exigido por `normalizeSiteCharacteristics` — ver nota no topo do arquivo).
+    const extra = (site.characteristic ?? []).find(
+      (c) => c.name === '_origin.extra' || (c.group === '_origin' && c.name === 'extra'),
+    );
     const sigla = extra?.value?.sigla;
-    if (sigla && !siteBySigla.has(sigla)) siteBySigla.set(sigla, site.id);
+    if (sigla && !siteBySigla.has(sigla)) {
+      siteBySigla.set(sigla, site.id);
+      siteFullBySigla.set(sigla, { id: site.id, characteristic: site.characteristic ?? [] });
+    }
   }
 }
 
 // -------------------------------------------------------------- ensure -------
+
+// Campos do CSV mantidos em sincronia com o registro existente.
+const EXTRA_CSV_KEYS = ['nome', 'sistemaOrigem', 'estado', 'dataAtivacao', 'dataUltimaModif', 'salasDeclaradas'];
+
+function extraDiffers(stored, expected) {
+  if (!stored) return true;
+  return EXTRA_CSV_KEYS.some((k) => String(stored[k] ?? '') !== String(expected[k] ?? ''));
+}
+
+// Substitui _origin.extra mantendo as demais characteristics intactas.
+function updateCharacteristics(existing, newExtra) {
+  const out = (existing ?? []).filter((c) => c.name !== '_origin.extra');
+  out.push({ name: '_origin.extra', valueType: 'json', value: newExtra });
+  return out;
+}
 
 async function ensureSpec(name, category) {
   const found = siteSpecByName.get(name);
@@ -355,6 +489,31 @@ async function ensureSpec(name, category) {
   const spec = await api('POST', '/v1/geo/site-specifications', { name, category });
   siteSpecByName.set(name, spec.id);
   return spec.id;
+}
+
+// `validateContainment` (service.ts) exige a relação declarada nos dois
+// sentidos: o filho precisa ter o pai em `allowedParentSpecIds` E o pai
+// precisa ter o filho em `allowedChildSpecIds`. `ensureSpec` cria specs sem
+// nenhuma relação — sem isto, todo `POST /v1/geo/sites` de Sala estoura
+// `GEO_SPEC_CONTAINMENT_NOT_ALLOWED`. `PATCH` substitui a lista inteira (não
+// mescla), então lemos o estado atual e só gravamos se faltar o par.
+async function ensureContainment(parentSpecId, childSpecId) {
+  const [parentSpec, childSpec] = await Promise.all([
+    api('GET', `/v1/geo/site-specifications/${parentSpecId}`),
+    api('GET', `/v1/geo/site-specifications/${childSpecId}`),
+  ]);
+  if (!(parentSpec.allowedChildSpecIds ?? []).includes(childSpecId)) {
+    await api('PATCH', `/v1/geo/site-specifications/${parentSpecId}`, {
+      allowedChildSpecIds: [...new Set([...(parentSpec.allowedChildSpecIds ?? []), childSpecId])],
+    });
+  }
+  if (!(childSpec.allowedParentSpecIds ?? []).includes(parentSpecId)) {
+    await api('PATCH', `/v1/geo/site-specifications/${childSpecId}`, {
+      allowedParentSpecIds: [
+        ...new Set([...(childSpec.allowedParentSpecIds ?? []), parentSpecId]),
+      ],
+    });
+  }
 }
 
 async function createPoint(coord, referencePoint) {
@@ -406,6 +565,7 @@ async function main() {
 
   const specEstacao = await ensureSpec('Estação', 'Site');
   const specSala = await ensureSpec('Sala', 'SubSite');
+  await ensureContainment(specEstacao, specSala);
 
   for (const row of rows) {
     const sigla = row['ESTACAO'] || '';
@@ -474,14 +634,13 @@ async function main() {
 
     const characteristic = [
       tag(),
-      { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
-      { group: '_origin', name: 'id', value: sigla, valueType: 'string' },
-      { group: '_origin', name: 'entity', value: 'Estacao', valueType: 'string' },
-      { group: '_origin', name: 'migratedAt', value: MIGRATED_AT, valueType: 'date' },
-      { group: '_origin', name: 'migratedBy', value: MIGRATED_BY, valueType: 'string' },
+      { name: '_origin.system', value: 'Netwin', valueType: 'string' },
+      { name: '_origin.id', value: sigla, valueType: 'string' },
+      { name: '_origin.entity', value: 'Estacao', valueType: 'string' },
+      { name: '_origin.migratedAt', value: MIGRATED_AT, valueType: 'date' },
+      { name: '_origin.migratedBy', value: MIGRATED_BY, valueType: 'string' },
       {
-        group: '_origin',
-        name: 'extra',
+        name: '_origin.extra',
         valueType: 'json',
         value: {
           sigla,
@@ -499,10 +658,13 @@ async function main() {
       },
     ];
 
+    const activationDate = parseActivationDate(row['DATA_ATIVACAO']);
+
     const payload = {
       name: estacaoName,
       siteSpecificationId: specEstacao,
-      status: 'active',
+      status: resolveSiteStatus(row['ESTADO'], sigla),
+      ...(activationDate ? { statusDate: activationDate } : {}),
       characteristic,
     };
 
@@ -534,12 +696,514 @@ async function main() {
   }
 
   console.log('\nResumo:');
-  console.log('  criados   :', JSON.stringify(created));
-  console.log('  descartados:', JSON.stringify(discarded));
-  console.log('  coordenada:', JSON.stringify(coordStats));
+  console.log('  criados      :', JSON.stringify(created));
+  console.log('  atualizados  :', JSON.stringify(updated));
+  console.log('  sem alteração:', JSON.stringify(discarded));
+  console.log('  coordenada   :', JSON.stringify(coordStats));
 }
 
-main().catch((err) => {
+// ------------------------------------------------------------ modo --fast ---
+//
+// `main()` faz 1 POST HTTP por Location/Address/Site/Sala — cada POST é uma
+// viagem de rede até o Neon (remoto, não localhost) mais o processamento do
+// backend (RBAC, characteristics, containment, audit, outbox). Em ~519
+// estações + salas isso passa de milhares de round-trips sequenciais (o
+// backend dev atende requisições em série — ver AGENTS.md).
+//
+// `--fast` faz o que `load-recursos-netwin.mjs` já faz para os 24.6k recursos
+// de planta externa: grava direto no Postgres via `pg`, em poucos INSERTs
+// multi-linha dentro de uma única transação. Mesmo tradeoff aceito lá — **não
+// publica eventos TMF688 (C7) nem grava audit log**, porque é carga inicial
+// de migração, não mudança operacional feita por um usuário. Ainda assim:
+//   · gera os mesmos UUID v7 (`createCanonicalId`, mesmo gerador da app);
+//   · grava `characteristics` no mesmo formato `_origin.*` (C5);
+//   · grava `tmf_geographic_site_status_history` (histórico de status fica
+//     íntegro mesmo sem os outros efeitos colaterais do backend);
+//   · é idempotente por sigla/nome, igual `main()` — seguro rodar de novo.
+// Exige que as specs "Estação"/"Sala" (com containment declarado) já
+// existam — rode `main()` (sem `--fast`) uma vez antes se a base for nova.
+//
+// Uso:
+//   node scripts/estacoes_carregar.mjs --fast              # dry-run, só mostra o plano
+//   node scripts/estacoes_carregar.mjs --fast --apply       # grava
+
+const chunk = (arr, size) => {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+};
+
+// INSERT multi-linha parametrizado, em blocos que respeitam o teto de
+// parâmetros do Postgres (65535 por statement) — mesmo helper de
+// `load-recursos-netwin.mjs`.
+async function bulkInsert(client, table, columns, rows) {
+  if (rows.length === 0) return 0;
+  const perStatement = Math.max(1, Math.floor(60000 / columns.length));
+  let total = 0;
+  for (const block of chunk(rows, Math.min(perStatement, 500))) {
+    const values = [];
+    const tuples = block.map((row, r) => {
+      const ph = columns.map((_, c) => `$${r * columns.length + c + 1}`);
+      values.push(...columns.map((col) => row[col] ?? null));
+      return `(${ph.join(', ')})`;
+    });
+    const sql = `INSERT INTO ${table} (${columns.map((c) => `"${c}"`).join(', ')}) VALUES ${tuples.join(', ')}`;
+    const res = await client.query(sql, values);
+    total += res.rowCount ?? 0;
+  }
+  return total;
+}
+
+function historyRow(siteId, statusDate, toStatus = 'Active') {
+  return {
+    id: createCanonicalId(),
+    site_id: siteId,
+    tenant_id: 'default',
+    from_status: null,
+    to_status: toStatus,
+    status_date: statusDate,
+    status_reason: null,
+    actor_sub: MIGRATED_BY,
+    trace_id: createCanonicalId(),
+  };
+}
+
+// As specs precisam existir com o containment já declarado nos dois sentidos
+// (ver `ensureContainment`) — `--fast` não faz esse bootstrap, só confirma.
+// Remove todas as estações (e salas filhas, endereços e locations associados)
+// carregadas por este script ou pela carga legada de Niterói.
+async function resetStations(client) {
+  console.log('Identificando estações e salas para remoção…');
+  const { rows: stations } = await client.query(`
+    SELECT id, geographic_address_id, geographic_location_id
+    FROM tmf_geographic_site s
+    WHERE characteristics::jsonb @> '[{"name":"_origin.seed","value":"estacoes-carregar"}]'
+       OR EXISTS (
+         SELECT 1 FROM jsonb_array_elements(s.characteristics::jsonb) c
+         WHERE c->>'name' = '_origin.entity' AND c->>'value' = 'Estacao'
+       )
+       OR EXISTS (
+         SELECT 1 FROM jsonb_array_elements(s.characteristics::jsonb) c
+         WHERE c->>'group' = '_origin' AND c->>'name' = 'extra'
+           AND (c->'value'->>'sigla') IS NOT NULL
+       )
+  `);
+  if (stations.length === 0) {
+    console.log('  Nenhuma estação encontrada.');
+    return 0;
+  }
+  const stationIds = stations.map((r) => r.id);
+  const { rows: salas } = await client.query(
+    `SELECT id, geographic_address_id, geographic_location_id
+     FROM tmf_geographic_site WHERE parent_site_id = ANY($1::text[])`,
+    [stationIds],
+  );
+  const all = [...stations, ...salas];
+  const allIds = all.map((r) => r.id);
+  const addrIds = [...new Set(all.map((r) => r.geographic_address_id).filter(Boolean))];
+  const locIds  = [...new Set(all.map((r) => r.geographic_location_id).filter(Boolean))];
+
+  await client.query('DELETE FROM tmf_geographic_site_status_history WHERE site_id = ANY($1::text[])', [allIds]);
+  await client.query('DELETE FROM tmf_geographic_site WHERE id = ANY($1::text[])', [allIds]);
+  if (addrIds.length) await client.query('DELETE FROM tmf_geographic_address WHERE id = ANY($1::text[])', [addrIds]);
+  if (locIds.length)  await client.query('DELETE FROM tmf_geographic_location WHERE id = ANY($1::text[])', [locIds]);
+
+  console.log(`  Removidos: ${stations.length} estações, ${salas.length} salas, ${addrIds.length} endereços, ${locIds.length} locations.`);
+  return allIds.length;
+}
+
+async function loadSpecsFast(client) {
+  const { rows } = await client.query(
+    `SELECT id, name, allowed_parent_spec_ids, allowed_child_spec_ids
+     FROM tmf_geographic_site_specification WHERE name IN ('Estação', 'Sala')`,
+  );
+  const byName = new Map(rows.map((r) => [r.name, r]));
+  const estacao = byName.get('Estação');
+  const sala = byName.get('Sala');
+  if (!estacao || !sala) {
+    throw new Error(
+      'Specs "Estação"/"Sala" não encontradas. Rode `node scripts/estacoes_carregar.mjs` (modo padrão, sem --fast) uma vez antes — ele cria as specs e o containment.',
+    );
+  }
+  const childOk = (estacao.allowed_child_spec_ids ?? []).includes(sala.id);
+  const parentOk = (sala.allowed_parent_spec_ids ?? []).includes(estacao.id);
+  if (!childOk || !parentOk) {
+    throw new Error(
+      'Specs "Estação"/"Sala" existem mas o containment Estação→Sala não está declarado. Rode o modo padrão (sem --fast) uma vez — ele chama `ensureContainment`.',
+    );
+  }
+  return { specEstacaoId: estacao.id, specSalaId: sala.id };
+}
+
+// Mesmo índice de idempotência de `bootstrap()`, mas lido direto do banco
+// numa única query em vez de 1 GET por página.
+async function loadExistingIndexFast(client) {
+  const { rows } = await client.query(
+    `SELECT id, name, parent_site_id, status, characteristics FROM tmf_geographic_site
+     WHERE status NOT IN ('Retired', 'terminated')`,
+  );
+  const siteBySigla = new Map();
+  const siteByName = new Map();
+  const childByKey = new Map();
+  const siteCharsBySigla = new Map();
+  const siteStatusBySigla = new Map();
+  for (const row of rows) {
+    if (!siteByName.has(row.name)) siteByName.set(row.name, row.id);
+    if (row.parent_site_id) childByKey.set(`${row.parent_site_id}::${row.name}`, row.id);
+    let chars = [];
+    try {
+      chars = JSON.parse(row.characteristics || '[]');
+    } catch {
+      chars = [];
+    }
+    const extra = chars.find(
+      (c) => c.name === '_origin.extra' || (c.group === '_origin' && c.name === 'extra'),
+    );
+    const sigla = extra?.value?.sigla;
+    if (sigla && !siteBySigla.has(sigla)) {
+      siteBySigla.set(sigla, row.id);
+      siteCharsBySigla.set(sigla, chars);
+      siteStatusBySigla.set(sigla, row.status);
+    }
+  }
+  return { siteBySigla, siteByName, childByKey, siteCharsBySigla, siteStatusBySigla };
+}
+
+async function mainFast() {
+  if (!DB_URL) throw new Error('DATABASE_URL_DEV (ou DATABASE_URL) não definido no .env');
+
+  const rows = parseCsv(readCsvText(CSV_PATH));
+  if (rows.length === 0) throw new Error(`nenhuma linha lida de ${CSV_PATH}`);
+
+  const pool = new pg.Pool({
+    connectionString: DB_URL,
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 20_000,
+  });
+  const client = await pool.connect();
+
+  try {
+    // --reset: limpa estações/salas existentes antes de recarregar
+    if (RESET) {
+      if (APPLY_FAST) {
+        await client.query('BEGIN');
+        try {
+          await resetStations(client);
+          await client.query('COMMIT');
+        } catch (err) {
+          await client.query('ROLLBACK');
+          throw err;
+        }
+      } else {
+        console.log('— DRY-RUN de reset: as estações existentes seriam removidas. Combine --reset com --apply para executar. —');
+      }
+    }
+
+    const { specEstacaoId, specSalaId } = await loadSpecsFast(client);
+    const { siteBySigla, siteByName, childByKey, siteCharsBySigla, siteStatusBySigla } =
+      await loadExistingIndexFast(client);
+
+    const newLocations = [];
+    const newAddresses = [];
+    const newSites = []; // ordem importa: pai (Estação) sempre antes das Salas
+    const newHistory = [];
+    const toUpdate = []; // { id, characteristics?, status?, statusDate? } — sites existentes com campos divergentes
+    const created = { estacoes: 0, salas: 0 };
+    const updated = { estacoes: 0 };
+    const discarded = { estacoes: 0 };
+    const coordStats = { csv: 0, geocoded: 0, none: 0 };
+
+    const addSala = (name, parentSiteId, statusDate) => {
+      const key = `${parentSiteId}::${name}`;
+      if (childByKey.has(key)) return;
+      const salaId = createCanonicalId();
+      childByKey.set(key, salaId);
+      newSites.push({
+        id: salaId,
+        href: `/tmf-api/geographicSiteManagement/v4/geographicSite/${salaId}`,
+        tenant_id: 'default',
+        name,
+        site_specification_id: specSalaId,
+        status: 'Active',
+        status_date: statusDate,
+        geographic_location_id: null,
+        geographic_address_id: null,
+        parent_site_id: parentSiteId,
+        related_party: '[]',
+        site_addresses: '[]',
+        characteristics: JSON.stringify([tag()]),
+      });
+      newHistory.push(historyRow(salaId, statusDate));
+      created.salas++;
+    };
+
+    for (const row of rows) {
+      const sigla = row['ESTACAO'] || '';
+      if (!sigla) continue;
+
+      const ufRaw = (row['UF'] || '').toUpperCase();
+      const municipioRaw = titleCase(row['MUNICIPIO'] || '');
+      const nome = titleCase(row['NOME'] || sigla);
+      const estacaoName = `${nome} (${sigla})`;
+      const salas = parseSalas(row['DESCRICAO_SITES_INTERNOS']);
+      const sistemaOrigem = fixMojibake(row['SISTEMA_ORIGEM'] || '');
+
+      const enderecoRaw = row['ENDEREÇO'] ?? row['ENDERE�O'] ?? '';
+      const hasRealAddress = isRealAddress(enderecoRaw);
+      const endereco = hasRealAddress
+        ? parseEndereco(enderecoRaw)
+        : { street: '', streetNr: '', bairro: '', postcode: undefined };
+
+      let uf = ufRaw;
+      let municipio = municipioRaw;
+      if (!VALID_UF.has(uf)) {
+        const extracted = hasRealAddress ? extractCityUfFromAddress(enderecoRaw) : null;
+        if (extracted) {
+          uf = extracted.uf;
+          municipio = extracted.city;
+        } else {
+          uf = '';
+        }
+      }
+
+      const street = endereco.street || municipio || nome;
+
+      const expectedExtra = {
+        sigla,
+        nome,
+        sistemaOrigem,
+        estado: row['ESTADO'] || '',
+        municipio,
+        uf,
+        ...(municipio !== municipioRaw ? { municipioOrigem: municipioRaw } : {}),
+        ...(uf !== ufRaw ? { ufOrigem: ufRaw } : {}),
+        dataAtivacao: row['DATA_ATIVACAO'] || '',
+        dataUltimaModif: row['DATA_ULTIMA_MODIF'] || '',
+        salasDeclaradas: salas.length,
+      };
+
+      const existingSiteId = siteBySigla.get(sigla) ?? siteByName.get(estacaoName);
+      if (existingSiteId) {
+        const storedChars = siteCharsBySigla.get(sigla) ?? [];
+        const storedExtra = storedChars.find((c) => c.name === '_origin.extra' || (c.group === '_origin' && c.name === 'extra'))?.value;
+        const charsDiffer = extraDiffers(storedExtra, expectedExtra);
+
+        const storedStatus = siteStatusBySigla.get(sigla);
+        const expectedStatus = resolveSiteStatus(row['ESTADO'], sigla);
+        const statusDiffers = storedStatus !== expectedStatus;
+
+        if (charsDiffer || statusDiffers) {
+          const patch = { id: existingSiteId };
+          if (charsDiffer) {
+            const fullExtra = { ...expectedExtra, coordSource: storedExtra?.coordSource ?? 'none' };
+            patch.characteristics = JSON.stringify(updateCharacteristics(storedChars, fullExtra));
+          }
+          if (statusDiffers) {
+            patch.status = expectedStatus;
+            patch.statusDate = parseActivationDate(row['DATA_ATIVACAO']) ?? new Date().toISOString();
+            patch.fromStatus = storedStatus;
+          }
+          toUpdate.push(patch);
+          updated.estacoes++;
+          const parts = [charsDiffer && 'características', statusDiffers && `status ${storedStatus}→${expectedStatus}`].filter(Boolean);
+          console.log(`↺ ${sigla.padEnd(8)} ${estacaoName.padEnd(40)} — ${parts.join(', ')} atualizado(s)`);
+        } else {
+          discarded.estacoes++;
+        }
+        siteBySigla.set(sigla, existingSiteId);
+        const now = new Date().toISOString();
+        for (const sala of salas) addSala(sala, existingSiteId, now);
+        continue;
+      }
+
+      let coord = uf ? resolveCsvCoord(row['LAT'], row['LONG'], uf) : null;
+      let coordSource = coord ? 'csv' : null;
+      if (!coord && hasRealAddress) {
+        const query = [endereco.street, endereco.streetNr, endereco.bairro, municipio, uf]
+          .filter(Boolean)
+          .join(', ');
+        coord = await geocodeAddress(query, uf);
+        if (coord) coordSource = 'geocoded';
+      }
+      if (coordSource === 'csv') coordStats.csv++;
+      else if (coordSource === 'geocoded') coordStats.geocoded++;
+      else coordStats.none++;
+
+      const activationDate = parseActivationDate(row['DATA_ATIVACAO']) ?? new Date().toISOString();
+
+      const characteristic = [
+        tag(),
+        { name: '_origin.system', value: 'Netwin', valueType: 'string' },
+        { name: '_origin.id', value: sigla, valueType: 'string' },
+        { name: '_origin.entity', value: 'Estacao', valueType: 'string' },
+        { name: '_origin.migratedAt', value: MIGRATED_AT, valueType: 'date' },
+        { name: '_origin.migratedBy', value: MIGRATED_BY, valueType: 'string' },
+        {
+          name: '_origin.extra',
+          valueType: 'json',
+          value: { ...expectedExtra, coordSource: coordSource ?? 'none' },
+        },
+      ];
+
+      const siteId = createCanonicalId();
+      let locationId = null;
+      if (coord) {
+        locationId = createCanonicalId();
+        newLocations.push({
+          id: locationId,
+          href: `/tmf-api/geographicLocationManagement/v4/geographicLocation/${locationId}`,
+          tenant_id: 'default',
+          geometry_type: 'Point',
+          geometry: JSON.stringify({ type: 'Point', coordinates: coord }),
+          spatial_ref: 'EPSG:4326',
+          reference_point: estacaoName,
+          characteristics: '[]',
+        });
+      }
+
+      const addressId = createCanonicalId();
+      newAddresses.push({
+        id: addressId,
+        href: `/tmf-api/geographicAddressManagement/v4/geographicAddress/${addressId}`,
+        tenant_id: 'default',
+        street_name: street,
+        street_nr: endereco.streetNr || null,
+        city: municipio || null,
+        state_or_province: uf || null,
+        country: 'BR',
+        postcode: endereco.postcode || null,
+        geographic_location_id: locationId,
+        characteristics: '[]',
+      });
+
+      const siteStatus = resolveSiteStatus(row['ESTADO'], sigla);
+
+      newSites.push({
+        id: siteId,
+        href: `/tmf-api/geographicSiteManagement/v4/geographicSite/${siteId}`,
+        tenant_id: 'default',
+        name: estacaoName,
+        site_specification_id: specEstacaoId,
+        status: siteStatus,
+        status_date: activationDate,
+        geographic_location_id: locationId,
+        geographic_address_id: addressId,
+        parent_site_id: null,
+        related_party: '[]',
+        site_addresses: '[]',
+        characteristics: JSON.stringify(characteristic),
+      });
+      newHistory.push(historyRow(siteId, activationDate, siteStatus));
+
+      siteBySigla.set(sigla, siteId);
+      siteByName.set(estacaoName, siteId);
+      created.estacoes++;
+
+      for (const sala of salas) addSala(sala, siteId, activationDate);
+
+      const flag = coordSource ? (coordSource === 'geocoded' ? '  ⚠ geocodificada' : '') : '  ⚠ sem coordenada';
+      console.log(`· ${sigla.padEnd(8)} ${estacaoName.padEnd(40)} ${municipio}/${uf} — ${salas.length} salas${flag}`);
+    }
+
+    console.log('\nPlano:');
+    console.log(`  estações novas        : ${created.estacoes}`);
+    console.log(`  estações atualizadas  : ${updated.estacoes}`);
+    console.log(`  estações sem alteração: ${discarded.estacoes}`);
+    console.log(`  salas novas           : ${created.salas}`);
+    console.log(`  coordenada            : ${JSON.stringify(coordStats)}`);
+
+    if (!APPLY_FAST) {
+      console.log('\n— DRY-RUN (--fast sem --apply). Nada foi gravado. Rode com --fast --apply para executar. —');
+      return;
+    }
+
+    await client.query('BEGIN');
+    try {
+      await bulkInsert(
+        client,
+        'tmf_geographic_location',
+        ['id', 'href', 'tenant_id', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'],
+        newLocations,
+      );
+      await bulkInsert(
+        client,
+        'tmf_geographic_address',
+        ['id', 'href', 'tenant_id', 'street_name', 'street_nr', 'city', 'state_or_province', 'country',
+         'postcode', 'geographic_location_id', 'characteristics'],
+        newAddresses,
+      );
+      await bulkInsert(
+        client,
+        'tmf_geographic_site',
+        ['id', 'href', 'tenant_id', 'name', 'site_specification_id', 'status', 'status_date',
+         'geographic_location_id', 'geographic_address_id', 'parent_site_id', 'related_party',
+         'site_addresses', 'characteristics'],
+        newSites,
+      );
+      await bulkInsert(
+        client,
+        'tmf_geographic_site_status_history',
+        ['id', 'site_id', 'tenant_id', 'from_status', 'to_status', 'status_date', 'status_reason', 'actor_sub', 'trace_id'],
+        newHistory,
+      );
+
+      // Conferência antes do COMMIT: todo id que preparamos tem de existir na base.
+      const allIds = newSites.map((s) => s.id);
+      if (allIds.length > 0) {
+        const { rows: [check] } = await client.query(
+          `SELECT count(*)::int AS n FROM tmf_geographic_site WHERE id = ANY($1::text[])`,
+          [allIds],
+        );
+        if (check.n !== allIds.length) {
+          throw new Error(`conferência falhou: ${check.n}/${allIds.length} sites gravados — ROLLBACK`);
+        }
+      }
+
+      // Atualiza sites existentes com campos divergentes (characteristics e/ou status).
+      for (const patch of toUpdate) {
+        if (patch.characteristics !== undefined) {
+          await client.query(
+            'UPDATE tmf_geographic_site SET characteristics = $2 WHERE id = $1',
+            [patch.id, patch.characteristics],
+          );
+        }
+        if (patch.status !== undefined) {
+          await client.query(
+            'UPDATE tmf_geographic_site SET status = $2, status_date = $3 WHERE id = $1',
+            [patch.id, patch.status, patch.statusDate],
+          );
+          // `newHistory` já foi gravado no bulkInsert acima — esta transição só existe
+          // por causa do UPDATE (site já existia), então grava avulsa, com o `from_status`
+          // real que a leitura de `loadExistingIndexFast` capturou.
+          const h = historyRow(patch.id, patch.statusDate, patch.status);
+          await client.query(
+            `INSERT INTO tmf_geographic_site_status_history
+             (id, site_id, tenant_id, from_status, to_status, status_date, status_reason, actor_sub, trace_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [h.id, h.site_id, h.tenant_id, patch.fromStatus ?? null, h.to_status, h.status_date, h.status_reason, h.actor_sub, h.trace_id],
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    }
+
+    console.log('\nGravado:');
+    console.log(`  locations  : ${newLocations.length}`);
+    console.log(`  addresses  : ${newAddresses.length}`);
+    console.log(`  sites novos: ${newSites.length}`);
+    console.log(`  atualizados: ${toUpdate.length}`);
+    console.log(`  history    : ${newHistory.length}`);
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+(FAST ? mainFast() : main()).catch((err) => {
   console.error(err);
   process.exit(1);
 });

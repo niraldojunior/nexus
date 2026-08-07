@@ -6,6 +6,7 @@ export { HierarchyTreeView, NodeIcon } from './HierarchyTreeView';
 export { HierarchyComboView } from './HierarchyComboView';
 export { GeoSearchBar, type GeoSearchBarProps, type AddressSearchError } from './GeoSearchBar';
 export { AddressDetailPanel, type AddressDetailPanelProps } from './AddressDetailPanel';
+export { ViabilityTab, type ViabilityTabProps, type DropSimulation } from './ViabilityTab';
 export { Info } from './InfoRow';
 export { IconInfoRow } from './IconInfoRow';
 export { CoordinateStreetView } from './CoordinateStreetView';

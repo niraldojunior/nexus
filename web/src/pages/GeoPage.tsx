@@ -93,7 +93,17 @@ import {
   PanelBarButton,
   StatusBadge,
   type AddressSearchError,
+  type DropSimulation,
 } from './geo-tabs';
+import {
+  DROP_ACCENT,
+  DROP_INK,
+  DROP_LABEL_HEIGHT,
+  dropLabelDataUrl,
+  dropLabelWidth,
+  formatDropDistance,
+  pathMidpoint,
+} from '../utils/dropSimulation';
 import { BottomSheet } from '../components/BottomSheet';
 import { StreetViewHero } from '../components/StreetViewHero';
 import { GoogleStreetViewButton } from '../components/GoogleStreetViewButton';
@@ -147,6 +157,13 @@ const CABLE_ROUTE_Z = 10;
 const SELECTION_PIN_Z = 2000;
 const SELECTION_PIN_HEIGHT = 44;
 
+// A simulação de drop (aba Viabilidade do painel de Endereço) desenha acima dos cabos
+// reais — é sobreposição de estudo, tem de se destacar da planta —, mas abaixo do
+// alfinete, que continua sendo o que diz "é aqui".
+const DROP_SIMULATION_Z = 1500;
+// Passo do pontilhado em movimento. 60 ms dá fluidez sem custar frame de mapa.
+const DROP_DASH_INTERVAL_MS = 60;
+
 // Espessura por hierarquia da planta: o feeder é o tronco, o drop é o capilar.
 const CABLE_STROKE_WEIGHT: Record<string, number> = {
   BackboneCable: 5,
@@ -199,6 +216,10 @@ export default function GeoPage() {
     source: 'search' | 'map';
   } | null>(null);
   const [addressError, setAddressError] = useState<AddressSearchError | null>(null);
+  // Drop simulado entre o endereço aberto na doca e a CDO escolhida na aba de
+  // Viabilidade. Mora aqui, e não no painel, porque quem desenha é o mapa; o painel só
+  // o produz e o apaga ao se desmontar (ver ViabilityTab).
+  const [dropSimulation, setDropSimulation] = useState<DropSimulation | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -369,7 +390,17 @@ export default function GeoPage() {
     setDetailOpen(false);
     setDraftAddress(null);
     setAddressLookup(null);
+    setDropSimulation(null);
     setQuery('');
+  }, []);
+
+  // CDO escolhida na aba de Viabilidade: guarda o traçado para o mapa desenhar e
+  // centraliza no meio dele, para a simulação nascer inteira na tela.
+  const onDropSimulation = useCallback((simulation: DropSimulation | null) => {
+    setDropSimulation(simulation);
+    if (!simulation) return;
+    const midpoint = pathMidpoint(simulation.path);
+    if (midpoint) setFocusPoint(midpoint);
   }, []);
 
   // Endereço resolvido pela busca (Enter em texto livre ou clique numa sugestão do
@@ -380,6 +411,7 @@ export default function GeoPage() {
     setDetailOpen(false);
     setDraftAddress(null);
     setAddressError(null);
+    setDropSimulation(null);
     setAddressLookup({ address, source: 'search' });
     setFocusPoint(address.coordinates);
     setQuery(address.label);
@@ -397,6 +429,7 @@ export default function GeoPage() {
   // GoogleMapPanel e a prop `addressPoint`).
   const onMapAddressFound = useCallback((address: DraftAddress) => {
     setDraftAddress(address);
+    setDropSimulation(null);
     setAddressLookup({ address, source: 'map' });
     setQuery(address.label);
   }, []);
@@ -506,6 +539,7 @@ export default function GeoPage() {
               isMobile={isMobile}
               address={addressLookup.address}
               onClose={onDeselect}
+              onDropSimulation={onDropSimulation}
               searchBar={
                 isMobile ? null : (
                   <GeoSearchBar
@@ -591,6 +625,7 @@ export default function GeoPage() {
               selectedNodeId={selectedNode?.id ?? null}
               draftAddress={draftAddress}
               addressPoint={addressLookup?.source === 'search' ? addressLookup.address.coordinates : null}
+              dropSimulation={dropSimulation}
               focusPoint={focusPoint}
               balloon={balloon}
               onSelectNode={selectNode}
@@ -673,6 +708,7 @@ export function GoogleMapPanel({
   selectedNodeId,
   draftAddress,
   addressPoint,
+  dropSimulation,
   focusPoint,
   balloon,
   onSelectNode,
@@ -690,6 +726,9 @@ export function GoogleMapPanel({
   // alfinete de seleção, na ausência de um nó selecionado (os dois nunca coexistem,
   // ver onAddressFound/selectNode em GeoPage).
   addressPoint?: [number, number] | null;
+  // Drop simulado entre o endereço e a CDO escolhida na aba de Viabilidade — estudo,
+  // não planta: desenho próprio, animado, que some junto com o painel que o criou.
+  dropSimulation?: DropSimulation | null;
   focusPoint?: [number, number] | null;
   balloon: MapBalloon | null;
   onSelectNode: (node: GeoTreeNode) => void;
@@ -710,6 +749,12 @@ export function GoogleMapPanel({
   const clustererRef = useRef<MarkerClusterer | null>(null);
   const draftMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const selectionMarkerRef = useRef<GoogleMarkerInstance | null>(null);
+  // Três peças da simulação de drop: o traço sólido de base, o pontilhado que anda por
+  // cima dele e a pílula com a metragem no meio do caminho.
+  const dropBaseRef = useRef<GooglePolylineInstance | null>(null);
+  const dropDashRef = useRef<GooglePolylineInstance | null>(null);
+  const dropLabelRef = useRef<GoogleMarkerInstance | null>(null);
+  const dropAnimationRef = useRef<number | undefined>(undefined);
   const infoWindowRef = useRef<GoogleInfoWindowInstance | null>(null);
   // Nó fora da árvore do React: o InfoWindow do Google recebe este elemento como
   // conteúdo e o React desenha dentro dele via portal, mantendo o balão como
@@ -1079,6 +1124,122 @@ export function GoogleMapPanel({
     }
   }, [mapsReady, nodes]);
 
+  // Simulação do drop: o traçado entre o endereço e a CDO escolhida na aba de
+  // Viabilidade. Não é planta — é um estudo do que *seria* o cabo —, então tem desenho
+  // próprio (casing escuro + pontilhado amarelo em movimento, o par de acento do design
+  // system) em vez da cor/espessura de cabo do inventário, e some junto com o painel.
+  useEffect(() => {
+    const maps = window.google?.maps;
+    if (!mapsReady || !mapRef.current || !maps) return;
+
+    const stopAnimation = () => {
+      if (dropAnimationRef.current !== undefined) {
+        window.clearInterval(dropAnimationRef.current);
+        dropAnimationRef.current = undefined;
+      }
+    };
+
+    if (!dropSimulation || dropSimulation.path.length < 2) {
+      stopAnimation();
+      dropBaseRef.current?.setMap(null);
+      dropDashRef.current?.setMap(null);
+      dropLabelRef.current?.setMap(null);
+      dropBaseRef.current = null;
+      dropDashRef.current = null;
+      dropLabelRef.current = null;
+      return;
+    }
+
+    const path = dropSimulation.path.map(([lng, lat]) => ({ lng, lat }));
+
+    // Um traço com `strokeOpacity` a zero e ícones repetidos é como o Google Maps faz
+    // linha tracejada: o "tracinho" é o próprio símbolo, repetido a cada 14 px.
+    const dashIcons = (offsetPercent: number) => [
+      {
+        icon: {
+          path: 'M 0,-1 0,1',
+          strokeColor: DROP_ACCENT,
+          strokeOpacity: 1,
+          strokeWeight: 4,
+          scale: 3.5,
+        },
+        offset: `${offsetPercent}%`,
+        repeat: '14px',
+      },
+    ];
+
+    if (dropBaseRef.current) {
+      dropBaseRef.current.setPath(path);
+      dropBaseRef.current.setMap(mapRef.current);
+    } else {
+      dropBaseRef.current = new maps.Polyline({
+        map: mapRef.current,
+        path,
+        strokeColor: DROP_INK,
+        strokeOpacity: 0.85,
+        strokeWeight: 5,
+        zIndex: DROP_SIMULATION_Z,
+        clickable: false,
+      });
+    }
+
+    if (dropDashRef.current) {
+      dropDashRef.current.setPath(path);
+      dropDashRef.current.setOptions({ icons: dashIcons(0) });
+      dropDashRef.current.setMap(mapRef.current);
+    } else {
+      dropDashRef.current = new maps.Polyline({
+        map: mapRef.current,
+        path,
+        strokeOpacity: 0,
+        zIndex: DROP_SIMULATION_Z + 1,
+        clickable: false,
+        icons: dashIcons(0),
+      });
+    }
+
+    // Metragem em cima da própria geometria. `≈` quando o traçado é o segmento direto
+    // (a Routes API não devolveu rota a pé) — a distância ali não é de caminho real.
+    const midpoint = pathMidpoint(dropSimulation.path);
+    if (midpoint) {
+      const text = `${dropSimulation.approximate ? '≈ ' : ''}${formatDropDistance(dropSimulation.distanceMeters)}`;
+      const width = dropLabelWidth(text);
+      const labelIcon = {
+        url: dropLabelDataUrl(text),
+        scaledSize: new maps.Size(width, DROP_LABEL_HEIGHT),
+        anchor: new maps.Point(width / 2, DROP_LABEL_HEIGHT / 2),
+      };
+      const position = { lng: midpoint[0], lat: midpoint[1] };
+      if (dropLabelRef.current) {
+        dropLabelRef.current.setPosition(position);
+        dropLabelRef.current.setIcon(labelIcon);
+        dropLabelRef.current.setMap(mapRef.current);
+      } else {
+        dropLabelRef.current = new maps.Marker({
+          map: mapRef.current,
+          position,
+          icon: labelIcon,
+          zIndex: DROP_SIMULATION_Z + 2,
+          clickable: false,
+        });
+      }
+    }
+
+    // O pontilhado anda do endereço para a CDO. Quem pediu menos movimento no sistema
+    // operacional fica com o tracejado parado — a informação é a mesma.
+    stopAnimation();
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    if (!reduceMotion) {
+      let offset = 0;
+      dropAnimationRef.current = window.setInterval(() => {
+        offset = (offset + 2) % 100;
+        dropDashRef.current?.setOptions({ icons: dashIcons(offset) });
+      }, DROP_DASH_INTERVAL_MS);
+    }
+
+    return stopAnimation;
+  }, [dropSimulation, mapsReady]);
+
   // Balão de preview ancorado no item sob o mouse. Usa o InfoWindow nativo — é o
   // que dá o bico apontando pro pin e o auto-pan quando ele nasce fora da tela.
   // Sem cabeçalho/X: é um balão temporário que fecha sozinho no mouse-out, então
@@ -1341,10 +1502,13 @@ function GeoDetailPanel({
 
   return (
     <div className="flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-x-hidden border-r border-app-border bg-app-panel shadow-dock">
-      <StreetViewHero marker={heroMarker} overlay={searchBar} />
       {header}
-      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-3">
-        {body}
+      {/* Cabeçalho (título + fechar) fixo; a foto de Street View e o corpo rolam
+          juntos, para o conteúdo usar toda a altura do painel — não só a metade
+          abaixo da foto. Mesmo padrão no painel de Endereço. */}
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
+        <StreetViewHero marker={heroMarker} overlay={searchBar} />
+        <div className="px-3 py-3">{body}</div>
       </div>
     </div>
   );
@@ -1405,6 +1569,11 @@ function SiteDetailBody({
   };
 
   const siteMarker = point ? siteStreetViewMarker(site, spec, point) : null;
+  // `_origin.extra` é somente-leitura, gravado por cargas de migração (ver
+  // scripts/estacoes_carregar.mjs) — nunca editável pela UI (C5, service.ts).
+  const siteOriginExtra = site.characteristic.find((c) => c.name === '_origin.extra')?.value as
+    | { sistemaOrigem?: string }
+    | undefined;
 
   return (
     <>
@@ -1462,6 +1631,9 @@ function SiteDetailBody({
             }
           />
           <IconInfoRow icon={Hash} hint="ID" value={site.id} mono />
+          {siteOriginExtra?.sistemaOrigem ? (
+            <IconInfoRow icon={InfoIcon} hint="Sistema de origem" value={siteOriginExtra.sistemaOrigem} />
+          ) : null}
         </div>
       ) : null}
 

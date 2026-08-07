@@ -651,6 +651,7 @@ export default function GeoPage() {
               onDeselect={onDeselect}
               onViewportChange={handleViewportChange}
               clusterMarkers={clusterMarkers}
+              autoLocateOnOpen={isMobile}
             />
 
             {isMobile || (!detailOpen && !addressLookup && hierarchyCollapsed) ? (
@@ -739,6 +740,7 @@ export function GoogleMapPanel({
   onDeselect,
   onViewportChange,
   clusterMarkers,
+  autoLocateOnOpen = false,
 }: {
   nodes: GeoTreeNode[];
   selectedNodeId: string | null;
@@ -759,6 +761,9 @@ export function GoogleMapPanel({
   onDeselect: () => void;
   onViewportChange: (bounds: MapBounds, scaleMeters: number) => void;
   clusterMarkers: boolean;
+  // Só o mobile salta sozinho para a posição do dispositivo ao abrir (ver efeito de
+  // auto-localização); no desktop o pulo fica reservado ao clique no botão.
+  autoLocateOnOpen?: boolean;
 }) {
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<GoogleMapInstance | null>(null);
@@ -841,6 +846,12 @@ export function GoogleMapPanel({
           mapTypeControl: false,
           fullscreenControl: false,
           streetViewControl: false,
+          // Sem os controles nativos de zoom (+/−) e rotação: o canto inferior direito
+          // fica livre para o botão Minha localização (ver MapLocateButton). A navegação
+          // segue por scroll/pinça. `scaleControl` fica — a régua alimenta a leitura de
+          // metros do mapa (ver readGoogleScaleMeters).
+          zoomControl: false,
+          rotateControl: false,
           scaleControl: true,
           styles: MAP_STYLES,
         });
@@ -1338,6 +1349,42 @@ export function GoogleMapPanel({
     },
     [mapsReady],
   );
+
+  // Ao abrir a página no mobile: se o dispositivo JÁ concedeu a permissão de localização,
+  // salta sozinho para a posição atual com zoom de rua — como se o usuário tivesse clicado
+  // no botão Minha localização. Só dispara quando a permissão está 'granted': nunca abrimos
+  // o prompt de permissão no load (intrusivo); 'prompt'/'denied', ou navegador sem a
+  // Permissions API, ficam para o clique explícito. Roda uma única vez e desiste se o
+  // usuário já selecionou algo (ex.: deep-link para um Site) enquanto resolvíamos a
+  // permissão, para não roubar o enquadramento dele.
+  const autoLocatedRef = useRef(false);
+  useEffect(() => {
+    if (!mapsReady || autoLocatedRef.current || !autoLocateOnOpen) return;
+    autoLocatedRef.current = true;
+    if (!('geolocation' in navigator) || !navigator.permissions?.query) return;
+    let cancelled = false;
+    navigator.permissions
+      .query({ name: 'geolocation' as PermissionName })
+      .then((status) => {
+        if (cancelled || status.state !== 'granted' || selectedNodeIdRef.current) return;
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            if (cancelled || selectedNodeIdRef.current) return;
+            handleDeviceLocate({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+              accuracy: position.coords.accuracy,
+            });
+          },
+          () => {},
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [mapsReady, handleDeviceLocate, autoLocateOnOpen]);
 
   if (!GOOGLE_MAPS_KEY) {
     return <FallbackMap nodes={nodes} draftAddress={draftAddress} onSelectNode={onSelectNode} />;

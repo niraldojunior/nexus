@@ -77,7 +77,7 @@ export function MapLocateButton({ onLocate }: { onLocate: (coords: DeviceLocatio
   const locating = status === 'locating';
 
   return (
-    <div className="absolute bottom-[6.25rem] left-3 z-30 flex flex-col items-start gap-2">
+    <div className="absolute bottom-8 right-3 z-30 flex flex-col items-end gap-2">
       {errorMsg ? (
         <div
           role="alert"

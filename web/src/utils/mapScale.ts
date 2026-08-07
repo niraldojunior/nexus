@@ -42,9 +42,9 @@ export function mapScaleMeters(zoom: number, latDeg: number): number {
   return largestNiceValue(metersPerPixel(zoom, latDeg) * SCALE_BAR_MAX_PX);
 }
 
-// Escala-alvo ao saltar para a localização do dispositivo: ~50 m enquadra o quarteirão
-// ao redor do usuário (ver zoomForScaleMeters e MapLocateButton).
-export const DEVICE_LOCATION_SCALE_METERS = 50;
+// Escala-alvo ao saltar para a localização do dispositivo: ~20 m coloca o usuário na
+// própria calçada, resolução de campo (ver zoomForScaleMeters e MapLocateButton).
+export const DEVICE_LOCATION_SCALE_METERS = 20;
 
 // Inverso de mapScaleMeters, sem o arredondamento "nice value": o zoom (fracionário, que o
 // Google Maps aceita) para o qual a barra de escala representaria ~`meters` metros na

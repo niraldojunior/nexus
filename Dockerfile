@@ -17,7 +17,10 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 make g++ \
  && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# `npm install` (não `npm ci`): o package-lock.json é gerado no Windows e omite
+# deps opcionais específicas de Linux (@emnapi/* via @napi-rs/wasm-runtime), o que
+# faz o `npm ci` estrito falhar no runner. Espelha o ci.yml, que já usa `npm install`.
+RUN npm install --no-audit --no-fund
 
 # ---------------------------------------------------------------- build (app) --
 FROM deps AS build
@@ -37,7 +40,9 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 make g++ \
  && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund
+# `npm install` (não `npm ci`) pelo mesmo motivo do estágio deps: lockfile gerado
+# no Windows omite deps opcionais de Linux.
+RUN npm install --omit=dev --no-audit --no-fund
 
 # --------------------------------------------------------------- api (target) --
 FROM node:22-bookworm-slim AS api

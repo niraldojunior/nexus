@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless';
 import { config as loadEnv } from 'dotenv';
+import { firstNonBlank } from '../src/shared/config/env.js';
 
 // Drops the per-worker test schemas (`nexus_test_%`) so the suite starts clean and leaves nothing
 // behind. Runs once in the Vitest main process — before any worker (returned teardown runs after).
@@ -10,11 +11,13 @@ import { config as loadEnv } from 'dotenv';
 // `--use-system-ca`, so the proxy's certificate chain is trusted).
 
 const resolvePostgresUrl = (): string | undefined =>
-  process.env.DATABASE_URL_TEST ??
-  process.env.NEON_DATABASE_URL_TEST ??
-  process.env.DATABASE_URL_DEV ??
-  process.env.NEON_DATABASE_URL_DEV ??
-  process.env.DATABASE_URL;
+  firstNonBlank(
+    process.env.DATABASE_URL_TEST,
+    process.env.NEON_DATABASE_URL_TEST,
+    process.env.DATABASE_URL_DEV,
+    process.env.NEON_DATABASE_URL_DEV,
+    process.env.DATABASE_URL,
+  );
 
 const withoutSchema = (databaseUrl: string): string => {
   const url = new URL(databaseUrl);

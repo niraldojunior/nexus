@@ -40,6 +40,17 @@ test('loadConfig prefers the dev Neon database outside production when DATABASE_
   assert.equal(config.databaseUrl, 'postgresql://dev.example');
 });
 
+test('loadConfig ignores empty test database variables and falls back to dev', () => {
+  const config = loadConfig({
+    DATABASE_URL_TEST: '',
+    NEON_DATABASE_URL_TEST: '   ',
+    DATABASE_URL_DEV: 'postgresql://dev.example',
+    NODE_ENV: 'test',
+  });
+
+  assert.equal(config.databaseUrl, 'postgresql://dev.example');
+});
+
 test('loadConfig uses the preview Neon database in Vercel preview deployments', () => {
   const config = loadConfig({
     DATABASE_URL_DEV: 'postgresql://dev.example',

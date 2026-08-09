@@ -630,7 +630,8 @@ const routeGeoRequest = async ({
     if (!nodeId) {
       throw new AppError('nodeId required', { code: 'GEO_TREE_NODE_REQUIRED', statusCode: 400 });
     }
-    return sendJson(response, 200, { nodeId, path: geoTreeService.pathTo(nodeId) });
+    const path = await geoTreeService.pathTo(nodeId);
+    return sendJson(response, 200, { nodeId, path });
   }
 
   // Infra passiva por região visível do mapa — fonte usada em escala de detalhe (≤ 200 m),

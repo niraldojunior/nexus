@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { config as loadEnv } from 'dotenv';
 import { createApp } from '../src/shared/http/app.js';
-import { isPostgresDatabaseUrl } from '../src/shared/config/env.js';
+import { firstNonBlank, isPostgresDatabaseUrl } from '../src/shared/config/env.js';
 import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
 import { TABLE_NAMES } from '../src/shared/persistence/schema.js';
 
@@ -24,11 +24,13 @@ let workerDatabaseUrl: string | undefined;
 let schemaReady = false;
 
 const resolvePostgresUrl = (): string | undefined =>
-  process.env.DATABASE_URL_TEST ??
-  process.env.NEON_DATABASE_URL_TEST ??
-  process.env.DATABASE_URL_DEV ??
-  process.env.NEON_DATABASE_URL_DEV ??
-  process.env.DATABASE_URL;
+  firstNonBlank(
+    process.env.DATABASE_URL_TEST,
+    process.env.NEON_DATABASE_URL_TEST,
+    process.env.DATABASE_URL_DEV,
+    process.env.NEON_DATABASE_URL_DEV,
+    process.env.DATABASE_URL,
+  );
 
 // Identity of a Postgres URL for comparison: host + database only, ignoring credentials and query
 // params (e.g. ?schema=). Two URLs that differ only by user/password/schema are the same database.

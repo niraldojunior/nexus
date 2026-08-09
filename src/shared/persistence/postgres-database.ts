@@ -67,10 +67,13 @@ export class PostgresDatabase implements DatabaseClient {
     if (this.initialized) return;
     const pool = this.getPool();
     const client = await pool.connect();
+    let transactionStarted = false;
     try {
       if (this.schemaName) {
+        await client.query('BEGIN');
+        transactionStarted = true;
         await client.query(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(this.schemaName)}`);
-        await client.query(`SET search_path TO ${quoteIdentifier(this.schemaName)}, public`);
+        await this.setSearchPath(client);
       }
       if (process.env.DATABASE_AUTO_SCHEMA === 'true') {
         await client.query(transformSchemaSql(SCHEMA_SQL));
@@ -79,7 +82,17 @@ export class PostgresDatabase implements DatabaseClient {
         await client.query('SELECT 1');
         await this.validateSchemaVersion(client);
       }
+      if (transactionStarted) await client.query('COMMIT');
       this.initialized = true;
+    } catch (error) {
+      if (transactionStarted) {
+        try {
+          await client.query('ROLLBACK');
+        } catch {
+          // Preserve the initialization error.
+        }
+      }
+      throw error;
     } finally {
       client.release();
     }

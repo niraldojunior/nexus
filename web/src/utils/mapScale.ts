@@ -58,6 +58,9 @@ export const RESOURCE_FOCUS_SCALE_METERS = 20;
 export const SITE_FOCUS_SCALE_METERS = 50;
 export const ADDRESS_FOCUS_SCALE_METERS = 30;
 
+// Escala final de uma seleção feita na consulta de locais.
+export const MAP_SELECTION_SCALE_METERS = 50;
+
 // Inverso de mapScaleMeters, sem o arredondamento "nice value": o zoom para o qual a
 // barra de escala representaria ~`meters` metros na latitude dada.
 //

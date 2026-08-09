@@ -123,6 +123,9 @@ export const isPostgresDatabaseUrl = (value: string | undefined): value is strin
   typeof value === 'string' &&
   (value.startsWith('postgres://') || value.startsWith('postgresql://'));
 
+export const firstNonBlank = (...values: Array<string | undefined>): string | undefined =>
+  values.find((value) => value !== undefined && value.trim().length > 0);
+
 export const resolveDatabaseUrl = (
   env: NodeJS.ProcessEnv,
   nodeEnv: AppConfig['nodeEnv'],
@@ -133,30 +136,32 @@ export const resolveDatabaseUrl = (
 
   if (env.VERCEL_ENV === 'production') {
     return requirePostgresUrl(
-      env.DATABASE_URL_PROD ?? env.NEON_DATABASE_URL_PROD,
+      firstNonBlank(env.DATABASE_URL_PROD, env.NEON_DATABASE_URL_PROD),
       'DATABASE_URL_PROD',
     );
   }
 
   if (env.VERCEL_ENV === 'preview' || env.VERCEL_ENV === 'development') {
     return requirePostgresUrl(
-      env.DATABASE_URL_DEV ?? env.NEON_DATABASE_URL_DEV,
+      firstNonBlank(env.DATABASE_URL_DEV, env.NEON_DATABASE_URL_DEV),
       'DATABASE_URL_DEV',
     );
   }
 
   if (nodeEnv === 'production') {
     return requirePostgresUrl(
-      env.DATABASE_URL_PROD ?? env.NEON_DATABASE_URL_PROD,
+      firstNonBlank(env.DATABASE_URL_PROD, env.NEON_DATABASE_URL_PROD),
       'DATABASE_URL_PROD',
     );
   }
 
   return requirePostgresUrl(
-    env.DATABASE_URL_TEST ??
-      env.NEON_DATABASE_URL_TEST ??
-      env.DATABASE_URL_DEV ??
+    firstNonBlank(
+      env.DATABASE_URL_TEST,
+      env.NEON_DATABASE_URL_TEST,
+      env.DATABASE_URL_DEV,
       env.NEON_DATABASE_URL_DEV,
+    ),
     'DATABASE_URL_DEV',
   );
 };

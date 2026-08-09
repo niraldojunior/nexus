@@ -70,6 +70,7 @@ import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { config as loadEnv } from 'dotenv';
 import pg from 'pg';
+import { sslFor } from './pg-ssl.mjs';
 
 loadEnv();
 
@@ -433,7 +434,7 @@ async function main() {
 
   const pool = new pg.Pool({
     connectionString: DB_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: sslFor(DB_URL),
     connectionTimeoutMillis: 20_000,
   });
   const client = await pool.connect();

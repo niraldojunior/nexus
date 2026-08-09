@@ -15,6 +15,7 @@ export type GoogleMapInstance = {
   getCenter: () => GoogleLatLng | undefined;
   getDiv: () => HTMLElement;
   getZoom: () => number | undefined;
+  moveCamera: (options: { center: { lat: number; lng: number }; zoom: number }) => void;
   panTo: (position: { lat: number; lng: number }) => void;
   setZoom: (zoom: number) => void;
   setMapTypeId: (mapTypeId: GoogleMapTypeId) => void;

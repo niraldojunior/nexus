@@ -85,6 +85,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import pg from 'pg';
+import { sslFor } from './pg-ssl.mjs';
 import { createCanonicalId } from '../dist/src/shared/utils/canonical-id.js';
 
 loadEnv({ quiet: true });
@@ -877,7 +878,7 @@ async function mainFast() {
 
   const pool = new pg.Pool({
     connectionString: DB_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: sslFor(DB_URL),
     connectionTimeoutMillis: 20_000,
   });
   const client = await pool.connect();

@@ -38,6 +38,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { sslFor } from './pg-ssl.mjs';
 
 const BASE = process.env.NEXUS_API || 'http://127.0.0.1:4001';
 const TOKEN = process.env.NEXUS_TOKEN || 'change-me';
@@ -283,7 +284,8 @@ async function purgeOrphanScaffolding() {
        AND NOT EXISTS (SELECT 1 FROM tmf_physical_resource r WHERE r.place_id = a.id)`;
 
   const { default: pg } = await import('pg');
-  const client = new pg.Client({ connectionString: match[1].trim(), ssl: { rejectUnauthorized: false } });
+  const dbUrl = match[1].trim();
+  const client = new pg.Client({ connectionString: dbUrl, ssl: sslFor(dbUrl) });
   await client.connect();
   try {
     // Endereços primeiro: apagar a Location antes deixaria o endereço apontando

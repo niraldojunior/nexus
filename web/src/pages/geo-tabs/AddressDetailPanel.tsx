@@ -130,7 +130,9 @@ export function AddressDetailPanel({
         {/* Foto, título e corpo rolam juntos dentro da folha (ver BottomSheet). */}
         <StreetViewHero marker={marker} />
         {header}
-        <div className="min-w-0 overflow-x-hidden px-4 py-3">{body}</div>
+        {/* `overflow-hidden` nos dois eixos mantém o BottomSheet como único dono
+            do gesto vertical; `overflow-x-hidden` faria Y computar para `auto`. */}
+        <div className="min-w-0 overflow-hidden px-4 py-3">{body}</div>
       </BottomSheet>
     );
   }

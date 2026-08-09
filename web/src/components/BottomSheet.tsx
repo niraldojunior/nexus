@@ -92,6 +92,7 @@ export function BottomSheet({
   const sheetStartHeightRef = useRef(0);
   const dragOffsetRef = useRef(0);
   const gestureStartSnapRef = useRef<BottomSheetSnap>(initialSnap);
+  const gestureStartScrollTopRef = useRef(0);
   // Espelho do encaixe atual, legível de dentro dos handlers sem esperar o re-render —
   // preciso porque um mesmo `pointermove` pode trocar o encaixe e agir sobre o novo.
   const snapRef = useRef<BottomSheetSnap>(initialSnap);
@@ -153,6 +154,13 @@ export function BottomSheet({
     const height = sheetStartHeightRef.current - offset;
     const fullHeight = window.innerHeight * SNAP_RATIO.full;
     if (height >= fullHeight) {
+      // A parcela do gesto que ultrapassou a altura de `full` já pertence à lista.
+      // Consumi-la neste mesmo pointermove evita perder movimento na fronteira entre
+      // expansão e scroll (principalmente quando o usuário faz um swipe único e solta).
+      const contentOverflow = height - fullHeight;
+      if (contentOverflow > 0 && contentRef.current) {
+        contentRef.current.scrollTop += contentOverflow;
+      }
       commitSnap('full');
       setDragOffset(0);
       dragOffsetRef.current = 0;
@@ -227,6 +235,7 @@ export function BottomSheet({
     if (cancelled) {
       if (modeRef.current === 'sheet' || modeRef.current === 'content') {
         commitSnap(gestureStartSnapRef.current);
+        if (contentRef.current) contentRef.current.scrollTop = gestureStartScrollTopRef.current;
       }
       setDragOffset(0);
       setDragging(false);
@@ -276,6 +285,7 @@ export function BottomSheet({
     armPointerLifecycle();
     modeRef.current = 'sheet';
     gestureStartSnapRef.current = snapRef.current;
+    gestureStartScrollTopRef.current = contentRef.current?.scrollTop ?? 0;
     startYRef.current = event.clientY;
     sheetStartHeightRef.current = window.innerHeight * SNAP_RATIO[snapRef.current];
     dragOffsetRef.current = 0;
@@ -309,6 +319,7 @@ export function BottomSheet({
     armPointerLifecycle();
     modeRef.current = 'idle';
     gestureStartSnapRef.current = snapRef.current;
+    gestureStartScrollTopRef.current = contentRef.current?.scrollTop ?? 0;
     startXRef.current = event.clientX;
     startYRef.current = event.clientY;
     lastYRef.current = event.clientY;
@@ -413,6 +424,7 @@ export function BottomSheet({
   return (
     <div
       ref={sheetRef}
+      data-testid="bottom-sheet"
       className={`fixed inset-x-0 bottom-0 z-40 flex flex-col overflow-hidden rounded-t-[20px] bg-app-panel shadow-soft-lg ${
         dragging ? '' : 'transition-[height] duration-200 ease-out'
       }`}
@@ -430,6 +442,7 @@ export function BottomSheet({
       </div>
       <div
         ref={contentRef}
+        data-testid="bottom-sheet-content"
         className={`min-h-0 flex-1 ${snap === 'full' ? 'overflow-y-auto' : 'overflow-hidden'}`}
         style={{
           touchAction: 'pan-x',

@@ -73,6 +73,21 @@ describe('AddressDetailPanel', () => {
     expect(screen.getAllByText('-').length).toBe(2);
   });
 
+  it('mantém o BottomSheet mobile como único contêiner de scroll vertical', () => {
+    const address: DraftAddress = {
+      street: 'Ponto selecionado no mapa',
+      country: 'BR',
+      coordinates: [-43.1, -22.9],
+      label: 'Ponto selecionado [-43.10000, -22.90000]',
+    };
+
+    render(<AddressDetailPanel isMobile address={address} onClose={vi.fn()} />);
+
+    const bodyWrapper = screen.getByText('Google Maps').closest('.px-4');
+    expect(bodyWrapper).toHaveClass('overflow-hidden');
+    expect(bodyWrapper).not.toHaveClass('overflow-x-hidden');
+  });
+
   it('alterna entre Visão geral e Viabilidade', async () => {
     const address: DraftAddress = {
       street: 'R. Dr. Paulo César',

@@ -49,7 +49,24 @@ describe('BottomSheet', () => {
     fireEvent.pointerUp(content, { clientY: 50, pointerId: 1 });
 
     expect(outer.style.height).toContain('92vh');
-    expect(content.scrollTop).toBe(50);
+    // 48px excedentes ao atingir full + 50px do movimento seguinte.
+    expect(content.scrollTop).toBe(98);
+  });
+
+  it('consome no scroll da lista o excedente do gesto que alcança full', () => {
+    const { outer, content } = renderSheet(
+      'mid',
+      <div style={{ height: 1600 }}>Lista longa de sub-recursos</div>,
+    );
+
+    fireEvent.pointerDown(content, { clientY: 500, pointerId: 1 });
+    // mid = 384px, full = 736px: 352px expandem a folha e os 48px restantes
+    // precisam continuar no conteúdo sem exigir que o usuário solte o dedo.
+    fireEvent.pointerMove(content, { clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(content, { clientY: 100, pointerId: 1 });
+
+    expect(outer.style.height).toContain('92vh');
+    expect(content.scrollTop).toBe(48);
   });
 
   it('não permite que um segundo ponteiro roube ou cancele o gesto ativo', () => {
@@ -175,6 +192,22 @@ describe('BottomSheet', () => {
     fireEvent.pointerCancel(content, { clientY: 460, pointerId: 1 });
 
     expect(outer.style.height).toContain('48vh');
+  });
+
+  it('restaura o scroll inicial quando pointercancel ocorre após transferir para a lista', () => {
+    const { outer, content } = renderSheet(
+      'mid',
+      <div style={{ height: 1600 }}>Lista longa de sub-recursos</div>,
+    );
+    content.scrollTop = 12;
+
+    fireEvent.pointerDown(content, { clientY: 500, pointerId: 1 });
+    fireEvent.pointerMove(content, { clientY: 100, pointerId: 1 });
+    expect(content.scrollTop).toBe(60);
+    fireEvent.pointerCancel(content, { clientY: 100, pointerId: 1 });
+
+    expect(outer.style.height).toContain('48vh');
+    expect(content.scrollTop).toBe(12);
   });
 
   it('expande mesmo quando o gesto começa em um controle interno que interrompe bubbling', () => {

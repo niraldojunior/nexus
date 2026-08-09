@@ -14,6 +14,10 @@ const reuseInstance = (): boolean => process.env.DATABASE_REUSE_TEST_INSTANCE ==
 // unlike VITEST_WORKER_ID, which Vitest reassigns per file.
 const workerId = process.env.VITEST_POOL_ID ?? process.env.VITEST_WORKER_ID ?? '1';
 
+// The per-worker schema every DB test in this worker shares (see createTestDatabase). Computed once
+// here so TRUNCATE_SQL can be schema-qualified — see the safety note on TRUNCATE_SQL below.
+const workerSchema = `nexus_test_w${workerId}`.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 63);
+
 let workerDatabaseUrl: string | undefined;
 // Flips true once a test in this worker has asked for the shared database, so the afterEach TRUNCATE
 // stays a no-op for pure (non-DB) tests until then.
@@ -26,9 +30,43 @@ const resolvePostgresUrl = (): string | undefined =>
   process.env.NEON_DATABASE_URL_DEV ??
   process.env.DATABASE_URL;
 
+// Identity of a Postgres URL for comparison: host + database only, ignoring credentials and query
+// params (e.g. ?schema=). Two URLs that differ only by user/password/schema are the same database.
+const dbIdentity = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.host}${parsed.pathname}`;
+  } catch {
+    return url;
+  }
+};
+
+// Refuses to let the test suite run against production. The suite TRUNCATEs every table between
+// tests, so a DATABASE_URL_TEST/DEV secret accidentally pointing at the prod database wipes prod.
+// This turns that mistake into a loud, immediate failure instead of silent data loss.
+export const assertNotProductionUrl = (url: string): void => {
+  const target = dbIdentity(url);
+  const isProd = [process.env.DATABASE_URL_PROD, process.env.NEON_DATABASE_URL_PROD]
+    .filter((value): value is string => Boolean(value))
+    .some((prod) => dbIdentity(prod) === target);
+  if (isProd) {
+    throw new Error(
+      'Recusando rodar: o banco de teste resolveu para a produção (DATABASE_URL_PROD). ' +
+        'A suíte faz TRUNCATE em todas as tabelas. Aponte DATABASE_URL_TEST/DATABASE_URL_DEV ' +
+        'para um branch descartável do Neon.',
+    );
+  }
+};
+
 // One statement covering every table: TRUNCATE ... CASCADE resets data (and identity sequences)
 // between tests in a single round-trip, without dropping/recreating the schema.
-const TRUNCATE_SQL = `TRUNCATE TABLE ${TABLE_NAMES.map((table) => `"${table}"`).join(', ')} RESTART IDENTITY CASCADE`;
+//
+// SAFETY: table names are schema-qualified with workerSchema. The connection runs with
+// search_path = "<workerSchema>, public"; with *unqualified* names, any table missing from the
+// worker schema (e.g. when DATABASE_AUTO_SCHEMA is off, so the DDL never ran there) would resolve
+// to public and TRUNCATE production data. Qualifying makes it physically impossible for this
+// statement to touch the public schema.
+export const TRUNCATE_SQL = `TRUNCATE TABLE ${TABLE_NAMES.map((table) => `"${workerSchema}"."${table}"`).join(', ')} RESTART IDENTITY CASCADE`;
 
 // Called from the global afterEach (test/setup.ts). Wipes the shared schema's data so the next test
 // starts clean. Best-effort: a test may have created the schema without yet running the DDL.
@@ -69,6 +107,8 @@ export const createTestDatabase = (
     );
   }
 
+  assertNotProductionUrl(postgresUrl);
+
   process.env.DATABASE_AUTO_SCHEMA = process.env.DATABASE_AUTO_SCHEMA ?? 'true';
 
   if (reuseInstance()) {
@@ -77,8 +117,8 @@ export const createTestDatabase = (
     // (test/global-setup.ts). cleanup() is therefore a no-op kept for call-site compatibility.
     if (!workerDatabaseUrl) {
       // Deterministic (no random suffix) so re-runs reuse the same schema and global-setup can find
-      // and drop it by the `nexus_test_%` prefix.
-      const workerSchema = `nexus_test_w${workerId}`.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 63);
+      // and drop it by the `nexus_test_%` prefix. workerSchema is module-level so TRUNCATE_SQL can
+      // qualify with the same name.
       workerDatabaseUrl = appendSchema(postgresUrl, workerSchema);
     }
     schemaReady = true;

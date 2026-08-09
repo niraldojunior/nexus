@@ -27,6 +27,9 @@ export type FlyOptions = {
   // superado/cancelado). O chamador usa isto para não disparar busca por viewport nos
   // `idle` intermediários do voo (ver GeoPage).
   onFlightChange?: (active: boolean) => void;
+  // Parte inferior do mapa coberta por um painel mobile. Após pousar, a câmera desloca
+  // o centro real para que o alvo fique no centro da área ainda descoberta.
+  bottomInsetPx?: number;
 };
 
 // Um salto conta como "perto" quando os dois pontos já distam menos que esta fração do
@@ -50,6 +53,16 @@ const FALLBACK_VIEWPORT_PX = 800;
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max);
+
+export function bottomInsetForOverlay(
+  mapRect: { top: number; bottom: number; height: number },
+  panelHeightPx: number,
+  viewportHeightPx: number,
+): number {
+  const panelTop = viewportHeightPx - Math.max(0, panelHeightPx);
+  const overlap = mapRect.bottom - Math.max(mapRect.top, panelTop);
+  return clamp(overlap, 0, mapRect.height);
+}
 
 type FlightState = {
   // Invalida os estágios pendentes: um voo novo (ou cancelamento) incrementa o token, e
@@ -89,8 +102,16 @@ function departureZoomFor(
 // Encerra qualquer voo em curso neste mapa e abre um novo "turno" (token). Retorna o
 // estado e o token corrente; os estágios conferem o token para se auto-cancelar quando
 // superados por um voo mais novo.
-function beginFlight(map: GoogleMapInstance, options?: FlyOptions): { state: FlightState; token: number } {
-  const state = flights.get(map) ?? { token: 0, active: false, timer: undefined, onFlightChange: undefined };
+function beginFlight(
+  map: GoogleMapInstance,
+  options?: FlyOptions,
+): { state: FlightState; token: number } {
+  const state = flights.get(map) ?? {
+    token: 0,
+    active: false,
+    timer: undefined,
+    onFlightChange: undefined,
+  };
   if (state.timer) {
     clearTimeout(state.timer);
     state.timer = undefined;
@@ -162,6 +183,10 @@ function runStages(
 export function flyTo(map: GoogleMapInstance, target: FlyTarget, options?: FlyOptions): void {
   const [lng, lat] = target.point;
   const { state, token } = beginFlight(map, options);
+  const div = map.getDiv?.();
+  const mapHeight = div?.clientHeight || FALLBACK_VIEWPORT_PX;
+  const bottomInsetPx = clamp(options?.bottomInsetPx ?? 0, 0, mapHeight);
+  const offsetStage = () => map.panBy(0, bottomInsetPx / 2);
 
   const center = map.getCenter();
   const currentZoom = map.getZoom();
@@ -171,12 +196,12 @@ export function flyTo(map: GoogleMapInstance, target: FlyTarget, options?: FlyOp
     if (target.scaleMeters !== null) {
       map.setZoom(Math.round(zoomForScaleMeters(target.scaleMeters, lat)));
     }
+    if (bottomInsetPx > 0) offsetStage();
     return;
   }
 
   const arrivalZoom = arrivalZoomFor(target, currentZoom, lat);
 
-  const div = map.getDiv?.();
   const viewportPx =
     Math.min(div?.clientWidth || FALLBACK_VIEWPORT_PX, div?.clientHeight || FALLBACK_VIEWPORT_PX) ||
     FALLBACK_VIEWPORT_PX;
@@ -185,7 +210,11 @@ export function flyTo(map: GoogleMapInstance, target: FlyTarget, options?: FlyOp
 
   if (travelPx <= NEAR_TRAVEL_FRACTION * viewportPx) {
     if (arrivalZoom > currentZoom) {
-      runStages(map, state, token, [() => map.panTo({ lat, lng }), () => map.setZoom(arrivalZoom)]);
+      const stages = [() => map.panTo({ lat, lng }), () => map.setZoom(arrivalZoom)];
+      if (bottomInsetPx > 0) stages.push(offsetStage);
+      runStages(map, state, token, stages);
+    } else if (bottomInsetPx > 0) {
+      runStages(map, state, token, [() => map.panTo({ lat, lng }), offsetStage]);
     } else {
       // Só desloca; deixa o `idle` normal seguir para a busca de infra por viewport.
       map.panTo({ lat, lng });
@@ -194,11 +223,13 @@ export function flyTo(map: GoogleMapInstance, target: FlyTarget, options?: FlyOp
   }
 
   const departureZoom = departureZoomFor(distanceMeters, lat, viewportPx, currentZoom);
-  runStages(map, state, token, [
+  const stages = [
     () => map.setZoom(departureZoom),
     () => map.panTo({ lat, lng }),
     () => map.setZoom(arrivalZoom),
-  ]);
+  ];
+  if (bottomInsetPx > 0) stages.push(offsetStage);
+  runStages(map, state, token, stages);
 }
 
 /** Cancela um voo em curso (ex.: no desmonte do painel do mapa). */

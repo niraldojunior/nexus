@@ -70,7 +70,7 @@ import {
   PASSIVE_INFRA_MAX_SCALE_METERS,
   MARKER_CLUSTER_MIN_SCALE_METERS,
 } from '../utils/mapScale';
-import { flyTo, cancelFlight, type FlyTarget } from '../utils/mapCamera';
+import { bottomInsetForOverlay, flyTo, cancelFlight, type FlyTarget } from '../utils/mapCamera';
 import { useGeoTree } from '../hooks/useGeoTree';
 import { useIsMobile } from '../hooks/useIsMobile';
 import {
@@ -113,7 +113,7 @@ import {
   formatDropDistance,
   pathMidpoint,
 } from '../utils/dropSimulation';
-import { BottomSheet } from '../components/BottomSheet';
+import { BottomSheet, type BottomSheetSnapState } from '../components/BottomSheet';
 import { StreetViewHero } from '../components/StreetViewHero';
 import { streetViewTargetsForGeometry } from '../utils/streetViewTargets';
 import { resourceStreetViewMarker, siteStreetViewMarker } from '../utils/streetViewMarker';
@@ -248,6 +248,10 @@ export default function GeoPage() {
   // (`scaleMeters: null` = voa sem mexer no zoom). É `state`, não ref, para a identidade
   // só mudar quando há pedido novo — cada troca dispara um voo (ver flyTo em GoogleMapPanel).
   const [focusRequest, setFocusRequest] = useState<FlyTarget | null>(null);
+  const [mobileSheetState, setMobileSheetState] = useState<{
+    panelKey: string;
+    state: BottomSheetSnapState;
+  } | null>(null);
   // Nó selecionado (clique, na árvore ou no mapa) e nó sob o mouse (hover, alvo
   // do balão de preview). São dois estados independentes: o hover é passageiro
   // e não mexe na seleção nem no painel de detalhe já aberto.
@@ -321,6 +325,27 @@ export default function GeoPage() {
     if (selectedResourceNode) return { kind: 'resource', node: selectedResourceNode };
     return null;
   }, [selectedSite, selectedResourceNode]);
+  const mobilePanelKey = !isMobile
+    ? null
+    : addressLookup
+      ? `address:${addressLookup.address.coordinates.join(',')}`
+      : detailOpen && detailTarget
+        ? detailTarget.kind === 'site'
+          ? `site:${detailTarget.site.id}`
+          : `resource:${detailTarget.node.id}`
+        : null;
+  const onMobileSheetSnapChange = useCallback(
+    (state: BottomSheetSnapState) => {
+      if (mobilePanelKey) setMobileSheetState({ panelKey: mobilePanelKey, state });
+    },
+    [mobilePanelKey],
+  );
+  const bottomSheetHeightPx =
+    mobilePanelKey === null
+      ? undefined
+      : mobileSheetState?.panelKey === mobilePanelKey
+        ? mobileSheetState.state.heightPx
+        : null;
   // Catálogo de locais: sites e tipos são dezenas de linhas e alimentam os modais
   // de cadastro e detalhe. O acervo pesado (endereços, geometrias e a planta
   // inteira) não vem mais por aqui — cada nó da árvore traz a sua geometria, e o
@@ -410,9 +435,18 @@ export default function GeoPage() {
 
   // Mesma seleção, três origens — a origem só decide o zoom de chegada (ver selectNode):
   // busca e árvore aproximam até o item; clique no mapa mantém o enquadramento atual.
-  const selectNodeFromSearch = useCallback((node: GeoTreeNode) => selectNode(node, 'search'), [selectNode]);
-  const selectNodeFromTree = useCallback((node: GeoTreeNode) => selectNode(node, 'tree'), [selectNode]);
-  const selectNodeFromMap = useCallback((node: GeoTreeNode) => selectNode(node, 'map'), [selectNode]);
+  const selectNodeFromSearch = useCallback(
+    (node: GeoTreeNode) => selectNode(node, 'search'),
+    [selectNode],
+  );
+  const selectNodeFromTree = useCallback(
+    (node: GeoTreeNode) => selectNode(node, 'tree'),
+    [selectNode],
+  );
+  const selectNodeFromMap = useCallback(
+    (node: GeoTreeNode) => selectNode(node, 'map'),
+    [selectNode],
+  );
 
   // Clique fora de qualquer item (vazio do mapa) com uma seleção ativa: tira o
   // alfinete e fecha o detalhe, igual ao Google Maps. A hierarquia reaparece
@@ -575,6 +609,7 @@ export default function GeoPage() {
             <AddressDetailPanel
               isMobile={isMobile}
               address={addressLookup.address}
+              onSnapChange={onMobileSheetSnapChange}
               onClose={onDeselect}
               onDropSimulation={onDropSimulation}
               searchBar={
@@ -595,6 +630,7 @@ export default function GeoPage() {
             <GeoDetailPanel
               isMobile={isMobile}
               target={detailTarget}
+              onSnapChange={onMobileSheetSnapChange}
               tab={detailTab}
               sites={sites}
               specById={specById}
@@ -671,6 +707,7 @@ export default function GeoPage() {
               }
               dropSimulation={dropSimulation}
               focusRequest={focusRequest}
+              bottomSheetHeightPx={bottomSheetHeightPx}
               balloon={balloon}
               onSelectNode={selectNodeFromMap}
               onHoverNode={handleHover}
@@ -760,6 +797,7 @@ export function GoogleMapPanel({
   addressPoint,
   dropSimulation,
   focusRequest,
+  bottomSheetHeightPx,
   balloon,
   onSelectNode,
   onHoverNode,
@@ -782,6 +820,9 @@ export function GoogleMapPanel({
   dropSimulation?: DropSimulation | null;
   // Pedido de foco: para onde a câmera voa e com que zoom de chegada (ver flyTo).
   focusRequest?: FlyTarget | null;
+  // `undefined` = sem painel; `null` = painel mobile montando/sem medida; número =
+  // altura estabilizada do snap atual, usada para centralizar na área descoberta.
+  bottomSheetHeightPx?: number | null;
   balloon: MapBalloon | null;
   onSelectNode: (node: GeoTreeNode) => void;
   onHoverNode: (node: GeoTreeNode | null) => void;
@@ -796,6 +837,8 @@ export function GoogleMapPanel({
 }) {
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<GoogleMapInstance | null>(null);
+  const framedFocusRequestRef = useRef<FlyTarget | null>(null);
+  const framedBottomSheetHeightRef = useRef<number | undefined>(undefined);
   // Marcadores/polylines indexados por id do nó — permite reusar o mesmo objeto entre renders
   // (só atualizando ícone/posição quando algo muda) em vez de destruir e recriar tudo a cada
   // seleção, que é o que travava o mapa com muitos pontos expandidos.
@@ -1106,13 +1149,31 @@ export function GoogleMapPanel({
   // viewport, e o fim do voo força uma leitura única (ver reportViewportRef).
   useEffect(() => {
     if (!mapsReady || !mapRef.current || !focusRequest) return;
+    if (bottomSheetHeightPx === null) return;
+    const focusChanged = framedFocusRequestRef.current !== focusRequest;
+    const measuredSnapChanged = framedBottomSheetHeightRef.current !== bottomSheetHeightPx;
+    if (!focusChanged && !measuredSnapChanged) {
+      framedBottomSheetHeightRef.current = bottomSheetHeightPx;
+      return;
+    }
+    const bottomInsetPx =
+      bottomSheetHeightPx === undefined
+        ? 0
+        : bottomInsetForOverlay(
+            mapRef.current.getDiv().getBoundingClientRect(),
+            bottomSheetHeightPx,
+            window.innerHeight,
+          );
     flyTo(mapRef.current, focusRequest, {
+      bottomInsetPx,
       onFlightChange: (active) => {
         flightActiveRef.current = active;
         if (!active) reportViewportRef.current();
       },
     });
-  }, [focusRequest, mapsReady]);
+    framedFocusRequestRef.current = focusRequest;
+    framedBottomSheetHeightRef.current = bottomSheetHeightPx;
+  }, [bottomSheetHeightPx, focusRequest, mapsReady]);
 
   // Cancela qualquer voo em curso no desmonte, para os timers do encadeamento não
   // dispararem sobre um mapa já descartado.
@@ -1578,6 +1639,7 @@ function GeoDetailPanel({
   onClose,
   onChanged,
   onCreateSubSite,
+  onSnapChange,
   searchBar,
 }: {
   isMobile: boolean;
@@ -1594,6 +1656,7 @@ function GeoDetailPanel({
   onClose: () => void;
   onChanged: () => Promise<void>;
   onCreateSubSite: () => void;
+  onSnapChange?: (state: BottomSheetSnapState) => void;
   searchBar?: ReactNode;
 }) {
   const eyebrow =
@@ -1670,7 +1733,7 @@ function GeoDetailPanel({
 
   if (isMobile) {
     return (
-      <BottomSheet onClose={onClose}>
+      <BottomSheet onClose={onClose} onSnapChange={onSnapChange}>
         {/* Foto, título e corpo rolam juntos dentro da folha (ver BottomSheet). */}
         <StreetViewHero marker={heroMarker} />
         {header}

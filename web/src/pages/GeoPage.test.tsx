@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GoogleMapPanel } from './GeoPage';
 
 const googleMocks = vi.hoisted(() => ({
@@ -11,6 +11,7 @@ const googleMocks = vi.hoisted(() => ({
   infoWindowSetContent: vi.fn(),
   infoWindowSetOptions: vi.fn(),
   infoWindowSetPosition: vi.fn(),
+  flyTo: vi.fn(),
   loadGoogleMaps: vi.fn<() => Promise<void>>(),
   mapAddListener: vi.fn(),
   mapAddListenerOnce: vi.fn(),
@@ -18,12 +19,18 @@ const googleMocks = vi.hoisted(() => ({
   mapGetCenter: vi.fn(),
   mapGetDiv: vi.fn(() => document.createElement('div')),
   mapGetZoom: vi.fn(),
+  mapPanBy: vi.fn(),
   mapPanTo: vi.fn(),
   mapSetZoom: vi.fn(),
   mapSetMapTypeId: vi.fn(),
   markerCtor: vi.fn(),
   reverseGeocode: vi.fn(),
 }));
+
+vi.mock('../utils/mapCamera', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/mapCamera')>();
+  return { ...actual, flyTo: googleMocks.flyTo };
+});
 
 vi.mock('../utils/googleMaps', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../utils/googleMaps')>();
@@ -51,6 +58,7 @@ function installGoogleMapsMock() {
     getCenter: googleMocks.mapGetCenter,
     getDiv: googleMocks.mapGetDiv,
     getZoom: googleMocks.mapGetZoom,
+    panBy: googleMocks.mapPanBy,
     panTo: googleMocks.mapPanTo,
     setZoom: googleMocks.mapSetZoom,
     setMapTypeId: googleMocks.mapSetMapTypeId,
@@ -106,12 +114,89 @@ function installGoogleMapsMock() {
   });
 }
 
+afterEach(cleanup);
+
 describe('GoogleMapPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     googleMocks.loadGoogleMaps.mockResolvedValue();
     googleMocks.reverseGeocode.mockResolvedValue(null);
     installGoogleMapsMock();
+  });
+
+  it('repassa ao voo somente a parte do mapa coberta pelo painel mobile', async () => {
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    const mapDiv = document.createElement('div');
+    vi.spyOn(mapDiv, 'getBoundingClientRect').mockReturnValue({
+      top: 100,
+      bottom: 700,
+      height: 600,
+      left: 0,
+      right: 400,
+      width: 400,
+      x: 0,
+      y: 100,
+      toJSON: () => ({}),
+    });
+    googleMocks.mapGetDiv.mockReturnValue(mapDiv);
+    const focusRequest = { point: [-43.1, -22.9] as [number, number], scaleMeters: 50 };
+
+    const renderPanel = (bottomSheetHeightPx?: number) => (
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNodeId={null}
+        draftAddress={null}
+        focusRequest={focusRequest}
+        bottomSheetHeightPx={bottomSheetHeightPx}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onDeselect={vi.fn()}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />
+    );
+    const { rerender } = render(renderPanel(384));
+
+    await waitFor(() =>
+      expect(googleMocks.flyTo).toHaveBeenCalledWith(
+        expect.anything(),
+        focusRequest,
+        expect.objectContaining({ bottomInsetPx: 284 }),
+      ),
+    );
+
+    rerender(renderPanel(736));
+    await waitFor(() =>
+      expect(googleMocks.flyTo).toHaveBeenLastCalledWith(
+        expect.anything(),
+        focusRequest,
+        expect.objectContaining({ bottomInsetPx: 600 }),
+      ),
+    );
+    expect(googleMocks.flyTo).toHaveBeenCalledTimes(2);
+
+    rerender(renderPanel(96));
+    await waitFor(() =>
+      expect(googleMocks.flyTo).toHaveBeenLastCalledWith(
+        expect.anything(),
+        focusRequest,
+        expect.objectContaining({ bottomInsetPx: 0 }),
+      ),
+    );
+    expect(googleMocks.flyTo).toHaveBeenCalledTimes(3);
+
+    rerender(renderPanel(undefined));
+    await waitFor(() =>
+      expect(googleMocks.flyTo).toHaveBeenLastCalledWith(
+        expect.anything(),
+        focusRequest,
+        expect.objectContaining({ bottomInsetPx: 0 }),
+      ),
+    );
+    expect(googleMocks.flyTo).toHaveBeenCalledTimes(4);
   });
 
   it('troca o MUB do mapa chamando setMapTypeId com o tipo esperado', async () => {

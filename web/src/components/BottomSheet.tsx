@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 
 type Snap = 'peek' | 'mid' | 'full';
 
@@ -10,21 +10,31 @@ const SNAP_RATIO: Record<Snap, number> = {
   full: 0.92,
 };
 
+// Ordem dos encaixes, de baixo para cima — o encaixe na soltura anda um passo por
+// vez nesta ordem, no sentido do arraste (ver endSheetDrag).
 const SNAPS: Snap[] = ['peek', 'mid', 'full'];
 
 // Movimento mínimo (px) antes de um toque no corpo virar arraste da folha — abaixo
 // disto é toque/clique (ou rolagem do conteúdo), e a folha não se mexe.
 const DRAG_COMMIT_THRESHOLD = 6;
 
+// Deslocamento mínimo (px) para a soltura confirmar a troca de encaixe. Abaixo disto,
+// a folha volta ao encaixe de onde saiu; acima, anda um passo no sentido do arraste.
+const SNAP_CONFIRM_PX = 24;
+
+const snapUp = (snap: Snap): Snap => SNAPS[Math.min(SNAPS.indexOf(snap) + 1, SNAPS.length - 1)];
+const snapDown = (snap: Snap): Snap => SNAPS[Math.max(SNAPS.indexOf(snap) - 1, 0)];
+
 /**
  * Painel inferior arrastável (mobile), com pontos de encaixe peek/mid/full.
  *
- * Arrasta com o dedo em qualquer lugar da folha — não só na alça — igual ao app do
- * Google Maps: em peek/mid o conteúdo não rola e o gesto sobe/desce a folha livremente;
- * em full o conteúdo rola, e um puxão pra baixo com o texto no topo recolhe a folha.
- * Arrastar abaixo do peek fecha. Sem véu escuro sobre o mapa — o Google Maps também não
- * escurece o mapa ao abrir o detalhe. Todo o conteúdo (foto, título e corpo) mora no
- * `children` e rola junto quando em full.
+ * Gesto no estilo "Google Maps puro": arrastar o corpo para cima expande a folha
+ * encaixe a encaixe até `full`; só a partir de `full` é que o conteúdo rola. Ao
+ * atingir `full` no meio de um arraste para cima, o gesto é entregue ao conteúdo
+ * sem soltar o dedo. Em `full`, um puxão para baixo com o conteúdo no topo recolhe a
+ * folha; arrastar abaixo do `peek` fecha. A alça no topo sempre arrasta a folha, em
+ * qualquer encaixe. Sem véu escuro sobre o mapa — o Google Maps também não escurece o
+ * mapa ao abrir o detalhe. Todo o conteúdo (foto, título e corpo) mora no `children`.
  */
 export function BottomSheet({
   children,
@@ -40,36 +50,61 @@ export function BottomSheet({
   const [dragging, setDragging] = useState(false);
 
   const contentRef = useRef<HTMLDivElement>(null);
-  // Início do arraste já comprometido a mover a folha; null quando não há arraste ativo.
-  const dragStartYRef = useRef<number | null>(null);
+  // Modo do gesto em curso: `idle` = toque ainda indeciso (pode virar arraste da folha
+  // ou rolagem do conteúdo); `sheet` = arrastando a folha; `content` = a folha chegou
+  // ao topo e o gesto virou rolagem do conteúdo (rolada à mão, ver onContentPointerMove).
+  const modeRef = useRef<'idle' | 'sheet' | 'content'>('idle');
+  // Y do ponteiro no início do gesto (âncora do arraste) e no último move (base do
+  // incremento ao rolar o conteúdo à mão). Altura da folha em px no início do arraste.
+  const startYRef = useRef(0);
+  const lastYRef = useRef(0);
+  const sheetStartHeightRef = useRef(0);
   const dragOffsetRef = useRef(0);
-  const draggingRef = useRef(false);
-  // Início de um toque no corpo ainda indeciso: só vira arraste da folha se passar do
-  // limiar na direção certa — senão é rolagem (ou clique) do conteúdo.
-  const pendingStartYRef = useRef<number | null>(null);
+  // Espelho do encaixe atual, legível de dentro dos handlers sem esperar o re-render —
+  // preciso porque um mesmo `pointermove` pode trocar o encaixe e agir sobre o novo.
+  const snapRef = useRef<Snap>(initialSnap);
+  useEffect(() => {
+    snapRef.current = snap;
+  }, [snap]);
 
-  const beginDrag = (clientY: number, pointerId: number, captureEl: Element | null) => {
-    dragStartYRef.current = clientY;
-    draggingRef.current = true;
-    setDragging(true);
-    captureEl?.setPointerCapture?.(pointerId);
+  const commitSnap = (next: Snap) => {
+    snapRef.current = next;
+    setSnap(next);
   };
 
-  const moveDrag = (clientY: number) => {
-    if (dragStartYRef.current === null) return;
-    const offset = clientY - dragStartYRef.current;
+  // Move a folha acompanhando o dedo. Se a altura atingir o teto de `full`, entrega o
+  // gesto ao conteúdo (passa a `content`) em vez de "estourar" o topo — é o "expandir
+  // até full, depois rolar" do Google Maps.
+  const moveSheet = (clientY: number, pointerId: number, cancelable: boolean, preventDefault: () => void) => {
+    const offset = clientY - startYRef.current;
+    const height = sheetStartHeightRef.current - offset;
+    const fullHeight = window.innerHeight * SNAP_RATIO.full;
+    if (height >= fullHeight) {
+      commitSnap('full');
+      setDragOffset(0);
+      dragOffsetRef.current = 0;
+      setDragging(false);
+      modeRef.current = 'content';
+      lastYRef.current = clientY;
+      // Mantém o ponteiro capturado no conteúdo para o move seguinte já rolar à mão.
+      contentRef.current?.setPointerCapture?.(pointerId);
+      if (cancelable) preventDefault();
+      return;
+    }
     dragOffsetRef.current = offset;
     setDragOffset(offset);
+    if (cancelable) preventDefault();
   };
 
-  const endDrag = () => {
-    if (!draggingRef.current) return;
-    const finalHeightPx = window.innerHeight * SNAP_RATIO[snap] - dragOffsetRef.current;
-    const ratio = finalHeightPx / window.innerHeight;
-    dragStartYRef.current = null;
+  // Fim de um arraste da folha: encaixa por DIREÇÃO (não por distância) — acima do
+  // limiar de confirmação anda um passo no sentido do arraste, abaixo volta ao encaixe
+  // atual. É isto que faz um arrasto curto para cima em `mid` chegar a `full` (antes,
+  // o encaixe por proximidade puxava de volta para `mid`).
+  const endSheetDrag = () => {
+    const offset = dragOffsetRef.current;
+    const finalHeight = sheetStartHeightRef.current - offset;
+    const ratio = finalHeight / window.innerHeight;
     dragOffsetRef.current = 0;
-    draggingRef.current = false;
-    pendingStartYRef.current = null;
     setDragOffset(0);
     setDragging(false);
 
@@ -78,55 +113,78 @@ export function BottomSheet({
       onClose();
       return;
     }
-
-    let closest: Snap = snap;
-    let bestDiff = Infinity;
-    for (const candidate of SNAPS) {
-      const diff = Math.abs(SNAP_RATIO[candidate] - ratio);
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        closest = candidate;
-      }
-    }
-    setSnap(closest);
+    const current = snapRef.current;
+    if (offset < -SNAP_CONFIRM_PX) commitSnap(snapUp(current));
+    else if (offset > SNAP_CONFIRM_PX) commitSnap(snapDown(current));
+    else commitSnap(current);
   };
 
   // Alça no topo: sempre arrasta a folha, em qualquer encaixe.
   const onHandlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    beginDrag(event.clientY, event.pointerId, event.currentTarget);
+    modeRef.current = 'sheet';
+    startYRef.current = event.clientY;
+    sheetStartHeightRef.current = window.innerHeight * SNAP_RATIO[snapRef.current];
+    dragOffsetRef.current = 0;
+    setDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
   };
   const onHandlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (draggingRef.current) moveDrag(event.clientY);
+    if (modeRef.current === 'sheet') {
+      moveSheet(event.clientY, event.pointerId, event.cancelable, () => event.preventDefault());
+    }
   };
   const onHandlePointerEnd = () => {
-    if (draggingRef.current) endDrag();
+    if (modeRef.current === 'sheet') endSheetDrag();
+    modeRef.current = 'idle';
   };
 
-  // Corpo: arrasta a folha livremente em peek/mid (onde o conteúdo não rola); em full,
-  // rola o conteúdo e só um puxão pra baixo com o texto no topo é que recolhe a folha.
+  // Corpo: um toque começa indeciso (`idle`). Em peek/mid, passar do limiar em qualquer
+  // direção arrasta a folha. Em full, só um puxão para baixo com o conteúdo no topo
+  // arrasta (recolhe) — todo o resto é rolagem nativa do conteúdo (touch-action: pan-y).
   const onContentPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    pendingStartYRef.current = event.clientY;
+    modeRef.current = 'idle';
+    startYRef.current = event.clientY;
+    lastYRef.current = event.clientY;
+    sheetStartHeightRef.current = window.innerHeight * SNAP_RATIO[snapRef.current];
+    dragOffsetRef.current = 0;
   };
   const onContentPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (draggingRef.current) {
-      moveDrag(event.clientY);
+    const mode = modeRef.current;
+    if (mode === 'content') {
+      // Ponteiro capturado: a rolagem nativa não assume no meio do gesto, então rolamos
+      // o conteúdo à mão pelo incremento desde o último move.
+      const el = contentRef.current;
+      if (el) el.scrollTop -= event.clientY - lastYRef.current;
+      lastYRef.current = event.clientY;
       if (event.cancelable) event.preventDefault();
       return;
     }
-    if (pendingStartYRef.current === null) return;
-    const delta = event.clientY - pendingStartYRef.current;
+    if (mode === 'sheet') {
+      moveSheet(event.clientY, event.pointerId, event.cancelable, () => event.preventDefault());
+      return;
+    }
+    // mode === 'idle': decidir para onde o gesto vai.
+    const delta = event.clientY - startYRef.current;
     const atTop = (contentRef.current?.scrollTop ?? 0) <= 0;
-    const canDrag =
-      snap === 'full'
-        ? atTop && delta > DRAG_COMMIT_THRESHOLD
-        : Math.abs(delta) > DRAG_COMMIT_THRESHOLD;
-    if (!canDrag) return;
-    beginDrag(pendingStartYRef.current, event.pointerId, contentRef.current);
-    moveDrag(event.clientY);
+    if (snapRef.current === 'full') {
+      if (atTop && delta > DRAG_COMMIT_THRESHOLD) {
+        modeRef.current = 'sheet';
+        setDragging(true);
+        contentRef.current?.setPointerCapture?.(event.pointerId);
+        moveSheet(event.clientY, event.pointerId, event.cancelable, () => event.preventDefault());
+      }
+      return;
+    }
+    if (Math.abs(delta) > DRAG_COMMIT_THRESHOLD) {
+      modeRef.current = 'sheet';
+      setDragging(true);
+      contentRef.current?.setPointerCapture?.(event.pointerId);
+      moveSheet(event.clientY, event.pointerId, event.cancelable, () => event.preventDefault());
+    }
   };
   const onContentPointerEnd = () => {
-    pendingStartYRef.current = null;
-    if (draggingRef.current) endDrag();
+    if (modeRef.current === 'sheet') endSheetDrag();
+    modeRef.current = 'idle';
   };
 
   return (

@@ -25,10 +25,36 @@ const withoutSchema = (databaseUrl: string): string => {
   return url.toString();
 };
 
+// Identity of a Postgres URL (host + database), ignoring credentials and query params.
+const dbIdentity = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.host}${parsed.pathname}`;
+  } catch {
+    return url;
+  }
+};
+
+// The earliest choke point in the run: fail loudly before any worker starts if the test database
+// resolves to production. The suite TRUNCATEs every table, so pointing it at prod wipes prod.
+const assertNotProductionUrl = (url: string): void => {
+  const target = dbIdentity(url);
+  const isProd = [process.env.DATABASE_URL_PROD, process.env.NEON_DATABASE_URL_PROD]
+    .filter((value): value is string => Boolean(value))
+    .some((prod) => dbIdentity(prod) === target);
+  if (isProd) {
+    throw new Error(
+      'Recusando rodar a suíte: o banco de teste resolveu para a produção (DATABASE_URL_PROD). ' +
+        'Aponte DATABASE_URL_TEST/DATABASE_URL_DEV para um branch descartável do Neon.',
+    );
+  }
+};
+
 const dropTestSchemas = async (): Promise<void> => {
   loadEnv();
   const raw = resolvePostgresUrl();
   if (!raw) return;
+  assertNotProductionUrl(raw);
   const sql = neon(withoutSchema(raw));
   const rows = (await sql.query(
     `SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'nexus_test_%'`,

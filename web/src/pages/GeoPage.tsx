@@ -60,16 +60,17 @@ import {
   type GoogleMarkerInstance,
   type GooglePolylineInstance,
 } from '../utils/googleMaps';
-import { animateMapCamera } from '../utils/mapCamera';
 import {
   mapScaleMeters,
   readGoogleScaleMeters,
-  zoomForScaleMeters,
   DEVICE_LOCATION_SCALE_METERS,
-  MAP_SELECTION_SCALE_METERS,
+  RESOURCE_FOCUS_SCALE_METERS,
+  SITE_FOCUS_SCALE_METERS,
+  ADDRESS_FOCUS_SCALE_METERS,
   PASSIVE_INFRA_MAX_SCALE_METERS,
   MARKER_CLUSTER_MIN_SCALE_METERS,
 } from '../utils/mapScale';
+import { flyTo, cancelFlight, type FlyTarget } from '../utils/mapCamera';
 import { useGeoTree } from '../hooks/useGeoTree';
 import { useIsMobile } from '../hooks/useIsMobile';
 import {
@@ -142,12 +143,6 @@ type MapBalloon = {
 // Alvo do painel de detalhe aberto por clique — Site ou Recurso, cada um com o
 // corpo que sabe montar a partir dele (ver SiteDetailBody/ResourceDetailBody).
 type DetailTarget = { kind: 'site'; site: GeoSite } | { kind: 'resource'; node: GeoTreeNode };
-
-type MapFocusRequest = {
-  id: number;
-  point: [number, number];
-  scaleMeters?: number;
-};
 
 // Lado do ícone de equipamento no mapa, em px. Um pouco menor que o pin de site
 // para o equipamento não competir com o local que o contém.
@@ -249,11 +244,10 @@ export default function GeoPage() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [focusRequest, setFocusRequest] = useState<MapFocusRequest | null>(null);
-  const focusRequestIdRef = useRef(0);
-  const requestMapFocus = useCallback((point: [number, number], scaleMeters?: number) => {
-    setFocusRequest({ id: ++focusRequestIdRef.current, point, scaleMeters });
-  }, []);
+  // Pedido de foco do mapa: para onde a câmera deve voar e com que zoom de chegada
+  // (`scaleMeters: null` = voa sem mexer no zoom). É `state`, não ref, para a identidade
+  // só mudar quando há pedido novo — cada troca dispara um voo (ver flyTo em GoogleMapPanel).
+  const [focusRequest, setFocusRequest] = useState<FlyTarget | null>(null);
   // Nó selecionado (clique, na árvore ou no mapa) e nó sob o mouse (hover, alvo
   // do balão de preview). São dois estados independentes: o hover é passageiro
   // e não mexe na seleção nem no painel de detalhe já aberto.
@@ -383,12 +377,23 @@ export default function GeoPage() {
   // GeoDetailPanel). Nós de UF/Município/grupo só navegam a árvore, não têm
   // detalhe próprio.
   const selectNode = useCallback(
-    (node: GeoTreeNode) => {
+    (node: GeoTreeNode, from: 'search' | 'tree' | 'map' = 'tree') => {
       setSelectedNode(node);
       setDraftAddress(null);
       setAddressLookup(null);
       const point = treeNodePoint(node);
-      if (point) requestMapFocus(point, MAP_SELECTION_SCALE_METERS);
+      if (point) {
+        // Clique num item já visível no mapa não pede zoom (não rouba o enquadramento
+        // do usuário); busca e árvore pedem o zoom de chegada do tipo do item —
+        // estação enquadra o prédio, recurso/cabo enquadra a caixa.
+        const scaleMeters =
+          from === 'map'
+            ? null
+            : node.kind === 'site'
+              ? SITE_FOCUS_SCALE_METERS
+              : RESOURCE_FOCUS_SCALE_METERS;
+        setFocusRequest({ point, scaleMeters });
+      }
       tree.revealNode(node.id, { expandSelf: node.hasChildren });
       if (node.kind === 'site' || node.kind === 'resource') {
         setDetailTab('overview');
@@ -400,8 +405,14 @@ export default function GeoPage() {
         setDetailOpen(false);
       }
     },
-    [requestMapFocus, tree],
+    [tree],
   );
+
+  // Mesma seleção, três origens — a origem só decide o zoom de chegada (ver selectNode):
+  // busca e árvore aproximam até o item; clique no mapa mantém o enquadramento atual.
+  const selectNodeFromSearch = useCallback((node: GeoTreeNode) => selectNode(node, 'search'), [selectNode]);
+  const selectNodeFromTree = useCallback((node: GeoTreeNode) => selectNode(node, 'tree'), [selectNode]);
+  const selectNodeFromMap = useCallback((node: GeoTreeNode) => selectNode(node, 'map'), [selectNode]);
 
   // Clique fora de qualquer item (vazio do mapa) com uma seleção ativa: tira o
   // alfinete e fecha o detalhe, igual ao Google Maps. A hierarquia reaparece
@@ -421,8 +432,10 @@ export default function GeoPage() {
     setDropSimulation(simulation);
     if (!simulation) return;
     const midpoint = pathMidpoint(simulation.path);
-    if (midpoint) requestMapFocus(midpoint);
-  }, [requestMapFocus]);
+    // Centraliza no meio do traçado para a simulação nascer inteira na tela, sem mexer
+    // no zoom — o usuário já está na escala da rua onde a CDO foi escolhida.
+    if (midpoint) setFocusRequest({ point: midpoint, scaleMeters: null });
+  }, []);
 
   // Endereço resolvido pela busca (Enter em texto livre ou clique numa sugestão do
   // dropdown) — os dois caminhos convergem aqui. Some qualquer seleção de nó em
@@ -434,9 +447,9 @@ export default function GeoPage() {
     setAddressError(null);
     setDropSimulation(null);
     setAddressLookup({ address, source: 'search' });
-    requestMapFocus(address.coordinates, MAP_SELECTION_SCALE_METERS);
+    setFocusRequest({ point: address.coordinates, scaleMeters: ADDRESS_FOCUS_SCALE_METERS });
     setQuery(address.label);
-  }, [requestMapFocus]);
+  }, []);
 
   const onAddressError = useCallback((err: AddressSearchError) => {
     setAddressError(err);
@@ -452,6 +465,9 @@ export default function GeoPage() {
     setDraftAddress(address);
     setDropSimulation(null);
     setAddressLookup({ address, source: 'map' });
+    // O ponto veio de um clique no mapa — já está à vista, então só recentraliza, sem
+    // mexer no zoom. A centralização passa pelo mesmo voo dos demais focos (flyTo).
+    setFocusRequest({ point: address.coordinates, scaleMeters: null });
     setQuery(address.label);
   }, []);
 
@@ -567,7 +583,7 @@ export default function GeoPage() {
                     variant="overlay"
                     query={query}
                     onQueryChange={setQuery}
-                    onSelectNode={selectNode}
+                    onSelectNode={selectNodeFromSearch}
                     onAddressFound={onAddressFound}
                     onAddressError={onAddressError}
                     onClear={onDeselect}
@@ -612,7 +628,7 @@ export default function GeoPage() {
                     variant="overlay"
                     query={query}
                     onQueryChange={setQuery}
-                    onSelectNode={selectNode}
+                    onSelectNode={selectNodeFromSearch}
                     onAddressFound={onAddressFound}
                     onAddressError={onAddressError}
                     onClear={onDeselect}
@@ -624,7 +640,7 @@ export default function GeoPage() {
             <HierarchySidebar
               tree={tree}
               selectedNodeId={selectedNode?.id ?? null}
-              onSelect={selectNode}
+              onSelect={selectNodeFromTree}
               onHover={handleHover}
               onOpenTypes={() => setTypeOpen(true)}
               collapsed={hierarchyCollapsed}
@@ -635,7 +651,7 @@ export default function GeoPage() {
                     variant="panel"
                     query={query}
                     onQueryChange={setQuery}
-                    onSelectNode={selectNode}
+                    onSelectNode={selectNodeFromSearch}
                     onAddressFound={onAddressFound}
                     onAddressError={onAddressError}
                     onClear={onDeselect}
@@ -656,7 +672,7 @@ export default function GeoPage() {
               dropSimulation={dropSimulation}
               focusRequest={focusRequest}
               balloon={balloon}
-              onSelectNode={selectNode}
+              onSelectNode={selectNodeFromMap}
               onHoverNode={handleHover}
               onCloseBalloon={() => handleHover(null)}
               onDraftAddress={onMapAddressFound}
@@ -672,7 +688,7 @@ export default function GeoPage() {
                 isMobile={isMobile}
                 query={query}
                 onQueryChange={setQuery}
-                onSelectNode={selectNode}
+                onSelectNode={selectNodeFromSearch}
                 onAddressFound={onAddressFound}
                 onAddressError={onAddressError}
                 onClear={onDeselect}
@@ -764,7 +780,8 @@ export function GoogleMapPanel({
   // Drop simulado entre o endereço e a CDO escolhida na aba de Viabilidade — estudo,
   // não planta: desenho próprio, animado, que some junto com o painel que o criou.
   dropSimulation?: DropSimulation | null;
-  focusRequest?: MapFocusRequest | null;
+  // Pedido de foco: para onde a câmera voa e com que zoom de chegada (ver flyTo).
+  focusRequest?: FlyTarget | null;
   balloon: MapBalloon | null;
   onSelectNode: (node: GeoTreeNode) => void;
   onHoverNode: (node: GeoTreeNode | null) => void;
@@ -797,8 +814,15 @@ export function GoogleMapPanel({
   const dropDashRef = useRef<GooglePolylineInstance | null>(null);
   const dropLabelRef = useRef<GoogleMarkerInstance | null>(null);
   const dropAnimationRef = useRef<number | undefined>(undefined);
-  const cameraAnimationRef = useRef<(() => void) | null>(null);
   const infoWindowRef = useRef<GoogleInfoWindowInstance | null>(null);
+  // Verdadeiro enquanto um voo de câmera encadeado (afasta → viaja → aproxima) está em
+  // curso: o listener de `idle` ignora os `idle` intermediários do voo para não disparar
+  // uma busca de infra por viewport a cada estágio (ver flyTo e o listener de idle).
+  const flightActiveRef = useRef(false);
+  // Reporta a região visível + escala atuais ao chamador. Guardado em ref porque é
+  // chamado tanto pelo listener de `idle` (atado uma vez só) quanto pelo fim de um voo,
+  // que precisa forçar uma leitura já que os `idle` do voo foram ignorados.
+  const reportViewportRef = useRef<() => void>(() => {});
   // Nó fora da árvore do React: o InfoWindow do Google recebe este elemento como
   // conteúdo e o React desenha dentro dele via portal, mantendo o balão como
   // componente normal (com handlers) em vez de HTML em string.
@@ -894,14 +918,9 @@ export function GoogleMapPanel({
             );
           });
         });
-        mapRef.current.addListener('dragstart', () => {
-          cameraAnimationRef.current?.();
-          cameraAnimationRef.current = null;
-        });
-        // `idle` dispara ao fim de todo pan/zoom (não a cada frame) — é aqui que
-        // reportamos a região visível e a escala atual para o chamador decidir se
-        // busca infra passiva por viewport (ver PASSIVE_INFRA_MAX_SCALE_METERS).
-        mapRef.current.addListener('idle', () => {
+        // Reporta a região visível e a escala atual para o chamador decidir se busca
+        // infra passiva por viewport (ver PASSIVE_INFRA_MAX_SCALE_METERS).
+        const reportViewport = () => {
           if (!mapRef.current) return;
           const zoom = mapRef.current.getZoom();
           const bounds = mapRef.current.getBounds();
@@ -922,6 +941,14 @@ export function GoogleMapPanel({
             },
             scaleMeters,
           );
+        };
+        reportViewportRef.current = reportViewport;
+        // `idle` dispara ao fim de todo pan/zoom (não a cada frame). Durante um voo
+        // encadeado, os `idle` intermediários são ignorados — o fim do voo força uma
+        // leitura única (ver o handler onFlightChange do flyTo).
+        mapRef.current.addListener('idle', () => {
+          if (flightActiveRef.current) return;
+          reportViewport();
         });
         setMapsReady(true);
       })
@@ -1069,33 +1096,32 @@ export function GoogleMapPanel({
         scale: 11,
       },
     });
-    mapRef.current.panTo({ lng, lat });
+    // Centralizar fica por conta do voo de câmera (focusRequest → flyTo abaixo): quem
+    // largou este rascunho também emitiu um focusRequest para o mesmo ponto.
   }, [draftAddress, mapsReady]);
 
-  // Solicitações de seleção animam centro e zoom em conjunto até a escala-alvo.
-  // Solicitações auxiliares sem escala (como a simulação de drop) preservam o pan atual.
+  // Voo de câmera até o item/endereço em foco (hierarquia, busca, clique no mapa ou
+  // simulação de drop). `flyTo` afasta/reaproxima em saltos longos e pousa em zoom
+  // inteiro; nos `idle` intermediários do voo o `flightActiveRef` bloqueia a busca por
+  // viewport, e o fim do voo força uma leitura única (ver reportViewportRef).
   useEffect(() => {
     if (!mapsReady || !mapRef.current || !focusRequest) return;
-    cameraAnimationRef.current?.();
-    cameraAnimationRef.current = null;
-    const [lng, lat] = focusRequest.point;
-    if (focusRequest.scaleMeters === undefined) {
-      mapRef.current.panTo({ lng, lat });
-      return;
-    }
-    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-    const cancel = animateMapCamera({
-      map: mapRef.current,
-      target: { lng, lat },
-      targetZoom: zoomForScaleMeters(focusRequest.scaleMeters, lat),
-      reducedMotion: reduceMotion,
+    flyTo(mapRef.current, focusRequest, {
+      onFlightChange: (active) => {
+        flightActiveRef.current = active;
+        if (!active) reportViewportRef.current();
+      },
     });
-    cameraAnimationRef.current = cancel;
-    return () => {
-      cancel();
-      if (cameraAnimationRef.current === cancel) cameraAnimationRef.current = null;
-    };
   }, [focusRequest, mapsReady]);
+
+  // Cancela qualquer voo em curso no desmonte, para os timers do encadeamento não
+  // dispararem sobre um mapa já descartado.
+  useEffect(
+    () => () => {
+      if (mapRef.current) cancelFlight(mapRef.current);
+    },
+    [],
+  );
 
   // Alfinete do item selecionado — marca sem ambiguidade o que foi clicado por
   // último (árvore, mapa ou busca), distinto do "+" de rascunho e do pin do
@@ -1357,8 +1383,18 @@ export function GoogleMapPanel({
     ({ lat, lng }: DeviceLocation) => {
       const maps = window.google?.maps;
       if (!mapsReady || !mapRef.current || !maps) return;
-      mapRef.current.setZoom(zoomForScaleMeters(DEVICE_LOCATION_SCALE_METERS, lat));
-      mapRef.current.panTo({ lat, lng });
+      // Voa até a posição (afasta/reaproxima se longe) e pousa em zoom de rua INTEIRO —
+      // era o `setZoom` fracionário direto que inflava os marcadores e borrava os tiles.
+      flyTo(
+        mapRef.current,
+        { point: [lng, lat], scaleMeters: DEVICE_LOCATION_SCALE_METERS },
+        {
+          onFlightChange: (active) => {
+            flightActiveRef.current = active;
+            if (!active) reportViewportRef.current();
+          },
+        },
+      );
       const dotIcon = {
         path: maps.SymbolPath.CIRCLE,
         fillColor: '#1a73e8',
@@ -1644,7 +1680,11 @@ function GeoDetailPanel({
   }
 
   return (
-    <div className="relative flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-x-hidden border-r border-app-border bg-app-panel shadow-dock">
+    // `overflow-hidden` (não `overflow-x-hidden`) de propósito: com só um eixo em
+    // `hidden`, o outro (`overflow-y: visible`) computa para `auto` e a casca vira um
+    // segundo contêiner de rolagem, ao lado do scroll do conteúdo abaixo — era o
+    // scroll duplo do painel. Quem rola aqui é só o filho `overflow-y-auto`.
+    <div className="relative flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock">
       {/* Barra de pesquisa ancorada no topo, flutuando sobre o conteúdo; a foto de
           Street View, o título e o corpo rolam por baixo dela — estilo Google Maps.
           Mesmo padrão no painel de Endereço. */}

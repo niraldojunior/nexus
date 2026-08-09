@@ -125,7 +125,11 @@ export function AddressDetailPanel({
   }
 
   return (
-    <div className="relative flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-x-hidden border-r border-app-border bg-app-panel shadow-dock">
+    // `overflow-hidden` (não `overflow-x-hidden`): com só um eixo em `hidden`, o
+    // `overflow-y: visible` computa para `auto` e a casca vira um segundo contêiner de
+    // rolagem, ao lado do scroll do conteúdo — era o scroll duplo do painel. Quem rola
+    // aqui é só o filho `overflow-y-auto`. Mesmo ajuste no painel de Site/Recurso.
+    <div className="relative flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock">
       {/* Barra de pesquisa ancorada no topo, flutuando sobre o conteúdo; a foto de
           Street View, o título e o corpo rolam por baixo dela — estilo Google Maps.
           Mesmo padrão no painel de Site/Recurso (ver GeoPage). */}

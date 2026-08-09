@@ -1,0 +1,92 @@
+# V.tal Nexus — stack de produção no VPS.
+#
+# Sobe backend (api) + proxy/SPA (web). O Postgres é EXTERNO ao compose:
+# conecta-se ao contêiner já existente via rede docker externa (dbnet).
+#
+#   docker compose up -d --build            # api + web
+#   docker compose --profile tools run --rm tools    # schema (migrate-database)
+#
+# Variáveis: .env.docker (copie de .env.docker.example).
+name: nexus
+
+# Args de build do Vite — idênticos em todo serviço que constrói a imagem,
+# senão o Docker invalida o cache e reconstrói o estágio `build` duas vezes.
+x-vite-args: &vite-args
+  VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
+  VITE_AUTH_TOKEN: ${VITE_AUTH_TOKEN:-change-me}
+
+services:
+  api:
+    build:
+      context: .
+      target: api
+      args: *vite-args
+    image: nexus-api:latest
+    env_file: .env.docker
+    restart: unless-stopped
+    networks: [nexus, dbnet]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      # O primeiro request dispara os bootstraps de catálogo (createNexusRuntime):
+      # dezenas de round-trips. Dê folga antes de marcar unhealthy.
+      start_period: 60s
+
+  web:
+    build:
+      context: .
+      target: web
+      args: *vite-args
+    image: nexus-web:latest
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    env_file: .env.docker
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    networks: [nexus]
+
+  # Perfil de operação: schema e cargas de dados. Não sobe com `up`.
+  #   docker compose --profile tools run --rm tools
+  #     -> migrate-database (schema)
+  #   docker compose --profile tools run --rm --entrypoint node tools scripts/<loader>.mjs
+  tools:
+    build:
+      context: .
+      target: api
+      args: *vite-args
+    image: nexus-api:latest
+    profiles: [tools]
+    env_file: .env.docker
+    networks: [nexus, dbnet]
+    volumes:
+      - ./legacy-data:/app/legacy-data:ro
+    entrypoint: ["node"]
+    command: ["dist/src/scripts/migrate-database.js"]
+
+networks:
+  nexus:
+  # Rede do contêiner Postgres já existente. Crie-a e conecte o Postgres a ela:
+  #   docker network create nexus-db
+  #   docker network connect nexus-db <container-pg>
+  dbnet:
+    external: true
+    name: ${POSTGRES_NETWORK:-nexus-db}
+
+volumes:
+  caddy_data:
+  caddy_config:

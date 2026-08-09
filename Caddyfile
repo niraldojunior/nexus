@@ -1,0 +1,34 @@
+# Caddy — perímetro do Nexus no VPS. Espelha as rotas de vercel.json:
+# API (com e sem prefixo /api) vai para o backend; o resto cai no SPA.
+{
+	email {$LETSENCRYPT_EMAIL}
+}
+
+{$NEXUS_DOMAIN} {
+	encode gzip zstd
+
+	# O frontend prefixa /api (installApiFetchRewrite). O backend não conhece
+	# esse prefixo — remova-o antes de repassar, como o normalizeRequestUrl faz.
+	@apiPrefixed path /api/v1/* /api/tmf-api/* /api/health
+	handle @apiPrefixed {
+		uri strip_prefix /api
+		reverse_proxy api:4001
+	}
+
+	# Compatibilidade: chamadas diretas sem /api (ex.: /health, /tmf-api/*).
+	@apiDirect path /v1/* /tmf-api/* /health
+	handle @apiDirect {
+		reverse_proxy api:4001
+	}
+
+	# SPA. O basic_auth é o perímetro real enquanto o Bearer do frontend for
+	# público (vai compilado no bundle). Remova este bloco para abrir o SPA.
+	handle {
+		basic_auth {
+			{$WEB_USER} {$WEB_PASSWORD_HASH}
+		}
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -23,7 +23,7 @@ ISP (Tenant), não o usuário final.
 | Banco     | PostgreSQL/Neon ou Oracle 21c/23ai Thin (`DATABASE_PROVIDER`) |
 | Testes    | Vitest 4 · Playwright · Testing Library · MSW                 |
 | Qualidade | ESLint 9 · Prettier 3 · TypeScript strict                     |
-| Deploy    | Vercel (Functions + estático)                                 |
+| Deploy    | Vercel (paralelo) · Docker Compose no VPS                     |
 
 ---
 
@@ -251,6 +251,68 @@ Defina `DATABASE_URL` apenas se quiser sobrescrever a seleção por ambiente.
 
 Com esse layout, branches e previews nunca tocam dados de produção. Para isolar os testes locais do
 banco de dev, aponte `DATABASE_URL_TEST` para um banco separado.
+
+---
+
+## Deploy (Docker / VPS)
+
+Alternativa ao Vercel, para rodar a stack num VPS próprio com domínio e HTTPS. O deploy Vercel segue
+em paralelo — nada em `vercel.json` / `api/` é removido. O runtime usa `pg` puro, então um Postgres
+comum (ex.: contêiner) serve sem mudar código: basta apontar `DATABASE_URL` para ele.
+
+**Componentes** (todos na raiz):
+
+| Arquivo                 | Papel                                                                 |
+| ----------------------- | --------------------------------------------------------------------- |
+| `Dockerfile`            | Multi-stage; alvos `api` (backend Node) e `web` (Caddy + SPA)         |
+| `Caddyfile`             | Proxy reverso + TLS automático; espelha as rotas de `vercel.json`     |
+| `docker-compose.yml`    | Serviços `api`, `web` e `tools` (schema/cargas); Postgres é externo   |
+| `.env.docker.example`   | Modelo do `.env.docker` (gitignored)                                  |
+
+O Postgres **não** é gerenciado pelo compose — conecta-se ao contêiner existente por uma rede docker
+externa (`POSTGRES_NETWORK`). A imagem `web` serve o SPA atrás de `basic_auth`; o Bearer do frontend
+vai compilado no bundle (`VITE_AUTH_TOKEN`) e **não é segredo** — o perímetro real é o `basic_auth`.
+
+### Passos
+
+```bash
+# 1. Rede + banco do Postgres já existente
+docker network create nexus-db
+docker network connect nexus-db <container-pg>
+
+# 2. Configuração
+cp .env.docker.example .env.docker   # preencher domínio, senha, DATABASE_URL, tokens
+#    hash do basic_auth:
+docker run --rm caddy:2-alpine caddy hash-password --plaintext '<senha>'
+
+# 3. Schema (banco vazio) — aponte o DNS do domínio para o VPS antes deste passo
+docker compose --profile tools run --rm tools
+
+# 4. Subir a stack (api + web com TLS via Let's Encrypt)
+docker compose up -d --build
+curl -fsS https://<domínio>/health
+```
+
+### Recarga dos dados
+
+Os CSVs de origem são gitignored — copie `legacy-data/` para o VPS. Rode os loaders **sempre dentro
+do `tools`** (que só enxerga `.env.docker`), nunca da estação de trabalho: com o `.env` do repo
+carregado, `load-recursos-netwin.mjs --apply` dá `TRUNCATE` no Neon de dev.
+
+```bash
+docker compose --profile tools run --rm --entrypoint node tools scripts/<loader>.mjs
+```
+
+Ordem: `estacoes_carregar.mjs --fast` → `load-recursos-netwin.mjs --apply` → seeds GPON/Service →
+`repair-geo-consistency.mjs` + `backfill-serving-site.mjs`. Os seeds que falam com a API usam
+`NEXUS_API=http://api:4001` e `NEXUS_TOKEN=$AUTH_TOKEN` (rede interna, sem passar pelo `basic_auth`).
+
+### CI das imagens
+
+`.github/workflows/docker.yml` valida o compose, constrói as imagens `api`/`web` e, fora de PR,
+publica no GHCR (`ghcr.io/<owner>/nexus-{api,web}`). Defina `VITE_AUTH_TOKEN` e
+`VITE_GOOGLE_MAPS_API_KEY` como secrets do repositório para que o bundle publicado saia com os
+valores corretos.
 
 ---
 

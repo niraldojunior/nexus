@@ -20,7 +20,11 @@ export const PASSIVE_INFRA_MAX_SCALE_METERS = 200;
 // individual — o usuário já está perto o bastante para ver caixa a caixa.
 export const MARKER_CLUSTER_MIN_SCALE_METERS = 100;
 
-const metersPerPixel = (zoom: number, latDeg: number): number =>
+// Metros por pixel na tela para um dado zoom e latitude (projeção Web Mercator do
+// Google). Exportado para a câmera (mapCamera.ts) estimar em pixels a distância de um
+// salto — quantos viewports separam o centro atual do alvo — e decidir se afasta antes
+// de voar.
+export const metersPerPixel = (zoom: number, latDeg: number): number =>
   (EARTH_METERS_PER_PIXEL_AT_ZOOM_0 * Math.cos((latDeg * Math.PI) / 180)) / 2 ** zoom;
 
 // Maior valor 1/2/5 × 10^n que não ultrapassa `maxMeters` — mesmo padrão de arredondamento
@@ -46,9 +50,21 @@ export function mapScaleMeters(zoom: number, latDeg: number): number {
 // própria calçada, resolução de campo (ver zoomForScaleMeters e MapLocateButton).
 export const DEVICE_LOCATION_SCALE_METERS = 20;
 
-// Inverso de mapScaleMeters, sem o arredondamento "nice value": o zoom (fracionário, que o
-// Google Maps aceita) para o qual a barra de escala representaria ~`meters` metros na
-// latitude dada. Usado para enquadrar a localização do dispositivo num raio de rua.
+// Escala-alvo de chegada ao focar cada tipo de item, na régua do mapa (ver
+// mapCamera.flyTo). Recurso é a caixa/porta — resolução de campo; Site é a estação — o
+// prédio e a quadra dele; Endereço é a fachada. A câmera só APROXIMA até aqui quando o
+// zoom atual está aberto demais (ver flyTo); se já estava perto, não mexe.
+export const RESOURCE_FOCUS_SCALE_METERS = 20;
+export const SITE_FOCUS_SCALE_METERS = 50;
+export const ADDRESS_FOCUS_SCALE_METERS = 30;
+
+// Inverso de mapScaleMeters, sem o arredondamento "nice value": o zoom para o qual a
+// barra de escala representaria ~`meters` metros na latitude dada.
+//
+// ATENÇÃO: o retorno é FRACIONÁRIO. No mapa raster do Google, `setZoom` com fração é
+// desenhado aplicando um `scale()` no contêiner inteiro do mapa — os tiles borram e
+// TODOS os marcadores (alfinete, recursos, sites) incham junto. Sempre `Math.round`
+// antes de `setZoom` (ver mapCamera.flyTo e handleDeviceLocate).
 export function zoomForScaleMeters(meters: number, latDeg: number): number {
   const metersPerPixelTarget = meters / SCALE_BAR_MAX_PX;
   const raw = Math.log2(

@@ -1,0 +1,217 @@
+// Voo de câmera do mapa Geo, no espírito do Google Maps: ao focar um item distante, a
+// câmera AFASTA, viaja e REAPROXIMA, em vez de saltar seco (o `panTo` nativo só anima
+// destinos que já caberiam em ~1 viewport; fora disso ele teleporta). Perto, um `panTo`
+// simples já basta.
+//
+// Toda a animação é feita ENCADEANDO as animações nativas do Google por `idle` — nunca
+// interpolando zoom quadro a quadro. Isso mantém cada estágio em ZOOM INTEIRO, que é o
+// que evita o borrão: no mapa raster, `setZoom` fracionário é desenhado com um `scale()`
+// no contêiner inteiro, borrando tiles e inchando todos os marcadores.
+//
+// O zoom de chegada só APROXIMA (`Math.max(zoomAtual, alvo)`): quem já estava perto não
+// tem o enquadramento roubado.
+
+import type { GoogleMapInstance } from './googleMaps';
+import { haversineMeters } from './googleRoutes';
+import { metersPerPixel, zoomForScaleMeters } from './mapScale';
+
+export type FlyTarget = {
+  point: [number, number];
+  // Escala-alvo na régua do mapa (m). `null` = voa sem mexer no zoom (ex.: clique num
+  // marcador já visível — o item está na tela, aproximar roubaria o enquadramento).
+  scaleMeters: number | null;
+};
+
+export type FlyOptions = {
+  // Avisado com `true` no início de um voo encadeado e `false` no fim (ou ao ser
+  // superado/cancelado). O chamador usa isto para não disparar busca por viewport nos
+  // `idle` intermediários do voo (ver GeoPage).
+  onFlightChange?: (active: boolean) => void;
+};
+
+// Um salto conta como "perto" quando os dois pontos já distam menos que esta fração do
+// menor lado do mapa — aí o `panTo` nativo anima suave e não vale a pena afastar.
+export const NEAR_TRAVEL_FRACTION = 0.8;
+
+// No estágio de afastamento, enquadramos os dois pontos em ~80% do viewport.
+const FIT_FRACTION = 0.8;
+
+// Piso do zoom de afastamento — não faz sentido abrir até o globo por um salto entre
+// bairros; e teto é sempre `zoomAtual - 1` (afastar ao menos um passo).
+const MIN_FLIGHT_ZOOM = 3;
+
+// Se o `idle` de um estágio não chegar (mapa já no destino, `setZoom` sem efeito), este
+// timeout avança o voo assim mesmo, para nunca ficar preso no meio.
+const STAGE_TIMEOUT_MS = 1200;
+
+// Fallback do lado do viewport em px quando o elemento do mapa ainda não tem medida
+// (ex.: primeiro render, ambiente de teste).
+const FALLBACK_VIEWPORT_PX = 800;
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), max);
+
+type FlightState = {
+  // Invalida os estágios pendentes: um voo novo (ou cancelamento) incrementa o token, e
+  // todo estágio agendado confere se ainda é o corrente antes de agir.
+  token: number;
+  active: boolean;
+  timer: ReturnType<typeof setTimeout> | undefined;
+  onFlightChange: ((active: boolean) => void) | undefined;
+};
+
+// Estado do voo por instância de mapa — WeakMap para não vazar quando o mapa é
+// descartado. A instância do Google é objeto estável, boa chave.
+const flights = new WeakMap<GoogleMapInstance, FlightState>();
+
+// Zoom de chegada: só aproxima. `scaleMeters: null` mantém o zoom atual. Sempre inteiro
+// (o fracionário de `zoomForScaleMeters` borraria o mapa — ver mapScale).
+function arrivalZoomFor(target: FlyTarget, currentZoom: number, lat: number): number {
+  if (target.scaleMeters === null) return currentZoom;
+  return Math.max(currentZoom, Math.round(zoomForScaleMeters(target.scaleMeters, lat)));
+}
+
+// Zoom (inteiro) que enquadra os dois pontos em ~FIT_FRACTION do viewport, para o salto
+// nascer com origem e destino à vista antes de viajar. Nunca abaixo de MIN_FLIGHT_ZOOM
+// nem acima de `currentZoom - 1` (afastar ao menos um passo).
+function departureZoomFor(
+  distanceMeters: number,
+  lat: number,
+  viewportPx: number,
+  currentZoom: number,
+): number {
+  const targetMetersPerPixel = distanceMeters / (FIT_FRACTION * viewportPx);
+  // metersPerPixel(0, lat) = C (constante da projeção na latitude): 2^z = C / mppAlvo.
+  const raw = Math.log2(metersPerPixel(0, lat) / targetMetersPerPixel);
+  return clamp(Math.floor(raw), MIN_FLIGHT_ZOOM, Math.max(1, currentZoom - 1));
+}
+
+// Encerra qualquer voo em curso neste mapa e abre um novo "turno" (token). Retorna o
+// estado e o token corrente; os estágios conferem o token para se auto-cancelar quando
+// superados por um voo mais novo.
+function beginFlight(map: GoogleMapInstance, options?: FlyOptions): { state: FlightState; token: number } {
+  const state = flights.get(map) ?? { token: 0, active: false, timer: undefined, onFlightChange: undefined };
+  if (state.timer) {
+    clearTimeout(state.timer);
+    state.timer = undefined;
+  }
+  if (state.active) state.onFlightChange?.(false);
+  state.token += 1;
+  state.active = false;
+  state.onFlightChange = options?.onFlightChange;
+  flights.set(map, state);
+  return { state, token: state.token };
+}
+
+// Executa os estágios em sequência, cada um avançando no `idle` seguinte (fim da
+// animação nativa) ou no timeout de segurança. Sinaliza voo ativo no início e no fim.
+function runStages(
+  map: GoogleMapInstance,
+  state: FlightState,
+  token: number,
+  stages: Array<() => void>,
+): void {
+  const maps = window.google?.maps;
+  if (!maps) {
+    // Sem API (teste sem mock de eventos): aplica tudo direto, sem encadear.
+    for (const stage of stages) stage();
+    return;
+  }
+
+  state.active = true;
+  state.onFlightChange?.(true);
+
+  let index = 0;
+  const finish = () => {
+    if (state.token !== token) return;
+    state.active = false;
+    state.timer = undefined;
+    state.onFlightChange?.(false);
+  };
+
+  const runNext = () => {
+    if (state.token !== token) return; // superado ou cancelado
+    if (index >= stages.length) {
+      finish();
+      return;
+    }
+    const stage = stages[index++];
+    let advanced = false;
+    const advance = () => {
+      if (advanced || state.token !== token) return;
+      advanced = true;
+      if (state.timer) {
+        clearTimeout(state.timer);
+        state.timer = undefined;
+      }
+      runNext();
+    };
+    maps.event.addListenerOnce(map, 'idle', advance);
+    state.timer = setTimeout(advance, STAGE_TIMEOUT_MS);
+    stage();
+  };
+
+  runNext();
+}
+
+/**
+ * Move a câmera até `target`, animando de verdade: perto, um `panTo` (mais o zoom de
+ * chegada se preciso); longe, afasta → viaja → reaproxima, cada estágio em zoom inteiro.
+ * Um voo novo cancela o anterior neste mapa.
+ */
+export function flyTo(map: GoogleMapInstance, target: FlyTarget, options?: FlyOptions): void {
+  const [lng, lat] = target.point;
+  const { state, token } = beginFlight(map, options);
+
+  const center = map.getCenter();
+  const currentZoom = map.getZoom();
+  // Sem estado de câmera ainda: posiciona direto, sem voo encadeado.
+  if (!center || currentZoom === undefined || currentZoom === null) {
+    map.panTo({ lat, lng });
+    if (target.scaleMeters !== null) {
+      map.setZoom(Math.round(zoomForScaleMeters(target.scaleMeters, lat)));
+    }
+    return;
+  }
+
+  const arrivalZoom = arrivalZoomFor(target, currentZoom, lat);
+
+  const div = map.getDiv?.();
+  const viewportPx =
+    Math.min(div?.clientWidth || FALLBACK_VIEWPORT_PX, div?.clientHeight || FALLBACK_VIEWPORT_PX) ||
+    FALLBACK_VIEWPORT_PX;
+  const distanceMeters = haversineMeters([center.lng(), center.lat()], target.point);
+  const travelPx = distanceMeters / metersPerPixel(currentZoom, lat);
+
+  if (travelPx <= NEAR_TRAVEL_FRACTION * viewportPx) {
+    if (arrivalZoom > currentZoom) {
+      runStages(map, state, token, [() => map.panTo({ lat, lng }), () => map.setZoom(arrivalZoom)]);
+    } else {
+      // Só desloca; deixa o `idle` normal seguir para a busca de infra por viewport.
+      map.panTo({ lat, lng });
+    }
+    return;
+  }
+
+  const departureZoom = departureZoomFor(distanceMeters, lat, viewportPx, currentZoom);
+  runStages(map, state, token, [
+    () => map.setZoom(departureZoom),
+    () => map.panTo({ lat, lng }),
+    () => map.setZoom(arrivalZoom),
+  ]);
+}
+
+/** Cancela um voo em curso (ex.: no desmonte do painel do mapa). */
+export function cancelFlight(map: GoogleMapInstance): void {
+  const state = flights.get(map);
+  if (!state) return;
+  if (state.timer) {
+    clearTimeout(state.timer);
+    state.timer = undefined;
+  }
+  state.token += 1;
+  if (state.active) {
+    state.active = false;
+    state.onFlightChange?.(false);
+  }
+}

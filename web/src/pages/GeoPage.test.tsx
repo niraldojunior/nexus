@@ -13,9 +13,13 @@ const googleMocks = vi.hoisted(() => ({
   infoWindowSetPosition: vi.fn(),
   loadGoogleMaps: vi.fn<() => Promise<void>>(),
   mapAddListener: vi.fn(),
+  mapAddListenerOnce: vi.fn(),
   mapGetBounds: vi.fn(),
+  mapGetCenter: vi.fn(),
+  mapGetDiv: vi.fn(() => document.createElement('div')),
   mapGetZoom: vi.fn(),
   mapPanTo: vi.fn(),
+  mapSetZoom: vi.fn(),
   mapSetMapTypeId: vi.fn(),
   markerCtor: vi.fn(),
   reverseGeocode: vi.fn(),
@@ -44,8 +48,11 @@ function installGoogleMapsMock() {
   const mapInstance = {
     addListener: googleMocks.mapAddListener,
     getBounds: googleMocks.mapGetBounds,
+    getCenter: googleMocks.mapGetCenter,
+    getDiv: googleMocks.mapGetDiv,
     getZoom: googleMocks.mapGetZoom,
     panTo: googleMocks.mapPanTo,
+    setZoom: googleMocks.mapSetZoom,
     setMapTypeId: googleMocks.mapSetMapTypeId,
   };
 
@@ -90,7 +97,10 @@ function installGoogleMapsMock() {
           return { width, height };
         }),
         SymbolPath: { CIRCLE: 'CIRCLE' },
-        event: { clearInstanceListeners: vi.fn() },
+        event: {
+          clearInstanceListeners: vi.fn(),
+          addListenerOnce: googleMocks.mapAddListenerOnce,
+        },
       },
     },
   });
@@ -112,7 +122,7 @@ describe('GoogleMapPanel', () => {
         nodes={[]}
         selectedNodeId={null}
         draftAddress={null}
-        focusPoint={null}
+        focusRequest={null}
         balloon={null}
         onSelectNode={vi.fn()}
         onHoverNode={vi.fn()}
@@ -142,7 +152,7 @@ describe('GoogleMapPanel', () => {
         selectedNodeId={null}
         draftAddress={null}
         addressPoint={[-43.1079841, -22.8985597]}
-        focusPoint={null}
+        focusRequest={null}
         balloon={null}
         onSelectNode={vi.fn()}
         onHoverNode={vi.fn()}
@@ -181,7 +191,7 @@ describe('GoogleMapPanel', () => {
         // clique no mapa fica de fora, para não cravar os dois marcadores na mesma
         // coordenada (ver onMapAddressFound em GeoPage).
         addressPoint={null}
-        focusPoint={null}
+        focusRequest={null}
         balloon={null}
         onSelectNode={vi.fn()}
         onHoverNode={vi.fn()}

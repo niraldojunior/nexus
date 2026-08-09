@@ -12,6 +12,8 @@ export type GoogleMapTypeId = 'roadmap' | 'satellite' | 'hybrid' | 'terrain';
 export type GoogleMapInstance = {
   addListener: (eventName: string, listener: (event: GoogleMapMouseEvent) => void) => void;
   getBounds: () => GoogleMapBounds | undefined;
+  getCenter: () => GoogleLatLng | undefined;
+  getDiv: () => HTMLElement;
   getZoom: () => number | undefined;
   panTo: (position: { lat: number; lng: number }) => void;
   setZoom: (zoom: number) => void;
@@ -85,6 +87,9 @@ type GoogleMapsApi = {
     SymbolPath: { CIRCLE: unknown };
     event: {
       clearInstanceListeners: (instance: object) => void;
+      // Dispara uma única vez e se auto-remove — usado pela câmera para encadear os
+      // estágios de um voo longo no `idle` (fim de cada animação nativa), ver mapCamera.
+      addListenerOnce: (instance: object, eventName: string, handler: () => void) => void;
     };
     places?: {
       AutocompleteService: new () => {

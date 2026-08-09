@@ -60,11 +60,13 @@ import {
   type GoogleMarkerInstance,
   type GooglePolylineInstance,
 } from '../utils/googleMaps';
+import { animateMapCamera } from '../utils/mapCamera';
 import {
   mapScaleMeters,
   readGoogleScaleMeters,
   zoomForScaleMeters,
   DEVICE_LOCATION_SCALE_METERS,
+  MAP_SELECTION_SCALE_METERS,
   PASSIVE_INFRA_MAX_SCALE_METERS,
   MARKER_CLUSTER_MIN_SCALE_METERS,
 } from '../utils/mapScale';
@@ -140,6 +142,12 @@ type MapBalloon = {
 // Alvo do painel de detalhe aberto por clique — Site ou Recurso, cada um com o
 // corpo que sabe montar a partir dele (ver SiteDetailBody/ResourceDetailBody).
 type DetailTarget = { kind: 'site'; site: GeoSite } | { kind: 'resource'; node: GeoTreeNode };
+
+type MapFocusRequest = {
+  id: number;
+  point: [number, number];
+  scaleMeters?: number;
+};
 
 // Lado do ícone de equipamento no mapa, em px. Um pouco menor que o pin de site
 // para o equipamento não competir com o local que o contém.
@@ -241,7 +249,11 @@ export default function GeoPage() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [focusPoint, setFocusPoint] = useState<[number, number] | null>(null);
+  const [focusRequest, setFocusRequest] = useState<MapFocusRequest | null>(null);
+  const focusRequestIdRef = useRef(0);
+  const requestMapFocus = useCallback((point: [number, number], scaleMeters?: number) => {
+    setFocusRequest({ id: ++focusRequestIdRef.current, point, scaleMeters });
+  }, []);
   // Nó selecionado (clique, na árvore ou no mapa) e nó sob o mouse (hover, alvo
   // do balão de preview). São dois estados independentes: o hover é passageiro
   // e não mexe na seleção nem no painel de detalhe já aberto.
@@ -376,7 +388,7 @@ export default function GeoPage() {
       setDraftAddress(null);
       setAddressLookup(null);
       const point = treeNodePoint(node);
-      if (point) setFocusPoint(point);
+      if (point) requestMapFocus(point, MAP_SELECTION_SCALE_METERS);
       tree.revealNode(node.id, { expandSelf: node.hasChildren });
       if (node.kind === 'site' || node.kind === 'resource') {
         setDetailTab('overview');
@@ -388,7 +400,7 @@ export default function GeoPage() {
         setDetailOpen(false);
       }
     },
-    [tree],
+    [requestMapFocus, tree],
   );
 
   // Clique fora de qualquer item (vazio do mapa) com uma seleção ativa: tira o
@@ -409,8 +421,8 @@ export default function GeoPage() {
     setDropSimulation(simulation);
     if (!simulation) return;
     const midpoint = pathMidpoint(simulation.path);
-    if (midpoint) setFocusPoint(midpoint);
-  }, []);
+    if (midpoint) requestMapFocus(midpoint);
+  }, [requestMapFocus]);
 
   // Endereço resolvido pela busca (Enter em texto livre ou clique numa sugestão do
   // dropdown) — os dois caminhos convergem aqui. Some qualquer seleção de nó em
@@ -422,9 +434,9 @@ export default function GeoPage() {
     setAddressError(null);
     setDropSimulation(null);
     setAddressLookup({ address, source: 'search' });
-    setFocusPoint(address.coordinates);
+    requestMapFocus(address.coordinates, MAP_SELECTION_SCALE_METERS);
     setQuery(address.label);
-  }, []);
+  }, [requestMapFocus]);
 
   const onAddressError = useCallback((err: AddressSearchError) => {
     setAddressError(err);
@@ -642,7 +654,7 @@ export default function GeoPage() {
                 addressLookup?.source === 'search' ? addressLookup.address.coordinates : null
               }
               dropSimulation={dropSimulation}
-              focusPoint={focusPoint}
+              focusRequest={focusRequest}
               balloon={balloon}
               onSelectNode={selectNode}
               onHoverNode={handleHover}
@@ -731,7 +743,7 @@ export function GoogleMapPanel({
   draftAddress,
   addressPoint,
   dropSimulation,
-  focusPoint,
+  focusRequest,
   balloon,
   onSelectNode,
   onHoverNode,
@@ -752,7 +764,7 @@ export function GoogleMapPanel({
   // Drop simulado entre o endereço e a CDO escolhida na aba de Viabilidade — estudo,
   // não planta: desenho próprio, animado, que some junto com o painel que o criou.
   dropSimulation?: DropSimulation | null;
-  focusPoint?: [number, number] | null;
+  focusRequest?: MapFocusRequest | null;
   balloon: MapBalloon | null;
   onSelectNode: (node: GeoTreeNode) => void;
   onHoverNode: (node: GeoTreeNode | null) => void;
@@ -785,6 +797,7 @@ export function GoogleMapPanel({
   const dropDashRef = useRef<GooglePolylineInstance | null>(null);
   const dropLabelRef = useRef<GoogleMarkerInstance | null>(null);
   const dropAnimationRef = useRef<number | undefined>(undefined);
+  const cameraAnimationRef = useRef<(() => void) | null>(null);
   const infoWindowRef = useRef<GoogleInfoWindowInstance | null>(null);
   // Nó fora da árvore do React: o InfoWindow do Google recebe este elemento como
   // conteúdo e o React desenha dentro dele via portal, mantendo o balão como
@@ -880,6 +893,10 @@ export function GoogleMapPanel({
               },
             );
           });
+        });
+        mapRef.current.addListener('dragstart', () => {
+          cameraAnimationRef.current?.();
+          cameraAnimationRef.current = null;
         });
         // `idle` dispara ao fim de todo pan/zoom (não a cada frame) — é aqui que
         // reportamos a região visível e a escala atual para o chamador decidir se
@@ -1055,12 +1072,30 @@ export function GoogleMapPanel({
     mapRef.current.panTo({ lng, lat });
   }, [draftAddress, mapsReady]);
 
-  // Centralizar o mapa quando a hierarquia seleciona um item (Site ou recurso).
+  // Solicitações de seleção animam centro e zoom em conjunto até a escala-alvo.
+  // Solicitações auxiliares sem escala (como a simulação de drop) preservam o pan atual.
   useEffect(() => {
-    if (!mapsReady || !mapRef.current || !focusPoint) return;
-    const [lng, lat] = focusPoint;
-    mapRef.current.panTo({ lng, lat });
-  }, [focusPoint, mapsReady]);
+    if (!mapsReady || !mapRef.current || !focusRequest) return;
+    cameraAnimationRef.current?.();
+    cameraAnimationRef.current = null;
+    const [lng, lat] = focusRequest.point;
+    if (focusRequest.scaleMeters === undefined) {
+      mapRef.current.panTo({ lng, lat });
+      return;
+    }
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    const cancel = animateMapCamera({
+      map: mapRef.current,
+      target: { lng, lat },
+      targetZoom: zoomForScaleMeters(focusRequest.scaleMeters, lat),
+      reducedMotion: reduceMotion,
+    });
+    cameraAnimationRef.current = cancel;
+    return () => {
+      cancel();
+      if (cameraAnimationRef.current === cancel) cameraAnimationRef.current = null;
+    };
+  }, [focusRequest, mapsReady]);
 
   // Alfinete do item selecionado — marca sem ambiguidade o que foi clicado por
   // último (árvore, mapa ou busca), distinto do "+" de rascunho e do pin do

@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MAP_SELECTION_SCALE_METERS, zoomForScaleMeters } from '../utils/mapScale';
 import { GoogleMapPanel } from './GeoPage';
 
 const googleMocks = vi.hoisted(() => ({
@@ -11,15 +12,25 @@ const googleMocks = vi.hoisted(() => ({
   infoWindowSetContent: vi.fn(),
   infoWindowSetOptions: vi.fn(),
   infoWindowSetPosition: vi.fn(),
+  cameraCancel: vi.fn(),
+  animateMapCamera: vi.fn(),
   loadGoogleMaps: vi.fn<() => Promise<void>>(),
   mapAddListener: vi.fn(),
   mapGetBounds: vi.fn(),
+  mapGetCenter: vi.fn(),
   mapGetZoom: vi.fn(),
+  mapMoveCamera: vi.fn(),
   mapPanTo: vi.fn(),
   mapSetMapTypeId: vi.fn(),
+  mapSetZoom: vi.fn(),
   markerCtor: vi.fn(),
   reverseGeocode: vi.fn(),
 }));
+
+vi.mock('../utils/mapCamera', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/mapCamera')>();
+  return { ...actual, animateMapCamera: googleMocks.animateMapCamera };
+});
 
 vi.mock('../utils/googleMaps', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../utils/googleMaps')>();
@@ -44,9 +55,12 @@ function installGoogleMapsMock() {
   const mapInstance = {
     addListener: googleMocks.mapAddListener,
     getBounds: googleMocks.mapGetBounds,
+    getCenter: googleMocks.mapGetCenter,
     getZoom: googleMocks.mapGetZoom,
+    moveCamera: googleMocks.mapMoveCamera,
     panTo: googleMocks.mapPanTo,
     setMapTypeId: googleMocks.mapSetMapTypeId,
+    setZoom: googleMocks.mapSetZoom,
   };
 
   Object.defineProperty(window, 'google', {
@@ -99,8 +113,11 @@ function installGoogleMapsMock() {
 describe('GoogleMapPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    googleMocks.animateMapCamera.mockReturnValue(googleMocks.cameraCancel);
     googleMocks.loadGoogleMaps.mockResolvedValue();
     googleMocks.reverseGeocode.mockResolvedValue(null);
+    googleMocks.mapGetCenter.mockReturnValue({ lat: () => -22.9, lng: () => -43.1 });
+    googleMocks.mapGetZoom.mockReturnValue(14);
     installGoogleMapsMock();
   });
 
@@ -112,7 +129,7 @@ describe('GoogleMapPanel', () => {
         nodes={[]}
         selectedNodeId={null}
         draftAddress={null}
-        focusPoint={null}
+        focusRequest={null}
         balloon={null}
         onSelectNode={vi.fn()}
         onHoverNode={vi.fn()}
@@ -135,6 +152,96 @@ describe('GoogleMapPanel', () => {
     await waitFor(() => expect(googleMocks.mapSetMapTypeId).toHaveBeenLastCalledWith('roadmap'));
   });
 
+  it('anima seleção até a escala de 50 m calculada na latitude do destino', async () => {
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNodeId={null}
+        draftAddress={null}
+        focusRequest={{ id: 1, point: [-43.1079841, -22.8985597], scaleMeters: 50 }}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onDeselect={vi.fn()}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(googleMocks.animateMapCamera).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: { lat: -22.8985597, lng: -43.1079841 },
+          targetZoom: zoomForScaleMeters(50, -22.8985597),
+        }),
+      ),
+    );
+  });
+
+  it('cancela a animação quando o usuário começa a arrastar o mapa', async () => {
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNodeId={null}
+        draftAddress={null}
+        focusRequest={{ id: 1, point: [-43.1079841, -22.8985597], scaleMeters: 50 }}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onDeselect={vi.fn()}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />,
+    );
+
+    await waitFor(() => expect(googleMocks.animateMapCamera).toHaveBeenCalledOnce());
+    const dragListener = googleMocks.mapAddListener.mock.calls.find(
+      ([eventName]) => eventName === 'dragstart',
+    )?.[1] as (() => void) | undefined;
+
+    expect(dragListener).toBeTypeOf('function');
+    dragListener?.();
+    expect(googleMocks.cameraCancel).toHaveBeenCalledOnce();
+  });
+
+  it('reanima a mesma coordenada quando uma nova seleção recebe outro identificador', async () => {
+    const props = {
+      nodes: [],
+      selectedNodeId: null,
+      draftAddress: null,
+      balloon: null,
+      onSelectNode: vi.fn(),
+      onHoverNode: vi.fn(),
+      onCloseBalloon: vi.fn(),
+      onDraftAddress: vi.fn(),
+      onDeselect: vi.fn(),
+      onViewportChange: vi.fn(),
+      clusterMarkers: false,
+    };
+    const point: [number, number] = [-43.1079841, -22.8985597];
+    const { rerender } = render(
+      <GoogleMapPanel
+        {...props}
+        focusRequest={{ id: 1, point, scaleMeters: MAP_SELECTION_SCALE_METERS }}
+      />,
+    );
+    await waitFor(() => expect(googleMocks.animateMapCamera).toHaveBeenCalledOnce());
+
+    rerender(
+      <GoogleMapPanel
+        {...props}
+        focusRequest={{ id: 2, point, scaleMeters: MAP_SELECTION_SCALE_METERS }}
+      />,
+    );
+
+    await waitFor(() => expect(googleMocks.animateMapCamera).toHaveBeenCalledTimes(2));
+    expect(googleMocks.cameraCancel).toHaveBeenCalledOnce();
+  });
+
   it('crava o alfinete de seleção no endereço encontrado pela busca, sem nó selecionado', async () => {
     render(
       <GoogleMapPanel
@@ -142,7 +249,7 @@ describe('GoogleMapPanel', () => {
         selectedNodeId={null}
         draftAddress={null}
         addressPoint={[-43.1079841, -22.8985597]}
-        focusPoint={null}
+        focusRequest={null}
         balloon={null}
         onSelectNode={vi.fn()}
         onHoverNode={vi.fn()}
@@ -181,7 +288,7 @@ describe('GoogleMapPanel', () => {
         // clique no mapa fica de fora, para não cravar os dois marcadores na mesma
         // coordenada (ver onMapAddressFound em GeoPage).
         addressPoint={null}
-        focusPoint={null}
+        focusRequest={null}
         balloon={null}
         onSelectNode={vi.fn()}
         onHoverNode={vi.fn()}

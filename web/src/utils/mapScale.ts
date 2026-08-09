@@ -46,6 +46,9 @@ export function mapScaleMeters(zoom: number, latDeg: number): number {
 // própria calçada, resolução de campo (ver zoomForScaleMeters e MapLocateButton).
 export const DEVICE_LOCATION_SCALE_METERS = 20;
 
+// Escala final de uma seleção feita na consulta de locais.
+export const MAP_SELECTION_SCALE_METERS = 50;
+
 // Inverso de mapScaleMeters, sem o arredondamento "nice value": o zoom (fracionário, que o
 // Google Maps aceita) para o qual a barra de escala representaria ~`meters` metros na
 // latitude dada. Usado para enquadrar a localização do dispositivo num raio de rua.

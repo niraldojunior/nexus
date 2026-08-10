@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cancelFlight, flyTo } from './mapCamera';
+import { bottomInsetForOverlay, cancelFlight, flyTo } from './mapCamera';
 import type { GoogleMapInstance } from './googleMaps';
 
 // Fila de handlers de `idle`: `addListenerOnce` empilha, `flushIdle` dispara o próximo —
@@ -31,9 +31,14 @@ function makeMap(center: [number, number], zoom: number) {
     getZoom: () => zoom,
     getDiv: () => ({ clientWidth: 1000, clientHeight: 800 }) as unknown as HTMLElement,
     panTo: vi.fn(),
+    panBy: vi.fn(),
     setZoom: vi.fn(),
   };
-  return map as unknown as GoogleMapInstance & { panTo: ReturnType<typeof vi.fn>; setZoom: ReturnType<typeof vi.fn> };
+  return map as unknown as GoogleMapInstance & {
+    panTo: ReturnType<typeof vi.fn>;
+    panBy: ReturnType<typeof vi.fn>;
+    setZoom: ReturnType<typeof vi.fn>;
+  };
 }
 
 // Um alvo distante o suficiente para o salto contar como "longe" (afasta → viaja →
@@ -52,6 +57,17 @@ afterEach(() => {
 });
 
 describe('flyTo', () => {
+  it('após chegar desloca o alvo para o centro da área acima do painel', () => {
+    const map = makeMap(RIO, 20);
+
+    flyTo(map, { point: NEAR, scaleMeters: 20 }, { bottomInsetPx: 320 });
+
+    expect(map.panTo).toHaveBeenCalledWith({ lat: NEAR[1], lng: NEAR[0] });
+    expect(map.panBy).not.toHaveBeenCalled();
+    flushIdle();
+    expect(map.panBy).toHaveBeenCalledWith(0, 160);
+  });
+
   it('perto e sem precisar aproximar: só desloca com panTo, sem tocar no zoom', () => {
     const map = makeMap(RIO, 20); // já mais perto que a escala de chegada
     flyTo(map, { point: NEAR, scaleMeters: 20 });
@@ -141,5 +157,15 @@ describe('flyTo', () => {
     cancelFlight(map);
     flushIdle(); // handler pendente deve ser inerte
     expect(map.panTo).not.toHaveBeenCalled();
+  });
+});
+
+describe('bottomInsetForOverlay', () => {
+  it('mede somente a interseção vertical real entre painel e mapa', () => {
+    const mapRect = { top: 100, bottom: 700, height: 600 };
+
+    expect(bottomInsetForOverlay(mapRect, 384, 800)).toBe(284);
+    expect(bottomInsetForOverlay(mapRect, 736, 800)).toBe(600);
+    expect(bottomInsetForOverlay(mapRect, 96, 800)).toBe(0);
   });
 });

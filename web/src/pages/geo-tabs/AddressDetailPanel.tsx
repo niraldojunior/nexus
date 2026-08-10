@@ -10,7 +10,7 @@ import {
   Target,
 } from 'lucide-react';
 import type { DraftAddress } from '../../utils/googleMaps';
-import { BottomSheet } from '../../components/BottomSheet';
+import { BottomSheet, type BottomSheetSnapState } from '../../components/BottomSheet';
 import { StreetViewHero } from '../../components/StreetViewHero';
 import { addressStreetViewMarker } from '../../utils/streetViewMarker';
 import { CoordinateStreetView } from './CoordinateStreetView';
@@ -31,6 +31,10 @@ export type AddressDetailPanelProps = {
   // Fecha o painel: no mobile é o único fechar (arrastar a folha para baixo). No
   // desktop, quem fecha é o X da barra de pesquisa ancorada (ver onClear em GeoPage).
   onClose: () => void;
+  onSnapChange?: (state: BottomSheetSnapState) => void;
+  // Contador que, ao incrementar, encolhe a folha para peek (ver BottomSheet) — usado
+  // quando o usuário navega o mapa manualmente com este painel aberto (ver GeoPage).
+  minimizeSignal?: number;
   // Barra de pesquisa unificada, ancorada no topo do painel (desktop), flutuando
   // sobre o conteúdo que rola por baixo — mesmo padrão dos painéis de Site e Recurso.
   searchBar?: ReactNode;
@@ -50,6 +54,8 @@ export function AddressDetailPanel({
   isMobile,
   address,
   onClose,
+  onSnapChange,
+  minimizeSignal,
   searchBar,
   onDropSimulation,
 }: AddressDetailPanelProps) {
@@ -93,8 +99,17 @@ export function AddressDetailPanel({
             hint="Localização"
             value={<CoordinateStreetView marker={marker} />}
           />
-          <IconInfoRow icon={Target} hint="Precisão" value={<PrecisionBadge locationType={address.precision} />} />
-          <IconInfoRow icon={Tag} hint="Place ID (Google Maps)" value={address.placeId ?? '-'} mono />
+          <IconInfoRow
+            icon={Target}
+            hint="Precisão"
+            value={<PrecisionBadge locationType={address.precision} />}
+          />
+          <IconInfoRow
+            icon={Tag}
+            hint="Place ID (Google Maps)"
+            value={address.placeId ?? '-'}
+            mono
+          />
           <IconInfoRow icon={Fingerprint} hint="Address ID (Geonet)" value="-" mono />
           <IconInfoRow icon={Globe} hint="Origem Localização" value="Google Maps" />
         </div>
@@ -115,11 +130,13 @@ export function AddressDetailPanel({
 
   if (isMobile) {
     return (
-      <BottomSheet onClose={onClose}>
+      <BottomSheet onClose={onClose} onSnapChange={onSnapChange} minimizeSignal={minimizeSignal}>
         {/* Foto, título e corpo rolam juntos dentro da folha (ver BottomSheet). */}
         <StreetViewHero marker={marker} />
         {header}
-        <div className="min-w-0 overflow-x-hidden px-4 py-3">{body}</div>
+        {/* `overflow-hidden` nos dois eixos mantém o BottomSheet como único dono
+            do gesto vertical; `overflow-x-hidden` faria Y computar para `auto`. */}
+        <div className="min-w-0 overflow-hidden px-4 py-3">{body}</div>
       </BottomSheet>
     );
   }

@@ -97,7 +97,7 @@ test('PostgresSearchRepository lista várias sessões por usuário com limite', 
   const { repository, cleanup } = await setupRepository();
 
   try {
-    repository.createSession({
+    await repository.createSession({
       '@type': 'ResearchSession',
       id: 'session-a',
       href: '/v1/search/sessions/session-a',
@@ -108,7 +108,7 @@ test('PostgresSearchRepository lista várias sessões por usuário com limite', 
       updatedAt: '2026-01-01T00:00:00.000Z',
     } as never);
 
-    repository.createSession({
+    await repository.createSession({
       '@type': 'ResearchSession',
       id: 'session-b',
       href: '/v1/search/sessions/session-b',

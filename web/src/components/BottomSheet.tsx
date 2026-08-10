@@ -1,10 +1,20 @@
-import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type PointerEvent,
+  type ReactNode,
+  type TransitionEvent,
+} from 'react';
 
-type Snap = 'peek' | 'mid' | 'full';
+export type BottomSheetSnap = 'peek' | 'mid' | 'full';
+export type BottomSheetSnapState = { snap: BottomSheetSnap; heightPx: number };
 
 // Altura de cada ponto de encaixe, em fração da viewport — mesmo espírito do
 // bottom sheet do Google Maps: nasce no meio, arrasta pra ver mais ou menos.
-const SNAP_RATIO: Record<Snap, number> = {
+const SNAP_RATIO: Record<BottomSheetSnap, number> = {
   peek: 0.12,
   mid: 0.48,
   full: 0.92,
@@ -12,7 +22,7 @@ const SNAP_RATIO: Record<Snap, number> = {
 
 // Ordem dos encaixes, de baixo para cima — o encaixe na soltura anda um passo por
 // vez nesta ordem, no sentido do arraste (ver endSheetDrag).
-const SNAPS: Snap[] = ['peek', 'mid', 'full'];
+const SNAPS: BottomSheetSnap[] = ['peek', 'mid', 'full'];
 
 // Movimento mínimo (px) antes de um toque no corpo virar arraste da folha — abaixo
 // disto é toque/clique (ou rolagem do conteúdo), e a folha não se mexe.
@@ -21,9 +31,18 @@ const DRAG_COMMIT_THRESHOLD = 6;
 // Deslocamento mínimo (px) para a soltura confirmar a troca de encaixe. Abaixo disto,
 // a folha volta ao encaixe de onde saiu; acima, anda um passo no sentido do arraste.
 const SNAP_CONFIRM_PX = 24;
+const RESIZE_SETTLE_MS = 250;
+const CLICK_SUPPRESSION_MS = 500;
 
-const snapUp = (snap: Snap): Snap => SNAPS[Math.min(SNAPS.indexOf(snap) + 1, SNAPS.length - 1)];
-const snapDown = (snap: Snap): Snap => SNAPS[Math.max(SNAPS.indexOf(snap) - 1, 0)];
+type PendingClickSuppression = {
+  pointerId: number;
+  target: EventTarget | null;
+};
+
+const snapUp = (snap: BottomSheetSnap): BottomSheetSnap =>
+  SNAPS[Math.min(SNAPS.indexOf(snap) + 1, SNAPS.length - 1)];
+const snapDown = (snap: BottomSheetSnap): BottomSheetSnap =>
+  SNAPS[Math.max(SNAPS.indexOf(snap) - 1, 0)];
 
 /**
  * Painel inferior arrastável (mobile), com pontos de encaixe peek/mid/full.
@@ -39,35 +58,103 @@ const snapDown = (snap: Snap): Snap => SNAPS[Math.max(SNAPS.indexOf(snap) - 1, 0
 export function BottomSheet({
   children,
   onClose,
+  onSnapChange,
+  minimizeSignal,
   initialSnap = 'mid',
 }: {
   children: ReactNode;
   onClose: () => void;
-  initialSnap?: Snap;
+  onSnapChange?: (state: BottomSheetSnapState) => void;
+  // Contador de comando externo: cada incremento encolhe a folha para peek (se ela já não
+  // estiver lá). Usado quando o usuário navega o mapa manualmente com a folha aberta — a
+  // seleção permanece, mas a folha sai da frente (ver GeoPage, issue #19).
+  minimizeSignal?: number;
+  initialSnap?: BottomSheetSnap;
 }) {
-  const [snap, setSnap] = useState<Snap>(initialSnap);
+  const [snap, setSnap] = useState<BottomSheetSnap>(initialSnap);
   const [dragOffset, setDragOffset] = useState(0);
   const [dragging, setDragging] = useState(false);
 
+  const sheetRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const onSnapChangeRef = useRef(onSnapChange);
+  const gestureTargetRef = useRef<EventTarget | null>(null);
+  const pendingClickSuppressionRef = useRef<PendingClickSuppression | null>(null);
+  const clickSuppressionTimerRef = useRef<number | null>(null);
+  const activePointerIdRef = useRef<number | null>(null);
+  const capturedByRef = useRef<EventTarget | null>(null);
+  const pointerLifecycleCleanupRef = useRef<(() => void) | null>(null);
   // Modo do gesto em curso: `idle` = toque ainda indeciso (pode virar arraste da folha
   // ou rolagem do conteúdo); `sheet` = arrastando a folha; `content` = a folha chegou
-  // ao topo e o gesto virou rolagem do conteúdo (rolada à mão, ver onContentPointerMove).
-  const modeRef = useRef<'idle' | 'sheet' | 'content'>('idle');
+  // ao topo e o gesto virou rolagem do conteúdo; `horizontal` = gesto reservado ao
+  // descendente (abas, carrossel ou Street View), que a folha não deve sequestrar.
+  const modeRef = useRef<'idle' | 'sheet' | 'content' | 'horizontal'>('idle');
   // Y do ponteiro no início do gesto (âncora do arraste) e no último move (base do
   // incremento ao rolar o conteúdo à mão). Altura da folha em px no início do arraste.
   const startYRef = useRef(0);
+  const startXRef = useRef(0);
   const lastYRef = useRef(0);
   const sheetStartHeightRef = useRef(0);
   const dragOffsetRef = useRef(0);
+  const gestureStartSnapRef = useRef<BottomSheetSnap>(initialSnap);
+  const gestureStartScrollTopRef = useRef(0);
   // Espelho do encaixe atual, legível de dentro dos handlers sem esperar o re-render —
   // preciso porque um mesmo `pointermove` pode trocar o encaixe e agir sobre o novo.
-  const snapRef = useRef<Snap>(initialSnap);
+  const snapRef = useRef<BottomSheetSnap>(initialSnap);
   useEffect(() => {
     snapRef.current = snap;
   }, [snap]);
 
-  const commitSnap = (next: Snap) => {
+  // Comando externo de encolher para peek (ver prop `minimizeSignal`). Guardamos o último
+  // valor visto para reagir só quando ele muda — nunca ao valor inicial. Se a folha já
+  // está em peek, é um no-op; a transição publica o novo snap pelo `transitionend`.
+  const lastMinimizeSignalRef = useRef(minimizeSignal);
+  useEffect(() => {
+    if (minimizeSignal === undefined || minimizeSignal === lastMinimizeSignalRef.current) return;
+    lastMinimizeSignalRef.current = minimizeSignal;
+    if (snapRef.current !== 'peek') {
+      snapRef.current = 'peek';
+      setSnap('peek');
+    }
+  }, [minimizeSignal]);
+
+  onSnapChangeRef.current = onSnapChange;
+
+  const reportStableSnap = useCallback(() => {
+    const measuredHeight = sheetRef.current?.getBoundingClientRect().height ?? 0;
+    const currentSnap = snapRef.current;
+    onSnapChangeRef.current?.({
+      snap: currentSnap,
+      heightPx: measuredHeight || window.innerHeight * SNAP_RATIO[currentSnap],
+    });
+  }, []);
+
+  // Publica a geometria inicial — e republica quando muda o painel/callback sem trocar
+  // de snap (ex.: Site → Recurso). Mudanças de snap são publicadas no `transitionend`.
+  useEffect(() => {
+    reportStableSnap();
+  }, [onSnapChange, reportStableSnap]);
+
+  useEffect(() => {
+    let resizeTimer: number | undefined;
+    const reportAfterResizeSettles = () => {
+      if (resizeTimer !== undefined) window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(reportStableSnap, RESIZE_SETTLE_MS);
+    };
+    window.addEventListener('resize', reportAfterResizeSettles);
+    return () => {
+      window.removeEventListener('resize', reportAfterResizeSettles);
+      if (resizeTimer !== undefined) window.clearTimeout(resizeTimer);
+    };
+  }, [reportStableSnap]);
+
+  const onSheetTransitionEnd = (event: TransitionEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget && event.propertyName === 'height') {
+      reportStableSnap();
+    }
+  };
+
+  const commitSnap = (next: BottomSheetSnap) => {
     snapRef.current = next;
     setSnap(next);
   };
@@ -75,11 +162,23 @@ export function BottomSheet({
   // Move a folha acompanhando o dedo. Se a altura atingir o teto de `full`, entrega o
   // gesto ao conteúdo (passa a `content`) em vez de "estourar" o topo — é o "expandir
   // até full, depois rolar" do Google Maps.
-  const moveSheet = (clientY: number, pointerId: number, cancelable: boolean, preventDefault: () => void) => {
+  const moveSheet = (
+    clientY: number,
+    pointerId: number,
+    cancelable: boolean,
+    preventDefault: () => void,
+  ) => {
     const offset = clientY - startYRef.current;
     const height = sheetStartHeightRef.current - offset;
     const fullHeight = window.innerHeight * SNAP_RATIO.full;
     if (height >= fullHeight) {
+      // A parcela do gesto que ultrapassou a altura de `full` já pertence à lista.
+      // Consumi-la neste mesmo pointermove evita perder movimento na fronteira entre
+      // expansão e scroll (principalmente quando o usuário faz um swipe único e solta).
+      const contentOverflow = height - fullHeight;
+      if (contentOverflow > 0 && contentRef.current) {
+        contentRef.current.scrollTop += contentOverflow;
+      }
       commitSnap('full');
       setDragOffset(0);
       dragOffsetRef.current = 0;
@@ -87,6 +186,7 @@ export function BottomSheet({
       modeRef.current = 'content';
       lastYRef.current = clientY;
       // Mantém o ponteiro capturado no conteúdo para o move seguinte já rolar à mão.
+      capturedByRef.current = contentRef.current;
       contentRef.current?.setPointerCapture?.(pointerId);
       if (cancelable) preventDefault();
       return;
@@ -117,46 +217,162 @@ export function BottomSheet({
     if (offset < -SNAP_CONFIRM_PX) commitSnap(snapUp(current));
     else if (offset > SNAP_CONFIRM_PX) commitSnap(snapDown(current));
     else commitSnap(current);
+    setDragOffset(0);
+    setDragging(false);
   };
+
+  const clearPointerLifecycle = () => {
+    pointerLifecycleCleanupRef.current?.();
+    pointerLifecycleCleanupRef.current = null;
+  };
+
+  const clearClickSuppression = () => {
+    pendingClickSuppressionRef.current = null;
+    if (clickSuppressionTimerRef.current !== null) {
+      window.clearTimeout(clickSuppressionTimerRef.current);
+      clickSuppressionTimerRef.current = null;
+    }
+  };
+
+  const suppressGestureClick = (pointerId: number) => {
+    clearClickSuppression();
+    pendingClickSuppressionRef.current = {
+      pointerId,
+      target: gestureTargetRef.current,
+    };
+    clickSuppressionTimerRef.current = window.setTimeout(
+      clearClickSuppression,
+      CLICK_SUPPRESSION_MS,
+    );
+  };
+
+  const finishActivePointer = (pointerId: number, cancelled: boolean) => {
+    if (activePointerIdRef.current !== pointerId) return;
+    activePointerIdRef.current = null;
+    capturedByRef.current = null;
+    if (cancelled) {
+      if (modeRef.current === 'sheet' || modeRef.current === 'content') {
+        commitSnap(gestureStartSnapRef.current);
+        if (contentRef.current) contentRef.current.scrollTop = gestureStartScrollTopRef.current;
+      }
+      setDragOffset(0);
+      setDragging(false);
+      clearClickSuppression();
+    } else if (modeRef.current === 'sheet') {
+      endSheetDrag();
+    }
+    modeRef.current = 'idle';
+    clearPointerLifecycle();
+  };
+
+  const armPointerLifecycle = () => {
+    clearPointerLifecycle();
+    const onGlobalPointerUp = (event: globalThis.PointerEvent) => {
+      finishActivePointer(event.pointerId, false);
+    };
+    const onGlobalPointerCancel = (event: globalThis.PointerEvent) => {
+      finishActivePointer(event.pointerId, true);
+    };
+    const onGlobalLostPointerCapture = (event: globalThis.PointerEvent) => {
+      if (event.target === capturedByRef.current) finishActivePointer(event.pointerId, true);
+    };
+    window.addEventListener('pointerup', onGlobalPointerUp, true);
+    window.addEventListener('pointercancel', onGlobalPointerCancel, true);
+    window.addEventListener('lostpointercapture', onGlobalLostPointerCapture, true);
+    pointerLifecycleCleanupRef.current = () => {
+      window.removeEventListener('pointerup', onGlobalPointerUp, true);
+      window.removeEventListener('pointercancel', onGlobalPointerCancel, true);
+      window.removeEventListener('lostpointercapture', onGlobalLostPointerCapture, true);
+    };
+  };
+
+  useEffect(
+    () => () => {
+      pointerLifecycleCleanupRef.current?.();
+      if (clickSuppressionTimerRef.current !== null) {
+        window.clearTimeout(clickSuppressionTimerRef.current);
+      }
+    },
+    [],
+  );
 
   // Alça no topo: sempre arrasta a folha, em qualquer encaixe.
   const onHandlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (activePointerIdRef.current !== null) return;
+    activePointerIdRef.current = event.pointerId;
+    armPointerLifecycle();
     modeRef.current = 'sheet';
+    gestureStartSnapRef.current = snapRef.current;
+    gestureStartScrollTopRef.current = contentRef.current?.scrollTop ?? 0;
     startYRef.current = event.clientY;
     sheetStartHeightRef.current = window.innerHeight * SNAP_RATIO[snapRef.current];
     dragOffsetRef.current = 0;
     setDragging(true);
+    capturedByRef.current = event.currentTarget;
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
   const onHandlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (activePointerIdRef.current !== event.pointerId) return;
     if (modeRef.current === 'sheet') {
       moveSheet(event.clientY, event.pointerId, event.cancelable, () => event.preventDefault());
     }
   };
-  const onHandlePointerEnd = () => {
-    if (modeRef.current === 'sheet') endSheetDrag();
-    modeRef.current = 'idle';
+  const onHandlePointerEnd = (event: PointerEvent<HTMLDivElement>) => {
+    finishActivePointer(event.pointerId, false);
+  };
+
+  const onPointerCancel = (event: PointerEvent<HTMLDivElement>) => {
+    finishActivePointer(event.pointerId, true);
   };
 
   // Corpo: um toque começa indeciso (`idle`). Em peek/mid, passar do limiar em qualquer
-  // direção arrasta a folha. Em full, só um puxão para baixo com o conteúdo no topo
-  // arrasta (recolhe) — todo o resto é rolagem nativa do conteúdo (touch-action: pan-y).
+  // direção arrasta a folha. Em full, o scroll vertical acompanha o ponteiro; quando um
+  // gesto descendente consome o restante do scroll e chega ao topo, o excedente continua
+  // no arraste da folha. `pan-x` fica reservado ao navegador/descendentes.
   const onContentPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (activePointerIdRef.current !== null) return;
+    clearClickSuppression();
+    activePointerIdRef.current = event.pointerId;
+    gestureTargetRef.current = event.target;
+    armPointerLifecycle();
     modeRef.current = 'idle';
+    gestureStartSnapRef.current = snapRef.current;
+    gestureStartScrollTopRef.current = contentRef.current?.scrollTop ?? 0;
+    startXRef.current = event.clientX;
     startYRef.current = event.clientY;
     lastYRef.current = event.clientY;
     sheetStartHeightRef.current = window.innerHeight * SNAP_RATIO[snapRef.current];
     dragOffsetRef.current = 0;
   };
+
+  const moveScrollableContent = (event: PointerEvent<HTMLDivElement>) => {
+    const el = contentRef.current;
+    if (!el) return;
+    const movement = event.clientY - lastYRef.current;
+
+    if (movement > 0 && el.scrollTop <= movement) {
+      const sheetMovement = movement - el.scrollTop;
+      el.scrollTop = 0;
+      modeRef.current = 'sheet';
+      sheetStartHeightRef.current = window.innerHeight * SNAP_RATIO.full;
+      startYRef.current = event.clientY - sheetMovement;
+      dragOffsetRef.current = 0;
+      setDragging(true);
+      moveSheet(event.clientY, event.pointerId, event.cancelable, () => event.preventDefault());
+      return;
+    }
+
+    el.scrollTop -= movement;
+    lastYRef.current = event.clientY;
+    if (event.cancelable) event.preventDefault();
+  };
+
   const onContentPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (activePointerIdRef.current !== event.pointerId) return;
     const mode = modeRef.current;
+    if (mode === 'horizontal') return;
     if (mode === 'content') {
-      // Ponteiro capturado: a rolagem nativa não assume no meio do gesto, então rolamos
-      // o conteúdo à mão pelo incremento desde o último move.
-      const el = contentRef.current;
-      if (el) el.scrollTop -= event.clientY - lastYRef.current;
-      lastYRef.current = event.clientY;
-      if (event.cancelable) event.preventDefault();
+      moveScrollableContent(event);
       return;
     }
     if (mode === 'sheet') {
@@ -165,52 +381,96 @@ export function BottomSheet({
     }
     // mode === 'idle': decidir para onde o gesto vai.
     const delta = event.clientY - startYRef.current;
+    const horizontalDelta = event.clientX - startXRef.current;
+    if (
+      Math.abs(horizontalDelta) > DRAG_COMMIT_THRESHOLD &&
+      Math.abs(horizontalDelta) > Math.abs(delta)
+    ) {
+      modeRef.current = 'horizontal';
+      return;
+    }
     const atTop = (contentRef.current?.scrollTop ?? 0) <= 0;
     if (snapRef.current === 'full') {
       if (atTop && delta > DRAG_COMMIT_THRESHOLD) {
         modeRef.current = 'sheet';
+        suppressGestureClick(event.pointerId);
         setDragging(true);
+        capturedByRef.current = contentRef.current;
         contentRef.current?.setPointerCapture?.(event.pointerId);
         moveSheet(event.clientY, event.pointerId, event.cancelable, () => event.preventDefault());
+      } else if (Math.abs(delta) > DRAG_COMMIT_THRESHOLD) {
+        modeRef.current = 'content';
+        suppressGestureClick(event.pointerId);
+        capturedByRef.current = contentRef.current;
+        contentRef.current?.setPointerCapture?.(event.pointerId);
+        moveScrollableContent(event);
       }
       return;
     }
     if (Math.abs(delta) > DRAG_COMMIT_THRESHOLD) {
       modeRef.current = 'sheet';
+      suppressGestureClick(event.pointerId);
       setDragging(true);
+      capturedByRef.current = contentRef.current;
       contentRef.current?.setPointerCapture?.(event.pointerId);
       moveSheet(event.clientY, event.pointerId, event.cancelable, () => event.preventDefault());
     }
   };
-  const onContentPointerEnd = () => {
-    if (modeRef.current === 'sheet') endSheetDrag();
-    modeRef.current = 'idle';
+  const onContentPointerEnd = (event: PointerEvent<HTMLDivElement>) => {
+    finishActivePointer(event.pointerId, false);
+  };
+  const onContentClickCapture = (event: MouseEvent<HTMLDivElement>) => {
+    const pending = pendingClickSuppressionRef.current;
+    if (!pending || event.detail === 0) return;
+    const origin = pending.target;
+    const target = event.target;
+    const sameTargetPath =
+      origin === target ||
+      (origin instanceof Node &&
+        target instanceof Node &&
+        (origin.contains(target) || target.contains(origin)));
+    if (!sameTargetPath) return;
+    const clickPointerId = (event.nativeEvent as globalThis.PointerEvent).pointerId;
+    if (typeof clickPointerId === 'number' && clickPointerId >= 0) {
+      if (clickPointerId !== pending.pointerId) return;
+    }
+    clearClickSuppression();
+    event.preventDefault();
+    event.stopPropagation();
   };
 
   return (
     <div
+      ref={sheetRef}
+      data-testid="bottom-sheet"
       className={`fixed inset-x-0 bottom-0 z-40 flex flex-col overflow-hidden rounded-t-[20px] bg-app-panel shadow-soft-lg ${
         dragging ? '' : 'transition-[height] duration-200 ease-out'
       }`}
       style={{ height: `calc(${SNAP_RATIO[snap] * 100}vh - ${dragOffset}px)`, maxHeight: '92vh' }}
+      onTransitionEnd={onSheetTransitionEnd}
     >
       <div
         className="flex shrink-0 cursor-grab touch-none select-none flex-col items-center pb-2 pt-3 active:cursor-grabbing"
         onPointerDown={onHandlePointerDown}
         onPointerMove={onHandlePointerMove}
         onPointerUp={onHandlePointerEnd}
-        onPointerCancel={onHandlePointerEnd}
+        onPointerCancel={onPointerCancel}
       >
         <span className="h-1.5 w-12 rounded-full bg-app-border" />
       </div>
       <div
         ref={contentRef}
+        data-testid="bottom-sheet-content"
         className={`min-h-0 flex-1 ${snap === 'full' ? 'overflow-y-auto' : 'overflow-hidden'}`}
-        style={{ touchAction: snap === 'full' ? 'pan-y' : 'none', overscrollBehavior: 'contain' }}
-        onPointerDown={onContentPointerDown}
-        onPointerMove={onContentPointerMove}
-        onPointerUp={onContentPointerEnd}
-        onPointerCancel={onContentPointerEnd}
+        style={{
+          touchAction: 'pan-x',
+          overscrollBehavior: 'contain',
+        }}
+        onPointerDownCapture={onContentPointerDown}
+        onPointerMoveCapture={onContentPointerMove}
+        onPointerUpCapture={onContentPointerEnd}
+        onPointerCancelCapture={onPointerCancel}
+        onClickCapture={onContentClickCapture}
       >
         {children}
       </div>

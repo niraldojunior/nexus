@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GoogleMapPanel } from './GeoPage';
 import type { GeoTreeNode } from '../services/geoTreeApi';
 
 const googleMocks = vi.hoisted(() => ({
+  cancelFlight: vi.fn(),
   clustererAddMarkers: vi.fn(),
   clustererClearMarkers: vi.fn(),
   infoWindowClose: vi.fn(),
@@ -12,19 +13,27 @@ const googleMocks = vi.hoisted(() => ({
   infoWindowSetContent: vi.fn(),
   infoWindowSetOptions: vi.fn(),
   infoWindowSetPosition: vi.fn(),
+  flyTo: vi.fn(),
   loadGoogleMaps: vi.fn<() => Promise<void>>(),
   mapAddListener: vi.fn(),
   mapAddListenerOnce: vi.fn(),
+  mapCtor: vi.fn(),
   mapGetBounds: vi.fn(),
   mapGetCenter: vi.fn(),
   mapGetDiv: vi.fn(() => document.createElement('div')),
   mapGetZoom: vi.fn(),
+  mapPanBy: vi.fn(),
   mapPanTo: vi.fn(),
   mapSetZoom: vi.fn(),
   mapSetMapTypeId: vi.fn(),
   markerCtor: vi.fn(),
   reverseGeocode: vi.fn(),
 }));
+
+vi.mock('../utils/mapCamera', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/mapCamera')>();
+  return { ...actual, cancelFlight: googleMocks.cancelFlight, flyTo: googleMocks.flyTo };
+});
 
 vi.mock('../utils/googleMaps', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../utils/googleMaps')>();
@@ -52,6 +61,7 @@ function installGoogleMapsMock() {
     getCenter: googleMocks.mapGetCenter,
     getDiv: googleMocks.mapGetDiv,
     getZoom: googleMocks.mapGetZoom,
+    panBy: googleMocks.mapPanBy,
     panTo: googleMocks.mapPanTo,
     setZoom: googleMocks.mapSetZoom,
     setMapTypeId: googleMocks.mapSetMapTypeId,
@@ -70,7 +80,8 @@ function installGoogleMapsMock() {
             setPosition: googleMocks.infoWindowSetPosition,
           };
         }),
-        Map: vi.fn(function Map() {
+        Map: vi.fn(function Map(element: HTMLElement, options: Record<string, unknown>) {
+          googleMocks.mapCtor(element, options);
           return mapInstance;
         }),
         Marker: vi.fn(function Marker(options: Record<string, unknown>) {
@@ -107,12 +118,424 @@ function installGoogleMapsMock() {
   });
 }
 
+// Nó de seleção mínimo, com geometria — o suficiente para o painel considerar que há algo
+// aberto (selectionActive) e para o alfinete ter um ponto.
+const selectionNode = (id = 'site:1'): GeoTreeNode => ({
+  id,
+  kind: 'site',
+  label: 'Estação',
+  hasChildren: false,
+  geometry: { type: 'Point', coordinates: [-43.1, -22.9] },
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  cleanup();
+});
+
 describe('GoogleMapPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     googleMocks.loadGoogleMaps.mockResolvedValue();
     googleMocks.reverseGeocode.mockResolvedValue(null);
     installGoogleMapsMock();
+  });
+
+  const mapListener = (eventName: string) => {
+    const registration = googleMocks.mapAddListener.mock.calls.find(
+      ([registeredEvent]) => registeredEvent === eventName,
+    );
+    expect(registration, `listener ${eventName}`).toBeDefined();
+    return registration?.[1] as ((...args: unknown[]) => void) | undefined;
+  };
+
+  it('permite pan com um dedo e mantém pinch zoom com dois dedos', async () => {
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />,
+    );
+
+    await waitFor(() => expect(googleMocks.mapCtor).toHaveBeenCalledOnce());
+    const options = googleMocks.mapCtor.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(options).toEqual(
+      expect.objectContaining({
+        gestureHandling: 'greedy',
+      }),
+    );
+    expect(options).not.toHaveProperty('renderingType');
+    expect(options).not.toHaveProperty('headingInteractionEnabled');
+    expect(options).not.toHaveProperty('tiltInteractionEnabled');
+  });
+
+  it('mantém a seleção ao arrastar o mapa: cancela o voo e avisa navegação manual, sem desselecionar', async () => {
+    const onManualNavigation = vi.fn();
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={selectionNode()}
+        selectionActive
+        draftAddress={null}
+        focusRequest={{ point: [-43.1, -22.9], scaleMeters: 50 }}
+        bottomSheetState={{ snap: 'mid', heightPx: 384 }}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onManualNavigation={onManualNavigation}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />,
+    );
+
+    await waitFor(() => expect(mapListener('dragstart')).toBeTypeOf('function'));
+    mapListener('dragstart')?.();
+
+    expect(googleMocks.cancelFlight).toHaveBeenCalledOnce();
+    expect(onManualNavigation).toHaveBeenCalledOnce();
+  });
+
+  it('cancela o voo ao arrastar sem seleção, mas não aciona navegação manual', async () => {
+    const onManualNavigation = vi.fn();
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={null}
+        selectionActive={false}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onManualNavigation={onManualNavigation}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />,
+    );
+
+    await waitFor(() => expect(mapListener('dragstart')).toBeTypeOf('function'));
+    mapListener('dragstart')?.();
+
+    expect(googleMocks.cancelFlight).toHaveBeenCalledOnce();
+    expect(onManualNavigation).not.toHaveBeenCalled();
+  });
+
+  it('invalida geocoding em voo quando o usuário dá duplo clique para ampliar o mapa', async () => {
+    const onDraftAddress = vi.fn();
+    let resolveGeocode!: (value: null) => void;
+    googleMocks.reverseGeocode.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveGeocode = resolve;
+      }),
+    );
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={null}
+        selectionActive={false}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={onDraftAddress}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />,
+    );
+
+    await waitFor(() => expect(mapListener('dblclick')).toBeTypeOf('function'));
+    vi.useFakeTimers();
+    const event = { latLng: { lat: () => -22.9, lng: () => -43.1 } };
+    mapListener('click')?.(event);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(googleMocks.reverseGeocode).toHaveBeenCalledOnce();
+    mapListener('dblclick')?.();
+    resolveGeocode(null);
+    await Promise.resolve();
+
+    // O duplo clique invalidou a geração da consulta adiada: o endereço não é criado.
+    expect(onDraftAddress).not.toHaveBeenCalled();
+  });
+
+  it('mantém a criação de endereço após confirmar um clique simples no mapa', async () => {
+    const onDraftAddress = vi.fn();
+    googleMocks.reverseGeocode.mockRejectedValueOnce(new Error('geocoder indisponível'));
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={null}
+        selectionActive={false}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={onDraftAddress}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />,
+    );
+
+    await waitFor(() => expect(mapListener('click')).toBeTypeOf('function'));
+    vi.useFakeTimers();
+    mapListener('click')?.({ latLng: { lat: () => -22.9, lng: () => -43.1 } });
+    expect(onDraftAddress).not.toHaveBeenCalled();
+    await vi.runAllTimersAsync();
+
+    expect(onDraftAddress).toHaveBeenCalledOnce();
+  });
+
+  it('substitui a seleção anterior: clique no vazio abre o endereço mesmo com algo selecionado', async () => {
+    const onDraftAddress = vi.fn();
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={selectionNode()}
+        selectionActive
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={onDraftAddress}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />,
+    );
+
+    await waitFor(() => expect(mapListener('click')).toBeTypeOf('function'));
+    vi.useFakeTimers();
+    mapListener('click')?.({ latLng: { lat: () => -22.95, lng: () => -43.2 } });
+    await vi.runAllTimersAsync();
+
+    // Issue #19: o clique consulta o ponto (não desseleciona) para substituir a seleção.
+    expect(googleMocks.reverseGeocode).toHaveBeenCalledWith(-22.95, -43.2);
+    expect(onDraftAddress).toHaveBeenCalledOnce();
+  });
+
+  it('cancela clique vazio pendente quando outra seleção é aberta', async () => {
+    const onDraftAddress = vi.fn();
+    const baseProps = {
+      nodes: [],
+      draftAddress: null,
+      focusRequest: null,
+      balloon: null,
+      onSelectNode: vi.fn(),
+      onHoverNode: vi.fn(),
+      onCloseBalloon: vi.fn(),
+      onDraftAddress,
+      onViewportChange: vi.fn(),
+      clusterMarkers: false,
+    };
+    const { rerender } = render(
+      <GoogleMapPanel {...baseProps} selectedNode={null} selectionActive={false} />,
+    );
+
+    await waitFor(() => expect(mapListener('click')).toBeTypeOf('function'));
+    vi.useFakeTimers();
+    mapListener('click')?.({ latLng: { lat: () => -22.9, lng: () => -43.1 } });
+    rerender(<GoogleMapPanel {...baseProps} selectedNode={selectionNode()} selectionActive />);
+    await vi.runAllTimersAsync();
+
+    expect(googleMocks.reverseGeocode).not.toHaveBeenCalled();
+    expect(onDraftAddress).not.toHaveBeenCalled();
+  });
+
+  it('avisa navegação manual só após movimento real de dois toques e limpa ponteiros fora do canvas', () => {
+    const onManualNavigation = vi.fn();
+    const { container } = render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={selectionNode()}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onManualNavigation={onManualNavigation}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />,
+    );
+
+    const canvas = container.querySelector('[data-testid="google-map-canvas"]')!;
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch' });
+    fireEvent.pointerDown(canvas, { pointerId: 2, pointerType: 'touch' });
+    expect(onManualNavigation).not.toHaveBeenCalled();
+
+    fireEvent.pointerUp(window, { pointerId: 1, pointerType: 'touch' });
+    fireEvent.pointerUp(window, { pointerId: 2, pointerType: 'touch' });
+    fireEvent.pointerDown(canvas, { pointerId: 3, pointerType: 'touch' });
+    fireEvent.pointerMove(canvas, {
+      pointerId: 3,
+      pointerType: 'touch',
+      clientX: 120,
+      clientY: 120,
+    });
+    expect(onManualNavigation).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(canvas, { pointerId: 4, pointerType: 'touch' });
+    fireEvent.pointerMove(canvas, {
+      pointerId: 4,
+      pointerType: 'touch',
+      clientX: 140,
+      clientY: 140,
+    });
+    expect(onManualNavigation).toHaveBeenCalledOnce();
+  });
+
+  it('avisa navegação manual ao iniciar zoom por roda ou trackpad sobre o mapa', async () => {
+    const onManualNavigation = vi.fn();
+    const { container } = render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={selectionNode()}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onManualNavigation={onManualNavigation}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />,
+    );
+
+    await waitFor(() => expect(googleMocks.mapCtor).toHaveBeenCalledOnce());
+    fireEvent.wheel(container.querySelector('[data-testid="google-map-canvas"]')!, {
+      deltaY: -100,
+    });
+
+    expect(googleMocks.cancelFlight).toHaveBeenCalledOnce();
+    expect(onManualNavigation).toHaveBeenCalledOnce();
+  });
+
+  it('reenquadra em peek↔mid e resize nesses snaps, mas ignora transições envolvendo full', async () => {
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    const focusRequest = { point: [-43.1, -22.9] as [number, number], scaleMeters: 50 };
+    const baseProps = {
+      nodes: [],
+      selectedNode: selectionNode(),
+      draftAddress: null,
+      focusRequest,
+      balloon: null,
+      onSelectNode: vi.fn(),
+      onHoverNode: vi.fn(),
+      onCloseBalloon: vi.fn(),
+      onDraftAddress: vi.fn(),
+      onViewportChange: vi.fn(),
+      clusterMarkers: false,
+    };
+    const { rerender } = render(
+      <GoogleMapPanel {...baseProps} bottomSheetState={{ snap: 'mid', heightPx: 384 }} />,
+    );
+    await waitFor(() => expect(googleMocks.flyTo).toHaveBeenCalledTimes(1));
+
+    rerender(<GoogleMapPanel {...baseProps} bottomSheetState={{ snap: 'full', heightPx: 736 }} />);
+    expect(googleMocks.flyTo).toHaveBeenCalledTimes(1);
+
+    rerender(<GoogleMapPanel {...baseProps} bottomSheetState={{ snap: 'mid', heightPx: 384 }} />);
+    expect(googleMocks.flyTo).toHaveBeenCalledTimes(1);
+
+    rerender(<GoogleMapPanel {...baseProps} bottomSheetState={{ snap: 'peek', heightPx: 96 }} />);
+    await waitFor(() => expect(googleMocks.flyTo).toHaveBeenCalledTimes(2));
+
+    rerender(<GoogleMapPanel {...baseProps} bottomSheetState={{ snap: 'peek', heightPx: 120 }} />);
+    await waitFor(() => expect(googleMocks.flyTo).toHaveBeenCalledTimes(3));
+
+    rerender(<GoogleMapPanel {...baseProps} bottomSheetState={undefined} />);
+    expect(googleMocks.flyTo).toHaveBeenCalledTimes(3);
+  });
+
+  it('repassa ao voo somente a parte do mapa coberta pelo painel mobile', async () => {
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    const mapDiv = document.createElement('div');
+    vi.spyOn(mapDiv, 'getBoundingClientRect').mockReturnValue({
+      top: 100,
+      bottom: 700,
+      height: 600,
+      left: 0,
+      right: 400,
+      width: 400,
+      x: 0,
+      y: 100,
+      toJSON: () => ({}),
+    });
+    googleMocks.mapGetDiv.mockReturnValue(mapDiv);
+    const focusRequest = { point: [-43.1, -22.9] as [number, number], scaleMeters: 50 };
+
+    const renderPanel = (bottomSheetState?: {
+      snap: 'peek' | 'mid' | 'full';
+      heightPx: number;
+    }) => (
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={focusRequest}
+        bottomSheetState={bottomSheetState}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />
+    );
+    const { rerender } = render(renderPanel({ snap: 'mid', heightPx: 384 }));
+
+    await waitFor(() =>
+      expect(googleMocks.flyTo).toHaveBeenCalledWith(
+        expect.anything(),
+        focusRequest,
+        expect.objectContaining({ bottomInsetPx: 284 }),
+      ),
+    );
+
+    rerender(renderPanel({ snap: 'mid', heightPx: 480 }));
+    await waitFor(() =>
+      expect(googleMocks.flyTo).toHaveBeenLastCalledWith(
+        expect.anything(),
+        focusRequest,
+        expect.objectContaining({ bottomInsetPx: 380 }),
+      ),
+    );
+    expect(googleMocks.flyTo).toHaveBeenCalledTimes(2);
+
+    rerender(renderPanel({ snap: 'peek', heightPx: 96 }));
+    await waitFor(() =>
+      expect(googleMocks.flyTo).toHaveBeenLastCalledWith(
+        expect.anything(),
+        focusRequest,
+        expect.objectContaining({ bottomInsetPx: 0 }),
+      ),
+    );
+    expect(googleMocks.flyTo).toHaveBeenCalledTimes(3);
+
+    rerender(renderPanel(undefined));
+    expect(googleMocks.flyTo).toHaveBeenCalledTimes(3);
   });
 
   it('troca o MUB do mapa chamando setMapTypeId com o tipo esperado', async () => {
@@ -247,56 +670,5 @@ describe('GoogleMapPanel', () => {
         }),
       ),
     );
-  });
-
-  it('duplo clique no vazio só dá zoom: não consulta o endereço do ponto', async () => {
-    const onDraftAddress = vi.fn();
-    render(
-      <GoogleMapPanel
-        nodes={[]}
-        selectedNode={null}
-        draftAddress={null}
-        focusRequest={null}
-        balloon={null}
-        onSelectNode={vi.fn()}
-        onHoverNode={vi.fn()}
-        onCloseBalloon={vi.fn()}
-        onDraftAddress={onDraftAddress}
-        onViewportChange={vi.fn()}
-        clusterMarkers={false}
-      />,
-    );
-
-    // Espera o mapa montar e capturar os handlers de click/dblclick pelo nome do evento.
-    await waitFor(() =>
-      expect(
-        googleMocks.mapAddListener.mock.calls.some(([name]) => name === 'dblclick'),
-      ).toBe(true),
-    );
-    const clickHandler = googleMocks.mapAddListener.mock.calls.find(
-      ([name]) => name === 'click',
-    )?.[1] as (event: { latLng: { lat: () => number; lng: () => number } }) => void;
-    const dblclickHandler = googleMocks.mapAddListener.mock.calls.find(
-      ([name]) => name === 'dblclick',
-    )?.[1] as () => void;
-    const event = { latLng: { lat: () => -22.9, lng: () => -43.1 } };
-
-    vi.useFakeTimers();
-    try {
-      // Duplo clique: o `click` chega antes do `dblclick`, que cancela a consulta adiada.
-      clickHandler(event);
-      dblclickHandler();
-      await vi.advanceTimersByTimeAsync(400);
-      expect(googleMocks.reverseGeocode).not.toHaveBeenCalled();
-      expect(onDraftAddress).not.toHaveBeenCalled();
-
-      // Clique simples: passada a janela de espera, a consulta do ponto acontece.
-      clickHandler(event);
-      await vi.advanceTimersByTimeAsync(400);
-      expect(googleMocks.reverseGeocode).toHaveBeenCalledWith(-22.9, -43.1);
-      expect(onDraftAddress).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });

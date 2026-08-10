@@ -46,7 +46,6 @@ describe('GeoSearchBar', () => {
 
     render(
       <GeoSearchBar
-        variant="floating"
         isMobile
         query=""
         onQueryChange={() => {}}
@@ -69,7 +68,6 @@ describe('GeoSearchBar', () => {
 
     render(
       <GeoSearchBar
-        variant="panel"
         query="Estação"
         onQueryChange={() => {}}
         onSelectNode={() => {}}
@@ -93,7 +91,6 @@ describe('GeoSearchBar', () => {
 
     render(
       <GeoSearchBar
-        variant="overlay"
         query="Estação Icaraí"
         selection={{ type: 'node', node }}
         onEditSelection={onEditSelection}
@@ -131,7 +128,6 @@ describe('GeoSearchBar', () => {
 
     render(
       <GeoSearchBar
-        variant="overlay"
         query={label}
         selection={{ type: 'node', node: resourceNode }}
         onEditSelection={vi.fn()}
@@ -152,7 +148,6 @@ describe('GeoSearchBar', () => {
       const [selection, setSelection] = useState<GeoSearchSelection | null>({ type: 'node', node });
       return (
         <GeoSearchBar
-          variant="floating"
           isMobile
           query="Estação Icaraí"
           selection={selection}
@@ -187,7 +182,6 @@ describe('GeoSearchBar', () => {
       const [selection, setSelection] = useState<GeoSearchSelection | null>({ type: 'node', node });
       return (
         <GeoSearchBar
-          variant="floating"
           query="Estação Icaraí"
           selection={selection}
           onEditSelection={() => setSelection(null)}
@@ -219,7 +213,6 @@ describe('GeoSearchBar', () => {
 
     render(
       <GeoSearchBar
-        variant="floating"
         query="Estação"
         onQueryChange={vi.fn()}
         onSelectNode={vi.fn()}
@@ -255,7 +248,6 @@ describe('GeoSearchBar', () => {
 
     render(
       <GeoSearchBar
-        variant="floating"
         query="Gavião"
         onQueryChange={vi.fn()}
         onSelectNode={vi.fn()}
@@ -303,7 +295,6 @@ describe('GeoSearchBar', () => {
 
     render(
       <GeoSearchBar
-        variant="floating"
         query="Icaraí"
         onQueryChange={vi.fn()}
         onSelectNode={onSelectNode}
@@ -364,7 +355,6 @@ describe('GeoSearchBar', () => {
             Selecionar no mapa
           </button>
           <GeoSearchBar
-            variant="floating"
             query={query}
             selection={selection}
             onEditSelection={() => setSelection(null)}
@@ -412,7 +402,6 @@ describe('GeoSearchBar', () => {
             Limpar externamente
           </button>
           <GeoSearchBar
-            variant="floating"
             query={query}
             onQueryChange={setQuery}
             onSelectNode={vi.fn()}
@@ -436,7 +425,6 @@ describe('GeoSearchBar', () => {
   it('representa endereço confirmado como chip com ícone de endereço e rótulo resolvido', () => {
     render(
       <GeoSearchBar
-        variant="panel"
         query="Rua Gavião Peixoto, Niterói"
         selection={{
           type: 'address',
@@ -468,7 +456,6 @@ describe('GeoSearchBar', () => {
 
       return (
         <GeoSearchBar
-          variant="overlay"
           query={query}
           selection={selection}
           onEditSelection={() => setSelection(null)}
@@ -512,7 +499,6 @@ describe('GeoSearchBar', () => {
 
       return (
         <GeoSearchBar
-          variant="floating"
           query={query}
           selection={selection}
           onEditSelection={() => setSelection(null)}
@@ -552,7 +538,6 @@ describe('GeoSearchBar', () => {
 
     render(
       <GeoSearchBar
-        variant="floating"
         isMobile
         query="Rua inexistente"
         onQueryChange={vi.fn()}
@@ -583,7 +568,6 @@ describe('GeoSearchBar', () => {
 
     render(
       <GeoSearchBar
-        variant="floating"
         isMobile
         query="Rua inexistente"
         onQueryChange={vi.fn()}
@@ -617,7 +601,6 @@ describe('GeoSearchBar', () => {
 
     render(
       <GeoSearchBar
-        variant="floating"
         isMobile
         query="Gaviao"
         onQueryChange={vi.fn()}
@@ -644,7 +627,6 @@ describe('GeoSearchBar', () => {
 
     render(
       <GeoSearchBar
-        variant="floating"
         isMobile
         query="Icarai"
         onQueryChange={vi.fn()}
@@ -671,7 +653,6 @@ describe('GeoSearchBar', () => {
 
     render(
       <GeoSearchBar
-        variant="panel"
         query="Icarai"
         onQueryChange={vi.fn()}
         onSelectNode={onSelectNode}
@@ -704,7 +685,6 @@ describe('GeoSearchBar', () => {
 
     render(
       <GeoSearchBar
-        variant="overlay"
         query="Icarai"
         onQueryChange={onQueryChange}
         onSelectNode={vi.fn()}
@@ -717,5 +697,111 @@ describe('GeoSearchBar', () => {
     fireEvent.click(screen.getByLabelText('Limpar busca'));
     expect(onQueryChange).toHaveBeenCalledWith('');
     expect(onClear).toHaveBeenCalledTimes(1);
+  });
+
+  it('sem texto nem seleção e com a hierarquia fechada, oferece abrir a hierarquia', () => {
+    mocks.fetchTreeSearch.mockResolvedValue([]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+    const onToggleHierarchy = vi.fn();
+
+    render(
+      <GeoSearchBar
+        query=""
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+        hierarchyOpen={false}
+        onToggleHierarchy={onToggleHierarchy}
+      />,
+    );
+
+    expect(screen.queryByLabelText('Limpar busca')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Abrir hierarquia'));
+    expect(onToggleHierarchy).toHaveBeenCalledTimes(1);
+  });
+
+  it('com a hierarquia aberta e sem busca, o X só fecha o painel — não desseleciona', () => {
+    mocks.fetchTreeSearch.mockResolvedValue([]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+    const onToggleHierarchy = vi.fn();
+    const onClear = vi.fn();
+
+    render(
+      <GeoSearchBar
+        query=""
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+        onClear={onClear}
+        hierarchyOpen
+        onToggleHierarchy={onToggleHierarchy}
+      />,
+    );
+
+    expect(screen.queryByLabelText('Abrir hierarquia')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Fechar hierarquia'));
+    expect(onToggleHierarchy).toHaveBeenCalledTimes(1);
+    expect(onClear).not.toHaveBeenCalled();
+  });
+
+  it('com texto e a hierarquia aberta, o X limpa a busca e preserva a hierarquia', () => {
+    mocks.fetchTreeSearch.mockResolvedValue([]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+    const onQueryChange = vi.fn();
+    const onClear = vi.fn();
+    const onToggleHierarchy = vi.fn();
+
+    render(
+      <GeoSearchBar
+        query="Icarai"
+        onQueryChange={onQueryChange}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+        onClear={onClear}
+        hierarchyOpen
+        onToggleHierarchy={onToggleHierarchy}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Limpar busca'));
+    expect(onQueryChange).toHaveBeenCalledWith('');
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(onToggleHierarchy).not.toHaveBeenCalled();
+  });
+
+  it('no mobile a marca do Nexus abre o menu principal; no desktop ela não aparece', () => {
+    mocks.fetchTreeSearch.mockResolvedValue([]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+    const onOpenMainMenu = vi.fn();
+
+    const { rerender } = render(
+      <GeoSearchBar
+        isMobile
+        query=""
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+        onOpenMainMenu={onOpenMainMenu}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Abrir menu principal'));
+    expect(onOpenMainMenu).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <GeoSearchBar
+        query=""
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+        onOpenMainMenu={onOpenMainMenu}
+      />,
+    );
+    expect(screen.queryByLabelText('Abrir menu principal')).not.toBeInTheDocument();
   });
 });

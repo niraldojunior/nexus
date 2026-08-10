@@ -26,6 +26,10 @@ type CategoryMenuItem = { code: string; label: string };
 interface SidebarProps {
   collapsed: boolean;
   isMobile?: boolean;
+  // No mobile, o botão flutuante que abre o drawer some quando outra tela já oferece
+  // essa entrada — é o caso da página Locais, onde a marca do Nexus dentro da barra de
+  // pesquisa abre o menu (ver GeoSearchBar/GeoPage). Fora desse caso, é a única porta.
+  showMobileToggle?: boolean;
   currentPage: PageId;
   activeRecentConversationId: string | null;
   activeResearchSessionId: string | null;
@@ -70,6 +74,7 @@ const serviceCategoryItems: CategoryMenuItem[] = listServiceCategories(SERVICE_C
 export default function Sidebar({
   collapsed,
   isMobile = false,
+  showMobileToggle = true,
   currentPage,
   activeResearchSessionId,
   activeResourceCategory,
@@ -126,7 +131,7 @@ export default function Sidebar({
 
   return (
     <>
-      {isMobile && collapsed ? (
+      {isMobile && collapsed && showMobileToggle ? (
         <button
           type="button"
           onClick={onToggleCollapse}

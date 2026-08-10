@@ -100,6 +100,7 @@ import {
   MapLocateButton,
   PanelBarButton,
   StatusBadge,
+  DOCK_WIDTH_CLASS,
   type AddressSearchError,
   type DeviceLocation,
   type DropSimulation,
@@ -216,7 +217,11 @@ const relationshipTypeLabel = (type: string): string => {
   return labels[type] || type;
 };
 
-export default function GeoPage() {
+export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => void } = {}) {
+  // Hoisted para o topo: o valor inicial de `hierarchyCollapsed` depende dele — no
+  // mobile a página abre com o mapa em foco (hierarquia fechada), no desktop a doca
+  // já vem aberta.
+  const isMobile = useIsMobile();
   const [sites, setSites] = useState<GeoSite[]>([]);
   const [specs, setSpecs] = useState<GeoSpec[]>([]);
   const [events, setEvents] = useState<GeoEvent[]>([]);
@@ -244,7 +249,7 @@ export default function GeoPage() {
   // barra de pesquisa decidir se flutua sobre o mapa ou fica dentro da doca (ver
   // dockPanelOpen), e para não mudar quando o detalhe abre/fecha por cima dela —
   // é isso que faz a hierarquia "lembrar" o estado de antes ao fechar o detalhe.
-  const [hierarchyCollapsed, setHierarchyCollapsed] = useState(false);
+  const [hierarchyCollapsed, setHierarchyCollapsed] = useState(isMobile);
   const [query, setQuery] = useState('');
   // Resultado confirmado exibido como chip na barra. É separado de `query` para
   // distinguir texto em edição de uma seleção válida já vinculada ao mapa/painel.
@@ -309,7 +314,6 @@ export default function GeoPage() {
   }, []);
 
   const tree = useGeoTree();
-  const isMobile = useIsMobile();
   const { navParams, clearNav, goToResource } = useNavigation();
 
   // Infra passiva só entra quando a escala está em ≤ 200 m; Estações (tree.mapNodes)
@@ -656,21 +660,6 @@ export default function GeoPage() {
               minimizeSignal={sheetMinimizeSignal}
               onClose={onDeselect}
               onDropSimulation={onDropSimulation}
-              searchBar={
-                isMobile ? null : (
-                  <GeoSearchBar
-                    variant="overlay"
-                    query={query}
-                    selection={searchSelection}
-                    onEditSelection={() => setSearchSelection(null)}
-                    onQueryChange={setQuery}
-                    onSelectNode={selectNodeFromSearch}
-                    onAddressFound={onAddressFound}
-                    onAddressError={onAddressError}
-                    onClear={onDeselect}
-                  />
-                )
-              }
             />
           ) : detailOpen && detailTarget ? (
             <GeoDetailPanel
@@ -705,21 +694,6 @@ export default function GeoPage() {
                 setDetailOpen(false);
                 setCreateOpen(true);
               }}
-              searchBar={
-                isMobile ? null : (
-                  <GeoSearchBar
-                    variant="overlay"
-                    query={query}
-                    selection={searchSelection}
-                    onEditSelection={() => setSearchSelection(null)}
-                    onQueryChange={setQuery}
-                    onSelectNode={selectNodeFromSearch}
-                    onAddressFound={onAddressFound}
-                    onAddressError={onAddressError}
-                    onClear={onDeselect}
-                  />
-                )
-              }
             />
           ) : (
             <HierarchySidebar
@@ -730,21 +704,6 @@ export default function GeoPage() {
               onOpenTypes={() => setTypeOpen(true)}
               collapsed={hierarchyCollapsed}
               onCollapsedChange={setHierarchyCollapsed}
-              searchBar={
-                isMobile || hierarchyCollapsed ? null : (
-                  <GeoSearchBar
-                    variant="panel"
-                    query={query}
-                    selection={searchSelection}
-                    onEditSelection={() => setSearchSelection(null)}
-                    onQueryChange={setQuery}
-                    onSelectNode={selectNodeFromSearch}
-                    onAddressFound={onAddressFound}
-                    onAddressError={onAddressError}
-                    onClear={onDeselect}
-                  />
-                )
-              }
             />
           )}
 
@@ -777,27 +736,31 @@ export default function GeoPage() {
               autoLocateOnOpen={isMobile}
             />
 
-            {isMobile || (!detailOpen && !addressLookup && hierarchyCollapsed) ? (
-              <GeoSearchBar
-                variant="floating"
-                isMobile={isMobile}
-                query={query}
-                selection={searchSelection}
-                onEditSelection={() => setSearchSelection(null)}
-                onQueryChange={setQuery}
-                onSelectNode={selectNodeFromSearch}
-                onAddressFound={onAddressFound}
-                onAddressError={onAddressError}
-                onClear={onDeselect}
-              />
-            ) : null}
-
             {loading ? (
               <div className="absolute right-5 bottom-5 z-30 rounded-[18px] border border-app-border bg-white/90 px-4 py-3 text-[0.84rem] font-medium text-app-muted shadow-soft backdrop-blur">
                 Carregando dados Geo...
               </div>
             ) : null}
           </div>
+
+          {/* Instância única da barra de pesquisa: sobreposta à doca e ao mapa, com o
+              mesmo retângulo em todos os estados (estilo Google Maps). É o único
+              controle de abrir/fechar a hierarquia (ver o slot ListTree/X) — por isso
+              vive aqui, irmã da doca e do mapa, e não dentro de nenhum painel. */}
+          <GeoSearchBar
+            isMobile={isMobile}
+            query={query}
+            selection={searchSelection}
+            onEditSelection={() => setSearchSelection(null)}
+            onQueryChange={setQuery}
+            onSelectNode={selectNodeFromSearch}
+            onAddressFound={onAddressFound}
+            onAddressError={onAddressError}
+            onClear={onDeselect}
+            hierarchyOpen={!addressLookup && !(detailOpen && detailTarget) && !hierarchyCollapsed}
+            onToggleHierarchy={() => setHierarchyCollapsed((collapsed) => !collapsed)}
+            onOpenMainMenu={onOpenMainMenu}
+          />
         </div>
       </main>
 
@@ -1847,7 +1810,6 @@ function GeoDetailPanel({
   onCreateSubSite,
   onSnapChange,
   minimizeSignal,
-  searchBar,
 }: {
   isMobile: boolean;
   target: DetailTarget;
@@ -1866,7 +1828,6 @@ function GeoDetailPanel({
   onSnapChange?: (state: BottomSheetSnapState) => void;
   // Contador que, ao incrementar, encolhe a folha para peek (ver BottomSheet).
   minimizeSignal?: number;
-  searchBar?: ReactNode;
 }) {
   const eyebrow =
     target.kind === 'site'
@@ -1958,11 +1919,12 @@ function GeoDetailPanel({
     // `hidden`, o outro (`overflow-y: visible`) computa para `auto` e a casca vira um
     // segundo contêiner de rolagem, ao lado do scroll do conteúdo abaixo — era o
     // scroll duplo do painel. Quem rola aqui é só o filho `overflow-y-auto`.
-    <div className="relative flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock">
-      {/* Barra de pesquisa ancorada no topo, flutuando sobre o conteúdo; a foto de
-          Street View, o título e o corpo rolam por baixo dela — estilo Google Maps.
-          Mesmo padrão no painel de Endereço. */}
-      {searchBar ? <div className="absolute inset-x-0 top-0 z-30">{searchBar}</div> : null}
+    <div
+      className={`relative flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
+    >
+      {/* A barra de pesquisa é uma instância única, sobreposta a esta doca pelo GeoPage
+          (estilo Google Maps): a foto de Street View, o título e o corpo rolam por baixo
+          dela. Aqui o painel só cede o topo — não monta a barra. */}
       {/* Barra de rolagem sobreposta: a foto e as abas usam toda a largura do painel; o
           polegar projeta por cima delas no hover (ver OverlayScrollArea). */}
       <OverlayScrollArea className="overflow-x-hidden">

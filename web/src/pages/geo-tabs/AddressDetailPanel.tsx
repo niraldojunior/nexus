@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Crosshair,
   Fingerprint,
@@ -12,6 +12,7 @@ import {
 import type { DraftAddress } from '../../utils/googleMaps';
 import { BottomSheet, type BottomSheetSnapState } from '../../components/BottomSheet';
 import { OverlayScrollArea } from '../../components/OverlayScrollArea';
+import { DOCK_WIDTH_CLASS } from './dock';
 import { StreetViewHero } from '../../components/StreetViewHero';
 import { addressStreetViewMarker } from '../../utils/streetViewMarker';
 import { CoordinateStreetView } from './CoordinateStreetView';
@@ -36,9 +37,6 @@ export type AddressDetailPanelProps = {
   // Contador que, ao incrementar, encolhe a folha para peek (ver BottomSheet) — usado
   // quando o usuário navega o mapa manualmente com este painel aberto (ver GeoPage).
   minimizeSignal?: number;
-  // Barra de pesquisa unificada, ancorada no topo do painel (desktop), flutuando
-  // sobre o conteúdo que rola por baixo — mesmo padrão dos painéis de Site e Recurso.
-  searchBar?: ReactNode;
   // Simulação do drop entre este endereço e a CDO escolhida na aba Viabilidade. Sobe
   // para o GeoPage porque quem desenha é o mapa, não o painel.
   onDropSimulation?: (simulation: DropSimulation | null) => void;
@@ -57,7 +55,6 @@ export function AddressDetailPanel({
   onClose,
   onSnapChange,
   minimizeSignal,
-  searchBar,
   onDropSimulation,
 }: AddressDetailPanelProps) {
   const title = [address.street, address.streetNr].filter(Boolean).join(', ') || address.label;
@@ -147,11 +144,12 @@ export function AddressDetailPanel({
     // `overflow-y: visible` computa para `auto` e a casca vira um segundo contêiner de
     // rolagem, ao lado do scroll do conteúdo — era o scroll duplo do painel. Quem rola
     // aqui é só o filho `overflow-y-auto`. Mesmo ajuste no painel de Site/Recurso.
-    <div className="relative flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock">
-      {/* Barra de pesquisa ancorada no topo, flutuando sobre o conteúdo; a foto de
-          Street View, o título e o corpo rolam por baixo dela — estilo Google Maps.
-          Mesmo padrão no painel de Site/Recurso (ver GeoPage). */}
-      {searchBar ? <div className="absolute inset-x-0 top-0 z-30">{searchBar}</div> : null}
+    <div
+      className={`relative flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
+    >
+      {/* A barra de pesquisa é uma instância única, sobreposta a esta doca pelo GeoPage
+          (estilo Google Maps): a foto de Street View, o título e o corpo rolam por baixo
+          dela. Aqui o painel só cede o topo — não monta a barra. */}
       {/* Barra de rolagem sobreposta: a foto e as abas usam toda a largura do painel; o
           polegar projeta por cima delas no hover (ver OverlayScrollArea). */}
       <OverlayScrollArea className="overflow-x-hidden">

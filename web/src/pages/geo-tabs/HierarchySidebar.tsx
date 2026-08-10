@@ -1,8 +1,13 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { GitBranch, ListTree, PanelLeftClose, PanelLeftOpen, RefreshCw, Settings } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { GitBranch, ListTree, RefreshCw, Settings } from 'lucide-react';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import type { GeoTree } from '../../hooks/useGeoTree';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import {
+  DOCK_WIDTH_CLASS,
+  DOCK_SEARCH_CLEARANCE_PT_CLASS,
+  DOCK_SEARCH_CLEARANCE_TOP_CLASS,
+} from './dock';
 import { HierarchyTreeView } from './HierarchyTreeView';
 import { HierarchyComboView } from './HierarchyComboView';
 
@@ -14,13 +19,11 @@ export type HierarchySidebarProps = {
   onHover?: (node: GeoTreeNode | null) => void;
   // Colapso controlado pelo pai: quando o painel de detalhe abre, GeoPage recolhe
   // a hierarquia para dar lugar a ele (uma doca, um painel por vez) sem perder o
-  // estado anterior — fechar o detalhe restaura este valor tal como estava.
+  // estado anterior — fechar o detalhe restaura este valor tal como estava. Quem
+  // abre e fecha a hierarquia é a barra de pesquisa (ver GeoSearchBar/GeoPage); no
+  // mobile, o clique no scrim e a seleção também fecham.
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
-  // Barra de pesquisa unificada, encaixada no topo do painel quando ele está
-  // expandido (ver GeoPage) — nula quando colapsado ou no mobile, onde a busca
-  // flutua sobre o mapa em vez de morar dentro da doca.
-  searchBar?: ReactNode;
 };
 
 type HierView = 'tree' | 'combos';
@@ -38,7 +41,6 @@ export function HierarchySidebar({
   onHover,
   collapsed,
   onCollapsedChange,
-  searchBar,
 }: HierarchySidebarProps) {
   const [view, setView] = useState<HierView>('tree');
   const isMobile = useIsMobile();
@@ -56,28 +58,10 @@ export function HierarchySidebar({
     if (isMobile) onCollapsedChange(true);
   };
 
-  if (collapsed) {
-    if (isMobile) {
-      return (
-        <button
-          type="button"
-          onClick={() => onCollapsedChange(false)}
-          className="absolute left-3 top-16 z-30 flex h-10 w-10 items-center justify-center rounded-xl border border-app-border bg-white text-app-text shadow-soft"
-          aria-label="Abrir hierarquia"
-        >
-          <PanelLeftOpen className="h-5 w-5" strokeWidth={1.8} />
-        </button>
-      );
-    }
-    return (
-      <div className="flex h-full w-11 shrink-0 flex-col items-center gap-2 border-r border-app-border bg-white py-3 shadow-dock">
-        <SidebarIconButton icon={PanelLeftOpen} label="Abrir hierarquia" onClick={() => onCollapsedChange(false)} />
-        <span className="mt-1 [writing-mode:vertical-rl] text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-app-muted">
-          Hierarquia
-        </span>
-      </div>
-    );
-  }
+  // Colapsada, a hierarquia não deixa nenhum vestígio sobre o mapa: quem a reabre é o
+  // ListTree da barra de pesquisa (ver GeoSearchBar/GeoPage). Antes havia um trilho
+  // vertical no desktop e um botão flutuante no mobile — ambos removidos.
+  if (collapsed) return null;
 
   return (
     <>
@@ -91,11 +75,14 @@ export function HierarchySidebar({
       <aside
         className={
           isMobile
-            ? 'hover-scroll-host absolute inset-y-0 left-0 z-40 flex w-[374px] max-w-[85vw] flex-col border-r border-app-border bg-white shadow-dock'
-            : 'hover-scroll-host flex h-full w-[374px] max-w-[80vw] shrink-0 flex-col border-r border-app-border bg-white shadow-dock'
+            ? // No mobile o drawer nasce abaixo da barra de pesquisa (que fica sobreposta
+              // em z-50), para o topo do painel não ficar escondido sob ela.
+              `hover-scroll-host absolute bottom-0 left-0 ${DOCK_SEARCH_CLEARANCE_TOP_CLASS} z-40 flex ${DOCK_WIDTH_CLASS} max-w-[85vw] flex-col border-r border-app-border bg-white shadow-dock`
+            : // No desktop a barra flutua sobre o topo da doca; o pt reserva o espaço dela
+              // para o título Hierarquia nascer logo abaixo, sem linha divisória entre os dois.
+              `hover-scroll-host flex h-full ${DOCK_WIDTH_CLASS} max-w-[80vw] shrink-0 flex-col border-r border-app-border bg-white ${DOCK_SEARCH_CLEARANCE_PT_CLASS} shadow-dock`
         }
       >
-        {searchBar}
         {/* Header — título + toggle de visão + ações, tudo em uma linha */}
         <div className="flex items-center justify-between gap-2 border-b border-app-border px-3 py-2">
           <h2 className="font-display text-[0.98rem] font-semibold text-app-text">Hierarquia</h2>
@@ -106,7 +93,6 @@ export function HierarchySidebar({
             </div>
             <SidebarIconButton icon={RefreshCw} label="Atualizar" onClick={tree.reload} spinning={tree.loading} />
             <SidebarIconButton icon={Settings} label="Tipos de local" onClick={onOpenTypes} />
-            <SidebarIconButton icon={PanelLeftClose} label="Recolher" onClick={() => onCollapsedChange(true)} />
           </div>
         </div>
 

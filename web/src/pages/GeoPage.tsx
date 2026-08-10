@@ -103,6 +103,7 @@ import {
   type AddressSearchError,
   type DeviceLocation,
   type DropSimulation,
+  type GeoSearchSelection,
 } from './geo-tabs';
 import {
   DROP_ACCENT,
@@ -244,6 +245,9 @@ export default function GeoPage() {
   // é isso que faz a hierarquia "lembrar" o estado de antes ao fechar o detalhe.
   const [hierarchyCollapsed, setHierarchyCollapsed] = useState(false);
   const [query, setQuery] = useState('');
+  // Resultado confirmado exibido como chip na barra. É separado de `query` para
+  // distinguir texto em edição de uma seleção válida já vinculada ao mapa/painel.
+  const [searchSelection, setSearchSelection] = useState<GeoSearchSelection | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Pedido de foco do mapa: para onde a câmera deve voar e com que zoom de chegada
@@ -386,7 +390,9 @@ export default function GeoPage() {
     if (navParams.siteId) {
       const site = sites.find((s) => s.id === navParams.siteId);
       if (site) {
-        setSelectedNode(siteNodeOf(site));
+        const node = siteNodeOf(site);
+        setSelectedNode(node);
+        setSearchSelection({ type: 'node', node });
         setAddressLookup(null);
         setDetailOpen(true);
         setQuery(site.name);
@@ -425,11 +431,12 @@ export default function GeoPage() {
       if (node.kind === 'site' || node.kind === 'resource') {
         setDetailTab('overview');
         setDetailOpen(true);
-        // Nome do item vai para a barra de pesquisa — tal como se o usuário tivesse
-        // pesquisado por ele (ver GeoSearchBar).
+        // Nome e identidade do item vão para a barra como seleção confirmada.
         setQuery(node.label);
+        setSearchSelection({ type: 'node', node });
       } else {
         setDetailOpen(false);
+        setSearchSelection(null);
       }
     },
     [tree],
@@ -464,6 +471,7 @@ export default function GeoPage() {
     setFocusRequest(null);
     setMobileSheetState(null);
     setQuery('');
+    setSearchSelection(null);
   }, []);
 
   // CDO escolhida na aba de Viabilidade: guarda o traçado para o mapa desenhar e
@@ -489,6 +497,7 @@ export default function GeoPage() {
     setAddressLookup({ address, source: 'search' });
     setFocusRequest({ point: address.coordinates, scaleMeters: ADDRESS_FOCUS_SCALE_METERS });
     setQuery(address.label);
+    setSearchSelection({ type: 'address', address });
   }, []);
 
   const onAddressError = useCallback((err: AddressSearchError) => {
@@ -509,6 +518,7 @@ export default function GeoPage() {
     // mexer no zoom. A centralização passa pelo mesmo voo dos demais focos (flyTo).
     setFocusRequest({ point: address.coordinates, scaleMeters: null });
     setQuery(address.label);
+    setSearchSelection({ type: 'address', address });
   }, []);
 
   // Some quando o mouse sai do item; sem atraso perceptível, mas absorve o
@@ -527,7 +537,9 @@ export default function GeoPage() {
   }, []);
 
   const openDetail = (site: GeoSite, tab: DetailTab = 'overview') => {
-    setSelectedNode(siteNodeOf(site));
+    const node = siteNodeOf(site);
+    setSelectedNode(node);
+    setSearchSelection({ type: 'node', node });
     setAddressLookup(null);
     setDetailTab(tab);
     setDetailOpen(true);
@@ -623,6 +635,8 @@ export default function GeoPage() {
                   <GeoSearchBar
                     variant="overlay"
                     query={query}
+                    selection={searchSelection}
+                    onEditSelection={() => setSearchSelection(null)}
                     onQueryChange={setQuery}
                     onSelectNode={selectNodeFromSearch}
                     onAddressFound={onAddressFound}
@@ -669,6 +683,8 @@ export default function GeoPage() {
                   <GeoSearchBar
                     variant="overlay"
                     query={query}
+                    selection={searchSelection}
+                    onEditSelection={() => setSearchSelection(null)}
                     onQueryChange={setQuery}
                     onSelectNode={selectNodeFromSearch}
                     onAddressFound={onAddressFound}
@@ -692,6 +708,8 @@ export default function GeoPage() {
                   <GeoSearchBar
                     variant="panel"
                     query={query}
+                    selection={searchSelection}
+                    onEditSelection={() => setSearchSelection(null)}
                     onQueryChange={setQuery}
                     onSelectNode={selectNodeFromSearch}
                     onAddressFound={onAddressFound}
@@ -733,6 +751,8 @@ export default function GeoPage() {
                 variant="floating"
                 isMobile={isMobile}
                 query={query}
+                selection={searchSelection}
+                onEditSelection={() => setSearchSelection(null)}
                 onQueryChange={setQuery}
                 onSelectNode={selectNodeFromSearch}
                 onAddressFound={onAddressFound}

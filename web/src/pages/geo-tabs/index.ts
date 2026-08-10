@@ -4,7 +4,12 @@ export { AddEquipmentModal, type AddEquipmentModalProps } from './AddEquipmentMo
 export { HierarchySidebar, type HierarchySidebarProps } from './HierarchySidebar';
 export { HierarchyTreeView, NodeIcon } from './HierarchyTreeView';
 export { HierarchyComboView } from './HierarchyComboView';
-export { GeoSearchBar, type GeoSearchBarProps, type AddressSearchError } from './GeoSearchBar';
+export {
+  GeoSearchBar,
+  type GeoSearchBarProps,
+  type GeoSearchSelection,
+  type AddressSearchError,
+} from './GeoSearchBar';
 export { AddressDetailPanel, type AddressDetailPanelProps } from './AddressDetailPanel';
 export { ViabilityTab, type ViabilityTabProps, type DropSimulation } from './ViabilityTab';
 export { Info } from './InfoRow';

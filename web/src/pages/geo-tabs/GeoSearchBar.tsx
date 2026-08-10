@@ -12,8 +12,14 @@ import { NodeIcon } from './HierarchyTreeView';
 
 export type AddressSearchError = { term: string; status: string; message: string };
 
+export type GeoSearchSelection =
+  | { type: 'node'; node: GeoTreeNode }
+  | { type: 'address'; address: DraftAddress };
+
 export type GeoSearchBarProps = {
   query: string;
+  selection?: GeoSearchSelection | null;
+  onEditSelection?: () => void;
   onQueryChange: (value: string) => void;
   onSelectNode: (node: GeoTreeNode) => void;
   // Endereço resolvido (Enter em texto livre ou clique numa sugestão) — os dois
@@ -49,6 +55,8 @@ const DEBOUNCE_MS = 250;
  */
 export function GeoSearchBar({
   query,
+  selection = null,
+  onEditSelection,
   onQueryChange,
   onSelectNode,
   onAddressFound,
@@ -64,9 +72,38 @@ export function GeoSearchBar({
   const [resolving, setResolving] = useState(false);
   const debounceRef = useRef<number | undefined>(undefined);
   const requestTokenRef = useRef(0);
+  const resolutionTokenRef = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const focusAfterSelectionRef = useRef(false);
+
+  // `query` e `selection` são controladas pela página. Qualquer mudança nelas pode
+  // vir da árvore, do mapa, de deep-link ou de uma limpeza externa; nesse caso,
+  // uma resolução iniciada pela barra já não representa a intenção mais recente.
+  useEffect(() => {
+    resolutionTokenRef.current += 1;
+    setResolving(false);
+  }, [query, selection]);
 
   useEffect(() => {
+    if (selection || !focusAfterSelectionRef.current) return;
+    focusAfterSelectionRef.current = false;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [selection]);
+
+  useEffect(() => {
+    if (selection) {
+      if (debounceRef.current !== undefined) {
+        window.clearTimeout(debounceRef.current);
+        debounceRef.current = undefined;
+      }
+      requestTokenRef.current += 1;
+      setNodeResults([]);
+      setAddressResults([]);
+      setOpen(false);
+      return;
+    }
+
     const term = query.trim();
     if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
     if (!term) {
@@ -83,12 +120,28 @@ export function GeoSearchBar({
           setAddressResults(addresses);
           setHighlighted(0);
         },
+        () => {
+          if (requestTokenRef.current !== token) return;
+          setNodeResults([]);
+          setAddressResults([]);
+        },
       );
     }, DEBOUNCE_MS);
     return () => {
-      if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
+      if (debounceRef.current !== undefined) {
+        window.clearTimeout(debounceRef.current);
+        debounceRef.current = undefined;
+      }
+      requestTokenRef.current += 1;
     };
-  }, [query]);
+  }, [query, selection]);
+
+  useEffect(
+    () => () => {
+      resolutionTokenRef.current += 1;
+    },
+    [],
+  );
 
   const options = useMemo<SearchOption[]>(
     () => [
@@ -105,25 +158,44 @@ export function GeoSearchBar({
   // o que reaciona `onFocus` abaixo. Sem limpar `nodeResults`/`addressResults`, esse
   // refoco indevido reabria a picklist com o resultado antigo da seleção já feita.
   const closeDropdown = () => {
+    if (debounceRef.current !== undefined) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = undefined;
+    }
+    requestTokenRef.current += 1;
     setOpen(false);
     setNodeResults([]);
     setAddressResults([]);
   };
 
-  const dismissMobileKeyboard = () => {
-    if (isMobile) inputRef.current?.blur();
+  const cancelAddressResolution = () => {
+    resolutionTokenRef.current += 1;
+    setResolving(false);
+  };
+
+  const dismissKeyboard = () => {
+    inputRef.current?.blur();
+  };
+
+  const editSelection = () => {
+    focusAfterSelectionRef.current = true;
+    closeDropdown();
+    onEditSelection?.();
   };
 
   const selectNode = (node: GeoTreeNode) => {
-    dismissMobileKeyboard();
+    cancelAddressResolution();
+    dismissKeyboard();
     onSelectNode(node);
     closeDropdown();
   };
 
   const selectAddress = async (prediction: AddressPrediction) => {
-    dismissMobileKeyboard();
+    const token = ++resolutionTokenRef.current;
+    dismissKeyboard();
     setResolving(true);
     const outcome = await resolveAddressByPlaceId(prediction.placeId);
+    if (resolutionTokenRef.current !== token) return;
     setResolving(false);
     if (outcome.ok) onAddressFound(outcome.address);
     else
@@ -145,9 +217,11 @@ export function GeoSearchBar({
   const runFallbackAddressSearch = async () => {
     const term = query.trim();
     if (!term) return;
-    dismissMobileKeyboard();
+    const token = ++resolutionTokenRef.current;
+    dismissKeyboard();
     setResolving(true);
     const outcome = await geocodeAddress(term);
+    if (resolutionTokenRef.current !== token) return;
     setResolving(false);
     if (outcome.ok) onAddressFound(outcome.address);
     else onAddressError({ term, status: outcome.status, message: outcome.message });
@@ -205,30 +279,61 @@ export function GeoSearchBar({
           às bordas da caixa de busca, e não às do wrapper com padding. */}
       <div className="relative">
         <div className={shellClass}>
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(event) => {
-              onQueryChange(event.target.value);
-              setOpen(true);
-            }}
-            onFocus={() => {
-              if (query.trim()) setOpen(true);
-            }}
-            onKeyDown={handleKeyDown}
-            className="h-full min-w-0 flex-1 rounded-l-2xl bg-transparent pl-4 pr-2 text-[15px] text-app-text placeholder:text-app-muted focus:outline-none"
-            placeholder="Pesquisar local, recurso ou endereço"
-            id="geo-search-input"
-            autoComplete="off"
-          />
+          {selection ? (
+            <button
+              type="button"
+              onClick={editSelection}
+              className="ml-2 flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-app-accent-border bg-app-accent-soft px-2.5 py-1.5 text-left text-[0.86rem] text-app-text transition hover:brightness-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-app-focus/30"
+              aria-label={`Editar seleção ${selection.type === 'node' ? selection.node.label : selection.address.label}`}
+              title={selection.type === 'node' ? selection.node.label : selection.address.label}
+            >
+              <span
+                role="img"
+                aria-label={
+                  selection.type === 'address'
+                    ? 'Endereço'
+                    : (selection.node.sublabel ??
+                      (selection.node.kind === 'site' ? 'Estação' : 'Recurso'))
+                }
+                className="shrink-0"
+              >
+                {selection.type === 'node' ? (
+                  <NodeIcon node={selection.node} />
+                ) : (
+                  <MapPin className="h-4 w-4 text-app-muted" aria-hidden="true" />
+                )}
+              </span>
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {selection.type === 'node' ? selection.node.label : selection.address.label}
+              </span>
+            </button>
+          ) : (
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(event) => {
+                cancelAddressResolution();
+                closeDropdown();
+                onQueryChange(event.target.value);
+                setOpen(true);
+              }}
+              onFocus={() => {
+                if (query.trim()) setOpen(true);
+              }}
+              onKeyDown={handleKeyDown}
+              className="h-full min-w-0 flex-1 rounded-l-2xl bg-transparent pl-4 pr-2 text-[15px] text-app-text placeholder:text-app-muted focus:outline-none"
+              placeholder="Pesquisar local, recurso ou endereço"
+              id="geo-search-input"
+              autoComplete="off"
+            />
+          )}
           {query ? (
             <button
               type="button"
               onClick={() => {
+                cancelAddressResolution();
+                closeDropdown();
                 onQueryChange('');
-                setNodeResults([]);
-                setAddressResults([]);
-                setOpen(false);
                 // Além de limpar o texto, desseleciona: fecha o painel aberto e tira
                 // o alfinete do mapa (ver onDeselect em GeoPage). onQueryChange('')
                 // acima fica redundante quando onClear já zera a query, mas mantém a
@@ -244,10 +349,10 @@ export function GeoSearchBar({
           <span className="mx-1 h-6 w-px bg-app-border" />
           <button
             type="button"
-            onClick={() => void runFallbackAddressSearch()}
+            onClick={() => (selection ? editSelection() : void runFallbackAddressSearch())}
             disabled={resolving}
             className="mr-1 flex h-9 w-9 items-center justify-center rounded-full text-[#1a73e8] transition hover:bg-[#1a73e8]/10 disabled:opacity-50"
-            aria-label="Pesquisar"
+            aria-label={selection ? 'Editar busca' : 'Pesquisar'}
           >
             {resolving ? (
               <RefreshCw className="h-4 w-4 animate-spin" />

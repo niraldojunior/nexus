@@ -109,6 +109,34 @@ describe('flyTo', () => {
     expect(arrival).toBeGreaterThan(departure);
   });
 
+  it('fitSpanMeters afasta quando o traçado não cabe, pousando em zoom inteiro', () => {
+    const map = makeMap(RIO, 20); // bem perto: o drop de ~2 km não cabe
+    flyTo(map, { point: NEAR, scaleMeters: null, fitSpanMeters: 2000 });
+    // Salto perto: desloca já e aplica o zoom de enquadramento no idle seguinte.
+    expect(map.panTo).toHaveBeenCalledWith({ lat: NEAR[1], lng: NEAR[0] });
+    flushIdle();
+    expect(map.setZoom).toHaveBeenCalledTimes(1);
+    const zoom = map.setZoom.mock.calls[0][0] as number;
+    expect(Number.isInteger(zoom)).toBe(true);
+    expect(zoom).toBeLessThan(20); // afastou para caber
+  });
+
+  it('fitSpanMeters desconta o painel: mais área coberta afasta ao menos tanto', () => {
+    const noInset = makeMap(RIO, 20);
+    flyTo(noInset, { point: NEAR, scaleMeters: null, fitSpanMeters: 2000 });
+    flushIdle();
+    const zoomNoInset = noInset.setZoom.mock.calls[0][0] as number;
+
+    // Isola a fila de idle do primeiro voo (o handler de finish ainda pendente não
+    // interfere no segundo mapa).
+    idleQueue = [];
+    const withInset = makeMap(RIO, 20);
+    flyTo(withInset, { point: NEAR, scaleMeters: null, fitSpanMeters: 2000 }, { bottomInsetPx: 400 });
+    flushIdle();
+    const zoomWithInset = withInset.setZoom.mock.calls[0][0] as number;
+    expect(zoomWithInset).toBeLessThanOrEqual(zoomNoInset);
+  });
+
   it('nunca AFASTA além do necessário: zoom de chegada só aproxima (Math.max com o atual)', () => {
     const map = makeMap(RIO, 21); // já mais perto que a escala-alvo
     flyTo(map, { point: FAR, scaleMeters: 20 });

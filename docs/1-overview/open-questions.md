@@ -6,7 +6,7 @@
 > Regra: uma questão vive aqui. Os documentos de origem podem referenciá-la pelo ID, mas não
 > mantêm listas paralelas.
 
-**Atualizado em:** 01/08/2026
+**Atualizado em:** 10/08/2026
 
 ---
 
@@ -24,7 +24,7 @@
 | Geographic (`Q-GEO`)               | 8   | —   | 1   |
 | Resource (`Q-RES`)                 | 10  | —   | —   |
 | Service (`Q-SVC`)                  | 6   | —   | —   |
-| Arquitetura / Plataforma (`Q-ARQ`) | 3   | —   | 2   |
+| Arquitetura / Plataforma (`Q-ARQ`) | 4   | —   | 2   |
 
 ---
 
@@ -54,6 +54,7 @@ Detalhamento em [`../3-system-design/integrations.md`](../3-system-design/integr
 | **Q-ARQ-003** | Criar `docs/3-system-design/adr/` para decisões novas, em vez de expandir a tabela C1–C10?                     | 🔴 Aberta                                       | Arquitetura              |
 | Q-ARQ-004     | Banco, aplicação, cache, mensageria e gateway alvo.                                                            | ✅ Oracle · OpenShift · Redis · Kafka · Apigee  | —                        |
 | Q-ARQ-005     | Vercel + Neon é destino ou laboratório?                                                                        | ✅ Laboratório temporário                       | —                        |
+| **Q-ARQ-006** | Migrar os marcadores do mapa Geo de `google.maps.Marker` (deprecado) para `AdvancedMarkerElement`? Exige um Map ID do Cloud Console e mover o `styles` inline de POI para cloud styling. | 🔴 Aberta | Arquitetura + Frontend |
 
 Detalhamento em [`../3-system-design/architecture.md`](../3-system-design/architecture.md) e
 [`../3-system-design/security.md`](../3-system-design/security.md).

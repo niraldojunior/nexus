@@ -37,6 +37,53 @@ export function pathMidpoint(path: LngLat[]): LngLat | null {
   return path[path.length - 1];
 }
 
+// Duas coordenadas são "a mesma ponta" abaixo desta folga (m): a Routes API devolve a
+// polyline já encaixada na via, com poucos metros até a fachada e a caixa reais.
+const STITCH_TOLERANCE_METERS = 0.5;
+
+/**
+ * Costura as pontas reais do drop no traçado da rua. A Routes API devolve a polyline
+ * ENCAIXADA na via (`snap to road`), então a primeira e a última coordenada não são o
+ * alfinete do endereço nem a CDO — e é esse vão que o técnico enxerga como "drop
+ * desconectado". Prefixa `origin` e sufixa `destination`, pulando a ponta da rota quando
+ * ela já coincide com o ponto real (evita um vértice duplicado degenerado). Só geometria:
+ * a distância exibida continua vindo da Routes API (ver ViabilityTab).
+ */
+export function stitchDropPath(origin: LngLat, routePath: LngLat[], destination: LngLat): LngLat[] {
+  if (!routePath.length) return [origin, destination];
+  const startsAtOrigin =
+    haversineMeters(origin, routePath[0]) <= STITCH_TOLERANCE_METERS;
+  const endsAtDestination =
+    haversineMeters(destination, routePath[routePath.length - 1]) <= STITCH_TOLERANCE_METERS;
+  const middle = routePath.slice(
+    startsAtOrigin ? 1 : 0,
+    endsAtDestination ? routePath.length - 1 : routePath.length,
+  );
+  return [origin, ...middle, destination];
+}
+
+/**
+ * Extensão do traçado na tela: o maior lado do bbox que o circunscreve, em metros. É o
+ * que a câmera precisa enquadrar para o drop nascer inteiro — o `pathMidpoint` só diz
+ * onde centrar, não quanto cabe. Traçado vazio ou degenerado devolve 0 (nada a enquadrar).
+ */
+export function pathSpanMeters(path: LngLat[]): number {
+  if (path.length < 2) return 0;
+  let minLng = path[0][0];
+  let maxLng = path[0][0];
+  let minLat = path[0][1];
+  let maxLat = path[0][1];
+  for (const [lng, lat] of path) {
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+  const widthMeters = haversineMeters([minLng, minLat], [maxLng, minLat]);
+  const heightMeters = haversineMeters([minLng, minLat], [minLng, maxLat]);
+  return Math.max(widthMeters, heightMeters);
+}
+
 /**
  * Distância do drop em pt-BR: metros inteiros até 1 km, depois km com uma casa. O
  * arredondamento vem antes da comparação para 999,6 m sair como "1 km" e não "1000 m".

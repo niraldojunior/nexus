@@ -12,6 +12,11 @@ import {
 export type BottomSheetSnap = 'peek' | 'mid' | 'full';
 export type BottomSheetSnapState = { snap: BottomSheetSnap; heightPx: number };
 
+// Comando externo de encaixe da folha. `seq` é um contador monotônico: a folha reage
+// só quando ele muda (nunca aplica o valor inicial no mount), então o mesmo encaixe
+// pode ser pedido de novo bastando um `seq` novo. Ver useSheetSnapCommand.
+export type SheetSnapCommand = { snap: BottomSheetSnap; seq: number };
+
 // Altura de cada ponto de encaixe, em fração da viewport — mesmo espírito do
 // bottom sheet do Google Maps: nasce no meio, arrasta pra ver mais ou menos.
 const SNAP_RATIO: Record<BottomSheetSnap, number> = {
@@ -59,16 +64,17 @@ export function BottomSheet({
   children,
   onClose,
   onSnapChange,
-  minimizeSignal,
+  snapCommand,
   initialSnap = 'mid',
 }: {
   children: ReactNode;
   onClose: () => void;
   onSnapChange?: (state: BottomSheetSnapState) => void;
-  // Contador de comando externo: cada incremento encolhe a folha para peek (se ela já não
-  // estiver lá). Usado quando o usuário navega o mapa manualmente com a folha aberta — a
-  // seleção permanece, mas a folha sai da frente (ver GeoPage, issue #19).
-  minimizeSignal?: number;
+  // Comando externo de encaixe (ver SheetSnapCommand): a folha salta para `snap` a cada
+  // `seq` novo. Cobre tanto o "encolher para peek" quando o usuário navega o mapa à mão
+  // (issue #19) quanto pedidos do próprio painel (ex.: a aba Viabilidade pedindo `mid`).
+  // Montar o comando é papel do useSheetSnapCommand, no painel.
+  snapCommand?: SheetSnapCommand;
   initialSnap?: BottomSheetSnap;
 }) {
   const [snap, setSnap] = useState<BottomSheetSnap>(initialSnap);
@@ -105,18 +111,18 @@ export function BottomSheet({
     snapRef.current = snap;
   }, [snap]);
 
-  // Comando externo de encolher para peek (ver prop `minimizeSignal`). Guardamos o último
-  // valor visto para reagir só quando ele muda — nunca ao valor inicial. Se a folha já
-  // está em peek, é um no-op; a transição publica o novo snap pelo `transitionend`.
-  const lastMinimizeSignalRef = useRef(minimizeSignal);
+  // Comando externo de encaixe (ver prop `snapCommand`). Guardamos o último `seq` visto
+  // para reagir só quando ele muda — nunca ao valor inicial. Se a folha já está no encaixe
+  // pedido, é um no-op; a transição publica o novo snap pelo `transitionend`.
+  const lastSnapCommandSeqRef = useRef(snapCommand?.seq);
   useEffect(() => {
-    if (minimizeSignal === undefined || minimizeSignal === lastMinimizeSignalRef.current) return;
-    lastMinimizeSignalRef.current = minimizeSignal;
-    if (snapRef.current !== 'peek') {
-      snapRef.current = 'peek';
-      setSnap('peek');
+    if (snapCommand === undefined || snapCommand.seq === lastSnapCommandSeqRef.current) return;
+    lastSnapCommandSeqRef.current = snapCommand.seq;
+    if (snapRef.current !== snapCommand.snap) {
+      snapRef.current = snapCommand.snap;
+      setSnap(snapCommand.snap);
     }
-  }, [minimizeSignal]);
+  }, [snapCommand]);
 
   onSnapChangeRef.current = onSnapChange;
 
@@ -476,4 +482,35 @@ export function BottomSheet({
       </div>
     </div>
   );
+}
+
+/**
+ * Traduz pedidos de encaixe em comandos para a folha (ver SheetSnapCommand). `minimizeSignal`
+ * é o contador vindo do GeoPage (navegação manual do mapa → peek); `requestSnap` é o pedido
+ * próprio do painel (ex.: a aba Viabilidade pedindo `mid`). Os dois compartilham um único
+ * contador (`seq`), então o último pedido é sempre o que a folha aplica. O comando inicial
+ * nunca dispara no mount — só mudanças posteriores do sinal ou chamadas a `requestSnap`.
+ */
+export function useSheetSnapCommand(minimizeSignal?: number): {
+  snapCommand: SheetSnapCommand | undefined;
+  requestSnap: (snap: BottomSheetSnap) => void;
+} {
+  const [snapCommand, setSnapCommand] = useState<SheetSnapCommand | undefined>(undefined);
+  const seqRef = useRef(0);
+
+  const requestSnap = useCallback((snap: BottomSheetSnap) => {
+    seqRef.current += 1;
+    setSnapCommand({ snap, seq: seqRef.current });
+  }, []);
+
+  // Cada incremento do `minimizeSignal` pede peek. `lastMinimizeRef` guarda o valor
+  // recebido no mount, para o primeiro efeito não disparar um peek indevido.
+  const lastMinimizeRef = useRef(minimizeSignal);
+  useEffect(() => {
+    if (minimizeSignal === undefined || minimizeSignal === lastMinimizeRef.current) return;
+    lastMinimizeRef.current = minimizeSignal;
+    requestSnap('peek');
+  }, [minimizeSignal, requestSnap]);
+
+  return { snapCommand, requestSnap };
 }

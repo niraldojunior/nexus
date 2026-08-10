@@ -14,8 +14,9 @@ export const DOCK_SEARCH_WIDTH_CLASS = 'w-[372px]';
 // classes lendo os arquivos-fonte, os literais precisam aparecer inteiros aqui (não
 // montados por interpolação) para o JIT gerá-los.
 
-/** Padding-top da doca (desktop) para o conteúdo começar abaixo da barra. */
+/**
+ * Padding-top da doca para o conteúdo começar abaixo da barra sobreposta. No desktop
+ * reserva o topo da doca; no mobile, onde a hierarquia cobre a página inteira, reserva a
+ * faixa branca sob a barra de pesquisa.
+ */
 export const DOCK_SEARCH_CLEARANCE_PT_CLASS = 'pt-[72px]';
-
-/** Offset do topo do drawer (mobile), que nasce abaixo da barra. */
-export const DOCK_SEARCH_CLEARANCE_TOP_CLASS = 'top-[72px]';

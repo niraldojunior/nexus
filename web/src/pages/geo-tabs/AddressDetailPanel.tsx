@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Crosshair,
   Fingerprint,
@@ -10,7 +10,11 @@ import {
   Target,
 } from 'lucide-react';
 import type { DraftAddress } from '../../utils/googleMaps';
-import { BottomSheet, type BottomSheetSnapState } from '../../components/BottomSheet';
+import {
+  BottomSheet,
+  useSheetSnapCommand,
+  type BottomSheetSnapState,
+} from '../../components/BottomSheet';
 import { OverlayScrollArea } from '../../components/OverlayScrollArea';
 import { DOCK_WIDTH_CLASS } from './dock';
 import { StreetViewHero } from '../../components/StreetViewHero';
@@ -60,6 +64,7 @@ export function AddressDetailPanel({
   const title = [address.street, address.streetNr].filter(Boolean).join(', ') || address.label;
   const marker = addressStreetViewMarker(address);
   const [tab, setTab] = useState<AddressTab>('overview');
+  const { snapCommand, requestSnap } = useSheetSnapCommand(minimizeSignal);
 
   // Endereço novo é consulta nova: a aba volta para a Visão geral, e a aba de
   // Viabilidade se desmonta — é a desmontagem dela que apaga o drop simulado do mapa
@@ -68,6 +73,25 @@ export function AddressDetailPanel({
   useEffect(() => {
     setTab('overview');
   }, [lng, lat]);
+
+  // No mobile a aba Viabilidade dá lugar ao mapa: a foto do Street View some (ver o
+  // corpo) e a folha vai para `mid`, para o traçado do drop caber na área descoberta. O
+  // efeito segue `tab`, então dispara ao entrar na aba (inclusive na volta a ela).
+  useEffect(() => {
+    if (isMobile && tab === 'viability') requestSnap('mid');
+  }, [isMobile, tab, requestSnap]);
+
+  // Cada CDO escolhida na lista (não a limpeza on-unmount) reabre a folha em `mid` no
+  // mobile: trocar de CDO com a folha em `full` esconderia o drop recém-projetado da nova
+  // caixa, então a folha volta ao meio para a projeção caber na tela. O drop em si sobe
+  // para o GeoPage desenhar (ver onDropSimulation e ViabilityTab).
+  const handleSimulate = useCallback(
+    (simulation: DropSimulation | null) => {
+      if (isMobile && simulation) requestSnap('mid');
+      (onDropSimulation ?? noop)(simulation);
+    },
+    [isMobile, requestSnap, onDropSimulation],
+  );
 
   const body = (
     <>
@@ -88,7 +112,7 @@ export function AddressDetailPanel({
         />
       </div>
       {tab === 'viability' ? (
-        <ViabilityTab origin={address.coordinates} onSimulate={onDropSimulation ?? noop} />
+        <ViabilityTab origin={address.coordinates} onSimulate={handleSimulate} />
       ) : (
         <div className="grid gap-1">
           <IconInfoRow icon={MapPin} hint="Endereço formatado" value={address.label} />
@@ -128,9 +152,10 @@ export function AddressDetailPanel({
 
   if (isMobile) {
     return (
-      <BottomSheet onClose={onClose} onSnapChange={onSnapChange} minimizeSignal={minimizeSignal}>
-        {/* Foto, título e corpo rolam juntos dentro da folha (ver BottomSheet). */}
-        <StreetViewHero marker={marker} />
+      <BottomSheet onClose={onClose} onSnapChange={onSnapChange} snapCommand={snapCommand}>
+        {/* Foto, título e corpo rolam juntos dentro da folha (ver BottomSheet). Na aba
+            Viabilidade a foto some para o mapa (e o traçado do drop) ganharem a tela. */}
+        {tab === 'overview' ? <StreetViewHero marker={marker} /> : null}
         {header}
         {/* `overflow-hidden` nos dois eixos mantém o BottomSheet como único dono
             do gesto vertical; `overflow-x-hidden` faria Y computar para `auto`. */}

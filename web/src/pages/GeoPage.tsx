@@ -114,8 +114,13 @@ import {
   dropLabelWidth,
   formatDropDistance,
   pathMidpoint,
+  pathSpanMeters,
 } from '../utils/dropSimulation';
-import { BottomSheet, type BottomSheetSnapState } from '../components/BottomSheet';
+import {
+  BottomSheet,
+  useSheetSnapCommand,
+  type BottomSheetSnapState,
+} from '../components/BottomSheet';
 import { OverlayScrollArea } from '../components/OverlayScrollArea';
 import { StreetViewHero } from '../components/StreetViewHero';
 import { streetViewTargetsForGeometry } from '../utils/streetViewTargets';
@@ -505,9 +510,16 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     setDropSimulation(simulation);
     if (!simulation) return;
     const midpoint = pathMidpoint(simulation.path);
-    // Centraliza no meio do traçado para a simulação nascer inteira na tela, sem mexer
-    // no zoom — o usuário já está na escala da rua onde a CDO foi escolhida.
-    if (midpoint) setFocusRequest({ point: midpoint, scaleMeters: null });
+    // Centraliza no meio do traçado e enquadra o comprimento inteiro (`fitSpanMeters`),
+    // para a simulação nascer inteira na tela mesmo com a folha mobile cobrindo parte do
+    // mapa — o enquadramento pode afastar se o drop for maior que a área visível.
+    if (midpoint) {
+      setFocusRequest({
+        point: midpoint,
+        scaleMeters: null,
+        fitSpanMeters: pathSpanMeters(simulation.path),
+      });
+    }
   }, []);
 
   // Endereço resolvido pela busca (Enter em texto livre ou clique numa sugestão do
@@ -598,6 +610,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         ['Endereço', node.detail?.address ?? 'Sem endereço'],
         ['Status', status],
       ];
+      if (node.detail?.substatus) rows.push(['Substatus', node.detail.substatus]);
       if (node.detail?.model) rows.push(['Modelo', node.detail.model]);
       return {
         key: hoverKey,
@@ -617,6 +630,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       ['Endereço', node.detail?.address ?? 'Sem endereço'],
       ['Status', status],
     ];
+    if (node.detail?.substatus) rows.push(['Substatus', node.detail.substatus]);
     if (node.detail?.model) rows.push(['Modelo', node.detail.model]);
     return {
       key: hoverKey,
@@ -737,7 +751,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
             />
 
             {loading ? (
-              <div className="absolute right-5 bottom-5 z-30 rounded-[18px] border border-app-border bg-white/90 px-4 py-3 text-[0.84rem] font-medium text-app-muted shadow-soft backdrop-blur">
+              <div className="absolute right-5 bottom-5 z-30 rounded-[18px] border border-app-border bg-white/90 px-4 py-3 text-[0.84rem] font-medium text-app-muted shadow-map-control backdrop-blur">
                 Carregando dados Geo...
               </div>
             ) : null}
@@ -1029,11 +1043,13 @@ export function GoogleMapPanel({
           streetViewControl: false,
           // `greedy` reserva os gestos sobre o canvas ao mapa: um dedo faz pan e dois
           // fazem pinch-to-zoom. Mantemos o renderer raster para preservar os estilos
-          // inline de POI. Os controles visuais de zoom/rotação continuam ocultos para
-          // preservar o botão Minha localização.
+          // inline de POI. Os controles visuais de zoom/rotação e o controle de câmera
+          // (bússola/tilt) continuam ocultos — o chrome do mapa é só o nosso (busca, MUB,
+          // Minha localização).
           gestureHandling: 'greedy',
           zoomControl: false,
           rotateControl: false,
+          cameraControl: false,
           scaleControl: true,
           styles: MAP_STYLES,
         });
@@ -1293,11 +1309,14 @@ export function GoogleMapPanel({
       }
     }
 
-    // Atualiza a memória mesmo quando a política decide não voar (ex.: full → mid),
-    // para a próxima transição ser classificada a partir do estado realmente visível.
-    framedFocusRequestRef.current = focusRequest;
+    // O snap visível é sempre memorizado (classifica a próxima transição). Já o foco só é
+    // marcado como "enquadrado" quando REALMENTE voamos: um foco novo que chegou com a
+    // folha em `full` (ex.: trocar de CDO na Viabilidade, que recolhe a folha para mid)
+    // fica pendente e é enquadrado quando a folha assenta em mid/peek — recentralizando o
+    // drop, como se o usuário tivesse recolhido e reaberto no meio.
     framedBottomSheetStateRef.current = currentSheet;
     if (!shouldFrame) return;
+    framedFocusRequestRef.current = focusRequest;
 
     const bottomSheetHeightPx = currentSheet?.heightPx;
     const bottomInsetPx =
@@ -1724,9 +1743,9 @@ function MapBalloonCard({ balloon }: { balloon: MapBalloon }) {
           {balloon.rows.map(([label, value]) => (
             <Fragment key={label}>
               <dt className="text-[0.72rem] text-app-muted">{label}</dt>
-              <dd className="truncate text-[0.78rem] text-app-text" title={value}>
-                {value}
-              </dd>
+              {/* Sem `truncate`: substatus/modelo/endereço podem ser longos e devem
+                  quebrar em mais de uma linha em vez de virar "…". */}
+              <dd className="break-words text-[0.78rem] leading-snug text-app-text">{value}</dd>
             </Fragment>
           ))}
         </dl>
@@ -1829,6 +1848,9 @@ function GeoDetailPanel({
   // Contador que, ao incrementar, encolhe a folha para peek (ver BottomSheet).
   minimizeSignal?: number;
 }) {
+  // Detalhe de Site/Recurso não tem pedido próprio de encaixe — só repassa o
+  // `minimizeSignal` (peek na navegação manual do mapa) como comando para a folha.
+  const { snapCommand } = useSheetSnapCommand(minimizeSignal);
   const eyebrow =
     target.kind === 'site'
       ? `Site · ${specById.get(target.site.siteSpecificationId)?.name ?? 'Tipo não informado'}`
@@ -1903,7 +1925,7 @@ function GeoDetailPanel({
 
   if (isMobile) {
     return (
-      <BottomSheet onClose={onClose} onSnapChange={onSnapChange} minimizeSignal={minimizeSignal}>
+      <BottomSheet onClose={onClose} onSnapChange={onSnapChange} snapCommand={snapCommand}>
         {/* Foto, título e corpo rolam juntos dentro da folha (ver BottomSheet). */}
         <StreetViewHero marker={heroMarker} />
         {header}

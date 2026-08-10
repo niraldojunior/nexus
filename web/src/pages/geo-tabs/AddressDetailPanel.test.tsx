@@ -1,8 +1,13 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AddressDetailPanel } from './AddressDetailPanel';
 import type { DraftAddress } from '../../utils/googleMaps';
+import type { GeoTreeNode } from '../../services/geoTreeApi';
+import type {
+  UseAddressViabilityResult,
+  ViabilityCandidate,
+} from '../../hooks/useAddressViability';
 
 vi.mock('../../utils/streetViewStatic', () => ({
   fetchStreetViewAvailability: vi.fn().mockResolvedValue({ status: 'unavailable' }),
@@ -13,16 +18,18 @@ vi.mock('../../components/GoogleStreetViewModal', () => ({
   GoogleStreetViewModal: () => null,
 }));
 
-// A aba de Viabilidade tem teste próprio (ViabilityTab.test.tsx); aqui interessa só a
-// troca de aba, então o hook que busca as CDOs fica fora do caminho.
+// A aba de Viabilidade tem teste próprio (ViabilityTab.test.tsx); aqui o hook que busca as
+// CDOs é mockado para o painel poder exercitar a troca de aba e o encaixe da folha. Mutável
+// para os casos que precisam de uma CDO na lista (ver beforeEach para o default vazio).
+const viability = vi.fn<() => UseAddressViabilityResult>();
 vi.mock('../../hooks/useAddressViability', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../hooks/useAddressViability')>();
-  return {
-    ...actual,
-    useAddressViability: () => ({ status: 'ready' as const, candidates: [], error: null }),
-  };
+  return { ...actual, useAddressViability: () => viability() };
 });
 
+beforeEach(() => {
+  viability.mockReturnValue({ status: 'ready', candidates: [], error: null });
+});
 afterEach(cleanup);
 
 describe('AddressDetailPanel', () => {
@@ -108,5 +115,73 @@ describe('AddressDetailPanel', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Visão geral' }));
     expect(screen.getByText('Google Maps')).toBeInTheDocument();
+  });
+
+  it('no mobile, a aba Viabilidade oculta o Street View e a Visão geral o traz de volta', async () => {
+    const address: DraftAddress = {
+      street: 'R. Dr. Paulo César',
+      streetNr: '155',
+      country: 'BR',
+      coordinates: [-43.1079841, -22.8985597],
+      label: 'R. Dr. Paulo César, 155, Niterói - RJ',
+    };
+
+    render(<AddressDetailPanel isMobile address={address} onClose={vi.fn()} />);
+
+    // Na Visão geral a foto (mockada como indisponível) mostra o placeholder do hero.
+    expect(screen.getByText('Sem imagem de Street View')).toBeInTheDocument();
+
+    // Na Viabilidade a foto some para o mapa ganhar a tela.
+    await userEvent.click(screen.getByRole('button', { name: 'Viabilidade' }));
+    expect(screen.queryByText('Sem imagem de Street View')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Visão geral' }));
+    expect(screen.getByText('Sem imagem de Street View')).toBeInTheDocument();
+  });
+
+  it('no mobile, escolher uma CDO recoloca a folha em mid para o drop caber na tela', async () => {
+    const address: DraftAddress = {
+      street: 'R. Dr. Paulo César',
+      streetNr: '155',
+      country: 'BR',
+      coordinates: [-43.1079841, -22.8985597],
+      label: 'R. Dr. Paulo César, 155, Niterói - RJ',
+    };
+    const node: GeoTreeNode = {
+      id: 'resource:CDOE-1',
+      kind: 'resource',
+      label: 'CDOE-1 (FSA)',
+      resourceType: 'CTO',
+      status: 'active',
+      hasChildren: false,
+      geometry: { type: 'Point', coordinates: [-43.108, -22.899] },
+    };
+    // `straight` para a seleção resolver sem bater na Routes API.
+    const candidate: ViabilityCandidate = {
+      node,
+      point: [-43.108, -22.899],
+      distanceMeters: 120,
+      straightMeters: 120,
+      mode: 'straight',
+    };
+    viability.mockReturnValue({ status: 'ready', candidates: [candidate], error: null });
+
+    render(<AddressDetailPanel isMobile address={address} onClose={vi.fn()} onDropSimulation={vi.fn()} />);
+    const sheet = screen.getByTestId('bottom-sheet');
+    const content = screen.getByTestId('bottom-sheet-content');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Viabilidade' }));
+    // A aba nasce em mid (folha a 48vh); a auto-seleção já projeta o drop.
+    await waitFor(() => expect(sheet.style.height).toContain('48vh'));
+
+    // Usuário arrasta a folha para full para ler a lista.
+    fireEvent.pointerDown(content, { clientY: 500, pointerId: 1 });
+    fireEvent.pointerMove(content, { clientY: 460, pointerId: 1 });
+    fireEvent.pointerUp(content, { clientY: 460, pointerId: 1 });
+    expect(sheet.style.height).toContain('92vh');
+
+    // Escolher a CDO recoloca a folha em mid, para o drop projetado voltar à vista.
+    await userEvent.click(screen.getByRole('button', { name: /CDOE-1/ }));
+    await waitFor(() => expect(sheet.style.height).toContain('48vh'));
   });
 });

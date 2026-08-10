@@ -154,11 +154,19 @@ button:focus-visible {
   background-clip: padding-box;
 }
 
-/* Painéis da doca do Geo: a barra de rolagem só aparece com o ponteiro sobre o
-   painel. A calha continua reservada nos dois estados — só o polegar troca de cor —,
-   então o conteúdo nunca desloca ao entrar/sair. Em touch (sem ponteiro fino) nada
-   muda: vale a barra padrão do sistema. `hover-scroll-host` na casca externa faz o
-   hover no cabeçalho ou na busca também revelar a barra do filho que rola. */
+/* Painéis da doca do Geo: barra de rolagem SOBREPOSTA ao conteúdo. `overflow: overlay`
+   (Chromium) não reserva calha, então a foto do Street View e as abas alcançam a borda
+   direita do painel; quando a barra aparece, ela projeta por cima do conteúdo, sem
+   deslocá-lo. `auto` é o fallback para quem não entende `overlay`. */
+.hover-scroll {
+  overflow-y: auto;
+  overflow-y: overlay;
+}
+
+/* A barra só aparece com o ponteiro sobre o painel — o polegar fica transparente fora
+   do hover. Como é sobreposta, some sem reflow. Em touch (sem ponteiro fino) nada muda:
+   vale a barra padrão do sistema. `hover-scroll-host` na casca externa faz o hover no
+   cabeçalho ou na busca também revelar a barra do filho que rola. */
 @media (hover: hover) and (pointer: fine) {
   .hover-scroll::-webkit-scrollbar-thumb {
     background: transparent;

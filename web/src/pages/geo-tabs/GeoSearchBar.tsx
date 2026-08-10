@@ -120,17 +120,16 @@ export function GeoSearchBar({
     }
     debounceRef.current = window.setTimeout(() => {
       const token = ++requestTokenRef.current;
-      void Promise.all([fetchTreeSearch(term), fetchAddressPredictions(term)]).then(
-        ([nodes, addresses]) => {
+      // As duas fontes são independentes: `allSettled` (não `all`) garante que a falha
+      // de uma — inventário indisponível ou Places sem cota/rede — não zere a outra.
+      // Com `all`, qualquer rejeição derrubava o dropdown inteiro (some com locais E
+      // endereços), e a picklist "parava de funcionar".
+      void Promise.allSettled([fetchTreeSearch(term), fetchAddressPredictions(term)]).then(
+        ([nodesResult, addressesResult]) => {
           if (requestTokenRef.current !== token) return;
-          setNodeResults(nodes);
-          setAddressResults(addresses);
+          setNodeResults(nodesResult.status === 'fulfilled' ? nodesResult.value : []);
+          setAddressResults(addressesResult.status === 'fulfilled' ? addressesResult.value : []);
           setHighlighted(0);
-        },
-        () => {
-          if (requestTokenRef.current !== token) return;
-          setNodeResults([]);
-          setAddressResults([]);
         },
       );
     }, DEBOUNCE_MS);

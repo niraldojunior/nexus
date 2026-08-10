@@ -230,6 +230,52 @@ describe('GeoSearchBar', () => {
     expect(screen.queryByRole('button', { name: /Estação Icaraí/i })).not.toBeInTheDocument();
   });
 
+  it('mantém os resultados de inventário quando a previsão de endereços falha', async () => {
+    mocks.fetchTreeSearch.mockResolvedValue([node]);
+    mocks.fetchAddressPredictions.mockRejectedValue(new Error('Places indisponível'));
+
+    render(
+      <GeoSearchBar
+        query="Estação"
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+
+    fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
+    // Com Promise.all a rejeição das previsões zerava tudo; com allSettled o resultado
+    // de inventário sobrevive.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Estação Icaraí/i })).toBeInTheDocument(),
+    );
+  });
+
+  it('mantém os endereços quando a busca de inventário falha', async () => {
+    mocks.fetchTreeSearch.mockRejectedValue(new Error('Inventário indisponível'));
+    mocks.fetchAddressPredictions.mockResolvedValue([
+      { placeId: 'place:1', description: 'Rua Gavião Peixoto, Niterói' },
+    ]);
+
+    render(
+      <GeoSearchBar
+        query="Gavião"
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+
+    fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
+    await waitFor(() =>
+      expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument(),
+    );
+  });
+
   it('descarta endereço resolvido depois que o usuário limpa a busca', async () => {
     let resolveAddress!: (outcome: {
       ok: true;

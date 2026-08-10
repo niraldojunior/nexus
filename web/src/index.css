@@ -154,6 +154,24 @@ button:focus-visible {
   background-clip: padding-box;
 }
 
+/* Painéis da doca do Geo: a barra de rolagem só aparece com o ponteiro sobre o
+   painel. A calha continua reservada nos dois estados — só o polegar troca de cor —,
+   então o conteúdo nunca desloca ao entrar/sair. Em touch (sem ponteiro fino) nada
+   muda: vale a barra padrão do sistema. `hover-scroll-host` na casca externa faz o
+   hover no cabeçalho ou na busca também revelar a barra do filho que rola. */
+@media (hover: hover) and (pointer: fine) {
+  .hover-scroll::-webkit-scrollbar-thumb {
+    background: transparent;
+    transition: background 140ms ease;
+  }
+  .hover-scroll-host:hover .hover-scroll::-webkit-scrollbar-thumb,
+  .hover-scroll:hover::-webkit-scrollbar-thumb,
+  .hover-scroll:focus-within::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.42);
+    background-clip: padding-box;
+  }
+}
+
 @keyframes menu-item-icon-hover {
   0% {
     transform: translateY(0) scale(1) rotate(0deg);

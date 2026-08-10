@@ -176,6 +176,12 @@ const DROP_SIMULATION_Z = 1500;
 // Passo do pontilhado em movimento. 60 ms dá fluidez sem custar frame de mapa.
 const DROP_DASH_INTERVAL_MS = 60;
 
+// Espera entre o `click` no vazio do mapa e a consulta do ponto: se um segundo clique
+// chegar dentro dela, era um duplo clique (zoom) e a consulta é cancelada. 250 ms é a
+// janela usual de duplo clique — imperceptível, já que o clique simples aguardava o
+// reverse geocode de qualquer forma.
+const MAP_CLICK_SETTLE_MS = 250;
+
 // Espessura por hierarquia da planta: o feeder é o tronco, o drop é o capilar.
 const CABLE_STROKE_WEIGHT: Record<string, number> = {
   BackboneCable: 5,
@@ -300,10 +306,17 @@ export default function GeoPage() {
   // Infra passiva só entra quando a escala está em ≤ 200 m; Estações (tree.mapNodes)
   // continuam sempre visíveis, ramo aberto ou não.
   const passiveInfraVisible = scaleMeters !== null && scaleMeters <= PASSIVE_INFRA_MAX_SCALE_METERS;
-  const mapNodes = useMemo(
-    () => (passiveInfraVisible ? [...tree.mapNodes, ...viewportInfra] : tree.mapNodes),
-    [tree.mapNodes, viewportInfra, passiveInfraVisible],
-  );
+  const mapNodes = useMemo(() => {
+    const base = passiveInfraVisible ? [...tree.mapNodes, ...viewportInfra] : tree.mapNodes;
+    // O item selecionado é imune à escala e ao viewport: recurso e cabo só existem em
+    // `viewportInfra`, e sem isto afastar o mapa (ou arrastá-lo até a borda) apagaria o
+    // ícone e o alfinete de quem está aberto no painel. Estação já vem sempre em
+    // `tree.mapNodes`, então isto só adiciona quando o nó realmente sumiu da lista.
+    if (selectedNode?.geometry && !base.some((node) => node.id === selectedNode.id)) {
+      return [...base, selectedNode];
+    }
+    return base;
+  }, [tree.mapNodes, viewportInfra, passiveInfraVisible, selectedNode]);
   // Só agrupa acima de 100 m; em ≤ 100 m cada ponto é um ícone individual. Escala ainda
   // desconhecida (antes do primeiro idle) agrupa por segurança — geralmente é vista aberta.
   const clusterMarkers = (scaleMeters ?? Infinity) > MARKER_CLUSTER_MIN_SCALE_METERS;
@@ -414,9 +427,11 @@ export default function GeoPage() {
   const selectNodeFromTree = useCallback((node: GeoTreeNode) => selectNode(node, 'tree'), [selectNode]);
   const selectNodeFromMap = useCallback((node: GeoTreeNode) => selectNode(node, 'map'), [selectNode]);
 
-  // Clique fora de qualquer item (vazio do mapa) com uma seleção ativa: tira o
-  // alfinete e fecha o detalhe, igual ao Google Maps. A hierarquia reaparece
-  // sozinha — seu colapso não é tocado por seleção/deseleção (ver selectNode).
+  // Desfaz a seleção por completo: tira o alfinete, fecha o detalhe e limpa a busca. É o
+  // X da barra de pesquisa (onClear), o fechar do painel de Endereço e, no mobile, o
+  // arrastar a folha para baixo. O clique no vazio do mapa não passa mais por aqui — ele
+  // consulta o ponto (ver onMapAddressFound). A hierarquia reaparece sozinha: seu colapso
+  // não é tocado por seleção/deseleção (ver selectNode).
   const onDeselect = useCallback(() => {
     setSelectedNode(null);
     setDetailOpen(false);
@@ -455,13 +470,17 @@ export default function GeoPage() {
     setAddressError(err);
   }, []);
 
-  // Clique no mapa (vazio, sem seleção ativa) — o mesmo reverse geocode que já
-  // largava o "+" de rascunho (`draftAddress`, usado pelo GuidedSignupModal para
-  // cadastrar um site ali) agora também abre o painel de endereço na doca. O mapa só
-  // desenha o "+" para essa origem (`source: 'map'`) — o alfinete de seleção fica
-  // reservado à busca, para não duplicar marcador na mesma coordenada (ver
+  // Clique no vazio do mapa — reverse geocode do ponto, que larga o "+" de rascunho
+  // (`draftAddress`, usado pelo GuidedSignupModal para cadastrar um site ali) e abre o
+  // painel de endereço na doca. Consulta é seleção: some qualquer nó em curso (mesma doca,
+  // um painel por vez) — é a terceira porta de troca de seleção, junto do X da busca e de
+  // uma nova pesquisa. O mapa só desenha o "+" para essa origem (`source: 'map'`) — o
+  // alfinete fica reservado à busca, para não duplicar marcador na mesma coordenada (ver
   // GoogleMapPanel e a prop `addressPoint`).
   const onMapAddressFound = useCallback((address: DraftAddress) => {
+    setSelectedNode(null);
+    setDetailOpen(false);
+    setAddressError(null);
     setDraftAddress(address);
     setDropSimulation(null);
     setAddressLookup({ address, source: 'map' });
@@ -664,7 +683,7 @@ export default function GeoPage() {
           <div className="relative min-h-0 flex-1">
             <GoogleMapPanel
               nodes={mapNodes}
-              selectedNodeId={selectedNode?.id ?? null}
+              selectedNode={selectedNode}
               draftAddress={draftAddress}
               addressPoint={
                 addressLookup?.source === 'search' ? addressLookup.address.coordinates : null
@@ -676,7 +695,6 @@ export default function GeoPage() {
               onHoverNode={handleHover}
               onCloseBalloon={() => handleHover(null)}
               onDraftAddress={onMapAddressFound}
-              onDeselect={onDeselect}
               onViewportChange={handleViewportChange}
               clusterMarkers={clusterMarkers}
               autoLocateOnOpen={isMobile}
@@ -755,7 +773,7 @@ export default function GeoPage() {
 // quando a região visível ou a escala mudam, para o chamador decidir o que buscar.
 export function GoogleMapPanel({
   nodes,
-  selectedNodeId,
+  selectedNode,
   draftAddress,
   addressPoint,
   dropSimulation,
@@ -765,13 +783,15 @@ export function GoogleMapPanel({
   onHoverNode,
   onCloseBalloon,
   onDraftAddress,
-  onDeselect,
   onViewportChange,
   clusterMarkers,
   autoLocateOnOpen = false,
 }: {
   nodes: GeoTreeNode[];
-  selectedNodeId: string | null;
+  // Nó selecionado inteiro (não só o id): o alfinete precisa da geometria mesmo quando o
+  // nó já saiu da lista visível do mapa — recurso/cabo afastado, ou deep-link de Site que
+  // ainda não virou marcador. O id é derivado abaixo, para os efeitos que só precisam dele.
+  selectedNode: GeoTreeNode | null;
   draftAddress: DraftAddress | null;
   // Endereço resolvido pela busca (ver AddressDetailPanel) — cravado com o mesmo
   // alfinete de seleção, na ausência de um nó selecionado (os dois nunca coexistem,
@@ -787,13 +807,13 @@ export function GoogleMapPanel({
   onHoverNode: (node: GeoTreeNode | null) => void;
   onCloseBalloon: () => void;
   onDraftAddress: (address: DraftAddress) => void;
-  onDeselect: () => void;
   onViewportChange: (bounds: MapBounds, scaleMeters: number) => void;
   clusterMarkers: boolean;
   // Só o mobile salta sozinho para a posição do dispositivo ao abrir (ver efeito de
   // auto-localização); no desktop o pulo fica reservado ao clique no botão.
   autoLocateOnOpen?: boolean;
 }) {
+  const selectedNodeId = selectedNode?.id ?? null;
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<GoogleMapInstance | null>(null);
   // Marcadores/polylines indexados por id do nó — permite reusar o mesmo objeto entre renders
@@ -836,10 +856,12 @@ export function GoogleMapPanel({
   const onSelectNodeRef = useRef(onSelectNode);
   const onHoverNodeRef = useRef(onHoverNode);
   const onViewportChangeRef = useRef(onViewportChange);
-  // O listener de clique no vazio do mapa também é atado uma única vez — precisa ler
-  // sempre a seleção e o callback de deseleção atuais (ver efeito abaixo).
-  const onDeselectRef = useRef(onDeselect);
+  // O clique no vazio do mapa sempre consulta aquele ponto (ver listener de click);
+  // o auto-locate ainda lê a seleção corrente daqui para não roubar o enquadramento.
   const selectedNodeIdRef = useRef(selectedNodeId);
+  // Timer da consulta de ponto adiada pelo clique no vazio — cancelável pelo `dblclick`
+  // (zoom) e no desmonte, para não disparar reverse geocode sobre um mapa já descartado.
+  const clickSettleRef = useRef<number | undefined>(undefined);
   const nodeByIdRef = useRef<Map<string, GeoTreeNode>>(new Map());
   const [mapsReady, setMapsReady] = useState(false);
   const [baseLayerId, setBaseLayerId] = useState(BASE_MAP_LAYERS[0]?.id ?? 'roadmap');
@@ -857,10 +879,6 @@ export function GoogleMapPanel({
   useEffect(() => {
     onHoverNodeRef.current = onHoverNode;
   }, [onHoverNode]);
-
-  useEffect(() => {
-    onDeselectRef.current = onDeselect;
-  }, [onDeselect]);
 
   useEffect(() => {
     selectedNodeIdRef.current = selectedNodeId;
@@ -896,27 +914,38 @@ export function GoogleMapPanel({
           // Clique fora de qualquer item: o balão sai. Cliques em marker ou
           // polyline não chegam aqui, então o balão só fecha no vazio do mapa.
           closeBalloonRef.current();
-          // Com uma seleção ativa, o vazio do mapa desseleciona (tira o alfinete e
-          // fecha o detalhe) — igual ao Google Maps. Só sem seleção é que o clique
-          // larga um rascunho de endereço para cadastrar um site novo ali.
-          if (selectedNodeIdRef.current) {
-            onDeselectRef.current();
-            return;
-          }
+          // Um clique no vazio consulta aquele ponto — abre o painel de Endereço e, se
+          // havia um item selecionado, o substitui (ver onMapAddressFound em GeoPage). É a
+          // terceira porta de troca de seleção; pan e zoom não passam por aqui.
           const lat = event.latLng.lat();
           const lng = event.latLng.lng();
-          reverseGeocode(lat, lng).then((address) => {
-            onDraftAddress(
-              address ?? {
-                street: 'Ponto selecionado no mapa',
-                city: 'Niteroi',
-                stateOrProvince: 'RJ',
-                country: 'BR',
-                coordinates: [lng, lat],
-                label: `Ponto selecionado [${lng.toFixed(5)}, ${lat.toFixed(5)}]`,
-              },
-            );
-          });
+          // Duplo clique é gesto de zoom: o Google dispara `click` antes do `dblclick`, e
+          // sem esta espera dar zoom no vazio trocaria a localização consultada. O clique
+          // simples já aguardava o reverse geocode, então o atraso não é perceptível.
+          if (clickSettleRef.current !== undefined) window.clearTimeout(clickSettleRef.current);
+          clickSettleRef.current = window.setTimeout(() => {
+            clickSettleRef.current = undefined;
+            reverseGeocode(lat, lng).then((address) => {
+              onDraftAddress(
+                address ?? {
+                  street: 'Ponto selecionado no mapa',
+                  city: 'Niteroi',
+                  stateOrProvince: 'RJ',
+                  country: 'BR',
+                  coordinates: [lng, lat],
+                  label: `Ponto selecionado [${lng.toFixed(5)}, ${lat.toFixed(5)}]`,
+                },
+              );
+            });
+          }, MAP_CLICK_SETTLE_MS);
+        });
+        // O segundo clique de um duplo clique cancela a consulta pendente do primeiro — o
+        // zoom nativo do Google segue seu curso e a seleção fica intacta.
+        mapRef.current.addListener('dblclick', () => {
+          if (clickSettleRef.current !== undefined) {
+            window.clearTimeout(clickSettleRef.current);
+            clickSettleRef.current = undefined;
+          }
         });
         // Reporta a região visível e a escala atual para o chamador decidir se busca
         // infra passiva por viewport (ver PASSIVE_INFRA_MAX_SCALE_METERS).
@@ -1132,7 +1161,12 @@ export function GoogleMapPanel({
   useEffect(() => {
     const maps = window.google?.maps;
     if (!mapsReady || !mapRef.current || !maps) return;
-    const node = selectedNodeId ? nodeByIdRef.current.get(selectedNodeId) : undefined;
+    // Prefere o nó do registro do mapa (versão mais fresca, vinda do último refetch da
+    // árvore) e cai para a própria seleção quando ele já não está no mapa — recurso/cabo
+    // afastado além do viewport, ou deep-link de Site que ainda não virou marcador. Sem
+    // esse fallback, mexer no mapa apagava o alfinete de quem continua aberto no painel.
+    const node =
+      (selectedNodeId ? nodeByIdRef.current.get(selectedNodeId) : undefined) ?? selectedNode;
     const point = node ? treeNodePoint(node) : (addressPoint ?? null);
     if (!point) {
       selectionMarkerRef.current?.setMap(null);
@@ -1167,7 +1201,7 @@ export function GoogleMapPanel({
         clickable: false,
       });
     }
-  }, [mapsReady, selectedNodeId, nodes, addressPoint]);
+  }, [mapsReady, selectedNodeId, selectedNode, nodes, addressPoint]);
 
   // Rota dos cabos. Um cabo não é um ponto: sua geometria é uma LineString com o traçado real na
   // rua, então vira polyline em vez de pin. Reusada por id pelo mesmo motivo dos marcadores.
@@ -1368,6 +1402,14 @@ export function GoogleMapPanel({
   }, [balloon, balloonNode, mapsReady]);
 
   useEffect(() => () => infoWindowRef.current?.close(), []);
+  // Cancela a consulta de ponto adiada pelo clique no vazio, para o reverse geocode não
+  // disparar depois que o mapa saiu de cena.
+  useEffect(
+    () => () => {
+      if (clickSettleRef.current !== undefined) window.clearTimeout(clickSettleRef.current);
+    },
+    [],
+  );
   useEffect(
     () => () => {
       userLocationMarkerRef.current?.setMap(null);
@@ -1684,12 +1726,12 @@ function GeoDetailPanel({
     // `hidden`, o outro (`overflow-y: visible`) computa para `auto` e a casca vira um
     // segundo contêiner de rolagem, ao lado do scroll do conteúdo abaixo — era o
     // scroll duplo do painel. Quem rola aqui é só o filho `overflow-y-auto`.
-    <div className="relative flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock">
+    <div className="hover-scroll-host relative flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock">
       {/* Barra de pesquisa ancorada no topo, flutuando sobre o conteúdo; a foto de
           Street View, o título e o corpo rolam por baixo dela — estilo Google Maps.
           Mesmo padrão no painel de Endereço. */}
       {searchBar ? <div className="absolute inset-x-0 top-0 z-30">{searchBar}</div> : null}
-      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
+      <div className="hover-scroll min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
         <StreetViewHero marker={heroMarker} />
         {header}
         <div className="px-3 py-3">{body}</div>

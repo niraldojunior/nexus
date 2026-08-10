@@ -105,3 +105,15 @@ test('primary navigation remains clickable when collapsed', async () => {
   expect(onSelectPage).toHaveBeenCalledWith('geo');
   expect(onToggleResourceMenu).toHaveBeenCalledTimes(1);
 });
+
+test('mobile floating toggle appears by default when collapsed', () => {
+  renderSidebar({ isMobile: true, collapsed: true });
+
+  expect(screen.getByRole('button', { name: 'Abrir barra lateral' })).toBeInTheDocument();
+});
+
+test('mobile floating toggle is suppressed when showMobileToggle is false', () => {
+  renderSidebar({ isMobile: true, collapsed: true, showMobileToggle: false });
+
+  expect(screen.queryByRole('button', { name: 'Abrir barra lateral' })).not.toBeInTheDocument();
+});

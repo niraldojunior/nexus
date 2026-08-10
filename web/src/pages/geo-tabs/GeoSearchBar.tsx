@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MapPin, RefreshCw, Search, X } from 'lucide-react';
+import { ListTree, MapPin, RefreshCw, Search, X } from 'lucide-react';
 import { fetchTreeSearch, type GeoTreeNode } from '../../services/geoTreeApi';
 import {
   fetchAddressPredictions,
@@ -8,6 +8,8 @@ import {
   type AddressPrediction,
   type DraftAddress,
 } from '../../utils/googleMaps';
+import NexusMark from '../../components/NexusMark';
+import { DOCK_SEARCH_WIDTH_CLASS } from './dock';
 import { NodeIcon } from './HierarchyTreeView';
 
 export type AddressSearchError = { term: string; status: string; message: string };
@@ -33,11 +35,14 @@ export type GeoSearchBarProps = {
   // GeoPage). Sem ele, o botão só apaga o texto e os resultados. Opcional para a
   // barra funcionar isolada (testes, usos sem painel).
   onClear?: () => void;
-  // 'floating' flutua sobre o mapa (nenhum painel aberto); 'panel' vive encaixada
-  // no topo da doca (hierarquia ou detalhe aberto); 'overlay' fica ancorada no topo
-  // de um painel, flutuando sobre o conteúdo que rola por baixo — mesmo padrão do
-  // Google Maps.
-  variant: 'floating' | 'panel' | 'overlay';
+  // Estado do painel de hierarquia — é a barra que o abre e fecha quando não há texto
+  // nem seleção (ver o slot direito). `true` = hierarquia aberta (o slot mostra o X de
+  // fechar); `false` = fechada (o slot mostra o ListTree de abrir).
+  hierarchyOpen?: boolean;
+  onToggleHierarchy?: () => void;
+  // Só no mobile: a marca do Nexus no início da barra abre o menu principal do app,
+  // no lugar do botão flutuante que foi removido nesta página (ver GeoPage/App).
+  onOpenMainMenu?: () => void;
   isMobile?: boolean;
 };
 
@@ -62,7 +67,9 @@ export function GeoSearchBar({
   onAddressFound,
   onAddressError,
   onClear,
-  variant,
+  hierarchyOpen = false,
+  onToggleHierarchy,
+  onOpenMainMenu,
   isMobile,
 }: GeoSearchBarProps) {
   const [open, setOpen] = useState(false);
@@ -113,17 +120,16 @@ export function GeoSearchBar({
     }
     debounceRef.current = window.setTimeout(() => {
       const token = ++requestTokenRef.current;
-      void Promise.all([fetchTreeSearch(term), fetchAddressPredictions(term)]).then(
-        ([nodes, addresses]) => {
+      // As duas fontes são independentes: `allSettled` (não `all`) garante que a falha
+      // de uma — inventário indisponível ou Places sem cota/rede — não zere a outra.
+      // Com `all`, qualquer rejeição derrubava o dropdown inteiro (some com locais E
+      // endereços), e a picklist "parava de funcionar".
+      void Promise.allSettled([fetchTreeSearch(term), fetchAddressPredictions(term)]).then(
+        ([nodesResult, addressesResult]) => {
           if (requestTokenRef.current !== token) return;
-          setNodeResults(nodes);
-          setAddressResults(addresses);
+          setNodeResults(nodesResult.status === 'fulfilled' ? nodesResult.value : []);
+          setAddressResults(addressesResult.status === 'fulfilled' ? addressesResult.value : []);
           setHighlighted(0);
-        },
-        () => {
-          if (requestTokenRef.current !== token) return;
-          setNodeResults([]);
-          setAddressResults([]);
         },
       );
     }, DEBOUNCE_MS);
@@ -250,40 +256,49 @@ export function GeoSearchBar({
     }
   };
 
+  // Instância única, sobreposta à doca e ao mapa (ver GeoPage): um estilo só, com o
+  // mesmo retângulo em todos os estados. Com a lista aberta, arredonda só o topo e some
+  // a borda de baixo, para caixa e sugestões virarem um componente só (estilo Google
+  // Maps).
   const shellBase =
-    variant === 'panel'
-      ? 'flex h-11 items-center border border-app-border bg-white transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15'
-      : 'flex h-12 items-center border border-app-border bg-white shadow-soft transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15';
-  // Cantos do bloco de sugestões combinam com o da caixa de busca (12px no painel,
-  // 16px flutuando/sobre a foto) — com a borda de baixo da caixa e a de cima da
-  // lista removidas quando aberta, os dois viram visualmente um componente só,
-  // sem costura dupla nem raio de canto descasado (estilo Google Maps).
-  const shellRadiusClass = variant === 'panel' ? 'rounded-xl' : 'rounded-2xl';
-  const shellRadiusOpenClass = variant === 'panel' ? 'rounded-t-xl' : 'rounded-t-2xl';
-  const dropdownRadiusClass = variant === 'panel' ? 'rounded-b-xl' : 'rounded-b-2xl';
-  const shellClass = `${shellBase} ${showDropdown ? `${shellRadiusOpenClass} border-b-0` : shellRadiusClass}`;
+    'flex h-12 items-center border border-app-border bg-white shadow-soft transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15';
+  const dropdownRadiusClass = 'rounded-b-2xl';
+  const shellClass = `${shellBase} ${showDropdown ? 'rounded-t-2xl border-b-0' : 'rounded-2xl'}`;
 
-  const wrapperClass =
-    variant === 'panel'
-      ? 'w-full border-b border-app-border p-3'
-      : variant === 'overlay'
-        ? 'w-full p-3'
-        : `absolute top-3 z-30 ${
-            isMobile ? 'left-14 right-3' : 'left-3 w-[400px] max-w-[calc(100%-1.5rem)]'
-          }`;
+  // Quando há texto ou seleção, o X limpa a busca (comportamento antigo). Sem nada
+  // digitado nem selecionado, o slot direito vira o controle da hierarquia: um X
+  // quando ela está aberta (fecha), um ListTree quando fechada (abre).
+  const hasSearchToClear = Boolean(query) || Boolean(selection);
+  const showClose = hasSearchToClear || hierarchyOpen;
+  // A marca do Nexus (abre o menu principal) só aparece no mobile — no desktop o menu
+  // fica na barra lateral persistente.
+  const showMenuMark = Boolean(isMobile && onOpenMainMenu);
+
+  const wrapperClass = `absolute top-3 max-w-[calc(100%-1.5rem)] ${
+    isMobile ? 'left-3 right-3' : `left-3 ${DOCK_SEARCH_WIDTH_CLASS}`
+  } ${isMobile && hierarchyOpen ? 'z-50' : 'z-30'}`;
 
   return (
     <div className={wrapperClass}>
-      {/* Contexto de posicionamento próprio (em vez de no wrapper, que tem padding
-          nas variantes 'panel'/'overlay') — garante que a lista se alinhe exatamente
-          às bordas da caixa de busca, e não às do wrapper com padding. */}
+      {/* Contexto de posicionamento próprio para a lista de sugestões se alinhar
+          exatamente às bordas da caixa de busca. */}
       <div className="relative">
         <div className={shellClass}>
+          {showMenuMark ? (
+            <button
+              type="button"
+              onClick={onOpenMainMenu}
+              className="ml-1.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition hover:bg-black/5"
+              aria-label="Abrir menu principal"
+            >
+              <NexusMark className="h-5 w-5" />
+            </button>
+          ) : null}
           {selection ? (
             <button
               type="button"
               onClick={editSelection}
-              className="ml-2 flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-app-accent-border bg-app-accent-soft px-2.5 py-1.5 text-left text-[0.86rem] text-app-text transition hover:brightness-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-app-focus/30"
+              className={`${showMenuMark ? 'ml-1' : 'ml-2'} flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-app-accent-border bg-app-accent-soft px-2.5 py-1.5 text-left text-[0.86rem] text-app-text transition hover:brightness-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-app-focus/30`}
               aria-label={`Editar seleção ${selection.type === 'node' ? selection.node.label : selection.address.label}`}
               title={selection.type === 'node' ? selection.node.label : selection.address.label}
             >
@@ -321,29 +336,44 @@ export function GeoSearchBar({
                 if (query.trim()) setOpen(true);
               }}
               onKeyDown={handleKeyDown}
-              className="h-full min-w-0 flex-1 rounded-l-2xl bg-transparent pl-4 pr-2 text-[15px] text-app-text placeholder:text-app-muted focus:outline-none"
+              className={`h-full min-w-0 flex-1 rounded-l-2xl bg-transparent ${showMenuMark ? 'pl-2' : 'pl-4'} pr-2 text-[15px] text-app-text placeholder:text-app-muted focus:outline-none`}
               placeholder="Pesquisar local, recurso ou endereço"
               id="geo-search-input"
               autoComplete="off"
             />
           )}
-          {query ? (
+          {showClose ? (
             <button
               type="button"
               onClick={() => {
-                cancelAddressResolution();
-                closeDropdown();
-                onQueryChange('');
-                // Além de limpar o texto, desseleciona: fecha o painel aberto e tira
-                // o alfinete do mapa (ver onDeselect em GeoPage). onQueryChange('')
-                // acima fica redundante quando onClear já zera a query, mas mantém a
-                // barra utilizável quando o chamador não passa onClear.
-                onClear?.();
+                if (hasSearchToClear) {
+                  cancelAddressResolution();
+                  closeDropdown();
+                  onQueryChange('');
+                  // Além de limpar o texto, desseleciona: fecha o painel aberto e tira
+                  // o alfinete do mapa (ver onDeselect em GeoPage). onQueryChange('')
+                  // acima fica redundante quando onClear já zera a query, mas mantém a
+                  // barra utilizável quando o chamador não passa onClear.
+                  onClear?.();
+                } else {
+                  // Sem texto nem seleção, o X só fecha o painel de hierarquia (ver
+                  // GeoPage) — o slot volta a mostrar o ListTree de abrir.
+                  onToggleHierarchy?.();
+                }
               }}
               className="flex h-8 w-8 items-center justify-center rounded-full text-app-muted transition hover:bg-black/5"
-              aria-label="Limpar busca"
+              aria-label={hasSearchToClear ? 'Limpar busca' : 'Fechar hierarquia'}
             >
               <X className="h-4 w-4" />
+            </button>
+          ) : onToggleHierarchy ? (
+            <button
+              type="button"
+              onClick={onToggleHierarchy}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-app-muted transition hover:bg-black/5"
+              aria-label="Abrir hierarquia"
+            >
+              <ListTree className="h-4 w-4" />
             </button>
           ) : null}
           <span className="mx-1 h-6 w-px bg-app-border" />

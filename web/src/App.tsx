@@ -130,14 +130,20 @@ function AssistantHome({
   );
 }
 
-function DomainPage({ page }: { page: Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas'> }) {
+function DomainPage({
+  page,
+  onOpenMainMenu,
+}: {
+  page: Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas'>;
+  onOpenMainMenu?: () => void;
+}) {
   const meta = domainMeta[page];
   const Icon = meta.icon;
 
   if (page === 'geo') {
     return (
       <div className="h-full min-h-0 min-w-0">
-        <GeoPage />
+        <GeoPage onOpenMainMenu={onOpenMainMenu} />
       </div>
     );
   }
@@ -660,6 +666,9 @@ function App() {
       <Sidebar
         collapsed={sidebarCollapsed}
         isMobile={isMobile}
+        // Em Locais no mobile, a marca do Nexus dentro da barra de pesquisa abre o menu;
+        // o botão flutuante do drawer some para não duplicar a entrada (ver GeoPage).
+        showMobileToggle={!(isMobile && currentPage === 'geo')}
         currentPage={currentPage}
         activeRecentConversationId={activeConversationId}
         activeResearchSessionId={activeResearchSessionId}
@@ -706,7 +715,7 @@ function App() {
           />
         ) : currentPage === 'geo' ? (
           <div className="h-full min-h-0 overflow-hidden">
-            <DomainPage page="geo" />
+            <DomainPage page="geo" onOpenMainMenu={() => setSidebarCollapsed(false)} />
           </div>
         ) : (
           <div className={currentPage === 'conversation' ? 'h-full overflow-hidden' : 'h-full overflow-y-auto'}>

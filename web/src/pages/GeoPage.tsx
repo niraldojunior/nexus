@@ -70,7 +70,7 @@ import {
   PASSIVE_INFRA_MAX_SCALE_METERS,
   MARKER_CLUSTER_MIN_SCALE_METERS,
 } from '../utils/mapScale';
-import { flyTo, cancelFlight, type FlyTarget } from '../utils/mapCamera';
+import { bottomInsetForOverlay, flyTo, cancelFlight, type FlyTarget } from '../utils/mapCamera';
 import { useGeoTree } from '../hooks/useGeoTree';
 import { useIsMobile } from '../hooks/useIsMobile';
 import {
@@ -113,7 +113,7 @@ import {
   formatDropDistance,
   pathMidpoint,
 } from '../utils/dropSimulation';
-import { BottomSheet } from '../components/BottomSheet';
+import { BottomSheet, type BottomSheetSnapState } from '../components/BottomSheet';
 import { StreetViewHero } from '../components/StreetViewHero';
 import { streetViewTargetsForGeometry } from '../utils/streetViewTargets';
 import { resourceStreetViewMarker, siteStreetViewMarker } from '../utils/streetViewMarker';
@@ -186,6 +186,8 @@ const CABLE_STROKE_WEIGHT: Record<string, number> = {
   PatchCord: 2,
 };
 const DEFAULT_CENTER = { lat: -22.9068, lng: -43.1075 };
+// Aguarda a janela nativa de duplo clique antes de tratar clique simples no mapa.
+const MAP_SINGLE_CLICK_DELAY_MS = 500;
 
 // O basemap é contexto, não conteúdo: POI comercial some por inteiro e os demais
 // POIs perdem o ícone (o texto fica, como referência de orientação) para não
@@ -248,6 +250,10 @@ export default function GeoPage() {
   // (`scaleMeters: null` = voa sem mexer no zoom). É `state`, não ref, para a identidade
   // só mudar quando há pedido novo — cada troca dispara um voo (ver flyTo em GoogleMapPanel).
   const [focusRequest, setFocusRequest] = useState<FlyTarget | null>(null);
+  const [mobileSheetState, setMobileSheetState] = useState<{
+    panelKey: string;
+    state: BottomSheetSnapState;
+  } | null>(null);
   // Nó selecionado (clique, na árvore ou no mapa) e nó sob o mouse (hover, alvo
   // do balão de preview). São dois estados independentes: o hover é passageiro
   // e não mexe na seleção nem no painel de detalhe já aberto.
@@ -321,6 +327,27 @@ export default function GeoPage() {
     if (selectedResourceNode) return { kind: 'resource', node: selectedResourceNode };
     return null;
   }, [selectedSite, selectedResourceNode]);
+  const mobilePanelKey = !isMobile
+    ? null
+    : addressLookup
+      ? `address:${addressLookup.address.coordinates.join(',')}`
+      : detailOpen && detailTarget
+        ? detailTarget.kind === 'site'
+          ? `site:${detailTarget.site.id}`
+          : `resource:${detailTarget.node.id}`
+        : null;
+  const onMobileSheetSnapChange = useCallback(
+    (state: BottomSheetSnapState) => {
+      if (mobilePanelKey) setMobileSheetState({ panelKey: mobilePanelKey, state });
+    },
+    [mobilePanelKey],
+  );
+  const bottomSheetState =
+    mobilePanelKey === null
+      ? undefined
+      : mobileSheetState?.panelKey === mobilePanelKey
+        ? mobileSheetState.state
+        : null;
   // Catálogo de locais: sites e tipos são dezenas de linhas e alimentam os modais
   // de cadastro e detalhe. O acervo pesado (endereços, geometrias e a planta
   // inteira) não vem mais por aqui — cada nó da árvore traz a sua geometria, e o
@@ -410,9 +437,18 @@ export default function GeoPage() {
 
   // Mesma seleção, três origens — a origem só decide o zoom de chegada (ver selectNode):
   // busca e árvore aproximam até o item; clique no mapa mantém o enquadramento atual.
-  const selectNodeFromSearch = useCallback((node: GeoTreeNode) => selectNode(node, 'search'), [selectNode]);
-  const selectNodeFromTree = useCallback((node: GeoTreeNode) => selectNode(node, 'tree'), [selectNode]);
-  const selectNodeFromMap = useCallback((node: GeoTreeNode) => selectNode(node, 'map'), [selectNode]);
+  const selectNodeFromSearch = useCallback(
+    (node: GeoTreeNode) => selectNode(node, 'search'),
+    [selectNode],
+  );
+  const selectNodeFromTree = useCallback(
+    (node: GeoTreeNode) => selectNode(node, 'tree'),
+    [selectNode],
+  );
+  const selectNodeFromMap = useCallback(
+    (node: GeoTreeNode) => selectNode(node, 'map'),
+    [selectNode],
+  );
 
   // Clique fora de qualquer item (vazio do mapa) com uma seleção ativa: tira o
   // alfinete e fecha o detalhe, igual ao Google Maps. A hierarquia reaparece
@@ -423,6 +459,10 @@ export default function GeoPage() {
     setDraftAddress(null);
     setAddressLookup(null);
     setDropSimulation(null);
+    // Invalida o alvo da câmera junto com a seleção. Sem isto, uma mudança posterior
+    // na geometria do Bottom Sheet pode reutilizar o alvo antigo e puxar o mapa de volta.
+    setFocusRequest(null);
+    setMobileSheetState(null);
     setQuery('');
   }, []);
 
@@ -575,6 +615,7 @@ export default function GeoPage() {
             <AddressDetailPanel
               isMobile={isMobile}
               address={addressLookup.address}
+              onSnapChange={onMobileSheetSnapChange}
               onClose={onDeselect}
               onDropSimulation={onDropSimulation}
               searchBar={
@@ -595,6 +636,7 @@ export default function GeoPage() {
             <GeoDetailPanel
               isMobile={isMobile}
               target={detailTarget}
+              onSnapChange={onMobileSheetSnapChange}
               tab={detailTab}
               sites={sites}
               specById={specById}
@@ -671,12 +713,16 @@ export default function GeoPage() {
               }
               dropSimulation={dropSimulation}
               focusRequest={focusRequest}
+              bottomSheetState={bottomSheetState}
               balloon={balloon}
               onSelectNode={selectNodeFromMap}
               onHoverNode={handleHover}
               onCloseBalloon={() => handleHover(null)}
               onDraftAddress={onMapAddressFound}
               onDeselect={onDeselect}
+              selectionActive={
+                selectedNode !== null || addressLookup !== null || draftAddress !== null
+              }
               onViewportChange={handleViewportChange}
               clusterMarkers={clusterMarkers}
               autoLocateOnOpen={isMobile}
@@ -760,12 +806,14 @@ export function GoogleMapPanel({
   addressPoint,
   dropSimulation,
   focusRequest,
+  bottomSheetState,
   balloon,
   onSelectNode,
   onHoverNode,
   onCloseBalloon,
   onDraftAddress,
   onDeselect,
+  selectionActive,
   onViewportChange,
   clusterMarkers,
   autoLocateOnOpen = false,
@@ -782,12 +830,16 @@ export function GoogleMapPanel({
   dropSimulation?: DropSimulation | null;
   // Pedido de foco: para onde a câmera voa e com que zoom de chegada (ver flyTo).
   focusRequest?: FlyTarget | null;
+  // `undefined` = sem painel; `null` = painel mobile montando/sem medida; objeto =
+  // snap e altura estabilizados, necessários para aplicar a política de reenquadramento.
+  bottomSheetState?: BottomSheetSnapState | null;
   balloon: MapBalloon | null;
   onSelectNode: (node: GeoTreeNode) => void;
   onHoverNode: (node: GeoTreeNode | null) => void;
   onCloseBalloon: () => void;
   onDraftAddress: (address: DraftAddress) => void;
   onDeselect: () => void;
+  selectionActive?: boolean;
   onViewportChange: (bounds: MapBounds, scaleMeters: number) => void;
   clusterMarkers: boolean;
   // Só o mobile salta sozinho para a posição do dispositivo ao abrir (ver efeito de
@@ -796,6 +848,8 @@ export function GoogleMapPanel({
 }) {
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<GoogleMapInstance | null>(null);
+  const framedFocusRequestRef = useRef<FlyTarget | null>(null);
+  const framedBottomSheetStateRef = useRef<BottomSheetSnapState | undefined>(undefined);
   // Marcadores/polylines indexados por id do nó — permite reusar o mesmo objeto entre renders
   // (só atualizando ícone/posição quando algo muda) em vez de destruir e recriar tudo a cada
   // seleção, que é o que travava o mapa com muitos pontos expandidos.
@@ -840,6 +894,12 @@ export function GoogleMapPanel({
   // sempre a seleção e o callback de deseleção atuais (ver efeito abaixo).
   const onDeselectRef = useRef(onDeselect);
   const selectedNodeIdRef = useRef(selectedNodeId);
+  const selectionActiveRef = useRef(selectionActive ?? selectedNodeId !== null);
+  const manualNavigationHandledRef = useRef(false);
+  const activeMapPointersRef = useRef<Set<number>>(new Set());
+  const pinchNavigationHandledRef = useRef(false);
+  const pendingMapClickTimerRef = useRef<number | null>(null);
+  const mapClickGenerationRef = useRef(0);
   const nodeByIdRef = useRef<Map<string, GeoTreeNode>>(new Map());
   const [mapsReady, setMapsReady] = useState(false);
   const [baseLayerId, setBaseLayerId] = useState(BASE_MAP_LAYERS[0]?.id ?? 'roadmap');
@@ -867,6 +927,54 @@ export function GoogleMapPanel({
   }, [selectedNodeId]);
 
   useEffect(() => {
+    selectionActiveRef.current = selectionActive ?? selectedNodeId !== null;
+    if (selectionActiveRef.current) manualNavigationHandledRef.current = false;
+  }, [selectedNodeId, selectionActive]);
+
+  const clearPendingMapClick = useCallback(() => {
+    mapClickGenerationRef.current += 1;
+    if (pendingMapClickTimerRef.current !== null) {
+      window.clearTimeout(pendingMapClickTimerRef.current);
+      pendingMapClickTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectionActiveRef.current) clearPendingMapClick();
+  }, [selectedNodeId, selectionActive, clearPendingMapClick]);
+
+  const dismissSelectionForManualNavigation = useCallback(() => {
+    clearPendingMapClick();
+    closeBalloonRef.current();
+    if (mapRef.current) cancelFlight(mapRef.current);
+    flightActiveRef.current = false;
+    if (selectionActiveRef.current) {
+      if (manualNavigationHandledRef.current) return;
+      manualNavigationHandledRef.current = true;
+    }
+    // Idempotente também sem seleção: garante que um dblclick limpe qualquer rascunho
+    // que tenha sido criado pelo primeiro click antes de o navegador reconhecer o duplo.
+    onDeselectRef.current();
+  }, [clearPendingMapClick]);
+
+  useEffect(() => clearPendingMapClick, [clearPendingMapClick]);
+
+  useEffect(() => {
+    const releasePointer = (event: globalThis.PointerEvent) => {
+      if (event.pointerType !== 'touch') return;
+      activeMapPointersRef.current.delete(event.pointerId);
+      if (activeMapPointersRef.current.size < 2) pinchNavigationHandledRef.current = false;
+    };
+    window.addEventListener('pointerup', releasePointer, true);
+    window.addEventListener('pointercancel', releasePointer, true);
+    return () => {
+      window.removeEventListener('pointerup', releasePointer, true);
+      window.removeEventListener('pointercancel', releasePointer, true);
+      activeMapPointersRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
     onViewportChangeRef.current = onViewportChange;
   }, [onViewportChange]);
 
@@ -883,41 +991,52 @@ export function GoogleMapPanel({
           mapTypeControl: false,
           fullscreenControl: false,
           streetViewControl: false,
-          // Sem os controles nativos de zoom (+/−) e rotação: o canto inferior direito
-          // fica livre para o botão Minha localização (ver MapLocateButton). A navegação
-          // segue por scroll/pinça. `scaleControl` fica — a régua alimenta a leitura de
-          // metros do mapa (ver readGoogleScaleMeters).
+          // `greedy` reserva os gestos sobre o canvas ao mapa: um dedo faz pan e dois
+          // fazem pinch-to-zoom. Mantemos o renderer raster para preservar os estilos
+          // inline de POI. Os controles visuais de zoom/rotação continuam ocultos para
+          // preservar o botão Minha localização.
+          gestureHandling: 'greedy',
           zoomControl: false,
           rotateControl: false,
           scaleControl: true,
           styles: MAP_STYLES,
         });
         mapRef.current.addListener('click', (event: GoogleMapMouseEvent) => {
-          // Clique fora de qualquer item: o balão sai. Cliques em marker ou
-          // polyline não chegam aqui, então o balão só fecha no vazio do mapa.
-          closeBalloonRef.current();
-          // Com uma seleção ativa, o vazio do mapa desseleciona (tira o alfinete e
-          // fecha o detalhe) — igual ao Google Maps. Só sem seleção é que o clique
-          // larga um rascunho de endereço para cadastrar um site novo ali.
-          if (selectedNodeIdRef.current) {
-            onDeselectRef.current();
-            return;
-          }
           const lat = event.latLng.lat();
           const lng = event.latLng.lng();
-          reverseGeocode(lat, lng).then((address) => {
-            onDraftAddress(
-              address ?? {
-                street: 'Ponto selecionado no mapa',
-                city: 'Niteroi',
-                stateOrProvince: 'RJ',
-                country: 'BR',
-                coordinates: [lng, lat],
-                label: `Ponto selecionado [${lng.toFixed(5)}, ${lat.toFixed(5)}]`,
-              },
-            );
-          });
+          clearPendingMapClick();
+          const clickGeneration = mapClickGenerationRef.current;
+          pendingMapClickTimerRef.current = window.setTimeout(() => {
+            pendingMapClickTimerRef.current = null;
+            // Clique fora de qualquer item: o balão sai. Cliques em marker ou
+            // polyline não chegam aqui, então o balão só fecha no vazio do mapa.
+            closeBalloonRef.current();
+            if (selectionActiveRef.current) {
+              onDeselectRef.current();
+              return;
+            }
+            void reverseGeocode(lat, lng)
+              .catch(() => null)
+              .then((address) => {
+                if (mapClickGenerationRef.current !== clickGeneration) return;
+                onDraftAddress(
+                  address ?? {
+                    street: 'Ponto selecionado no mapa',
+                    city: 'Niteroi',
+                    stateOrProvince: 'RJ',
+                    country: 'BR',
+                    coordinates: [lng, lat],
+                    label: `Ponto selecionado [${lng.toFixed(5)}, ${lat.toFixed(5)}]`,
+                  },
+                );
+              });
+          }, MAP_SINGLE_CLICK_DELAY_MS);
         });
+        // Pan e duplo clique só são emitidos para gesto manual. Pinça é reconhecida
+        // diretamente pelos pointer events abaixo, sem observar `zoom_changed` — assim
+        // voos e reenquadramentos programáticos nunca são classificados como gesto.
+        mapRef.current.addListener('dragstart', dismissSelectionForManualNavigation);
+        mapRef.current.addListener('dblclick', dismissSelectionForManualNavigation);
         // Reporta a região visível e a escala atual para o chamador decidir se busca
         // infra passiva por viewport (ver PASSIVE_INFRA_MAX_SCALE_METERS).
         const reportViewport = () => {
@@ -953,7 +1072,7 @@ export function GoogleMapPanel({
         setMapsReady(true);
       })
       .catch(() => setMapsReady(false));
-  }, [onDraftAddress, selectedBaseLayer.googleMapTypeId]);
+  }, [dismissSelectionForManualNavigation, onDraftAddress, selectedBaseLayer.googleMapTypeId]);
 
   useEffect(() => {
     if (!mapsReady || !mapRef.current || !selectedBaseLayer) return;
@@ -1105,14 +1224,59 @@ export function GoogleMapPanel({
   // inteiro; nos `idle` intermediários do voo o `flightActiveRef` bloqueia a busca por
   // viewport, e o fim do voo força uma leitura única (ver reportViewportRef).
   useEffect(() => {
-    if (!mapsReady || !mapRef.current || !focusRequest) return;
+    if (!mapsReady || !mapRef.current) return;
+    if (!focusRequest) {
+      framedFocusRequestRef.current = null;
+      framedBottomSheetStateRef.current = bottomSheetState ?? undefined;
+      return;
+    }
+    if (bottomSheetState === null) return;
+
+    const previousFocus = framedFocusRequestRef.current;
+    const previousSheet = framedBottomSheetStateRef.current;
+    const focusChanged = previousFocus !== focusRequest;
+    const currentSheet = bottomSheetState;
+    let shouldFrame = focusChanged && currentSheet?.snap !== 'full';
+
+    if (!focusChanged && currentSheet) {
+      if (!previousSheet) {
+        // O painel abriu para um foco já existente.
+        shouldFrame = currentSheet.snap !== 'full';
+      } else {
+        const snapChanged = previousSheet.snap !== currentSheet.snap;
+        const transitionInvolvesFull =
+          previousSheet.snap === 'full' || currentSheet.snap === 'full';
+        const resizedAtFramableSnap =
+          !snapChanged &&
+          currentSheet.snap !== 'full' &&
+          previousSheet.heightPx !== currentSheet.heightPx;
+        shouldFrame = (snapChanged && !transitionInvolvesFull) || resizedAtFramableSnap;
+      }
+    }
+
+    // Atualiza a memória mesmo quando a política decide não voar (ex.: full → mid),
+    // para a próxima transição ser classificada a partir do estado realmente visível.
+    framedFocusRequestRef.current = focusRequest;
+    framedBottomSheetStateRef.current = currentSheet;
+    if (!shouldFrame) return;
+
+    const bottomSheetHeightPx = currentSheet?.heightPx;
+    const bottomInsetPx =
+      bottomSheetHeightPx === undefined
+        ? 0
+        : bottomInsetForOverlay(
+            mapRef.current.getDiv().getBoundingClientRect(),
+            bottomSheetHeightPx,
+            window.innerHeight,
+          );
     flyTo(mapRef.current, focusRequest, {
+      bottomInsetPx,
       onFlightChange: (active) => {
         flightActiveRef.current = active;
         if (!active) reportViewportRef.current();
       },
     });
-  }, [focusRequest, mapsReady]);
+  }, [bottomSheetState, focusRequest, mapsReady]);
 
   // Cancela qualquer voo em curso no desmonte, para os timers do encadeamento não
   // dispararem sobre um mapa já descartado.
@@ -1463,7 +1627,29 @@ export function GoogleMapPanel({
 
   return (
     <>
-      <div ref={mapEl} className="absolute inset-0 h-full w-full" />
+      <div
+        ref={mapEl}
+        data-testid="google-map-canvas"
+        className="absolute inset-0 h-full w-full"
+        onPointerDownCapture={(event) => {
+          if (event.pointerType !== 'touch') return;
+          activeMapPointersRef.current.add(event.pointerId);
+        }}
+        onPointerMoveCapture={(event) => {
+          // Dois dedos apenas apoiados não caracterizam zoom; o movimento real evita
+          // confundir um zoom programático simultâneo com uma pinça do usuário.
+          if (
+            event.pointerType === 'touch' &&
+            activeMapPointersRef.current.has(event.pointerId) &&
+            activeMapPointersRef.current.size >= 2 &&
+            !pinchNavigationHandledRef.current
+          ) {
+            pinchNavigationHandledRef.current = true;
+            dismissSelectionForManualNavigation();
+          }
+        }}
+        onWheelCapture={dismissSelectionForManualNavigation}
+      />
       <MapBaseLayerSelector value={baseLayerId} onChange={setBaseLayerId} />
       <MapLocateButton onLocate={handleDeviceLocate} />
       {balloon ? createPortal(<MapBalloonCard balloon={balloon} />, balloonNode) : null}
@@ -1578,6 +1764,7 @@ function GeoDetailPanel({
   onClose,
   onChanged,
   onCreateSubSite,
+  onSnapChange,
   searchBar,
 }: {
   isMobile: boolean;
@@ -1594,6 +1781,7 @@ function GeoDetailPanel({
   onClose: () => void;
   onChanged: () => Promise<void>;
   onCreateSubSite: () => void;
+  onSnapChange?: (state: BottomSheetSnapState) => void;
   searchBar?: ReactNode;
 }) {
   const eyebrow =
@@ -1670,11 +1858,13 @@ function GeoDetailPanel({
 
   if (isMobile) {
     return (
-      <BottomSheet onClose={onClose}>
+      <BottomSheet onClose={onClose} onSnapChange={onSnapChange}>
         {/* Foto, título e corpo rolam juntos dentro da folha (ver BottomSheet). */}
         <StreetViewHero marker={heroMarker} />
         {header}
-        <div className="min-w-0 overflow-x-hidden px-4 py-3">{body}</div>
+        {/* `overflow-hidden` nos dois eixos evita que `overflow-x-hidden` transforme
+            implicitamente Y em `auto` e roube o gesto touch do BottomSheet. */}
+        <div className="min-w-0 overflow-hidden px-4 py-3">{body}</div>
       </BottomSheet>
     );
   }

@@ -64,6 +64,7 @@ export function GeoSearchBar({
   const [resolving, setResolving] = useState(false);
   const debounceRef = useRef<number | undefined>(undefined);
   const requestTokenRef = useRef(0);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const term = query.trim();
@@ -109,12 +110,18 @@ export function GeoSearchBar({
     setAddressResults([]);
   };
 
+  const dismissMobileKeyboard = () => {
+    if (isMobile) inputRef.current?.blur();
+  };
+
   const selectNode = (node: GeoTreeNode) => {
+    dismissMobileKeyboard();
     onSelectNode(node);
     closeDropdown();
   };
 
   const selectAddress = async (prediction: AddressPrediction) => {
+    dismissMobileKeyboard();
     setResolving(true);
     const outcome = await resolveAddressByPlaceId(prediction.placeId);
     setResolving(false);
@@ -138,6 +145,7 @@ export function GeoSearchBar({
   const runFallbackAddressSearch = async () => {
     const term = query.trim();
     if (!term) return;
+    dismissMobileKeyboard();
     setResolving(true);
     const outcome = await geocodeAddress(term);
     setResolving(false);
@@ -198,6 +206,7 @@ export function GeoSearchBar({
       <div className="relative">
         <div className={shellClass}>
           <input
+            ref={inputRef}
             value={query}
             onChange={(event) => {
               onQueryChange(event.target.value);

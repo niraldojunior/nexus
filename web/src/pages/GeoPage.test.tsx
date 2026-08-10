@@ -16,6 +16,7 @@ const googleMocks = vi.hoisted(() => ({
   loadGoogleMaps: vi.fn<() => Promise<void>>(),
   mapAddListener: vi.fn(),
   mapAddListenerOnce: vi.fn(),
+  mapCtor: vi.fn(),
   mapGetBounds: vi.fn(),
   mapGetCenter: vi.fn(),
   mapGetDiv: vi.fn(() => document.createElement('div')),
@@ -78,7 +79,8 @@ function installGoogleMapsMock() {
             setPosition: googleMocks.infoWindowSetPosition,
           };
         }),
-        Map: vi.fn(function Map() {
+        Map: vi.fn(function Map(element: HTMLElement, options: Record<string, unknown>) {
+          googleMocks.mapCtor(element, options);
           return mapInstance;
         }),
         Marker: vi.fn(function Marker(options: Record<string, unknown>) {
@@ -135,6 +137,36 @@ describe('GoogleMapPanel', () => {
     expect(registration, `listener ${eventName}`).toBeDefined();
     return registration?.[1] as ((...args: unknown[]) => void) | undefined;
   };
+
+  it('permite pan com um dedo e mantém pinch zoom com dois dedos', async () => {
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNodeId={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onDeselect={vi.fn()}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />,
+    );
+
+    await waitFor(() => expect(googleMocks.mapCtor).toHaveBeenCalledOnce());
+    const options = googleMocks.mapCtor.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(options).toEqual(
+      expect.objectContaining({
+        gestureHandling: 'greedy',
+      }),
+    );
+    expect(options).not.toHaveProperty('renderingType');
+    expect(options).not.toHaveProperty('headingInteractionEnabled');
+    expect(options).not.toHaveProperty('tiltInteractionEnabled');
+  });
 
   it('cancela o voo e deseleciona endereço ativo quando o usuário arrasta o mapa', async () => {
     const onDeselect = vi.fn();

@@ -991,10 +991,11 @@ export function GoogleMapPanel({
           mapTypeControl: false,
           fullscreenControl: false,
           streetViewControl: false,
-          // Sem os controles nativos de zoom (+/−) e rotação: o canto inferior direito
-          // fica livre para o botão Minha localização (ver MapLocateButton). A navegação
-          // segue por scroll/pinça. `scaleControl` fica — a régua alimenta a leitura de
-          // metros do mapa (ver readGoogleScaleMeters).
+          // `greedy` reserva os gestos sobre o canvas ao mapa: um dedo faz pan e dois
+          // fazem pinch-to-zoom. Mantemos o renderer raster para preservar os estilos
+          // inline de POI. Os controles visuais de zoom/rotação continuam ocultos para
+          // preservar o botão Minha localização.
+          gestureHandling: 'greedy',
           zoomControl: false,
           rotateControl: false,
           scaleControl: true,

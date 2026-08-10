@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { DraftAddress } from '../../utils/googleMaps';
 import { BottomSheet, type BottomSheetSnapState } from '../../components/BottomSheet';
+import { OverlayScrollArea } from '../../components/OverlayScrollArea';
 import { StreetViewHero } from '../../components/StreetViewHero';
 import { addressStreetViewMarker } from '../../utils/streetViewMarker';
 import { CoordinateStreetView } from './CoordinateStreetView';
@@ -146,16 +147,18 @@ export function AddressDetailPanel({
     // `overflow-y: visible` computa para `auto` e a casca vira um segundo contêiner de
     // rolagem, ao lado do scroll do conteúdo — era o scroll duplo do painel. Quem rola
     // aqui é só o filho `overflow-y-auto`. Mesmo ajuste no painel de Site/Recurso.
-    <div className="hover-scroll-host relative flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock">
+    <div className="relative flex h-full w-[396px] max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock">
       {/* Barra de pesquisa ancorada no topo, flutuando sobre o conteúdo; a foto de
           Street View, o título e o corpo rolam por baixo dela — estilo Google Maps.
           Mesmo padrão no painel de Site/Recurso (ver GeoPage). */}
       {searchBar ? <div className="absolute inset-x-0 top-0 z-30">{searchBar}</div> : null}
-      <div className="hover-scroll min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
+      {/* Barra de rolagem sobreposta: a foto e as abas usam toda a largura do painel; o
+          polegar projeta por cima delas no hover (ver OverlayScrollArea). */}
+      <OverlayScrollArea className="overflow-x-hidden">
         <StreetViewHero marker={marker} />
         {header}
         <div className="px-3 py-3">{body}</div>
-      </div>
+      </OverlayScrollArea>
     </div>
   );
 }

@@ -1,7 +1,7 @@
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook } from '@testing-library/react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BottomSheet } from './BottomSheet';
+import { BottomSheet, useSheetSnapCommand } from './BottomSheet';
 
 // A folha renderiza a altura em `vh` do encaixe atual, então basta checar o `vh` no
 // style — independe do innerHeight. Mas a matemática do arraste é em px e usa
@@ -366,5 +366,48 @@ describe('BottomSheet', () => {
     const { outer, content } = renderSheet('mid');
     dragContent(content, 300, 303); // 3px < limiar de arraste
     expect(outer.style.height).toContain('48vh');
+  });
+
+  it('aplica o snapCommand só quando o seq muda — o comando inicial é ignorado no mount', () => {
+    const onClose = vi.fn();
+    const { container, rerender } = render(
+      <BottomSheet onClose={onClose} initialSnap="peek" snapCommand={{ snap: 'mid', seq: 1 }}>
+        <div>Conteudo</div>
+      </BottomSheet>,
+    );
+    const outer = container.firstChild as HTMLElement;
+    // Comando presente já no mount não é aplicado: a folha nasce no initialSnap (peek).
+    expect(outer.style.height).toContain('12vh');
+
+    rerender(
+      <BottomSheet onClose={onClose} initialSnap="peek" snapCommand={{ snap: 'mid', seq: 2 }}>
+        <div>Conteudo</div>
+      </BottomSheet>,
+    );
+    // Um seq novo leva a folha ao encaixe pedido.
+    expect(outer.style.height).toContain('48vh');
+  });
+});
+
+describe('useSheetSnapCommand', () => {
+  it('não emite comando no mount e traduz cada incremento do minimizeSignal em peek', () => {
+    const { result, rerender } = renderHook(
+      ({ signal }: { signal?: number }) => useSheetSnapCommand(signal),
+      { initialProps: { signal: 0 } },
+    );
+    expect(result.current.snapCommand).toBeUndefined();
+
+    rerender({ signal: 1 });
+    expect(result.current.snapCommand).toEqual({ snap: 'peek', seq: 1 });
+  });
+
+  it('requestSnap emite o encaixe pedido com seq crescente', () => {
+    const { result } = renderHook(() => useSheetSnapCommand());
+
+    act(() => result.current.requestSnap('mid'));
+    expect(result.current.snapCommand).toEqual({ snap: 'mid', seq: 1 });
+
+    act(() => result.current.requestSnap('full'));
+    expect(result.current.snapCommand).toEqual({ snap: 'full', seq: 2 });
   });
 });

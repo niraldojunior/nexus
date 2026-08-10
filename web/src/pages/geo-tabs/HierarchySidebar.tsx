@@ -3,11 +3,7 @@ import { GitBranch, ListTree, RefreshCw, Settings } from 'lucide-react';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import type { GeoTree } from '../../hooks/useGeoTree';
 import { useIsMobile } from '../../hooks/useIsMobile';
-import {
-  DOCK_WIDTH_CLASS,
-  DOCK_SEARCH_CLEARANCE_PT_CLASS,
-  DOCK_SEARCH_CLEARANCE_TOP_CLASS,
-} from './dock';
+import { DOCK_WIDTH_CLASS, DOCK_SEARCH_CLEARANCE_PT_CLASS } from './dock';
 import { HierarchyTreeView } from './HierarchyTreeView';
 import { HierarchyComboView } from './HierarchyComboView';
 
@@ -65,19 +61,15 @@ export function HierarchySidebar({
 
   return (
     <>
-      {isMobile ? (
-        <div
-          className="absolute inset-0 z-30 bg-black/40"
-          onClick={() => onCollapsedChange(true)}
-          aria-hidden="true"
-        />
-      ) : null}
       <aside
         className={
           isMobile
-            ? // No mobile o drawer nasce abaixo da barra de pesquisa (que fica sobreposta
-              // em z-50), para o topo do painel não ficar escondido sob ela.
-              `hover-scroll-host absolute bottom-0 left-0 ${DOCK_SEARCH_CLEARANCE_TOP_CLASS} z-40 flex ${DOCK_WIDTH_CLASS} max-w-[85vw] flex-col border-r border-app-border bg-white shadow-dock`
+            ? // No mobile o painel cobre a página inteira, com fundo branco: a barra de
+              // pesquisa fica sobreposta em z-50, e o pt reserva o espaço dela para o
+              // conteúdo (título Hierarquia) nascer logo abaixo — a faixa sob a barra é
+              // branca do painel, não transparência sobre o mapa. Como cobre tudo, não há
+              // scrim nem "fora" para clicar: fechar é o X da barra ou selecionar um nó.
+              `hover-scroll-host absolute inset-0 z-40 flex w-full flex-col bg-white ${DOCK_SEARCH_CLEARANCE_PT_CLASS}`
             : // No desktop a barra flutua sobre o topo da doca; o pt reserva o espaço dela
               // para o título Hierarquia nascer logo abaixo, sem linha divisória entre os dois.
               `hover-scroll-host flex h-full ${DOCK_WIDTH_CLASS} max-w-[80vw] shrink-0 flex-col border-r border-app-border bg-white ${DOCK_SEARCH_CLEARANCE_PT_CLASS} shadow-dock`

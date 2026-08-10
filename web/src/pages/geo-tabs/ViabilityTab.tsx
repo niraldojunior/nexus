@@ -7,7 +7,8 @@ import {
   type ViabilityCandidate,
 } from '../../hooks/useAddressViability';
 import { computeWalkRoute, type LngLat } from '../../utils/googleRoutes';
-import { formatDropDistance } from '../../utils/dropSimulation';
+import { formatDropDistance, stitchDropPath } from '../../utils/dropSimulation';
+import { shortSubstatus } from '../../utils/substatus';
 
 // Simulação do drop entre o endereço e a CDO escolhida, para o mapa desenhar.
 // `approximate` marca o traçado que não veio da rota a pé — é o segmento direto entre
@@ -34,8 +35,13 @@ export type ViabilityTabProps = {
 // e o acervo de caixas tem `inactive`, que cairia sem rótulo nem classe. Aqui o que
 // interessa são as três situações que a operação reconhece — e a cor de cada uma já vem
 // do próprio ícone (ver resourceIcon.ts), igual à árvore de hierarquia.
-const statusLabel = (status: string | undefined): string =>
-  status === 'active' ? 'Ativa' : status === 'suspended' ? 'Suspensa' : 'Indefinida';
+const statusLabel = (status: string | undefined, substatus?: string): string => {
+  if (status === 'active') return 'Ativa';
+  // Caixa suspensa carrega o motivo (ds_estado_controle na origem) no substatus: mostrá-lo
+  // entre parênteses diz por que ela não está viável, na versão curta (ver shortSubstatus).
+  if (status === 'suspended') return substatus ? `Suspensa (${shortSubstatus(substatus)})` : 'Suspensa';
+  return 'Indefinida';
+};
 
 const formatWalkTime = (seconds: number | undefined): string | null => {
   if (!seconds) return null;
@@ -98,7 +104,11 @@ export function ViabilityTab({ origin, onSimulate }: ViabilityTabProps) {
           resolution = (async (): Promise<DropResolution> => {
             const route = await computeWalkRoute(origin, candidate.point);
             return {
-              path: route?.path ?? [origin, candidate.point],
+              // Costura o alfinete e a CDO nas pontas do traçado da rua: a Routes API
+              // devolve a polyline encaixada na via, sem os pontos reais (ver stitchDropPath).
+              path: route
+                ? stitchDropPath(origin, route.path, candidate.point)
+                : [origin, candidate.point],
               distanceMeters: route?.distanceMeters ?? candidate.distanceMeters,
               approximate: !route,
             };
@@ -193,8 +203,10 @@ export function ViabilityTab({ origin, onSimulate }: ViabilityTabProps) {
                   <span className="block truncate text-[0.85rem] font-medium leading-tight">
                     {candidate.node.label}
                   </span>
-                  <span className="block truncate text-[0.72rem] text-app-muted">
-                    {statusLabel(candidate.node.status)}
+                  {/* Sem `truncate`: o motivo do substatus pode ser longo e deve quebrar em
+                      mais de uma linha em vez de ser cortado (ver shortSubstatus). */}
+                  <span className="block break-words text-[0.72rem] leading-tight text-app-muted">
+                    {statusLabel(candidate.node.status, candidate.node.detail?.substatus)}
                     {walkTime ? ` · ${walkTime}` : null}
                     {candidate.mode === 'straight' ? ' · linha reta' : null}
                   </span>

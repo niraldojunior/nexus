@@ -93,6 +93,39 @@ describe('ViabilityTab', () => {
     expect(items[1]).toHaveAttribute('aria-pressed', 'false');
   });
 
+  it('mostra o motivo do substatus entre parênteses numa CDO suspensa', () => {
+    const base = candidate('CDOE-9 (FSA)', 'suspended', 150, 'walk');
+    const withReason: ViabilityCandidate = {
+      ...base,
+      node: { ...base.node, detail: { substatus: 'OBRA DESCARTADA - ÁREA DE RISCO' } },
+    };
+    useAddressViability.mockReturnValue(ready([withReason]));
+
+    render(<ViabilityTab origin={ORIGIN} onSimulate={vi.fn()} />);
+
+    // A fase ("OBRA DESCARTADA - ") é descartada e o motivo entra reduzido.
+    expect(screen.getByText(/Suspensa \(Área de Risco\)/)).toBeInTheDocument();
+  });
+
+  it('reduz o motivo longo e deixa a linha de status quebrar (sem truncate)', () => {
+    const base = candidate('CDOI-1219 (FSA)', 'suspended', 210, 'walk');
+    const withReason: ViabilityCandidate = {
+      ...base,
+      node: {
+        ...base.node,
+        detail: { substatus: 'OBRA IMPEDIDA - INFRAESTR. DE TERCEIRO INADEQUADA' },
+      },
+    };
+    useAddressViability.mockReturnValue(ready([withReason]));
+
+    render(<ViabilityTab origin={ORIGIN} onSimulate={vi.fn()} />);
+
+    const statusLine = screen.getByText(/Suspensa \(Infra\. de Terceiro\)/);
+    expect(statusLine).toBeInTheDocument();
+    // A linha pode quebrar em mais de uma linha em vez de cortar.
+    expect(statusLine).not.toHaveClass('truncate');
+  });
+
   it('marca com "linha reta" e "≈" a CDO sem rota a pé', async () => {
     const onSimulate = vi.fn();
     useAddressViability.mockReturnValue(ready([candidate('CDOE-2401', 'active', 287, 'straight')]));
@@ -128,6 +161,27 @@ describe('ViabilityTab', () => {
     await userEvent.click(screen.getByRole('button', { name: /CDOE-3701/ }));
     await waitFor(() => expect(onSimulate).toHaveBeenCalledTimes(2));
     expect(computeWalkRoute).toHaveBeenCalledTimes(1);
+  });
+
+  it('costura o alfinete e a CDO nas pontas do traçado vindo encaixado na rua', async () => {
+    // A rota da Routes API vem sem passar pela origem (fachada) nem pela CDO.
+    const roadPath: Array<[number, number]> = [
+      [-43.1078, -22.8986],
+      [-43.1082, -22.8989],
+    ];
+    computeWalkRoute.mockResolvedValue({ distanceMeters: 118, durationSeconds: 95, path: roadPath });
+    useAddressViability.mockReturnValue(ready([candidate('CDOE-3701', 'active', 118, 'walk')]));
+    const onSimulate = vi.fn();
+
+    render(<ViabilityTab origin={ORIGIN} onSimulate={onSimulate} />);
+
+    await waitFor(() => expect(onSimulate).toHaveBeenCalled());
+    const calls = onSimulate.mock.calls;
+    const simulation = calls[calls.length - 1][0] as { path: Array<[number, number]> };
+    // O traçado nasce no alfinete e termina no ponto da CDO, sem vão nas pontas.
+    expect(simulation.path[0]).toEqual(ORIGIN);
+    expect(simulation.path[simulation.path.length - 1]).toEqual([-43.108, -22.899]);
+    expect(simulation.path).toHaveLength(4);
   });
 
   it('auto-seleciona a CDO de linha reta com o segmento direto, sem chamar a API', async () => {

@@ -114,6 +114,9 @@ declare global {
   interface Window {
     google?: GoogleMapsApi;
     __nexusGoogleMapsPromise?: Promise<void>;
+    // Callback global do padrão `loading=async` do Google: a API o chama quando o core
+    // termina de carregar (ver loadGoogleMaps).
+    __nexusGoogleMapsReady?: () => void;
   }
 }
 
@@ -164,11 +167,17 @@ export function loadGoogleMaps(apiKey: string): Promise<void> {
   if (window.__nexusGoogleMapsPromise) return window.__nexusGoogleMapsPromise;
 
   window.__nexusGoogleMapsPromise = new Promise((resolve, reject) => {
+    // Padrão recomendado pelo Google: `loading=async` + `callback`. Sem eles, o console
+    // acusa "loaded directly without loading=async". O callback global é registrado ANTES
+    // de anexar o script; a API o chama quando o core carrega, e ele resolve a promise e se
+    // remove do window. `defer` sai — é ignorado (e desnecessário) num script `async`.
+    window.__nexusGoogleMapsReady = () => {
+      resolve();
+      delete window.__nexusGoogleMapsReady;
+    };
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&loading=async&callback=__nexusGoogleMapsReady`;
     script.async = true;
-    script.defer = true;
-    script.onload = () => resolve();
     script.onerror = () => reject(new Error('Falha ao carregar Google Maps.'));
     document.head.appendChild(script);
   });

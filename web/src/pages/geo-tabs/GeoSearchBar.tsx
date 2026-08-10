@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ListTree, MapPin, RefreshCw, Search, X } from 'lucide-react';
+import { MapPin, RefreshCw, Search, X } from 'lucide-react';
 import { fetchTreeSearch, type GeoTreeNode } from '../../services/geoTreeApi';
 import {
   fetchAddressPredictions,
@@ -10,6 +10,7 @@ import {
 } from '../../utils/googleMaps';
 import NexusMark from '../../components/NexusMark';
 import { DOCK_SEARCH_WIDTH_CLASS } from './dock';
+import { HierarchyIcon } from './HierarchyIcon';
 import { NodeIcon } from './HierarchyTreeView';
 
 export type AddressSearchError = { term: string; status: string; message: string };
@@ -261,7 +262,7 @@ export function GeoSearchBar({
   // a borda de baixo, para caixa e sugestões virarem um componente só (estilo Google
   // Maps).
   const shellBase =
-    'flex h-12 items-center border border-app-border bg-white shadow-soft transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15';
+    'flex h-12 items-center border border-app-border bg-white shadow-map-control transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15';
   const dropdownRadiusClass = 'rounded-b-2xl';
   const shellClass = `${shellBase} ${showDropdown ? 'rounded-t-2xl border-b-0' : 'rounded-2xl'}`;
 
@@ -291,14 +292,14 @@ export function GeoSearchBar({
               className="ml-1.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition hover:bg-black/5"
               aria-label="Abrir menu principal"
             >
-              <NexusMark className="h-5 w-5" />
+              <NexusMark className="h-8 w-8" />
             </button>
           ) : null}
           {selection ? (
             <button
               type="button"
               onClick={editSelection}
-              className={`${showMenuMark ? 'ml-1' : 'ml-2'} flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-app-accent-border bg-app-accent-soft px-2.5 py-1.5 text-left text-[0.86rem] text-app-text transition hover:brightness-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-app-focus/30`}
+              className={`${showMenuMark ? 'ml-1' : 'ml-2'} flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-app-accent-border bg-app-accent-soft px-2.5 py-1.5 text-left text-[0.92rem] text-app-text transition hover:brightness-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-app-focus/30`}
               aria-label={`Editar seleção ${selection.type === 'node' ? selection.node.label : selection.address.label}`}
               title={selection.type === 'node' ? selection.node.label : selection.address.label}
             >
@@ -336,7 +337,7 @@ export function GeoSearchBar({
                 if (query.trim()) setOpen(true);
               }}
               onKeyDown={handleKeyDown}
-              className={`h-full min-w-0 flex-1 rounded-l-2xl bg-transparent ${showMenuMark ? 'pl-2' : 'pl-4'} pr-2 text-[15px] text-app-text placeholder:text-app-muted focus:outline-none`}
+              className={`h-full min-w-0 flex-1 rounded-l-2xl bg-transparent ${showMenuMark ? 'pl-2' : 'pl-4'} pr-2 text-[16px] text-app-text placeholder:text-app-muted focus:outline-none`}
               placeholder="Pesquisar local, recurso ou endereço"
               id="geo-search-input"
               autoComplete="off"
@@ -367,13 +368,16 @@ export function GeoSearchBar({
               <X className="h-4 w-4" />
             </button>
           ) : onToggleHierarchy ? (
+            // Fundo transparente (o slot fica leve, sem moldura); quem carrega a leitura é
+            // o ícone próprio, colorido, de "lista em árvore" (ver HierarchyIcon).
             <button
               type="button"
               onClick={onToggleHierarchy}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-app-muted transition hover:bg-black/5"
+              className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-black/5"
               aria-label="Abrir hierarquia"
+              title="Hierarquia"
             >
-              <ListTree className="h-4 w-4" />
+              <HierarchyIcon className="h-6 w-6" />
             </button>
           ) : null}
           <span className="mx-1 h-6 w-px bg-app-border" />
@@ -395,7 +399,7 @@ export function GeoSearchBar({
         {showDropdown ? (
           <div
             onMouseDown={(event) => event.preventDefault()}
-            className={`absolute left-0 right-0 top-full z-40 max-h-80 overflow-y-auto border border-t-0 border-app-border bg-white shadow-soft-lg ${dropdownRadiusClass}`}
+            className={`absolute left-0 right-0 top-full z-40 max-h-80 overflow-y-auto border border-t-0 border-app-border bg-white shadow-map-control-lg ${dropdownRadiusClass}`}
           >
             {nodeResults.length ? (
               <div>

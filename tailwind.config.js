@@ -40,6 +40,11 @@ export default {
         // Sombra do dock (hierarquia/detalhe) sobre o mapa de fundo — estilo Google
         // Maps: mais forte que `soft`, para se destacar do canvas cinza-claro do mapa.
         dock: '3px 0 18px rgba(15, 23, 42, 0.22)',
+        // Controles flutuantes sobre o mapa (busca, MUB, GPS) — sombra curta e escura,
+        // no padrão do Google Maps: o `soft` (6 % de alfa, 20 px de desfoque) some sobre
+        // o canvas claro do mapa e confunde o controle com o próprio mapa.
+        'map-control': '0 1px 4px -1px rgba(15, 23, 42, 0.32)',
+        'map-control-lg': '0 2px 10px -1px rgba(15, 23, 42, 0.35)',
       },
       fontFamily: {
         sans: ['"Aptos"', '"Segoe UI"', '"SF Pro Text"', '"Helvetica Neue"', 'Arial', 'sans-serif'],

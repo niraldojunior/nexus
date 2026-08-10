@@ -135,7 +135,7 @@ export function MapBaseLayerSelector({
           aria-label={`Trocar base cartográfica para ${alternateLayer.label}`}
           title={`Trocar para ${alternateLayer.label}`}
           onClick={() => onChange(alternateLayer.id)}
-          className="rounded-[10px] border border-app-border bg-white p-1 shadow-soft-lg transition hover:border-app-accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
+          className="rounded-[10px] border border-app-border bg-white p-1 shadow-map-control transition hover:border-app-accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
         >
           <LayerPreview layer={alternateLayer} showLabel />
         </button>
@@ -153,7 +153,7 @@ export function MapBaseLayerSelector({
         aria-controls={open ? listboxId : undefined}
         title={`Base cartográfica: ${selectedLayer.label}`}
         onClick={() => setOpen((current) => !current)}
-        className="rounded-[10px] border border-app-border bg-white p-1 shadow-soft-lg transition hover:border-app-accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
+        className="rounded-[10px] border border-app-border bg-white p-1 shadow-map-control transition hover:border-app-accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
       >
         <LayerPreview layer={selectedLayer} />
       </button>
@@ -163,7 +163,7 @@ export function MapBaseLayerSelector({
           id={listboxId}
           role="listbox"
           aria-label="Opções de base cartográfica"
-          className="absolute bottom-[calc(100%+8px)] left-0 flex gap-1.5 rounded-[12px] border border-app-border bg-white p-1.5 shadow-soft-lg"
+          className="absolute bottom-[calc(100%+8px)] left-0 flex gap-1.5 rounded-[12px] border border-app-border bg-white p-1.5 shadow-map-control-lg"
         >
           {options.map((option) => {
             const selected = option.id === selectedLayer.id;

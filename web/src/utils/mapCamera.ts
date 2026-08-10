@@ -20,6 +20,11 @@ export type FlyTarget = {
   // Escala-alvo na régua do mapa (m). `null` = voa sem mexer no zoom (ex.: clique num
   // marcador já visível — o item está na tela, aproximar roubaria o enquadramento).
   scaleMeters: number | null;
+  // Extensão (m) que deve caber na tela ao pousar — o maior lado do que se quer enquadrar
+  // (ex.: o traçado inteiro do drop, ver dropSimulation.pathSpanMeters). Ao contrário de
+  // `scaleMeters`, este ajuste PODE AFASTAR: é o único caso em que o zoom de chegada não
+  // é limitado por `Math.max(zoomAtual, …)`. Ignorado quando ausente ou ≤ 0.
+  fitSpanMeters?: number;
 };
 
 export type FlyOptions = {
@@ -77,26 +82,41 @@ type FlightState = {
 // descartado. A instância do Google é objeto estável, boa chave.
 const flights = new WeakMap<GoogleMapInstance, FlightState>();
 
-// Zoom de chegada: só aproxima. `scaleMeters: null` mantém o zoom atual. Sempre inteiro
-// (o fracionário de `zoomForScaleMeters` borraria o mapa — ver mapScale).
-function arrivalZoomFor(target: FlyTarget, currentZoom: number, lat: number): number {
+// Zoom (inteiro) que faz `spanMeters` caber em ~FIT_FRACTION do viewport. Base comum do
+// zoom de partida (enquadrar origem+destino antes de viajar) e do enquadramento de chegada
+// por `fitSpanMeters`. Sempre inteiro (o fracionário borraria o mapa raster — ver mapScale).
+function zoomToFit(spanMeters: number, lat: number, viewportPx: number): number {
+  const targetMetersPerPixel = spanMeters / (FIT_FRACTION * viewportPx);
+  // metersPerPixel(0, lat) = C (constante da projeção na latitude): 2^z = C / mppAlvo.
+  return Math.floor(Math.log2(metersPerPixel(0, lat) / targetMetersPerPixel));
+}
+
+// Zoom de chegada. `fitSpanMeters > 0` enquadra a extensão pedida na área DESCOBERTA
+// (viewport menos o painel) e PODE AFASTAR. Senão, `scaleMeters` só aproxima
+// (`Math.max` com o atual); `scaleMeters: null` mantém o zoom. Sempre inteiro.
+function arrivalZoomFor(
+  target: FlyTarget,
+  currentZoom: number,
+  lat: number,
+  fitViewportPx: number,
+): number {
+  if (target.fitSpanMeters !== undefined && target.fitSpanMeters > 0) {
+    return clamp(zoomToFit(target.fitSpanMeters, lat, fitViewportPx), MIN_FLIGHT_ZOOM, 21);
+  }
   if (target.scaleMeters === null) return currentZoom;
   return Math.max(currentZoom, Math.round(zoomForScaleMeters(target.scaleMeters, lat)));
 }
 
-// Zoom (inteiro) que enquadra os dois pontos em ~FIT_FRACTION do viewport, para o salto
-// nascer com origem e destino à vista antes de viajar. Nunca abaixo de MIN_FLIGHT_ZOOM
-// nem acima de `currentZoom - 1` (afastar ao menos um passo).
+// Zoom que enquadra os dois pontos em ~FIT_FRACTION do viewport, para o salto nascer com
+// origem e destino à vista antes de viajar. Nunca abaixo de MIN_FLIGHT_ZOOM nem acima de
+// `currentZoom - 1` (afastar ao menos um passo).
 function departureZoomFor(
   distanceMeters: number,
   lat: number,
   viewportPx: number,
   currentZoom: number,
 ): number {
-  const targetMetersPerPixel = distanceMeters / (FIT_FRACTION * viewportPx);
-  // metersPerPixel(0, lat) = C (constante da projeção na latitude): 2^z = C / mppAlvo.
-  const raw = Math.log2(metersPerPixel(0, lat) / targetMetersPerPixel);
-  return clamp(Math.floor(raw), MIN_FLIGHT_ZOOM, Math.max(1, currentZoom - 1));
+  return clamp(zoomToFit(distanceMeters, lat, viewportPx), MIN_FLIGHT_ZOOM, Math.max(1, currentZoom - 1));
 }
 
 // Encerra qualquer voo em curso neste mapa e abre um novo "turno" (token). Retorna o
@@ -184,32 +204,41 @@ export function flyTo(map: GoogleMapInstance, target: FlyTarget, options?: FlyOp
   const [lng, lat] = target.point;
   const { state, token } = beginFlight(map, options);
   const div = map.getDiv?.();
+  const mapWidth = div?.clientWidth || FALLBACK_VIEWPORT_PX;
   const mapHeight = div?.clientHeight || FALLBACK_VIEWPORT_PX;
   const bottomInsetPx = clamp(options?.bottomInsetPx ?? 0, 0, mapHeight);
   const offsetStage = () => map.panBy(0, bottomInsetPx / 2);
+
+  // Menor lado do viewport, para medir o salto em pixels. `fitViewportPx` desconta o
+  // painel (altura coberta), para o enquadramento por `fitSpanMeters` caber na área ainda
+  // visível — o `offsetStage` reposiciona o centro depois de pousar.
+  const viewportPx = Math.min(mapWidth, mapHeight) || FALLBACK_VIEWPORT_PX;
+  const fitViewportPx =
+    Math.max(1, Math.min(mapWidth, mapHeight - bottomInsetPx)) || FALLBACK_VIEWPORT_PX;
 
   const center = map.getCenter();
   const currentZoom = map.getZoom();
   // Sem estado de câmera ainda: posiciona direto, sem voo encadeado.
   if (!center || currentZoom === undefined || currentZoom === null) {
     map.panTo({ lat, lng });
-    if (target.scaleMeters !== null) {
+    if (target.fitSpanMeters !== undefined && target.fitSpanMeters > 0) {
+      map.setZoom(clamp(zoomToFit(target.fitSpanMeters, lat, fitViewportPx), MIN_FLIGHT_ZOOM, 21));
+    } else if (target.scaleMeters !== null) {
       map.setZoom(Math.round(zoomForScaleMeters(target.scaleMeters, lat)));
     }
     if (bottomInsetPx > 0) offsetStage();
     return;
   }
 
-  const arrivalZoom = arrivalZoomFor(target, currentZoom, lat);
+  const arrivalZoom = arrivalZoomFor(target, currentZoom, lat, fitViewportPx);
 
-  const viewportPx =
-    Math.min(div?.clientWidth || FALLBACK_VIEWPORT_PX, div?.clientHeight || FALLBACK_VIEWPORT_PX) ||
-    FALLBACK_VIEWPORT_PX;
   const distanceMeters = haversineMeters([center.lng(), center.lat()], target.point);
   const travelPx = distanceMeters / metersPerPixel(currentZoom, lat);
 
   if (travelPx <= NEAR_TRAVEL_FRACTION * viewportPx) {
-    if (arrivalZoom > currentZoom) {
+    // `!==` (não `>`): um enquadramento por `fitSpanMeters` pode precisar AFASTAR, e o
+    // ramo perto também tem de aplicar esse zoom menor.
+    if (arrivalZoom !== currentZoom) {
       const stages = [() => map.panTo({ lat, lng }), () => map.setZoom(arrivalZoom)];
       if (bottomInsetPx > 0) stages.push(offsetStage);
       runStages(map, state, token, stages);

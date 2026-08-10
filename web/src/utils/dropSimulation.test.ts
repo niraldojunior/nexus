@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { dropLabelDataUrl, formatDropDistance, pathMidpoint } from './dropSimulation';
+import {
+  dropLabelDataUrl,
+  formatDropDistance,
+  pathMidpoint,
+  pathSpanMeters,
+  stitchDropPath,
+} from './dropSimulation';
+import { haversineMeters, type LngLat } from './googleRoutes';
 
 describe('pathMidpoint', () => {
   it('devolve o meio do comprimento, não o vértice do meio', () => {
@@ -58,5 +65,52 @@ describe('dropLabelDataUrl', () => {
     const url = dropLabelDataUrl('123 m');
     expect(url.startsWith('data:image/svg+xml;charset=UTF-8,')).toBe(true);
     expect(decodeURIComponent(url)).toContain('123 m');
+  });
+});
+
+describe('stitchDropPath', () => {
+  const origin: LngLat = [-43.1, -22.9];
+  const destination: LngLat = [-43.102, -22.902];
+
+  it('prefixa a origem e sufixa o destino quando as pontas da rota estão deslocadas', () => {
+    // A rota vem encaixada na via, sem passar pela fachada nem pela caixa.
+    const routePath: LngLat[] = [
+      [-43.1005, -22.9004],
+      [-43.1015, -22.9016],
+    ];
+    const path = stitchDropPath(origin, routePath, destination);
+    expect(path[0]).toEqual(origin);
+    expect(path[path.length - 1]).toEqual(destination);
+    expect(path).toHaveLength(4);
+  });
+
+  it('não duplica o vértice quando a ponta da rota já coincide com o ponto real', () => {
+    const routePath: LngLat[] = [origin, [-43.101, -22.901], destination];
+    const path = stitchDropPath(origin, routePath, destination);
+    expect(path[0]).toEqual(origin);
+    expect(path[path.length - 1]).toEqual(destination);
+    // As pontas coincidentes são puladas: origem + meio + destino, sem repetição.
+    expect(path).toHaveLength(3);
+  });
+
+  it('devolve o segmento direto quando a rota vem vazia', () => {
+    expect(stitchDropPath(origin, [], destination)).toEqual([origin, destination]);
+  });
+});
+
+describe('pathSpanMeters', () => {
+  it('mede o maior lado do bbox do traçado', () => {
+    // ~0,02° de longitude na latitude -22.9 é bem maior que ~0,001° de latitude.
+    const span = pathSpanMeters([
+      [-43.1, -22.9],
+      [-43.08, -22.901],
+    ]);
+    const width = haversineMeters([-43.1, -22.9], [-43.08, -22.9]);
+    expect(span).toBeCloseTo(width, 0);
+  });
+
+  it('devolve 0 para traçado vazio ou de ponto único', () => {
+    expect(pathSpanMeters([])).toBe(0);
+    expect(pathSpanMeters([[-43.1, -22.9]])).toBe(0);
   });
 });

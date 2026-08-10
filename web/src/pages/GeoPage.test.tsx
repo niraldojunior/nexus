@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GoogleMapPanel } from './GeoPage';
+import type { GeoTreeNode } from '../services/geoTreeApi';
 
 const googleMocks = vi.hoisted(() => ({
   cancelFlight: vi.fn(),
@@ -117,6 +118,16 @@ function installGoogleMapsMock() {
   });
 }
 
+// Nó de seleção mínimo, com geometria — o suficiente para o painel considerar que há algo
+// aberto (selectionActive) e para o alfinete ter um ponto.
+const selectionNode = (id = 'site:1'): GeoTreeNode => ({
+  id,
+  kind: 'site',
+  label: 'Estação',
+  hasChildren: false,
+  geometry: { type: 'Point', coordinates: [-43.1, -22.9] },
+});
+
 afterEach(() => {
   vi.useRealTimers();
   cleanup();
@@ -142,7 +153,7 @@ describe('GoogleMapPanel', () => {
     render(
       <GoogleMapPanel
         nodes={[]}
-        selectedNodeId={null}
+        selectedNode={null}
         draftAddress={null}
         focusRequest={null}
         balloon={null}
@@ -150,7 +161,6 @@ describe('GoogleMapPanel', () => {
         onHoverNode={vi.fn()}
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
-        onDeselect={vi.fn()}
         onViewportChange={vi.fn()}
         clusterMarkers={false}
       />,
@@ -168,12 +178,12 @@ describe('GoogleMapPanel', () => {
     expect(options).not.toHaveProperty('tiltInteractionEnabled');
   });
 
-  it('cancela o voo e deseleciona endereço ativo quando o usuário arrasta o mapa', async () => {
-    const onDeselect = vi.fn();
+  it('mantém a seleção ao arrastar o mapa: cancela o voo e avisa navegação manual, sem desselecionar', async () => {
+    const onManualNavigation = vi.fn();
     render(
       <GoogleMapPanel
         nodes={[]}
-        selectedNodeId={null}
+        selectedNode={selectionNode()}
         selectionActive
         draftAddress={null}
         focusRequest={{ point: [-43.1, -22.9], scaleMeters: 50 }}
@@ -183,7 +193,7 @@ describe('GoogleMapPanel', () => {
         onHoverNode={vi.fn()}
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
-        onDeselect={onDeselect}
+        onManualNavigation={onManualNavigation}
         onViewportChange={vi.fn()}
         clusterMarkers={false}
       />,
@@ -193,15 +203,15 @@ describe('GoogleMapPanel', () => {
     mapListener('dragstart')?.();
 
     expect(googleMocks.cancelFlight).toHaveBeenCalledOnce();
-    expect(onDeselect).toHaveBeenCalledOnce();
+    expect(onManualNavigation).toHaveBeenCalledOnce();
   });
 
-  it('cancela o voo e limpa estado transitório mesmo quando não há seleção', async () => {
-    const onDeselect = vi.fn();
+  it('cancela o voo ao arrastar sem seleção, mas não aciona navegação manual', async () => {
+    const onManualNavigation = vi.fn();
     render(
       <GoogleMapPanel
         nodes={[]}
-        selectedNodeId={null}
+        selectedNode={null}
         selectionActive={false}
         draftAddress={null}
         focusRequest={null}
@@ -210,7 +220,7 @@ describe('GoogleMapPanel', () => {
         onHoverNode={vi.fn()}
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
-        onDeselect={onDeselect}
+        onManualNavigation={onManualNavigation}
         onViewportChange={vi.fn()}
         clusterMarkers={false}
       />,
@@ -220,12 +230,11 @@ describe('GoogleMapPanel', () => {
     mapListener('dragstart')?.();
 
     expect(googleMocks.cancelFlight).toHaveBeenCalledOnce();
-    expect(onDeselect).toHaveBeenCalledOnce();
+    expect(onManualNavigation).not.toHaveBeenCalled();
   });
 
   it('invalida geocoding em voo quando o usuário dá duplo clique para ampliar o mapa', async () => {
     const onDraftAddress = vi.fn();
-    const onDeselect = vi.fn();
     let resolveGeocode!: (value: null) => void;
     googleMocks.reverseGeocode.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -235,7 +244,7 @@ describe('GoogleMapPanel', () => {
     render(
       <GoogleMapPanel
         nodes={[]}
-        selectedNodeId={null}
+        selectedNode={null}
         selectionActive={false}
         draftAddress={null}
         focusRequest={null}
@@ -244,7 +253,6 @@ describe('GoogleMapPanel', () => {
         onHoverNode={vi.fn()}
         onCloseBalloon={vi.fn()}
         onDraftAddress={onDraftAddress}
-        onDeselect={onDeselect}
         onViewportChange={vi.fn()}
         clusterMarkers={false}
       />,
@@ -260,8 +268,8 @@ describe('GoogleMapPanel', () => {
     resolveGeocode(null);
     await Promise.resolve();
 
+    // O duplo clique invalidou a geração da consulta adiada: o endereço não é criado.
     expect(onDraftAddress).not.toHaveBeenCalled();
-    expect(onDeselect).toHaveBeenCalledOnce();
   });
 
   it('mantém a criação de endereço após confirmar um clique simples no mapa', async () => {
@@ -270,7 +278,7 @@ describe('GoogleMapPanel', () => {
     render(
       <GoogleMapPanel
         nodes={[]}
-        selectedNodeId={null}
+        selectedNode={null}
         selectionActive={false}
         draftAddress={null}
         focusRequest={null}
@@ -279,7 +287,6 @@ describe('GoogleMapPanel', () => {
         onHoverNode={vi.fn()}
         onCloseBalloon={vi.fn()}
         onDraftAddress={onDraftAddress}
-        onDeselect={vi.fn()}
         onViewportChange={vi.fn()}
         clusterMarkers={false}
       />,
@@ -294,9 +301,37 @@ describe('GoogleMapPanel', () => {
     expect(onDraftAddress).toHaveBeenCalledOnce();
   });
 
+  it('substitui a seleção anterior: clique no vazio abre o endereço mesmo com algo selecionado', async () => {
+    const onDraftAddress = vi.fn();
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={selectionNode()}
+        selectionActive
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={onDraftAddress}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />,
+    );
+
+    await waitFor(() => expect(mapListener('click')).toBeTypeOf('function'));
+    vi.useFakeTimers();
+    mapListener('click')?.({ latLng: { lat: () => -22.95, lng: () => -43.2 } });
+    await vi.runAllTimersAsync();
+
+    // Issue #19: o clique consulta o ponto (não desseleciona) para substituir a seleção.
+    expect(googleMocks.reverseGeocode).toHaveBeenCalledWith(-22.95, -43.2);
+    expect(onDraftAddress).toHaveBeenCalledOnce();
+  });
+
   it('cancela clique vazio pendente quando outra seleção é aberta', async () => {
     const onDraftAddress = vi.fn();
-    const onDeselect = vi.fn();
     const baseProps = {
       nodes: [],
       draftAddress: null,
@@ -306,31 +341,29 @@ describe('GoogleMapPanel', () => {
       onHoverNode: vi.fn(),
       onCloseBalloon: vi.fn(),
       onDraftAddress,
-      onDeselect,
       onViewportChange: vi.fn(),
       clusterMarkers: false,
     };
     const { rerender } = render(
-      <GoogleMapPanel {...baseProps} selectedNodeId={null} selectionActive={false} />,
+      <GoogleMapPanel {...baseProps} selectedNode={null} selectionActive={false} />,
     );
 
     await waitFor(() => expect(mapListener('click')).toBeTypeOf('function'));
     vi.useFakeTimers();
     mapListener('click')?.({ latLng: { lat: () => -22.9, lng: () => -43.1 } });
-    rerender(<GoogleMapPanel {...baseProps} selectedNodeId="site:1" selectionActive />);
+    rerender(<GoogleMapPanel {...baseProps} selectedNode={selectionNode()} selectionActive />);
     await vi.runAllTimersAsync();
 
     expect(googleMocks.reverseGeocode).not.toHaveBeenCalled();
     expect(onDraftAddress).not.toHaveBeenCalled();
-    expect(onDeselect).not.toHaveBeenCalled();
   });
 
-  it('deseleciona somente após movimento real de dois toques e limpa ponteiros fora do canvas', () => {
-    const onDeselect = vi.fn();
+  it('avisa navegação manual só após movimento real de dois toques e limpa ponteiros fora do canvas', () => {
+    const onManualNavigation = vi.fn();
     const { container } = render(
       <GoogleMapPanel
         nodes={[]}
-        selectedNodeId="site:1"
+        selectedNode={selectionNode()}
         draftAddress={null}
         focusRequest={null}
         balloon={null}
@@ -338,7 +371,7 @@ describe('GoogleMapPanel', () => {
         onHoverNode={vi.fn()}
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
-        onDeselect={onDeselect}
+        onManualNavigation={onManualNavigation}
         onViewportChange={vi.fn()}
         clusterMarkers={false}
       />,
@@ -347,7 +380,7 @@ describe('GoogleMapPanel', () => {
     const canvas = container.querySelector('[data-testid="google-map-canvas"]')!;
     fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch' });
     fireEvent.pointerDown(canvas, { pointerId: 2, pointerType: 'touch' });
-    expect(onDeselect).not.toHaveBeenCalled();
+    expect(onManualNavigation).not.toHaveBeenCalled();
 
     fireEvent.pointerUp(window, { pointerId: 1, pointerType: 'touch' });
     fireEvent.pointerUp(window, { pointerId: 2, pointerType: 'touch' });
@@ -358,7 +391,7 @@ describe('GoogleMapPanel', () => {
       clientX: 120,
       clientY: 120,
     });
-    expect(onDeselect).not.toHaveBeenCalled();
+    expect(onManualNavigation).not.toHaveBeenCalled();
 
     fireEvent.pointerDown(canvas, { pointerId: 4, pointerType: 'touch' });
     fireEvent.pointerMove(canvas, {
@@ -367,15 +400,15 @@ describe('GoogleMapPanel', () => {
       clientX: 140,
       clientY: 140,
     });
-    expect(onDeselect).toHaveBeenCalledOnce();
+    expect(onManualNavigation).toHaveBeenCalledOnce();
   });
 
-  it('deseleciona ao iniciar zoom por roda ou trackpad sobre o mapa', async () => {
-    const onDeselect = vi.fn();
+  it('avisa navegação manual ao iniciar zoom por roda ou trackpad sobre o mapa', async () => {
+    const onManualNavigation = vi.fn();
     const { container } = render(
       <GoogleMapPanel
         nodes={[]}
-        selectedNodeId="site:1"
+        selectedNode={selectionNode()}
         draftAddress={null}
         focusRequest={null}
         balloon={null}
@@ -383,19 +416,19 @@ describe('GoogleMapPanel', () => {
         onHoverNode={vi.fn()}
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
-        onDeselect={onDeselect}
+        onManualNavigation={onManualNavigation}
         onViewportChange={vi.fn()}
         clusterMarkers={false}
       />,
     );
 
-    await waitFor(() => expect(googleMocks.loadGoogleMaps).toHaveBeenCalled());
+    await waitFor(() => expect(googleMocks.mapCtor).toHaveBeenCalledOnce());
     fireEvent.wheel(container.querySelector('[data-testid="google-map-canvas"]')!, {
       deltaY: -100,
     });
 
     expect(googleMocks.cancelFlight).toHaveBeenCalledOnce();
-    expect(onDeselect).toHaveBeenCalledOnce();
+    expect(onManualNavigation).toHaveBeenCalledOnce();
   });
 
   it('reenquadra em peek↔mid e resize nesses snaps, mas ignora transições envolvendo full', async () => {
@@ -403,7 +436,7 @@ describe('GoogleMapPanel', () => {
     const focusRequest = { point: [-43.1, -22.9] as [number, number], scaleMeters: 50 };
     const baseProps = {
       nodes: [],
-      selectedNodeId: 'site:1',
+      selectedNode: selectionNode(),
       draftAddress: null,
       focusRequest,
       balloon: null,
@@ -411,7 +444,6 @@ describe('GoogleMapPanel', () => {
       onHoverNode: vi.fn(),
       onCloseBalloon: vi.fn(),
       onDraftAddress: vi.fn(),
-      onDeselect: vi.fn(),
       onViewportChange: vi.fn(),
       clusterMarkers: false,
     };
@@ -459,7 +491,7 @@ describe('GoogleMapPanel', () => {
     }) => (
       <GoogleMapPanel
         nodes={[]}
-        selectedNodeId={null}
+        selectedNode={null}
         draftAddress={null}
         focusRequest={focusRequest}
         bottomSheetState={bottomSheetState}
@@ -468,7 +500,6 @@ describe('GoogleMapPanel', () => {
         onHoverNode={vi.fn()}
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
-        onDeselect={vi.fn()}
         onViewportChange={vi.fn()}
         clusterMarkers={false}
       />
@@ -513,7 +544,7 @@ describe('GoogleMapPanel', () => {
     render(
       <GoogleMapPanel
         nodes={[]}
-        selectedNodeId={null}
+        selectedNode={null}
         draftAddress={null}
         focusRequest={null}
         balloon={null}
@@ -521,7 +552,6 @@ describe('GoogleMapPanel', () => {
         onHoverNode={vi.fn()}
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
-        onDeselect={vi.fn()}
         onViewportChange={vi.fn()}
         clusterMarkers={false}
       />,
@@ -542,7 +572,7 @@ describe('GoogleMapPanel', () => {
     render(
       <GoogleMapPanel
         nodes={[]}
-        selectedNodeId={null}
+        selectedNode={null}
         draftAddress={null}
         addressPoint={[-43.1079841, -22.8985597]}
         focusRequest={null}
@@ -551,7 +581,6 @@ describe('GoogleMapPanel', () => {
         onHoverNode={vi.fn()}
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
-        onDeselect={vi.fn()}
         onViewportChange={vi.fn()}
         clusterMarkers={false}
       />,
@@ -578,7 +607,7 @@ describe('GoogleMapPanel', () => {
     render(
       <GoogleMapPanel
         nodes={[]}
-        selectedNodeId={null}
+        selectedNode={null}
         draftAddress={draftAddress}
         // GeoPage só passa addressPoint quando a origem é a busca (source: 'search') —
         // clique no mapa fica de fora, para não cravar os dois marcadores na mesma
@@ -590,7 +619,6 @@ describe('GoogleMapPanel', () => {
         onHoverNode={vi.fn()}
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
-        onDeselect={vi.fn()}
         onViewportChange={vi.fn()}
         clusterMarkers={false}
       />,
@@ -603,6 +631,44 @@ describe('GoogleMapPanel', () => {
     );
     expect(googleMocks.markerCtor).not.toHaveBeenCalledWith(
       expect.objectContaining({ clickable: false }),
+    );
+  });
+
+  it('mantém o alfinete do nó selecionado mesmo quando ele saiu da lista visível do mapa', async () => {
+    // Recurso afastado além do viewport: some de `nodes`, mas a seleção continua aberta no
+    // painel. O alfinete deve cravar na coordenada da própria seleção (fallback quando o
+    // nó não está no registro do mapa) — ver o efeito do alfinete em GeoPage.
+    const selectedNode: GeoTreeNode = {
+      id: 'resource:abc',
+      kind: 'resource',
+      label: 'CTO 42',
+      hasChildren: false,
+      geometry: { type: 'Point', coordinates: [-43.2003, -22.9512] },
+    };
+
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={selectedNode}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(googleMocks.markerCtor).toHaveBeenCalledWith(
+        expect.objectContaining({
+          position: { lng: -43.2003, lat: -22.9512 },
+          clickable: false,
+        }),
+      ),
     );
   });
 });

@@ -59,11 +59,16 @@ export function BottomSheet({
   children,
   onClose,
   onSnapChange,
+  minimizeSignal,
   initialSnap = 'mid',
 }: {
   children: ReactNode;
   onClose: () => void;
   onSnapChange?: (state: BottomSheetSnapState) => void;
+  // Contador de comando externo: cada incremento encolhe a folha para peek (se ela já não
+  // estiver lá). Usado quando o usuário navega o mapa manualmente com a folha aberta — a
+  // seleção permanece, mas a folha sai da frente (ver GeoPage, issue #19).
+  minimizeSignal?: number;
   initialSnap?: BottomSheetSnap;
 }) {
   const [snap, setSnap] = useState<BottomSheetSnap>(initialSnap);
@@ -99,6 +104,19 @@ export function BottomSheet({
   useEffect(() => {
     snapRef.current = snap;
   }, [snap]);
+
+  // Comando externo de encolher para peek (ver prop `minimizeSignal`). Guardamos o último
+  // valor visto para reagir só quando ele muda — nunca ao valor inicial. Se a folha já
+  // está em peek, é um no-op; a transição publica o novo snap pelo `transitionend`.
+  const lastMinimizeSignalRef = useRef(minimizeSignal);
+  useEffect(() => {
+    if (minimizeSignal === undefined || minimizeSignal === lastMinimizeSignalRef.current) return;
+    lastMinimizeSignalRef.current = minimizeSignal;
+    if (snapRef.current !== 'peek') {
+      snapRef.current = 'peek';
+      setSnap('peek');
+    }
+  }, [minimizeSignal]);
 
   onSnapChangeRef.current = onSnapChange;
 

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { DraftAddress } from '../../utils/googleMaps';
 import { BottomSheet, type BottomSheetSnapState } from '../../components/BottomSheet';
+import { OverlayScrollArea } from '../../components/OverlayScrollArea';
 import { StreetViewHero } from '../../components/StreetViewHero';
 import { addressStreetViewMarker } from '../../utils/streetViewMarker';
 import { CoordinateStreetView } from './CoordinateStreetView';
@@ -32,6 +33,9 @@ export type AddressDetailPanelProps = {
   // desktop, quem fecha é o X da barra de pesquisa ancorada (ver onClear em GeoPage).
   onClose: () => void;
   onSnapChange?: (state: BottomSheetSnapState) => void;
+  // Contador que, ao incrementar, encolhe a folha para peek (ver BottomSheet) — usado
+  // quando o usuário navega o mapa manualmente com este painel aberto (ver GeoPage).
+  minimizeSignal?: number;
   // Barra de pesquisa unificada, ancorada no topo do painel (desktop), flutuando
   // sobre o conteúdo que rola por baixo — mesmo padrão dos painéis de Site e Recurso.
   searchBar?: ReactNode;
@@ -52,6 +56,7 @@ export function AddressDetailPanel({
   address,
   onClose,
   onSnapChange,
+  minimizeSignal,
   searchBar,
   onDropSimulation,
 }: AddressDetailPanelProps) {
@@ -126,7 +131,7 @@ export function AddressDetailPanel({
 
   if (isMobile) {
     return (
-      <BottomSheet onClose={onClose} onSnapChange={onSnapChange}>
+      <BottomSheet onClose={onClose} onSnapChange={onSnapChange} minimizeSignal={minimizeSignal}>
         {/* Foto, título e corpo rolam juntos dentro da folha (ver BottomSheet). */}
         <StreetViewHero marker={marker} />
         {header}
@@ -147,11 +152,13 @@ export function AddressDetailPanel({
           Street View, o título e o corpo rolam por baixo dela — estilo Google Maps.
           Mesmo padrão no painel de Site/Recurso (ver GeoPage). */}
       {searchBar ? <div className="absolute inset-x-0 top-0 z-30">{searchBar}</div> : null}
-      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
+      {/* Barra de rolagem sobreposta: a foto e as abas usam toda a largura do painel; o
+          polegar projeta por cima delas no hover (ver OverlayScrollArea). */}
+      <OverlayScrollArea className="overflow-x-hidden">
         <StreetViewHero marker={marker} />
         {header}
         <div className="px-3 py-3">{body}</div>
-      </div>
+      </OverlayScrollArea>
     </div>
   );
 }

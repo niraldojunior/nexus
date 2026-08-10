@@ -115,6 +115,7 @@ import {
   pathMidpoint,
 } from '../utils/dropSimulation';
 import { BottomSheet, type BottomSheetSnapState } from '../components/BottomSheet';
+import { OverlayScrollArea } from '../components/OverlayScrollArea';
 import { StreetViewHero } from '../components/StreetViewHero';
 import { streetViewTargetsForGeometry } from '../utils/streetViewTargets';
 import { resourceStreetViewMarker, siteStreetViewMarker } from '../utils/streetViewMarker';
@@ -258,6 +259,10 @@ export default function GeoPage() {
     panelKey: string;
     state: BottomSheetSnapState;
   } | null>(null);
+  // Sinal (contador) que pede à folha mobile para encolher a peek. É incrementado quando o
+  // usuário navega o mapa manualmente com um painel aberto (ver handleManualMapNavigation),
+  // para liberar a visualização sem perder a seleção (issue #19).
+  const [sheetMinimizeSignal, setSheetMinimizeSignal] = useState(0);
   // Nó selecionado (clique, na árvore ou no mapa) e nó sob o mouse (hover, alvo
   // do balão de preview). São dois estados independentes: o hover é passageiro
   // e não mexe na seleção nem no painel de detalhe já aberto.
@@ -310,10 +315,17 @@ export default function GeoPage() {
   // Infra passiva só entra quando a escala está em ≤ 200 m; Estações (tree.mapNodes)
   // continuam sempre visíveis, ramo aberto ou não.
   const passiveInfraVisible = scaleMeters !== null && scaleMeters <= PASSIVE_INFRA_MAX_SCALE_METERS;
-  const mapNodes = useMemo(
-    () => (passiveInfraVisible ? [...tree.mapNodes, ...viewportInfra] : tree.mapNodes),
-    [tree.mapNodes, viewportInfra, passiveInfraVisible],
-  );
+  const mapNodes = useMemo(() => {
+    const base = passiveInfraVisible ? [...tree.mapNodes, ...viewportInfra] : tree.mapNodes;
+    // O item selecionado é imune à escala e ao viewport: recurso e cabo só existem em
+    // `viewportInfra`, e sem isto afastar o mapa (ou arrastá-lo até a borda) apagaria o
+    // ícone e o alfinete de quem está aberto no painel. Estação já vem sempre em
+    // `tree.mapNodes`, então isto só adiciona quando o nó realmente sumiu da lista.
+    if (selectedNode?.geometry && !base.some((node) => node.id === selectedNode.id)) {
+      return [...base, selectedNode];
+    }
+    return base;
+  }, [tree.mapNodes, viewportInfra, passiveInfraVisible, selectedNode]);
   // Só agrupa acima de 100 m; em ≤ 100 m cada ponto é um ícone individual. Escala ainda
   // desconhecida (antes do primeiro idle) agrupa por segurança — geralmente é vista aberta.
   const clusterMarkers = (scaleMeters ?? Infinity) > MARKER_CLUSTER_MIN_SCALE_METERS;
@@ -346,6 +358,13 @@ export default function GeoPage() {
     },
     [mobilePanelKey],
   );
+  // Navegação manual do mapa (arrastar, pinça, roda, duplo clique) com um painel aberto:
+  // issue #19 mantém a seleção; no mobile, encolhe a folha para peek para desobstruir o
+  // mapa. No desktop não há folha, então é um no-op.
+  const handleManualMapNavigation = useCallback(() => {
+    if (!isMobile) return;
+    setSheetMinimizeSignal((signal) => signal + 1);
+  }, [isMobile]);
   const bottomSheetState =
     mobilePanelKey === null
       ? undefined
@@ -457,9 +476,11 @@ export default function GeoPage() {
     [selectNode],
   );
 
-  // Clique fora de qualquer item (vazio do mapa) com uma seleção ativa: tira o
-  // alfinete e fecha o detalhe, igual ao Google Maps. A hierarquia reaparece
-  // sozinha — seu colapso não é tocado por seleção/deseleção (ver selectNode).
+  // Desfaz a seleção por completo: tira o alfinete, fecha o detalhe e limpa a busca. É o
+  // X da barra de pesquisa (onClear), o fechar do painel de Endereço e, no mobile, o
+  // arrastar a folha para baixo. O clique no vazio do mapa não passa mais por aqui — ele
+  // consulta o ponto (ver onMapAddressFound). A hierarquia reaparece sozinha: seu colapso
+  // não é tocado por seleção/deseleção (ver selectNode).
   const onDeselect = useCallback(() => {
     setSelectedNode(null);
     setDetailOpen(false);
@@ -504,13 +525,17 @@ export default function GeoPage() {
     setAddressError(err);
   }, []);
 
-  // Clique no mapa (vazio, sem seleção ativa) — o mesmo reverse geocode que já
-  // largava o "+" de rascunho (`draftAddress`, usado pelo GuidedSignupModal para
-  // cadastrar um site ali) agora também abre o painel de endereço na doca. O mapa só
-  // desenha o "+" para essa origem (`source: 'map'`) — o alfinete de seleção fica
-  // reservado à busca, para não duplicar marcador na mesma coordenada (ver
+  // Clique no vazio do mapa — reverse geocode do ponto, que larga o "+" de rascunho
+  // (`draftAddress`, usado pelo GuidedSignupModal para cadastrar um site ali) e abre o
+  // painel de endereço na doca. Consulta é seleção: some qualquer nó em curso (mesma doca,
+  // um painel por vez) — é a terceira porta de troca de seleção, junto do X da busca e de
+  // uma nova pesquisa. O mapa só desenha o "+" para essa origem (`source: 'map'`) — o
+  // alfinete fica reservado à busca, para não duplicar marcador na mesma coordenada (ver
   // GoogleMapPanel e a prop `addressPoint`).
   const onMapAddressFound = useCallback((address: DraftAddress) => {
+    setSelectedNode(null);
+    setDetailOpen(false);
+    setAddressError(null);
     setDraftAddress(address);
     setDropSimulation(null);
     setAddressLookup({ address, source: 'map' });
@@ -628,6 +653,7 @@ export default function GeoPage() {
               isMobile={isMobile}
               address={addressLookup.address}
               onSnapChange={onMobileSheetSnapChange}
+              minimizeSignal={sheetMinimizeSignal}
               onClose={onDeselect}
               onDropSimulation={onDropSimulation}
               searchBar={
@@ -651,6 +677,7 @@ export default function GeoPage() {
               isMobile={isMobile}
               target={detailTarget}
               onSnapChange={onMobileSheetSnapChange}
+              minimizeSignal={sheetMinimizeSignal}
               tab={detailTab}
               sites={sites}
               specById={specById}
@@ -724,7 +751,7 @@ export default function GeoPage() {
           <div className="relative min-h-0 flex-1">
             <GoogleMapPanel
               nodes={mapNodes}
-              selectedNodeId={selectedNode?.id ?? null}
+              selectedNode={selectedNode}
               draftAddress={draftAddress}
               addressPoint={
                 addressLookup?.source === 'search' ? addressLookup.address.coordinates : null
@@ -737,7 +764,11 @@ export default function GeoPage() {
               onHoverNode={handleHover}
               onCloseBalloon={() => handleHover(null)}
               onDraftAddress={onMapAddressFound}
-              onDeselect={onDeselect}
+              // Navegação manual do mapa (arrastar, pinça, roda, duplo clique) NÃO
+              // desseleciona (issue #19); no mobile, encolhe a folha para peek (ver
+              // handleManualMapNavigation). `selectionActive` diz ao mapa se há algo aberto,
+              // para só encolher a folha quando faz sentido.
+              onManualNavigation={handleManualMapNavigation}
               selectionActive={
                 selectedNode !== null || addressLookup !== null || draftAddress !== null
               }
@@ -821,7 +852,7 @@ export default function GeoPage() {
 // quando a região visível ou a escala mudam, para o chamador decidir o que buscar.
 export function GoogleMapPanel({
   nodes,
-  selectedNodeId,
+  selectedNode,
   draftAddress,
   addressPoint,
   dropSimulation,
@@ -832,14 +863,17 @@ export function GoogleMapPanel({
   onHoverNode,
   onCloseBalloon,
   onDraftAddress,
-  onDeselect,
+  onManualNavigation,
   selectionActive,
   onViewportChange,
   clusterMarkers,
   autoLocateOnOpen = false,
 }: {
   nodes: GeoTreeNode[];
-  selectedNodeId: string | null;
+  // Nó selecionado inteiro (não só o id): o alfinete precisa da geometria mesmo quando o
+  // nó já saiu da lista visível do mapa — recurso/cabo afastado, ou deep-link de Site que
+  // ainda não virou marcador. O id é derivado abaixo, para os efeitos que só precisam dele.
+  selectedNode: GeoTreeNode | null;
   draftAddress: DraftAddress | null;
   // Endereço resolvido pela busca (ver AddressDetailPanel) — cravado com o mesmo
   // alfinete de seleção, na ausência de um nó selecionado (os dois nunca coexistem,
@@ -858,7 +892,11 @@ export function GoogleMapPanel({
   onHoverNode: (node: GeoTreeNode | null) => void;
   onCloseBalloon: () => void;
   onDraftAddress: (address: DraftAddress) => void;
-  onDeselect: () => void;
+  // Navegação manual do mapa com algo selecionado: mantém a seleção (issue #19) e serve
+  // para o mobile encolher a folha para peek. Só é chamado quando `selectionActive`.
+  onManualNavigation?: () => void;
+  // Se há algo aberto (nó, endereço ou rascunho) — decide se a navegação manual encolhe
+  // a folha e alimenta a invalidação do clique adiado.
   selectionActive?: boolean;
   onViewportChange: (bounds: MapBounds, scaleMeters: number) => void;
   clusterMarkers: boolean;
@@ -866,6 +904,7 @@ export function GoogleMapPanel({
   // auto-localização); no desktop o pulo fica reservado ao clique no botão.
   autoLocateOnOpen?: boolean;
 }) {
+  const selectedNodeId = selectedNode?.id ?? null;
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<GoogleMapInstance | null>(null);
   const framedFocusRequestRef = useRef<FlyTarget | null>(null);
@@ -910,11 +949,15 @@ export function GoogleMapPanel({
   const onSelectNodeRef = useRef(onSelectNode);
   const onHoverNodeRef = useRef(onHoverNode);
   const onViewportChangeRef = useRef(onViewportChange);
-  // O listener de clique no vazio do mapa também é atado uma única vez — precisa ler
-  // sempre a seleção e o callback de deseleção atuais (ver efeito abaixo).
-  const onDeselectRef = useRef(onDeselect);
+  // O clique no vazio do mapa sempre consulta aquele ponto (ver listener de click);
+  // o auto-locate ainda lê a seleção corrente daqui para não roubar o enquadramento.
   const selectedNodeIdRef = useRef(selectedNodeId);
+  // Chamado no início de uma navegação manual com algo selecionado — o mapa lê sempre a
+  // versão atual daqui (o listener é atado uma vez só).
+  const onManualNavigationRef = useRef(onManualNavigation);
   const selectionActiveRef = useRef(selectionActive ?? selectedNodeId !== null);
+  // Encolhe a folha uma vez por sessão de navegação; volta a false quando a seleção muda
+  // ou a folha reabre acima de peek (ver efeitos abaixo).
   const manualNavigationHandledRef = useRef(false);
   const activeMapPointersRef = useRef<Set<number>>(new Set());
   const pinchNavigationHandledRef = useRef(false);
@@ -939,17 +982,25 @@ export function GoogleMapPanel({
   }, [onHoverNode]);
 
   useEffect(() => {
-    onDeselectRef.current = onDeselect;
-  }, [onDeselect]);
-
-  useEffect(() => {
     selectedNodeIdRef.current = selectedNodeId;
   }, [selectedNodeId]);
+
+  useEffect(() => {
+    onManualNavigationRef.current = onManualNavigation;
+  }, [onManualNavigation]);
 
   useEffect(() => {
     selectionActiveRef.current = selectionActive ?? selectedNodeId !== null;
     if (selectionActiveRef.current) manualNavigationHandledRef.current = false;
   }, [selectedNodeId, selectionActive]);
+
+  // Folha reaberta acima de peek (mobile): a próxima navegação manual pode encolhê-la
+  // de novo. Enquanto estiver em peek, o flag permanece para não repetir o encolhimento.
+  useEffect(() => {
+    if (bottomSheetState && bottomSheetState.snap !== 'peek') {
+      manualNavigationHandledRef.current = false;
+    }
+  }, [bottomSheetState]);
 
   const clearPendingMapClick = useCallback(() => {
     mapClickGenerationRef.current += 1;
@@ -963,18 +1014,20 @@ export function GoogleMapPanel({
     if (selectionActiveRef.current) clearPendingMapClick();
   }, [selectedNodeId, selectionActive, clearPendingMapClick]);
 
-  const dismissSelectionForManualNavigation = useCallback(() => {
+  // Navegação manual do mapa (arrastar, pinça, roda ou duplo clique). Issue #19: a
+  // seleção NÃO é desfeita — pan/zoom preservam o item aberto no painel. O que a
+  // navegação faz é: cancelar um clique adiado (para o duplo clique não consultar o
+  // ponto), fechar o balão de hover e interromper um voo de câmera em curso. Com algo
+  // selecionado, avisa o chamador uma vez (no mobile, encolhe a folha para peek).
+  const handleManualNavigation = useCallback(() => {
     clearPendingMapClick();
     closeBalloonRef.current();
     if (mapRef.current) cancelFlight(mapRef.current);
     flightActiveRef.current = false;
-    if (selectionActiveRef.current) {
-      if (manualNavigationHandledRef.current) return;
+    if (selectionActiveRef.current && !manualNavigationHandledRef.current) {
       manualNavigationHandledRef.current = true;
+      onManualNavigationRef.current?.();
     }
-    // Idempotente também sem seleção: garante que um dblclick limpe qualquer rascunho
-    // que tenha sido criado pelo primeiro click antes de o navegador reconhecer o duplo.
-    onDeselectRef.current();
   }, [clearPendingMapClick]);
 
   useEffect(() => clearPendingMapClick, [clearPendingMapClick]);
@@ -1024,6 +1077,10 @@ export function GoogleMapPanel({
         mapRef.current.addListener('click', (event: GoogleMapMouseEvent) => {
           const lat = event.latLng.lat();
           const lng = event.latLng.lng();
+          // Clique adiado pela janela nativa de duplo clique: um `dblclick` (zoom) cancela
+          // esta consulta via handleManualNavigation → clearPendingMapClick, então dar zoom
+          // no vazio não troca o ponto consultado. O `generation` invalida a consulta caso a
+          // seleção mude enquanto o reverse geocode estava em voo.
           clearPendingMapClick();
           const clickGeneration = mapClickGenerationRef.current;
           pendingMapClickTimerRef.current = window.setTimeout(() => {
@@ -1031,10 +1088,9 @@ export function GoogleMapPanel({
             // Clique fora de qualquer item: o balão sai. Cliques em marker ou
             // polyline não chegam aqui, então o balão só fecha no vazio do mapa.
             closeBalloonRef.current();
-            if (selectionActiveRef.current) {
-              onDeselectRef.current();
-              return;
-            }
+            // Issue #19: o clique no vazio consulta o ponto e abre o painel de Endereço,
+            // substituindo qualquer seleção anterior (ver onMapAddressFound em GeoPage). É a
+            // terceira porta de troca de seleção; pan e zoom não passam por aqui.
             void reverseGeocode(lat, lng)
               .catch(() => null)
               .then((address) => {
@@ -1055,8 +1111,8 @@ export function GoogleMapPanel({
         // Pan e duplo clique só são emitidos para gesto manual. Pinça é reconhecida
         // diretamente pelos pointer events abaixo, sem observar `zoom_changed` — assim
         // voos e reenquadramentos programáticos nunca são classificados como gesto.
-        mapRef.current.addListener('dragstart', dismissSelectionForManualNavigation);
-        mapRef.current.addListener('dblclick', dismissSelectionForManualNavigation);
+        mapRef.current.addListener('dragstart', handleManualNavigation);
+        mapRef.current.addListener('dblclick', handleManualNavigation);
         // Reporta a região visível e a escala atual para o chamador decidir se busca
         // infra passiva por viewport (ver PASSIVE_INFRA_MAX_SCALE_METERS).
         const reportViewport = () => {
@@ -1092,7 +1148,7 @@ export function GoogleMapPanel({
         setMapsReady(true);
       })
       .catch(() => setMapsReady(false));
-  }, [dismissSelectionForManualNavigation, onDraftAddress, selectedBaseLayer.googleMapTypeId]);
+  }, [handleManualNavigation, onDraftAddress, selectedBaseLayer.googleMapTypeId]);
 
   useEffect(() => {
     if (!mapsReady || !mapRef.current || !selectedBaseLayer) return;
@@ -1316,7 +1372,12 @@ export function GoogleMapPanel({
   useEffect(() => {
     const maps = window.google?.maps;
     if (!mapsReady || !mapRef.current || !maps) return;
-    const node = selectedNodeId ? nodeByIdRef.current.get(selectedNodeId) : undefined;
+    // Prefere o nó do registro do mapa (versão mais fresca, vinda do último refetch da
+    // árvore) e cai para a própria seleção quando ele já não está no mapa — recurso/cabo
+    // afastado além do viewport, ou deep-link de Site que ainda não virou marcador. Sem
+    // esse fallback, mexer no mapa apagava o alfinete de quem continua aberto no painel.
+    const node =
+      (selectedNodeId ? nodeByIdRef.current.get(selectedNodeId) : undefined) ?? selectedNode;
     const point = node ? treeNodePoint(node) : (addressPoint ?? null);
     if (!point) {
       selectionMarkerRef.current?.setMap(null);
@@ -1351,7 +1412,7 @@ export function GoogleMapPanel({
         clickable: false,
       });
     }
-  }, [mapsReady, selectedNodeId, nodes, addressPoint]);
+  }, [mapsReady, selectedNodeId, selectedNode, nodes, addressPoint]);
 
   // Rota dos cabos. Um cabo não é um ponto: sua geometria é uma LineString com o traçado real na
   // rua, então vira polyline em vez de pin. Reusada por id pelo mesmo motivo dos marcadores.
@@ -1665,10 +1726,10 @@ export function GoogleMapPanel({
             !pinchNavigationHandledRef.current
           ) {
             pinchNavigationHandledRef.current = true;
-            dismissSelectionForManualNavigation();
+            handleManualNavigation();
           }
         }}
-        onWheelCapture={dismissSelectionForManualNavigation}
+        onWheelCapture={handleManualNavigation}
       />
       <MapBaseLayerSelector value={baseLayerId} onChange={setBaseLayerId} />
       <MapLocateButton onLocate={handleDeviceLocate} />
@@ -1785,6 +1846,7 @@ function GeoDetailPanel({
   onChanged,
   onCreateSubSite,
   onSnapChange,
+  minimizeSignal,
   searchBar,
 }: {
   isMobile: boolean;
@@ -1802,6 +1864,8 @@ function GeoDetailPanel({
   onChanged: () => Promise<void>;
   onCreateSubSite: () => void;
   onSnapChange?: (state: BottomSheetSnapState) => void;
+  // Contador que, ao incrementar, encolhe a folha para peek (ver BottomSheet).
+  minimizeSignal?: number;
   searchBar?: ReactNode;
 }) {
   const eyebrow =
@@ -1878,7 +1942,7 @@ function GeoDetailPanel({
 
   if (isMobile) {
     return (
-      <BottomSheet onClose={onClose} onSnapChange={onSnapChange}>
+      <BottomSheet onClose={onClose} onSnapChange={onSnapChange} minimizeSignal={minimizeSignal}>
         {/* Foto, título e corpo rolam juntos dentro da folha (ver BottomSheet). */}
         <StreetViewHero marker={heroMarker} />
         {header}
@@ -1899,11 +1963,13 @@ function GeoDetailPanel({
           Street View, o título e o corpo rolam por baixo dela — estilo Google Maps.
           Mesmo padrão no painel de Endereço. */}
       {searchBar ? <div className="absolute inset-x-0 top-0 z-30">{searchBar}</div> : null}
-      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
+      {/* Barra de rolagem sobreposta: a foto e as abas usam toda a largura do painel; o
+          polegar projeta por cima delas no hover (ver OverlayScrollArea). */}
+      <OverlayScrollArea className="overflow-x-hidden">
         <StreetViewHero marker={heroMarker} />
         {header}
         <div className="px-3 py-3">{body}</div>
-      </div>
+      </OverlayScrollArea>
     </div>
   );
 }

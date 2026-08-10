@@ -91,8 +91,8 @@ export function HierarchySidebar({
       <aside
         className={
           isMobile
-            ? 'absolute inset-y-0 left-0 z-40 flex w-[374px] max-w-[85vw] flex-col border-r border-app-border bg-white shadow-dock'
-            : 'flex h-full w-[374px] max-w-[80vw] shrink-0 flex-col border-r border-app-border bg-white shadow-dock'
+            ? 'hover-scroll-host absolute inset-y-0 left-0 z-40 flex w-[374px] max-w-[85vw] flex-col border-r border-app-border bg-white shadow-dock'
+            : 'hover-scroll-host flex h-full w-[374px] max-w-[80vw] shrink-0 flex-col border-r border-app-border bg-white shadow-dock'
         }
       >
         {searchBar}
@@ -111,7 +111,7 @@ export function HierarchySidebar({
         </div>
 
         {/* Corpo */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <div className="hover-scroll min-h-0 flex-1 overflow-y-auto p-3">
           {tree.error ? (
             <div className="mb-3 rounded-[14px] border border-red-200 bg-red-50 px-3 py-2 text-[0.82rem] text-red-700">
               {tree.error}

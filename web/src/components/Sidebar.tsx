@@ -17,6 +17,7 @@ import { groupResourceCategories, sidebarCategoryLabel } from '../data/resourceC
 import { SERVICE_CATEGORY_DEFAULTS } from '../data/serviceCatalogDefaults';
 import { listServiceCategories } from '../data/serviceCategoryViews';
 import Diamond from './Diamond';
+import NexusMark from './NexusMark';
 
 type PrimaryItemId = 'conversations' | 'research' | 'geo' | 'resource' | 'service' | 'order';
 
@@ -138,7 +139,7 @@ export default function Sidebar({
           className="fixed left-3 top-3 z-[60] flex h-10 w-10 items-center justify-center rounded-xl border border-app-border bg-white text-app-text shadow-soft"
           aria-label="Abrir barra lateral"
         >
-          <PanelLeftOpen className="h-5 w-5" strokeWidth={1.8} />
+          <NexusMark className="h-7 w-7" />
         </button>
       ) : null}
 
@@ -163,30 +164,51 @@ export default function Sidebar({
       >
       <div
         className={`flex min-h-[53px] items-center pb-3 pt-3 ${
-          contentCollapsed ? 'justify-center px-0' : 'pl-4 pr-[15px]'
+          contentCollapsed ? 'justify-center px-0' : 'pl-[15px] pr-[15px]'
         }`}
       >
         <button
           type="button"
-          className={`overflow-hidden whitespace-nowrap font-display text-[1.75rem] font-semibold leading-none tracking-[-0.03em] text-app-text transition-all duration-200 ease-in-out ${
-            contentCollapsed ? 'max-w-0 opacity-0 pointer-events-none' : 'max-w-[160px] opacity-100'
+          // Mesma geometria dos NavItem abaixo (px-[15px] + ícone 1.18rem + gap-4): a marca cai na
+          // mesma coluna dos ícones do menu e o "N" do wordmark alinha com a primeira letra de cada item.
+          className={`flex items-center gap-4 overflow-hidden whitespace-nowrap font-display text-[1.75rem] font-semibold leading-none tracking-[-0.03em] text-app-text transition-all duration-200 ease-in-out ${
+            contentCollapsed ? 'max-w-0 opacity-0 pointer-events-none' : 'max-w-[200px] opacity-100'
           }`}
         >
-          Nexus
+          <NexusMark className="h-[1.18rem] w-[1.18rem] shrink-0" />
+          <span>Nexus</span>
         </button>
         <div className={`${contentCollapsed ? 'flex items-center' : 'ml-auto flex items-center'}`}>
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            className="rounded-xl border border-transparent p-0 text-app-text transition hover:bg-app-accent-soft"
-            aria-label={collapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'}
-          >
-            {collapsed ? (
-              <PanelLeftOpen className="h-[1.15rem] w-[1.15rem]" strokeWidth={1.8} />
-            ) : (
-              <PanelLeftClose className="h-[1.15rem] w-[1.15rem]" strokeWidth={1.8} />
-            )}
-          </button>
+          {contentCollapsed ? (
+            // No rail recolhido, o primeiro botão é a marca do Nexus (mesma da barra de pesquisa
+            // do Geo mobile). Passar o mouse revela o ícone de abrir painel — a troca é só CSS,
+            // sem estado; o clique continua expandindo a barra.
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="group relative flex h-[42px] w-[42px] items-center justify-center rounded-[14px] border border-transparent text-app-text transition hover:border-app-border hover:bg-white hover:shadow-soft"
+              aria-label="Expandir barra lateral"
+            >
+              <NexusMark className="h-[1.62rem] w-[1.62rem] transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0" />
+              <PanelLeftOpen
+                className="absolute h-[1.15rem] w-[1.15rem] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+                strokeWidth={1.8}
+              />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="rounded-xl border border-transparent p-0 text-app-text transition hover:bg-app-accent-soft"
+              aria-label={collapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'}
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="h-[1.15rem] w-[1.15rem]" strokeWidth={1.8} />
+              ) : (
+                <PanelLeftClose className="h-[1.15rem] w-[1.15rem]" strokeWidth={1.8} />
+              )}
+            </button>
+          )}
         </div>
       </div>
 

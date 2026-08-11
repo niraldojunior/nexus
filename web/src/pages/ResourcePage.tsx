@@ -52,6 +52,7 @@ import { resourceFieldLabel } from '../utils/resourceFieldLabels';
 import {
   DEFAULT_RESOURCE_CATEGORY_CODE,
   RESOURCE_VIEWS,
+  resourceCategoryDescription,
   type ResourceView,
 } from '../data/resourceCategoryViews';
 import {
@@ -140,14 +141,15 @@ const tabConfig: Record<
   ResourceTabId,
   {
     title: string;
-    description: string;
+    // Só o Catálogo (ResourceSpecification) usa `description` no cabeçalho; Inventário
+    // (Physical/Logical) exibe a descrição da categoria via `resourceCategoryDescription`.
+    description?: string;
     icon: LucideIcon;
     buildColumns: () => Array<{ key: string; label: string }>;
   }
 > = {
   PhysicalResource: {
     title: 'Recursos Físicos',
-    description: 'Inventário de ativos e infraestrutura física, com foco em ocupação, estado e contenção.',
     icon: Layers3,
     buildColumns: () => [
       { key: 'name', label: resourceFieldLabel('name') },
@@ -160,7 +162,6 @@ const tabConfig: Record<
   },
   LogicalResource: {
     title: 'Recursos Lógicos',
-    description: 'Recursos lógicos associados a endereçamento, isolamento e vínculos técnicos.',
     icon: Link2,
     buildColumns: () => [
       { key: 'name', label: resourceFieldLabel('name') },
@@ -172,7 +173,8 @@ const tabConfig: Record<
   },
   ResourceSpecification: {
     title: 'Catálogo de Recursos',
-    description: 'Catálogo de tipos, categorias e especificações que tipam as instâncias de recurso.',
+    description:
+      'Catálogo de tipos, categorias e especificações que tipam as instâncias de recurso.',
     icon: FileText,
     buildColumns: () => [
       { key: 'resourceType', label: resourceFieldLabel('resourceType') },
@@ -205,7 +207,11 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   const isPhysicalCategory = isPhysicalCategoryCode(category);
   const [view, setView] = useState<ResourceView>('inventory');
   const effectiveTab: ResourceTabId =
-    view === 'catalog' ? 'ResourceSpecification' : isPhysicalCategory ? 'PhysicalResource' : 'LogicalResource';
+    view === 'catalog'
+      ? 'ResourceSpecification'
+      : isPhysicalCategory
+        ? 'PhysicalResource'
+        : 'LogicalResource';
 
   const [page, setPage] = useState(1);
   const [columnFilters, setColumnFilters] = useState<Record<string, Set<string>>>({});
@@ -213,7 +219,9 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [resourceCategories, setResourceCategories] = useState<ResourceCategory[]>([]);
   const [resourceTypes, setResourceTypes] = useState<ResourceType[]>([]);
-  const [resourceSpecificationOptions, setResourceSpecificationOptions] = useState<ResourceSpecification[]>([]);
+  const [resourceSpecificationOptions, setResourceSpecificationOptions] = useState<
+    ResourceSpecification[]
+  >([]);
   const [manufacturerOptions, setManufacturerOptions] = useState<Party[]>([]);
   // Página atual + total já filtrados/paginados pelo servidor (PhysicalResource/LogicalResource).
   // O catálogo (ResourceSpecification) é pequeno o bastante para continuar paginando no cliente.
@@ -221,7 +229,9 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   const [totalCount, setTotalCount] = useState(0);
   // Opções limitadas para o combobox "recurso físico de suporte" do modal de LogicalResource —
   // buscadas sob demanda na abertura do modal, nunca a partir do inventário completo.
-  const [supportingPhysicalResourceChoices, setSupportingPhysicalResourceChoices] = useState<PhysicalResource[]>([]);
+  const [supportingPhysicalResourceChoices, setSupportingPhysicalResourceChoices] = useState<
+    PhysicalResource[]
+  >([]);
   const [isLoading, setIsLoading] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -264,7 +274,10 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
       case 'lifecycleStatus':
         return readSpecLifecycleStatus(spec.resourceSpecificationCharacteristic);
       case 'equipmentFunction':
-        return readSpecCharacteristic(spec.resourceSpecificationCharacteristic, 'equipmentFunction');
+        return readSpecCharacteristic(
+          spec.resourceSpecificationCharacteristic,
+          'equipmentFunction',
+        );
       default:
         return '-';
     }
@@ -368,28 +381,36 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   const selectedCategory = resourceCategories.find((item) => item.code === formState.category);
   const visibleTypeOptions = buildTypeOptions(resourceTypes, formState.category);
   const selectedResourceType = resourceTypes.find((type) => type.code === formState.resourceType);
-  const categorySelectionInvalid = Boolean(formState.category && (!selectedCategory || selectedCategory.status !== 'active'));
+  const categorySelectionInvalid = Boolean(
+    formState.category && (!selectedCategory || selectedCategory.status !== 'active'),
+  );
   const resourceTypeSelectionInvalid = Boolean(
     formState.resourceType &&
-      (!selectedResourceType || selectedResourceType.status !== 'active' || selectedResourceType.categoryCode !== formState.category),
+    (!selectedResourceType ||
+      selectedResourceType.status !== 'active' ||
+      selectedResourceType.categoryCode !== formState.category),
   );
   const catalogRequiredFieldsValid =
     modalState?.tab !== 'ResourceSpecification' ||
-    (formState.category.trim().length > 0 && formState.resourceType.trim().length > 0 && formState.model.trim().length > 0);
-  const catalogSelectionValid =
-    !(
-      modalState?.tab === 'ResourceSpecification' &&
-      (categorySelectionInvalid ||
-        resourceTypeSelectionInvalid ||
-        (Boolean(formState.category) &&
-          Boolean(formState.resourceType) &&
-          !visibleTypeOptions.some((option) => option.code === formState.resourceType)))
-    );
+    (formState.category.trim().length > 0 &&
+      formState.resourceType.trim().length > 0 &&
+      formState.model.trim().length > 0);
+  const catalogSelectionValid = !(
+    modalState?.tab === 'ResourceSpecification' &&
+    (categorySelectionInvalid ||
+      resourceTypeSelectionInvalid ||
+      (Boolean(formState.category) &&
+        Boolean(formState.resourceType) &&
+        !visibleTypeOptions.some((option) => option.code === formState.resourceType)))
+  );
   const catalogSubmitValid = catalogRequiredFieldsValid && catalogSelectionValid;
   const selectedOnPage = pageItems.filter((item) => selectedIds.has(item.id));
   const pageSelectionCount = selectedOnPage.length;
   const selectedCount = selectedIds.size;
-  const selectedDeletePreview = selectedOnPage.slice(0, 3).map((item) => item.name).join(', ');
+  const selectedDeletePreview = selectedOnPage
+    .slice(0, 3)
+    .map((item) => item.name)
+    .join(', ');
 
   const loadWorkspaceData = async (tab: ResourceTabId, pageNumber: number): Promise<void> => {
     setIsLoading(true);
@@ -403,7 +424,9 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
         offset: isInstanceTab ? (pageNumber - 1) * PAGE_SIZE : 0,
         ...(isInstanceTab ? { category } : {}),
         ...(isInstanceTab ? { resourceSpecificationIdIn: selectedResourceSpecificationIds() } : {}),
-        ...(isInstanceTab && tab === 'PhysicalResource' ? { resourceTypeIn: selectedResourceTypes() } : {}),
+        ...(isInstanceTab && tab === 'PhysicalResource'
+          ? { resourceTypeIn: selectedResourceTypes() }
+          : {}),
       });
 
       setResourceSpecificationOptions(snapshot.resourceSpecificationOptions);
@@ -436,7 +459,8 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
 
   useEffect(() => {
     if (!selectAllRef.current) return;
-    selectAllRef.current.indeterminate = pageSelectionCount > 0 && pageSelectionCount < pageItems.length;
+    selectAllRef.current.indeterminate =
+      pageSelectionCount > 0 && pageSelectionCount < pageItems.length;
   }, [pageItems.length, pageSelectionCount]);
 
   // Category or sub-view changes reset the local pagination/selection/filter scope.
@@ -462,9 +486,15 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
     if (modalState.tab === 'ResourceSpecification') {
       const entity = modalState.entity as ResourceSpecification | null;
       const characteristics = entity?.resourceSpecificationCharacteristic ?? [];
-      const manufacturerCharacteristic = characteristics.find((characteristic) => characteristic.name === 'manufacturer');
-      const manufacturerParty = entity?.relatedParty?.find((party) => party.role === 'manufacturer');
-      const manufacturerLabel = manufacturerParty?.name ?? (manufacturerCharacteristic?.value ? String(manufacturerCharacteristic.value).trim() : '');
+      const manufacturerCharacteristic = characteristics.find(
+        (characteristic) => characteristic.name === 'manufacturer',
+      );
+      const manufacturerParty = entity?.relatedParty?.find(
+        (party) => party.role === 'manufacturer',
+      );
+      const manufacturerLabel =
+        manufacturerParty?.name ??
+        (manufacturerCharacteristic?.value ? String(manufacturerCharacteristic.value).trim() : '');
       const resolvedManufacturer =
         manufacturerParty ??
         manufacturerOptions.find(
@@ -480,39 +510,75 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
         category: entity?.category ?? category,
         resourceType: entity?.resourceType ?? '',
         description: entity?.description ?? '',
-        equipmentCode: readResourceSpecificationCharacteristicString(characteristics, 'equipmentCode'),
-        equipmentFunction: readResourceSpecificationCharacteristicString(characteristics, 'equipmentFunction'),
+        equipmentCode: readResourceSpecificationCharacteristicString(
+          characteristics,
+          'equipmentCode',
+        ),
+        equipmentFunction: readResourceSpecificationCharacteristicString(
+          characteristics,
+          'equipmentFunction',
+        ),
         model: readSpecificationModel(entity),
         manufacturerPartyId: resolvedManufacturer?.id ?? '',
         skuId: readResourceSpecificationCharacteristicString(characteristics, 'skuId'),
-        stockable: readResourceSpecificationCharacteristicBooleanState(characteristics, 'stockable'),
-        discontinued: readResourceSpecificationCharacteristicBooleanState(characteristics, 'discontinued'),
-        supportsSdWan: readResourceSpecificationCharacteristicBooleanState(characteristics, 'supportsSdWan'),
-        supportsVoice: readResourceSpecificationCharacteristicBooleanState(characteristics, 'supportsVoice'),
-        homologationDate: readResourceSpecificationCharacteristicString(characteristics, 'homologationDate'),
-        endOfLifeDate: readResourceSpecificationCharacteristicString(characteristics, 'endOfLifeDate'),
-        endOfSupportLifeDate: readResourceSpecificationCharacteristicString(characteristics, 'endOfSupportLifeDate'),
-        lifecycleStatus: readResourceSpecificationCharacteristicString(characteristics, 'lifecycleStatus'),
+        stockable: readResourceSpecificationCharacteristicBooleanState(
+          characteristics,
+          'stockable',
+        ),
+        discontinued: readResourceSpecificationCharacteristicBooleanState(
+          characteristics,
+          'discontinued',
+        ),
+        supportsSdWan: readResourceSpecificationCharacteristicBooleanState(
+          characteristics,
+          'supportsSdWan',
+        ),
+        supportsVoice: readResourceSpecificationCharacteristicBooleanState(
+          characteristics,
+          'supportsVoice',
+        ),
+        homologationDate: readResourceSpecificationCharacteristicString(
+          characteristics,
+          'homologationDate',
+        ),
+        endOfLifeDate: readResourceSpecificationCharacteristicString(
+          characteristics,
+          'endOfLifeDate',
+        ),
+        endOfSupportLifeDate: readResourceSpecificationCharacteristicString(
+          characteristics,
+          'endOfSupportLifeDate',
+        ),
+        lifecycleStatus: readResourceSpecificationCharacteristicString(
+          characteristics,
+          'lifecycleStatus',
+        ),
       });
       return;
     }
 
     const entity = modalState.entity as ResourceEntity | null;
-    const resourceSpecification = resourceSpecificationOptions.find((spec) => spec.id === entity?.resourceSpecificationId);
+    const resourceSpecification = resourceSpecificationOptions.find(
+      (spec) => spec.id === entity?.resourceSpecificationId,
+    );
     setFormState({
       ...emptyFormState(),
       name: entity?.name ?? '',
       resourceSpecificationId: entity?.resourceSpecificationId ?? '',
       // Physical resources scope their catalog lookups by category; default to the active page category.
-      category: isPhysicalResource(entity) ? resourceSpecification?.category ?? category : category,
-      resourceType: isPhysicalResource(entity) ? resourceSpecification?.resourceType ?? '' : '',
+      category: isPhysicalResource(entity)
+        ? (resourceSpecification?.category ?? category)
+        : category,
+      resourceType: isPhysicalResource(entity) ? (resourceSpecification?.resourceType ?? '') : '',
       placeId: entity?.place?.id ?? '',
       placeType: entity?.place?.['@referredType'] ?? '',
       status: entity?.status ?? 'active',
-      model: isPhysicalResource(entity) ? entity.model ?? '' : '',
-      serialNumber: isPhysicalResource(entity) ? entity.serialNumber ?? '' : '',
-      partNumber: isPhysicalResource(entity) ? entity.partNumber ?? '' : '',
-      supportingPhysicalResourceId: isLogicalResource(entity) ? entity.supportingPhysicalResourceId ?? '' : '',
+      model: isPhysicalResource(entity) ? (entity.model ?? '') : '',
+      serialNumber: isPhysicalResource(entity) ? (entity.serialNumber ?? '') : '',
+      partNumber: isPhysicalResource(entity) ? (entity.partNumber ?? '') : '',
+      supportingPhysicalResourceId: isLogicalResource(entity)
+        ? (entity.supportingPhysicalResourceId ?? '')
+        : '',
     });
   }, [modalState, manufacturerOptions, category]);
 
@@ -523,7 +589,12 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
     let cancelled = false;
     void (async () => {
       try {
-        const options = await listResources({ kind: 'PhysicalResource', limit: 200, offset: 0, status: 'active' });
+        const options = await listResources({
+          kind: 'PhysicalResource',
+          limit: 200,
+          offset: 0,
+          status: 'active',
+        });
         if (!cancelled) setSupportingPhysicalResourceChoices(options as PhysicalResource[]);
       } catch {
         // Best-effort: o campo já tolera um id selecionado sem opção correspondente na lista.
@@ -537,7 +608,8 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   useEffect(() => {
     if (!modalState || modalState.mode !== 'create') return;
     if (modalState.tab !== 'LogicalResource') return;
-    const firstCategorySpecId = resourceSpecificationOptions.find((spec) => spec.category === category)?.id ?? '';
+    const firstCategorySpecId =
+      resourceSpecificationOptions.find((spec) => spec.category === category)?.id ?? '';
     setFormState((current) => {
       const nextResourceSpecificationId = current.resourceSpecificationId || firstCategorySpecId;
       if (nextResourceSpecificationId === current.resourceSpecificationId) return current;
@@ -550,16 +622,23 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
     if (!modalState || modalState.tab !== 'PhysicalResource') return;
     if (!formState.resourceSpecificationId) return;
 
-    const selectedSpec = resourceSpecificationOptions.find((spec) => spec.id === formState.resourceSpecificationId);
+    const selectedSpec = resourceSpecificationOptions.find(
+      (spec) => spec.id === formState.resourceSpecificationId,
+    );
     if (!selectedSpec) return;
 
     // Prefer the canonical characteristic. Keep relatedParty as fallback for legacy specs.
     const manufacturerCharacteristic = selectedSpec.resourceSpecificationCharacteristic?.find(
       (characteristic) => characteristic.name === 'manufacturer',
     );
-    const manufacturerParty = selectedSpec.relatedParty?.find((party) => party.role === 'manufacturer');
+    const manufacturerParty = selectedSpec.relatedParty?.find(
+      (party) => party.role === 'manufacturer',
+    );
     const manufacturerName =
-      (typeof manufacturerCharacteristic?.value === 'string' ? manufacturerCharacteristic.value : String(manufacturerCharacteristic?.value ?? '')).trim() ||
+      (typeof manufacturerCharacteristic?.value === 'string'
+        ? manufacturerCharacteristic.value
+        : String(manufacturerCharacteristic?.value ?? '')
+      ).trim() ||
       manufacturerParty?.name ||
       '';
 
@@ -650,7 +729,11 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
     setError(null);
     try {
       if (modalState?.tab === 'ResourceSpecification') {
-        const payload = buildSpecificationPayload(formState, modalState.entity as ResourceSpecification | null, manufacturerOptions);
+        const payload = buildSpecificationPayload(
+          formState,
+          modalState.entity as ResourceSpecification | null,
+          manufacturerOptions,
+        );
         if (modalState.mode === 'create') {
           await createResourceSpecification(payload);
         } else if (modalState.entity) {
@@ -718,13 +801,33 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
                 onChange={() => toggleSelected(spec.id)}
               />
             </td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readResourceTypeCode(resourceTypes, spec.resourceType)}</td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readSpecificationManufacturer(spec)}</td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readSpecificationModel(spec)}</td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readSpecLifecycleStatus(spec.resourceSpecificationCharacteristic)}</td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readSpecCharacteristic(spec.resourceSpecificationCharacteristic, 'equipmentFunction')}</td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readSpecCharacteristic(spec.resourceSpecificationCharacteristic, 'endOfLifeDate')}</td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">{readSpecCharacteristic(spec.resourceSpecificationCharacteristic, 'endOfSupportLifeDate')}</td>
+            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
+              {readResourceTypeCode(resourceTypes, spec.resourceType)}
+            </td>
+            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
+              {readSpecificationManufacturer(spec)}
+            </td>
+            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
+              {readSpecificationModel(spec)}
+            </td>
+            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
+              {readSpecLifecycleStatus(spec.resourceSpecificationCharacteristic)}
+            </td>
+            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
+              {readSpecCharacteristic(
+                spec.resourceSpecificationCharacteristic,
+                'equipmentFunction',
+              )}
+            </td>
+            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
+              {readSpecCharacteristic(spec.resourceSpecificationCharacteristic, 'endOfLifeDate')}
+            </td>
+            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
+              {readSpecCharacteristic(
+                spec.resourceSpecificationCharacteristic,
+                'endOfSupportLifeDate',
+              )}
+            </td>
           </tr>
         ))
       : (pageItems as ResourceEntity[]).map((resourceItem) => (
@@ -742,13 +845,21 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
                 onChange={() => toggleSelected(resourceItem.id)}
               />
             </td>
-            <td className="px-4 py-3 text-[0.92rem] font-semibold text-app-text">{resourceItem.name}</td>
+            <td className="px-4 py-3 text-[0.92rem] font-semibold text-app-text">
+              {resourceItem.name}
+            </td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">
-              {readResourceSpecificationName(resourceSpecificationOptions, resourceItem.resourceSpecification?.id ?? resourceItem.resourceSpecificationId)}
+              {readResourceSpecificationName(
+                resourceSpecificationOptions,
+                resourceItem.resourceSpecification?.id ?? resourceItem.resourceSpecificationId,
+              )}
             </td>
             {effectiveTab === 'PhysicalResource' ? (
               <td className="px-4 py-3 text-[0.88rem] text-app-muted">
-                {readResourceSpecificationType(resourceSpecificationOptions, resourceItem.resourceSpecification?.id ?? resourceItem.resourceSpecificationId)}
+                {readResourceSpecificationType(
+                  resourceSpecificationOptions,
+                  resourceItem.resourceSpecification?.id ?? resourceItem.resourceSpecificationId,
+                )}
               </td>
             ) : null}
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">
@@ -766,7 +877,9 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
                 )}
               </div>
             </td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">{resourceItem.status ?? '-'}</td>
+            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
+              {resourceItem.status ?? '-'}
+            </td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">
               {effectiveTab === 'PhysicalResource'
                 ? physicalDetails(resourceItem as PhysicalResource)
@@ -778,64 +891,66 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   return (
     <div className="h-full min-h-0 overflow-hidden px-8 py-8">
       <div className="mx-auto flex h-full max-w-[1460px] flex-col gap-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-3">
               <CategoryIcon className="h-7 w-7 shrink-0 text-app-muted" strokeWidth={2} />
-              <h1 className="font-display text-4xl font-semibold text-app-text">
+              <h1 className="truncate font-display text-4xl font-semibold text-app-text">
                 {categoryName}
               </h1>
             </div>
-            <p className="mt-2 max-w-[820px] text-[0.96rem] text-app-muted">
-              {activeTabConfig.description}
-            </p>
-          </div>
-          <div className="mt-1 flex shrink-0 items-center gap-2">
-            <div
-              role="tablist"
-              aria-label="Visão do recurso"
-              className="mr-1 inline-flex items-center gap-1 rounded-[16px] border border-app-border bg-white p-1 shadow-soft"
-            >
-              {RESOURCE_VIEWS.map((viewOption) => {
-                const selected = view === viewOption.id;
-                return (
-                  <button
-                    key={viewOption.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={selected}
-                    onClick={() => setView(viewOption.id)}
-                    className={`rounded-[12px] px-4 py-2 text-[0.88rem] font-semibold transition ${
-                      selected
-                        ? 'bg-app-accent-soft text-app-text'
-                        : 'text-app-muted hover:bg-app-accent-soft hover:text-app-text'
-                    }`}
-                  >
-                    {viewOption.label}
-                  </button>
-                );
-              })}
+            <div className="flex shrink-0 items-center gap-2">
+              <div
+                role="tablist"
+                aria-label="Visão do recurso"
+                className="mr-1 inline-flex items-center gap-1 rounded-[16px] border border-app-border bg-white p-1 shadow-soft"
+              >
+                {RESOURCE_VIEWS.map((viewOption) => {
+                  const selected = view === viewOption.id;
+                  return (
+                    <button
+                      key={viewOption.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      onClick={() => setView(viewOption.id)}
+                      className={`rounded-[12px] px-4 py-2 text-[0.88rem] font-semibold transition ${
+                        selected
+                          ? 'bg-app-accent-soft text-app-text'
+                          : 'text-app-muted hover:bg-app-accent-soft hover:text-app-text'
+                      }`}
+                    >
+                      {viewOption.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={openCreateModal}
+                aria-label="Criar recurso"
+                title="Criar recurso"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-app-border bg-white text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text focus-visible:border-app-accent-border disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={openDeleteConfirmation}
+                disabled={!selectedCount || saving || deleting}
+                aria-label="Excluir selecionados"
+                title="Excluir selecionados"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-app-border bg-white text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text focus-visible:border-app-accent-border disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={openCreateModal}
-              aria-label="Criar recurso"
-              title="Criar recurso"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-app-border bg-white text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text focus-visible:border-app-accent-border disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={openDeleteConfirmation}
-              disabled={!selectedCount || saving || deleting}
-              aria-label="Excluir selecionados"
-              title="Excluir selecionados"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-app-border bg-white text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text focus-visible:border-app-accent-border disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
           </div>
+          <p className="max-w-[760px] text-[0.9rem] text-app-muted">
+            {view === 'catalog'
+              ? tabConfig.ResourceSpecification.description
+              : resourceCategoryDescription(category)}
+          </p>
         </div>
 
         {error ? (
@@ -908,7 +1023,10 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
                   rows
                 ) : (
                   <tr>
-                    <td colSpan={activeColumns.length + 1} className="px-4 py-10 text-center text-[0.9rem] text-app-muted">
+                    <td
+                      colSpan={activeColumns.length + 1}
+                      className="px-4 py-10 text-center text-[0.9rem] text-app-muted"
+                    >
                       Nenhum registro encontrado.
                     </td>
                   </tr>
@@ -929,7 +1047,9 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
                       : 'Nenhuma seleção ativa'
                   : filteredItems.length
                     ? `Mostrando ${(activePage - 1) * PAGE_SIZE + 1}–${Math.min(activePage * PAGE_SIZE, filteredItems.length)} de ${filteredItems.length} registro(s)${
-                        filteredItems.length !== categoryItems.length ? ` (filtrado de ${categoryItems.length})` : ''
+                        filteredItems.length !== categoryItems.length
+                          ? ` (filtrado de ${categoryItems.length})`
+                          : ''
                       }`
                     : categoryItems.length
                       ? 'Nenhum registro para os filtros aplicados'
@@ -996,68 +1116,81 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
         />
       ) : null}
 
-      {deleteConfirmOpen ? createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="delete-confirmation-title"
-            className="w-full max-w-[560px] rounded-[28px] border border-app-border bg-white p-6 shadow-modal"
-          >
-            <div className="mb-5 flex items-start justify-between gap-4 border-b border-app-border pb-4">
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5 rounded-[14px] bg-amber-50 p-2 text-amber-700">
-                  <AlertTriangle className="h-5 w-5" aria-hidden="true" />
-                </div>
-                <div>
-                  <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-                    Confirmação de exclusão
+      {deleteConfirmOpen
+        ? createPortal(
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="delete-confirmation-title"
+                className="w-full max-w-[560px] rounded-[28px] border border-app-border bg-white p-6 shadow-modal"
+              >
+                <div className="mb-5 flex items-start justify-between gap-4 border-b border-app-border pb-4">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 rounded-[14px] bg-amber-50 p-2 text-amber-700">
+                      <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+                        Confirmação de exclusão
+                      </div>
+                      <h2
+                        id="delete-confirmation-title"
+                        className="mt-1 font-display text-[1.4rem] font-semibold text-app-text"
+                      >
+                        Excluir {selectedCount} selecionado{selectedCount === 1 ? '' : 's'}?
+                      </h2>
+                    </div>
                   </div>
-                  <h2 id="delete-confirmation-title" className="mt-1 font-display text-[1.4rem] font-semibold text-app-text">
-                    Excluir {selectedCount} selecionado{selectedCount === 1 ? '' : 's'}?
-                  </h2>
+                  <button
+                    type="button"
+                    className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
+                    onClick={closeDeleteConfirmation}
+                    disabled={deleting}
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="grid gap-4 text-[0.92rem] text-app-muted">
+                  <p>
+                    A exclusão é lógica. Os itens selecionados serão encerrados e removidos da
+                    listagem ativa.
+                  </p>
+                  {selectedDeletePreview ? (
+                    <div className="rounded-[18px] border border-app-border bg-app-accent-soft px-4 py-3 text-[0.88rem] text-app-text">
+                      {selectedDeletePreview}
+                      {selectedCount > selectedOnPage.length
+                        ? ' e outros itens selecionados em páginas anteriores.'
+                        : ''}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="mt-6 flex items-center justify-end gap-3 border-t border-app-border pt-4">
+                  <button
+                    type="button"
+                    onClick={closeDeleteConfirmation}
+                    disabled={deleting}
+                    className="geo-btn secondary"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void confirmDeleteSelected()}
+                    disabled={deleting}
+                    className="inline-flex items-center gap-2 rounded-[16px] border border-red-200 bg-red-600 px-4 py-2 text-[0.92rem] font-semibold text-white shadow-soft transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {deleting ? 'Excluindo...' : 'Confirmar exclusão'}
+                  </button>
                 </div>
               </div>
-              <button type="button" className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft" onClick={closeDeleteConfirmation} disabled={deleting}>
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="grid gap-4 text-[0.92rem] text-app-muted">
-              <p>
-                A exclusão é lógica. Os itens selecionados serão encerrados e removidos da listagem ativa.
-              </p>
-              {selectedDeletePreview ? (
-                <div className="rounded-[18px] border border-app-border bg-app-accent-soft px-4 py-3 text-[0.88rem] text-app-text">
-                  {selectedDeletePreview}
-                  {selectedCount > selectedOnPage.length ? ' e outros itens selecionados em páginas anteriores.' : ''}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="mt-6 flex items-center justify-end gap-3 border-t border-app-border pt-4">
-              <button
-                type="button"
-                onClick={closeDeleteConfirmation}
-                disabled={deleting}
-                className="geo-btn secondary"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => void confirmDeleteSelected()}
-                disabled={deleting}
-                className="inline-flex items-center gap-2 rounded-[16px] border border-red-200 bg-red-600 px-4 py-2 text-[0.92rem] font-semibold text-white shadow-soft transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Trash2 className="h-4 w-4" />
-                {deleting ? 'Excluindo...' : 'Confirmar exclusão'}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
 
       {isLoading ? (
         <div className="pointer-events-none fixed bottom-6 right-6 z-50 rounded-[18px] border border-app-border bg-white/90 px-4 py-3 text-[0.88rem] font-medium text-app-muted shadow-soft backdrop-blur">
@@ -1111,15 +1244,30 @@ function ResourceModal({
       ? `${mode === 'create' ? 'Criar' : 'Editar'} Modelo de Recurso`
       : `${mode === 'create' ? 'Criar' : 'Editar'} ${tabConfig[tab].title}`;
   const visibleTypeOptions = buildTypeOptions(resourceTypes, category);
-  const selectedResourceSpecification = resourceSpecificationOptions.find((spec) => spec.id === formState.resourceSpecificationId);
+  const selectedResourceSpecification = resourceSpecificationOptions.find(
+    (spec) => spec.id === formState.resourceSpecificationId,
+  );
   const selectedResourceType = resourceTypes.find((type) => type.code === formState.resourceType);
-  const selectedResourceTypeOption = visibleTypeOptions.find((option) => option.code === formState.resourceType);
-  const selectedResourceTypeVisible = visibleTypeOptions.some((option) => option.code === formState.resourceType);
+  const selectedResourceTypeOption = visibleTypeOptions.find(
+    (option) => option.code === formState.resourceType,
+  );
+  const selectedResourceTypeVisible = visibleTypeOptions.some(
+    (option) => option.code === formState.resourceType,
+  );
   const physicalTypeOptions = visibleTypeOptions;
-  const physicalModelOptions = buildPhysicalModelOptions(resourceSpecificationOptions, category, formState.resourceType);
-  const logicalSpecificationOptions = resourceSpecificationOptions.filter((spec) => spec.category === category);
-  const selectedPhysicalResource = physicalResourceOptions.find((resource) => resource.id === formState.supportingPhysicalResourceId);
-  const selectedManufacturer = manufacturerOptions.find((party) => party.id === formState.manufacturerPartyId) ?? null;
+  const physicalModelOptions = buildPhysicalModelOptions(
+    resourceSpecificationOptions,
+    category,
+    formState.resourceType,
+  );
+  const logicalSpecificationOptions = resourceSpecificationOptions.filter(
+    (spec) => spec.category === category,
+  );
+  const selectedPhysicalResource = physicalResourceOptions.find(
+    (resource) => resource.id === formState.supportingPhysicalResourceId,
+  );
+  const selectedManufacturer =
+    manufacturerOptions.find((party) => party.id === formState.manufacturerPartyId) ?? null;
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const typeMenuRef = useRef<HTMLDivElement>(null);
 
@@ -1155,11 +1303,18 @@ function ResourceModal({
             <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
               CRUD de Recursos
             </div>
-            <h2 id="resource-modal-title" className="mt-1 font-display text-[1.45rem] font-semibold text-app-text">
+            <h2
+              id="resource-modal-title"
+              className="mt-1 font-display text-[1.45rem] font-semibold text-app-text"
+            >
               {title}
             </h2>
           </div>
-          <button type="button" className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft" onClick={onClose}>
+          <button
+            type="button"
+            className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
+            onClick={onClose}
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -1184,7 +1339,10 @@ function ResourceModal({
                     <span className="flex min-w-0 items-center gap-2">
                       {selectedResourceTypeOption ? (
                         <>
-                          <selectedResourceTypeOption.icon className="h-4 w-4 shrink-0 text-app-muted" aria-hidden="true" />
+                          <selectedResourceTypeOption.icon
+                            className="h-4 w-4 shrink-0 text-app-muted"
+                            aria-hidden="true"
+                          />
                           <span className="truncate">{selectedResourceTypeOption.label}</span>
                         </>
                       ) : (
@@ -1216,16 +1374,24 @@ function ResourceModal({
                               setTypeMenuOpen(false);
                             }}
                             className={`flex w-full items-center gap-3 rounded-[14px] px-3 py-2 text-left text-[0.92rem] transition ${
-                              isSelected ? 'bg-app-accent-soft text-app-text' : 'text-app-text hover:bg-app-accent-soft'
+                              isSelected
+                                ? 'bg-app-accent-soft text-app-text'
+                                : 'text-app-text hover:bg-app-accent-soft'
                             } disabled:cursor-not-allowed disabled:opacity-50`}
                           >
-                            <OptionIcon className="h-4 w-4 shrink-0 text-app-muted" aria-hidden="true" />
+                            <OptionIcon
+                              className="h-4 w-4 shrink-0 text-app-muted"
+                              aria-hidden="true"
+                            />
                             <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                            {!option.active ? <span className="text-[0.72rem] text-app-muted">(inativo)</span> : null}
+                            {!option.active ? (
+                              <span className="text-[0.72rem] text-app-muted">(inativo)</span>
+                            ) : null}
                           </button>
                         );
                       })}
-                      {formState.resourceType && (!selectedResourceType || !selectedResourceTypeVisible) ? (
+                      {formState.resourceType &&
+                      (!selectedResourceType || !selectedResourceTypeVisible) ? (
                         <button
                           type="button"
                           role="option"
@@ -1233,8 +1399,13 @@ function ResourceModal({
                           className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2 text-left text-[0.92rem] text-amber-900 transition hover:bg-amber-50"
                           onClick={() => setTypeMenuOpen(false)}
                         >
-                          <FileText className="h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
-                          <span className="min-w-0 flex-1 truncate">{formState.resourceType} (legado)</span>
+                          <FileText
+                            className="h-4 w-4 shrink-0 text-amber-700"
+                            aria-hidden="true"
+                          />
+                          <span className="min-w-0 flex-1 truncate">
+                            {formState.resourceType} (legado)
+                          </span>
                         </button>
                       ) : null}
                     </div>
@@ -1244,7 +1415,9 @@ function ResourceModal({
               <Field label={resourceFieldLabel('manufacturer')}>
                 <select
                   value={formState.manufacturerPartyId}
-                  onChange={(event) => onChange({ ...formState, manufacturerPartyId: event.target.value })}
+                  onChange={(event) =>
+                    onChange({ ...formState, manufacturerPartyId: event.target.value })
+                  }
                   className="geo-input"
                 >
                   <option value="">Selecione um fabricante</option>
@@ -1271,7 +1444,9 @@ function ResourceModal({
               <Field label={resourceFieldLabel('equipmentFunction')}>
                 <input
                   value={formState.equipmentFunction}
-                  onChange={(event) => onChange({ ...formState, equipmentFunction: event.target.value })}
+                  onChange={(event) =>
+                    onChange({ ...formState, equipmentFunction: event.target.value })
+                  }
                   className="geo-input"
                   placeholder="Ex.: Roteador, ONT, OLT"
                 />
@@ -1279,7 +1454,9 @@ function ResourceModal({
               <Field label={resourceFieldLabel('equipmentCode')}>
                 <input
                   value={formState.equipmentCode}
-                  onChange={(event) => onChange({ ...formState, equipmentCode: event.target.value })}
+                  onChange={(event) =>
+                    onChange({ ...formState, equipmentCode: event.target.value })
+                  }
                   className="geo-input"
                   placeholder="Ex.: EQ-OLT-001"
                 />
@@ -1298,7 +1475,9 @@ function ResourceModal({
                 <input
                   type="date"
                   value={formState.homologationDate}
-                  onChange={(event) => onChange({ ...formState, homologationDate: event.target.value })}
+                  onChange={(event) =>
+                    onChange({ ...formState, homologationDate: event.target.value })
+                  }
                   className="geo-input"
                 />
               </Field>
@@ -1306,7 +1485,9 @@ function ResourceModal({
                 <input
                   type="date"
                   value={formState.endOfLifeDate}
-                  onChange={(event) => onChange({ ...formState, endOfLifeDate: event.target.value })}
+                  onChange={(event) =>
+                    onChange({ ...formState, endOfLifeDate: event.target.value })
+                  }
                   className="geo-input"
                 />
               </Field>
@@ -1314,7 +1495,9 @@ function ResourceModal({
                 <input
                   type="date"
                   value={formState.endOfSupportLifeDate}
-                  onChange={(event) => onChange({ ...formState, endOfSupportLifeDate: event.target.value })}
+                  onChange={(event) =>
+                    onChange({ ...formState, endOfSupportLifeDate: event.target.value })
+                  }
                   className="geo-input"
                 />
               </Field>
@@ -1325,7 +1508,10 @@ function ResourceModal({
                 <select
                   value={formState.stockable}
                   onChange={(event) =>
-                    onChange({ ...formState, stockable: event.target.value as ResourceFormState['stockable'] })
+                    onChange({
+                      ...formState,
+                      stockable: event.target.value as ResourceFormState['stockable'],
+                    })
                   }
                   className="geo-input"
                 >
@@ -1338,7 +1524,10 @@ function ResourceModal({
                 <select
                   value={formState.discontinued}
                   onChange={(event) =>
-                    onChange({ ...formState, discontinued: event.target.value as ResourceFormState['discontinued'] })
+                    onChange({
+                      ...formState,
+                      discontinued: event.target.value as ResourceFormState['discontinued'],
+                    })
                   }
                   className="geo-input"
                 >
@@ -1351,7 +1540,10 @@ function ResourceModal({
                 <select
                   value={formState.supportsSdWan}
                   onChange={(event) =>
-                    onChange({ ...formState, supportsSdWan: event.target.value as ResourceFormState['supportsSdWan'] })
+                    onChange({
+                      ...formState,
+                      supportsSdWan: event.target.value as ResourceFormState['supportsSdWan'],
+                    })
                   }
                   className="geo-input"
                 >
@@ -1364,7 +1556,10 @@ function ResourceModal({
                 <select
                   value={formState.supportsVoice}
                   onChange={(event) =>
-                    onChange({ ...formState, supportsVoice: event.target.value as ResourceFormState['supportsVoice'] })
+                    onChange({
+                      ...formState,
+                      supportsVoice: event.target.value as ResourceFormState['supportsVoice'],
+                    })
                   }
                   className="geo-input"
                 >
@@ -1376,7 +1571,9 @@ function ResourceModal({
               <Field label={resourceFieldLabel('lifecycleStatus')}>
                 <select
                   value={formState.lifecycleStatus}
-                  onChange={(event) => onChange({ ...formState, lifecycleStatus: event.target.value })}
+                  onChange={(event) =>
+                    onChange({ ...formState, lifecycleStatus: event.target.value })
+                  }
                   className="geo-input"
                 >
                   <option value="">Selecione um status</option>
@@ -1396,7 +1593,8 @@ function ResourceModal({
               </Field>
               {!catalogSelectionValid ? (
                 <div className="md:col-span-2 rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-3 text-[0.88rem] text-amber-900">
-                  Selecione uma categoria e um tipo ativos do catálogo. Valores legados precisam ser remapeados antes de salvar.
+                  Selecione uma categoria e um tipo ativos do catálogo. Valores legados precisam ser
+                  remapeados antes de salvar.
                 </div>
               ) : null}
             </div>
@@ -1405,7 +1603,12 @@ function ResourceModal({
           {tab === 'PhysicalResource' ? (
             <div className="grid gap-4 md:grid-cols-2">
               <Field label={resourceFieldLabel('name')}>
-                <input required value={formState.name} onChange={(event) => onChange({ ...formState, name: event.target.value })} className="geo-input" />
+                <input
+                  required
+                  value={formState.name}
+                  onChange={(event) => onChange({ ...formState, name: event.target.value })}
+                  className="geo-input"
+                />
               </Field>
               <Field label={resourceFieldLabel('resourceType')}>
                 <select
@@ -1425,7 +1628,8 @@ function ResourceModal({
                   <option value="">Selecione um tipo</option>
                   {physicalTypeOptions.map((option) => (
                     <option key={option.code} value={option.code} disabled={!option.active}>
-                      {option.label}{!option.active ? ' (inativo)' : ''}
+                      {option.label}
+                      {!option.active ? ' (inativo)' : ''}
                     </option>
                   ))}
                 </select>
@@ -1435,7 +1639,9 @@ function ResourceModal({
                   required
                   value={formState.resourceSpecificationId}
                   onChange={(event) => {
-                    const nextSpecification = resourceSpecificationOptions.find((spec) => spec.id === event.target.value);
+                    const nextSpecification = resourceSpecificationOptions.find(
+                      (spec) => spec.id === event.target.value,
+                    );
                     onChange({
                       ...formState,
                       resourceSpecificationId: event.target.value,
@@ -1447,7 +1653,11 @@ function ResourceModal({
                     });
                   }}
                   className="geo-input"
-                  disabled={!formState.category || !formState.resourceType || (lookupLoading && !resourceSpecificationOptions.length)}
+                  disabled={
+                    !formState.category ||
+                    !formState.resourceType ||
+                    (lookupLoading && !resourceSpecificationOptions.length)
+                  }
                 >
                   <option value="">Selecione um modelo</option>
                   {physicalModelOptions.map((spec) => (
@@ -1455,8 +1665,14 @@ function ResourceModal({
                       {spec.name}
                     </option>
                   ))}
-                  {formState.resourceSpecificationId && selectedResourceSpecification && !physicalModelOptions.some((spec) => spec.id === selectedResourceSpecification.id) ? (
-                    <option value={selectedResourceSpecification.id}>{selectedResourceSpecification.name}</option>
+                  {formState.resourceSpecificationId &&
+                  selectedResourceSpecification &&
+                  !physicalModelOptions.some(
+                    (spec) => spec.id === selectedResourceSpecification.id,
+                  ) ? (
+                    <option value={selectedResourceSpecification.id}>
+                      {selectedResourceSpecification.name}
+                    </option>
                   ) : null}
                   {formState.resourceSpecificationId && !selectedResourceSpecification ? (
                     <option value={formState.resourceSpecificationId}>Modelo legado</option>
@@ -1465,7 +1681,14 @@ function ResourceModal({
               </Field>
               <Field label={resourceFieldLabel('placeId')}>
                 <PlacePicker
-                  value={formState.placeId ? { id: formState.placeId, '@referredType': formState.placeType || 'GeographicSite' } : null}
+                  value={
+                    formState.placeId
+                      ? {
+                          id: formState.placeId,
+                          '@referredType': formState.placeType || 'GeographicSite',
+                        }
+                      : null
+                  }
                   onChange={(place) => {
                     onChange({
                       ...formState,
@@ -1478,9 +1701,15 @@ function ResourceModal({
                 />
               </Field>
               <Field label="status">
-                <select value={formState.status} onChange={(event) => onChange({ ...formState, status: event.target.value })} className="geo-input">
+                <select
+                  value={formState.status}
+                  onChange={(event) => onChange({ ...formState, status: event.target.value })}
+                  className="geo-input"
+                >
                   {['active', 'inactive', 'suspended', 'terminated'].map((item) => (
-                    <option key={item} value={item}>{item}</option>
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
                   ))}
                 </select>
               </Field>
@@ -1503,10 +1732,18 @@ function ResourceModal({
                 />
               </Field>
               <Field label="serialNumber">
-                <input value={formState.serialNumber} onChange={(event) => onChange({ ...formState, serialNumber: event.target.value })} className="geo-input" />
+                <input
+                  value={formState.serialNumber}
+                  onChange={(event) => onChange({ ...formState, serialNumber: event.target.value })}
+                  className="geo-input"
+                />
               </Field>
               <Field label="partNumber">
-                <input value={formState.partNumber} onChange={(event) => onChange({ ...formState, partNumber: event.target.value })} className="geo-input" />
+                <input
+                  value={formState.partNumber}
+                  onChange={(event) => onChange({ ...formState, partNumber: event.target.value })}
+                  className="geo-input"
+                />
               </Field>
             </div>
           ) : null}
@@ -1514,13 +1751,20 @@ function ResourceModal({
           {tab === 'LogicalResource' ? (
             <div className="grid gap-4 md:grid-cols-2">
               <Field label={resourceFieldLabel('name')}>
-                <input required value={formState.name} onChange={(event) => onChange({ ...formState, name: event.target.value })} className="geo-input" />
+                <input
+                  required
+                  value={formState.name}
+                  onChange={(event) => onChange({ ...formState, name: event.target.value })}
+                  className="geo-input"
+                />
               </Field>
               <Field label={resourceFieldLabel('resourceSpecificationName')}>
                 <select
                   required
                   value={formState.resourceSpecificationId}
-                  onChange={(event) => onChange({ ...formState, resourceSpecificationId: event.target.value })}
+                  onChange={(event) =>
+                    onChange({ ...formState, resourceSpecificationId: event.target.value })
+                  }
                   className="geo-input"
                   disabled={lookupLoading && !resourceSpecificationOptions.length}
                 >
@@ -1531,7 +1775,9 @@ function ResourceModal({
                     </option>
                   ))}
                   {formState.resourceSpecificationId && !selectedResourceSpecification ? (
-                    <option value={formState.resourceSpecificationId}>{formState.resourceSpecificationId}</option>
+                    <option value={formState.resourceSpecificationId}>
+                      {formState.resourceSpecificationId}
+                    </option>
                   ) : null}
                 </select>
                 <span className="text-[0.72rem] font-normal uppercase tracking-[0.05em] text-app-muted">
@@ -1542,7 +1788,14 @@ function ResourceModal({
               </Field>
               <Field label={resourceFieldLabel('placeId')}>
                 <PlacePicker
-                  value={formState.placeId ? { id: formState.placeId, '@referredType': formState.placeType || 'GeographicSite' } : null}
+                  value={
+                    formState.placeId
+                      ? {
+                          id: formState.placeId,
+                          '@referredType': formState.placeType || 'GeographicSite',
+                        }
+                      : null
+                  }
                   onChange={(place) => {
                     onChange({
                       ...formState,
@@ -1555,16 +1808,24 @@ function ResourceModal({
                 />
               </Field>
               <Field label="status">
-                <select value={formState.status} onChange={(event) => onChange({ ...formState, status: event.target.value })} className="geo-input">
+                <select
+                  value={formState.status}
+                  onChange={(event) => onChange({ ...formState, status: event.target.value })}
+                  className="geo-input"
+                >
                   {['active', 'inactive', 'suspended', 'terminated'].map((item) => (
-                    <option key={item} value={item}>{item}</option>
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
                   ))}
                 </select>
               </Field>
               <Field label={resourceFieldLabel('supportingPhysicalResourceName')}>
                 <select
                   value={formState.supportingPhysicalResourceId}
-                  onChange={(event) => onChange({ ...formState, supportingPhysicalResourceId: event.target.value })}
+                  onChange={(event) =>
+                    onChange({ ...formState, supportingPhysicalResourceId: event.target.value })
+                  }
                   className="geo-input"
                 >
                   <option value="">Selecione um recurso fisico</option>
@@ -1574,11 +1835,15 @@ function ResourceModal({
                     </option>
                   ))}
                   {formState.supportingPhysicalResourceId && !selectedPhysicalResource ? (
-                    <option value={formState.supportingPhysicalResourceId}>{formState.supportingPhysicalResourceId}</option>
+                    <option value={formState.supportingPhysicalResourceId}>
+                      {formState.supportingPhysicalResourceId}
+                    </option>
                   ) : null}
                 </select>
                 <span className="text-[0.72rem] font-normal uppercase tracking-[0.05em] text-app-muted">
-                  {selectedPhysicalResource ? `${selectedPhysicalResource.name} · ${selectedPhysicalResource.resourceSpecificationId}` : 'Lookup TMF639'}
+                  {selectedPhysicalResource
+                    ? `${selectedPhysicalResource.name} · ${selectedPhysicalResource.resourceSpecificationId}`
+                    : 'Lookup TMF639'}
                 </span>
               </Field>
             </div>
@@ -1599,7 +1864,7 @@ function ResourceModal({
         </form>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }
 
@@ -1612,7 +1877,12 @@ type SpecificationCharacteristicDefinition = {
 
 const SPECIFICATION_CHARACTERISTIC_DEFINITIONS: SpecificationCharacteristicDefinition[] = [
   { name: 'equipmentCode', field: 'equipmentCode', valueType: 'string', group: 'identification' },
-  { name: 'equipmentFunction', field: 'equipmentFunction', valueType: 'string', group: 'identification' },
+  {
+    name: 'equipmentFunction',
+    field: 'equipmentFunction',
+    valueType: 'string',
+    group: 'identification',
+  },
   { name: 'model', field: 'model', valueType: 'string', group: 'commercial' },
   { name: 'skuId', field: 'skuId', valueType: 'string', group: 'commercial' },
   { name: 'stockable', field: 'stockable', valueType: 'boolean', group: 'capability' },
@@ -1621,7 +1891,12 @@ const SPECIFICATION_CHARACTERISTIC_DEFINITIONS: SpecificationCharacteristicDefin
   { name: 'supportsVoice', field: 'supportsVoice', valueType: 'boolean', group: 'capability' },
   { name: 'homologationDate', field: 'homologationDate', valueType: 'date', group: 'commercial' },
   { name: 'endOfLifeDate', field: 'endOfLifeDate', valueType: 'date', group: 'lifecycle' },
-  { name: 'endOfSupportLifeDate', field: 'endOfSupportLifeDate', valueType: 'date', group: 'lifecycle' },
+  {
+    name: 'endOfSupportLifeDate',
+    field: 'endOfSupportLifeDate',
+    valueType: 'date',
+    group: 'lifecycle',
+  },
   { name: 'lifecycleStatus', field: 'lifecycleStatus', valueType: 'string', group: 'lifecycle' },
 ];
 
@@ -1630,22 +1905,35 @@ function buildSpecificationPayload(
   existing?: ResourceSpecification | null,
   manufacturerOptions: Party[] = [],
 ): ResourceSpecificationPayload {
-  const existingManufacturerParty = existing?.relatedParty?.find((party) => party.role === 'manufacturer');
-  const manufacturerParty = resolveManufacturerParty(state, manufacturerOptions) ?? existingManufacturerParty;
-  const relatedParty = (existing?.relatedParty ?? []).filter((party) => party.role !== 'manufacturer');
+  const existingManufacturerParty = existing?.relatedParty?.find(
+    (party) => party.role === 'manufacturer',
+  );
+  const manufacturerParty =
+    resolveManufacturerParty(state, manufacturerOptions) ?? existingManufacturerParty;
+  const relatedParty = (existing?.relatedParty ?? []).filter(
+    (party) => party.role !== 'manufacturer',
+  );
   if (manufacturerParty) {
     relatedParty.push({
       id: manufacturerParty.id,
-      '@referredType': 'partyType' in manufacturerParty ? manufacturerParty.partyType : manufacturerParty['@referredType'],
+      '@referredType':
+        'partyType' in manufacturerParty
+          ? manufacturerParty.partyType
+          : manufacturerParty['@referredType'],
       role: 'manufacturer',
       name: manufacturerParty.name,
     });
   }
 
-  const resourceSpecificationCharacteristic = mergeSpecificationCharacteristics(existing?.resourceSpecificationCharacteristic ?? [], state);
+  const resourceSpecificationCharacteristic = mergeSpecificationCharacteristics(
+    existing?.resourceSpecificationCharacteristic ?? [],
+    state,
+  );
   const modelName = normalizeCatalogText(state.model) || normalizeCatalogText(state.name);
   if (manufacturerParty) {
-    const filtered = resourceSpecificationCharacteristic.filter((item) => item.name !== 'manufacturer');
+    const filtered = resourceSpecificationCharacteristic.filter(
+      (item) => item.name !== 'manufacturer',
+    );
     return {
       name: modelName,
       category: state.category.trim(),
@@ -1713,7 +2001,10 @@ function mergeSpecificationCharacteristics(
       continue;
     }
 
-    const text = definition.name === 'model' ? normalizeCatalogText(String(value ?? '')) : String(value ?? '').trim();
+    const text =
+      definition.name === 'model'
+        ? normalizeCatalogText(String(value ?? ''))
+        : String(value ?? '').trim();
     if (!text) {
       merged.delete(definition.name);
       continue;
@@ -1738,7 +2029,10 @@ function resolveManufacturerParty(state: ResourceFormState, options: Party[]): P
   return undefined;
 }
 
-function readSpecCharacteristic(characteristics: ResourceSpecificationCharacteristic[] | undefined, name: string): string {
+function readSpecCharacteristic(
+  characteristics: ResourceSpecificationCharacteristic[] | undefined,
+  name: string,
+): string {
   const item = characteristics?.find((characteristic) => characteristic.name === name);
   if (!item || item.value === undefined || item.value === null) return '-';
   return typeof item.value === 'string' ? item.value : String(item.value);
@@ -1758,7 +2052,9 @@ function readSpecificationModel(spec: ResourceSpecification | null | undefined):
   return spec.name || '-';
 }
 
-function readSpecLifecycleStatus(characteristics: ResourceSpecificationCharacteristic[] | undefined): string {
+function readSpecLifecycleStatus(
+  characteristics: ResourceSpecificationCharacteristic[] | undefined,
+): string {
   const value = readSpecCharacteristic(characteristics, 'lifecycleStatus');
   if (value === '-') return value;
   return readResourceSpecificationStatusLabel(value);
@@ -1768,32 +2064,45 @@ function readResourceTypeCode(types: ResourceType[], resourceTypeCode: string): 
   return types.find((type) => type.code === resourceTypeCode)?.code ?? resourceTypeCode;
 }
 
-function readResourceSpecificationName(specifications: ResourceSpecification[], specificationId: string): string {
+function readResourceSpecificationName(
+  specifications: ResourceSpecification[],
+  specificationId: string,
+): string {
   return specifications.find((spec) => spec.id === specificationId)?.name ?? specificationId;
 }
 
-function readResourceSpecificationType(specifications: ResourceSpecification[], specificationId: string): string {
-  return specifications.find((spec) => spec.id === specificationId)?.resourceType ?? specificationId;
+function readResourceSpecificationType(
+  specifications: ResourceSpecification[],
+  specificationId: string,
+): string {
+  return (
+    specifications.find((spec) => spec.id === specificationId)?.resourceType ?? specificationId
+  );
 }
 
-function isPhysicalResource(entity: ResourceEntity | ResourceSpecification | null): entity is PhysicalResource {
+function isPhysicalResource(
+  entity: ResourceEntity | ResourceSpecification | null,
+): entity is PhysicalResource {
   return Boolean(entity && entity['@type'] === 'PhysicalResource');
 }
 
-function isLogicalResource(entity: ResourceEntity | ResourceSpecification | null): entity is LogicalResource {
+function isLogicalResource(
+  entity: ResourceEntity | ResourceSpecification | null,
+): entity is LogicalResource {
   return Boolean(entity && entity['@type'] === 'LogicalResource');
 }
 
 function physicalDetails(resource: PhysicalResource): string {
-  return [resource.manufacturer, resource.model, resource.serialNumber, resource.partNumber]
-    .filter(Boolean)
-    .join(' · ') || '-';
+  return (
+    [resource.manufacturer, resource.model, resource.serialNumber, resource.partNumber]
+      .filter(Boolean)
+      .join(' · ') || '-'
+  );
 }
 
 function logicalDetails(resource: LogicalResource): string {
   return resource.supportingPhysicalResourceId ?? '-';
 }
-
 
 function buildPhysicalModelOptions(
   resourceSpecifications: ResourceSpecification[],

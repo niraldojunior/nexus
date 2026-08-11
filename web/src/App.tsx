@@ -38,6 +38,7 @@ import { sendMessage } from './services/api';
 import { useIsMobile } from './hooks/useIsMobile';
 import { DEFAULT_RESOURCE_CATEGORY_CODE } from './data/resourceCategoryViews';
 import { DEFAULT_SERVICE_CATEGORY_CODE } from './data/serviceCategoryViews';
+import { appRoutePath, parseAppRoute, type AppRoute } from './utils/appRoute';
 import {
   Conversation,
   ConversationEntry,
@@ -408,20 +409,46 @@ function AssistantEntry({ entry }: { entry: ConversationEntry }) {
 
 function App() {
   const isMobile = useIsMobile();
-  const [currentPage, setCurrentPage] = useState<PageId>('research');
+  // Estado inicial derivado da URL — recarregar (F5) volta para a mesma página em vez de cair
+  // sempre em "Nova conversa". `useIsMobile` já devolve o valor certo na primeira renderização,
+  // então `/` resolve para Locais no celular e Nova conversa no desktop.
+  const [initialRoute] = useState<AppRoute>(() =>
+    parseAppRoute(window.location.pathname, { isMobile }),
+  );
+  const [currentPage, setCurrentPage] = useState<PageId>(initialRoute.page);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [recentGroup, setRecentGroup] = useState<RecentGroup>('none');
-  const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
+  const [conversations, setConversations] = useState<Conversation[]>(() =>
+    initialRoute.conversationId &&
+    !initialConversations.some((conversation) => conversation.id === initialRoute.conversationId)
+      ? [
+          {
+            id: initialRoute.conversationId,
+            title: `Conversa ${initialRoute.conversationId.slice(0, 10)}`,
+            projectLabel: 'V.tal Nexus',
+            updatedAt: 'agora',
+            entries: [],
+          },
+          ...initialConversations,
+        ]
+      : initialConversations,
+  );
   const [activeConversationId, setActiveConversationId] = useState(
-    initialConversations[0]?.id ?? null,
+    initialRoute.conversationId ?? initialConversations[0]?.id ?? null,
   );
   const [pendingConversationEntryId, setPendingConversationEntryId] = useState<string | null>(null);
-  const [activeResearchSessionId, setActiveResearchSessionId] = useState<string | null>(null);
-  const [activeResourceCategory, setActiveResourceCategory] = useState<string>(DEFAULT_RESOURCE_CATEGORY_CODE);
-  const [resourceMenuOpen, setResourceMenuOpen] = useState(false);
-  const [activeServiceCategory, setActiveServiceCategory] = useState<string>(DEFAULT_SERVICE_CATEGORY_CODE);
-  const [serviceMenuOpen, setServiceMenuOpen] = useState(false);
+  const [activeResearchSessionId, setActiveResearchSessionId] = useState<string | null>(
+    initialRoute.sessionId ?? null,
+  );
+  const [activeResourceCategory, setActiveResourceCategory] = useState<string>(
+    initialRoute.resourceCategory ?? DEFAULT_RESOURCE_CATEGORY_CODE,
+  );
+  const [resourceMenuOpen, setResourceMenuOpen] = useState(initialRoute.page === 'resource');
+  const [activeServiceCategory, setActiveServiceCategory] = useState<string>(
+    initialRoute.serviceCategory ?? DEFAULT_SERVICE_CATEGORY_CODE,
+  );
+  const [serviceMenuOpen, setServiceMenuOpen] = useState(initialRoute.page === 'service');
   const [researchSessionRefreshTrigger, setResearchSessionRefreshTrigger] = useState(0);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -435,56 +462,71 @@ function App() {
     setSidebarCollapsed(isMobile ? true : currentPage === 'geo');
   }, [currentPage, isMobile]);
 
+  // Reaplica o estado de navegação a partir de uma rota — usado tanto pelo `popstate` (voltar/avançar
+  // do navegador e deep links internos via useNavigation) quanto pela canonização inicial da URL.
+  const applyRoute = useRef((route: AppRoute) => {
+    setSettingsOpen(false);
+
+    if (route.page === 'conversation' && route.conversationId) {
+      const conversationId = route.conversationId;
+      setConversations((current) => {
+        if (current.some((conversation) => conversation.id === conversationId)) return current;
+        return [
+          {
+            id: conversationId,
+            title: `Conversa ${conversationId.slice(0, 10)}`,
+            projectLabel: 'V.tal Nexus',
+            updatedAt: 'agora',
+            entries: [],
+          },
+          ...current,
+        ];
+      });
+      setActiveConversationId(conversationId);
+      setActiveResearchSessionId(null);
+      setResourceMenuOpen(false);
+      setServiceMenuOpen(false);
+      setCurrentPage('conversation');
+      return;
+    }
+
+    setActiveResearchSessionId(route.sessionId ?? null);
+    if (route.resourceCategory) setActiveResourceCategory(route.resourceCategory);
+    if (route.serviceCategory) setActiveServiceCategory(route.serviceCategory);
+    setResourceMenuOpen(route.page === 'resource');
+    setServiceMenuOpen(route.page === 'service');
+    setCurrentPage(route.page);
+  });
+
   useEffect(() => {
-    const openConversationFromUrl = () => {
-      const match = window.location.pathname.match(/^\/c\/([^/]+)$/);
-      if (!match) return;
-
-      const conversationId = decodeURIComponent(match[1]);
-
-      // Backward compatibility for local mock conversations while prioritizing research sessions.
-      if (conversationId.startsWith('conversation-')) {
-        setConversations((current) => {
-          if (current.some((conversation) => conversation.id === conversationId)) return current;
-
-          return [
-            {
-              id: conversationId,
-              title: `Conversa ${conversationId.slice(0, 10)}`,
-              projectLabel: 'V.tal Nexus',
-              updatedAt: 'agora',
-              entries: [],
-            },
-            ...current,
-          ];
-        });
-        setActiveConversationId(conversationId);
-        setActiveResearchSessionId(null);
-        setCurrentPage('conversation');
-        return;
-      }
-
-      setActiveResearchSessionId(conversationId);
-      setCurrentPage('research');
+    const onPopState = () => {
+      applyRoute.current(parseAppRoute(window.location.pathname, { isMobile }));
     };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [isMobile]);
 
-    openConversationFromUrl();
-    window.addEventListener('popstate', openConversationFromUrl);
-    return () => window.removeEventListener('popstate', openConversationFromUrl);
-  }, []);
-
+  // Mantém a URL em sincronia com a página atual (F5 volta ao mesmo lugar). Preserva a query string —
+  // é por ela que o deep link `?siteId=` chega ao GeoPage (ver useNavigation/parseNavigationParams).
   useEffect(() => {
-    const expectedPath =
-      currentPage === 'conversation' && activeConversationId
-        ? `/c/${encodeURIComponent(activeConversationId)}`
-        : currentPage === 'research' && activeResearchSessionId
-          ? `/c/${encodeURIComponent(activeResearchSessionId)}`
-          : '/';
+    const expectedPath = appRoutePath({
+      page: currentPage,
+      sessionId: activeResearchSessionId ?? undefined,
+      conversationId: currentPage === 'conversation' ? (activeConversationId ?? undefined) : undefined,
+      resourceCategory: activeResourceCategory,
+      serviceCategory: activeServiceCategory,
+    });
 
     if (window.location.pathname !== expectedPath) {
-      window.history.replaceState({}, '', expectedPath);
+      window.history.replaceState({}, '', `${expectedPath}${window.location.search}`);
     }
-  }, [currentPage, activeConversationId]);
+  }, [
+    currentPage,
+    activeConversationId,
+    activeResearchSessionId,
+    activeResourceCategory,
+    activeServiceCategory,
+  ]);
 
   const activeConversation = useMemo(
     () =>

@@ -106,14 +106,24 @@ test('primary navigation remains clickable when collapsed', async () => {
   expect(onToggleResourceMenu).toHaveBeenCalledTimes(1);
 });
 
-test('mobile floating toggle appears by default when collapsed', () => {
+test('mobile floating toggle appears by default when collapsed and shows the Nexus mark', () => {
   renderSidebar({ isMobile: true, collapsed: true });
 
-  expect(screen.getByRole('button', { name: 'Abrir barra lateral' })).toBeInTheDocument();
+  const toggle = screen.getByRole('button', { name: 'Abrir barra lateral' });
+  expect(toggle).toBeInTheDocument();
+  expect(toggle.querySelector('svg')).toBeInTheDocument();
 });
 
 test('mobile floating toggle is suppressed when showMobileToggle is false', () => {
   renderSidebar({ isMobile: true, collapsed: true, showMobileToggle: false });
 
   expect(screen.queryByRole('button', { name: 'Abrir barra lateral' })).not.toBeInTheDocument();
+});
+
+test('collapsed desktop rail shows the Nexus mark as the expand toggle', () => {
+  renderSidebar({ collapsed: true });
+
+  const toggle = screen.getByRole('button', { name: 'Expandir barra lateral' });
+  // Marca do Nexus + ícone de painel (revelado no hover) convivem no mesmo botão.
+  expect(toggle.querySelectorAll('svg').length).toBeGreaterThanOrEqual(2);
 });

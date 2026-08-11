@@ -43,6 +43,12 @@ export type GooglePolylineInstance = {
   setOptions: (options: Record<string, unknown>) => void;
   setPath: (path: Array<{ lat: number; lng: number }>) => void;
 };
+export type GoogleCircleInstance = {
+  setMap: (map: GoogleMapInstance | null) => void;
+  setCenter: (center: { lat: number; lng: number }) => void;
+  setRadius: (radius: number) => void;
+  setOptions: (options: Record<string, unknown>) => void;
+};
 export type GoogleInfoWindowInstance = {
   close: () => void;
   open: (options: { map: GoogleMapInstance }) => void;
@@ -73,6 +79,7 @@ type GoogleMapsApi = {
     Map: new (element: HTMLElement, options: Record<string, unknown>) => GoogleMapInstance;
     Marker: new (options: Record<string, unknown>) => GoogleMarkerInstance;
     Polyline: new (options: Record<string, unknown>) => GooglePolylineInstance;
+    Circle: new (options: Record<string, unknown>) => GoogleCircleInstance;
     InfoWindow: new (options: Record<string, unknown>) => GoogleInfoWindowInstance;
     StreetViewService: new () => {
       getPanorama: (

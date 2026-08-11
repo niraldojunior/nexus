@@ -54,6 +54,7 @@ import {
   loadGoogleMaps,
   reverseGeocode,
   type DraftAddress,
+  type GoogleCircleInstance,
   type GoogleInfoWindowInstance,
   type GoogleMapInstance,
   type GoogleMapMouseEvent,
@@ -71,6 +72,10 @@ import {
   MARKER_CLUSTER_MIN_SCALE_METERS,
 } from '../utils/mapScale';
 import { bottomInsetForOverlay, flyTo, cancelFlight, type FlyTarget } from '../utils/mapCamera';
+import {
+  acquireDeviceLocation,
+  DEVICE_LOCATION_POOR_ACCURACY_M,
+} from '../utils/deviceLocation';
 import { useGeoTree } from '../hooks/useGeoTree';
 import { useIsMobile } from '../hooks/useIsMobile';
 import {
@@ -898,6 +903,9 @@ export function GoogleMapPanel({
   // dispositivo (ver MapLocateButton). Vive fora do fluxo de nós/seleção — não é
   // inventário, é a posição real de quem está olhando o mapa.
   const userLocationMarkerRef = useRef<GoogleMarkerInstance | null>(null);
+  // Halo de incerteza em volta do ponto (raio = accuracy do fix, em metros), no espírito
+  // do círculo de precisão do Google Maps: torna visível quão confiável é a leitura.
+  const userLocationHaloRef = useRef<GoogleCircleInstance | null>(null);
   // Três peças da simulação de drop: o traço sólido de base, o pontilhado que anda por
   // cima dele e a pílula com a metragem no meio do caminho.
   const dropBaseRef = useRef<GooglePolylineInstance | null>(null);
@@ -1599,29 +1607,51 @@ export function GoogleMapPanel({
     () => () => {
       userLocationMarkerRef.current?.setMap(null);
       userLocationMarkerRef.current = null;
+      userLocationHaloRef.current?.setMap(null);
+      userLocationHaloRef.current = null;
     },
     [],
   );
 
-  // Geolocalização do dispositivo (ver MapLocateButton): salta o mapa para a posição real
-  // do usuário com zoom de rua (~DEVICE_LOCATION_SCALE_METERS na barra de escala) e crava
-  // o ponto azul de "minha localização", distinto dos pins de inventário e do alfinete.
+  // Geolocalização do dispositivo (ver MapLocateButton): crava o ponto azul de "minha
+  // localização" com um halo de incerteza (raio = precisão do fix), distinto dos pins de
+  // inventário e do alfinete. `isFirst` marca a primeira leitura da aquisição — a única
+  // que move a câmera: as melhoras do refino e o rastreamento vivo só reposicionam ponto e
+  // halo, para não roubar um enquadramento que o usuário possa ter ajustado à mão.
   const handleDeviceLocate = useCallback(
-    ({ lat, lng }: DeviceLocation) => {
+    ({ lat, lng, accuracy }: DeviceLocation, isFirst: boolean) => {
       const maps = window.google?.maps;
       if (!mapsReady || !mapRef.current || !maps) return;
-      // Voa até a posição (afasta/reaproxima se longe) e pousa em zoom de rua INTEIRO —
-      // era o `setZoom` fracionário direto que inflava os marcadores e borrava os tiles.
-      flyTo(
-        mapRef.current,
-        { point: [lng, lat], scaleMeters: DEVICE_LOCATION_SCALE_METERS },
-        {
+
+      if (isFirst) {
+        // Enquadramento honesto: num fix grosseiro, deixamos o `fitSpanMeters` AFASTAR para
+        // o halo inteiro (diâmetro = 2×accuracy) caber — em vez de prometer precisão de
+        // calçada. Com fix bom/médio, pousa no zoom de rua INTEIRO (o `setZoom` fracionário
+        // inflava marcadores e borrava os tiles).
+        const target: FlyTarget =
+          accuracy > DEVICE_LOCATION_POOR_ACCURACY_M
+            ? { point: [lng, lat], scaleMeters: null, fitSpanMeters: accuracy * 2 }
+            : { point: [lng, lat], scaleMeters: DEVICE_LOCATION_SCALE_METERS };
+        // Com um painel mobile cobrindo a base do mapa, desconta a altura para o ponto não
+        // pousar sob a folha (mesmo cálculo do enquadramento de foco).
+        const bottomSheetHeightPx = bottomSheetState?.heightPx;
+        const bottomInsetPx =
+          bottomSheetHeightPx === undefined
+            ? 0
+            : bottomInsetForOverlay(
+                mapRef.current.getDiv().getBoundingClientRect(),
+                bottomSheetHeightPx,
+                window.innerHeight,
+              );
+        flyTo(mapRef.current, target, {
+          bottomInsetPx,
           onFlightChange: (active) => {
             flightActiveRef.current = active;
             if (!active) reportViewportRef.current();
           },
-        },
-      );
+        });
+      }
+
       const dotIcon = {
         path: maps.SymbolPath.CIRCLE,
         fillColor: '#1a73e8',
@@ -1644,8 +1674,35 @@ export function GoogleMapPanel({
           clickable: false,
         });
       }
+
+      // Halo de incerteza sob o ponto (zIndex logo abaixo dele). Só é desenhado quando a
+      // precisão é um número útil; caso contrário some, para não pintar um círculo sem
+      // significado.
+      const reliableAccuracy = Number.isFinite(accuracy) && accuracy > 0;
+      if (userLocationHaloRef.current) {
+        if (reliableAccuracy) {
+          userLocationHaloRef.current.setCenter({ lat, lng });
+          userLocationHaloRef.current.setRadius(accuracy);
+          userLocationHaloRef.current.setMap(mapRef.current);
+        } else {
+          userLocationHaloRef.current.setMap(null);
+        }
+      } else if (reliableAccuracy) {
+        userLocationHaloRef.current = new maps.Circle({
+          map: mapRef.current,
+          center: { lat, lng },
+          radius: accuracy,
+          fillColor: '#1a73e8',
+          fillOpacity: 0.12,
+          strokeColor: '#1a73e8',
+          strokeOpacity: 0.25,
+          strokeWeight: 1,
+          clickable: false,
+          zIndex: USER_LOCATION_Z - 1,
+        });
+      }
     },
-    [mapsReady],
+    [mapsReady, bottomSheetState],
   );
 
   // Ao abrir a página no mobile: se o dispositivo JÁ concedeu a permissão de localização,
@@ -1661,26 +1718,27 @@ export function GoogleMapPanel({
     autoLocatedRef.current = true;
     if (!('geolocation' in navigator) || !navigator.permissions?.query) return;
     let cancelled = false;
+    let cancelAcquire: (() => void) | undefined;
     navigator.permissions
       .query({ name: 'geolocation' as PermissionName })
       .then((status) => {
         if (cancelled || status.state !== 'granted' || selectedNodeIdRef.current) return;
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
+        // Mesma aquisição refinada do botão (ver deviceLocation): pousa na primeira leitura
+        // e vai apertando o fix. Silencioso — o auto-locate não mostra erro; se falhar, fica
+        // para o clique explícito no botão Minha localização.
+        cancelAcquire = acquireDeviceLocation({
+          onUpdate: (coords, isFirst) => {
+            // O usuário pode ter selecionado algo enquanto o fix chegava — aí paramos de
+            // mexer no mapa para não roubar o enquadramento dele.
             if (cancelled || selectedNodeIdRef.current) return;
-            handleDeviceLocate({
-              lat: position.coords.latitude,
-              lng: position.coords.longitude,
-              accuracy: position.coords.accuracy,
-            });
+            handleDeviceLocate(coords, isFirst);
           },
-          () => {},
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
-        );
+        });
       })
       .catch(() => {});
     return () => {
       cancelled = true;
+      cancelAcquire?.();
     };
   }, [mapsReady, handleDeviceLocate, autoLocateOnOpen]);
 

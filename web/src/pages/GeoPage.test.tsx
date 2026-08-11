@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GoogleMapPanel } from './GeoPage';
@@ -27,6 +27,11 @@ const googleMocks = vi.hoisted(() => ({
   mapSetZoom: vi.fn(),
   mapSetMapTypeId: vi.fn(),
   markerCtor: vi.fn(),
+  circleCtor: vi.fn(),
+  circleSetCenter: vi.fn(),
+  circleSetRadius: vi.fn(),
+  circleSetMap: vi.fn(),
+  circleSetOptions: vi.fn(),
   reverseGeocode: vi.fn(),
 }));
 
@@ -94,6 +99,15 @@ function installGoogleMapsMock() {
             setZIndex: vi.fn(),
           };
         }),
+        Circle: vi.fn(function Circle(options: Record<string, unknown>) {
+          googleMocks.circleCtor(options);
+          return {
+            setCenter: googleMocks.circleSetCenter,
+            setRadius: googleMocks.circleSetRadius,
+            setMap: googleMocks.circleSetMap,
+            setOptions: googleMocks.circleSetOptions,
+          };
+        }),
         Point: vi.fn(function Point(x: number, y: number) {
           return { x, y };
         }),
@@ -131,6 +145,7 @@ const selectionNode = (id = 'site:1'): GeoTreeNode => ({
 afterEach(() => {
   vi.useRealTimers();
   cleanup();
+  Reflect.deleteProperty(navigator, 'geolocation');
 });
 
 describe('GoogleMapPanel', () => {
@@ -536,6 +551,70 @@ describe('GoogleMapPanel', () => {
 
     rerender(renderPanel(undefined));
     expect(googleMocks.flyTo).toHaveBeenCalledTimes(3);
+  });
+
+  it('crava o ponto com halo de precisão e só move a câmera na primeira leitura', async () => {
+    const user = userEvent.setup();
+    const state: {
+      success?: (position: {
+        coords: { latitude: number; longitude: number; accuracy: number };
+      }) => void;
+    } = {};
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: {
+        watchPosition: vi.fn((success) => {
+          state.success = success;
+          return 1;
+        }),
+        clearWatch: vi.fn(),
+      },
+    });
+
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        clusterMarkers={false}
+      />,
+    );
+    // Mesmo sinal de prontidão do mapa usado no teste de MUB.
+    await waitFor(() => expect(googleMocks.mapSetMapTypeId).toHaveBeenCalled());
+
+    await user.click(screen.getByRole('button', { name: 'Ir para a minha localização' }));
+
+    // Primeira leitura: fix grosseiro (±40 m). A câmera AFASTA (fitSpanMeters = 2×accuracy)
+    // para o halo caber, e o círculo de incerteza nasce com raio = accuracy.
+    act(() =>
+      state.success?.({ coords: { latitude: -22.9068, longitude: -43.1075, accuracy: 40 } }),
+    );
+
+    expect(googleMocks.flyTo).toHaveBeenCalledTimes(1);
+    expect(googleMocks.flyTo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ fitSpanMeters: 80, scaleMeters: null }),
+      expect.objectContaining({ bottomInsetPx: 0 }),
+    );
+    expect(googleMocks.circleCtor).toHaveBeenCalledTimes(1);
+    expect(googleMocks.circleCtor).toHaveBeenCalledWith(expect.objectContaining({ radius: 40 }));
+
+    // Segunda leitura, fix apertado (±8 m): atualiza o halo existente (sem novo círculo) e
+    // NÃO reenquadra — a câmera é uma só por acionamento.
+    act(() =>
+      state.success?.({ coords: { latitude: -22.9068, longitude: -43.1075, accuracy: 8 } }),
+    );
+
+    expect(googleMocks.circleCtor).toHaveBeenCalledTimes(1);
+    expect(googleMocks.circleSetRadius).toHaveBeenCalledWith(8);
+    expect(googleMocks.flyTo).toHaveBeenCalledTimes(1);
   });
 
   it('troca o MUB do mapa chamando setMapTypeId com o tipo esperado', async () => {

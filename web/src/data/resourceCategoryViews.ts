@@ -45,6 +45,39 @@ export function sidebarCategoryLabel(category: ResourceCategory): string {
   return SIDEBAR_CATEGORY_LABEL_OVERRIDES[category.code] ?? category.name;
 }
 
+/**
+ * Descrição de cabeçalho por categoria — resume o que a categoria representa e cita exemplos de
+ * tipos. Exibida na aba Inventário da página de recurso (o Catálogo mantém texto próprio, ver
+ * `tabConfig` em ResourcePage). Categoria sem texto específico cai no genérico.
+ */
+const RESOURCE_CATEGORY_DESCRIPTIONS: Record<string, string> = {
+  'Equipment.Access':
+    'Terminação da rede de acesso — OLTs, cartões e portas GPON —, com ocupação de porta e estado.',
+  'Equipment.Transport':
+    'Agregação e transporte — roteadores, switches, racks e fontes —, com posição em estação e estado.',
+  'Equipment.CustomerPremises':
+    'Equipamentos no endereço do assinante — ONTs e CPEs —, com número de série e vínculo ao serviço.',
+  'Infrastructure.Passive':
+    'Elementos passivos — splitters, CTOs, DIOs, dutos, postes e caixas —, com ocupação e contenção.',
+  'Cable.OutsidePlant':
+    'Cabos ópticos da planta externa — backbone, distribuição e drop —, com rota, fibras e ocupação.',
+  'Cable.InsidePlant':
+    'Cabos internos de estação — patch cords e jumpers — que fecham o caminho óptico no prédio.',
+  'Logical.IPAM':
+    'Endereçamento IP — endereços e prefixos —, com alocação, hierarquia e vínculo ao recurso físico.',
+  'Logical.L2': 'Recursos de camada 2 — VLANs e grupos — para isolar tráfego por serviço e tenant.',
+  'Logical.L3':
+    'Recursos de camada 3 — VRFs, ASNs e route targets — para roteamento e separação de rotas.',
+};
+
+const RESOURCE_CATEGORY_DESCRIPTION_FALLBACK =
+  'Inventário de ativos e infraestrutura, com foco em ocupação, estado e contenção.';
+
+/** Descrição de cabeçalho da categoria (texto genérico quando não há um específico). */
+export function resourceCategoryDescription(categoryCode: string): string {
+  return RESOURCE_CATEGORY_DESCRIPTIONS[categoryCode] ?? RESOURCE_CATEGORY_DESCRIPTION_FALLBACK;
+}
+
 export type ResourceCategoryGroup = {
   key: string;
   label: string;

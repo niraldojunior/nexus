@@ -7,36 +7,41 @@ import type { DatabaseProvider } from './database-client.js';
 export interface SqlDialect {
   readonly provider: DatabaseProvider;
   /**
-   * An inline, single-column table of `count` bound-parameter rows, aliased `alias(column)`.
-   * Postgres uses a VALUES constructor; Oracle has none, so it unions `SELECT ? FROM DUAL` rows.
-   * Emits exactly `count` `?` placeholders — bind the row values in order. `count` must be >= 1.
+   * An inline, single-column table of the given `values`, aliased `alias(column)`, plus the binds to
+   * pass in order. Postgres uses a VALUES constructor (one bind per value). Oracle uses JSON_TABLE
+   * over a single JSON-array bind — a VALUES-style `SELECT ? FROM DUAL UNION ALL …` would be an
+   * N-branch statement that Oracle parses/executes in super-linear time (seconds for a few thousand
+   * rows). `values` must be non-empty.
    */
-  inlineRows(count: number, alias: string, column: string): string;
+  inlineRows(
+    values: readonly unknown[],
+    alias: string,
+    column: string,
+  ): { sql: string; binds: unknown[] };
 }
 
-const requirePositiveCount = (count: number): void => {
-  if (!Number.isInteger(count) || count < 1) {
-    throw new Error(`inlineRows requires a positive row count, received ${count}.`);
-  }
+const requireNonEmpty = (values: readonly unknown[]): void => {
+  if (values.length < 1) throw new Error('inlineRows requires at least one value.');
 };
 
 const postgresDialect: SqlDialect = {
   provider: 'postgres',
-  inlineRows(count, alias, column) {
-    requirePositiveCount(count);
-    const rows = Array.from({ length: count }, () => '(?)').join(', ');
-    return `(VALUES ${rows}) AS ${alias}(${column})`;
+  inlineRows(values, alias, column) {
+    requireNonEmpty(values);
+    const rows = values.map(() => '(?)').join(', ');
+    return { sql: `(VALUES ${rows}) AS ${alias}(${column})`, binds: [...values] };
   },
 };
 
 const oracleDialect: SqlDialect = {
   provider: 'oracle',
-  inlineRows(count, alias, column) {
-    requirePositiveCount(count);
-    const rows = Array.from({ length: count }, () => `SELECT ? AS ${column} FROM DUAL`).join(
-      ' UNION ALL ',
-    );
-    return `(${rows}) ${alias}`;
+  inlineRows(values, alias, column) {
+    requireNonEmpty(values);
+    // One JSON-array bind, expanded by JSON_TABLE — scales to any row count with a single parse.
+    const sql =
+      `(SELECT ${column} FROM JSON_TABLE(?, '$[*]' ` +
+      `COLUMNS (${column} VARCHAR2(4000) PATH '$'))) ${alias}`;
+    return { sql, binds: [JSON.stringify(values)] };
   },
 };
 

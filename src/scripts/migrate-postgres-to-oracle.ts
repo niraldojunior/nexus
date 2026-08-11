@@ -65,6 +65,9 @@ try {
       // target with integrity checks turned off.
       if (copying) await setForeignKeys(target, true);
     }
+    // Fresh optimizer statistics so the app is fast immediately after a load — without them Oracle
+    // full-scans and re-parses JSON CLOBs instead of using the indexes.
+    if (copying) await gatherStats(target);
     const valid = reports.every((report) => report.valid);
     process.stdout.write(
       `${JSON.stringify({ dryRun, resume, verifyOnly, batchSize, valid, tables: reports }, null, 2)}\n`,
@@ -244,6 +247,22 @@ async function setForeignKeys(target: Connection, enable: boolean): Promise<void
     await target.execute(
       `ALTER TABLE "${row.TABLE_NAME}" ${action} CONSTRAINT "${row.CONSTRAINT_NAME}"`,
       [],
+      { autoCommit: true },
+    );
+  }
+}
+
+// Gathers optimizer statistics (with index stats) for every prefixed table on the target.
+async function gatherStats(target: Connection): Promise<void> {
+  const result = await target.execute<{ TABLE_NAME: string }>(
+    `SELECT table_name AS "TABLE_NAME" FROM user_tables WHERE table_name LIKE :1`,
+    [`${targetPrefix.toUpperCase()}%`],
+    { outFormat: oracledb.OUT_FORMAT_OBJECT },
+  );
+  for (const row of result.rows ?? []) {
+    await target.execute(
+      `BEGIN DBMS_STATS.GATHER_TABLE_STATS(USER, :1, cascade => TRUE, method_opt => 'FOR ALL COLUMNS SIZE AUTO'); END;`,
+      [row.TABLE_NAME],
       { autoCommit: true },
     );
   }

@@ -289,15 +289,42 @@ const ISO_DATETIME_BIND = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+
 // The application emits ISO date-time strings (fine for Postgres timestamptz). Oracle cannot convert
 // them to TIMESTAMP via the default NLS format (ORA-01843), so bind them as native Date objects,
 // which oracledb maps straight to the TIMESTAMP column.
+// Oracle's VARCHAR bind cap is ~32k bytes; longer strings (e.g. a big JSON-array bind for an inline
+// id list) must bind as CLOB.
+const MAX_VARCHAR_BIND_BYTES = 32_000;
+
 const toBinds = (params: unknown[]): BindParameters =>
   params.map((value) => {
     if (typeof value === 'string' && ISO_DATETIME_BIND.test(value)) return new Date(value);
+    if (typeof value === 'string' && Buffer.byteLength(value, 'utf8') > MAX_VARCHAR_BIND_BYTES) {
+      return { type: oracledb.DB_TYPE_CLOB, val: value };
+    }
     return value ?? null;
   });
+
+// Oracle caps an IN-list at 1000 expressions (ORA-01795); Postgres has no such limit. Split any
+// bound IN-list longer than that into OR-joined groups (NOT IN → AND-joined). The bind array is
+// unchanged — the same :n placeholders are just regrouped.
+const MAX_IN_LIST = 1000;
+const chunkOracleInLists = (sql: string): string =>
+  sql.replace(
+    /([A-Za-z_][A-Za-z0-9_."]*)\s+(NOT\s+)?IN\s*\(\s*(:[0-9]+(?:\s*,\s*:[0-9]+)*)\s*\)/gi,
+    (match, column: string, notKeyword: string | undefined, list: string) => {
+      const binds = list.split(',').map((bind) => bind.trim());
+      if (binds.length <= MAX_IN_LIST) return match;
+      const operator = notKeyword ? 'NOT IN' : 'IN';
+      const groups: string[] = [];
+      for (let index = 0; index < binds.length; index += MAX_IN_LIST) {
+        groups.push(`${column} ${operator} (${binds.slice(index, index + MAX_IN_LIST).join(', ')})`);
+      }
+      return `(${groups.join(notKeyword ? ' AND ' : ' OR ')})`;
+    },
+  );
 
 export const transformOracleQuery = (sql: string, objectPrefix: string): string => {
   let bindIndex = 1;
   let output = replaceQuestionBinds(sql, () => `:${bindIndex++}`);
+  output = chunkOracleInLists(output);
   output = transformUpsertToMerge(output);
   // json_extract survives in a few runtime queries (e.g. the event lookup by entityId). The Postgres
   // worker rewrites it to `->>`; here it becomes JSON_VALUE (default VARCHAR2 return is fine for the

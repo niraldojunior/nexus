@@ -54,15 +54,18 @@ test('translator rewrites the hard constructs to their Oracle form', () => {
   assert.match(event, /FETCH FIRST 1 ROWS ONLY/);
 });
 
-test('inlineRows differs by dialect and emits one placeholder per row', () => {
-  const pg = dialectFor('postgres').inlineRows(2, 'v', 'id');
-  assert.match(pg, /\(VALUES \(\?\), \(\?\)\) AS v\(id\)/);
+test('inlineRows differs by dialect: Postgres VALUES (N binds), Oracle JSON_TABLE (1 bind)', () => {
+  const pg = dialectFor('postgres').inlineRows(['a', 'b'], 'v', 'id');
+  assert.match(pg.sql, /\(VALUES \(\?\), \(\?\)\) AS v\(id\)/);
+  assert.deepEqual(pg.binds, ['a', 'b']);
 
-  const ora = dialectFor('oracle').inlineRows(2, 'v', 'id');
-  assert.match(ora, /SELECT \? AS id FROM DUAL UNION ALL SELECT \? AS id FROM DUAL/);
-  assert.doesNotMatch(ora, /VALUES/);
+  // Oracle uses a single JSON-array bind (not an N-branch UNION ALL) so it scales to thousands.
+  const ora = dialectFor('oracle').inlineRows(['a', 'b'], 'v', 'id');
+  assert.match(ora.sql, /JSON_TABLE\(\?, '\$\[\*\]' COLUMNS \(id VARCHAR2\(4000\) PATH '\$'\)\)\) v/);
+  assert.doesNotMatch(ora.sql, /VALUES|DUAL/);
+  assert.deepEqual(ora.binds, ['["a","b"]']);
 
-  assert.throws(() => dialectFor('oracle').inlineRows(0, 'v', 'id'), /positive row count/);
+  assert.throws(() => dialectFor('oracle').inlineRows([], 'v', 'id'), /at least one value/);
 });
 
 test('every managed table name is prefixed in a table position', () => {

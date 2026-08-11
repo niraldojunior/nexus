@@ -25,8 +25,10 @@
 import { config as loadEnv } from 'dotenv';
 import pg from 'pg';
 import { sslFor } from './pg-ssl.mjs';
+import { requirePostgresProvider } from './db-provider-guard.mjs';
 
 loadEnv({ quiet: true });
+requirePostgresProvider('backfill-serving-site.mjs');
 
 const APPLY = process.argv.slice(2).includes('--apply');
 const DB_URL = process.env.DATABASE_URL_DEV ?? process.env.DATABASE_URL;

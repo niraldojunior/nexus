@@ -12,6 +12,12 @@ export type OracleConfig = {
   user: string;
   password: string;
   pool: DatabasePoolConfig;
+  /**
+   * Prefix prepended to every database object (tables, indexes, constraints). The corporate Oracle
+   * instance hosts DEV/HML/PRD in a single schema, so environments are distinguished by this prefix
+   * (`NEXUS_DEV_`, `NEXUS_HML_`, `NEXUS_PRD_`, `NEXUS_TEST_`). Validated to end with `_`.
+   */
+  objectPrefix: string;
 };
 
 export type AppDatabaseConfig = PostgresConfig | OracleConfig;
@@ -80,17 +86,54 @@ export const resolveDatabaseConfig = (
   nodeEnv: AppConfig['nodeEnv'],
 ): AppDatabaseConfig => {
   const provider = normalizeDatabaseProvider(env.DATABASE_PROVIDER);
-  const pool = resolvePoolConfig(env);
   if (provider === 'postgres') {
-    return { provider, url: resolveDatabaseUrl(env, nodeEnv), pool };
+    return { provider, url: resolveDatabaseUrl(env, nodeEnv), pool: resolvePoolConfig(env) };
   }
 
+  // The real instance ships `ORACLE_CONNECTION_STRING`; keep `ORACLE_CONNECT_STRING` as a fallback
+  // so older .env files (and the migration script's own naming) keep working.
+  const connectString = firstNonBlank(env.ORACLE_CONNECTION_STRING, env.ORACLE_CONNECT_STRING);
   return {
     provider,
-    connectString: requireOracleValue(env.ORACLE_CONNECT_STRING, 'ORACLE_CONNECT_STRING'),
+    connectString: requireOracleValue(connectString, 'ORACLE_CONNECTION_STRING'),
     user: requireOracleValue(env.ORACLE_USER, 'ORACLE_USER'),
     password: requireOracleValue(env.ORACLE_PASSWORD, 'ORACLE_PASSWORD'),
-    pool,
+    pool: resolveOraclePoolConfig(env),
+    objectPrefix: resolveOracleObjectPrefix(env),
+  };
+};
+
+// DEV/HML/PRD/TEST share one Oracle schema, so every object name carries this prefix. Validated to
+// a leading letter, word chars, and a trailing `_` so it can be interpolated straight into SQL
+// object names without escaping. Required whenever DATABASE_PROVIDER=oracle.
+const resolveOracleObjectPrefix = (env: NodeJS.ProcessEnv): string => {
+  const value = requireOracleValue(env.ORACLE_OBJECT_PREFIX, 'ORACLE_OBJECT_PREFIX').trim();
+  if (!/^[A-Za-z][A-Za-z0-9_]*_$/.test(value)) {
+    throw new Error(
+      'ORACLE_OBJECT_PREFIX must match ^[A-Za-z][A-Za-z0-9_]*_$ (e.g. NEXUS_DEV_, NEXUS_TEST_).',
+    );
+  }
+  return value;
+};
+
+// Oracle pool: ORACLE_POOL_* overrides the shared DATABASE_POOL_* defaults; timeouts arrive in
+// seconds (oracledb convention) and are converted to the milliseconds the pool config carries.
+const resolveOraclePoolConfig = (env: NodeJS.ProcessEnv): DatabasePoolConfig => {
+  const min = normalizeNonNegativeInteger(firstNonBlank(env.ORACLE_POOL_MIN, env.DATABASE_POOL_MIN), 1);
+  const max = normalizePositiveInteger(firstNonBlank(env.ORACLE_POOL_MAX, env.DATABASE_POOL_MAX), 5);
+  if (max < min) throw new Error('ORACLE_POOL_MAX must be greater than or equal to ORACLE_POOL_MIN.');
+  const timeoutSeconds = normalizePositiveInteger(env.ORACLE_POOL_TIMEOUT_SECONDS, 30);
+  const timeoutMs = timeoutSeconds * 1_000;
+  return {
+    min,
+    max,
+    increment: normalizePositiveInteger(
+      firstNonBlank(env.ORACLE_POOL_INCREMENT, env.DATABASE_POOL_INCREMENT),
+      1,
+    ),
+    queueTimeoutMs: timeoutMs,
+    connectionTimeoutMs: timeoutMs,
+    pingIntervalSeconds: normalizeNonNegativeInteger(env.ORACLE_POOL_PING_INTERVAL_SECONDS, 30),
   };
 };
 

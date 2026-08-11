@@ -69,8 +69,7 @@
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { config as loadEnv } from 'dotenv';
-import pg from 'pg';
-import { sslFor } from './pg-ssl.mjs';
+import { openLoaderDb } from './loader-db.mjs';
 
 loadEnv();
 
@@ -87,7 +86,6 @@ const APPLY = has('--apply');
 // usuário) — é o comportamento padrão. `--no-truncate` desativa para uma carga
 // incremental idempotente (o modo antigo, pela chave natural em _origin.id).
 const TRUNCATE = !has('--no-truncate');
-const DB_URL = process.env.DATABASE_URL_DEV ?? process.env.DATABASE_URL;
 
 const MIGRATED_AT = new Date().toISOString();
 const MIGRATED_BY = 'load-recursos-netwin';
@@ -365,32 +363,10 @@ function assignDisplayNames(boxes) {
 
 // --------------------------------------------------------------- inserts -----
 
-const chunk = (arr, size) => {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-};
-
-// INSERT multi-linha parametrizado, em blocos que respeitam o teto de
-// parâmetros do Postgres (65535 por statement).
-async function bulkInsert(client, table, columns, rows, { onConflict = '' } = {}) {
-  if (rows.length === 0) return 0;
-  const perStatement = Math.max(1, Math.floor(60000 / columns.length));
-  let total = 0;
-  for (const block of chunk(rows, Math.min(perStatement, 500))) {
-    const values = [];
-    const tuples = block.map((row, r) => {
-      const ph = columns.map((_, c) => `$${r * columns.length + c + 1}`);
-      values.push(...columns.map((col) => row[col] ?? null));
-      return `(${ph.join(', ')})`;
-    });
-    const sql =
-      `INSERT INTO ${table} (${columns.map((c) => `"${c}"`).join(', ')}) ` +
-      `VALUES ${tuples.join(', ')} ${onConflict}`;
-    const res = await client.query(sql, values);
-    total += res.rowCount ?? 0;
-  }
-  return total;
+// Bulk insert delegated to the provider-aware adapter (Postgres multi-row VALUES; Oracle
+// executeMany). The loader keeps its `$N`/`?`-free row objects; the adapter builds the SQL.
+async function bulkInsert(client, table, columns, rows, opts = {}) {
+  return client.bulkInsert(table, columns, rows, opts);
 }
 
 // `servingSite` é a estação que atende o recurso. Planta externa fica na rua e
@@ -414,8 +390,6 @@ const originChars = (naturalKey, entity, extra, servingSiteId, substatus) => [
 // ------------------------------------------------------------------ main -----
 
 async function main() {
-  if (!DB_URL) throw new Error('DATABASE_URL_DEV (ou DATABASE_URL) não definido no .env');
-
   const rows = readCsv(CSV_PATH);
   const { boxes, splitters, orphans, problems } = buildModel(rows);
   assignDisplayNames(boxes);
@@ -432,12 +406,7 @@ async function main() {
     for (const o of orphans.slice(0, 5)) console.log('   ', o.boxKey, '/', o.nome);
   }
 
-  const pool = new pg.Pool({
-    connectionString: DB_URL,
-    ssl: sslFor(DB_URL),
-    connectionTimeoutMillis: 20_000,
-  });
-  const client = await pool.connect();
+  const client = await openLoaderDb();
 
   try {
     // ---- estado atual (índices de idempotência) ----
@@ -820,8 +789,7 @@ async function main() {
     console.log(`  relacionamentos : ${relationships.length}`);
     console.log(`  total recursos na base: ${check.n}`);
   } finally {
-    client.release();
-    await pool.end();
+    await client.close();
   }
 }
 

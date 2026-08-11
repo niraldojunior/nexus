@@ -1,0 +1,121 @@
+import assert from 'node:assert/strict';
+import { test } from 'vitest';
+import { transformOracleQuery } from '../src/shared/persistence/oracle-database.js';
+import {
+  assertOracleCompatible,
+  findPostgresisms,
+} from '../src/shared/persistence/oracle-dialect-lint.js';
+import {
+  prefixed,
+  rewriteDdlObjectNames,
+  rewriteTableReferences,
+} from '../src/shared/persistence/oracle-object-names.js';
+import { dialectFor } from '../src/shared/persistence/sql-dialect.js';
+import { TABLE_NAMES } from '../src/shared/persistence/schema.js';
+
+const PREFIX = 'NEXUS_TEST_';
+
+// Representative shapes covering every hard construct in the app's SQL. Each is authored the way the
+// Oracle path emits it (VALUES already resolved to the DUAL form by the dialect) and must translate
+// to Oracle with no Postgres-ism left behind.
+const REPRESENTATIVE_SQL: Record<string, string> = {
+  eventLookup: `SELECT id FROM tmf_event WHERE json_extract(event_data, '$.entityId') = ? ORDER BY id LIMIT 1`,
+  scalarCharacteristic: `SELECT r.id, (SELECT ce->>'value' FROM jsonb_array_elements(NULLIF(r.characteristics, '')::jsonb) AS ce WHERE ce->>'name' = 'substatus' AND ce->>'group' IS NULL LIMIT 1) AS substatus FROM tmf_physical_resource r`,
+  derivedTableLimitOffset: `SELECT * FROM (SELECT count(*) AS n FROM tmf_geographic_site) AS t ORDER BY name, id LIMIT ? OFFSET ?`,
+  rowNumberDedup: `SELECT id, name FROM ( SELECT dedup.*, ROW_NUMBER() OVER (PARTITION BY id ORDER BY id) AS rn FROM (SELECT r.id, r.name FROM tmf_physical_resource r) dedup ) d WHERE d.rn = 1`,
+  recursiveFrontier: `WITH RECURSIVE frontier(root_id, node_id, depth) AS ( SELECT v.id, v.id, 0 FROM (SELECT ? AS id FROM DUAL UNION ALL SELECT ? AS id FROM DUAL) v UNION ALL SELECT f.root_id, e.resource_to_id, f.depth+1 FROM frontier f JOIN tmf_resource_relationship e ON e.resource_from_id = f.node_id ) SELECT root_id, count(DISTINCT node_id) AS n FROM frontier GROUP BY root_id`,
+  upsert: `INSERT INTO tmf_party(id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name`,
+  viewportLine: `SELECT r.id FROM tmf_logical_resource r JOIN tmf_geographic_location l ON l.id=r.place_id WHERE l.geometry_type='LineString' AND EXISTS (SELECT 1 FROM jsonb_array_elements(l.geometry::jsonb->'coordinates') AS v WHERE (v->>0)::float8 BETWEEN ? AND ? AND (v->>1)::float8 BETWEEN ? AND ?)`,
+};
+
+test('every representative query translates to Oracle without a Postgres-ism', () => {
+  for (const [name, sql] of Object.entries(REPRESENTATIVE_SQL)) {
+    assert.doesNotThrow(() => assertOracleCompatible(sql, PREFIX), `residual Postgres-ism in ${name}`);
+  }
+});
+
+test('translator rewrites the hard constructs to their Oracle form', () => {
+  const upsert = transformOracleQuery(REPRESENTATIVE_SQL.upsert!, PREFIX);
+  assert.match(upsert, /MERGE INTO NEXUS_TEST_tmf_party/);
+  assert.doesNotMatch(upsert, /ON CONFLICT/i);
+
+  const limit = transformOracleQuery(REPRESENTATIVE_SQL.derivedTableLimitOffset!, PREFIX);
+  assert.match(limit, /OFFSET :\d+ ROWS FETCH NEXT :\d+ ROWS ONLY/);
+  assert.doesNotMatch(limit, /\bLIMIT\b/i);
+  assert.doesNotMatch(limit, /\)\s+AS\s+t\b/);
+
+  const scalar = transformOracleQuery(REPRESENTATIVE_SQL.scalarCharacteristic!, PREFIX);
+  assert.match(scalar, /JSON_TABLE\(r\.characteristics/);
+  assert.match(scalar, /ce\.nm = 'substatus'/);
+  assert.match(scalar, /ce\.grp IS NULL/);
+
+  const event = transformOracleQuery(REPRESENTATIVE_SQL.eventLookup!, PREFIX);
+  assert.match(event, /JSON_VALUE\(event_data, '\$\.entityId'\)/);
+  assert.match(event, /FETCH FIRST 1 ROWS ONLY/);
+});
+
+test('inlineRows differs by dialect and emits one placeholder per row', () => {
+  const pg = dialectFor('postgres').inlineRows(2, 'v', 'id');
+  assert.match(pg, /\(VALUES \(\?\), \(\?\)\) AS v\(id\)/);
+
+  const ora = dialectFor('oracle').inlineRows(2, 'v', 'id');
+  assert.match(ora, /SELECT \? AS id FROM DUAL UNION ALL SELECT \? AS id FROM DUAL/);
+  assert.doesNotMatch(ora, /VALUES/);
+
+  assert.throws(() => dialectFor('oracle').inlineRows(0, 'v', 'id'), /positive row count/);
+});
+
+test('every managed table name is prefixed in a table position', () => {
+  for (const table of TABLE_NAMES) {
+    const rewritten = rewriteTableReferences(`SELECT 1 FROM ${table} x`, PREFIX);
+    assert.equal(rewritten, `SELECT 1 FROM ${prefixed(table, PREFIX)} x`);
+  }
+});
+
+test('columns and CTE names that share a table name are left alone', () => {
+  // `users` and `searches` are table names, but here they are select-list columns — not a table
+  // position — so they must not be prefixed. Only the table after FROM is.
+  const rewritten = rewriteTableReferences('SELECT users, searches FROM tmf_party', PREFIX);
+  assert.equal(rewritten, `SELECT users, searches FROM ${prefixed('tmf_party', PREFIX)}`);
+
+  // A CTE name is not a managed table name, so it is never touched even after FROM.
+  const cte = rewriteTableReferences(
+    'WITH frontier AS (SELECT 1) SELECT * FROM frontier',
+    PREFIX,
+  );
+  assert.equal(cte, 'WITH frontier AS (SELECT 1) SELECT * FROM frontier');
+});
+
+test('DDL prefixes tables, indexes, constraints and references', () => {
+  assert.match(
+    rewriteDdlObjectNames('CREATE TABLE tmf_party (id VARCHAR2(36))', PREFIX),
+    /CREATE TABLE NEXUS_TEST_tmf_party/,
+  );
+  assert.match(
+    rewriteDdlObjectNames('CREATE INDEX idx_party_name ON tmf_party(name)', PREFIX),
+    /CREATE INDEX NEXUS_TEST_idx_party_name ON NEXUS_TEST_tmf_party/,
+  );
+  assert.match(
+    rewriteDdlObjectNames('ALTER TABLE tmf_party ADD CONSTRAINT ck_1 CHECK (name IS JSON)', PREFIX),
+    /ALTER TABLE NEXUS_TEST_tmf_party ADD CONSTRAINT NEXUS_TEST_ck_1/,
+  );
+  assert.match(
+    rewriteDdlObjectNames('... REFERENCES tmf_party(id)', PREFIX),
+    /REFERENCES NEXUS_TEST_tmf_party/,
+  );
+});
+
+test('findPostgresisms catches constructs the translator cannot bridge', () => {
+  // IS DISTINCT FROM against a column (not a quoted literal) is not handled by the translator.
+  assert.throws(
+    () => assertOracleCompatible('SELECT 1 FROM tmf_party a WHERE a.x IS DISTINCT FROM a.y'),
+    /IS DISTINCT FROM/,
+  );
+  // A JSON arrow on an unmapped alias survives translation.
+  assert.throws(
+    () => assertOracleCompatible(`SELECT foo->>'bar' FROM tmf_party`),
+    /->/,
+  );
+  // A clean, already-Oracle string reports nothing.
+  assert.deepEqual(findPostgresisms('SELECT id FROM NEXUS_TEST_tmf_party FETCH FIRST 1 ROWS ONLY'), []);
+});

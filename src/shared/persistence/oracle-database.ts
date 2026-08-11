@@ -18,6 +18,12 @@ import {
   ORACLE_SCHEMA_SQL,
   splitOracleStatements,
 } from './oracle-schema.js';
+import {
+  prefixed,
+  quoteOracleReservedColumns,
+  rewriteDdlObjectNames,
+  rewriteTableReferences,
+} from './oracle-object-names.js';
 import { replaceQuestionBinds } from './postgres-database.js';
 
 export type OracleConnectionConfig = {
@@ -25,6 +31,8 @@ export type OracleConnectionConfig = {
   user: string;
   password: string;
   pool: DatabasePoolConfig;
+  /** Per-environment prefix prepended to every object name (see oracle-object-names.ts). */
+  objectPrefix: string;
 };
 
 oracledb.fetchAsString = [oracledb.CLOB];
@@ -50,6 +58,9 @@ export class OracleDatabase implements DatabaseClient {
       poolIncrement: this.config.pool.increment,
       queueTimeout: this.config.pool.queueTimeoutMs,
       connectTimeout: Math.max(1, Math.ceil(this.config.pool.connectionTimeoutMs / 1_000)),
+      ...(this.config.pool.pingIntervalSeconds !== undefined
+        ? { poolPingInterval: this.config.pool.pingIntervalSeconds }
+        : {}),
     });
     const connection = await this.pool.getConnection();
     try {
@@ -95,9 +106,11 @@ export class OracleDatabase implements DatabaseClient {
     const session = this.transactionStorage.getStore();
     if (session) return session.execute(sql, params);
     return this.withConnection(async (connection) => {
-      const result = await connection.execute(transformOracleQuery(sql), toBinds(params), {
-        autoCommit: true,
-      });
+      const result = await connection.execute(
+        transformOracleQuery(sql, this.config.objectPrefix),
+        toBinds(params),
+        { autoCommit: true },
+      );
       return { changes: Number(result.rowsAffected ?? 0) };
     });
   }
@@ -114,7 +127,7 @@ export class OracleDatabase implements DatabaseClient {
     if (session) return session.queryMany<T>(sql, params);
     return this.withConnection(async (connection) => {
       const result = await connection.execute<Record<string, unknown>>(
-        transformOracleQuery(sql),
+        transformOracleQuery(sql, this.config.objectPrefix),
         toBinds(params),
         QUERY_OPTIONS,
       );
@@ -141,7 +154,7 @@ export class OracleDatabase implements DatabaseClient {
   public async transaction<T>(work: (session: DatabaseSession) => Promise<T>): Promise<T> {
     const connection = await this.getPool().getConnection();
     try {
-      const session = new OracleSession(connection);
+      const session = new OracleSession(connection, this.config.objectPrefix);
       const result = await this.transactionStorage.run(session, () => work(session));
       await connection.commit();
       return result;
@@ -172,18 +185,22 @@ export class OracleDatabase implements DatabaseClient {
   }
 
   private async applyMigrations(connection: Connection): Promise<void> {
+    const prefix = this.config.objectPrefix;
+    const prefixDdl = (sql: string): string =>
+      rewriteTableReferences(rewriteDdlObjectNames(sql, prefix), prefix);
     for (const statement of splitOracleStatements(ORACLE_SCHEMA_SQL)) {
-      await executeOracleDdl(connection, statement);
+      await executeOracleDdl(connection, prefixDdl(statement));
     }
     for (const statement of splitOracleStatements(ORACLE_MIGRATIONS_SQL)) {
-      await executeOracleDdl(connection, statement);
+      await executeOracleDdl(connection, prefixDdl(statement));
     }
     for (const statement of splitOracleStatements(ORACLE_JSON_CONSTRAINTS_SQL)) {
-      await executeOracleDdl(connection, statement);
+      await executeOracleDdl(connection, prefixDdl(statement));
     }
+    const migrations = prefixed('schema_migrations', prefix);
     await executeOracleDdl(
       connection,
-      `CREATE TABLE schema_migrations (
+      `CREATE TABLE ${migrations} (
         version NUMBER(10) PRIMARY KEY,
         name VARCHAR2(255 CHAR) NOT NULL,
         checksum VARCHAR2(255 CHAR) NOT NULL,
@@ -191,7 +208,7 @@ export class OracleDatabase implements DatabaseClient {
       )`,
     );
     await connection.execute(
-      `MERGE INTO schema_migrations target
+      `MERGE INTO ${migrations} target
        USING (SELECT 1 version, 'oracle-baseline' name, 'schema-v1' checksum FROM DUAL) source
        ON (target.version = source.version)
        WHEN MATCHED THEN UPDATE SET target.checksum = source.checksum
@@ -205,7 +222,7 @@ export class OracleDatabase implements DatabaseClient {
   private async validateSchemaVersion(connection: Connection): Promise<void> {
     try {
       const result = await connection.execute<Record<string, unknown>>(
-        `SELECT version AS "version" FROM schema_migrations
+        `SELECT version AS "version" FROM ${prefixed('schema_migrations', this.config.objectPrefix)}
          ORDER BY version DESC FETCH FIRST 1 ROWS ONLY`,
         [],
         QUERY_OPTIONS,
@@ -222,10 +239,16 @@ export class OracleDatabase implements DatabaseClient {
 
 class OracleSession implements DatabaseSession {
   public readonly provider = 'oracle' as const;
-  public constructor(private readonly connection: Connection) {}
+  public constructor(
+    private readonly connection: Connection,
+    private readonly objectPrefix: string,
+  ) {}
 
   public async execute(sql: string, params: unknown[] = []): Promise<DatabaseRunResult> {
-    const result = await this.connection.execute(transformOracleQuery(sql), toBinds(params));
+    const result = await this.connection.execute(
+      transformOracleQuery(sql, this.objectPrefix),
+      toBinds(params),
+    );
     return { changes: Number(result.rowsAffected ?? 0) };
   }
 
@@ -236,7 +259,7 @@ class OracleSession implements DatabaseSession {
 
   public async queryMany<T>(sql: string, params: unknown[] = []): Promise<T[]> {
     const result = await this.connection.execute<Record<string, unknown>>(
-      transformOracleQuery(sql),
+      transformOracleQuery(sql, this.objectPrefix),
       toBinds(params),
       QUERY_OPTIONS,
     );
@@ -245,7 +268,7 @@ class OracleSession implements DatabaseSession {
 
   public async exec(sql: string): Promise<void> {
     for (const statement of splitOracleStatements(sql))
-      await this.connection.execute(transformOracleQuery(statement));
+      await this.connection.execute(transformOracleQuery(statement, this.objectPrefix));
   }
 
   public run(sql: string, params?: unknown[]): Promise<DatabaseRunResult> {
@@ -259,18 +282,40 @@ class OracleSession implements DatabaseSession {
   }
 }
 
-const toBinds = (params: unknown[]): BindParameters => params.map((value) => value ?? null);
+// Full ISO date-time (with a time component), e.g. `2026-08-11T10:57:21.573Z`. Date-only strings
+// (`2026-08-11`) deliberately do not match — those stay text.
+const ISO_DATETIME_BIND = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/;
 
-const transformOracleQuery = (sql: string): string => {
+// The application emits ISO date-time strings (fine for Postgres timestamptz). Oracle cannot convert
+// them to TIMESTAMP via the default NLS format (ORA-01843), so bind them as native Date objects,
+// which oracledb maps straight to the TIMESTAMP column.
+const toBinds = (params: unknown[]): BindParameters =>
+  params.map((value) => {
+    if (typeof value === 'string' && ISO_DATETIME_BIND.test(value)) return new Date(value);
+    return value ?? null;
+  });
+
+export const transformOracleQuery = (sql: string, objectPrefix: string): string => {
   let bindIndex = 1;
   let output = replaceQuestionBinds(sql, () => `:${bindIndex++}`);
   output = transformUpsertToMerge(output);
+  // json_extract survives in a few runtime queries (e.g. the event lookup by entityId). The Postgres
+  // worker rewrites it to `->>`; here it becomes JSON_VALUE (default VARCHAR2 return is fine for the
+  // equality comparisons that use it).
+  output = output.replace(
+    /json_extract\(([^,]+),\s*'\$\.(.+?)'\)/gi,
+    (_match, column: string, path: string) =>
+      `JSON_VALUE(${column.trim()}, '$.${path.replace(/'/g, "''")}')`,
+  );
   output = output.replace(
     /\bLIMIT\s+:([0-9]+)\s+OFFSET\s+:([0-9]+)/gi,
     'OFFSET :$2 ROWS FETCH NEXT :$1 ROWS ONLY',
   );
   output = output.replace(/\bLIMIT\s+:([0-9]+)/gi, 'FETCH FIRST :$1 ROWS ONLY');
   output = output.replace(/\bLIMIT\s+-1\s+OFFSET\s+:([0-9]+)/gi, 'OFFSET :$1 ROWS');
+  // Literal `LIMIT n` (no OFFSET) — used by scalar subqueries and single-row lookups. `LIMIT -1`
+  // never reaches here bare (it is always paired with OFFSET, handled just above).
+  output = output.replace(/\bLIMIT\s+([0-9]+)\b/gi, 'FETCH FIRST $1 ROWS ONLY');
   output = output.replace(/\bWITH\s+RECURSIVE\b/gi, 'WITH');
   output = output.replace(
     /([A-Za-z_][A-Za-z0-9_.]*)\s+IS\s+DISTINCT\s+FROM\s+('[^']*')/gi,
@@ -296,8 +341,28 @@ const transformOracleQuery = (sql: string): string => {
   );
   output = output.replace(/c->>'name'/gi, 'c.name');
   output = output.replace(/c->>'value'/gi, 'c.value');
+  // Scalar characteristic lookup (substatus, source system): scans the characteristics JSON array
+  // for the element matching a name (+ optional group) and returns its value. NULLIF is a no-op in
+  // Oracle (''=NULL) but is kept in the source for Postgres; JSON_TABLE columns avoid the reserved
+  // words NAME/VALUE/GROUP by using nm/val/grp.
+  output = output.replace(
+    /jsonb_array_elements\(NULLIF\(([A-Za-z_][A-Za-z0-9_.]*),\s*''\)::jsonb\)\s+AS\s+ce/gi,
+    "JSON_TABLE($1, '$[*]' COLUMNS (nm VARCHAR2(255) PATH '$.name', val VARCHAR2(4000) PATH '$.value', grp VARCHAR2(255) PATH '$.group')) ce",
+  );
+  output = output.replace(/ce->>'name'/gi, 'ce.nm');
+  output = output.replace(/ce->>'value'/gi, 'ce.val');
+  output = output.replace(/ce->>'group'/gi, 'ce.grp');
   output = output.replace(/\bAS\s+([A-Za-z_][A-Za-z0-9_]*[a-z][A-Z][A-Za-z0-9_]*)\b/g, 'AS "$1"');
+  // Oracle rejects AS for a table/derived-table alias (ORA-00933). Dropping AS is legal for column
+  // aliases too, so strip it after any closing paren followed by a bare lowercase alias. Quoted
+  // (camelCase) aliases from the rule above are untouched, and no `CAST(func() AS type)` exists that
+  // could be mis-hit (the only CAST is `CAST(:n AS text)`, handled next).
+  output = output.replace(/\)\s+AS\s+([a-z_][a-z0-9_]*)/g, ') $1');
   output = output.replace(/\bCAST\((:[0-9]+)\s+AS\s+text\)/gi, 'CAST($1 AS VARCHAR2(36 CHAR))');
+  // Prefix managed table names last, once all structural transforms have run against the bare names.
+  output = rewriteTableReferences(output, objectPrefix);
+  // Quote Oracle reserved-word columns (e.g. `mode`) so queries agree with the quoted DDL.
+  output = quoteOracleReservedColumns(output);
   return output;
 };
 
@@ -343,7 +408,14 @@ const executeOracleDdl = async (connection: Connection, sql: string): Promise<vo
     await connection.execute(sql, [], { autoCommit: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (!/ORA-00955|ORA-01430|ORA-02260|ORA-02261|ORA-02264|ORA-02443|ORA-00942/.test(message))
+    // Swallow "already exists / already indexed / already (non-)nullable" so re-running the schema is
+    // idempotent. ORA-01408 = column list already indexed (a UNIQUE constraint already covers it).
+    // ORA-40664 = column already has an IS JSON constraint (idempotent re-run of the JSON checks).
+    if (
+      !/ORA-00955|ORA-01430|ORA-02260|ORA-02261|ORA-02264|ORA-02443|ORA-00942|ORA-01408|ORA-01442|ORA-01451|ORA-40664/.test(
+        message,
+      )
+    )
       throw error;
   }
 };

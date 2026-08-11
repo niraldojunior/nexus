@@ -3,6 +3,7 @@ import { config as loadEnv } from 'dotenv';
 import { Pool as PostgresPool } from 'pg';
 import oracledb, { type Connection } from 'oracledb';
 import { TABLE_NAMES } from '../shared/persistence/schema.js';
+import { prefixed } from '../shared/persistence/oracle-object-names.js';
 
 loadEnv();
 oracledb.fetchAsString = [oracledb.CLOB];
@@ -16,6 +17,13 @@ const sourceUrl = required('SOURCE_DATABASE_URL');
 const targetConnectString = required('TARGET_ORACLE_CONNECT_STRING');
 const targetUser = required('TARGET_ORACLE_USER');
 const targetPassword = required('TARGET_ORACLE_PASSWORD');
+// DEV/HML/PRD share one Oracle schema, so the target objects carry a per-environment prefix. It
+// must match the ORACLE_OBJECT_PREFIX the destination runtime will read.
+const targetPrefix = objectPrefix('TARGET_ORACLE_OBJECT_PREFIX');
+
+// A quoted, uppercased, prefixed Oracle table identifier — for table names only, never columns.
+const targetTable = (table: string): string => quoteOracle(prefixed(table, targetPrefix));
+const checkpointTable = targetTable('nexus_migration_checkpoint');
 
 const source = new PostgresPool({ connectionString: sourceUrl, max: 2 });
 const targetPool = await oracledb.createPool({
@@ -42,9 +50,20 @@ try {
   try {
     await assertSchemaVersions(target);
     if (!dryRun && !verifyOnly) await ensureCheckpointTable(target);
+    // Copy order is per-table, PK-ordered — it does not respect FK dependencies (notably the
+    // self-referential tmf_geographic_site.parent_site_id). Disable FKs for the load and re-enable
+    // (validating) after, so integrity is still enforced against the final result.
+    const copying = !dryRun && !verifyOnly;
+    if (copying) await setForeignKeys(target, false);
     const reports: TableReport[] = [];
-    for (const table of TABLE_NAMES) {
-      reports.push(await migrateTable(target, table));
+    try {
+      for (const table of TABLE_NAMES) {
+        reports.push(await migrateTable(target, table));
+      }
+    } finally {
+      // Always re-enable FKs — even if a table failed mid-copy — so a partial run never leaves the
+      // target with integrity checks turned off.
+      if (copying) await setForeignKeys(target, true);
     }
     const valid = reports.every((report) => report.valid);
     process.stdout.write(
@@ -118,13 +137,25 @@ async function upsertBatch(
     mutable.length > 0
       ? `WHEN MATCHED THEN UPDATE SET ${mutable.map((column) => `target.${quoteOracle(column)} = source.${quoteOracle(column)}`).join(', ')}`
       : '';
-  const sql = `MERGE INTO ${quoteOracle(table)} target USING (SELECT ${sourceProjection} FROM DUAL) source ON (${on}) ${update}
+  const sql = `MERGE INTO ${targetTable(table)} target USING (SELECT ${sourceProjection} FROM DUAL) source ON (${on}) ${update}
     WHEN NOT MATCHED THEN INSERT (${columns.map(quoteOracle).join(', ')}) VALUES (${columns.map((column) => `source.${quoteOracle(column)}`).join(', ')})`;
   const binds = rows.map((row) => columns.map((column) => oracleValue(row[column])));
-  const result = await target.executeMany(sql, binds, { autoCommit: true, batchErrors: true });
+  // Explicit bind types: executeMany otherwise infers them from the first row, which breaks when the
+  // first value is NULL or when a CLOB column carries a string longer than the 32k VARCHAR bind cap.
+  const bindDefs = columns.map((_, index) => bindDefForColumn(binds, index));
+  const result = await target.executeMany(sql, binds, {
+    autoCommit: true,
+    batchErrors: true,
+    bindDefs,
+  });
   if (result.batchErrors && result.batchErrors.length > 0) {
-    const codes = result.batchErrors.map((error) => error.errorNum).join(',');
-    throw new Error(`Falha no lote da tabela ${table}; codigos Oracle: ${codes}.`);
+    const detail = result.batchErrors
+      .slice(0, 3)
+      .map((error) => `ORA-${error.errorNum}: ${error.message}`)
+      .join(' | ');
+    throw new Error(
+      `Falha no lote da tabela ${table} (${result.batchErrors.length} erro(s)): ${detail}`,
+    );
   }
 }
 
@@ -135,7 +166,7 @@ async function commonColumns(target: Connection, table: string): Promise<string[
   );
   const targetColumns = await target.execute<{ COLUMN_NAME: string }>(
     `SELECT column_name AS "COLUMN_NAME" FROM user_tab_columns WHERE table_name = :1`,
-    [table.toUpperCase()],
+    [prefixed(table, targetPrefix).toUpperCase()],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
   const available = new Set((targetColumns.rows ?? []).map((row) => row.COLUMN_NAME.toLowerCase()));
@@ -180,7 +211,7 @@ async function digestOracle(
   let count = 0;
   for (let offset = 0; ; offset += batchSize) {
     const result = await target.execute<Record<string, unknown>>(
-      `SELECT ${columns.map((column) => `${quoteOracle(column)} AS "${column}"`).join(', ')} FROM ${quoteOracle(table)}
+      `SELECT ${columns.map((column) => `${quoteOracle(column)} AS "${column}"`).join(', ')} FROM ${targetTable(table)}
        ORDER BY ${primaryKeys.map(quoteOracle).join(', ')} OFFSET :1 ROWS FETCH NEXT :2 ROWS ONLY`,
       [offset, batchSize],
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
@@ -199,12 +230,31 @@ async function countPostgres(table: string): Promise<number> {
   return Number(result.rows[0]?.count ?? 0);
 }
 
+// Disables (enable=false) or re-enables (enable=true, validating) every foreign key on the target's
+// prefixed tables. Re-enabling validates the loaded data, so referential integrity still holds.
+async function setForeignKeys(target: Connection, enable: boolean): Promise<void> {
+  const result = await target.execute<{ TABLE_NAME: string; CONSTRAINT_NAME: string }>(
+    `SELECT table_name AS "TABLE_NAME", constraint_name AS "CONSTRAINT_NAME"
+       FROM user_constraints WHERE constraint_type = 'R' AND table_name LIKE :1`,
+    [`${targetPrefix.toUpperCase()}%`],
+    { outFormat: oracledb.OUT_FORMAT_OBJECT },
+  );
+  const action = enable ? 'ENABLE' : 'DISABLE';
+  for (const row of result.rows ?? []) {
+    await target.execute(
+      `ALTER TABLE "${row.TABLE_NAME}" ${action} CONSTRAINT "${row.CONSTRAINT_NAME}"`,
+      [],
+      { autoCommit: true },
+    );
+  }
+}
+
 async function assertSchemaVersions(target: Connection): Promise<void> {
   const sourceVersion = await source.query<{ version: number }>(
     'SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1',
   );
   const targetVersion = await target.execute<{ version: number }>(
-    'SELECT version AS "version" FROM schema_migrations ORDER BY version DESC FETCH FIRST 1 ROWS ONLY',
+    `SELECT version AS "version" FROM ${targetTable('schema_migrations')} ORDER BY version DESC FETCH FIRST 1 ROWS ONLY`,
     [],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
@@ -220,7 +270,7 @@ async function assertSchemaVersions(target: Connection): Promise<void> {
 async function ensureCheckpointTable(target: Connection): Promise<void> {
   try {
     await target.execute(
-      `CREATE TABLE nexus_migration_checkpoint (table_name VARCHAR2(128 CHAR) PRIMARY KEY, rows_processed NUMBER(19) NOT NULL, updated_at TIMESTAMP(6) WITH TIME ZONE NOT NULL)`,
+      `CREATE TABLE ${checkpointTable} (table_name VARCHAR2(128 CHAR) PRIMARY KEY, rows_processed NUMBER(19) NOT NULL, updated_at TIMESTAMP(6) WITH TIME ZONE NOT NULL)`,
       [],
       { autoCommit: true },
     );
@@ -231,7 +281,7 @@ async function ensureCheckpointTable(target: Connection): Promise<void> {
 
 async function checkpoint(target: Connection, table: string): Promise<number> {
   const result = await target.execute<{ rowsProcessed: number }>(
-    `SELECT rows_processed AS "rowsProcessed" FROM nexus_migration_checkpoint WHERE table_name=:1`,
+    `SELECT rows_processed AS "rowsProcessed" FROM ${checkpointTable} WHERE table_name=:1`,
     [table],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
@@ -244,7 +294,7 @@ async function saveCheckpoint(
   rowsProcessed: number,
 ): Promise<void> {
   await target.execute(
-    `MERGE INTO nexus_migration_checkpoint t USING (SELECT :1 table_name, :2 rows_processed FROM DUAL) s ON (t.table_name=s.table_name)
+    `MERGE INTO ${checkpointTable} t USING (SELECT :1 table_name, :2 rows_processed FROM DUAL) s ON (t.table_name=s.table_name)
      WHEN MATCHED THEN UPDATE SET t.rows_processed=s.rows_processed, t.updated_at=CURRENT_TIMESTAMP
      WHEN NOT MATCHED THEN INSERT (table_name, rows_processed, updated_at) VALUES (s.table_name, s.rows_processed, CURRENT_TIMESTAMP)`,
     [table, rowsProcessed],
@@ -252,26 +302,76 @@ async function saveCheckpoint(
   );
 }
 
-const normalizeRecord = (row: Record<string, unknown>, columns: string[]): string =>
-  `${JSON.stringify(columns.map((column) => normalizeValue(row[column] ?? row[column.toUpperCase()])))}\n`;
+// Function declarations (hoisted) so the top-level await migration can call them before this point
+// in source order without hitting the temporal dead zone.
+function normalizeRecord(row: Record<string, unknown>, columns: string[]): string {
+  return `${JSON.stringify(columns.map((column) => normalizeValue(row[column] ?? row[column.toUpperCase()])))}\n`;
+}
 
-const normalizeValue = (value: unknown): unknown => {
+function normalizeValue(value: unknown): unknown {
   if (value instanceof Date) return value.toISOString();
   if (Buffer.isBuffer(value)) return value.toString('hex');
   if (typeof value === 'object' && value !== null) return JSON.stringify(value);
   return value ?? null;
-};
+}
 
-const oracleValue = (value: unknown): unknown =>
-  typeof value === 'object' && value !== null && !(value instanceof Date) && !Buffer.isBuffer(value)
+function oracleValue(value: unknown): unknown {
+  return typeof value === 'object' &&
+    value !== null &&
+    !(value instanceof Date) &&
+    !Buffer.isBuffer(value)
     ? JSON.stringify(value)
     : (value ?? null);
+}
 
-const quotePostgres = (name: string): string => `"${name.replaceAll('"', '""')}"`;
-const quoteOracle = (name: string): string => `"${name.toUpperCase().replaceAll('"', '""')}"`;
+// Infers an explicit executeMany bind type for one column by scanning every row's value (the whole
+// batch, not just the first), so NULL-first columns and long CLOB values bind correctly.
+function bindDefForColumn(binds: unknown[][], index: number): oracledb.BindDefinition {
+  let allNull = true;
+  let hasDate = false;
+  let allNumber = true;
+  let maxLen = 1;
+  for (const row of binds) {
+    const value = row[index];
+    if (value === null || value === undefined) continue;
+    allNull = false;
+    if (value instanceof Date) {
+      hasDate = true;
+      allNumber = false;
+      continue;
+    }
+    if (typeof value === 'number') continue;
+    allNumber = false;
+    const text = typeof value === 'string' ? value : String(value);
+    // Oracle VARCHAR bind maxSize is in BYTES; accented UTF-8 chars are multi-byte.
+    const bytes = Buffer.byteLength(text, 'utf8');
+    if (bytes > maxLen) maxLen = bytes;
+  }
+  if (hasDate) return { type: oracledb.DB_TYPE_TIMESTAMP_TZ };
+  if (allNull) return { type: oracledb.DB_TYPE_VARCHAR, maxSize: 1 };
+  if (allNumber) return { type: oracledb.DB_TYPE_NUMBER };
+  if (maxLen > 4000) return { type: oracledb.DB_TYPE_CLOB };
+  return { type: oracledb.DB_TYPE_VARCHAR, maxSize: Math.min(4000, Math.max(1, maxLen)) };
+}
+
+// Function declarations (hoisted) so the top-level `checkpointTable`/`targetTable` initialization
+// can call them before this point in source order without hitting the temporal dead zone.
+function quotePostgres(name: string): string {
+  return `"${name.replaceAll('"', '""')}"`;
+}
+function quoteOracle(name: string): string {
+  return `"${name.toUpperCase().replaceAll('"', '""')}"`;
+}
 function required(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required.`);
+  return value;
+}
+function objectPrefix(name: string): string {
+  const value = required(name).trim();
+  if (!/^[A-Za-z][A-Za-z0-9_]*_$/.test(value)) {
+    throw new Error(`${name} must match ^[A-Za-z][A-Za-z0-9_]*_$ (e.g. NEXUS_PRD_).`);
+  }
   return value;
 }
 function positiveInteger(value: string | undefined, fallback: number): number {

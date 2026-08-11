@@ -46,6 +46,7 @@ test.skipIf(!oracleConfigured)(
       user: process.env.ORACLE_TEST_USER!,
       password: process.env.ORACLE_TEST_PASSWORD!,
       pool,
+      objectPrefix: process.env.ORACLE_TEST_OBJECT_PREFIX ?? 'NEXUS_TEST_',
     });
     process.env.DATABASE_AUTO_SCHEMA = 'false';
     await client.initialize();

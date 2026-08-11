@@ -84,8 +84,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { config as loadEnv } from 'dotenv';
-import pg from 'pg';
-import { sslFor } from './pg-ssl.mjs';
+import { openLoaderDb } from './loader-db.mjs';
 import { createCanonicalId } from '../dist/src/shared/utils/canonical-id.js';
 
 loadEnv({ quiet: true });
@@ -95,7 +94,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const BASE = process.env.NEXUS_API || 'http://127.0.0.1:4001';
 const TOKEN = process.env.NEXUS_TOKEN || 'change-me';
 const SEED_TAG = 'estacoes-carregar';
-const DB_URL = process.env.DATABASE_URL_DEV || process.env.DATABASE_URL;
 
 const DEFAULT_CSV = join(__dirname, '..', 'legacy-data', 'estacoes_vtal_2026-08-07.csv');
 
@@ -728,31 +726,10 @@ async function main() {
 //   node scripts/estacoes_carregar.mjs --fast              # dry-run, só mostra o plano
 //   node scripts/estacoes_carregar.mjs --fast --apply       # grava
 
-const chunk = (arr, size) => {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-};
-
-// INSERT multi-linha parametrizado, em blocos que respeitam o teto de
-// parâmetros do Postgres (65535 por statement) — mesmo helper de
-// `load-recursos-netwin.mjs`.
+// Bulk insert delegated to the provider-aware adapter (Postgres multi-row VALUES; Oracle
+// executeMany). Same drop-in as load-recursos-netwin.mjs.
 async function bulkInsert(client, table, columns, rows) {
-  if (rows.length === 0) return 0;
-  const perStatement = Math.max(1, Math.floor(60000 / columns.length));
-  let total = 0;
-  for (const block of chunk(rows, Math.min(perStatement, 500))) {
-    const values = [];
-    const tuples = block.map((row, r) => {
-      const ph = columns.map((_, c) => `$${r * columns.length + c + 1}`);
-      values.push(...columns.map((col) => row[col] ?? null));
-      return `(${ph.join(', ')})`;
-    });
-    const sql = `INSERT INTO ${table} (${columns.map((c) => `"${c}"`).join(', ')}) VALUES ${tuples.join(', ')}`;
-    const res = await client.query(sql, values);
-    total += res.rowCount ?? 0;
-  }
-  return total;
+  return client.bulkInsert(table, columns, rows);
 }
 
 function historyRow(siteId, statusDate, toStatus = 'Active') {
@@ -871,17 +848,10 @@ async function loadExistingIndexFast(client) {
 }
 
 async function mainFast() {
-  if (!DB_URL) throw new Error('DATABASE_URL_DEV (ou DATABASE_URL) não definido no .env');
-
   const rows = parseCsv(readCsvText(CSV_PATH));
   if (rows.length === 0) throw new Error(`nenhuma linha lida de ${CSV_PATH}`);
 
-  const pool = new pg.Pool({
-    connectionString: DB_URL,
-    ssl: sslFor(DB_URL),
-    connectionTimeoutMillis: 20_000,
-  });
-  const client = await pool.connect();
+  const client = await openLoaderDb();
 
   try {
     // --reset: limpa estações/salas existentes antes de recarregar
@@ -1199,8 +1169,7 @@ async function mainFast() {
     console.log(`  atualizados: ${toUpdate.length}`);
     console.log(`  history    : ${newHistory.length}`);
   } finally {
-    client.release();
-    await pool.end();
+    await client.close();
   }
 }
 

@@ -100,24 +100,70 @@ test('database url helpers identify Neon and reject sqlite as the default stack'
 test('loadConfig selects Oracle without consulting PostgreSQL variables', () => {
   const config = loadConfig({
     DATABASE_PROVIDER: 'oracle',
-    ORACLE_CONNECT_STRING: 'oracle.example:1521/NEXUS',
+    ORACLE_CONNECTION_STRING: 'oracle.example:1521/NEXUS',
     ORACLE_USER: 'nexus_runtime',
     ORACLE_PASSWORD: 'secret-from-environment',
-    DATABASE_POOL_MIN: '1',
-    DATABASE_POOL_MAX: '8',
+    ORACLE_OBJECT_PREFIX: 'NEXUS_DEV_',
+    ORACLE_POOL_MIN: '1',
+    ORACLE_POOL_MAX: '8',
+    ORACLE_POOL_TIMEOUT_SECONDS: '30',
+    ORACLE_POOL_PING_INTERVAL_SECONDS: '45',
   });
 
   assert.equal(config.database?.provider, 'oracle');
   if (config.database?.provider !== 'oracle') throw new Error('Oracle config expected');
   assert.equal(config.database.connectString, 'oracle.example:1521/NEXUS');
+  assert.equal(config.database.objectPrefix, 'NEXUS_DEV_');
   assert.equal(config.database.pool.min, 1);
   assert.equal(config.database.pool.max, 8);
+  // Timeouts arrive in seconds and are stored as milliseconds.
+  assert.equal(config.database.pool.queueTimeoutMs, 30_000);
+  assert.equal(config.database.pool.pingIntervalSeconds, 45);
+});
+
+test('loadConfig accepts the legacy ORACLE_CONNECT_STRING and DATABASE_POOL_* fallbacks', () => {
+  const config = loadConfig({
+    DATABASE_PROVIDER: 'oracle',
+    ORACLE_CONNECT_STRING: 'legacy.example:1521/NEXUS',
+    ORACLE_USER: 'nexus_runtime',
+    ORACLE_PASSWORD: 'secret',
+    ORACLE_OBJECT_PREFIX: 'NEXUS_HML_',
+    DATABASE_POOL_MIN: '2',
+    DATABASE_POOL_MAX: '9',
+  });
+
+  assert.equal(config.database?.provider, 'oracle');
+  if (config.database?.provider !== 'oracle') throw new Error('Oracle config expected');
+  assert.equal(config.database.connectString, 'legacy.example:1521/NEXUS');
+  assert.equal(config.database.pool.min, 2);
+  assert.equal(config.database.pool.max, 9);
 });
 
 test('loadConfig rejects incomplete Oracle configuration and invalid providers', () => {
   assert.throws(
     () => loadConfig({ DATABASE_PROVIDER: 'oracle', ORACLE_USER: 'nexus_runtime' }),
-    /ORACLE_CONNECT_STRING/,
+    /ORACLE_CONNECTION_STRING/,
+  );
+  assert.throws(
+    () =>
+      loadConfig({
+        DATABASE_PROVIDER: 'oracle',
+        ORACLE_CONNECTION_STRING: 'oracle.example:1521/NEXUS',
+        ORACLE_USER: 'nexus_runtime',
+        ORACLE_PASSWORD: 'secret',
+      }),
+    /ORACLE_OBJECT_PREFIX/,
+  );
+  assert.throws(
+    () =>
+      loadConfig({
+        DATABASE_PROVIDER: 'oracle',
+        ORACLE_CONNECTION_STRING: 'oracle.example:1521/NEXUS',
+        ORACLE_USER: 'nexus_runtime',
+        ORACLE_PASSWORD: 'secret',
+        ORACLE_OBJECT_PREFIX: 'nexus-dev',
+      }),
+    /ORACLE_OBJECT_PREFIX must match/,
   );
   assert.throws(
     () => loadConfig({ DATABASE_PROVIDER: 'mysql', DATABASE_URL: 'postgresql://dev.example' }),

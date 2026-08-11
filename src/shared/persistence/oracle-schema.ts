@@ -1,4 +1,5 @@
 import { MIGRATIONS_SQL, SCHEMA_SQL } from './schema.js';
+import { quoteOracleReservedColumns } from './oracle-object-names.js';
 
 const CLOB_COLUMNS = new Set([
   'after_state',
@@ -68,6 +69,13 @@ export const transformOracleSchemaSql = (sql: string): string => {
     /\bADD\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+TEXT\b/g,
     (_match, column: string) => `ADD ${column} ${oracleTextType(column)}`,
   );
+  // Oracle requires DEFAULT before the inline NOT NULL constraint (SQLite/Postgres accept either
+  // order). Reorder `NOT NULL DEFAULT <value>` → `DEFAULT <value> NOT NULL`, preserving any trailing
+  // CHECK(...) — the default value is always a single token (quoted string or number/keyword).
+  output = output.replace(
+    /\bNOT NULL DEFAULT\s+('[^']*'|[^\s,)]+)/gi,
+    'DEFAULT $1 NOT NULL',
+  );
   output = output.replace(
     /json_extract\(event_data, '\$\.entityId'\)/g,
     "JSON_VALUE(event_data, '$.entityId' RETURNING VARCHAR2(36))",
@@ -80,6 +88,11 @@ export const transformOracleSchemaSql = (sql: string): string => {
     /\(\(geometry::jsonb->'coordinates'->>1\)::float8\)/g,
     "JSON_VALUE(geometry, '$.coordinates[1]' RETURNING NUMBER)",
   );
+  // Oracle has no partial indexes. The only one is the point lng/lat functional index; drop its
+  // predicate — JSON_VALUE(... RETURNING NUMBER) is NULL for non-Point geometries (their
+  // coordinates[0] is an array, not a number), so those rows are excluded from the index anyway.
+  output = output.replace(/\s+WHERE\s+geometry_type\s*=\s*'Point'/gi, '');
+  output = quoteOracleReservedColumns(output);
   return output;
 };
 

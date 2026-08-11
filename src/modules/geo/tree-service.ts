@@ -21,6 +21,7 @@
 // CTO…) sobe um nível, para nada ficar inalcançável pela árvore.
 
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import { dialectFor } from '../../shared/persistence/sql-dialect.js';
 import type { GeoJSONGeometry } from './domain.js';
 
 export type GeoTreeNodeKind = 'uf' | 'city' | 'group' | 'site' | 'resource';
@@ -505,12 +506,17 @@ export class GeoTreeService {
     offset: number,
     scope: GeoTreeScope,
   ): Promise<{ nodes: GeoTreeNode[]; total: number }> {
-    // DISTINCT só entra em 'tree': o pass-through pode alcançar o mesmo descendente por
+    // Dedup só entra em 'tree': o pass-through pode alcançar o mesmo descendente por
     // mais de um splitter da cadeia (diamante raro, mas possível), e as colunas vêm
-    // idênticas nas duas vezes — dedup por igualdade de linha basta.
+    // idênticas nas duas vezes — uma linha por id basta. Usamos ROW_NUMBER (portável) em
+    // vez de SELECT DISTINCT * porque Oracle recusa DISTINCT sobre a coluna CLOB `geometry`
+    // (ORA-00932); as linhas duplicadas são idênticas, então qualquer uma serve.
     const source =
       scope === 'tree'
-        ? `SELECT DISTINCT * FROM (${RESOURCE_CHILD_TREE_SOURCE}) AS dedup`
+        ? `SELECT ${RESOURCE_TREE_COLUMNS} FROM (
+             SELECT dedup.*, ROW_NUMBER() OVER (PARTITION BY id ORDER BY id) AS rn
+               FROM (${RESOURCE_CHILD_TREE_SOURCE}) dedup
+           ) d WHERE d.rn = 1`
         : RESOURCE_CHILD_SOURCE;
     const countParams = scope === 'tree' ? [resourceId] : [resourceId, resourceId];
     const rowParams = scope === 'tree' ? [resourceId] : [resourceId, resourceId];
@@ -744,7 +750,7 @@ export class GeoTreeService {
     // é o que conta como filho de cada raiz.
     const rows = await this.db.all<{ root_id: string; n: number }>(
       `WITH RECURSIVE frontier(root_id, node_id, depth) AS (
-         SELECT v.id, v.id, 0 FROM (VALUES ${resourceIds.map(() => '(?)').join(', ')}) AS v(id)
+         SELECT v.id, v.id, 0 FROM ${dialectFor(this.db.provider).inlineRows(resourceIds.length, 'v', 'id')}
          UNION ALL
          SELECT f.root_id, e.resource_to_id, f.depth + 1
            FROM frontier f
@@ -909,6 +915,13 @@ const SEARCH_RESOURCE_SOURCE = [
   viewportBlock('PhysicalResource', SEARCH_NAME_WHERE),
   viewportBlock('LogicalResource', SEARCH_NAME_WHERE),
 ].join('\n  UNION ALL\n');
+
+// Colunas (na ordem) que RESOURCE_CHILD_SOURCE / RESOURCE_CHILD_TREE_SOURCE projetam. Listadas
+// explicitamente para o dedup por ROW_NUMBER em childrenOfResource poder descartar a coluna `rn`
+// sem SELECT DISTINCT * (que Oracle recusa sobre o CLOB `geometry`).
+const RESOURCE_TREE_COLUMNS =
+  'id, name, entity_type, resource_type, status, spec_name, manufacturer, model, ' +
+  'serial_number, substatus, source_system, geometry_type, geometry';
 
 // Filhos de um recurso: o outro lado das arestas de contenção e conexão. Usada em
 // `scope: 'all'` (painel de detalhe) — devolve tudo, Splitter incluso.

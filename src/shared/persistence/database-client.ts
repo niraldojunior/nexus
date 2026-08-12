@@ -41,4 +41,9 @@ export type DatabasePoolConfig = {
   increment: number;
   queueTimeoutMs: number;
   connectionTimeoutMs: number;
+  /**
+   * Oracle-only: seconds between pool health pings (oracledb `poolPingInterval`). Ignored by the
+   * Postgres pool, which does its own liveness checks.
+   */
+  pingIntervalSeconds?: number;
 };

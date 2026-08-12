@@ -10,6 +10,7 @@ export const createDatabaseClient = (config: AppDatabaseConfig): DatabaseClient 
       user: config.user,
       password: config.password,
       pool: config.pool,
+      objectPrefix: config.objectPrefix,
     });
   }
   return PostgresDatabase.getInstance(config.url, config.pool);

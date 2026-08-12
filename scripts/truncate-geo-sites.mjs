@@ -56,8 +56,10 @@
 import { config as loadEnv } from 'dotenv';
 import pg from 'pg';
 import { sslFor } from './pg-ssl.mjs';
+import { requirePostgresProvider } from './db-provider-guard.mjs';
 
 loadEnv({ quiet: true });
+requirePostgresProvider('truncate-geo-sites.mjs');
 
 const argv = process.argv.slice(2);
 const APPLY = argv.includes('--apply');

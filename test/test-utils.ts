@@ -1,7 +1,13 @@
 import http from 'node:http';
 import { config as loadEnv } from 'dotenv';
 import { createApp } from '../src/shared/http/app.js';
-import { firstNonBlank, isPostgresDatabaseUrl } from '../src/shared/config/env.js';
+import {
+  firstNonBlank,
+  isPostgresDatabaseUrl,
+  resolveDatabaseConfig,
+} from '../src/shared/config/env.js';
+import { createDatabaseClient } from '../src/shared/persistence/database-factory.js';
+import type { DatabaseClient } from '../src/shared/persistence/database-client.js';
 import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
 import { TABLE_NAMES } from '../src/shared/persistence/schema.js';
 
@@ -145,6 +151,68 @@ export const createTestDatabase = (
       }
     },
   };
+};
+
+// --------------------------------------------------------------- Oracle ----
+//
+// The corporate Oracle instance hosts DEV/HML/PRD in ONE schema, distinguished by an object prefix,
+// so there is no per-worker schema to isolate tests. The test suite instead runs under a dedicated
+// NEXUS_TEST_ prefix and clears data with DELETE (Oracle's TRUNCATE cannot cross the FK graph). Run
+// Oracle tests with a single worker — one prefix is one shared namespace.
+
+export const TEST_ORACLE_PREFIX = process.env.ORACLE_TEST_OBJECT_PREFIX ?? 'NEXUS_TEST_';
+
+// True when the environment carries enough to reach a real Oracle. Oracle-gated specs skip unless
+// this holds, so the default (Postgres) suite never tries to connect.
+export const isOracleTestConfigured = (): boolean =>
+  Boolean(
+    firstNonBlank(process.env.ORACLE_CONNECTION_STRING, process.env.ORACLE_CONNECT_STRING) &&
+      process.env.ORACLE_USER &&
+      process.env.ORACLE_PASSWORD,
+  );
+
+// Guard analogous to assertNotProductionUrl: because PRD lives in the same schema, the suite (which
+// DELETEs every prefixed table) must refuse to run under anything but a test prefix.
+export const assertOracleTestPrefix = (prefix: string): void => {
+  if (!/_(TEST|TST)_$/i.test(prefix)) {
+    throw new Error(
+      `Recusando rodar testes Oracle sob o prefixo "${prefix}": use um prefixo de teste ` +
+        `(ex.: NEXUS_TEST_). A suíte apaga todas as tabelas do prefixo — outro prefixo apagaria ` +
+        `dados de DEV/HML/PRD no mesmo schema.`,
+    );
+  }
+};
+
+// One initialized Oracle client per run (Oracle tests are single-worker), built from the ambient
+// ORACLE_* connection but pinned to the test prefix.
+let oracleTestClient: Promise<DatabaseClient> | undefined;
+
+export const getOracleTestClient = (): Promise<DatabaseClient> => {
+  oracleTestClient ??= (async () => {
+    const config = resolveDatabaseConfig(
+      { ...process.env, DATABASE_PROVIDER: 'oracle', ORACLE_OBJECT_PREFIX: TEST_ORACLE_PREFIX },
+      'test',
+    );
+    if (config.provider !== 'oracle') throw new Error('Expected an Oracle database configuration.');
+    assertOracleTestPrefix(config.objectPrefix);
+    const client = createDatabaseClient(config);
+    await client.initialize();
+    return client;
+  })();
+  return oracleTestClient;
+};
+
+// Clears every table's data for the test prefix. Reverse TABLE_NAMES order is child-before-parent
+// (TABLE_NAMES is parent-first), so plain DELETE satisfies the FK graph without TRUNCATE ... CASCADE
+// (which Oracle rejects under enabled foreign keys, ORA-02266).
+export const cleanupOracleTables = async (client: DatabaseClient): Promise<void> => {
+  for (const table of [...TABLE_NAMES].reverse()) {
+    try {
+      await client.exec(`DELETE FROM ${table}`);
+    } catch {
+      // Table may not exist yet (schema not fully applied); best-effort, like truncateTestSchema.
+    }
+  }
 };
 
 const createSchemaName = (prefix: string): string => {

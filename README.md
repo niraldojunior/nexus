@@ -91,18 +91,30 @@ npm run web:dev     # só o frontend Vite
 A configuração incompleta ou a indisponibilidade do provider selecionado interrompe a inicialização;
 o Nexus não tenta o outro banco silenciosamente.
 
-Com `DATABASE_PROVIDER=oracle`, informe `ORACLE_CONNECT_STRING`, `ORACLE_USER` e
-`ORACLE_PASSWORD`. O driver `node-oracledb` opera em Thin mode, sem Oracle Client. Nos dois
-providers, o pool usa `DATABASE_POOL_MIN`, `DATABASE_POOL_MAX`, `DATABASE_POOL_INCREMENT`,
-`DATABASE_QUEUE_TIMEOUT_MS` e `DATABASE_CONNECTION_TIMEOUT_MS`.
+Com `DATABASE_PROVIDER=oracle`, informe `ORACLE_CONNECTION_STRING` (alias legado:
+`ORACLE_CONNECT_STRING`), `ORACLE_USER` e `ORACLE_PASSWORD`. O driver `node-oracledb` opera em Thin
+mode, sem Oracle Client. O pool Oracle usa `ORACLE_POOL_MIN`, `ORACLE_POOL_MAX` (com fallback para
+os `DATABASE_POOL_*` compartilhados), `ORACLE_POOL_TIMEOUT_SECONDS` e
+`ORACLE_POOL_PING_INTERVAL_SECONDS` — valores **em segundos**. O provider Postgres continua com
+`DATABASE_POOL_*` (milissegundos).
 
-Em produção o boot somente valida `schema_migrations`; aplique DDL antecipadamente com
+**Schema único, prefixo por ambiente.** A instância corporativa hospeda DEV/HML/PRD (e a suíte de
+teste) num único schema Oracle, distinguidos por `ORACLE_OBJECT_PREFIX` — obrigatório e terminando
+em `_` (ex.: `NEXUS_DEV_`, `NEXUS_HML_`, `NEXUS_PRD_`, `NEXUS_TEST_`). Todo objeto (tabela, índice,
+constraint) é criado e consultado com esse prefixo; o SQL da aplicação é autorado no dialeto
+Postgres e traduzido para Oracle em runtime ([`oracle-database.ts`](src/shared/persistence/oracle-database.ts),
+[`oracle-object-names.ts`](src/shared/persistence/oracle-object-names.ts)). O usuário Oracle precisa
+de privilégio de DDL quando `DATABASE_AUTO_SCHEMA=true` cria os objetos do prefixo.
+
+Em produção o boot somente valida `<prefixo>schema_migrations`; aplique DDL antecipadamente com
 `npm run db:migrate`. `DATABASE_AUTO_SCHEMA=true` é aceito apenas em desenvolvimento/teste.
 
 Para o cutover, `npm run migrate:postgres-to-oracle -- --dry-run|--resume|--verify-only` usa
 `SOURCE_DATABASE_URL`, `TARGET_ORACLE_CONNECT_STRING`, `TARGET_ORACLE_USER`,
-`TARGET_ORACLE_PASSWORD` e `MIGRATION_BATCH_SIZE` (padrão `1000`). O relatório contém somente
-contagens e hashes normalizados, nunca credenciais ou conteúdo dos registros.
+`TARGET_ORACLE_PASSWORD`, `TARGET_ORACLE_OBJECT_PREFIX` (deve casar com o `ORACLE_OBJECT_PREFIX` do
+runtime de destino) e `MIGRATION_BATCH_SIZE` (padrão `1000`). Fluxo recomendado: `--dry-run` →
+carga → `--verify-only`. O relatório contém somente contagens e hashes normalizados, nunca
+credenciais ou conteúdo dos registros.
 
 Ao menos uma connection string do Neon é obrigatória — a aplicação **falha no boot** sem ela. Todas
 precisam começar com `postgres://` ou `postgresql://`.
@@ -168,9 +180,18 @@ Raramente precisam ser ajustadas — têm padrões seguros definidos em `scripts
 | `npm test`                 | —          | Suíte completa: unit → integration → regression    |
 | `npm run test:unit`        | Vitest     | `test/**/*.spec.ts` e `web/src/**/*.test.tsx`      |
 | `npm run test:integration` | Node       | Suíte de integração sobre o `dist/` compilado      |
+| `npm run test:oracle`      | Vitest     | Path Oracle contra uma instância real (ver abaixo) |
 | `npm run test:regression`  | Playwright | E2E de browser (requer `npm run browsers:install`) |
 | `npm run test:watch`       | Vitest     | Modo watch                                         |
 | `npm run test:coverage`    | Vitest     | Cobertura v8                                       |
+
+O gate de dialeto Oracle roda **sem banco** dentro de `test:unit`
+([`test/oracle-dialect.spec.ts`](test/oracle-dialect.spec.ts)): traduz o SQL da aplicação e falha se
+sobrar qualquer construção só-Postgres. `npm run test:oracle` vai além e exercita o path contra uma
+instância real — exige `DATABASE_PROVIDER=oracle` (setado pelo script), a conexão `ORACLE_*` no
+`.env` e um prefixo de teste (`ORACLE_OBJECT_PREFIX`/`ORACLE_TEST_OBJECT_PREFIX` terminando em
+`_TEST_`). Roda em worker único (o prefixo é um namespace compartilhado) e recusa rodar sob um
+prefixo que não seja de teste, para não apagar DEV/HML/PRD no mesmo schema.
 
 > Armadilhas de teste (obrigatoriedade do `--use-system-ca`, endpoint `-pooler`, schema por worker)
 > estão documentadas em [AGENTS.md](AGENTS.md) §3.

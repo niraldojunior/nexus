@@ -1,6 +1,9 @@
 param(
   # Ambiente Oracle a subir (prefixo dos objetos no schema único). Padrão: DEV.
-  [string]$Prefix = 'NEXUS_DEV_'
+  [string]$Prefix = 'NEXUS_DEV_',
+  # Aplica o schema (db:migrate) no prefixo antes de subir. Use quando o schema mudou
+  # (ex.: colunas/tabelas novas). Sem o flag, o boot só valida a versão — mais rápido.
+  [switch]$Migrate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,6 +17,7 @@ Set-Location $PSScriptRoot
 # Pré-requisito: a conexão Oracle (ORACLE_CONNECTION_STRING, ORACLE_USER,
 # ORACLE_PASSWORD) precisa estar no .env (fora do git). O schema do prefixo já deve
 # existir — criado por `npm run db:migrate` (por isso DATABASE_AUTO_SCHEMA=false aqui).
+# Passe -Migrate para aplicar o schema automaticamente antes de subir (ver abaixo).
 
 $backendPort = 4001
 $webPort = 5200
@@ -97,6 +101,18 @@ $env:DATABASE_AUTO_SCHEMA = 'false'
 
 Write-Host "== Build =="
 npm run build
+
+# Com -Migrate, aplica o schema no prefixo antes de subir. Reaproveita o build acima
+# (chama o script direto, sem o rebuild embutido em `npm run db:migrate`). O
+# migrate-database força DATABASE_AUTO_SCHEMA=true internamente, então o 'false' da
+# sessão não bloqueia a aplicação do DDL.
+if ($Migrate) {
+  Write-Host "== Migrando schema Oracle ($Prefix) =="
+  node dist/src/scripts/migrate-database.js
+  if ($LASTEXITCODE -ne 0) {
+    Write-Error "Falha ao migrar o schema Oracle ($Prefix). Abortando antes de subir o backend."
+  }
+}
 
 Write-Host "== Subindo backend (Oracle, prefixo $Prefix) =="
 $backend = Start-Process -WindowStyle Hidden `

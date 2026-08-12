@@ -13,7 +13,12 @@ import type { DatabaseClient } from '../persistence/database-client.js';
 import { createDatabaseClient } from '../persistence/database-factory.js';
 import { createCanonicalId } from '../utils/canonical-id.js';
 import { ChatGPTProvider } from '../../modules/search/chatgpt-provider.js';
+import { GeminiProvider } from '../../modules/search/gemini-provider.js';
 import { LocalKnowledgeProvider } from '../../modules/search/local-knowledge-provider.js';
+import {
+  resolveDefaultModel,
+  resolveResearchProvider,
+} from '../../modules/search/provider-router.js';
 import { prependNexusCopilotContext } from '../../modules/search/nexus-copilot-context.js';
 import { SearchService } from '../../modules/search/service.js';
 import { createNexusMcpModule } from '../../modules/mcp/index.js';
@@ -78,7 +83,6 @@ type OpenAIChatRequestBody = {
   max_tokens?: unknown;
 };
 
-const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
 
 type AppDependencies = {
   config: AppConfig;
@@ -251,6 +255,10 @@ const routeRequest = async ({
   const apiKey = process.env.OPENAI_API_KEY;
   const apiEndpoint = process.env.API_ENDPOINT || 'https://api.openai.com/v1';
   const chatGptProvider = apiKey ? new ChatGPTProvider(apiKey, apiEndpoint) : null;
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const geminiProvider = geminiKey
+    ? new GeminiProvider(geminiKey, process.env.GEMINI_API_ENDPOINT)
+    : null;
   const localKnowledgeProvider = new LocalKnowledgeProvider();
   const mcpModule = createNexusMcpModule(runtime);
 
@@ -336,14 +344,15 @@ const routeRequest = async ({
 
     const messages = prependNexusCopilotContext(parsed.messages);
 
-    if (!chatGptProvider) {
-      logger.warn({}, 'ChatGPT not configured; returning fallback completion');
+    const chatProvider = resolveResearchProvider(parsed.model, { chatGptProvider, geminiProvider });
+    if (!chatProvider) {
+      logger.warn({ model: parsed.model }, 'No LLM provider configured; returning fallback completion');
       const fallbackCompletion = await localKnowledgeProvider.complete(messages, parsed.model);
       return sendFallbackChatCompletion(response, parsed.model, fallbackCompletion.content);
     }
 
     try {
-      const completion = await chatGptProvider.complete(
+      const completion = await chatProvider.complete(
         messages,
         parsed.model,
         parsed.temperature,
@@ -694,6 +703,7 @@ const routeRequest = async ({
       searchService,
       researchRepository,
       chatGptProvider,
+      geminiProvider,
       localKnowledgeProvider,
       mcpModule,
       llmToolCatalog,
@@ -2959,15 +2969,15 @@ const resolveGeoEntityRoute = (pathname: string): GeoEntityRoute | undefined => 
  * `llmRequest.signal`, which the service layer attaches to each request it builds.
  */
 const createLlmProvider = (
-  chatGptProvider: ChatGPTProvider | null,
+  provider: ChatGPTProvider | null,
   localKnowledgeProvider: LocalKnowledgeProvider,
   llmToolCatalog: ReturnType<typeof buildLlmToolCatalog>,
   session: ResearchSession,
 ): ((llmRequest: LLMRequest) => Promise<LLMResponse>) =>
-  chatGptProvider
+  provider
     ? async (llmRequest) => {
         try {
-          const providerResponse = await chatGptProvider.invoke(llmRequest);
+          const providerResponse = await provider.invoke(llmRequest);
           if (!providerResponse.toolCalls) {
             return providerResponse;
           }
@@ -3009,6 +3019,7 @@ const routeResearchRequest = async ({
   searchService,
   researchRepository,
   chatGptProvider,
+  geminiProvider,
   localKnowledgeProvider,
   mcpModule,
   llmToolCatalog,
@@ -3022,6 +3033,7 @@ const routeResearchRequest = async ({
   searchService: SearchService;
   researchRepository: ResearchMessageRepository;
   chatGptProvider: ChatGPTProvider | null;
+  geminiProvider: GeminiProvider | null;
   localKnowledgeProvider: LocalKnowledgeProvider;
   mcpModule: ReturnType<typeof createNexusMcpModule>;
   llmToolCatalog: ReturnType<typeof buildLlmToolCatalog>;
@@ -3040,7 +3052,7 @@ const routeResearchRequest = async ({
     const body = await readBody(request);
     const sessionInput: Parameters<SearchService['createSession']>[1] = {
       title: (body.title || 'New Chat') as string,
-      model: (body.model || process.env.OPENAI_MODEL || 'gpt-4o-mini') as string,
+      model: (body.model || resolveDefaultModel()) as string,
     };
 
     if (body.description !== undefined) {
@@ -3182,8 +3194,12 @@ const routeResearchRequest = async ({
       response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
 
-    const llmProvider = createLlmProvider(
+    const activeProvider = resolveResearchProvider(session.model, {
       chatGptProvider,
+      geminiProvider,
+    });
+    const llmProvider = createLlmProvider(
+      activeProvider,
       localKnowledgeProvider,
       llmToolCatalog,
       session,
@@ -3194,7 +3210,7 @@ const routeResearchRequest = async ({
     try {
       const { userMessage: userMsg, assistantMessage } =
         await searchService.addMessageAndGetResponse(sessionId, userMessage, llmProvider, {
-          ...(chatGptProvider
+          ...(activeProvider
             ? {
                 tools: llmToolCatalog.tools,
                 executeTool: async (toolName, input) =>
@@ -3236,8 +3252,12 @@ const routeResearchRequest = async ({
     const session = await searchService.getSession(sessionId);
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
 
-    const llmProvider = createLlmProvider(
+    const activeProvider = resolveResearchProvider(session.model, {
       chatGptProvider,
+      geminiProvider,
+    });
+    const llmProvider = createLlmProvider(
+      activeProvider,
       localKnowledgeProvider,
       llmToolCatalog,
       session,
@@ -3247,7 +3267,7 @@ const routeResearchRequest = async ({
       sessionId,
       userMessage,
       llmProvider,
-      chatGptProvider
+      activeProvider
         ? {
             tools: llmToolCatalog.tools,
             executeTool: async (toolName, input) =>
@@ -3404,7 +3424,7 @@ const normalizeOpenAIModel = (value: unknown): string => {
     return value.trim();
   }
 
-  return process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL;
+  return resolveDefaultModel();
 };
 
 const normalizeNumber = (value: unknown, fallback: number): number => {

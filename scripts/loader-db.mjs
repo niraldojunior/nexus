@@ -171,11 +171,15 @@ const bindValueFor = (value, bindDef) => {
 
 async function bulkInsertOracle(conn, prefix, table, columns, rows, { onConflict = '' } = {}) {
   if (rows.length === 0) return 0;
-  const target = prefixed(table, prefix);
   const bindDefs = columns.map((column) => bindDefFor(column, rows));
-  const sql =
-    `INSERT INTO ${target} (${columns.map((c) => `"${c}"`).join(', ')}) ` +
-    `VALUES (${columns.map((_, i) => `:${i + 1}`).join(', ')})`;
+  // Build the INSERT through the same translator the query path uses: it prefixes the table and
+  // leaves the columns UNQUOTED so Oracle folds them to its uppercase schema names. Hand-quoting them
+  // as "col" pinned case-sensitive lowercase identifiers that don't exist (ORA-00904 "characteristics").
+  const sql = toOracleSql(
+    `INSERT INTO ${table} (${columns.join(', ')}) ` +
+      `VALUES (${columns.map((_, i) => `$${i + 1}`).join(', ')})`,
+    prefix,
+  );
   const ignoreDuplicates = /DO NOTHING/i.test(onConflict);
   let inserted = 0;
   for (const block of chunk(rows, 1000)) {

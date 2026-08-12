@@ -20,3 +20,12 @@ export const DOCK_SEARCH_WIDTH_CLASS = 'w-[372px]';
  * faixa branca sob a barra de pesquisa.
  */
 export const DOCK_SEARCH_CLEARANCE_PT_CLASS = 'pt-[72px]';
+
+/**
+ * Elevação da doca sobre o mapa (só desktop). O canvas do Google Maps é `absolute inset-0`
+ * dentro de um irmão posicionado que vem DEPOIS da doca no DOM (ver GeoPage); sem z-index ele
+ * pinta por cima e engole a `shadow-dock`. Um nível positivo põe a doca e sua sombra acima do
+ * mapa — e abaixo da barra de pesquisa sobreposta (z-30), que continua por cima da doca. O
+ * literal aparece inteiro para o JIT do Tailwind gerá-lo.
+ */
+export const DOCK_ELEVATION_CLASS = 'relative z-10';

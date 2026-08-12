@@ -16,7 +16,7 @@ import {
   type BottomSheetSnapState,
 } from '../../components/BottomSheet';
 import { OverlayScrollArea } from '../../components/OverlayScrollArea';
-import { DOCK_WIDTH_CLASS } from './dock';
+import { DOCK_WIDTH_CLASS, DOCK_ELEVATION_CLASS } from './dock';
 import { StreetViewHero } from '../../components/StreetViewHero';
 import { addressStreetViewMarker } from '../../utils/streetViewMarker';
 import { CoordinateStreetView } from './CoordinateStreetView';
@@ -170,7 +170,7 @@ export function AddressDetailPanel({
     // rolagem, ao lado do scroll do conteúdo — era o scroll duplo do painel. Quem rola
     // aqui é só o filho `overflow-y-auto`. Mesmo ajuste no painel de Site/Recurso.
     <div
-      className={`relative flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
+      className={`${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
     >
       {/* A barra de pesquisa é uma instância única, sobreposta a esta doca pelo GeoPage
           (estilo Google Maps): a foto de Street View, o título e o corpo rolam por baixo

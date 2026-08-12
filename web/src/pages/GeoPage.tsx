@@ -106,6 +106,7 @@ import {
   PanelBarButton,
   StatusBadge,
   DOCK_WIDTH_CLASS,
+  DOCK_ELEVATION_CLASS,
   type AddressSearchError,
   type DeviceLocation,
   type DropSimulation,
@@ -2000,7 +2001,7 @@ function GeoDetailPanel({
     // segundo contêiner de rolagem, ao lado do scroll do conteúdo abaixo — era o
     // scroll duplo do painel. Quem rola aqui é só o filho `overflow-y-auto`.
     <div
-      className={`relative flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
+      className={`${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
     >
       {/* A barra de pesquisa é uma instância única, sobreposta a esta doca pelo GeoPage
           (estilo Google Maps): a foto de Street View, o título e o corpo rolam por baixo

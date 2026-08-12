@@ -6,7 +6,11 @@ interface NewResearchPageProps {
   onSessionCreated?: (sessionId: string) => void;
 }
 
+// A primeira opção é o padrão de novas conversas (ver useState abaixo). O prefixo do modelo decide o
+// provider no backend: `gemini*` → Gemini; senão → OpenAI (ver resolveResearchProvider em app.ts).
 const AVAILABLE_MODELS = [
+  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
   { value: 'gpt-4o-mini', label: 'GPT-4o mini' },
   { value: 'gpt-4o', label: 'GPT-4o' },
 ];

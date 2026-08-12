@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { afterEach, test, vi } from 'vitest';
 import { ChatGPTProvider } from '../src/modules/search/chatgpt-provider.js';
+import { GeminiProvider, DEFAULT_GEMINI_ENDPOINT } from '../src/modules/search/gemini-provider.js';
 import { LocalKnowledgeProvider } from '../src/modules/search/local-knowledge-provider.js';
+import {
+  resolveDefaultModel,
+  resolveResearchProvider,
+} from '../src/modules/search/provider-router.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -161,6 +166,73 @@ test('ChatGPTProvider monta contexto, histórico e mensagem atual ao chamar call
   assert.equal(completeSpy.mock.calls[0]?.[1], 'gpt-4o');
   assert.equal(completeSpy.mock.calls[0]?.[2], 0.3);
   assert.equal(completeSpy.mock.calls[0]?.[3], 90);
+});
+
+test('GeminiProvider usa o endpoint OpenAI-compat do Gemini e autentica com Bearer', async () => {
+  const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+    return new Response(
+      JSON.stringify({
+        model: 'gemini-2.5-flash',
+        choices: [{ finish_reason: 'stop', message: { content: 'Olá do Gemini' } }],
+        usage: { total_tokens: 42 },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  const provider = new GeminiProvider('gemini-key');
+  const result = await provider.complete([{ role: 'user', content: 'oi' }], 'gemini-2.5-flash');
+
+  const firstCall = fetchMock.mock.calls[0];
+  assert.ok(firstCall);
+  assert.equal(firstCall[0], `${DEFAULT_GEMINI_ENDPOINT}/chat/completions`);
+  assert.equal(
+    (firstCall[1]?.headers as Record<string, string>)?.Authorization,
+    'Bearer gemini-key',
+  );
+  assert.equal(result.content, 'Olá do Gemini');
+});
+
+test('GeminiProvider respeita um endpoint customizado', () => {
+  const provider = new GeminiProvider('gemini-key', 'https://proxy.local/v1');
+  assert.equal(provider.apiEndpoint, 'https://proxy.local/v1');
+  const blank = new GeminiProvider('gemini-key', '   ');
+  assert.equal(blank.apiEndpoint, DEFAULT_GEMINI_ENDPOINT);
+});
+
+test('resolveResearchProvider roteia por prefixo de modelo e cai em null sem chave', () => {
+  const chatGptProvider = new ChatGPTProvider('openai-key');
+  const geminiProvider = new GeminiProvider('gemini-key');
+
+  assert.equal(
+    resolveResearchProvider('gemini-2.5-flash', { chatGptProvider, geminiProvider }),
+    geminiProvider,
+  );
+  assert.equal(
+    resolveResearchProvider('gpt-4o', { chatGptProvider, geminiProvider }),
+    chatGptProvider,
+  );
+  // Modelo Gemini sem provider configurado → null (fallback local no chamador).
+  assert.equal(
+    resolveResearchProvider('gemini-2.5-pro', { chatGptProvider, geminiProvider: null }),
+    null,
+  );
+  // Modelo indefinido cai no caminho OpenAI.
+  assert.equal(
+    resolveResearchProvider(undefined, { chatGptProvider, geminiProvider }),
+    chatGptProvider,
+  );
+});
+
+test('resolveDefaultModel prefere Gemini quando a chave está presente', () => {
+  assert.equal(resolveDefaultModel({ GEMINI_API_KEY: 'k' } as NodeJS.ProcessEnv), 'gemini-2.5-flash');
+  assert.equal(
+    resolveDefaultModel({ GEMINI_API_KEY: 'k', GEMINI_MODEL: 'gemini-2.5-pro' } as NodeJS.ProcessEnv),
+    'gemini-2.5-pro',
+  );
+  assert.equal(resolveDefaultModel({ OPENAI_MODEL: 'gpt-4o' } as NodeJS.ProcessEnv), 'gpt-4o');
+  assert.equal(resolveDefaultModel({} as NodeJS.ProcessEnv), 'gpt-4o-mini');
 });
 
 test('LocalKnowledgeProvider responde com conteúdo curado e fallback local', async () => {

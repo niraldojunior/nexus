@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Check, KeyRound, Loader2, Plus, Trash2, UserCog } from 'lucide-react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Check, KeyRound, Loader2, Plus, Trash2, UserCog, X } from 'lucide-react';
 import {
   ASSIGNABLE_ROLES,
   createUser,
@@ -10,6 +11,8 @@ import {
   setUserStatus,
   type AdminUser,
 } from '../services/authApi';
+import { PasswordStrengthField } from '../components/PasswordStrengthField';
+import { isPasswordValid } from '../utils/passwordPolicy';
 
 // Administração de contas — visível apenas para papéis admin (o App condiciona a rota).
 // Criar usuário, editar papéis, ativar/desativar e redefinir senha. Sem exclusão física de
@@ -145,7 +148,7 @@ function CreateUserForm({
       <h2 className="mb-3 flex items-center gap-2 text-[0.92rem] font-semibold text-app-text">
         <Plus className="h-4 w-4" /> Novo usuário
       </h2>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -159,13 +162,9 @@ function CreateUserForm({
           placeholder="E-mail"
           className="h-10 rounded-lg border border-app-border bg-white px-3 text-[0.88rem] text-app-text outline-none focus:border-app-accent-border"
         />
-        <input
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="Senha (mín. 12)"
-          className="h-10 rounded-lg border border-app-border bg-white px-3 text-[0.88rem] text-app-text outline-none focus:border-app-accent-border"
-        />
+      </div>
+      <div className="mt-3">
+        <PasswordStrengthField label="Senha" value={password} onChange={setPassword} showGenerator />
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {ASSIGNABLE_ROLES.map((role) => (
@@ -175,7 +174,7 @@ function CreateUserForm({
       <button
         type="button"
         onClick={() => void submit()}
-        disabled={submitting || !name.trim() || !email.trim() || password.length < 12}
+        disabled={submitting || !name.trim() || !email.trim() || !isPasswordValid(password)}
         className="mt-4 flex h-10 items-center gap-2 rounded-lg bg-app-ink px-4 text-[0.88rem] font-semibold text-app-on-ink transition hover:brightness-110 disabled:opacity-50"
       >
         {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
@@ -202,6 +201,7 @@ function UserRow({
 }) {
   const [editingRoles, setEditingRoles] = useState(false);
   const [draftRoles, setDraftRoles] = useState<string[]>(user.roles);
+  const [resetOpen, setResetOpen] = useState(false);
   const disabled = user.status !== 'active';
 
   const toggleDraft = (role: string) =>
@@ -240,10 +240,7 @@ function UserRow({
         </button>
         <button
           type="button"
-          onClick={() => {
-            const password = window.prompt(`Nova senha para ${user.name} (mín. 12 caracteres):`);
-            if (password && password.length >= 12) onResetPassword(password);
-          }}
+          onClick={() => setResetOpen(true)}
           className="flex h-8 w-8 items-center justify-center rounded-lg text-app-muted transition hover:bg-black/5"
           title="Redefinir senha"
           aria-label={`Redefinir senha de ${user.name}`}
@@ -292,7 +289,154 @@ function UserRow({
           </button>
         </div>
       ) : null}
+
+      {resetOpen ? (
+        <ResetPasswordModal
+          user={user}
+          onClose={() => setResetOpen(false)}
+          onSubmit={(password) => {
+            onResetPassword(password);
+            setResetOpen(false);
+          }}
+        />
+      ) : null}
     </li>
+  );
+}
+
+function ResetPasswordModal({
+  user,
+  onClose,
+  onSubmit,
+}: {
+  user: AdminUser;
+  onClose: () => void;
+  onSubmit: (password: string) => void;
+}) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      } else if (!dialogRef.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, [onClose]);
+
+  const mismatch = confirm.length > 0 && password !== confirm;
+  const canSubmit = isPasswordValid(password) && password === confirm;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="w-full max-w-[460px] rounded-[26px] border border-app-border bg-white p-5 shadow-modal"
+      >
+        <div className="mb-4 flex items-start justify-between gap-4 border-b border-app-border pb-4">
+          <div className="min-w-0">
+            <h3 id={titleId} className="font-display text-[1.35rem] font-semibold text-app-text">
+              Redefinir senha
+            </h3>
+            <p className="mt-1 truncate text-[0.82rem] text-app-muted">
+              {user.name} · {user.email ?? user.externalId}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 text-app-muted transition hover:bg-app-accent-soft"
+            aria-label="Fechar"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <PasswordStrengthField
+            label="Nova senha"
+            value={password}
+            onChange={setPassword}
+            autoFocus
+            showGenerator
+          />
+
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor={`${titleId}-confirm`} className="text-[0.78rem] font-medium text-app-muted">
+              Confirmar senha
+            </label>
+            <input
+              id={`${titleId}-confirm`}
+              type="password"
+              autoComplete="new-password"
+              value={confirm}
+              onChange={(event) => setConfirm(event.target.value)}
+              className="h-11 rounded-xl border border-app-border bg-white px-3 text-[0.92rem] text-app-text outline-none focus:border-app-accent-border"
+              placeholder="••••••••••••"
+            />
+            {mismatch ? (
+              <p className="text-[0.76rem] text-status-red">As senhas não conferem.</p>
+            ) : null}
+          </div>
+
+          <p className="text-[0.76rem] text-app-muted">
+            Redefinir a senha encerra as sessões ativas do usuário.
+          </p>
+        </div>
+
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 items-center rounded-lg border border-app-border px-4 text-[0.88rem] font-medium text-app-text transition hover:bg-black/5"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => onSubmit(password)}
+            disabled={!canSubmit}
+            className="flex h-10 items-center gap-2 rounded-lg bg-app-ink px-4 text-[0.88rem] font-semibold text-app-on-ink transition hover:brightness-110 disabled:opacity-50"
+          >
+            <KeyRound className="h-4 w-4" /> Redefinir senha
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

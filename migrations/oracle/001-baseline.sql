@@ -976,7 +976,8 @@ ALTER TABLE tmf_audit_log ADD CONSTRAINT ck_nexus_json_47 CHECK (after_state IS 
 ALTER TABLE tmf_audit_log ADD CONSTRAINT ck_nexus_json_48 CHECK (before_state IS JSON);
 ALTER TABLE tmf_outbox ADD CONSTRAINT ck_nexus_json_49 CHECK (payload IS JSON);
 ALTER TABLE tmf_geo_bulk_job_result ADD CONSTRAINT ck_nexus_json_50 CHECK (warnings IS JSON);
-ALTER TABLE research_session ADD CONSTRAINT ck_nexus_json_51 CHECK (context IS JSON);
+-- ck_nexus_json_51 intentionally skipped: research_session.context holds the Nexus Copilot system
+-- prompt (free-form markdown), not JSON. The index stays reserved so later numbers don't shift.
 ALTER TABLE research_message ADD CONSTRAINT ck_nexus_json_52 CHECK (metadata IS JSON);
 ALTER TABLE mcp_confirmation ADD CONSTRAINT ck_nexus_json_53 CHECK (context IS JSON);
 ALTER TABLE mcp_confirmation ADD CONSTRAINT ck_nexus_json_54 CHECK (payload IS JSON);

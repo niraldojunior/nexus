@@ -6,6 +6,10 @@ import {
   findPostgresisms,
 } from '../src/shared/persistence/oracle-dialect-lint.js';
 import {
+  ORACLE_JSON_CONSTRAINTS_SQL,
+  splitOracleStatements,
+} from '../src/shared/persistence/oracle-schema.js';
+import {
   prefixed,
   rewriteDdlObjectNames,
   rewriteTableReferences,
@@ -105,6 +109,21 @@ test('DDL prefixes tables, indexes, constraints and references', () => {
   assert.match(
     rewriteDdlObjectNames('... REFERENCES tmf_party(id)', PREFIX),
     /REFERENCES NEXUS_TEST_tmf_party/,
+  );
+});
+
+test('research_session.context is never IS JSON-constrained, but mcp_confirmation.context still is', () => {
+  // research_session.context holds the Nexus Copilot system prompt (free-form markdown), so an
+  // IS JSON check makes every session INSERT fail with ORA-02290. mcp_confirmation.context genuinely
+  // stores JSON, so its constraint must remain — guards against over-broad removal.
+  const statements = splitOracleStatements(ORACLE_JSON_CONSTRAINTS_SQL);
+  assert.ok(
+    !statements.some((s) => /\bresearch_session\b[\s\S]*\(\s*context\s+IS JSON\s*\)/i.test(s)),
+    'research_session.context must not carry an IS JSON constraint',
+  );
+  assert.ok(
+    statements.some((s) => /\bmcp_confirmation\b[\s\S]*\(\s*context\s+IS JSON\s*\)/i.test(s)),
+    'mcp_confirmation.context should still carry its IS JSON constraint',
   );
 });
 

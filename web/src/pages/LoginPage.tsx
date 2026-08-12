@@ -43,9 +43,10 @@ export default function LoginPage({ onSuccess }: { onSuccess?: () => void }) {
             backgroundSize: '26px 26px',
           }}
         />
-        <div className="relative flex items-center gap-3">
-          <NexusMark className="h-9 w-9" />
-          <span className="font-display text-[1.4rem] font-semibold tracking-[-0.01em]">Nexus</span>
+        <div className="relative flex items-center gap-3.5">
+          {/* Cubo claro (ink branco) para contrastar com o painel escuro (app-ink). */}
+          <NexusMark ink="#ffffff" className="h-[2.9rem] w-[2.9rem]" />
+          <span className="font-display text-[2rem] font-semibold tracking-[-0.01em]">Nexus</span>
         </div>
         <div className="relative">
           <h1 className="font-display text-[2rem] font-extrabold leading-[1.15] tracking-[-0.02em]">
@@ -72,9 +73,10 @@ export default function LoginPage({ onSuccess }: { onSuccess?: () => void }) {
       {/* Painel do formulário */}
       <div className="flex items-center justify-center bg-app-panel p-8 md:p-12">
         <div className="w-full max-w-[360px]">
-          <div className="mb-1 flex items-center gap-2 md:hidden">
-            <NexusMark className="h-8 w-8" />
-            <span className="font-display text-[1.2rem] font-semibold text-app-text">Nexus</span>
+          <div className="mb-2 flex items-center gap-2.5 md:hidden">
+            {/* No painel branco (mobile), o cubo escuro (padrão) é que contrasta. */}
+            <NexusMark className="h-[2.6rem] w-[2.6rem]" />
+            <span className="font-display text-[1.6rem] font-semibold text-app-text">Nexus</span>
           </div>
           <h2 className="font-display text-[1.6rem] font-semibold tracking-[-0.02em] text-app-text">
             Acessar a plataforma
@@ -94,7 +96,7 @@ export default function LoginPage({ onSuccess }: { onSuccess?: () => void }) {
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   className="h-11 min-w-0 flex-1 bg-transparent text-[0.92rem] text-app-text outline-none placeholder:text-app-muted"
-                  placeholder="voce@vtal.com.br"
+                  placeholder="voce@vtal.com"
                   required
                 />
               </span>
@@ -125,7 +127,7 @@ export default function LoginPage({ onSuccess }: { onSuccess?: () => void }) {
             <button
               type="submit"
               disabled={loading}
-              className="mt-1 flex h-11 items-center justify-center gap-2 rounded-xl bg-app-ink text-[0.92rem] font-semibold text-app-on-ink transition hover:brightness-110 disabled:opacity-60"
+              className="mt-1 flex h-11 items-center justify-center gap-2 rounded-xl border border-app-accent-border bg-app-accent text-[0.92rem] font-semibold text-app-text shadow-soft transition hover:brightness-95 disabled:opacity-60"
             >
               {loading ? 'Entrando...' : 'Entrar'}
               {loading ? null : <ArrowRight className="h-4 w-4" aria-hidden="true" />}

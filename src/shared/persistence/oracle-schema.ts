@@ -100,6 +100,11 @@ export const transformOracleSchemaSql = (sql: string): string => {
 export const ORACLE_SCHEMA_SQL = transformOracleSchemaSql(SCHEMA_SQL);
 export const ORACLE_MIGRATIONS_SQL = transformOracleSchemaSql(MIGRATIONS_SQL);
 
+// `context` holds JSON in mcp_confirmation but free-form markdown (the Nexus Copilot system prompt)
+// in research_session, so the IS JSON check must be skipped for that column there. Keyed by
+// `table.column` so the exclusion is surgical — every other `context` column stays constrained.
+const JSON_CONSTRAINT_EXCLUSIONS = new Set(['research_session.context']);
+
 let jsonConstraintIndex = 0;
 export const ORACLE_JSON_CONSTRAINTS_SQL = splitOracleStatements(ORACLE_SCHEMA_SQL)
   .flatMap((statement) => {
@@ -107,9 +112,14 @@ export const ORACLE_JSON_CONSTRAINTS_SQL = splitOracleStatements(ORACLE_SCHEMA_S
     if (!table) return [];
     return [...JSON_COLUMNS]
       .filter((column) => new RegExp(`\\b${column}\\s+CLOB\\b`, 'i').test(statement))
-      .map((column) => {
+      .flatMap((column) => {
+        // Increment for every candidate column so constraint numbers stay stable across
+        // environments even when a column is excluded; just skip emitting the excluded one.
         jsonConstraintIndex += 1;
-        return `ALTER TABLE ${table} ADD CONSTRAINT ck_nexus_json_${jsonConstraintIndex} CHECK (${column} IS JSON)`;
+        if (JSON_CONSTRAINT_EXCLUSIONS.has(`${table}.${column}`)) return [];
+        return [
+          `ALTER TABLE ${table} ADD CONSTRAINT ck_nexus_json_${jsonConstraintIndex} CHECK (${column} IS JSON)`,
+        ];
       });
   })
   .join(';\n');

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MapPin, RefreshCw, Search, X } from 'lucide-react';
+import { Clock, MapPin, RefreshCw, Search, X } from 'lucide-react';
 import { fetchTreeSearch, type GeoTreeNode } from '../../services/geoTreeApi';
 import {
   fetchAddressPredictions,
@@ -9,6 +9,7 @@ import {
   type DraftAddress,
 } from '../../utils/googleMaps';
 import NexusMark from '../../components/NexusMark';
+import { useGeoSearchHistory } from '../../hooks/useGeoSearchHistory';
 import { DOCK_SEARCH_WIDTH_CLASS } from './dock';
 import { HierarchyIcon } from './HierarchyIcon';
 import { NodeIcon } from './HierarchyTreeView';
@@ -48,7 +49,15 @@ export type GeoSearchBarProps = {
 };
 
 type SearchOption =
-  { type: 'node'; node: GeoTreeNode } | { type: 'address'; prediction: AddressPrediction };
+  | { type: 'node'; node: GeoTreeNode }
+  | { type: 'address'; prediction: AddressPrediction }
+  // Itens do histórico (campo vazio): re-selecionam pelo snapshot salvo, sem nova consulta ao
+  // inventário/Google. `entryKey` permite remover a linha individualmente.
+  | HistoryOption;
+
+type HistoryOption =
+  | { type: 'history-node'; node: GeoTreeNode; entryKey: string }
+  | { type: 'history-address'; address: DraftAddress; entryKey: string };
 
 const DEBOUNCE_MS = 250;
 
@@ -78,6 +87,8 @@ export function GeoSearchBar({
   const [addressResults, setAddressResults] = useState<AddressPrediction[]>([]);
   const [highlighted, setHighlighted] = useState(0);
   const [resolving, setResolving] = useState(false);
+  // Histórico por usuário — alimenta a picklist quando o campo está vazio (estilo Google Maps).
+  const { history, recordNode, recordAddress, remove, clear } = useGeoSearchHistory();
   const debounceRef = useRef<number | undefined>(undefined);
   const requestTokenRef = useRef(0);
   const resolutionTokenRef = useRef(0);
@@ -150,7 +161,12 @@ export function GeoSearchBar({
     [],
   );
 
-  const options = useMemo<SearchOption[]>(
+  const hasText = query.trim().length > 0;
+
+  // Resultados de busca (com texto) e histórico (campo vazio) alimentam a MESMA lista navegável
+  // por teclado — `options` é a que estiver ativa, então ↑/↓/Enter/realce funcionam nos dois
+  // modos sem lógica duplicada.
+  const resultOptions = useMemo<SearchOption[]>(
     () => [
       ...nodeResults.map((node): SearchOption => ({ type: 'node', node })),
       ...addressResults.map((prediction): SearchOption => ({ type: 'address', prediction })),
@@ -158,7 +174,24 @@ export function GeoSearchBar({
     [nodeResults, addressResults],
   );
 
-  const showDropdown = open && query.trim().length > 0 && options.length > 0;
+  const historyOptions = useMemo<HistoryOption[]>(
+    () =>
+      history.flatMap((entry): HistoryOption[] => {
+        if (entry.kind === 'node' && entry.node) {
+          return [{ type: 'history-node', node: entry.node, entryKey: entry.entryKey }];
+        }
+        if (entry.kind === 'address' && entry.address) {
+          return [{ type: 'history-address', address: entry.address, entryKey: entry.entryKey }];
+        }
+        return [];
+      }),
+    [history],
+  );
+
+  const options = hasText ? resultOptions : historyOptions;
+
+  const showDropdown =
+    open && !selection && (hasText ? resultOptions.length > 0 : historyOptions.length > 0);
 
   // Fecha e esvazia os resultados — não basta fechar (`setOpen(false)`): o balão de
   // preview do mapa (InfoWindow nativo do Google) devolve o foco ao input ao fechar,
@@ -194,6 +227,8 @@ export function GeoSearchBar({
     cancelAddressResolution();
     dismissKeyboard();
     onSelectNode(node);
+    // Só o que passa pela barra entra no histórico; re-selecionar sobe o ranking.
+    recordNode(node);
     closeDropdown();
   };
 
@@ -204,8 +239,10 @@ export function GeoSearchBar({
     const outcome = await resolveAddressByPlaceId(prediction.placeId);
     if (resolutionTokenRef.current !== token) return;
     setResolving(false);
-    if (outcome.ok) onAddressFound(outcome.address);
-    else
+    if (outcome.ok) {
+      onAddressFound(outcome.address);
+      recordAddress(outcome.address);
+    } else
       onAddressError({
         term: prediction.description,
         status: outcome.status,
@@ -214,8 +251,19 @@ export function GeoSearchBar({
     closeDropdown();
   };
 
+  // Endereço vindo do histórico: já resolvido, então vai direto para o mapa/painel sem tocar o
+  // Google (não gasta cota) e sobe no ranking.
+  const selectHistoryAddress = (address: DraftAddress) => {
+    cancelAddressResolution();
+    dismissKeyboard();
+    onAddressFound(address);
+    recordAddress(address);
+    closeDropdown();
+  };
+
   const selectOption = async (option: SearchOption) => {
-    if (option.type === 'node') selectNode(option.node);
+    if (option.type === 'node' || option.type === 'history-node') selectNode(option.node);
+    else if (option.type === 'history-address') selectHistoryAddress(option.address);
     else await selectAddress(option.prediction);
   };
 
@@ -230,8 +278,10 @@ export function GeoSearchBar({
     const outcome = await geocodeAddress(term);
     if (resolutionTokenRef.current !== token) return;
     setResolving(false);
-    if (outcome.ok) onAddressFound(outcome.address);
-    else onAddressError({ term, status: outcome.status, message: outcome.message });
+    if (outcome.ok) {
+      onAddressFound(outcome.address);
+      recordAddress(outcome.address);
+    } else onAddressError({ term, status: outcome.status, message: outcome.message });
     closeDropdown();
   };
 
@@ -334,7 +384,10 @@ export function GeoSearchBar({
                 setOpen(true);
               }}
               onFocus={() => {
-                if (query.trim()) setOpen(true);
+                // Foco sempre abre: com texto, mostra resultados; vazio, mostra o histórico
+                // (estilo Google Maps). A picklist só aparece se houver o que mostrar
+                // (showDropdown).
+                setOpen(true);
               }}
               onKeyDown={handleKeyDown}
               className={`h-full min-w-0 flex-1 rounded-l-2xl bg-transparent ${showMenuMark ? 'pl-2' : 'pl-4'} pr-2 text-[16px] text-app-text placeholder:text-app-muted focus:outline-none`}
@@ -401,7 +454,58 @@ export function GeoSearchBar({
             onMouseDown={(event) => event.preventDefault()}
             className={`absolute left-0 right-0 top-full z-40 max-h-80 overflow-y-auto border border-t-0 border-app-border bg-white shadow-map-control-lg ${dropdownRadiusClass}`}
           >
-            {nodeResults.length ? (
+            {!hasText ? (
+              <div>
+                <div className="flex items-center justify-between px-3 pt-2 pb-1">
+                  <span className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+                    Recentes
+                  </span>
+                  <button
+                    type="button"
+                    onClick={clear}
+                    className="text-[0.7rem] font-medium text-app-muted transition hover:text-app-text"
+                  >
+                    Limpar histórico
+                  </button>
+                </div>
+                {historyOptions.map((option, index) => {
+                  const label =
+                    option.type === 'history-node' ? option.node.label : option.address.label;
+                  return (
+                    <div
+                      key={option.entryKey}
+                      className={`group flex items-center ${
+                        index === highlighted ? 'bg-app-accent-soft' : 'hover:bg-black/5'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => void selectOption(option)}
+                        className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2 text-left"
+                      >
+                        {option.type === 'history-node' ? (
+                          <NodeIcon node={option.node} />
+                        ) : (
+                          <Clock className="h-4 w-4 shrink-0 text-app-muted" />
+                        )}
+                        <span className="min-w-0 flex-1 truncate text-[0.86rem] text-app-text">
+                          {label}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => remove(option.entryKey)}
+                        className="mr-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-app-muted transition hover:bg-black/10"
+                        aria-label={`Remover ${label} do histórico`}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+            {hasText && nodeResults.length ? (
               <div>
                 <div className="px-3 pt-2 pb-1 text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
                   Locais e recursos

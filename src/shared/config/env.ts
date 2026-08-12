@@ -25,6 +25,11 @@ export type AppConfig = {
   authJwtSecret?: string;
   authJwksJson?: string;
   authJwksUrl?: string;
+  /** Admin semente criado no bootstrap do runtime (idempotente). */
+  adminEmail?: string;
+  adminPassword?: string;
+  /** TTL do access token emitido pelo IdP local, em horas (default 12). */
+  authAccessTokenTtlHours?: number;
   databaseUrl: string;
   /** Resolved by loadConfig; optional only for legacy programmatic test fixtures. */
   database?: AppDatabaseConfig;
@@ -67,6 +72,9 @@ export const loadConfig = (env: NodeJS.ProcessEnv): AppConfig => {
     ...(env.AUTH_JWT_SECRET ? { authJwtSecret: env.AUTH_JWT_SECRET } : {}),
     ...(env.AUTH_JWKS_JSON ? { authJwksJson: env.AUTH_JWKS_JSON } : {}),
     ...(env.AUTH_JWKS_URL ? { authJwksUrl: env.AUTH_JWKS_URL } : {}),
+    ...(env.ADMIN_EMAIL ? { adminEmail: env.ADMIN_EMAIL } : {}),
+    ...(env.ADMIN_PASSWORD ? { adminPassword: env.ADMIN_PASSWORD } : {}),
+    authAccessTokenTtlHours: normalizePositiveInteger(env.AUTH_ACCESS_TOKEN_TTL_HOURS, 12),
     databaseUrl: database.provider === 'postgres' ? database.url : database.connectString,
     database,
     logLevel,

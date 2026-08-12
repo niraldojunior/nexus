@@ -8,6 +8,7 @@
 export const TABLE_NAMES = [
   'users',
   'searches',
+  'geo_search_history',
   'tmf_geographic_location',
   'tmf_geographic_address',
   'tmf_geographic_site_specification',
@@ -272,6 +273,20 @@ export const MIGRATIONS_SQL = `
       ((geometry::jsonb->'coordinates'->>0)::float8),
       ((geometry::jsonb->'coordinates'->>1)::float8)
     ) WHERE geometry_type = 'Point';
+
+  -- Seguranca de conta na tabela users (autenticacao local). A tabela ja existe em bases
+  -- implantadas, entao as colunas entram como migracao idempotente. password_hash guarda o
+  -- digest scrypt (nunca a senha). token_version invalida tokens emitidos ao ser incrementado
+  -- no logout global ou desativacao, sem estado de sessao no servidor.
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS roles TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT DEFAULT 'default';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER DEFAULT 0;
+  -- TIMESTAMPTZ (nao DATETIME): MIGRATIONS_SQL nao passa por transformSchemaSql no Postgres, entao
+  -- o tipo precisa ja ser o nativo. O transform do Oracle converte TIMESTAMPTZ mesmo assim.
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
 `;
 
 export const SCHEMA_SQL = `
@@ -295,6 +310,26 @@ export const SCHEMA_SQL = `
         FOREIGN KEY (user_id) REFERENCES users(id)
       );
       CREATE INDEX IF NOT EXISTS idx_searches_user_id ON searches(user_id);
+
+      -- Histórico da barra de pesquisa da página Geo, por usuário (estilo Google Maps).
+      -- Ranking: visit_count DESC, desempate por last_visited_at DESC. entry_key deduplica
+      -- (node:<id> ou address:<placeId|hash(label)>); payload guarda o snapshot do
+      -- GeoTreeNode/DraftAddress para re-selecionar sem nova consulta ao Google.
+      CREATE TABLE IF NOT EXISTS geo_search_history (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        entry_key TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('node', 'address')),
+        label TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        visit_count INTEGER NOT NULL DEFAULT 1,
+        last_visited_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        UNIQUE(user_id, entry_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_geo_search_history_rank
+        ON geo_search_history(user_id, visit_count DESC, last_visited_at DESC);
 
       -- ========== MODULE 1: GEOGRAPHIC (TMF673/674/675) ==========
 

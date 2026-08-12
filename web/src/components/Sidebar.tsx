@@ -2,6 +2,7 @@ import {
   Briefcase,
   Boxes,
   FolderTree,
+  LogOut,
   type LucideIcon,
   MapPinned,
   MessagesSquare,
@@ -9,6 +10,7 @@ import {
   PanelLeftOpen,
   Plus,
   Settings,
+  Users,
 } from 'lucide-react';
 import { PageId, RecentGroup, RecentItem } from '../types';
 import { ResearchHistoryPage } from '../pages/ResearchHistoryPage';
@@ -53,6 +55,11 @@ interface SidebarProps {
   onOpenRecentItem: (conversationId: string) => void;
   onSelectResearchSession?: (sessionId: string) => void;
   researchSessionRefreshTrigger?: number;
+  // Sessão atual: identidade no rodapé, "Sair" e a entrada de administração de Usuários
+  // (só para admin). Ver useSession/App.
+  sessionUser?: { name: string; email?: string; roles: string[] } | null;
+  isAdmin?: boolean;
+  onLogout?: () => void;
 }
 
 const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: LucideIcon }> = [
@@ -63,6 +70,15 @@ const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: LucideIcon }
   { id: 'service', label: 'Serviços', icon: Briefcase },
   { id: 'order', label: 'Ordens', icon: FolderTree },
 ];
+
+const initialOf = (name?: string): string => name?.trim()?.[0]?.toUpperCase() ?? 'U';
+
+const primaryRoleLabel = (roles?: string[]): string => {
+  if (!roles || roles.length === 0) return 'Sem papéis';
+  if (roles.includes('platform.admin')) return 'Administrador da plataforma';
+  if (roles.includes('tenant.admin')) return 'Administrador do tenant';
+  return roles[0] ?? 'Sem papéis';
+};
 
 const resourceCategoryItems: CategoryMenuItem[] = groupResourceCategories(RESOURCE_CATEGORY_DEFAULTS)
   .flatMap((group) => group.categories)
@@ -92,6 +108,9 @@ export default function Sidebar({
   onSelectServiceCategory,
   onSelectResearchSession,
   researchSessionRefreshTrigger,
+  sessionUser,
+  isAdmin = false,
+  onLogout,
 }: SidebarProps) {
   // Os módulos com submenu de categoria compartilham a mesma mecânica; só variam os dados.
   const categoryMenus: Partial<
@@ -293,6 +312,18 @@ export default function Sidebar({
                   </div>
                 );
               })}
+            {isAdmin ? (
+              <NavItem
+                active={currentPage === 'usuarios'}
+                icon={Users}
+                label="Usuários"
+                onClick={() => {
+                  onSelectPage('usuarios');
+                  closeMobileDrawer();
+                }}
+                collapsed={contentCollapsed}
+              />
+            ) : null}
           </nav>
 
           {!contentCollapsed ? (
@@ -324,15 +355,17 @@ export default function Sidebar({
         }`}
       >
         <div className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-app-accent text-app-text">
-          <span className="text-[1.12rem] font-medium">N</span>
+          <span className="text-[1.12rem] font-medium">{initialOf(sessionUser?.name)}</span>
         </div>
         {!contentCollapsed ? (
           <>
             <div className="min-w-0 flex-1">
               <div className="truncate text-[0.96rem] font-semibold leading-[1.1] text-app-text">
-                Niraldo R.
+                {sessionUser?.name ?? 'Usuário'}
               </div>
-              <div className="text-[0.84rem] leading-[1.1] text-app-muted">Operações de Rede</div>
+              <div className="truncate text-[0.84rem] leading-[1.1] text-app-muted">
+                {sessionUser?.email ?? primaryRoleLabel(sessionUser?.roles)}
+              </div>
             </div>
             <button
               type="button"
@@ -349,6 +382,20 @@ export default function Sidebar({
             >
               <Settings className="h-[1rem] w-[1rem]" strokeWidth={1.8} />
             </button>
+            {onLogout ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onLogout();
+                  closeMobileDrawer();
+                }}
+                className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:bg-app-accent-soft hover:text-app-text"
+                aria-label="Sair"
+                title="Sair"
+              >
+                <LogOut className="h-[1rem] w-[1rem]" strokeWidth={1.8} />
+              </button>
+            ) : null}
           </>
         ) : null}
       </div>

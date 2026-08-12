@@ -28,8 +28,23 @@ import {
 import { OracleUserRepository } from '../persistence/oracle-user-repository.js';
 import { EventService, PostgresEventRepository } from '../tmf/index.js';
 import { OracleEventRepository } from '../tmf/oracle-event-repository.js';
+import { AuthService } from '../../modules/auth/index.js';
+import { GeoSearchHistoryRepository } from '../../modules/geo/search-history-repository.js';
 
 export type NexusRuntimeUser = UserRecord;
+
+// Opções de runtime injetadas a partir da AppConfig (o runtime não lê env direto). A
+// autenticação local precisa do segredo HS256, do TTL do token e do admin semente.
+export type NexusRuntimeOptions = {
+  auth?: {
+    jwtSecret?: string;
+    accessTokenTtlSeconds?: number;
+    adminEmail?: string;
+    adminPassword?: string;
+  };
+};
+
+const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 12 * 60 * 60;
 
 export type NexusToolContextOptions = {
   correlationId?: string;
@@ -47,9 +62,14 @@ export const DEFAULT_RUNTIME_USER = {
   name: 'NIRALDO ROCHA GRANADO JUNIOR',
 } as const;
 
-export const createNexusRuntime = async (db: DatabaseClient) => {
+export const createNexusRuntime = async (db: DatabaseClient, options: NexusRuntimeOptions = {}) => {
   const oracle = db.provider === 'oracle';
   const userRepository = oracle ? new OracleUserRepository(db) : new PostgresUserRepository(db);
+  const authService = new AuthService(userRepository, {
+    ...(options.auth?.jwtSecret ? { jwtSecret: options.auth.jwtSecret } : {}),
+    accessTokenTtlSeconds: options.auth?.accessTokenTtlSeconds ?? DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
+  });
+  const geoSearchHistoryRepository = new GeoSearchHistoryRepository(db);
   const searchRepository = oracle
     ? new OracleSearchRepository(db)
     : new PostgresSearchRepository(db);
@@ -167,9 +187,17 @@ export const createNexusRuntime = async (db: DatabaseClient) => {
     defaultUser = await userRepository.create(DEFAULT_RUNTIME_USER);
   }
 
+  // Admin semente idempotente: só cria/atualiza quando as duas variáveis existem. Sem elas,
+  // não há como fazer o primeiro login — o chamador (createApp) registra o aviso.
+  if (options.auth?.adminEmail && options.auth?.adminPassword) {
+    await authService.ensureAdmin(options.auth.adminEmail, options.auth.adminPassword);
+  }
+
   return {
     db,
     userRepository,
+    authService,
+    geoSearchHistoryRepository,
     searchRepository,
     researchRepository,
     searchService,

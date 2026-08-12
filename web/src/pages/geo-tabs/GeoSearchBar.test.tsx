@@ -1,15 +1,21 @@
 import { useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeoSearchBar, type GeoSearchSelection } from './GeoSearchBar';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
+import type { GeoSearchHistoryEntry } from '../../services/geoSearchHistoryApi';
 
 const mocks = vi.hoisted(() => ({
   fetchTreeSearch: vi.fn(),
   fetchAddressPredictions: vi.fn(),
   resolveAddressByPlaceId: vi.fn(),
   geocodeAddress: vi.fn(),
+  fetchSearchHistory: vi.fn(),
+  recordNodeVisit: vi.fn(),
+  recordAddressVisit: vi.fn(),
+  removeSearchHistoryEntry: vi.fn(),
+  clearSearchHistory: vi.fn(),
 }));
 
 vi.mock('../../services/geoTreeApi', async (importOriginal) => {
@@ -25,6 +31,28 @@ vi.mock('../../utils/googleMaps', async (importOriginal) => {
     resolveAddressByPlaceId: mocks.resolveAddressByPlaceId,
     geocodeAddress: mocks.geocodeAddress,
   };
+});
+
+vi.mock('../../services/geoSearchHistoryApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/geoSearchHistoryApi')>();
+  return {
+    ...actual,
+    fetchSearchHistory: mocks.fetchSearchHistory,
+    recordNodeVisit: mocks.recordNodeVisit,
+    recordAddressVisit: mocks.recordAddressVisit,
+    removeSearchHistoryEntry: mocks.removeSearchHistoryEntry,
+    clearSearchHistory: mocks.clearSearchHistory,
+  };
+});
+
+beforeEach(() => {
+  // Defaults seguros: o histórico resolve vazio salvo quando o teste diz o contrário; sem
+  // isso o hook receberia `undefined` de fetchSearchHistory após clearAllMocks.
+  mocks.fetchSearchHistory.mockResolvedValue([]);
+  mocks.recordNodeVisit.mockResolvedValue(undefined);
+  mocks.recordAddressVisit.mockResolvedValue(undefined);
+  mocks.removeSearchHistoryEntry.mockResolvedValue(undefined);
+  mocks.clearSearchHistory.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -849,5 +877,166 @@ describe('GeoSearchBar', () => {
       />,
     );
     expect(screen.queryByLabelText('Abrir menu principal')).not.toBeInTheDocument();
+  });
+});
+
+describe('GeoSearchBar histórico', () => {
+  const addressEntry: GeoSearchHistoryEntry = {
+    entryKey: 'address:place:1',
+    kind: 'address',
+    label: 'Rua Gavião Peixoto, Niterói',
+    address: {
+      street: 'Rua Gavião Peixoto',
+      country: 'BR',
+      coordinates: [-43.1, -22.9],
+      label: 'Rua Gavião Peixoto, Niterói',
+    },
+    visitCount: 5,
+    lastVisitedAt: '2026-08-10T00:00:00Z',
+  };
+  const nodeEntry: GeoSearchHistoryEntry = {
+    entryKey: 'node:site:1',
+    kind: 'node',
+    label: 'Estação Icaraí',
+    node,
+    visitCount: 2,
+    lastVisitedAt: '2026-08-09T00:00:00Z',
+  };
+
+  it('ao focar o campo vazio, exibe o histórico (mais visitado primeiro)', async () => {
+    mocks.fetchTreeSearch.mockResolvedValue([]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+    mocks.fetchSearchHistory.mockResolvedValue([addressEntry, nodeEntry]);
+
+    render(
+      <GeoSearchBar
+        query=""
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+      />,
+    );
+
+    fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
+    await waitFor(() => expect(screen.getByText('Recentes')).toBeInTheDocument());
+    const items = screen.getAllByText(/Rua Gavião Peixoto, Niterói|Estação Icaraí/);
+    // O endereço (5 visitas) vem antes da estação (2 visitas), na ordem devolvida pelo backend.
+    expect(items[0]).toHaveTextContent('Rua Gavião Peixoto, Niterói');
+    expect(items[1]).toHaveTextContent('Estação Icaraí');
+  });
+
+  it('escolher um endereço do histórico chama onAddressFound sem resolver no Google', async () => {
+    mocks.fetchTreeSearch.mockResolvedValue([]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+    mocks.fetchSearchHistory.mockResolvedValue([addressEntry]);
+    const onAddressFound = vi.fn();
+
+    render(
+      <GeoSearchBar
+        query=""
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={onAddressFound}
+        onAddressError={vi.fn()}
+      />,
+    );
+
+    fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
+    await waitFor(() => expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Rua Gavião Peixoto, Niterói'));
+
+    expect(onAddressFound).toHaveBeenCalledWith(addressEntry.address);
+    expect(mocks.resolveAddressByPlaceId).not.toHaveBeenCalled();
+    expect(mocks.recordAddressVisit).toHaveBeenCalledWith(addressEntry.address);
+  });
+
+  it('ao digitar, troca o histórico pelos resultados de busca', async () => {
+    mocks.fetchTreeSearch.mockResolvedValue([node]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+    mocks.fetchSearchHistory.mockResolvedValue([addressEntry]);
+
+    render(
+      <GeoSearchBar
+        query="Estação"
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+      />,
+    );
+
+    fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
+    await waitFor(() => expect(screen.getByText('Locais e recursos')).toBeInTheDocument());
+    expect(screen.queryByText('Recentes')).not.toBeInTheDocument();
+  });
+
+  it('não mostra o histórico quando há uma seleção confirmada (chip)', async () => {
+    mocks.fetchSearchHistory.mockResolvedValue([addressEntry]);
+
+    render(
+      <GeoSearchBar
+        query="Estação Icaraí"
+        selection={{ type: 'node', node }}
+        onEditSelection={vi.fn()}
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByPlaceholderText('Pesquisar local, recurso ou endereço'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Recentes')).not.toBeInTheDocument();
+  });
+
+  it('remove um item do histórico pelo X da linha', async () => {
+    mocks.fetchSearchHistory.mockResolvedValue([addressEntry]);
+
+    render(
+      <GeoSearchBar
+        query=""
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+      />,
+    );
+
+    fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
+    await waitFor(() => expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument());
+    fireEvent.click(
+      screen.getByLabelText('Remover Rua Gavião Peixoto, Niterói do histórico'),
+    );
+
+    expect(mocks.removeSearchHistoryEntry).toHaveBeenCalledWith('address:place:1');
+  });
+
+  it('o teclado navega o histórico e Enter seleciona', async () => {
+    mocks.fetchTreeSearch.mockResolvedValue([]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+    mocks.fetchSearchHistory.mockResolvedValue([addressEntry, nodeEntry]);
+    const onSelectNode = vi.fn();
+
+    render(
+      <GeoSearchBar
+        query=""
+        onQueryChange={vi.fn()}
+        onSelectNode={onSelectNode}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+      />,
+    );
+
+    const input = screen.getByPlaceholderText('Pesquisar local, recurso ou endereço');
+    fireEvent.focus(input);
+    await waitFor(() => expect(screen.getByText('Recentes')).toBeInTheDocument());
+    // Item 0 = endereço, item 1 = estação. ArrowDown leva ao índice 1 e Enter seleciona.
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onSelectNode).toHaveBeenCalledWith(node);
   });
 });

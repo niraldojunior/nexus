@@ -75,7 +75,15 @@ npm run web:dev     # só o frontend Vite
 | `APP_NAME`     | não                 | `v-tal-nexus` | Nome da aplicação nos logs                      |
 | `LOG_LEVEL`    | não                 | `info`        | `debug` · `info` · `warn` · `error`             |
 | `AUTH_ENABLED` | não                 | `true`        | Liga o guard de bearer token                    |
-| `AUTH_TOKEN`   | **sim em produção** | `change-me`   | Token do header `Authorization: Bearer <token>` |
+| `AUTH_TOKEN`   | **sim em produção** | `change-me`   | Token estático de máquina (scripts/MCP)         |
+| `AUTH_JWT_SECRET` | para login       | —             | Segredo HS256 do IdP local; sem ele `/v1/auth/login` responde 503 |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | para o 1º login | — | Admin semente criado no bootstrap (idempotente) |
+| `AUTH_ACCESS_TOKEN_TTL_HOURS` | não    | `12`          | Validade do JWT de sessão, em horas             |
+
+> **Login de usuário.** Usuários reais entram por e-mail/senha (`POST /v1/auth/login` → JWT), gravado
+> no `localStorage` da SPA. O `AUTH_TOKEN` estático continua para máquina-a-máquina. Defina
+> `AUTH_JWT_SECRET` (`openssl rand -hex 32`) e `ADMIN_EMAIL`/`ADMIN_PASSWORD` no `.env`; o primeiro
+> login usa esse admin, que cria os demais usuários na tela **Usuários** (papéis RBAC).
 
 ### Banco de dados
 

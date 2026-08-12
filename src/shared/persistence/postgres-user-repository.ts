@@ -2,29 +2,96 @@ import type { DatabaseClient } from './database-client.js';
 import { randomUUID } from 'node:crypto';
 
 // Linha crua de `users`. As consultas usam alias (`external_id AS externalId`),
-// entao os nomes ja chegam em camelCase; `email` e a unica coluna anulavel.
+// entao os nomes ja chegam em camelCase; `email` e a unica coluna anulavel do nucleo,
+// mas as colunas de seguranca (roles/status/...) podem ser nulas em linhas antigas.
 type UserRow = {
   id: string;
   externalId: string;
   name: string;
   email: string | null;
+  status: string | null;
+  roles: string | null;
+  tenantId: string | null;
+  tokenVersion: number | null;
+  lastLoginAt: string | null;
+  passwordHash?: string | null;
   createdAt: string;
   updatedAt: string;
 };
+
+export type UserStatus = 'active' | 'disabled';
 
 export type UserRecord = {
   id: string;
   externalId: string;
   name: string;
   email?: string;
+  status: UserStatus;
+  roles: string[];
+  tenantId: string;
+  tokenVersion: number;
+  lastLoginAt?: string;
   createdAt: string;
   updatedAt: string;
 };
+
+// Igual ao UserRecord, mas carrega o digest da senha. NUNCA sai da camada de
+// persistencia/servico de autenticacao — os handlers HTTP devolvem UserRecord.
+export type UserCredentials = UserRecord & { passwordHash?: string };
 
 export type NewUserInput = {
   externalId: string;
   name: string;
   email?: string;
+  status?: UserStatus;
+  roles?: string[];
+  tenantId?: string;
+  passwordHash?: string;
+};
+
+// Campos de seguranca alteraveis apos a criacao. Todos opcionais: o chamador seta so o
+// que muda (trocar senha, promover papel, desativar conta, registrar login, revogar).
+export type UserSecurityUpdate = {
+  passwordHash?: string;
+  status?: UserStatus;
+  roles?: string[];
+  tenantId?: string;
+  tokenVersion?: number;
+  lastLoginAt?: string;
+};
+
+const CORE_COLUMNS =
+  'id, external_id AS externalId, name, email, status, roles, tenant_id AS tenantId, ' +
+  'token_version AS tokenVersion, last_login_at AS lastLoginAt, ' +
+  'created_at AS createdAt, updated_at AS updatedAt';
+
+const parseRoles = (raw: string | null): string[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+};
+
+const toRecord = (row: UserRow): UserRecord => {
+  const record: UserRecord = {
+    id: row.id,
+    externalId: row.externalId,
+    name: row.name,
+    status: row.status === 'disabled' ? 'disabled' : 'active',
+    roles: parseRoles(row.roles),
+    tenantId: row.tenantId ?? 'default',
+    tokenVersion: row.tokenVersion ?? 0,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+  // email e last_login_at sao anulaveis no banco, mas opcionais no dominio: devolver a
+  // linha crua vazaria `null` para campos tipados `?: string`.
+  if (row.email) record.email = row.email;
+  if (row.lastLoginAt) record.lastLoginAt = row.lastLoginAt;
+  return record;
 };
 
 export class PostgresUserRepository {
@@ -35,83 +102,72 @@ export class PostgresUserRepository {
     const now = new Date().toISOString();
 
     await this.db.run(
-      `INSERT INTO users (id, external_id, name, email, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, input.externalId, input.name, input.email || null, now, now],
+      `INSERT INTO users
+         (id, external_id, name, email, status, roles, tenant_id, token_version,
+          password_hash, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+      [
+        id,
+        input.externalId,
+        input.name,
+        input.email || null,
+        input.status ?? 'active',
+        JSON.stringify(input.roles ?? []),
+        input.tenantId ?? 'default',
+        input.passwordHash || null,
+        now,
+        now,
+      ],
     );
 
     const record: UserRecord = {
       id,
       externalId: input.externalId,
       name: input.name,
+      status: input.status ?? 'active',
+      roles: input.roles ?? [],
+      tenantId: input.tenantId ?? 'default',
+      tokenVersion: 0,
       createdAt: now,
       updatedAt: now,
     };
-
     if (input.email) record.email = input.email;
-
     return record;
   }
 
   async getById(id: string): Promise<UserRecord | undefined> {
-    const row = await this.db.get<UserRow>(
-      `SELECT id, external_id AS externalId, name, email, created_at AS createdAt, updated_at AS updatedAt
-       FROM users WHERE id = ?`,
-      [id],
-    );
-    if (!row) return undefined;
-
-    const record: UserRecord = {
-      id: row.id,
-      externalId: row.externalId,
-      name: row.name,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
-
-    if (row.email) record.email = row.email;
-
-    return record;
+    const row = await this.db.get<UserRow>(`SELECT ${CORE_COLUMNS} FROM users WHERE id = ?`, [id]);
+    return row ? toRecord(row) : undefined;
   }
 
   async getByExternalId(externalId: string): Promise<UserRecord | undefined> {
+    const row = await this.db.get<UserRow>(`SELECT ${CORE_COLUMNS} FROM users WHERE external_id = ?`, [
+      externalId,
+    ]);
+    return row ? toRecord(row) : undefined;
+  }
+
+  async getByEmail(email: string): Promise<UserRecord | undefined> {
+    const row = await this.db.get<UserRow>(`SELECT ${CORE_COLUMNS} FROM users WHERE email = ?`, [email]);
+    return row ? toRecord(row) : undefined;
+  }
+
+  // Login: unica leitura que traz o digest da senha. Mantida separada de getByEmail para
+  // que o hash nunca escape por engano num handler que so precisa do perfil publico.
+  async getCredentialsByEmail(email: string): Promise<UserCredentials | undefined> {
     const row = await this.db.get<UserRow>(
-      `SELECT id, external_id AS externalId, name, email, created_at AS createdAt, updated_at AS updatedAt
-       FROM users WHERE external_id = ?`,
-      [externalId],
+      `SELECT ${CORE_COLUMNS}, password_hash AS passwordHash FROM users WHERE email = ?`,
+      [email],
     );
     if (!row) return undefined;
-
-    // `email` e anulavel no banco, mas opcional no dominio: devolver a linha crua
-    // vazaria `email: null` para um campo tipado `email?: string`.
-    const record: UserRecord = {
-      id: row.id,
-      externalId: row.externalId,
-      name: row.name,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
-    if (row.email) record.email = row.email;
-
-    return record;
+    const credentials: UserCredentials = toRecord(row);
+    if (row.passwordHash) credentials.passwordHash = row.passwordHash;
+    return credentials;
   }
 
   async list(): Promise<UserRecord[]> {
-    const rows = await this.db.all<UserRow>(
-      `SELECT id, external_id AS externalId, name, email, created_at AS createdAt, updated_at AS updatedAt
-       FROM users ORDER BY created_at DESC`,
-    );
-    return rows.map((row) => {
-      const record: UserRecord = {
-        id: row.id,
-        externalId: row.externalId,
-        name: row.name,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-      };
-      if (row.email) record.email = row.email;
-      return record;
-    });
+    const rows = await this.db.all<UserRow>(`SELECT ${CORE_COLUMNS} FROM users ORDER BY created_at DESC`);
+    return rows.map(toRecord);
   }
 
   async update(id: string, input: Partial<NewUserInput>): Promise<UserRecord | undefined> {
@@ -125,6 +181,38 @@ export class PostgresUserRepository {
       now,
       id,
     ]);
+
+    return await this.getById(id);
+  }
+
+  // Escrita transversal de seguranca: so toca as colunas presentes em `update`, deixando o
+  // resto intacto (COALESCE). Incrementar token_version aqui invalida todo JWT ja emitido.
+  async updateSecurity(id: string, update: UserSecurityUpdate): Promise<UserRecord | undefined> {
+    const existing = await this.getById(id);
+    if (!existing) return undefined;
+
+    const now = new Date().toISOString();
+    await this.db.run(
+      `UPDATE users SET
+         password_hash = COALESCE(?, password_hash),
+         status = COALESCE(?, status),
+         roles = COALESCE(?, roles),
+         tenant_id = COALESCE(?, tenant_id),
+         token_version = COALESCE(?, token_version),
+         last_login_at = COALESCE(?, last_login_at),
+         updated_at = ?
+       WHERE id = ?`,
+      [
+        update.passwordHash ?? null,
+        update.status ?? null,
+        update.roles ? JSON.stringify(update.roles) : null,
+        update.tenantId ?? null,
+        update.tokenVersion ?? null,
+        update.lastLoginAt ?? null,
+        now,
+        id,
+      ],
+    );
 
     return await this.getById(id);
   }

@@ -51,6 +51,7 @@ export const transformOracleSchemaSql = (sql: string): string => {
   let output = sql
     .replace(/--.*$/gm, '')
     .replace(/\bCREATE TABLE IF NOT EXISTS\b/gi, 'CREATE TABLE')
+    .replace(/\bCREATE UNIQUE INDEX IF NOT EXISTS\b/gi, 'CREATE UNIQUE INDEX')
     .replace(/\bCREATE INDEX IF NOT EXISTS\b/gi, 'CREATE INDEX')
     .replace(/\bADD COLUMN IF NOT EXISTS\b/gi, 'ADD')
     .replace(/\bDROP CONSTRAINT IF EXISTS\b/gi, 'DROP CONSTRAINT')

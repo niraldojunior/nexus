@@ -6,7 +6,7 @@
 > Regra: uma questão vive aqui. Os documentos de origem podem referenciá-la pelo ID, mas não
 > mantêm listas paralelas.
 
-**Atualizado em:** 10/08/2026
+**Atualizado em:** 12/08/2026
 
 ---
 
@@ -55,6 +55,7 @@ Detalhamento em [`../3-system-design/integrations.md`](../3-system-design/integr
 | Q-ARQ-004     | Banco, aplicação, cache, mensageria e gateway alvo.                                                            | ✅ Oracle · OpenShift · Redis · Kafka · Apigee  | —                        |
 | Q-ARQ-005     | Vercel + Neon é destino ou laboratório?                                                                        | ✅ Laboratório temporário                       | —                        |
 | **Q-ARQ-006** | Migrar os marcadores do mapa Geo de `google.maps.Marker` (deprecado) para `AdvancedMarkerElement`? Exige um Map ID do Cloud Console e mover o `styles` inline de POI para cloud styling. | 🔴 Aberta | Arquitetura + Frontend |
+| **Q-ARQ-007** | Estender o RBAC (hoje só em `/v1/users` e histórico Geo) para cada caso de uso de Geo/Resource/Service/Order na camada de serviço, e impor isolamento multi-tenant no adaptador/VPD (§4 de security.md). O IdP local emite JWT compatível com o Apigee — a migração troca só o emissor. | 🔴 Aberta | Arquitetura + Segurança |
 
 Detalhamento em [`../3-system-design/architecture.md`](../3-system-design/architecture.md) e
 [`../3-system-design/security.md`](../3-system-design/security.md).

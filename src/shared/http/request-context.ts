@@ -17,6 +17,9 @@ export type RequestContext = {
   roles: string[];
   traceId: string;
   sourceIp?: string;
+  // Versão do token (claim `tv`) para JWTs emitidos pelo IdP local; ausente no caminho do
+  // token estático. requireUser a confere contra o banco para revogar sessões.
+  tokenVersion?: number;
 };
 
 export const GEO_ADMIN_ROLES = [
@@ -46,6 +49,7 @@ type JwtPayload = {
   tenantId?: string;
   tenant_id?: string;
   tid?: string;
+  tv?: number;
   roles?: string[] | string;
   permissions?: string[] | string;
   scope?: string;
@@ -109,10 +113,18 @@ export const buildRequestContext = async (
     actorSub: payload.sub,
     tenantId,
     roles: extractPayloadRoles(payload),
+    ...(typeof payload.tv === 'number' ? { tokenVersion: payload.tv } : {}),
   };
 };
 
-export const ensureAuthorized = (request: IncomingMessage, config: AppConfig): void => {
+// Autorização de porta de entrada para rotas que só exigem "requisição autenticada" (sem
+// resolver o usuário). Verifica DE FATO a assinatura do JWT — antes, um token com formato de
+// JWT era aceito sem verificação sempre que houvesse um verificador configurado, o que deixava
+// as rotas protegidas abertas a qualquer `a.b.c`.
+export const ensureAuthorized = async (
+  request: IncomingMessage,
+  config: AppConfig,
+): Promise<void> => {
   if (!config.authEnabled) return;
   const header = request.headers.authorization;
   if (!header) {
@@ -123,8 +135,14 @@ export const ensureAuthorized = (request: IncomingMessage, config: AppConfig): v
     throw new AppError('invalid authorization scheme', { code: 'AUTH_INVALID', statusCode: 401 });
   }
   if (token === config.authToken) return;
-  if (looksLikeJwt(token) && (config.authJwtSecret || config.authJwksUrl || config.authJwksJson))
-    return;
+  // Não é o token estático: só passa se for um JWT com assinatura e claims válidos.
+  await verifyJwt(token, config);
+};
+
+// Autorização por papel (RBAC), verificada no handler antes de despachar. Ver a matriz de
+// papéis em docs/3-system-design/security.md §3.
+export const requireRoles = (context: RequestContext, allowed: readonly string[]): void => {
+  if (context.roles.some((role) => allowed.includes(role))) return;
   throw new AppError('forbidden', { code: 'AUTH_FORBIDDEN', statusCode: 403 });
 };
 
@@ -147,8 +165,6 @@ const extractBearerToken = (header: string): string | undefined => {
   const match = header.match(/^Bearer\s+(.+)$/i);
   return match?.[1]?.trim();
 };
-
-const looksLikeJwt = (token: string): boolean => token.split('.').length === 3;
 
 const verifyJwt = async (token: string, config: AppConfig): Promise<JwtPayload> => {
   const [encodedHeader, encodedPayload, encodedSignature] = token.split('.');

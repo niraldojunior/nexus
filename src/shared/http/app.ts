@@ -4,6 +4,8 @@ import { AppError } from '../errors/app-error.js';
 import {
   buildRequestContext,
   ensureAuthorized as ensureRequestAuthorized,
+  requireRoles,
+  type RequestContext,
 } from './request-context.js';
 import type { Logger } from '../logging/logger.js';
 import { InMemoryEntityRepository } from '../persistence/in-memory-entity-repository.js';
@@ -22,6 +24,8 @@ import {
   createNexusRuntime,
   DEFAULT_RUNTIME_USER,
   type NexusRuntime,
+  type NexusRuntimeOptions,
+  type NexusRuntimeUser,
 } from '../runtime/nexus-runtime.js';
 import type { PartyService } from '../../modules/party/service.js';
 import type { ResourceService } from '../../modules/resource/service.js';
@@ -128,13 +132,15 @@ export const createApp = ({ config, logger }: AppDependencies) => {
   const repository = new InMemoryEntityRepository();
   const databaseConfig = databaseConfigOf(config);
   const db = createDatabaseClient(databaseConfig);
+  const runtimeOptions = runtimeOptionsFromConfig(config);
   // The runtime builds every repository and runs their seeds, which over a Postgres/Neon
   // backend means dozens of network round-trips. Build it ONCE at startup and reuse it for
   // every request instead of rebuilding per request (which made each request take seconds).
   let runtimePromise: Promise<NexusRuntime> | null = null;
 
   const server = createServer((request, response) => {
-    const activeRuntime = runtimePromise ?? (runtimePromise = createNexusRuntime(db));
+    const activeRuntime =
+      runtimePromise ?? (runtimePromise = createNexusRuntime(db, runtimeOptions));
     const startedAt = Date.now();
     void activeRuntime
       .then((runtime) =>
@@ -170,7 +176,7 @@ export const createApp = ({ config, logger }: AppDependencies) => {
       await db.initialize();
       logger.info({ databaseProvider: databaseConfig.provider }, 'database initialized');
       const runtimeStartedAt = Date.now();
-      runtimePromise = createNexusRuntime(db);
+      runtimePromise = createNexusRuntime(db, runtimeOptions);
       const runtime = await runtimePromise;
       logger.info({ durationMs: Date.now() - runtimeStartedAt }, 'runtime initialized');
 
@@ -178,6 +184,18 @@ export const createApp = ({ config, logger }: AppDependencies) => {
         logger.info(
           { userId: runtime.defaultUser.id, externalId: runtime.defaultUser.externalId },
           'default user ready',
+        );
+      }
+
+      if (!config.authJwtSecret) {
+        logger.warn(
+          {},
+          'AUTH_JWT_SECRET não definido: login de usuário indisponível (apenas token estático).',
+        );
+      } else if (!config.adminEmail || !config.adminPassword) {
+        logger.warn(
+          {},
+          'ADMIN_EMAIL/ADMIN_PASSWORD não definidos: nenhum admin semente criado.',
         );
       }
 
@@ -225,6 +243,7 @@ const routeRequest = async ({
   const searchService = runtime.searchService;
   const defaultUser = runtime.defaultUser;
   const userRepository = runtime.userRepository;
+  const authService = runtime.authService;
   const searchRepository = runtime.searchRepository;
   const researchRepository = runtime.researchRepository;
   const { geoService, eventService, partyService, resourceService, serviceService, orderService } =
@@ -250,14 +269,14 @@ const routeRequest = async ({
   }
 
   if (request.method === 'GET' && url.pathname === '/v1/bootstrap') {
-    ensureAuthorized(request, config);
+    await ensureAuthorized(request, config);
     const count = repository.count();
     sendJson(response, 200, { status: 'ready', entities: count });
     return;
   }
 
   if (request.method === 'GET' && url.pathname === '/v1/resource/workspace') {
-    ensureAuthorized(request, config);
+    await ensureAuthorized(request, config);
     const tab = parseResourceWorkspaceTab(url.searchParams.get('tab'));
     const limit = parseOptionalNumber(url.searchParams.get('limit')) ?? 20;
     const offset = parseOptionalNumber(url.searchParams.get('offset')) ?? 0;
@@ -283,7 +302,7 @@ const routeRequest = async ({
   }
 
   if (request.method === 'GET' && url.pathname === '/v1/service/workspace') {
-    ensureAuthorized(request, config);
+    await ensureAuthorized(request, config);
     const tab = parseServiceWorkspaceTab(url.searchParams.get('tab'));
     const category = url.searchParams.get('category');
     const snapshot = await buildServiceWorkspaceSnapshot({
@@ -296,7 +315,7 @@ const routeRequest = async ({
   }
 
   if (request.method === 'POST' && url.pathname === '/v1/bootstrap/entities') {
-    ensureAuthorized(request, config);
+    await ensureAuthorized(request, config);
     const body = await readBody(request);
     const label = typeof body.label === 'string' ? body.label : 'untitled';
     const entity = repository.create({ label });
@@ -307,7 +326,7 @@ const routeRequest = async ({
 
   // POST /v1/chat/completions - Main assistant chat proxy
   if (request.method === 'POST' && url.pathname === '/v1/chat/completions') {
-    ensureAuthorized(request, config);
+    await ensureAuthorized(request, config);
 
     const body = (await readBody(request)) as OpenAIChatRequestBody;
     const parsed = parseOpenAIChatRequest(body);
@@ -359,25 +378,130 @@ const routeRequest = async ({
     }
   }
 
-  // Users API
+  // Auth API — sessão local (login/JWT). /login é público (sem ensureAuthorized), protegido
+  // por rate limit no AuthService. As demais rotas resolvem o usuário real (requireUser).
+  if (request.method === 'POST' && url.pathname === '/v1/auth/login') {
+    const body = await readBody(request);
+    const email = typeof body.email === 'string' ? body.email : '';
+    const password = typeof body.password === 'string' ? body.password : '';
+    if (!email || !password) {
+      throw new AppError('email and password required', {
+        code: 'AUTH_MISSING_CREDENTIALS',
+        statusCode: 400,
+      });
+    }
+    const ip = sourceIpOf(request);
+    const result = await authService.login(email, password, ip ? { ip } : {});
+    logger.info({ userId: result.user.id }, 'user logged in');
+    sendJson(response, 200, {
+      token: result.token,
+      expiresAt: result.expiresAt,
+      user: result.user,
+    });
+    return;
+  }
+
+  if (request.method === 'GET' && url.pathname === '/v1/auth/me') {
+    const context = await buildRequestContext(request, config);
+    const user = await requireUser(runtime, context);
+    sendJson(response, 200, user);
+    return;
+  }
+
+  if (request.method === 'POST' && url.pathname === '/v1/auth/logout') {
+    const context = await buildRequestContext(request, config);
+    const user = await requireUser(runtime, context);
+    await authService.revokeSessions(user.id);
+    sendJson(response, 204, null);
+    return;
+  }
+
+  if (request.method === 'POST' && url.pathname === '/v1/auth/password') {
+    const context = await buildRequestContext(request, config);
+    const user = await requireUser(runtime, context);
+    const body = await readBody(request);
+    await authService.changeOwnPassword(
+      user.id,
+      String(body.currentPassword ?? ''),
+      String(body.newPassword ?? ''),
+    );
+    sendJson(response, 204, null);
+    return;
+  }
+
+  // Users API — administração de contas, restrita a papéis de admin (RBAC). Uma sessão
+  // autenticada não-admin recebe 403; o token estático (máquina) carrega os papéis admin
+  // por padrão, preservando scripts e testes de integração.
   if (request.method === 'GET' && url.pathname === '/v1/users') {
-    ensureAuthorized(request, config);
+    const context = await buildRequestContext(request, config);
+    requireRoles(context, USER_ADMIN_ROLES);
     const users = await userRepository.list();
     sendJson(response, 200, users);
     return;
   }
 
   if (request.method === 'POST' && url.pathname === '/v1/users') {
-    ensureAuthorized(request, config);
+    const context = await buildRequestContext(request, config);
+    requireRoles(context, USER_ADMIN_ROLES);
     const body = await readBody(request);
     const email = body.email ? String(body.email) : undefined;
-    const user = await userRepository.create({
-      externalId: String(body.externalId),
-      name: String(body.name),
-      ...(email ? { email } : {}),
-    });
+    const roles = Array.isArray(body.roles) ? body.roles.map(String) : undefined;
+    const tenantId = body.tenantId ? String(body.tenantId) : undefined;
+    // Com senha: fluxo novo (login habilitado, hash via AuthService). Sem senha: mantém o
+    // cadastro legado por externalId (contas de máquina/seed que não fazem login).
+    const password = body.password ? String(body.password) : undefined;
+    const user = password
+      ? await authService.createUser({
+          email: email ?? '',
+          name: String(body.name),
+          password,
+          ...(roles ? { roles } : {}),
+          ...(tenantId ? { tenantId } : {}),
+        })
+      : await userRepository.create({
+          externalId: String(body.externalId),
+          name: String(body.name),
+          ...(email ? { email } : {}),
+          ...(roles ? { roles } : {}),
+          ...(tenantId ? { tenantId } : {}),
+        });
     logger.info({ userId: user.id, externalId: user.externalId }, 'user created');
     sendJson(response, 201, user);
+    return;
+  }
+
+  const userPasswordMatch = url.pathname.match(/^\/v1\/users\/([^/]+)\/password$/);
+  if (userPasswordMatch && userPasswordMatch[1] && request.method === 'POST') {
+    const context = await buildRequestContext(request, config);
+    requireRoles(context, USER_ADMIN_ROLES);
+    const body = await readBody(request);
+    const user = await authService.resetPassword(userPasswordMatch[1], String(body.password ?? ''));
+    logger.info({ userId: user.id }, 'user password reset');
+    sendJson(response, 200, user);
+    return;
+  }
+
+  const userStatusMatch = url.pathname.match(/^\/v1\/users\/([^/]+)\/status$/);
+  if (userStatusMatch && userStatusMatch[1] && request.method === 'POST') {
+    const context = await buildRequestContext(request, config);
+    requireRoles(context, USER_ADMIN_ROLES);
+    const body = await readBody(request);
+    const status = body.status === 'disabled' ? 'disabled' : 'active';
+    const user = await authService.setStatus(userStatusMatch[1], status);
+    logger.info({ userId: user.id, status }, 'user status changed');
+    sendJson(response, 200, user);
+    return;
+  }
+
+  const userRolesMatch = url.pathname.match(/^\/v1\/users\/([^/]+)\/roles$/);
+  if (userRolesMatch && userRolesMatch[1] && request.method === 'POST') {
+    const context = await buildRequestContext(request, config);
+    requireRoles(context, USER_ADMIN_ROLES);
+    const body = await readBody(request);
+    const roles = Array.isArray(body.roles) ? body.roles.map(String) : [];
+    const user = await authService.setRoles(userRolesMatch[1], roles);
+    logger.info({ userId: user.id }, 'user roles changed');
+    sendJson(response, 200, user);
     return;
   }
 
@@ -385,7 +509,8 @@ const routeRequest = async ({
   if (userIdMatch && userIdMatch[1]) {
     const userId = userIdMatch[1];
     if (request.method === 'GET') {
-      ensureAuthorized(request, config);
+      const context = await buildRequestContext(request, config);
+      requireRoles(context, USER_ADMIN_ROLES);
       const user = await userRepository.getById(userId);
       if (!user) {
         throw new AppError('user not found', { code: 'USER_NOT_FOUND', statusCode: 404 });
@@ -395,7 +520,8 @@ const routeRequest = async ({
     }
 
     if (request.method === 'PUT') {
-      ensureAuthorized(request, config);
+      const context = await buildRequestContext(request, config);
+      requireRoles(context, USER_ADMIN_ROLES);
       const body = await readBody(request);
       const email = body.email ? String(body.email) : undefined;
       const user = await userRepository.update(userId, {
@@ -411,7 +537,8 @@ const routeRequest = async ({
     }
 
     if (request.method === 'DELETE') {
-      ensureAuthorized(request, config);
+      const context = await buildRequestContext(request, config);
+      requireRoles(context, USER_ADMIN_ROLES);
       const deleted = await userRepository.delete(userId);
       if (!deleted) {
         throw new AppError('user not found', { code: 'USER_NOT_FOUND', statusCode: 404 });
@@ -424,21 +551,21 @@ const routeRequest = async ({
 
   // Searches API
   if (request.method === 'GET' && url.pathname === '/v1/searches') {
-    ensureAuthorized(request, config);
+    await ensureAuthorized(request, config);
     const searches = await searchRepository.list();
     sendJson(response, 200, searches);
     return;
   }
 
   if (request.method === 'GET' && url.pathname === '/v1/searches/my') {
-    ensureAuthorized(request, config);
+    await ensureAuthorized(request, config);
     const searches = await searchRepository.listByUserId(defaultUser.id);
     sendJson(response, 200, searches);
     return;
   }
 
   if (request.method === 'POST' && url.pathname === '/v1/searches') {
-    ensureAuthorized(request, config);
+    await ensureAuthorized(request, config);
     const body = await readBody(request);
     const filters = body.filters ? (body.filters as Record<string, unknown>) : undefined;
     const results = body.results ? (body.results as Record<string, unknown>) : undefined;
@@ -457,7 +584,7 @@ const routeRequest = async ({
   if (searchIdMatch && searchIdMatch[1]) {
     const searchId = searchIdMatch[1];
     if (request.method === 'GET') {
-      ensureAuthorized(request, config);
+      await ensureAuthorized(request, config);
       const search = await searchRepository.getById(searchId);
       if (!search) {
         throw new AppError('search not found', { code: 'SEARCH_NOT_FOUND', statusCode: 404 });
@@ -467,7 +594,7 @@ const routeRequest = async ({
     }
 
     if (request.method === 'PUT') {
-      ensureAuthorized(request, config);
+      await ensureAuthorized(request, config);
       const body = await readBody(request);
       const filters = body.filters ? (body.filters as Record<string, unknown>) : undefined;
       const results = body.results ? (body.results as Record<string, unknown>) : undefined;
@@ -486,7 +613,7 @@ const routeRequest = async ({
     }
 
     if (request.method === 'DELETE') {
-      ensureAuthorized(request, config);
+      await ensureAuthorized(request, config);
       const deleted = await searchRepository.delete(searchId);
       if (!deleted) {
         throw new AppError('search not found', { code: 'SEARCH_NOT_FOUND', statusCode: 404 });
@@ -550,6 +677,7 @@ const routeRequest = async ({
       config,
       geoService,
       geoTreeService: runtime.geoTreeService,
+      runtime,
       url,
     });
     return;
@@ -583,6 +711,7 @@ const routeGeoRequest = async ({
   config,
   geoService,
   geoTreeService,
+  runtime,
   url,
 }: {
   request: IncomingMessage;
@@ -590,9 +719,57 @@ const routeGeoRequest = async ({
   config: AppConfig;
   geoService: GeoService;
   geoTreeService: GeoTreeService;
+  runtime: NexusRuntime;
   url: URL;
 }): Promise<void> => {
   const geoContext = await buildRequestContext(request, config);
+
+  // Histórico da barra de pesquisa da página Geo, por usuário. Exige uma sessão real
+  // (requireUser) — o user_id vem da identidade, nunca do corpo da requisição.
+  if (url.pathname === '/v1/geo/search-history') {
+    const user = await requireUser(runtime, geoContext);
+    if (request.method === 'GET') {
+      const limit = parseOptionalNumber(url.searchParams.get('limit'));
+      return sendJson(
+        response,
+        200,
+        await runtime.geoSearchHistoryRepository.list(user.id, limit ?? 8),
+      );
+    }
+    if (request.method === 'POST') {
+      const body = await readBody(request);
+      const kind = body.kind === 'node' ? 'node' : 'address';
+      const entryKey = String(body.entryKey ?? '').trim();
+      const label = String(body.label ?? '').trim();
+      if (!entryKey || !label) {
+        throw new AppError('entryKey and label required', {
+          code: 'GEO_HISTORY_INVALID',
+          statusCode: 400,
+        });
+      }
+      await runtime.geoSearchHistoryRepository.record(user.id, {
+        entryKey,
+        kind,
+        label,
+        payload: body.payload ?? null,
+      });
+      return sendJson(response, 204, null);
+    }
+    if (request.method === 'DELETE') {
+      await runtime.geoSearchHistoryRepository.clear(user.id);
+      return sendJson(response, 204, null);
+    }
+  }
+
+  const historyEntryMatch = url.pathname.match(/^\/v1\/geo\/search-history\/([^/]+)$/);
+  if (historyEntryMatch && historyEntryMatch[1] && request.method === 'DELETE') {
+    const user = await requireUser(runtime, geoContext);
+    await runtime.geoSearchHistoryRepository.remove(
+      user.id,
+      decodeURIComponent(historyEntryMatch[1]),
+    );
+    return sendJson(response, 204, null);
+  }
 
   // Árvore de navegação — um nível por chamada. Vem antes do roteador de
   // entidades porque `tree` não é uma entidade Geo, é uma projeção de leitura.
@@ -1153,7 +1330,7 @@ const routeEventRequest = async ({
   eventService: EventService;
   url: URL;
 }): Promise<void> => {
-  ensureAuthorized(request, config);
+  await ensureAuthorized(request, config);
 
   const route = resolveEventRoute(url.pathname);
   if (!route) {
@@ -1184,7 +1361,7 @@ const routePartyRequest = async ({
   partyService: PartyService;
   url: URL;
 }): Promise<void> => {
-  ensureAuthorized(request, config);
+  await ensureAuthorized(request, config);
 
   const partyRoute = resolvePartyRoute(url.pathname);
   if (partyRoute) {
@@ -1286,7 +1463,7 @@ const routeResourceRequest = async ({
   resourceService: ResourceService;
   url: URL;
 }): Promise<void> => {
-  ensureAuthorized(request, config);
+  await ensureAuthorized(request, config);
 
   const route = resolveResourceRoute(url.pathname);
   if (!route) {
@@ -1535,7 +1712,7 @@ const routeServiceRequest = async ({
   serviceService: ServiceService;
   url: URL;
 }): Promise<void> => {
-  ensureAuthorized(request, config);
+  await ensureAuthorized(request, config);
 
   const route = resolveServiceRoute(url.pathname);
   if (!route) {
@@ -1746,7 +1923,7 @@ const routeOrderRequest = async ({
   orderService: OrderService;
   url: URL;
 }): Promise<void> => {
-  ensureAuthorized(request, config);
+  await ensureAuthorized(request, config);
 
   const route = resolveOrderRoute(url.pathname);
   if (!route) {
@@ -2850,7 +3027,7 @@ const routeResearchRequest = async ({
   llmToolCatalog: ReturnType<typeof buildLlmToolCatalog>;
   url: URL;
 }): Promise<void> => {
-  ensureAuthorized(request, config);
+  await ensureAuthorized(request, config);
 
   // GET /v1/research/sessions - List user's sessions
   if (request.method === 'GET' && url.pathname === '/v1/research/sessions') {
@@ -3126,8 +3303,46 @@ const routeResearchRequest = async ({
   throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
 };
 
-const ensureAuthorized = (request: IncomingMessage, config: AppConfig): void => {
+const ensureAuthorized = (request: IncomingMessage, config: AppConfig): Promise<void> =>
   ensureRequestAuthorized(request, config);
+
+// Papéis que administram contas de usuário (ver docs/3-system-design/security.md §3).
+const USER_ADMIN_ROLES = ['tenant.admin', 'platform.admin'] as const;
+
+// Deriva as opções de autenticação do runtime a partir da AppConfig — o runtime não lê env
+// direto (testabilidade), então a fronteira HTTP traduz config → options.
+const runtimeOptionsFromConfig = (config: AppConfig): NexusRuntimeOptions => ({
+  auth: {
+    ...(config.authJwtSecret ? { jwtSecret: config.authJwtSecret } : {}),
+    accessTokenTtlSeconds: (config.authAccessTokenTtlHours ?? 12) * 60 * 60,
+    ...(config.adminEmail ? { adminEmail: config.adminEmail } : {}),
+    ...(config.adminPassword ? { adminPassword: config.adminPassword } : {}),
+  },
+});
+
+const sourceIpOf = (request: IncomingMessage): string | undefined => {
+  const forwarded = request.headers['x-forwarded-for'];
+  const value = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  return value?.split(',')[0]?.trim() ?? request.socket.remoteAddress ?? undefined;
+};
+
+// Resolve o usuário real por trás do contexto (claim `sub` = externalId) e impõe as
+// invariantes de sessão: conta ativa e versão do token igual à do banco. É o que dá
+// revogação de verdade (desativar conta / "sair de todos os dispositivos") mesmo com JWT
+// stateless. O token estático (máquina) não corresponde a nenhum usuário, então rotas com
+// requireUser exigem uma sessão de usuário real.
+const requireUser = async (
+  runtime: NexusRuntime,
+  context: RequestContext,
+): Promise<NexusRuntimeUser> => {
+  const user = await runtime.userRepository.getByExternalId(context.actorSub);
+  if (!user || user.status !== 'active') {
+    throw new AppError('authentication required', { code: 'AUTH_REQUIRED', statusCode: 401 });
+  }
+  if (context.tokenVersion !== undefined && context.tokenVersion !== user.tokenVersion) {
+    throw new AppError('session revoked', { code: 'AUTH_SESSION_REVOKED', statusCode: 401 });
+  }
+  return user;
 };
 
 const readBody = async (request: IncomingMessage): Promise<Record<string, unknown>> => {

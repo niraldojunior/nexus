@@ -21,11 +21,16 @@ import GoogleDriveMark from './components/GoogleDriveMark';
 import SettingsModal from './components/SettingsModal';
 import Sidebar from './components/Sidebar';
 import GeoPage from './pages/GeoPage';
+import LoginPage from './pages/LoginPage';
 import NewResearchPage from './pages/NewResearchPage';
 import ResourcePage from './pages/ResourcePage';
 import ServicePage from './pages/ServicePage';
+import UsersPage from './pages/UsersPage';
 import { ResearchPage } from './pages/ResearchPage';
 import { ConversasPage } from './pages/PesquisasPage';
+import { useSession } from './hooks/useSession';
+import { logout as logoutRequest } from './services/authApi';
+import { clearSession } from './services/session';
 import { scrollChatAnchorIntoView, scrollChatToBottom } from './utils/chatScroll';
 import {
   domainCards,
@@ -58,7 +63,7 @@ const assistantChips = [
 ];
 
 const domainMeta: Record<
-  Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas'>,
+  Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'usuarios'>,
   { title: string; subtitle: string; icon: typeof MapPin }
 > = {
   geo: { title: 'Geo', subtitle: 'Onde? Geographic Site, Address & Location', icon: MapPinned },
@@ -135,7 +140,7 @@ function DomainPage({
   page,
   onOpenMainMenu,
 }: {
-  page: Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas'>;
+  page: Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'usuarios'>;
   onOpenMainMenu?: () => void;
 }) {
   const meta = domainMeta[page];
@@ -407,8 +412,9 @@ function AssistantEntry({ entry }: { entry: ConversationEntry }) {
   );
 }
 
-function App() {
+function AppShell({ onLogout }: { onLogout: () => void }) {
   const isMobile = useIsMobile();
+  const session = useSession();
   // Estado inicial derivado da URL — recarregar (F5) volta para a mesma página em vez de cair
   // sempre em "Nova conversa". `useIsMobile` já devolve o valor certo na primeira renderização,
   // então `/` resolve para Locais no celular e Nova conversa no desktop.
@@ -743,6 +749,9 @@ function App() {
           setActiveResearchSessionId(sessionId);
           setCurrentPage('research');
         }}
+        sessionUser={session.user}
+        isAdmin={session.admin}
+        onLogout={onLogout}
       />
 
       <main className="min-w-0 flex-1 overflow-hidden">
@@ -782,6 +791,7 @@ function App() {
               ) : null}
               {currentPage === 'service' ? <ServicePage category={activeServiceCategory} /> : null}
               {currentPage === 'order' ? <DomainPage page="order" /> : null}
+              {currentPage === 'usuarios' ? <UsersPage /> : null}
               {currentPage === 'research' ? (
                 activeResearchSessionId === null ? (
                   <NewResearchPage
@@ -828,4 +838,18 @@ function App() {
   );
 }
 
-export default App;
+// Porta de entrada: sem sessão válida, só a tela de login é renderizada; o shell inteiro
+// (sidebar, páginas, dados) fica atrás dela. useSession re-renderiza em login/logout/expiração.
+export default function App() {
+  const { authenticated } = useSession();
+
+  const handleLogout = () => {
+    // Revoga a sessão no servidor (bump de token_version) e limpa o cliente. A limpeza local
+    // não espera a rede: mesmo offline, o usuário sai.
+    void logoutRequest().catch(() => undefined);
+    clearSession();
+  };
+
+  if (!authenticated) return <LoginPage />;
+  return <AppShell onLogout={handleLogout} />;
+}

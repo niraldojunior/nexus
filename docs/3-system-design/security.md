@@ -26,6 +26,15 @@ if (header !== `Bearer ${config.authToken}`) throw forbiddenError();
 > ❗ Numa plataforma **wholesale**, onde ISPs concorrentes consultam o mesmo inventário, ausência de
 > isolamento de tenant é **bloqueador de go-live** — não dívida técnica. Um ISP consegue ler a base
 > instalada do concorrente.
+>
+> **Atualização (laboratório):** já existe um **IdP local** — login por e-mail/senha (scrypt) que
+> emite JWT HS256 com os mesmos claims que o Apigee injetaria (`sub`, `tenant_id`, `roles`, `exp`,
+> `tv`). O verificador de JWT em `request-context.ts` passou a **rejeitar assinatura inválida**
+> (antes aceitava qualquer token com formato de JWT quando havia verificador configurado). RBAC é
+> imposto nas rotas de **usuários** e no **histórico de pesquisa Geo**; o restante dos módulos ainda
+> exige apenas autenticação (ver §9 e `../1-overview/open-questions.md`). Isolamento multi-tenant
+> (§4) continua pendente. Quando o Apigee entrar, troca-se o emissor local e o lado resource-server
+> permanece intacto.
 
 ---
 

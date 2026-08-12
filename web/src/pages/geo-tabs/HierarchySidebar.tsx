@@ -3,7 +3,7 @@ import { GitBranch, ListTree, RefreshCw, Settings } from 'lucide-react';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import type { GeoTree } from '../../hooks/useGeoTree';
 import { useIsMobile } from '../../hooks/useIsMobile';
-import { DOCK_WIDTH_CLASS, DOCK_SEARCH_CLEARANCE_PT_CLASS } from './dock';
+import { DOCK_WIDTH_CLASS, DOCK_SEARCH_CLEARANCE_PT_CLASS, DOCK_ELEVATION_CLASS } from './dock';
 import { HierarchyTreeView } from './HierarchyTreeView';
 import { HierarchyComboView } from './HierarchyComboView';
 
@@ -72,7 +72,7 @@ export function HierarchySidebar({
               `hover-scroll-host absolute inset-0 z-40 flex w-full flex-col bg-white ${DOCK_SEARCH_CLEARANCE_PT_CLASS}`
             : // No desktop a barra flutua sobre o topo da doca; o pt reserva o espaço dela
               // para o título Hierarquia nascer logo abaixo, sem linha divisória entre os dois.
-              `hover-scroll-host flex h-full ${DOCK_WIDTH_CLASS} max-w-[80vw] shrink-0 flex-col border-r border-app-border bg-white ${DOCK_SEARCH_CLEARANCE_PT_CLASS} shadow-dock`
+              `hover-scroll-host flex h-full ${DOCK_WIDTH_CLASS} max-w-[80vw] shrink-0 flex-col border-r border-app-border bg-white ${DOCK_SEARCH_CLEARANCE_PT_CLASS} ${DOCK_ELEVATION_CLASS} shadow-dock`
         }
       >
         {/* Header — título + toggle de visão + ações, tudo em uma linha */}

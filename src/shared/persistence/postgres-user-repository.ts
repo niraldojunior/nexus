@@ -185,34 +185,46 @@ export class PostgresUserRepository {
     return await this.getById(id);
   }
 
-  // Escrita transversal de seguranca: so toca as colunas presentes em `update`, deixando o
-  // resto intacto (COALESCE). Incrementar token_version aqui invalida todo JWT ja emitido.
+  // Escrita transversal de seguranca: so toca as colunas presentes em `update`. O SET e
+  // montado dinamicamente (sem COALESCE) para nunca ligar um bind nulo a uma coluna — o
+  // adaptador Oracle infere o tipo do bind nulo e colidia com a coluna (ORA-00932). Sem nulos,
+  // cada bind carrega o tipo do proprio valor. Incrementar token_version invalida todo JWT
+  // ja emitido.
   async updateSecurity(id: string, update: UserSecurityUpdate): Promise<UserRecord | undefined> {
     const existing = await this.getById(id);
     if (!existing) return undefined;
 
-    const now = new Date().toISOString();
-    await this.db.run(
-      `UPDATE users SET
-         password_hash = COALESCE(?, password_hash),
-         status = COALESCE(?, status),
-         roles = COALESCE(?, roles),
-         tenant_id = COALESCE(?, tenant_id),
-         token_version = COALESCE(?, token_version),
-         last_login_at = COALESCE(?, last_login_at),
-         updated_at = ?
-       WHERE id = ?`,
-      [
-        update.passwordHash ?? null,
-        update.status ?? null,
-        update.roles ? JSON.stringify(update.roles) : null,
-        update.tenantId ?? null,
-        update.tokenVersion ?? null,
-        update.lastLoginAt ?? null,
-        now,
-        id,
-      ],
-    );
+    const assignments: string[] = [];
+    const params: unknown[] = [];
+    if (update.passwordHash !== undefined) {
+      assignments.push('password_hash = ?');
+      params.push(update.passwordHash);
+    }
+    if (update.status !== undefined) {
+      assignments.push('status = ?');
+      params.push(update.status);
+    }
+    if (update.roles !== undefined) {
+      assignments.push('roles = ?');
+      params.push(JSON.stringify(update.roles));
+    }
+    if (update.tenantId !== undefined) {
+      assignments.push('tenant_id = ?');
+      params.push(update.tenantId);
+    }
+    if (update.tokenVersion !== undefined) {
+      assignments.push('token_version = ?');
+      params.push(update.tokenVersion);
+    }
+    if (update.lastLoginAt !== undefined) {
+      assignments.push('last_login_at = ?');
+      params.push(update.lastLoginAt);
+    }
+    assignments.push('updated_at = ?');
+    params.push(new Date().toISOString());
+    params.push(id);
+
+    await this.db.run(`UPDATE users SET ${assignments.join(', ')} WHERE id = ?`, params);
 
     return await this.getById(id);
   }

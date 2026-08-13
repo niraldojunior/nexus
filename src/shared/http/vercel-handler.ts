@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { databaseConfigOf, loadConfig } from '../config/env.js';
-import { handleHttpError, handleHttpRequest } from './app.js';
+import { handleHttpError, handleHttpRequest, runtimeOptionsFromConfig } from './app.js';
 import { createLogger } from '../logging/logger.js';
 import { InMemoryEntityRepository } from '../persistence/in-memory-entity-repository.js';
 import { createDatabaseClient } from '../persistence/database-factory.js';
@@ -25,7 +25,9 @@ export const handler = async (
   response: ServerResponse,
 ): Promise<void> => {
   await initialized;
-  runtimePromise ??= createNexusRuntime(db);
+  // As opções de auth precisam vir da config: sem elas o AuthService do runtime fica sem
+  // jwtSecret (todo login vira 503 AUTH_NOT_CONFIGURED) e o admin semente nunca é criado.
+  runtimePromise ??= createNexusRuntime(db, runtimeOptionsFromConfig(appConfig));
   const runtime = await runtimePromise;
   request.url = normalizeRequestUrl(request.url ?? '/');
 

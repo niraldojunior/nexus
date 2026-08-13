@@ -859,34 +859,6 @@ const routeGeoRequest = async ({
     );
   }
 
-  // Mapa de calor de cobertura GPON por bairro — fonte do mapa acima de 100 m, no lugar dos
-  // recursos individuais e dos clusters (ver GeoCoverageService). `level`: fine (células de
-  // 150 m), coarse (agregado 750 m) ou area (polígonos de bairro). Recorte por bbox.
-  if (request.method === 'GET' && url.pathname === '/v1/geo/coverage') {
-    const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
-    const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
-    const maxLng = parseOptionalNumber(url.searchParams.get('maxLng'));
-    const maxLat = parseOptionalNumber(url.searchParams.get('maxLat'));
-    if (
-      minLng === undefined ||
-      minLat === undefined ||
-      maxLng === undefined ||
-      maxLat === undefined
-    ) {
-      throw new AppError('minLng, minLat, maxLng and maxLat are required', {
-        code: 'GEO_COVERAGE_BOUNDS_REQUIRED',
-        statusCode: 400,
-      });
-    }
-    const levelParam = url.searchParams.get('level');
-    const level = levelParam === 'coarse' || levelParam === 'area' ? levelParam : 'fine';
-    return sendJson(
-      response,
-      200,
-      runtime.geoCoverageService.coverage({ minLng, minLat, maxLng, maxLat }, level),
-    );
-  }
-
   // Busca por nome para a barra de pesquisa unificada — Estações e Recursos (nunca
   // sub-locais/salas), devolvida como nó de árvore para reusar seleção/mapa/detalhe.
   if (request.method === 'GET' && url.pathname === '/v1/geo/tree/search') {

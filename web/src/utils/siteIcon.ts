@@ -173,3 +173,19 @@ export function selectionPinDataUrl(height: number): string {
   selectionPinDataUrlCache.set(height, value);
   return value;
 }
+
+const addressSourcePinCache = new Map<string, string>();
+
+/** Pins distintos para comparar resultados externos de endereço no mapa Geo. */
+export function addressSourcePinDataUrl(source: 'google' | 'geonet', selected: boolean): string {
+  const key = `${source}:${selected}`;
+  const cached = addressSourcePinCache.get(key);
+  if (cached) return cached;
+  const fill = source === 'google' ? '#4285F4' : '#243041';
+  const inner = source === 'google' ? '#34A853' : '#FFD200';
+  const stroke = selected ? '#FFD200' : '#FFFFFF';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="40" viewBox="0 0 30 40" fill="none"><path d="M15 1C7.27 1 1 7.27 1 15c0 10.5 14 24 14 24s14-13.5 14-24C29 7.27 22.73 1 15 1Z" fill="${fill}" stroke="${stroke}" stroke-width="${selected ? 3 : 2}"/><circle cx="15" cy="15" r="6" fill="${inner}"/>${source === 'google' ? '<path d="M12 15h6M15 12v6" stroke="#fff" stroke-width="1.5"/>' : '<path d="M10.5 11.5 15 20l4.5-8.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'}</svg>`;
+  const value = toDataUrl(svg);
+  addressSourcePinCache.set(key, value);
+  return value;
+}

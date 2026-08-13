@@ -21,7 +21,8 @@ vi.mock('../../components/GoogleStreetViewModal', () => ({
 // A aba de Viabilidade tem teste próprio (ViabilityTab.test.tsx); aqui o hook que busca as
 // CDOs é mockado para o painel poder exercitar a troca de aba e o encaixe da folha. Mutável
 // para os casos que precisam de uma CDO na lista (ver beforeEach para o default vazio).
-const viability = vi.fn<(origin: [number, number], enabled: boolean) => UseAddressViabilityResult>();
+const viability =
+  vi.fn<(origin: [number, number], enabled: boolean) => UseAddressViabilityResult>();
 vi.mock('../../hooks/useAddressViability', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../hooks/useAddressViability')>();
   return {
@@ -95,6 +96,7 @@ describe('AddressDetailPanel', () => {
       precision: 'RANGE_INTERPOLATED',
     };
     render(<AddressDetailPanel isMobile={false} address={address} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole('radio', { name: 'Usar GEONET' }));
     await userEvent.click(screen.getByRole('button', { name: 'Viabilidade' }));
     expect(viability).toHaveBeenCalledWith([-43.2, -22.8], true);
   });

@@ -34,6 +34,10 @@ export type GeoTree = {
   rows: GeoTreeRow[];
   mapNodes: GeoTreeNode[];
   loading: boolean;
+  // Qualquer carga da árvore em voo: raízes (`loading`) ou expansão de algum nó. Alimenta
+  // o indicador de carga do mapa (ver MapLoadingBar em GeoPage) — a doca já mostra o seu
+  // próprio spinner por linha.
+  busy: boolean;
   error: string | null;
   isExpanded: (rowKey: string) => boolean;
   toggle: (row: GeoTreeRow) => void;
@@ -246,6 +250,7 @@ export function useGeoTree(): GeoTree {
     rows,
     mapNodes,
     loading,
+    busy: loading || loadingNodes.size > 0,
     error,
     isExpanded: (rowKey: string) => expandedRows.has(rowKey),
     toggle,

@@ -14,6 +14,7 @@ export {
   AddressDetailPanel,
   type AddressDetailPanelProps,
   type AddressPinLocation,
+  type AddressLocationResolution,
 } from './AddressDetailPanel';
 export { ViabilityTab, type ViabilityTabProps, type DropSimulation } from './ViabilityTab';
 export { Info } from './InfoRow';
@@ -24,6 +25,7 @@ export { StatusBadge } from './StatusBadge';
 export { PanelBarButton } from './PanelBarButton';
 export { MapBaseLayerSelector, BASE_MAP_LAYERS, type MapBaseLayer } from './MapBaseLayerSelector';
 export { MapLocateButton, type DeviceLocation } from './MapLocateButton';
+export { MapLoadingBar } from './MapLoadingBar';
 export {
   DOCK_WIDTH_CLASS,
   DOCK_SEARCH_WIDTH_CLASS,

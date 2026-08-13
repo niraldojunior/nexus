@@ -25,6 +25,16 @@ import { PrecisionBadge } from './PrecisionBadge';
 import { ViabilityTab, type DropSimulation } from './ViabilityTab';
 import { useGeonetAddress } from '../../hooks/useGeonetAddress';
 import type { GeonetAddressDetail } from '../../services/geonetAddressApi';
+import {
+  resolveAddressLocation,
+  type AddressLocationResolution,
+  type AddressPinLocation,
+} from './addressLocationResolution';
+export {
+  selectPinLocation,
+  type AddressLocationResolution,
+  type AddressPinLocation,
+} from './addressLocationResolution';
 
 type AddressTab = 'overview' | 'viability';
 
@@ -46,13 +56,7 @@ export type AddressDetailPanelProps = {
   // para o GeoPage porque quem desenha é o mapa, não o painel.
   onDropSimulation?: (simulation: DropSimulation | null) => void;
   geonetEnabled?: boolean;
-  onLocationResolved?: (location: AddressPinLocation) => void;
-};
-
-export type AddressPinLocation = {
-  coordinates: [number, number];
-  source: 'google' | 'geonet';
-  precision: string;
+  onLocationResolved?: (resolution: AddressLocationResolution) => void;
 };
 
 /**
@@ -72,22 +76,43 @@ export function AddressDetailPanel({
   geonetEnabled = true,
   onLocationResolved,
 }: AddressDetailPanelProps) {
-  const title = address.sourceQuery?.trim() || [address.street, address.streetNr].filter(Boolean).join(', ') || address.label;
-  const marker = addressStreetViewMarker(address);
+  const title =
+    address.sourceQuery?.trim() ||
+    [address.street, address.streetNr].filter(Boolean).join(', ') ||
+    address.label;
   const [tab, setTab] = useState<AddressTab>('overview');
   const { snapCommand, requestSnap } = useSheetSnapCommand(minimizeSignal);
   const geonet = useGeonetAddress(address, geonetEnabled);
-  const pinLocation = useMemo(
-    () => selectPinLocation(address, geonet.detail),
-    [address, geonet.detail],
+  const resolutionKey = `${address.coordinates.join(',')}|${geonet.detail?.coordinates?.join(',') ?? ''}`;
+  const [sourceChoice, setSourceChoice] = useState<{
+    key: string;
+    source: AddressPinLocation['source'];
+  } | null>(null);
+  const resolution = useMemo(
+    () =>
+      resolveAddressLocation(
+        address,
+        geonet.detail,
+        sourceChoice?.key === resolutionKey ? sourceChoice.source : null,
+      ),
+    [address, geonet.detail, resolutionKey, sourceChoice],
   );
+  const activeLocation =
+    resolution.mode === 'automatic'
+      ? resolution.selected
+      : resolution.selectedSource
+        ? resolution[resolution.selectedSource]
+        : null;
+  const marker = activeLocation
+    ? addressStreetViewMarker({ ...address, coordinates: activeLocation.coordinates })
+    : null;
 
   useEffect(() => {
     // A câmera só pode voar após a comparação terminar: enquanto o detalhe Geonet
     // ainda está em trânsito, a decisão poderia mudar do ponto Google para o Geonet.
     if (geonet.status === 'loading' || geonet.locationPending) return;
-    onLocationResolved?.(pinLocation);
-  }, [geonet.locationPending, geonet.status, onLocationResolved, pinLocation]);
+    onLocationResolved?.(resolution);
+  }, [geonet.locationPending, geonet.status, onLocationResolved, resolution]);
 
   // Endereço novo é consulta nova: a aba volta para a Visão geral, e a aba de
   // Viabilidade se desmonta — é a desmontagem dela que apaga o drop simulado do mapa
@@ -96,6 +121,15 @@ export function AddressDetailPanel({
   useEffect(() => {
     setTab('overview');
   }, [lng, lat]);
+
+  const chooseSource = useCallback(
+    (source: AddressPinLocation['source']) => {
+      setSourceChoice({ key: resolutionKey, source });
+      setTab('overview');
+      (onDropSimulation ?? noop)(null);
+    },
+    [onDropSimulation, resolutionKey],
+  );
 
   // No mobile a aba Viabilidade dá lugar ao mapa: a foto do Street View some (ver o
   // corpo) e a folha vai para `mid`, para o traçado do drop caber na área descoberta. O
@@ -127,17 +161,25 @@ export function AddressDetailPanel({
           active={tab === 'overview'}
           onClick={() => setTab('overview')}
         />
-        <PanelBarButton
-          icon={Route}
-          label="Viabilidade"
-          active={tab === 'viability'}
-          onClick={() => setTab('viability')}
-        />
+        {activeLocation ? (
+          <PanelBarButton
+            icon={Route}
+            label="Viabilidade"
+            active={tab === 'viability'}
+            onClick={() => setTab('viability')}
+          />
+        ) : null}
       </div>
-      {tab === 'viability' ? (
-        <ViabilityTab origin={pinLocation.coordinates} onSimulate={handleSimulate} />
+      {tab === 'viability' && activeLocation ? (
+        <ViabilityTab origin={activeLocation.coordinates} onSimulate={handleSimulate} />
       ) : (
-        <AddressOverview address={address} marker={marker} geonet={geonet} pinLocation={pinLocation} />
+        <AddressOverview
+          address={address}
+          marker={marker}
+          geonet={geonet}
+          resolution={resolution}
+          onChooseSource={chooseSource}
+        />
       )}
     </>
   );
@@ -158,7 +200,7 @@ export function AddressDetailPanel({
       <BottomSheet onClose={onClose} onSnapChange={onSnapChange} snapCommand={snapCommand}>
         {/* Foto, título e corpo rolam juntos dentro da folha (ver BottomSheet). Na aba
             Viabilidade a foto some para o mapa (e o traçado do drop) ganharem a tela. */}
-        {tab === 'overview' ? <StreetViewHero marker={marker} /> : null}
+        {tab === 'overview' && marker ? <StreetViewHero marker={marker} /> : null}
         {header}
         {/* `overflow-hidden` nos dois eixos mantém o BottomSheet como único dono
             do gesto vertical; `overflow-x-hidden` faria Y computar para `auto`. */}
@@ -181,7 +223,7 @@ export function AddressDetailPanel({
       {/* Barra de rolagem sobreposta: a foto e as abas usam toda a largura do painel; o
           polegar projeta por cima delas no hover (ver OverlayScrollArea). */}
       <OverlayScrollArea className="overflow-x-hidden">
-        <StreetViewHero marker={marker} />
+        {marker ? <StreetViewHero marker={marker} /> : null}
         {header}
         <div className="px-3 py-3">{body}</div>
       </OverlayScrollArea>
@@ -193,19 +235,42 @@ function AddressOverview({
   address,
   marker,
   geonet,
-  pinLocation,
+  resolution,
+  onChooseSource,
 }: {
   address: DraftAddress;
-  marker: ReturnType<typeof addressStreetViewMarker>;
+  marker: ReturnType<typeof addressStreetViewMarker> | null;
   geonet: ReturnType<typeof useGeonetAddress>;
-  pinLocation: AddressPinLocation;
+  resolution: AddressLocationResolution;
+  onChooseSource: (source: AddressPinLocation['source']) => void;
 }) {
+  const activeLocation =
+    resolution.mode === 'automatic'
+      ? resolution.selected
+      : resolution.selectedSource
+        ? resolution[resolution.selectedSource]
+        : null;
   return (
     <div className="grid gap-3">
+      {resolution.mode === 'conflict' && !activeLocation ? (
+        <div className="rounded-[12px] border border-status-amber/30 bg-status-amber-soft px-3 py-2 text-[0.78rem] leading-snug text-app-text">
+          As localizaÃ§Ãµes retornadas divergem em {Math.round(resolution.distanceMeters)} m.
+          Selecione uma origem para continuar a anÃ¡lise.
+        </div>
+      ) : null}
       <div className="px-1 py-1 text-[0.76rem] text-app-muted">
-        Alfinete do mapa: <span className="font-semibold">{pinLocation.source === 'google' ? 'Google' : 'GEONET'}</span>
+        {activeLocation ? (
+          <>
+            Alfinete do mapa:{' '}
+            <span className="font-semibold">
+              {activeLocation.source === 'google' ? 'Google' : 'GEONET'}
+            </span>
+          </>
+        ) : (
+          'Selecione uma origem para continuar'
+        )}
         {' · '}
-        {pinLocation.precision}
+        {activeLocation?.precision ?? ''}
       </div>
       <AddressSourceCard
         icon={<GoogleMapsIcon />}
@@ -216,7 +281,15 @@ function AddressOverview({
         <IconInfoRow
           icon={Crosshair}
           hint="Localização"
-          value={<CoordinateStreetView marker={marker} />}
+          value={
+            marker ? (
+              <CoordinateStreetView marker={marker} />
+            ) : (
+              <span className="font-mono">
+                [{address.coordinates[0].toFixed(5)}, {address.coordinates[1].toFixed(5)}]
+              </span>
+            )
+          }
         />
         <IconInfoRow
           icon={Target}
@@ -224,8 +297,11 @@ function AddressOverview({
           value={<PrecisionBadge locationType={address.precision} />}
         />
         <IconInfoRow icon={Fingerprint} hint="Place ID" value={address.placeId ?? '-'} mono />
+        {resolution.mode === 'conflict' ? (
+          <SourceChoiceButton source="google" resolution={resolution} onChoose={onChooseSource} />
+        ) : null}
       </AddressSourceCard>
-      <GeonetAddressCard geonet={geonet} />
+      <GeonetAddressCard geonet={geonet} resolution={resolution} onChooseSource={onChooseSource} />
     </div>
   );
 }
@@ -237,7 +313,7 @@ const GOOGLE_PRECISION_RANK: Record<string, number> = {
   APPROXIMATE: 1,
 };
 
-export function selectPinLocation(
+export function legacySelectPinLocation(
   address: DraftAddress,
   geonet: GeonetAddressDetail | null,
 ): AddressPinLocation {
@@ -250,7 +326,9 @@ export function selectPinLocation(
   const geonetPrecision = geonet?.geolocationMethod
     ? GEONET_PRECISION[geonet.geolocationMethod.trim().toUpperCase()]
     : undefined;
-  const geonetRank = geonetPrecision ? ({ Alta: 3, Média: 2, Baixa: 1 }[geonetPrecision.quality] ?? 0) : 0;
+  const geonetRank = geonetPrecision
+    ? ({ Alta: 3, Média: 2, Baixa: 1 }[geonetPrecision.quality] ?? 0)
+    : 0;
   if (geonet?.coordinates && geonetRank > google.rank) {
     return {
       coordinates: geonet.coordinates,
@@ -283,7 +361,15 @@ function AddressSourceCard({
   );
 }
 
-function GeonetAddressCard({ geonet }: { geonet: ReturnType<typeof useGeonetAddress> }) {
+function GeonetAddressCard({
+  geonet,
+  resolution,
+  onChooseSource,
+}: {
+  geonet: ReturnType<typeof useGeonetAddress>;
+  resolution: AddressLocationResolution;
+  onChooseSource: (source: AddressPinLocation['source']) => void;
+}) {
   const selected = geonet.candidates.find((candidate) => candidate.addressId === geonet.selectedId);
   const detail: GeonetAddressDetail | null = geonet.detail ?? (selected ? { ...selected } : null);
   const selectedIndex = geonet.candidates.findIndex(
@@ -367,9 +453,36 @@ function GeonetAddressCard({ geonet }: { geonet: ReturnType<typeof useGeonetAddr
             value={<GeonetPrecisionBadge method={detail.geolocationMethod} />}
           />
           <IconInfoRow icon={Fingerprint} hint="Address ID" value={detail.addressId ?? '-'} mono />
+          {resolution.mode === 'conflict' ? (
+            <SourceChoiceButton source="geonet" resolution={resolution} onChoose={onChooseSource} />
+          ) : null}
         </>
       ) : null}
     </AddressSourceCard>
+  );
+}
+
+function SourceChoiceButton({
+  source,
+  resolution,
+  onChoose,
+}: {
+  source: AddressPinLocation['source'];
+  resolution: Extract<AddressLocationResolution, { mode: 'conflict' }>;
+  onChoose: (source: AddressPinLocation['source']) => void;
+}) {
+  const selected = resolution.selectedSource === source;
+  const label = source === 'google' ? 'Google Maps' : 'GEONET';
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={() => onChoose(source)}
+      className={`mt-2 w-full rounded-[10px] border px-2.5 py-1.5 text-[0.76rem] font-semibold transition ${selected ? 'border-app-accent-border bg-app-accent-soft text-app-text' : 'border-app-border bg-white text-app-text hover:border-app-accent-border'}`}
+    >
+      {selected ? `${label} selecionado` : `Usar ${label}`}
+    </button>
   );
 }
 

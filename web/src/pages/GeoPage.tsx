@@ -92,6 +92,7 @@ import {
 import { ResourceIcon } from '../components/ResourceIcon';
 import {
   selectionPinDataUrl,
+  addressSourcePinDataUrl,
   siteIconDataUrl,
   siteIconFor,
   SELECTION_PIN_ASPECT,
@@ -100,6 +101,7 @@ import { useNavigation } from '../hooks/useNavigation';
 import {
   AddressDetailPanel,
   type AddressPinLocation,
+  type AddressLocationResolution,
   BASE_MAP_LAYERS,
   CoordinateStreetView,
   GeoSearchBar,
@@ -107,6 +109,7 @@ import {
   HierarchySidebar,
   IconInfoRow,
   MapBaseLayerSelector,
+  MapLoadingBar,
   MapLocateButton,
   PanelBarButton,
   StatusBadge,
@@ -287,7 +290,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const [addressLookup, setAddressLookup] = useState<{
     address: DraftAddress;
     source: 'search' | 'map';
-    pinLocation?: AddressPinLocation;
+    resolution?: AddressLocationResolution;
   } | null>(null);
   const [addressError, setAddressError] = useState<AddressSearchError | null>(null);
   // Drop simulado entre o endereço aberto na doca e a CDO escolhida na aba de
@@ -330,6 +333,9 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Infra passiva (recursos + cabos) da região visível do mapa — some acima de
   // PASSIVE_INFRA_MAX_SCALE_METERS (200 m) e é buscada por bbox, não pela árvore.
   const [viewportInfra, setViewportInfra] = useState<GeoTreeNode[]>([]);
+  // Verdadeiro enquanto a busca de infra passiva por viewport está em voo — alimenta a
+  // barra de carga do mapa (ver mapDataLoading e MapLoadingBar).
+  const [viewportLoading, setViewportLoading] = useState(false);
   const [scaleMeters, setScaleMeters] = useState<number | null>(null);
   // Região visível atual (identidade só muda no `idle`) — alimenta a busca de cobertura GPON,
   // que roda em toda escala acima de 100 m, não só na de detalhe.
@@ -351,6 +357,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     if (meters > PASSIVE_INFRA_MAX_SCALE_METERS) {
       lastViewportKeyRef.current = null;
       setViewportInfra([]);
+      setViewportLoading(false);
       return;
     }
     const key = [bounds.minLng, bounds.minLat, bounds.maxLng, bounds.maxLat]
@@ -360,12 +367,16 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     viewportDebounceRef.current = window.setTimeout(() => {
       lastViewportKeyRef.current = key;
       const token = ++viewportFetchTokenRef.current;
+      setViewportLoading(true);
       void fetchViewportResources(bounds)
         .then((resources) => {
           if (viewportFetchTokenRef.current === token) setViewportInfra(resources);
         })
         .catch(() => {
           if (viewportFetchTokenRef.current === token) setViewportInfra([]);
+        })
+        .finally(() => {
+          if (viewportFetchTokenRef.current === token) setViewportLoading(false);
         });
     }, 250);
   }, []);
@@ -393,7 +404,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   }, [tree.mapNodes, viewportInfra, passiveInfraVisible, stationTier, selectedNode]);
 
   // Cobertura GPON da viewport (mapa de calor por bairro), acima de 100 m em qualquer escala.
-  const coverage = useGponCoverage(viewportBounds, scaleMeters);
+  const { data: coverage, loading: coverageLoading } = useGponCoverage(viewportBounds, scaleMeters);
   const coverageVisible = coverageVisibleAtScale(scaleMeters);
   // Bairro sob o cursor sobre a mancha — vira o balão de hover (ver coverageBalloon).
   const [coverageHover, setCoverageHover] = useState<{
@@ -404,6 +415,12 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   useEffect(() => {
     if (!coverageVisible) setCoverageHover(null);
   }, [coverageVisible]);
+
+  // Qualquer camada do mapa ainda em voo — vira a barra de progresso no topo do mapa (ver
+  // MapLoadingBar). Cargas internas dos painéis (Viabilidade, GEONET, eventos) têm spinner
+  // próprio dentro da doca e não entram aqui. O script do Google Maps é rastreado dentro do
+  // GoogleMapPanel (mapsReady) e somado à barra por lá.
+  const mapDataLoading = loading || tree.busy || viewportLoading || coverageLoading;
 
   const specById = useMemo(() => new Map(specs.map((item) => [item.id, item])), [specs]);
   const siteById = useMemo(() => new Map(sites.map((item) => [item.id, item])), [sites]);
@@ -600,27 +617,43 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     setAddressLookup({
       address,
       source: 'search',
-      pinLocation: { coordinates: address.coordinates, source: 'google', precision: address.precision ?? 'Desconhecida' },
+      resolution: {
+        mode: 'automatic',
+        selected: {
+          coordinates: address.coordinates,
+          source: 'google',
+          precision: address.precision ?? 'Desconhecida',
+        },
+      },
     });
     setQuery(address.sourceQuery?.trim() || address.label);
     setSearchSelection({ type: 'address', address });
   }, []);
 
-  const onAddressLocationResolved = useCallback((location: AddressPinLocation) => {
+  const onAddressLocationResolved = useCallback((resolution: AddressLocationResolution) => {
     setAddressLookup((current) => {
       if (!current || current.source !== 'search') return current;
-      const previous = current.pinLocation;
-      if (
-        previous?.source === location.source &&
-        previous.coordinates[0] === location.coordinates[0] &&
-        previous.coordinates[1] === location.coordinates[1] &&
-        previous.precision === location.precision
-      ) {
-        return current;
-      }
-      return { ...current, pinLocation: location };
+      return { ...current, resolution };
     });
-    setFocusRequest({ point: location.coordinates, scaleMeters: ADDRESS_FOCUS_SCALE_METERS });
+    if (resolution.mode === 'automatic') {
+      setFocusRequest({
+        point: resolution.selected.coordinates,
+        scaleMeters: ADDRESS_FOCUS_SCALE_METERS,
+      });
+    } else if (resolution.selectedSource) {
+      setFocusRequest({
+        point: resolution[resolution.selectedSource].coordinates,
+        scaleMeters: ADDRESS_FOCUS_SCALE_METERS,
+      });
+    } else {
+      const [googleLng, googleLat] = resolution.google.coordinates;
+      const [geonetLng, geonetLat] = resolution.geonet.coordinates;
+      setFocusRequest({
+        point: [(googleLng + geonetLng) / 2, (googleLat + geonetLat) / 2],
+        scaleMeters: null,
+        fitSpanMeters: resolution.distanceMeters,
+      });
+    }
   }, []);
 
   const onAddressError = useCallback((err: AddressSearchError) => {
@@ -815,9 +848,12 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               selectedNode={selectedNode}
               draftAddress={draftAddress}
               addressPoint={
-                addressLookup?.source === 'search' && addressLookup.pinLocation
-                  ? addressLookup.pinLocation
+                addressLookup?.source === 'search' && addressLookup.resolution?.mode === 'automatic'
+                  ? addressLookup.resolution.selected
                   : null
+              }
+              addressResolution={
+                addressLookup?.source === 'search' ? addressLookup.resolution : null
               }
               dropSimulation={dropSimulation}
               focusRequest={focusRequest}
@@ -841,13 +877,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               resourceTier={resourceTier}
               onCoverageHover={setCoverageHover}
               autoLocateOnOpen={isMobile}
+              // Qualquer camada do mapa em carga acende a barra fina no topo do mapa; o
+              // script do Google Maps é somado à barra dentro do painel (ver MapLoadingBar).
+              busy={mapDataLoading}
             />
-
-            {loading ? (
-              <div className="absolute right-5 bottom-5 z-30 rounded-[18px] border border-app-border bg-white/90 px-4 py-3 text-[0.84rem] font-medium text-app-muted shadow-map-control backdrop-blur">
-                Carregando dados Geo...
-              </div>
-            ) : null}
           </div>
 
           {/* Instância única da barra de pesquisa: sobreposta à doca e ao mapa, com o
@@ -925,6 +958,7 @@ export function GoogleMapPanel({
   selectedNode,
   draftAddress,
   addressPoint,
+  addressResolution,
   dropSimulation,
   focusRequest,
   bottomSheetState,
@@ -941,6 +975,7 @@ export function GoogleMapPanel({
   resourceTier,
   onCoverageHover,
   autoLocateOnOpen = false,
+  busy = false,
 }: {
   nodes: GeoTreeNode[];
   // Nó selecionado inteiro (não só o id): o alfinete precisa da geometria mesmo quando o
@@ -952,6 +987,9 @@ export function GoogleMapPanel({
   // alfinete de seleção, na ausência de um nó selecionado (os dois nunca coexistem,
   // ver onAddressFound/selectNode em GeoPage).
   addressPoint?: AddressPinLocation | [number, number] | null;
+  // Resultado da comparação Google × GEONET. Em conflito, os dois pins permanecem
+  // visíveis mesmo depois da escolha para permitir comparação em campo.
+  addressResolution?: AddressLocationResolution | null;
   // Drop simulado entre o endereço e a CDO escolhida na aba de Viabilidade — estudo,
   // não planta: desenho próprio, animado, que some junto com o painel que o criou.
   dropSimulation?: DropSimulation | null;
@@ -986,6 +1024,10 @@ export function GoogleMapPanel({
   // Só o mobile salta sozinho para a posição do dispositivo ao abrir (ver efeito de
   // auto-localização); no desktop o pulo fica reservado ao clique no botão.
   autoLocateOnOpen?: boolean;
+  // Alguma camada do mapa (cobertura, catálogo, recursos, hierarquia) está carregando —
+  // acende a barra fina no topo (ver MapLoadingBar). O carregamento do próprio script do
+  // Google Maps é somado a isto internamente (mapsLoading).
+  busy?: boolean;
 }) {
   const selectedNodeId = selectedNode?.id ?? null;
   const mapEl = useRef<HTMLDivElement>(null);
@@ -1005,6 +1047,7 @@ export function GoogleMapPanel({
   >(null);
   const draftMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const selectionMarkerRef = useRef<GoogleMarkerInstance | null>(null);
+  const addressSourceMarkersRef = useRef<Map<'google' | 'geonet', GoogleMarkerInstance>>(new Map());
   // Ponto azul "minha localização", cravado quando o usuário pede a geolocalização do
   // dispositivo (ver MapLocateButton). Vive fora do fluxo de nós/seleção — não é
   // inventário, é a posição real de quem está olhando o mapa.
@@ -1056,6 +1099,10 @@ export function GoogleMapPanel({
   const mapClickGenerationRef = useRef(0);
   const nodeByIdRef = useRef<Map<string, GeoTreeNode>>(new Map());
   const [mapsReady, setMapsReady] = useState(false);
+  // Carregamento do script do Google Maps — soma-se ao `busy` do chamador na barra de
+  // carga (ver MapLoadingBar). Distinto de `mapsReady`: derivar a barra de `!mapsReady` a
+  // deixaria girando para sempre se o script falhasse (o catch faz setMapsReady(false)).
+  const [mapsLoading, setMapsLoading] = useState(true);
   const [baseLayerId, setBaseLayerId] = useState(BASE_MAP_LAYERS[0]?.id ?? 'roadmap');
   const selectedBaseLayer =
     BASE_MAP_LAYERS.find((layer) => layer.id === baseLayerId) ?? BASE_MAP_LAYERS[0];
@@ -1262,7 +1309,8 @@ export function GoogleMapPanel({
 
         setMapsReady(true);
       })
-      .catch(() => setMapsReady(false));
+      .catch(() => setMapsReady(false))
+      .finally(() => setMapsLoading(false));
   }, [handleManualNavigation, onDraftAddress, selectedBaseLayer.googleMapTypeId]);
 
   // Repassa os dados de cobertura para a camada de canvas quando mudam (ou saem de escala).
@@ -1501,6 +1549,11 @@ export function GoogleMapPanel({
     // árvore) e cai para a própria seleção quando ele já não está no mapa — recurso/cabo
     // afastado além do viewport, ou deep-link de Site que ainda não virou marcador. Sem
     // esse fallback, mexer no mapa apagava o alfinete de quem continua aberto no painel.
+    if (addressResolution?.mode === 'conflict') {
+      selectionMarkerRef.current?.setMap(null);
+      selectionMarkerRef.current = null;
+      return;
+    }
     const node =
       (selectedNodeId ? nodeByIdRef.current.get(selectedNodeId) : undefined) ?? selectedNode;
     const addressLocation = Array.isArray(addressPoint) ? undefined : addressPoint;
@@ -1535,7 +1588,11 @@ export function GoogleMapPanel({
     if (selectionMarkerRef.current) {
       selectionMarkerRef.current.setPosition({ lng, lat });
       selectionMarkerRef.current.setIcon(iconOptions);
-      selectionMarkerRef.current.setOptions({ title: node ? undefined : `Localização usada: ${addressLocation?.source === 'geonet' ? 'GEONET' : 'Google Maps'} · ${addressLocation?.precision ?? ''}` });
+      selectionMarkerRef.current.setOptions({
+        title: node
+          ? undefined
+          : `Localização usada: ${addressLocation?.source === 'geonet' ? 'GEONET' : 'Google Maps'} · ${addressLocation?.precision ?? ''}`,
+      });
     } else {
       selectionMarkerRef.current = new maps.Marker({
         map: mapRef.current,
@@ -1543,10 +1600,50 @@ export function GoogleMapPanel({
         icon: iconOptions,
         zIndex: SELECTION_PIN_Z,
         clickable: false,
-        title: node ? undefined : `Localização usada: ${addressLocation?.source === 'geonet' ? 'GEONET' : 'Google Maps'} · ${addressLocation?.precision ?? ''}`,
+        title: node
+          ? undefined
+          : `Localização usada: ${addressLocation?.source === 'geonet' ? 'GEONET' : 'Google Maps'} · ${addressLocation?.precision ?? ''}`,
       });
     }
-  }, [mapsReady, selectedNodeId, selectedNode, nodes, addressPoint]);
+  }, [mapsReady, selectedNodeId, selectedNode, nodes, addressPoint, addressResolution]);
+
+  useEffect(() => {
+    const maps = window.google?.maps;
+    if (!mapsReady || !mapRef.current || !maps) return;
+    if (addressResolution?.mode !== 'conflict') {
+      for (const marker of addressSourceMarkersRef.current.values()) marker.setMap(null);
+      addressSourceMarkersRef.current.clear();
+      return;
+    }
+    for (const source of ['google', 'geonet'] as const) {
+      const location = addressResolution[source];
+      const selected = addressResolution.selectedSource === source;
+      const icon = {
+        url: addressSourcePinDataUrl(source, selected),
+        scaledSize: new maps.Size(30, 40),
+        anchor: new maps.Point(15, 40),
+      };
+      const title = `${source === 'google' ? 'Google Maps' : 'GEONET'}${selected ? ' — selecionado' : ''}`;
+      const marker = addressSourceMarkersRef.current.get(source);
+      if (marker) {
+        marker.setPosition({ lng: location.coordinates[0], lat: location.coordinates[1] });
+        marker.setIcon(icon);
+        marker.setOptions({ title });
+      } else {
+        addressSourceMarkersRef.current.set(
+          source,
+          new maps.Marker({
+            map: mapRef.current,
+            position: { lng: location.coordinates[0], lat: location.coordinates[1] },
+            icon,
+            title,
+            clickable: false,
+            zIndex: SELECTION_PIN_Z,
+          }),
+        );
+      }
+    }
+  }, [addressResolution, mapsReady]);
 
   // Rota dos cabos. Um cabo não é um ponto: sua geometria é uma LineString com o traçado real na
   // rua, então vira polyline em vez de pin. Reusada por id pelo mesmo motivo dos marcadores.
@@ -1887,7 +1984,14 @@ export function GoogleMapPanel({
   }, [mapsReady, handleDeviceLocate, autoLocateOnOpen]);
 
   if (!GOOGLE_MAPS_KEY) {
-    return <FallbackMap nodes={nodes} draftAddress={draftAddress} onSelectNode={onSelectNode} />;
+    // Sem chave do Maps não há script a carregar; a barra reflete só a carga de dados do
+    // chamador (catálogo, recursos, hierarquia).
+    return (
+      <>
+        <MapLoadingBar busy={busy} />
+        <FallbackMap nodes={nodes} draftAddress={draftAddress} onSelectNode={onSelectNode} />
+      </>
+    );
   }
 
   return (
@@ -1915,6 +2019,7 @@ export function GoogleMapPanel({
         }}
         onWheelCapture={handleManualNavigation}
       />
+      <MapLoadingBar busy={busy || mapsLoading} />
       <MapBaseLayerSelector value={baseLayerId} onChange={setBaseLayerId} />
       <MapLocateButton onLocate={handleDeviceLocate} />
       {coverage ? <CoverageLegend /> : null}

@@ -24,8 +24,12 @@ const requestKey = (bounds: MapBounds, level: CoverageLevel): string =>
 export function useGponCoverage(
   bounds: MapBounds | null,
   scaleMeters: number | null,
-): CoverageResponse | null {
+): { data: CoverageResponse | null; loading: boolean } {
   const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
+  // Só é `true` quando uma requisição de fato está em voo — vira a barra de carga do mapa
+  // (ver MapLoadingBar). Marcado dentro do debounce, não no início do efeito: durante o
+  // arraste o debounce reinicia a cada frame e a barra piscaria sem haver requisição.
+  const [loading, setLoading] = useState(false);
   const debounceRef = useRef<number | undefined>(undefined);
   const tokenRef = useRef(0);
   const lastKeyRef = useRef<string | null>(null);
@@ -35,6 +39,7 @@ export function useGponCoverage(
       if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
       lastKeyRef.current = null;
       setCoverage(null);
+      setLoading(false);
       return;
     }
 
@@ -48,6 +53,7 @@ export function useGponCoverage(
     debounceRef.current = window.setTimeout(() => {
       lastKeyRef.current = key;
       const token = ++tokenRef.current;
+      setLoading(true);
       const pending = inFlight.get(key) ?? fetchCoverage(bounds, level);
       inFlight.set(key, pending);
       pending
@@ -59,6 +65,7 @@ export function useGponCoverage(
         })
         .finally(() => {
           inFlight.delete(key);
+          if (tokenRef.current === token) setLoading(false);
         });
     }, 250);
 
@@ -67,5 +74,5 @@ export function useGponCoverage(
     };
   }, [bounds, scaleMeters]);
 
-  return coverage;
+  return { data: coverage, loading };
 }

@@ -274,6 +274,35 @@ button:focus-visible {
   animation: vt-rise 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* Barra de progresso indeterminada do topo do mapa (ver MapLoadingBar): o segmento
+   percorre a faixa da esquerda para a direita enquanto houver carga de camada em voo. */
+@keyframes vt-map-progress {
+  0% {
+    transform: translateX(-100%) scaleX(0.35);
+  }
+  50% {
+    transform: translateX(20%) scaleX(0.6);
+  }
+  100% {
+    transform: translateX(100%) scaleX(0.35);
+  }
+}
+
+.animate-vt-map-progress {
+  transform-origin: left center;
+  animation: vt-map-progress 1.15s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Com movimento reduzido a faixa fica estática e preenchida — continua dizendo
+     "carregando", sem a animação de vaivém. */
+  .animate-vt-map-progress {
+    animation: none;
+    transform: none;
+    opacity: 0.55;
+  }
+}
+
 .markdown-content > *:first-child {
   margin-top: 0;
 }

@@ -213,8 +213,11 @@ async function bulkInsertOracle(conn, prefix, table, columns, rows, { onConflict
     const errors = result.batchErrors ?? [];
     for (const error of errors) {
       // ORA-00001 = unique constraint violation, the Oracle analogue of ON CONFLICT DO NOTHING.
-      if (error.errorNum !== 1)
-        throw new Error(`bulkInsert ${table}: ORA-${error.errorNum} ${error.message}`);
+      // Some node-oracledb builds return the batch-error entry with `errorNum` UNDEFINED and only
+      // the "ORA-00001..." text in `message`, so match either — otherwise a legitimate duplicate
+      // skip is rethrown (breaks coverage cells and any DO NOTHING path on Oracle).
+      const isUnique = error.errorNum === 1 || /\bORA-00001\b/.test(String(error.message ?? ''));
+      if (!isUnique) throw new Error(`bulkInsert ${table}: ORA-${error.errorNum} ${error.message}`);
     }
     inserted += block.length - errors.length;
   }

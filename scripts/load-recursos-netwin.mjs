@@ -59,17 +59,21 @@
  *   não toca no catálogo de specs nem nas tabelas de Geo). Use --no-truncate
  *   para a carga incremental idempotente antiga (pela chave natural em _origin).
  *
+ * Caixa de coordenadas: por UF, via `--uf <UF>` (UF_BBOX em ./uf-geo.mjs). Sem
+ * `--uf`, mantém o default histórico do RJ; `--no-bbox` desliga o filtro.
+ *
  * Uso:
- *   node scripts/load-recursos-netwin.mjs                  # dry-run (padrão)
+ *   node scripts/load-recursos-netwin.mjs                  # dry-run (padrão, RJ)
  *   node scripts/load-recursos-netwin.mjs --apply          # zera + grava
  *   node scripts/load-recursos-netwin.mjs --apply --no-truncate   # incremental
- *   node scripts/load-recursos-netwin.mjs --file outro.csv --apply
+ *   node scripts/load-recursos-netwin.mjs --file outro.csv --uf PR --apply --no-truncate
  */
 
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { config as loadEnv } from 'dotenv';
 import { openLoaderDb } from './loader-db.mjs';
+import { loaderRangesForUf } from './uf-geo.mjs';
 
 loadEnv();
 
@@ -86,6 +90,11 @@ const APPLY = has('--apply');
 // usuário) — é o comportamento padrão. `--no-truncate` desativa para uma carga
 // incremental idempotente (o modo antigo, pela chave natural em _origin.id).
 const TRUNCATE = !has('--no-truncate');
+// UF da carga: define a caixa de coordenadas de sanidade (UF_BBOX em ./uf-geo.mjs).
+// Sem --uf mantém o default histórico do RJ. `--no-bbox` desliga o filtro.
+const UF_ARG = argOf('--uf', null);
+const NO_BBOX = has('--no-bbox');
+const UF_RANGES = UF_ARG ? loaderRangesForUf(UF_ARG) : null;
 
 const MIGRATED_AT = new Date().toISOString();
 const MIGRATED_BY = 'load-recursos-netwin';
@@ -168,12 +177,13 @@ const canonCity = (raw) => {
   return CITY_CANON[v.toUpperCase()] ?? titleCase(v);
 };
 
-// Limites de sanidade para o RJ — pega coordenada que o parser não recuperou.
-// Caixa do estado inteiro (extração RJ real: LAT -23.22..-21.70, LNG -44.72..-41.28).
-// A faixa antiga [-23.5,-20.5]/[-44.5,-42.5] era calibrada para Niterói e descartava
-// ~12% dos pontos numa carga estadual (Região dos Lagos, Norte Fluminense, oeste).
-const LAT_RANGE = [-23.5, -20.7];
-const LNG_RANGE = [-45.0, -40.9];
+// Limites de sanidade da coordenada — pega ponto que o parser não recuperou ou
+// que veio grosseiramente errado (lixo de digitação). A caixa vem por UF de
+// ./uf-geo.mjs (fonte única, compartilhada com a carga de estações); passe --uf
+// <UF> para carregar outro estado. Sem --uf, mantém o default histórico do RJ.
+const LAT_RANGE = UF_RANGES?.LAT_RANGE ?? [-23.5, -20.7];
+const LNG_RANGE = UF_RANGES?.LNG_RANGE ?? [-45.0, -40.9];
+const UF_LABEL = UF_RANGES?.uf ?? UF_ARG ?? 'RJ (default)';
 
 // --------------------------------------------------------------- parsing -----
 
@@ -257,7 +267,11 @@ function readCsv(path) {
 
 // Sigla da estação: "FONSECA (FSA)" → "FSA". É o que liga o recurso ao site já
 // carregado por load-estacoes-netwin.mjs, cujo nome é "Fonseca (FSA)".
-const siglaOf = (estacao) => (String(estacao ?? '').match(/\(([^)]+)\)\s*$/) || [])[1] ?? null;
+// `[^()]+` (não `[^)]+`) casa o parêntese MAIS INTERNO no fim: alguns nomes de
+// estação do Netwin vêm poluídos com um "(" solto (ex.: "... 1055 (ES;FNCL" →
+// "... (ES (FNCL)"), e o `[^)]+` antigo atravessava o "(" interno e devolvia
+// "ES (FNCL" em vez de "FNCL".
+const siglaOf = (estacao) => (String(estacao ?? '').match(/\(([^()]+)\)\s*$/) || [])[1] ?? null;
 
 // Sigla PRIMÁRIA para vincular o recurso. ~0,04% das linhas são caixas entre
 // duas estações (CEO de enlace), com a estação-par embutida: "COLEGIO,IRAJA I
@@ -291,8 +305,11 @@ function buildModel(rows) {
       problems.push(`linha ${linha}: coordenada ilegível (${row.LAT} / ${row.LONG})`);
       continue;
     }
-    if (lat < LAT_RANGE[0] || lat > LAT_RANGE[1] || lng < LNG_RANGE[0] || lng > LNG_RANGE[1]) {
-      problems.push(`linha ${linha}: coordenada fora do RJ (${lat}, ${lng})`);
+    if (
+      !NO_BBOX &&
+      (lat < LAT_RANGE[0] || lat > LAT_RANGE[1] || lng < LNG_RANGE[0] || lng > LNG_RANGE[1])
+    ) {
+      problems.push(`linha ${linha}: coordenada fora de ${UF_LABEL} (${lat}, ${lng})`);
       continue;
     }
 
@@ -390,11 +407,20 @@ const originChars = (naturalKey, entity, extra, servingSiteId, substatus) => [
 // ------------------------------------------------------------------ main -----
 
 async function main() {
+  if (UF_ARG && !UF_RANGES) {
+    throw new Error(
+      `--uf desconhecida: "${UF_ARG}". Use a sigla de 2 letras (ex.: PR) ou o nome por extenso (ex.: PARANA).`,
+    );
+  }
+
   const rows = readCsv(CSV_PATH);
   const { boxes, splitters, orphans, problems } = buildModel(rows);
   assignDisplayNames(boxes);
 
   console.log(`Origem : ${CSV_PATH}`);
+  console.log(
+    `UF     : ${UF_LABEL}${NO_BBOX ? '  (bbox desligada)' : `  bbox LAT[${LAT_RANGE}] LNG[${LNG_RANGE}]`}`,
+  );
   console.log(`Linhas : ${rows.length}  →  caixas ${boxes.length} · splitters ${splitters.length}`);
   if (problems.length) {
     console.log(`\n⚠ ${problems.length} linha(s) descartada(s):`);
@@ -451,10 +477,17 @@ async function main() {
     // TRUNCATE ligado (padrão) a base de recursos é zerada antes de gravar, então
     // tudo conta como novo e nem consultamos o estado atual — o índice fica vazio.
     const idByNaturalKey = new Map();
+    // Contagem real de recursos Netwin já na base — é o baseline da conferência
+    // final. NÃO usar idByNaturalKey.size no lugar: o Map deduplica por chave
+    // natural (_origin.id) e ignora linhas sem essa chave, subestimando o count(*)
+    // quando a base traz recursos com _origin.id repetido/ausente (ex.: ~963 linhas
+    // herdadas da carga do RJ), o que dispararia um ROLLBACK falso-positivo.
+    let preNetwinCount = 0;
     if (!TRUNCATE) {
       const { rows: existingRows } = await client.query(
         `SELECT id, characteristics FROM tmf_physical_resource WHERE characteristics LIKE '%"Netwin"%'`,
       );
+      preNetwinCount = existingRows.length;
       for (const r of existingRows) {
         let chars;
         try {
@@ -828,7 +861,7 @@ async function main() {
       `SELECT count(*)::int AS n FROM tmf_physical_resource WHERE characteristics LIKE '%"Netwin"%'`,
     );
     const esperado =
-      idByNaturalKey.size + boxResources.length + splitterResources.length + orphanResources.length;
+      preNetwinCount + boxResources.length + splitterResources.length + orphanResources.length;
     if (check.n !== esperado) {
       await client.query('ROLLBACK');
       throw new Error(

@@ -65,22 +65,26 @@
  *  entram como recurso avulso). Nenhuma linha é descartada.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * ⚠ ATENÇÃO ao rodar o loader depois: `load-recursos-netwin.mjs` valida a
- *  coordenada contra uma caixa estreita (LAT[-23.5,-20.5], LNG[-44.5,-42.5])
- *  calibrada para Niterói. No estado inteiro isso descarta ~12% dos pontos
- *  (Região dos Lagos, Norte Fluminense, extremo oeste). Este conversor reporta a
- *  contagem no fim; para carregar o RJ todo, amplie LAT/LNG_RANGE no loader
- *  (sugestão: LAT[-23.5,-20.7], LNG[-45.0,-40.9]).
+ * MULTI-UF
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A UF é resolvida por linha a partir da coluna `UF` do export ("PARANA" → PR),
+ *  ou fixada com `--uf` quando o arquivo é de uma UF só. Ela alimenta duas coisas:
+ *    · o fallback de endereço ("<município> - <UF>"), para o recurso cair na UF
+ *      certa da árvore de Locais E casar com o filtro `--uf` da cobertura GPON;
+ *    · o diagnóstico da caixa de coordenadas (UF_BBOX em ./uf-geo.mjs), que só
+ *      REPORTA quantos pontos o loader descartaria — o loader agora usa a mesma
+ *      caixa por UF, então não é mais preciso mexer em LAT/LNG_RANGE à mão.
  *
  * Uso:
- *   node scripts/convert-recursos-netwin.mjs
- *   node scripts/convert-recursos-netwin.mjs --file legacy-data/recursos_rj_2026-08-07.csv
+ *   node scripts/convert-recursos-netwin.mjs --file legacy-data/recursos_pr_2026-08-13.csv --uf PR
+ *   node scripts/convert-recursos-netwin.mjs --file legacy-data/recursos_go_2026-08-13.csv  # UF pela coluna
  *   node scripts/convert-recursos-netwin.mjs --out outro.csv --no-enrich
  */
 
 import { createReadStream, createWriteStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { once } from 'node:events';
+import { ufAbbrev, bboxForUf, inBbox } from './uf-geo.mjs';
 
 const argv = process.argv.slice(2);
 const has = (flag) => argv.includes(flag);
@@ -91,6 +95,8 @@ const argOf = (flag, fallback) => {
 
 const IN_PATH = argOf('--file', 'legacy-data/recursos_rj_2026-08-07.csv');
 const ENRICH = !has('--no-enrich');
+// UF fixa para o arquivo inteiro; se ausente, cada linha resolve pela coluna `UF`.
+const UF_ARG = argOf('--uf', null);
 
 // Filtro opcional por município (subconjunto que caiba na cota do Neon).
 // Fold: sem acento + maiúsculo, para casar "São Gonçalo" com "SAO GONCALO".
@@ -135,10 +141,8 @@ const OUT_HEADER = [
   'Endereço',
 ];
 
-// Caixa de sanidade do loader — só para REPORTAR quantos pontos ele descartaria.
-// Alinhada à faixa vigente em load-recursos-netwin.mjs (ampliada p/ o RJ inteiro).
-const LOADER_LAT = [-23.5, -20.7];
-const LOADER_LNG = [-45.0, -40.9];
+// A caixa de sanidade do loader agora vem de ./uf-geo.mjs (UF_BBOX), resolvida por
+// UF de cada linha — este conversor só REPORTA quantos pontos cairiam fora dela.
 
 // --------------------------------------------------------------- CSV parse ----
 
@@ -244,6 +248,8 @@ async function main() {
     filtradas: 0,
   };
   const tipo2Dist = new Map();
+  const ufsSeen = new Set();
+  const ufSemMapa = new Set();
   const STATUS_KNOWN = new Set(['Em Serviço', 'Fora de Serviço', 'Bloqueado']);
 
   await write(OUT_HEADER.join(';'));
@@ -288,22 +294,29 @@ async function main() {
     if (splitter) stats.splitters++;
     else stats.caixas++;
 
+    // UF da linha: fixada por --uf, ou resolvida da coluna `UF` ("PARANA" → PR).
+    const uf = ufAbbrev(UF_ARG ?? g('UF'));
+    if (uf) ufsSeen.add(uf);
+    else if (g('UF')) ufSemMapa.add(g('UF'));
+
     // Endereço: original, ou fallback município para o item não cair em "Sem UF".
+    // O sufixo "- <UF>" (sigla) é o que o loader lê como state_or_province e o que
+    // o filtro `--uf` da cobertura GPON casa — por isso usa a sigla, não o nome.
     let endereco = g('END_CDO');
     if (!endereco && ENRICH) {
       const mun = g('NOME_MUNICIPIO');
       if (mun) {
-        endereco = `${mun} - RJ`;
+        endereco = uf ? `${mun} - ${uf}` : mun;
         stats.enriquecidas++;
       }
     }
 
-    // Diagnóstico da caixa de coord do loader (não altera a saída).
+    // Diagnóstico da caixa de coord do loader por UF (não altera a saída).
     const lat = Number(g('LAT'));
     const lng = Number(g('LONG'));
-    if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      if (lat < LOADER_LAT[0] || lat > LOADER_LAT[1] || lng < LOADER_LNG[0] || lng > LOADER_LNG[1])
-        stats.foraDaCaixaLoader++;
+    const bbox = uf ? bboxForUf(uf) : null;
+    if (bbox && Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0) {
+      if (!inBbox(lat, lng, bbox)) stats.foraDaCaixaLoader++;
     }
 
     const status = g('no_nome_estado_operacional');
@@ -348,8 +361,20 @@ async function main() {
   console.log(
     `Sem estação       : ${stats.semEstacao}  (ESTACAO vazia → agrupadas em "${ORPHAN_ESTACAO}")`,
   );
+  console.log(
+    `UF(s) detectada(s): ${[...ufsSeen].sort().join(', ') || '—'}${
+      UF_ARG ? `  (fixada por --uf ${ufAbbrev(UF_ARG) ?? UF_ARG})` : '  (da coluna UF)'
+    }`,
+  );
+  if (ufSemMapa.size) {
+    console.log(
+      `⚠ UF sem mapa     : ${[...ufSemMapa].join(', ')} — endereço fica sem sigla; recurso pode cair em "Sem UF".`,
+    );
+  }
   if (ENRICH)
-    console.log(`Endereços enriq.  : ${stats.enriquecidas}  (END_CDO vazio → "<município> - RJ")`);
+    console.log(
+      `Endereços enriq.  : ${stats.enriquecidas}  (END_CDO vazio → "<município> - <UF>")`,
+    );
   if (stats.statusNaoMapeado) {
     console.log(
       `STATUS fora do mapa: ${stats.statusNaoMapeado}  (ex.: "Em Manutenção"/"Com Defeito"; o loader trata como Bloqueado/suspended via resolveStatus)`,
@@ -361,14 +386,21 @@ async function main() {
   }
   if (stats.foraDaCaixaLoader) {
     console.log(
-      `\n⚠ ${stats.foraDaCaixaLoader} ponto(s) (${pct(stats.foraDaCaixaLoader)}) caem FORA da caixa de coordenadas`,
+      `\n⚠ ${stats.foraDaCaixaLoader} ponto(s) (${pct(stats.foraDaCaixaLoader)}) caem FORA da caixa da UF`,
     );
-    console.log(`  do load-recursos-netwin.mjs (LAT[${LOADER_LAT}], LNG[${LOADER_LNG}]) e seriam`);
-    console.log(`  descartados na carga — ajuste LAT_RANGE/LNG_RANGE no loader antes do --apply.`);
+    console.log(
+      `  (UF_BBOX em uf-geo.mjs) e serão descartados pelo loader — coordenada corrompida.`,
+    );
   }
+  const ufHint = ufAbbrev(UF_ARG) ?? (ufsSeen.size === 1 ? [...ufsSeen][0] : null);
+  const ufFlag = ufHint ? ` --uf ${ufHint}` : '';
   console.log('\nPróximo passo:');
-  console.log(`  node scripts/load-recursos-netwin.mjs --file ${OUT_PATH}            # dry-run`);
-  console.log(`  node scripts/load-recursos-netwin.mjs --file ${OUT_PATH} --apply    # grava`);
+  console.log(
+    `  node scripts/load-recursos-netwin.mjs --file ${OUT_PATH}${ufFlag}            # dry-run`,
+  );
+  console.log(
+    `  node scripts/load-recursos-netwin.mjs --file ${OUT_PATH}${ufFlag} --apply    # grava`,
+  );
 }
 
 main().catch((err) => {

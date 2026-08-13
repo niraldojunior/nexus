@@ -1895,12 +1895,15 @@ export function GoogleMapPanel({
 // a camada está visível. Cor via coverageSwatch (mesma rampa do canvas), não token hardcoded.
 function CoverageLegend() {
   return (
-    <div className="pointer-events-none absolute right-5 top-5 z-30 rounded-[14px] border border-app-border bg-white/90 px-3 py-2.5 text-[0.72rem] shadow-map-control backdrop-blur">
-      <div className="mb-1.5 font-semibold text-app-text">Cobertura GPON</div>
-      <div className="flex items-center gap-2">
+    <div
+      role="group"
+      aria-label="Legenda da cobertura GPON"
+      className="pointer-events-none absolute bottom-8 left-1/2 z-30 -translate-x-1/2 rounded-[14px] border border-app-border bg-white/90 px-2 py-2 text-[0.66rem] shadow-map-control backdrop-blur sm:px-3 sm:text-[0.72rem]"
+    >
+      <div className="flex items-center gap-1.5 sm:gap-2">
         <span className="text-app-muted">Indisponível</span>
         <span
-          className="h-2.5 w-24 rounded-full"
+          className="h-2.5 w-16 rounded-full sm:w-24"
           style={{
             background: `linear-gradient(90deg, ${coverageSwatch(0)}, ${coverageSwatch(0.5)}, ${coverageSwatch(1)})`,
           }}

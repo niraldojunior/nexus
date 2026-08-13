@@ -231,7 +231,11 @@ describe('GoogleMapPanel', () => {
       />,
     );
 
-    expect(await screen.findByText('Cobertura GPON')).toBeInTheDocument();
+    const legend = await screen.findByRole('group', { name: 'Legenda da cobertura GPON' });
+    expect(legend).toHaveClass('bottom-8', 'left-1/2', '-translate-x-1/2');
+    expect(screen.getByText('Indisponível')).toBeInTheDocument();
+    expect(screen.getByText('Disponível')).toBeInTheDocument();
+    expect(screen.queryByText('Cobertura GPON')).not.toBeInTheDocument();
   });
 
   it('desenha a Estação em tamanho reduzido no tier "small" (5–50 km)', async () => {

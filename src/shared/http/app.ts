@@ -267,6 +267,15 @@ const routeRequest = async ({
       status: 'ok',
       appName: config.appName,
       timestamp: new Date().toISOString(),
+      // Diagnóstico de deploy: identifica qual código está no ar e se ele enxerga as variáveis de
+      // autenticação. Só o SHA e booleanos — nenhum valor de segredo. O Vercel injeta env vars no
+      // deployment, então mudar uma variável sem redeploy não tem efeito; estes campos tornam essa
+      // diferença visível de fora.
+      commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local',
+      auth: {
+        jwtSecretConfigured: Boolean(config.authJwtSecret),
+        adminSeedConfigured: Boolean(config.adminEmail && config.adminPassword),
+      },
     });
     return;
   }
@@ -847,6 +856,34 @@ const routeGeoRequest = async ({
         { minLng, minLat, maxLng, maxLat },
         limit !== undefined ? { limit } : {},
       ),
+    );
+  }
+
+  // Mapa de calor de cobertura GPON por bairro — fonte do mapa acima de 100 m, no lugar dos
+  // recursos individuais e dos clusters (ver GeoCoverageService). `level`: fine (células de
+  // 150 m), coarse (agregado 750 m) ou area (polígonos de bairro). Recorte por bbox.
+  if (request.method === 'GET' && url.pathname === '/v1/geo/coverage') {
+    const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
+    const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
+    const maxLng = parseOptionalNumber(url.searchParams.get('maxLng'));
+    const maxLat = parseOptionalNumber(url.searchParams.get('maxLat'));
+    if (
+      minLng === undefined ||
+      minLat === undefined ||
+      maxLng === undefined ||
+      maxLat === undefined
+    ) {
+      throw new AppError('minLng, minLat, maxLng and maxLat are required', {
+        code: 'GEO_COVERAGE_BOUNDS_REQUIRED',
+        statusCode: 400,
+      });
+    }
+    const levelParam = url.searchParams.get('level');
+    const level = levelParam === 'coarse' || levelParam === 'area' ? levelParam : 'fine';
+    return sendJson(
+      response,
+      200,
+      runtime.geoCoverageService.coverage({ minLng, minLat, maxLng, maxLat }, level),
     );
   }
 

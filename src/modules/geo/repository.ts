@@ -14,7 +14,18 @@ import type {
   GeographicSiteStatusHistoryEntry,
   GeoOutboxMessage,
 } from './domain.js';
-import type { GeoTenantScope, IGeoRepository } from './geo-repository-interface.js';
+import type {
+  GeographicAddressQuery,
+  GeoTenantScope,
+  IGeoRepository,
+} from './geo-repository-interface.js';
+import {
+  normalizeAddressText,
+  normalizeCountrySearch,
+  normalizePostcodeSearch,
+  normalizeStreetNumberSearch,
+  normalizeStreetSearch,
+} from './address-normalization.js';
 
 type ContainmentRule = {
   parentSpecId: string;
@@ -79,13 +90,25 @@ export class GeoRepository implements IGeoRepository {
     return address ? cloneAddress(address) : undefined;
   }
 
-  public listAddresses(
-    query?: GeoTenantScope & { name?: string; limit?: number; offset?: number },
-  ): GeographicAddress[] {
+  public listAddresses(query?: GeographicAddressQuery): GeographicAddress[] {
+    const street = normalizeStreetSearch(query?.street ?? query?.name);
+    const streetNr = normalizeStreetNumberSearch(query?.streetNr);
+    const city = normalizeAddressText(query?.city);
+    const state = normalizeAddressText(query?.stateOrProvince);
+    const postcode = normalizePostcodeSearch(query?.postcode);
+    const country = normalizeCountrySearch(query?.country);
     const filtered = [...this.addresses.values()].filter(
       (address) =>
         matchesTenant(address.tenantId, query?.tenantId) &&
-        (!query?.name || address.street.toLowerCase().includes(query.name.toLowerCase())),
+        (!query?.id || address.id === query.id) &&
+        (!street || normalizeStreetSearch(address.street).includes(street)) &&
+        (!streetNr || normalizeStreetNumberSearch(address.streetNr) === streetNr) &&
+        (!city || normalizeAddressText(address.city) === city) &&
+        (!state || normalizeAddressText(address.stateOrProvince) === state) &&
+        (!postcode || normalizePostcodeSearch(address.postcode) === postcode) &&
+        (!country || normalizeCountrySearch(address.country) === country) &&
+        (!query?.geographicLocationId ||
+          address.geographicLocationId === query.geographicLocationId),
     );
     const sorted = filtered.sort(
       (a, b) => a.street.localeCompare(b.street) || a.id.localeCompare(b.id),
@@ -95,7 +118,11 @@ export class GeoRepository implements IGeoRepository {
       query?.limit !== undefined
         ? sorted.slice(offset, offset + query.limit)
         : sorted.slice(offset);
-    return sliced.map(cloneAddress);
+    return sliced.map((address) => {
+      const clone = cloneAddress(address);
+      if (query?.includeCharacteristics === false) clone.characteristic = [];
+      return clone;
+    });
   }
 
   public upsertSpec(spec: GeographicSiteSpecification): GeographicSiteSpecification {
@@ -465,14 +492,13 @@ export class GeoRepository implements IGeoRepository {
     scope?: GeoTenantScope & { limit?: number; offset?: number },
   ): GeoBulkJobResult[] {
     const sorted = this.bulkResults
-      .filter(
-        (result) =>
-          result.jobId === jobId && matchesTenant(result.tenantId, scope?.tenantId),
-      )
+      .filter((result) => result.jobId === jobId && matchesTenant(result.tenantId, scope?.tenantId))
       .sort((a, b) => a.index - b.index || a.id.localeCompare(b.id));
     const offset = scope?.offset ?? 0;
     const sliced =
-      scope?.limit !== undefined ? sorted.slice(offset, offset + scope.limit) : sorted.slice(offset);
+      scope?.limit !== undefined
+        ? sorted.slice(offset, offset + scope.limit)
+        : sorted.slice(offset);
     return sliced.map(cloneBulkJobResult);
   }
 

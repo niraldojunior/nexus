@@ -20,18 +20,34 @@ export type GeoTenantScope = {
   tenantId?: string;
 };
 
+export type GeographicAddressQuery = GeoTenantScope & {
+  id?: string;
+  /** Compatibilidade com a busca historica por nome do logradouro. */
+  name?: string;
+  street?: string;
+  streetNr?: string;
+  city?: string;
+  stateOrProvince?: string;
+  postcode?: string;
+  country?: string;
+  geographicLocationId?: string;
+  includeCharacteristics?: boolean;
+  limit?: number;
+  offset?: number;
+};
+
 export interface IGeoRepository {
   transaction<T>(fn: () => Awaitable<T>): Awaitable<T>;
 
   upsertLocation(location: GeographicLocation): Awaitable<GeographicLocation>;
   getLocation(id: string, scope?: GeoTenantScope): Awaitable<GeographicLocation | undefined>;
-  listLocations(query?: GeoTenantScope & { limit?: number; offset?: number }): Awaitable<GeographicLocation[]>;
+  listLocations(
+    query?: GeoTenantScope & { limit?: number; offset?: number },
+  ): Awaitable<GeographicLocation[]>;
 
   upsertAddress(address: GeographicAddress): Awaitable<GeographicAddress>;
   getAddress(id: string, scope?: GeoTenantScope): Awaitable<GeographicAddress | undefined>;
-  listAddresses(
-    query?: GeoTenantScope & { name?: string; limit?: number; offset?: number },
-  ): Awaitable<GeographicAddress[]>;
+  listAddresses(query?: GeographicAddressQuery): Awaitable<GeographicAddress[]>;
 
   upsertSpec(spec: GeographicSiteSpecification): Awaitable<GeographicSiteSpecification>;
   getSpec(id: string): Awaitable<GeographicSiteSpecification | undefined>;
@@ -84,7 +100,9 @@ export interface IGeoRepository {
   ): Awaitable<boolean>;
   listSiteRelationships(siteId: string): Awaitable<GeographicSiteRelationship[]>;
 
-  upsertRelationshipType(relationshipType: GeographicRelationshipType): Awaitable<GeographicRelationshipType>;
+  upsertRelationshipType(
+    relationshipType: GeographicRelationshipType,
+  ): Awaitable<GeographicRelationshipType>;
   getRelationshipType(code: string): Awaitable<GeographicRelationshipType | undefined>;
   listRelationshipTypes(query?: {
     code?: string;
@@ -96,7 +114,10 @@ export interface IGeoRepository {
   appendSiteStatusHistory(
     entry: GeographicSiteStatusHistoryEntry,
   ): Awaitable<GeographicSiteStatusHistoryEntry>;
-  listSiteStatusHistory(siteId: string, scope?: GeoTenantScope): Awaitable<GeographicSiteStatusHistoryEntry[]>;
+  listSiteStatusHistory(
+    siteId: string,
+    scope?: GeoTenantScope,
+  ): Awaitable<GeographicSiteStatusHistoryEntry[]>;
   getSiteReferences(siteId: string, scope?: GeoTenantScope): Awaitable<GeographicSiteReferences>;
   countSiteDescendants(siteId: string, scope?: GeoTenantScope): Awaitable<number>;
 

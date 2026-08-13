@@ -15,7 +15,19 @@ import type {
   GeographicSiteStatusHistoryEntry,
   GeoOutboxMessage,
 } from './domain.js';
-import type { GeoTenantScope, IGeoRepository } from './geo-repository-interface.js';
+import type {
+  GeographicAddressQuery,
+  GeoTenantScope,
+  IGeoRepository,
+} from './geo-repository-interface.js';
+import {
+  addressStreetLikePattern,
+  normalizeAddressText,
+  normalizeCountrySearch,
+  normalizePostcodeSearch,
+  normalizeStreetNumberSearch,
+  normalizeStreetSearch,
+} from './address-normalization.js';
 import type {
   EventRow,
   GeoAuditLogRow,
@@ -154,10 +166,71 @@ export class PostgresGeoRepository implements IGeoRepository {
   public async upsertAddress(address: GeographicAddress): Promise<GeographicAddress> {
     const now = new Date().toISOString();
 
+    if (this.db.provider === 'oracle') {
+      await this.upsertAddressWithoutSearchColumns(address, now);
+      return (await this.getAddress(address.id))!;
+    }
+
     await this.db.run(
       `INSERT INTO tmf_geographic_address
-       (id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
+       (id, href, tenant_id, street_type, street_name, street_search, street_nr, street_nr_search,
+        city, city_search, state_or_province, postcode, postcode_search, country,
         geographic_location_id, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+       href = excluded.href,
+       tenant_id = excluded.tenant_id,
+       street_type = excluded.street_type,
+       street_name = excluded.street_name,
+       street_search = excluded.street_search,
+       street_nr = excluded.street_nr,
+       street_nr_search = excluded.street_nr_search,
+       city = excluded.city,
+       city_search = excluded.city_search,
+       state_or_province = excluded.state_or_province,
+       postcode = excluded.postcode,
+       postcode_search = excluded.postcode_search,
+       country = excluded.country,
+       geographic_location_id = excluded.geographic_location_id,
+       valid_for_start = excluded.valid_for_start,
+       valid_for_end = excluded.valid_for_end,
+       characteristics = excluded.characteristics,
+       updated_at = excluded.updated_at`,
+      [
+        address.id,
+        address.href,
+        address.tenantId ?? 'default',
+        null,
+        address.street,
+        normalizeStreetSearch(address.street),
+        address.streetNr || null,
+        normalizeStreetNumberSearch(address.streetNr) || null,
+        address.city || null,
+        normalizeAddressText(address.city) || null,
+        address.stateOrProvince || null,
+        address.postcode || null,
+        normalizePostcodeSearch(address.postcode) || null,
+        address.country || null,
+        address.geographicLocationId || null,
+        address.validFor?.startDateTime || null,
+        address.validFor?.endDateTime || null,
+        JSON.stringify(address.characteristic),
+        now,
+        now,
+      ],
+    );
+
+    return (await this.getAddress(address.id))!;
+  }
+
+  private async upsertAddressWithoutSearchColumns(
+    address: GeographicAddress,
+    now: string,
+  ): Promise<void> {
+    await this.db.run(
+      `INSERT INTO tmf_geographic_address
+       (id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode,
+        country, geographic_location_id, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
@@ -193,8 +266,6 @@ export class PostgresGeoRepository implements IGeoRepository {
         now,
       ],
     );
-
-    return (await this.getAddress(address.id))!;
   }
 
   public async getAddress(
@@ -217,9 +288,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     return row ? this.mapAddressRow(row) : undefined;
   }
 
-  public async listAddresses(
-    query?: GeoTenantScope & { name?: string; limit?: number; offset?: number },
-  ): Promise<GeographicAddress[]> {
+  public async listAddresses(query?: GeographicAddressQuery): Promise<GeographicAddress[]> {
     const conditions: string[] = [];
     const params: Array<string | number> = [];
 
@@ -227,16 +296,75 @@ export class PostgresGeoRepository implements IGeoRepository {
       conditions.push('tenant_id = ?');
       params.push(query.tenantId);
     }
-    if (query?.name) {
-      conditions.push('LOWER(street_name) LIKE LOWER(?)');
-      params.push(`%${query.name}%`);
+    if (query?.id) {
+      conditions.push('id = ?');
+      params.push(query.id);
+    }
+    const street = normalizeStreetSearch(query?.street ?? query?.name);
+    if (street) {
+      const streetSearch =
+        this.db.provider === 'oracle'
+          ? `LOWER(TRANSLATE(street_name,
+              'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
+              'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc'))`
+          : 'street_search';
+      conditions.push(`(${streetSearch} = ? OR ${streetSearch} LIKE ?)`);
+      params.push(street, addressStreetLikePattern(street));
+    }
+    const streetNr = normalizeStreetNumberSearch(query?.streetNr);
+    if (streetNr) {
+      conditions.push(
+        this.db.provider === 'oracle'
+          ? "LOWER(REPLACE(REPLACE(COALESCE(street_nr, ''), ' ', ''), '-', '')) = ?"
+          : 'street_nr_search = ?',
+      );
+      params.push(streetNr);
+    }
+    const city = normalizeAddressText(query?.city);
+    if (city) {
+      conditions.push(
+        this.db.provider === 'oracle'
+          ? `LOWER(TRANSLATE(COALESCE(city, ''),
+              'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
+              'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc')) = ?`
+          : 'city_search = ?',
+      );
+      params.push(city);
+    }
+    const state = normalizeAddressText(query?.stateOrProvince);
+    if (state) {
+      conditions.push('LOWER(state_or_province) = LOWER(?)');
+      params.push(state);
+    }
+    const postcode = normalizePostcodeSearch(query?.postcode);
+    if (postcode) {
+      conditions.push(
+        this.db.provider === 'oracle'
+          ? "REPLACE(REPLACE(COALESCE(postcode, ''), ' ', ''), '-', '') = ?"
+          : 'postcode_search = ?',
+      );
+      params.push(postcode);
+    }
+    const country = normalizeCountrySearch(query?.country);
+    if (country) {
+      if (country === 'BR') {
+        conditions.push("UPPER(country) IN ('BR', 'BRA', 'BRASIL', 'BRAZIL')");
+      } else {
+        conditions.push('UPPER(country) = ?');
+        params.push(country);
+      }
+    }
+    if (query?.geographicLocationId) {
+      conditions.push('geographic_location_id = ?');
+      params.push(query.geographicLocationId);
     }
 
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
       `SELECT id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
-              geographic_location_id, valid_for_start, valid_for_end, characteristics
+              geographic_location_id, valid_for_start, valid_for_end,
+              ${query?.includeCharacteristics === false ? 'NULL' : 'characteristics'} AS characteristics
        FROM tmf_geographic_address`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY street_name, id',

@@ -40,6 +40,10 @@ const getPendingConfirmationLabel = (pending?: PendingConfirmationMetadata): str
   if (pending.operation === 'delete_equipment_model') return 'Confirmar remoção';
   if (pending.operation === 'create_equipment_models') return 'Confirmar cadastro';
   if (pending.operation === 'create_equipment_model') return 'Confirmar cadastro';
+  if (pending.operation === 'create_condominium') return 'Confirmar cadastro';
+  if (pending.operation === 'create_address') return 'Confirmar cadastro';
+  if (pending.operation === 'create_site') return 'Confirmar cadastro';
+  if (pending.operation === 'update_physical_resource') return 'Confirmar atualização';
   return 'Confirmar operação';
 };
 
@@ -48,6 +52,10 @@ const getPendingConfirmationTitle = (pending?: PendingConfirmationMetadata): str
   if (pending.operation === 'create_equipment_models') return 'Cadastro em lote pendente';
   if (pending.operation === 'delete_equipment_model') return 'Remoção pendente';
   if (pending.operation === 'create_equipment_model') return 'Cadastro pendente';
+  if (pending.operation === 'create_condominium') return 'Cadastro de condomínio pendente';
+  if (pending.operation === 'create_address') return 'Cadastro de endereço pendente';
+  if (pending.operation === 'create_site') return 'Cadastro de site pendente';
+  if (pending.operation === 'update_physical_resource') return 'Atualização pendente';
   return 'Operação pendente';
 };
 
@@ -83,7 +91,9 @@ export const ResearchPage: React.FC<{
   const [loadingSession, setLoadingSession] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [confirmingToken, setConfirmingToken] = useState<string | null>(null);
-  const [resolvedConfirmationTokens, setResolvedConfirmationTokens] = useState<Set<string>>(() => new Set());
+  const [resolvedConfirmationTokens, setResolvedConfirmationTokens] = useState<Set<string>>(
+    () => new Set(),
+  );
   const pendingMessageIdRef = useRef<string | null>(null);
   const activeTurnAnchorRef = useRef<HTMLDivElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
@@ -118,7 +128,7 @@ export const ResearchPage: React.FC<{
 
       if (!response.ok) throw new Error('Erro ao carregar conversa');
 
-      const data = await response.json() as ResearchSession;
+      const data = (await response.json()) as ResearchSession;
       setSession(data);
       setMessages((data.messages || []).filter((m) => m.role !== 'system'));
     } catch (err) {
@@ -189,7 +199,10 @@ export const ResearchPage: React.FC<{
       });
 
       setMessages((prev) => [
-        ...prev.filter((message) => message.id !== optimisticUserMessage.id && message.id !== optimisticAssistantId),
+        ...prev.filter(
+          (message) =>
+            message.id !== optimisticUserMessage.id && message.id !== optimisticAssistantId,
+        ),
         result.userMessage,
         result.assistantMessage,
       ]);
@@ -211,7 +224,10 @@ export const ResearchPage: React.FC<{
         );
       } else {
         setMessages((prev) =>
-          prev.filter((message) => message.id !== optimisticUserMessage.id && message.id !== optimisticAssistantId),
+          prev.filter(
+            (message) =>
+              message.id !== optimisticUserMessage.id && message.id !== optimisticAssistantId,
+          ),
         );
         setInput(userInput);
         setError(err instanceof Error ? err.message : 'Erro desconhecido');
@@ -241,7 +257,7 @@ export const ResearchPage: React.FC<{
       });
 
       if (response.ok) {
-        const updated = await response.json() as ResearchSession;
+        const updated = (await response.json()) as ResearchSession;
         setSession(updated);
         onSessionUpdated?.(updated);
       }
@@ -257,7 +273,10 @@ export const ResearchPage: React.FC<{
     setConfirmingToken(pending.confirmationToken);
 
     try {
-      const result: ResearchConfirmationResponse = await confirmResearchSessionAction(session.id, pending.confirmationToken);
+      const result: ResearchConfirmationResponse = await confirmResearchSessionAction(
+        session.id,
+        pending.confirmationToken,
+      );
       setResolvedConfirmationTokens((current) => {
         const next = new Set(current);
         next.add(pending.confirmationToken);
@@ -292,14 +311,15 @@ export const ResearchPage: React.FC<{
     }
   };
 
-  const readPendingConfirmation = (message: Message): PendingConfirmationMetadata | undefined => {
-    const confirmation = message.metadata?.pendingConfirmation;
+  const parsePendingConfirmation = (
+    confirmation: unknown,
+  ): PendingConfirmationMetadata | undefined => {
     if (!confirmation || typeof confirmation !== 'object') return undefined;
     const record = confirmation as Record<string, unknown>;
     const confirmationToken = record.confirmationToken;
     if (typeof confirmationToken !== 'string' || !confirmationToken.trim()) return undefined;
 
-  return {
+    return {
       confirmationToken,
       ...(typeof record.summary === 'string' ? { summary: record.summary } : {}),
       ...(typeof record.expiresAt === 'string' ? { expiresAt: record.expiresAt } : {}),
@@ -311,7 +331,11 @@ export const ResearchPage: React.FC<{
               .filter((item): item is PendingConfirmationItem => {
                 if (!item || typeof item !== 'object') return false;
                 const entry = item as Record<string, unknown>;
-                return typeof entry.model === 'string' && typeof entry.manufacturerName === 'string' && typeof entry.equipmentType === 'string';
+                return (
+                  typeof entry.model === 'string' &&
+                  typeof entry.manufacturerName === 'string' &&
+                  typeof entry.equipmentType === 'string'
+                );
               })
               .map((item) => ({
                 model: item.model,
@@ -321,6 +345,17 @@ export const ResearchPage: React.FC<{
           }
         : {}),
     };
+  };
+
+  const readPendingConfirmations = (message: Message): PendingConfirmationMetadata[] => {
+    const confirmations = message.metadata?.pendingConfirmations;
+    if (Array.isArray(confirmations)) {
+      return confirmations
+        .map(parsePendingConfirmation)
+        .filter((item): item is PendingConfirmationMetadata => Boolean(item));
+    }
+    const legacy = parsePendingConfirmation(message.metadata?.pendingConfirmation);
+    return legacy ? [legacy] : [];
   };
 
   if (loadingSession) {
@@ -351,9 +386,7 @@ export const ResearchPage: React.FC<{
         <div className="flex w-full items-center justify-between gap-4">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <Diamond size={7} />
-            <h1 className="truncate text-[0.98rem] font-semibold text-app-text">
-              {session.title}
-            </h1>
+            <h1 className="truncate text-[0.98rem] font-semibold text-app-text">{session.title}</h1>
           </div>
           <button
             onClick={handleDelete}
@@ -375,79 +408,25 @@ export const ResearchPage: React.FC<{
       {/* Scrollable Messages Area - Middle */}
       <div ref={messagesScrollRef} className="flex-1 overflow-y-auto px-6 py-2">
         <div className="mx-auto flex min-h-full w-full max-w-[780px] flex-col justify-start gap-5 pb-10 pt-8">
-            {messages.length === 0 ? (
-              <div className="flex min-h-[240px] items-center justify-center text-center">
-                <p className="text-app-muted">Inicie uma conversa...</p>
-              </div>
-            ) : (
-              messages.map((msg) => (
-                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  {msg.role === 'user' ? (
-                    <div className="flex w-full flex-col gap-3">
-                      {pendingMessageIdRef.current === msg.id ? (
-                        <div ref={activeTurnAnchorRef} className="h-1 w-full" />
-                      ) : null}
-                      <div className="ml-auto w-fit max-w-[760px] rounded-[24px] border border-app-border bg-white px-6 py-5 shadow-sm">
-                        <p className="whitespace-pre-wrap text-[0.92rem] leading-[1.6] tracking-[-0.01em] text-app-text">
-                          {msg.content}
-                        </p>
-                        <div className="mt-3 text-xs text-app-muted">
-                          {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </div>
-                      </div>
-                      {sendingMessage && pendingMessageIdRef.current === msg.id ? (
-                        <CopilotPendingResponse />
-                      ) : null}
-                    </div>
-                  ) : (
-                  <div className="w-full">
-                    <MarkdownMessage content={msg.content} />
-                      {(() => {
-                        const pending = readPendingConfirmation(msg);
-                        if (!pending) return null;
-                        if (resolvedConfirmationTokens.has(pending.confirmationToken)) return null;
-                        const isConfirming = confirmingToken === pending.confirmationToken;
-                        return (
-                          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-app-border border-l-[3px] border-l-app-accent bg-white px-4 py-3 shadow-soft">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-                                <Diamond size={6} />
-                                {getPendingConfirmationTitle(pending)}
-                              </div>
-                              <div className="mt-1 text-[0.92rem] leading-[1.55] text-app-text">
-                                {pending.summary ?? 'Confirme para concluir a operação.'}
-                              </div>
-                              {pending.items?.length ? (
-                                <div className="mt-3 space-y-2">
-                                  {pending.items.map((item) => (
-                                    <div
-                                      key={`${item.manufacturerName}-${item.equipmentType}-${item.model}`}
-                                      className="rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text shadow-soft"
-                                    >
-                                      {formatPendingItemLabel(item)}
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                void handleConfirmPending(msg, pending);
-                              }}
-                              disabled={isConfirming}
-                              style={{ border: '2px solid #000000' }}
-                              className="inline-flex items-center gap-2 rounded-[16px] !border-2 !border-black bg-white px-4 py-2 text-[0.9rem] font-semibold text-app-text shadow-soft transition hover:bg-app-accent-soft disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {isConfirming ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                              <span>{isConfirming ? 'Confirmando...' : getPendingConfirmationLabel(pending)}</span>
-                            </button>
-                          </div>
-                        );
-                      })()}
+          {messages.length === 0 ? (
+            <div className="flex min-h-[240px] items-center justify-center text-center">
+              <p className="text-app-muted">Inicie uma conversa...</p>
+            </div>
+          ) : (
+            messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                {msg.role === 'user' ? (
+                  <div className="flex w-full flex-col gap-3">
+                    {pendingMessageIdRef.current === msg.id ? (
+                      <div ref={activeTurnAnchorRef} className="h-1 w-full" />
+                    ) : null}
+                    <div className="ml-auto w-fit max-w-[760px] rounded-[24px] border border-app-border bg-white px-6 py-5 shadow-sm">
+                      <p className="whitespace-pre-wrap text-[0.92rem] leading-[1.6] tracking-[-0.01em] text-app-text">
+                        {msg.content}
+                      </p>
                       <div className="mt-3 text-xs text-app-muted">
                         {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
                           hour: '2-digit',
@@ -455,10 +434,85 @@ export const ResearchPage: React.FC<{
                         })}
                       </div>
                     </div>
-                  )}
-                </div>
-              ))
-            )}
+                    {sendingMessage && pendingMessageIdRef.current === msg.id ? (
+                      <CopilotPendingResponse />
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="w-full">
+                    <MarkdownMessage content={msg.content} />
+                    {(() => {
+                      const pendingItems = readPendingConfirmations(msg).filter(
+                        (pending) => !resolvedConfirmationTokens.has(pending.confirmationToken),
+                      );
+                      if (pendingItems.length === 0) return null;
+                      return (
+                        <div className="mt-4 space-y-3">
+                          {pendingItems.map((pending) => {
+                            const isConfirming = confirmingToken === pending.confirmationToken;
+                            return (
+                              <div
+                                key={pending.confirmationToken}
+                                className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-app-border border-l-[3px] border-l-app-accent bg-white px-4 py-3 shadow-soft"
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+                                    <Diamond size={6} />
+                                    {getPendingConfirmationTitle(pending)}
+                                  </div>
+                                  <div className="mt-1 text-[0.92rem] leading-[1.55] text-app-text">
+                                    {pending.summary ?? 'Confirme para concluir a operação.'}
+                                  </div>
+                                  {pending.items?.length ? (
+                                    <div className="mt-3 space-y-2">
+                                      {pending.items.map((item) => (
+                                        <div
+                                          key={`${item.manufacturerName}-${item.equipmentType}-${item.model}`}
+                                          className="rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text shadow-soft"
+                                        >
+                                          {formatPendingItemLabel(item)}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void handleConfirmPending(msg, pending);
+                                  }}
+                                  disabled={isConfirming}
+                                  style={{ border: '2px solid #000000' }}
+                                  className="inline-flex items-center gap-2 rounded-[16px] !border-2 !border-black bg-white px-4 py-2 text-[0.9rem] font-semibold text-app-text shadow-soft transition hover:bg-app-accent-soft disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {isConfirming ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="h-4 w-4" />
+                                  )}
+                                  <span>
+                                    {isConfirming
+                                      ? 'Confirmando...'
+                                      : getPendingConfirmationLabel(pending)}
+                                  </span>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                    <div className="mt-3 text-xs text-app-muted">
+                      {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </div>
       </div>
 

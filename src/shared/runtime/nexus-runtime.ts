@@ -100,6 +100,10 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
       if (location) {
         return { id: location.id, '@referredType': 'GeographicLocation', href: location.href };
       }
+      const address = await geoService.getAddress(id);
+      if (address) {
+        return { id: address.id, '@referredType': 'GeographicAddress', href: address.href };
+      }
       return undefined;
     },
     lookupParty: async (id) => {

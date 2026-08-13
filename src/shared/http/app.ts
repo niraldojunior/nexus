@@ -83,7 +83,6 @@ type OpenAIChatRequestBody = {
   max_tokens?: unknown;
 };
 
-
 type AppDependencies = {
   config: AppConfig;
   logger: Logger;
@@ -197,10 +196,7 @@ export const createApp = ({ config, logger }: AppDependencies) => {
           'AUTH_JWT_SECRET não definido: login de usuário indisponível (apenas token estático).',
         );
       } else if (!config.adminEmail || !config.adminPassword) {
-        logger.warn(
-          {},
-          'ADMIN_EMAIL/ADMIN_PASSWORD não definidos: nenhum admin semente criado.',
-        );
+        logger.warn({}, 'ADMIN_EMAIL/ADMIN_PASSWORD não definidos: nenhum admin semente criado.');
       }
 
       const port = await new Promise<number>((resolve) => {
@@ -355,7 +351,10 @@ const routeRequest = async ({
 
     const chatProvider = resolveResearchProvider(parsed.model, { chatGptProvider, geminiProvider });
     if (!chatProvider) {
-      logger.warn({ model: parsed.model }, 'No LLM provider configured; returning fallback completion');
+      logger.warn(
+        { model: parsed.model },
+        'No LLM provider configured; returning fallback completion',
+      );
       const fallbackCompletion = await localKnowledgeProvider.complete(messages, parsed.model);
       return sendFallbackChatCompletion(response, parsed.model, fallbackCompletion.content);
     }
@@ -1252,7 +1251,7 @@ const routeGeoRequest = async ({
       return sendJson(
         response,
         200,
-        geoService.listAddresses(parseGeoListQuery(url.searchParams), geoContext),
+        geoService.listAddresses(parseGeoAddressListQuery(url.searchParams), geoContext),
       );
     if (!route.id && request.method === 'POST')
       return sendJson(
@@ -2247,6 +2246,32 @@ const parseGeoListQuery = (
   const characteristicValue = params.get('characteristicValue');
   if (characteristicValue !== null) {
     (query as { characteristicValue?: string }).characteristicValue = characteristicValue;
+  }
+  const limit = parseOptionalNumber(params.get('limit'));
+  if (limit !== undefined) query.limit = limit;
+  const offset = parseOptionalNumber(params.get('offset'));
+  if (offset !== undefined) query.offset = offset;
+  return query;
+};
+
+const parseGeoAddressListQuery = (
+  params: URLSearchParams,
+): NonNullable<Parameters<GeoService['listAddresses']>[0]> => {
+  const query: NonNullable<Parameters<GeoService['listAddresses']>[0]> = {};
+  const stringFilters = [
+    ['id', 'id'],
+    ['name', 'name'],
+    ['street', 'street'],
+    ['streetNr', 'streetNr'],
+    ['city', 'city'],
+    ['stateOrProvince', 'stateOrProvince'],
+    ['postcode', 'postcode'],
+    ['country', 'country'],
+    ['geographicLocationId', 'geographicLocationId'],
+  ] as const;
+  for (const [parameter, property] of stringFilters) {
+    const value = params.get(parameter);
+    if (value?.trim()) Object.assign(query, { [property]: value });
   }
   const limit = parseOptionalNumber(params.get('limit'));
   if (limit !== undefined) query.limit = limit;
@@ -3502,6 +3527,10 @@ const buildConfirmationOperationLabel = (operation: string): string => {
   if (operation === 'create_equipment_model') return 'cadastro';
   if (operation === 'create_equipment_models') return 'cadastro em lote';
   if (operation === 'delete_equipment_model') return 'remocao';
+  if (operation === 'create_condominium') return 'cadastro do condominio';
+  if (operation === 'create_address') return 'cadastro do endereco';
+  if (operation === 'create_site') return 'cadastro do site';
+  if (operation === 'update_physical_resource') return 'atualizacao do recurso';
   return 'operacao';
 };
 
@@ -3514,6 +3543,18 @@ const buildConfirmationOutcomeMessage = (
   commitResult: { ok: boolean; data: unknown; error?: { code?: string; message?: string } },
 ): string => {
   if (commitResult.ok) {
+    if (
+      pendingConfirmation.domain === 'geo' &&
+      pendingConfirmation.operation === 'create_condominium'
+    ) {
+      const result = commitResult.data as {
+        condominium?: { name?: string };
+        blocks?: Array<{ site?: { name?: string }; cdoi?: { name?: string } }>;
+      };
+      const name = result.condominium?.name ?? 'Condominio';
+      return `${name} cadastrado com ${result.blocks?.length ?? 0} blocos e CDOIs vinculadas com sucesso.`;
+    }
+
     if (
       pendingConfirmation.domain === 'resource' &&
       pendingConfirmation.operation === 'create_equipment_models'

@@ -15,10 +15,15 @@ import { getNexusCopilotContext } from './nexus-copilot-context.js';
 type Awaitable<T> = T | Promise<T>;
 
 type ResearchRepository = {
-  createSession(session: Omit<ResearchSession, 'createdAt' | 'updatedAt'>): Awaitable<ResearchSession>;
+  createSession(
+    session: Omit<ResearchSession, 'createdAt' | 'updatedAt'>,
+  ): Awaitable<ResearchSession>;
   getSession(sessionId: string): Awaitable<ResearchSession | undefined>;
   listSessionsByUser(userId: string, limit?: number): Awaitable<ResearchSession[]>;
-  addMessage(sessionId: string, message: AddMessageInput & { id: string }): Awaitable<ResearchMessage>;
+  addMessage(
+    sessionId: string,
+    message: AddMessageInput & { id: string },
+  ): Awaitable<ResearchMessage>;
   updateSessionTitle(sessionId: string, title: string): Awaitable<ResearchSession | undefined>;
   archiveSession(sessionId: string): Awaitable<ResearchSession | undefined>;
 };
@@ -92,7 +97,10 @@ export class SearchService {
     llmProvider: (request: LLMRequest) => Promise<LLMResponse>,
     options?: {
       tools?: LLMToolDefinition[];
-      executeTool?: (toolName: string, input: Record<string, unknown>) => Promise<unknown> | unknown;
+      executeTool?: (
+        toolName: string,
+        input: Record<string, unknown>,
+      ) => Promise<unknown> | unknown;
       maxToolCalls?: number;
       onDelta?: (textChunk: string) => void;
       signal?: AbortSignal;
@@ -125,12 +133,7 @@ export class SearchService {
         ...(options?.onDelta ? { onDelta: options.onDelta } : {}),
         ...(options?.signal ? { signal: options.signal } : {}),
       };
-      llmResponse = await this.runToolLoop(
-        llmRequest,
-        llmProvider,
-        toolExecutions,
-        options,
-      );
+      llmResponse = await this.runToolLoop(llmRequest, llmProvider, toolExecutions, options);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       llmResponse = {
@@ -143,15 +146,20 @@ export class SearchService {
       };
     }
 
-    const pendingConfirmation = extractPendingConfirmation(toolExecutions);
-    if (pendingConfirmation) {
-      const pendingMessage = buildPendingConfirmationMessage(pendingConfirmation);
+    const pendingConfirmations = extractPendingConfirmations(toolExecutions);
+    if (pendingConfirmations.length > 0) {
+      const pendingConfirmation = pendingConfirmations[0]!;
+      const pendingMessage =
+        pendingConfirmations.length === 1
+          ? buildPendingConfirmationMessage(pendingConfirmation)
+          : `${pendingConfirmations.length} operacoes foram preparadas. Revise e confirme cada uma para concluir.`;
       llmResponse = {
         ...llmResponse,
         content: pendingMessage,
         metadata: {
           ...(llmResponse.metadata ?? {}),
           pendingConfirmation,
+          pendingConfirmations,
         },
       };
     }
@@ -183,7 +191,10 @@ export class SearchService {
   /**
    * Update session title (e.g., auto-generate from first message)
    */
-  public async updateSessionTitle(sessionId: string, title: string): Promise<ResearchSession | undefined> {
+  public async updateSessionTitle(
+    sessionId: string,
+    title: string,
+  ): Promise<ResearchSession | undefined> {
     return await this.repository.updateSessionTitle(sessionId, title);
   }
 
@@ -200,7 +211,10 @@ export class SearchService {
     toolExecutions: ToolExecutionRecord[],
     options?: {
       tools?: LLMToolDefinition[];
-      executeTool?: (toolName: string, input: Record<string, unknown>) => Promise<unknown> | unknown;
+      executeTool?: (
+        toolName: string,
+        input: Record<string, unknown>,
+      ) => Promise<unknown> | unknown;
       maxToolCalls?: number;
     },
   ): Promise<LLMResponse> {
@@ -305,26 +319,59 @@ type PendingConfirmationItem = {
 const buildPendingConfirmationMessage = (pendingConfirmation: PendingConfirmation): string => {
   const itemCount = pendingConfirmation.items?.length ?? 0;
 
-  if (pendingConfirmation.domain === 'resource' && pendingConfirmation.operation === 'create_equipment_models') {
+  if (
+    pendingConfirmation.domain === 'resource' &&
+    pendingConfirmation.operation === 'create_equipment_models'
+  ) {
     return itemCount > 0
       ? `Cadastro preparado. Revise os ${itemCount} itens abaixo e confirme para concluir.`
       : 'Cadastro preparado. Revise os itens abaixo e confirme para concluir.';
   }
 
-  if (pendingConfirmation.domain === 'resource' && pendingConfirmation.operation === 'delete_equipment_model') {
+  if (
+    pendingConfirmation.domain === 'resource' &&
+    pendingConfirmation.operation === 'delete_equipment_model'
+  ) {
     return 'Remocao preparada. Clique em Confirmar remocao para concluir.';
   }
 
-  if (pendingConfirmation.domain === 'resource' && pendingConfirmation.operation === 'create_equipment_model') {
+  if (
+    pendingConfirmation.domain === 'resource' &&
+    pendingConfirmation.operation === 'create_equipment_model'
+  ) {
     return 'Cadastro preparado. Clique em Confirmar cadastro para concluir.';
+  }
+
+  if (
+    pendingConfirmation.domain === 'geo' &&
+    pendingConfirmation.operation === 'create_condominium'
+  ) {
+    return 'Cadastro do condominio preparado. Revise os blocos e as CDOIs e confirme para concluir.';
+  }
+
+  if (
+    pendingConfirmation.domain === 'geo' &&
+    (pendingConfirmation.operation === 'create_address' ||
+      pendingConfirmation.operation === 'create_site')
+  ) {
+    return 'Cadastro preparado. Revise os dados e confirme para concluir.';
+  }
+
+  if (
+    pendingConfirmation.domain === 'resource' &&
+    pendingConfirmation.operation === 'update_physical_resource'
+  ) {
+    return 'Atualizacao preparada. Revise os dados e confirme para concluir.';
   }
 
   return 'Operacao preparada. Clique em confirmar para concluir.';
 };
 
-const extractPendingConfirmation = (
+const extractPendingConfirmations = (
   toolExecutions: ToolExecutionRecord[],
-): PendingConfirmation | undefined => {
+): PendingConfirmation[] => {
+  const pendingConfirmations: PendingConfirmation[] = [];
+  const seenTokens = new Set<string>();
   for (const execution of toolExecutions) {
     const result = execution.result as { data?: Record<string, unknown> } | undefined;
     const data = result?.data;
@@ -335,23 +382,27 @@ const extractPendingConfirmation = (
     if (typeof confirmationToken !== 'string' || confirmationToken.trim().length === 0) {
       continue;
     }
+    if (seenTokens.has(confirmationToken)) continue;
+    seenTokens.add(confirmationToken);
 
     const pendingItems = extractPendingConfirmationItems(data);
 
-    return {
+    pendingConfirmations.push({
       confirmationToken,
       domain: execution.toolName.split('.')[0] ?? 'mcp',
       operation: execution.toolName.split('.').slice(1).join('.'),
       ...(typeof data.summary === 'string' ? { summary: data.summary } : {}),
       ...(typeof data.expiresAt === 'string' ? { expiresAt: data.expiresAt } : {}),
       ...(pendingItems.length > 0 ? { items: pendingItems } : {}),
-    };
+    });
   }
 
-  return undefined;
+  return pendingConfirmations;
 };
 
-const extractPendingConfirmationItems = (data: Record<string, unknown>): PendingConfirmationItem[] => {
+const extractPendingConfirmationItems = (
+  data: Record<string, unknown>,
+): PendingConfirmationItem[] => {
   const payload = data.payload as Record<string, unknown> | undefined;
   const itemsSource: unknown[] = Array.isArray(data.items)
     ? data.items
@@ -363,7 +414,11 @@ const extractPendingConfirmationItems = (data: Record<string, unknown>): Pending
     .filter((item): item is PendingConfirmationItem => {
       if (!item || typeof item !== 'object') return false;
       const record = item as Record<string, unknown>;
-      return typeof record.model === 'string' && typeof record.manufacturerName === 'string' && typeof record.equipmentType === 'string';
+      return (
+        typeof record.model === 'string' &&
+        typeof record.manufacturerName === 'string' &&
+        typeof record.equipmentType === 'string'
+      );
     })
     .map((item) => ({
       model: item.model,

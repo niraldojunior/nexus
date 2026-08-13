@@ -29,7 +29,8 @@ import type {
   GeoOutboxMessage,
   TimePeriod,
 } from './domain.js';
-import type { IGeoRepository } from './geo-repository-interface.js';
+import type { GeographicAddressQuery, IGeoRepository } from './geo-repository-interface.js';
+import { normalizeCountrySearch } from './address-normalization.js';
 
 type LocationInput = {
   geometryType: 'Point' | 'LineString' | 'Polygon';
@@ -41,7 +42,7 @@ type LocationInput = {
   characteristic?: Characteristic[];
 };
 
-type AddressInput = {
+export type AddressInput = {
   street: string;
   streetNr?: string;
   city?: string;
@@ -69,7 +70,7 @@ type SpecInput = {
   specCharacteristic?: GeographicSiteSpecificationCharacteristic[];
 };
 
-type SiteInput = {
+export type SiteInput = {
   name: string;
   status?: GeoSiteStatus | GeoSiteStatusAlias;
   statusDate?: string;
@@ -182,7 +183,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     category: 'Region',
     description: 'Agrupador territorial hierárquico para estados, regiões e macroáreas.',
     allowedParentCodes: ['REGION'],
-    allowedChildCodes: ['REGION', 'CO', 'POP', 'CABINET', 'INSTALLATION_POINT'],
+    allowedChildCodes: ['REGION', 'CO', 'POP', 'CABINET', 'INSTALLATION_POINT', 'CONDOMINIUM'],
   },
   {
     name: 'Functional Group',
@@ -222,6 +223,22 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     category: 'Site',
     description: 'Ponto de instalação associado ao atendimento.',
     allowedParentCodes: ['REGION'],
+    allowedChildCodes: [],
+  },
+  {
+    name: 'Condominium',
+    code: 'CONDOMINIUM',
+    category: 'Site',
+    description: 'Condominio residencial ou comercial que agrupa blocos fisicos no mesmo endereco.',
+    allowedParentCodes: ['REGION'],
+    allowedChildCodes: ['BLOCK'],
+  },
+  {
+    name: 'Building Block',
+    code: 'BLOCK',
+    category: 'SubSite',
+    description: 'Bloco fisico subordinado a um condominio.',
+    allowedParentCodes: ['CONDOMINIUM'],
     allowedChildCodes: [],
   },
   {
@@ -289,6 +306,39 @@ const BOOTSTRAP_RELATIONSHIP_TYPES: RelationshipTypeInput[] = [
   },
 ];
 
+const sameStringSet = (left: readonly string[], right: readonly string[]): boolean =>
+  left.length === right.length && new Set(left).size === new Set([...left, ...right]).size;
+
+const matchesBootstrapSpecification = (
+  existing: GeographicSiteSpecification,
+  definition: BootstrapDefinition,
+): boolean =>
+  existing.name === definition.name &&
+  existing.code === definition.code &&
+  existing.description === definition.description &&
+  existing.category === definition.category &&
+  existing.lifecycleStatus === 'Active' &&
+  existing._bootstrapProtected === true;
+
+const matchesBootstrapRelationshipType = (
+  existing: GeographicRelationshipType,
+  definition: RelationshipTypeInput,
+): boolean => {
+  const inverseCode = definition.inverseCode ?? definition.code;
+  const cardinality = definition.cardinality;
+  return (
+    existing.name === (definition.name ?? definition.code) &&
+    existing.inverseCode === inverseCode &&
+    existing.symmetric === (definition.symmetric ?? definition.code === inverseCode) &&
+    sameStringSet(existing.allowedSourceCategories, definition.allowedSourceCategories ?? []) &&
+    sameStringSet(existing.allowedTargetCategories, definition.allowedTargetCategories ?? []) &&
+    existing.cardinality?.maxSourcePerTarget === cardinality?.maxSourcePerTarget &&
+    existing.cardinality?.maxTargetPerSource === cardinality?.maxTargetPerSource &&
+    existing.lifecycleStatus === (definition.lifecycleStatus ?? 'Active') &&
+    existing._bootstrapProtected === true
+  );
+};
+
 const DEFAULT_CONTEXT: RequestContext = {
   actorSub: 'system',
   tenantId: 'default',
@@ -323,84 +373,98 @@ export class GeoService {
   }> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, CATALOG_ROLE);
-    let created = 0;
-    let updated = 0;
-    const codeToSpec = new Map<string, GeographicSiteSpecification>();
+    return await this.repository.transaction(async () => {
+      let created = 0;
+      let updated = 0;
+      const existingSpecs = await this.repository.listSpecs();
+      const codeToSpec = new Map(
+        existingSpecs.map((spec) => [spec.code.toUpperCase(), spec] as const),
+      );
 
-    for (const definition of BOOTSTRAP_SPECIFICATIONS) {
-      const existing = await this.repository.getSpecByCode(definition.code);
-      if (!existing) {
-        created += 1;
-        const createdSpec = await this.repository.upsertSpec(
-          this.buildSpecRecord({
-            id: createCanonicalId(),
-            name: definition.name,
-            code: definition.code,
-            description: definition.description,
-            category: definition.category,
-            lifecycleStatus: 'Active',
-            validFor: {},
-            specCharacteristic: [],
-            allowedParentSpecIds: [],
-            allowedChildSpecIds: [],
-            bootstrapProtected: true,
-          }),
-        );
-        codeToSpec.set(definition.code, createdSpec);
-        continue;
+      for (const definition of BOOTSTRAP_SPECIFICATIONS) {
+        const existing = codeToSpec.get(definition.code);
+        if (!existing) {
+          created += 1;
+          const createdSpec = await this.repository.upsertSpec(
+            this.buildSpecRecord({
+              id: createCanonicalId(),
+              name: definition.name,
+              code: definition.code,
+              description: definition.description,
+              category: definition.category,
+              lifecycleStatus: 'Active',
+              validFor: {},
+              specCharacteristic: [],
+              allowedParentSpecIds: [],
+              allowedChildSpecIds: [],
+              bootstrapProtected: true,
+            }),
+          );
+          codeToSpec.set(definition.code, createdSpec);
+          continue;
+        }
+
+        if (!matchesBootstrapSpecification(existing, definition)) {
+          updated += 1;
+          const updatedSpec = await this.repository.upsertSpec(
+            this.buildSpecRecord({
+              id: existing.id,
+              name: definition.name,
+              code: definition.code,
+              description: definition.description,
+              category: definition.category,
+              lifecycleStatus: 'Active',
+              ...(existing.validFor ? { validFor: existing.validFor } : {}),
+              specCharacteristic: existing.specCharacteristic,
+              allowedParentSpecIds: existing.allowedParentSpecIds,
+              allowedChildSpecIds: existing.allowedChildSpecIds,
+              bootstrapProtected: true,
+            }),
+          );
+          codeToSpec.set(definition.code, updatedSpec);
+        }
       }
 
-      updated += 1;
-      const updatedSpec = await this.repository.upsertSpec(
-        this.buildSpecRecord({
-          id: existing.id,
-          name: definition.name,
-          code: definition.code,
-          description: definition.description,
-          category: definition.category,
-          lifecycleStatus: 'Active',
-          ...(existing.validFor ? { validFor: existing.validFor } : {}),
-          specCharacteristic: existing.specCharacteristic,
-          allowedParentSpecIds: existing.allowedParentSpecIds,
-          allowedChildSpecIds: existing.allowedChildSpecIds,
-          bootstrapProtected: true,
-        }),
-      );
-      codeToSpec.set(definition.code, updatedSpec);
-    }
+      for (const definition of BOOTSTRAP_SPECIFICATIONS) {
+        const spec = codeToSpec.get(definition.code);
+        if (!spec) continue;
+        const resolveSpecIds = (codes: readonly string[]): string[] =>
+          codes
+            .map((code) => codeToSpec.get(code)?.id)
+            .filter((value): value is string => Boolean(value));
+        const allowedParentSpecIds = resolveSpecIds(definition.allowedParentCodes);
+        const allowedChildSpecIds = resolveSpecIds(definition.allowedChildCodes);
+        if (
+          sameStringSet(spec.allowedParentSpecIds, allowedParentSpecIds) &&
+          sameStringSet(spec.allowedChildSpecIds, allowedChildSpecIds) &&
+          sameStringSet(spec._protectedAllowedParentSpecIds ?? [], allowedParentSpecIds) &&
+          sameStringSet(spec._protectedAllowedChildSpecIds ?? [], allowedChildSpecIds)
+        ) {
+          continue;
+        }
+        await this.repository.syncSpecContainmentRules(spec.id, {
+          allowedParentSpecIds,
+          allowedChildSpecIds,
+          protectedParentSpecIds: allowedParentSpecIds,
+          protectedChildSpecIds: allowedChildSpecIds,
+        });
+        const updatedSpec = await this.repository.upsertSpec({
+          ...spec,
+          allowedParentSpecIds,
+          allowedChildSpecIds,
+          _bootstrapProtected: true,
+          _protectedAllowedParentSpecIds: allowedParentSpecIds,
+          _protectedAllowedChildSpecIds: allowedChildSpecIds,
+        });
+        codeToSpec.set(definition.code, updatedSpec);
+      }
 
-    for (const definition of BOOTSTRAP_SPECIFICATIONS) {
-      const spec =
-        codeToSpec.get(definition.code) ?? (await this.repository.getSpecByCode(definition.code));
-      if (!spec) continue;
-      const resolveSpecIds = async (codes: readonly string[]): Promise<string[]> =>
-        (
-          await Promise.all(
-            codes.map(
-              async (code) =>
-                codeToSpec.get(code)?.id ?? (await this.repository.getSpecByCode(code))?.id,
-            ),
-          )
-        ).filter((value): value is string => Boolean(value));
-      const allowedParentSpecIds = await resolveSpecIds(definition.allowedParentCodes);
-      const allowedChildSpecIds = await resolveSpecIds(definition.allowedChildCodes);
-      await this.repository.syncSpecContainmentRules(spec.id, {
-        allowedParentSpecIds,
-        allowedChildSpecIds,
-        protectedParentSpecIds: allowedParentSpecIds,
-        protectedChildSpecIds: allowedChildSpecIds,
-      });
-      await this.repository.upsertSpec({
-        ...(await this.getSpecOrThrow(spec.id)),
-        _bootstrapProtected: true,
-      });
-    }
-
-    return {
-      created,
-      updated,
-      specs: await this.listSpecs(),
-    };
+      return {
+        created,
+        updated,
+        specs: await this.listSpecs(),
+      };
+    });
   }
 
   public async createLocation(
@@ -1387,32 +1451,41 @@ export class GeoService {
   }> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, CATALOG_ROLE);
-    let created = 0;
-    let updated = 0;
-    for (const definition of BOOTSTRAP_RELATIONSHIP_TYPES) {
-      const existing = await this.repository.getRelationshipType(definition.code);
-      if (existing) updated += 1;
-      else created += 1;
-      await this.repository.upsertRelationshipType(
-        this.buildRelationshipTypeRecord({
-          id: existing?.id ?? createCanonicalId(),
-          code: definition.code,
-          name: definition.name ?? definition.code,
-          inverseCode: definition.inverseCode ?? definition.code,
-          symmetric: definition.symmetric ?? definition.code === definition.inverseCode,
-          allowedSourceCategories: definition.allowedSourceCategories ?? [],
-          allowedTargetCategories: definition.allowedTargetCategories ?? [],
-          ...(definition.cardinality ? { cardinality: definition.cardinality } : {}),
-          lifecycleStatus: definition.lifecycleStatus ?? 'Active',
-          bootstrapProtected: true,
-        }),
+    return await this.repository.transaction(async () => {
+      let created = 0;
+      let updated = 0;
+      const existingByCode = new Map(
+        (await this.repository.listRelationshipTypes()).map(
+          (relationshipType) => [relationshipType.code, relationshipType] as const,
+        ),
       );
-    }
-    return {
-      created,
-      updated,
-      relationshipTypes: await this.listRelationshipTypes(undefined, ctx),
-    };
+      for (const definition of BOOTSTRAP_RELATIONSHIP_TYPES) {
+        const existing = existingByCode.get(definition.code);
+        if (existing && matchesBootstrapRelationshipType(existing, definition)) continue;
+        if (existing) updated += 1;
+        else created += 1;
+        const stored = await this.repository.upsertRelationshipType(
+          this.buildRelationshipTypeRecord({
+            id: existing?.id ?? createCanonicalId(),
+            code: definition.code,
+            name: definition.name ?? definition.code,
+            inverseCode: definition.inverseCode ?? definition.code,
+            symmetric: definition.symmetric ?? definition.code === definition.inverseCode,
+            allowedSourceCategories: definition.allowedSourceCategories ?? [],
+            allowedTargetCategories: definition.allowedTargetCategories ?? [],
+            ...(definition.cardinality ? { cardinality: definition.cardinality } : {}),
+            lifecycleStatus: definition.lifecycleStatus ?? 'Active',
+            bootstrapProtected: true,
+          }),
+        );
+        existingByCode.set(stored.code, stored);
+      }
+      return {
+        created,
+        updated,
+        relationshipTypes: await this.listRelationshipTypes(undefined, ctx),
+      };
+    });
   }
 
   public async createRelationshipType(
@@ -1718,7 +1791,7 @@ export class GeoService {
     });
   }
   public async listAddresses(
-    query?: { name?: string; limit?: number; offset?: number },
+    query?: Omit<GeographicAddressQuery, 'tenantId'>,
     context?: RequestContext,
   ): Promise<GeographicAddress[]> {
     const ctx = this.resolveContext(context);
@@ -3014,7 +3087,7 @@ const originMatches = (
   );
 };
 
-const normalizeCountry = (value?: string): string => (value ?? 'BR').trim().toUpperCase();
+const normalizeCountry = (value?: string): string => normalizeCountrySearch(value) || 'BR';
 
 const normalizePostcode = (
   value: string | undefined,

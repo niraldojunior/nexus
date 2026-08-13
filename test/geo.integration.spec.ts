@@ -205,7 +205,7 @@ test('Geo HTTP integration exposes bootstrap, allowedChildren and containment im
 
   const bootstrap = await requestJson(port, 'POST', '/v1/geo/site-specifications/bootstrap');
   assert.equal(bootstrap.statusCode, 200);
-  assert.equal((bootstrap.body as { specs: unknown[] }).specs.length, 9);
+  assert.equal((bootstrap.body as { specs: unknown[] }).specs.length, 11);
 
   const regionSpecs = await requestJson(port, 'GET', '/v1/geo/site-specifications?code=REGION');
   const centralSpecs = await requestJson(port, 'GET', '/v1/geo/site-specifications?code=CO');
@@ -470,7 +470,10 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
     'GET',
     `/v1/geo/tree/children?nodeId=site:${idOf(station)}&limit=1&offset=1&scope=all`,
   );
-  assert.equal((firstPage.body as { nodes: Array<{ label: string }> }).nodes[0]?.label, 'Sala GPON');
+  assert.equal(
+    (firstPage.body as { nodes: Array<{ label: string }> }).nodes[0]?.label,
+    'Sala GPON',
+  );
   assert.equal((secondPage.body as { total: number }).total, 2);
   assert.equal(
     (secondPage.body as { nodes: Array<{ label: string }> }).nodes[0]?.label,
@@ -577,7 +580,11 @@ test('Geo tree pass-through skips a chain of hidden splitters to the first visib
     port,
     'POST',
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'Cabo secundário 6FO', category: 'Cable.OutsidePlant', resourceType: 'DistributionCable' },
+    {
+      name: 'Cabo secundário 6FO',
+      category: 'Cable.OutsidePlant',
+      resourceType: 'DistributionCable',
+    },
   );
   const place = await requestJson(port, 'POST', '/v1/geo/locations', {
     geometryType: 'Point',
@@ -594,29 +601,44 @@ test('Geo tree pass-through skips a chain of hidden splitters to the first visib
   assert.equal(box.statusCode, 201);
   // Caixa → splitter A (containsAsChild) → splitter B (connectedTo, cascata rara mas
   // possível) → cabo (connectedTo). Dois saltos internos seguidos.
-  const splitterA = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'PhysicalResource',
-    name: 'CDOE-2201 · S1',
-    resourceSpecificationId: idOf(splitterSpec),
-    placeId: idOf(place),
-    placeType: 'GeographicLocation',
-  });
+  const splitterA = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceInventoryManagement/v4/resource',
+    {
+      '@type': 'PhysicalResource',
+      name: 'CDOE-2201 · S1',
+      resourceSpecificationId: idOf(splitterSpec),
+      placeId: idOf(place),
+      placeType: 'GeographicLocation',
+    },
+  );
   assert.equal(splitterA.statusCode, 201);
-  const splitterB = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'PhysicalResource',
-    name: 'CDOE-2201 · S1 · S1',
-    resourceSpecificationId: idOf(splitterSpec),
-    placeId: idOf(place),
-    placeType: 'GeographicLocation',
-  });
+  const splitterB = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceInventoryManagement/v4/resource',
+    {
+      '@type': 'PhysicalResource',
+      name: 'CDOE-2201 · S1 · S1',
+      resourceSpecificationId: idOf(splitterSpec),
+      placeId: idOf(place),
+      placeType: 'GeographicLocation',
+    },
+  );
   assert.equal(splitterB.statusCode, 201);
-  const cable = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'PhysicalResource',
-    name: 'Cabo Secundário 02',
-    resourceSpecificationId: idOf(cableSpec),
-    placeId: idOf(place),
-    placeType: 'GeographicLocation',
-  });
+  const cable = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceInventoryManagement/v4/resource',
+    {
+      '@type': 'PhysicalResource',
+      name: 'Cabo Secundário 02',
+      resourceSpecificationId: idOf(cableSpec),
+      placeId: idOf(place),
+      placeType: 'GeographicLocation',
+    },
+  );
   assert.equal(cable.statusCode, 201);
 
   const boxSplitterLink = await requestJson(
@@ -728,13 +750,18 @@ test('Geo tree viewport serves passive infra by bounding box, independent of hie
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     { name: 'Splitter óptico 1:8', category: 'Infrastructure.Passive', resourceType: 'Splitter' },
   );
-  const splitter = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'PhysicalResource',
-    name: 'CDOE-1108 · S32_1',
-    resourceSpecificationId: idOf(splitterSpec),
-    placeId: idOf(boxPlace),
-    placeType: 'GeographicLocation',
-  });
+  const splitter = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceInventoryManagement/v4/resource',
+    {
+      '@type': 'PhysicalResource',
+      name: 'CDOE-1108 · S32_1',
+      resourceSpecificationId: idOf(splitterSpec),
+      placeId: idOf(boxPlace),
+      placeType: 'GeographicLocation',
+    },
+  );
   assert.equal(splitter.statusCode, 201);
 
   // Bbox que cobre a região de Icaraí: caixa e cabo voltam, sem expandir nada antes;
@@ -810,7 +837,14 @@ test('Geo coverage serves the GPON heat grid and neighborhood polygons by boundi
 
   const seedArea = async (
     locId: string,
-    stat: { key: string; neighborhood: string; city: string; uf: string; cdoTotal: number; cdoAvailable: number },
+    stat: {
+      key: string;
+      neighborhood: string;
+      city: string;
+      uf: string;
+      cdoTotal: number;
+      cdoAvailable: number;
+    },
     cells: Array<{ gx: number; gy: number; total: number; avail: number }>,
   ) => {
     await db.run(
@@ -855,7 +889,14 @@ test('Geo coverage serves the GPON heat grid and neighborhood polygons by boundi
   // da soma das células — é o que o balão exibe.
   await seedArea(
     '11111111-1111-7111-8111-111111111111',
-    { key: 'RJ|Niterói|Icaraí', neighborhood: 'Icaraí', city: 'Niterói', uf: 'RJ', cdoTotal: 5, cdoAvailable: 3 },
+    {
+      key: 'RJ|Niterói|Icaraí',
+      neighborhood: 'Icaraí',
+      city: 'Niterói',
+      uf: 'RJ',
+      cdoTotal: 5,
+      cdoAvailable: 3,
+    },
     [
       { gx, gy, total: 3, avail: 2 },
       { gx: gx + 1, gy, total: 2, avail: 1 },
@@ -863,7 +904,14 @@ test('Geo coverage serves the GPON heat grid and neighborhood polygons by boundi
   );
   await seedArea(
     '22222222-2222-7222-8222-222222222222',
-    { key: 'RJ|Niterói|Santa Rosa', neighborhood: 'Santa Rosa', city: 'Niterói', uf: 'RJ', cdoTotal: 4, cdoAvailable: 0 },
+    {
+      key: 'RJ|Niterói|Santa Rosa',
+      neighborhood: 'Santa Rosa',
+      city: 'Niterói',
+      uf: 'RJ',
+      cdoTotal: 4,
+      cdoAvailable: 0,
+    },
     [{ gx: gx + 2, gy, total: 4, avail: 0 }],
   );
 
@@ -876,7 +924,12 @@ test('Geo coverage serves the GPON heat grid and neighborhood polygons by boundi
     level: string;
     grid: { sizeMeters: number };
     cells: number[][];
-    neighborhoods: Array<{ id: number; neighborhood: string; cdoTotal: number; cdoAvailable: number }>;
+    neighborhoods: Array<{
+      id: number;
+      neighborhood: string;
+      cdoTotal: number;
+      cdoAvailable: number;
+    }>;
     truncated: boolean;
   };
   assert.equal(fineBody.level, 'fine');
@@ -885,7 +938,11 @@ test('Geo coverage serves the GPON heat grid and neighborhood polygons by boundi
   assert.equal(fineBody.neighborhoods.length, 2);
   const icarai = fineBody.neighborhoods.find((item) => item.neighborhood === 'Icaraí');
   assert.ok(icarai);
-  assert.equal(icarai!.cdoTotal, 5, 'estatística do balão é a contagem real, não a soma das células');
+  assert.equal(
+    icarai!.cdoTotal,
+    5,
+    'estatística do balão é a contagem real, não a soma das células',
+  );
   assert.equal(icarai!.cdoAvailable, 3);
   // Toda célula referencia um índice de bairro válido.
   for (const cell of fineBody.cells) {
@@ -895,7 +952,11 @@ test('Geo coverage serves the GPON heat grid and neighborhood polygons by boundi
   // coarse: campo de densidade agregado; a soma bate com a das células finas.
   const coarse = await requestJson(port, 'GET', `/v1/geo/coverage?${bbox}&level=coarse`);
   assert.equal(coarse.statusCode, 200);
-  const coarseBody = coarse.body as { level: string; grid: { sizeMeters: number }; cells: number[][] };
+  const coarseBody = coarse.body as {
+    level: string;
+    grid: { sizeMeters: number };
+    cells: number[][];
+  };
   assert.equal(coarseBody.level, 'coarse');
   assert.equal(coarseBody.grid.sizeMeters, COVERAGE_CELL_METERS * 5);
   const totalCdo = coarseBody.cells.reduce((sum, cell) => sum + cell[2]!, 0);
@@ -1022,13 +1083,18 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     { name: 'Splitter óptico 1:8', category: 'Infrastructure.Passive', resourceType: 'Splitter' },
   );
-  const splitter = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'PhysicalResource',
-    name: 'CDOE Icaraí 08 · Splitter',
-    resourceSpecificationId: idOf(splitterSpec),
-    placeId: idOf(boxPlace),
-    placeType: 'GeographicLocation',
-  });
+  const splitter = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceInventoryManagement/v4/resource',
+    {
+      '@type': 'PhysicalResource',
+      name: 'CDOE Icaraí 08 · Splitter',
+      resourceSpecificationId: idOf(splitterSpec),
+      placeId: idOf(boxPlace),
+      placeType: 'GeographicLocation',
+    },
+  );
   assert.equal(splitter.statusCode, 201);
 
   const search = await requestJson(port, 'GET', '/v1/geo/tree/search?q=icara');

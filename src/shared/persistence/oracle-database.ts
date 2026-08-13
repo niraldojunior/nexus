@@ -152,6 +152,8 @@ export class OracleDatabase implements DatabaseClient {
   }
 
   public async transaction<T>(work: (session: DatabaseSession) => Promise<T>): Promise<T> {
+    const activeSession = this.transactionStorage.getStore();
+    if (activeSession) return await work(activeSession);
     const connection = await this.getPool().getConnection();
     try {
       const session = new OracleSession(connection, this.config.objectPrefix);
@@ -315,7 +317,9 @@ const chunkOracleInLists = (sql: string): string =>
       const operator = notKeyword ? 'NOT IN' : 'IN';
       const groups: string[] = [];
       for (let index = 0; index < binds.length; index += MAX_IN_LIST) {
-        groups.push(`${column} ${operator} (${binds.slice(index, index + MAX_IN_LIST).join(', ')})`);
+        groups.push(
+          `${column} ${operator} (${binds.slice(index, index + MAX_IN_LIST).join(', ')})`,
+        );
       }
       return `(${groups.join(notKeyword ? ' AND ' : ' OR ')})`;
     },

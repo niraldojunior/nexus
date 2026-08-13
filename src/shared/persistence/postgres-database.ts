@@ -188,6 +188,8 @@ export class PostgresDatabase implements DatabaseClient {
   }
 
   public async transaction<T>(work: (session: DatabaseSession) => Promise<T>): Promise<T> {
+    const activeSession = this.transactionStorage.getStore();
+    if (activeSession) return await work(activeSession);
     const client = await this.getPool().connect();
     try {
       await client.query('BEGIN');

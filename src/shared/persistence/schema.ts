@@ -133,6 +133,24 @@ export const MIGRATIONS_SQL = `
 
   ALTER TABLE tmf_geographic_location ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
   ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS street_search TEXT;
+  ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS street_nr_search TEXT;
+  ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS city_search TEXT;
+  ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS postcode_search TEXT;
+  UPDATE tmf_geographic_address
+     SET street_search = LOWER(TRANSLATE(street_name,
+           'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
+           'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc')),
+         street_nr_search = LOWER(REPLACE(REPLACE(COALESCE(street_nr, ''), ' ', ''), '-', '')),
+         city_search = LOWER(TRANSLATE(COALESCE(city, ''),
+           'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
+           'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc')),
+         postcode_search = REPLACE(REPLACE(COALESCE(postcode, ''), ' ', ''), '-', '')
+   WHERE street_search IS NULL OR street_nr_search IS NULL OR city_search IS NULL OR postcode_search IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_search
+    ON tmf_geographic_address(tenant_id, postcode_search, street_nr_search);
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_street_search
+    ON tmf_geographic_address(street_search);
   ALTER TABLE tmf_geographic_site ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
   ALTER TABLE tmf_geographic_site ADD COLUMN IF NOT EXISTS status_date TIMESTAMPTZ;
   ALTER TABLE tmf_geographic_site ADD COLUMN IF NOT EXISTS status_reason TEXT;
@@ -360,12 +378,16 @@ export const SCHEMA_SQL = `
         tenant_id TEXT NOT NULL DEFAULT 'default',
         street_type TEXT,
         street_name TEXT NOT NULL,
+        street_search TEXT,
         street_nr TEXT,
+        street_nr_search TEXT,
         locality TEXT,
         city TEXT,
+        city_search TEXT,
         state_or_province TEXT,
         country TEXT DEFAULT 'BR',
         postcode TEXT,
+        postcode_search TEXT,
         geographic_location_id TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,

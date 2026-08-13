@@ -8,8 +8,12 @@ import type {
   CreateResourceSpecificationInput,
   ResourceFunctionActivationInput,
   ResourceQuery,
+  UpdatePhysicalResourceInput,
 } from '../resource/index.js';
 import type { CreateServiceInput, ServiceQuery } from '../service/index.js';
+import type { AddressInput } from '../geo/index.js';
+import { haversineMeters } from '../geo/coverage-grid.js';
+import type { GeographicAddress, GeographicLocation } from '../geo/domain.js';
 import type {
   CreateResourceOrderInput,
   CreateServiceOrderInput,
@@ -19,8 +23,22 @@ import { type JsonSchema, validateJsonSchema } from './schema.js';
 import { PostgresMcpConfirmationRepository } from './confirmation.js';
 import { OracleMcpConfirmationRepository } from './oracle-confirmation.js';
 import type { PendingMcpConfirmation } from './confirmation.js';
+import {
+  commitCondominiumWorkflow,
+  prepareCondominiumWorkflow,
+  type CondominiumWorkflowInput,
+  type PreparedCondominiumWorkflow,
+} from './condominium-workflow.js';
 
 export type McpToolContext = ReturnType<NexusRuntime['createToolContext']>;
+
+type PointGeographicLocation = GeographicLocation & {
+  geometry: { type: 'Point'; coordinates: [number, number] };
+};
+
+const isPointGeographicLocation = (
+  location: GeographicLocation | undefined,
+): location is PointGeographicLocation => location?.geometry.type === 'Point';
 
 export type McpToolResult = {
   ok: boolean;
@@ -364,8 +382,11 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     properties: {
       id: { type: 'string' },
       street: { type: 'string' },
+      streetNr: { type: 'string' },
       city: { type: 'string' },
+      stateOrProvince: { type: 'string' },
       postcode: { type: 'string' },
+      country: { type: 'string' },
       geographicLocationId: { type: 'string' },
       limit: { type: 'integer' },
       offset: { type: 'integer' },
@@ -497,36 +518,29 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
 
   registry.register({
     name: 'geo.list_addresses',
-    description: 'Lista Geographic Addresses do inventario Nexus.',
+    description:
+      'Busca Geographic Addresses com filtros estruturados normalizados no banco. Aceita variacoes de abreviacao, acento e mascara de CEP. Informe streetNr sempre que o usuario fornecer o numero.',
     inputSchema: queryAddressSchema,
     handler: async (input, context) => {
-      const items = paginate(
-        (await runtime.geoService.listAddresses()).filter((address) => {
-          if (typeof input.id === 'string' && address.id !== input.id) return false;
-          if (
-            typeof input.street === 'string' &&
-            !address.street.toLowerCase().includes(input.street.toLowerCase())
-          )
-            return false;
-          if (
-            typeof input.city === 'string' &&
-            (address.city ?? '').toLowerCase() !== input.city.toLowerCase()
-          )
-            return false;
-          if (typeof input.postcode === 'string' && address.postcode !== input.postcode)
-            return false;
-          if (
-            typeof input.geographicLocationId === 'string' &&
-            address.geographicLocationId !== input.geographicLocationId
-          )
-            return false;
-          return true;
-        }),
-        input,
-      );
+      const query: NonNullable<Parameters<typeof runtime.geoService.listAddresses>[0]> = {
+        includeCharacteristics: false,
+        limit: typeof input.limit === 'number' ? input.limit : 25,
+      };
+      if (typeof input.id === 'string') query.id = input.id;
+      if (typeof input.street === 'string') query.street = input.street;
+      if (typeof input.streetNr === 'string') query.streetNr = input.streetNr;
+      if (typeof input.city === 'string') query.city = input.city;
+      if (typeof input.stateOrProvince === 'string') query.stateOrProvince = input.stateOrProvince;
+      if (typeof input.postcode === 'string') query.postcode = input.postcode;
+      if (typeof input.country === 'string') query.country = input.country;
+      if (typeof input.geographicLocationId === 'string')
+        query.geographicLocationId = input.geographicLocationId;
+      if (typeof input.offset === 'number') query.offset = input.offset;
+      const items = await runtime.geoService.listAddresses(query);
       return registry.successResult('geo', 'list_addresses', context, {
         items,
         count: items.length,
+        normalized: true,
       });
     },
   });
@@ -549,6 +563,201 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       ),
   });
 
+  registry.register({
+    name: 'geo.find_nearby_cdos',
+    description:
+      'Localiza CDOs proximas de um endereco em uma unica consulta. Resolve o GeographicAddress com normalizacao, usa sua GeographicLocation e retorna PhysicalResources CTO cujo nome comeca por CDO, ordenados pela distancia real em metros. Use para perguntas como "ha CDO proxima deste endereco?".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        street: { type: 'string' },
+        streetNr: { type: 'string' },
+        city: { type: 'string' },
+        stateOrProvince: { type: 'string' },
+        postcode: { type: 'string' },
+        country: { type: 'string' },
+        radiusMeters: { type: 'integer' },
+        limit: { type: 'integer' },
+      },
+      required: ['street'],
+      additionalProperties: false,
+    },
+    handler: async (input, context) => {
+      const radiusMeters =
+        typeof input.radiusMeters === 'number'
+          ? Math.min(Math.max(Math.round(input.radiusMeters), 1), 5000)
+          : 300;
+      const limit =
+        typeof input.limit === 'number' ? Math.min(Math.max(Math.round(input.limit), 1), 50) : 10;
+      const addressQuery: NonNullable<Parameters<typeof runtime.geoService.listAddresses>[0]> = {
+        street: String(input.street),
+        includeCharacteristics: false,
+        limit: 25,
+      };
+      if (typeof input.streetNr === 'string') addressQuery.streetNr = input.streetNr;
+      if (typeof input.city === 'string') addressQuery.city = input.city;
+      if (typeof input.stateOrProvince === 'string')
+        addressQuery.stateOrProvince = input.stateOrProvince;
+      if (typeof input.postcode === 'string') addressQuery.postcode = input.postcode;
+      if (typeof input.country === 'string') addressQuery.country = input.country;
+
+      const addresses = await runtime.geoService.listAddresses(addressQuery);
+      const resolvedAddresses = (
+        await Promise.all(
+          addresses.map(async (address) => {
+            if (!address.geographicLocationId) return undefined;
+            const location = await runtime.geoService.getLocation(address.geographicLocationId);
+            if (!isPointGeographicLocation(location)) return undefined;
+            return { address, location };
+          }),
+        )
+      ).filter(
+        (
+          item,
+        ): item is { address: GeographicAddress; location: PointGeographicLocation } =>
+          item !== undefined,
+      );
+
+      if (resolvedAddresses.length === 0) {
+        return registry.successResult('geo', 'find_nearby_cdos', context, {
+          addressMatches: [],
+          items: [],
+          count: 0,
+          radiusMeters,
+        });
+      }
+
+      const bounds = boundsAroundPoints(
+        resolvedAddresses.map(({ location }) => ({
+          lng: location.geometry.coordinates[0],
+          lat: location.geometry.coordinates[1],
+        })),
+        radiusMeters,
+      );
+      const resources = await runtime.geoTreeService.resourcesInViewport(bounds);
+      const nearby = resources
+        .filter(
+          (resource) =>
+            resource.referredType === 'PhysicalResource' &&
+            resource.resourceType === 'CTO' &&
+            /^CDO/i.test(resource.label) &&
+            resource.geometry?.type === 'Point',
+        )
+        .map((resource) => {
+          const coordinates = resource.geometry!.coordinates as [number, number];
+          const nearestAddress = resolvedAddresses
+            .map(({ address, location }) => ({
+              address,
+              location,
+              distanceMeters: haversineMeters(
+                coordinates[0],
+                coordinates[1],
+                location.geometry.coordinates[0],
+                location.geometry.coordinates[1],
+              ),
+            }))
+            .sort((left, right) => left.distanceMeters - right.distanceMeters)[0]!;
+          return {
+            id: resource.refId ?? resource.id.replace(/^resource:/, ''),
+            name: resource.label,
+            resourceType: resource.resourceType,
+            status: resource.status,
+            distanceMeters: Math.round(nearestAddress.distanceMeters),
+            geometry: resource.geometry,
+            matchedAddressId: nearestAddress.address.id,
+          };
+        })
+        .filter((resource) => resource.distanceMeters <= radiusMeters)
+        .sort(
+          (left, right) =>
+            left.distanceMeters - right.distanceMeters || left.name.localeCompare(right.name),
+        )
+        .slice(0, limit);
+
+      return registry.successResult('geo', 'find_nearby_cdos', context, {
+        addressMatches: resolvedAddresses.map(({ address, location }) => ({
+          id: address.id,
+          street: address.street,
+          streetNr: address.streetNr,
+          city: address.city,
+          stateOrProvince: address.stateOrProvince,
+          postcode: address.postcode,
+          geographicLocationId: location.id,
+        })),
+        items: nearby,
+        count: nearby.length,
+        radiusMeters,
+      });
+    },
+  });
+
+  registry.register({
+    name: 'geo.list_site_specifications',
+    description:
+      'Lista GeographicSiteSpecifications por id, nome, codigo, categoria e lifecycleStatus. Use para resolver o tipo canonico antes de criar Sites.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        name: { type: 'string' },
+        code: { type: 'string' },
+        category: { type: 'string', enum: ['Region', 'FunctionalGroup', 'Site', 'SubSite'] },
+        lifecycleStatus: { type: 'string', enum: ['Active', 'Retired'] },
+        limit: { type: 'integer' },
+        offset: { type: 'integer' },
+      },
+      additionalProperties: false,
+    },
+    handler: async (input, context) => {
+      const query: NonNullable<Parameters<typeof runtime.geoService.listSpecs>[0]> = {};
+      if (typeof input.name === 'string') query.name = input.name;
+      if (typeof input.code === 'string') query.code = input.code;
+      if (
+        input.category === 'Region' ||
+        input.category === 'FunctionalGroup' ||
+        input.category === 'Site' ||
+        input.category === 'SubSite'
+      )
+        query.category = input.category;
+      if (input.lifecycleStatus === 'Active' || input.lifecycleStatus === 'Retired')
+        query.lifecycleStatus = input.lifecycleStatus;
+      if (typeof input.limit === 'number') query.limit = input.limit;
+      if (typeof input.offset === 'number') query.offset = input.offset;
+      const listed = await runtime.geoService.listSpecs(query);
+      const items =
+        typeof input.id === 'string' ? listed.filter((item) => item.id === input.id) : listed;
+      return registry.successResult('geo', 'list_site_specifications', context, {
+        items,
+        count: items.length,
+      });
+    },
+  });
+
+  const createAddressPayloadSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+      payload: {
+        type: 'object',
+        properties: {
+          street: { type: 'string' },
+          streetNr: { type: 'string' },
+          city: { type: 'string' },
+          stateOrProvince: { type: 'string' },
+          postcode: { type: 'string' },
+          country: { type: 'string' },
+          geographicLocationId: { type: 'string' },
+          characteristic: characteristicArraySchema,
+        },
+        required: ['street'],
+        additionalProperties: true,
+      },
+    },
+    required: ['payload'],
+    additionalProperties: false,
+  };
+
+  registerAddressCreationTools(registry, runtime, createAddressPayloadSchema);
+
   const createSitePayloadSchema: JsonSchema = {
     type: 'object',
     properties: {
@@ -558,6 +767,8 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           name: { type: 'string' },
           status: { type: 'string', enum: ['planned', 'active', 'suspended', 'terminated'] },
           siteSpecificationId: { type: 'string' },
+          siteSpecificationCode: { type: 'string' },
+          siteSpecificationName: { type: 'string' },
           placeId: { type: 'string' },
           addressId: { type: 'string' },
           parentSiteId: { type: 'string' },
@@ -576,7 +787,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
             },
           },
         },
-        required: ['name', 'siteSpecificationId'],
+        required: ['name'],
         additionalProperties: true,
       },
     },
@@ -615,12 +826,8 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     'create_site',
     async (payload) => {
       const typedPayload = payload as Record<string, unknown>;
-      if (!(await runtime.geoService.getSpec(String(typedPayload.siteSpecificationId)))) {
-        throw new AppError('site specification not found', {
-          code: 'GEO_SPEC_NOT_FOUND',
-          statusCode: 404,
-        });
-      }
+      const specification = await resolveSiteSpecificationReference(runtime, typedPayload);
+      typedPayload.siteSpecificationId = specification.id;
       if (
         typedPayload.placeId &&
         !(await runtime.geoService.getLocation(String(typedPayload.placeId)))
@@ -686,6 +893,96 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
               characteristic?: Characteristic[];
               relatedSite?: Array<{ id: string; relationshipType: string }>;
             },
+          ),
+      ),
+  });
+
+  const condominiumWorkflowSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+      payload: {
+        type: 'object',
+        properties: {
+          condominiumName: { type: 'string' },
+          status: { type: 'string', enum: ['planned', 'active'] },
+          address: {
+            type: 'object',
+            properties: {
+              street: { type: 'string' },
+              streetNr: { type: 'string' },
+              city: { type: 'string' },
+              stateOrProvince: { type: 'string' },
+              postcode: { type: 'string' },
+              country: { type: 'string' },
+            },
+            required: ['street', 'streetNr'],
+            additionalProperties: false,
+          },
+          relatedParty: entityRefArraySchema,
+          blocks: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                cdoiName: { type: 'string' },
+              },
+              required: ['name', 'cdoiName'],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ['address', 'blocks'],
+        additionalProperties: false,
+      },
+    },
+    required: ['payload'],
+    additionalProperties: false,
+  };
+
+  registry.register({
+    name: 'geo.create_condominium',
+    description:
+      'Prepara em uma unica confirmacao o cadastro atomico de um condominio, seus blocos e o vinculo de CDOIs existentes. Resolve endereco normalizado, specifications CONDOMINIUM/BLOCK e CDOIs por nome; nao duplica Address nem Resource.',
+    inputSchema: condominiumWorkflowSchema,
+    handler: async (input, context) => {
+      const prepared = await prepareCondominiumWorkflow(
+        runtime,
+        input.payload as unknown as CondominiumWorkflowInput,
+      );
+      return await registry.prepareMutation(
+        'geo',
+        'create_condominium',
+        prepared as unknown as Record<string, unknown>,
+        context,
+        () => ({
+          summary: `Condominio ${prepared.condominiumName}, ${prepared.blocks.length} blocos e respectivos vinculos de CDOI serao cadastrados.`,
+          warnings: [],
+        }),
+      );
+    },
+  });
+
+  registry.register({
+    name: 'geo.commit_create_condominium',
+    description:
+      'Confirma e executa atomicamente a criacao do condominio, blocos e vinculos das CDOIs.',
+    inputSchema: {
+      type: 'object',
+      properties: { confirmationToken: { type: 'string' } },
+      required: ['confirmationToken'],
+      additionalProperties: false,
+    },
+    handler: (input, context) =>
+      registry.commitMutation(
+        'geo',
+        'create_condominium',
+        String(input.confirmationToken),
+        context,
+        (pending) =>
+          commitCondominiumWorkflow(
+            runtime,
+            pending.payload as unknown as PreparedCondominiumWorkflow,
           ),
       ),
   });
@@ -857,6 +1154,107 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       ),
   });
 
+  const updatePhysicalResourceSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+      payload: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          placeId: { type: 'string' },
+          placeType: { type: 'string' },
+          status: { type: 'string', enum: ['active', 'inactive', 'suspended', 'terminated'] },
+          administrativeState: { type: 'string', enum: ['unlocked', 'locked'] },
+          operationalState: { type: 'string', enum: ['enabled', 'disabled'] },
+          usageState: { type: 'string', enum: ['idle', 'busy', 'unknown'] },
+          characteristic: characteristicArraySchema,
+        },
+        required: ['id'],
+        additionalProperties: true,
+      },
+    },
+    required: ['payload'],
+    additionalProperties: false,
+  };
+
+  registry.register({
+    name: 'resource.update_physical_resource',
+    description:
+      'Prepara a atualizacao de um PhysicalResource existente, inclusive seu place GeographicSite. Retorna confirmationToken para commit explicito.',
+    inputSchema: updatePhysicalResourceSchema,
+    handler: async (input, context) => {
+      const payload = input.payload as Record<string, unknown>;
+      const id = String(payload.id);
+      const resource = await runtime.resourceService.getResource(id);
+      if (!resource || resource['@type'] !== 'PhysicalResource') {
+        throw new AppError('physical resource not found', {
+          code: 'RESOURCE_NOT_FOUND',
+          statusCode: 404,
+        });
+      }
+      if (typeof payload.placeId === 'string') {
+        const [site, address, location] = await Promise.all([
+          runtime.geoService.getSite(payload.placeId),
+          runtime.geoService.getAddress(payload.placeId),
+          runtime.geoService.getLocation(payload.placeId),
+        ]);
+        const placeType = site
+          ? 'GeographicSite'
+          : address
+            ? 'GeographicAddress'
+            : location
+              ? 'GeographicLocation'
+              : undefined;
+        if (!placeType) {
+          throw new AppError('place not found', {
+            code: 'RESOURCE_PLACE_NOT_FOUND',
+            statusCode: 404,
+          });
+        }
+        if (payload.placeType && payload.placeType !== placeType) {
+          throw new AppError('place type does not match the referenced entity', {
+            code: 'RESOURCE_PLACE_TYPE_MISMATCH',
+            statusCode: 422,
+          });
+        }
+        payload.placeType = placeType;
+      }
+      return await registry.prepareMutation(
+        'resource',
+        'update_physical_resource',
+        payload,
+        context,
+        () => ({ summary: `PhysicalResource ${resource.name} sera atualizado.` }),
+      );
+    },
+  });
+
+  registry.register({
+    name: 'resource.commit_update_physical_resource',
+    description: 'Confirma e executa a atualizacao de um PhysicalResource.',
+    inputSchema: {
+      type: 'object',
+      properties: { confirmationToken: { type: 'string' } },
+      required: ['confirmationToken'],
+      additionalProperties: false,
+    },
+    handler: (input, context) =>
+      registry.commitMutation(
+        'resource',
+        'update_physical_resource',
+        String(input.confirmationToken),
+        context,
+        (pending) => {
+          const { id, ...changes } = pending.payload;
+          return runtime.resourceService.updatePhysicalResource(
+            String(id),
+            changes as UpdatePhysicalResourceInput,
+          );
+        },
+      ),
+  });
+
   const createPhysicalResourceSchema: JsonSchema = {
     type: 'object',
     properties: {
@@ -905,11 +1303,12 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         });
       }
       if (typedPayload.placeId) {
-        const placeExists =
-          runtime.geoService.getSite(typedPayload.placeId) ||
-          runtime.geoService.getAddress(typedPayload.placeId) ||
-          runtime.geoService.getLocation(typedPayload.placeId);
-        if (!placeExists) {
+        const [site, address, location] = await Promise.all([
+          runtime.geoService.getSite(typedPayload.placeId),
+          runtime.geoService.getAddress(typedPayload.placeId),
+          runtime.geoService.getLocation(typedPayload.placeId),
+        ]);
+        if (!site && !address && !location) {
           throw new AppError('place not found', {
             code: 'RESOURCE_PLACE_NOT_FOUND',
             statusCode: 404,
@@ -2120,6 +2519,133 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     registry,
     confirmations,
   };
+};
+
+const registerAddressCreationTools = (
+  registry: McpToolRegistry,
+  runtime: NexusRuntime,
+  schema: JsonSchema,
+): void => {
+  registry.register({
+    name: 'geo.create_address',
+    description:
+      'Prepara a criacao de um GeographicAddress TMF673 quando uma busca normalizada confirmou que ele ainda nao existe. Retorna confirmationToken; nao cria sem confirmacao.',
+    inputSchema: schema,
+    handler: async (input, context) => {
+      const payload = input.payload as unknown as AddressInput;
+      if (payload.geographicLocationId) {
+        const location = await runtime.geoService.getLocation(payload.geographicLocationId);
+        if (!location) {
+          throw new AppError('geographic location not found', {
+            code: 'GEO_LOCATION_NOT_FOUND',
+            statusCode: 404,
+          });
+        }
+      }
+      const existing = await runtime.geoService.listAddresses({
+        street: payload.street,
+        ...(payload.streetNr ? { streetNr: payload.streetNr } : {}),
+        ...(payload.city ? { city: payload.city } : {}),
+        ...(payload.postcode ? { postcode: payload.postcode } : {}),
+        includeCharacteristics: false,
+        limit: 1,
+      });
+      if (existing.length > 0) {
+        throw new AppError('geographic address already exists', {
+          code: 'GEO_ADDRESS_DUPLICATE',
+          statusCode: 409,
+        });
+      }
+      return await registry.prepareMutation(
+        'geo',
+        'create_address',
+        payload as unknown as Record<string, unknown>,
+        context,
+        () => ({
+          summary: `Endereco ${payload.street}${payload.streetNr ? `, ${payload.streetNr}` : ''} sera criado.`,
+        }),
+      );
+    },
+  });
+
+  registry.register({
+    name: 'geo.commit_create_address',
+    description: 'Confirma e executa a criacao de um GeographicAddress TMF673.',
+    inputSchema: {
+      type: 'object',
+      properties: { confirmationToken: { type: 'string' } },
+      required: ['confirmationToken'],
+      additionalProperties: false,
+    },
+    handler: (input, context) =>
+      registry.commitMutation(
+        'geo',
+        'create_address',
+        String(input.confirmationToken),
+        context,
+        (pending) => runtime.geoService.createAddress(pending.payload as unknown as AddressInput),
+      ),
+  });
+};
+
+const resolveSiteSpecificationReference = async (
+  runtime: NexusRuntime,
+  payload: Record<string, unknown>,
+) => {
+  if (typeof payload.siteSpecificationId === 'string') {
+    const specification = await runtime.geoService.getSpec(payload.siteSpecificationId);
+    if (specification?.lifecycleStatus === 'Active') return specification;
+  }
+
+  const code =
+    typeof payload.siteSpecificationCode === 'string'
+      ? payload.siteSpecificationCode.trim().toUpperCase()
+      : undefined;
+  const name =
+    typeof payload.siteSpecificationName === 'string'
+      ? payload.siteSpecificationName.trim()
+      : undefined;
+  const candidates = code
+    ? await runtime.geoService.listSpecs({ code, lifecycleStatus: 'Active', limit: 2 })
+    : name
+      ? await runtime.geoService.listSpecs({ name, lifecycleStatus: 'Active', limit: 10 })
+      : [];
+  const exact = candidates.filter(
+    (item) =>
+      (code && item.code.toUpperCase() === code) ||
+      (name && normalizeSearchText(item.name) === normalizeSearchText(name)),
+  );
+  if (exact.length === 1) return exact[0]!;
+  if (exact.length > 1) {
+    throw new AppError('site specification is ambiguous', {
+      code: 'GEO_SPEC_AMBIGUOUS',
+      statusCode: 409,
+    });
+  }
+  throw new AppError('site specification not found', {
+    code: 'GEO_SPEC_NOT_FOUND',
+    statusCode: 404,
+  });
+};
+
+const boundsAroundPoints = (
+  points: Array<{ lng: number; lat: number }>,
+  radiusMeters: number,
+): { minLng: number; minLat: number; maxLng: number; maxLat: number } => {
+  let minLng = Number.POSITIVE_INFINITY;
+  let minLat = Number.POSITIVE_INFINITY;
+  let maxLng = Number.NEGATIVE_INFINITY;
+  let maxLat = Number.NEGATIVE_INFINITY;
+  for (const point of points) {
+    const latitudeDelta = radiusMeters / 111_320;
+    const longitudeScale = Math.max(Math.cos((point.lat * Math.PI) / 180), 0.01);
+    const longitudeDelta = radiusMeters / (111_320 * longitudeScale);
+    minLng = Math.min(minLng, point.lng - longitudeDelta);
+    maxLng = Math.max(maxLng, point.lng + longitudeDelta);
+    minLat = Math.min(minLat, point.lat - latitudeDelta);
+    maxLat = Math.max(maxLat, point.lat + latitudeDelta);
+  }
+  return { minLng, minLat, maxLng, maxLat };
 };
 
 const paginate = <T>(items: T[], input: Record<string, unknown>): T[] => {

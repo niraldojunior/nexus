@@ -3340,7 +3340,10 @@ const USER_ADMIN_ROLES = ['tenant.admin', 'platform.admin'] as const;
 
 // Deriva as opções de autenticação do runtime a partir da AppConfig — o runtime não lê env
 // direto (testabilidade), então a fronteira HTTP traduz config → options.
-const runtimeOptionsFromConfig = (config: AppConfig): NexusRuntimeOptions => ({
+// Exportado porque o handler serverless (vercel-handler.ts) precisa construir o runtime com as
+// mesmas opções do servidor standalone — sem elas o AuthService nasce sem jwtSecret e todo login
+// responde 503, e o ensureAdmin nunca roda.
+export const runtimeOptionsFromConfig = (config: AppConfig): NexusRuntimeOptions => ({
   auth: {
     ...(config.authJwtSecret ? { jwtSecret: config.authJwtSecret } : {}),
     accessTokenTtlSeconds: (config.authAccessTokenTtlHours ?? 12) * 60 * 60,

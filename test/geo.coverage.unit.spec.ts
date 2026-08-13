@@ -17,11 +17,7 @@ import {
 // Bairro de Icaraí, Niterói — coordenada real de referência da base.
 const ICARAI: [number, number] = [-43.106, -22.906];
 
-const cdo = (
-  lng: number,
-  lat: number,
-  overrides: Partial<CdoPoint> = {},
-): CdoPoint => ({
+const cdo = (lng: number, lat: number, overrides: Partial<CdoPoint> = {}): CdoPoint => ({
   lng,
   lat,
   available: true,
@@ -103,11 +99,7 @@ test('bairro dominante da célula é o que mais contribuiu; empate vai para a CD
 
 test('connectedComponents separa dois aglomerados desconexos do mesmo bairro', () => {
   const clusterA = stampCells([cdo(...ICARAI)], COVERAGE_CELL_METERS, COVERAGE_RADIUS_METERS);
-  const clusterB = stampCells(
-    [cdo(-43.06, -22.94)],
-    COVERAGE_CELL_METERS,
-    COVERAGE_RADIUS_METERS,
-  );
+  const clusterB = stampCells([cdo(-43.06, -22.94)], COVERAGE_CELL_METERS, COVERAGE_RADIUS_METERS);
   const components = connectedComponents([...clusterA, ...clusterB]);
   assert.equal(components.length, 2);
 });
@@ -152,6 +144,77 @@ test('neighborhoodStats conta CDOs reais, disponibilidade e área coberta', () =
   assert.equal(stat.cdoUnavailable, 1);
   assert.ok(Math.abs(stat.availabilityRatio - 2 / 3) < 1e-3);
   assert.ok(stat.coveredAreaKm2 > 0);
+});
+
+test('anel suavizado permanece fechado e com a mesma orientação do anel cru', () => {
+  const cells = stampCells([cdo(...ICARAI)], COVERAGE_CELL_METERS, COVERAGE_RADIUS_METERS);
+  const raw = tracePolygon(cells, COVERAGE_CELL_METERS, { smoothIterations: 0 })!;
+  const smooth = tracePolygon(cells, COVERAGE_CELL_METERS)!;
+  const outer = smooth.coordinates[0]!;
+  assert.deepEqual(outer[0], outer[outer.length - 1], 'anel suavizado deve fechar');
+
+  const shoelace = (ring: Array<[number, number]>): number => {
+    let sum = 0;
+    for (let i = 0; i < ring.length - 1; i += 1) {
+      const [x1, y1] = ring[i]!;
+      const [x2, y2] = ring[i + 1]!;
+      sum += x1 * y2 - x2 * y1;
+    }
+    return sum;
+  };
+  const rawSign = Math.sign(shoelace(raw.coordinates[0]!));
+  const smoothSign = Math.sign(shoelace(outer));
+  assert.equal(smoothSign, rawSign, 'orientação (CCW/CW) deve ser preservada pela suavização');
+});
+
+test('suavização não desloca a mancha além de ~1 célula (bounding box)', () => {
+  const cells = stampCells([cdo(...ICARAI)], COVERAGE_CELL_METERS, COVERAGE_RADIUS_METERS);
+  const raw = tracePolygon(cells, COVERAGE_CELL_METERS, { smoothIterations: 0 })!;
+  const smooth = tracePolygon(cells, COVERAGE_CELL_METERS)!;
+
+  const bbox = (ring: Array<[number, number]>) => {
+    const lngs = ring.map((p) => p[0]);
+    const lats = ring.map((p) => p[1]);
+    return {
+      minLng: Math.min(...lngs),
+      maxLng: Math.max(...lngs),
+      minLat: Math.min(...lats),
+      maxLat: Math.max(...lats),
+    };
+  };
+  const rawBox = bbox(raw.coordinates[0]!);
+  const smoothBox = bbox(smooth.coordinates[0]!);
+  const tolerance = COVERAGE_CELL_METERS * 1.5;
+
+  const minCornerDist = haversineMeters(
+    rawBox.minLng,
+    rawBox.minLat,
+    smoothBox.minLng,
+    smoothBox.minLat,
+  );
+  const maxCornerDist = haversineMeters(
+    rawBox.maxLng,
+    rawBox.maxLat,
+    smoothBox.maxLng,
+    smoothBox.maxLat,
+  );
+  assert.ok(minCornerDist <= tolerance, `canto mínimo deslocou demais: ${minCornerDist} m`);
+  assert.ok(maxCornerDist <= tolerance, `canto máximo deslocou demais: ${maxCornerDist} m`);
+});
+
+test('buildCoverage descarta componente menor que minComponentCells sem afetar a estatística do bairro', () => {
+  const cdos = [cdo(...ICARAI)];
+  const full = buildCoverage(cdos);
+  assert.ok(full.components.length >= 1, 'sem filtro, o componente da CDO isolada aparece');
+  const realCellCount = full.components[0]!.cells.length;
+  assert.ok(realCellCount > 1, 'uma CDO isolada cobre bem mais que 1 célula');
+
+  const filtered = buildCoverage(cdos, { minComponentCells: realCellCount + 1 });
+  assert.equal(filtered.components.length, 0, 'componente abaixo do piso não vira polígono');
+  // A estatística do bairro conta os CDOs REAIS (RN-004), independente da geometria ter sido
+  // descartada por ser pequena demais para desenhar.
+  assert.equal(filtered.neighborhoods.length, 1);
+  assert.equal(filtered.neighborhoods[0]!.cdoTotal, 1);
 });
 
 test('buildCoverage compõe componentes, geometria e estatística por bairro', () => {

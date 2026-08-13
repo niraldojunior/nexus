@@ -32,6 +32,7 @@
  *   node scripts/build-gpon-coverage.mjs --city "Niterói" --apply
  *   node scripts/build-gpon-coverage.mjs --uf RJ --apply
  *   node scripts/build-gpon-coverage.mjs --cell 50 --radius 200 --apply
+ *   node scripts/build-gpon-coverage.mjs --smooth 2 --apply        # corner-cutting do contorno
  *   # cross-DB: lê as CDOs do Oracle e grava a cobertura no Postgres/Neon
  *   node scripts/build-gpon-coverage.mjs --source oracle --target postgres --uf RJ --apply
  */
@@ -43,6 +44,8 @@ import {
   buildCoverage,
   COVERAGE_CELL_METERS,
   COVERAGE_RADIUS_METERS,
+  COVERAGE_SMOOTH_ITERATIONS,
+  COVERAGE_MIN_COMPONENT_CELLS,
 } from '../dist/src/modules/geo/coverage-grid.js';
 
 loadEnv();
@@ -60,6 +63,17 @@ const UF = argOf('--uf', null);
 const TENANT = argOf('--tenant', 'default');
 const CELL_METERS = Number(argOf('--cell', String(COVERAGE_CELL_METERS)));
 const RADIUS_METERS = Number(argOf('--radius', String(COVERAGE_RADIUS_METERS)));
+
+// Iterações de corner-cutting (Chaikin) aplicadas ao traçado do polígono — ver coverage-grid.ts.
+// 0 desliga a suavização e volta ao contorno em escada.
+const SMOOTH_ITERATIONS = Number(argOf('--smooth', String(COVERAGE_SMOOTH_ITERATIONS)));
+
+// Descarta componentes conexos menores que isto (em células) antes de traçar o polígono — em
+// área densa, o "bairro dominante por célula" deixa fragmentos de fronteira (1-3 células) para
+// o bairro perdedor, que só poluem o mapa (sem CDO visível dentro, quase sempre vermelhos por
+// serem sobra de um bairro pouco disponível). Não afeta a estatística do bairro (cdoTotal etc.
+// continuam contando os CDOs reais). 0 desliga o filtro.
+const MIN_COMPONENT_CELLS = Number(argOf('--min-cells', String(COVERAGE_MIN_COMPONENT_CELLS)));
 
 // Resolução do ÍNDICE de células gravado (geo_gpon_coverage_cell), que serve só para achar
 // polígonos por bbox — o polígono em si continua traçado em `--cell` (suave). Com `--index-cell`
@@ -79,7 +93,10 @@ const GENERATOR = 'build-gpon-coverage';
 // Só caixa de distribuição (CDO) entra: mesmo recorte da aba de Viabilidade.
 const CDO_NAME = /^\s*CDO/i;
 
-const clean = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
+const clean = (value) =>
+  String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 // Bairro a partir do endereço da carga. O parser lê pelas pontas, então em endereço curto
 // o "bairro" pode ter caído no número do logradouro — rejeita numérico puro ou igual ao nº.
@@ -162,10 +179,18 @@ async function main() {
   if (!Number.isFinite(INDEX_CELL_METERS) || INDEX_CELL_METERS < CELL_METERS) {
     throw new Error('--index-cell deve ser >= --cell');
   }
+  if (!Number.isFinite(SMOOTH_ITERATIONS) || SMOOTH_ITERATIONS < 0) {
+    throw new Error('--smooth inválido');
+  }
+  if (!Number.isFinite(MIN_COMPONENT_CELLS) || MIN_COMPONENT_CELLS < 0) {
+    throw new Error('--min-cells inválido');
+  }
 
   const source = await openLoaderDb({ provider: SOURCE_PROVIDER });
   const target =
-    TARGET_PROVIDER === SOURCE_PROVIDER ? source : await openLoaderDb({ provider: TARGET_PROVIDER });
+    TARGET_PROVIDER === SOURCE_PROVIDER
+      ? source
+      : await openLoaderDb({ provider: TARGET_PROVIDER });
   try {
     if (source !== target) {
       console.log(`Origem   : CDOs em ${SOURCE_PROVIDER} → cobertura em ${TARGET_PROVIDER}`);
@@ -231,10 +256,15 @@ async function main() {
       });
     }
 
-    const scopeLabel = [CITY && `city=${CITY}`, UF && `uf=${UF}`].filter(Boolean).join(' · ') || 'base inteira';
+    const scopeLabel =
+      [CITY && `city=${CITY}`, UF && `uf=${UF}`].filter(Boolean).join(' · ') || 'base inteira';
     console.log(`Escopo   : ${scopeLabel}`);
-    console.log(`Grade    : célula ${CELL_METERS} m · raio de cobertura ${RADIUS_METERS} m`);
-    console.log(`CDOs     : ${cdos.length} elegíveis${skippedGeometry ? ` (${skippedGeometry} sem geometria válida)` : ''}`);
+    console.log(
+      `Grade    : célula ${CELL_METERS} m · raio de cobertura ${RADIUS_METERS} m · suavização ${SMOOTH_ITERATIONS}x · mínimo ${MIN_COMPONENT_CELLS} células`,
+    );
+    console.log(
+      `CDOs     : ${cdos.length} elegíveis${skippedGeometry ? ` (${skippedGeometry} sem geometria válida)` : ''}`,
+    );
 
     if (cdos.length === 0) {
       console.log('\nNenhuma CDO no escopo — nada a gerar.');
@@ -245,13 +275,22 @@ async function main() {
     const { components, neighborhoods } = buildCoverage(cdos, {
       cellMeters: CELL_METERS,
       radiusMeters: RADIUS_METERS,
+      smoothIterations: SMOOTH_ITERATIONS,
+      minComponentCells: MIN_COMPONENT_CELLS,
     });
     const cellCount = components.reduce((sum, component) => sum + component.cells.length, 0);
+    const vertexCount = components.reduce(
+      (sum, component) =>
+        sum + component.geometry.coordinates.reduce((inner, ring) => inner + ring.length, 0),
+      0,
+    );
+    const avgVertices = components.length ? (vertexCount / components.length).toFixed(1) : '0';
 
     neighborhoods.sort((a, b) => b.cdoTotal - a.cdoTotal);
     console.log(`Bairros  : ${neighborhoods.length}`);
     console.log(`Componentes (polígonos): ${components.length}`);
     console.log(`Células  : ${cellCount}`);
+    console.log(`Vértices : ${vertexCount} total · ${avgVertices} em média por polígono`);
     console.log('\nTop bairros por CDOs:');
     for (const stat of neighborhoods.slice(0, 10)) {
       const pct = (stat.availabilityRatio * 100).toFixed(1);
@@ -308,15 +347,26 @@ async function main() {
     const { rows: existing } = await target.query(
       `SELECT id, reference_point FROM tmf_geographic_location WHERE reference_point LIKE 'GPON:%'`,
     );
-    const staleIds = existing
-      .filter((row) => inScope(row.reference_point))
-      .map((row) => row.id);
-    const removedCells = await deleteByIds(target, 'geo_gpon_coverage_cell', 'coverage_area_id', staleIds);
+    const staleIds = existing.filter((row) => inScope(row.reference_point)).map((row) => row.id);
+    const removedCells = await deleteByIds(
+      target,
+      'geo_gpon_coverage_cell',
+      'coverage_area_id',
+      staleIds,
+    );
     const removedAreas = await deleteByIds(target, 'tmf_geographic_location', 'id', staleIds);
 
     const insertedLocations = await target.bulkInsert(
       'tmf_geographic_location',
-      ['id', 'href', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'],
+      [
+        'id',
+        'href',
+        'geometry_type',
+        'geometry',
+        'spatial_ref',
+        'reference_point',
+        'characteristics',
+      ],
       locations,
     );
     // Índice de células gravado na resolução de --index-cell (agrega o fino se for maior).
@@ -325,7 +375,15 @@ async function main() {
     // gravada por outro município (não apagada por este escopo) é preservada.
     const insertedCells = await target.bulkInsert(
       'geo_gpon_coverage_cell',
-      ['tenant_id', 'grid_size_m', 'grid_x', 'grid_y', 'coverage_area_id', 'cdo_total', 'cdo_available'],
+      [
+        'tenant_id',
+        'grid_size_m',
+        'grid_x',
+        'grid_y',
+        'coverage_area_id',
+        'cdo_total',
+        'cdo_available',
+      ],
       indexCells,
       { onConflict: 'ON CONFLICT (tenant_id, grid_size_m, grid_x, grid_y) DO NOTHING' },
     );
@@ -404,11 +462,38 @@ function coverageChars(stat) {
     { group: '_coverage', name: 'neighborhoodKey', value: stat.key, valueType: 'string' },
     { group: '_coverage', name: 'cdoTotal', value: stat.cdoTotal, valueType: 'integer' },
     { group: '_coverage', name: 'cdoAvailable', value: stat.cdoAvailable, valueType: 'integer' },
-    { group: '_coverage', name: 'cdoUnavailable', value: stat.cdoUnavailable, valueType: 'integer' },
-    { group: '_coverage', name: 'availabilityRatio', value: stat.availabilityRatio, valueType: 'decimal' },
-    { group: '_coverage', name: 'coveredAreaKm2', value: stat.coveredAreaKm2, valueType: 'decimal' },
+    {
+      group: '_coverage',
+      name: 'cdoUnavailable',
+      value: stat.cdoUnavailable,
+      valueType: 'integer',
+    },
+    {
+      group: '_coverage',
+      name: 'availabilityRatio',
+      value: stat.availabilityRatio,
+      valueType: 'decimal',
+    },
+    {
+      group: '_coverage',
+      name: 'coveredAreaKm2',
+      value: stat.coveredAreaKm2,
+      valueType: 'decimal',
+    },
     { group: '_coverage', name: 'radiusMeters', value: RADIUS_METERS, valueType: 'integer' },
     { group: '_coverage', name: 'cellSizeMeters', value: CELL_METERS, valueType: 'integer' },
+    {
+      group: '_coverage',
+      name: 'smoothIterations',
+      value: SMOOTH_ITERATIONS,
+      valueType: 'integer',
+    },
+    {
+      group: '_coverage',
+      name: 'minComponentCells',
+      value: MIN_COMPONENT_CELLS,
+      valueType: 'integer',
+    },
     { group: '_coverage', name: 'generatedAt', value: GENERATED_AT, valueType: 'date' },
     { group: '_coverage', name: 'generator', value: GENERATOR, valueType: 'string' },
   ];

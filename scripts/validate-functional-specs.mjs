@@ -14,7 +14,7 @@ const specs = [
     questionPrefix: 'Q-GEO-',
     decisionPrefix: 'D-GEO-',
     count: 14,
-    version: '1.5',
+    version: '1.7',
     illustrative: new Set(),
   },
   {
@@ -46,31 +46,35 @@ for (const definition of specs) {
   const text = readFileSync(path, 'utf8');
   const requirementMatches = [...text.matchAll(/^## (\d+)\. (REQ-MOD\d{2}-\d{3}) —/gmu)];
   const ids = requirementMatches.map((match) => match[2]);
-  const expectedIds = Array.from({ length: definition.count }, (_, index) =>
-    `${definition.prefix}${String(index + 1).padStart(3, '0')}`,
+  const expectedIds = Array.from(
+    { length: definition.count },
+    (_, index) => `${definition.prefix}${String(index + 1).padStart(3, '0')}`,
   );
 
   if (ids.join('|') !== expectedIds.join('|')) {
-    fail(`${definition.file}: sequência de requisitos diferente de ${expectedIds[0]}…${expectedIds.at(-1)}`);
+    fail(
+      `${definition.file}: sequência de requisitos diferente de ${expectedIds[0]}…${expectedIds.at(-1)}`,
+    );
   }
 
   const summary = text.match(/## 5\. Resumo dos requisitos do módulo([\s\S]*?)(?=\n## 6\.)/u)?.[1];
   if (!summary) fail(`${definition.file}: resumo de requisitos ausente`);
   else {
     for (const id of expectedIds) {
-      if (!summary.includes(`**${id}**`)) fail(`${definition.file}: ${id} ausente no resumo de requisitos`);
+      if (!summary.includes(`**${id}**`))
+        fail(`${definition.file}: ${id} ausente no resumo de requisitos`);
     }
   }
 
-  const adherenceMatch = text.match(/### 2\.3 Aderência ao codebase atual([\s\S]*?)(?=\n---\n|\n## 3\.)/u);
+  const adherenceMatch = text.match(
+    /### 2\.3 Aderência ao codebase atual([\s\S]*?)(?=\n---\n|\n## 3\.)/u,
+  );
   if (!adherenceMatch) {
     fail(`${definition.file}: seção 2.3 de aderência ausente`);
   } else {
     const adherence = adherenceMatch[1];
     for (const id of expectedIds) {
-      const row = adherence
-        .split(/\r?\n/u)
-        .find((line) => line.includes(`**${id}**`));
+      const row = adherence.split(/\r?\n/u).find((line) => line.includes(`**${id}**`));
       if (!row) fail(`${definition.file}: ${id} ausente na matriz de aderência`);
       else {
         if (!/\b(Implementado|Parcial|Não implementado|Divergente)\b/u.test(row)) {
@@ -92,34 +96,56 @@ for (const definition of specs) {
     const block = text.slice(current.index, next?.index ?? text.length);
     const section = current[1];
     const id = current[2];
-    const subsections = [...block.matchAll(new RegExp(`^### ${section}\\.(\\d+) `, 'gmu'))].map((match) =>
-      Number(match[1]),
+    const subsections = [...block.matchAll(new RegExp(`^### ${section}\\.(\\d+) `, 'gmu'))].map(
+      (match) => Number(match[1]),
     );
-    const expected = definition.illustrative.has(id) ? [1, 2, 3, 4, 5, 6, 7] : [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    const expected = definition.illustrative.has(id)
+      ? [1, 2, 3, 4, 5, 6, 7]
+      : [1, 2, 3, 4, 5, 6, 7, 8, 9];
     if (subsections.join('|') !== expected.join('|')) {
-      fail(`${definition.file}: ${id} possui subitens ${subsections.join(',')}; esperado ${expected.join(',')}`);
+      fail(
+        `${definition.file}: ${id} possui subitens ${subsections.join(',')}; esperado ${expected.join(',')}`,
+      );
     }
 
-    if (!/Status funcional:\*{0,2}\s*(?:Especificado|Bloqueado por Q-(?:GEO|RES|SVC|ARQ|INT)-\d{3})/u.test(block)) {
+    if (
+      !/Status funcional:\*{0,2}\s*(?:Especificado|Bloqueado por Q-(?:GEO|RES|SVC|ARQ|INT)-\d{3})/u.test(
+        block,
+      )
+    ) {
       fail(`${definition.file}: ${id} sem maturidade funcional Especificado/Bloqueado por Q-*`);
     }
 
     const benchmarkHeading = definition.illustrative.has(id) ? expected.at(-1) : 9;
     const benchmark = block.match(
-      new RegExp(`### ${section}\\.${benchmarkHeading} Mapeamento contra sistemas de referência([\\s\\S]*?)(?=\\n---\\n|$)`, 'u'),
+      new RegExp(
+        `### ${section}\\.${benchmarkHeading} Mapeamento contra sistemas de referência([\\s\\S]*?)(?=\\n---\\n|$)`,
+        'u',
+      ),
     );
-    if (!benchmark || !benchmark[1].includes('| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |')) {
+    if (
+      !benchmark ||
+      !benchmark[1].includes('| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |')
+    ) {
       fail(`${definition.file}: ${id} sem tabela N.${benchmarkHeading} completa de benchmark`);
     } else {
-      const rows = benchmark[1]
-        .split(/\r?\n/u)
-        .filter((line) => /^\| \*\*.+\|/u.test(line));
-      if (rows.length === 0) fail(`${definition.file}: ${id} sem capacidade comparada no benchmark`);
+      const rows = benchmark[1].split(/\r?\n/u).filter((line) => /^\| \*\*.+\|/u.test(line));
+      if (rows.length === 0)
+        fail(`${definition.file}: ${id} sem capacidade comparada no benchmark`);
       for (const row of rows) {
-        const cells = row.split('|').slice(1, -1).map((cell) => cell.trim());
+        const cells = row
+          .split('|')
+          .slice(1, -1)
+          .map((cell) => cell.trim());
         for (const systemCell of cells.slice(1, 4)) {
-          if (/^(?:N\/A|Inexistente|\*\*Inexistente|Não(?! identificado no levantamento))/u.test(systemCell)) {
-            fail(`${definition.file}: ${id} usa negativa categórica sem evidência no benchmark (${systemCell})`);
+          if (
+            /^(?:N\/A|Inexistente|\*\*Inexistente|Não(?! identificado no levantamento))/u.test(
+              systemCell,
+            )
+          ) {
+            fail(
+              `${definition.file}: ${id} usa negativa categórica sem evidência no benchmark (${systemCell})`,
+            );
           }
         }
       }
@@ -135,13 +161,19 @@ for (const definition of specs) {
   }
 
   const headerVersion = text.match(/\| \*\*Versão\*\* \| ([^|]+) \|/u)?.[1];
-  const revisionVersions = [...text.matchAll(/^\| (\d+\.\d+) \| [^|]+ \| [^|]+ \|/gmu)].map((match) => match[1]);
+  const revisionVersions = [...text.matchAll(/^\| (\d+\.\d+) \| [^|]+ \| [^|]+ \|/gmu)].map(
+    (match) => match[1],
+  );
   const latestRevision = revisionVersions.at(-1);
   if (!headerVersion || !latestRevision || normalizeVersion(headerVersion) !== latestRevision) {
-    fail(`${definition.file}: versão do cabeçalho (${headerVersion?.trim() ?? 'ausente'}) difere da revisão (${latestRevision ?? 'ausente'})`);
+    fail(
+      `${definition.file}: versão do cabeçalho (${headerVersion?.trim() ?? 'ausente'}) difere da revisão (${latestRevision ?? 'ausente'})`,
+    );
   }
   if (normalizeVersion(headerVersion ?? '') !== definition.version) {
-    fail(`${definition.file}: versão esperada ${definition.version}, encontrada ${headerVersion?.trim() ?? 'ausente'}`);
+    fail(
+      `${definition.file}: versão esperada ${definition.version}, encontrada ${headerVersion?.trim() ?? 'ausente'}`,
+    );
   }
   if (!/\| \*\*Status\*\* \| Em elaboração \|/u.test(text)) {
     fail(`${definition.file}: status do documento deve permanecer Em elaboração`);
@@ -151,7 +183,9 @@ for (const definition of specs) {
   }
   for (const line of text.split(/\r?\n/u)) {
     if (/^\| \*\*Q-(?:GEO|RES|SVC)-\d{3}\*\*/u.test(line) && /Decidid/iu.test(line)) {
-      fail(`${definition.file}: questão resolvida deve usar ID D-* (${line.split('|')[1]?.trim()})`);
+      fail(
+        `${definition.file}: questão resolvida deve usar ID D-* (${line.split('|')[1]?.trim()})`,
+      );
     }
   }
 }
@@ -160,28 +194,43 @@ const backlog = readFileSync(backlogPath, 'utf8');
 const referencedBacklogIds = new Set();
 for (const definition of specs) {
   const text = readFileSync(join(specsDir, definition.file), 'utf8');
-  for (const match of text.matchAll(/DEV-(?:GEO|RES|SVC|X)-\d{3}/gu)) referencedBacklogIds.add(match[0]);
+  for (const match of text.matchAll(/DEV-(?:GEO|RES|SVC|X)-\d{3}/gu))
+    referencedBacklogIds.add(match[0]);
 }
 for (const id of referencedBacklogIds) {
-  if (!backlog.includes(`| ${id} |`) && !backlog.includes(`| **${id}** |`)) fail(`technical-backlog.md: item ${id} referenciado mas não definido`);
+  if (!backlog.includes(`| ${id} |`) && !backlog.includes(`| **${id}** |`))
+    fail(`technical-backlog.md: item ${id} referenciado mas não definido`);
 }
 
 const definedBacklogIds = new Set();
 for (const line of backlog.split(/\r?\n/u)) {
   if (!/^\| DEV-(?:GEO|RES|SVC|X)-\d{3} \|/u.test(line)) continue;
-  const cells = line.split('|').slice(1, -1).map((cell) => cell.trim());
-  const [id, priority, status, origin, behavior, contract, dependency, evidence, acceptance] = cells;
+  const cells = line
+    .split('|')
+    .slice(1, -1)
+    .map((cell) => cell.trim());
+  const [id, priority, status, origin, behavior, contract, dependency, evidence, acceptance] =
+    cells;
   if (definedBacklogIds.has(id)) fail(`technical-backlog.md: item ${id} definido mais de uma vez`);
   definedBacklogIds.add(id);
   if (!/^P[0-2]$/u.test(priority)) fail(`technical-backlog.md: ${id} com prioridade inválida`);
-  if (!/^(?:Concluído|Parcial|Pendente|Superado)$/u.test(status)) fail(`technical-backlog.md: ${id} com estado inválido`);
-  if (!/(?:REQ-MOD\d{2}-\d{3}|C\d+)/u.test(origin)) fail(`technical-backlog.md: ${id} sem origem REQ/C rastreável`);
-  for (const [field, value] of Object.entries({ behavior, contract, dependency, evidence, acceptance })) {
+  if (!/^(?:Concluído|Parcial|Pendente|Superado)$/u.test(status))
+    fail(`technical-backlog.md: ${id} com estado inválido`);
+  if (!/(?:REQ-MOD\d{2}-\d{3}|C\d+)/u.test(origin))
+    fail(`technical-backlog.md: ${id} sem origem REQ/C rastreável`);
+  for (const [field, value] of Object.entries({
+    behavior,
+    contract,
+    dependency,
+    evidence,
+    acceptance,
+  })) {
     if (!value || value === '—') fail(`technical-backlog.md: ${id} sem campo ${field}`);
   }
 }
 for (const id of definedBacklogIds) {
-  if (!referencedBacklogIds.has(id)) fail(`technical-backlog.md: item ${id} não referenciado por nenhum HLD`);
+  if (!referencedBacklogIds.has(id))
+    fail(`technical-backlog.md: item ${id} não referenciado por nenhum HLD`);
 }
 
 const canonicalQuestions = readFileSync(questionsPath, 'utf8');
@@ -189,10 +238,12 @@ const canonicalDecisions = readFileSync(decisionsPath, 'utf8');
 for (const definition of specs) {
   const text = readFileSync(join(specsDir, definition.file), 'utf8');
   for (const match of text.matchAll(/\bQ-(?:GEO|RES|SVC|ARQ|INT)-\d{3}\b/gu)) {
-    if (!canonicalQuestions.includes(match[0])) fail(`${definition.file}: questão ${match[0]} ausente no registro central`);
+    if (!canonicalQuestions.includes(match[0]))
+      fail(`${definition.file}: questão ${match[0]} ausente no registro central`);
   }
   for (const match of text.matchAll(/\bD-(?:GEO|RES|SVC)-\d{3}\b/gu)) {
-    if (!canonicalDecisions.includes(match[0])) fail(`${definition.file}: decisão ${match[0]} ausente no registro central`);
+    if (!canonicalDecisions.includes(match[0]))
+      fail(`${definition.file}: decisão ${match[0]} ausente no registro central`);
   }
 
   const hldQuestionIds = new Set(
@@ -226,7 +277,8 @@ const benchmarkPlaybook = readFileSync(join(specsDir, '_benchmark-systems.md'), 
 for (const source of ['netwin.md', 'kuwaiba.md', 'netbox.md']) {
   const sourcePath = join(specsDir, 'inspirations', source);
   if (!existsSync(sourcePath)) fail(`fonte de benchmark ausente: inspirations/${source}`);
-  if (!benchmarkPlaybook.includes(`inspirations/${source}`)) fail(`_benchmark-systems.md: fonte inspirations/${source} não referenciada`);
+  if (!benchmarkPlaybook.includes(`inspirations/${source}`))
+    fail(`_benchmark-systems.md: fonte inspirations/${source} não referenciada`);
 }
 
 const overview = readFileSync(overviewPath, 'utf8');
@@ -247,7 +299,8 @@ markdownFiles.push(join(root, 'AGENTS.md'));
 
 for (const path of markdownFiles) {
   const text = readFileSync(path, 'utf8');
-  if (text.includes('reference-systems/')) fail(`${relative(root, path)}: referência obsoleta a reference-systems/`);
+  if (text.includes('reference-systems/'))
+    fail(`${relative(root, path)}: referência obsoleta a reference-systems/`);
   for (const match of text.matchAll(/\[[^\]]*\]\(([^)]+)\)/gu)) {
     const target = match[1].trim().replace(/^<|>$/gu, '');
     if (/^(?:https?:\/\/|mailto:|#)/u.test(target)) continue;
@@ -263,5 +316,7 @@ if (errors.length > 0) {
   for (const error of errors) console.error(`- ${error}`);
   process.exitCode = 1;
 } else {
-  console.log('Functional specs válidas: 57 requisitos, matrizes, JSON, links, benchmarks e backlog conferidos.');
+  console.log(
+    'Functional specs válidas: 57 requisitos, matrizes, JSON, links, benchmarks e backlog conferidos.',
+  );
 }

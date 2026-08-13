@@ -6,16 +6,16 @@
 
 TMFC014 · TMF673 / TMF674 / TMF675
 
-| Campo | Valor |
-|---|---|
-| **Document Reference** | VTN-HLD-MOD01-GEO |
-| **Versão** | 1.5 — draft |
-| **Data** | Agosto 2026 |
-| **Documento âncora** | VTN-HLD-OVERVIEW-001 |
-| **TMFC coberto** | TMFC014 — Geographic Site Mgmt |
-| **Open APIs** | TMF673, TMF674, TMF675, TMF688 |
-| **Requisitos cobertos** | REQ-MOD01-001 a REQ-MOD01-013 |
-| **Status** | Em elaboração |
+| Campo                   | Valor                          |
+| ----------------------- | ------------------------------ |
+| **Document Reference**  | VTN-HLD-MOD01-GEO              |
+| **Versão**              | 1.7 — draft                    |
+| **Data**                | Agosto 2026                    |
+| **Documento âncora**    | VTN-HLD-OVERVIEW-001           |
+| **TMFC coberto**        | TMFC014 — Geographic Site Mgmt |
+| **Open APIs**           | TMF673, TMF674, TMF675, TMF688 |
+| **Requisitos cobertos** | REQ-MOD01-001 a REQ-MOD01-014  |
+| **Status**              | Em elaboração                  |
 
 ---
 
@@ -59,22 +59,22 @@ Este documento se ancora arquiteturalmente no documento de visão geral VTN-HLD-
 
 O HLD descreve o contrato funcional alvo. A tabela abaixo registra o estado verificado no backend, persistência, frontend e testes em julho de 2026. `Parcial` significa que existe uma base executável, mas ao menos um RF/CA obrigatório, requisito de escala ou regra canônica ainda não está entregue.
 
-| Requisito | Estado | Evidência atual | Gap principal | Bloqueador | Backlog |
-|---|---|---|---|---|---|
-| **REQ-MOD01-001** | Parcial | `GeoService`, `IGeoRepository`, rotas TMF675 e `geo.unit.spec.ts` validam e persistem Point/LineString/Polygon. | Consultas por raio/interseção, export GeoJSON, índice espacial e UUID v7. | Q-ARQ-001 | DEV-GEO-001, DEV-X-001 |
-| **REQ-MOD01-002** | Parcial | CRUD TMF673, vínculo com Location e testes de rota estão ativos. | Sugestão/geocodificação Geosite, versionamento e carga em massa. | Q-GEO-005 | DEV-GEO-002, DEV-GEO-006 |
-| **REQ-MOD01-003** | Parcial | CRUD de SiteSpecification e regras de contenção são exercitados em `geo.unit.spec.ts`. | Categorias continuam fechadas no tipo TypeScript; falta lifecycle e consulta `allowedChildren`. | Q-GEO-001 | DEV-GEO-003 |
-| **REQ-MOD01-004** | Parcial | Região é representável por SiteSpecification e a árvore expõe raízes/filhos paginados. | Filtros próprios, contadores acumulados e invariantes administrativas. | Q-GEO-001, Q-GEO-002 | DEV-GEO-004 |
-| **REQ-MOD01-005** | Parcial | `relatedSite` e specs permitem classificação e agrupamento básico. | `siteType`, consulta de membros, filtros combinados e agregações de grupo. | Q-GEO-004 | DEV-GEO-004 |
-| **REQ-MOD01-006** | Parcial | CRUD TMF674, `/v1/geo/workspace/site-at-address`, busca e frontend Geo estão testados. | Filtros completos, bulk, múltiplos endereços e características governadas pelo catálogo. | Q-GEO-001 | DEV-GEO-004, DEV-GEO-006 |
-| **REQ-MOD01-007** | Parcial | `/v1/geo/tree/roots`, `children` e `search` entregam navegação lazy com contagens. | Árvore completa dedicada, profundidade/ciclos e operações específicas de Sub-Site. | Q-GEO-010 | DEV-GEO-004 |
-| **REQ-MOD01-008** | Parcial | PATCH de status gera TMF688 e `/v1/geo/sites/{id}/events` expõe histórico bruto. | Máquina de transições, `statusDate`, histórico semântico e retenção. | Q-GEO-008 | DEV-GEO-004, DEV-X-002 |
-| **REQ-MOD01-009** | Parcial | `validateContainment` verifica pares pai/filho configurados. | Prevenção de ciclos ancestrais e API dinâmica de filhos permitidos. | Q-GEO-001 | DEV-GEO-003, DEV-GEO-004 |
-| **REQ-MOD01-010** | Parcial | Criação, listagem e remoção de `relatedSite` persistem e publicam eventos. | Tipos governados, inversos automáticos, impact analysis e subgrafo. | Q-GEO-004 | DEV-GEO-004, DEV-X-003 |
-| **REQ-MOD01-011** | Parcial | `GeoPage`, Google Maps, árvore sincronizada, camada de cobertura GPON por escala (REQ-MOD01-014) e `/v1/geo/tree/viewport` exibem Sites e infraestrutura passiva por bbox/escala. | Sync de coordenadas, camadas Geosite, proximidade e exportação PNG/GeoJSON. | Q-GEO-005, Q-GEO-007 | DEV-GEO-005 |
-| **REQ-MOD01-012** | Parcial | Mudanças Geo persistem eventos consultáveis e cobertos por testes unitários/integrados. | Outbox transacional, Schema Registry, catálogo público, DLQ e UUID v7. | Q-GEO-008 | DEV-X-002 |
-| **REQ-MOD01-013** | Não implementado | `GeoPage` e o mapa exibem e selecionam feições; nenhuma tela cria ou altera vértices. | Editor de geometria completo: desenho, vértices, snap, split/merge, rascunho, import e histórico. | Q-GEO-011 | DEV-GEO-007, DEV-GEO-005 |
-| **REQ-MOD01-014** | Implementado | `coverage-grid.ts`, `coverage-service.ts`, `/v1/geo/coverage`, `scripts/build-gpon-coverage.mjs` e a camada `CoverageOverlay` no `GeoPage`, com `geo.coverage.unit.spec.ts`, `geo.integration.spec.ts` e `coverageColor.test.ts`. | Takeup (portas ocupadas/totais) por bairro e regeneração incremental/orquestrada da grade. | — | DEV-GEO-008 |
+| Requisito         | Estado           | Evidência atual                                                                                                                                                                                                                   | Gap principal                                                                                     | Bloqueador           | Backlog                  |
+| ----------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------- | ------------------------ |
+| **REQ-MOD01-001** | Parcial          | `GeoService`, `IGeoRepository`, rotas TMF675 e `geo.unit.spec.ts` validam e persistem Point/LineString/Polygon.                                                                                                                   | Consultas por raio/interseção, export GeoJSON, índice espacial e UUID v7.                         | Q-ARQ-001            | DEV-GEO-001, DEV-X-001   |
+| **REQ-MOD01-002** | Parcial          | CRUD TMF673, vínculo com Location e testes de rota estão ativos.                                                                                                                                                                  | Sugestão/geocodificação Geosite, versionamento e carga em massa.                                  | Q-GEO-005            | DEV-GEO-002, DEV-GEO-006 |
+| **REQ-MOD01-003** | Parcial          | CRUD de SiteSpecification e regras de contenção são exercitados em `geo.unit.spec.ts`.                                                                                                                                            | Categorias continuam fechadas no tipo TypeScript; falta lifecycle e consulta `allowedChildren`.   | Q-GEO-001            | DEV-GEO-003              |
+| **REQ-MOD01-004** | Parcial          | Região é representável por SiteSpecification e a árvore expõe raízes/filhos paginados.                                                                                                                                            | Filtros próprios, contadores acumulados e invariantes administrativas.                            | Q-GEO-001, Q-GEO-002 | DEV-GEO-004              |
+| **REQ-MOD01-005** | Parcial          | `relatedSite` e specs permitem classificação e agrupamento básico.                                                                                                                                                                | `siteType`, consulta de membros, filtros combinados e agregações de grupo.                        | Q-GEO-004            | DEV-GEO-004              |
+| **REQ-MOD01-006** | Parcial          | CRUD TMF674, `/v1/geo/workspace/site-at-address`, busca e frontend Geo estão testados.                                                                                                                                            | Filtros completos, bulk, múltiplos endereços e características governadas pelo catálogo.          | Q-GEO-001            | DEV-GEO-004, DEV-GEO-006 |
+| **REQ-MOD01-007** | Parcial          | `/v1/geo/tree/roots`, `children` e `search` entregam navegação lazy com contagens.                                                                                                                                                | Árvore completa dedicada, profundidade/ciclos e operações específicas de Sub-Site.                | Q-GEO-010            | DEV-GEO-004              |
+| **REQ-MOD01-008** | Parcial          | PATCH de status gera TMF688 e `/v1/geo/sites/{id}/events` expõe histórico bruto.                                                                                                                                                  | Máquina de transições, `statusDate`, histórico semântico e retenção.                              | Q-GEO-008            | DEV-GEO-004, DEV-X-002   |
+| **REQ-MOD01-009** | Parcial          | `validateContainment` verifica pares pai/filho configurados.                                                                                                                                                                      | Prevenção de ciclos ancestrais e API dinâmica de filhos permitidos.                               | Q-GEO-001            | DEV-GEO-003, DEV-GEO-004 |
+| **REQ-MOD01-010** | Parcial          | Criação, listagem e remoção de `relatedSite` persistem e publicam eventos.                                                                                                                                                        | Tipos governados, inversos automáticos, impact analysis e subgrafo.                               | Q-GEO-004            | DEV-GEO-004, DEV-X-003   |
+| **REQ-MOD01-011** | Parcial          | `GeoPage`, Google Maps, árvore sincronizada, camada de cobertura GPON por escala (REQ-MOD01-014) e `/v1/geo/tree/viewport` exibem Sites e infraestrutura passiva por bbox/escala.                                                 | Sync de coordenadas, camadas Geosite, proximidade e exportação PNG/GeoJSON.                       | Q-GEO-005, Q-GEO-007 | DEV-GEO-005              |
+| **REQ-MOD01-012** | Parcial          | Mudanças Geo persistem eventos consultáveis e cobertos por testes unitários/integrados.                                                                                                                                           | Outbox transacional, Schema Registry, catálogo público, DLQ e UUID v7.                            | Q-GEO-008            | DEV-X-002                |
+| **REQ-MOD01-013** | Não implementado | `GeoPage` e o mapa exibem e selecionam feições; nenhuma tela cria ou altera vértices.                                                                                                                                             | Editor de geometria completo: desenho, vértices, snap, split/merge, rascunho, import e histórico. | Q-GEO-011            | DEV-GEO-007, DEV-GEO-005 |
+| **REQ-MOD01-014** | Implementado     | `coverage-grid.ts`, `coverage-service.ts`, `/v1/geo/coverage`, `scripts/build-gpon-coverage.mjs` e a camada `CoverageOverlay` no `GeoPage`, com `geo.coverage.unit.spec.ts`, `geo.integration.spec.ts` e `coverageColor.test.ts`. | Takeup (portas ocupadas/totais) por bairro e regeneração incremental/orquestrada da grade.        | —                    | DEV-GEO-008              |
 
 ---
 
@@ -82,12 +82,12 @@ O HLD descreve o contrato funcional alvo. A tabela abaixo registra o estado veri
 
 O módulo Geographic implementa o TMFC014 expondo três entidades canônicas que se referenciam, conforme o modelo de informação do TM Forum:
 
-| Entidade | API | Papel no modelo |
-|---|---|---|
-| **GeographicLocation** | TMF675 | Representação geoespacial pura (Point, LineString, Polygon). Independente de qualquer outra entidade. É referenciada por endereços e sites para indicar onde estão fisicamente no mundo. |
-| **GeographicAddress** | TMF673 | Endereço postal estruturado (logradouro, número, CEP, cidade, estado, país). Entidade independente que pode opcionalmente referenciar uma GeographicLocation para sua geocodificação. |
-| **GeographicSite** | TMF674 | Local físico (Central, POP, Armário, andar, sala). Entidade central do módulo. Referencia GeographicLocation (place) e GeographicAddress (address). Tem hierarquia (parentSite) e relações topológicas (relatedSite). |
-| **GeographicSiteSpecification** | TMF674 | Especificação de tipo de Site (Catálogo). Define atributos esperados, validações e regras de contenção (allowedParent/Child). É o ponto de extensão do metamodelo. |
+| Entidade                        | API    | Papel no modelo                                                                                                                                                                                                       |
+| ------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **GeographicLocation**          | TMF675 | Representação geoespacial pura (Point, LineString, Polygon). Independente de qualquer outra entidade. É referenciada por endereços e sites para indicar onde estão fisicamente no mundo.                              |
+| **GeographicAddress**           | TMF673 | Endereço postal estruturado (logradouro, número, CEP, cidade, estado, país). Entidade independente que pode opcionalmente referenciar uma GeographicLocation para sua geocodificação.                                 |
+| **GeographicSite**              | TMF674 | Local físico (Central, POP, Armário, andar, sala). Entidade central do módulo. Referencia GeographicLocation (place) e GeographicAddress (address). Tem hierarquia (parentSite) e relações topológicas (relatedSite). |
+| **GeographicSiteSpecification** | TMF674 | Especificação de tipo de Site (Catálogo). Define atributos esperados, validações e regras de contenção (allowedParent/Child). É o ponto de extensão do metamodelo.                                                    |
 
 ### 3.1 Relações entre entidades
 
@@ -144,7 +144,7 @@ Sites podem ter relatedParty com Tenants distintos; visibilidade e operação de
 
 Todo objeto que o usuário cadastra corresponde a algo que existe no mundo: um site, um endereço, uma geometria. Adjacências, trechos e arestas de grafo são **derivados** das entidades e de suas relações — nunca cadastrados como objeto próprio. Se o modelo exige inventar um registro apenas para amarrar outros dois, o modelo está errado.
 
-O contraexemplo está documentado em `inspirations/geosite-legado.md`: para representar infraestrutura subterrânea, o sistema legado exige cadastrar *arcos* — arestas do grafo expostas como objeto de cadastro. Nas palavras da operação, "o arco nem existe". A consequência prática é dupla: complexidade de cadastro e uma classe de inconsistência silenciosa, em que os objetos artificiais existem e o objeto real não.
+O contraexemplo está documentado em `inspirations/geosite-legado.md`: para representar infraestrutura subterrânea, o sistema legado exige cadastrar _arcos_ — arestas do grafo expostas como objeto de cadastro. Nas palavras da operação, "o arco nem existe". A consequência prática é dupla: complexidade de cadastro e uma classe de inconsistência silenciosa, em que os objetos artificiais existem e o objeto real não.
 
 ### 4.8 Operação 100% web, sem cliente desktop
 
@@ -156,22 +156,22 @@ Toda operação de cadastro do módulo — inclusive digitalização de geometri
 
 O módulo Geographic é composto por 14 requisitos, organizados conforme o fluxo natural de modelagem TMF: primeiro as entidades geoespaciais base (Location, Address), depois o catálogo (SiteSpecification), depois as instâncias (Region, Site, Sub-Site, ciclo de vida), depois as relações (contenção, topologia A↔Z) e finalmente as funcionalidades transversais (mapa, eventos, edição geoespacial, cobertura agregada por bairro).
 
-| ID | Título | Entidade TMF principal |
-|---|---|---|
-| **REQ-MOD01-001** | Cadastro de Geographic Location (ponto, área, linha) | *GeographicLocation (TMF675)* |
-| **REQ-MOD01-002** | Cadastro de Geographic Address (endereço postal estruturado) | *GeographicAddress (TMF673)* |
-| **REQ-MOD01-003** | Catálogo de Geographic Site Specification (tipos de site) | *GeographicSiteSpecification (TMF674)* |
-| **REQ-MOD01-004** | Cadastro de Região Geográfica (GeographicSite administrativo) | *GeographicSite com siteType=Region (TMF674)* |
-| **REQ-MOD01-005** | Classificação Funcional de Sites (siteType e grupo funcional) | *GeographicSite com siteType (TMF674) + grupo via relatedSite* |
-| **REQ-MOD01-006** | Cadastro de Geographic Site (entidade central do módulo) | *GeographicSite (TMF674)* |
-| **REQ-MOD01-007** | Sub-Sites (andares, salas, cages como GeographicSite) | *GeographicSite com category=SubSite (TMF674)* |
-| **REQ-MOD01-008** | Ciclo de Vida do Site (status, transições e histórico) | *GeographicSite.status + StateChangeEvent (TMF674 + TMF688)* |
-| **REQ-MOD01-009** | Regras de Contenção e Hierarquia entre Sites | *allowedParentSpec / allowedChildSpec em SiteSpec (TMF674)* |
-| **REQ-MOD01-010** | Relações Topológicas A↔Z entre Sites | *relatedSite[] em GeographicSite (TMF674)* |
-| **REQ-MOD01-011** | Visão de Mapa Georreferenciado | *Não é entidade TMF — funcionalidade de UI sobre TMF674+675* |
-| **REQ-MOD01-012** | Eventos de Domínio do Módulo Geographic | *Event (TMF688) — vários tipos* |
-| **REQ-MOD01-013** | Digitalização e edição de geometria no navegador | *GeographicLocation (TMF675) — operação de edição* |
-| **REQ-MOD01-014** | Cobertura GPON por bairro (mapa de calor) | *GeographicLocation (TMF675) — polígono de cobertura agregado* |
+| ID                | Título                                                        | Entidade TMF principal                                         |
+| ----------------- | ------------------------------------------------------------- | -------------------------------------------------------------- |
+| **REQ-MOD01-001** | Cadastro de Geographic Location (ponto, área, linha)          | _GeographicLocation (TMF675)_                                  |
+| **REQ-MOD01-002** | Cadastro de Geographic Address (endereço postal estruturado)  | _GeographicAddress (TMF673)_                                   |
+| **REQ-MOD01-003** | Catálogo de Geographic Site Specification (tipos de site)     | _GeographicSiteSpecification (TMF674)_                         |
+| **REQ-MOD01-004** | Cadastro de Região Geográfica (GeographicSite administrativo) | _GeographicSite com siteType=Region (TMF674)_                  |
+| **REQ-MOD01-005** | Classificação Funcional de Sites (siteType e grupo funcional) | _GeographicSite com siteType (TMF674) + grupo via relatedSite_ |
+| **REQ-MOD01-006** | Cadastro de Geographic Site (entidade central do módulo)      | _GeographicSite (TMF674)_                                      |
+| **REQ-MOD01-007** | Sub-Sites (andares, salas, cages como GeographicSite)         | _GeographicSite com category=SubSite (TMF674)_                 |
+| **REQ-MOD01-008** | Ciclo de Vida do Site (status, transições e histórico)        | _GeographicSite.status + StateChangeEvent (TMF674 + TMF688)_   |
+| **REQ-MOD01-009** | Regras de Contenção e Hierarquia entre Sites                  | _allowedParentSpec / allowedChildSpec em SiteSpec (TMF674)_    |
+| **REQ-MOD01-010** | Relações Topológicas A↔Z entre Sites                          | _relatedSite[] em GeographicSite (TMF674)_                     |
+| **REQ-MOD01-011** | Visão de Mapa Georreferenciado                                | _Não é entidade TMF — funcionalidade de UI sobre TMF674+675_   |
+| **REQ-MOD01-012** | Eventos de Domínio do Módulo Geographic                       | _Event (TMF688) — vários tipos_                                |
+| **REQ-MOD01-013** | Digitalização e edição de geometria no navegador              | _GeographicLocation (TMF675) — operação de edição_             |
+| **REQ-MOD01-014** | Cobertura GPON por bairro (mapa de calor)                     | _GeographicLocation (TMF675) — polígono de cobertura agregado_ |
 
 ### 5.1 Ordem de implementação sugerida
 
@@ -182,7 +182,6 @@ A ordem natural de construção respeita as dependências entre entidades:
 - **Camada 3 (governança):** REQ-008 (Ciclo de Vida) + REQ-009 (Contenção). Endurece a operação do dia a dia.
 - **Camada 4 (topologia e visualização):** REQ-010 (Relações A↔Z) + REQ-011 (Mapa) + REQ-013 (Edição de geometria) + REQ-014 (Cobertura GPON por bairro). Eleva a operação para análise topológica, torna o cadastro geoespacial autossuficiente no navegador e dá leitura de densidade/disponibilidade da planta em qualquer escala.
 - **Camada 5 (interoperabilidade):** REQ-012 (Eventos). Habilita módulos downstream e Data Lake — pode ser implementado em paralelo às camadas 2-4.
-
 
 ---
 
@@ -205,17 +204,17 @@ O design do TMF675 trata localização geográfica como entidade própria com ID
 
 Atributos canônicos da entidade GeographicLocation (TMF675):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `id` | string | Sim | UUID v7 gerado pelo Nexus. |
-| `href` | string | Não | URL canônica da entidade. |
-| `geometryType` | enum | Sim | Point | LineString | Polygon. Padrão V.tal: Point para sites e equipamentos; LineString para cabos. |
-| `geometry` | GeoJSON | Sim | Geometria conforme RFC 7946 (GeoJSON). Coordenadas em [longitude, latitude] — note a ordem invertida em relação ao senso comum. |
-| `spatialRef` | string | Não | Sistema de referência espacial. Padrão V.tal: "EPSG:4326" (WGS84). |
-| `accuracy` | string | Não | Indicação de precisão da coordenada (ex.: GPS, manual, derivado de endereço). |
-| `referencePoint` | string | Não | Descrição textual auxiliar (ex.: "Em frente ao número 100, próximo ao poste de luz"). |
-| `relatedEntity` | array<EntityRef> | Não | Lista de entidades que referenciam esta localização (back-reference para consulta). |
-| `validFor` | TimePeriod | Não | Período de validade — permite versionar localizações ao longo do tempo. |
+| Atributo TMF     | Tipo             | Obrigatório | Observação V.tal                                                                                                                |
+| ---------------- | ---------------- | :---------: | ------------------------------------------------------------------------------------------------------------------------------- |
+| `id`             | string           |     Sim     | UUID v7 gerado pelo Nexus.                                                                                                      |
+| `href`           | string           |     Não     | URL canônica da entidade.                                                                                                       |
+| `geometryType`   | enum             |     Sim     | Point                                                                                                                           | LineString | Polygon. Padrão V.tal: Point para sites e equipamentos; LineString para cabos. |
+| `geometry`       | GeoJSON          |     Sim     | Geometria conforme RFC 7946 (GeoJSON). Coordenadas em [longitude, latitude] — note a ordem invertida em relação ao senso comum. |
+| `spatialRef`     | string           |     Não     | Sistema de referência espacial. Padrão V.tal: "EPSG:4326" (WGS84).                                                              |
+| `accuracy`       | string           |     Não     | Indicação de precisão da coordenada (ex.: GPS, manual, derivado de endereço).                                                   |
+| `referencePoint` | string           |     Não     | Descrição textual auxiliar (ex.: "Em frente ao número 100, próximo ao poste de luz").                                           |
+| `relatedEntity`  | array<EntityRef> |     Não     | Lista de entidades que referenciam esta localização (back-reference para consulta).                                             |
+| `validFor`       | TimePeriod       |     Não     | Período de validade — permite versionar localizações ao longo do tempo.                                                         |
 
 ### 6.4 Exemplo de payload
 
@@ -246,53 +245,52 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ### 6.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Geographic Location** | Permitir criação de GeographicLocation com geometryType, geometry (GeoJSON), spatialRef e demais atributos. |
-| **RF-002** | **Validação geométrica** | Validar geometria conforme RFC 7946: Point com [long, lat]; LineString com array de pontos ordenado; Polygon com anel fechado. |
-| **RF-003** | **Validação de intervalo** | Validar latitude em [-90, 90] e longitude em [-180, 180] para todos os pontos da geometria. |
-| **RF-004** | **Buscar por proximidade** | Suportar busca de localizações dentro de raio (em metros) de um ponto de referência, usando distância geodésica. |
-| **RF-005** | **Buscar por bounding box** | Suportar busca de localizações contidas em um retângulo geográfico (minLong, minLat, maxLong, maxLat). |
-| **RF-006** | **Buscar por interseção** | Suportar busca de localizações que intersectam um polígono dado (caso de uso: "todos os Sites na área de impacto X"). |
-| **RF-007** | **Atualizar geometria** | Permitir atualização de geometria; mudanças geram evento TMF688 (GeographicLocationAttributeValueChangeEvent) para sistemas consumidores. |
-| **RF-008** | **Excluir Location** | Bloquear exclusão de Location referenciada por entidades ativas (Site, Address, Resource); permitir soft-delete via validFor. |
-| **RF-009** | **Consulta de referências** | Expor endpoint para listar todas as entidades que referenciam uma dada GeographicLocation. |
-| **RF-010** | **Exportação GeoJSON** | Exportar localizações em formato GeoJSON nativo para integração com sistemas GIS externos. |
+| ID         | Nome                          | Descrição                                                                                                                                 |
+| ---------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Geographic Location** | Permitir criação de GeographicLocation com geometryType, geometry (GeoJSON), spatialRef e demais atributos.                               |
+| **RF-002** | **Validação geométrica**      | Validar geometria conforme RFC 7946: Point com [long, lat]; LineString com array de pontos ordenado; Polygon com anel fechado.            |
+| **RF-003** | **Validação de intervalo**    | Validar latitude em [-90, 90] e longitude em [-180, 180] para todos os pontos da geometria.                                               |
+| **RF-004** | **Buscar por proximidade**    | Suportar busca de localizações dentro de raio (em metros) de um ponto de referência, usando distância geodésica.                          |
+| **RF-005** | **Buscar por bounding box**   | Suportar busca de localizações contidas em um retângulo geográfico (minLong, minLat, maxLong, maxLat).                                    |
+| **RF-006** | **Buscar por interseção**     | Suportar busca de localizações que intersectam um polígono dado (caso de uso: "todos os Sites na área de impacto X").                     |
+| **RF-007** | **Atualizar geometria**       | Permitir atualização de geometria; mudanças geram evento TMF688 (GeographicLocationAttributeValueChangeEvent) para sistemas consumidores. |
+| **RF-008** | **Excluir Location**          | Bloquear exclusão de Location referenciada por entidades ativas (Site, Address, Resource); permitir soft-delete via validFor.             |
+| **RF-009** | **Consulta de referências**   | Expor endpoint para listar todas as entidades que referenciam uma dada GeographicLocation.                                                |
+| **RF-010** | **Exportação GeoJSON**        | Exportar localizações em formato GeoJSON nativo para integração com sistemas GIS externos.                                                |
 
 ### 6.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Toda GeographicLocation deve ter geometria válida conforme RFC 7946 — geometrias malformadas são rejeitadas no save. |
+| ID         | Regra de Negócio                                                                                                                                                                  |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | Toda GeographicLocation deve ter geometria válida conforme RFC 7946 — geometrias malformadas são rejeitadas no save.                                                              |
 | **RN-002** | O sistema de referência espacial padrão é EPSG:4326 (WGS84); outros sistemas podem ser registrados como metadado mas não são suportados em consultas geoespaciais nativas do MVP. |
-| **RN-003** | Localizações nunca são excluídas fisicamente quando referenciadas — apenas marcadas com validFor.endDateTime. |
-| **RN-004** | Para LineString, ordem dos pontos é significativa (define direção do traçado para cabos). |
-| **RN-005** | Para Polygon, o anel exterior deve ser fechado (primeiro ponto = último ponto) e seguir orientação anti-horária. |
-| **RN-006** | Buscas por proximidade usam distância geodésica (fórmula de Haversine ou equivalente), não distância euclidiana. |
-| **RN-007** | Toda criação ou alteração gera evento TMF688 com correlation ID rastreável. |
+| **RN-003** | Localizações nunca são excluídas fisicamente quando referenciadas — apenas marcadas com validFor.endDateTime.                                                                     |
+| **RN-004** | Para LineString, ordem dos pontos é significativa (define direção do traçado para cabos).                                                                                         |
+| **RN-005** | Para Polygon, o anel exterior deve ser fechado (primeiro ponto = último ponto) e seguir orientação anti-horária.                                                                  |
+| **RN-006** | Buscas por proximidade usam distância geodésica (fórmula de Haversine ou equivalente), não distância euclidiana.                                                                  |
+| **RN-007** | Toda criação ou alteração gera evento TMF688 com correlation ID rastreável.                                                                                                       |
 
 ### 6.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criação válida** | Point criado com geometria {type:"Point", coordinates:[long,lat]} retorna 201 com ID e href; LineString com 5 pontos é aceito com mesmo padrão. |
-| **CA-002** | **Validação RFC 7946** | Geometria malformada (Point sem coordinates, LineString com 1 ponto, Polygon não fechado) retorna 400 com mensagem específica do erro. |
-| **CA-003** | **Validação de intervalo** | Longitude=181 ou latitude=-91 retornam 400 antes de qualquer persistência. |
-| **CA-004** | **Busca por proximidade** | GET /geographicLocation?near=-43.18,-22.90&radius=1000 retorna localizações dentro de 1km, ordenadas por distância crescente. |
-| **CA-005** | **Bounding box** | GET /geographicLocation?bbox=-43.20,-22.92,-43.16,-22.88 retorna apenas localizações dentro do retângulo informado. |
-| **CA-006** | **Bloqueio de exclusão** | DELETE em Location referenciada retorna 409 com lista de referências; reativação com soft-delete é permitida. |
-| **CA-007** | **Evento publicado** | Cada criação/alteração publica evento TMF688 no tópico geographic.location.v1 com payload conforme schema. |
-| **CA-008** | **Export GeoJSON** | GET /geographicLocation com Accept: application/geo+json retorna FeatureCollection válida conforme RFC 7946. |
+| ID         | Critério                   | Resultado Esperado                                                                                                                              |
+| ---------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Criação válida**         | Point criado com geometria {type:"Point", coordinates:[long,lat]} retorna 201 com ID e href; LineString com 5 pontos é aceito com mesmo padrão. |
+| **CA-002** | **Validação RFC 7946**     | Geometria malformada (Point sem coordinates, LineString com 1 ponto, Polygon não fechado) retorna 400 com mensagem específica do erro.          |
+| **CA-003** | **Validação de intervalo** | Longitude=181 ou latitude=-91 retornam 400 antes de qualquer persistência.                                                                      |
+| **CA-004** | **Busca por proximidade**  | GET /geographicLocation?near=-43.18,-22.90&radius=1000 retorna localizações dentro de 1km, ordenadas por distância crescente.                   |
+| **CA-005** | **Bounding box**           | GET /geographicLocation?bbox=-43.20,-22.92,-43.16,-22.88 retorna apenas localizações dentro do retângulo informado.                             |
+| **CA-006** | **Bloqueio de exclusão**   | DELETE em Location referenciada retorna 409 com lista de referências; reativação com soft-delete é permitida.                                   |
+| **CA-007** | **Evento publicado**       | Cada criação/alteração publica evento TMF688 no tópico geographic.location.v1 com payload conforme schema.                                      |
+| **CA-008** | **Export GeoJSON**         | GET /geographicLocation com Accept: application/geo+json retorna FeatureCollection válida conforme RFC 7946.                                    |
 
 ### 6.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Entidade de localização independente** | Não identificado no levantamento | Atributo de GenericLocation no metamodelo | Campos lat/long no Site | **GeographicLocation como entidade própria conforme TMF675** |
-| **Geometrias complexas (LineString, Polygon)** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Suporte nativo via GeoJSON** |
-| **Busca por proximidade** | Sim (Tolerância em m) | Não identificado no levantamento | Não identificado no levantamento | **Suporte nativo com distância geodésica** |
-| **Reutilização de localização** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Localização única referenciada por N entidades** |
-
+| Capacidade                                     | Netwin                           | Kuwaiba                                   | NetBox                           | Decisão Nexus                                                |
+| ---------------------------------------------- | -------------------------------- | ----------------------------------------- | -------------------------------- | ------------------------------------------------------------ |
+| **Entidade de localização independente**       | Não identificado no levantamento | Atributo de GenericLocation no metamodelo | Campos lat/long no Site          | **GeographicLocation como entidade própria conforme TMF675** |
+| **Geometrias complexas (LineString, Polygon)** | Não identificado no levantamento | Não identificado no levantamento          | Não identificado no levantamento | **Suporte nativo via GeoJSON**                               |
+| **Busca por proximidade**                      | Sim (Tolerância em m)            | Não identificado no levantamento          | Não identificado no levantamento | **Suporte nativo com distância geodésica**                   |
+| **Reutilização de localização**                | Não identificado no levantamento | Não identificado no levantamento          | Não identificado no levantamento | **Localização única referenciada por N entidades**           |
 
 ---
 
@@ -315,22 +313,22 @@ Endereço postal e geometria geográfica são conceitos distintos: o endereço �
 
 Atributos canônicos da entidade GeographicAddress (TMF673):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `id` | string | Sim | UUID v7 gerado pelo Nexus. |
-| `href` | string | Não | URL canônica da entidade. |
-| `streetType` | string | Não | Tipo de logradouro: Rua, Avenida, Travessa, Praça, Estrada. |
-| `streetName` | string | Sim | Nome do logradouro sem o tipo. |
-| `streetNr` | string | Não | Número do imóvel; pode conter alfanumérico (S/N, 100A). |
-| `streetNrSuffix` | string | Não | Complemento do número (apto, bloco, sala). |
-| `locality` | string | Não | Bairro. |
-| `city` | string | Sim | Cidade. |
-| `stateOrProvince` | string | Sim | Estado (UF em 2 letras para Brasil). |
-| `country` | string | Sim | País (código ISO 3166-1 alpha-2; padrão "BR"). |
-| `postcode` | string | Não | CEP no formato NNNNN-NNN. |
-| `geographicLocation` | EntityRef | Não | Referência opcional para GeographicLocation (TMF675) com a geocodificação do endereço. |
-| `geographicSubAddress` | array | Não | Sub-endereços (apartamento, sala, andar) — útil para condomínios. |
-| `validFor` | TimePeriod | Não | Período de validade do endereço. |
+| Atributo TMF           | Tipo       | Obrigatório | Observação V.tal                                                                       |
+| ---------------------- | ---------- | :---------: | -------------------------------------------------------------------------------------- |
+| `id`                   | string     |     Sim     | UUID v7 gerado pelo Nexus.                                                             |
+| `href`                 | string     |     Não     | URL canônica da entidade.                                                              |
+| `streetType`           | string     |     Não     | Tipo de logradouro: Rua, Avenida, Travessa, Praça, Estrada.                            |
+| `streetName`           | string     |     Sim     | Nome do logradouro sem o tipo.                                                         |
+| `streetNr`             | string     |     Não     | Número do imóvel; pode conter alfanumérico (S/N, 100A).                                |
+| `streetNrSuffix`       | string     |     Não     | Complemento do número (apto, bloco, sala).                                             |
+| `locality`             | string     |     Não     | Bairro.                                                                                |
+| `city`                 | string     |     Sim     | Cidade.                                                                                |
+| `stateOrProvince`      | string     |     Sim     | Estado (UF em 2 letras para Brasil).                                                   |
+| `country`              | string     |     Sim     | País (código ISO 3166-1 alpha-2; padrão "BR").                                         |
+| `postcode`             | string     |     Não     | CEP no formato NNNNN-NNN.                                                              |
+| `geographicLocation`   | EntityRef  |     Não     | Referência opcional para GeographicLocation (TMF675) com a geocodificação do endereço. |
+| `geographicSubAddress` | array      |     Não     | Sub-endereços (apartamento, sala, andar) — útil para condomínios.                      |
+| `validFor`             | TimePeriod |     Não     | Período de validade do endereço.                                                       |
 
 ### 7.4 Exemplo de payload
 
@@ -364,54 +362,53 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ### 7.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Geographic Address** | Permitir criação de endereço com os campos do TMF673; validar obrigatórios (streetName, city, stateOrProvince, country). |
-| **RF-002** | **Lookup em Logradouros** | Integrar o campo streetName com a base Logradouros V.tal para sugestão e padronização ao digitar. |
-| **RF-003** | **Validação de CEP** | Validar formato do CEP brasileiro (NNNNN-NNN); opcionalmente validar contra base externa de CEPs. |
-| **RF-004** | **Vinculação a Geographic Location** | Permitir associar opcionalmente uma GeographicLocation (TMF675) ao endereço para geocodificação. |
-| **RF-005** | **Geocodificação automática** | Quando endereço é criado sem geographicLocation, oferecer geocodificação automática via serviço externo (com aprovação). |
-| **RF-006** | **Sub-endereços** | Suportar geographicSubAddress (apartamento, sala, andar) para condomínios e edifícios comerciais. |
-| **RF-007** | **Editar e versionar** | Permitir edição com versionamento via validFor; histórico de endereços anteriores preservado como entidades inativas. |
-| **RF-008** | **Excluir endereço** | Bloquear exclusão de endereço referenciado por Site ou Subscriber ativo; permitir soft-delete. |
-| **RF-009** | **Padronização (normalize)** | Endpoint dedicado para normalizar um endereço (uppercase, abreviações expandidas, CEP formatado) sem persistir. |
-| **RF-010** | **Eventos** | Publicar evento TMF688 a cada criação/alteração de endereço. |
+| ID         | Nome                                 | Descrição                                                                                                                |
+| ---------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| **RF-001** | **Criar Geographic Address**         | Permitir criação de endereço com os campos do TMF673; validar obrigatórios (streetName, city, stateOrProvince, country). |
+| **RF-002** | **Lookup em Logradouros**            | Integrar o campo streetName com a base Logradouros V.tal para sugestão e padronização ao digitar.                        |
+| **RF-003** | **Validação de CEP**                 | Validar formato do CEP brasileiro (NNNNN-NNN); opcionalmente validar contra base externa de CEPs.                        |
+| **RF-004** | **Vinculação a Geographic Location** | Permitir associar opcionalmente uma GeographicLocation (TMF675) ao endereço para geocodificação.                         |
+| **RF-005** | **Geocodificação automática**        | Quando endereço é criado sem geographicLocation, oferecer geocodificação automática via serviço externo (com aprovação). |
+| **RF-006** | **Sub-endereços**                    | Suportar geographicSubAddress (apartamento, sala, andar) para condomínios e edifícios comerciais.                        |
+| **RF-007** | **Editar e versionar**               | Permitir edição com versionamento via validFor; histórico de endereços anteriores preservado como entidades inativas.    |
+| **RF-008** | **Excluir endereço**                 | Bloquear exclusão de endereço referenciado por Site ou Subscriber ativo; permitir soft-delete.                           |
+| **RF-009** | **Padronização (normalize)**         | Endpoint dedicado para normalizar um endereço (uppercase, abreviações expandidas, CEP formatado) sem persistir.          |
+| **RF-010** | **Eventos**                          | Publicar evento TMF688 a cada criação/alteração de endereço.                                                             |
 
 ### 7.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Os campos streetName, city, stateOrProvince e country são obrigatórios. |
-| **RN-002** | CEP, quando informado, deve seguir o formato NNNNN-NNN (8 dígitos com hífen). |
-| **RN-003** | O código de país segue ISO 3166-1 alpha-2; padrão "BR". |
-| **RN-004** | Endereços não são removidos fisicamente quando referenciados — apenas com validFor.endDateTime. |
+| ID         | Regra de Negócio                                                                                                                     |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **RN-001** | Os campos streetName, city, stateOrProvince e country são obrigatórios.                                                              |
+| **RN-002** | CEP, quando informado, deve seguir o formato NNNNN-NNN (8 dígitos com hífen).                                                        |
+| **RN-003** | O código de país segue ISO 3166-1 alpha-2; padrão "BR".                                                                              |
+| **RN-004** | Endereços não são removidos fisicamente quando referenciados — apenas com validFor.endDateTime.                                      |
 | **RN-005** | A vinculação com GeographicLocation é opcional, mas recomendada para Sites — sites sem geocodificação não aparecem na visão de mapa. |
-| **RN-006** | A normalização aplica regras V.tal: streetType em uppercase, abreviações padronizadas (Av., Tv., Pç.). |
-| **RN-007** | Toda criação ou alteração gera entrada no Audit Trail e evento TMF688. |
+| **RN-006** | A normalização aplica regras V.tal: streetType em uppercase, abreviações padronizadas (Av., Tv., Pç.).                               |
+| **RN-007** | Toda criação ou alteração gera entrada no Audit Trail e evento TMF688.                                                               |
 
 ### 7.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criação válida** | POST com streetName="Voluntarios da Patria", city="Rio de Janeiro", stateOrProvince="RJ", country="BR" retorna 201 com ID. |
-| **CA-002** | **Obrigatórios validados** | POST sem city retorna 400 com mensagem indicando o campo faltante. |
-| **CA-003** | **Validação de CEP** | postcode="22270170" sem hífen é normalizado para "22270-170"; postcode="ABCDE-FGH" retorna 400. |
-| **CA-004** | **Lookup Logradouros** | Endpoint GET /addresses/suggest?q=volunt retorna sugestões da base Logradouros com cidade e estado pré-preenchidos. |
-| **CA-005** | **Geocodificação** | Endpoint POST /addresses/{id}/geocode dispara geocodificação e cria GeographicLocation vinculada. |
-| **CA-006** | **Sub-endereços** | Criar endereço com geographicSubAddress=[{type:"apartamento", value:"301"}] persiste corretamente. |
-| **CA-007** | **Versionamento** | Edição cria nova versão com validFor.startDateTime atual; versão anterior tem validFor.endDateTime preenchido. |
-| **CA-008** | **Bloqueio de exclusão** | DELETE em endereço de Site ativo retorna 409 com lista de Sites referenciando. |
+| ID         | Critério                   | Resultado Esperado                                                                                                         |
+| ---------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Criação válida**         | POST com streetName="Voluntarios da Patria", city="Rio de Janeiro", stateOrProvince="RJ", country="BR" retorna 201 com ID. |
+| **CA-002** | **Obrigatórios validados** | POST sem city retorna 400 com mensagem indicando o campo faltante.                                                         |
+| **CA-003** | **Validação de CEP**       | postcode="22270170" sem hífen é normalizado para "22270-170"; postcode="ABCDE-FGH" retorna 400.                            |
+| **CA-004** | **Lookup Logradouros**     | Endpoint GET /addresses/suggest?q=volunt retorna sugestões da base Logradouros com cidade e estado pré-preenchidos.        |
+| **CA-005** | **Geocodificação**         | Endpoint POST /addresses/{id}/geocode dispara geocodificação e cria GeographicLocation vinculada.                          |
+| **CA-006** | **Sub-endereços**          | Criar endereço com geographicSubAddress=[{type:"apartamento", value:"301"}] persiste corretamente.                         |
+| **CA-007** | **Versionamento**          | Edição cria nova versão com validFor.startDateTime atual; versão anterior tem validFor.endDateTime preenchido.             |
+| **CA-008** | **Bloqueio de exclusão**   | DELETE em endereço de Site ativo retorna 409 com lista de Sites referenciando.                                             |
 
 ### 7.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Endereço como entidade própria** | Tabela embutida no Site | Atributo de texto no metamodelo | Dois campos texto no Site | **Entidade GeographicAddress conforme TMF673** |
-| **Múltiplos endereços por Site** | Sim (tabela com principal) | Não identificado no levantamento | Não identificado no levantamento | **Sim — Site referencia N endereços** |
-| **Integração Logradouros** | Sim (Geosite Logradouros) | Não identificado no levantamento | Não identificado no levantamento | **Integração reaproveitada via API de sugestão** |
-| **Sub-endereços (apto, sala)** | Texto livre no campo | Não identificado no levantamento | Texto livre | **Modelado via geographicSubAddress (TMF673)** |
-| **Vinculação com geocodificação** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Vinculação opcional via referência TMF675** |
-
+| Capacidade                         | Netwin                           | Kuwaiba                          | NetBox                           | Decisão Nexus                                    |
+| ---------------------------------- | -------------------------------- | -------------------------------- | -------------------------------- | ------------------------------------------------ |
+| **Endereço como entidade própria** | Tabela embutida no Site          | Atributo de texto no metamodelo  | Dois campos texto no Site        | **Entidade GeographicAddress conforme TMF673**   |
+| **Múltiplos endereços por Site**   | Sim (tabela com principal)       | Não identificado no levantamento | Não identificado no levantamento | **Sim — Site referencia N endereços**            |
+| **Integração Logradouros**         | Sim (Geosite Logradouros)        | Não identificado no levantamento | Não identificado no levantamento | **Integração reaproveitada via API de sugestão** |
+| **Sub-endereços (apto, sala)**     | Texto livre no campo             | Não identificado no levantamento | Texto livre                      | **Modelado via geographicSubAddress (TMF673)**   |
+| **Vinculação com geocodificação**  | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Vinculação opcional via referência TMF675**    |
 
 ---
 
@@ -434,18 +431,18 @@ O TMF674 introduz GeographicSiteSpecification como entidade do catálogo de Site
 
 Atributos canônicos da entidade GeographicSiteSpecification (TMF674):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `id` | string | Sim | UUID v7. |
-| `name` | string | Sim | Nome do tipo de site (ex.: "Central Office", "POP", "Armário", "Andar", "Sala"). |
-| `code` | string | Sim | Código interno (ex.: "CO", "POP", "ARM", "AND", "SLA"). Único na plataforma. |
-| `description` | string | Não | Descrição funcional do tipo de site. |
-| `category` | enum | Sim | Region | FunctionalGroup | Site | SubSite. Determina o papel hierárquico. |
-| `lifecycleStatus` | enum | Sim | Active | Retired — especificações descontinuadas não criam novos sites. |
-| `specCharacteristic` | array<CharSpec> | Não | Lista de atributos customizados do tipo (CLLI, CN, Anel, capacidade etc.). |
-| `validFor` | TimePeriod | Não | Período de validade da especificação. |
-| `allowedParentSpec` | array<EntityRef> | Não | Lista de SiteSpecifications que podem ser pais deste tipo (catálogo de contenção). |
-| `allowedChildSpec` | array<EntityRef> | Não | Lista de SiteSpecifications que podem ser filhos deste tipo. |
+| Atributo TMF         | Tipo             | Obrigatório | Observação V.tal                                                                   |
+| -------------------- | ---------------- | :---------: | ---------------------------------------------------------------------------------- |
+| `id`                 | string           |     Sim     | UUID v7.                                                                           |
+| `name`               | string           |     Sim     | Nome do tipo de site (ex.: "Central Office", "POP", "Armário", "Andar", "Sala").   |
+| `code`               | string           |     Sim     | Código interno (ex.: "CO", "POP", "ARM", "AND", "SLA"). Único na plataforma.       |
+| `description`        | string           |     Não     | Descrição funcional do tipo de site.                                               |
+| `category`           | enum             |     Sim     | Region                                                                             | FunctionalGroup                                                | Site | SubSite. Determina o papel hierárquico. |
+| `lifecycleStatus`    | enum             |     Sim     | Active                                                                             | Retired — especificações descontinuadas não criam novos sites. |
+| `specCharacteristic` | array<CharSpec>  |     Não     | Lista de atributos customizados do tipo (CLLI, CN, Anel, capacidade etc.).         |
+| `validFor`           | TimePeriod       |     Não     | Período de validade da especificação.                                              |
+| `allowedParentSpec`  | array<EntityRef> |     Não     | Lista de SiteSpecifications que podem ser pais deste tipo (catálogo de contenção). |
+| `allowedChildSpec`   | array<EntityRef> |     Não     | Lista de SiteSpecifications que podem ser filhos deste tipo.                       |
 
 ### 8.4 Exemplo de payload
 
@@ -460,16 +457,18 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
   "lifecycleStatus": "Active",
   "description": "Central de telecomunicacoes principal da V.tal",
   "specCharacteristic": [
-    { "name": "CLLI", "valueType": "string", "mandatory": true,
-      "validator": "^[A-Z0-9]{11}$" },
-    { "name": "CN", "valueType": "string", "mandatory": true,
-      "configurable": false, "description": "Calculado por Regiao+Regional" },
+    { "name": "CLLI", "valueType": "string", "mandatory": true, "validator": "^[A-Z0-9]{11}$" },
+    {
+      "name": "CN",
+      "valueType": "string",
+      "mandatory": true,
+      "configurable": false,
+      "description": "Calculado por Regiao+Regional"
+    },
     { "name": "Anel", "valueType": "string", "mandatory": false },
     { "name": "SICOM_ID", "valueType": "string", "mandatory": false }
   ],
-  "allowedParentSpec": [
-    { "id": "spec-region", "@referredType": "GeographicSiteSpecification" }
-  ],
+  "allowedParentSpec": [{ "id": "spec-region", "@referredType": "GeographicSiteSpecification" }],
   "allowedChildSpec": [
     { "id": "spec-floor", "@referredType": "GeographicSiteSpecification" },
     { "id": "spec-room", "@referredType": "GeographicSiteSpecification" }
@@ -483,51 +482,50 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ### 8.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar SiteSpecification** | Permitir criação de novo tipo de Site com nome, código, categoria e atributos customizados. |
-| **RF-002** | **Catálogo de tipos base** | Pré-popular o catálogo com tipos canônicos V.tal: Region, FunctionalGroup, CentralOffice, POP, Cabinet, InstallationPoint, Floor, Room, Cage. |
-| **RF-003** | **Atributos customizados** | Permitir definir specCharacteristics por tipo: nome, tipo (string/int/enum/date), obrigatório, valor padrão, validador (regex ou lookup). |
-| **RF-004** | **Regras de contenção** | Configurar allowedParentSpec e allowedChildSpec para definir quais tipos podem se conter. |
-| **RF-005** | **Versionamento** | Permitir versionar SiteSpecifications via validFor; especificações descontinuadas não criam novos sites mas mantêm sites existentes. |
-| **RF-006** | **Editar SiteSpecification** | Editar nome, descrição e atributos; alteração de specCharacteristics não-obrigatórios é segura; obrigatórios novos exigem migração. |
-| **RF-007** | **Excluir SiteSpecification** | Bloquear exclusão de SiteSpec com sites instanciados; permitir transição para lifecycleStatus=Retired. |
-| **RF-008** | **Consultar contenção possível** | Endpoint GET /geographicSiteSpecification/{id}/allowedChildren retorna tipos aceitos como filhos para uso em formulários dinâmicos. |
-| **RF-009** | **Eventos** | Publicar evento TMF688 a cada criação/alteração de especificação. |
+| ID         | Nome                             | Descrição                                                                                                                                     |
+| ---------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar SiteSpecification**      | Permitir criação de novo tipo de Site com nome, código, categoria e atributos customizados.                                                   |
+| **RF-002** | **Catálogo de tipos base**       | Pré-popular o catálogo com tipos canônicos V.tal: Region, FunctionalGroup, CentralOffice, POP, Cabinet, InstallationPoint, Floor, Room, Cage. |
+| **RF-003** | **Atributos customizados**       | Permitir definir specCharacteristics por tipo: nome, tipo (string/int/enum/date), obrigatório, valor padrão, validador (regex ou lookup).     |
+| **RF-004** | **Regras de contenção**          | Configurar allowedParentSpec e allowedChildSpec para definir quais tipos podem se conter.                                                     |
+| **RF-005** | **Versionamento**                | Permitir versionar SiteSpecifications via validFor; especificações descontinuadas não criam novos sites mas mantêm sites existentes.          |
+| **RF-006** | **Editar SiteSpecification**     | Editar nome, descrição e atributos; alteração de specCharacteristics não-obrigatórios é segura; obrigatórios novos exigem migração.           |
+| **RF-007** | **Excluir SiteSpecification**    | Bloquear exclusão de SiteSpec com sites instanciados; permitir transição para lifecycleStatus=Retired.                                        |
+| **RF-008** | **Consultar contenção possível** | Endpoint GET /geographicSiteSpecification/{id}/allowedChildren retorna tipos aceitos como filhos para uso em formulários dinâmicos.           |
+| **RF-009** | **Eventos**                      | Publicar evento TMF688 a cada criação/alteração de especificação.                                                                             |
 
 ### 8.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | O code da SiteSpecification deve ser único globalmente na plataforma. |
-| **RN-002** | As 4 categorias base (Region, FunctionalGroup, Site, SubSite) determinam o papel hierárquico e não podem ser sobrescritas. |
-| **RN-003** | specCharacteristic obrigatório só pode ser adicionado a SiteSpec sem sites instanciados — caso contrário, exige migração explícita. |
+| ID         | Regra de Negócio                                                                                                                        |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | O code da SiteSpecification deve ser único globalmente na plataforma.                                                                   |
+| **RN-002** | As 4 categorias base (Region, FunctionalGroup, Site, SubSite) determinam o papel hierárquico e não podem ser sobrescritas.              |
+| **RN-003** | specCharacteristic obrigatório só pode ser adicionado a SiteSpec sem sites instanciados — caso contrário, exige migração explícita.     |
 | **RN-004** | Regras de contenção (allowedParent/Child) são imutáveis para combinações já existentes — só podem ser flexibilizadas, não restringidas. |
-| **RN-005** | SiteSpecification em status Retired não pode criar novos sites, mas sites existentes desse tipo continuam ativos. |
-| **RN-006** | Toda alteração no catálogo gera registro no Audit Trail e evento TMF688. |
+| **RN-005** | SiteSpecification em status Retired não pode criar novos sites, mas sites existentes desse tipo continuam ativos.                       |
+| **RN-006** | Toda alteração no catálogo gera registro no Audit Trail e evento TMF688.                                                                |
 
 ### 8.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criação válida** | POST com name="POP Regional", code="POP-REG", category="Site" retorna 201 com ID. |
-| **CA-002** | **Unicidade de code** | POST com code já existente retorna 409 com mensagem específica. |
-| **CA-003** | **Atributos custom** | SpecCharacteristic [{name:"CLLI", type:"string", mandatory:true, validator:"^[A-Z0-9]{11}$"}] é aceito e aplicado a novos sites. |
-| **CA-004** | **Contenção configurada** | SiteSpec "Floor" com allowedParentSpec=["CentralOffice","POP"] permite criar Floor apenas como filho desses tipos. |
-| **CA-005** | **Bloqueio de exclusão** | DELETE em SiteSpec com sites instanciados retorna 409; PATCH para lifecycleStatus="Retired" é aceito. |
-| **CA-006** | **Allowed children API** | GET /geographicSiteSpecification/{id}/allowedChildren retorna lista de SiteSpecs filhas permitidas com 200. |
-| **CA-007** | **Migração de obrigatório** | Adicionar specCharacteristic obrigatório a SiteSpec com sites instanciados exige parâmetro migrationStrategy explícito. |
-| **CA-008** | **Evento publicado** | Cada criação/alteração publica evento no tópico geographic.siteSpec.v1. |
+| ID         | Critério                    | Resultado Esperado                                                                                                               |
+| ---------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Criação válida**          | POST com name="POP Regional", code="POP-REG", category="Site" retorna 201 com ID.                                                |
+| **CA-002** | **Unicidade de code**       | POST com code já existente retorna 409 com mensagem específica.                                                                  |
+| **CA-003** | **Atributos custom**        | SpecCharacteristic [{name:"CLLI", type:"string", mandatory:true, validator:"^[A-Z0-9]{11}$"}] é aceito e aplicado a novos sites. |
+| **CA-004** | **Contenção configurada**   | SiteSpec "Floor" com allowedParentSpec=["CentralOffice","POP"] permite criar Floor apenas como filho desses tipos.               |
+| **CA-005** | **Bloqueio de exclusão**    | DELETE em SiteSpec com sites instanciados retorna 409; PATCH para lifecycleStatus="Retired" é aceito.                            |
+| **CA-006** | **Allowed children API**    | GET /geographicSiteSpecification/{id}/allowedChildren retorna lista de SiteSpecs filhas permitidas com 200.                      |
+| **CA-007** | **Migração de obrigatório** | Adicionar specCharacteristic obrigatório a SiteSpec com sites instanciados exige parâmetro migrationStrategy explícito.          |
+| **CA-008** | **Evento publicado**        | Cada criação/alteração publica evento no tópico geographic.siteSpec.v1.                                                          |
 
 ### 8.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Catálogo de tipos formalizado** | Não identificado no levantamento | Sim (Data Model Manager) | Parcial (modelo Django fixo) | **GeographicSiteSpecification conforme TMF674** |
-| **Atributos customizados por tipo** | Campos hardcoded (CLLI, CN, Anel) | Sim (metamodelo) | Sim (Custom Fields) | **specCharacteristic versionado** |
-| **Regras de contenção configuráveis** | Implícitas no formulário polimórfico | Sim (Containment Manager) | Hardcoded no modelo | **allowedParent/ChildSpec configuráveis** |
-| **Versionamento do catálogo** | Não identificado no levantamento | Parcial | Não identificado no levantamento | **validFor + lifecycleStatus** |
-
+| Capacidade                            | Netwin                               | Kuwaiba                   | NetBox                           | Decisão Nexus                                   |
+| ------------------------------------- | ------------------------------------ | ------------------------- | -------------------------------- | ----------------------------------------------- |
+| **Catálogo de tipos formalizado**     | Não identificado no levantamento     | Sim (Data Model Manager)  | Parcial (modelo Django fixo)     | **GeographicSiteSpecification conforme TMF674** |
+| **Atributos customizados por tipo**   | Campos hardcoded (CLLI, CN, Anel)    | Sim (metamodelo)          | Sim (Custom Fields)              | **specCharacteristic versionado**               |
+| **Regras de contenção configuráveis** | Implícitas no formulário polimórfico | Sim (Containment Manager) | Hardcoded no modelo              | **allowedParent/ChildSpec configuráveis**       |
+| **Versionamento do catálogo**         | Não identificado no levantamento     | Parcial                   | Não identificado no levantamento | **validFor + lifecycleStatus**                  |
 
 ---
 
@@ -550,15 +548,15 @@ Na primeira versão do levantamento, modelamos Região como entidade separada (i
 
 Atributos canônicos da entidade GeographicSite com siteType=Region (TMF674):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `siteSpecification` | EntityRef | Sim | Referência para GeographicSiteSpecification com category="Region". |
-| `name` | string | Sim | Nome da Região (ex.: "Brasil", "Rio de Janeiro", "Regional Sudeste V.tal"). |
-| `code` | string | Sim | Código curto (ex.: "BR", "RJ", "REG-SE"). Único no nível hierárquico. |
-| `parentSite` | EntityRef | Não | Referência ao GeographicSite pai (Região superior). Nulo para Região de topo. |
-| `status` | enum | Sim | Active | Inactive — Regiões podem ser desativadas mas raramente excluídas. |
-| `relatedParty` | array | Não | Responsáveis pela Região (ex.: gerente regional V.tal). |
-| `characteristic` | array | Não | Valores dos specCharacteristics definidos na SiteSpecification (ex.: código IBGE, ISO 3166). |
+| Atributo TMF        | Tipo      | Obrigatório | Observação V.tal                                                                             |
+| ------------------- | --------- | :---------: | -------------------------------------------------------------------------------------------- |
+| `siteSpecification` | EntityRef |     Sim     | Referência para GeographicSiteSpecification com category="Region".                           |
+| `name`              | string    |     Sim     | Nome da Região (ex.: "Brasil", "Rio de Janeiro", "Regional Sudeste V.tal").                  |
+| `code`              | string    |     Sim     | Código curto (ex.: "BR", "RJ", "REG-SE"). Único no nível hierárquico.                        |
+| `parentSite`        | EntityRef |     Não     | Referência ao GeographicSite pai (Região superior). Nulo para Região de topo.                |
+| `status`            | enum      |     Sim     | Active                                                                                       | Inactive — Regiões podem ser desativadas mas raramente excluídas. |
+| `relatedParty`      | array     |     Não     | Responsáveis pela Região (ex.: gerente regional V.tal).                                      |
+| `characteristic`    | array     |     Não     | Valores dos specCharacteristics definidos na SiteSpecification (ex.: código IBGE, ISO 3166). |
 
 ### 9.4 Exemplo de payload
 
@@ -586,48 +584,47 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ### 9.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Região** | Criar GeographicSite com siteSpecification de category=Region, nome, código, pai opcional e atributos. |
-| **RF-002** | **Hierarquia n-níveis** | Suportar profundidade ilimitada via parentSite recursivo (Continente > País > Estado > Cidade > Regional). |
-| **RF-003** | **Editar Região** | Editar nome, descrição, atributos; reassignar parentSite com validação de não-ciclo. |
-| **RF-004** | **Excluir/Desativar** | Bloquear exclusão de Região com filhos ou Sites operacionais; permitir status=Inactive. |
-| **RF-005** | **Listar e filtrar** | Suportar listagem em árvore e plana com filtros por código, nome, pai e status. |
-| **RF-006** | **Contadores agregados** | Expor count de Sites e Sub-Sites descendentes por Região (acumulado na subárvore). |
-| **RF-007** | **Hierarquia padrão V.tal** | Bootstrap automático da hierarquia base: Brasil > {26 UFs + DF} > principais regionais V.tal. |
-| **RF-008** | **Eventos** | Publicar evento TMF688 a cada criação, alteração ou mudança de status. |
+| ID         | Nome                        | Descrição                                                                                                  |
+| ---------- | --------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Região**            | Criar GeographicSite com siteSpecification de category=Region, nome, código, pai opcional e atributos.     |
+| **RF-002** | **Hierarquia n-níveis**     | Suportar profundidade ilimitada via parentSite recursivo (Continente > País > Estado > Cidade > Regional). |
+| **RF-003** | **Editar Região**           | Editar nome, descrição, atributos; reassignar parentSite com validação de não-ciclo.                       |
+| **RF-004** | **Excluir/Desativar**       | Bloquear exclusão de Região com filhos ou Sites operacionais; permitir status=Inactive.                    |
+| **RF-005** | **Listar e filtrar**        | Suportar listagem em árvore e plana com filtros por código, nome, pai e status.                            |
+| **RF-006** | **Contadores agregados**    | Expor count de Sites e Sub-Sites descendentes por Região (acumulado na subárvore).                         |
+| **RF-007** | **Hierarquia padrão V.tal** | Bootstrap automático da hierarquia base: Brasil > {26 UFs + DF} > principais regionais V.tal.              |
+| **RF-008** | **Eventos**                 | Publicar evento TMF688 a cada criação, alteração ou mudança de status.                                     |
 
 ### 9.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Nome único dentro do mesmo parentSite (ou globalmente para Regiões de topo). |
-| **RN-002** | Code único globalmente quando a Região é de topo; único por pai quando aninhada. |
-| **RN-003** | Não é permitido ciclo na hierarquia — parentSite não pode apontar para descendente. |
-| **RN-004** | Excluir Região com filhos é bloqueado; é necessário desativar primeiro os filhos ou reassignar. |
+| ID         | Regra de Negócio                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | Nome único dentro do mesmo parentSite (ou globalmente para Regiões de topo).                                        |
+| **RN-002** | Code único globalmente quando a Região é de topo; único por pai quando aninhada.                                    |
+| **RN-003** | Não é permitido ciclo na hierarquia — parentSite não pode apontar para descendente.                                 |
+| **RN-004** | Excluir Região com filhos é bloqueado; é necessário desativar primeiro os filhos ou reassignar.                     |
 | **RN-005** | Regiões da hierarquia base V.tal (Brasil, UFs) não podem ser excluídas — apenas desativadas com aprovação especial. |
-| **RN-006** | Toda alteração gera Audit Trail e evento TMF688. |
+| **RN-006** | Toda alteração gera Audit Trail e evento TMF688.                                                                    |
 
 ### 9.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criação válida** | POST de Região "São Paulo" com parentSite=Brasil retorna 201 e a Região aparece na árvore. |
-| **CA-002** | **Hierarquia correta** | GET /geographicSite?parentSite={id}&category=Region retorna Regiões filhas diretas. |
-| **CA-003** | **Contagem agregada** | GET /geographicSite/{id}/descendantCount retorna {sites:N, subSites:M} para a subárvore. |
-| **CA-004** | **Bloqueio de ciclo** | PATCH em Região tentando definir parentSite como seu próprio descendente retorna 400. |
-| **CA-005** | **Bloqueio de exclusão** | DELETE em Região com Sites operacionais retorna 409 com lista de dependentes. |
-| **CA-006** | **Status Inactive** | PATCH com status=Inactive em Região com filhos ativos exibe alerta e exige confirmação. |
+| ID         | Critério                 | Resultado Esperado                                                                         |
+| ---------- | ------------------------ | ------------------------------------------------------------------------------------------ |
+| **CA-001** | **Criação válida**       | POST de Região "São Paulo" com parentSite=Brasil retorna 201 e a Região aparece na árvore. |
+| **CA-002** | **Hierarquia correta**   | GET /geographicSite?parentSite={id}&category=Region retorna Regiões filhas diretas.        |
+| **CA-003** | **Contagem agregada**    | GET /geographicSite/{id}/descendantCount retorna {sites:N, subSites:M} para a subárvore.   |
+| **CA-004** | **Bloqueio de ciclo**    | PATCH em Região tentando definir parentSite como seu próprio descendente retorna 400.      |
+| **CA-005** | **Bloqueio de exclusão** | DELETE em Região com Sites operacionais retorna 409 com lista de dependentes.              |
+| **CA-006** | **Status Inactive**      | PATCH com status=Inactive em Região com filhos ativos exibe alerta e exige confirmação.    |
 
 ### 9.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Modelagem de Região** | Campo Região (dropdown) | Subclasse via metamodelo | Entidade Region MPTT | **GeographicSite com category=Region (unificado em TMF674)** |
-| **Hierarquia n-níveis** | Região + Regional (2 nv.) | Sim (metamodelo) | Sim (MPTT) | **Sim (parentSite recursivo)** |
-| **Contagem acumulada** | Não identificado no levantamento | Não identificado no levantamento | Sim (site_count) | **Sim (descendantCount endpoint)** |
-| **Hierarquia base pré-populada** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim (Brasil + 27 UFs no bootstrap)** |
-
+| Capacidade                       | Netwin                           | Kuwaiba                          | NetBox                           | Decisão Nexus                                                |
+| -------------------------------- | -------------------------------- | -------------------------------- | -------------------------------- | ------------------------------------------------------------ |
+| **Modelagem de Região**          | Campo Região (dropdown)          | Subclasse via metamodelo         | Entidade Region MPTT             | **GeographicSite com category=Region (unificado em TMF674)** |
+| **Hierarquia n-níveis**          | Região + Regional (2 nv.)        | Sim (metamodelo)                 | Sim (MPTT)                       | **Sim (parentSite recursivo)**                               |
+| **Contagem acumulada**           | Não identificado no levantamento | Não identificado no levantamento | Sim (site_count)                 | **Sim (descendantCount endpoint)**                           |
+| **Hierarquia base pré-populada** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim (Brasil + 27 UFs no bootstrap)**                       |
 
 ---
 
@@ -650,11 +647,11 @@ Aqui o Nexus se afasta deliberadamente do modelo NetBox (que trata Site Group co
 
 Atributos canônicos da entidade GeographicSite com siteType (TMF674) + grupo via relatedSite:
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `siteType` | string | Não | Classificação direta (ex.: "CO", "POP-Distribuição", "Armário-Rural"). Derivada do code da siteSpecification + atributos. |
-| `relatedSite` | array | Não | Vínculos com FunctionalGroups via {site, role:"memberOf"}. |
-| `characteristic` | array | Não | Atributos de classificação funcional (capacidade, classe de serviço, função técnica). |
+| Atributo TMF     | Tipo   | Obrigatório | Observação V.tal                                                                                                          |
+| ---------------- | ------ | :---------: | ------------------------------------------------------------------------------------------------------------------------- |
+| `siteType`       | string |     Não     | Classificação direta (ex.: "CO", "POP-Distribuição", "Armário-Rural"). Derivada do code da siteSpecification + atributos. |
+| `relatedSite`    | array  |     Não     | Vínculos com FunctionalGroups via {site, role:"memberOf"}.                                                                |
+| `characteristic` | array  |     Não     | Atributos de classificação funcional (capacidade, classe de serviço, função técnica).                                     |
 
 ### 10.4 Exemplo de payload
 
@@ -668,8 +665,10 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
   "siteSpecification": { "id": "spec-pop", "@referredType": "GeographicSiteSpecification" },
   "parentSite": { "id": "site-region-rj", "@referredType": "GeographicSite" },
   "relatedSite": [
-    { "site": { "id": "site-fg-pops-borda", "@referredType": "GeographicSite" },
-      "role": "memberOf" }
+    {
+      "site": { "id": "site-fg-pops-borda", "@referredType": "GeographicSite" },
+      "role": "memberOf"
+    }
   ]
 }
 ```
@@ -680,41 +679,40 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ### 10.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Definir siteType** | Permitir associar siteType ao Site na criação/edição, baseado na SiteSpecification. |
-| **RF-002** | **Vincular a FunctionalGroup** | Permitir vincular um Site a um ou mais GeographicSites do tipo FunctionalGroup via relatedSite. |
+| ID         | Nome                                | Descrição                                                                                          |
+| ---------- | ----------------------------------- | -------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Definir siteType**                | Permitir associar siteType ao Site na criação/edição, baseado na SiteSpecification.                |
+| **RF-002** | **Vincular a FunctionalGroup**      | Permitir vincular um Site a um ou mais GeographicSites do tipo FunctionalGroup via relatedSite.    |
 | **RF-003** | **Hierarquia de Grupos Funcionais** | Suportar hierarquia em FunctionalGroups (ex.: "POPs" > "POPs de Borda" > "POPs de Borda Sudeste"). |
-| **RF-004** | **Filtragem por classificação** | Listar Sites filtrando por siteType e/ou por FunctionalGroup; combinação com filtro geográfico. |
-| **RF-005** | **Agregação por grupo** | Expor agregados (contagem, soma de capacidade) por FunctionalGroup. |
-| **RF-006** | **Auditoria de classificação** | Toda mudança de siteType ou vínculo com FunctionalGroup gera Audit Trail. |
+| **RF-004** | **Filtragem por classificação**     | Listar Sites filtrando por siteType e/ou por FunctionalGroup; combinação com filtro geográfico.    |
+| **RF-005** | **Agregação por grupo**             | Expor agregados (contagem, soma de capacidade) por FunctionalGroup.                                |
+| **RF-006** | **Auditoria de classificação**      | Toda mudança de siteType ou vínculo com FunctionalGroup gera Audit Trail.                          |
 
 ### 10.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | siteType é livre mas recomendado vir de um conjunto canônico V.tal (preset). |
-| **RN-002** | Um Site pode pertencer a múltiplos FunctionalGroups simultaneamente (relação N:N). |
-| **RN-003** | FunctionalGroups podem ter atributos customizados próprios (capacidade total, política). |
+| ID         | Regra de Negócio                                                                           |
+| ---------- | ------------------------------------------------------------------------------------------ |
+| **RN-001** | siteType é livre mas recomendado vir de um conjunto canônico V.tal (preset).               |
+| **RN-002** | Um Site pode pertencer a múltiplos FunctionalGroups simultaneamente (relação N:N).         |
+| **RN-003** | FunctionalGroups podem ter atributos customizados próprios (capacidade total, política).   |
 | **RN-004** | Reassignar siteType de um Site exige Audit Trail e potencial revisão de regras associadas. |
 
 ### 10.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Filtro combinado** | GET /geographicSite?regionId=RJ&siteType=POP-Distribuicao retorna apenas POPs no RJ. |
-| **CA-002** | **Vínculo a grupo** | POST /geographicSite/{id}/relatedSite com role=memberOf vincula Site a FunctionalGroup. |
-| **CA-003** | **Múltiplos grupos** | Um Site pode aparecer em GET /geographicSite/{groupId}/members de mais de um grupo. |
+| ID         | Critério               | Resultado Esperado                                                                       |
+| ---------- | ---------------------- | ---------------------------------------------------------------------------------------- |
+| **CA-001** | **Filtro combinado**   | GET /geographicSite?regionId=RJ&siteType=POP-Distribuicao retorna apenas POPs no RJ.     |
+| **CA-002** | **Vínculo a grupo**    | POST /geographicSite/{id}/relatedSite com role=memberOf vincula Site a FunctionalGroup.  |
+| **CA-003** | **Múltiplos grupos**   | Um Site pode aparecer em GET /geographicSite/{groupId}/members de mais de um grupo.      |
 | **CA-004** | **Agregado por grupo** | GET /geographicSite/{groupId}/aggregate retorna count e atributos agregados dos membros. |
 
 ### 10.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Modelagem de Grupo de Site** | Campo tipo (texto) | Não identificado no levantamento | Entidade SiteGroup separada | **GeographicSite com category=FunctionalGroup (unificado em TMF674)** |
-| **Classificação ortogonal** | Não identificado no levantamento | Via metamodelo | Sim (Region + SiteGroup) | **Sim (parentSite + relatedSite)** |
-| **Múltiplos grupos por Site** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim (relatedSite array)** |
-
+| Capacidade                     | Netwin                           | Kuwaiba                          | NetBox                           | Decisão Nexus                                                         |
+| ------------------------------ | -------------------------------- | -------------------------------- | -------------------------------- | --------------------------------------------------------------------- |
+| **Modelagem de Grupo de Site** | Campo tipo (texto)               | Não identificado no levantamento | Entidade SiteGroup separada      | **GeographicSite com category=FunctionalGroup (unificado em TMF674)** |
+| **Classificação ortogonal**    | Não identificado no levantamento | Via metamodelo                   | Sim (Region + SiteGroup)         | **Sim (parentSite + relatedSite)**                                    |
+| **Múltiplos grupos por Site**  | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim (relatedSite array)**                                           |
 
 ---
 
@@ -737,22 +735,22 @@ Este é o requisito mais importante do módulo: GeographicSite é a entidade can
 
 Atributos canônicos da entidade GeographicSite (TMF674):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `id` | string | Sim | UUID v7 — identificador estável global. |
-| `name` | string | Sim | Nome do Site. Único globalmente para Sites operacionais. |
-| `code` | string | Não | Código curto V.tal (ex.: "RJ-BOT-CO-01"). |
-| `siteSpecification` | EntityRef | Sim | Tipo de Site (TMF674 SiteSpec). |
-| `parentSite` | EntityRef | Não | Site pai na hierarquia (Região para Sites, Site para Sub-Sites). |
-| `status` | enum | Sim | Planned | InConstruction | Active | InDeactivation | Retired. |
-| `statusDate` | datetime | Sim | Data da última mudança de status. |
-| `place` | EntityRef | Não | Referência para GeographicLocation (TMF675). Recomendado para visualização em mapa. |
-| `address` | array | Não | Referências a GeographicAddress (TMF673). Suporta múltiplos endereços com papel (principal, despacho, cobrança). |
-| `relatedParty` | array | Não | Owners, operadores, Tenants relacionados. |
-| `relatedSite` | array | Não | Relações com outros Sites (alimentação, backhaul, FunctionalGroup membership). |
-| `characteristic` | array | Não | Valores dos specCharacteristics do tipo: CLLI, CN, Anel, SICOM_ID, Sitar etc. |
-| `description` | string | Não | Descrição livre. |
-| `validFor` | TimePeriod | Não | Período de validade (data de ativação até desativação). |
+| Atributo TMF        | Tipo       | Obrigatório | Observação V.tal                                                                                                 |
+| ------------------- | ---------- | :---------: | ---------------------------------------------------------------------------------------------------------------- |
+| `id`                | string     |     Sim     | UUID v7 — identificador estável global.                                                                          |
+| `name`              | string     |     Sim     | Nome do Site. Único globalmente para Sites operacionais.                                                         |
+| `code`              | string     |     Não     | Código curto V.tal (ex.: "RJ-BOT-CO-01").                                                                        |
+| `siteSpecification` | EntityRef  |     Sim     | Tipo de Site (TMF674 SiteSpec).                                                                                  |
+| `parentSite`        | EntityRef  |     Não     | Site pai na hierarquia (Região para Sites, Site para Sub-Sites).                                                 |
+| `status`            | enum       |     Sim     | Planned                                                                                                          | InConstruction | Active | InDeactivation | Retired. |
+| `statusDate`        | datetime   |     Sim     | Data da última mudança de status.                                                                                |
+| `place`             | EntityRef  |     Não     | Referência para GeographicLocation (TMF675). Recomendado para visualização em mapa.                              |
+| `address`           | array      |     Não     | Referências a GeographicAddress (TMF673). Suporta múltiplos endereços com papel (principal, despacho, cobrança). |
+| `relatedParty`      | array      |     Não     | Owners, operadores, Tenants relacionados.                                                                        |
+| `relatedSite`       | array      |     Não     | Relações com outros Sites (alimentação, backhaul, FunctionalGroup membership).                                   |
+| `characteristic`    | array      |     Não     | Valores dos specCharacteristics do tipo: CLLI, CN, Anel, SICOM_ID, Sitar etc.                                    |
+| `description`       | string     |     Não     | Descrição livre.                                                                                                 |
+| `validFor`          | TimePeriod |     Não     | Período de validade (data de ativação até desativação).                                                          |
 
 ### 11.4 Exemplo de payload
 
@@ -763,26 +761,32 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
   "id": "site-rj-bot-co-01",
   "name": "Central Botafogo",
   "code": "RJ-BOT-CO-01",
-  "siteSpecification": { "id": "spec-central-office", "@referredType": "GeographicSiteSpecification" },
+  "siteSpecification": {
+    "id": "spec-central-office",
+    "@referredType": "GeographicSiteSpecification"
+  },
   "parentSite": { "id": "site-region-rj-cidade", "@referredType": "GeographicSite" },
   "status": "Active",
   "statusDate": "2026-01-15T08:30:00Z",
   "place": { "id": "loc-018f...", "@referredType": "GeographicLocation" },
   "address": [
-    { "address": { "id": "addr-018f...", "@referredType": "GeographicAddress" },
-      "role": "principal" }
+    {
+      "address": { "id": "addr-018f...", "@referredType": "GeographicAddress" },
+      "role": "principal"
+    }
   ],
   "relatedParty": [
-    { "party": { "id": "party-vtal", "@referredType": "Organization" },
-      "role": "owner" }
+    { "party": { "id": "party-vtal", "@referredType": "Organization" }, "role": "owner" }
   ],
   "relatedSite": [
-    { "site": { "id": "site-fg-pops-borda", "@referredType": "GeographicSite" },
-      "role": "memberOf" }
+    {
+      "site": { "id": "site-fg-pops-borda", "@referredType": "GeographicSite" },
+      "role": "memberOf"
+    }
   ],
   "characteristic": [
     { "name": "CLLI", "value": "RJBTFL01CO0" },
-    { "name": "CN",   "value": "RJ-SE-01" },
+    { "name": "CN", "value": "RJ-SE-01" },
     { "name": "Anel", "value": "AN-RJ-NORTE-01" },
     { "name": "SICOM_ID", "value": "12345" }
   ]
@@ -797,61 +801,60 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ### 11.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Site** | Criar GeographicSite com siteSpecification, name, status inicial (Planned), opcionalmente place, address, parentSite. |
-| **RF-002** | **Validação de tipo** | Verificar que parentSite tem siteSpecification.allowedChildSpec contendo o tipo do filho. |
-| **RF-003** | **Atributos do specCharacteristic** | Validar characteristic do Site contra specCharacteristic do tipo: obrigatórios, validadores (regex, enum, range). |
-| **RF-004** | **Múltiplos endereços** | Permitir associar N GeographicAddress com role distinto (principal, despacho, cobrança). Exatamente um pode ter role=principal. |
-| **RF-005** | **Vinculação a localização** | Associar GeographicLocation via place; permitir geocodificação automática a partir do address principal. |
-| **RF-006** | **Editar Site** | Editar todos os atributos com Audit Trail; campos calculados (CN) recomputados se base mudar. |
-| **RF-007** | **Excluir/Desativar** | Bloquear exclusão de Site com Resources, Services ou Orders ativos; permitir transição para Retired via ciclo de vida (REQ-008). |
-| **RF-008** | **Listar e filtrar** | Filtros por: status, siteSpecification, parentSite (recursivo), siteType, characteristic, proximidade (via place), bounding box. |
-| **RF-009** | **Contadores** | Expor por Site: contagem de Sub-Sites, Resources vinculados, Services ativos, Orders pendentes. |
-| **RF-010** | **Detalhamento (GET)** | Expor representação completa do Site incluindo place expandido, address expandido e descendentes. |
-| **RF-011** | **Importação em massa** | Suportar importação em lote via CSV com validação completa (catálogo, contenção, atributos). |
-| **RF-012** | **Eventos** | Publicar TMF688 em cada criação, atualização e mudança de status (CreateEvent, AttributeValueChangeEvent, StateChangeEvent). |
+| ID         | Nome                                | Descrição                                                                                                                        |
+| ---------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Site**                      | Criar GeographicSite com siteSpecification, name, status inicial (Planned), opcionalmente place, address, parentSite.            |
+| **RF-002** | **Validação de tipo**               | Verificar que parentSite tem siteSpecification.allowedChildSpec contendo o tipo do filho.                                        |
+| **RF-003** | **Atributos do specCharacteristic** | Validar characteristic do Site contra specCharacteristic do tipo: obrigatórios, validadores (regex, enum, range).                |
+| **RF-004** | **Múltiplos endereços**             | Permitir associar N GeographicAddress com role distinto (principal, despacho, cobrança). Exatamente um pode ter role=principal.  |
+| **RF-005** | **Vinculação a localização**        | Associar GeographicLocation via place; permitir geocodificação automática a partir do address principal.                         |
+| **RF-006** | **Editar Site**                     | Editar todos os atributos com Audit Trail; campos calculados (CN) recomputados se base mudar.                                    |
+| **RF-007** | **Excluir/Desativar**               | Bloquear exclusão de Site com Resources, Services ou Orders ativos; permitir transição para Retired via ciclo de vida (REQ-008). |
+| **RF-008** | **Listar e filtrar**                | Filtros por: status, siteSpecification, parentSite (recursivo), siteType, characteristic, proximidade (via place), bounding box. |
+| **RF-009** | **Contadores**                      | Expor por Site: contagem de Sub-Sites, Resources vinculados, Services ativos, Orders pendentes.                                  |
+| **RF-010** | **Detalhamento (GET)**              | Expor representação completa do Site incluindo place expandido, address expandido e descendentes.                                |
+| **RF-011** | **Importação em massa**             | Suportar importação em lote via CSV com validação completa (catálogo, contenção, atributos).                                     |
+| **RF-012** | **Eventos**                         | Publicar TMF688 em cada criação, atualização e mudança de status (CreateEvent, AttributeValueChangeEvent, StateChangeEvent).     |
 
 ### 11.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | name é único globalmente para Sites com status != Retired. |
-| **RN-002** | siteSpecification, name e status são obrigatórios na criação. |
+| ID         | Regra de Negócio                                                                                            |
+| ---------- | ----------------------------------------------------------------------------------------------------------- |
+| **RN-001** | name é único globalmente para Sites com status != Retired.                                                  |
+| **RN-002** | siteSpecification, name e status são obrigatórios na criação.                                               |
 | **RN-003** | parentSite deve ter siteSpecification.allowedChildSpec compatível — se não compatível, criação é rejeitada. |
-| **RN-004** | characteristics declaradas mandatory no specCharacteristic do tipo são obrigatórias na criação do Site. |
-| **RN-005** | characteristics com configurable=false (ex.: CN) são derivadas pelo sistema, não aceitam edição manual. |
-| **RN-006** | Site não pode ser excluído fisicamente quando tem Resources, Services ou Orders ativos; apenas Retired. |
-| **RN-007** | Site pode ter no máximo um endereço com role=principal. |
-| **RN-008** | Toda criação, edição ou mudança de status gera evento TMF688 e Audit Trail. |
-| **RN-009** | statusDate é atualizado automaticamente a cada mudança de status, não aceita edição manual. |
+| **RN-004** | characteristics declaradas mandatory no specCharacteristic do tipo são obrigatórias na criação do Site.     |
+| **RN-005** | characteristics com configurable=false (ex.: CN) são derivadas pelo sistema, não aceitam edição manual.     |
+| **RN-006** | Site não pode ser excluído fisicamente quando tem Resources, Services ou Orders ativos; apenas Retired.     |
+| **RN-007** | Site pode ter no máximo um endereço com role=principal.                                                     |
+| **RN-008** | Toda criação, edição ou mudança de status gera evento TMF688 e Audit Trail.                                 |
+| **RN-009** | statusDate é atualizado automaticamente a cada mudança de status, não aceita edição manual.                 |
 
 ### 11.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criação válida** | POST de Site com siteSpec="CO", name único, characteristic [{name:"CLLI",value:"RJBTFL01CO0"}] retorna 201 com ID e href. |
-| **CA-002** | **Validação de contenção** | POST com parentSite incompatível (ex.: Andar como filho direto de Região) retorna 400 com mensagem explicando. |
-| **CA-003** | **Obrigatório de spec** | POST sem CLLI em SiteSpec que o exige retorna 400 indicando o atributo faltante. |
-| **CA-004** | **Validador de spec** | CLLI com 5 caracteres falha no validador regex e retorna 400. |
-| **CA-005** | **Cálculo de CN** | CN é preenchido automaticamente baseado em Região e Regional; PATCH manual em CN é rejeitado. |
-| **CA-006** | **Múltiplos endereços** | Criação com 2 endereços (principal + despacho) é aceita; tentativa de 2 principais retorna 400. |
-| **CA-007** | **Filtros combinados** | GET /geographicSite?status=Active&siteSpecification.id=spec-co&characteristic.Anel=AN-RJ-01 retorna apenas matches exatos. |
-| **CA-008** | **Bloqueio de exclusão** | DELETE em Site com Resources ativos retorna 409 com contagem de dependentes. |
-| **CA-009** | **Evento de criação** | POST bem-sucedido publica TMF688 GeographicSiteCreateEvent no tópico geographic.site.v1. |
-| **CA-010** | **Importação em lote** | POST /geographicSite/bulk com 1000 sites valida individualmente; retorna relatório com sucessos e falhas detalhadas. |
+| ID         | Critério                   | Resultado Esperado                                                                                                         |
+| ---------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Criação válida**         | POST de Site com siteSpec="CO", name único, characteristic [{name:"CLLI",value:"RJBTFL01CO0"}] retorna 201 com ID e href.  |
+| **CA-002** | **Validação de contenção** | POST com parentSite incompatível (ex.: Andar como filho direto de Região) retorna 400 com mensagem explicando.             |
+| **CA-003** | **Obrigatório de spec**    | POST sem CLLI em SiteSpec que o exige retorna 400 indicando o atributo faltante.                                           |
+| **CA-004** | **Validador de spec**      | CLLI com 5 caracteres falha no validador regex e retorna 400.                                                              |
+| **CA-005** | **Cálculo de CN**          | CN é preenchido automaticamente baseado em Região e Regional; PATCH manual em CN é rejeitado.                              |
+| **CA-006** | **Múltiplos endereços**    | Criação com 2 endereços (principal + despacho) é aceita; tentativa de 2 principais retorna 400.                            |
+| **CA-007** | **Filtros combinados**     | GET /geographicSite?status=Active&siteSpecification.id=spec-co&characteristic.Anel=AN-RJ-01 retorna apenas matches exatos. |
+| **CA-008** | **Bloqueio de exclusão**   | DELETE em Site com Resources ativos retorna 409 com contagem de dependentes.                                               |
+| **CA-009** | **Evento de criação**      | POST bem-sucedido publica TMF688 GeographicSiteCreateEvent no tópico geographic.site.v1.                                   |
+| **CA-010** | **Importação em lote**     | POST /geographicSite/bulk com 1000 sites valida individualmente; retorna relatório com sucessos e falhas detalhadas.       |
 
 ### 11.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Modelagem Site** | Site + Ponto Instalação (2 entidades) | Subclasse de GenericLocation | Entidade Site | **GeographicSite (entidade única tipada)** |
-| **Endereço** | Tabela embutida (múltiplos) | Atributo texto | Campos texto | **Referência a GeographicAddress (TMF673)** |
-| **Coordenadas** | Campos lat/long no Site | Atributos lat/long | Campos lat/long | **Referência a GeographicLocation (TMF675)** |
-| **Campos V.tal (CLLI, CN, Anel)** | Campos hardcoded no formulário | Atributos do metamodelo | Custom Fields | **characteristics conforme specCharacteristic** |
-| **Contenção validada** | Implícita no formulário polimórfico | Containment Manager | Hardcoded | **allowedChildSpec validado em runtime** |
-| **Eventos de domínio** | Não identificado no levantamento | Não identificado no levantamento | Webhooks (limitado) | **TMF688 Create/Update/StateChange** |
-
+| Capacidade                        | Netwin                                | Kuwaiba                          | NetBox              | Decisão Nexus                                   |
+| --------------------------------- | ------------------------------------- | -------------------------------- | ------------------- | ----------------------------------------------- |
+| **Modelagem Site**                | Site + Ponto Instalação (2 entidades) | Subclasse de GenericLocation     | Entidade Site       | **GeographicSite (entidade única tipada)**      |
+| **Endereço**                      | Tabela embutida (múltiplos)           | Atributo texto                   | Campos texto        | **Referência a GeographicAddress (TMF673)**     |
+| **Coordenadas**                   | Campos lat/long no Site               | Atributos lat/long               | Campos lat/long     | **Referência a GeographicLocation (TMF675)**    |
+| **Campos V.tal (CLLI, CN, Anel)** | Campos hardcoded no formulário        | Atributos do metamodelo          | Custom Fields       | **characteristics conforme specCharacteristic** |
+| **Contenção validada**            | Implícita no formulário polimórfico   | Containment Manager              | Hardcoded           | **allowedChildSpec validado em runtime**        |
+| **Eventos de domínio**            | Não identificado no levantamento      | Não identificado no levantamento | Webhooks (limitado) | **TMF688 Create/Update/StateChange**            |
 
 ---
 
@@ -874,12 +877,12 @@ A decisão de modelar Sub-Sites como mais um tipo de GeographicSite traz consist
 
 Atributos canônicos da entidade GeographicSite com category=SubSite (TMF674):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `siteSpecification` | EntityRef | Sim | Referência a SiteSpec com category="SubSite" (Floor, Room, Cage etc.). |
-| `parentSite` | EntityRef | Sim | Para Sub-Sites, parentSite é obrigatório. |
-| `characteristic` | array | Não | Atributos específicos: piso elevado, capacidade U total, classe de ambiente (TIA-942), restrição de acesso. |
-| `place` | EntityRef | Não | GeographicLocation própria (raro — usualmente Sub-Sites herdam place do pai). Útil para Cages com coordenadas precisas em DCs grandes. |
+| Atributo TMF        | Tipo      | Obrigatório | Observação V.tal                                                                                                                       |
+| ------------------- | --------- | :---------: | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `siteSpecification` | EntityRef |     Sim     | Referência a SiteSpec com category="SubSite" (Floor, Room, Cage etc.).                                                                 |
+| `parentSite`        | EntityRef |     Sim     | Para Sub-Sites, parentSite é obrigatório.                                                                                              |
+| `characteristic`    | array     |     Não     | Atributos específicos: piso elevado, capacidade U total, classe de ambiente (TIA-942), restrição de acesso.                            |
+| `place`             | EntityRef |     Não     | GeographicLocation própria (raro — usualmente Sub-Sites herdam place do pai). Útil para Cages com coordenadas precisas em DCs grandes. |
 
 ### 12.4 Exemplo de payload
 
@@ -909,48 +912,47 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ### 12.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Sub-Site** | Criar GeographicSite com siteSpec de category=SubSite, parentSite obrigatório, characteristics específicas. |
-| **RF-002** | **Hierarquia em árvore** | Suportar profundidade ilimitada de Sub-Sites: Site > Floor > Room > Cage > ... |
-| **RF-003** | **Validação Site-coerente** | Sub-Site deve ter sempre parentSite com mesmo Site raiz; mover Sub-Site entre Sites é restrito. |
-| **RF-004** | **Visualização hierárquica** | Expor árvore de Sub-Sites de um Site via endpoint dedicado (GET /geographicSite/{id}/tree). |
-| **RF-005** | **Capacidade física** | Suportar characteristic de capacidade (m², U total, kVA) para planejamento. |
-| **RF-006** | **Restrição de Resource placement** | Validar (no módulo Resource Domain) que Resources colocados em Sub-Site têm tipo compatível. |
-| **RF-007** | **Eventos** | Publicar TMF688 a cada criação/alteração de Sub-Site. |
+| ID         | Nome                                | Descrição                                                                                                   |
+| ---------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Sub-Site**                  | Criar GeographicSite com siteSpec de category=SubSite, parentSite obrigatório, characteristics específicas. |
+| **RF-002** | **Hierarquia em árvore**            | Suportar profundidade ilimitada de Sub-Sites: Site > Floor > Room > Cage > ...                              |
+| **RF-003** | **Validação Site-coerente**         | Sub-Site deve ter sempre parentSite com mesmo Site raiz; mover Sub-Site entre Sites é restrito.             |
+| **RF-004** | **Visualização hierárquica**        | Expor árvore de Sub-Sites de um Site via endpoint dedicado (GET /geographicSite/{id}/tree).                 |
+| **RF-005** | **Capacidade física**               | Suportar characteristic de capacidade (m², U total, kVA) para planejamento.                                 |
+| **RF-006** | **Restrição de Resource placement** | Validar (no módulo Resource Domain) que Resources colocados em Sub-Site têm tipo compatível.                |
+| **RF-007** | **Eventos**                         | Publicar TMF688 a cada criação/alteração de Sub-Site.                                                       |
 
 ### 12.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Sub-Sites têm parentSite obrigatório — Sub-Site órfão é inválido. |
-| **RN-002** | Mover Sub-Site para outro Site raiz é operação especial (com confirmação) e exige validação dos Resources nele contidos. |
-| **RN-003** | Sub-Site não pode ter status diferente do permitido pelo Site raiz (Sub-Site Active dentro de Site Retired é inválido). |
-| **RN-004** | Nome do Sub-Site é único dentro do mesmo parentSite. |
-| **RN-005** | Excluir Sub-Site com Resources é bloqueado; permite-se transição para Retired. |
-| **RN-006** | Toda alteração gera evento TMF688 e Audit Trail. |
-| **RN-007** | Sub-Sites não figuram no mapa nem na árvore de navegação de Locais; são acessados pelo painel de detalhe do Site pai, na aba "Sub-locais". A mesma regra vale para o recurso `Splitter` (Módulo 2 — Resource): ele reaproveita a Location da caixa que o contém e some do mapa/árvore, listado no painel de detalhe do recurso pai como "Recursos internos". A árvore faz *pass-through* sobre o Splitter — o que pende dele sobe um nível, para nada ficar inalcançável pela navegação. |
+| ID         | Regra de Negócio                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | Sub-Sites têm parentSite obrigatório — Sub-Site órfão é inválido.                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **RN-002** | Mover Sub-Site para outro Site raiz é operação especial (com confirmação) e exige validação dos Resources nele contidos.                                                                                                                                                                                                                                                                                                                                                                 |
+| **RN-003** | Sub-Site não pode ter status diferente do permitido pelo Site raiz (Sub-Site Active dentro de Site Retired é inválido).                                                                                                                                                                                                                                                                                                                                                                  |
+| **RN-004** | Nome do Sub-Site é único dentro do mesmo parentSite.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **RN-005** | Excluir Sub-Site com Resources é bloqueado; permite-se transição para Retired.                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **RN-006** | Toda alteração gera evento TMF688 e Audit Trail.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **RN-007** | Sub-Sites não figuram no mapa nem na árvore de navegação de Locais; são acessados pelo painel de detalhe do Site pai, na aba "Sub-locais". A mesma regra vale para o recurso `Splitter` (Módulo 2 — Resource): ele reaproveita a Location da caixa que o contém e some do mapa/árvore, listado no painel de detalhe do recurso pai como "Recursos internos". A árvore faz _pass-through_ sobre o Splitter — o que pende dele sobe um nível, para nada ficar inalcançável pela navegação. |
 
 ### 12.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criação válida** | POST de Sub-Site "Sala 301" com parentSite=Floor-3 e siteSpec=spec-room retorna 201. |
-| **CA-002** | **Parent obrigatório** | POST de Sub-Site sem parentSite retorna 400 com mensagem específica. |
+| ID         | Critério                  | Resultado Esperado                                                                          |
+| ---------- | ------------------------- | ------------------------------------------------------------------------------------------- |
+| **CA-001** | **Criação válida**        | POST de Sub-Site "Sala 301" com parentSite=Floor-3 e siteSpec=spec-room retorna 201.        |
+| **CA-002** | **Parent obrigatório**    | POST de Sub-Site sem parentSite retorna 400 com mensagem específica.                        |
 | **CA-003** | **Hierarquia respeitada** | POST de Cage com parentSite=Floor (sem Room intermediária) é rejeitado se spec não permite. |
-| **CA-004** | **Árvore expandida** | GET /geographicSite/{id}/tree retorna estrutura aninhada do Site com todos os Sub-Sites. |
-| **CA-005** | **Move entre Sites** | PATCH com parentSite de outro Site retorna 409 (operação proibida no MVP). |
-| **CA-006** | **Bloqueio de exclusão** | DELETE em Sub-Site com Resources retorna 409 com lista de Resources. |
+| **CA-004** | **Árvore expandida**      | GET /geographicSite/{id}/tree retorna estrutura aninhada do Site com todos os Sub-Sites.    |
+| **CA-005** | **Move entre Sites**      | PATCH com parentSite de outro Site retorna 409 (operação proibida no MVP).                  |
+| **CA-006** | **Bloqueio de exclusão**  | DELETE em Sub-Site com Resources retorna 409 com lista de Resources.                        |
 
 ### 12.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Modelagem Sub-Site** | Não identificado no levantamento | Subclasse Room/Building | Entidade Location MPTT | **GeographicSite com category=SubSite (unificado)** |
-| **Hierarquia interna** | Não identificado no levantamento | Sim (metamodelo) | Sim (MPTT por Site) | **Sim (parentSite recursivo)** |
-| **Atributos físicos** | Não identificado no levantamento | Atributo metamodelo (hasRaisedFloor) | Custom Fields | **characteristics (Area, Capacidade, etc.)** |
-| **Integridade cross-obj** | Não identificado no levantamento | Não identificado no levantamento | Sim (validações Django) | **Sim (validado no módulo Resource)** |
-
+| Capacidade                | Netwin                           | Kuwaiba                              | NetBox                  | Decisão Nexus                                       |
+| ------------------------- | -------------------------------- | ------------------------------------ | ----------------------- | --------------------------------------------------- |
+| **Modelagem Sub-Site**    | Não identificado no levantamento | Subclasse Room/Building              | Entidade Location MPTT  | **GeographicSite com category=SubSite (unificado)** |
+| **Hierarquia interna**    | Não identificado no levantamento | Sim (metamodelo)                     | Sim (MPTT por Site)     | **Sim (parentSite recursivo)**                      |
+| **Atributos físicos**     | Não identificado no levantamento | Atributo metamodelo (hasRaisedFloor) | Custom Fields           | **characteristics (Area, Capacidade, etc.)**        |
+| **Integridade cross-obj** | Não identificado no levantamento | Não identificado no levantamento     | Sim (validações Django) | **Sim (validado no módulo Resource)**               |
 
 ---
 
@@ -973,12 +975,12 @@ A ausência de histórico de transições nos sistemas analisados é uma limita�
 
 Atributos canônicos da entidade GeographicSite.status + StateChangeEvent (TMF674 + TMF688):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `status` | enum | Sim | Planned | InConstruction | Active | InDeactivation | Retired. |
-| `statusDate` | datetime | Sim | Data/hora da última transição de status. |
-| `statusReason` | string | Não | Motivo da transição (texto livre ou enum). |
-| `statusChangeUser` | EntityRef | Não | Usuário que realizou a transição. |
+| Atributo TMF       | Tipo      | Obrigatório | Observação V.tal                           |
+| ------------------ | --------- | :---------: | ------------------------------------------ |
+| `status`           | enum      |     Sim     | Planned                                    | InConstruction | Active | InDeactivation | Retired. |
+| `statusDate`       | datetime  |     Sim     | Data/hora da última transição de status.   |
+| `statusReason`     | string    |     Não     | Motivo da transição (texto livre ou enum). |
+| `statusChangeUser` | EntityRef |     Não     | Usuário que realizou a transição.          |
 
 ### 13.4 Exemplo de payload
 
@@ -1013,51 +1015,50 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ### 13.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Estados canônicos** | Suportar 5 estados: Planned, InConstruction, Active, InDeactivation, Retired. |
-| **RF-002** | **Transições válidas** | Configurar matriz de transições permitidas: Planned→InConstruction→Active→InDeactivation→Retired; saltos não permitidos. |
-| **RF-003** | **Histórico via eventos** | Cada transição publica StateChangeEvent TMF688 com timestamp, usuário, status anterior e novo. |
-| **RF-004** | **Consulta de histórico** | Endpoint GET /geographicSite/{id}/history retorna sequência cronológica de transições. |
-| **RF-005** | **Guard de transição** | Bloquear transições inválidas (ex.: Planned → Retired) com mensagem clara. |
-| **RF-006** | **Restrição de Service** | Bloquear ativação de Service em Sites com status != Active (validação no módulo Service Domain consultando este Site). |
-| **RF-007** | **Restrição de Resource** | Bloquear criação de novos Resources em Sites com status Retired (validação no módulo Resource Domain). |
-| **RF-008** | **Aviso pré-desativação** | Ao iniciar transição para InDeactivation, listar Resources, Services e Orders ativos que serão impactados. |
-| **RF-009** | **Reativação** | Permitir transição de Retired para Active apenas com aprovação especial (RBAC + Audit). |
+| ID         | Nome                      | Descrição                                                                                                                |
+| ---------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **RF-001** | **Estados canônicos**     | Suportar 5 estados: Planned, InConstruction, Active, InDeactivation, Retired.                                            |
+| **RF-002** | **Transições válidas**    | Configurar matriz de transições permitidas: Planned→InConstruction→Active→InDeactivation→Retired; saltos não permitidos. |
+| **RF-003** | **Histórico via eventos** | Cada transição publica StateChangeEvent TMF688 com timestamp, usuário, status anterior e novo.                           |
+| **RF-004** | **Consulta de histórico** | Endpoint GET /geographicSite/{id}/history retorna sequência cronológica de transições.                                   |
+| **RF-005** | **Guard de transição**    | Bloquear transições inválidas (ex.: Planned → Retired) com mensagem clara.                                               |
+| **RF-006** | **Restrição de Service**  | Bloquear ativação de Service em Sites com status != Active (validação no módulo Service Domain consultando este Site).   |
+| **RF-007** | **Restrição de Resource** | Bloquear criação de novos Resources em Sites com status Retired (validação no módulo Resource Domain).                   |
+| **RF-008** | **Aviso pré-desativação** | Ao iniciar transição para InDeactivation, listar Resources, Services e Orders ativos que serão impactados.               |
+| **RF-009** | **Reativação**            | Permitir transição de Retired para Active apenas com aprovação especial (RBAC + Audit).                                  |
 
 ### 13.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Status inicial padrão na criação: Planned. |
+| ID         | Regra de Negócio                                                                                                                                                                                                                                                        |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | Status inicial padrão na criação: Planned.                                                                                                                                                                                                                              |
 | **RN-002** | Transições permitidas: Planned → InConstruction ou Retired (cancelamento); InConstruction → Active, Planned (rollback) ou Retired; Active → InDeactivation; InDeactivation → Retired ou Active (reverter); Retired → Active apenas com reativação especial e aprovação. |
-| **RN-003** | Toda transição registra statusReason (recomendado) e statusChangeUser. |
-| **RN-004** | Eventos StateChangeEvent são imutáveis — nunca são deletados ou editados. |
-| **RN-005** | Transição Retired→Active exige role Administrador Geographic + comentário obrigatório. |
-| **RN-006** | Site em InDeactivation com Services ativos só pode ir para Retired quando os Services migrarem ou cancelarem. |
+| **RN-003** | Toda transição registra statusReason (recomendado) e statusChangeUser.                                                                                                                                                                                                  |
+| **RN-004** | Eventos StateChangeEvent são imutáveis — nunca são deletados ou editados.                                                                                                                                                                                               |
+| **RN-005** | Transição Retired→Active exige role Administrador Geographic + comentário obrigatório.                                                                                                                                                                                  |
+| **RN-006** | Site em InDeactivation com Services ativos só pode ir para Retired quando os Services migrarem ou cancelarem.                                                                                                                                                           |
 
 ### 13.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Transição válida** | PATCH /geographicSite/{id} com status=Active a partir de InConstruction é aceito; status e statusDate atualizados. |
-| **CA-002** | **Transição inválida** | PATCH com status=Retired a partir de Planned retorna 400 com mensagem da regra violada. |
-| **CA-003** | **Evento publicado** | Toda transição válida publica StateChangeEvent TMF688 no tópico geographic.site.lifecycle.v1. |
-| **CA-004** | **Histórico completo** | GET /geographicSite/{id}/history retorna 200 com array de transições em ordem cronológica. |
-| **CA-005** | **Aviso pré-desativação** | PATCH com status=InDeactivation em Site com Services retorna 200 mas inclui warnings com lista de Services. |
-| **CA-006** | **Bloqueio de Service** | POST de Service em Site com status=Planned é bloqueado (validação cross-module). |
-| **CA-007** | **Reativação especial** | PATCH Retired→Active sem role apropriado retorna 403; com role correto + statusReason é aceito. |
+| ID         | Critério                  | Resultado Esperado                                                                                                 |
+| ---------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **CA-001** | **Transição válida**      | PATCH /geographicSite/{id} com status=Active a partir de InConstruction é aceito; status e statusDate atualizados. |
+| **CA-002** | **Transição inválida**    | PATCH com status=Retired a partir de Planned retorna 400 com mensagem da regra violada.                            |
+| **CA-003** | **Evento publicado**      | Toda transição válida publica StateChangeEvent TMF688 no tópico geographic.site.lifecycle.v1.                      |
+| **CA-004** | **Histórico completo**    | GET /geographicSite/{id}/history retorna 200 com array de transições em ordem cronológica.                         |
+| **CA-005** | **Aviso pré-desativação** | PATCH com status=InDeactivation em Site com Services retorna 200 mas inclui warnings com lista de Services.        |
+| **CA-006** | **Bloqueio de Service**   | POST de Service em Site com status=Planned é bloqueado (validação cross-module).                                   |
+| **CA-007** | **Reativação especial**   | PATCH Retired→Active sem role apropriado retorna 403; com role correto + statusReason é aceito.                    |
 
 ### 13.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Estados de ciclo de vida** | Estado ciclo de vida (texto) | Não identificado no levantamento | Status com choices | **5 estados canônicos (TMF + V.tal)** |
-| **Histórico de transições** | Não identificado no levantamento | Audit Trail global | Não identificado no levantamento | **Sim via TMF688 StateChangeEvent** |
-| **Matriz de transições** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Matriz configurável validada em runtime** |
-| **Guards cross-module** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim (Resource e Service consultam status)** |
-| **Reativação controlada** | Permitido livremente | Não identificado no levantamento | Permitido livremente | **Requer RBAC + Audit + statusReason** |
-
+| Capacidade                   | Netwin                           | Kuwaiba                          | NetBox                           | Decisão Nexus                                 |
+| ---------------------------- | -------------------------------- | -------------------------------- | -------------------------------- | --------------------------------------------- |
+| **Estados de ciclo de vida** | Estado ciclo de vida (texto)     | Não identificado no levantamento | Status com choices               | **5 estados canônicos (TMF + V.tal)**         |
+| **Histórico de transições**  | Não identificado no levantamento | Audit Trail global               | Não identificado no levantamento | **Sim via TMF688 StateChangeEvent**           |
+| **Matriz de transições**     | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Matriz configurável validada em runtime**   |
+| **Guards cross-module**      | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim (Resource e Service consultam status)** |
+| **Reativação controlada**    | Permitido livremente             | Não identificado no levantamento | Permitido livremente             | **Requer RBAC + Audit + statusReason**        |
 
 ---
 
@@ -1080,11 +1081,11 @@ A escolha de tornar regras de contenção parte do catálogo (e não regras hard
 
 Atributos canônicos da entidade allowedParentSpec / allowedChildSpec em SiteSpec (TMF674):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `allowedParentSpec` | array<EntityRef> | Não | Em GeographicSiteSpecification: lista de SiteSpecs que podem ser pais deste tipo. |
-| `allowedChildSpec` | array<EntityRef> | Não | Em GeographicSiteSpecification: lista de SiteSpecs que podem ser filhos deste tipo. |
-| `containmentRule` | array | Não | Regras estendidas opcionais: cardinalidade (min/max), exclusividade. |
+| Atributo TMF        | Tipo             | Obrigatório | Observação V.tal                                                                    |
+| ------------------- | ---------------- | :---------: | ----------------------------------------------------------------------------------- |
+| `allowedParentSpec` | array<EntityRef> |     Não     | Em GeographicSiteSpecification: lista de SiteSpecs que podem ser pais deste tipo.   |
+| `allowedChildSpec`  | array<EntityRef> |     Não     | Em GeographicSiteSpecification: lista de SiteSpecs que podem ser filhos deste tipo. |
+| `containmentRule`   | array            |     Não     | Regras estendidas opcionais: cardinalidade (min/max), exclusividade.                |
 
 ### 14.4 Exemplo de payload
 
@@ -1098,15 +1099,12 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
   "category": "SubSite",
   "allowedParentSpec": [
     { "id": "spec-central-office", "@referredType": "GeographicSiteSpecification" },
-    { "id": "spec-pop",            "@referredType": "GeographicSiteSpecification" },
-    { "id": "spec-data-center",    "@referredType": "GeographicSiteSpecification" }
+    { "id": "spec-pop", "@referredType": "GeographicSiteSpecification" },
+    { "id": "spec-data-center", "@referredType": "GeographicSiteSpecification" }
   ],
-  "allowedChildSpec": [
-    { "id": "spec-room", "@referredType": "GeographicSiteSpecification" }
-  ],
+  "allowedChildSpec": [{ "id": "spec-room", "@referredType": "GeographicSiteSpecification" }],
   "containmentRule": [
-    { "rule": "maxChildrenOfType",
-      "params": { "childSpec": "spec-room", "max": 50 } }
+    { "rule": "maxChildrenOfType", "params": { "childSpec": "spec-room", "max": 50 } }
   ]
 }
 ```
@@ -1118,46 +1116,45 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ### 14.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Configurar contenção** | Permitir definir allowedParentSpec e allowedChildSpec ao criar/editar SiteSpec. |
-| **RF-002** | **Validação em runtime** | Validar na criação/edição de Site que (a) Site tem siteSpec.allowedParentSpec contendo o tipo do pai, OU (b) parentSite.siteSpec.allowedChildSpec contém o tipo do filho. |
-| **RF-003** | **API allowedChildren** | Endpoint GET /geographicSiteSpecification/{id}/allowedChildren retorna SiteSpecs filhas permitidas para uso em formulários dinâmicos. |
-| **RF-004** | **Hierarquia base imutável** | Bootstrap define regras-base intocáveis: Region→Region (recursivo), Region→Site (CO, POP, Cabinet etc.), Site→SubSite. |
-| **RF-005** | **Prevenção de ciclo** | Impedir criação ou alteração de parentSite que cause ciclo na hierarquia. |
-| **RF-006** | **Análise de impacto** | Antes de remover regra de contenção, calcular e exibir impacto (quantos Sites existentes violariam a nova regra). |
-| **RF-007** | **Eventos de catálogo** | Publicar TMF688 a cada alteração de regras de contenção. |
+| ID         | Nome                         | Descrição                                                                                                                                                                 |
+| ---------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Configurar contenção**     | Permitir definir allowedParentSpec e allowedChildSpec ao criar/editar SiteSpec.                                                                                           |
+| **RF-002** | **Validação em runtime**     | Validar na criação/edição de Site que (a) Site tem siteSpec.allowedParentSpec contendo o tipo do pai, OU (b) parentSite.siteSpec.allowedChildSpec contém o tipo do filho. |
+| **RF-003** | **API allowedChildren**      | Endpoint GET /geographicSiteSpecification/{id}/allowedChildren retorna SiteSpecs filhas permitidas para uso em formulários dinâmicos.                                     |
+| **RF-004** | **Hierarquia base imutável** | Bootstrap define regras-base intocáveis: Region→Region (recursivo), Region→Site (CO, POP, Cabinet etc.), Site→SubSite.                                                    |
+| **RF-005** | **Prevenção de ciclo**       | Impedir criação ou alteração de parentSite que cause ciclo na hierarquia.                                                                                                 |
+| **RF-006** | **Análise de impacto**       | Antes de remover regra de contenção, calcular e exibir impacto (quantos Sites existentes violariam a nova regra).                                                         |
+| **RF-007** | **Eventos de catálogo**      | Publicar TMF688 a cada alteração de regras de contenção.                                                                                                                  |
 
 ### 14.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Regras de contenção são parte da SiteSpecification — herdadas por todos os Sites do tipo. |
+| ID         | Regra de Negócio                                                                                      |
+| ---------- | ----------------------------------------------------------------------------------------------------- |
+| **RN-001** | Regras de contenção são parte da SiteSpecification — herdadas por todos os Sites do tipo.             |
 | **RN-002** | Hierarquia base (Region recursiva, Site, SubSite) é protegida — alterações exigem aprovação especial. |
-| **RN-003** | Não é permitido ciclo: um Site não pode ter como ancestral nenhum de seus descendentes. |
-| **RN-004** | Adição de novas regras (flexibilização) é livre; remoção (restrição) exige análise de impacto. |
-| **RN-005** | A API allowedChildren responde em < 200ms para uso interativo em formulários. |
-| **RN-006** | Toda alteração de regra de contenção é registrada no Audit Trail e publica evento. |
+| **RN-003** | Não é permitido ciclo: um Site não pode ter como ancestral nenhum de seus descendentes.               |
+| **RN-004** | Adição de novas regras (flexibilização) é livre; remoção (restrição) exige análise de impacto.        |
+| **RN-005** | A API allowedChildren responde em < 200ms para uso interativo em formulários.                         |
+| **RN-006** | Toda alteração de regra de contenção é registrada no Audit Trail e publica evento.                    |
 
 ### 14.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Validação aplicada** | POST de Floor com parentSite=Region (não permitido pelas regras) retorna 400 explicando a regra violada. |
-| **CA-002** | **API allowedChildren** | GET /geographicSiteSpecification/spec-co/allowedChildren retorna [spec-floor, spec-room] com 200. |
-| **CA-003** | **Prevenção de ciclo** | PATCH /geographicSite/{id} com parentSite causando ciclo retorna 400 com path detectado. |
-| **CA-004** | **Impacto de remoção** | DELETE de regra com impacto retorna 409 e exige confirmação via parâmetro forceWithImpact=true. |
-| **CA-005** | **Evento de catálogo** | Alteração de allowedChildSpec publica evento no tópico geographic.siteSpec.containment.v1. |
+| ID         | Critério                | Resultado Esperado                                                                                       |
+| ---------- | ----------------------- | -------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Validação aplicada**  | POST de Floor com parentSite=Region (não permitido pelas regras) retorna 400 explicando a regra violada. |
+| **CA-002** | **API allowedChildren** | GET /geographicSiteSpecification/spec-co/allowedChildren retorna [spec-floor, spec-room] com 200.        |
+| **CA-003** | **Prevenção de ciclo**  | PATCH /geographicSite/{id} com parentSite causando ciclo retorna 400 com path detectado.                 |
+| **CA-004** | **Impacto de remoção**  | DELETE de regra com impacto retorna 409 e exige confirmação via parâmetro forceWithImpact=true.          |
+| **CA-005** | **Evento de catálogo**  | Alteração de allowedChildSpec publica evento no tópico geographic.siteSpec.containment.v1.               |
 
 ### 14.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Catálogo de contenção** | Implícito no formulário | Containment Manager (UI) | Hardcoded no model Django | **allowedParent/ChildSpec configuráveis (TMF674)** |
-| **Validação em runtime** | Implícita por tipo | getPossibleChildren API | Save validator | **Validação canônica na criação/edição** |
-| **Prevenção de ciclo** | Não identificado no levantamento | Validado | Validado | **Validado via traversal de parentSite** |
-| **Análise de impacto** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim antes de remoção de regra** |
-
+| Capacidade                | Netwin                           | Kuwaiba                          | NetBox                           | Decisão Nexus                                      |
+| ------------------------- | -------------------------------- | -------------------------------- | -------------------------------- | -------------------------------------------------- |
+| **Catálogo de contenção** | Implícito no formulário          | Containment Manager (UI)         | Hardcoded no model Django        | **allowedParent/ChildSpec configuráveis (TMF674)** |
+| **Validação em runtime**  | Implícita por tipo               | getPossibleChildren API          | Save validator                   | **Validação canônica na criação/edição**           |
+| **Prevenção de ciclo**    | Não identificado no levantamento | Validado                         | Validado                         | **Validado via traversal de parentSite**           |
+| **Análise de impacto**    | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim antes de remoção de regra**                  |
 
 ---
 
@@ -1180,14 +1177,14 @@ O Netwin é o mais maduro nesta capacidade — sua aba "Relações" cobre exatam
 
 Atributos canônicos da entidade relatedSite[] em GeographicSite (TMF674):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `relatedSite` | array<SiteRelationship> | Não | Lista de relações deste Site com outros. |
-| `SiteRelationship.site` | EntityRef | Sim | Site relacionado (polo Z). |
-| `SiteRelationship.role` | enum | Sim | Papel deste Site na relação: source | target | peer | memberOf. |
-| `SiteRelationship.relationshipType` | string | Sim | Tipo da relação (vem do catálogo de RelationshipType): feeds, isFedBy, peersWith, contains, memberOf. |
-| `SiteRelationship.description` | string | Não | Descrição livre da relação específica. |
-| `SiteRelationship.validFor` | TimePeriod | Não | Período de validade (relações podem ter início/fim datados). |
+| Atributo TMF                        | Tipo                    | Obrigatório | Observação V.tal                                                                                      |
+| ----------------------------------- | ----------------------- | :---------: | ----------------------------------------------------------------------------------------------------- |
+| `relatedSite`                       | array<SiteRelationship> |     Não     | Lista de relações deste Site com outros.                                                              |
+| `SiteRelationship.site`             | EntityRef               |     Sim     | Site relacionado (polo Z).                                                                            |
+| `SiteRelationship.role`             | enum                    |     Sim     | Papel deste Site na relação: source                                                                   | target | peer | memberOf. |
+| `SiteRelationship.relationshipType` | string                  |     Sim     | Tipo da relação (vem do catálogo de RelationshipType): feeds, isFedBy, peersWith, contains, memberOf. |
+| `SiteRelationship.description`      | string                  |     Não     | Descrição livre da relação específica.                                                                |
+| `SiteRelationship.validFor`         | TimePeriod              |     Não     | Período de validade (relações podem ter início/fim datados).                                          |
 
 ### 15.4 Exemplo de payload
 
@@ -1196,20 +1193,22 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 ```json
 {
   "relationshipTypes": [
-    { "code": "feeds",      "inverse": "isFedBy",   "symmetric": false },
-    { "code": "isFedBy",    "inverse": "feeds",     "symmetric": false },
-    { "code": "peersWith",  "inverse": "peersWith", "symmetric": true  },
-    { "code": "memberOf",   "inverse": "contains",  "symmetric": false }
+    { "code": "feeds", "inverse": "isFedBy", "symmetric": false },
+    { "code": "isFedBy", "inverse": "feeds", "symmetric": false },
+    { "code": "peersWith", "inverse": "peersWith", "symmetric": true },
+    { "code": "memberOf", "inverse": "contains", "symmetric": false }
   ],
   "geographicSite": {
     "id": "site-rj-cabinet-001",
     "name": "Armario AR-RJ-001",
     "relatedSite": [
-      { "site": { "id": "site-rj-bot-co-01", "@referredType": "GeographicSite" },
+      {
+        "site": { "id": "site-rj-bot-co-01", "@referredType": "GeographicSite" },
         "role": "target",
         "relationshipType": "isFedBy",
         "description": "Alimentacao GPON via cabo CB-001",
-        "validFor": { "startDateTime": "2025-03-10T00:00:00Z" } }
+        "validFor": { "startDateTime": "2025-03-10T00:00:00Z" }
+      }
     ]
   }
 }
@@ -1223,54 +1222,53 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ### 15.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar relação A→Z** | Adicionar entrada em relatedSite[] do Site A apontando para Site Z com role e relationshipType. |
-| **RF-002** | **Catálogo de RelationshipType** | Manter catálogo configurável de tipos: feeds, isFedBy (inverso), peersWith (simétrico), memberOf, isPartOf. |
-| **RF-003** | **Relação inversa automática** | Ao criar A→Z com tipo que tem inverso definido, criar automaticamente Z→A com tipo inverso. |
-| **RF-004** | **Editar relação** | Permitir editar relationshipType, role, description, validFor de uma relação existente. |
-| **RF-005** | **Excluir relação** | Excluir relação remove ambos os sentidos (A→Z e Z→A); preservar histórico via validFor.endDateTime. |
-| **RF-006** | **Listar relações de um Site** | GET /geographicSite/{id}/relatedSite retorna todas as relações (entrada e saída). |
-| **RF-007** | **Análise de impacto** | Endpoint GET /geographicSite/{id}/impact retorna Sites dependentes (que recebem feeds, backhaul deste Site). |
-| **RF-008** | **Visualização em grafo** | Expor endpoint /graph com nós (Sites) e arestas (relações) para renderização de grafo topológico. |
-| **RF-009** | **Validação no ciclo de vida** | Ao iniciar desativação de Site, listar Sites dependentes (acionado por REQ-008 RF-008). |
-| **RF-010** | **Eventos** | Publicar TMF688 a cada criação, alteração ou remoção de relação. |
+| ID         | Nome                             | Descrição                                                                                                    |
+| ---------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **RF-001** | **Criar relação A→Z**            | Adicionar entrada em relatedSite[] do Site A apontando para Site Z com role e relationshipType.              |
+| **RF-002** | **Catálogo de RelationshipType** | Manter catálogo configurável de tipos: feeds, isFedBy (inverso), peersWith (simétrico), memberOf, isPartOf.  |
+| **RF-003** | **Relação inversa automática**   | Ao criar A→Z com tipo que tem inverso definido, criar automaticamente Z→A com tipo inverso.                  |
+| **RF-004** | **Editar relação**               | Permitir editar relationshipType, role, description, validFor de uma relação existente.                      |
+| **RF-005** | **Excluir relação**              | Excluir relação remove ambos os sentidos (A→Z e Z→A); preservar histórico via validFor.endDateTime.          |
+| **RF-006** | **Listar relações de um Site**   | GET /geographicSite/{id}/relatedSite retorna todas as relações (entrada e saída).                            |
+| **RF-007** | **Análise de impacto**           | Endpoint GET /geographicSite/{id}/impact retorna Sites dependentes (que recebem feeds, backhaul deste Site). |
+| **RF-008** | **Visualização em grafo**        | Expor endpoint /graph com nós (Sites) e arestas (relações) para renderização de grafo topológico.            |
+| **RF-009** | **Validação no ciclo de vida**   | Ao iniciar desativação de Site, listar Sites dependentes (acionado por REQ-008 RF-008).                      |
+| **RF-010** | **Eventos**                      | Publicar TMF688 a cada criação, alteração ou remoção de relação.                                             |
 
 ### 15.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Não é permitida autorrelação — Site não pode ter relatedSite apontando para si mesmo. |
-| **RN-002** | relationshipType é obrigatório e deve existir no catálogo de RelationshipType. |
-| **RN-003** | Para tipos com inverso definido, a relação Z→A é criada automaticamente ao criar A→Z (mantida coerente). |
-| **RN-004** | Múltiplas relações entre o mesmo par de Sites são permitidas desde que tipos sejam distintos. |
-| **RN-005** | Excluir Site cascateia a exclusão lógica de todas as suas relações (validFor.endDateTime preenchido). |
+| ID         | Regra de Negócio                                                                                                   |
+| ---------- | ------------------------------------------------------------------------------------------------------------------ |
+| **RN-001** | Não é permitida autorrelação — Site não pode ter relatedSite apontando para si mesmo.                              |
+| **RN-002** | relationshipType é obrigatório e deve existir no catálogo de RelationshipType.                                     |
+| **RN-003** | Para tipos com inverso definido, a relação Z→A é criada automaticamente ao criar A→Z (mantida coerente).           |
+| **RN-004** | Múltiplas relações entre o mesmo par de Sites são permitidas desde que tipos sejam distintos.                      |
+| **RN-005** | Excluir Site cascateia a exclusão lógica de todas as suas relações (validFor.endDateTime preenchido).              |
 | **RN-006** | Análise de impacto é não-transitiva por padrão — segue apenas um salto, com opção depth=N para travessia profunda. |
-| **RN-007** | Toda alteração de relação gera evento TMF688 e Audit Trail. |
+| **RN-007** | Toda alteração de relação gera evento TMF688 e Audit Trail.                                                        |
 
 ### 15.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criação de relação** | POST /geographicSite/{idA}/relatedSite com {site:idZ, role:source, relationshipType:feeds} cria relação e a inversa em Z (fedBy). |
-| **CA-002** | **Autorrelação** | POST com site=idA (mesmo ID) retorna 400. |
-| **CA-003** | **Tipo inexistente** | POST com relationshipType="xyz" não cadastrado retorna 400. |
-| **CA-004** | **Edição** | PATCH em relação existente atualiza ambos os sentidos consistentemente. |
-| **CA-005** | **Análise de impacto** | GET /geographicSite/{id}/impact retorna lista de Sites dependentes com tipo de dependência. |
-| **CA-006** | **Visão de grafo** | GET /geographicSite/graph?center={id}&depth=2 retorna subgrafo até 2 saltos. |
-| **CA-007** | **Aviso de desativação** | PATCH status=InDeactivation em Site com dependentes retorna warning com lista de dependentes. |
-| **CA-008** | **Evento publicado** | Cada criação/alteração publica evento no tópico geographic.site.relationship.v1. |
+| ID         | Critério                 | Resultado Esperado                                                                                                                |
+| ---------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Criação de relação**   | POST /geographicSite/{idA}/relatedSite com {site:idZ, role:source, relationshipType:feeds} cria relação e a inversa em Z (fedBy). |
+| **CA-002** | **Autorrelação**         | POST com site=idA (mesmo ID) retorna 400.                                                                                         |
+| **CA-003** | **Tipo inexistente**     | POST com relationshipType="xyz" não cadastrado retorna 400.                                                                       |
+| **CA-004** | **Edição**               | PATCH em relação existente atualiza ambos os sentidos consistentemente.                                                           |
+| **CA-005** | **Análise de impacto**   | GET /geographicSite/{id}/impact retorna lista de Sites dependentes com tipo de dependência.                                       |
+| **CA-006** | **Visão de grafo**       | GET /geographicSite/graph?center={id}&depth=2 retorna subgrafo até 2 saltos.                                                      |
+| **CA-007** | **Aviso de desativação** | PATCH status=InDeactivation em Site com dependentes retorna warning com lista de dependentes.                                     |
+| **CA-008** | **Evento publicado**     | Cada criação/alteração publica evento no tópico geographic.site.relationship.v1.                                                  |
 
 ### 15.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Modelagem de relação A↔Z** | Aba Relações (tabela) | Relações especiais entre objetos | Via Circuit Terminations | **relatedSite array (TMF674)** |
-| **Catálogo de tipos de relação** | Dropdown fixo no formulário | Não identificado no levantamento | Não identificado no levantamento | **RelationshipType configurável com pares inversos** |
-| **Relação inversa automática** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim — criada automaticamente** |
-| **Análise de impacto** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Endpoint /impact com depth configurável** |
-| **Visão em grafo** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Endpoint /graph com subgrafo** |
-
+| Capacidade                       | Netwin                           | Kuwaiba                          | NetBox                           | Decisão Nexus                                        |
+| -------------------------------- | -------------------------------- | -------------------------------- | -------------------------------- | ---------------------------------------------------- |
+| **Modelagem de relação A↔Z**     | Aba Relações (tabela)            | Relações especiais entre objetos | Via Circuit Terminations         | **relatedSite array (TMF674)**                       |
+| **Catálogo de tipos de relação** | Dropdown fixo no formulário      | Não identificado no levantamento | Não identificado no levantamento | **RelationshipType configurável com pares inversos** |
+| **Relação inversa automática**   | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim — criada automaticamente**                     |
+| **Análise de impacto**           | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Endpoint /impact com depth configurável**          |
+| **Visão em grafo**               | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Endpoint /graph com subgrafo**                     |
 
 ---
 
@@ -1291,12 +1289,12 @@ O syncGeoPosition do Kuwaiba é a melhor implementação observada — mover um 
 
 ### 16.3 Mapeamento de atributos TMF
 
-| Atributo | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `GeographicSite.place` | EntityRef | Sim para exibição | Referência a GeographicLocation; a geometria nunca é embutida no Site. |
-| `GeographicLocation.geometry` | GeoJSON | Sim | Point para Sites; Resources na mesma viewport também podem usar LineString. |
-| `GeographicSite.status` | enum | Sim | Determina status visual e filtros do mapa. |
-| `GeographicSite.siteSpecification` | EntityRef | Sim | Determina classe, ícone e filtros operacionais. |
+| Atributo                           | Tipo      |    Obrigatório    | Observação V.tal                                                            |
+| ---------------------------------- | --------- | :---------------: | --------------------------------------------------------------------------- |
+| `GeographicSite.place`             | EntityRef | Sim para exibição | Referência a GeographicLocation; a geometria nunca é embutida no Site.      |
+| `GeographicLocation.geometry`      | GeoJSON   |        Sim        | Point para Sites; Resources na mesma viewport também podem usar LineString. |
+| `GeographicSite.status`            | enum      |        Sim        | Determina status visual e filtros do mapa.                                  |
+| `GeographicSite.siteSpecification` | EntityRef |        Sim        | Determina classe, ícone e filtros operacionais.                             |
 
 ### 16.4 Exemplo de payload
 
@@ -1329,52 +1327,51 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ### 16.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Exibição de Sites em mapa** | Renderizar Sites com place válido em camada cartográfica; marcadores diferenciados por tipo e status. |
-| **RF-002** | **Filtros visuais** | Filtrar Sites no mapa por: status, siteSpecification, Região (parentSite recursivo), siteType, characteristic. |
-| **RF-003** | **Bounding box dinâmico** | Carregar apenas Sites visíveis na viewport atual do mapa para performance em alta densidade. |
+| ID         | Nome                                           | Descrição                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Exibição de Sites em mapa**                  | Renderizar Sites com place válido em camada cartográfica; marcadores diferenciados por tipo e status.                                                                                                                                                                                                                                                                             |
+| **RF-002** | **Filtros visuais**                            | Filtrar Sites no mapa por: status, siteSpecification, Região (parentSite recursivo), siteType, characteristic.                                                                                                                                                                                                                                                                    |
+| **RF-003** | **Bounding box dinâmico**                      | Carregar apenas Sites visíveis na viewport atual do mapa para performance em alta densidade.                                                                                                                                                                                                                                                                                      |
 | **RF-004** | **Camadas por escala (cobertura em zoom-out)** | Em vez de agrupar marcadores em clusters numerados, o mapa troca de representação por escala: em detalhe (≤ 200 m) exibe a planta individual; acima de 100 m entra a camada de cobertura GPON por bairro (REQ-MOD01-014), com grade de calor fina (≤ 500 m), grade grossa (≤ 10 km) e polígonos de bairro (> 10 km). As Estações encolhem entre 5 e 50 km e somem acima de 50 km. |
-| **RF-005** | **Detalhamento por clique** | Clique no marcador exibe popup com name, type, status, code, atributos principais e link para detalhamento. |
-| **RF-006** | **Sincronização bidirecional** | Permitir mover marcador no mapa para atualizar coordenadas; alterações em formulário refletem em tempo real no mapa. Criação e edição de vértices de LineString/Polygon são tratadas em REQ-MOD01-013. |
-| **RF-007** | **Camadas de visualização** | Suportar camadas configuráveis: hierarquia geográfica (limites de Regiões), Sites por tipo, relações topológicas como linhas. |
-| **RF-008** | **Busca por proximidade** | Tool de medição: clicar em ponto para listar Sites dentro de raio configurável. |
-| **RF-009** | **Exportação** | Exportar visão atual como imagem (PNG) ou dados (GeoJSON). |
-| **RF-010** | **Integração Geosite OSP** | Reaproveitar base cartográfica e camadas pré-existentes do Geosite OSP da V.tal. |
+| **RF-005** | **Detalhamento por clique**                    | Clique no marcador exibe popup com name, type, status, code, atributos principais e link para detalhamento.                                                                                                                                                                                                                                                                       |
+| **RF-006** | **Sincronização bidirecional**                 | Permitir mover marcador no mapa para atualizar coordenadas; alterações em formulário refletem em tempo real no mapa. Criação e edição de vértices de LineString/Polygon são tratadas em REQ-MOD01-013.                                                                                                                                                                            |
+| **RF-007** | **Camadas de visualização**                    | Suportar camadas configuráveis: hierarquia geográfica (limites de Regiões), Sites por tipo, relações topológicas como linhas.                                                                                                                                                                                                                                                     |
+| **RF-008** | **Busca por proximidade**                      | Tool de medição: clicar em ponto para listar Sites dentro de raio configurável.                                                                                                                                                                                                                                                                                                   |
+| **RF-009** | **Exportação**                                 | Exportar visão atual como imagem (PNG) ou dados (GeoJSON).                                                                                                                                                                                                                                                                                                                        |
+| **RF-010** | **Integração Geosite OSP**                     | Reaproveitar base cartográfica e camadas pré-existentes do Geosite OSP da V.tal.                                                                                                                                                                                                                                                                                                  |
 
 ### 16.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
+| ID         | Regra de Negócio                                                                                                                                                        |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **RN-001** | Sites sem place válido não aparecem no mapa e são detectados pela regra "Site sem place" do motor de integridade (REQ-MOD02-027), não por um relatório próprio do mapa. |
-| **RN-002** | A sincronização bidirecional atualiza a GeographicLocation referenciada pelo Site, não atributos do Site diretamente. |
-| **RN-003** | Movimentação de Site no mapa exige confirmação se o Site tem status=Active (mudança de coordenadas de Site ativo é evento crítico). |
-| **RN-004** | A viewport é limitada à área de operação V.tal (Brasil + ajustes futuros); pan além desses limites é restrito. |
-| **RN-005** | Clusters de marcadores agrupam Sites por proximidade e mostram contagem; clique no cluster faz zoom para ver individuais. |
-| **RN-006** | Toda movimentação de Site via mapa gera Audit Trail e evento TMF688 AttributeValueChangeEvent sobre place. |
+| **RN-002** | A sincronização bidirecional atualiza a GeographicLocation referenciada pelo Site, não atributos do Site diretamente.                                                   |
+| **RN-003** | Movimentação de Site no mapa exige confirmação se o Site tem status=Active (mudança de coordenadas de Site ativo é evento crítico).                                     |
+| **RN-004** | A viewport é limitada à área de operação V.tal (Brasil + ajustes futuros); pan além desses limites é restrito.                                                          |
+| **RN-005** | Clusters de marcadores agrupam Sites por proximidade e mostram contagem; clique no cluster faz zoom para ver individuais.                                               |
+| **RN-006** | Toda movimentação de Site via mapa gera Audit Trail e evento TMF688 AttributeValueChangeEvent sobre place.                                                              |
 
 ### 16.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Renderização** | GET /map/sites?bbox=... retorna FeatureCollection GeoJSON com Sites na bounding box. |
-| **CA-002** | **Filtros** | Aplicar filtro siteSpec=CO e status=Active reduz marcadores apenas a Centrais ativas. |
-| **CA-003** | **Cluster** | Em zoom out abaixo de 8, marcadores próximos são agrupados em clusters numerados. |
-| **CA-004** | **Sincronização** | Mover marcador no mapa dispara PATCH em GeographicLocation com novas coordenadas e atualiza Site em tempo real. |
-| **CA-005** | **Confirmação para Active** | Mover Site com status=Active exige modal de confirmação com motivo da mudança. |
-| **CA-006** | **Busca por proximidade** | Clique em ponto + raio 500m lista Sites dentro do raio com distância ao ponto. |
-| **CA-007** | **Exportação GeoJSON** | Export da viewport gera arquivo com Sites visíveis em formato FeatureCollection. |
+| ID         | Critério                    | Resultado Esperado                                                                                              |
+| ---------- | --------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Renderização**            | GET /map/sites?bbox=... retorna FeatureCollection GeoJSON com Sites na bounding box.                            |
+| **CA-002** | **Filtros**                 | Aplicar filtro siteSpec=CO e status=Active reduz marcadores apenas a Centrais ativas.                           |
+| **CA-003** | **Cluster**                 | Em zoom out abaixo de 8, marcadores próximos são agrupados em clusters numerados.                               |
+| **CA-004** | **Sincronização**           | Mover marcador no mapa dispara PATCH em GeographicLocation com novas coordenadas e atualiza Site em tempo real. |
+| **CA-005** | **Confirmação para Active** | Mover Site com status=Active exige modal de confirmação com motivo da mudança.                                  |
+| **CA-006** | **Busca por proximidade**   | Clique em ponto + raio 500m lista Sites dentro do raio com distância ao ponto.                                  |
+| **CA-007** | **Exportação GeoJSON**      | Export da viewport gera arquivo com Sites visíveis em formato FeatureCollection.                                |
 
 ### 16.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Visão de mapa nativa** | Sim (Geosite OSP) | Sim (OSP Module) | Não identificado no levantamento | **Sim (reaproveita Geosite OSP)** |
-| **Sincronização bidirecional** | Não identificado no levantamento | Sim (syncGeoPosition) | Não identificado no levantamento | **Sim (atualiza GeographicLocation)** |
-| **Filtros visuais** | Filtros básicos | Filtros básicos | Não identificado no levantamento | **Filtros combinados completos** |
-| **Clusterização** | Não identificado no levantamento | Limitada | Não identificado no levantamento | **Sim (configurável por zoom)** |
-| **Busca por proximidade no mapa** | Sim | Sim | Não identificado no levantamento | **Sim** |
-
+| Capacidade                        | Netwin                           | Kuwaiba               | NetBox                           | Decisão Nexus                         |
+| --------------------------------- | -------------------------------- | --------------------- | -------------------------------- | ------------------------------------- |
+| **Visão de mapa nativa**          | Sim (Geosite OSP)                | Sim (OSP Module)      | Não identificado no levantamento | **Sim (reaproveita Geosite OSP)**     |
+| **Sincronização bidirecional**    | Não identificado no levantamento | Sim (syncGeoPosition) | Não identificado no levantamento | **Sim (atualiza GeographicLocation)** |
+| **Filtros visuais**               | Filtros básicos                  | Filtros básicos       | Não identificado no levantamento | **Filtros combinados completos**      |
+| **Clusterização**                 | Não identificado no levantamento | Limitada              | Não identificado no levantamento | **Sim (configurável por zoom)**       |
+| **Busca por proximidade no mapa** | Sim                              | Sim                   | Não identificado no levantamento | **Sim**                               |
 
 ---
 
@@ -1397,14 +1394,14 @@ A publicação de eventos canônicos TMF688 é um dos pilares arquiteturais do N
 
 Atributos canônicos da entidade Event (TMF688) — vários tipos:
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `eventId` | string | Sim | UUID v7 único do evento. |
-| `eventType` | string | Sim | Nome canônico do tipo de evento (ex.: GeographicSiteCreateEvent). |
-| `eventTime` | datetime | Sim | Timestamp ISO 8601 com timezone. |
-| `source` | string | Sim | URL da entidade que gerou o evento. |
-| `correlationId` | string | Não | ID para correlação com a transação originadora. |
-| `event` | object | Sim | Payload específico do tipo de evento (referência à entidade, estados envolvidos etc.). |
+| Atributo TMF    | Tipo     | Obrigatório | Observação V.tal                                                                       |
+| --------------- | -------- | :---------: | -------------------------------------------------------------------------------------- |
+| `eventId`       | string   |     Sim     | UUID v7 único do evento.                                                               |
+| `eventType`     | string   |     Sim     | Nome canônico do tipo de evento (ex.: GeographicSiteCreateEvent).                      |
+| `eventTime`     | datetime |     Sim     | Timestamp ISO 8601 com timezone.                                                       |
+| `source`        | string   |     Sim     | URL da entidade que gerou o evento.                                                    |
+| `correlationId` | string   |     Não     | ID para correlação com a transação originadora.                                        |
+| `event`         | object   |     Sim     | Payload específico do tipo de evento (referência à entidade, estados envolvidos etc.). |
 
 ### 17.4 Exemplo de payload
 
@@ -1433,46 +1430,46 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ### 17.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Publicação transacional** | Toda escrita em entidade do módulo publica evento correspondente no mesmo commit (outbox pattern). |
-| **RF-002** | **Catálogo de eventos** | Manter catálogo formal dos eventos publicados pelo módulo (lista abaixo). |
-| **RF-003** | **Tópicos canônicos** | Publicar em tópicos versionados: geographic.site.v1, geographic.site.lifecycle.v1, geographic.location.v1, geographic.address.v1, geographic.siteSpec.v1. |
-| **RF-004** | **Schema Registry** | Schemas dos eventos publicados em Avro/JSON Schema no Schema Registry V.tal. |
-| **RF-005** | **Retry e dead letter** | Falha de publicação aciona retry exponencial; após N tentativas, evento vai para dead letter topic para análise. |
-| **RF-006** | **Idempotência** | Eventos têm eventId único; consumidores podem deduplicar por eventId. |
-| **RF-007** | **Correlation tracking** | Eventos carregam correlationId quando originados de OS ou request rastreável. |
-| **RF-008** | **Catálogo público** | Endpoint /events/catalog expõe lista de eventos publicados pelo módulo com schema e exemplos. |
+| ID         | Nome                        | Descrição                                                                                                                                                 |
+| ---------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Publicação transacional** | Toda escrita em entidade do módulo publica evento correspondente no mesmo commit (outbox pattern).                                                        |
+| **RF-002** | **Catálogo de eventos**     | Manter catálogo formal dos eventos publicados pelo módulo (lista abaixo).                                                                                 |
+| **RF-003** | **Tópicos canônicos**       | Publicar em tópicos versionados: geographic.site.v1, geographic.site.lifecycle.v1, geographic.location.v1, geographic.address.v1, geographic.siteSpec.v1. |
+| **RF-004** | **Schema Registry**         | Schemas dos eventos publicados em Avro/JSON Schema no Schema Registry V.tal.                                                                              |
+| **RF-005** | **Retry e dead letter**     | Falha de publicação aciona retry exponencial; após N tentativas, evento vai para dead letter topic para análise.                                          |
+| **RF-006** | **Idempotência**            | Eventos têm eventId único; consumidores podem deduplicar por eventId.                                                                                     |
+| **RF-007** | **Correlation tracking**    | Eventos carregam correlationId quando originados de OS ou request rastreável.                                                                             |
+| **RF-008** | **Catálogo público**        | Endpoint /events/catalog expõe lista de eventos publicados pelo módulo com schema e exemplos.                                                             |
 
 ### 17.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Eventos são imutáveis após publicação — nunca são editados, apenas compensados por eventos subsequentes. |
+| ID         | Regra de Negócio                                                                                                |
+| ---------- | --------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | Eventos são imutáveis após publicação — nunca são editados, apenas compensados por eventos subsequentes.        |
 | **RN-002** | Publicação é parte da transação de escrita (outbox pattern) — sucesso da escrita implica sucesso da publicação. |
-| **RN-003** | Falha de publicação no commit aciona rollback da escrita. |
-| **RN-004** | Schemas de evento são versionados; mudanças breaking exigem nova versão de tópico. |
-| **RN-005** | Retention dos tópicos: 30 dias quente (Kafka), arquivado em Data Lake para análise histórica. |
-| **RN-006** | Eventos não contêm dados sensíveis em texto claro — apenas referências por ID. |
+| **RN-003** | Falha de publicação no commit aciona rollback da escrita.                                                       |
+| **RN-004** | Schemas de evento são versionados; mudanças breaking exigem nova versão de tópico.                              |
+| **RN-005** | Retention dos tópicos: 30 dias quente (Kafka), arquivado em Data Lake para análise histórica.                   |
+| **RN-006** | Eventos não contêm dados sensíveis em texto claro — apenas referências por ID.                                  |
 
 ### 17.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Publicação no commit** | Criação de Site bem-sucedida publica GeographicSiteCreateEvent no tópico geographic.site.v1. |
-| **CA-002** | **Outbox pattern** | Falha de publicação na transação reverte a escrita do Site (testado com Kafka indisponível). |
-| **CA-003** | **Schema válido** | Eventos publicados validam contra schema registrado; mensagens inválidas vão para dead letter. |
-| **CA-004** | **Idempotência** | Reprocessamento de mesmo evento pelo consumidor não causa efeito colateral (eventId deduplicado). |
-| **CA-005** | **Catálogo público** | GET /events/catalog retorna 200 com lista de tipos de evento, schemas e exemplos. |
+| ID         | Critério                 | Resultado Esperado                                                                                |
+| ---------- | ------------------------ | ------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Publicação no commit** | Criação de Site bem-sucedida publica GeographicSiteCreateEvent no tópico geographic.site.v1.      |
+| **CA-002** | **Outbox pattern**       | Falha de publicação na transação reverte a escrita do Site (testado com Kafka indisponível).      |
+| **CA-003** | **Schema válido**        | Eventos publicados validam contra schema registrado; mensagens inválidas vão para dead letter.    |
+| **CA-004** | **Idempotência**         | Reprocessamento de mesmo evento pelo consumidor não causa efeito colateral (eventId deduplicado). |
+| **CA-005** | **Catálogo público**     | GET /events/catalog retorna 200 com lista de tipos de evento, schemas e exemplos.                 |
 
 ### 17.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Publicação de eventos canônicos** | Não identificado no levantamento | Não identificado no levantamento | Webhooks (limitado) | **TMF688 nativo em todas as operações** |
-| **Outbox pattern** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim — consistência transacional** |
-| **Schema Registry** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim — Avro/JSON Schema versionado** |
-| **Tópicos versionados** | Não identificado no levantamento | Não identificado no levantamento | Endpoints únicos | **Tópicos por entidade com versão (v1, v2)** |
+| Capacidade                          | Netwin                           | Kuwaiba                          | NetBox                           | Decisão Nexus                                |
+| ----------------------------------- | -------------------------------- | -------------------------------- | -------------------------------- | -------------------------------------------- |
+| **Publicação de eventos canônicos** | Não identificado no levantamento | Não identificado no levantamento | Webhooks (limitado)              | **TMF688 nativo em todas as operações**      |
+| **Outbox pattern**                  | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim — consistência transacional**          |
+| **Schema Registry**                 | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim — Avro/JSON Schema versionado**        |
+| **Tópicos versionados**             | Não identificado no levantamento | Não identificado no levantamento | Endpoints únicos                 | **Tópicos por entidade com versão (v1, v2)** |
 
 ---
 
@@ -1499,46 +1496,46 @@ O Kuwaiba oferece o `syncGeoPosition` (mover um nó atualiza a coordenada de for
 
 ### 18.3 Mapeamento de atributos TMF
 
-| Atributo | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `GeographicLocation.geometry` | GeoJSON | Sim | Point, LineString ou Polygon. Alvo único da edição. |
-| `GeographicLocation.geometryType` | enum | Sim | Não pode mudar de tipo em edição — mudar de LineString para Polygon exige nova Location. |
-| `GeographicLocation.accuracy` | string | Não | Passa a `desenho-manual` quando os vértices vêm do editor, distinguindo de coordenada levantada em campo. |
-| `GeographicLocation.spatialRef` | string | Sim | Sempre WGS84 (EPSG:4326); conversão de outros sistemas é responsabilidade do import. |
-| `GeographicLocation.validFor` | TimePeriod | Não | Encerramento da geometria anterior quando a edição é versionada. |
+| Atributo                          | Tipo       | Obrigatório | Observação V.tal                                                                                          |
+| --------------------------------- | ---------- | :---------: | --------------------------------------------------------------------------------------------------------- |
+| `GeographicLocation.geometry`     | GeoJSON    |     Sim     | Point, LineString ou Polygon. Alvo único da edição.                                                       |
+| `GeographicLocation.geometryType` | enum       |     Sim     | Não pode mudar de tipo em edição — mudar de LineString para Polygon exige nova Location.                  |
+| `GeographicLocation.accuracy`     | string     |     Não     | Passa a `desenho-manual` quando os vértices vêm do editor, distinguindo de coordenada levantada em campo. |
+| `GeographicLocation.spatialRef`   | string     |     Sim     | Sempre WGS84 (EPSG:4326); conversão de outros sistemas é responsabilidade do import.                      |
+| `GeographicLocation.validFor`     | TimePeriod |     Não     | Encerramento da geometria anterior quando a edição é versionada.                                          |
 
 ### 18.4 Exemplo de payload
 
 ```json
 [
-{
-  "id": "loc-linestring-mg-duto-0042",
-  "@type": "GeographicLocation",
-  "geometryType": "LineString",
-  "spatialRef": "EPSG:4326",
-  "accuracy": "desenho-manual",
-  "geometry": {
-    "type": "LineString",
-    "coordinates": [
-      [-43.9412, -19.9218],
-      [-43.9407, -19.9221],
-      [-43.9399, -19.9226],
-      [-43.9391, -19.9230]
-    ]
+  {
+    "id": "loc-linestring-mg-duto-0042",
+    "@type": "GeographicLocation",
+    "geometryType": "LineString",
+    "spatialRef": "EPSG:4326",
+    "accuracy": "desenho-manual",
+    "geometry": {
+      "type": "LineString",
+      "coordinates": [
+        [-43.9412, -19.9218],
+        [-43.9407, -19.9221],
+        [-43.9399, -19.9226],
+        [-43.9391, -19.923]
+      ]
+    },
+    "validFor": { "startDateTime": "2026-08-01T14:20:00Z" }
   },
-  "validFor": { "startDateTime": "2026-08-01T14:20:00Z" }
-},
-{
-  "editSession": {
-    "targetLocation": "loc-linestring-mg-duto-0042",
-    "snappedTo": [
-      { "id": "res-caixa-mg-bh-0117", "@referredType": "Resource", "vertexIndex": 0 },
-      { "id": "res-caixa-mg-bh-0118", "@referredType": "Resource", "vertexIndex": 3 }
-    ],
-    "reason": "cadastro de duto novo — projeto BH-2026-114",
-    "draft": false
+  {
+    "editSession": {
+      "targetLocation": "loc-linestring-mg-duto-0042",
+      "snappedTo": [
+        { "id": "res-caixa-mg-bh-0117", "@referredType": "Resource", "vertexIndex": 0 },
+        { "id": "res-caixa-mg-bh-0118", "@referredType": "Resource", "vertexIndex": 3 }
+      ],
+      "reason": "cadastro de duto novo — projeto BH-2026-114",
+      "draft": false
+    }
   }
-}
 ]
 ```
 
@@ -1550,54 +1547,54 @@ O Kuwaiba oferece o `syncGeoPosition` (mover um nó atualiza a coordenada de for
 
 ### 18.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Desenhar geometria** | Criar Point, LineString e Polygon no mapa, vértice a vértice, gerando a GeographicLocation correspondente. |
-| **RF-002** | **Editar vértices** | Inserir, mover e remover vértices de geometria existente, preservando o `id` da Location. |
-| **RF-003** | **Snap a feições existentes** | Ancorar vértice em Site, poste, caixa ou vértice de outra geometria, com tolerância configurável em metros. |
-| **RF-004** | **Split e merge de LineString** | Dividir uma linha em duas Locations num vértice escolhido e emendar duas linhas contíguas em uma. |
-| **RF-005** | **Medição durante o traçado** | Exibir comprimento acumulado e por segmento enquanto o usuário desenha. |
-| **RF-006** | **Undo / redo** | Desfazer e refazer operações dentro da sessão de edição antes de salvar. |
-| **RF-007** | **Rascunho** | Salvar a geometria como rascunho não publicado, retomável depois, sem afetar a Location vigente. |
-| **RF-008** | **Import de geometria** | Colar ou importar GeoJSON e WKT, com validação e relatório por feição. |
-| **RF-009** | **Motivo e histórico** | Registrar motivo da alteração e preservar a geometria anterior consultável. |
-| **RF-010** | **Edição sem instalação** | Todo o fluxo executa em navegador padrão, sem plugin, applet, cliente desktop ou licença por estação. |
+| ID         | Nome                            | Descrição                                                                                                   |
+| ---------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Desenhar geometria**          | Criar Point, LineString e Polygon no mapa, vértice a vértice, gerando a GeographicLocation correspondente.  |
+| **RF-002** | **Editar vértices**             | Inserir, mover e remover vértices de geometria existente, preservando o `id` da Location.                   |
+| **RF-003** | **Snap a feições existentes**   | Ancorar vértice em Site, poste, caixa ou vértice de outra geometria, com tolerância configurável em metros. |
+| **RF-004** | **Split e merge de LineString** | Dividir uma linha em duas Locations num vértice escolhido e emendar duas linhas contíguas em uma.           |
+| **RF-005** | **Medição durante o traçado**   | Exibir comprimento acumulado e por segmento enquanto o usuário desenha.                                     |
+| **RF-006** | **Undo / redo**                 | Desfazer e refazer operações dentro da sessão de edição antes de salvar.                                    |
+| **RF-007** | **Rascunho**                    | Salvar a geometria como rascunho não publicado, retomável depois, sem afetar a Location vigente.            |
+| **RF-008** | **Import de geometria**         | Colar ou importar GeoJSON e WKT, com validação e relatório por feição.                                      |
+| **RF-009** | **Motivo e histórico**          | Registrar motivo da alteração e preservar a geometria anterior consultável.                                 |
+| **RF-010** | **Edição sem instalação**       | Todo o fluxo executa em navegador padrão, sem plugin, applet, cliente desktop ou licença por estação.       |
 
 ### 18.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
+| ID         | Regra de Negócio                                                                                                                                            |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **RN-001** | Geometria inválida é rejeitada no save: LineString com menos de 2 vértices, Polygon não fechado, auto-interseção e coordenada fora dos limites de operação. |
-| **RN-002** | A edição altera a `GeographicLocation`; a entidade que a referencia (Site ou Resource) não tem geometria própria. |
-| **RN-003** | Editar geometria de entidade com status `Active` exige motivo declarado e publica `AttributeValueChangeEvent` (TMF688). |
-| **RN-004** | Toda edição registra ator, timestamp, geometria anterior e motivo — Audit Trail obrigatório, sem exceção para carga em massa. |
-| **RN-005** | O tipo de geometria é imutável na edição; converter Point em LineString exige criar nova Location e reapontar a referência. |
-| **RN-006** | Rascunho não participa de consultas operacionais, mapa público nem cálculo de trajeto até ser publicado. |
-| **RN-007** | Import assume WGS84; arquivo em outro sistema de referência é rejeitado com mensagem explícita, nunca reprojetado silenciosamente. |
-| **RN-008** | Snap não move a feição ancorada — apenas copia sua coordenada para o vértice em edição. |
+| **RN-002** | A edição altera a `GeographicLocation`; a entidade que a referencia (Site ou Resource) não tem geometria própria.                                           |
+| **RN-003** | Editar geometria de entidade com status `Active` exige motivo declarado e publica `AttributeValueChangeEvent` (TMF688).                                     |
+| **RN-004** | Toda edição registra ator, timestamp, geometria anterior e motivo — Audit Trail obrigatório, sem exceção para carga em massa.                               |
+| **RN-005** | O tipo de geometria é imutável na edição; converter Point em LineString exige criar nova Location e reapontar a referência.                                 |
+| **RN-006** | Rascunho não participa de consultas operacionais, mapa público nem cálculo de trajeto até ser publicado.                                                    |
+| **RN-007** | Import assume WGS84; arquivo em outro sistema de referência é rejeitado com mensagem explícita, nunca reprojetado silenciosamente.                          |
+| **RN-008** | Snap não move a feição ancorada — apenas copia sua coordenada para o vértice em edição.                                                                     |
 
 ### 18.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Traçar linha de duto** | Desenhar LineString de 6 vértices com snap em duas caixas subterrâneas, salvar e reabrir devolve os mesmos vértices — usando apenas o navegador, sem instalação. |
-| **CA-002** | **Geometria inválida** | Salvar LineString com auto-interseção retorna 422 com o índice do segmento problemático. |
-| **CA-003** | **Split** | Dividir uma linha de 800 m em um vértice gera duas Locations cuja soma de comprimento equivale à original. |
-| **CA-004** | **Edição de entidade ativa** | Editar geometria de Site `Active` sem motivo retorna 400; com motivo, publica AttributeValueChangeEvent. |
-| **CA-005** | **Rascunho** | Geometria salva como rascunho não aparece no mapa operacional e é retomável na sessão seguinte. |
-| **CA-006** | **Import GeoJSON** | Import de arquivo com 50 feições devolve relatório por item, aceitando as válidas e listando as rejeitadas com o motivo. |
-| **CA-007** | **Histórico** | Após duas edições, a consulta de histórico devolve as duas geometrias anteriores com ator, motivo e timestamp. |
+| ID         | Critério                     | Resultado Esperado                                                                                                                                               |
+| ---------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Traçar linha de duto**     | Desenhar LineString de 6 vértices com snap em duas caixas subterrâneas, salvar e reabrir devolve os mesmos vértices — usando apenas o navegador, sem instalação. |
+| **CA-002** | **Geometria inválida**       | Salvar LineString com auto-interseção retorna 422 com o índice do segmento problemático.                                                                         |
+| **CA-003** | **Split**                    | Dividir uma linha de 800 m em um vértice gera duas Locations cuja soma de comprimento equivale à original.                                                       |
+| **CA-004** | **Edição de entidade ativa** | Editar geometria de Site `Active` sem motivo retorna 400; com motivo, publica AttributeValueChangeEvent.                                                         |
+| **CA-005** | **Rascunho**                 | Geometria salva como rascunho não aparece no mapa operacional e é retomável na sessão seguinte.                                                                  |
+| **CA-006** | **Import GeoJSON**           | Import de arquivo com 50 feições devolve relatório por item, aceitando as válidas e listando as rejeitadas com o motivo.                                         |
+| **CA-007** | **Histórico**                | Após duas edições, a consulta de histórico devolve as duas geometrias anteriores com ator, motivo e timestamp.                                                   |
 
 ### 18.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Digitalização de geometria** | Sim, via GISMaps (Outside Plant / OSP) | Sim, no módulo OSP | Não identificado no levantamento | **Editor nativo web sobre TMF675, sem cliente instalado** |
-| **Edição de vértices de LineString** | Sim (traçado de rede exterior) | Não identificado no levantamento | Não identificado no levantamento | **Sim, com split, merge e undo/redo** |
-| **Snap a feições existentes** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim, tolerância configurável em metros** |
-| **Sincronização mapa ↔ inventário** | Não identificado no levantamento | Sim (`syncGeoPosition`) | Não identificado no levantamento | **Sim, transacional sobre GeographicLocation** |
-| **Rascunho antes de publicar** | Estado de projeto no cadastro | Não identificado no levantamento | Não identificado no levantamento | **Sim, invisível à operação até publicar** |
-| **Import GeoJSON/WKT** | Data Manager (importação) | Não identificado no levantamento | Sim, via API/scripts | **Sim, com relatório por feição e SRID fixo** |
+| Capacidade                           | Netwin                                 | Kuwaiba                          | NetBox                           | Decisão Nexus                                             |
+| ------------------------------------ | -------------------------------------- | -------------------------------- | -------------------------------- | --------------------------------------------------------- |
+| **Digitalização de geometria**       | Sim, via GISMaps (Outside Plant / OSP) | Sim, no módulo OSP               | Não identificado no levantamento | **Editor nativo web sobre TMF675, sem cliente instalado** |
+| **Edição de vértices de LineString** | Sim (traçado de rede exterior)         | Não identificado no levantamento | Não identificado no levantamento | **Sim, com split, merge e undo/redo**                     |
+| **Snap a feições existentes**        | Não identificado no levantamento       | Não identificado no levantamento | Não identificado no levantamento | **Sim, tolerância configurável em metros**                |
+| **Sincronização mapa ↔ inventário**  | Não identificado no levantamento       | Sim (`syncGeoPosition`)          | Não identificado no levantamento | **Sim, transacional sobre GeographicLocation**            |
+| **Rascunho antes de publicar**       | Estado de projeto no cadastro          | Não identificado no levantamento | Não identificado no levantamento | **Sim, invisível à operação até publicar**                |
+| **Import GeoJSON/WKT**               | Data Manager (importação)              | Não identificado no levantamento | Sim, via API/scripts             | **Sim, com relatório por feição e SRID fixo**             |
 
 ---
 
@@ -1606,31 +1603,33 @@ O Kuwaiba oferece o `syncGeoPosition` (mover um nó atualiza a coordenada de for
 > **Entidade TMF:** GeographicLocation (TMF675) — polígono de cobertura; não cria entidade nova  
 > **Open API TMF:** TMF675 — consulta geoespacial de áreas de cobertura  
 > **Prioridade:** Média — leitura operacional agregada da planta  
-> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.5 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.7 — draft
 
 ### 19.1 Descrição
 
-Acima da escala de detalhe, o mapa (REQ-MOD01-011) deixa de desenhar recurso a recurso e passa a mostrar a **cobertura GPON**: uma camada térmica por bairro que responde a "onde há planta óptica disponível?" em qualquer escala acima de 100 m. Cada CDO (caixa de distribuição óptica, cadastrada como PhysicalResource `CTO` cujo nome começa em "CDO") cobre um raio de 300 m lineares; a consolidação desses perímetros forma o polígono de cobertura de cada bairro. A cor mede **disponibilidade** — verde onde predominam CDOs ativas, vermelho onde predominam bloqueadas — e a intensidade mede **densidade** de CDOs. Substitui os antigos clusters numerados (bolas azuis), que poluíam a visão de cidade/estado sem informar nada sobre a rede.
+Acima da escala de detalhe, o mapa (REQ-MOD01-011) deixa de desenhar recurso a recurso e passa a mostrar a **cobertura GPON**: uma camada térmica por bairro que responde a "onde há planta óptica disponível?" em qualquer escala acima de 100 m. Cada CDO (caixa de distribuição óptica, cadastrada como PhysicalResource `CTO` cujo nome começa em "CDO") cobre um raio de 200 m lineares; a consolidação desses perímetros forma o polígono de cobertura de cada bairro. O contorno do polígono é suavizado por corner-cutting (Chaikin) tanto na geração quanto no traçado do canvas, para a silhueta ler como mancha fluida em vez da escada da grade. A cor mede **disponibilidade** — verde onde predominam CDOs ativas, vermelho onde predominam bloqueadas — e a intensidade mede **densidade** de CDOs. Substitui os antigos clusters numerados (bolas azuis), que poluíam a visão de cidade/estado sem informar nada sobre a rede.
 
 ### 19.2 Racional arquitetural
 
 A cobertura é uma **área geográfica**, não um serviço nem um recurso: é a projeção espacial de "até onde a planta alcança". Por isso o polígono do bairro é uma `GeographicLocation` (TMF675, `geometryType: Polygon`) — o mesmo caso de uso já previsto no REQ-MOD01-001 ("zona de cobertura, polígono de uma cidade"). Não é `Service` (C4: cobertura não é Home Connected) nem `Resource` (C3-a: serviço/área referencia recurso, não o contém). A geometria é **derivada** da posição das CDOs: um artefato regenerável, não um cadastro manual — mora ao lado do inventário, alimentado por um job de recomputação (`scripts/build-gpon-coverage.mjs`).
 
-O campo de calor fino (grade de 150 m em Web Mercator, EPSG:3857) fica numa **projeção de leitura** própria (`geo_gpon_coverage_cell`), agregável por zoom (150 m → 750 m → polígono de bairro) sem inflar a tabela de Locations nem exigir interseção de polígono em tempo de consulta. As estatísticas de cada bairro (contagem real de CDOs, disponibilidade, área coberta) viajam como `characteristic` tipada no grupo `_coverage` (C1 — extensão V.tal via característica, nunca campo hardcoded).
+O campo de calor fino (grade de 50 m em Web Mercator, EPSG:3857) fica numa **projeção de leitura** própria (`geo_gpon_coverage_cell`), agregável por zoom (50 m → 250 m → polígono de bairro) sem inflar a tabela de Locations nem exigir interseção de polígono em tempo de consulta. As estatísticas de cada bairro (contagem real de CDOs, disponibilidade, área coberta) viajam como `characteristic` tipada no grupo `_coverage` (C1 — extensão V.tal via característica, nunca campo hardcoded).
 
 ### 19.3 Mapeamento de atributos TMF
 
-| Atributo | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `GeographicLocation.geometryType` | enum | Sim | `Polygon` — anel externo do bairro + buracos. |
-| `GeographicLocation.geometry` | GeoJSON | Sim | Polígono do componente conexo da cobertura do bairro (RFC 7946). |
-| `GeographicLocation.referencePoint` | string | Não | Token de escopo `GPON:<uf>\|<city>\|<bairro>` — idempotência da regeneração. |
-| `characteristic._coverage.neighborhood` | string | Sim | Nome do bairro (rótulo do balão). |
-| `characteristic._coverage.cdoTotal` | integer | Sim | Contagem **real** de CDOs do bairro (não a soma de células). |
-| `characteristic._coverage.cdoAvailable` | integer | Sim | CDOs ativas (disponíveis). |
-| `characteristic._coverage.availabilityRatio` | decimal | Sim | `cdoAvailable / cdoTotal`, base da cor. |
-| `characteristic._coverage.coveredAreaKm2` | decimal | Não | Área coberta pelo bairro, em km². |
-| `characteristic._coverage.radiusMeters` | integer | Não | Raio de cobertura por CDO (300 m). |
+| Atributo                                     | Tipo    | Obrigatório | Observação V.tal                                                                                                                            |
+| -------------------------------------------- | ------- | :---------: | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GeographicLocation.geometryType`            | enum    |     Sim     | `Polygon` — anel externo do bairro + buracos.                                                                                               |
+| `GeographicLocation.geometry`                | GeoJSON |     Sim     | Polígono do componente conexo da cobertura do bairro (RFC 7946).                                                                            |
+| `GeographicLocation.referencePoint`          | string  |     Não     | Token de escopo `GPON:<uf>\|<city>\|<bairro>` — idempotência da regeneração.                                                                |
+| `characteristic._coverage.neighborhood`      | string  |     Sim     | Nome do bairro (rótulo do balão).                                                                                                           |
+| `characteristic._coverage.cdoTotal`          | integer |     Sim     | Contagem **real** de CDOs do bairro (não a soma de células).                                                                                |
+| `characteristic._coverage.cdoAvailable`      | integer |     Sim     | CDOs ativas (disponíveis).                                                                                                                  |
+| `characteristic._coverage.availabilityRatio` | decimal |     Sim     | `cdoAvailable / cdoTotal`, base da cor.                                                                                                     |
+| `characteristic._coverage.coveredAreaKm2`    | decimal |     Não     | Área coberta pelo bairro, em km².                                                                                                           |
+| `characteristic._coverage.radiusMeters`      | integer |     Não     | Raio de cobertura por CDO (200 m).                                                                                                          |
+| `characteristic._coverage.smoothIterations`  | integer |     Não     | Iterações de corner-cutting (Chaikin) aplicadas ao contorno; 0 = escada crua.                                                               |
+| `characteristic._coverage.minComponentCells` | integer |     Não     | Piso de células (grade fina) abaixo do qual um componente conexo não vira polígono — descarta fragmentos de fronteira entre bairros densos. |
 
 ### 19.4 Exemplo de payload
 
@@ -1664,7 +1663,9 @@ Exemplo ilustrativo do polígono de cobertura de um bairro conforme o contrato T
     { "group": "_coverage", "name": "cdoAvailable", "value": 1421, "valueType": "integer" },
     { "group": "_coverage", "name": "availabilityRatio", "value": 0.7464, "valueType": "decimal" },
     { "group": "_coverage", "name": "coveredAreaKm2", "value": 3.67, "valueType": "decimal" },
-    { "group": "_coverage", "name": "radiusMeters", "value": 300, "valueType": "integer" }
+    { "group": "_coverage", "name": "radiusMeters", "value": 200, "valueType": "integer" },
+    { "group": "_coverage", "name": "smoothIterations", "value": 2, "valueType": "integer" },
+    { "group": "_coverage", "name": "minComponentCells", "value": 6, "valueType": "integer" }
   ]
 }
 ```
@@ -1677,46 +1678,49 @@ Exemplo ilustrativo do polígono de cobertura de um bairro conforme o contrato T
 
 ### 19.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Consolidação por raio** | Consolidar o disco de 300 m de cada CDO numa grade de 150 m e, por bairro, no polígono de cobertura (componente conexo). |
-| **RF-002** | **Cor por disponibilidade** | Colorir a mancha de vermelho (indisponível) a verde (disponível) pela razão `cdoAvailable/cdoTotal`. |
-| **RF-003** | **Intensidade por densidade** | Modular o alfa da célula pela densidade de CDOs, sem tapar o mapa base. |
-| **RF-004** | **Camadas por zoom** | Servir grade fina (≤ 500 m), grade grossa de 750 m (≤ 10 km) e polígonos de bairro (> 10 km), por bbox. |
-| **RF-005** | **Balão de hover** | Ao passar o cursor sobre a mancha, exibir bairro, município, total de CDOs, disponíveis/indisponíveis, % de disponibilidade e área coberta. |
-| **RF-006** | **Regeneração por escopo** | Recomputar a cobertura de um município substituindo a geração anterior daquele escopo, de forma idempotente. |
-| **RF-007** | **Takeup (evolução)** | Reservar `portsTotal`/`portsUsed` por bairro para, no futuro, exibir portas ocupadas sobre o total. |
+| ID         | Nome                          | Descrição                                                                                                                                                                                                                        |
+| ---------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Consolidação por raio**     | Consolidar o disco de 200 m de cada CDO numa grade de 50 m e, por bairro, no polígono de cobertura (componente conexo).                                                                                                          |
+| **RF-002** | **Cor por disponibilidade**   | Colorir a mancha de vermelho (indisponível) a verde (disponível) pela razão `cdoAvailable/cdoTotal`.                                                                                                                             |
+| **RF-003** | **Intensidade por densidade** | Modular o alfa da célula pela densidade de CDOs, sem tapar o mapa base.                                                                                                                                                          |
+| **RF-004** | **Camadas por zoom**          | Servir grade fina (≤ 500 m), grade grossa de 250 m (≤ 10 km) e polígonos de bairro (> 10 km), por bbox.                                                                                                                          |
+| **RF-005** | **Balão de hover**            | Ao passar o cursor sobre a mancha, exibir bairro, município, total de CDOs, disponíveis/indisponíveis, % de disponibilidade e área coberta.                                                                                      |
+| **RF-006** | **Regeneração por escopo**    | Recomputar a cobertura de um município substituindo a geração anterior daquele escopo, de forma idempotente.                                                                                                                     |
+| **RF-007** | **Takeup (evolução)**         | Reservar `portsTotal`/`portsUsed` por bairro para, no futuro, exibir portas ocupadas sobre o total.                                                                                                                              |
+| **RF-008** | **Suavização do contorno**    | Arredondar os cantos do polígono (corner-cutting/Chaikin) na geração e no traçado do canvas, para a silhueta ler como mancha fluida em vez da escada da grade.                                                                   |
+| **RF-009** | **Descarte de fragmento**     | Não gerar polígono para um componente conexo menor que `minComponentCells` — sobra de fronteira entre bairros densos que o algoritmo do bairro dominante (RN-001/RF-001) deixa para o bairro perdedor, sem valor visual próprio. |
 
 ### 19.7 Regras de Negócio
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RN-001** | **Só CDO gera cobertura** | Apenas PhysicalResource `CTO` com nome iniciado em "CDO" entra; CEO/CEOS (caixas de emenda) ficam de fora. |
-| **RN-002** | **Disponível = ativo** | `status = active` conta como disponível; `suspended`/Bloqueada como indisponível; `terminated` não entra (C6). |
-| **RN-003** | **Cobertura não é Service** | A área de cobertura é `GeographicLocation` (TMF675); nunca `CustomerFacingService` (C4) nem `Resource` (C3-a). |
-| **RN-004** | **Estatística é contagem real** | Os números do balão vêm da contagem real de CDOs do bairro, não da soma de células (que multiplica de propósito no campo de densidade). |
-| **RN-005** | **Artefato regenerável** | O polígono e a grade são derivados: a regeneração por escopo pode apagá-los fisicamente e recriá-los — exceção consciente a C6, restrita a artefato de leitura. |
+| ID         | Nome                            | Descrição                                                                                                                                                                                         |
+| ---------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | **Só CDO gera cobertura**       | Apenas PhysicalResource `CTO` com nome iniciado em "CDO" entra; CEO/CEOS (caixas de emenda) ficam de fora.                                                                                        |
+| **RN-002** | **Disponível = ativo**          | `status = active` conta como disponível; `suspended`/Bloqueada como indisponível; `terminated` não entra (C6).                                                                                    |
+| **RN-003** | **Cobertura não é Service**     | A área de cobertura é `GeographicLocation` (TMF675); nunca `CustomerFacingService` (C4) nem `Resource` (C3-a).                                                                                    |
+| **RN-004** | **Estatística é contagem real** | Os números do balão vêm da contagem real de CDOs do bairro, não da soma de células (que multiplica de propósito no campo de densidade); o descarte de fragmento (RF-009) não afeta essa contagem. |
+| **RN-005** | **Artefato regenerável**        | O polígono e a grade são derivados: a regeneração por escopo pode apagá-los fisicamente e recriá-los — exceção consciente a C6, restrita a artefato de leitura.                                   |
 
 ### 19.8 Critérios de Aceite
 
-| ID | Critério |
-|---|---|
-| **CA-001** | Rodar o job para um município produz um polígono por bairro (componente conexo) e a grade fina correspondente, com a contagem de CDOs conferindo com o inventário. |
-| **CA-002** | Acima de 100 m o mapa mostra a mancha térmica e nenhum cluster numerado aparece em escala alguma. |
-| **CA-003** | A cor de um bairro majoritariamente bloqueado tende ao vermelho; a de um majoritariamente ativo, ao verde. |
-| **CA-004** | O hover sobre a mancha abre o balão com bairro, município e os números de CDOs/disponibilidade. |
-| **CA-005** | Entre 5 e 50 km as Estações aparecem como pontos pequenos; acima de 50 km somem, restando só a cobertura. |
-| **CA-006** | Regenerar o mesmo município duas vezes não duplica polígonos nem células (idempotência por escopo). |
+| ID         | Critério                                                                                                                                                                                          |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | Rodar o job para um município produz um polígono por bairro (componente conexo) e a grade fina correspondente, com a contagem de CDOs conferindo com o inventário.                                |
+| **CA-002** | Acima de 100 m o mapa mostra a mancha térmica e nenhum cluster numerado aparece em escala alguma.                                                                                                 |
+| **CA-003** | A cor de um bairro majoritariamente bloqueado tende ao vermelho; a de um majoritariamente ativo, ao verde.                                                                                        |
+| **CA-004** | O hover sobre a mancha abre o balão com bairro, município e os números de CDOs/disponibilidade.                                                                                                   |
+| **CA-005** | Entre 5 e 50 km as Estações aparecem como pontos pequenos; acima de 50 km somem, restando só a cobertura.                                                                                         |
+| **CA-006** | Regenerar o mesmo município duas vezes não duplica polígonos nem células (idempotência por escopo).                                                                                               |
+| **CA-007** | Numa área com bairros densos e adjacentes, nenhum polígono minúsculo (fragmento de fronteira sem CDO próprio visível) aparece isolado no mapa; a estatística do bairro perdedor continua correta. |
 
 ### 19.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Mapa de calor de densidade de planta** | Consulta de planta por região na visão de OSP | Geometrias de área no metamodelo, sem calor pronto | Trabalha em prefixos/sites IP, sem camada óptica dedicada | **Grade de 150 m consolidando o raio de 300 m das CDOs** |
-| **Polígono de cobertura por área** | Áreas de atendimento no cadastro de OSP | Modelagem de áreas via geometrias | Não identificado no levantamento | **Polígono de bairro (TMF675) por componente conexo** |
-| **Disponibilidade colorida por status** | Legenda de status na planta exterior | Estado do nó no metamodelo | Status de dispositivo/site | **Rampa vermelho→verde por razão de CDOs ativas** |
-| **Agregação por zoom** | Níveis de detalhe na visão de OSP | Não identificado no levantamento | Não identificado no levantamento | **Fino (150 m) → grosso (750 m) → polígono de bairro** |
-| **Takeup de portas por área** | Ocupação por caixa no cadastro | Portas modeladas no metamodelo | Portas/interfaces por dispositivo | **Reservado (`portsTotal`/`portsUsed`) para evolução** |
+| Capacidade                               | Netwin                                        | Kuwaiba                                            | NetBox                                                    | Decisão Nexus                                                                         |
+| ---------------------------------------- | --------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **Mapa de calor de densidade de planta** | Consulta de planta por região na visão de OSP | Geometrias de área no metamodelo, sem calor pronto | Trabalha em prefixos/sites IP, sem camada óptica dedicada | **Grade de 50 m consolidando o raio de 200 m das CDOs**                               |
+| **Polígono de cobertura por área**       | Áreas de atendimento no cadastro de OSP       | Modelagem de áreas via geometrias                  | Não identificado no levantamento                          | **Polígono de bairro (TMF675) por componente conexo, com corner-cutting no contorno** |
+| **Disponibilidade colorida por status**  | Legenda de status na planta exterior          | Estado do nó no metamodelo                         | Status de dispositivo/site                                | **Rampa vermelho→verde por razão de CDOs ativas**                                     |
+| **Agregação por zoom**                   | Níveis de detalhe na visão de OSP             | Não identificado no levantamento                   | Não identificado no levantamento                          | **Fino (50 m) → grosso (250 m) → polígono de bairro**                                 |
+| **Takeup de portas por área**            | Ocupação por caixa no cadastro                | Portas modeladas no metamodelo                     | Portas/interfaces por dispositivo                         | **Reservado (`portsTotal`/`portsUsed`) para evolução**                                |
 
 ---
 
@@ -1770,38 +1774,38 @@ O cenário valida a hierarquia de Sub-Sites, a fronteira Geo↔Resource no Rack 
 
 O módulo Geographic é a fundação referenciada por praticamente todos os outros módulos. Os contratos de integração:
 
-| Módulo consumidor | Tipo de consumo | Detalhe do contrato |
-|---|---|---|
-| **Módulo 2 — Resource Domain** | Síncrono (referência) + Assíncrono (eventos) | Todo Resource tem place referenciando GeographicSite ou GeographicLocation. Eventos de StateChange disparam validação de status do Site. |
-| **Módulo 3 — Service Domain** | Síncrono (referência) + Assíncrono (eventos) | Services têm installationAddress referenciando GeographicAddress. Validação de status do Site para ativação. |
-| **Módulo 4 — Order & Fulfillment** | Síncrono (referência) + Síncrono (Service Feasibility) | Orders operam sobre Sites e Addresses. Service Feasibility (TMF645) consulta Sites por endereço/coordenada. |
-| **Módulo 5 — Process Orchestration** | Síncrono (BPMN tasks) | Workflows de aprovação para mudanças críticas (ex.: desativação de CO) acionam tasks que operam sobre Sites. |
-| **Módulo 6 — Party & Tenant** | Síncrono (referência) | Sites têm relatedParty com referência a Party (Owner, Tenant). Validação de existência da Party no momento da escrita. |
-| **Módulo 7 — Analytics & Events** | Assíncrono (consumidor de eventos) | Todos os eventos TMF688 publicados pelo módulo Geographic são consumidos pelo Data Lake e por dashboards. |
-| **Módulo 8 — Platform & Administration** | Síncrono (RBAC, Audit) | Todas as operações de escrita passam por RBAC granular e geram Audit Trail global. |
+| Módulo consumidor                        | Tipo de consumo                                        | Detalhe do contrato                                                                                                                      |
+| ---------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **Módulo 2 — Resource Domain**           | Síncrono (referência) + Assíncrono (eventos)           | Todo Resource tem place referenciando GeographicSite ou GeographicLocation. Eventos de StateChange disparam validação de status do Site. |
+| **Módulo 3 — Service Domain**            | Síncrono (referência) + Assíncrono (eventos)           | Services têm installationAddress referenciando GeographicAddress. Validação de status do Site para ativação.                             |
+| **Módulo 4 — Order & Fulfillment**       | Síncrono (referência) + Síncrono (Service Feasibility) | Orders operam sobre Sites e Addresses. Service Feasibility (TMF645) consulta Sites por endereço/coordenada.                              |
+| **Módulo 5 — Process Orchestration**     | Síncrono (BPMN tasks)                                  | Workflows de aprovação para mudanças críticas (ex.: desativação de CO) acionam tasks que operam sobre Sites.                             |
+| **Módulo 6 — Party & Tenant**            | Síncrono (referência)                                  | Sites têm relatedParty com referência a Party (Owner, Tenant). Validação de existência da Party no momento da escrita.                   |
+| **Módulo 7 — Analytics & Events**        | Assíncrono (consumidor de eventos)                     | Todos os eventos TMF688 publicados pelo módulo Geographic são consumidos pelo Data Lake e por dashboards.                                |
+| **Módulo 8 — Platform & Administration** | Síncrono (RBAC, Audit)                                 | Todas as operações de escrita passam por RBAC granular e geram Audit Trail global.                                                       |
 
 ---
 
 ## 23. Questões em aberto
 
-| ID | Questão | Status | Responsável |
-|---|---|---|---|
-| **Q-GEO-001** | Quais são exatamente os SiteSpecifications pré-populados no bootstrap? Lista canônica V.tal precisa ser fechada (CO, POP, Armário, Ponto de Instalação, Andar, Sala, Cage — outros?). | *Aberta* | *Produto + Engenharia V.tal* |
-| **Q-GEO-002** | O cálculo do campo CN é determinístico a partir de Região + Regional, ou tem exceções? Precisa de matriz de derivação documentada. | *Aberta* | *Engenharia V.tal* |
-| **Q-GEO-003** | CLLI é obrigatório para todos os Sites de tipo CO ou apenas para subconjunto (por exemplo, apenas centrais ativas em interconexão)? | *Aberta* | *Engenharia V.tal + Regulatório* |
-| **Q-GEO-004** | Quais são os RelationshipTypes do catálogo inicial? Lista mínima: feeds/isFedBy, peersWith, memberOf/contains. Há outros tipos críticos V.tal? | *Aberta* | *Operações V.tal* |
-| **Q-GEO-005** | A integração com Geosite Logradouros é via API REST existente ou requer expor nova interface no Geosite? | *Aberta* | *Arquitetura + Geosite* |
-| **Q-GEO-007** | O syncGeoPosition deve ser síncrono (PATCH com confirmação) ou assíncrono (atualização via evento)? Trade-off de UX vs. performance. | *Aberta* | *Arquitetura Nexus + Produto* |
-| **Q-GEO-008** | O catálogo de eventos publicados em produção deve ter quais SLAs de disponibilidade e latência fim-a-fim? | *Aberta* | *Arquitetura + Plataforma* |
-| **Q-GEO-010** | A profundidade máxima da hierarquia de Sub-Sites tem limite prático? Caso de uso típico: CO > Andar > Sala > Cage (4 níveis); algum caso ultrapassa? | *Aberta* | *Engenharia V.tal* |
-| **Q-GEO-011** | A edição de geometria no navegador (REQ-MOD01-013) exige workflow de aprovação no Módulo 5, ou bastam RBAC, motivo declarado e Audit Trail? A resposta muda o custo do editor e o tempo de resposta da operação de campo. | *Aberta* | *Operações V.tal + Arquitetura* |
+| ID            | Questão                                                                                                                                                                                                                   | Status   | Responsável                      |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------- |
+| **Q-GEO-001** | Quais são exatamente os SiteSpecifications pré-populados no bootstrap? Lista canônica V.tal precisa ser fechada (CO, POP, Armário, Ponto de Instalação, Andar, Sala, Cage — outros?).                                     | _Aberta_ | _Produto + Engenharia V.tal_     |
+| **Q-GEO-002** | O cálculo do campo CN é determinístico a partir de Região + Regional, ou tem exceções? Precisa de matriz de derivação documentada.                                                                                        | _Aberta_ | _Engenharia V.tal_               |
+| **Q-GEO-003** | CLLI é obrigatório para todos os Sites de tipo CO ou apenas para subconjunto (por exemplo, apenas centrais ativas em interconexão)?                                                                                       | _Aberta_ | _Engenharia V.tal + Regulatório_ |
+| **Q-GEO-004** | Quais são os RelationshipTypes do catálogo inicial? Lista mínima: feeds/isFedBy, peersWith, memberOf/contains. Há outros tipos críticos V.tal?                                                                            | _Aberta_ | _Operações V.tal_                |
+| **Q-GEO-005** | A integração com Geosite Logradouros é via API REST existente ou requer expor nova interface no Geosite?                                                                                                                  | _Aberta_ | _Arquitetura + Geosite_          |
+| **Q-GEO-007** | O syncGeoPosition deve ser síncrono (PATCH com confirmação) ou assíncrono (atualização via evento)? Trade-off de UX vs. performance.                                                                                      | _Aberta_ | _Arquitetura Nexus + Produto_    |
+| **Q-GEO-008** | O catálogo de eventos publicados em produção deve ter quais SLAs de disponibilidade e latência fim-a-fim?                                                                                                                 | _Aberta_ | _Arquitetura + Plataforma_       |
+| **Q-GEO-010** | A profundidade máxima da hierarquia de Sub-Sites tem limite prático? Caso de uso típico: CO > Andar > Sala > Cage (4 níveis); algum caso ultrapassa?                                                                      | _Aberta_ | _Engenharia V.tal_               |
+| **Q-GEO-011** | A edição de geometria no navegador (REQ-MOD01-013) exige workflow de aprovação no Módulo 5, ou bastam RBAC, motivo declarado e Audit Trail? A resposta muda o custo do editor e o tempo de resposta da operação de campo. | _Aberta_ | _Operações V.tal + Arquitetura_  |
 
 ### 23.1 Decisões resolvidas
 
-| ID | Decisão | Impacto |
-|---|---|---|
-| **D-GEO-001** | O Nexus gera UUID v7 próprio e preserva IDs legados em `_origin`. | Aplica-se a Site, Address e Location; detalhamento na seção 23.2. |
-| **D-GEO-002** | O provedor de geocodificação é o Geosite Logradouros. | Resolve a antiga Q-GEO-009; a interface técnica continua em Q-GEO-005. |
+| ID            | Decisão                                                           | Impacto                                                                |
+| ------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| **D-GEO-001** | O Nexus gera UUID v7 próprio e preserva IDs legados em `_origin`. | Aplica-se a Site, Address e Location; detalhamento na seção 23.2.      |
+| **D-GEO-002** | O provedor de geocodificação é o Geosite Logradouros.             | Resolve a antiga Q-GEO-009; a interface técnica continua em Q-GEO-005. |
 
 ### 23.2 D-GEO-001 — Identidade e proveniência de entidades
 
@@ -1811,25 +1815,25 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 
 **Sistemas cobertos por esta decisão:**
 
-| Sistema de origem | Contexto |
-|---|---|
-| Netwin (Openlabs) | Migração de Sites/Locais — Região 1 e 2 V.tal |
-| Hexagon/Octave NetworkCore | Migração de Sites da Região 2 (planta externa) |
+| Sistema de origem             | Contexto                                         |
+| ----------------------------- | ------------------------------------------------ |
+| Netwin (Openlabs)             | Migração de Sites/Locais — Região 1 e 2 V.tal    |
+| Hexagon/Octave NetworkCore    | Migração de Sites da Região 2 (planta externa)   |
 | Geosite / Geosite Logradouros | Migração de endereços e localizações geográficas |
-| OZMAP | Futura integração Um Telecom (pós-M&A) |
-| UMBOX | Futura integração Um Telecom (pós-M&A) |
+| OZMAP                         | Futura integração Um Telecom (pós-M&A)           |
+| UMBOX                         | Futura integração Um Telecom (pós-M&A)           |
 
 **Grupo canônico `_origin` para GeographicSite, GeographicAddress e GeographicLocation:**
 
-| Characteristic | Tipo | Obrigatório na migração | Descrição |
-|---|---|:---:|---|
-| `_origin.system` | string | Sim | Nome do sistema de origem (ex.: `Netwin`, `Geosite`, `NetworkCore`, `OZMAP`). |
-| `_origin.id` | string | Sim | Identificador da entidade no sistema de origem (ex.: `"SITE-4521"`, `"LOC-00312"`). |
-| `_origin.entity` | string | Sim | Nome do tipo de entidade no sistema de origem (ex.: `"Location"`, `"Node"`, `"Site"`). |
-| `_origin.migratedAt` | datetime | Sim | Timestamp ISO 8601 da migração. |
-| `_origin.migratedBy` | string | Sim | Identificador do job de migração (ex.: `"migration-job-netwin-wave1-v2"`). |
-| `_origin.url` | string | Não | URL ou deep link para a entidade no sistema de origem (quando disponível). |
-| `_origin.extra` | JSON string | Não | Atributos adicionais do sistema de origem que não têm correspondência no Nexus, preservados como JSON serializado para auditoria. |
+| Characteristic       | Tipo        | Obrigatório na migração | Descrição                                                                                                                         |
+| -------------------- | ----------- | :---------------------: | --------------------------------------------------------------------------------------------------------------------------------- |
+| `_origin.system`     | string      |           Sim           | Nome do sistema de origem (ex.: `Netwin`, `Geosite`, `NetworkCore`, `OZMAP`).                                                     |
+| `_origin.id`         | string      |           Sim           | Identificador da entidade no sistema de origem (ex.: `"SITE-4521"`, `"LOC-00312"`).                                               |
+| `_origin.entity`     | string      |           Sim           | Nome do tipo de entidade no sistema de origem (ex.: `"Location"`, `"Node"`, `"Site"`).                                            |
+| `_origin.migratedAt` | datetime    |           Sim           | Timestamp ISO 8601 da migração.                                                                                                   |
+| `_origin.migratedBy` | string      |           Sim           | Identificador do job de migração (ex.: `"migration-job-netwin-wave1-v2"`).                                                        |
+| `_origin.url`        | string      |           Não           | URL ou deep link para a entidade no sistema de origem (quando disponível).                                                        |
+| `_origin.extra`      | JSON string |           Não           | Atributos adicionais do sistema de origem que não têm correspondência no Nexus, preservados como JSON serializado para auditoria. |
 
 **Exemplo de GeographicSite migrado do Netwin:**
 
@@ -1840,11 +1844,11 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
   "siteSpecification": { "id": "spec-central-office" },
   "status": "Active",
   "characteristic": [
-    { "name": "CLLI",           "value": "RJBTFL01CO0" },
-    { "name": "CN",             "value": "RJ-SE-01" },
-    { "name": "_origin.system",     "value": "Netwin" },
-    { "name": "_origin.id",         "value": "SITE-4521" },
-    { "name": "_origin.entity",     "value": "Location" },
+    { "name": "CLLI", "value": "RJBTFL01CO0" },
+    { "name": "CN", "value": "RJ-SE-01" },
+    { "name": "_origin.system", "value": "Netwin" },
+    { "name": "_origin.id", "value": "SITE-4521" },
+    { "name": "_origin.entity", "value": "Location" },
     { "name": "_origin.migratedAt", "value": "2026-09-15T03:00:00Z" },
     { "name": "_origin.migratedBy", "value": "migration-job-netwin-wave1-v2" }
   ]
@@ -1869,15 +1873,17 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 
 ## 24. Controle de revisões
 
-| Versão | Data | Autor | Descrição |
-|---|---|---|---|
-| 1.0 | Junho 2026 | Produto — V.tal Nexus | Versão inicial do HLD do Módulo 1 — Nexus Geographic, alinhada a TMF673/674/675 e ao documento âncora VTN-HLD-OVERVIEW-001. |
-| 1.1 | Junho 2026 | Produto — V.tal Nexus | Formalização de D-GEO-001 (estratégia de migração): definição do princípio de agnósticidade à origem, grupo canônico `_origin` para todas as entidades geográficas, tabela de sistemas cobertos, payload de exemplo e regras de negócio. |
-| 1.2 | Julho 2026 | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: matriz de aderência dos 12 requisitos, cenários e síntese arquitetural, anatomia normalizada, JSON válido, questões namespaced e gaps ligados ao backlog `DEV-*`. |
-| 1.3 | Agosto 2026 | Produto — V.tal Nexus | Incorporação da consulta operacional de OSP (`inspirations/geosite-legado.md`): princípios 4.7 (fidelidade física — zero entidades artificiais) e 4.8 (operação 100% web), novo REQ-MOD01-013 (digitalização e edição de geometria no navegador), Q-GEO-011, RN-001 do mapa redirecionada ao motor de integridade (REQ-MOD02-027) e backlog DEV-GEO-007. |
-| 1.4 | Agosto 2026 | Engenharia — V.tal Nexus | Novo RN-007 (§12.7): mapa e árvore de navegação escondem Sub-Site e o recurso `Splitter` (Módulo 2), com pass-through do splitter para o primeiro descendente visível; os dois continuam acessíveis pelo painel de detalhe do local/recurso pai. `GeoTreeService.children` ganha o parâmetro `scope` (`'tree'` default para navegação, `'all'` para os painéis de detalhe). |
-| 1.5 | Agosto 2026 | Engenharia — V.tal Nexus | Novo REQ-MOD01-014 (Cobertura GPON por bairro): mapa de calor de disponibilidade/densidade derivado do raio de 300 m das CDOs, com polígono de bairro em TMF675 e grade de leitura `geo_gpon_coverage_cell` agregável por zoom. RF-004 do REQ-MOD01-011 substitui os clusters numerados pela troca de camadas por escala (planta → cobertura → polígono), com Estações que encolhem em 5–50 km e somem acima de 50 km. Seções 19–23 renumeradas para 20–24. |
+| Versão | Data        | Autor                    | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------ | ----------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0    | Junho 2026  | Produto — V.tal Nexus    | Versão inicial do HLD do Módulo 1 — Nexus Geographic, alinhada a TMF673/674/675 e ao documento âncora VTN-HLD-OVERVIEW-001.                                                                                                                                                                                                                                                                                                                                 |
+| 1.1    | Junho 2026  | Produto — V.tal Nexus    | Formalização de D-GEO-001 (estratégia de migração): definição do princípio de agnósticidade à origem, grupo canônico `_origin` para todas as entidades geográficas, tabela de sistemas cobertos, payload de exemplo e regras de negócio.                                                                                                                                                                                                                    |
+| 1.2    | Julho 2026  | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: matriz de aderência dos 12 requisitos, cenários e síntese arquitetural, anatomia normalizada, JSON válido, questões namespaced e gaps ligados ao backlog `DEV-*`.                                                                                                                                                                                                                                                   |
+| 1.3    | Agosto 2026 | Produto — V.tal Nexus    | Incorporação da consulta operacional de OSP (`inspirations/geosite-legado.md`): princípios 4.7 (fidelidade física — zero entidades artificiais) e 4.8 (operação 100% web), novo REQ-MOD01-013 (digitalização e edição de geometria no navegador), Q-GEO-011, RN-001 do mapa redirecionada ao motor de integridade (REQ-MOD02-027) e backlog DEV-GEO-007.                                                                                                    |
+| 1.4    | Agosto 2026 | Engenharia — V.tal Nexus | Novo RN-007 (§12.7): mapa e árvore de navegação escondem Sub-Site e o recurso `Splitter` (Módulo 2), com pass-through do splitter para o primeiro descendente visível; os dois continuam acessíveis pelo painel de detalhe do local/recurso pai. `GeoTreeService.children` ganha o parâmetro `scope` (`'tree'` default para navegação, `'all'` para os painéis de detalhe).                                                                                 |
+| 1.5    | Agosto 2026 | Engenharia — V.tal Nexus | Novo REQ-MOD01-014 (Cobertura GPON por bairro): mapa de calor de disponibilidade/densidade derivado do raio de 300 m das CDOs, com polígono de bairro em TMF675 e grade de leitura `geo_gpon_coverage_cell` agregável por zoom. RF-004 do REQ-MOD01-011 substitui os clusters numerados pela troca de camadas por escala (planta → cobertura → polígono), com Estações que encolhem em 5–50 km e somem acima de 50 km. Seções 19–23 renumeradas para 20–24. |
+| 1.6    | Agosto 2026 | Engenharia — V.tal Nexus | Novo RF-008 (§19.6): suavização do contorno do polígono de cobertura por corner-cutting (Chaikin), na geração (`coverage-grid.ts`) e no traçado do canvas (`CoverageOverlay.ts`), eliminando o serrilhado da grade. Nova característica `_coverage.smoothIterations`. Correção dos números de §19 (raio real das CDOs é 200 m, célula de traçado é 50 m, agregação grossa é 250 m — desatualizados desde a v1.5).                                           |
+| 1.7    | Agosto 2026 | Engenharia — V.tal Nexus | Novo RF-009/RN-004/CA-007 (§19.6-19.8): descarta componente conexo abaixo de `minComponentCells` — fragmento de fronteira que o bairro dominante por célula (RN-001) deixa para o bairro perdedor em áreas densas, sem CDO visível próprio, poluindo o mapa. Nova característica `_coverage.minComponentCells`.                                                                                                                                             |
 
 ---
 
-*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*
+_V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA_

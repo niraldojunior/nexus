@@ -24,7 +24,7 @@ const MAX_LAT = 85.05112878;
 function lngLatToMercator(lng: number, lat: number): [number, number] {
   const clamped = Math.max(-MAX_LAT, Math.min(MAX_LAT, lat));
   const x = ((lng * Math.PI) / 180) * EARTH_RADIUS_M;
-  const y = Math.log(Math.tan(Math.PI / 4 + ((clamped * Math.PI) / 180) / 2)) * EARTH_RADIUS_M;
+  const y = Math.log(Math.tan(Math.PI / 4 + (clamped * Math.PI) / 180 / 2)) * EARTH_RADIUS_M;
   return [x, y];
 }
 
@@ -32,6 +32,35 @@ function mercatorToLngLat(x: number, y: number): [number, number] {
   const lng = ((x / EARTH_RADIUS_M) * 180) / Math.PI;
   const lat = ((2 * Math.atan(Math.exp(y / EARTH_RADIUS_M)) - Math.PI / 2) * 180) / Math.PI;
   return [lng, lat];
+}
+
+type PathSink = Pick<CanvasRenderingContext2D, 'moveTo' | 'lineTo' | 'quadraticCurveTo'>;
+
+// Caminho fechado por PONTOS MÉDIOS: cada vértice do anel vira o ponto de controle de uma
+// quadrática entre o meio da aresta que chega e o meio da que sai. É a versão contínua
+// (invariante a zoom) do corner-cutting já aplicado na geração (coverage-grid.ts) — aqui
+// suaviza o que sobrar do traçado em grade, sem inchar nem encolher a silhueta (a curva nunca
+// sai do polígono de controle). Com menos de 3 pontos cai no `lineTo` reto de sempre.
+export function traceSmoothRing(sink: PathSink, points: Array<[number, number]>): void {
+  const n = points.length;
+  if (n === 0) return;
+  if (n < 3) {
+    sink.moveTo(points[0]![0], points[0]![1]);
+    for (let i = 1; i < n; i += 1) sink.lineTo(points[i]![0], points[i]![1]);
+    return;
+  }
+  const mid = (a: [number, number], b: [number, number]): [number, number] => [
+    (a[0] + b[0]) / 2,
+    (a[1] + b[1]) / 2,
+  ];
+  const start = mid(points[n - 1]!, points[0]!);
+  sink.moveTo(start[0], start[1]);
+  for (let i = 0; i < n; i += 1) {
+    const p = points[i]!;
+    const q = points[(i + 1) % n]!;
+    const m = mid(p, q);
+    sink.quadraticCurveTo(p[0], p[1], m[0], m[1]);
+  }
 }
 
 export type CoverageOverlayHandle = {
@@ -141,12 +170,13 @@ export function createCoverageOverlay(maps: Maps, map: GoogleMapInstance): Cover
         context.fillStyle = coverageFill(ratio, 0, { solid: true });
         context.beginPath();
         for (const ring of area.geometry.coordinates) {
-          ring.forEach((vertex, index) => {
-            const point = toLocal(vertex[0], vertex[1]);
-            if (!point) return;
-            if (index === 0) context.moveTo(point[0], point[1]);
-            else context.lineTo(point[0], point[1]);
-          });
+          // GeoJSON fecha o anel repetindo o primeiro ponto no fim — traceSmoothRing já
+          // fecha via módulo, então o ponto duplicado sai antes de suavizar.
+          const open = ring.length > 1 ? ring.slice(0, -1) : ring;
+          const points = open
+            .map((vertex) => toLocal(vertex[0], vertex[1]))
+            .filter((point): point is [number, number] => point !== null);
+          traceSmoothRing(context, points);
           context.closePath();
         }
         // evenodd desenha os buracos (anéis internos horários) como vazios.

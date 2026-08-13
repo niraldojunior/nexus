@@ -33,6 +33,25 @@ export const COVERAGE_CELL_METERS = 50;
 // Fator de agregação da grade grossa (750 m): a API soma 5×5 células finas num GROUP BY.
 export const COVERAGE_COARSE_FACTOR = 5;
 
+// Tamanho mínimo (em células) de um componente conexo para virar polígono. Numa área densa,
+// onde bairros vizinhos se sobrepõem, o "bairro dominante por célula" (dominantNeighborhood)
+// deixa fragmentos de 1-3 células para o bairro perdedor — sobras do disco de 200 m que o
+// vizinho mais denso não engoliu. Um CDO isolado (sem vizinho concorrente) sempre produz bem
+// mais que isso (o próprio disco de 200 m já cobre dezenas de células de 50 m); abaixo do
+// piso, o componente é ruído de fronteira, não uma área real — descartado antes de traçar
+// (a estatística do bairro em neighborhoodStats não é afetada: conta os CDOs reais, não as
+// células desenhadas).
+export const COVERAGE_MIN_COMPONENT_CELLS = 6;
+
+// Iterações de corner-cutting (Chaikin) sobre o anel já simplificado por Douglas-Peucker. 2
+// iterações bastam para a escada de célula virar curva contínua; cada iteração dobra os
+// vértices — o DP de limpeza logo depois devolve a contagem a um patamar razoável.
+export const COVERAGE_SMOOTH_ITERATIONS = 2;
+
+// ε (em frações de célula) do Douglas-Peucker de limpeza pós-Chaikin: remove os pontos que o
+// corner-cutting insere no meio dos trechos já retos, sem reintroduzir canto.
+const SMOOTH_CLEANUP_EPSILON = 0.08;
+
 // Raio da Terra do EPSG:3857 (esfera de Mercator) e da haversine em WGS84. É a mesma
 // constante que o Google usa para projetar tiles.
 const EARTH_RADIUS_M = 6378137;
@@ -97,7 +116,7 @@ export type CoverageResult = {
 export function lngLatToMercator(lng: number, lat: number): [number, number] {
   const clampedLat = Math.max(-MAX_MERCATOR_LAT, Math.min(MAX_MERCATOR_LAT, lat));
   const x = ((lng * Math.PI) / 180) * EARTH_RADIUS_M;
-  const y = Math.log(Math.tan(Math.PI / 4 + ((clampedLat * Math.PI) / 180) / 2)) * EARTH_RADIUS_M;
+  const y = Math.log(Math.tan(Math.PI / 4 + (clampedLat * Math.PI) / 180 / 2)) * EARTH_RADIUS_M;
   return [x, y];
 }
 
@@ -108,12 +127,7 @@ export function mercatorToLngLat(x: number, y: number): [number, number] {
 }
 
 // Haversine própria (o backend não importa de web/src) — distância verdadeira em metros.
-export function haversineMeters(
-  aLng: number,
-  aLat: number,
-  bLng: number,
-  bLat: number,
-): number {
+export function haversineMeters(aLng: number, aLat: number, bLng: number, bLat: number): number {
   const toRad = (value: number) => (value * Math.PI) / 180;
   const dLat = toRad(bLat - aLat);
   const dLng = toRad(bLng - aLng);
@@ -322,14 +336,12 @@ function boundaryRings(cellSet: Set<string>, cells: CoverageCell[]): Point[][] {
   for (const cell of cells) {
     const { gridX: gx, gridY: gy } = cell;
     // Arestas em coordenada de canto: célula (gx,gy) ocupa de (gx,gy) a (gx+1,gy+1).
-    if (!cellSet.has(cellKey(gx, gy - 1)))
-      segments.push({ from: [gx, gy], to: [gx + 1, gy] }); // base
+    if (!cellSet.has(cellKey(gx, gy - 1))) segments.push({ from: [gx, gy], to: [gx + 1, gy] }); // base
     if (!cellSet.has(cellKey(gx + 1, gy)))
       segments.push({ from: [gx + 1, gy], to: [gx + 1, gy + 1] }); // direita
     if (!cellSet.has(cellKey(gx, gy + 1)))
       segments.push({ from: [gx + 1, gy + 1], to: [gx, gy + 1] }); // topo
-    if (!cellSet.has(cellKey(gx - 1, gy)))
-      segments.push({ from: [gx, gy + 1], to: [gx, gy] }); // esquerda
+    if (!cellSet.has(cellKey(gx - 1, gy))) segments.push({ from: [gx, gy + 1], to: [gx, gy] }); // esquerda
   }
 
   // Índice start→segmentos, para costurar os anéis seguindo os pontos. Num vértice de
@@ -385,7 +397,8 @@ function dropCollinear(ring: Point[]): Point[] {
     const prev = pts[(i - 1 + n) % n]!;
     const cur = pts[i]!;
     const next = pts[(i + 1) % n]!;
-    const cross = (cur[0] - prev[0]) * (next[1] - prev[1]) - (cur[1] - prev[1]) * (next[0] - prev[0]);
+    const cross =
+      (cur[0] - prev[0]) * (next[1] - prev[1]) - (cur[1] - prev[1]) * (next[0] - prev[0]);
     if (cross !== 0) out.push(cur);
   }
   const first = out[0];
@@ -442,6 +455,34 @@ function douglasPeucker(ring: Point[], epsilon: number): Point[] {
   return merged.length >= 4 ? merged : ring;
 }
 
+// Corner-cutting de Chaikin: substitui cada vértice pelos pontos a 1/4 e 3/4 da aresta que
+// chega e da que sai, produzindo uma curva contínua que nunca sai do polígono de controle (a
+// mancha não incha nem invade célula sem CDO). Preserva o sentido do percurso, então
+// `signedArea` continua classificando externo (CCW) vs. buraco (CW) sem mudança.
+function chaikin(ring: Point[], iterations: number): Point[] {
+  if (iterations <= 0 || ring.length <= 4) return ring;
+  const start = ring[0]!;
+  const end = ring[ring.length - 1]!;
+  const closed = start[0] === end[0] && start[1] === end[1];
+  let points = closed ? ring.slice(0, -1) : ring.slice();
+  if (points.length < 3) return ring;
+
+  for (let iter = 0; iter < iterations; iter += 1) {
+    const next: Point[] = [];
+    const n = points.length;
+    for (let i = 0; i < n; i += 1) {
+      const a = points[i]!;
+      const b = points[(i + 1) % n]!;
+      next.push([a[0] + (b[0] - a[0]) * 0.25, a[1] + (b[1] - a[1]) * 0.25]);
+      next.push([a[0] + (b[0] - a[0]) * 0.75, a[1] + (b[1] - a[1]) * 0.75]);
+    }
+    points = next;
+  }
+
+  const first = points[0]!;
+  return [...points, first];
+}
+
 function perpendicularDistance(point: Point, lineStart: Point, lineEnd: Point): number {
   const dx = lineEnd[0] - lineStart[0];
   const dy = lineEnd[1] - lineStart[1];
@@ -460,11 +501,18 @@ function ringToLngLat(ring: Point[], cellMeters: number): Point[] {
 }
 
 // Um componente conexo → um Polygon (anel externo CCW + buracos CW). Traça, simplifica em
-// grade, e só então projeta para lng/lat. Exportado para o teste exercitar o caso de buraco.
-export function tracePolygon(cells: CoverageCell[], cellMeters: number): GeoJSONPolygon | null {
+// grade, arredonda os cantos (Chaikin) e só então projeta para lng/lat. Exportado para o teste
+// exercitar o caso de buraco.
+export function tracePolygon(
+  cells: CoverageCell[],
+  cellMeters: number,
+  options: { smoothIterations?: number } = {},
+): GeoJSONPolygon | null {
+  const smoothIterations = options.smoothIterations ?? COVERAGE_SMOOTH_ITERATIONS;
   const cellSet = new Set(cells.map((cell) => cellKey(cell.gridX, cell.gridY)));
   const rings = boundaryRings(cellSet, cells)
     .map((ring) => douglasPeucker(dropCollinear(ring), 0.5))
+    .map((ring) => douglasPeucker(chaikin(ring, smoothIterations), SMOOTH_CLEANUP_EPSILON))
     .filter((ring) => ring.length >= 4);
   if (rings.length === 0) return null;
 
@@ -484,10 +532,17 @@ export function tracePolygon(cells: CoverageCell[], cellMeters: number): GeoJSON
 
 export function buildCoverage(
   cdos: CdoPoint[],
-  options: { cellMeters?: number; radiusMeters?: number } = {},
+  options: {
+    cellMeters?: number;
+    radiusMeters?: number;
+    smoothIterations?: number;
+    minComponentCells?: number;
+  } = {},
 ): CoverageResult {
   const cellMeters = options.cellMeters ?? COVERAGE_CELL_METERS;
   const radiusMeters = options.radiusMeters ?? COVERAGE_RADIUS_METERS;
+  const smoothIterations = options.smoothIterations ?? COVERAGE_SMOOTH_ITERATIONS;
+  const minComponentCells = options.minComponentCells ?? COVERAGE_MIN_COMPONENT_CELLS;
 
   const cells = stampCells(cdos, cellMeters, radiusMeters);
   const neighborhoods = neighborhoodStats(cdos, cells, cellMeters);
@@ -502,7 +557,8 @@ export function buildCoverage(
   const components: CoverageComponent[] = [];
   for (const [neighborhoodKey, neighborhoodCells] of cellsByNeighborhood) {
     for (const componentCells of connectedComponents(neighborhoodCells)) {
-      const geometry = tracePolygon(componentCells, cellMeters);
+      if (componentCells.length < minComponentCells) continue;
+      const geometry = tracePolygon(componentCells, cellMeters, { smoothIterations });
       if (!geometry) continue;
       components.push({ neighborhoodKey, geometry, cells: componentCells });
     }

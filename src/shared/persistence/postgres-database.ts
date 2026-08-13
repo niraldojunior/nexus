@@ -22,6 +22,35 @@ const DEFAULT_POOL: DatabasePoolConfig = {
   connectionTimeoutMs: 15_000,
 };
 
+// Transient connection failures worth retrying (Neon cold-start drops, resets, DNS/connect timeouts).
+// Auth failures, bad credentials and similar permanent errors do not match and are rethrown at once.
+export const TRANSIENT_CONNECT_ERROR =
+  /Connection terminated|connection timeout|timeout expired|ECONNRESET|ETIMEDOUT|EPIPE|ENOTFOUND|ECONNREFUSED|socket hang up/i;
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Runs `fn`, retrying only while it throws an error deemed transient by `isTransient`, waiting
+ * `backoffsMs[attempt]` before each retry. Stops (and rethrows the last error) once the backoff list
+ * is exhausted; rethrows a non-transient error immediately. `sleepFor` is injectable for tests.
+ */
+export async function retryOnTransient<T>(
+  fn: () => Promise<T>,
+  isTransient: (message: string) => boolean,
+  backoffsMs: readonly number[],
+  sleepFor: (ms: number) => Promise<void> = sleep,
+): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt >= backoffsMs.length || !isTransient(message)) throw error;
+      await sleepFor(backoffsMs[attempt]!);
+    }
+  }
+}
+
 export class PostgresDatabase implements DatabaseClient {
   public readonly provider = 'postgres' as const;
   private static instances = new Map<string, PostgresDatabase>();
@@ -65,8 +94,7 @@ export class PostgresDatabase implements DatabaseClient {
 
   public async initialize(): Promise<void> {
     if (this.initialized) return;
-    const pool = this.getPool();
-    const client = await pool.connect();
+    const client = await this.connectWithRetry();
     let transactionStarted = false;
     try {
       if (this.schemaName) {
@@ -188,6 +216,20 @@ export class PostgresDatabase implements DatabaseClient {
       min: this.poolConfig.min,
     });
     return this.pool;
+  }
+
+  // Neon auto-suspends idle computes; the first connection after idle is often dropped fast
+  // (`Connection terminated unexpectedly`) while the compute wakes. These failures return in
+  // ~milliseconds, not after the full connect timeout, so a few short backoff retries let the cold
+  // start self-heal without risking the serverless function's time budget. Permanent errors (auth,
+  // bad host) are not transient and are rethrown on the first attempt.
+  private connectWithRetry(): Promise<PoolClient> {
+    const pool = this.getPool();
+    return retryOnTransient(
+      () => pool.connect(),
+      (message) => TRANSIENT_CONNECT_ERROR.test(message),
+      [250, 500, 1000, 2000],
+    );
   }
 
   private async query(sql: string, params: unknown[]): Promise<QueryResult<QueryResultRow>> {

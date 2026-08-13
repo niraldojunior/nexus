@@ -295,14 +295,27 @@ const ISO_DATETIME_BIND = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+
 // id list) must bind as CLOB.
 const MAX_VARCHAR_BIND_BYTES = 32_000;
 
-const toBinds = (params: unknown[]): BindParameters =>
-  params.map((value) => {
-    if (typeof value === 'string' && ISO_DATETIME_BIND.test(value)) return new Date(value);
-    if (typeof value === 'string' && Buffer.byteLength(value, 'utf8') > MAX_VARCHAR_BIND_BYTES) {
-      return { type: oracledb.DB_TYPE_CLOB, val: value };
-    }
-    return value ?? null;
+const toBindValue = (value: unknown): unknown => {
+  if (typeof value === 'string' && ISO_DATETIME_BIND.test(value)) return new Date(value);
+  if (typeof value === 'string' && Buffer.byteLength(value, 'utf8') > MAX_VARCHAR_BIND_BYTES) {
+    return { type: oracledb.DB_TYPE_CLOB, val: value };
+  }
+  return value ?? null;
+};
+
+// Bind por NOME, não por posição. `transformOracleQuery` numera os `?` como :1,:2,… em ordem de
+// aparição, mas depois REORDENA e REUSA placeholders (LIMIT :a OFFSET :b → OFFSET :b … FETCH NEXT :a;
+// chunking de IN-list repete o mesmo :n em vários grupos). O node-oracledb liga um ARRAY pela ordem
+// de aparição dos placeholders, ignorando o número — então, após o reordenamento, OFFSET acabava
+// recebendo o valor de LIMIT (e a query voltava vazia). Devolvendo um objeto `{ '1': v0, '2': v1, … }`
+// o driver liga cada `:n` ao seu valor 1-based, imune a qualquer reordenamento/reuso.
+export const toBinds = (params: unknown[]): BindParameters => {
+  const binds: Record<string, unknown> = {};
+  params.forEach((value, index) => {
+    binds[String(index + 1)] = toBindValue(value);
   });
+  return binds as BindParameters;
+};
 
 // Oracle caps an IN-list at 1000 expressions (ORA-01795); Postgres has no such limit. Split any
 // bound IN-list longer than that into OR-joined groups (NOT IN → AND-joined). The bind array is

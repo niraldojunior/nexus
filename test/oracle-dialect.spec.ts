@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { transformOracleQuery } from '../src/shared/persistence/oracle-database.js';
+import { transformOracleQuery, toBinds } from '../src/shared/persistence/oracle-database.js';
 import {
   assertOracleCompatible,
   findPostgresisms,
@@ -59,6 +59,33 @@ test('translator rewrites the hard constructs to their Oracle form', () => {
   const event = transformOracleQuery(REPRESENTATIVE_SQL.eventLookup!, PREFIX);
   assert.match(event, /JSON_VALUE\(event_data, '\$\.entityId'\)/);
   assert.match(event, /FETCH FIRST 1 ROWS ONLY/);
+});
+
+test('toBinds is name-keyed so :n binds by name, not by array position (issue #43)', () => {
+  // node-oracledb binds an ARRAY by appearance order, ignoring the number in `:n`. Since
+  // transformOracleQuery reorders/reuses placeholders (LIMIT/OFFSET → OFFSET/FETCH; IN-list chunking),
+  // positional binds land on the wrong value — OFFSET grabbing the LIMIT value returned 0 rows. A
+  // name-keyed object makes the driver bind each `:n` to its 1-based value, immune to the reorder.
+  const binds = toBinds(['a', 'b', 50, 0]) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(binds), ['1', '2', '3', '4']);
+  assert.equal(binds['3'], 50);
+  assert.equal(binds['4'], 0);
+
+  // Per-value transforms survive: ISO datetime → Date, oversized string → CLOB bind spec.
+  const big = 'x'.repeat(40_000);
+  const typed = toBinds(['2026-08-13T10:00:00.000Z', big]) as Record<string, { val?: unknown }>;
+  assert.ok(typed['1'] instanceof Date);
+  assert.equal((typed['2'] as { val?: unknown }).val, big);
+});
+
+test('LIMIT/OFFSET rewrite stays aligned with name-keyed binds (issue #43)', () => {
+  // FETCH must reference the LIMIT param (:1) and OFFSET the OFFSET param (:2). With name-keyed
+  // binds, :1 = limit and :2 = offset regardless of the flipped textual order.
+  const sql = transformOracleQuery(REPRESENTATIVE_SQL.derivedTableLimitOffset!, PREFIX);
+  assert.match(sql, /OFFSET :2 ROWS FETCH NEXT :1 ROWS ONLY/);
+  const binds = toBinds([50, 0]) as Record<string, unknown>;
+  assert.equal(binds['1'], 50); // FETCH NEXT :1 → limit
+  assert.equal(binds['2'], 0); // OFFSET :2 → offset
 });
 
 test('inlineRows differs by dialect: Postgres VALUES (N binds), Oracle JSON_TABLE (1 bind)', () => {

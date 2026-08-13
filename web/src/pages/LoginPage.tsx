@@ -73,17 +73,14 @@ export default function LoginPage({ onSuccess }: { onSuccess?: () => void }) {
       {/* Painel do formulário */}
       <div className="flex items-center justify-center bg-app-panel p-8 md:p-12">
         <div className="w-full max-w-[360px]">
-          <div className="mb-2 flex items-center gap-2.5 md:hidden">
+          {/* No mobile a marca é o único cabeçalho do formulário — por isso vem maior. */}
+          <div className="mb-8 flex items-center gap-3 md:hidden">
             {/* No painel branco (mobile), o cubo escuro (padrão) é que contrasta. */}
-            <NexusMark className="h-[2.6rem] w-[2.6rem]" />
-            <span className="font-display text-[1.6rem] font-semibold text-app-text">Nexus</span>
+            <NexusMark className="h-[3.4rem] w-[3.4rem]" />
+            <span className="font-display text-[2.1rem] font-semibold tracking-[-0.01em] text-app-text">
+              Nexus
+            </span>
           </div>
-          <h2 className="font-display text-[1.6rem] font-semibold tracking-[-0.02em] text-app-text">
-            Acessar a plataforma
-          </h2>
-          <p className="mb-7 mt-1 text-[0.86rem] text-app-muted">
-            Use suas credenciais funcionais V.tal.
-          </p>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <label className="flex flex-col gap-1.5">

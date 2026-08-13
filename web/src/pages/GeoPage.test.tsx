@@ -6,8 +6,6 @@ import type { GeoTreeNode } from '../services/geoTreeApi';
 
 const googleMocks = vi.hoisted(() => ({
   cancelFlight: vi.fn(),
-  clustererAddMarkers: vi.fn(),
-  clustererClearMarkers: vi.fn(),
   infoWindowClose: vi.fn(),
   infoWindowOpen: vi.fn(),
   infoWindowSetContent: vi.fn(),
@@ -50,14 +48,6 @@ vi.mock('../utils/googleMaps', async (importOriginal) => {
   };
 });
 
-vi.mock('@googlemaps/markerclusterer', () => ({
-  MarkerClusterer: vi.fn(function MarkerClusterer() {
-    return {
-      addMarkers: googleMocks.clustererAddMarkers,
-      clearMarkers: googleMocks.clustererClearMarkers,
-    };
-  }),
-}));
 
 function installGoogleMapsMock() {
   const mapInstance = {
@@ -122,6 +112,23 @@ function installGoogleMapsMock() {
         Size: vi.fn(function Size(width: number, height: number) {
           return { width, height };
         }),
+        LatLng: vi.fn(function LatLng(lat: number, lng: number) {
+          return { lat: () => lat, lng: () => lng };
+        }),
+        // OverlayView é subclassada pela camada de cobertura (CoverageOverlay). Sem projeção
+        // (getProjection → null) o draw sai cedo, então o canvas não desenha no teste.
+        OverlayView: class MockOverlayView {
+          setMap(): void {}
+          getPanes() {
+            return {
+              overlayLayer: document.createElement('div'),
+              overlayMouseTarget: document.createElement('div'),
+            };
+          }
+          getProjection() {
+            return null;
+          }
+        },
         SymbolPath: { CIRCLE: 'CIRCLE' },
         event: {
           clearInstanceListeners: vi.fn(),
@@ -177,7 +184,10 @@ describe('GoogleMapPanel', () => {
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
-        clusterMarkers={false}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
       />,
     );
 
@@ -191,6 +201,64 @@ describe('GoogleMapPanel', () => {
     expect(options).not.toHaveProperty('renderingType');
     expect(options).not.toHaveProperty('headingInteractionEnabled');
     expect(options).not.toHaveProperty('tiltInteractionEnabled');
+  });
+
+  it('mostra a legenda de cobertura GPON quando a camada está visível', async () => {
+    const coverage = {
+      level: 'fine' as const,
+      grid: { sizeMeters: 150, projection: 'EPSG:3857' as const },
+      cells: [],
+      areas: [],
+      neighborhoods: [],
+      truncated: false,
+    };
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        coverage={coverage}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText('Cobertura GPON')).toBeInTheDocument();
+  });
+
+  it('desenha a Estação em tamanho reduzido no tier "small" (5–50 km)', async () => {
+    render(
+      <GoogleMapPanel
+        nodes={[selectionNode()]}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        coverage={null}
+        stationTier="small"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(googleMocks.markerCtor).toHaveBeenCalled());
+    const siteOptions = googleMocks.markerCtor.mock.calls
+      .map(([options]) => options as { icon?: { scaledSize?: { width?: number } } })
+      .find((options) => options.icon?.scaledSize?.width !== undefined);
+    expect(siteOptions?.icon?.scaledSize?.width).toBe(14);
   });
 
   it('mantém a seleção ao arrastar o mapa: cancela o voo e avisa navegação manual, sem desselecionar', async () => {
@@ -210,7 +278,10 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onManualNavigation={onManualNavigation}
         onViewportChange={vi.fn()}
-        clusterMarkers={false}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
       />,
     );
 
@@ -237,7 +308,10 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onManualNavigation={onManualNavigation}
         onViewportChange={vi.fn()}
-        clusterMarkers={false}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
       />,
     );
 
@@ -269,7 +343,10 @@ describe('GoogleMapPanel', () => {
         onCloseBalloon={vi.fn()}
         onDraftAddress={onDraftAddress}
         onViewportChange={vi.fn()}
-        clusterMarkers={false}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
       />,
     );
 
@@ -303,7 +380,10 @@ describe('GoogleMapPanel', () => {
         onCloseBalloon={vi.fn()}
         onDraftAddress={onDraftAddress}
         onViewportChange={vi.fn()}
-        clusterMarkers={false}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
       />,
     );
 
@@ -331,7 +411,10 @@ describe('GoogleMapPanel', () => {
         onCloseBalloon={vi.fn()}
         onDraftAddress={onDraftAddress}
         onViewportChange={vi.fn()}
-        clusterMarkers={false}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
       />,
     );
 
@@ -357,7 +440,10 @@ describe('GoogleMapPanel', () => {
       onCloseBalloon: vi.fn(),
       onDraftAddress,
       onViewportChange: vi.fn(),
-      clusterMarkers: false,
+      coverage: null,
+      stationTier: 'full' as const,
+      resourceTier: 'full' as const,
+      onCoverageHover: vi.fn(),
     };
     const { rerender } = render(
       <GoogleMapPanel {...baseProps} selectedNode={null} selectionActive={false} />,
@@ -388,7 +474,10 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onManualNavigation={onManualNavigation}
         onViewportChange={vi.fn()}
-        clusterMarkers={false}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
       />,
     );
 
@@ -433,7 +522,10 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onManualNavigation={onManualNavigation}
         onViewportChange={vi.fn()}
-        clusterMarkers={false}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
       />,
     );
 
@@ -460,7 +552,10 @@ describe('GoogleMapPanel', () => {
       onCloseBalloon: vi.fn(),
       onDraftAddress: vi.fn(),
       onViewportChange: vi.fn(),
-      clusterMarkers: false,
+      coverage: null,
+      stationTier: 'full' as const,
+      resourceTier: 'full' as const,
+      onCoverageHover: vi.fn(),
     };
     const { rerender } = render(
       <GoogleMapPanel {...baseProps} bottomSheetState={{ snap: 'mid', heightPx: 384 }} />,
@@ -516,7 +611,10 @@ describe('GoogleMapPanel', () => {
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
-        clusterMarkers={false}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
       />
     );
     const { rerender } = render(renderPanel({ snap: 'mid', heightPx: 384 }));
@@ -583,7 +681,10 @@ describe('GoogleMapPanel', () => {
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
-        clusterMarkers={false}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
       />,
     );
     // Mesmo sinal de prontidão do mapa usado no teste de MUB.
@@ -632,7 +733,10 @@ describe('GoogleMapPanel', () => {
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
-        clusterMarkers={false}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
       />,
     );
 
@@ -661,7 +765,10 @@ describe('GoogleMapPanel', () => {
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
-        clusterMarkers={false}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
       />,
     );
 
@@ -699,7 +806,10 @@ describe('GoogleMapPanel', () => {
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
-        clusterMarkers={false}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
       />,
     );
 
@@ -737,7 +847,10 @@ describe('GoogleMapPanel', () => {
         onCloseBalloon={vi.fn()}
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
-        clusterMarkers={false}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
       />,
     );
 

@@ -57,6 +57,24 @@ export type GoogleInfoWindowInstance = {
   setPosition: (position: { lat: number; lng: number }) => void;
 };
 
+// Camadas de desenho do OverlayView. A cobertura GPON vai em `overlayLayer` — abaixo dos
+// marcadores, para não roubar o clique/hover que hoje consulta o endereço do ponto.
+export type GoogleMapPanes = {
+  overlayLayer: HTMLElement;
+  overlayMouseTarget: HTMLElement;
+};
+export type GoogleMapProjection = {
+  fromLatLngToDivPixel: (latLng: GoogleLatLng) => { x: number; y: number } | null;
+};
+// OverlayView é a base a estender para desenhar num <canvas> próprio sobre o mapa. A subclasse
+// adiciona `onAdd`/`draw`/`onRemove` (que o Google chama no ciclo de vida) como métodos próprios;
+// aqui declaramos só o que a subclasse consome da base.
+export interface GoogleOverlayView {
+  setMap: (map: GoogleMapInstance | null) => void;
+  getPanes: () => GoogleMapPanes | null;
+  getProjection: () => GoogleMapProjection | null;
+}
+
 type GoogleAddressComponent = {
   long_name?: string;
   short_name?: string;
@@ -71,7 +89,7 @@ type GooglePlace = {
 };
 type GooglePlaceWithGeometry = GooglePlace & { geometry: { location: GoogleLatLng } };
 type GooglePlacePrediction = { place_id: string; description: string };
-type GoogleMapsApi = {
+export type GoogleMapsApi = {
   maps: {
     Geocoder: new () => {
       geocode: (request: Record<string, unknown>) => Promise<{ results?: GooglePlace[] }>;
@@ -93,6 +111,8 @@ type GoogleMapsApi = {
     ) => GoogleStreetViewPanoramaInstance;
     Size: new (width: number, height: number) => unknown;
     Point: new (x: number, y: number) => unknown;
+    LatLng: new (lat: number, lng: number) => GoogleLatLng;
+    OverlayView: { new (): GoogleOverlayView; prototype: GoogleOverlayView };
     SymbolPath: { CIRCLE: unknown };
     event: {
       clearInstanceListeners: (instance: object) => void;

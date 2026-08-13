@@ -69,8 +69,15 @@ import {
   SITE_FOCUS_SCALE_METERS,
   ADDRESS_FOCUS_SCALE_METERS,
   PASSIVE_INFRA_MAX_SCALE_METERS,
-  MARKER_CLUSTER_MIN_SCALE_METERS,
+  coverageVisibleAtScale,
+  stationTierForScale,
+  resourceTierForScale,
+  type StationTier,
 } from '../utils/mapScale';
+import { useGponCoverage } from '../hooks/useGponCoverage';
+import { createCoverageOverlay, type CoverageOverlayHandle } from './geo-tabs/CoverageOverlay';
+import { coverageSwatch, coverageSwatchDataUrl } from '../utils/coverageColor';
+import type { CoverageNeighborhood, CoverageResponse } from '../services/geoCoverageApi';
 import { bottomInsetForOverlay, flyTo, cancelFlight, type FlyTarget } from '../utils/mapCamera';
 import {
   acquireDeviceLocation,
@@ -132,7 +139,6 @@ import { StreetViewHero } from '../components/StreetViewHero';
 import { streetViewTargetsForGeometry } from '../utils/streetViewTargets';
 import { resourceStreetViewMarker, siteStreetViewMarker } from '../utils/streetViewMarker';
 import type { StreetViewMarker } from '../utils/streetViewPanorama';
-import { MarkerClusterer } from '@googlemaps/markerclusterer';
 
 type DetailTab = 'overview' | 'subsites' | 'topology' | 'lifecycle' | 'resources';
 
@@ -154,6 +160,38 @@ type MapBalloon = {
   rows: Array<[string, string]>;
 };
 
+// Balão de hover da cobertura GPON: o bairro sob o cursor, com os números da rede. Não é um
+// item pontual (não tem ícone de local/recurso), então usa um swatch da cor de disponibilidade.
+function coverageBalloonOf(
+  hover: { point: [number, number]; neighborhood: CoverageNeighborhood } | null,
+): MapBalloon | null {
+  if (!hover) return null;
+  const { neighborhood, point } = hover;
+  const pct = Math.round(neighborhood.availabilityRatio * 100);
+  const rows: Array<[string, string]> = [
+    ['Município', `${neighborhood.city}/${neighborhood.uf}`],
+    ['CDOs', String(neighborhood.cdoTotal)],
+    ['Disponíveis', `${neighborhood.cdoAvailable} (${pct}%)`],
+    ['Indisponíveis', String(neighborhood.cdoUnavailable)],
+    ['Área coberta', `${neighborhood.coveredAreaKm2.toFixed(2)} km²`],
+  ];
+  // Takeup (portas ocupadas / totais) entra quando a carga trouxer o dado — hoje é null.
+  if (neighborhood.portsTotal !== null && neighborhood.portsTotal > 0) {
+    const used = neighborhood.portsUsed ?? 0;
+    const take = Math.round((used / neighborhood.portsTotal) * 100);
+    rows.push(['Takeup', `${used}/${neighborhood.portsTotal} (${take}%)`]);
+  }
+  return {
+    key: `coverage:${neighborhood.neighborhoodKey}`,
+    point,
+    offset: [0, -12],
+    iconUrl: coverageSwatchDataUrl(neighborhood.availabilityRatio),
+    eyebrow: 'Cobertura GPON',
+    title: neighborhood.neighborhood,
+    rows,
+  };
+}
+
 // Alvo do painel de detalhe aberto por clique — Site ou Recurso, cada um com o
 // corpo que sabe montar a partir dele (ver SiteDetailBody/ResourceDetailBody).
 type DetailTarget = { kind: 'site'; site: GeoSite } | { kind: 'resource'; node: GeoTreeNode };
@@ -161,15 +199,20 @@ type DetailTarget = { kind: 'site'; site: GeoSite } | { kind: 'resource'; node: 
 // Lado do ícone de equipamento no mapa, em px. Um pouco menor que o pin de site
 // para o equipamento não competir com o local que o contém.
 const MARKER_ICON_SIZE = 26;
+// Recurso reduzido (escala 100–200 m): ponto menor para não poluir junto da cobertura.
+const MARKER_ICON_SMALL_SIZE = 16;
 
-// Equipamento desenha acima do pin de local: por padrão o Google Maps ordena os
-// markers por latitude, e o pin do site cobriria o equipamento que mora nele.
 const EQUIPMENT_MARKER_Z = 1000;
 
 // Lado do ícone de local, um pouco maior que o de equipamento: o local é o
 // contexto, o equipamento é o detalhe dentro dele.
 const SITE_ICON_SIZE = 30;
-const SITE_MARKER_Z = 500;
+// Estação encolhida (≥ 1 km): ponto pequeno, sem agrupamento — só o suficiente para
+// situar a Central sem poluir a visão de cidade/estado (ver stationTierForScale).
+const SITE_ICON_SMALL_SIZE = 14;
+// A Estação desenha ACIMA dos equipamentos (z maior): ela é a referência mais importante,
+// então nunca fica escondida atrás de uma caixa/splitter que compartilha a coordenada.
+const SITE_MARKER_Z = 1500;
 
 // A rota do cabo fica abaixo de todos os pins — é o fundo por onde a rede passa.
 const CABLE_ROUTE_Z = 10;
@@ -289,6 +332,9 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // PASSIVE_INFRA_MAX_SCALE_METERS (200 m) e é buscada por bbox, não pela árvore.
   const [viewportInfra, setViewportInfra] = useState<GeoTreeNode[]>([]);
   const [scaleMeters, setScaleMeters] = useState<number | null>(null);
+  // Região visível atual (identidade só muda no `idle`) — alimenta a busca de cobertura GPON,
+  // que roda em toda escala acima de 100 m, não só na de detalhe.
+  const [viewportBounds, setViewportBounds] = useState<MapBounds | null>(null);
   const viewportFetchTokenRef = useRef(0);
   const viewportDebounceRef = useRef<number | undefined>(undefined);
   const lastViewportKeyRef = useRef<string | null>(null);
@@ -298,6 +344,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // frame de arraste — só quando o usuário para de mexer no mapa.
   const handleViewportChange = useCallback((bounds: MapBounds, meters: number) => {
     setScaleMeters(meters);
+    setViewportBounds(bounds);
     if (viewportDebounceRef.current !== undefined) {
       window.clearTimeout(viewportDebounceRef.current);
       viewportDebounceRef.current = undefined;
@@ -328,10 +375,14 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const { navParams, clearNav, goToResource } = useNavigation();
 
   // Infra passiva só entra quando a escala está em ≤ 200 m; Estações (tree.mapNodes)
-  // continuam sempre visíveis, ramo aberto ou não.
+  // continuam visíveis, mas encolhem (5–50 km) e somem acima de 50 km — ver stationTier.
   const passiveInfraVisible = scaleMeters !== null && scaleMeters <= PASSIVE_INFRA_MAX_SCALE_METERS;
+  const stationTier: StationTier = stationTierForScale(scaleMeters);
+  const resourceTier: StationTier = resourceTierForScale(scaleMeters);
   const mapNodes = useMemo(() => {
-    const base = passiveInfraVisible ? [...tree.mapNodes, ...viewportInfra] : tree.mapNodes;
+    // Estações permanecem visíveis em qualquer escala (só mudam de tamanho por stationTier).
+    const stations = tree.mapNodes;
+    const base = passiveInfraVisible ? [...stations, ...viewportInfra] : stations;
     // O item selecionado é imune à escala e ao viewport: recurso e cabo só existem em
     // `viewportInfra`, e sem isto afastar o mapa (ou arrastá-lo até a borda) apagaria o
     // ícone e o alfinete de quem está aberto no painel. Estação já vem sempre em
@@ -340,10 +391,20 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       return [...base, selectedNode];
     }
     return base;
-  }, [tree.mapNodes, viewportInfra, passiveInfraVisible, selectedNode]);
-  // Só agrupa acima de 100 m; em ≤ 100 m cada ponto é um ícone individual. Escala ainda
-  // desconhecida (antes do primeiro idle) agrupa por segurança — geralmente é vista aberta.
-  const clusterMarkers = (scaleMeters ?? Infinity) > MARKER_CLUSTER_MIN_SCALE_METERS;
+  }, [tree.mapNodes, viewportInfra, passiveInfraVisible, stationTier, selectedNode]);
+
+  // Cobertura GPON da viewport (mapa de calor por bairro), acima de 100 m em qualquer escala.
+  const coverage = useGponCoverage(viewportBounds, scaleMeters);
+  const coverageVisible = coverageVisibleAtScale(scaleMeters);
+  // Bairro sob o cursor sobre a mancha — vira o balão de hover (ver coverageBalloon).
+  const [coverageHover, setCoverageHover] = useState<{
+    point: [number, number];
+    neighborhood: CoverageNeighborhood;
+  } | null>(null);
+  // Some com o balão de cobertura ao descer abaixo de 100 m (a mancha sai de cena).
+  useEffect(() => {
+    if (!coverageVisible) setCoverageHover(null);
+  }, [coverageVisible]);
 
   const specById = useMemo(() => new Map(specs.map((item) => [item.id, item])), [specs]);
   const siteById = useMemo(() => new Map(sites.map((item) => [item.id, item])), [sites]);
@@ -599,7 +660,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // ação: quem abre o detalhe é o clique, não o hover.
   const balloon = useMemo<MapBalloon | null>(() => {
     const node = mapNodes.find((item) => item.id === hoverKey) ?? null;
-    if (!node || !hoverKey) return null;
+    if (!node || !hoverKey) return coverageBalloonOf(coverageHover);
     // O painel de detalhe já mostra tipo/endereço/status do mesmo item — o
     // balão por cima seria redundante enquanto ele está aberto.
     if (detailOpen && selectedNode?.id === node.id) return null;
@@ -649,7 +710,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       title: node.label,
       rows,
     };
-  }, [detailOpen, hoverKey, selectedNode?.id, mapNodes]);
+  }, [detailOpen, hoverKey, selectedNode?.id, mapNodes, coverageHover]);
 
   // Esc fecha o painel de detalhe — mas só quando nenhum outro modal está
   // aberto, senão a tecla fecharia os dois de uma vez.
@@ -752,7 +813,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                 selectedNode !== null || addressLookup !== null || draftAddress !== null
               }
               onViewportChange={handleViewportChange}
-              clusterMarkers={clusterMarkers}
+              coverage={coverageVisible ? coverage : null}
+              stationTier={stationTier}
+              resourceTier={resourceTier}
+              onCoverageHover={setCoverageHover}
               autoLocateOnOpen={isMobile}
             />
 
@@ -849,7 +913,10 @@ export function GoogleMapPanel({
   onManualNavigation,
   selectionActive,
   onViewportChange,
-  clusterMarkers,
+  coverage,
+  stationTier,
+  resourceTier,
+  onCoverageHover,
   autoLocateOnOpen = false,
 }: {
   nodes: GeoTreeNode[];
@@ -882,7 +949,17 @@ export function GoogleMapPanel({
   // a folha e alimenta a invalidação do clique adiado.
   selectionActive?: boolean;
   onViewportChange: (bounds: MapBounds, scaleMeters: number) => void;
-  clusterMarkers: boolean;
+  // Cobertura GPON da viewport (mapa de calor por bairro), ou null quando fora de escala. O
+  // painel só a desenha na camada de canvas (ver CoverageOverlay); a busca é do chamador.
+  coverage: CoverageResponse | null;
+  // Como desenhar as Estações na escala atual: cheia (perto) ou pequena (longe).
+  stationTier: StationTier;
+  // Como desenhar os Recursos (caixas/splitters): cheio (≤ 50 m) ou reduzido (100–200 m).
+  resourceTier: StationTier;
+  // Bairro sob o cursor sobre a mancha (ou null) — vira o balão de hover no GeoPage.
+  onCoverageHover: (
+    hover: { point: [number, number]; neighborhood: CoverageNeighborhood } | null,
+  ) => void;
   // Só o mobile salta sozinho para a posição do dispositivo ao abrir (ver efeito de
   // auto-localização); no desktop o pulo fica reservado ao clique no botão.
   autoLocateOnOpen?: boolean;
@@ -897,7 +974,12 @@ export function GoogleMapPanel({
   // seleção, que é o que travava o mapa com muitos pontos expandidos.
   const markersRef = useRef<Map<string, GoogleMarkerInstance>>(new Map());
   const cableRoutesRef = useRef<Map<string, GooglePolylineInstance>>(new Map());
-  const clustererRef = useRef<MarkerClusterer | null>(null);
+  // Camada de calor da cobertura GPON (canvas em OverlayView, abaixo dos marcadores).
+  const coverageOverlayRef = useRef<CoverageOverlayHandle | null>(null);
+  const onCoverageHoverRef = useRef(onCoverageHover);
+  const coverageHitTestRef = useRef<((lng: number, lat: number) => CoverageNeighborhood | null) | null>(
+    null,
+  );
   const draftMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const selectionMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   // Ponto azul "minha localização", cravado quando o usuário pede a geolocalização do
@@ -1038,6 +1120,10 @@ export function GoogleMapPanel({
   }, [onViewportChange]);
 
   useEffect(() => {
+    onCoverageHoverRef.current = onCoverageHover;
+  }, [onCoverageHover]);
+
+  useEffect(() => {
     if (!GOOGLE_MAPS_KEY || !mapEl.current) return;
     void loadGoogleMaps(GOOGLE_MAPS_KEY)
       .then(() => {
@@ -1133,10 +1219,43 @@ export function GoogleMapPanel({
           if (flightActiveRef.current) return;
           reportViewport();
         });
+
+        // Camada de calor da cobertura GPON (canvas), abaixo dos marcadores. O hover sobre a
+        // mancha vira o balão do bairro; throttle leve porque `mousemove` dispara muito.
+        coverageOverlayRef.current = createCoverageOverlay(maps, mapRef.current);
+        coverageHitTestRef.current = coverageOverlayRef.current.hitTest;
+        let lastCoverageHoverAt = 0;
+        mapRef.current.addListener('mousemove', (event: GoogleMapMouseEvent) => {
+          const hitTest = coverageHitTestRef.current;
+          if (!hitTest) return;
+          const now = Date.now();
+          if (now - lastCoverageHoverAt < 50) return;
+          lastCoverageHoverAt = now;
+          const lng = event.latLng.lng();
+          const lat = event.latLng.lat();
+          const neighborhood = hitTest(lng, lat);
+          onCoverageHoverRef.current(neighborhood ? { point: [lng, lat], neighborhood } : null);
+        });
+
         setMapsReady(true);
       })
       .catch(() => setMapsReady(false));
   }, [handleManualNavigation, onDraftAddress, selectedBaseLayer.googleMapTypeId]);
+
+  // Repassa os dados de cobertura para a camada de canvas quando mudam (ou saem de escala).
+  useEffect(() => {
+    coverageOverlayRef.current?.setData(coverage);
+  }, [coverage, mapsReady]);
+
+  // Descarta a camada de cobertura no desmonte, junto do mapa.
+  useEffect(
+    () => () => {
+      coverageOverlayRef.current?.destroy();
+      coverageOverlayRef.current = null;
+      coverageHitTestRef.current = null;
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!mapsReady || !mapRef.current || !selectedBaseLayer) return;
@@ -1167,8 +1286,9 @@ export function GoogleMapPanel({
       if (node.kind === 'site') {
         const kind = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
         const icon = siteIconFor(kind, (node.status as GeoStatus) ?? 'active');
-        // O selecionado cresce; o resto fica no tamanho base.
-        const size = selected ? SITE_ICON_SIZE + 8 : SITE_ICON_SIZE;
+        // O selecionado cresce; o resto segue o tier de escala (cheio perto, pequeno em 5–50 km).
+        const baseSize = stationTier === 'small' ? SITE_ICON_SMALL_SIZE : SITE_ICON_SIZE;
+        const size = selected ? SITE_ICON_SIZE + 8 : baseSize;
         const iconOptions = {
           url: siteIconDataUrl(icon, { size }),
           scaledSize: new maps.Size(size, size),
@@ -1201,7 +1321,9 @@ export function GoogleMapPanel({
       }
 
       const icon = resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
-      const size = selected ? MARKER_ICON_SIZE + 6 : MARKER_ICON_SIZE;
+      // O selecionado cresce; o resto segue o tier de escala (cheio ≤ 50 m, reduzido em 100–200 m).
+      const resourceBaseSize = resourceTier === 'small' ? MARKER_ICON_SMALL_SIZE : MARKER_ICON_SIZE;
+      const size = selected ? MARKER_ICON_SIZE + 6 : resourceBaseSize;
       const iconOptions = {
         url: resourceIconDataUrl(icon, { size }),
         scaledSize: new maps.Size(size, size),
@@ -1244,21 +1366,10 @@ export function GoogleMapPanel({
       }
     }
 
-    if (!clustererRef.current) {
-      clustererRef.current = new MarkerClusterer({ map: mapRef.current });
-    }
-    if (clusterMarkers) {
-      // Acima do limiar de escala: agrupa (clusters azuis). Tira qualquer marker que
-      // estava direto no mapa e deixa o clusterer gerenciar a exibição.
-      for (const marker of activeMarkers) marker.setMap(null);
-      clustererRef.current.clearMarkers();
-      clustererRef.current.addMarkers(activeMarkers);
-    } else {
-      // ≤ 100 m: sem agrupamento — cada ponto é um ícone individual no mapa.
-      clustererRef.current.clearMarkers();
-      for (const marker of activeMarkers) marker.setMap(mapRef.current);
-    }
-  }, [mapsReady, nodes, selectedNodeId, clusterMarkers]);
+    // Cada ponto é um ícone individual no mapa — sem agrupamento. Acima de 100 m a leitura da
+    // rede fica por conta da camada de cobertura GPON (ver CoverageOverlay), não de clusters.
+    for (const marker of activeMarkers) marker.setMap(mapRef.current);
+  }, [mapsReady, nodes, selectedNodeId, stationTier, resourceTier]);
 
   useEffect(() => {
     const maps = window.google?.maps;
@@ -1774,8 +1885,29 @@ export function GoogleMapPanel({
       />
       <MapBaseLayerSelector value={baseLayerId} onChange={setBaseLayerId} />
       <MapLocateButton onLocate={handleDeviceLocate} />
+      {coverage ? <CoverageLegend /> : null}
       {balloon ? createPortal(<MapBalloonCard balloon={balloon} />, balloonNode) : null}
     </>
+  );
+}
+
+// Legenda da cobertura GPON: a rampa de disponibilidade (vermelho → verde). Aparece só quando
+// a camada está visível. Cor via coverageSwatch (mesma rampa do canvas), não token hardcoded.
+function CoverageLegend() {
+  return (
+    <div className="pointer-events-none absolute right-5 top-5 z-30 rounded-[14px] border border-app-border bg-white/90 px-3 py-2.5 text-[0.72rem] shadow-map-control backdrop-blur">
+      <div className="mb-1.5 font-semibold text-app-text">Cobertura GPON</div>
+      <div className="flex items-center gap-2">
+        <span className="text-app-muted">Indisponível</span>
+        <span
+          className="h-2.5 w-24 rounded-full"
+          style={{
+            background: `linear-gradient(90deg, ${coverageSwatch(0)}, ${coverageSwatch(0.5)}, ${coverageSwatch(1)})`,
+          }}
+        />
+        <span className="text-app-muted">Disponível</span>
+      </div>
+    </div>
   );
 }
 

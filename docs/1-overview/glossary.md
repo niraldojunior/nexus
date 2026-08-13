@@ -88,6 +88,8 @@ rótulos de UI, status e prosa ficam em **português**.
 | **CPE** | *Customer Premises Equipment* — equipamento na casa do cliente (roteador, ONT) |
 | **CTO** | Caixa de Terminação Óptica — armário na via pública onde a fibra é distribuída |
 | **CDOE** | Caixa de Distribuição Óptica de Extremidade. No inventário é cadastrada com tipo **CTO** |
+| **CDO** | Caixa de Distribuição Óptica — a caixa de rua onde o assinante puxa o *drop*. É a origem da **Cobertura GPON**; cobre ~200 m lineares |
+| **Cobertura GPON** | Polígono de cobertura por bairro (REQ-MOD01-014) que consolida o raio de 200 m das CDOs, colorido por disponibilidade (verde ativo / vermelho bloqueado). O polígono do bairro é `GeographicLocation` (TMF675); **não** é Service (C4) nem Resource |
 | **DIO** | Distribuidor Interno Óptico — painel de conexão dentro da Central |
 | **Splitter** | Divisor óptico passivo: reparte um sinal em vários (típico 1:8, 1:16) |
 | **Rack** | Estrutura que abriga equipamentos. **É a fronteira Geo ↔ Resource** (C2) |

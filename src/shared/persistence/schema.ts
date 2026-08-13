@@ -47,6 +47,7 @@ export const TABLE_NAMES = [
   'mcp_confirmation',
   'tmf_relationship_type_catalog',
   'tmf_characteristic_group_catalog',
+  'geo_gpon_coverage_cell',
 ] as const;
 
 // Column migrations added after the base schema so databases created before these columns get
@@ -1017,6 +1018,35 @@ export const SCHEMA_SQL = `
         allowed_characteristics TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
+
+      -- ========== MODULE 1: GPON COVERAGE (mapa de calor por bairro, REQ-MOD01-014) ==========
+
+      -- Projeção de leitura da cobertura GPON: a grade de calor derivada da posição das
+      -- CDOs (ver scripts/build-gpon-coverage.mjs e src/modules/geo/coverage-grid.ts). Não é
+      -- entidade TMF — é artefato regenerável, como geo_search_history. O polígono do bairro
+      -- em si mora em tmf_geographic_location (Polygon, TMF675); aqui fica o campo de densidade
+      -- fino de 150 m que a API agrega por zoom (150 m → 750 m via GROUP BY floor(grid_x/5)).
+      -- coverage_area_id aponta (por convenção, sem FK rígida — a tabela é substituída inteira
+      -- a cada geração) a GeographicLocation do componente de cobertura da célula.
+      -- ports_total/ports_used ficam NULL hoje e reservam o takeup futuro (portas ocupadas).
+      -- Sem coluna JSON de propósito: a base Oracle tem CHECK(col IS JSON) global por nome.
+      CREATE TABLE IF NOT EXISTS geo_gpon_coverage_cell (
+        tenant_id TEXT NOT NULL DEFAULT 'default',
+        grid_size_m INTEGER NOT NULL,
+        grid_x INTEGER NOT NULL,
+        grid_y INTEGER NOT NULL,
+        coverage_area_id TEXT,
+        cdo_total INTEGER NOT NULL DEFAULT 0,
+        cdo_available INTEGER NOT NULL DEFAULT 0,
+        ports_total INTEGER,
+        ports_used INTEGER,
+        generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (tenant_id, grid_size_m, grid_x, grid_y)
+      );
+      CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_cell_xy
+        ON geo_gpon_coverage_cell(grid_size_m, grid_x, grid_y);
+      CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_cell_area
+        ON geo_gpon_coverage_cell(coverage_area_id);
 `;
 
 // Rewrites the SQLite-dialect schema DDL to its Postgres equivalent: SQLite type names to

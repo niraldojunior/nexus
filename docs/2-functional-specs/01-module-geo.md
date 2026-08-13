@@ -9,7 +9,7 @@ TMFC014 · TMF673 / TMF674 / TMF675
 | Campo | Valor |
 |---|---|
 | **Document Reference** | VTN-HLD-MOD01-GEO |
-| **Versão** | 1.4 — draft |
+| **Versão** | 1.5 — draft |
 | **Data** | Agosto 2026 |
 | **Documento âncora** | VTN-HLD-OVERVIEW-001 |
 | **TMFC coberto** | TMFC014 — Geographic Site Mgmt |
@@ -71,9 +71,10 @@ O HLD descreve o contrato funcional alvo. A tabela abaixo registra o estado veri
 | **REQ-MOD01-008** | Parcial | PATCH de status gera TMF688 e `/v1/geo/sites/{id}/events` expõe histórico bruto. | Máquina de transições, `statusDate`, histórico semântico e retenção. | Q-GEO-008 | DEV-GEO-004, DEV-X-002 |
 | **REQ-MOD01-009** | Parcial | `validateContainment` verifica pares pai/filho configurados. | Prevenção de ciclos ancestrais e API dinâmica de filhos permitidos. | Q-GEO-001 | DEV-GEO-003, DEV-GEO-004 |
 | **REQ-MOD01-010** | Parcial | Criação, listagem e remoção de `relatedSite` persistem e publicam eventos. | Tipos governados, inversos automáticos, impact analysis e subgrafo. | Q-GEO-004 | DEV-GEO-004, DEV-X-003 |
-| **REQ-MOD01-011** | Parcial | `GeoPage`, Google Maps, árvore sincronizada, cluster e `/v1/geo/tree/viewport` exibem Sites e infraestrutura passiva por bbox/escala. | Sync de coordenadas, camadas Geosite, proximidade e exportação PNG/GeoJSON. | Q-GEO-005, Q-GEO-007 | DEV-GEO-005 |
+| **REQ-MOD01-011** | Parcial | `GeoPage`, Google Maps, árvore sincronizada, camada de cobertura GPON por escala (REQ-MOD01-014) e `/v1/geo/tree/viewport` exibem Sites e infraestrutura passiva por bbox/escala. | Sync de coordenadas, camadas Geosite, proximidade e exportação PNG/GeoJSON. | Q-GEO-005, Q-GEO-007 | DEV-GEO-005 |
 | **REQ-MOD01-012** | Parcial | Mudanças Geo persistem eventos consultáveis e cobertos por testes unitários/integrados. | Outbox transacional, Schema Registry, catálogo público, DLQ e UUID v7. | Q-GEO-008 | DEV-X-002 |
 | **REQ-MOD01-013** | Não implementado | `GeoPage` e o mapa exibem e selecionam feições; nenhuma tela cria ou altera vértices. | Editor de geometria completo: desenho, vértices, snap, split/merge, rascunho, import e histórico. | Q-GEO-011 | DEV-GEO-007, DEV-GEO-005 |
+| **REQ-MOD01-014** | Implementado | `coverage-grid.ts`, `coverage-service.ts`, `/v1/geo/coverage`, `scripts/build-gpon-coverage.mjs` e a camada `CoverageOverlay` no `GeoPage`, com `geo.coverage.unit.spec.ts`, `geo.integration.spec.ts` e `coverageColor.test.ts`. | Takeup (portas ocupadas/totais) por bairro e regeneração incremental/orquestrada da grade. | — | DEV-GEO-008 |
 
 ---
 
@@ -153,7 +154,7 @@ Toda operação de cadastro do módulo — inclusive digitalização de geometri
 
 ## 5. Resumo dos requisitos do módulo
 
-O módulo Geographic é composto por 13 requisitos, organizados conforme o fluxo natural de modelagem TMF: primeiro as entidades geoespaciais base (Location, Address), depois o catálogo (SiteSpecification), depois as instâncias (Region, Site, Sub-Site, ciclo de vida), depois as relações (contenção, topologia A↔Z) e finalmente as funcionalidades transversais (mapa, eventos, edição geoespacial).
+O módulo Geographic é composto por 14 requisitos, organizados conforme o fluxo natural de modelagem TMF: primeiro as entidades geoespaciais base (Location, Address), depois o catálogo (SiteSpecification), depois as instâncias (Region, Site, Sub-Site, ciclo de vida), depois as relações (contenção, topologia A↔Z) e finalmente as funcionalidades transversais (mapa, eventos, edição geoespacial, cobertura agregada por bairro).
 
 | ID | Título | Entidade TMF principal |
 |---|---|---|
@@ -170,6 +171,7 @@ O módulo Geographic é composto por 13 requisitos, organizados conforme o fluxo
 | **REQ-MOD01-011** | Visão de Mapa Georreferenciado | *Não é entidade TMF — funcionalidade de UI sobre TMF674+675* |
 | **REQ-MOD01-012** | Eventos de Domínio do Módulo Geographic | *Event (TMF688) — vários tipos* |
 | **REQ-MOD01-013** | Digitalização e edição de geometria no navegador | *GeographicLocation (TMF675) — operação de edição* |
+| **REQ-MOD01-014** | Cobertura GPON por bairro (mapa de calor) | *GeographicLocation (TMF675) — polígono de cobertura agregado* |
 
 ### 5.1 Ordem de implementação sugerida
 
@@ -178,7 +180,7 @@ A ordem natural de construção respeita as dependências entre entidades:
 - **Camada 1 (fundação geoespacial):** REQ-001 (Location) + REQ-002 (Address) + REQ-003 (SiteSpec). Sem estas três, nenhuma instância de Site pode existir.
 - **Camada 2 (instâncias hierárquicas):** REQ-004 (Região) + REQ-005 (Grupo Funcional) + REQ-006 (Site) + REQ-007 (Sub-Site). É a operação CRUD efetiva sobre Sites.
 - **Camada 3 (governança):** REQ-008 (Ciclo de Vida) + REQ-009 (Contenção). Endurece a operação do dia a dia.
-- **Camada 4 (topologia e visualização):** REQ-010 (Relações A↔Z) + REQ-011 (Mapa) + REQ-013 (Edição de geometria). Eleva a operação para análise topológica e torna o cadastro geoespacial autossuficiente no navegador.
+- **Camada 4 (topologia e visualização):** REQ-010 (Relações A↔Z) + REQ-011 (Mapa) + REQ-013 (Edição de geometria) + REQ-014 (Cobertura GPON por bairro). Eleva a operação para análise topológica, torna o cadastro geoespacial autossuficiente no navegador e dá leitura de densidade/disponibilidade da planta em qualquer escala.
 - **Camada 5 (interoperabilidade):** REQ-012 (Eventos). Habilita módulos downstream e Data Lake — pode ser implementado em paralelo às camadas 2-4.
 
 
@@ -1332,7 +1334,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 | **RF-001** | **Exibição de Sites em mapa** | Renderizar Sites com place válido em camada cartográfica; marcadores diferenciados por tipo e status. |
 | **RF-002** | **Filtros visuais** | Filtrar Sites no mapa por: status, siteSpecification, Região (parentSite recursivo), siteType, characteristic. |
 | **RF-003** | **Bounding box dinâmico** | Carregar apenas Sites visíveis na viewport atual do mapa para performance em alta densidade. |
-| **RF-004** | **Cluster em zoom-out** | Agrupar marcadores próximos em clusters numerados quando zoom < threshold configurável. |
+| **RF-004** | **Camadas por escala (cobertura em zoom-out)** | Em vez de agrupar marcadores em clusters numerados, o mapa troca de representação por escala: em detalhe (≤ 200 m) exibe a planta individual; acima de 100 m entra a camada de cobertura GPON por bairro (REQ-MOD01-014), com grade de calor fina (≤ 500 m), grade grossa (≤ 10 km) e polígonos de bairro (> 10 km). As Estações encolhem entre 5 e 50 km e somem acima de 50 km. |
 | **RF-005** | **Detalhamento por clique** | Clique no marcador exibe popup com name, type, status, code, atributos principais e link para detalhamento. |
 | **RF-006** | **Sincronização bidirecional** | Permitir mover marcador no mapa para atualizar coordenadas; alterações em formulário refletem em tempo real no mapa. Criação e edição de vértices de LineString/Polygon são tratadas em REQ-MOD01-013. |
 | **RF-007** | **Camadas de visualização** | Suportar camadas configuráveis: hierarquia geográfica (limites de Regiões), Sites por tipo, relações topológicas como linhas. |
@@ -1599,9 +1601,128 @@ O Kuwaiba oferece o `syncGeoPosition` (mover um nó atualiza a coordenada de for
 
 ---
 
-## 19. Cenários ilustrativos da modelagem
+## 19. REQ-MOD01-014 — Cobertura GPON por bairro (mapa de calor)
 
-### 19.1 Cenário A — Home Passed até Home Connected
+> **Entidade TMF:** GeographicLocation (TMF675) — polígono de cobertura; não cria entidade nova  
+> **Open API TMF:** TMF675 — consulta geoespacial de áreas de cobertura  
+> **Prioridade:** Média — leitura operacional agregada da planta  
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.5 — draft
+
+### 19.1 Descrição
+
+Acima da escala de detalhe, o mapa (REQ-MOD01-011) deixa de desenhar recurso a recurso e passa a mostrar a **cobertura GPON**: uma camada térmica por bairro que responde a "onde há planta óptica disponível?" em qualquer escala acima de 100 m. Cada CDO (caixa de distribuição óptica, cadastrada como PhysicalResource `CTO` cujo nome começa em "CDO") cobre um raio de 300 m lineares; a consolidação desses perímetros forma o polígono de cobertura de cada bairro. A cor mede **disponibilidade** — verde onde predominam CDOs ativas, vermelho onde predominam bloqueadas — e a intensidade mede **densidade** de CDOs. Substitui os antigos clusters numerados (bolas azuis), que poluíam a visão de cidade/estado sem informar nada sobre a rede.
+
+### 19.2 Racional arquitetural
+
+A cobertura é uma **área geográfica**, não um serviço nem um recurso: é a projeção espacial de "até onde a planta alcança". Por isso o polígono do bairro é uma `GeographicLocation` (TMF675, `geometryType: Polygon`) — o mesmo caso de uso já previsto no REQ-MOD01-001 ("zona de cobertura, polígono de uma cidade"). Não é `Service` (C4: cobertura não é Home Connected) nem `Resource` (C3-a: serviço/área referencia recurso, não o contém). A geometria é **derivada** da posição das CDOs: um artefato regenerável, não um cadastro manual — mora ao lado do inventário, alimentado por um job de recomputação (`scripts/build-gpon-coverage.mjs`).
+
+O campo de calor fino (grade de 150 m em Web Mercator, EPSG:3857) fica numa **projeção de leitura** própria (`geo_gpon_coverage_cell`), agregável por zoom (150 m → 750 m → polígono de bairro) sem inflar a tabela de Locations nem exigir interseção de polígono em tempo de consulta. As estatísticas de cada bairro (contagem real de CDOs, disponibilidade, área coberta) viajam como `characteristic` tipada no grupo `_coverage` (C1 — extensão V.tal via característica, nunca campo hardcoded).
+
+### 19.3 Mapeamento de atributos TMF
+
+| Atributo | Tipo | Obrigatório | Observação V.tal |
+|---|---|:---:|---|
+| `GeographicLocation.geometryType` | enum | Sim | `Polygon` — anel externo do bairro + buracos. |
+| `GeographicLocation.geometry` | GeoJSON | Sim | Polígono do componente conexo da cobertura do bairro (RFC 7946). |
+| `GeographicLocation.referencePoint` | string | Não | Token de escopo `GPON:<uf>\|<city>\|<bairro>` — idempotência da regeneração. |
+| `characteristic._coverage.neighborhood` | string | Sim | Nome do bairro (rótulo do balão). |
+| `characteristic._coverage.cdoTotal` | integer | Sim | Contagem **real** de CDOs do bairro (não a soma de células). |
+| `characteristic._coverage.cdoAvailable` | integer | Sim | CDOs ativas (disponíveis). |
+| `characteristic._coverage.availabilityRatio` | decimal | Sim | `cdoAvailable / cdoTotal`, base da cor. |
+| `characteristic._coverage.coveredAreaKm2` | decimal | Não | Área coberta pelo bairro, em km². |
+| `characteristic._coverage.radiusMeters` | integer | Não | Raio de cobertura por CDO (300 m). |
+
+### 19.4 Exemplo de payload
+
+Exemplo ilustrativo do polígono de cobertura de um bairro conforme o contrato TMF675:
+
+```json
+{
+  "id": "loc-018f9c21-7a10-7b3e-9c44-2f7a1b9e0c31",
+  "href": "/tmf-api/geographicLocationManagement/v4/geographicLocation/loc-018f9c21",
+  "geometryType": "Polygon",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [-43.1101, -22.9075],
+        [-43.1004, -22.9075],
+        [-43.1004, -22.9012],
+        [-43.1101, -22.9012],
+        [-43.1101, -22.9075]
+      ]
+    ]
+  },
+  "spatialRef": "EPSG:4326",
+  "referencePoint": "GPON:RJ|Niteroi|Icarai",
+  "characteristic": [
+    { "group": "_coverage", "name": "kind", "value": "GponCoverage", "valueType": "string" },
+    { "group": "_coverage", "name": "neighborhood", "value": "Icarai", "valueType": "string" },
+    { "group": "_coverage", "name": "city", "value": "Niteroi", "valueType": "string" },
+    { "group": "_coverage", "name": "uf", "value": "RJ", "valueType": "string" },
+    { "group": "_coverage", "name": "cdoTotal", "value": 1904, "valueType": "integer" },
+    { "group": "_coverage", "name": "cdoAvailable", "value": 1421, "valueType": "integer" },
+    { "group": "_coverage", "name": "availabilityRatio", "value": 0.7464, "valueType": "decimal" },
+    { "group": "_coverage", "name": "coveredAreaKm2", "value": 3.67, "valueType": "decimal" },
+    { "group": "_coverage", "name": "radiusMeters", "value": 300, "valueType": "integer" }
+  ]
+}
+```
+
+### 19.5 Pré-condições
+
+- As CDOs do município estão inventariadas como PhysicalResource `CTO` com `place` referenciando uma `GeographicLocation` do tipo Point (REQ-MOD01-001, REQ-MOD02-008).
+- O endereço de cada CDO (REQ-MOD01-002) traz `locality` (bairro); na ausência, a CDO entra em "Sem bairro".
+- A base cartográfica do mapa (REQ-MOD01-011) está disponível para sobrepor a camada de calor.
+
+### 19.6 Requisitos Funcionais
+
+| ID | Nome | Descrição |
+|---|---|---|
+| **RF-001** | **Consolidação por raio** | Consolidar o disco de 300 m de cada CDO numa grade de 150 m e, por bairro, no polígono de cobertura (componente conexo). |
+| **RF-002** | **Cor por disponibilidade** | Colorir a mancha de vermelho (indisponível) a verde (disponível) pela razão `cdoAvailable/cdoTotal`. |
+| **RF-003** | **Intensidade por densidade** | Modular o alfa da célula pela densidade de CDOs, sem tapar o mapa base. |
+| **RF-004** | **Camadas por zoom** | Servir grade fina (≤ 500 m), grade grossa de 750 m (≤ 10 km) e polígonos de bairro (> 10 km), por bbox. |
+| **RF-005** | **Balão de hover** | Ao passar o cursor sobre a mancha, exibir bairro, município, total de CDOs, disponíveis/indisponíveis, % de disponibilidade e área coberta. |
+| **RF-006** | **Regeneração por escopo** | Recomputar a cobertura de um município substituindo a geração anterior daquele escopo, de forma idempotente. |
+| **RF-007** | **Takeup (evolução)** | Reservar `portsTotal`/`portsUsed` por bairro para, no futuro, exibir portas ocupadas sobre o total. |
+
+### 19.7 Regras de Negócio
+
+| ID | Nome | Descrição |
+|---|---|---|
+| **RN-001** | **Só CDO gera cobertura** | Apenas PhysicalResource `CTO` com nome iniciado em "CDO" entra; CEO/CEOS (caixas de emenda) ficam de fora. |
+| **RN-002** | **Disponível = ativo** | `status = active` conta como disponível; `suspended`/Bloqueada como indisponível; `terminated` não entra (C6). |
+| **RN-003** | **Cobertura não é Service** | A área de cobertura é `GeographicLocation` (TMF675); nunca `CustomerFacingService` (C4) nem `Resource` (C3-a). |
+| **RN-004** | **Estatística é contagem real** | Os números do balão vêm da contagem real de CDOs do bairro, não da soma de células (que multiplica de propósito no campo de densidade). |
+| **RN-005** | **Artefato regenerável** | O polígono e a grade são derivados: a regeneração por escopo pode apagá-los fisicamente e recriá-los — exceção consciente a C6, restrita a artefato de leitura. |
+
+### 19.8 Critérios de Aceite
+
+| ID | Critério |
+|---|---|
+| **CA-001** | Rodar o job para um município produz um polígono por bairro (componente conexo) e a grade fina correspondente, com a contagem de CDOs conferindo com o inventário. |
+| **CA-002** | Acima de 100 m o mapa mostra a mancha térmica e nenhum cluster numerado aparece em escala alguma. |
+| **CA-003** | A cor de um bairro majoritariamente bloqueado tende ao vermelho; a de um majoritariamente ativo, ao verde. |
+| **CA-004** | O hover sobre a mancha abre o balão com bairro, município e os números de CDOs/disponibilidade. |
+| **CA-005** | Entre 5 e 50 km as Estações aparecem como pontos pequenos; acima de 50 km somem, restando só a cobertura. |
+| **CA-006** | Regenerar o mesmo município duas vezes não duplica polígonos nem células (idempotência por escopo). |
+
+### 19.9 Mapeamento contra sistemas de referência
+
+| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
+|---|---|---|---|---|
+| **Mapa de calor de densidade de planta** | Consulta de planta por região na visão de OSP | Geometrias de área no metamodelo, sem calor pronto | Trabalha em prefixos/sites IP, sem camada óptica dedicada | **Grade de 150 m consolidando o raio de 300 m das CDOs** |
+| **Polígono de cobertura por área** | Áreas de atendimento no cadastro de OSP | Modelagem de áreas via geometrias | Não identificado no levantamento | **Polígono de bairro (TMF675) por componente conexo** |
+| **Disponibilidade colorida por status** | Legenda de status na planta exterior | Estado do nó no metamodelo | Status de dispositivo/site | **Rampa vermelho→verde por razão de CDOs ativas** |
+| **Agregação por zoom** | Níveis de detalhe na visão de OSP | Não identificado no levantamento | Não identificado no levantamento | **Fino (150 m) → grosso (750 m) → polígono de bairro** |
+| **Takeup de portas por área** | Ocupação por caixa no cadastro | Portas modeladas no metamodelo | Portas/interfaces por dispositivo | **Reservado (`portsTotal`/`portsUsed`) para evolução** |
+
+---
+
+## 20. Cenários ilustrativos da modelagem
+
+### 20.1 Cenário A — Home Passed até Home Connected
 
 ```text
 GeographicAddress + GeographicLocation (HP)
@@ -1614,7 +1735,7 @@ GeographicAddress + GeographicLocation (HP)
 
 O cenário valida C4, a separação Address/Location/Site e a regra de referência entre Geo, Resource e Service.
 
-### 19.2 Cenário B — Central, sala, Rack e cadeia GPON
+### 20.2 Cenário B — Central, sala, Rack e cadeia GPON
 
 ```text
 Central (GeographicSite)
@@ -1626,7 +1747,7 @@ Central (GeographicSite)
 
 O cenário valida a hierarquia de Sub-Sites, a fronteira Geo↔Resource no Rack e a navegação conjunta árvore/mapa já existente no frontend.
 
-### 19.3 Padrões reaproveitáveis
+### 20.3 Padrões reaproveitáveis
 
 - Address, Location e Site são entidades distintas; referências substituem duplicação.
 - A árvore Geo termina antes do Rack; infraestrutura passiva e equipamentos são Resources.
@@ -1635,7 +1756,7 @@ O cenário valida a hierarquia de Sub-Sites, a fronteira Geo↔Resource no Rack 
 
 ---
 
-## 20. Síntese arquitetural do módulo
+## 21. Síntese arquitetural do módulo
 
 - **Geo é a fonte do “onde”.** Address, Location e Site têm identidades e ciclos de vida próprios.
 - **Catálogo governa a estrutura.** SiteSpecification define características e contenção; enums fechados no código são dívida registrada.
@@ -1645,7 +1766,7 @@ O cenário valida a hierarquia de Sub-Sites, a fronteira Geo↔Resource no Rack 
 
 ---
 
-## 21. Contratos com outros módulos do Nexus
+## 22. Contratos com outros módulos do Nexus
 
 O módulo Geographic é a fundação referenciada por praticamente todos os outros módulos. Os contratos de integração:
 
@@ -1661,7 +1782,7 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 
 ---
 
-## 22. Questões em aberto
+## 23. Questões em aberto
 
 | ID | Questão | Status | Responsável |
 |---|---|---|---|
@@ -1675,14 +1796,14 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 | **Q-GEO-010** | A profundidade máxima da hierarquia de Sub-Sites tem limite prático? Caso de uso típico: CO > Andar > Sala > Cage (4 níveis); algum caso ultrapassa? | *Aberta* | *Engenharia V.tal* |
 | **Q-GEO-011** | A edição de geometria no navegador (REQ-MOD01-013) exige workflow de aprovação no Módulo 5, ou bastam RBAC, motivo declarado e Audit Trail? A resposta muda o custo do editor e o tempo de resposta da operação de campo. | *Aberta* | *Operações V.tal + Arquitetura* |
 
-### 22.1 Decisões resolvidas
+### 23.1 Decisões resolvidas
 
 | ID | Decisão | Impacto |
 |---|---|---|
-| **D-GEO-001** | O Nexus gera UUID v7 próprio e preserva IDs legados em `_origin`. | Aplica-se a Site, Address e Location; detalhamento na seção 22.2. |
+| **D-GEO-001** | O Nexus gera UUID v7 próprio e preserva IDs legados em `_origin`. | Aplica-se a Site, Address e Location; detalhamento na seção 23.2. |
 | **D-GEO-002** | O provedor de geocodificação é o Geosite Logradouros. | Resolve a antiga Q-GEO-009; a interface técnica continua em Q-GEO-005. |
 
-### 22.2 D-GEO-001 — Identidade e proveniência de entidades
+### 23.2 D-GEO-001 — Identidade e proveniência de entidades
 
 > **Princípio arquitetural (Jun/2026):** O Nexus é agnóstico à origem de seus dados. Todo identificador canônico é UUID v7 gerado pelo próprio Nexus, independente do sistema de origem. IDs legados são preservados como atributos customizados (`characteristic`) no grupo convencional `_origin`, exclusivamente para fins de rastreabilidade histórica, auditoria e suporte ao período de dual-running.
 
@@ -1746,7 +1867,7 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 
 ---
 
-## 23. Controle de revisões
+## 24. Controle de revisões
 
 | Versão | Data | Autor | Descrição |
 |---|---|---|---|
@@ -1755,6 +1876,7 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 | 1.2 | Julho 2026 | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: matriz de aderência dos 12 requisitos, cenários e síntese arquitetural, anatomia normalizada, JSON válido, questões namespaced e gaps ligados ao backlog `DEV-*`. |
 | 1.3 | Agosto 2026 | Produto — V.tal Nexus | Incorporação da consulta operacional de OSP (`inspirations/geosite-legado.md`): princípios 4.7 (fidelidade física — zero entidades artificiais) e 4.8 (operação 100% web), novo REQ-MOD01-013 (digitalização e edição de geometria no navegador), Q-GEO-011, RN-001 do mapa redirecionada ao motor de integridade (REQ-MOD02-027) e backlog DEV-GEO-007. |
 | 1.4 | Agosto 2026 | Engenharia — V.tal Nexus | Novo RN-007 (§12.7): mapa e árvore de navegação escondem Sub-Site e o recurso `Splitter` (Módulo 2), com pass-through do splitter para o primeiro descendente visível; os dois continuam acessíveis pelo painel de detalhe do local/recurso pai. `GeoTreeService.children` ganha o parâmetro `scope` (`'tree'` default para navegação, `'all'` para os painéis de detalhe). |
+| 1.5 | Agosto 2026 | Engenharia — V.tal Nexus | Novo REQ-MOD01-014 (Cobertura GPON por bairro): mapa de calor de disponibilidade/densidade derivado do raio de 300 m das CDOs, com polígono de bairro em TMF675 e grade de leitura `geo_gpon_coverage_cell` agregável por zoom. RF-004 do REQ-MOD01-011 substitui os clusters numerados pela troca de camadas por escala (planta → cobertura → polígono), com Estações que encolhem em 5–50 km e somem acima de 50 km. Seções 19–23 renumeradas para 20–24. |
 
 ---
 

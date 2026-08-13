@@ -3,6 +3,7 @@ import { PostgresGeoRepository } from '../../modules/geo/postgres-repository.js'
 import { OracleGeoRepository } from '../../modules/geo/oracle-repository.js';
 import { GeoService } from '../../modules/geo/service.js';
 import { GeoTreeService } from '../../modules/geo/tree-service.js';
+import { GeoCoverageService } from '../../modules/geo/coverage-service.js';
 import { OrderService } from '../../modules/order/service.js';
 import { PostgresOrderRepository } from '../../modules/order/postgres-repository.js';
 import { OracleOrderRepository } from '../../modules/order/oracle-repository.js';
@@ -79,6 +80,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   await geoService.ensureBootstrapSpecifications();
   await geoService.ensureBootstrapRelationshipTypes();
   const geoTreeService = new GeoTreeService(db);
+  const geoCoverageService = new GeoCoverageService(db);
   const eventRepository = oracle ? new OracleEventRepository(db) : new PostgresEventRepository(db);
   const eventService = new EventService(eventRepository);
   const partyRepository = oracle ? new OraclePartyRepository(db) : new PostgresPartyRepository(db);
@@ -204,6 +206,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     geoRepository,
     geoService,
     geoTreeService,
+    geoCoverageService,
     eventRepository,
     eventService,
     partyRepository,

@@ -13,12 +13,59 @@ const EARTH_METERS_PER_PIXEL_AT_ZOOM_0 = 156543.03392;
 // melhor estimativa da barra real do Google (100 px arredondava um passo acima).
 const SCALE_BAR_MAX_PX = 64;
 
-// Acima deste valor, a infra passiva (recursos + cabos) some do mapa — só Estações continuam.
+// Acima deste valor, a infra passiva (recursos + cabos) some do mapa. No lugar dela entra
+// a camada de cobertura GPON (ver COVERAGE_MIN_SCALE_METERS); Estações continuam visíveis.
 export const PASSIVE_INFRA_MAX_SCALE_METERS = 200;
 
-// Só agrupa (clusters azuis) acima desta escala. Em ≤ 100 m cada recurso vira um ícone
-// individual — o usuário já está perto o bastante para ver caixa a caixa.
-export const MARKER_CLUSTER_MIN_SCALE_METERS = 100;
+// Cobertura GPON (mapa de calor por bairro) entra ACIMA desta escala — "visível para
+// qualquer escala acima de 100 m". Em ≤ 100 m só a planta individual aparece; não há mais
+// cluster (bolas azuis numeradas foram removidas). Na faixa 100–200 m a mancha e os ícones
+// de caixa coexistem.
+export const COVERAGE_MIN_SCALE_METERS = 100;
+
+// Nível da cobertura por escala: grade fina de 150 m até aqui, grade grossa (750 m) até
+// COVERAGE_COARSE_MAX_SCALE_METERS e polígonos de bairro acima disso.
+export const COVERAGE_FINE_MAX_SCALE_METERS = 500;
+export const COVERAGE_COARSE_MAX_SCALE_METERS = 10_000;
+
+// Estações: tamanho cheio até aqui; a partir de 1 km viram pontos pequenos (sem agrupamento) —
+// já nas escalas de 1 e 2 km. Permanecem visíveis em qualquer escala, inclusive acima de 50 km.
+export const STATION_SMALL_MIN_SCALE_METERS = 1_000;
+
+// Recursos (caixas/splitters): tamanho cheio bem de perto (≤ 50 m) e reduzidos a partir de
+// 100 m — na faixa 100–200 m, onde ainda aparecem junto da cobertura, ícones menores poluem
+// menos (mesmo espírito da redução das estações em escala grande).
+export const RESOURCE_SMALL_MIN_SCALE_METERS = 100;
+
+export type CoverageLevel = 'fine' | 'coarse' | 'area';
+export type StationTier = 'full' | 'small';
+
+// Cobertura visível? Acima de 100 m, em qualquer escala.
+export const coverageVisibleAtScale = (scaleMeters: number | null): boolean =>
+  scaleMeters !== null && scaleMeters > COVERAGE_MIN_SCALE_METERS;
+
+// Nível de cobertura a pedir ao servidor para a escala atual (ver GeoCoverageService).
+export function coverageLevelForScale(scaleMeters: number): CoverageLevel {
+  if (scaleMeters <= COVERAGE_FINE_MAX_SCALE_METERS) return 'fine';
+  if (scaleMeters <= COVERAGE_COARSE_MAX_SCALE_METERS) return 'coarse';
+  return 'area';
+}
+
+// Como desenhar a Estação na escala atual: cheia (perto) ou pequena (longe). Nunca oculta —
+// as estações permanecem visíveis em qualquer escala.
+export function stationTierForScale(scaleMeters: number | null): StationTier {
+  if (scaleMeters === null) return 'full';
+  if (scaleMeters >= STATION_SMALL_MIN_SCALE_METERS) return 'small';
+  return 'full';
+}
+
+// Como desenhar o Recurso (caixa/splitter) na escala atual: cheio em zoom bem fechado (≤ 50 m),
+// reduzido a partir de 100 m (faixa 100–200 m).
+export function resourceTierForScale(scaleMeters: number | null): StationTier {
+  if (scaleMeters === null) return 'full';
+  if (scaleMeters >= RESOURCE_SMALL_MIN_SCALE_METERS) return 'small';
+  return 'full';
+}
 
 // Metros por pixel na tela para um dado zoom e latitude (projeção Web Mercator do
 // Google). Exportado para a câmera (mapCamera.ts) estimar em pixels a distância de um

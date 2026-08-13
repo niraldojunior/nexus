@@ -3,6 +3,9 @@ import http from 'node:http';
 import test from 'node:test';
 import { createApp } from '../src/shared/http/app.js';
 import { createTestDatabase as createPostgresTestDatabase } from './test-utils.js';
+import { createDatabaseClient } from '../src/shared/persistence/database-factory.js';
+import { databaseConfigOf } from '../src/shared/config/env.js';
+import { COVERAGE_CELL_METERS, lngLatToMercator } from '../src/modules/geo/coverage-grid.js';
 
 const createLogger = () => ({
   debug: () => undefined,
@@ -755,6 +758,179 @@ test('Geo tree viewport serves passive infra by bounding box, independent of hie
   assert.deepEqual(outsideBbox.body, []);
 
   const missingBounds = await requestJson(port, 'GET', '/v1/geo/tree/viewport?minLng=-43.12');
+  assert.equal(missingBounds.statusCode, 400);
+});
+
+test('Geo coverage serves the GPON heat grid and neighborhood polygons by bounding box', async (t) => {
+  const database = createPostgresTestDatabase('geo-coverage');
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
+  const port = await server.start();
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
+
+  // Mesma instância de banco que o app usa (PostgresDatabase é singleton por URL): a
+  // cobertura é semeada direto nas tabelas de projeção, como faz o build-gpon-coverage.
+  const db = createDatabaseClient(databaseConfigOf(createConfig(0, database.databaseUrl)));
+
+  const coverageChars = (stat: {
+    key: string;
+    neighborhood: string;
+    city: string;
+    uf: string;
+    cdoTotal: number;
+    cdoAvailable: number;
+  }) =>
+    JSON.stringify([
+      { group: '_coverage', name: 'kind', value: 'GponCoverage', valueType: 'string' },
+      { group: '_coverage', name: 'neighborhood', value: stat.neighborhood, valueType: 'string' },
+      { group: '_coverage', name: 'city', value: stat.city, valueType: 'string' },
+      { group: '_coverage', name: 'uf', value: stat.uf, valueType: 'string' },
+      { group: '_coverage', name: 'neighborhoodKey', value: stat.key, valueType: 'string' },
+      { group: '_coverage', name: 'cdoTotal', value: stat.cdoTotal, valueType: 'integer' },
+      { group: '_coverage', name: 'cdoAvailable', value: stat.cdoAvailable, valueType: 'integer' },
+      {
+        group: '_coverage',
+        name: 'cdoUnavailable',
+        value: stat.cdoTotal - stat.cdoAvailable,
+        valueType: 'integer',
+      },
+      {
+        group: '_coverage',
+        name: 'availabilityRatio',
+        value: stat.cdoTotal > 0 ? stat.cdoAvailable / stat.cdoTotal : 0,
+        valueType: 'decimal',
+      },
+      { group: '_coverage', name: 'coveredAreaKm2', value: 0.25, valueType: 'decimal' },
+    ]);
+
+  const seedArea = async (
+    locId: string,
+    stat: { key: string; neighborhood: string; city: string; uf: string; cdoTotal: number; cdoAvailable: number },
+    cells: Array<{ gx: number; gy: number; total: number; avail: number }>,
+  ) => {
+    await db.run(
+      `INSERT INTO tmf_geographic_location
+         (id, href, geometry_type, geometry, spatial_ref, reference_point, characteristics)
+       VALUES (?, ?, 'Polygon', ?, 'EPSG:4326', ?, ?)`,
+      [
+        locId,
+        `/tmf-api/geographicLocationManagement/v4/geographicLocation/${locId}`,
+        JSON.stringify({
+          type: 'Polygon',
+          coordinates: [
+            [
+              [-43.108, -22.908],
+              [-43.1, -22.908],
+              [-43.1, -22.902],
+              [-43.108, -22.902],
+              [-43.108, -22.908],
+            ],
+          ],
+        }),
+        `GPON:${stat.key}`,
+        coverageChars(stat),
+      ],
+    );
+    for (const cell of cells) {
+      await db.run(
+        `INSERT INTO geo_gpon_coverage_cell
+           (tenant_id, grid_size_m, grid_x, grid_y, coverage_area_id, cdo_total, cdo_available)
+         VALUES ('default', ?, ?, ?, ?, ?, ?)`,
+        [COVERAGE_CELL_METERS, cell.gx, cell.gy, locId, cell.total, cell.avail],
+      );
+    }
+  };
+
+  // Alinha as células ao mesmo mapeamento bbox→grade do serviço, ancorando em Icaraí.
+  const [x0, y0] = lngLatToMercator(-43.106, -22.906);
+  const gx = Math.floor(x0 / COVERAGE_CELL_METERS);
+  const gy = Math.floor(y0 / COVERAGE_CELL_METERS);
+
+  // cdoTotal nas characteristics (5 e 4) é a contagem REAL do bairro, de propósito diferente
+  // da soma das células — é o que o balão exibe.
+  await seedArea(
+    '11111111-1111-7111-8111-111111111111',
+    { key: 'RJ|Niterói|Icaraí', neighborhood: 'Icaraí', city: 'Niterói', uf: 'RJ', cdoTotal: 5, cdoAvailable: 3 },
+    [
+      { gx, gy, total: 3, avail: 2 },
+      { gx: gx + 1, gy, total: 2, avail: 1 },
+    ],
+  );
+  await seedArea(
+    '22222222-2222-7222-8222-222222222222',
+    { key: 'RJ|Niterói|Santa Rosa', neighborhood: 'Santa Rosa', city: 'Niterói', uf: 'RJ', cdoTotal: 4, cdoAvailable: 0 },
+    [{ gx: gx + 2, gy, total: 4, avail: 0 }],
+  );
+
+  const bbox = 'minLng=-43.108&minLat=-22.910&maxLng=-43.100&maxLat=-22.902';
+
+  // fine: 3 células, cada uma com o índice do seu bairro; estatística vem das characteristics.
+  const fine = await requestJson(port, 'GET', `/v1/geo/coverage?${bbox}&level=fine`);
+  assert.equal(fine.statusCode, 200);
+  const fineBody = fine.body as {
+    level: string;
+    grid: { sizeMeters: number };
+    cells: number[][];
+    neighborhoods: Array<{ id: number; neighborhood: string; cdoTotal: number; cdoAvailable: number }>;
+    truncated: boolean;
+  };
+  assert.equal(fineBody.level, 'fine');
+  assert.equal(fineBody.grid.sizeMeters, COVERAGE_CELL_METERS);
+  assert.equal(fineBody.cells.length, 3);
+  assert.equal(fineBody.neighborhoods.length, 2);
+  const icarai = fineBody.neighborhoods.find((item) => item.neighborhood === 'Icaraí');
+  assert.ok(icarai);
+  assert.equal(icarai!.cdoTotal, 5, 'estatística do balão é a contagem real, não a soma das células');
+  assert.equal(icarai!.cdoAvailable, 3);
+  // Toda célula referencia um índice de bairro válido.
+  for (const cell of fineBody.cells) {
+    assert.ok(cell[4]! >= 0 && cell[4]! < fineBody.neighborhoods.length);
+  }
+
+  // coarse: campo de densidade agregado; a soma bate com a das células finas.
+  const coarse = await requestJson(port, 'GET', `/v1/geo/coverage?${bbox}&level=coarse`);
+  assert.equal(coarse.statusCode, 200);
+  const coarseBody = coarse.body as { level: string; grid: { sizeMeters: number }; cells: number[][] };
+  assert.equal(coarseBody.level, 'coarse');
+  assert.equal(coarseBody.grid.sizeMeters, COVERAGE_CELL_METERS * 5);
+  const totalCdo = coarseBody.cells.reduce((sum, cell) => sum + cell[2]!, 0);
+  const totalAvail = coarseBody.cells.reduce((sum, cell) => sum + cell[3]!, 0);
+  assert.equal(totalCdo, 9);
+  assert.equal(totalAvail, 3);
+
+  // area: polígonos de bairro com geometria e estatística.
+  const area = await requestJson(port, 'GET', `/v1/geo/coverage?${bbox}&level=area`);
+  assert.equal(area.statusCode, 200);
+  const areaBody = area.body as {
+    level: string;
+    areas: Array<{ id: string; neighborhoodIndex: number; geometry: { type: string } }>;
+    neighborhoods: Array<{ neighborhood: string }>;
+  };
+  assert.equal(areaBody.level, 'area');
+  assert.equal(areaBody.areas.length, 2);
+  assert.equal(areaBody.neighborhoods.length, 2);
+  for (const polygon of areaBody.areas) {
+    assert.equal(polygon.geometry.type, 'Polygon');
+    assert.ok(polygon.neighborhoodIndex >= 0);
+  }
+
+  // bbox distante: nada volta.
+  const empty = await requestJson(
+    port,
+    'GET',
+    '/v1/geo/coverage?minLng=-43.30&minLat=-23.00&maxLng=-43.25&maxLat=-22.95&level=fine',
+  );
+  assert.equal(empty.statusCode, 200);
+  const emptyBody = empty.body as { cells: number[][]; neighborhoods: unknown[] };
+  assert.deepEqual(emptyBody.cells, []);
+  assert.deepEqual(emptyBody.neighborhoods, []);
+
+  const missingBounds = await requestJson(port, 'GET', '/v1/geo/coverage?minLng=-43.12&level=fine');
   assert.equal(missingBounds.statusCode, 400);
 });
 

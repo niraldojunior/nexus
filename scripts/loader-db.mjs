@@ -25,8 +25,12 @@ const chunk = (arr, size) => {
 
 const ISO_DATETIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/;
 
-export async function openLoaderDb() {
-  return isOracle() ? openOracle() : openPostgres();
+// Abre a conexão de carga. Sem argumento, escolhe pelo DATABASE_PROVIDER (compatível com os
+// loaders existentes). Com `{ provider }` explícito, permite ler de um banco e gravar em outro
+// (ex.: gerar cobertura a partir das CDOs no Oracle e persistir os polígonos no Postgres/Neon).
+export async function openLoaderDb(options = {}) {
+  const provider = options.provider ?? (isOracle() ? 'oracle' : 'postgres');
+  return provider === 'oracle' ? openOracle() : openPostgres();
 }
 
 // --------------------------------------------------------------- Postgres ----

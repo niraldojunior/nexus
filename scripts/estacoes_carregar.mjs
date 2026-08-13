@@ -85,6 +85,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import { openLoaderDb } from './loader-db.mjs';
+import { UF_BBOX } from './uf-geo.mjs';
 import { createCanonicalId } from '../dist/src/shared/utils/canonical-id.js';
 
 loadEnv({ quiet: true });
@@ -334,35 +335,7 @@ function parseCsv(text) {
 // folga — usada para rejeitar coordenada "consistente com o Brasil" mas
 // claramente de outra região (ex.: coordenada do RJ atribuída a estação do
 // PR). Não é sobre precisão de fronteira, é sobre descartar lixo grosseiro.
-const UF_BBOX = {
-  AC: [-11.4, -7.0, -74.2, -66.5],
-  AL: [-10.6, -8.7, -38.3, -35.0],
-  AP: [-1.3, 4.6, -54.9, -49.8],
-  AM: [-9.9, 2.3, -73.9, -56.0],
-  BA: [-18.5, -8.4, -46.7, -37.2],
-  CE: [-8.0, -2.6, -41.5, -37.1],
-  DF: [-16.2, -15.4, -48.4, -47.2],
-  ES: [-21.4, -17.8, -42.0, -39.5],
-  GO: [-19.6, -12.3, -53.4, -45.8],
-  MA: [-10.4, -0.9, -48.9, -41.7],
-  MT: [-18.1, -7.2, -61.7, -50.1],
-  MS: [-24.2, -17.1, -58.3, -50.8],
-  MG: [-23.0, -14.1, -51.1, -39.8],
-  PA: [-9.9, 2.7, -59.0, -45.9],
-  PB: [-8.4, -5.9, -38.9, -34.7],
-  PR: [-26.8, -22.4, -54.7, -47.9],
-  PE: [-9.6, -7.2, -41.5, -32.3],
-  PI: [-11.0, -2.6, -46.0, -40.3],
-  RJ: [-23.5, -20.6, -45.0, -40.8],
-  RN: [-7.0, -4.7, -38.7, -34.8],
-  RS: [-33.9, -26.9, -57.8, -49.5],
-  RO: [-13.8, -7.8, -66.9, -59.6],
-  RR: [-1.7, 5.4, -64.9, -58.9],
-  SC: [-29.5, -25.8, -54.0, -48.2],
-  SP: [-25.5, -19.6, -53.3, -44.0],
-  SE: [-11.7, -9.4, -38.4, -36.3],
-  TO: [-13.6, -5.0, -50.9, -45.6],
-};
+// A tabela vive em ./uf-geo.mjs (fonte única compartilhada com os loaders de recurso).
 
 function inBbox(lat, lng, bbox) {
   const [latMin, latMax, lonMin, lonMax] = bbox;

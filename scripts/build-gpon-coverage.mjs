@@ -340,60 +340,68 @@ async function main() {
     await ensureCoverageTable(target);
 
     await target.query('BEGIN');
-
-    // Substitui a geração anterior DO ESCOPO: acha as Locations "GPON:" do escopo, apaga
-    // suas células e depois as próprias Locations. Filtra o escopo em JS (uf/city do
-    // reference_point) para não depender de LIKE com acento/caractere especial.
-    const { rows: existing } = await target.query(
-      `SELECT id, reference_point FROM tmf_geographic_location WHERE reference_point LIKE 'GPON:%'`,
-    );
-    const staleIds = existing.filter((row) => inScope(row.reference_point)).map((row) => row.id);
-    const removedCells = await deleteByIds(
-      target,
-      'geo_gpon_coverage_cell',
-      'coverage_area_id',
-      staleIds,
-    );
-    const removedAreas = await deleteByIds(target, 'tmf_geographic_location', 'id', staleIds);
-
-    const insertedLocations = await target.bulkInsert(
-      'tmf_geographic_location',
-      [
-        'id',
-        'href',
-        'geometry_type',
-        'geometry',
-        'spatial_ref',
-        'reference_point',
-        'characteristics',
-      ],
-      locations,
-    );
-    // Índice de células gravado na resolução de --index-cell (agrega o fino se for maior).
-    const indexCells = aggregateIndex(cells);
-    // DO NOTHING protege a fronteira entre municípios em cargas por-cidade: uma célula já
-    // gravada por outro município (não apagada por este escopo) é preservada.
-    const insertedCells = await target.bulkInsert(
-      'geo_gpon_coverage_cell',
-      [
-        'tenant_id',
-        'grid_size_m',
-        'grid_x',
-        'grid_y',
+    // ROLLBACK explícito em erro: no Oracle o `close()` do loader-db faz commit() no
+    // finally, então sem isto uma falha no meio (ex.: insert de células) deixaria os
+    // polígonos já inseridos comitados — cobertura parcial. Como é idempotente por
+    // escopo, a próxima execução limparia, mas melhor não gravar lixo de saída.
+    try {
+      // Substitui a geração anterior DO ESCOPO: acha as Locations "GPON:" do escopo, apaga
+      // suas células e depois as próprias Locations. Filtra o escopo em JS (uf/city do
+      // reference_point) para não depender de LIKE com acento/caractere especial.
+      const { rows: existing } = await target.query(
+        `SELECT id, reference_point FROM tmf_geographic_location WHERE reference_point LIKE 'GPON:%'`,
+      );
+      const staleIds = existing.filter((row) => inScope(row.reference_point)).map((row) => row.id);
+      const removedCells = await deleteByIds(
+        target,
+        'geo_gpon_coverage_cell',
         'coverage_area_id',
-        'cdo_total',
-        'cdo_available',
-      ],
-      indexCells,
-      { onConflict: 'ON CONFLICT (tenant_id, grid_size_m, grid_x, grid_y) DO NOTHING' },
-    );
+        staleIds,
+      );
+      const removedAreas = await deleteByIds(target, 'tmf_geographic_location', 'id', staleIds);
 
-    await target.query('COMMIT');
+      const insertedLocations = await target.bulkInsert(
+        'tmf_geographic_location',
+        [
+          'id',
+          'href',
+          'geometry_type',
+          'geometry',
+          'spatial_ref',
+          'reference_point',
+          'characteristics',
+        ],
+        locations,
+      );
+      // Índice de células gravado na resolução de --index-cell (agrega o fino se for maior).
+      const indexCells = aggregateIndex(cells);
+      // DO NOTHING protege a fronteira entre municípios em cargas por-cidade: uma célula já
+      // gravada por outro município (não apagada por este escopo) é preservada.
+      const insertedCells = await target.bulkInsert(
+        'geo_gpon_coverage_cell',
+        [
+          'tenant_id',
+          'grid_size_m',
+          'grid_x',
+          'grid_y',
+          'coverage_area_id',
+          'cdo_total',
+          'cdo_available',
+        ],
+        indexCells,
+        { onConflict: 'ON CONFLICT (tenant_id, grid_size_m, grid_x, grid_y) DO NOTHING' },
+      );
 
-    console.log('\nGravado:');
-    console.log(`  removidos (regeneração): ${removedAreas} polígonos · ${removedCells} células`);
-    console.log(`  polígonos de cobertura : ${insertedLocations}`);
-    console.log(`  células de grade        : ${insertedCells}`);
+      await target.query('COMMIT');
+
+      console.log('\nGravado:');
+      console.log(`  removidos (regeneração): ${removedAreas} polígonos · ${removedCells} células`);
+      console.log(`  polígonos de cobertura : ${insertedLocations}`);
+      console.log(`  células de grade        : ${insertedCells}`);
+    } catch (err) {
+      await target.query('ROLLBACK');
+      throw err;
+    }
   } finally {
     await target.close();
     if (target !== source) await source.close();
@@ -406,7 +414,18 @@ async function main() {
 // INDEX_CELL_METERS == CELL_METERS, o índice fino é gravado sem alteração.
 function aggregateIndex(cells) {
   const factor = Math.round(INDEX_CELL_METERS / CELL_METERS);
-  if (factor <= 1) return cells;
+  if (factor <= 1) {
+    // Sem agregação de índice, mas ainda é preciso COLAPSAR células repetidas: a
+    // mesma grid_x/grid_y aparece em componentes vizinhos (fronteira de bairro), e
+    // sem dedup dá violação da PK (tenant_id, grid_size_m, grid_x, grid_y). Mantém a
+    // PRIMEIRA ocorrência — mesma semântica do ON CONFLICT DO NOTHING do Postgres.
+    const seen = new Map();
+    for (const cell of cells) {
+      const key = `${cell.grid_size_m},${cell.grid_x},${cell.grid_y}`;
+      if (!seen.has(key)) seen.set(key, cell);
+    }
+    return [...seen.values()];
+  }
   const agg = new Map();
   for (const cell of cells) {
     const cx = Math.floor(cell.grid_x / factor);

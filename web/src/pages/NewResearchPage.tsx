@@ -72,7 +72,7 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
         },
         body: JSON.stringify({
           title: input.substring(0, 50),
@@ -90,7 +90,7 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
         },
         body: JSON.stringify({ message: input }),
       });

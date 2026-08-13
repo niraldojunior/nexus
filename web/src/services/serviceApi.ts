@@ -24,12 +24,7 @@ export type ServiceSpecificationType = 'CFS' | 'RFS' | 'Other';
 
 /** Ciclo de vida canônico TMF638. `terminated` é terminal; "suspenso" não é estado (ver §10.3). */
 export type ServiceState =
-  | 'feasibilityChecked'
-  | 'designed'
-  | 'reserved'
-  | 'inactive'
-  | 'active'
-  | 'terminated';
+  'feasibilityChecked' | 'designed' | 'reserved' | 'inactive' | 'active' | 'terminated';
 
 export type ServiceStatus = 'active' | 'inactive' | 'suspended' | 'terminated';
 
@@ -226,7 +221,9 @@ export async function loadServiceWorkspaceSnapshot({
 }): Promise<ServiceWorkspaceSnapshot> {
   const searchParams = new URLSearchParams({ tab });
   if (category) searchParams.set('category', category);
-  return await requestJson<ServiceWorkspaceSnapshot>(`/v1/service/workspace?${searchParams.toString()}`);
+  return await requestJson<ServiceWorkspaceSnapshot>(
+    `/v1/service/workspace?${searchParams.toString()}`,
+  );
 }
 
 export async function createServiceSpecification(

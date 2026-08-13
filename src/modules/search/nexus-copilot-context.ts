@@ -48,7 +48,9 @@ export const getNexusCopilotContext = (): string => {
 export const prependNexusCopilotContext = (
   messages: NexusCopilotChatMessage[],
 ): NexusCopilotChatMessage[] => {
-  const hasSystemMessage = messages.some((message) => message.role === 'system' && message.content.trim().length > 0);
+  const hasSystemMessage = messages.some(
+    (message) => message.role === 'system' && message.content.trim().length > 0,
+  );
   if (hasSystemMessage) {
     return messages;
   }

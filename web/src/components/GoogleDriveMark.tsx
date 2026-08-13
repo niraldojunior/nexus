@@ -1,5 +1,5 @@
 interface GoogleDriveMarkProps {
-  className?: string
+  className?: string;
 }
 
 export default function GoogleDriveMark({ className = '' }: GoogleDriveMarkProps) {
@@ -15,5 +15,5 @@ export default function GoogleDriveMark({ className = '' }: GoogleDriveMarkProps
       <path d="M3 12L8 3L13 12L8 21L3 12Z" fill="#FBBC04" />
       <path d="M13 12H21L16 21H8L13 12Z" fill="#4285F4" />
     </svg>
-  )
+  );
 }

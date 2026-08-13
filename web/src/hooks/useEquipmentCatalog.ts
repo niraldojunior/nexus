@@ -22,7 +22,8 @@ export function useEquipmentCatalog() {
           return (
             cat.includes('infrastructure.passive') ||
             cat.includes('equipment.access') ||
-            (spec.resourceType && ['Splitter', 'Pole', 'OLT', 'ONT', 'CTO', 'CPE'].includes(spec.resourceType))
+            (spec.resourceType &&
+              ['Splitter', 'Pole', 'OLT', 'ONT', 'CTO', 'CPE'].includes(spec.resourceType))
           );
         });
         setEquipment(filtered);
@@ -63,10 +64,10 @@ export const equipmentKindDescription: Record<string, string> = {
  * Cores por tipo de equipamento (element-class colors)
  */
 export const equipmentKindColor: Record<string, string> = {
-  Splitter: '#004E89',   // Azul escuro
-  Pole: '#8B7500',       // Marrom
-  OLT: '#FF6B35',        // Laranja
-  ONT: '#1A9E7D',        // Verde
-  CTO: '#1A9E7D',        // Verde
-  CPE: '#9B59B6',        // Roxo
+  Splitter: '#004E89', // Azul escuro
+  Pole: '#8B7500', // Marrom
+  OLT: '#FF6B35', // Laranja
+  ONT: '#1A9E7D', // Verde
+  CTO: '#1A9E7D', // Verde
+  CPE: '#9B59B6', // Roxo
 };

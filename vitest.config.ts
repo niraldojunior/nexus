@@ -18,11 +18,7 @@ export default {
     // TLS note: behind a corporate TLS-inspection proxy Node rejects Neon's self-signed chain.
     // --use-system-ca (trust the OS certificate store) must be set on the main node process — it is
     // process-global, so the `test:unit` script launches node with it (see package.json).
-    include: [
-      'test/**/*.spec.ts',
-      'web/src/**/*.test.ts',
-      'web/src/**/*.test.tsx',
-    ],
+    include: ['test/**/*.spec.ts', 'web/src/**/*.test.ts', 'web/src/**/*.test.tsx'],
     exclude: [
       'test/system/**',
       'test/*.integration.spec.ts',

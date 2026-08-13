@@ -58,7 +58,9 @@ async function main() {
   try {
     // A coluna nasce em MIGRATIONS_SQL, que só roda quando o backend sobe. Repetir
     // aqui (é idempotente) deixa o script rodar numa base ainda não migrada.
-    await client.query(`ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS serving_site_id TEXT`);
+    await client.query(
+      `ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS serving_site_id TEXT`,
+    );
     await client.query(
       `CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_serving_site ON tmf_physical_resource(serving_site_id)`,
     );
@@ -112,7 +114,9 @@ async function main() {
       const resolvida = siteBySigla.has(row.sigla);
       if (resolvida) aVincular += row.n;
       else semEstacao += row.n;
-      console.log(`  ${row.sigla.padEnd(12)} ${String(row.resource_type ?? '-').padEnd(10)} ${String(row.n).padStart(6)}${resolvida ? '' : '   ← sem estação correspondente'}`);
+      console.log(
+        `  ${row.sigla.padEnd(12)} ${String(row.resource_type ?? '-').padEnd(10)} ${String(row.n).padStart(6)}${resolvida ? '' : '   ← sem estação correspondente'}`,
+      );
     }
     console.log(`\n  a vincular : ${aVincular}`);
     console.log(`  sem match  : ${semEstacao}`);
@@ -146,7 +150,9 @@ async function main() {
       console.log(`  ${sigla.padEnd(6)} → ${rowCount} recurso(s)`);
     }
 
-    const { rows: [check] } = await client.query(
+    const {
+      rows: [check],
+    } = await client.query(
       `SELECT count(*)::int AS n FROM tmf_physical_resource WHERE serving_site_id IS NOT NULL`,
     );
     await client.query('COMMIT');

@@ -91,4 +91,5 @@ export const getSessionRoles = (): string[] => {
 
 const USER_ADMIN_ROLES = ['tenant.admin', 'platform.admin'];
 
-export const isAdmin = (): boolean => getSessionRoles().some((role) => USER_ADMIN_ROLES.includes(role));
+export const isAdmin = (): boolean =>
+  getSessionRoles().some((role) => USER_ADMIN_ROLES.includes(role));

@@ -6,9 +6,9 @@ export const buildDevNeonRuntimeEnv = (baseEnv: NodeJS.ProcessEnv): NodeJS.Proce
   NODE_ENV: baseEnv.NODE_ENV || 'development',
   DATABASE_URL: requirePostgresDatabaseUrl(
     baseEnv.DATABASE_URL_DEV ||
-    baseEnv.NEON_DATABASE_URL_DEV ||
-    baseEnv.DATABASE_URL ||
-    missingDevDatabaseUrl(),
+      baseEnv.NEON_DATABASE_URL_DEV ||
+      baseEnv.DATABASE_URL ||
+      missingDevDatabaseUrl(),
   ),
 });
 
@@ -21,7 +21,9 @@ export const ensureDevDataDir = (cwd: string): string => {
 };
 
 const missingDevDatabaseUrl = (): never => {
-  throw new Error('DATABASE_URL_DEV or NEON_DATABASE_URL_DEV must point to a Neon/Postgres database.');
+  throw new Error(
+    'DATABASE_URL_DEV or NEON_DATABASE_URL_DEV must point to a Neon/Postgres database.',
+  );
 };
 
 const requirePostgresDatabaseUrl = (value: string): string => {

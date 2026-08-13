@@ -1,11 +1,11 @@
-import { Plus, Sparkles, X } from 'lucide-react'
-import { useState } from 'react'
+import { Plus, Sparkles, X } from 'lucide-react';
+import { useState } from 'react';
 
 type InterestTone = {
-  bg: string
-  text: string
-  border: string
-}
+  bg: string;
+  text: string;
+  border: string;
+};
 
 const tones: InterestTone[] = [
   { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-200' },
@@ -13,14 +13,14 @@ const tones: InterestTone[] = [
   { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
   { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
   { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200' },
-  { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' }
-]
+  { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
+];
 
 type InterestItem = {
-  id: number
-  title: string
-  tone: InterestTone
-}
+  id: number;
+  title: string;
+  tone: InterestTone;
+};
 
 export default function Interests() {
   const [interests, setInterests] = useState<InterestItem[]>([
@@ -29,31 +29,31 @@ export default function Interests() {
     { id: 3, title: 'Data Science', tone: tones[1] },
     { id: 4, title: 'Machine Learning', tone: tones[2] },
     { id: 5, title: 'Design UX/UI', tone: tones[3] },
-    { id: 6, title: 'DevOps', tone: tones[5] }
-  ])
-  const [newInterest, setNewInterest] = useState('')
+    { id: 6, title: 'DevOps', tone: tones[5] },
+  ]);
+  const [newInterest, setNewInterest] = useState('');
 
   const addInterest = () => {
     if (!newInterest.trim()) {
-      return
+      return;
     }
 
-    const tone = tones[Math.floor(Math.random() * tones.length)]
+    const tone = tones[Math.floor(Math.random() * tones.length)];
 
     setInterests((current) => [
       ...current,
       {
         id: Date.now(),
         title: newInterest,
-        tone
-      }
-    ])
-    setNewInterest('')
-  }
+        tone,
+      },
+    ]);
+    setNewInterest('');
+  };
 
   const removeInterest = (id: number) => {
-    setInterests((current) => current.filter((interest) => interest.id !== id))
-  }
+    setInterests((current) => current.filter((interest) => interest.id !== id));
+  };
 
   return (
     <div className="flex flex-1 flex-col">
@@ -117,7 +117,7 @@ export default function Interests() {
                   { title: 'Produtividade', description: 'Dicas para aumentar produtividade' },
                   { title: 'Educação', description: 'Aprendizado e desenvolvimento pessoal' },
                   { title: 'Saúde', description: 'Bem-estar e exercício' },
-                  { title: 'Tecnologia', description: 'Últimas novidades em tech' }
+                  { title: 'Tecnologia', description: 'Últimas novidades em tech' },
                 ].map((suggestion, index) => (
                   <div
                     key={index}
@@ -138,5 +138,5 @@ export default function Interests() {
         </div>
       </div>
     </div>
-  )
+  );
 }

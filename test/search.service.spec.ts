@@ -4,25 +4,29 @@ import type { LLMRequest, ResearchMessage, ResearchSession } from '../src/module
 import { SearchService } from '../src/modules/search/index.js';
 import type { PostgresSearchRepository } from '../src/modules/search/postgres-repository.js';
 
-const createRepositoryMock = () => ({
-  createSession: vi.fn(),
-  getSession: vi.fn(),
-  listSessionsByUser: vi.fn(),
-  addMessage: vi.fn(),
-  updateSessionTitle: vi.fn(),
-  archiveSession: vi.fn(),
-}) as unknown as PostgresSearchRepository & {
-  createSession: ReturnType<typeof vi.fn>;
-  getSession: ReturnType<typeof vi.fn>;
-  listSessionsByUser: ReturnType<typeof vi.fn>;
-  addMessage: ReturnType<typeof vi.fn>;
-  updateSessionTitle: ReturnType<typeof vi.fn>;
-  archiveSession: ReturnType<typeof vi.fn>;
-};
+const createRepositoryMock = () =>
+  ({
+    createSession: vi.fn(),
+    getSession: vi.fn(),
+    listSessionsByUser: vi.fn(),
+    addMessage: vi.fn(),
+    updateSessionTitle: vi.fn(),
+    archiveSession: vi.fn(),
+  }) as unknown as PostgresSearchRepository & {
+    createSession: ReturnType<typeof vi.fn>;
+    getSession: ReturnType<typeof vi.fn>;
+    listSessionsByUser: ReturnType<typeof vi.fn>;
+    addMessage: ReturnType<typeof vi.fn>;
+    updateSessionTitle: ReturnType<typeof vi.fn>;
+    archiveSession: ReturnType<typeof vi.fn>;
+  };
 
 test('SearchService cria sessoes com defaults canonicos e campos opcionais', async () => {
   const repository = createRepositoryMock();
-  repository.createSession.mockImplementation((session: ResearchSession) => ({ ...session, messages: [] }));
+  repository.createSession.mockImplementation((session: ResearchSession) => ({
+    ...session,
+    messages: [],
+  }));
   const service = new SearchService(repository);
 
   const session = await service.createSession('tenant-1', {
@@ -48,7 +52,10 @@ test('SearchService cria sessoes com defaults canonicos e campos opcionais', asy
 
 test('SearchService preenche defaults quando criacao nao traz opcionais', async () => {
   const repository = createRepositoryMock();
-  repository.createSession.mockImplementation((session: ResearchSession) => ({ ...session, messages: [] }));
+  repository.createSession.mockImplementation((session: ResearchSession) => ({
+    ...session,
+    messages: [],
+  }));
   const service = new SearchService(repository);
 
   await service.createSession('tenant-2', { title: 'Sessao sem extras' });
@@ -91,16 +98,18 @@ test('SearchService adiciona mensagem, preserva contexto e faz fallback quando o
   };
 
   repository.getSession.mockReturnValue(session);
-  repository.addMessage.mockImplementation((sessionId: string, message: ResearchMessage & { id: string }) => ({
-    '@type': 'ResearchMessage',
-    id: message.id,
-    researchSessionId: sessionId,
-    role: message.role,
-    content: message.content,
-    tokensUsed: message.tokensUsed,
-    metadata: message.metadata,
-    createdAt: '2026-01-01T00:00:00.000Z',
-  }));
+  repository.addMessage.mockImplementation(
+    (sessionId: string, message: ResearchMessage & { id: string }) => ({
+      '@type': 'ResearchMessage',
+      id: message.id,
+      researchSessionId: sessionId,
+      role: message.role,
+      content: message.content,
+      tokensUsed: message.tokensUsed,
+      metadata: message.metadata,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    }),
+  );
 
   const service = new SearchService(repository);
   const llmProvider = vi.fn(async (_request: LLMRequest) => ({
@@ -118,7 +127,10 @@ test('SearchService adiciona mensagem, preserva contexto e faz fallback quando o
   assert.equal(result.userMessage.content, 'Qual a triade?');
   assert.equal(result.assistantMessage.content, 'Resposta do modelo');
   assert.equal(result.assistantMessage.tokensUsed, 12);
-  assert.deepEqual(result.assistantMessage.metadata, { model: 'gpt-4o-mini', finish_reason: 'stop' });
+  assert.deepEqual(result.assistantMessage.metadata, {
+    model: 'gpt-4o-mini',
+    finish_reason: 'stop',
+  });
   assert.equal(repository.addMessage.mock.calls.length, 2);
 });
 
@@ -137,21 +149,27 @@ test('SearchService retorna fallback quando o provedor de IA falha', async () =>
   };
 
   repository.getSession.mockReturnValue(session);
-  repository.addMessage.mockImplementation((sessionId: string, message: ResearchMessage & { id: string }) => ({
-    '@type': 'ResearchMessage',
-    id: message.id,
-    researchSessionId: sessionId,
-    role: message.role,
-    content: message.content,
-    tokensUsed: message.tokensUsed,
-    metadata: message.metadata,
-    createdAt: '2026-01-01T00:00:00.000Z',
-  }));
+  repository.addMessage.mockImplementation(
+    (sessionId: string, message: ResearchMessage & { id: string }) => ({
+      '@type': 'ResearchMessage',
+      id: message.id,
+      researchSessionId: sessionId,
+      role: message.role,
+      content: message.content,
+      tokensUsed: message.tokensUsed,
+      metadata: message.metadata,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    }),
+  );
 
   const service = new SearchService(repository);
   const llmProvider = vi.fn().mockRejectedValue(new Error('OpenAI fora do ar'));
 
-  const result = await service.addMessageAndGetResponse('session-2', 'Preciso de ajuda', llmProvider);
+  const result = await service.addMessageAndGetResponse(
+    'session-2',
+    'Preciso de ajuda',
+    llmProvider,
+  );
 
   assert.equal(result.assistantMessage.role, 'assistant');
   assert.match(result.assistantMessage.content, /Nao consegui gerar uma resposta automatica agora/);
@@ -204,16 +222,18 @@ test('SearchService executa loop de ferramentas e persiste metadados de tool exe
   };
 
   repository.getSession.mockReturnValue(session);
-  repository.addMessage.mockImplementation((sessionId: string, message: ResearchMessage & { id: string }) => ({
-    '@type': 'ResearchMessage',
-    id: message.id,
-    researchSessionId: sessionId,
-    role: message.role,
-    content: message.content,
-    tokensUsed: message.tokensUsed,
-    metadata: message.metadata,
-    createdAt: '2026-01-01T00:00:00.000Z',
-  }));
+  repository.addMessage.mockImplementation(
+    (sessionId: string, message: ResearchMessage & { id: string }) => ({
+      '@type': 'ResearchMessage',
+      id: message.id,
+      researchSessionId: sessionId,
+      role: message.role,
+      content: message.content,
+      tokensUsed: message.tokensUsed,
+      metadata: message.metadata,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    }),
+  );
 
   const service = new SearchService(repository);
   const llmProvider = vi
@@ -239,16 +259,29 @@ test('SearchService executa loop de ferramentas e persiste metadados de tool exe
     correlationId: 'corr-1',
   });
 
-  const result = await service.addMessageAndGetResponse('session-tools', 'Liste os sites', llmProvider, {
-    tools: [{ name: 'geo.list_sites', description: 'Lista sites', inputSchema: { type: 'object', properties: {} } }],
-    executeTool,
-  });
+  const result = await service.addMessageAndGetResponse(
+    'session-tools',
+    'Liste os sites',
+    llmProvider,
+    {
+      tools: [
+        {
+          name: 'geo.list_sites',
+          description: 'Lista sites',
+          inputSchema: { type: 'object', properties: {} },
+        },
+      ],
+      executeTool,
+    },
+  );
 
   assert.equal(llmProvider.mock.calls.length, 2);
   assert.equal(executeTool.mock.calls[0]?.[0], 'geo.list_sites');
   assert.equal(result.assistantMessage.content, 'Encontrei 1 site.');
   assert.equal(
-    (result.assistantMessage.metadata?.toolExecutions as Array<{ toolName: string }> | undefined)?.[0]?.toolName,
+    (
+      result.assistantMessage.metadata?.toolExecutions as Array<{ toolName: string }> | undefined
+    )?.[0]?.toolName,
     'geo.list_sites',
   );
 });
@@ -268,30 +301,38 @@ test('SearchService carrega confirmacao em lote com lista de itens', async () =>
   };
 
   repository.getSession.mockReturnValue(session);
-  repository.addMessage.mockImplementation((sessionId: string, message: ResearchMessage & { id: string }) => ({
-    '@type': 'ResearchMessage',
-    id: message.id,
-    researchSessionId: sessionId,
-    role: message.role,
-    content: message.content,
-    tokensUsed: message.tokensUsed,
-    metadata: message.metadata,
-    createdAt: '2026-01-01T00:00:00.000Z',
-  }));
+  repository.addMessage.mockImplementation(
+    (sessionId: string, message: ResearchMessage & { id: string }) => ({
+      '@type': 'ResearchMessage',
+      id: message.id,
+      researchSessionId: sessionId,
+      role: message.role,
+      content: message.content,
+      tokensUsed: message.tokensUsed,
+      metadata: message.metadata,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    }),
+  );
 
   const service = new SearchService(repository);
   const llmProvider = vi
     .fn()
     .mockResolvedValueOnce({
       content: '',
-      toolCalls: [{
-        id: 'tool-1',
-        name: 'resource.create_equipment_models',
-        arguments: { payload: { items: [
-          { model: 'G-010G-Q', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
-          { model: 'G-0425G-C', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
-        ] } },
-      }],
+      toolCalls: [
+        {
+          id: 'tool-1',
+          name: 'resource.create_equipment_models',
+          arguments: {
+            payload: {
+              items: [
+                { model: 'G-010G-Q', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
+                { model: 'G-0425G-C', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
+              ],
+            },
+          },
+        },
+      ],
       finishReason: 'tool_calls',
     })
     .mockResolvedValueOnce({
@@ -320,24 +361,35 @@ test('SearchService carrega confirmacao em lote com lista de itens', async () =>
     correlationId: 'corr-batch',
   });
 
-  const result = await service.addMessageAndGetResponse('session-batch', 'Cadastre dois modelos', llmProvider, {
-    tools: [{ name: 'resource.create_equipment_models', description: 'Cadastro em lote', inputSchema: { type: 'object', properties: {} } }],
-    executeTool,
-  });
-
-  assert.equal(result.assistantMessage.content, 'Cadastro preparado. Revise os 2 itens abaixo e confirme para concluir.');
-  assert.deepEqual(
-    result.assistantMessage.metadata?.pendingConfirmation,
+  const result = await service.addMessageAndGetResponse(
+    'session-batch',
+    'Cadastre dois modelos',
+    llmProvider,
     {
-      confirmationToken: 'token-batch',
-      domain: 'resource',
-      operation: 'create_equipment_models',
-      summary: '2 modelos de ONT da NOKIA serao criados no catalogo.',
-      expiresAt: '2026-01-01T00:30:00.000Z',
-      items: [
-        { model: 'G-010G-Q', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
-        { model: 'G-0425G-C', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
+      tools: [
+        {
+          name: 'resource.create_equipment_models',
+          description: 'Cadastro em lote',
+          inputSchema: { type: 'object', properties: {} },
+        },
       ],
+      executeTool,
     },
   );
+
+  assert.equal(
+    result.assistantMessage.content,
+    'Cadastro preparado. Revise os 2 itens abaixo e confirme para concluir.',
+  );
+  assert.deepEqual(result.assistantMessage.metadata?.pendingConfirmation, {
+    confirmationToken: 'token-batch',
+    domain: 'resource',
+    operation: 'create_equipment_models',
+    summary: '2 modelos de ONT da NOKIA serao criados no catalogo.',
+    expiresAt: '2026-01-01T00:30:00.000Z',
+    items: [
+      { model: 'G-010G-Q', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
+      { model: 'G-0425G-C', manufacturerName: 'NOKIA', equipmentType: 'ONT' },
+    ],
+  });
 });

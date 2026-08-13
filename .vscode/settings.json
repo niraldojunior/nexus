@@ -1,5 +1,5 @@
 {
-    "chat.tools.terminal.autoApprove": {
-        "ForEach-Object": true
-    }
+  "chat.tools.terminal.autoApprove": {
+    "ForEach-Object": true
+  }
 }

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { getNexusCopilotContext, prependNexusCopilotContext } from '../src/modules/search/nexus-copilot-context.js';
+import {
+  getNexusCopilotContext,
+  prependNexusCopilotContext,
+} from '../src/modules/search/nexus-copilot-context.js';
 
 test('getNexusCopilotContext carrega o MD de treinamento do repositorio', () => {
   const context = getNexusCopilotContext();

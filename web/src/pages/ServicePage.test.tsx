@@ -120,7 +120,10 @@ test('defaults to the Access category and lists both CFS and RFS of that categor
 
   expect(await screen.findByRole('heading', { name: 'Acesso' })).toBeInTheDocument();
   await waitFor(() =>
-    expect(loadSnapshotMock).toHaveBeenCalledWith({ tab: 'CustomerFacingService', category: 'Access' }),
+    expect(loadSnapshotMock).toHaveBeenCalledWith({
+      tab: 'CustomerFacingService',
+      category: 'Access',
+    }),
   );
 
   expect(screen.getByText('Bitstream-GPON-700-ProvedorX-SUB778899')).toBeInTheDocument();
@@ -136,7 +139,9 @@ test('switching to the catalog view lists only specifications of the active cate
   await screen.findByText('Bitstream-GPON-700-ProvedorX-SUB778899');
   await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
 
-  await waitFor(() => expect(loadSnapshotMock).toHaveBeenCalledWith({ tab: 'ServiceSpecification' }));
+  await waitFor(() =>
+    expect(loadSnapshotMock).toHaveBeenCalledWith({ tab: 'ServiceSpecification' }),
+  );
   expect(await screen.findByText('Bitstream GPON 700')).toBeInTheDocument();
   expect(screen.getByText('Acesso GPON')).toBeInTheDocument();
   expect(screen.queryByText('CloudVoIP')).not.toBeInTheDocument();
@@ -179,8 +184,14 @@ test('creating a CFS posts subscriberId and the selected supporting RFS', async 
   await user.click(screen.getByRole('button', { name: 'Criar serviço de cliente (CFS)' }));
 
   const dialog = await screen.findByRole('dialog');
-  await user.type(within(dialog).getByPlaceholderText('Bitstream-GPON-700-ProvedorX-SUB778899'), 'Novo CFS');
-  await user.selectOptions(within(dialog).getByRole('combobox', { name: /Especificação/i }), 'spec-cfs-bitstream');
+  await user.type(
+    within(dialog).getByPlaceholderText('Bitstream-GPON-700-ProvedorX-SUB778899'),
+    'Novo CFS',
+  );
+  await user.selectOptions(
+    within(dialog).getByRole('combobox', { name: /Especificação/i }),
+    'spec-cfs-bitstream',
+  );
   await user.type(within(dialog).getByPlaceholderText('SUB778899'), 'SUB999');
   await user.click(within(dialog).getByRole('checkbox', { name: 'Acesso-GPON-778899' }));
   await user.click(within(dialog).getByRole('button', { name: 'Salvar' }));
@@ -199,7 +210,9 @@ test('terminating a selected service calls the soft-terminate endpoint', async (
   render(<ServicePage category="Access" />);
 
   await screen.findByText('Bitstream-GPON-700-ProvedorX-SUB778899');
-  await user.click(screen.getByRole('checkbox', { name: 'Selecionar Bitstream-GPON-700-ProvedorX-SUB778899' }));
+  await user.click(
+    screen.getByRole('checkbox', { name: 'Selecionar Bitstream-GPON-700-ProvedorX-SUB778899' }),
+  );
   await user.click(screen.getByRole('button', { name: 'Encerrar selecionados' }));
 
   const dialog = await screen.findByRole('dialog');

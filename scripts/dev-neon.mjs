@@ -2,7 +2,10 @@ import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { config as loadEnv } from 'dotenv';
-import { buildDevNeonRuntimeEnv, ensureDevDataDir } from '../dist/src/shared/config/dev-neon-core.js';
+import {
+  buildDevNeonRuntimeEnv,
+  ensureDevDataDir,
+} from '../dist/src/shared/config/dev-neon-core.js';
 
 loadEnv();
 

@@ -96,7 +96,10 @@ export const fetchViewportResources = (
 // Busca por nome para a barra de pesquisa — Estações e Recursos do inventário (nunca
 // sub-locais/salas). Devolve nós de árvore, então o resultado se seleciona e desenha
 // exatamente como qualquer outro nó (ver selectNode em GeoPage).
-export const fetchTreeSearch = (q: string, options: { limit?: number } = {}): Promise<GeoTreeNode[]> => {
+export const fetchTreeSearch = (
+  q: string,
+  options: { limit?: number } = {},
+): Promise<GeoTreeNode[]> => {
   const term = q.trim();
   if (!term) return Promise.resolve([]);
   const params = new URLSearchParams({ q: term });

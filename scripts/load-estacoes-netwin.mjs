@@ -245,7 +245,13 @@ async function ensureEstacao({ name, specId, coord, address, parentSiteId, chara
     reused.estacoes++;
     return found;
   }
-  const payload = { name, siteSpecificationId: specId, status: 'active', parentSiteId, characteristic };
+  const payload = {
+    name,
+    siteSpecificationId: specId,
+    status: 'active',
+    parentSiteId,
+    characteristic,
+  };
   if (coord) {
     const locationId = await createPoint(coord, name);
     payload.placeId = locationId;
@@ -353,7 +359,9 @@ async function main() {
     }
 
     const flag = hasCoord ? '' : '  ⚠ sem coordenada';
-    console.log(`· ${estacaoName.padEnd(28)} ${municipio} / ${bairro} — ${salas.length} salas${flag}`);
+    console.log(
+      `· ${estacaoName.padEnd(28)} ${municipio} / ${bairro} — ${salas.length} salas${flag}`,
+    );
   }
 
   console.log('\nResumo:');

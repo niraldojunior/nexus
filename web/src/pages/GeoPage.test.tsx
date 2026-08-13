@@ -48,7 +48,6 @@ vi.mock('../utils/googleMaps', async (importOriginal) => {
   };
 });
 
-
 function installGoogleMapsMock() {
   const mapInstance = {
     addListener: googleMocks.mapAddListener,

@@ -41,7 +41,8 @@ export function Button({
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.5 : 1,
     width: fullWidth ? '100%' : 'auto',
-    transition: 'transform var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast), filter var(--transition-fast)',
+    transition:
+      'transform var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast), filter var(--transition-fast)',
     whiteSpace: 'nowrap',
   };
 
@@ -76,12 +77,15 @@ export function Button({
   };
 
   const [hover, setHover] = React.useState(false);
-  const hoverStyle = !disabled && hover ? {
-    transform: 'translateY(-1px)',
-    boxShadow: variant === 'primary' ? 'var(--shadow-md)' : 'var(--shadow-sm)',
-    filter: variant === 'ghost' ? 'none' : 'brightness(1.03)',
-    background: variant === 'ghost' ? 'var(--surface-inset)' : undefined,
-  } : {};
+  const hoverStyle =
+    !disabled && hover
+      ? {
+          transform: 'translateY(-1px)',
+          boxShadow: variant === 'primary' ? 'var(--shadow-md)' : 'var(--shadow-sm)',
+          filter: variant === 'ghost' ? 'none' : 'brightness(1.03)',
+          background: variant === 'ghost' ? 'var(--surface-inset)' : undefined,
+        }
+      : {};
 
   return (
     <button

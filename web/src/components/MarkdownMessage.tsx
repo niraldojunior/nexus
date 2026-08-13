@@ -36,9 +36,7 @@ export default function MarkdownMessage({ content }: MarkdownMessageProps) {
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
         components={{
-          a: ({ ...props }) => (
-            <a {...props} target="_blank" rel="noopener noreferrer" />
-          ),
+          a: ({ ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
           pre: ({ children }) => {
             const rawCode = extractText(children);
 

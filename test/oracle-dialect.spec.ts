@@ -34,7 +34,10 @@ const REPRESENTATIVE_SQL: Record<string, string> = {
 
 test('every representative query translates to Oracle without a Postgres-ism', () => {
   for (const [name, sql] of Object.entries(REPRESENTATIVE_SQL)) {
-    assert.doesNotThrow(() => assertOracleCompatible(sql, PREFIX), `residual Postgres-ism in ${name}`);
+    assert.doesNotThrow(
+      () => assertOracleCompatible(sql, PREFIX),
+      `residual Postgres-ism in ${name}`,
+    );
   }
 });
 
@@ -65,7 +68,10 @@ test('inlineRows differs by dialect: Postgres VALUES (N binds), Oracle JSON_TABL
 
   // Oracle uses a single JSON-array bind (not an N-branch UNION ALL) so it scales to thousands.
   const ora = dialectFor('oracle').inlineRows(['a', 'b'], 'v', 'id');
-  assert.match(ora.sql, /JSON_TABLE\(\?, '\$\[\*\]' COLUMNS \(id VARCHAR2\(4000\) PATH '\$'\)\)\) v/);
+  assert.match(
+    ora.sql,
+    /JSON_TABLE\(\?, '\$\[\*\]' COLUMNS \(id VARCHAR2\(4000\) PATH '\$'\)\)\) v/,
+  );
   assert.doesNotMatch(ora.sql, /VALUES|DUAL/);
   assert.deepEqual(ora.binds, ['["a","b"]']);
 
@@ -86,10 +92,7 @@ test('columns and CTE names that share a table name are left alone', () => {
   assert.equal(rewritten, `SELECT users, searches FROM ${prefixed('tmf_party', PREFIX)}`);
 
   // A CTE name is not a managed table name, so it is never touched even after FROM.
-  const cte = rewriteTableReferences(
-    'WITH frontier AS (SELECT 1) SELECT * FROM frontier',
-    PREFIX,
-  );
+  const cte = rewriteTableReferences('WITH frontier AS (SELECT 1) SELECT * FROM frontier', PREFIX);
   assert.equal(cte, 'WITH frontier AS (SELECT 1) SELECT * FROM frontier');
 });
 
@@ -134,10 +137,10 @@ test('findPostgresisms catches constructs the translator cannot bridge', () => {
     /IS DISTINCT FROM/,
   );
   // A JSON arrow on an unmapped alias survives translation.
-  assert.throws(
-    () => assertOracleCompatible(`SELECT foo->>'bar' FROM tmf_party`),
-    /->/,
-  );
+  assert.throws(() => assertOracleCompatible(`SELECT foo->>'bar' FROM tmf_party`), /->/);
   // A clean, already-Oracle string reports nothing.
-  assert.deepEqual(findPostgresisms('SELECT id FROM NEXUS_TEST_tmf_party FETCH FIRST 1 ROWS ONLY'), []);
+  assert.deepEqual(
+    findPostgresisms('SELECT id FROM NEXUS_TEST_tmf_party FETCH FIRST 1 ROWS ONLY'),
+    [],
+  );
 });

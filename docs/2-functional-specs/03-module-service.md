@@ -6,18 +6,18 @@
 
 TMFC002 + TMFC022 · TMF633 / TMF638 / TMF688
 
-| Campo | Valor |
-|---|---|
-| **Document Reference** | VTN-HLD-MOD03-SVC |
-| **Sequência de HLD** | HLD04 (4º documento) · Módulo 3 da arquitetura |
-| **Versão** | 1.2 — draft |
-| **Data** | Agosto 2026 |
-| **Documento âncora** | VTN-HLD-OVERVIEW-001 |
-| **HLDs predecessores** | VTN-HLD-MOD01-GEO (Geographic) · VTN-HLD-MOD02-RES (Resource) |
-| **TMFCs cobertos** | TMFC002 — Service Inventory Mgmt; TMFC022 — Service Catalog Mgmt |
-| **Open APIs** | TMF633, TMF638, TMF688 |
-| **Requisitos cobertos** | REQ-MOD03-001 a REQ-MOD03-016 |
-| **Status** | Em elaboração |
+| Campo                   | Valor                                                            |
+| ----------------------- | ---------------------------------------------------------------- |
+| **Document Reference**  | VTN-HLD-MOD03-SVC                                                |
+| **Sequência de HLD**    | HLD04 (4º documento) · Módulo 3 da arquitetura                   |
+| **Versão**              | 1.2 — draft                                                      |
+| **Data**                | Agosto 2026                                                      |
+| **Documento âncora**    | VTN-HLD-OVERVIEW-001                                             |
+| **HLDs predecessores**  | VTN-HLD-MOD01-GEO (Geographic) · VTN-HLD-MOD02-RES (Resource)    |
+| **TMFCs cobertos**      | TMFC002 — Service Inventory Mgmt; TMFC022 — Service Catalog Mgmt |
+| **Open APIs**           | TMF633, TMF638, TMF688                                           |
+| **Requisitos cobertos** | REQ-MOD03-001 a REQ-MOD03-016                                    |
+| **Status**              | Em elaboração                                                    |
 
 ---
 
@@ -27,11 +27,11 @@ O Módulo 3 — Nexus Service Domain implementa os componentes ODA **TMFC022 (Se
 
 Fecha a tríade fundamental do inventário, em cima da fundação dos Módulos 1 e 2:
 
-| Pergunta | Módulo | Standard |
-|---|---|---|
-| **Onde** está o elemento de rede? | 1 — Geographic | TMF673/674/675 |
-| **O quê** existe (físico e lógico)? | 2 — Resource | TMF634/639 |
-| **Para quê / para quem** existe? | **3 — Service** | **TMF633/638** |
+| Pergunta                            | Módulo          | Standard       |
+| ----------------------------------- | --------------- | -------------- |
+| **Onde** está o elemento de rede?   | 1 — Geographic  | TMF673/674/675 |
+| **O quê** existe (físico e lógico)? | 2 — Resource    | TMF634/639     |
+| **Para quê / para quem** existe?    | **3 — Service** | **TMF633/638** |
 
 O Service Domain nunca duplica modelagem de Resource. Ele modela o **intangível** — o serviço contratado/entregue — e amarra-se ao mundo físico/lógico exclusivamente por **referência** (`supportingResource`). A OLT, a porta PON, a VLAN, o VRF e o IP continuam sendo entidades do Módulo 2; o serviço apenas aponta para eles.
 
@@ -78,24 +78,24 @@ Esta dualidade é tratada como decisão arquitetural explícita (seção 25.1, D
 
 O backend e o frontend já entregam a base TMF633/TMF638. A aderência abaixo considera também validações CFS/RFS, persistência Postgres, MCP/Copilot e testes; capacidades comerciais especializadas continuam como alvo.
 
-| Requisito | Estado | Evidência atual | Gap principal | Bloqueador | Backlog |
-|---|---|---|---|---|---|
-| **REQ-MOD03-001** | Parcial | CRUD de ServiceSpecification, filtros, workspace, frontend e testes estão ativos. | Lifecycle/versionamento completos, characteristics governadas, UUID v7 e `_origin`. | Q-SVC-001 | DEV-SVC-001, DEV-X-001 |
-| **REQ-MOD03-002** | Parcial | ServiceCategory tem CRUD, parent ref, filtros e persistência. | Árvore expandida, raiz única, ordenação e governança multi-tenant. | Q-SVC-001 | DEV-SVC-001, DEV-X-004 |
-| **REQ-MOD03-003** | Parcial | ServiceCandidate tem CRUD, filtros por spec/categoria/status e eventos. | Regras de publicação, vigência, associação comercial e visibilidade por tenant. | Q-SVC-001 | DEV-SVC-001, DEV-X-004 |
-| **REQ-MOD03-004** | Parcial | CRUD CFS/RFS, filtros, paginação, workspace, UI e MCP são cobertos por testes. | Bulk, expansão `fields`, histórico, UUID v7 e `_origin`. | — | DEV-SVC-002, DEV-X-001 |
-| **REQ-MOD03-005** | Parcial | Estados válidos, PATCH, soft-terminate e eventos estão implementados. | Máquina de transições, razões, propagação e histórico semântico. | Q-SVC-006 | DEV-SVC-002, DEV-SVC-004 |
-| **REQ-MOD03-006** | Parcial | CFS exige SubscriberID e RFS suportante; código/UI/MCP proíbem `supportingResource` direto. | Política completa de Tenant, unicidade e reconciliação do subscriber. | Q-SVC-002 | DEV-SVC-003, DEV-X-004 |
-| **REQ-MOD03-007** | Parcial | RFS exige Resource existente e pode compor outros RFS. | Invariantes técnicas, compartilhamento/capacidade e lifecycle acoplado. | Q-SVC-004 | DEV-SVC-004 |
-| **REQ-MOD03-008** | Parcial | `supportingResource` é validado, persistido e filtrável; CFS direto é rejeitado. | Reverse impact completo, papéis, cardinalidades, reação a eventos Resource e o trace composto até o ativo civil (RF-005/RF-006). | Q-SVC-007 | DEV-SVC-004, DEV-RES-003 |
-| **REQ-MOD03-009** | Parcial | `supportingService` valida existência e tipo RFS. | Detecção de ciclos, expansão da árvore, compartilhamento e propagação de estado. | Q-SVC-004, Q-SVC-006 | DEV-SVC-004 |
-| **REQ-MOD03-010** | Parcial | `place` é persistido, validado e filtrável com múltiplos papéis. | Semântica A/Z, re-home, cobertura e validação geográfica avançada. | — | DEV-SVC-002 |
-| **REQ-MOD03-011** | Parcial | SubscriberID é obrigatório no CFS e possui filtro dedicado. | Geração Nexus-native, unicidade, faixa, autoridade e convivência legado. | Q-SVC-002 | DEV-SVC-003 |
-| **REQ-MOD03-012** | Parcial | O modelo genérico e a UI suportam CFS Bitstream sobre RFS/Resources GPON. | Specs canônicas, perfil, VLANs, granularidade do RFS e aceite end-to-end. | Q-SVC-001, Q-SVC-004 | DEV-SVC-005 |
-| **REQ-MOD03-013** | Parcial | O modelo suporta CFS multiponto, RFS encadeados, VRF/IP e places A/Z. | Catálogo EILD/L2/L3VPN, SLA, regras multiponto e cenário automatizado. | Q-SVC-001 | DEV-SVC-005 |
-| **REQ-MOD03-014** | Parcial | `serviceRelationship` e LogicalResource E.164 permitem representar CloudVoIP. | Catálogo VoIP, bundle/dependência, características e aceite end-to-end. | Q-SVC-001, Q-SVC-005 | DEV-SVC-005 |
-| **REQ-MOD03-015** | Divergente | Relações têm CRUD, mas `ServiceService` aceita qualquer string e não consulta catálogo governado. | Bootstrap + CRUD de RelationshipType, validação, inversos, Audit e evento. | Q-SVC-005 | DEV-SVC-006 |
-| **REQ-MOD03-016** | Parcial | Eventos de catálogo/inventário são persistidos, consultáveis por TMF688 e testados. | Outbox, Schema Registry, catálogo, DLQ, reprocessamento e UUID v7. | — | DEV-X-002 |
+| Requisito         | Estado     | Evidência atual                                                                                   | Gap principal                                                                                                                    | Bloqueador           | Backlog                  |
+| ----------------- | ---------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ------------------------ |
+| **REQ-MOD03-001** | Parcial    | CRUD de ServiceSpecification, filtros, workspace, frontend e testes estão ativos.                 | Lifecycle/versionamento completos, characteristics governadas, UUID v7 e `_origin`.                                              | Q-SVC-001            | DEV-SVC-001, DEV-X-001   |
+| **REQ-MOD03-002** | Parcial    | ServiceCategory tem CRUD, parent ref, filtros e persistência.                                     | Árvore expandida, raiz única, ordenação e governança multi-tenant.                                                               | Q-SVC-001            | DEV-SVC-001, DEV-X-004   |
+| **REQ-MOD03-003** | Parcial    | ServiceCandidate tem CRUD, filtros por spec/categoria/status e eventos.                           | Regras de publicação, vigência, associação comercial e visibilidade por tenant.                                                  | Q-SVC-001            | DEV-SVC-001, DEV-X-004   |
+| **REQ-MOD03-004** | Parcial    | CRUD CFS/RFS, filtros, paginação, workspace, UI e MCP são cobertos por testes.                    | Bulk, expansão `fields`, histórico, UUID v7 e `_origin`.                                                                         | —                    | DEV-SVC-002, DEV-X-001   |
+| **REQ-MOD03-005** | Parcial    | Estados válidos, PATCH, soft-terminate e eventos estão implementados.                             | Máquina de transições, razões, propagação e histórico semântico.                                                                 | Q-SVC-006            | DEV-SVC-002, DEV-SVC-004 |
+| **REQ-MOD03-006** | Parcial    | CFS exige SubscriberID e RFS suportante; código/UI/MCP proíbem `supportingResource` direto.       | Política completa de Tenant, unicidade e reconciliação do subscriber.                                                            | Q-SVC-002            | DEV-SVC-003, DEV-X-004   |
+| **REQ-MOD03-007** | Parcial    | RFS exige Resource existente e pode compor outros RFS.                                            | Invariantes técnicas, compartilhamento/capacidade e lifecycle acoplado.                                                          | Q-SVC-004            | DEV-SVC-004              |
+| **REQ-MOD03-008** | Parcial    | `supportingResource` é validado, persistido e filtrável; CFS direto é rejeitado.                  | Reverse impact completo, papéis, cardinalidades, reação a eventos Resource e o trace composto até o ativo civil (RF-005/RF-006). | Q-SVC-007            | DEV-SVC-004, DEV-RES-003 |
+| **REQ-MOD03-009** | Parcial    | `supportingService` valida existência e tipo RFS.                                                 | Detecção de ciclos, expansão da árvore, compartilhamento e propagação de estado.                                                 | Q-SVC-004, Q-SVC-006 | DEV-SVC-004              |
+| **REQ-MOD03-010** | Parcial    | `place` é persistido, validado e filtrável com múltiplos papéis.                                  | Semântica A/Z, re-home, cobertura e validação geográfica avançada.                                                               | —                    | DEV-SVC-002              |
+| **REQ-MOD03-011** | Parcial    | SubscriberID é obrigatório no CFS e possui filtro dedicado.                                       | Geração Nexus-native, unicidade, faixa, autoridade e convivência legado.                                                         | Q-SVC-002            | DEV-SVC-003              |
+| **REQ-MOD03-012** | Parcial    | O modelo genérico e a UI suportam CFS Bitstream sobre RFS/Resources GPON.                         | Specs canônicas, perfil, VLANs, granularidade do RFS e aceite end-to-end.                                                        | Q-SVC-001, Q-SVC-004 | DEV-SVC-005              |
+| **REQ-MOD03-013** | Parcial    | O modelo suporta CFS multiponto, RFS encadeados, VRF/IP e places A/Z.                             | Catálogo EILD/L2/L3VPN, SLA, regras multiponto e cenário automatizado.                                                           | Q-SVC-001            | DEV-SVC-005              |
+| **REQ-MOD03-014** | Parcial    | `serviceRelationship` e LogicalResource E.164 permitem representar CloudVoIP.                     | Catálogo VoIP, bundle/dependência, características e aceite end-to-end.                                                          | Q-SVC-001, Q-SVC-005 | DEV-SVC-005              |
+| **REQ-MOD03-015** | Divergente | Relações têm CRUD, mas `ServiceService` aceita qualquer string e não consulta catálogo governado. | Bootstrap + CRUD de RelationshipType, validação, inversos, Audit e evento.                                                       | Q-SVC-005            | DEV-SVC-006              |
+| **REQ-MOD03-016** | Parcial    | Eventos de catálogo/inventário são persistidos, consultáveis por TMF688 e testados.               | Outbox, Schema Registry, catálogo, DLQ, reprocessamento e UUID v7.                                                               | —                    | DEV-X-002                |
 
 ---
 
@@ -103,12 +103,12 @@ O backend e o frontend já entregam a base TMF633/TMF638. A aderência abaixo co
 
 O módulo implementa os TMFCs TMFC022 e TMFC002 expondo quatro grupos de entidades canônicas:
 
-| Entidade | API | Papel no modelo |
-|---|---|---|
+| Entidade                 | API    | Papel no modelo                                                                                                                                  |
+| ------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **ServiceSpecification** | TMF633 | Definição de tipo de serviço no catálogo. Duas especializações: **CustomerFacingServiceSpecification** e **ResourceFacingServiceSpecification**. |
-| **ServiceCategory** | TMF633 | Organização hierárquica navegável do catálogo (Acesso > Banda Larga > Bitstream GPON). |
-| **ServiceCandidate** | TMF633 | Exposição de uma ServiceSpecification como oferta publicável/comercializável (controla visibilidade no catálogo de vendas). |
-| **Service** | TMF638 | Instância concreta de serviço. Duas especializações: **CustomerFacingService (CFS)** e **ResourceFacingService (RFS)**. |
+| **ServiceCategory**      | TMF633 | Organização hierárquica navegável do catálogo (Acesso > Banda Larga > Bitstream GPON).                                                           |
+| **ServiceCandidate**     | TMF633 | Exposição de uma ServiceSpecification como oferta publicável/comercializável (controla visibilidade no catálogo de vendas).                      |
+| **Service**              | TMF638 | Instância concreta de serviço. Duas especializações: **CustomerFacingService (CFS)** e **ResourceFacingService (RFS)**.                          |
 
 ### 3.1 Hierarquia de tipos TMF
 
@@ -142,7 +142,7 @@ Assim como o **Rack** é a linha divisória entre Geographic e Resource (Decisã
 
 **Fronteira interna — CFS ↔ RFS (comercial vs. técnico):**
 
-> **CFS** responde *o que o cliente vê e contrata* (a oferta, o SLA comercial, o SubscriberID). **RFS** responde *como a rede realiza tecnicamente* (a sessão, o circuito, o par de VLANs). Um CFS é realizado por um ou mais RFS (`supportingService`); cada RFS consome Resources (`supportingResource`). O cliente nunca enxerga o RFS; a rede nunca opera o CFS.
+> **CFS** responde _o que o cliente vê e contrata_ (a oferta, o SLA comercial, o SubscriberID). **RFS** responde _como a rede realiza tecnicamente_ (a sessão, o circuito, o par de VLANs). Um CFS é realizado por um ou mais RFS (`supportingService`); cada RFS consome Resources (`supportingResource`). O cliente nunca enxerga o RFS; a rede nunca opera o CFS.
 
 ```
 [Camada comercial]   CFS  "Bitstream GPON 700M — Provedor X" (SubscriberID)
@@ -158,10 +158,10 @@ Assim como o **Rack** é a linha divisória entre Geographic e Resource (Decisã
 
 O Service Domain **não** modela viabilidade nem Home Passed. Reafirmando a Decisão 5.2 do Overview e tornando-a contrato deste módulo:
 
-| Conceito | Natureza | Onde mora |
-|---|---|---|
-| **Home Passed (HP)** | Capacidade de rede disponível em um endereço. É derivada de Geo + Resource. | **GeographicAddress** (Módulo 1) + consulta de viabilidade **TMF645** (Módulo 4). **Não** é Service. |
-| **Home Connected (HC)** | Serviço efetivamente ativo no endereço. | **ServiceInstance** (este módulo) com `place` no InstallationPoint e `supportingResource` nos recursos reais. |
+| Conceito                | Natureza                                                                    | Onde mora                                                                                                     |
+| ----------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Home Passed (HP)**    | Capacidade de rede disponível em um endereço. É derivada de Geo + Resource. | **GeographicAddress** (Módulo 1) + consulta de viabilidade **TMF645** (Módulo 4). **Não** é Service.          |
+| **Home Connected (HC)** | Serviço efetivamente ativo no endereço.                                     | **ServiceInstance** (este módulo) com `place` no InstallationPoint e `supportingResource` nos recursos reais. |
 
 A transição HP → HC é o **trigger de criação** do CFS+RFS neste módulo. Antes da ativação, não existe Service no inventário — existe apenas endereço viável (Geo) e, eventualmente, uma ServiceQualification efêmera (Order). Isso preserva a escala: ~22M de HPs **não** geram 22M de Services.
 
@@ -207,34 +207,34 @@ Idêntico aos Módulos 1 e 2: o Nexus gera UUID v7 próprio; IDs de serviço leg
 
 O módulo Service é composto por **16 requisitos**, organizados em 5 blocos funcionais:
 
-| Bloco | Requisitos |
-|---|---|
-| **A — Service Catalog (TMF633)** | REQ-MOD03-001 a 003 |
-| **B — Service Inventory base (TMF638)** | REQ-MOD03-004 a 007 |
-| **C — Amarração, composição e identidade** | REQ-MOD03-008 a 011 |
-| **D — Serviços ilustrativos V.tal** | REQ-MOD03-012 a 014 |
+| Bloco                                          | Requisitos          |
+| ---------------------------------------------- | ------------------- |
+| **A — Service Catalog (TMF633)**               | REQ-MOD03-001 a 003 |
+| **B — Service Inventory base (TMF638)**        | REQ-MOD03-004 a 007 |
+| **C — Amarração, composição e identidade**     | REQ-MOD03-008 a 011 |
+| **D — Serviços ilustrativos V.tal**            | REQ-MOD03-012 a 014 |
 | **E — Transversais (Relationships + Eventos)** | REQ-MOD03-015 a 016 |
 
 ### 5.1 Tabela completa dos requisitos
 
-| ID | Título | Entidade TMF principal |
-|---|---|---|
-| **REQ-MOD03-001** | Service Specification (CFS Spec + RFS Spec) | *ServiceSpecification (TMF633)* |
-| **REQ-MOD03-002** | Service Category (organização hierárquica do catálogo) | *ServiceCategory (TMF633)* |
-| **REQ-MOD03-003** | Service Candidate (oferta publicável) | *ServiceCandidate (TMF633)* |
-| **REQ-MOD03-004** | Cadastro genérico de Service (CRUD canônico) | *Service (CFS \| RFS) (TMF638)* |
-| **REQ-MOD03-005** | Ciclo de vida do Service (máquina de estados) | *Service.state (TMF638)* |
-| **REQ-MOD03-006** | Customer Facing Service (CFS) | *CustomerFacingService (TMF638)* |
-| **REQ-MOD03-007** | Resource Facing Service (RFS) | *ResourceFacingService (TMF638)* |
-| **REQ-MOD03-008** | Vínculo Service → Resource (supportingResource) | *Service.supportingResource (TMF638)* |
-| **REQ-MOD03-009** | Composição CFS ↔ RFS (supportingService) | *Service.supportingService (TMF638)* |
-| **REQ-MOD03-010** | Localização do Service (place / serviceLocation) | *Service.place (TMF638 → TMF674/673)* |
-| **REQ-MOD03-011** | SubscriberID e identidade do serviço de cliente | *serviceCharacteristic SubscriberID (TMF638)* |
-| **REQ-MOD03-012** | Serviço Banda Larga FTTH / Bitstream GPON | *CFS+RFS (TMF638) — ilustrativo* |
-| **REQ-MOD03-013** | Serviço Empresarial / Link Dedicado (EILD, L2/L3 VPN) | *CFS+RFS (TMF638) — ilustrativo* |
-| **REQ-MOD03-014** | Serviço CloudVoIP | *CFS+RFS (TMF638) — ilustrativo* |
-| **REQ-MOD03-015** | Service Relationship (catálogo de relações tipadas) | *Service.serviceRelationship (TMF638)* |
-| **REQ-MOD03-016** | Eventos de domínio do Service | *Event (TMF688)* |
+| ID                | Título                                                 | Entidade TMF principal                        |
+| ----------------- | ------------------------------------------------------ | --------------------------------------------- |
+| **REQ-MOD03-001** | Service Specification (CFS Spec + RFS Spec)            | _ServiceSpecification (TMF633)_               |
+| **REQ-MOD03-002** | Service Category (organização hierárquica do catálogo) | _ServiceCategory (TMF633)_                    |
+| **REQ-MOD03-003** | Service Candidate (oferta publicável)                  | _ServiceCandidate (TMF633)_                   |
+| **REQ-MOD03-004** | Cadastro genérico de Service (CRUD canônico)           | _Service (CFS \| RFS) (TMF638)_               |
+| **REQ-MOD03-005** | Ciclo de vida do Service (máquina de estados)          | _Service.state (TMF638)_                      |
+| **REQ-MOD03-006** | Customer Facing Service (CFS)                          | _CustomerFacingService (TMF638)_              |
+| **REQ-MOD03-007** | Resource Facing Service (RFS)                          | _ResourceFacingService (TMF638)_              |
+| **REQ-MOD03-008** | Vínculo Service → Resource (supportingResource)        | _Service.supportingResource (TMF638)_         |
+| **REQ-MOD03-009** | Composição CFS ↔ RFS (supportingService)               | _Service.supportingService (TMF638)_          |
+| **REQ-MOD03-010** | Localização do Service (place / serviceLocation)       | _Service.place (TMF638 → TMF674/673)_         |
+| **REQ-MOD03-011** | SubscriberID e identidade do serviço de cliente        | _serviceCharacteristic SubscriberID (TMF638)_ |
+| **REQ-MOD03-012** | Serviço Banda Larga FTTH / Bitstream GPON              | _CFS+RFS (TMF638) — ilustrativo_              |
+| **REQ-MOD03-013** | Serviço Empresarial / Link Dedicado (EILD, L2/L3 VPN)  | _CFS+RFS (TMF638) — ilustrativo_              |
+| **REQ-MOD03-014** | Serviço CloudVoIP                                      | _CFS+RFS (TMF638) — ilustrativo_              |
+| **REQ-MOD03-015** | Service Relationship (catálogo de relações tipadas)    | _Service.serviceRelationship (TMF638)_        |
+| **REQ-MOD03-016** | Eventos de domínio do Service                          | _Event (TMF688)_                              |
 
 ### 5.2 Ordem de implementação sugerida
 
@@ -265,21 +265,21 @@ O TMF633 separa explicitamente CFS Spec (orientada a cliente) de RFS Spec (orien
 
 ### 6.3 Mapeamento de atributos TMF
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `id` | string | Sim | UUID v7. |
-| `name` | string | Sim | Ex.: "Bitstream GPON 700M", "RFS Acesso GPON". |
-| `@type` | string | Sim | `CustomerFacingServiceSpecification` \| `ResourceFacingServiceSpecification`. |
-| `version` | string | Sim | Versionamento da spec (ex.: "1.0"). |
-| `lifecycleStatus` | enum | Sim | `In Study` \| `In Design` \| `Active` \| `Launched` \| `Retired` \| `Obsolete`. |
-| `isBundle` | boolean | Não | Indica spec composta (bundle de serviços). |
-| `category` | EntityRef | Não | ServiceCategory (REQ-MOD03-002). |
-| `specCharacteristic` | array | Não | Características declaradas (velocidade, SLA, perfil de banda, validadores). |
-| `serviceLevelSpecification` | array | Não | SLA(s) associados (disponibilidade, latência, MTTR). |
-| `resourceSpecification` | array | Condicional | **Apenas RFS Spec** — quais ResourceSpecs o serviço consome (TMF634, Módulo 2). |
-| `serviceSpecRelationship` | array | Não | Relações entre specs (CFS Spec → RFS Spec; dependsOn; substituição). |
-| `relatedParty` | array | Não | Owner da spec, área responsável. |
-| `validFor` | TimePeriod | Não | Janela de validade. |
+| Atributo TMF                | Tipo       | Obrigatório | Observação V.tal                                                                |
+| --------------------------- | ---------- | :---------: | ------------------------------------------------------------------------------- |
+| `id`                        | string     |     Sim     | UUID v7.                                                                        |
+| `name`                      | string     |     Sim     | Ex.: "Bitstream GPON 700M", "RFS Acesso GPON".                                  |
+| `@type`                     | string     |     Sim     | `CustomerFacingServiceSpecification` \| `ResourceFacingServiceSpecification`.   |
+| `version`                   | string     |     Sim     | Versionamento da spec (ex.: "1.0").                                             |
+| `lifecycleStatus`           | enum       |     Sim     | `In Study` \| `In Design` \| `Active` \| `Launched` \| `Retired` \| `Obsolete`. |
+| `isBundle`                  | boolean    |     Não     | Indica spec composta (bundle de serviços).                                      |
+| `category`                  | EntityRef  |     Não     | ServiceCategory (REQ-MOD03-002).                                                |
+| `specCharacteristic`        | array      |     Não     | Características declaradas (velocidade, SLA, perfil de banda, validadores).     |
+| `serviceLevelSpecification` | array      |     Não     | SLA(s) associados (disponibilidade, latência, MTTR).                            |
+| `resourceSpecification`     | array      | Condicional | **Apenas RFS Spec** — quais ResourceSpecs o serviço consome (TMF634, Módulo 2). |
+| `serviceSpecRelationship`   | array      |     Não     | Relações entre specs (CFS Spec → RFS Spec; dependsOn; substituição).            |
+| `relatedParty`              | array      |     Não     | Owner da spec, área responsável.                                                |
+| `validFor`                  | TimePeriod |     Não     | Janela de validade.                                                             |
 
 ### 6.4 Exemplo de payload
 
@@ -293,15 +293,33 @@ O TMF633 separa explicitamente CFS Spec (orientada a cliente) de RFS Spec (orien
   "isBundle": false,
   "category": { "id": "cat-acesso-banda-larga", "@referredType": "ServiceCategory" },
   "specCharacteristic": [
-    { "name": "downstream_mbps", "valueType": "integer", "configurable": false, "characteristicValueSpecification": [{ "value": 700 }] },
-    { "name": "upstream_mbps",   "valueType": "integer", "configurable": false, "characteristicValueSpecification": [{ "value": 350 }] },
-    { "name": "modelo_comercial","valueType": "string",  "characteristicValueSpecification": [{ "value": "wholesale" }, { "value": "direto" }] }
+    {
+      "name": "downstream_mbps",
+      "valueType": "integer",
+      "configurable": false,
+      "characteristicValueSpecification": [{ "value": 700 }]
+    },
+    {
+      "name": "upstream_mbps",
+      "valueType": "integer",
+      "configurable": false,
+      "characteristicValueSpecification": [{ "value": 350 }]
+    },
+    {
+      "name": "modelo_comercial",
+      "valueType": "string",
+      "characteristicValueSpecification": [{ "value": "wholesale" }, { "value": "direto" }]
+    }
   ],
   "serviceLevelSpecification": [
     { "id": "sla-residencial-padrao", "name": "SLA Residencial 99.5 / MTTR 24h" }
   ],
   "serviceSpecRelationship": [
-    { "id": "spec-rfs-acesso-gpon", "relationshipType": "isRealizedBy", "@referredType": "ResourceFacingServiceSpecification" }
+    {
+      "id": "spec-rfs-acesso-gpon",
+      "relationshipType": "isRealizedBy",
+      "@referredType": "ResourceFacingServiceSpecification"
+    }
   ]
 }
 ```
@@ -314,44 +332,44 @@ O TMF633 separa explicitamente CFS Spec (orientada a cliente) de RFS Spec (orien
 
 ### 6.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar CFS/RFS Spec** | POST /serviceSpecification com `@type` discriminando CFS ou RFS. |
-| **RF-002** | **Declarar características** | Suportar specCharacteristic com tipo, validador, valores permitidos, configurável/fixo. |
-| **RF-003** | **Vincular SLA** | Associar serviceLevelSpecification à spec. |
-| **RF-004** | **RFS → ResourceSpec** | RFS Spec declara quais ResourceSpecifications consome (cross-catalog Módulo 2). |
-| **RF-005** | **Relacionar specs** | serviceSpecRelationship: CFS `isRealizedBy` RFS; dependsOn; replaces. |
-| **RF-006** | **Versionar e aposentar** | Transição de lifecycleStatus com nova `version`; Retired/Obsolete bloqueia novas instâncias. |
-| **RF-007** | **Bootstrap V.tal** | Pré-popular specs canônicas: Bitstream GPON (300/500/700/1G), EILD/Link Dedicado, L2VPN, CloudVoIP, e as RFS Specs correspondentes. |
-| **RF-008** | **Eventos** | Publicar TMF688: ServiceSpecificationCreate/Change/Delete/StateChange. |
+| ID         | Nome                         | Descrição                                                                                                                           |
+| ---------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar CFS/RFS Spec**       | POST /serviceSpecification com `@type` discriminando CFS ou RFS.                                                                    |
+| **RF-002** | **Declarar características** | Suportar specCharacteristic com tipo, validador, valores permitidos, configurável/fixo.                                             |
+| **RF-003** | **Vincular SLA**             | Associar serviceLevelSpecification à spec.                                                                                          |
+| **RF-004** | **RFS → ResourceSpec**       | RFS Spec declara quais ResourceSpecifications consome (cross-catalog Módulo 2).                                                     |
+| **RF-005** | **Relacionar specs**         | serviceSpecRelationship: CFS `isRealizedBy` RFS; dependsOn; replaces.                                                               |
+| **RF-006** | **Versionar e aposentar**    | Transição de lifecycleStatus com nova `version`; Retired/Obsolete bloqueia novas instâncias.                                        |
+| **RF-007** | **Bootstrap V.tal**          | Pré-popular specs canônicas: Bitstream GPON (300/500/700/1G), EILD/Link Dedicado, L2VPN, CloudVoIP, e as RFS Specs correspondentes. |
+| **RF-008** | **Eventos**                  | Publicar TMF688: ServiceSpecificationCreate/Change/Delete/StateChange.                                                              |
 
 ### 6.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | `name`, `@type`, `version`, `lifecycleStatus` obrigatórios. |
+| ID         | Regra de Negócio                                                                         |
+| ---------- | ---------------------------------------------------------------------------------------- |
+| **RN-001** | `name`, `@type`, `version`, `lifecycleStatus` obrigatórios.                              |
 | **RN-002** | Apenas RFS Spec pode declarar `resourceSpecification`; CFS Spec que o fizer é rejeitada. |
-| **RN-003** | Spec em `Retired`/`Obsolete` não aceita criação de novas instâncias de Service. |
-| **RN-004** | Característica `mandatory` da spec é obrigatória nas instâncias derivadas. |
-| **RN-005** | Toda criação/alteração publica TMF688 e gera Audit Trail. |
+| **RN-003** | Spec em `Retired`/`Obsolete` não aceita criação de novas instâncias de Service.          |
+| **RN-004** | Característica `mandatory` da spec é obrigatória nas instâncias derivadas.               |
+| **RN-005** | Toda criação/alteração publica TMF688 e gera Audit Trail.                                |
 
 ### 6.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criar CFS** | POST de CFS Spec sem `resourceSpecification` é aceito. |
-| **CA-002** | **CFS com resourceSpec** | POST de CFS Spec com `resourceSpecification` retorna 422. |
-| **CA-003** | **Aposentar** | Spec `Retired` rejeita POST de nova instância no inventory. |
-| **CA-004** | **Bootstrap** | Bootstrap cria as specs canônicas V.tal (CFS+RFS) automaticamente. |
+| ID         | Critério                 | Resultado Esperado                                                 |
+| ---------- | ------------------------ | ------------------------------------------------------------------ |
+| **CA-001** | **Criar CFS**            | POST de CFS Spec sem `resourceSpecification` é aceito.             |
+| **CA-002** | **CFS com resourceSpec** | POST de CFS Spec com `resourceSpecification` retorna 422.          |
+| **CA-003** | **Aposentar**            | Spec `Retired` rejeita POST de nova instância no inventory.        |
+| **CA-004** | **Bootstrap**            | Bootstrap cria as specs canônicas V.tal (CFS+RFS) automaticamente. |
 
 ### 6.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Catálogo de serviço** | Catálogo de "Rede e Serviços" (sem CFS/RFS) | Template Manager (GenericService) | Não identificado no levantamento | **TMF633 com CFS Spec + RFS Spec** |
-| **Separação comercial/técnico** | Implícita, não modelada | Não identificado no levantamento | Não identificado no levantamento | **Explícita (SID)** |
-| **SLA na spec** | Atributo livre | Não identificado no levantamento | Não identificado no levantamento | **serviceLevelSpecification** |
-| **Spec → ResourceSpec** | Não identificado no levantamento | Via "uses" | Não identificado no levantamento | **RFS.resourceSpecification (cross-catalog)** |
+| Capacidade                      | Netwin                                      | Kuwaiba                           | NetBox                           | Decisão Nexus                                 |
+| ------------------------------- | ------------------------------------------- | --------------------------------- | -------------------------------- | --------------------------------------------- |
+| **Catálogo de serviço**         | Catálogo de "Rede e Serviços" (sem CFS/RFS) | Template Manager (GenericService) | Não identificado no levantamento | **TMF633 com CFS Spec + RFS Spec**            |
+| **Separação comercial/técnico** | Implícita, não modelada                     | Não identificado no levantamento  | Não identificado no levantamento | **Explícita (SID)**                           |
+| **SLA na spec**                 | Atributo livre                              | Não identificado no levantamento  | Não identificado no levantamento | **serviceLevelSpecification**                 |
+| **Spec → ResourceSpec**         | Não identificado no levantamento            | Via "uses"                        | Não identificado no levantamento | **RFS.resourceSpecification (cross-catalog)** |
 
 ---
 
@@ -372,15 +390,15 @@ Categorização é requisito de usabilidade do catálogo (busca, navegação, go
 
 ### 7.3 Mapeamento de atributos TMF
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `id` | string | Sim | UUID v7. |
-| `name` | string | Sim | Ex.: "Banda Larga", "Conectividade Empresarial". |
-| `@type` | string | Sim | ServiceCategory. |
-| `parentId` | EntityRef | Não | Categoria pai (auto-relacionamento). |
-| `isRoot` | boolean | Não | Marca raiz da árvore. |
-| `lifecycleStatus` | enum | Sim | Active \| Retired. |
-| `serviceCandidate` | array | Não | ServiceCandidates classificados nesta categoria. |
+| Atributo TMF       | Tipo      | Obrigatório | Observação V.tal                                 |
+| ------------------ | --------- | :---------: | ------------------------------------------------ |
+| `id`               | string    |     Sim     | UUID v7.                                         |
+| `name`             | string    |     Sim     | Ex.: "Banda Larga", "Conectividade Empresarial". |
+| `@type`            | string    |     Sim     | ServiceCategory.                                 |
+| `parentId`         | EntityRef |     Não     | Categoria pai (auto-relacionamento).             |
+| `isRoot`           | boolean   |     Não     | Marca raiz da árvore.                            |
+| `lifecycleStatus`  | enum      |     Sim     | Active \| Retired.                               |
+| `serviceCandidate` | array     |     Não     | ServiceCandidates classificados nesta categoria. |
 
 ### 7.4 Exemplo de payload
 
@@ -402,32 +420,32 @@ Categorização é requisito de usabilidade do catálogo (busca, navegação, go
 
 ### 7.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar categoria** | POST /serviceCategory com parentId opcional. |
-| **RF-002** | **Navegar árvore** | GET com expansão de descendentes/ancestrais. |
-| **RF-003** | **Reparentar** | PATCH de parentId com validação anti-ciclo. |
-| **RF-004** | **Bootstrap** | Árvore canônica V.tal: Acesso, Conectividade Empresarial, Voz, Transporte/Atacado. |
+| ID         | Nome                | Descrição                                                                          |
+| ---------- | ------------------- | ---------------------------------------------------------------------------------- |
+| **RF-001** | **Criar categoria** | POST /serviceCategory com parentId opcional.                                       |
+| **RF-002** | **Navegar árvore**  | GET com expansão de descendentes/ancestrais.                                       |
+| **RF-003** | **Reparentar**      | PATCH de parentId com validação anti-ciclo.                                        |
+| **RF-004** | **Bootstrap**       | Árvore canônica V.tal: Acesso, Conectividade Empresarial, Voz, Transporte/Atacado. |
 
 ### 7.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Não pode haver ciclo na hierarquia (A pai de B, B pai de A). |
+| ID         | Regra de Negócio                                                               |
+| ---------- | ------------------------------------------------------------------------------ |
+| **RN-001** | Não pode haver ciclo na hierarquia (A pai de B, B pai de A).                   |
 | **RN-002** | Categoria com filhos/candidates ativos não pode ser excluída — apenas Retired. |
-| **RN-003** | Apenas uma categoria `isRoot=true` por árvore de domínio. |
+| **RN-003** | Apenas uma categoria `isRoot=true` por árvore de domínio.                      |
 
 ### 7.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Árvore** | GET retorna hierarquia completa navegável. |
-| **CA-002** | **Anti-ciclo** | Reparent que cria ciclo retorna 422. |
+| ID         | Critério       | Resultado Esperado                         |
+| ---------- | -------------- | ------------------------------------------ |
+| **CA-001** | **Árvore**     | GET retorna hierarquia completa navegável. |
+| **CA-002** | **Anti-ciclo** | Reparent que cria ciclo retorna 422.       |
 
 ### 7.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
+| Capacidade                   | Netwin            | Kuwaiba                            | NetBox                           | Decisão Nexus                            |
+| ---------------------------- | ----------------- | ---------------------------------- | -------------------------------- | ---------------------------------------- |
 | **Categorização de serviço** | Tipificação plana | Hierarquia de classes (metamodelo) | Não identificado no levantamento | **ServiceCategory hierárquica (TMF633)** |
 
 ---
@@ -441,7 +459,7 @@ Categorização é requisito de usabilidade do catálogo (busca, navegação, go
 
 ### 8.1 Descrição
 
-ServiceCandidate expõe uma ServiceSpecification como **oferta comercializável** — controla *o que está disponível para venda/contratação* num dado período, separando o catálogo técnico (todas as specs) do catálogo comercial (o subconjunto ofertável). Tipicamente envolve apenas CFS Specs.
+ServiceCandidate expõe uma ServiceSpecification como **oferta comercializável** — controla _o que está disponível para venda/contratação_ num dado período, separando o catálogo técnico (todas as specs) do catálogo comercial (o subconjunto ofertável). Tipicamente envolve apenas CFS Specs.
 
 ### 8.2 Racional arquitetural
 
@@ -449,14 +467,14 @@ Nem toda spec ativa é vendável: uma RFS Spec é interna; uma CFS Spec pode exi
 
 ### 8.3 Mapeamento de atributos TMF
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `id` | string | Sim | UUID v7. |
-| `name` | string | Sim | Nome comercial da oferta. |
-| `lifecycleStatus` | enum | Sim | In Study \| Active \| Launched \| Retired. |
-| `serviceSpecification` | EntityRef | Sim | CFS Spec referenciada. |
-| `category` | array | Não | ServiceCategory(s). |
-| `validFor` | TimePeriod | Não | Janela de oferta. |
+| Atributo TMF           | Tipo       | Obrigatório | Observação V.tal                           |
+| ---------------------- | ---------- | :---------: | ------------------------------------------ |
+| `id`                   | string     |     Sim     | UUID v7.                                   |
+| `name`                 | string     |     Sim     | Nome comercial da oferta.                  |
+| `lifecycleStatus`      | enum       |     Sim     | In Study \| Active \| Launched \| Retired. |
+| `serviceSpecification` | EntityRef  |     Sim     | CFS Spec referenciada.                     |
+| `category`             | array      |     Não     | ServiceCategory(s).                        |
+| `validFor`             | TimePeriod |     Não     | Janela de oferta.                          |
 
 ### 8.4 Exemplo de payload
 
@@ -466,7 +484,10 @@ Nem toda spec ativa é vendável: uma RFS Spec é interna; uma CFS Spec pode exi
   "@type": "ServiceCandidate",
   "name": "Bitstream GPON 700M — Região 1",
   "lifecycleStatus": "Launched",
-  "serviceSpecification": { "id": "spec-cfs-bitstream-gpon-700", "@referredType": "CustomerFacingServiceSpecification" },
+  "serviceSpecification": {
+    "id": "spec-cfs-bitstream-gpon-700",
+    "@referredType": "CustomerFacingServiceSpecification"
+  },
   "category": [{ "id": "cat-acesso-banda-larga" }],
   "validFor": { "startDateTime": "2027-01-01T00:00:00Z" }
 }
@@ -478,30 +499,30 @@ Nem toda spec ativa é vendável: uma RFS Spec é interna; uma CFS Spec pode exi
 
 ### 8.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Publicar candidate** | POST /serviceCandidate vinculando CFS Spec. |
-| **RF-002** | **Controlar visibilidade** | lifecycleStatus governa o que aparece como ofertável. |
-| **RF-003** | **Filtrar por categoria/região** | GET por category e validFor. |
+| ID         | Nome                             | Descrição                                             |
+| ---------- | -------------------------------- | ----------------------------------------------------- |
+| **RF-001** | **Publicar candidate**           | POST /serviceCandidate vinculando CFS Spec.           |
+| **RF-002** | **Controlar visibilidade**       | lifecycleStatus governa o que aparece como ofertável. |
+| **RF-003** | **Filtrar por categoria/região** | GET por category e validFor.                          |
 
 ### 8.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Candidate só referencia CFS Spec (não RFS). |
+| ID         | Regra de Negócio                                     |
+| ---------- | ---------------------------------------------------- |
+| **RN-001** | Candidate só referencia CFS Spec (não RFS).          |
 | **RN-002** | Candidate `Launched` exige spec `Active`/`Launched`. |
 
 ### 8.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Publicar** | Candidate sobre CFS Spec ativa é aceito. |
-| **CA-002** | **RFS bloqueado** | Candidate sobre RFS Spec retorna 422. |
+| ID         | Critério          | Resultado Esperado                       |
+| ---------- | ----------------- | ---------------------------------------- |
+| **CA-001** | **Publicar**      | Candidate sobre CFS Spec ativa é aceito. |
+| **CA-002** | **RFS bloqueado** | Candidate sobre RFS Spec retorna 422.    |
 
 ### 8.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
+| Capacidade                 | Netwin                           | Kuwaiba                          | NetBox                           | Decisão Nexus                 |
+| -------------------------- | -------------------------------- | -------------------------------- | -------------------------------- | ----------------------------- |
 | **Oferta comercializável** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **ServiceCandidate (TMF633)** |
 
 ---
@@ -523,26 +544,26 @@ O TMF638 define Service como entidade abstrata com duas especializações (CFS, 
 
 ### 9.3 Mapeamento de atributos TMF
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `id` | string | Sim | UUID v7 — identificador canônico interno. |
-| `name` | string | Sim | Nome operacional do serviço. |
-| `@type` | string | Sim | `CustomerFacingService` \| `ResourceFacingService`. |
-| `serviceType` | string | Não | Rótulo livre (ex.: "GPON", "L2VPN", "VoIP"). |
-| `serviceSpecification` | EntityRef | Sim | ServiceSpecification que define o tipo (REQ-001). |
-| `state` | enum | Sim | feasibilityChecked \| designed \| reserved \| inactive \| active \| terminated. |
-| `serviceDate` | datetime | Não | Data de referência. |
-| `startDate` / `endDate` | datetime | Não | Início/fim de operação do serviço. |
-| `category` | string | Não | Categoria do serviço. |
-| `isServiceEnabled` | boolean | Não | Flag operacional de habilitação. |
-| `hasStarted` | boolean | Não | Serviço já iniciou operação. |
-| `serviceCharacteristic` | array | Não | Atributos da instância (velocidade configurada, SubscriberID, S/C-VLAN, perfil). |
-| `supportingResource` | array | Condicional | **RFS** — Resources que realizam o serviço (Módulo 2). |
-| `supportingService` | array | Condicional | **CFS** → RFS; RFS → RFS. Composição. |
-| `serviceRelationship` | array | Não | Relações tipadas com outros serviços (REQ-015). |
-| `relatedParty` | array | Não | Subscriber (ISP/cliente), owner (Módulo 6). |
-| `place` | array | Não | GeographicSite/Address de instalação (Módulo 1). |
-| `serviceOrderItem` | array | Não | Referência ao item de ordem que originou (Módulo 4). |
+| Atributo TMF            | Tipo      | Obrigatório | Observação V.tal                                                                 |
+| ----------------------- | --------- | :---------: | -------------------------------------------------------------------------------- |
+| `id`                    | string    |     Sim     | UUID v7 — identificador canônico interno.                                        |
+| `name`                  | string    |     Sim     | Nome operacional do serviço.                                                     |
+| `@type`                 | string    |     Sim     | `CustomerFacingService` \| `ResourceFacingService`.                              |
+| `serviceType`           | string    |     Não     | Rótulo livre (ex.: "GPON", "L2VPN", "VoIP").                                     |
+| `serviceSpecification`  | EntityRef |     Sim     | ServiceSpecification que define o tipo (REQ-001).                                |
+| `state`                 | enum      |     Sim     | feasibilityChecked \| designed \| reserved \| inactive \| active \| terminated.  |
+| `serviceDate`           | datetime  |     Não     | Data de referência.                                                              |
+| `startDate` / `endDate` | datetime  |     Não     | Início/fim de operação do serviço.                                               |
+| `category`              | string    |     Não     | Categoria do serviço.                                                            |
+| `isServiceEnabled`      | boolean   |     Não     | Flag operacional de habilitação.                                                 |
+| `hasStarted`            | boolean   |     Não     | Serviço já iniciou operação.                                                     |
+| `serviceCharacteristic` | array     |     Não     | Atributos da instância (velocidade configurada, SubscriberID, S/C-VLAN, perfil). |
+| `supportingResource`    | array     | Condicional | **RFS** — Resources que realizam o serviço (Módulo 2).                           |
+| `supportingService`     | array     | Condicional | **CFS** → RFS; RFS → RFS. Composição.                                            |
+| `serviceRelationship`   | array     |     Não     | Relações tipadas com outros serviços (REQ-015).                                  |
+| `relatedParty`          | array     |     Não     | Subscriber (ISP/cliente), owner (Módulo 6).                                      |
+| `place`                 | array     |     Não     | GeographicSite/Address de instalação (Módulo 1).                                 |
+| `serviceOrderItem`      | array     |     Não     | Referência ao item de ordem que originou (Módulo 4).                             |
 
 ### 9.4 Exemplo de payload
 
@@ -552,14 +573,17 @@ O TMF638 define Service como entidade abstrata com duas especializações (CFS, 
   "@type": "CustomerFacingService",
   "name": "Bitstream-GPON-700-ProvedorX-SUB778899",
   "serviceType": "GPON",
-  "serviceSpecification": { "id": "spec-cfs-bitstream-gpon-700", "@referredType": "CustomerFacingServiceSpecification" },
+  "serviceSpecification": {
+    "id": "spec-cfs-bitstream-gpon-700",
+    "@referredType": "CustomerFacingServiceSpecification"
+  },
   "state": "active",
   "startDate": "2027-02-15T10:30:00Z",
   "isServiceEnabled": true,
   "serviceCharacteristic": [
-    { "name": "SubscriberID",    "value": "SUB778899" },
+    { "name": "SubscriberID", "value": "SUB778899" },
     { "name": "downstream_mbps", "value": 700 },
-    { "name": "modelo_comercial","value": "wholesale" }
+    { "name": "modelo_comercial", "value": "wholesale" }
   ],
   "supportingService": [
     { "id": "svc-rfs-acesso-gpon-778899", "@referredType": "ResourceFacingService" }
@@ -568,7 +592,11 @@ O TMF638 define Service como entidade abstrata com duas especializações (CFS, 
     { "role": "subscriber", "@referredType": "Organization", "id": "tenant-provedor-x" }
   ],
   "place": [
-    { "role": "installationAddress", "@referredType": "GeographicAddress", "id": "addr-rj-tijuca-rua-x-100-ap-302" }
+    {
+      "role": "installationAddress",
+      "@referredType": "GeographicAddress",
+      "id": "addr-rj-tijuca-rua-x-100-ap-302"
+    }
   ]
 }
 ```
@@ -581,48 +609,48 @@ O TMF638 define Service como entidade abstrata com duas especializações (CFS, 
 
 ### 9.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Service** | POST /service com `@type`, serviceSpecification, state inicial, characteristics. |
-| **RF-002** | **Validar contra spec** | Validar serviceCharacteristic contra specCharacteristic (obrigatórios, validadores, tipos). |
-| **RF-003** | **Atualizar Service** | PATCH parcial; campos imutáveis (id, serviceSpecification, @type) rejeitados. |
-| **RF-004** | **Mudar estado** | PATCH de `state` validado pela máquina de estados (REQ-005). |
-| **RF-005** | **Terminar (soft)** | Cancelamento transiciona para `terminated`; nunca DELETE físico. |
-| **RF-006** | **Listar e filtrar** | Filtros: state, @type, serviceSpecification, relatedParty (subscriber), place, characteristic (ex.: SubscriberID). |
-| **RF-007** | **Detalhar (GET)** | GET /service/{id} expande spec, supportingResource, supportingService, place, relatedParty via `fields`. |
-| **RF-008** | **Importação em massa** | POST /service/bulk para migração/carga com relatório por item. |
-| **RF-009** | **Histórico** | GET /service/{id}/history via Event Store. |
-| **RF-010** | **Eventos** | Publicar TMF688: ServiceCreate / AttributeValueChange / StateChange / Delete. |
+| ID         | Nome                    | Descrição                                                                                                          |
+| ---------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **RF-001** | **Criar Service**       | POST /service com `@type`, serviceSpecification, state inicial, characteristics.                                   |
+| **RF-002** | **Validar contra spec** | Validar serviceCharacteristic contra specCharacteristic (obrigatórios, validadores, tipos).                        |
+| **RF-003** | **Atualizar Service**   | PATCH parcial; campos imutáveis (id, serviceSpecification, @type) rejeitados.                                      |
+| **RF-004** | **Mudar estado**        | PATCH de `state` validado pela máquina de estados (REQ-005).                                                       |
+| **RF-005** | **Terminar (soft)**     | Cancelamento transiciona para `terminated`; nunca DELETE físico.                                                   |
+| **RF-006** | **Listar e filtrar**    | Filtros: state, @type, serviceSpecification, relatedParty (subscriber), place, characteristic (ex.: SubscriberID). |
+| **RF-007** | **Detalhar (GET)**      | GET /service/{id} expande spec, supportingResource, supportingService, place, relatedParty via `fields`.           |
+| **RF-008** | **Importação em massa** | POST /service/bulk para migração/carga com relatório por item.                                                     |
+| **RF-009** | **Histórico**           | GET /service/{id}/history via Event Store.                                                                         |
+| **RF-010** | **Eventos**             | Publicar TMF688: ServiceCreate / AttributeValueChange / StateChange / Delete.                                      |
 
 ### 9.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | serviceSpecification, name, @type e state obrigatórios na criação. |
-| **RN-002** | `@type` do Service deve casar com `@type` da spec (CFS↔CFS Spec, RFS↔RFS Spec). |
+| ID         | Regra de Negócio                                                                                |
+| ---------- | ----------------------------------------------------------------------------------------------- |
+| **RN-001** | serviceSpecification, name, @type e state obrigatórios na criação.                              |
+| **RN-002** | `@type` do Service deve casar com `@type` da spec (CFS↔CFS Spec, RFS↔RFS Spec).                 |
 | **RN-003** | CFS **não** pode ter `supportingResource` direto — apenas via RFS (RN-004 reforça a fronteira). |
-| **RN-004** | RFS **não** pode ter SubscriberID nem `relatedParty[role=subscriber]`. |
-| **RN-005** | Service não é excluído fisicamente — apenas `terminated`. |
-| **RN-006** | Toda criação/alteração/transição publica TMF688 e gera Audit Trail. |
-| **RN-007** | SubscriberID, quando presente (CFS), é único entre serviços ativos. |
+| **RN-004** | RFS **não** pode ter SubscriberID nem `relatedParty[role=subscriber]`.                          |
+| **RN-005** | Service não é excluído fisicamente — apenas `terminated`.                                       |
+| **RN-006** | Toda criação/alteração/transição publica TMF688 e gera Audit Trail.                             |
+| **RN-007** | SubscriberID, quando presente (CFS), é único entre serviços ativos.                             |
 
 ### 9.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criar CFS** | POST de CFS com supportingService→RFS é aceito. |
-| **CA-002** | **CFS com Resource** | CFS com supportingResource direto retorna 422 (RN-003). |
-| **CA-003** | **RFS com Subscriber** | RFS com relatedParty[subscriber] retorna 422 (RN-004). |
-| **CA-004** | **Soft-terminate** | DELETE físico bloqueado; transição para terminated aceita. |
+| ID         | Critério                    | Resultado Esperado                                                |
+| ---------- | --------------------------- | ----------------------------------------------------------------- |
+| **CA-001** | **Criar CFS**               | POST de CFS com supportingService→RFS é aceito.                   |
+| **CA-002** | **CFS com Resource**        | CFS com supportingResource direto retorna 422 (RN-003).           |
+| **CA-003** | **RFS com Subscriber**      | RFS com relatedParty[subscriber] retorna 422 (RN-004).            |
+| **CA-004** | **Soft-terminate**          | DELETE físico bloqueado; transição para terminated aceita.        |
 | **CA-005** | **Filtro por SubscriberID** | GET /service?characteristic.SubscriberID=SUB778899 retorna o CFS. |
 
 ### 9.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
+| Capacidade               | Netwin                                               | Kuwaiba                          | NetBox                                                            | Decisão Nexus                          |
+| ------------------------ | ---------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------- | -------------------------------------- |
 | **Instância de serviço** | "Serviços de cliente / de rede" (Network & Services) | GenericService (Service Manager) | L2VPN/Circuit como objeto adjacente; Service TMF não identificado | **Service CFS/RFS unificado (TMF638)** |
-| **CRUD único CFS+RFS** | Telas separadas | Classe única GenericService | Não identificado no levantamento | **/service com @type** |
-| **Soft-terminate** | Estado de ciclo de vida | Delete lógico | Não identificado no levantamento | **state=terminated, sem DELETE** |
+| **CRUD único CFS+RFS**   | Telas separadas                                      | Classe única GenericService      | Não identificado no levantamento                                  | **/service com @type**                 |
+| **Soft-terminate**       | Estado de ciclo de vida                              | Delete lógico                    | Não identificado no levantamento                                  | **state=terminated, sem DELETE**       |
 
 ---
 
@@ -643,14 +671,14 @@ O TMF638 padroniza os estados de serviço. Adotá-los garante interoperabilidade
 
 ### 10.3 Mapeamento de estados (TMF638)
 
-| Estado | Significado | Trigger típico |
-|---|---|---|
-| `feasibilityChecked` | Viabilidade confirmada (vinda do Order/TMF645). | Qualificação aprovada. |
-| `designed` | Serviço desenhado (CFS+RFS montados, recursos identificados). | Decomposição da ordem. |
-| `reserved` | Recursos reservados para o serviço (Módulo 2 `reserved`). | Reserva de porta/VLAN. |
-| `inactive` | Provisionado mas não operante (inclui **suspenso**). | Aguardando ativação / suspensão. |
-| `active` | Serviço operante e habilitado. | Comissionamento concluído. |
-| `terminated` | Serviço encerrado (histórico preservado). | Cancelamento/churn. |
+| Estado               | Significado                                                   | Trigger típico                   |
+| -------------------- | ------------------------------------------------------------- | -------------------------------- |
+| `feasibilityChecked` | Viabilidade confirmada (vinda do Order/TMF645).               | Qualificação aprovada.           |
+| `designed`           | Serviço desenhado (CFS+RFS montados, recursos identificados). | Decomposição da ordem.           |
+| `reserved`           | Recursos reservados para o serviço (Módulo 2 `reserved`).     | Reserva de porta/VLAN.           |
+| `inactive`           | Provisionado mas não operante (inclui **suspenso**).          | Aguardando ativação / suspensão. |
+| `active`             | Serviço operante e habilitado.                                | Comissionamento concluído.       |
+| `terminated`         | Serviço encerrado (histórico preservado).                     | Cancelamento/churn.              |
 
 ### 10.4 Diagrama de transições
 
@@ -672,42 +700,42 @@ feasibilityChecked → designed → reserved → inactive → active ───�
 
 ### 10.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
+| ID         | Nome                     | Descrição                                                                                |
+| ---------- | ------------------------ | ---------------------------------------------------------------------------------------- |
 | **RF-001** | **Matriz de transições** | Aceitar apenas transições válidas; rejeitar saltos inválidos (ex.: terminated → active). |
-| **RF-002** | **Ativar** | inactive/reserved → active com validação de recursos de suporte habilitados. |
-| **RF-003** | **Suspender** | active → inactive + serviceCharacteristic[suspensionReason] (inadimplência, manutenção). |
-| **RF-004** | **Religar** | inactive(suspenso) → active. |
-| **RF-005** | **Terminar** | Qualquer estado → terminated, liberando reservas de Resources (Módulo 2). |
-| **RF-006** | **Propagar** | Mudança de estado de CFS pode propagar para RFS conforme política. |
-| **RF-007** | **Eventos** | ServiceStateChangeEvent com from/to e razão. |
+| **RF-002** | **Ativar**               | inactive/reserved → active com validação de recursos de suporte habilitados.             |
+| **RF-003** | **Suspender**            | active → inactive + serviceCharacteristic[suspensionReason] (inadimplência, manutenção). |
+| **RF-004** | **Religar**              | inactive(suspenso) → active.                                                             |
+| **RF-005** | **Terminar**             | Qualquer estado → terminated, liberando reservas de Resources (Módulo 2).                |
+| **RF-006** | **Propagar**             | Mudança de estado de CFS pode propagar para RFS conforme política.                       |
+| **RF-007** | **Eventos**              | ServiceStateChangeEvent com from/to e razão.                                             |
 
 ### 10.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | terminated é terminal — sem transição de saída. |
-| **RN-002** | Ativar CFS exige todos os RFS de suporte em `active`. |
+| ID         | Regra de Negócio                                                                                   |
+| ---------- | -------------------------------------------------------------------------------------------------- |
+| **RN-001** | terminated é terminal — sem transição de saída.                                                    |
+| **RN-002** | Ativar CFS exige todos os RFS de suporte em `active`.                                              |
 | **RN-003** | Terminar CFS aciona liberação das reservas de Resource via Módulo 2 (status reserved → available). |
-| **RN-004** | Suspensão preserva os vínculos supportingResource/supportingService (não desfaz). |
-| **RN-005** | Toda transição publica TMF688 e gera Audit Trail. |
+| **RN-004** | Suspensão preserva os vínculos supportingResource/supportingService (não desfaz).                  |
+| **RN-005** | Toda transição publica TMF688 e gera Audit Trail.                                                  |
 
 ### 10.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Transição válida** | inactive → active aceito quando RFS ativos. |
-| **CA-002** | **Salto inválido** | terminated → active retorna 409. |
-| **CA-003** | **Suspensão** | active → inactive grava suspensionReason e mantém vínculos. |
-| **CA-004** | **Liberação** | terminated libera reservas no Módulo 2 (evento correlato). |
+| ID         | Critério             | Resultado Esperado                                          |
+| ---------- | -------------------- | ----------------------------------------------------------- |
+| **CA-001** | **Transição válida** | inactive → active aceito quando RFS ativos.                 |
+| **CA-002** | **Salto inválido**   | terminated → active retorna 409.                            |
+| **CA-003** | **Suspensão**        | active → inactive grava suspensionReason e mantém vínculos. |
+| **CA-004** | **Liberação**        | terminated libera reservas no Módulo 2 (evento correlato).  |
 
 ### 10.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Ciclo de vida de serviço** | Estados próprios | Estado simples | Não identificado no levantamento | **TMF638 canônico (6 estados)** |
-| **Suspensão** | Estado dedicado | Manual | Não identificado no levantamento | **inactive + suspensionReason** |
-| **Liberação de recurso ao terminar** | Manual | Manual | Não identificado no levantamento | **Automática via evento (Módulo 2)** |
+| Capacidade                           | Netwin           | Kuwaiba        | NetBox                           | Decisão Nexus                        |
+| ------------------------------------ | ---------------- | -------------- | -------------------------------- | ------------------------------------ |
+| **Ciclo de vida de serviço**         | Estados próprios | Estado simples | Não identificado no levantamento | **TMF638 canônico (6 estados)**      |
+| **Suspensão**                        | Estado dedicado  | Manual         | Não identificado no levantamento | **inactive + suspensionReason**      |
+| **Liberação de recurso ao terminar** | Manual           | Manual         | Não identificado no levantamento | **Automática via evento (Módulo 2)** |
 
 ---
 
@@ -728,14 +756,14 @@ Isolar o CFS é o que permite que o contrato comercial sobreviva a mudanças de 
 
 ### 11.3 Mapeamento de atributos TMF
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `@type` | string | Sim | CustomerFacingService. |
-| `serviceCharacteristic[SubscriberID]` | string | Sim | Identidade do serviço de cliente (REQ-011). |
-| `relatedParty[role=subscriber]` | EntityRef | Sim | Tenant ISP ou cliente direto (Módulo 6). |
-| `supportingService` | array | Sim | RFS que realizam o CFS. |
-| `place[role=installationAddress]` | EntityRef | Não | Endereço de instalação (Módulo 1). |
-| `serviceCharacteristic[*]` | array | Não | Velocidade comercial, SLA comercial, modelo (wholesale/direto). |
+| Atributo TMF                          | Tipo      | Obrigatório | Observação V.tal                                                |
+| ------------------------------------- | --------- | :---------: | --------------------------------------------------------------- |
+| `@type`                               | string    |     Sim     | CustomerFacingService.                                          |
+| `serviceCharacteristic[SubscriberID]` | string    |     Sim     | Identidade do serviço de cliente (REQ-011).                     |
+| `relatedParty[role=subscriber]`       | EntityRef |     Sim     | Tenant ISP ou cliente direto (Módulo 6).                        |
+| `supportingService`                   | array     |     Sim     | RFS que realizam o CFS.                                         |
+| `place[role=installationAddress]`     | EntityRef |     Não     | Endereço de instalação (Módulo 1).                              |
+| `serviceCharacteristic[*]`            | array     |     Não     | Velocidade comercial, SLA comercial, modelo (wholesale/direto). |
 
 ### 11.4 Exemplo de payload
 
@@ -750,8 +778,12 @@ Isolar o CFS é o que permite que o contrato comercial sobreviva a mudanças de 
     { "name": "modelo_comercial", "value": "wholesale" },
     { "name": "sla_comercial", "value": "Residencial-99.5" }
   ],
-  "supportingService": [{ "id": "svc-rfs-acesso-gpon-778899", "@referredType": "ResourceFacingService" }],
-  "relatedParty": [{ "role": "subscriber", "id": "tenant-provedor-x", "@referredType": "Organization" }]
+  "supportingService": [
+    { "id": "svc-rfs-acesso-gpon-778899", "@referredType": "ResourceFacingService" }
+  ],
+  "relatedParty": [
+    { "role": "subscriber", "id": "tenant-provedor-x", "@referredType": "Organization" }
+  ]
 }
 ```
 
@@ -761,34 +793,34 @@ Isolar o CFS é o que permite que o contrato comercial sobreviva a mudanças de 
 
 ### 11.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar CFS** | POST de CFS com SubscriberID, subscriber e supportingService. |
-| **RF-002** | **Trocar realização** | Substituir RFS de suporte sem alterar SubscriberID/CFS (re-home). |
-| **RF-003** | **Consultar por cliente** | GET por relatedParty (todos os CFS de um ISP). |
-| **RF-004** | **Consultar por SubscriberID** | GET por characteristic SubscriberID. |
+| ID         | Nome                           | Descrição                                                         |
+| ---------- | ------------------------------ | ----------------------------------------------------------------- |
+| **RF-001** | **Criar CFS**                  | POST de CFS com SubscriberID, subscriber e supportingService.     |
+| **RF-002** | **Trocar realização**          | Substituir RFS de suporte sem alterar SubscriberID/CFS (re-home). |
+| **RF-003** | **Consultar por cliente**      | GET por relatedParty (todos os CFS de um ISP).                    |
+| **RF-004** | **Consultar por SubscriberID** | GET por characteristic SubscriberID.                              |
 
 ### 11.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | CFS exige SubscriberID e ao menos um supportingService (RFS). |
-| **RN-002** | CFS não referencia Resource diretamente. |
+| ID         | Regra de Negócio                                               |
+| ---------- | -------------------------------------------------------------- |
+| **RN-001** | CFS exige SubscriberID e ao menos um supportingService (RFS).  |
+| **RN-002** | CFS não referencia Resource diretamente.                       |
 | **RN-003** | Troca de RFS preserva o SubscriberID e gera evento de re-home. |
 
 ### 11.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
+| ID         | Critério    | Resultado Esperado                                 |
+| ---------- | ----------- | -------------------------------------------------- |
 | **CA-001** | **Por ISP** | GET por subscriber retorna todos os CFS do Tenant. |
-| **CA-002** | **Re-home** | Trocar RFS mantém SubscriberID; evento emitido. |
+| **CA-002** | **Re-home** | Trocar RFS mantém SubscriberID; evento emitido.    |
 
 ### 11.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Serviço de cliente** | "Serviço de cliente" (Network & Services) | Service Manager (cliente) | Não identificado no levantamento | **CFS (TMF638) com SubscriberID** |
-| **Wholesale (cliente = ISP)** | Parcial | Via Contract | Não identificado no levantamento | **relatedParty[subscriber]=Tenant ISP** |
+| Capacidade                    | Netwin                                    | Kuwaiba                   | NetBox                           | Decisão Nexus                           |
+| ----------------------------- | ----------------------------------------- | ------------------------- | -------------------------------- | --------------------------------------- |
+| **Serviço de cliente**        | "Serviço de cliente" (Network & Services) | Service Manager (cliente) | Não identificado no levantamento | **CFS (TMF638) com SubscriberID**       |
+| **Wholesale (cliente = ISP)** | Parcial                                   | Via Contract              | Não identificado no levantamento | **relatedParty[subscriber]=Tenant ISP** |
 
 ---
 
@@ -805,16 +837,16 @@ O RFS é a **realização técnica** do serviço: a sessão GPON, o par S-VLAN/C
 
 ### 12.2 Racional arquitetural
 
-O RFS é o que torna o inventário de serviço *acionável* pela operação: é por ele que se navega do serviço até a porta física (e, via Resource, até o path completo OLT→ONT computado no Módulo 2). Reutilizável: um RFS de "transporte L2VPN" pode suportar múltiplos CFS de clientes diferentes.
+O RFS é o que torna o inventário de serviço _acionável_ pela operação: é por ele que se navega do serviço até a porta física (e, via Resource, até o path completo OLT→ONT computado no Módulo 2). Reutilizável: um RFS de "transporte L2VPN" pode suportar múltiplos CFS de clientes diferentes.
 
 ### 12.3 Mapeamento de atributos TMF
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `@type` | string | Sim | ResourceFacingService. |
-| `supportingResource` | array | Sim | Resources que realizam (ONT, Port PON, VLAN, VRF, IP, Circuit). |
-| `supportingService` | array | Não | Outro RFS componível (ex.: RFS acesso sobre RFS transporte). |
-| `serviceCharacteristic[*]` | array | Não | S-VLAN, C-VLAN, perfil de banda, parâmetros técnicos. |
+| Atributo TMF               | Tipo   | Obrigatório | Observação V.tal                                                |
+| -------------------------- | ------ | :---------: | --------------------------------------------------------------- |
+| `@type`                    | string |     Sim     | ResourceFacingService.                                          |
+| `supportingResource`       | array  |     Sim     | Resources que realizam (ONT, Port PON, VLAN, VRF, IP, Circuit). |
+| `supportingService`        | array  |     Não     | Outro RFS componível (ex.: RFS acesso sobre RFS transporte).    |
+| `serviceCharacteristic[*]` | array  |     Não     | S-VLAN, C-VLAN, perfil de banda, parâmetros técnicos.           |
 
 ### 12.4 Exemplo de payload
 
@@ -844,37 +876,37 @@ O RFS é o que torna o inventário de serviço *acionável* pela operação: é 
 
 ### 12.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar RFS** | POST de RFS com supportingResource. |
-| **RF-002** | **Compor RFS** | RFS sobre RFS (acesso sobre transporte). |
+| ID         | Nome                    | Descrição                                                   |
+| ---------- | ----------------------- | ----------------------------------------------------------- |
+| **RF-001** | **Criar RFS**           | POST de RFS com supportingResource.                         |
+| **RF-002** | **Compor RFS**          | RFS sobre RFS (acesso sobre transporte).                    |
 | **RF-003** | **Navegar até recurso** | GET expandindo supportingResource → path físico (Módulo 2). |
-| **RF-004** | **Reusar RFS** | Mesmo RFS suportar múltiplos CFS (RN-002). |
+| **RF-004** | **Reusar RFS**          | Mesmo RFS suportar múltiplos CFS (RN-002).                  |
 
 ### 12.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | RFS exige ao menos um supportingResource ou um supportingService. |
+| ID         | Regra de Negócio                                                   |
+| ---------- | ------------------------------------------------------------------ |
+| **RN-001** | RFS exige ao menos um supportingResource ou um supportingService.  |
 | **RN-002** | Um RFS pode ser referenciado por múltiplos CFS (compartilhamento). |
-| **RN-003** | RFS não tem SubscriberID nem relatedParty[subscriber]. |
-| **RN-004** | Terminar RFS exige que nenhum CFS ativo dependa dele. |
+| **RN-003** | RFS não tem SubscriberID nem relatedParty[subscriber].             |
+| **RN-004** | Terminar RFS exige que nenhum CFS ativo dependa dele.              |
 
 ### 12.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Navegação** | GET RFS → supportingResource → porta/ONT reais (Módulo 2). |
-| **CA-002** | **Compartilhamento** | RFS referenciado por 2 CFS é válido. |
-| **CA-003** | **Dependência** | Terminar RFS com CFS ativo retorna 409. |
+| ID         | Critério             | Resultado Esperado                                         |
+| ---------- | -------------------- | ---------------------------------------------------------- |
+| **CA-001** | **Navegação**        | GET RFS → supportingResource → porta/ONT reais (Módulo 2). |
+| **CA-002** | **Compartilhamento** | RFS referenciado por 2 CFS é válido.                       |
+| **CA-003** | **Dependência**      | Terminar RFS com CFS ativo retorna 409.                    |
 
 ### 12.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Serviço de rede** | "Serviço de rede" (Network & Services) | GenericService + "uses" circuito | L2VPN / Circuit (resource-adjacent) | **RFS (TMF638) com supportingResource** |
-| **Reuso técnico** | Limitado | Via relacionamento | Não identificado no levantamento | **RFS compartilhável entre CFS** |
-| **Navegação até porta** | Sim (Portas e Serviços) | Via Connectivity | Via cable trace | **supportingResource → path (Módulo 2)** |
+| Capacidade              | Netwin                                 | Kuwaiba                          | NetBox                              | Decisão Nexus                            |
+| ----------------------- | -------------------------------------- | -------------------------------- | ----------------------------------- | ---------------------------------------- |
+| **Serviço de rede**     | "Serviço de rede" (Network & Services) | GenericService + "uses" circuito | L2VPN / Circuit (resource-adjacent) | **RFS (TMF638) com supportingResource**  |
+| **Reuso técnico**       | Limitado                               | Via relacionamento               | Não identificado no levantamento    | **RFS compartilhável entre CFS**         |
+| **Navegação até porta** | Sim (Portas e Serviços)                | Via Connectivity                 | Via cable trace                     | **supportingResource → path (Módulo 2)** |
 
 ---
 
@@ -895,12 +927,12 @@ Formaliza a única ponte legítima entre o Service Domain e o Resource Domain: `
 
 ### 13.3 Mapeamento de atributos TMF
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `supportingResource[].id` | string | Sim | UUID do Resource (Módulo 2). |
-| `supportingResource[].@referredType` | string | Sim | PhysicalResource \| LogicalResource. |
-| `supportingResource[].name` | string | Não | Cache do nome (denormalização opcional p/ leitura). |
-| `supportingResource[].role` | string | Não | Papel do recurso no serviço (ex.: "accessPort", "cpe", "vrf"). |
+| Atributo TMF                         | Tipo   | Obrigatório | Observação V.tal                                               |
+| ------------------------------------ | ------ | :---------: | -------------------------------------------------------------- |
+| `supportingResource[].id`            | string |     Sim     | UUID do Resource (Módulo 2).                                   |
+| `supportingResource[].@referredType` | string |     Sim     | PhysicalResource \| LogicalResource.                           |
+| `supportingResource[].name`          | string |     Não     | Cache do nome (denormalização opcional p/ leitura).            |
+| `supportingResource[].role`          | string |     Não     | Papel do recurso no serviço (ex.: "accessPort", "cpe", "vrf"). |
 
 ### 13.4 Exemplo de consulta de impacto reverso
 
@@ -916,44 +948,44 @@ GET /service?supportingResource.id=res-port-pon-rj-bot-0-1-3&state=active
 
 ### 13.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Vincular recurso** | Adicionar supportingResource com validação de existência (Módulo 2). |
-| **RF-002** | **Forward trace** | GET serviço → recursos de suporte (com papel). |
-| **RF-003** | **Reverse trace** | GET por supportingResource → serviços impactados. |
-| **RF-004** | **Consistência por evento** | Consumir ResourceStateChange/Delete (Módulo 2) e marcar serviços impactados. |
-| **RF-005** | **Trace físico completo** | Encadear serviço → RFS → recursos → trajeto óptico → **trajeto civil** (cabo, duto, banco de dutos, caixa, poste), compondo com REQ-MOD02-012 RF-010. Responde "que ativos físicos, até a infraestrutura civil, sustentam este serviço". |
-| **RF-006** | **Impacto reverso a partir de ativo civil** | A partir de uma caixa, duto, banco de dutos ou poste, listar os CFS afetados — passando por REQ-MOD02-012 RF-011 e pelo reverse trace deste requisito. Responde "que clientes caem se esta caixa for arrancada". |
+| ID         | Nome                                        | Descrição                                                                                                                                                                                                                                |
+| ---------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Vincular recurso**                        | Adicionar supportingResource com validação de existência (Módulo 2).                                                                                                                                                                     |
+| **RF-002** | **Forward trace**                           | GET serviço → recursos de suporte (com papel).                                                                                                                                                                                           |
+| **RF-003** | **Reverse trace**                           | GET por supportingResource → serviços impactados.                                                                                                                                                                                        |
+| **RF-004** | **Consistência por evento**                 | Consumir ResourceStateChange/Delete (Módulo 2) e marcar serviços impactados.                                                                                                                                                             |
+| **RF-005** | **Trace físico completo**                   | Encadear serviço → RFS → recursos → trajeto óptico → **trajeto civil** (cabo, duto, banco de dutos, caixa, poste), compondo com REQ-MOD02-012 RF-010. Responde "que ativos físicos, até a infraestrutura civil, sustentam este serviço". |
+| **RF-006** | **Impacto reverso a partir de ativo civil** | A partir de uma caixa, duto, banco de dutos ou poste, listar os CFS afetados — passando por REQ-MOD02-012 RF-011 e pelo reverse trace deste requisito. Responde "que clientes caem se esta caixa for arrancada".                         |
 
 > **A rastreabilidade que a operação pede é mais longa que a ponte Service↔Resource.** `supportingResource` liga o RFS ao recurso de rede; a pergunta operacional real vai até o ativo civil que sustenta aquele recurso. Nenhum dos dois lados resolve isso sozinho: o Módulo 3 conhece o serviço e o recurso, o Módulo 2 conhece o trajeto e a infraestrutura. O trace completo é a composição das duas consultas, e não justifica duplicar modelagem em nenhum dos lados.
 
 ### 13.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | supportingResource só em RFS (CFS é indireto, via RFS). |
-| **RN-002** | Vincular recurso inexistente é rejeitado (422). |
-| **RN-003** | Delete/suspensão de Resource com serviço ativo dependente gera evento de alerta (não bloqueia no Módulo 2, mas sinaliza). |
+| ID         | Regra de Negócio                                                                                                                                               |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | supportingResource só em RFS (CFS é indireto, via RFS).                                                                                                        |
+| **RN-002** | Vincular recurso inexistente é rejeitado (422).                                                                                                                |
+| **RN-003** | Delete/suspensão de Resource com serviço ativo dependente gera evento de alerta (não bloqueia no Módulo 2, mas sinaliza).                                      |
 | **RN-004** | O trace físico e o impacto reverso são **consultas compostas**: o Módulo 3 não copia trajeto, geometria nem atributo de infraestrutura para dentro do Service. |
-| **RN-005** | Trecho sem infraestrutura declarada aparece no resultado como lacuna explícita — o impacto nunca é inferido para preencher buraco de inventário. |
+| **RN-005** | Trecho sem infraestrutura declarada aparece no resultado como lacuna explícita — o impacto nunca é inferido para preencher buraco de inventário.               |
 
 ### 13.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Validação** | Vincular Resource inexistente retorna 422. |
-| **CA-002** | **Reverse trace** | GET por recurso lista serviços ativos dependentes. |
-| **CA-003** | **Propagação** | ResourceStateChange (down) marca serviços como impactados. |
-| **CA-004** | **Trace físico completo** | Consulta a partir de um CFS FTTH devolve RFS, porta PON, cabo, fibra, CTO e a infraestrutura civil do percurso (duto, banco, caixas, postes), em ordem. |
-| **CA-005** | **Impacto de ativo civil** | Consulta a partir de uma caixa subterrânea devolve a lista de CFS afetados, com contagem por Tenant. |
-| **CA-006** | **Lacuna explícita** | Serviço cujo cabo não tem apoio declarado em parte do percurso devolve o trace com o trecho marcado como lacuna, sem interromper a resposta. |
+| ID         | Critério                   | Resultado Esperado                                                                                                                                      |
+| ---------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Validação**              | Vincular Resource inexistente retorna 422.                                                                                                              |
+| **CA-002** | **Reverse trace**          | GET por recurso lista serviços ativos dependentes.                                                                                                      |
+| **CA-003** | **Propagação**             | ResourceStateChange (down) marca serviços como impactados.                                                                                              |
+| **CA-004** | **Trace físico completo**  | Consulta a partir de um CFS FTTH devolve RFS, porta PON, cabo, fibra, CTO e a infraestrutura civil do percurso (duto, banco, caixas, postes), em ordem. |
+| **CA-005** | **Impacto de ativo civil** | Consulta a partir de uma caixa subterrânea devolve a lista de CFS afetados, com contagem por Tenant.                                                    |
+| **CA-006** | **Lacuna explícita**       | Serviço cujo cabo não tem apoio declarado em parte do percurso devolve o trace com o trecho marcado como lacuna, sem interromper a resposta.            |
 
 ### 13.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Serviço → recurso** | Portas e Serviços | "uses" (Service → circuit) | Indireto (L2VPN termination) | **supportingResource (referência por ID)** |
-| **Impacto reverso** | Relatório | Manual | Limitado | **Reverse trace por query/evento** |
+| Capacidade                                    | Netwin                           | Kuwaiba                          | NetBox                           | Decisão Nexus                                                    |
+| --------------------------------------------- | -------------------------------- | -------------------------------- | -------------------------------- | ---------------------------------------------------------------- |
+| **Serviço → recurso**                         | Portas e Serviços                | "uses" (Service → circuit)       | Indireto (L2VPN termination)     | **supportingResource (referência por ID)**                       |
+| **Impacto reverso**                           | Relatório                        | Manual                           | Limitado                         | **Reverse trace por query/evento**                               |
 | **Serviço → ativo civil (cabo, duto, caixa)** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Consulta composta com REQ-MOD02-012 — sem duplicar modelagem** |
 
 ---
@@ -975,11 +1007,11 @@ Formaliza a composição entre serviços: CFS é realizado por um ou mais RFS; u
 
 ### 14.3 Mapeamento de atributos TMF
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `supportingService[].id` | string | Sim | UUID do serviço suportante. |
-| `supportingService[].@referredType` | string | Sim | ResourceFacingService (tipicamente). |
-| `supportingService[].role` | string | Não | Papel na composição (ex.: "access", "transport"). |
+| Atributo TMF                        | Tipo   | Obrigatório | Observação V.tal                                  |
+| ----------------------------------- | ------ | :---------: | ------------------------------------------------- |
+| `supportingService[].id`            | string |     Sim     | UUID do serviço suportante.                       |
+| `supportingService[].@referredType` | string |     Sim     | ResourceFacingService (tipicamente).              |
+| `supportingService[].role`          | string |     Não     | Papel na composição (ex.: "access", "transport"). |
 
 ### 14.4 Exemplo de payload (empresarial multi-camada)
 
@@ -996,33 +1028,33 @@ CFS  "Link-Dedicado-1G-Acme"
 
 ### 14.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Compor** | Adicionar supportingService a CFS/RFS. |
-| **RF-002** | **Navegar árvore** | GET expandindo composição completa (CFS → RFS → RFS). |
-| **RF-003** | **Anti-ciclo** | Rejeitar composição que forme ciclo. |
+| ID         | Nome                     | Descrição                                                      |
+| ---------- | ------------------------ | -------------------------------------------------------------- |
+| **RF-001** | **Compor**               | Adicionar supportingService a CFS/RFS.                         |
+| **RF-002** | **Navegar árvore**       | GET expandindo composição completa (CFS → RFS → RFS).          |
+| **RF-003** | **Anti-ciclo**           | Rejeitar composição que forme ciclo.                           |
 | **RF-004** | **Propagação de estado** | Política de propagação de estado pela árvore (REQ-005 RF-006). |
 
 ### 14.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | CFS só compõe com RFS (não com outro CFS). |
-| **RN-002** | Sem ciclos: A suporta B, B não pode suportar A. |
+| ID         | Regra de Negócio                                                          |
+| ---------- | ------------------------------------------------------------------------- |
+| **RN-001** | CFS só compõe com RFS (não com outro CFS).                                |
+| **RN-002** | Sem ciclos: A suporta B, B não pode suportar A.                           |
 | **RN-003** | Terminar serviço suportante exige tratar dependentes (RN-004 do REQ-007). |
 
 ### 14.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Árvore** | GET retorna composição multi-nível. |
-| **CA-002** | **Anti-ciclo** | Composição cíclica retorna 422. |
+| ID         | Critério       | Resultado Esperado                  |
+| ---------- | -------------- | ----------------------------------- |
+| **CA-001** | **Árvore**     | GET retorna composição multi-nível. |
+| **CA-002** | **Anti-ciclo** | Composição cíclica retorna 422.     |
 
 ### 14.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Composição de serviço** | Plana | Hierarquia parcial | Não identificado no levantamento | **supportingService (árvore CFS→RFS→RFS)** |
+| Capacidade                | Netwin | Kuwaiba            | NetBox                           | Decisão Nexus                              |
+| ------------------------- | ------ | ------------------ | -------------------------------- | ------------------------------------------ |
+| **Composição de serviço** | Plana  | Hierarquia parcial | Não identificado no levantamento | **supportingService (árvore CFS→RFS→RFS)** |
 
 ---
 
@@ -1043,11 +1075,11 @@ Coerência com a Decisão 5.2 do Overview: HC cria o InstallationPoint (Módulo 
 
 ### 15.3 Mapeamento de atributos TMF
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `place[].id` | string | Não | UUID do Site/Address/Location (Módulo 1). |
-| `place[].@referredType` | string | Não | GeographicAddress \| GeographicSite \| GeographicLocation. |
-| `place[].role` | string | Não | installationAddress \| endpointA \| endpointZ \| coverageArea. |
+| Atributo TMF            | Tipo   | Obrigatório | Observação V.tal                                               |
+| ----------------------- | ------ | :---------: | -------------------------------------------------------------- |
+| `place[].id`            | string |     Não     | UUID do Site/Address/Location (Módulo 1).                      |
+| `place[].@referredType` | string |     Não     | GeographicAddress \| GeographicSite \| GeographicLocation.     |
+| `place[].role`          | string |     Não     | installationAddress \| endpointA \| endpointZ \| coverageArea. |
 
 ### 15.4 Exemplo de payload (serviço ponto-a-ponto)
 
@@ -1066,32 +1098,32 @@ Coerência com a Decisão 5.2 do Overview: HC cria o InstallationPoint (Módulo 
 
 ### 15.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Ancorar** | Vincular place com papel ao CFS/RFS. |
-| **RF-002** | **Multiponto** | Suportar múltiplos place com papéis (A/Z, coverage). |
+| ID         | Nome                    | Descrição                                                       |
+| ---------- | ----------------------- | --------------------------------------------------------------- |
+| **RF-001** | **Ancorar**             | Vincular place com papel ao CFS/RFS.                            |
+| **RF-002** | **Multiponto**          | Suportar múltiplos place com papéis (A/Z, coverage).            |
 | **RF-003** | **Consulta geográfica** | GET serviços por place (todos os serviços de um Site/endereço). |
 
 ### 15.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | place referencia entidade existente no Módulo 1 (validação no save). |
+| ID         | Regra de Negócio                                                                  |
+| ---------- | --------------------------------------------------------------------------------- |
+| **RN-001** | place referencia entidade existente no Módulo 1 (validação no save).              |
 | **RN-002** | CFS residencial tem 1 installationAddress; serviço P2P tem endpointA e endpointZ. |
 
 ### 15.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
+| ID         | Critério         | Resultado Esperado                                          |
+| ---------- | ---------------- | ----------------------------------------------------------- |
 | **CA-001** | **Por endereço** | GET serviços por place retorna serviços ativos no endereço. |
-| **CA-002** | **P2P** | Serviço com endpointA/Z é aceito e consultável por ambos. |
+| **CA-002** | **P2P**          | Serviço com endpointA/Z é aceito e consultável por ambos.   |
 
 ### 15.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Serviço → localização** | Via local/endereço | Via geo do objeto | Via site (resource) | **place → Módulo 1 (TMF673/674/675)** |
-| **Multiponto A/Z** | Limitado | Via circuito | Via circuit termination | **place[] com papéis** |
+| Capacidade                | Netwin             | Kuwaiba           | NetBox                  | Decisão Nexus                         |
+| ------------------------- | ------------------ | ----------------- | ----------------------- | ------------------------------------- |
+| **Serviço → localização** | Via local/endereço | Via geo do objeto | Via site (resource)     | **place → Módulo 1 (TMF673/674/675)** |
+| **Multiponto A/Z**        | Limitado           | Via circuito      | Via circuit termination | **place[] com papéis**                |
 
 ---
 
@@ -1112,11 +1144,11 @@ O `id` UUID v7 é interno e não-amigável; o BSS e o atendimento precisam de um
 
 ### 16.3 Mapeamento de atributos TMF
 
-| Característica | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `SubscriberID` | string | Sim (CFS) | Identidade de negócio do serviço de cliente. Única entre serviços ativos. |
-| `legacySubscriberID` | string | Não | ID de assinante no sistema de origem (no grupo `_origin`). |
-| `bssReference` | string | Não | Chave de correlação com billing/BSS. |
+| Característica       | Tipo   | Obrigatório | Observação V.tal                                                          |
+| -------------------- | ------ | :---------: | ------------------------------------------------------------------------- |
+| `SubscriberID`       | string |  Sim (CFS)  | Identidade de negócio do serviço de cliente. Única entre serviços ativos. |
+| `legacySubscriberID` | string |     Não     | ID de assinante no sistema de origem (no grupo `_origin`).                |
+| `bssReference`       | string |     Não     | Chave de correlação com billing/BSS.                                      |
 
 ### 16.4 Exemplo
 
@@ -1135,32 +1167,32 @@ O `id` UUID v7 é interno e não-amigável; o BSS e o atendimento precisam de um
 
 ### 16.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
+| ID         | Nome               | Descrição                                                                  |
+| ---------- | ------------------ | -------------------------------------------------------------------------- |
 | **RF-001** | **Gerar/atribuir** | Atribuir SubscriberID na criação do CFS (gerado ou informado na migração). |
-| **RF-002** | **Unicidade** | Garantir unicidade entre serviços ativos. |
-| **RF-003** | **Estabilidade** | Preservar SubscriberID em re-homes (troca de RFS/recursos). |
-| **RF-004** | **Busca** | GET /service por SubscriberID (índice dedicado). |
+| **RF-002** | **Unicidade**      | Garantir unicidade entre serviços ativos.                                  |
+| **RF-003** | **Estabilidade**   | Preservar SubscriberID em re-homes (troca de RFS/recursos).                |
+| **RF-004** | **Busca**          | GET /service por SubscriberID (índice dedicado).                           |
 
 ### 16.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | SubscriberID obrigatório em todo CFS. |
-| **RN-002** | Único entre CFS não-terminados. |
+| ID         | Regra de Negócio                            |
+| ---------- | ------------------------------------------- |
+| **RN-001** | SubscriberID obrigatório em todo CFS.       |
+| **RN-002** | Único entre CFS não-terminados.             |
 | **RN-003** | Imutável após criação (re-home não altera). |
 
 ### 16.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
+| ID         | Critério      | Resultado Esperado                                     |
+| ---------- | ------------- | ------------------------------------------------------ |
 | **CA-001** | **Unicidade** | Criar 2º CFS com mesmo SubscriberID ativo retorna 409. |
-| **CA-002** | **Re-home** | Trocar RFS preserva SubscriberID. |
+| **CA-002** | **Re-home**   | Trocar RFS preserva SubscriberID.                      |
 
 ### 16.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
+| Capacidade                  | Netwin                | Kuwaiba              | NetBox                           | Decisão Nexus                                    |
+| --------------------------- | --------------------- | -------------------- | -------------------------------- | ------------------------------------------------ |
 | **Identidade de assinante** | ID de serviço próprio | Via cliente/contrato | Não identificado no levantamento | **SubscriberID Nexus-native + `_origin.legacy`** |
 
 ---
@@ -1199,35 +1231,35 @@ CFS "Bitstream GPON 700M" (wholesale → Tenant Provedor X)   |   CFS "FTTH 700M
 
 ### 17.4 Características-chave
 
-| Característica | Camada | Exemplo |
-|---|---|---|
-| downstream/upstream | CFS | 700/350 Mbps |
-| modelo_comercial | CFS | wholesale \| direto |
-| S_VLAN / C_VLAN | RFS | 1001 / 778 |
-| perfil_banda | RFS | GPON-700-350 |
-| ONT / Port PON | Resource (Mód. 2) | referência |
+| Característica      | Camada            | Exemplo             |
+| ------------------- | ----------------- | ------------------- |
+| downstream/upstream | CFS               | 700/350 Mbps        |
+| modelo_comercial    | CFS               | wholesale \| direto |
+| S_VLAN / C_VLAN     | RFS               | 1001 / 778          |
+| perfil_banda        | RFS               | GPON-700-350        |
+| ONT / Port PON      | Resource (Mód. 2) | referência          |
 
 ### 17.5 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Instanciar na ativação** | Criar CFS+RFS no trigger HP→HC. |
-| **RF-002** | **Wholesale e direto** | Suportar ambos os CFS sobre o mesmo RFS de acesso. |
-| **RF-003** | **Upgrade de velocidade** | Alterar CFS (nova spec) preservando SubscriberID e ajustando perfil no RFS. |
+| ID         | Nome                       | Descrição                                                                   |
+| ---------- | -------------------------- | --------------------------------------------------------------------------- |
+| **RF-001** | **Instanciar na ativação** | Criar CFS+RFS no trigger HP→HC.                                             |
+| **RF-002** | **Wholesale e direto**     | Suportar ambos os CFS sobre o mesmo RFS de acesso.                          |
+| **RF-003** | **Upgrade de velocidade**  | Alterar CFS (nova spec) preservando SubscriberID e ajustando perfil no RFS. |
 
 ### 17.6 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Ativação** | CFS+RFS criados, recursos vinculados, state=active. |
-| **CA-002** | **Upgrade** | Mudança de velocidade ajusta perfil_banda no RFS sem trocar SubscriberID. |
+| ID         | Critério     | Resultado Esperado                                                        |
+| ---------- | ------------ | ------------------------------------------------------------------------- |
+| **CA-001** | **Ativação** | CFS+RFS criados, recursos vinculados, state=active.                       |
+| **CA-002** | **Upgrade**  | Mudança de velocidade ajusta perfil_banda no RFS sem trocar SubscriberID. |
 
 ### 17.7 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Banda larga GPON** | FTTH Aprovisionamento / GPON | Via circuito + service | L2VPN proxy | **CFS+RFS GPON (TMF638)** |
-| **Wholesale + varejo** | Parcial | Via contrato | Não identificado no levantamento | **2 CFS / 1 RFS** |
+| Capacidade             | Netwin                       | Kuwaiba                | NetBox                           | Decisão Nexus             |
+| ---------------------- | ---------------------------- | ---------------------- | -------------------------------- | ------------------------- |
+| **Banda larga GPON**   | FTTH Aprovisionamento / GPON | Via circuito + service | L2VPN proxy                      | **CFS+RFS GPON (TMF638)** |
+| **Wholesale + varejo** | Parcial                      | Via contrato           | Não identificado no levantamento | **2 CFS / 1 RFS**         |
 
 ---
 
@@ -1261,34 +1293,34 @@ CFS "Link-Dedicado-1G-Acme" (SubscriberID SUB-CORP-12345, subscriber: cliente di
 
 ### 18.4 Características-chave
 
-| Característica | Camada | Exemplo |
-|---|---|---|
-| velocidade / CIR | CFS | 1 Gbps / 1 Gbps |
-| sla_comercial | CFS | Empresarial-99.9 / MTTR 4h |
-| rd (route distinguisher) | RFS L3VPN | 65000:12345 |
-| VRF / Prefix / IP | Resource (Mód. 2) | referência |
+| Característica           | Camada            | Exemplo                    |
+| ------------------------ | ----------------- | -------------------------- |
+| velocidade / CIR         | CFS               | 1 Gbps / 1 Gbps            |
+| sla_comercial            | CFS               | Empresarial-99.9 / MTTR 4h |
+| rd (route distinguisher) | RFS L3VPN         | 65000:12345                |
+| VRF / Prefix / IP        | Resource (Mód. 2) | referência                 |
 
 ### 18.5 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Multiponto** | CFS com endpointA/Z e RFS de acesso por ponta. |
-| **RF-002** | **L3VPN** | RFS com VRF/IP referenciados (Módulo 2). |
+| ID         | Nome                       | Descrição                                               |
+| ---------- | -------------------------- | ------------------------------------------------------- |
+| **RF-001** | **Multiponto**             | CFS com endpointA/Z e RFS de acesso por ponta.          |
+| **RF-002** | **L3VPN**                  | RFS com VRF/IP referenciados (Módulo 2).                |
 | **RF-003** | **Backbone compartilhado** | RFS de core reutilizado por múltiplos CFS empresariais. |
 
 ### 18.6 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
+| ID         | Critério       | Resultado Esperado                              |
+| ---------- | -------------- | ----------------------------------------------- |
 | **CA-001** | **Composição** | CFS → 2 RFS acesso + 1 RFS transporte montados. |
-| **CA-002** | **VRF** | RFS L3VPN referencia VRF existente no Módulo 2. |
+| **CA-002** | **VRF**        | RFS L3VPN referencia VRF existente no Módulo 2. |
 
 ### 18.7 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **L2/L3 VPN empresarial** | Serviços de rede | MPLS/circuito + service | L2VPN / VRF (resource) | **CFS+RFS multi-camada (TMF638)** |
-| **Backbone compartilhado** | Limitado | Via circuito | Parcial | **RFS core compartilhado** |
+| Capacidade                 | Netwin           | Kuwaiba                 | NetBox                 | Decisão Nexus                     |
+| -------------------------- | ---------------- | ----------------------- | ---------------------- | --------------------------------- |
+| **L2/L3 VPN empresarial**  | Serviços de rede | MPLS/circuito + service | L2VPN / VRF (resource) | **CFS+RFS multi-camada (TMF638)** |
+| **Backbone compartilhado** | Limitado         | Via circuito            | Parcial                | **RFS core compartilhado**        |
 
 ---
 
@@ -1300,7 +1332,7 @@ CFS "Link-Dedicado-1G-Acme" (SubscriberID SUB-CORP-12345, subscriber: cliente di
 
 ### 19.1 Descrição
 
-Modela serviço de voz gerenciada (CloudVoIP): linha/tronco SIP entregue sobre a conectividade FTTH/empresarial. Caso que exercita serviço *sobre serviço* — o CFS VoIP depende do CFS de acesso — e recursos lógicos de voz (números/E.164 como LogicalResource no Módulo 2).
+Modela serviço de voz gerenciada (CloudVoIP): linha/tronco SIP entregue sobre a conectividade FTTH/empresarial. Caso que exercita serviço _sobre serviço_ — o CFS VoIP depende do CFS de acesso — e recursos lógicos de voz (números/E.164 como LogicalResource no Módulo 2).
 
 ### 19.2 Racional arquitetural
 
@@ -1321,35 +1353,35 @@ CFS "CloudVoIP-10-ramais-Acme" (SubscriberID SUB-VOIP-7788)
 
 ### 19.4 Características-chave
 
-| Característica | Camada | Uso |
-|---|---|---|
-| `ramais` / `canais_simultaneos` | CFS/RFS | Capacidade comercial e técnica do serviço de voz. |
-| `codec` | RFS | Perfil técnico negociado no tronco SIP. |
-| `plano` | CFS | Variação comercial governada pela ServiceSpecification. |
-| Faixa E.164 | Resource | LogicalResource referenciado pelo RFS; nunca copiado para o CFS. |
+| Característica                  | Camada   | Uso                                                              |
+| ------------------------------- | -------- | ---------------------------------------------------------------- |
+| `ramais` / `canais_simultaneos` | CFS/RFS  | Capacidade comercial e técnica do serviço de voz.                |
+| `codec`                         | RFS      | Perfil técnico negociado no tronco SIP.                          |
+| `plano`                         | CFS      | Variação comercial governada pela ServiceSpecification.          |
+| Faixa E.164                     | Resource | LogicalResource referenciado pelo RFS; nunca copiado para o CFS. |
 
 ### 19.5 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **VoIP sobre acesso** | CFS VoIP com dependsOn ao CFS de acesso. |
+| ID         | Nome                     | Descrição                                                       |
+| ---------- | ------------------------ | --------------------------------------------------------------- |
+| **RF-001** | **VoIP sobre acesso**    | CFS VoIP com dependsOn ao CFS de acesso.                        |
 | **RF-002** | **Números como recurso** | RFS referencia faixa/números E.164 (LogicalResource, Módulo 2). |
-| **RF-003** | **Suspensão em cascata** | Suspensão do acesso reflete no VoIP conforme política. |
+| **RF-003** | **Suspensão em cascata** | Suspensão do acesso reflete no VoIP conforme política.          |
 
 ### 19.6 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
+| ID         | Critério        | Resultado Esperado                                      |
+| ---------- | --------------- | ------------------------------------------------------- |
 | **CA-001** | **Dependência** | CFS VoIP referencia CFS acesso via serviceRelationship. |
-| **CA-002** | **Números** | RFS SIP referencia faixa E.164 no Módulo 2. |
+| **CA-002** | **Números**     | RFS SIP referencia faixa E.164 no Módulo 2.             |
 
 ### 19.7 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Voz/VoIP** | Serviço de cliente | GenericService | Não identificado no levantamento | **CFS+RFS VoIP (TMF638)** |
-| **Números E.164** | Recurso lógico | Atributo | Não identificado no levantamento | **LogicalResource (Módulo 2)** |
-| **Serviço sobre serviço** | Limitado | Via relacionamento | Não identificado no levantamento | **serviceRelationship dependsOn** |
+| Capacidade                | Netwin             | Kuwaiba            | NetBox                           | Decisão Nexus                     |
+| ------------------------- | ------------------ | ------------------ | -------------------------------- | --------------------------------- |
+| **Voz/VoIP**              | Serviço de cliente | GenericService     | Não identificado no levantamento | **CFS+RFS VoIP (TMF638)**         |
+| **Números E.164**         | Recurso lógico     | Atributo           | Não identificado no levantamento | **LogicalResource (Módulo 2)**    |
+| **Serviço sobre serviço** | Limitado           | Via relacionamento | Não identificado no levantamento | **serviceRelationship dependsOn** |
 
 ---
 
@@ -1370,20 +1402,20 @@ Mesmo padrão do catálogo de ResourceRelationships (REQ-MOD02-024, Decisão 5.6
 
 ### 20.3 Mapeamento de atributos TMF
 
-| Atributo TMF | Tipo | Obrigatório | Observação |
-|---|---|:---:|---|
-| `serviceRelationship[].relationshipType` | string | Sim | Tipo do catálogo (bootstrap ou extensão). |
-| `serviceRelationship[].service.id` | string | Sim | Serviço relacionado. |
+| Atributo TMF                             | Tipo   | Obrigatório | Observação                                |
+| ---------------------------------------- | ------ | :---------: | ----------------------------------------- |
+| `serviceRelationship[].relationshipType` | string |     Sim     | Tipo do catálogo (bootstrap ou extensão). |
+| `serviceRelationship[].service.id`       | string |     Sim     | Serviço relacionado.                      |
 
 Bootstrap canônico de RelationshipTypes:
 
-| Tipo | Semântica |
-|---|---|
-| `dependsOn` | Serviço A requer B operante (VoIP dependsOn acesso). |
-| `aggregates` | A agrega B em um bundle comercial. |
-| `replaces` | A substitui B (upgrade/migração). |
-| `peersWith` | A e B são pares (ex.: redundância). |
-| `backsUp` | A é backup de B. |
+| Tipo         | Semântica                                            |
+| ------------ | ---------------------------------------------------- |
+| `dependsOn`  | Serviço A requer B operante (VoIP dependsOn acesso). |
+| `aggregates` | A agrega B em um bundle comercial.                   |
+| `replaces`   | A substitui B (upgrade/migração).                    |
+| `peersWith`  | A e B são pares (ex.: redundância).                  |
+| `backsUp`    | A é backup de B.                                     |
 
 ### 20.4 Exemplo de payload
 
@@ -1409,30 +1441,30 @@ Bootstrap canônico de RelationshipTypes:
 
 ### 20.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Catálogo extensível** | CRUD de RelationshipType com Audit + evento. |
-| **RF-002** | **Relacionar** | Adicionar serviceRelationship tipado entre serviços. |
-| **RF-003** | **Navegar** | GET serviços relacionados por tipo. |
+| ID         | Nome                    | Descrição                                            |
+| ---------- | ----------------------- | ---------------------------------------------------- |
+| **RF-001** | **Catálogo extensível** | CRUD de RelationshipType com Audit + evento.         |
+| **RF-002** | **Relacionar**          | Adicionar serviceRelationship tipado entre serviços. |
+| **RF-003** | **Navegar**             | GET serviços relacionados por tipo.                  |
 
 ### 20.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | relationshipType deve existir no catálogo. |
+| ID         | Regra de Negócio                                                            |
+| ---------- | --------------------------------------------------------------------------- |
+| **RN-001** | relationshipType deve existir no catálogo.                                  |
 | **RN-002** | Novos tipos via Administrador do Catálogo, com governança (Audit + TMF688). |
 
 ### 20.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Tipado** | Relação com tipo do catálogo é aceita. |
+| ID         | Critério     | Resultado Esperado                            |
+| ---------- | ------------ | --------------------------------------------- |
+| **CA-001** | **Tipado**   | Relação com tipo do catálogo é aceita.        |
 | **CA-002** | **Extensão** | Novo tipo criado via API gera Audit + evento. |
 
 ### 20.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
+| Capacidade              | Netwin     | Kuwaiba                   | NetBox                           | Decisão Nexus                           |
+| ----------------------- | ---------- | ------------------------- | -------------------------------- | --------------------------------------- |
 | **Relações de serviço** | Implícitas | Relacionamentos de classe | Não identificado no levantamento | **Catálogo tipado extensível (TMF638)** |
 
 ---
@@ -1454,23 +1486,23 @@ Define o catálogo de eventos canônicos publicados pelo Service Domain via outb
 
 ### 21.3 Mapeamento de atributos TMF
 
-| Atributo | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `eventId` | UUID v7 | Sim | Identificador idempotente. |
-| `eventType` | string | Sim | Tipo canônico de evento Service. |
-| `eventTime` | datetime | Sim | Instante UTC da mudança. |
-| `event.service` | object | Sim | Snapshot ou delta do Service. |
-| `correlationId` | string | Não | Ordem, workflow ou wave de migração relacionada. |
+| Atributo        | Tipo     | Obrigatório | Observação V.tal                                 |
+| --------------- | -------- | :---------: | ------------------------------------------------ |
+| `eventId`       | UUID v7  |     Sim     | Identificador idempotente.                       |
+| `eventType`     | string   |     Sim     | Tipo canônico de evento Service.                 |
+| `eventTime`     | datetime |     Sim     | Instante UTC da mudança.                         |
+| `event.service` | object   |     Sim     | Snapshot ou delta do Service.                    |
+| `correlationId` | string   |     Não     | Ordem, workflow ou wave de migração relacionada. |
 
 Catálogo de eventos:
 
-| Evento | Quando | Principais consumidores |
-|---|---|---|
-| `ServiceCreateEvent` | Novo serviço instanciado. | Order, Data Lake. |
-| `ServiceAttributeValueChangeEvent` | Mudança de característica (ex.: upgrade). | BSS, Data Lake. |
-| `ServiceStateChangeEvent` | Transição de estado (active/inactive/terminated). | Service Assurance, BSS, Order. |
-| `ServiceDeleteEvent` | Terminação (soft). | Data Lake, billing. |
-| `ServiceRehomeEvent` | Troca de RFS/recursos preservando SubscriberID. | Service Assurance. |
+| Evento                             | Quando                                            | Principais consumidores        |
+| ---------------------------------- | ------------------------------------------------- | ------------------------------ |
+| `ServiceCreateEvent`               | Novo serviço instanciado.                         | Order, Data Lake.              |
+| `ServiceAttributeValueChangeEvent` | Mudança de característica (ex.: upgrade).         | BSS, Data Lake.                |
+| `ServiceStateChangeEvent`          | Transição de estado (active/inactive/terminated). | Service Assurance, BSS, Order. |
+| `ServiceDeleteEvent`               | Terminação (soft).                                | Data Lake, billing.            |
+| `ServiceRehomeEvent`               | Troca de RFS/recursos preservando SubscriberID.   | Service Assurance.             |
 
 ### 21.4 Exemplo de evento
 
@@ -1500,31 +1532,31 @@ Catálogo de eventos:
 
 ### 21.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Outbox transacional** | Falha de publicação reverte a escrita. |
-| **RF-002** | **Schema Registry** | Eventos versionados (Avro/JSON); inválidos vão para dead letter. |
-| **RF-003** | **Catálogo público** | GET /events/catalog com schemas e exemplos. |
-| **RF-004** | **Idempotência** | UUID v7 por evento. |
+| ID         | Nome                    | Descrição                                                        |
+| ---------- | ----------------------- | ---------------------------------------------------------------- |
+| **RF-001** | **Outbox transacional** | Falha de publicação reverte a escrita.                           |
+| **RF-002** | **Schema Registry**     | Eventos versionados (Avro/JSON); inválidos vão para dead letter. |
+| **RF-003** | **Catálogo público**    | GET /events/catalog com schemas e exemplos.                      |
+| **RF-004** | **Idempotência**        | UUID v7 por evento.                                              |
 
 ### 21.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
+| ID         | Regra de Negócio                       |
+| ---------- | -------------------------------------- |
 | **RN-001** | Toda mudança relevante publica evento. |
-| **RN-002** | Eventos são imutáveis e idempotentes. |
+| **RN-002** | Eventos são imutáveis e idempotentes.  |
 
 ### 21.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Outbox** | Falha de publicação reverte escrita. |
+| ID         | Critério     | Resultado Esperado                                 |
+| ---------- | ------------ | -------------------------------------------------- |
+| **CA-001** | **Outbox**   | Falha de publicação reverte escrita.               |
 | **CA-002** | **Catálogo** | GET /events/catalog lista os 5 eventos com schema. |
 
 ### 21.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
+| Capacidade            | Netwin                           | Kuwaiba                          | NetBox            | Decisão Nexus              |
+| --------------------- | -------------------------------- | -------------------------------- | ----------------- | -------------------------- |
 | **Eventos canônicos** | Não identificado no levantamento | Não identificado no levantamento | Webhooks limitado | **TMF688 nativo (outbox)** |
 
 ---
@@ -1620,37 +1652,37 @@ CFS "CloudVoIP-10ramais-Acme" (SubscriberID SUB-VOIP-7788)
 
 ## 24. Contratos com outros módulos do Nexus
 
-| Módulo | Tipo de consumo | Detalhe |
-|---|---|---|
-| **Módulo 1 — Geographic** | Síncrono (referência) | Service referencia Site/Address via `place`. Validação de existência no save. |
-| **Módulo 2 — Resource** | Síncrono (referência) + Assíncrono (eventos) | RFS referencia Resources via `supportingResource`. Consome ResourceStateChange para análise de impacto. Terminar serviço libera reservas de Resource. |
-| **Módulo 4 — Order & Fulfillment** | Síncrono (origem) + Assíncrono (eventos) | Orders criam/alteram Services (decomposição da ordem). Viabilidade (TMF645/HP) é do Order, não do Service. `serviceOrderItem` referencia o item de ordem. |
-| **Módulo 5 — Process Orchestration** | Síncrono (BPMN tasks) | Ativação/desativação complexa, re-home e suspensão em cascata podem ser orquestrados por BPMN. |
-| **Módulo 6 — Party & Tenant** | Síncrono (referência) | `relatedParty[subscriber]` → Tenant ISP / cliente. Validação de existência (diferida no MVP — D-SVC-003). |
-| **Módulo 7 — Analytics & Events** | Assíncrono (consumidor) | Eventos TMF688 do Service consumidos pelo Data Lake (penetração, churn, ocupação). |
-| **Módulo 8 — Platform & Admin** | Síncrono (RBAC, Audit) | RBAC por Tenant e tipo de serviço (ISP enxerga apenas seus CFS). |
+| Módulo                               | Tipo de consumo                              | Detalhe                                                                                                                                                   |
+| ------------------------------------ | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Módulo 1 — Geographic**            | Síncrono (referência)                        | Service referencia Site/Address via `place`. Validação de existência no save.                                                                             |
+| **Módulo 2 — Resource**              | Síncrono (referência) + Assíncrono (eventos) | RFS referencia Resources via `supportingResource`. Consome ResourceStateChange para análise de impacto. Terminar serviço libera reservas de Resource.     |
+| **Módulo 4 — Order & Fulfillment**   | Síncrono (origem) + Assíncrono (eventos)     | Orders criam/alteram Services (decomposição da ordem). Viabilidade (TMF645/HP) é do Order, não do Service. `serviceOrderItem` referencia o item de ordem. |
+| **Módulo 5 — Process Orchestration** | Síncrono (BPMN tasks)                        | Ativação/desativação complexa, re-home e suspensão em cascata podem ser orquestrados por BPMN.                                                            |
+| **Módulo 6 — Party & Tenant**        | Síncrono (referência)                        | `relatedParty[subscriber]` → Tenant ISP / cliente. Validação de existência (diferida no MVP — D-SVC-003).                                                 |
+| **Módulo 7 — Analytics & Events**    | Assíncrono (consumidor)                      | Eventos TMF688 do Service consumidos pelo Data Lake (penetração, churn, ocupação).                                                                        |
+| **Módulo 8 — Platform & Admin**      | Síncrono (RBAC, Audit)                       | RBAC por Tenant e tipo de serviço (ISP enxerga apenas seus CFS).                                                                                          |
 
 ---
 
 ## 25. Questões em aberto
 
-| ID | Questão | Status | Responsável |
-|---|---|---|---|
-| **Q-SVC-001** | Catálogo inicial de ServiceSpecifications (CFS+RFS) do MVP: lista canônica fechada (velocidades GPON, variantes empresariais, VoIP). | *Aberta* | *Produto + Engenharia V.tal* |
-| **Q-SVC-002** | Geração do SubscriberID: formato, faixa, autoridade emissora (Nexus-native) e convivência com IDs legados de assinante. | *Aberta* | *Produto + BSS* |
-| **Q-SVC-004** | Granularidade do RFS GPON: um RFS por assinante, ou RFS de "porta PON" agregando assinantes? Trade-off volume vs. fidelidade. | *Aberta* | *Engenharia + Arquitetura* |
-| **Q-SVC-005** | Modelagem de bundle comercial (acesso + VoIP + valor agregado): CFS bundle (`isBundle`) ou agregação via serviceRelationship? | *Aberta* | *Produto* |
-| **Q-SVC-006** | Propagação de estado CFS↔RFS↔Resource: política de cascata (suspensão, falha) — automática ou orquestrada (Módulo 5)? | *Aberta* | *Operações + Arquitetura* |
-| **Q-SVC-007** | Service Assurance sobre serviço: confirmar que impact analysis (reverse trace) atende o consumidor externo de SA no MVP. | *Aberta* | *Arquitetura + Operações* |
+| ID            | Questão                                                                                                                              | Status   | Responsável                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------- | ---------------------------- |
+| **Q-SVC-001** | Catálogo inicial de ServiceSpecifications (CFS+RFS) do MVP: lista canônica fechada (velocidades GPON, variantes empresariais, VoIP). | _Aberta_ | _Produto + Engenharia V.tal_ |
+| **Q-SVC-002** | Geração do SubscriberID: formato, faixa, autoridade emissora (Nexus-native) e convivência com IDs legados de assinante.              | _Aberta_ | _Produto + BSS_              |
+| **Q-SVC-004** | Granularidade do RFS GPON: um RFS por assinante, ou RFS de "porta PON" agregando assinantes? Trade-off volume vs. fidelidade.        | _Aberta_ | _Engenharia + Arquitetura_   |
+| **Q-SVC-005** | Modelagem de bundle comercial (acesso + VoIP + valor agregado): CFS bundle (`isBundle`) ou agregação via serviceRelationship?        | _Aberta_ | _Produto_                    |
+| **Q-SVC-006** | Propagação de estado CFS↔RFS↔Resource: política de cascata (suspensão, falha) — automática ou orquestrada (Módulo 5)?                | _Aberta_ | _Operações + Arquitetura_    |
+| **Q-SVC-007** | Service Assurance sobre serviço: confirmar que impact analysis (reverse trace) atende o consumidor externo de SA no MVP.             | _Aberta_ | _Arquitetura + Operações_    |
 
 ### 25.1 Decisões resolvidas e seus impactos arquiteturais
 
-| Decisão | Requisitos impactados | Mudança aplicada |
-|---|---|---|
-| **D-SVC-001 — Home Passed não é Service** (reafirma C4) | REQ-MOD03-004, 010 | HP/viabilidade fica no Módulo 4 (TMF645) sobre Geo+Resource. Service só nasce no HC. Nenhuma entidade de viabilidade é persistida no Service Inventory. |
-| **D-SVC-002 — Wholesale como modelo default** | REQ-MOD03-006, 011 | `relatedParty[subscriber]` aponta tipicamente para Tenant ISP. CFS carrega `modelo_comercial` (wholesale\|direto). Mesmo RFS suporta os dois CFS. |
-| **D-SVC-003 — Validação de Subscriber diferida** | REQ-MOD03-006 | No MVP, Subscriber é referenciado por ID sem validação síncrona; reconciliação quando o Módulo 6 entrar (Fase 3). |
-| **D-SVC-004 — Catálogo de Service Relationships extensível** | REQ-MOD03-015 | RelationshipType de serviço tem bootstrap canônico + CRUD via API com governança (Audit + TMF688). |
+| Decisão                                                      | Requisitos impactados | Mudança aplicada                                                                                                                                        |
+| ------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D-SVC-001 — Home Passed não é Service** (reafirma C4)      | REQ-MOD03-004, 010    | HP/viabilidade fica no Módulo 4 (TMF645) sobre Geo+Resource. Service só nasce no HC. Nenhuma entidade de viabilidade é persistida no Service Inventory. |
+| **D-SVC-002 — Wholesale como modelo default**                | REQ-MOD03-006, 011    | `relatedParty[subscriber]` aponta tipicamente para Tenant ISP. CFS carrega `modelo_comercial` (wholesale\|direto). Mesmo RFS suporta os dois CFS.       |
+| **D-SVC-003 — Validação de Subscriber diferida**             | REQ-MOD03-006         | No MVP, Subscriber é referenciado por ID sem validação síncrona; reconciliação quando o Módulo 6 entrar (Fase 3).                                       |
+| **D-SVC-004 — Catálogo de Service Relationships extensível** | REQ-MOD03-015         | RelationshipType de serviço tem bootstrap canônico + CRUD via API com governança (Audit + TMF688).                                                      |
 
 ### 25.2 D-SVC-005 — Identidade e proveniência de Services
 
@@ -1658,24 +1690,24 @@ CFS "CloudVoIP-10ramais-Acme" (SubscriberID SUB-VOIP-7788)
 
 **Sistemas de origem cobertos (Service):**
 
-| Sistema de origem | Serviços migrados |
-|---|---|
-| Netwin — Network & Services | Serviços de cliente (CFS) e serviços de rede (RFS) de FTTH/GPON |
-| Netwin — Resource Provisioning | Provisionamentos GPON associados a serviço |
-| UMBOX | Serviços/recursos lógicos da Um Telecom (pós-M&A) |
-| OZMAP | Vínculos de serviço de acesso da Um Telecom |
+| Sistema de origem              | Serviços migrados                                               |
+| ------------------------------ | --------------------------------------------------------------- |
+| Netwin — Network & Services    | Serviços de cliente (CFS) e serviços de rede (RFS) de FTTH/GPON |
+| Netwin — Resource Provisioning | Provisionamentos GPON associados a serviço                      |
+| UMBOX                          | Serviços/recursos lógicos da Um Telecom (pós-M&A)               |
+| OZMAP                          | Vínculos de serviço de acesso da Um Telecom                     |
 
 **Grupo canônico `_origin` para Service:**
 
-| Characteristic | Tipo | Obrigatório na migração | Descrição |
-|---|---|:---:|---|
-| `_origin.system` | string | Sim | Ex.: `Netwin`, `UMBOX`, `OZMAP`. |
-| `_origin.id` | string | Sim | ID do serviço no sistema de origem. |
-| `_origin.entity` | string | Sim | Tipo no origem (ex.: `CustomerService`, `NetworkService`). |
-| `_origin.legacySubscriberID` | string | Não | ID de assinante legado, preservado para correlação. |
-| `_origin.migratedAt` | datetime | Sim | Timestamp ISO 8601. |
-| `_origin.migratedBy` | string | Sim | Job de migração. |
-| `_origin.extra` | JSON string | Não | Campos proprietários do legado, preservados brutos. |
+| Characteristic               | Tipo        | Obrigatório na migração | Descrição                                                  |
+| ---------------------------- | ----------- | :---------------------: | ---------------------------------------------------------- |
+| `_origin.system`             | string      |           Sim           | Ex.: `Netwin`, `UMBOX`, `OZMAP`.                           |
+| `_origin.id`                 | string      |           Sim           | ID do serviço no sistema de origem.                        |
+| `_origin.entity`             | string      |           Sim           | Tipo no origem (ex.: `CustomerService`, `NetworkService`). |
+| `_origin.legacySubscriberID` | string      |           Não           | ID de assinante legado, preservado para correlação.        |
+| `_origin.migratedAt`         | datetime    |           Sim           | Timestamp ISO 8601.                                        |
+| `_origin.migratedBy`         | string      |           Sim           | Job de migração.                                           |
+| `_origin.extra`              | JSON string |           Não           | Campos proprietários do legado, preservados brutos.        |
 
 **Exemplo de CFS migrado do Netwin:**
 
@@ -1687,13 +1719,13 @@ CFS "CloudVoIP-10ramais-Acme" (SubscriberID SUB-VOIP-7788)
   "serviceSpecification": { "id": "spec-cfs-bitstream-gpon-700" },
   "state": "active",
   "serviceCharacteristic": [
-    { "name": "SubscriberID",            "value": "SUB778899" },
-    { "name": "_origin.system",          "value": "Netwin" },
-    { "name": "_origin.id",              "value": "SVC-CLI-44521" },
-    { "name": "_origin.entity",          "value": "CustomerService" },
+    { "name": "SubscriberID", "value": "SUB778899" },
+    { "name": "_origin.system", "value": "Netwin" },
+    { "name": "_origin.id", "value": "SVC-CLI-44521" },
+    { "name": "_origin.entity", "value": "CustomerService" },
     { "name": "_origin.legacySubscriberID", "value": "44521" },
-    { "name": "_origin.migratedAt",      "value": "2026-11-15T02:00:00Z" },
-    { "name": "_origin.migratedBy",      "value": "migration-job-netwin-svc-wave1-v1" }
+    { "name": "_origin.migratedAt", "value": "2026-11-15T02:00:00Z" },
+    { "name": "_origin.migratedBy", "value": "migration-job-netwin-svc-wave1-v1" }
   ]
 }
 ```
@@ -1704,12 +1736,12 @@ CFS "CloudVoIP-10ramais-Acme" (SubscriberID SUB-VOIP-7788)
 
 ## 26. Controle de revisões
 
-| Versão | Data | Autor | Descrição |
-|---|---|---|---|
-| 1.0 | Junho 2026 | Produto — V.tal Nexus | Versão inicial do HLD do Módulo 3 — Nexus Service Domain (HLD04), com 16 requisitos alinhados a TMF633 e TMF638, separação CFS/RFS, decisão de wholesale e fronteira Home Passed, cenários ilustrativos e proveniência `_origin`. |
-| 1.1 | Julho 2026 | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: adiciona matriz dos 16 requisitos, documenta a base TMF633/638 e o workspace atual, normaliza os requisitos 014–016 e liga os gaps de implementação ao backlog `DEV-*`. |
-| 1.2 | Agosto 2026 | Produto — V.tal Nexus | Incorporação da consulta operacional de OSP (`inspirations/geosite-legado.md`): REQ-MOD03-008 ganha o trace físico completo até o ativo civil (RF-005) e o impacto reverso a partir de caixa, duto ou poste (RF-006), como consultas compostas com REQ-MOD02-012 — sem duplicar modelagem de infraestrutura no Service Domain. |
+| Versão | Data        | Autor                    | Descrição                                                                                                                                                                                                                                                                                                                      |
+| ------ | ----------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1.0    | Junho 2026  | Produto — V.tal Nexus    | Versão inicial do HLD do Módulo 3 — Nexus Service Domain (HLD04), com 16 requisitos alinhados a TMF633 e TMF638, separação CFS/RFS, decisão de wholesale e fronteira Home Passed, cenários ilustrativos e proveniência `_origin`.                                                                                              |
+| 1.1    | Julho 2026  | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: adiciona matriz dos 16 requisitos, documenta a base TMF633/638 e o workspace atual, normaliza os requisitos 014–016 e liga os gaps de implementação ao backlog `DEV-*`.                                                                                                                |
+| 1.2    | Agosto 2026 | Produto — V.tal Nexus    | Incorporação da consulta operacional de OSP (`inspirations/geosite-legado.md`): REQ-MOD03-008 ganha o trace físico completo até o ativo civil (RF-005) e o impacto reverso a partir de caixa, duto ou poste (RF-006), como consultas compostas com REQ-MOD02-012 — sem duplicar modelagem de infraestrutura no Service Domain. |
 
 ---
 
-*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*
+_V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA_

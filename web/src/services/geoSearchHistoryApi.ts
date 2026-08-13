@@ -51,7 +51,10 @@ const toEntry = (raw: RawEntry): GeoSearchHistoryEntry => ({
 // endereço veio de texto livre sem placeId).
 export const historyKeyForNode = (node: GeoTreeNode): string => `node:${node.id}`;
 export const historyKeyForAddress = (address: DraftAddress): string =>
-  `address:${address.placeId ?? address.label}`;
+  // Pesquisa livre mantém cada texto digitado como uma entrada própria. Uma mesma
+  // coordenada pode ter sido encontrada por consultas diferentes, e o histórico deve
+  // reproduzir o termo que o usuário de fato informou.
+  `address:${address.sourceQuery?.trim() || address.placeId || address.label}`;
 
 export async function fetchSearchHistory(limit = 8): Promise<GeoSearchHistoryEntry[]> {
   try {
@@ -77,7 +80,7 @@ export async function recordAddressVisit(address: DraftAddress): Promise<void> {
   await postRecord({
     entryKey: historyKeyForAddress(address),
     kind: 'address',
-    label: address.label,
+    label: address.sourceQuery?.trim() || address.label,
     payload: address,
   });
 }
@@ -89,7 +92,11 @@ async function postRecord(body: {
   payload: unknown;
 }): Promise<void> {
   try {
-    await fetch(API_BASE_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+    await fetch(API_BASE_URL, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(body),
+    });
   } catch {
     // silencioso — o histórico não deve interromper a navegação
   }

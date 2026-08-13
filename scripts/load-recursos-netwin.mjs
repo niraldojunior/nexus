@@ -402,7 +402,9 @@ async function main() {
     if (problems.length > 10) console.log(`    ... +${problems.length - 10}`);
   }
   if (orphans.length) {
-    console.log(`\nℹ ${orphans.length} splitter(s) sem caixa correspondente — carregados como recurso avulso (Location própria, sob o nó da estação/agrupador).`);
+    console.log(
+      `\nℹ ${orphans.length} splitter(s) sem caixa correspondente — carregados como recurso avulso (Location própria, sob o nó da estação/agrupador).`,
+    );
     for (const o of orphans.slice(0, 5)) console.log('   ', o.boxKey, '/', o.nome);
   }
 
@@ -432,8 +434,7 @@ async function main() {
     // Nó agrupador "SEM ESTAÇÃO (SEM)": criado sob demanda quando algum recurso
     // (caixa ou splitter órfão) veio sem estação — para nenhum ficar de fora.
     const usaNoOrfao =
-      boxes.some((b) => b.sigla === ORPHAN_SIGLA) ||
-      orphans.some((s) => s.sigla === ORPHAN_SIGLA);
+      boxes.some((b) => b.sigla === ORPHAN_SIGLA) || orphans.some((s) => s.sigla === ORPHAN_SIGLA);
     let orphanSiteId = siteBySigla.get(ORPHAN_SIGLA) ?? null;
     const criarNoOrfao = usaNoOrfao && !orphanSiteId;
     if (criarNoOrfao) {
@@ -472,9 +473,7 @@ async function main() {
       (s) => !idByNaturalKey.has(`${s.boxKey}|${s.nome}`),
     );
     // Splitters órfãos (sem caixa) — não são descartados: carregam avulsos.
-    const novosOrfaos = orphans.filter(
-      (s) => !idByNaturalKey.has(`${s.boxKey}|${s.nome}`),
-    );
+    const novosOrfaos = orphans.filter((s) => !idByNaturalKey.has(`${s.boxKey}|${s.nome}`));
 
     console.log('\nEstado da base:');
     console.log(`  estações resolvidas : ${siglas.length}/${siglas.length}`);
@@ -482,17 +481,23 @@ async function main() {
     if (TRUNCATE) {
       console.log(
         `\n⚠ TRUNCATE ligado (padrão): as tabelas de recurso serão zeradas antes da carga —\n` +
-        `   ${RESOURCE_TABLES.join(', ')}.\n` +
-        `   (catálogo de specs e tabelas de Geo não são tocados; use --no-truncate para carga incremental.)`,
+          `   ${RESOURCE_TABLES.join(', ')}.\n` +
+          `   (catálogo de specs e tabelas de Geo não são tocados; use --no-truncate para carga incremental.)`,
       );
     }
     console.log('\nA criar:');
     console.log(`  GeographicSite (nó órfão): ${criarNoOrfao ? 1 : 0}`);
-    console.log(`  ResourceSpecification : ${[...new Set(boxes.map((b) => b.tipo)), 'Splitter'].filter((n) => !specByName.has(n)).length}`);
-    console.log(`  GeographicLocation    : ${novasCaixas.length + novosOrfaos.length}  (${novasCaixas.length} caixas + ${novosOrfaos.length} splitters órfãos)`);
+    console.log(
+      `  ResourceSpecification : ${[...new Set(boxes.map((b) => b.tipo)), 'Splitter'].filter((n) => !specByName.has(n)).length}`,
+    );
+    console.log(
+      `  GeographicLocation    : ${novasCaixas.length + novosOrfaos.length}  (${novasCaixas.length} caixas + ${novosOrfaos.length} splitters órfãos)`,
+    );
     console.log(`  GeographicAddress     : ${novasCaixas.filter((b) => b.endereco).length}`);
-    console.log(`  PhysicalResource      : ${novasCaixas.length + novosSplitters.length + novosOrfaos.length}` +
-      ` (${novasCaixas.length} caixas + ${novosSplitters.length} splitters + ${novosOrfaos.length} órfãos)`);
+    console.log(
+      `  PhysicalResource      : ${novasCaixas.length + novosSplitters.length + novosOrfaos.length}` +
+        ` (${novasCaixas.length} caixas + ${novosSplitters.length} splitters + ${novosOrfaos.length} órfãos)`,
+    );
     console.log(`  Relacionamentos       : ${novosSplitters.length} (containsAsChild)`);
 
     if (!APPLY) {
@@ -626,18 +631,24 @@ async function main() {
         manufacturer: b.row.FABRICANTE || null,
         model: b.row.MODELO || null,
         characteristics: JSON.stringify(
-          originChars(b.key, 'Equipamento', {
-            estacao: b.row.ESTACAO,
-            sigla: b.sigla,
-            tipo: b.tipo,
-            codigoPonto: b.row.CODIGO_EQUIPAMENTO,
-            tipoOrigem: b.row.TIPO,
-            statusOrigem: cleanText(b.row.STATUS),
-            grupoOperacional: cleanText(b.row.ds_grupo_operacional),
-            estadoControle: substatus,
-            dataEstadoControle: b.row.dt_data_estado_controle,
-            bairro: b.endereco?.locality ?? null,
-          }, siteBySigla.get(b.sigla), substatus),
+          originChars(
+            b.key,
+            'Equipamento',
+            {
+              estacao: b.row.ESTACAO,
+              sigla: b.sigla,
+              tipo: b.tipo,
+              codigoPonto: b.row.CODIGO_EQUIPAMENTO,
+              tipoOrigem: b.row.TIPO,
+              statusOrigem: cleanText(b.row.STATUS),
+              grupoOperacional: cleanText(b.row.ds_grupo_operacional),
+              estadoControle: substatus,
+              dataEstadoControle: b.row.dt_data_estado_controle,
+              bairro: b.endereco?.locality ?? null,
+            },
+            siteBySigla.get(b.sigla),
+            substatus,
+          ),
         ),
       });
     }
@@ -677,18 +688,24 @@ async function main() {
         manufacturer: s.row.FABRICANTE || null,
         model: s.row.MODELO || null,
         characteristics: JSON.stringify(
-          originChars(naturalKey, 'Equipamento', {
-            estacao: s.row.ESTACAO,
-            sigla: s.sigla,
-            tipo: 'SPLITTER',
-            caixa: s.row.CODIGO_EQUIPAMENTO,
-            orfao: true,
-            tipoOrigem: s.row.TIPO,
-            statusOrigem: cleanText(s.row.STATUS),
-            grupoOperacional: cleanText(s.row.ds_grupo_operacional),
-            estadoControle: substatus,
-            dataEstadoControle: s.row.dt_data_estado_controle,
-          }, siteBySigla.get(s.sigla), substatus),
+          originChars(
+            naturalKey,
+            'Equipamento',
+            {
+              estacao: s.row.ESTACAO,
+              sigla: s.sigla,
+              tipo: 'SPLITTER',
+              caixa: s.row.CODIGO_EQUIPAMENTO,
+              orfao: true,
+              tipoOrigem: s.row.TIPO,
+              statusOrigem: cleanText(s.row.STATUS),
+              grupoOperacional: cleanText(s.row.ds_grupo_operacional),
+              estadoControle: substatus,
+              dataEstadoControle: s.row.dt_data_estado_controle,
+            },
+            siteBySigla.get(s.sigla),
+            substatus,
+          ),
         ),
       });
     }
@@ -696,18 +713,50 @@ async function main() {
     await bulkInsert(
       client,
       'tmf_geographic_location',
-      ['id', 'href', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'],
+      [
+        'id',
+        'href',
+        'geometry_type',
+        'geometry',
+        'spatial_ref',
+        'reference_point',
+        'characteristics',
+      ],
       locations,
     );
     await bulkInsert(
       client,
       'tmf_geographic_address',
-      ['id', 'href', 'street_name', 'street_nr', 'locality', 'city', 'state_or_province',
-       'country', 'postcode', 'geographic_location_id', 'characteristics'],
+      [
+        'id',
+        'href',
+        'street_name',
+        'street_nr',
+        'locality',
+        'city',
+        'state_or_province',
+        'country',
+        'postcode',
+        'geographic_location_id',
+        'characteristics',
+      ],
       addresses,
     );
-    const boxCols = ['id', 'href', 'name', 'resource_specification_id', 'resource_type', 'status',
-      'place_id', 'place_type', 'geographic_location_id', 'serving_site_id', 'manufacturer', 'model', 'characteristics'];
+    const boxCols = [
+      'id',
+      'href',
+      'name',
+      'resource_specification_id',
+      'resource_type',
+      'status',
+      'place_id',
+      'place_type',
+      'geographic_location_id',
+      'serving_site_id',
+      'manufacturer',
+      'model',
+      'characteristics',
+    ];
     await bulkInsert(client, 'tmf_physical_resource', boxCols, boxResources);
 
     // 3. Splitters — reaproveitam a Location da caixa (mesmo ponto físico).
@@ -735,17 +784,23 @@ async function main() {
         manufacturer: s.row.FABRICANTE || null,
         model: s.row.MODELO || null,
         characteristics: JSON.stringify(
-          originChars(naturalKey, 'Equipamento', {
-            estacao: s.row.ESTACAO,
-            sigla: s.sigla,
-            tipo: 'SPLITTER',
-            caixa: s.row.CODIGO_EQUIPAMENTO,
-            tipoOrigem: s.row.TIPO,
-            statusOrigem: cleanText(s.row.STATUS),
-            grupoOperacional: cleanText(s.row.ds_grupo_operacional),
-            estadoControle: substatus,
-            dataEstadoControle: s.row.dt_data_estado_controle,
-          }, siteBySigla.get(s.sigla), substatus),
+          originChars(
+            naturalKey,
+            'Equipamento',
+            {
+              estacao: s.row.ESTACAO,
+              sigla: s.sigla,
+              tipo: 'SPLITTER',
+              caixa: s.row.CODIGO_EQUIPAMENTO,
+              tipoOrigem: s.row.TIPO,
+              statusOrigem: cleanText(s.row.STATUS),
+              grupoOperacional: cleanText(s.row.ds_grupo_operacional),
+              estadoControle: substatus,
+              dataEstadoControle: s.row.dt_data_estado_controle,
+            },
+            siteBySigla.get(s.sigla),
+            substatus,
+          ),
         ),
       });
       relationships.push({
@@ -767,14 +822,18 @@ async function main() {
     );
 
     // Conferência antes do COMMIT: o que foi inserido tem de bater com o plano.
-    const { rows: [check] } = await client.query(
+    const {
+      rows: [check],
+    } = await client.query(
       `SELECT count(*)::int AS n FROM tmf_physical_resource WHERE characteristics LIKE '%"Netwin"%'`,
     );
     const esperado =
       idByNaturalKey.size + boxResources.length + splitterResources.length + orphanResources.length;
     if (check.n !== esperado) {
       await client.query('ROLLBACK');
-      throw new Error(`conferência falhou: base tem ${check.n} recursos, esperado ${esperado} — ROLLBACK`);
+      throw new Error(
+        `conferência falhou: base tem ${check.n} recursos, esperado ${esperado} — ROLLBACK`,
+      );
     }
 
     await client.query('COMMIT');

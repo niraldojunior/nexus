@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AddressDetailPanel } from './AddressDetailPanel';
+import { AddressDetailPanel, selectPinLocation } from './AddressDetailPanel';
 import type { DraftAddress } from '../../utils/googleMaps';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import type {
@@ -21,18 +21,96 @@ vi.mock('../../components/GoogleStreetViewModal', () => ({
 // A aba de Viabilidade tem teste próprio (ViabilityTab.test.tsx); aqui o hook que busca as
 // CDOs é mockado para o painel poder exercitar a troca de aba e o encaixe da folha. Mutável
 // para os casos que precisam de uma CDO na lista (ver beforeEach para o default vazio).
-const viability = vi.fn<() => UseAddressViabilityResult>();
+const viability = vi.fn<(origin: [number, number], enabled: boolean) => UseAddressViabilityResult>();
 vi.mock('../../hooks/useAddressViability', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../hooks/useAddressViability')>();
-  return { ...actual, useAddressViability: () => viability() };
+  return {
+    ...actual,
+    useAddressViability: (origin: [number, number], enabled: boolean) => viability(origin, enabled),
+  };
 });
+
+const geonet = vi.fn();
+vi.mock('../../hooks/useGeonetAddress', () => ({ useGeonetAddress: () => geonet() }));
 
 beforeEach(() => {
   viability.mockReturnValue({ status: 'ready', candidates: [], error: null });
+  geonet.mockReturnValue({
+    status: 'not_configured',
+    candidates: [],
+    selectedId: null,
+    detail: null,
+    error: null,
+    select: vi.fn(),
+    retry: vi.fn(),
+  });
 });
 afterEach(cleanup);
 
 describe('AddressDetailPanel', () => {
+  it('prioriza a coordenada Geonet somente quando sua precisão é superior', () => {
+    const address: DraftAddress = {
+      street: 'Rua Exemplo',
+      country: 'BR',
+      coordinates: [-43.1, -22.9],
+      label: 'Rua Exemplo',
+      precision: 'RANGE_INTERPOLATED',
+    };
+    expect(
+      selectPinLocation(address, {
+        formattedAddress: 'Rua Exemplo',
+        coordinates: [-43.2, -22.8],
+        geolocationMethod: 'Endereço Completo',
+      }),
+    ).toMatchObject({ source: 'geonet', coordinates: [-43.2, -22.8] });
+    expect(
+      selectPinLocation(address, {
+        formattedAddress: 'Rua Exemplo',
+        coordinates: [-43.2, -22.8],
+        geolocationMethod: 'Endereço Interpolação',
+      }),
+    ).toMatchObject({ source: 'google', coordinates: [-43.1, -22.9] });
+  });
+
+  it('usa a coordenada selecionada para a viabilidade', async () => {
+    geonet.mockReturnValue({
+      status: 'ready',
+      candidates: [{ addressId: '1', formattedAddress: 'Rua Exemplo' }],
+      selectedId: '1',
+      detail: {
+        addressId: '1',
+        formattedAddress: 'Rua Exemplo',
+        coordinates: [-43.2, -22.8],
+        geolocationMethod: 'Endereço Completo',
+      },
+      error: null,
+      select: vi.fn(),
+      retry: vi.fn(),
+    });
+    const address: DraftAddress = {
+      street: 'Rua Exemplo',
+      country: 'BR',
+      coordinates: [-43.1, -22.9],
+      label: 'Rua Exemplo',
+      precision: 'RANGE_INTERPOLATED',
+    };
+    render(<AddressDetailPanel isMobile={false} address={address} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Viabilidade' }));
+    expect(viability).toHaveBeenCalledWith([-43.2, -22.8], true);
+  });
+
+  it('usa literalmente o texto digitado como título da pesquisa livre', () => {
+    const address: DraftAddress = {
+      street: 'Rua Doutor Paulo César',
+      country: 'BR',
+      coordinates: [-43.1, -22.9],
+      label: 'Rua Doutor Paulo César, Niterói - RJ',
+      sourceQuery: 'Rua Doutor Paulo Cesar, número 155, Niteroi',
+    };
+    render(<AddressDetailPanel isMobile={false} address={address} onClose={vi.fn()} />);
+    expect(screen.getByRole('heading', { name: address.sourceQuery })).toBeInTheDocument();
+  });
+
   it('mostra os campos do endereço resolvido pelo Google', () => {
     const address: DraftAddress = {
       street: 'R. Dr. Paulo César',
@@ -63,6 +141,7 @@ describe('AddressDetailPanel', () => {
     expect(screen.getByText('Alta - ROOFTOP')).toBeInTheDocument();
     expect(screen.getByText('ChIJkUT-yu-DmQAREfIQzEVzYOU')).toBeInTheDocument();
     expect(screen.getByText('Google Maps')).toBeInTheDocument();
+    expect(screen.getByText('GEONET')).toBeInTheDocument();
   });
 
   it('mostra "-" quando precisão e Place ID não vieram do Google', () => {
@@ -76,8 +155,41 @@ describe('AddressDetailPanel', () => {
     render(<AddressDetailPanel isMobile={false} address={address} onClose={vi.fn()} />);
 
     expect(screen.getByText('Desconhecida')).toBeInTheDocument();
-    // Place ID e Address ID (Geonet) caem em "-" quando ausentes.
-    expect(screen.getAllByText('-').length).toBe(2);
+    // Place ID cai em "-"; Geonet não configurado não finge ter Address ID.
+    expect(screen.getAllByText('-').length).toBe(1);
+  });
+
+  it('mostra o Address ID do Geonet com a mesma iconografia do Place ID', () => {
+    geonet.mockReturnValue({
+      status: 'ready',
+      candidates: [
+        { addressId: '345959', formattedAddress: 'Rua Exemplo, 10 - Rio de Janeiro, RJ' },
+      ],
+      selectedId: '345959',
+      detail: {
+        addressId: '345959',
+        formattedAddress: 'Rua Exemplo, 10 - Rio de Janeiro, RJ',
+        coordinates: [-43.18, -22.91],
+        geolocationMethod: 'Endereço Completo',
+      },
+      error: null,
+      select: vi.fn(),
+      retry: vi.fn(),
+    });
+    const address: DraftAddress = {
+      street: 'Rua Exemplo',
+      streetNr: '10',
+      country: 'BR',
+      coordinates: [-43.18, -22.91],
+      label: 'Rua Exemplo, 10 - Rio de Janeiro, RJ',
+      placeId: 'google-place-id',
+    };
+
+    render(<AddressDetailPanel isMobile={false} address={address} onClose={vi.fn()} />);
+
+    expect(screen.getByText('345959')).toBeInTheDocument();
+    expect(screen.getByText('Alta - Endereço Completo')).toBeInTheDocument();
+    expect(screen.queryByText(/equivale ao Place ID/)).not.toBeInTheDocument();
   });
 
   it('mantém o BottomSheet mobile como único contêiner de scroll vertical', () => {
@@ -166,7 +278,14 @@ describe('AddressDetailPanel', () => {
     };
     viability.mockReturnValue({ status: 'ready', candidates: [candidate], error: null });
 
-    render(<AddressDetailPanel isMobile address={address} onClose={vi.fn()} onDropSimulation={vi.fn()} />);
+    render(
+      <AddressDetailPanel
+        isMobile
+        address={address}
+        onClose={vi.fn()}
+        onDropSimulation={vi.fn()}
+      />,
+    );
     const sheet = screen.getByTestId('bottom-sheet');
     const content = screen.getByTestId('bottom-sheet-content');
 

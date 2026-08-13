@@ -68,17 +68,17 @@ npm run web:dev     # só o frontend Vite
 
 ### Aplicação
 
-| Variável       | Obrigatória         | Padrão        | Descrição                                       |
-| -------------- | ------------------- | ------------- | ----------------------------------------------- |
-| `NODE_ENV`     | não                 | `development` | `development` · `test` · `production`           |
-| `PORT`         | não                 | `4001`        | Porta do backend                                |
-| `APP_NAME`     | não                 | `v-tal-nexus` | Nome da aplicação nos logs                      |
-| `LOG_LEVEL`    | não                 | `info`        | `debug` · `info` · `warn` · `error`             |
-| `AUTH_ENABLED` | não                 | `true`        | Liga o guard de bearer token                    |
-| `AUTH_TOKEN`   | **sim em produção** | `change-me`   | Token estático de máquina (scripts/MCP)         |
-| `AUTH_JWT_SECRET` | para login       | —             | Segredo HS256 do IdP local; sem ele `/v1/auth/login` responde 503 |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | para o 1º login | — | Admin semente criado no bootstrap (idempotente) |
-| `AUTH_ACCESS_TOKEN_TTL_HOURS` | não    | `12`          | Validade do JWT de sessão, em horas             |
+| Variável                         | Obrigatória         | Padrão        | Descrição                                                         |
+| -------------------------------- | ------------------- | ------------- | ----------------------------------------------------------------- |
+| `NODE_ENV`                       | não                 | `development` | `development` · `test` · `production`                             |
+| `PORT`                           | não                 | `4001`        | Porta do backend                                                  |
+| `APP_NAME`                       | não                 | `v-tal-nexus` | Nome da aplicação nos logs                                        |
+| `LOG_LEVEL`                      | não                 | `info`        | `debug` · `info` · `warn` · `error`                               |
+| `AUTH_ENABLED`                   | não                 | `true`        | Liga o guard de bearer token                                      |
+| `AUTH_TOKEN`                     | **sim em produção** | `change-me`   | Token estático de máquina (scripts/MCP)                           |
+| `AUTH_JWT_SECRET`                | para login          | —             | Segredo HS256 do IdP local; sem ele `/v1/auth/login` responde 503 |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | para o 1º login     | —             | Admin semente criado no bootstrap (idempotente)                   |
+| `AUTH_ACCESS_TOKEN_TTL_HOURS`    | não                 | `12`          | Validade do JWT de sessão, em horas                               |
 
 > **Login de usuário.** Usuários reais entram por e-mail/senha (`POST /v1/auth/login` → JWT), gravado
 > no `localStorage` da SPA. O `AUTH_TOKEN` estático continua para máquina-a-máquina. Defina
@@ -134,12 +134,14 @@ aceita o alias `NEON_DATABASE_URL_*` (ex.: `NEON_DATABASE_URL_PROD`).
 
 ### Integrações opcionais
 
-| Variável                   | Padrão                      | Descrição                                                                                  |
-| -------------------------- | --------------------------- | ------------------------------------------------------------------------------------------ |
-| `OPENAI_API_KEY`           | —                           | Habilita as rotas de research/chat. Sem ela, o Copilot cai em fallback local sobre `docs/` |
-| `OPENAI_MODEL`             | `gpt-4o-mini`               | Modelo usado nas rotas de chat                                                             |
-| `API_ENDPOINT`             | `https://api.openai.com/v1` | Endpoint compatível com OpenAI                                                             |
-| `VITE_GOOGLE_MAPS_API_KEY` | —                           | Mapas do módulo Geo (só a JS API está habilitada)                                          |
+| Variável                                    | Padrão                      | Descrição                                                                                           |
+| ------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`                            | —                           | Habilita as rotas de research/chat. Sem ela, o Copilot cai em fallback local sobre `docs/`          |
+| `OPENAI_MODEL`                              | `gpt-4o-mini`               | Modelo usado nas rotas de chat                                                                      |
+| `API_ENDPOINT`                              | `https://api.openai.com/v1` | Endpoint compatível com OpenAI                                                                      |
+| `VITE_GOOGLE_MAPS_API_KEY`                  | —                           | Mapas do módulo Geo (só a JS API está habilitada)                                                   |
+| `GEONET_API_BASE_URL` / `GEONET_TOKEN_URL`  | —                           | Base e OAuth2 do GeographicAddressManagement; ambas obrigatórias para habilitar a comparação Geonet |
+| `GEONET_CLIENT_ID` / `GEONET_CLIENT_SECRET` | —                           | Credenciais OAuth2 server-side do Geonet; nunca devem ter prefixo `VITE_`                           |
 
 ### Avançadas
 
@@ -291,12 +293,12 @@ comum (ex.: contêiner) serve sem mudar código: basta apontar `DATABASE_URL` pa
 
 **Componentes** (todos na raiz):
 
-| Arquivo                 | Papel                                                                 |
-| ----------------------- | --------------------------------------------------------------------- |
-| `Dockerfile`            | Multi-stage; alvos `api` (backend Node) e `web` (Caddy + SPA)         |
-| `Caddyfile`             | Proxy reverso + TLS automático; espelha as rotas de `vercel.json`     |
-| `docker-compose.yml`    | Serviços `api`, `web` e `tools` (schema/cargas); Postgres é externo   |
-| `.env.docker.example`   | Modelo do `.env.docker` (gitignored)                                  |
+| Arquivo               | Papel                                                               |
+| --------------------- | ------------------------------------------------------------------- |
+| `Dockerfile`          | Multi-stage; alvos `api` (backend Node) e `web` (Caddy + SPA)       |
+| `Caddyfile`           | Proxy reverso + TLS automático; espelha as rotas de `vercel.json`   |
+| `docker-compose.yml`  | Serviços `api`, `web` e `tools` (schema/cargas); Postgres é externo |
+| `.env.docker.example` | Modelo do `.env.docker` (gitignored)                                |
 
 O Postgres **não** é gerenciado pelo compose — conecta-se ao contêiner existente por uma rede docker
 externa (`POSTGRES_NETWORK`). A imagem `web` serve o SPA atrás de `basic_auth`; o Bearer do frontend

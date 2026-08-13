@@ -48,5 +48,7 @@ const serializeError = (error: Error): Record<string, unknown> => ({
   name: error.name,
   message: error.message,
   stack: error.stack,
-  ...(error.cause ? { cause: error.cause instanceof Error ? serializeError(error.cause) : error.cause } : {}),
+  ...(error.cause
+    ? { cause: error.cause instanceof Error ? serializeError(error.cause) : error.cause }
+    : {}),
 });

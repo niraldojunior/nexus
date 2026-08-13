@@ -64,16 +64,16 @@ Antes de fechar um requisito ou modelo, **exercite-o contra um cenário operacio
 
 Cenários já validados e documentados:
 
-| Cenário | Onde está |
-|---|---|
-| Home Passed → Home Connected → ONT → Serviço | `../1-overview/product-overview.md` §8.1 |
-| Central Office GPON — hierarquia OLT→Card→Porta→DIO→Cabo→Splitter→CTO→ONT | `02-module-resource.md` §34.2 |
-| Cliente corporativo em condomínio empresarial (VRF + CPE + porta) | `02-module-resource.md` §34.1 |
-| Banda larga residencial via ISP (wholesale Bitstream) | `03-module-service.md` §22.1 |
-| Link dedicado multiponto L3VPN (CFS→RFS acesso+transporte+backbone) | `03-module-service.md` §22.2 |
-| CloudVoIP sobre link empresarial (serviceRelationship dependsOn) | `03-module-service.md` §22.3 |
-| Infraestrutura subterrânea — caixa → banco de dutos → duto → cabo, sem entidade intermediária | `02-module-resource.md` §31.8 |
-| Traçado de linha de duto no navegador, com snap em caixas existentes | `01-module-geo.md` §18.8 |
+| Cenário                                                                                       | Onde está                                |
+| --------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| Home Passed → Home Connected → ONT → Serviço                                                  | `../1-overview/product-overview.md` §8.1 |
+| Central Office GPON — hierarquia OLT→Card→Porta→DIO→Cabo→Splitter→CTO→ONT                     | `02-module-resource.md` §34.2            |
+| Cliente corporativo em condomínio empresarial (VRF + CPE + porta)                             | `02-module-resource.md` §34.1            |
+| Banda larga residencial via ISP (wholesale Bitstream)                                         | `03-module-service.md` §22.1             |
+| Link dedicado multiponto L3VPN (CFS→RFS acesso+transporte+backbone)                           | `03-module-service.md` §22.2             |
+| CloudVoIP sobre link empresarial (serviceRelationship dependsOn)                              | `03-module-service.md` §22.3             |
+| Infraestrutura subterrânea — caixa → banco de dutos → duto → cabo, sem entidade intermediária | `02-module-resource.md` §31.8            |
+| Traçado de linha de duto no navegador, com snap em caixas existentes                          | `01-module-geo.md` §18.8                 |
 
 ---
 
@@ -86,4 +86,4 @@ Cenários já validados e documentados:
 
 ---
 
-*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*
+_V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA_

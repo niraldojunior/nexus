@@ -2,7 +2,12 @@ import Database from 'better-sqlite3';
 import { config as loadEnv } from 'dotenv';
 import { resolve } from 'node:path';
 import { Pool, types } from 'pg';
-import { MIGRATIONS_SQL, SCHEMA_SQL, TABLE_NAMES, transformSchemaSql } from '../shared/persistence/schema.js';
+import {
+  MIGRATIONS_SQL,
+  SCHEMA_SQL,
+  TABLE_NAMES,
+  transformSchemaSql,
+} from '../shared/persistence/schema.js';
 
 // Preserve numeric semantics when reading back counts from Postgres.
 types.setTypeParser(20, (value) => Number.parseInt(value, 10));
@@ -25,7 +30,9 @@ async function main(): Promise<void> {
   const targetUrl = process.env.TARGET_DATABASE_URL ?? process.env.DATABASE_URL;
 
   if (!targetUrl) {
-    throw new Error('TARGET_DATABASE_URL or DATABASE_URL must be set to the Neon connection string before running this migration.');
+    throw new Error(
+      'TARGET_DATABASE_URL or DATABASE_URL must be set to the Neon connection string before running this migration.',
+    );
   }
 
   const sourcePath = resolveSqlitePath(sourceUrl);
@@ -50,9 +57,13 @@ async function main(): Promise<void> {
       throw new Error(`Source database is missing expected tables: ${missingTables.join(', ')}`);
     }
 
-    const extraTables = tableNames.filter((table) => !TABLE_ORDER.includes(table as (typeof TABLE_ORDER)[number]));
+    const extraTables = tableNames.filter(
+      (table) => !TABLE_ORDER.includes(table as (typeof TABLE_ORDER)[number]),
+    );
     if (extraTables.length > 0) {
-      console.log(`Additional source tables detected and will be ignored: ${extraTables.join(', ')}`);
+      console.log(
+        `Additional source tables detected and will be ignored: ${extraTables.join(', ')}`,
+      );
     }
 
     const orderedTables = TABLE_ORDER.filter((table) => tableNames.includes(table));
@@ -69,7 +80,9 @@ async function main(): Promise<void> {
       console.log('Copying data...');
       for (const table of orderedTables) {
         const columns = getColumns(sourceDb, table);
-        const rows = sourceDb.prepare(`SELECT * FROM ${quoteIdentifier(table)}`).all() as TableRow[];
+        const rows = sourceDb
+          .prepare(`SELECT * FROM ${quoteIdentifier(table)}`)
+          .all() as TableRow[];
         const orderedRows = orderRowsForTable(table, rows);
 
         if (orderedRows.length === 0) {
@@ -104,8 +117,13 @@ async function main(): Promise<void> {
   }
 }
 
-async function bootstrapTargetSchema(client: { query: (sql: string, params?: unknown[]) => Promise<unknown> }): Promise<void> {
-  const statements = [...splitSqlStatements(transformSchemaSql(SCHEMA_SQL)), ...splitSqlStatements(MIGRATIONS_SQL)];
+async function bootstrapTargetSchema(client: {
+  query: (sql: string, params?: unknown[]) => Promise<unknown>;
+}): Promise<void> {
+  const statements = [
+    ...splitSqlStatements(transformSchemaSql(SCHEMA_SQL)),
+    ...splitSqlStatements(MIGRATIONS_SQL),
+  ];
 
   for (const statement of statements) {
     await client.query(statement);
@@ -121,19 +139,25 @@ function splitSqlStatements(sql: string): string[] {
 
 // Resolves a `sqlite://<path>` URL (or a bare filesystem path) to an absolute file path.
 function resolveSqlitePath(sourceUrl: string): string {
-  const filePath = sourceUrl.startsWith('sqlite://') ? sourceUrl.slice('sqlite://'.length) : sourceUrl;
+  const filePath = sourceUrl.startsWith('sqlite://')
+    ? sourceUrl.slice('sqlite://'.length)
+    : sourceUrl;
   return resolve(process.cwd(), filePath);
 }
 
 function getTableNames(db: Database.Database): string[] {
   const rows = db
-    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    )
     .all() as Array<{ name: string }>;
   return rows.map((row) => row.name);
 }
 
 function getColumns(db: Database.Database, table: string): string[] {
-  const rows = db.prepare(`PRAGMA table_info(${quoteIdentifier(table)})`).all() as Array<{ name: string }>;
+  const rows = db.prepare(`PRAGMA table_info(${quoteIdentifier(table)})`).all() as Array<{
+    name: string;
+  }>;
   return rows.map((row) => row.name);
 }
 

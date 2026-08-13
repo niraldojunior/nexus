@@ -39,10 +39,23 @@ export function siteKindFromSpec(spec?: { category?: string; name?: string }): S
   if (spec.category === 'FunctionalGroup') return 'REGION';
   if (spec.category === 'SubSite') return 'SUBSITE';
   const name = spec.name.toLowerCase();
-  if (name.includes('central') || name === 'co' || name.includes('estac') || name.includes('estaç')) return 'CO';
+  if (name.includes('central') || name === 'co' || name.includes('estac') || name.includes('estaç'))
+    return 'CO';
   if (name.includes('pop') || name.includes('presenc') || name.includes('presenç')) return 'POP';
-  if (name.includes('cto') || name.includes('armario') || name.includes('armário') || name.includes('caixa')) return 'CTO';
-  if (name.includes('instalac') || name.includes('instalaç') || name === 'pi' || name.includes('cliente')) return 'PI';
+  if (
+    name.includes('cto') ||
+    name.includes('armario') ||
+    name.includes('armário') ||
+    name.includes('caixa')
+  )
+    return 'CTO';
+  if (
+    name.includes('instalac') ||
+    name.includes('instalaç') ||
+    name === 'pi' ||
+    name.includes('cliente')
+  )
+    return 'PI';
   return 'SITE';
 }
 
@@ -78,7 +91,8 @@ export function buildGeoDirectory(
   }
   const addressByLocationId = new Map<string, GeoAddress>();
   for (const address of addresses) {
-    if (address.geographicLocationId) addressByLocationId.set(address.geographicLocationId, address);
+    if (address.geographicLocationId)
+      addressByLocationId.set(address.geographicLocationId, address);
   }
   return {
     siteById: new Map(sites.map((s) => [s.id, s])),
@@ -169,7 +183,10 @@ function labelForSite(site: GeoSite, directory: GeoDirectory): ResolvedPlaceLabe
 }
 
 // Resolve { id, '@referredType' } para Nome + Tipo + Endereço, sem expor hash.
-export function resolvePlaceLabel(place: PlaceReference, directory: GeoDirectory): ResolvedPlaceLabel | null {
+export function resolvePlaceLabel(
+  place: PlaceReference,
+  directory: GeoDirectory,
+): ResolvedPlaceLabel | null {
   if (!place?.id) return null;
   const type = place['@referredType'];
 
@@ -185,7 +202,10 @@ export function resolvePlaceLabel(place: PlaceReference, directory: GeoDirectory
     if (owningSite) return labelForSite(owningSite, directory);
     const address = directory.addressByLocationId.get(place.id);
     const location = directory.locationById.get(place.id);
-    const point = location?.geometry.type === 'Point' ? (location.geometry.coordinates as [number, number]) : null;
+    const point =
+      location?.geometry.type === 'Point'
+        ? (location.geometry.coordinates as [number, number])
+        : null;
     return {
       name: location?.referencePoint ?? 'Ponto no mapa',
       kind: null,
@@ -229,7 +249,10 @@ export function resolvePlaceLabel(place: PlaceReference, directory: GeoDirectory
 // equipamento dentro de um CO aponta para o Site (C2), um ponto de planta externa
 // aponta para a Location, e um endereço avulso aponta para o Address. Todos os
 // três precisam virar pin, então a resolução é feita aqui e não no chamador.
-export function resolvePlacePoint(place: PlaceReference, directory: GeoDirectory): [number, number] | null {
+export function resolvePlacePoint(
+  place: PlaceReference,
+  directory: GeoDirectory,
+): [number, number] | null {
   if (!place?.id) return null;
 
   const pointOfLocation = (locationId?: string): [number, number] | null => {

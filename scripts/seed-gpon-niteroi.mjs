@@ -85,7 +85,8 @@ const CO_COORD = [-43.1062, -22.9028];
 const CO_ADDRESS = { street: 'Rua Gavião Peixoto', streetNr: '220' };
 
 // Esquina (i, j): i quarteirões descendo a rua principal, j nas transversais.
-const esquina = (i, j) => walk(walk(CO_COORD, RUMO_RUA, i * BLOCO_RUA), RUMO_TRAVESSA, j * BLOCO_TRAVESSA);
+const esquina = (i, j) =>
+  walk(walk(CO_COORD, RUMO_RUA, i * BLOCO_RUA), RUMO_TRAVESSA, j * BLOCO_TRAVESSA);
 
 // Poste do splitter primário: duas quadras abaixo da estação, virando uma
 // transversal à direita.
@@ -100,7 +101,8 @@ const ROTA_PRIMARIO = [CO_COORD, esquina(1, 0), esquina(2, 0), esquina(2, 1)];
 
 // Posiciona uma casa: anda `ao longo` metros pela rua a partir da esquina e
 // recua `recuo` metros para dentro do quarteirão, onde fica a testada do lote.
-const casaEm = (i, j, aoLongo, recuo) => walk(walk(esquina(i, j), RUMO_RUA, aoLongo), RUMO_TRAVESSA, recuo);
+const casaEm = (i, j, aoLongo, recuo) =>
+  walk(walk(esquina(i, j), RUMO_RUA, aoLongo), RUMO_TRAVESSA, recuo);
 
 // Drop: sai do poste, corre pela calçada até a testada da casa e entra no lote.
 const rotaDrop = (poste, i, j, aoLongo, recuo) => {
@@ -174,7 +176,17 @@ const partyByName = new Map();
 const addressByLocationId = new Map(); // location -> address, para não duplicar logradouro
 const sitePlaceByName = new Map(); // site -> Location dele, para reposicionar geometria
 
-const created = { sites: 0, locations: 0, addresses: 0, regeometria: 0, resources: 0, specs: 0, rfs: 0, cfs: 0, links: 0 };
+const created = {
+  sites: 0,
+  locations: 0,
+  addresses: 0,
+  regeometria: 0,
+  resources: 0,
+  specs: 0,
+  rfs: 0,
+  cfs: 0,
+  links: 0,
+};
 const reused = { sites: 0, resources: 0, services: 0 };
 
 async function bootstrap() {
@@ -199,13 +211,15 @@ async function bootstrap() {
       if (site.place?.id) sitePlaceByName.set(site.name, site.place.id);
     }
   }
-  for (const spec of resourceWs.resourceSpecificationOptions ?? []) resSpecByName.set(spec.name, spec.id);
+  for (const spec of resourceWs.resourceSpecificationOptions ?? [])
+    resSpecByName.set(spec.name, spec.id);
   // O `place` entra no índice para que uma re-execução reaproveite a geometria já
   // criada em vez de gerar uma Location nova e deixar a antiga órfã.
   for (const r of resourceWs.physicalResources ?? []) {
     resourceByName.set(r.name, { id: r.id, '@type': r['@type'], place: r.place });
   }
-  for (const spec of serviceWs.serviceSpecificationOptions ?? []) svcSpecByName.set(spec.name, spec.id);
+  for (const spec of serviceWs.serviceSpecificationOptions ?? [])
+    svcSpecByName.set(spec.name, spec.id);
   for (const s of serviceWs.resourceFacingServices ?? []) rfsByName.set(s.name, { id: s.id });
   for (const s of serviceWs.customerFacingServices ?? []) cfsByName.set(s.name, { id: s.id });
 }
@@ -360,7 +374,15 @@ const servingSiteCharacteristic = (placeType) =>
     ? [{ name: 'servingSite', value: servingSiteId, valueType: 'string' }]
     : [];
 
-async function ensureResource({ name, specId, placeId, placeType, serialNumber, model, characteristic = [] }) {
+async function ensureResource({
+  name,
+  specId,
+  placeId,
+  placeType,
+  serialNumber,
+  model,
+  characteristic = [],
+}) {
   const found = resourceByName.get(name);
   if (found) {
     reused.resources++;
@@ -386,11 +408,15 @@ async function ensureResource({ name, specId, placeId, placeType, serialNumber, 
 // (resourceId, relatedId, tipo), então re-executar não duplica.
 async function link(fromRef, toRef, relationshipType) {
   if (!fromRef || !toRef) return;
-  await api('POST', `/tmf-api/resourceInventoryManagement/v4/resource/${fromRef.id}/relationships`, {
-    id: toRef.id,
-    relationshipType,
-    '@referredType': 'Resource',
-  });
+  await api(
+    'POST',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${fromRef.id}/relationships`,
+    {
+      id: toRef.id,
+      relationshipType,
+      '@referredType': 'Resource',
+    },
+  );
   created.links++;
 }
 
@@ -418,7 +444,10 @@ async function ensureParty(name) {
     partyByName.set(name, found.id);
     return found.id;
   }
-  const party = await api('POST', '/tmf-api/partyManagement/v4/party', { '@type': 'Organization', name });
+  const party = await api('POST', '/tmf-api/partyManagement/v4/party', {
+    '@type': 'Organization',
+    name,
+  });
   partyByName.set(name, party.id);
   return party.id;
 }
@@ -541,19 +570,40 @@ async function main() {
   const portaAtiva = portas[0];
 
   // 3. Outside plant: poste + splitter + feeder.
-  const poleSpec = await ensureResourceSpec('Poste de concreto 9m', 'Infrastructure.Passive', 'Pole');
-  const splitterSpec = await ensureResourceSpec('Splitter óptico 1:8', 'Infrastructure.Passive', 'Splitter');
+  const poleSpec = await ensureResourceSpec(
+    'Poste de concreto 9m',
+    'Infrastructure.Passive',
+    'Pole',
+  );
+  const splitterSpec = await ensureResourceSpec(
+    'Splitter óptico 1:8',
+    'Infrastructure.Passive',
+    'Splitter',
+  );
   // CDOE = Caixa de Distribuição Óptica Externa. O catálogo canônico traz o tipo
   // CTO para caixa óptica de rua; as instâncias é que se chamam CDOE-xx.
-  const cdoeSpec = await ensureResourceSpec('CDOE 1:8 (caixa de distribuição)', 'Infrastructure.Passive', 'CTO');
-  const feederSpec = await ensureResourceSpec('Cabo óptico primário 24FO', 'Cable.OutsidePlant', 'BackboneCable');
-  const distSpec = await ensureResourceSpec('Cabo óptico secundário 12FO', 'Cable.OutsidePlant', 'DistributionCable');
+  const cdoeSpec = await ensureResourceSpec(
+    'CDOE 1:8 (caixa de distribuição)',
+    'Infrastructure.Passive',
+    'CTO',
+  );
+  const feederSpec = await ensureResourceSpec(
+    'Cabo óptico primário 24FO',
+    'Cable.OutsidePlant',
+    'BackboneCable',
+  );
+  const distSpec = await ensureResourceSpec(
+    'Cabo óptico secundário 12FO',
+    'Cable.OutsidePlant',
+    'DistributionCable',
+  );
   const dropSpec = await ensureResourceSpec('Cabo drop 1FO', 'Cable.OutsidePlant', 'DropCable');
   const ontSpec = await ensureResourceSpec('ONT GPON Icaraí', 'Equipment.CustomerPremises', 'ONT');
 
   const posteSplitterLoc = await locationFor(
     [`POSTE-${POSTE_SPLITTER.tag}`, 'SPLITTER-1x8-ICARAI-01'],
-    () => createPoint(POSTE_SPLITTER.coord, `Poste ${POSTE_SPLITTER.tag} — ${POSTE_SPLITTER.street}`),
+    () =>
+      createPoint(POSTE_SPLITTER.coord, `Poste ${POSTE_SPLITTER.tag} — ${POSTE_SPLITTER.street}`),
   );
   await ensurePointGeometry(posteSplitterLoc, POSTE_SPLITTER.coord);
   await ensureStreetAddress(posteSplitterLoc, POSTE_SPLITTER.street);
@@ -652,7 +702,10 @@ async function main() {
       await ensurePointGeometry(sitePlaceByName.get(`PI ${enderecoCasa}`), casaEm(...casa.at));
 
       const dropLoc = await locationFor([`CABO-DROP-ICARAI-${seq}`], () =>
-        createRoute(rotaDrop(ramal.poste.coord, ...casa.at), `Cabo drop — ${ramal.cdoe} → ${enderecoCasa}`),
+        createRoute(
+          rotaDrop(ramal.poste.coord, ...casa.at),
+          `Cabo drop — ${ramal.cdoe} → ${enderecoCasa}`,
+        ),
       );
       await ensureRouteGeometry(dropLoc, rotaDrop(ramal.poste.coord, ...casa.at));
       await ensureStreetAddress(dropLoc, casa.street);
@@ -703,10 +756,14 @@ async function main() {
 
   console.log('== Resumo ==');
   console.log(`Sites:     ${created.sites} criados, ${reused.sites} reaproveitados`);
-  console.log(`Locations: ${created.locations} (pontos + rotas LineString), ${created.addresses} logradouros, ${created.regeometria} reposicionadas`);
+  console.log(
+    `Locations: ${created.locations} (pontos + rotas LineString), ${created.addresses} logradouros, ${created.regeometria} reposicionadas`,
+  );
   console.log(`Recursos:  ${created.resources} criados, ${reused.resources} reaproveitados`);
   console.log(`Ligações:  ${created.links} relacionamentos de recurso`);
-  console.log(`Serviços:  ${created.rfs} RFS + ${created.cfs} CFS criados, ${reused.services} reaproveitados`);
+  console.log(
+    `Serviços:  ${created.rfs} RFS + ${created.cfs} CFS criados, ${reused.services} reaproveitados`,
+  );
   console.log(`Specs:     ${created.specs}`);
   console.log('\nRede GPON de Icaraí presente no inventário.');
 }

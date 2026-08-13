@@ -26,7 +26,9 @@ test('Composer submits the current value', () => {
   fireEvent.click(screen.getByLabelText('Enviar'));
 
   expect(onSubmit).toHaveBeenCalledTimes(1);
-  expect((screen.getByPlaceholderText('Pergunte algo') as HTMLTextAreaElement).value).toBe('Consulta TMF');
+  expect((screen.getByPlaceholderText('Pergunte algo') as HTMLTextAreaElement).value).toBe(
+    'Consulta TMF',
+  );
 });
 
 test('Composer submits on Enter instead of inserting a new line', () => {

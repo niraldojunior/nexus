@@ -28,7 +28,11 @@ export async function fetchStreetViewAvailability(
       pano_id?: string;
       location?: { lat?: number; lng?: number };
     };
-    if (data.status === 'OK' && data.location?.lat !== undefined && data.location?.lng !== undefined) {
+    if (
+      data.status === 'OK' &&
+      data.location?.lat !== undefined &&
+      data.location?.lng !== undefined
+    ) {
       return {
         status: 'ok',
         panoramaPoint: [data.location.lng, data.location.lat],

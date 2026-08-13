@@ -10,7 +10,11 @@ export {
   type GeoSearchSelection,
   type AddressSearchError,
 } from './GeoSearchBar';
-export { AddressDetailPanel, type AddressDetailPanelProps } from './AddressDetailPanel';
+export {
+  AddressDetailPanel,
+  type AddressDetailPanelProps,
+  type AddressPinLocation,
+} from './AddressDetailPanel';
 export { ViabilityTab, type ViabilityTabProps, type DropSimulation } from './ViabilityTab';
 export { Info } from './InfoRow';
 export { IconInfoRow } from './IconInfoRow';

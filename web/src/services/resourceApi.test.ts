@@ -122,7 +122,16 @@ test('resource catalog helpers hit the read-only endpoints', async () => {
     const url = String(input);
     if (url.endsWith('/resourceCategory')) {
       return new Response(
-        JSON.stringify([{ id: 'cat-equipment-access', code: 'Equipment.Access', name: 'Equipamentos de Acesso', href: '/x', '@type': 'ResourceCategory', status: 'active' }]),
+        JSON.stringify([
+          {
+            id: 'cat-equipment-access',
+            code: 'Equipment.Access',
+            name: 'Equipamentos de Acesso',
+            href: '/x',
+            '@type': 'ResourceCategory',
+            status: 'active',
+          },
+        ]),
         {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -130,7 +139,17 @@ test('resource catalog helpers hit the read-only endpoints', async () => {
       );
     }
     return new Response(
-      JSON.stringify([{ id: 'rt-olt', code: 'OLT', name: 'OLT', href: '/x', '@type': 'ResourceType', categoryCode: 'Equipment.Access', status: 'active' }]),
+      JSON.stringify([
+        {
+          id: 'rt-olt',
+          code: 'OLT',
+          name: 'OLT',
+          href: '/x',
+          '@type': 'ResourceType',
+          categoryCode: 'Equipment.Access',
+          status: 'active',
+        },
+      ]),
       {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -144,8 +163,14 @@ test('resource catalog helpers hit the read-only endpoints', async () => {
 
   expect(categories).toHaveLength(1);
   expect(types).toHaveLength(1);
-  expect(fetchMock).toHaveBeenCalledWith('/tmf-api/resourceCatalogManagement/v4/resourceCategory', expect.objectContaining({ method: 'GET' }));
-  expect(fetchMock).toHaveBeenCalledWith('/tmf-api/resourceCatalogManagement/v4/resourceType', expect.objectContaining({ method: 'GET' }));
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/tmf-api/resourceCatalogManagement/v4/resourceCategory',
+    expect.objectContaining({ method: 'GET' }),
+  );
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/tmf-api/resourceCatalogManagement/v4/resourceType',
+    expect.objectContaining({ method: 'GET' }),
+  );
 });
 
 test('loadResourceWorkspaceSnapshot requests the aggregated workspace endpoint', async () => {
@@ -169,7 +194,11 @@ test('loadResourceWorkspaceSnapshot requests the aggregated workspace endpoint',
   });
   vi.stubGlobal('fetch', fetchMock);
 
-  const result = await loadResourceWorkspaceSnapshot({ tab: 'PhysicalResource', limit: 20, offset: 40 });
+  const result = await loadResourceWorkspaceSnapshot({
+    tab: 'PhysicalResource',
+    limit: 20,
+    offset: 40,
+  });
 
   expect(result.items).toEqual([]);
 });
@@ -202,10 +231,13 @@ test('deleteResourceSpecification calls DELETE and returns the closed entity', a
 
 test('listResources requests a kind-filtered page', async () => {
   const fetchMock = vi.fn(async () => {
-    return new Response(JSON.stringify([{ id: 'res-1', name: 'Resource 1', resourceSpecificationId: 'spec-1' }]), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify([{ id: 'res-1', name: 'Resource 1', resourceSpecificationId: 'spec-1' }]),
+      {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      },
+    );
   });
   vi.stubGlobal('fetch', fetchMock);
 
@@ -220,15 +252,26 @@ test('listResources requests a kind-filtered page', async () => {
 
 test('createResource, updateResource and deleteResource call the inventory endpoint', async () => {
   const fetchMock = vi.fn(async () => {
-    return new Response(JSON.stringify({ id: 'res-1', name: 'Resource 1', resourceSpecificationId: 'spec-1' }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({ id: 'res-1', name: 'Resource 1', resourceSpecificationId: 'spec-1' }),
+      {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      },
+    );
   });
   vi.stubGlobal('fetch', fetchMock);
 
-  await createResource({ '@type': 'PhysicalResource', name: 'Resource 1', resourceSpecificationId: 'spec-1' });
-  await updateResource('res-1', { '@type': 'LogicalResource', name: 'Resource 2', resourceSpecificationId: 'spec-2' });
+  await createResource({
+    '@type': 'PhysicalResource',
+    name: 'Resource 1',
+    resourceSpecificationId: 'spec-1',
+  });
+  await updateResource('res-1', {
+    '@type': 'LogicalResource',
+    name: 'Resource 2',
+    resourceSpecificationId: 'spec-2',
+  });
   await deleteResource('res-1');
 
   const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>;

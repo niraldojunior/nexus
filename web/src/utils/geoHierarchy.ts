@@ -81,7 +81,9 @@ export function flattenTreeRows(
 // continuam aparecendo no mapa mesmo fechadas (ver `mapNodes` em useGeoTree).
 const AUTO_EXPAND: Array<GeoTreeNode['kind']> = [];
 
-export function defaultExpandedRows(state: Pick<GeoTreeState, 'rootIds' | 'childIds' | 'nodesById'>): Set<string> {
+export function defaultExpandedRows(
+  state: Pick<GeoTreeState, 'rootIds' | 'childIds' | 'nodesById'>,
+): Set<string> {
   const expanded = new Set<string>();
   const walk = (nodeId: string, parentKey: string) => {
     const rowKey = `${parentKey}/${nodeId}`;
@@ -105,7 +107,18 @@ export function collapseBranch(expandedRows: Set<string>, rowKey: string): Set<s
 }
 
 // Códigos/keywords que caracterizam Cabo (category Cable.* do catálogo Resource).
-const CABLE_KEYWORDS = ['cabo', 'cable', 'fiber', 'fibra', 'drop', 'feeder', 'jumper', 'patch', 'backbone', 'distribution'];
+const CABLE_KEYWORDS = [
+  'cabo',
+  'cable',
+  'fiber',
+  'fibra',
+  'drop',
+  'feeder',
+  'jumper',
+  'patch',
+  'backbone',
+  'distribution',
+];
 
 // Classifica um recurso como Cabo a partir do resourceType/spec/nome.
 export function isCableResource(resource: {

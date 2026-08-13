@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Crosshair,
   Fingerprint,
-  Globe,
   Info as InfoIcon,
+  Loader2,
   MapPin,
   Route,
-  Tag,
   Target,
 } from 'lucide-react';
 import type { DraftAddress } from '../../utils/googleMaps';
@@ -24,6 +23,8 @@ import { IconInfoRow } from './IconInfoRow';
 import { PanelBarButton } from './PanelBarButton';
 import { PrecisionBadge } from './PrecisionBadge';
 import { ViabilityTab, type DropSimulation } from './ViabilityTab';
+import { useGeonetAddress } from '../../hooks/useGeonetAddress';
+import type { GeonetAddressDetail } from '../../services/geonetAddressApi';
 
 type AddressTab = 'overview' | 'viability';
 
@@ -44,6 +45,14 @@ export type AddressDetailPanelProps = {
   // Simulação do drop entre este endereço e a CDO escolhida na aba Viabilidade. Sobe
   // para o GeoPage porque quem desenha é o mapa, não o painel.
   onDropSimulation?: (simulation: DropSimulation | null) => void;
+  geonetEnabled?: boolean;
+  onLocationResolved?: (location: AddressPinLocation) => void;
+};
+
+export type AddressPinLocation = {
+  coordinates: [number, number];
+  source: 'google' | 'geonet';
+  precision: string;
 };
 
 /**
@@ -60,11 +69,25 @@ export function AddressDetailPanel({
   onSnapChange,
   minimizeSignal,
   onDropSimulation,
+  geonetEnabled = true,
+  onLocationResolved,
 }: AddressDetailPanelProps) {
-  const title = [address.street, address.streetNr].filter(Boolean).join(', ') || address.label;
+  const title = address.sourceQuery?.trim() || [address.street, address.streetNr].filter(Boolean).join(', ') || address.label;
   const marker = addressStreetViewMarker(address);
   const [tab, setTab] = useState<AddressTab>('overview');
   const { snapCommand, requestSnap } = useSheetSnapCommand(minimizeSignal);
+  const geonet = useGeonetAddress(address, geonetEnabled);
+  const pinLocation = useMemo(
+    () => selectPinLocation(address, geonet.detail),
+    [address, geonet.detail],
+  );
+
+  useEffect(() => {
+    // A câmera só pode voar após a comparação terminar: enquanto o detalhe Geonet
+    // ainda está em trânsito, a decisão poderia mudar do ponto Google para o Geonet.
+    if (geonet.status === 'loading' || geonet.locationPending) return;
+    onLocationResolved?.(pinLocation);
+  }, [geonet.locationPending, geonet.status, onLocationResolved, pinLocation]);
 
   // Endereço novo é consulta nova: a aba volta para a Visão geral, e a aba de
   // Viabilidade se desmonta — é a desmontagem dela que apaga o drop simulado do mapa
@@ -112,29 +135,9 @@ export function AddressDetailPanel({
         />
       </div>
       {tab === 'viability' ? (
-        <ViabilityTab origin={address.coordinates} onSimulate={handleSimulate} />
+        <ViabilityTab origin={pinLocation.coordinates} onSimulate={handleSimulate} />
       ) : (
-        <div className="grid gap-1">
-          <IconInfoRow icon={MapPin} hint="Endereço formatado" value={address.label} />
-          <IconInfoRow
-            icon={Crosshair}
-            hint="Localização"
-            value={<CoordinateStreetView marker={marker} />}
-          />
-          <IconInfoRow
-            icon={Target}
-            hint="Precisão"
-            value={<PrecisionBadge locationType={address.precision} />}
-          />
-          <IconInfoRow
-            icon={Tag}
-            hint="Place ID (Google Maps)"
-            value={address.placeId ?? '-'}
-            mono
-          />
-          <IconInfoRow icon={Fingerprint} hint="Address ID (Geonet)" value="-" mono />
-          <IconInfoRow icon={Globe} hint="Origem Localização" value="Google Maps" />
-        </div>
+        <AddressOverview address={address} marker={marker} geonet={geonet} pinLocation={pinLocation} />
       )}
     </>
   );
@@ -183,5 +186,287 @@ export function AddressDetailPanel({
         <div className="px-3 py-3">{body}</div>
       </OverlayScrollArea>
     </div>
+  );
+}
+
+function AddressOverview({
+  address,
+  marker,
+  geonet,
+  pinLocation,
+}: {
+  address: DraftAddress;
+  marker: ReturnType<typeof addressStreetViewMarker>;
+  geonet: ReturnType<typeof useGeonetAddress>;
+  pinLocation: AddressPinLocation;
+}) {
+  return (
+    <div className="grid gap-3">
+      <div className="px-1 py-1 text-[0.76rem] text-app-muted">
+        Alfinete do mapa: <span className="font-semibold">{pinLocation.source === 'google' ? 'Google' : 'GEONET'}</span>
+        {' · '}
+        {pinLocation.precision}
+      </div>
+      <AddressSourceCard
+        icon={<GoogleMapsIcon />}
+        title="Google Maps"
+        tone="bg-status-green-soft/40"
+      >
+        <IconInfoRow icon={MapPin} hint="Endereço formatado" value={address.label} />
+        <IconInfoRow
+          icon={Crosshair}
+          hint="Localização"
+          value={<CoordinateStreetView marker={marker} />}
+        />
+        <IconInfoRow
+          icon={Target}
+          hint="Precisão"
+          value={<PrecisionBadge locationType={address.precision} />}
+        />
+        <IconInfoRow icon={Fingerprint} hint="Place ID" value={address.placeId ?? '-'} mono />
+      </AddressSourceCard>
+      <GeonetAddressCard geonet={geonet} />
+    </div>
+  );
+}
+
+const GOOGLE_PRECISION_RANK: Record<string, number> = {
+  ROOFTOP: 3,
+  RANGE_INTERPOLATED: 2,
+  GEOMETRIC_CENTER: 1,
+  APPROXIMATE: 1,
+};
+
+export function selectPinLocation(
+  address: DraftAddress,
+  geonet: GeonetAddressDetail | null,
+): AddressPinLocation {
+  const google = {
+    coordinates: address.coordinates,
+    source: 'google' as const,
+    precision: address.precision ?? 'Desconhecida',
+    rank: GOOGLE_PRECISION_RANK[address.precision ?? ''] ?? 0,
+  };
+  const geonetPrecision = geonet?.geolocationMethod
+    ? GEONET_PRECISION[geonet.geolocationMethod.trim().toUpperCase()]
+    : undefined;
+  const geonetRank = geonetPrecision ? ({ Alta: 3, Média: 2, Baixa: 1 }[geonetPrecision.quality] ?? 0) : 0;
+  if (geonet?.coordinates && geonetRank > google.rank) {
+    return {
+      coordinates: geonet.coordinates,
+      source: 'geonet',
+      precision: `${geonetPrecision?.quality} - ${geonetPrecision?.label}`,
+    };
+  }
+  return { coordinates: google.coordinates, source: google.source, precision: google.precision };
+}
+
+function AddressSourceCard({
+  icon,
+  title,
+  tone,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  tone: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className={`min-w-0 rounded-[14px] border border-app-border p-3 shadow-sm ${tone}`}>
+      <h4 className="mb-2 flex items-center gap-2 text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+        {icon}
+        {title}
+      </h4>
+      <div className="grid gap-1">{children}</div>
+    </section>
+  );
+}
+
+function GeonetAddressCard({ geonet }: { geonet: ReturnType<typeof useGeonetAddress> }) {
+  const selected = geonet.candidates.find((candidate) => candidate.addressId === geonet.selectedId);
+  const detail: GeonetAddressDetail | null = geonet.detail ?? (selected ? { ...selected } : null);
+  const selectedIndex = geonet.candidates.findIndex(
+    (candidate) => candidate.addressId === geonet.selectedId,
+  );
+
+  return (
+    <AddressSourceCard icon={<VtalIcon />} title="GEONET" tone="bg-app-accent-soft/70">
+      {geonet.status === 'loading' ? (
+        <div className="flex items-center gap-2 py-2 text-[0.82rem] text-app-muted">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Consultando endereço no Geonet...
+        </div>
+      ) : null}
+      {geonet.status === 'idle' ? (
+        <p className="py-1 text-[0.82rem] leading-snug text-app-muted">
+          A comparação Geonet é feita para endereços pesquisados.
+        </p>
+      ) : null}
+      {geonet.status === 'not_configured' ? (
+        <p className="py-1 text-[0.82rem] leading-snug text-app-muted">
+          Consulta Geonet não configurada neste ambiente.
+        </p>
+      ) : null}
+      {geonet.status === 'empty' ? (
+        <p className="py-1 text-[0.82rem] leading-snug text-app-muted">
+          Nenhum endereço equivalente encontrado no Geonet.
+        </p>
+      ) : null}
+      {geonet.status === 'error' ? (
+        <div className="grid gap-2 py-1 text-[0.82rem] leading-snug text-app-muted">
+          <span>{geonet.error ?? 'Não foi possível consultar o Geonet.'}</span>
+          <button
+            type="button"
+            onClick={geonet.retry}
+            className="w-fit rounded-[10px] border border-app-border px-2.5 py-1 text-[0.76rem] font-semibold text-app-text transition hover:border-app-accent-border hover:bg-app-accent-soft"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      ) : null}
+      {geonet.status === 'ready' && detail ? (
+        <>
+          {geonet.candidates.length > 1 ? (
+            <label className="mb-1 grid gap-1 text-[0.72rem] font-medium text-app-muted">
+              Resultado {Math.max(1, selectedIndex + 1)} de {geonet.candidates.length}
+              <select
+                value={geonet.selectedId ?? ''}
+                onChange={(event) => geonet.select(event.target.value)}
+                className="w-full rounded-[10px] border border-app-border bg-white px-2 py-1.5 text-[0.8rem] text-app-text outline-none focus:border-app-accent-border"
+              >
+                {geonet.candidates.map((candidate) => (
+                  <option
+                    key={candidate.addressId ?? candidate.formattedAddress}
+                    value={candidate.addressId ?? ''}
+                    disabled={!candidate.addressId}
+                  >
+                    {candidate.formattedAddress}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <IconInfoRow icon={MapPin} hint="Endereço formatado" value={detail.formattedAddress} />
+          <IconInfoRow
+            icon={Crosshair}
+            hint="Localização"
+            value={
+              detail.coordinates ? (
+                <span className="font-mono">
+                  [{detail.coordinates[0].toFixed(5)}, {detail.coordinates[1].toFixed(5)}]
+                </span>
+              ) : (
+                '-'
+              )
+            }
+          />
+          <IconInfoRow
+            icon={Target}
+            hint="Precisão"
+            value={<GeonetPrecisionBadge method={detail.geolocationMethod} />}
+          />
+          <IconInfoRow icon={Fingerprint} hint="Address ID" value={detail.addressId ?? '-'} mono />
+        </>
+      ) : null}
+    </AddressSourceCard>
+  );
+}
+
+const GEONET_PRECISION: Record<string, { quality: string; label: string; className: string }> = {
+  'ENDEREÇO COMPLETO': {
+    quality: 'Alta',
+    label: 'Endereço Completo',
+    className: 'border-status-green/30 bg-status-green-soft text-status-green',
+  },
+  'ENDERECO COMPLETO': {
+    quality: 'Alta',
+    label: 'Endereço Completo',
+    className: 'border-status-green/30 bg-status-green-soft text-status-green',
+  },
+  'ENDEREÇO INTERPOLAÇÃO': {
+    quality: 'Média',
+    label: 'Endereço Interpolação',
+    className: 'border-status-amber/30 bg-status-amber-soft text-status-amber',
+  },
+  'ENDERECO INTERPOLACAO': {
+    quality: 'Média',
+    label: 'Endereço Interpolação',
+    className: 'border-status-amber/30 bg-status-amber-soft text-status-amber',
+  },
+  BAIRRO: {
+    quality: 'Baixa',
+    label: 'Ponto no Centro do Bairro',
+    className: 'border-status-red/30 bg-status-red-soft text-status-red',
+  },
+  MUNICÍPIO: {
+    quality: 'Baixa',
+    label: 'Ponto no Centro do Município',
+    className: 'border-status-red/30 bg-status-red-soft text-status-red',
+  },
+  MUNICIPIO: {
+    quality: 'Baixa',
+    label: 'Ponto no Centro do Município',
+    className: 'border-status-red/30 bg-status-red-soft text-status-red',
+  },
+  'CEP + INTERPOLAÇÃO': {
+    quality: 'Média',
+    label: 'CEP + Interpolação',
+    className: 'border-status-amber/30 bg-status-amber-soft text-status-amber',
+  },
+  'CEP + INTERPOLACAO': {
+    quality: 'Média',
+    label: 'CEP + Interpolação',
+    className: 'border-status-amber/30 bg-status-amber-soft text-status-amber',
+  },
+  'CEP + NÚMERO DE PORTA': {
+    quality: 'Alta',
+    label: 'Endereço Completo',
+    className: 'border-status-green/30 bg-status-green-soft text-status-green',
+  },
+  'CEP + NUMERO DE PORTA': {
+    quality: 'Alta',
+    label: 'Endereço Completo',
+    className: 'border-status-green/30 bg-status-green-soft text-status-green',
+  },
+};
+
+function GeonetPrecisionBadge({ method }: { method?: string }) {
+  const precision = method ? GEONET_PRECISION[method.trim().toUpperCase()] : undefined;
+  const text = precision ? `${precision.quality} - ${precision.label}` : (method ?? 'Desconhecida');
+  return (
+    <span
+      className={`inline-flex items-center rounded-[999px] border px-2 py-0.5 text-[0.68rem] font-semibold tracking-[0.02em] ${precision?.className ?? 'border-app-border bg-app-sidebar text-app-muted'}`}
+    >
+      {text}
+    </span>
+  );
+}
+
+function GoogleMapsIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#34A853" d="M3 5.5 9.5 2v16.5L3 22V5.5Z" />
+      <path fill="#4285F4" d="M9.5 2 16 5.5V22l-6.5-3.5V2Z" />
+      <path fill="#FBBC04" d="M16 5.5 21 2.8v16.5L16 22V5.5Z" />
+      <path
+        fill="#EA4335"
+        d="M12.75 7.1a3.35 3.35 0 0 0-3.35 3.35c0 2.52 3.35 6.3 3.35 6.3s3.35-3.78 3.35-6.3a3.35 3.35 0 0 0-3.35-3.35Zm0 4.6a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z"
+      />
+    </svg>
+  );
+}
+
+function VtalIcon() {
+  return (
+    <span
+      className="inline-flex h-4 w-4 items-center justify-center rounded-[4px] bg-app-text"
+      aria-hidden="true"
+    >
+      <svg className="h-3 w-3" viewBox="0 0 24 24">
+        <path fill="white" d="M2.5 3h4.1L12 16.2 17.4 3h4.1L12 21 2.5 3Z" />
+        <path fill="currentColor" className="text-app-accent" d="M21 15h2v3h-2z" />
+      </svg>
+    </span>
   );
 }

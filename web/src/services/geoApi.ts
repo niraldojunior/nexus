@@ -89,13 +89,21 @@ export async function getJson<T>(url: string): Promise<T> {
 }
 
 export async function postJson<T = unknown>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(url, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
   if (!response.ok) throw new Error(`POST ${url} falhou (${response.status})`);
   return (await response.json()) as T;
 }
 
 export async function patchJson<T = unknown>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(url, { method: 'PATCH', headers: authHeaders(), body: JSON.stringify(body) });
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
   if (!response.ok) throw new Error(`PATCH ${url} falhou (${response.status})`);
   return (await response.json()) as T;
 }
@@ -104,4 +112,5 @@ export const listGeoSites = () => getJson<GeoSite[]>('/v1/geo/sites');
 export const listGeoAddresses = () => getJson<GeoAddress[]>('/v1/geo/addresses');
 export const listGeoLocations = () => getJson<GeoLocation[]>('/v1/geo/locations');
 export const listGeoSiteSpecifications = () => getJson<GeoSpec[]>('/v1/geo/site-specifications');
-export const listGeoSiteEvents = (siteId: string) => getJson<GeoEvent[]>(`/v1/geo/sites/${siteId}/events`);
+export const listGeoSiteEvents = (siteId: string) =>
+  getJson<GeoEvent[]>(`/v1/geo/sites/${siteId}/events`);

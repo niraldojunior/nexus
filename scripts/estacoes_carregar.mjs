@@ -143,7 +143,7 @@ const tag = () => ({ name: '_origin.seed', value: SEED_TAG, valueType: 'string' 
 function readCsvText(path) {
   const buf = readFileSync(path);
   // Descarta UTF-8 BOM se presente
-  const start = (buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) ? 3 : 0;
+  const start = buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf ? 3 : 0;
   return buf.slice(start).toString('utf8');
 }
 
@@ -151,14 +151,35 @@ function readCsvText(path) {
 // Necessário para reverter mojibake: bytes UTF-8 lidos como CP1252 → string
 // com esses chars especiais → `fixCp1252Mojibake` desfaz.
 const CP1252_UNICODE = new Map([
-  [0x80,0x20AC],[0x82,0x201A],[0x83,0x0192],[0x84,0x201E],[0x85,0x2026],
-  [0x86,0x2020],[0x87,0x2021],[0x88,0x02C6],[0x89,0x2030],[0x8A,0x0160],
-  [0x8B,0x2039],[0x8C,0x0152],[0x8E,0x017D],[0x91,0x2018],[0x92,0x2019],
-  [0x93,0x201C],[0x94,0x201D],[0x95,0x2022],[0x96,0x2013],[0x97,0x2014],
-  [0x98,0x02DC],[0x99,0x2122],[0x9A,0x0161],[0x9B,0x203A],[0x9C,0x0153],
-  [0x9E,0x017E],[0x9F,0x0178],
+  [0x80, 0x20ac],
+  [0x82, 0x201a],
+  [0x83, 0x0192],
+  [0x84, 0x201e],
+  [0x85, 0x2026],
+  [0x86, 0x2020],
+  [0x87, 0x2021],
+  [0x88, 0x02c6],
+  [0x89, 0x2030],
+  [0x8a, 0x0160],
+  [0x8b, 0x2039],
+  [0x8c, 0x0152],
+  [0x8e, 0x017d],
+  [0x91, 0x2018],
+  [0x92, 0x2019],
+  [0x93, 0x201c],
+  [0x94, 0x201d],
+  [0x95, 0x2022],
+  [0x96, 0x2013],
+  [0x97, 0x2014],
+  [0x98, 0x02dc],
+  [0x99, 0x2122],
+  [0x9a, 0x0161],
+  [0x9b, 0x203a],
+  [0x9c, 0x0153],
+  [0x9e, 0x017e],
+  [0x9f, 0x0178],
 ]);
-const UNICODE_TO_CP1252 = new Map([...CP1252_UNICODE].map(([k,v]) => [v,k]));
+const UNICODE_TO_CP1252 = new Map([...CP1252_UNICODE].map(([k, v]) => [v, k]));
 
 // CP1252 tem 5 posições sem caractere atribuído em 0x80–0x9F (0x81, 0x8D, 0x8F,
 // 0x90, 0x9D). O decoder windows-1252 do WHATWG (usado por navegador/Node ao
@@ -168,7 +189,7 @@ const UNICODE_TO_CP1252 = new Map([...CP1252_UNICODE].map(([k,v]) => [v,k]));
 // re-exportado em UTF-8 vira "Ã" (U+00C3) + U+008D — esse 2º codepoint é
 // exatamente um desses "buracos" do CP1252. Sem tratar isso aqui, a função
 // desistia (`return str`) e "Icaraí (ICI)" ficava "IcaraÃ (ICI)".
-const CP1252_GAPS = new Set([0x81, 0x8D, 0x8F, 0x90, 0x9D]);
+const CP1252_GAPS = new Set([0x81, 0x8d, 0x8f, 0x90, 0x9d]);
 
 // Tenta reverter double-encoding CP1252→UTF-8 (bytes UTF-8 armazenados como
 // texto CP1252, depois re-exportados). Devolve o original se não conseguir.
@@ -176,11 +197,23 @@ function fixCp1252Mojibake(str) {
   const bytes = [];
   for (const ch of str) {
     const cp = ch.codePointAt(0);
-    if (cp <= 0x7F)                          { bytes.push(cp); continue; }
-    if (cp >= 0xA0 && cp <= 0xFF)            { bytes.push(cp); continue; }
-    if (CP1252_GAPS.has(cp))                 { bytes.push(cp); continue; }
+    if (cp <= 0x7f) {
+      bytes.push(cp);
+      continue;
+    }
+    if (cp >= 0xa0 && cp <= 0xff) {
+      bytes.push(cp);
+      continue;
+    }
+    if (CP1252_GAPS.has(cp)) {
+      bytes.push(cp);
+      continue;
+    }
     const b = UNICODE_TO_CP1252.get(cp);
-    if (b !== undefined)                     { bytes.push(b);  continue; }
+    if (b !== undefined) {
+      bytes.push(b);
+      continue;
+    }
     return str; // codepoint não mapeável → não é mojibake CP1252
   }
   const decoded = Buffer.from(bytes).toString('utf8');
@@ -188,7 +221,10 @@ function fixCp1252Mojibake(str) {
 }
 
 function fixMojibake(raw) {
-  const s = String(raw ?? '').replace(/Â(?=[º°ª])/g, '').replace(/\s+/g, ' ').trim();
+  const s = String(raw ?? '')
+    .replace(/Â(?=[º°ª])/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return fixCp1252Mojibake(s);
 }
 
@@ -242,7 +278,9 @@ const ESTADO_TO_STATUS = {
 };
 
 function resolveSiteStatus(estadoRaw, sigla) {
-  const key = String(estadoRaw ?? '').trim().toLowerCase();
+  const key = String(estadoRaw ?? '')
+    .trim()
+    .toLowerCase();
   const status = ESTADO_TO_STATUS[key];
   if (!status) {
     console.log(`  ⚠ ${sigla}: ESTADO "${estadoRaw}" não reconhecido — usando status 'Planned'`);
@@ -468,7 +506,14 @@ async function bootstrap() {
 // -------------------------------------------------------------- ensure -------
 
 // Campos do CSV mantidos em sincronia com o registro existente.
-const EXTRA_CSV_KEYS = ['nome', 'sistemaOrigem', 'estado', 'dataAtivacao', 'dataUltimaModif', 'salasDeclaradas'];
+const EXTRA_CSV_KEYS = [
+  'nome',
+  'sistemaOrigem',
+  'estado',
+  'dataAtivacao',
+  'dataUltimaModif',
+  'salasDeclaradas',
+];
 
 function extraDiffers(stored, expected) {
   if (!stored) return true;
@@ -508,9 +553,7 @@ async function ensureContainment(parentSpecId, childSpecId) {
   }
   if (!(childSpec.allowedParentSpecIds ?? []).includes(parentSpecId)) {
     await api('PATCH', `/v1/geo/site-specifications/${childSpecId}`, {
-      allowedParentSpecIds: [
-        ...new Set([...(childSpec.allowedParentSpecIds ?? []), parentSpecId]),
-      ],
+      allowedParentSpecIds: [...new Set([...(childSpec.allowedParentSpecIds ?? []), parentSpecId])],
     });
   }
 }
@@ -593,7 +636,9 @@ async function main() {
 
     const enderecoRaw = row['ENDEREÇO'] ?? row['ENDERE�O'] ?? '';
     const hasRealAddress = isRealAddress(enderecoRaw);
-    const endereco = hasRealAddress ? parseEndereco(enderecoRaw) : { street: '', streetNr: '', bairro: '', postcode: undefined };
+    const endereco = hasRealAddress
+      ? parseEndereco(enderecoRaw)
+      : { street: '', streetNr: '', bairro: '', postcode: undefined };
 
     // UF/MUNICIPIO da linha podem ser lixo de origem (ex.: `UF=TR`,
     // `MUNICIPIO=Formação` em entradas de treinamento do Netwin). Quando a UF
@@ -622,7 +667,9 @@ async function main() {
 
     // 2) coordenada inconsistente/ausente + endereço de verdade → geocodifica.
     if (!coord && hasRealAddress) {
-      const query = [endereco.street, endereco.streetNr, endereco.bairro, municipio, uf].filter(Boolean).join(', ');
+      const query = [endereco.street, endereco.streetNr, endereco.bairro, municipio, uf]
+        .filter(Boolean)
+        .join(', ');
       coord = await geocodeAddress(query, uf);
       if (coord) coordSource = 'geocoded';
     }
@@ -690,8 +737,14 @@ async function main() {
       await ensureSala({ name: sala, specId: specSala, parentSiteId: site.id });
     }
 
-    const flag = coordSource ? (coordSource === 'geocoded' ? '  ⚠ geocodificada' : '') : '  ⚠ sem coordenada';
-    console.log(`· ${sigla.padEnd(8)} ${estacaoName.padEnd(40)} ${municipio}/${uf} — ${salas.length} salas${flag}`);
+    const flag = coordSource
+      ? coordSource === 'geocoded'
+        ? '  ⚠ geocodificada'
+        : ''
+      : '  ⚠ sem coordenada';
+    console.log(
+      `· ${sigla.padEnd(8)} ${estacaoName.padEnd(40)} ${municipio}/${uf} — ${salas.length} salas${flag}`,
+    );
   }
 
   console.log('\nResumo:');
@@ -779,14 +832,21 @@ async function resetStations(client) {
   const all = [...stations, ...salas];
   const allIds = all.map((r) => r.id);
   const addrIds = [...new Set(all.map((r) => r.geographic_address_id).filter(Boolean))];
-  const locIds  = [...new Set(all.map((r) => r.geographic_location_id).filter(Boolean))];
+  const locIds = [...new Set(all.map((r) => r.geographic_location_id).filter(Boolean))];
 
-  await client.query('DELETE FROM tmf_geographic_site_status_history WHERE site_id = ANY($1::text[])', [allIds]);
+  await client.query(
+    'DELETE FROM tmf_geographic_site_status_history WHERE site_id = ANY($1::text[])',
+    [allIds],
+  );
   await client.query('DELETE FROM tmf_geographic_site WHERE id = ANY($1::text[])', [allIds]);
-  if (addrIds.length) await client.query('DELETE FROM tmf_geographic_address WHERE id = ANY($1::text[])', [addrIds]);
-  if (locIds.length)  await client.query('DELETE FROM tmf_geographic_location WHERE id = ANY($1::text[])', [locIds]);
+  if (addrIds.length)
+    await client.query('DELETE FROM tmf_geographic_address WHERE id = ANY($1::text[])', [addrIds]);
+  if (locIds.length)
+    await client.query('DELETE FROM tmf_geographic_location WHERE id = ANY($1::text[])', [locIds]);
 
-  console.log(`  Removidos: ${stations.length} estações, ${salas.length} salas, ${addrIds.length} endereços, ${locIds.length} locations.`);
+  console.log(
+    `  Removidos: ${stations.length} estações, ${salas.length} salas, ${addrIds.length} endereços, ${locIds.length} locations.`,
+  );
   return allIds.length;
 }
 
@@ -866,7 +926,9 @@ async function mainFast() {
           throw err;
         }
       } else {
-        console.log('— DRY-RUN de reset: as estações existentes seriam removidas. Combine --reset com --apply para executar. —');
+        console.log(
+          '— DRY-RUN de reset: as estações existentes seriam removidas. Combine --reset com --apply para executar. —',
+        );
       }
     }
 
@@ -956,7 +1018,9 @@ async function mainFast() {
       const existingSiteId = siteBySigla.get(sigla) ?? siteByName.get(estacaoName);
       if (existingSiteId) {
         const storedChars = siteCharsBySigla.get(sigla) ?? [];
-        const storedExtra = storedChars.find((c) => c.name === '_origin.extra' || (c.group === '_origin' && c.name === 'extra'))?.value;
+        const storedExtra = storedChars.find(
+          (c) => c.name === '_origin.extra' || (c.group === '_origin' && c.name === 'extra'),
+        )?.value;
         const charsDiffer = extraDiffers(storedExtra, expectedExtra);
 
         const storedStatus = siteStatusBySigla.get(sigla);
@@ -971,13 +1035,19 @@ async function mainFast() {
           }
           if (statusDiffers) {
             patch.status = expectedStatus;
-            patch.statusDate = parseActivationDate(row['DATA_ATIVACAO']) ?? new Date().toISOString();
+            patch.statusDate =
+              parseActivationDate(row['DATA_ATIVACAO']) ?? new Date().toISOString();
             patch.fromStatus = storedStatus;
           }
           toUpdate.push(patch);
           updated.estacoes++;
-          const parts = [charsDiffer && 'características', statusDiffers && `status ${storedStatus}→${expectedStatus}`].filter(Boolean);
-          console.log(`↺ ${sigla.padEnd(8)} ${estacaoName.padEnd(40)} — ${parts.join(', ')} atualizado(s)`);
+          const parts = [
+            charsDiffer && 'características',
+            statusDiffers && `status ${storedStatus}→${expectedStatus}`,
+          ].filter(Boolean);
+          console.log(
+            `↺ ${sigla.padEnd(8)} ${estacaoName.padEnd(40)} — ${parts.join(', ')} atualizado(s)`,
+          );
         } else {
           discarded.estacoes++;
         }
@@ -1072,8 +1142,14 @@ async function mainFast() {
 
       for (const sala of salas) addSala(sala, siteId, activationDate);
 
-      const flag = coordSource ? (coordSource === 'geocoded' ? '  ⚠ geocodificada' : '') : '  ⚠ sem coordenada';
-      console.log(`· ${sigla.padEnd(8)} ${estacaoName.padEnd(40)} ${municipio}/${uf} — ${salas.length} salas${flag}`);
+      const flag = coordSource
+        ? coordSource === 'geocoded'
+          ? '  ⚠ geocodificada'
+          : ''
+        : '  ⚠ sem coordenada';
+      console.log(
+        `· ${sigla.padEnd(8)} ${estacaoName.padEnd(40)} ${municipio}/${uf} — ${salas.length} salas${flag}`,
+      );
     }
 
     console.log('\nPlano:');
@@ -1084,7 +1160,9 @@ async function mainFast() {
     console.log(`  coordenada            : ${JSON.stringify(coordStats)}`);
 
     if (!APPLY_FAST) {
-      console.log('\n— DRY-RUN (--fast sem --apply). Nada foi gravado. Rode com --fast --apply para executar. —');
+      console.log(
+        '\n— DRY-RUN (--fast sem --apply). Nada foi gravado. Rode com --fast --apply para executar. —',
+      );
       return;
     }
 
@@ -1093,50 +1171,96 @@ async function mainFast() {
       await bulkInsert(
         client,
         'tmf_geographic_location',
-        ['id', 'href', 'tenant_id', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'],
+        [
+          'id',
+          'href',
+          'tenant_id',
+          'geometry_type',
+          'geometry',
+          'spatial_ref',
+          'reference_point',
+          'characteristics',
+        ],
         newLocations,
       );
       await bulkInsert(
         client,
         'tmf_geographic_address',
-        ['id', 'href', 'tenant_id', 'street_name', 'street_nr', 'city', 'state_or_province', 'country',
-         'postcode', 'geographic_location_id', 'characteristics'],
+        [
+          'id',
+          'href',
+          'tenant_id',
+          'street_name',
+          'street_nr',
+          'city',
+          'state_or_province',
+          'country',
+          'postcode',
+          'geographic_location_id',
+          'characteristics',
+        ],
         newAddresses,
       );
       await bulkInsert(
         client,
         'tmf_geographic_site',
-        ['id', 'href', 'tenant_id', 'name', 'site_specification_id', 'status', 'status_date',
-         'geographic_location_id', 'geographic_address_id', 'parent_site_id', 'related_party',
-         'site_addresses', 'characteristics'],
+        [
+          'id',
+          'href',
+          'tenant_id',
+          'name',
+          'site_specification_id',
+          'status',
+          'status_date',
+          'geographic_location_id',
+          'geographic_address_id',
+          'parent_site_id',
+          'related_party',
+          'site_addresses',
+          'characteristics',
+        ],
         newSites,
       );
       await bulkInsert(
         client,
         'tmf_geographic_site_status_history',
-        ['id', 'site_id', 'tenant_id', 'from_status', 'to_status', 'status_date', 'status_reason', 'actor_sub', 'trace_id'],
+        [
+          'id',
+          'site_id',
+          'tenant_id',
+          'from_status',
+          'to_status',
+          'status_date',
+          'status_reason',
+          'actor_sub',
+          'trace_id',
+        ],
         newHistory,
       );
 
       // Conferência antes do COMMIT: todo id que preparamos tem de existir na base.
       const allIds = newSites.map((s) => s.id);
       if (allIds.length > 0) {
-        const { rows: [check] } = await client.query(
+        const {
+          rows: [check],
+        } = await client.query(
           `SELECT count(*)::int AS n FROM tmf_geographic_site WHERE id = ANY($1::text[])`,
           [allIds],
         );
         if (check.n !== allIds.length) {
-          throw new Error(`conferência falhou: ${check.n}/${allIds.length} sites gravados — ROLLBACK`);
+          throw new Error(
+            `conferência falhou: ${check.n}/${allIds.length} sites gravados — ROLLBACK`,
+          );
         }
       }
 
       // Atualiza sites existentes com campos divergentes (characteristics e/ou status).
       for (const patch of toUpdate) {
         if (patch.characteristics !== undefined) {
-          await client.query(
-            'UPDATE tmf_geographic_site SET characteristics = $2 WHERE id = $1',
-            [patch.id, patch.characteristics],
-          );
+          await client.query('UPDATE tmf_geographic_site SET characteristics = $2 WHERE id = $1', [
+            patch.id,
+            patch.characteristics,
+          ]);
         }
         if (patch.status !== undefined) {
           await client.query(
@@ -1151,7 +1275,17 @@ async function mainFast() {
             `INSERT INTO tmf_geographic_site_status_history
              (id, site_id, tenant_id, from_status, to_status, status_date, status_reason, actor_sub, trace_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-            [h.id, h.site_id, h.tenant_id, patch.fromStatus ?? null, h.to_status, h.status_date, h.status_reason, h.actor_sub, h.trace_id],
+            [
+              h.id,
+              h.site_id,
+              h.tenant_id,
+              patch.fromStatus ?? null,
+              h.to_status,
+              h.status_date,
+              h.status_reason,
+              h.actor_sub,
+              h.trace_id,
+            ],
           );
         }
       }

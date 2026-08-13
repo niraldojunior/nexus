@@ -2,16 +2,16 @@ Minha avaliação: o módulo Geo já possui uma boa base executável, mas ainda 
 
 Já existem CRUDs TMF673/674/675, validação de geometrias, árvore lazy, busca, viewport, mapa com clusters, relações básicas e registro de eventos. O que falta pode ser organizado nestes pacotes:
 
-| Prioridade | Entrega que falta |
-|---|---|
-| P0 | Identidade e eventos canônicos |
-| P0 | Catálogo governado de SiteSpecification e RelationshipType |
-| P0/P1 | Lifecycle e invariantes de GeographicSite |
-| P1 | Consultas geoespaciais completas |
-| P1 | GeographicAddress e integração Geosite |
-| P1 | Hierarquia, classificação e relações completas |
-| P1 | Operações em massa |
-| P2 | Funcionalidades avançadas do mapa |
+| Prioridade | Entrega que falta                                          |
+| ---------- | ---------------------------------------------------------- |
+| P0         | Identidade e eventos canônicos                             |
+| P0         | Catálogo governado de SiteSpecification e RelationshipType |
+| P0/P1      | Lifecycle e invariantes de GeographicSite                  |
+| P1         | Consultas geoespaciais completas                           |
+| P1         | GeographicAddress e integração Geosite                     |
+| P1         | Hierarquia, classificação e relações completas             |
+| P1         | Operações em massa                                         |
+| P2         | Funcionalidades avançadas do mapa                          |
 
 ### 1. Identidade e eventos canônicos
 

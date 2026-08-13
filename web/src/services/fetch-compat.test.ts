@@ -8,7 +8,10 @@ afterEach(() => {
 });
 
 test('installApiFetchRewrite prefixes v1 requests with /api', async () => {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify({ ok: true, input: String(input) })));
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL) =>
+      new Response(JSON.stringify({ ok: true, input: String(input) })),
+  );
   vi.stubGlobal('fetch', fetchMock);
   vi.stubGlobal('window', { location: { origin: 'http://localhost:5200' } });
 
@@ -18,11 +21,16 @@ test('installApiFetchRewrite prefixes v1 requests with /api', async () => {
   await fetch('/tmf-api/resourceCatalogManagement/v4/resourceCategory');
 
   expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/research/sessions');
-  expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/tmf-api/resourceCatalogManagement/v4/resourceCategory');
+  expect(fetchMock.mock.calls[1]?.[0]).toBe(
+    '/api/tmf-api/resourceCatalogManagement/v4/resourceCategory',
+  );
 });
 
 test('installApiFetchRewrite is idempotent', async () => {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify({ ok: true, input: String(input) })));
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL) =>
+      new Response(JSON.stringify({ ok: true, input: String(input) })),
+  );
   vi.stubGlobal('fetch', fetchMock);
   vi.stubGlobal('window', { location: { origin: 'http://localhost:5200' } });
 

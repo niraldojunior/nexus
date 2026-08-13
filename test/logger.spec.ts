@@ -39,7 +39,10 @@ test('createLogger emits debug entries only when level is debug', () => {
   logger.debug({ enabled: true }, 'debug');
 
   assert.equal(logSpy.mock.calls.length, 1);
-  const debugEntry = JSON.parse(logSpy.mock.calls[0]?.[0] as string) as { level: string; message: string };
+  const debugEntry = JSON.parse(logSpy.mock.calls[0]?.[0] as string) as {
+    level: string;
+    message: string;
+  };
   assert.equal(debugEntry.level, 'debug');
   assert.equal(debugEntry.message, 'debug');
 });

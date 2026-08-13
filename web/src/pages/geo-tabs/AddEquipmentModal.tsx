@@ -7,7 +7,16 @@ import type { ResourceSpecification } from '../../services/resourceApi';
 type Step = 'type' | 'location' | 'details';
 
 export type AddEquipmentModalProps = {
-  draftAddress: { street: string; streetNr?: string; city?: string; stateOrProvince?: string; postcode?: string; country: string; coordinates: [number, number]; label: string } | null;
+  draftAddress: {
+    street: string;
+    streetNr?: string;
+    city?: string;
+    stateOrProvince?: string;
+    postcode?: string;
+    country: string;
+    coordinates: [number, number];
+    label: string;
+  } | null;
   selectedSite: GeoSite | null;
   equipment: ResourceSpecification[];
   locationById: Map<string, GeoLocation>;
@@ -28,7 +37,9 @@ export function AddEquipmentModal({
 }: AddEquipmentModalProps) {
   const [step, setStep] = useState<Step>('type');
   const [resourceSpecificationId, setResourceSpecificationId] = useState(equipment[0]?.id ?? '');
-  const [name, setName] = useState(draftAddress ? `${equipment[0]?.name} - ${draftAddress.street}` : '');
+  const [name, setName] = useState(
+    draftAddress ? `${equipment[0]?.name} - ${draftAddress.street}` : '',
+  );
   const [serialNumber, setSerialNumber] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -71,7 +82,11 @@ export function AddEquipmentModal({
                   : 'Detalhes do equipamento'}
             </h3>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
+          >
             ✕
           </button>
         </div>
@@ -94,9 +109,7 @@ export function AddEquipmentModal({
                       : 'border-app-border hover:border-app-accent-border hover:bg-app-accent-soft'
                   }`}
                 >
-                  <div className="text-[0.95rem] font-semibold text-app-text">
-                    {spec.name}
-                  </div>
+                  <div className="text-[0.95rem] font-semibold text-app-text">{spec.name}</div>
                   <div className="mt-1 text-[0.75rem] text-app-muted">
                     {spec.description || 'Sem descrição'}
                   </div>
@@ -112,10 +125,15 @@ export function AddEquipmentModal({
                 {draftAddress ? (
                   <div>
                     <div className="font-semibold text-app-text">{draftAddress.label}</div>
-                    <div className="mt-1 text-[0.75rem]">[{draftAddress.coordinates[0].toFixed(5)}, {draftAddress.coordinates[1].toFixed(5)}]</div>
+                    <div className="mt-1 text-[0.75rem]">
+                      [{draftAddress.coordinates[0].toFixed(5)},{' '}
+                      {draftAddress.coordinates[1].toFixed(5)}]
+                    </div>
                   </div>
                 ) : selectedSite ? (
-                  <div>Herdado de <strong>{selectedSite.name}</strong></div>
+                  <div>
+                    Herdado de <strong>{selectedSite.name}</strong>
+                  </div>
                 ) : (
                   <div className="text-amber-600">⚠ Selecione um ponto no mapa</div>
                 )}
@@ -167,18 +185,22 @@ export function AddEquipmentModal({
         <div className="mt-5 flex justify-between gap-3 border-t border-app-border pt-4">
           <button
             type="button"
-            onClick={step === 'type' ? onClose : () => setStep(step === 'details' ? 'location' : 'type')}
+            onClick={
+              step === 'type' ? onClose : () => setStep(step === 'details' ? 'location' : 'type')
+            }
             className="geo-btn secondary"
           >
-            {step === 'type' ? 'Cancelar' : <><ChevronLeft className="h-4 w-4" /> Voltar</>}
+            {step === 'type' ? (
+              'Cancelar'
+            ) : (
+              <>
+                <ChevronLeft className="h-4 w-4" /> Voltar
+              </>
+            )}
           </button>
 
           {step === 'type' && (
-            <button
-              type="button"
-              onClick={() => setStep('location')}
-              className="geo-btn primary"
-            >
+            <button type="button" onClick={() => setStep('location')} className="geo-btn primary">
               Continuar →
             </button>
           )}

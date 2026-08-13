@@ -31,30 +31,36 @@ afterAll(async () => {
   await client.close();
 });
 
-test.skipIf(!oracleConfigured)('cria o schema prefixado e faz round-trip em tmf_party', async () => {
-  const client = await getOracleTestClient();
+test.skipIf(!oracleConfigured)(
+  'cria o schema prefixado e faz round-trip em tmf_party',
+  async () => {
+    const client = await getOracleTestClient();
 
-  const id = `oracle-roundtrip-${Date.now()}`;
-  await client.execute('INSERT INTO tmf_party (id, href, name, party_type) VALUES (?, ?, ?, ?)', [
-    id,
-    `/tmf-api/party/${id}`,
-    'Oracle Roundtrip Co',
-    'Organization',
-  ]);
+    const id = `oracle-roundtrip-${Date.now()}`;
+    await client.execute('INSERT INTO tmf_party (id, href, name, party_type) VALUES (?, ?, ?, ?)', [
+      id,
+      `/tmf-api/party/${id}`,
+      'Oracle Roundtrip Co',
+      'Organization',
+    ]);
 
-  const row = await client.queryOne<{ id: string; name: string }>(
-    'SELECT id, name FROM tmf_party WHERE id = ?',
-    [id],
-  );
-  assert.equal(row?.name, 'Oracle Roundtrip Co');
-});
+    const row = await client.queryOne<{ id: string; name: string }>(
+      'SELECT id, name FROM tmf_party WHERE id = ?',
+      [id],
+    );
+    assert.equal(row?.name, 'Oracle Roundtrip Co');
+  },
+);
 
-test.skipIf(!oracleConfigured)('os objetos vivem sob o prefixo de teste no schema único', async () => {
-  const client = await getOracleTestClient();
-  const expected = prefixed('tmf_party', TEST_ORACLE_PREFIX).toUpperCase();
-  const found = await client.queryOne<{ n: number }>(
-    'SELECT COUNT(*) AS n FROM user_tables WHERE table_name = ?',
-    [expected],
-  );
-  assert.equal(Number(found?.n), 1);
-});
+test.skipIf(!oracleConfigured)(
+  'os objetos vivem sob o prefixo de teste no schema único',
+  async () => {
+    const client = await getOracleTestClient();
+    const expected = prefixed('tmf_party', TEST_ORACLE_PREFIX).toUpperCase();
+    const found = await client.queryOne<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM user_tables WHERE table_name = ?',
+      [expected],
+    );
+    assert.equal(Number(found?.n), 1);
+  },
+);

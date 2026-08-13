@@ -24,7 +24,12 @@ function buildState(): GeoTreeState {
   const nodes: GeoTreeNode[] = [
     node('uf:RJ', { kind: 'uf', label: 'RJ', hasChildren: true, childCount: 1 }),
     node('city:RJ|Niterói', { kind: 'city', label: 'Niterói', hasChildren: true, childCount: 1 }),
-    node('group:RJ|Niterói|stations', { kind: 'group', label: 'Estações', hasChildren: true, childCount: 1 }),
+    node('group:RJ|Niterói|stations', {
+      kind: 'group',
+      label: 'Estações',
+      hasChildren: true,
+      childCount: 1,
+    }),
     node('site:est-1', {
       kind: 'site',
       label: 'Icaraí (ICI)',
@@ -40,7 +45,11 @@ function buildState(): GeoTreeState {
       hasChildren: true,
       geometry: { type: 'Point', coordinates: [-43.11, -22.91] },
     }),
-    node('resource:spl-1', { label: 'CDOE-1108 · S32_1', refId: 'spl-1', resourceType: 'Splitter' }),
+    node('resource:spl-1', {
+      label: 'CDOE-1108 · S32_1',
+      refId: 'spl-1',
+      resourceType: 'Splitter',
+    }),
   ];
 
   return {
@@ -106,12 +115,20 @@ test('nó fechado não revela filhos já carregados', () => {
 
 test('remaining conta o que falta buscar, e só em nó aberto', () => {
   const state = buildState();
-  const rows = flattenTreeRows(state, expandChain('uf:RJ', 'city:RJ|Niterói', 'group:RJ|Niterói|stations', 'site:est-1'), new Set());
+  const rows = flattenTreeRows(
+    state,
+    expandChain('uf:RJ', 'city:RJ|Niterói', 'group:RJ|Niterói|stations', 'site:est-1'),
+    new Set(),
+  );
   const station = rows.find((row) => row.rowKey === stationKey);
   assert.equal(station?.remaining, 3822);
   assert.equal(station?.total, 3823);
 
-  const closed = flattenTreeRows(state, expandChain('uf:RJ', 'city:RJ|Niterói', 'group:RJ|Niterói|stations'), new Set());
+  const closed = flattenTreeRows(
+    state,
+    expandChain('uf:RJ', 'city:RJ|Niterói', 'group:RJ|Niterói|stations'),
+    new Set(),
+  );
   const closedStation = closed.find((row) => row.rowKey === stationKey);
   assert.equal(closedStation?.remaining, 0);
   // Fechado ou aberto, o total conhecido do servidor é o mesmo — só `remaining`

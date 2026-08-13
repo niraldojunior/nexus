@@ -69,7 +69,9 @@ const parseRoles = (raw: string | null): string[] => {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : [];
   } catch {
     return [];
   }
@@ -141,14 +143,17 @@ export class PostgresUserRepository {
   }
 
   async getByExternalId(externalId: string): Promise<UserRecord | undefined> {
-    const row = await this.db.get<UserRow>(`SELECT ${CORE_COLUMNS} FROM users WHERE external_id = ?`, [
-      externalId,
-    ]);
+    const row = await this.db.get<UserRow>(
+      `SELECT ${CORE_COLUMNS} FROM users WHERE external_id = ?`,
+      [externalId],
+    );
     return row ? toRecord(row) : undefined;
   }
 
   async getByEmail(email: string): Promise<UserRecord | undefined> {
-    const row = await this.db.get<UserRow>(`SELECT ${CORE_COLUMNS} FROM users WHERE email = ?`, [email]);
+    const row = await this.db.get<UserRow>(`SELECT ${CORE_COLUMNS} FROM users WHERE email = ?`, [
+      email,
+    ]);
     return row ? toRecord(row) : undefined;
   }
 
@@ -166,7 +171,9 @@ export class PostgresUserRepository {
   }
 
   async list(): Promise<UserRecord[]> {
-    const rows = await this.db.all<UserRow>(`SELECT ${CORE_COLUMNS} FROM users ORDER BY created_at DESC`);
+    const rows = await this.db.all<UserRow>(
+      `SELECT ${CORE_COLUMNS} FROM users ORDER BY created_at DESC`,
+    );
     return rows.map(toRecord);
   }
 

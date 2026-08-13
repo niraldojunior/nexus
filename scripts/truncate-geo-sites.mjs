@@ -92,11 +92,15 @@ async function main() {
     console.log('Contagem atual:');
     let total = 0;
     for (const table of TABLES) {
-      const { rows: [row] } = await client.query(`SELECT count(*)::int AS n FROM ${table}`);
+      const {
+        rows: [row],
+      } = await client.query(`SELECT count(*)::int AS n FROM ${table}`);
       console.log(`  ${table.padEnd(42)} ${row.n}`);
       total += row.n;
     }
-    const { rows: [locRow] } = await client.query(`SELECT count(*)::int AS n FROM tmf_geographic_location`);
+    const {
+      rows: [locRow],
+    } = await client.query(`SELECT count(*)::int AS n FROM tmf_geographic_location`);
     console.log(`  ${'tmf_geographic_location (fora do escopo padrão)'.padEnd(42)} ${locRow.n}`);
 
     if (total === 0) {

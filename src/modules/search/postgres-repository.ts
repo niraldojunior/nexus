@@ -10,7 +10,9 @@ export class PostgresSearchRepository {
 
   // ============ RESEARCH SESSIONS ============
 
-  public async createSession(session: Omit<ResearchSession, 'createdAt' | 'updatedAt'>): Promise<ResearchSession> {
+  public async createSession(
+    session: Omit<ResearchSession, 'createdAt' | 'updatedAt'>,
+  ): Promise<ResearchSession> {
     const now = new Date().toISOString();
 
     await this.db.run(
@@ -74,42 +76,57 @@ export class PostgresSearchRepository {
       [userId, limit],
     );
 
-    return Promise.all(rows.map(async (row) => {
-      const messages = await this.getSessionMessages(row.id);
-      return {
-        '@type': 'ResearchSession',
-        id: row.id,
-        href: row.href,
-        userId: row.user_id,
-        title: row.title,
-        ...(row.description !== null ? { description: row.description } : {}),
-        ...(row.context !== null ? { context: row.context } : {}),
-        status: row.status,
-        ...(row.model !== null ? { model: row.model } : {}),
-        ...(row.temperature !== null ? { temperature: row.temperature } : {}),
-        ...(row.max_tokens !== null ? { maxTokens: row.max_tokens } : {}),
-        messages,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      };
-    }));
+    return Promise.all(
+      rows.map(async (row) => {
+        const messages = await this.getSessionMessages(row.id);
+        return {
+          '@type': 'ResearchSession',
+          id: row.id,
+          href: row.href,
+          userId: row.user_id,
+          title: row.title,
+          ...(row.description !== null ? { description: row.description } : {}),
+          ...(row.context !== null ? { context: row.context } : {}),
+          status: row.status,
+          ...(row.model !== null ? { model: row.model } : {}),
+          ...(row.temperature !== null ? { temperature: row.temperature } : {}),
+          ...(row.max_tokens !== null ? { maxTokens: row.max_tokens } : {}),
+          messages,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        };
+      }),
+    );
   }
 
-  public async updateSessionTitle(sessionId: string, title: string): Promise<ResearchSession | undefined> {
+  public async updateSessionTitle(
+    sessionId: string,
+    title: string,
+  ): Promise<ResearchSession | undefined> {
     const now = new Date().toISOString();
-    await this.db.run(`UPDATE research_session SET title = ?, updated_at = ? WHERE id = ?`, [title, now, sessionId]);
+    await this.db.run(`UPDATE research_session SET title = ?, updated_at = ? WHERE id = ?`, [
+      title,
+      now,
+      sessionId,
+    ]);
     return await this.getSession(sessionId);
   }
 
   public async archiveSession(sessionId: string): Promise<ResearchSession | undefined> {
     const now = new Date().toISOString();
-    await this.db.run(`UPDATE research_session SET status = 'archived', updated_at = ? WHERE id = ?`, [now, sessionId]);
+    await this.db.run(
+      `UPDATE research_session SET status = 'archived', updated_at = ? WHERE id = ?`,
+      [now, sessionId],
+    );
     return await this.getSession(sessionId);
   }
 
   // ============ RESEARCH MESSAGES ============
 
-  public async addMessage(sessionId: string, message: AddMessageInput & { id: string }): Promise<ResearchMessage> {
+  public async addMessage(
+    sessionId: string,
+    message: AddMessageInput & { id: string },
+  ): Promise<ResearchMessage> {
     await this.db.run(
       `INSERT INTO research_message (id, research_session_id, role, content, tokens_used, metadata, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -143,7 +160,9 @@ export class PostgresSearchRepository {
       role: row.role,
       content: row.content,
       ...(row.tokens_used !== null ? { tokensUsed: row.tokens_used } : {}),
-      ...(row.metadata !== null ? { metadata: JSON.parse(row.metadata) as Record<string, unknown> } : {}),
+      ...(row.metadata !== null
+        ? { metadata: JSON.parse(row.metadata) as Record<string, unknown> }
+        : {}),
       createdAt: row.created_at,
     };
   }
@@ -163,7 +182,9 @@ export class PostgresSearchRepository {
       role: row.role,
       content: row.content,
       ...(row.tokens_used !== null ? { tokensUsed: row.tokens_used } : {}),
-      ...(row.metadata !== null ? { metadata: JSON.parse(row.metadata) as Record<string, unknown> } : {}),
+      ...(row.metadata !== null
+        ? { metadata: JSON.parse(row.metadata) as Record<string, unknown> }
+        : {}),
       createdAt: row.created_at,
     }));
   }

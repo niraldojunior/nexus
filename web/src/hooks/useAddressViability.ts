@@ -94,7 +94,12 @@ async function fetchViability(origin: LngLat): Promise<ViabilityCandidate[]> {
     .map((candidate, index) => {
       const leg = legs[index];
       return leg
-        ? { ...candidate, distanceMeters: leg.distanceMeters, durationSeconds: leg.durationSeconds, mode: 'walk' as const }
+        ? {
+            ...candidate,
+            distanceMeters: leg.distanceMeters,
+            durationSeconds: leg.durationSeconds,
+            mode: 'walk' as const,
+          }
         : { ...candidate, distanceMeters: candidate.straightMeters, mode: 'straight' as const };
     })
     // O raio de 300 m vale para a distância exibida: a rota a pé pode ser bem maior que a

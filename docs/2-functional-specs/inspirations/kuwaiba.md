@@ -1,6 +1,7 @@
 # Relatório do Frontend do Kuwaiba
 
 ## 1. Visão geral do frontend
+
 O frontend do Kuwaiba é construído em Vaadin Flow sobre Spring Boot, com renderização server-side e roteamento por classes Java.  
 A composição da interface é modular: cada funcionalidade entra como um módulo registrado, e o menu principal é montado dinamicamente em runtime com base em:
 
@@ -10,17 +11,18 @@ A composição da interface é modular: cada funcionalidade entra como um módul
 
 ## 2. Como o frontend está construído
 
-| Camada | Como funciona |
-|---|---|
-| UI framework | Vaadin Flow, com rotas Java e componentes server-side |
-| Container de aplicação | Spring Boot |
-| Registro de módulos | ModuleRegistry centraliza módulos carregados |
-| Layout base | ModuleLayout define cabeçalho, menu e área de conteúdo |
-| Segurança de navegação | beforeEnter valida sessão e privilégios |
-| Internacionalização | textos por chaves em arquivos de idioma |
-| Tema/estilo | CSS e CssImport por componente/tema |
+| Camada                 | Como funciona                                          |
+| ---------------------- | ------------------------------------------------------ |
+| UI framework           | Vaadin Flow, com rotas Java e componentes server-side  |
+| Container de aplicação | Spring Boot                                            |
+| Registro de módulos    | ModuleRegistry centraliza módulos carregados           |
+| Layout base            | ModuleLayout define cabeçalho, menu e área de conteúdo |
+| Segurança de navegação | beforeEnter valida sessão e privilégios                |
+| Internacionalização    | textos por chaves em arquivos de idioma                |
+| Tema/estilo            | CSS e CssImport por componente/tema                    |
 
 ## 3. Fluxo principal de uso
+
 1. Usuário acessa a tela de login.
 2. Login cria sessão via Application Entity Manager.
 3. Ao entrar em Home, o ModuleLayout monta o menu superior.
@@ -29,52 +31,52 @@ A composição da interface é modular: cada funcionalidade entra como um módul
 
 ## 4. Resumo inicial do menu principal e propósito
 
-| Menu principal | Propósito |
-|---|---|
+| Menu principal | Propósito                                                                |
+| -------------- | ------------------------------------------------------------------------ |
 | Administration | Governança do sistema, metamodelo, auditoria e operações administrativas |
-| Navigation | Exploração e acesso rápido aos ativos de inventário |
-| Physical | Gestão de infraestrutura e conexões físicas |
-| Logical | Gestão de recursos lógicos de rede |
-| Services | Gestão de serviços, contratos e processos |
-| Planning | Planejamento de projetos e atividades |
-| Other | Funcionalidades auxiliares e integrações sem categoria dedicada |
-| Settings | Configurações técnicas e de comportamento |
-| About | Informações institucionais e da aplicação |
+| Navigation     | Exploração e acesso rápido aos ativos de inventário                      |
+| Physical       | Gestão de infraestrutura e conexões físicas                              |
+| Logical        | Gestão de recursos lógicos de rede                                       |
+| Services       | Gestão de serviços, contratos e processos                                |
+| Planning       | Planejamento de projetos e atividades                                    |
+| Other          | Funcionalidades auxiliares e integrações sem categoria dedicada          |
+| Settings       | Configurações técnicas e de comportamento                                |
+| About          | Informações institucionais e da aplicação                                |
 
 ## 5. Detalhamento completo de cada submenu
 
 ### 5.1 Administration
 
-| Submenu | Função |
-|---|---|
-| Data Model Manager | Gerencia a estrutura do modelo de dados, hierarquia de classes e list types |
-| Containment Manager | Define e mantém hierarquias especiais de contenção entre classes |
-| List Type Manager | Gerencia list types e seus itens, incluindo CRUD e uso por objetos |
-| User Manager | Cria e gerencia usuários, grupos e privilégios |
-| Session Manager | Lista, monitora e encerra sessões; envia mensagens broadcast |
-| Template Manager | Gerencia templates de serviços, classes e recursos relacionados |
-| Audit Trail | Rastreia mudanças globais e suporta auditoria de modificações |
-| Job Scheduler | Gerencia agendamentos e execução de jobs |
-| Reporting | Cria relatórios complexos com Groovy e Persistence API |
-| Task Manager | Gerencia e executa tarefas operacionais |
+| Submenu             | Função                                                                      |
+| ------------------- | --------------------------------------------------------------------------- |
+| Data Model Manager  | Gerencia a estrutura do modelo de dados, hierarquia de classes e list types |
+| Containment Manager | Define e mantém hierarquias especiais de contenção entre classes            |
+| List Type Manager   | Gerencia list types e seus itens, incluindo CRUD e uso por objetos          |
+| User Manager        | Cria e gerencia usuários, grupos e privilégios                              |
+| Session Manager     | Lista, monitora e encerra sessões; envia mensagens broadcast                |
+| Template Manager    | Gerencia templates de serviços, classes e recursos relacionados             |
+| Audit Trail         | Rastreia mudanças globais e suporta auditoria de modificações               |
+| Job Scheduler       | Gerencia agendamentos e execução de jobs                                    |
+| Reporting           | Cria relatórios complexos com Groovy e Persistence API                      |
+| Task Manager        | Gerencia e executa tarefas operacionais                                     |
 
 ### 5.2 Navigation
 
-| Submenu | Função |
-|---|---|
-| Navigation | Busca, exploração e navegação pelos ativos de inventário |
-| Favorites | Acesso rápido a objetos usados com frequência |
-| Queries | Criação, salvamento e execução de consultas (gráficas e low-level) |
-| Pools | Criação e organização de pools customizados de objetos |
-| Warehouse Manager | Gestão de armazéns |
+| Submenu           | Função                                                             |
+| ----------------- | ------------------------------------------------------------------ |
+| Navigation        | Busca, exploração e navegação pelos ativos de inventário           |
+| Favorites         | Acesso rápido a objetos usados com frequência                      |
+| Queries           | Criação, salvamento e execução de consultas (gráficas e low-level) |
+| Pools             | Criação e organização de pools customizados de objetos             |
+| Warehouse Manager | Gestão de armazéns                                                 |
 
 ### 5.3 Physical
 
-| Submenu | Função |
-|---|---|
-| Connectivity Manager | Gestão de conectividade física |
-| Outside Plant | Gestão de infraestrutura externa (postes, manholes, torres, edifícios etc.) |
-| Physical Connections | Criação e gestão de conexões físicas ópticas/elétricas/energia |
+| Submenu              | Função                                                                      |
+| -------------------- | --------------------------------------------------------------------------- |
+| Connectivity Manager | Gestão de conectividade física                                              |
+| Outside Plant        | Gestão de infraestrutura externa (postes, manholes, torres, edifícios etc.) |
+| Physical Connections | Criação e gestão de conexões físicas ópticas/elétricas/energia              |
 
 Observação: Physical Connections está desabilitado no código atual, então tende a não aparecer no menu para uso normal.
 
@@ -98,20 +100,20 @@ Operações principais:
 
 1. Circuit tab
 1. selecionar Source port
-2. selecionar Target port
-3. escolher Action por linha
+1. selecionar Target port
+1. escolher Action por linha
 1. Select Link
-2. New Link
-3. New Mirror
-4. New Link From Container Template
-4. visualizar/editar Link selecionado na coluna de link
-5. criar circuito completo (Create Circuit)
-2. Logical connection tab (habilitado após circuito válido)
+1. New Link
+1. New Mirror
+1. New Link From Container Template
+1. visualizar/editar Link selecionado na coluna de link
+1. criar circuito completo (Create Circuit)
+1. Logical connection tab (habilitado após circuito válido)
 1. definir nome da conexão lógica
-2. selecionar/confirmar endpoint A e endpoint B
-3. escolher classe da conexão lógica (subclasses de GenericLastMileCircuit)
-4. opcionalmente associar a um serviço (GenericService)
-5. criar logical connection
+1. selecionar/confirmar endpoint A e endpoint B
+1. escolher classe da conexão lógica (subclasses de GenericLastMileCircuit)
+1. opcionalmente associar a um serviço (GenericService)
+1. criar logical connection
 
 Campos de entrada relevantes:
 
@@ -129,21 +131,21 @@ Regras de negócio e validações:
 
 1. Circuito com múltiplos segmentos exige continuidade: target da linha N deve ser igual ao source da linha N+1.
 2. Para New Link:
-1. endpoints não podem já estar conectados por endpointA/endpointB
-2. deve existir common parent entre endpoints
-3. nome e classe do link são obrigatórios
-3. Para New Mirror:
-1. endpoints devem ser portas (GenericPort)
-2. regra de exclusividade entre mirror e mirrorMultiple é validada
-4. Para New Link From Container Template:
-1. endpoint A/B obrigatórios
-2. nome do container obrigatório
-3. classe/template obrigatórios
-4. o último elemento do template deve ser subclasse de GenericPhysicalLink
-5. Para criação de last mile logical connection:
-1. classe deve ser subclasse de GenericLastMileCircuit
-2. endpoint A/B devem ser GenericPort
-3. portas precisam estar sob GenericCommunicationsElement
+3. endpoints não podem já estar conectados por endpointA/endpointB
+4. deve existir common parent entre endpoints
+5. nome e classe do link são obrigatórios
+6. Para New Mirror:
+7. endpoints devem ser portas (GenericPort)
+8. regra de exclusividade entre mirror e mirrorMultiple é validada
+9. Para New Link From Container Template:
+10. endpoint A/B obrigatórios
+11. nome do container obrigatório
+12. classe/template obrigatórios
+13. o último elemento do template deve ser subclasse de GenericPhysicalLink
+14. Para criação de last mile logical connection:
+15. classe deve ser subclasse de GenericLastMileCircuit
+16. endpoint A/B devem ser GenericPort
+17. portas precisam estar sob GenericCommunicationsElement
 
 Saídas/efeitos:
 
@@ -164,44 +166,44 @@ Operações principais no frontend:
 
 1. OSP View lifecycle
 1. criar view
-2. abrir view existente
-3. salvar view
-4. atualizar view
-5. excluir view
-2. Ferramentas de mapa
+1. abrir view existente
+1. salvar view
+1. atualizar view
+1. excluir view
+1. Ferramentas de mapa
 1. Add Node
-2. Connect two nodes using a container
-3. Run a container through single/multiple containers
-4. Search node/connection
-5. Measure distance
-6. Filter nodes by class
-3. Operações de localização/dispositivo
+1. Connect two nodes using a container
+1. Run a container through single/multiple containers
+1. Search node/connection
+1. Measure distance
+1. Filter nodes by class
+1. Operações de localização/dispositivo
 1. seleção de location
-2. refresh da location view
-3. splicing de fibra
-4. cut and splice
-5. show/hide leftover fiber
-6. change device position
+1. refresh da location view
+1. splicing de fibra
+1. cut and splice
+1. show/hide leftover fiber
+1. change device position
 
 Campos e propriedades relevantes:
 
 1. OSP View metadata
 1. name
-2. description
-3. structure (XML serializado em Base64)
-2. Mapa
+1. description
+1. structure (XML serializado em Base64)
+1. Mapa
 1. centerLatitude
-2. centerLongitude
-3. zoom
-4. map type
-5. unit of length
-6. compute edges length
-7. syncGeoPosition
-3. Nó/objeto de inventário no mapa
+1. centerLongitude
+1. zoom
+1. map type
+1. unit of length
+1. compute edges length
+1. syncGeoPosition
+1. Nó/objeto de inventário no mapa
 1. parent
-2. name
-3. latitude
-4. longitude
+1. name
+1. latitude
+1. longitude
 
 Regras de negócio e validações:
 
@@ -237,17 +239,17 @@ Operações principais de serviço:
 
 1. createPhysicalConnection
 1. valida subclasse de GenericPhysicalConnection
-2. exige common parent entre endpoints
-3. para links (GenericPhysicalLink), endpoints devem ser GenericPort
-4. impede endpoint já conectado
-5. nome obrigatório
-6. cria objeto e relacionamentos endpointA/endpointB
-2. deletePhysicalConnection
+1. exige common parent entre endpoints
+1. para links (GenericPhysicalLink), endpoints devem ser GenericPort
+1. impede endpoint já conectado
+1. nome obrigatório
+1. cria objeto e relacionamentos endpointA/endpointB
+1. deletePhysicalConnection
 1. valida se objeto é GenericPhysicalConnection
-2. remove objeto com cascata lógica do contexto
-3. getPhysicalPath
+1. remove objeto com cascata lógica do contexto
+1. getPhysicalPath
 1. retorna trilha física linear via relações especiais (endpoint e mirror)
-4. getPhysicalTree
+1. getPhysicalTree
 1. retorna representação em árvore das trilhas físicas
 
 Campos de entrada típicos:
@@ -278,67 +280,70 @@ APIs dedicadas (Physical Connections):
 
 ### 5.4 Logical
 
-| Submenu | Função |
-|---|---|
-| New Logical Circuit | Operações de circuito lógico |
-| IP Address Manager | Gestão de endereçamento e subnetting IPv4/IPv6 |
-| MPLS Networks | Criação de topologias MPLS e circuitos virtuais |
-| SDH Networks Module | Criação de links STMX, circuitos e cálculo de rotas SDH |
-| Software Manager | Gestão de licenças de software e hardware associadas a equipamentos |
+| Submenu             | Função                                                              |
+| ------------------- | ------------------------------------------------------------------- |
+| New Logical Circuit | Operações de circuito lógico                                        |
+| IP Address Manager  | Gestão de endereçamento e subnetting IPv4/IPv6                      |
+| MPLS Networks       | Criação de topologias MPLS e circuitos virtuais                     |
+| SDH Networks Module | Criação de links STMX, circuitos e cálculo de rotas SDH             |
+| Software Manager    | Gestão de licenças de software e hardware associadas a equipamentos |
 
 ### 5.5 Services
 
-| Submenu | Função |
-|---|---|
-| Service Manager | Gestão de clientes, serviços e recursos de rede associados |
-| Contract Manager | Criação de contratos e associação de recursos de rede |
-| Process Manager | Desenho, execução e orquestração de processos de negócio |
-| Process Editor | Criação e edição de diagramas BPMN |
+| Submenu          | Função                                                     |
+| ---------------- | ---------------------------------------------------------- |
+| Service Manager  | Gestão de clientes, serviços e recursos de rede associados |
+| Contract Manager | Criação de contratos e associação de recursos de rede      |
+| Process Manager  | Desenho, execução e orquestração de processos de negócio   |
+| Process Editor   | Criação e edição de diagramas BPMN                         |
 
 ### 5.6 Planning
 
-| Submenu | Função |
-|---|---|
+| Submenu         | Função                                                                   |
+| --------------- | ------------------------------------------------------------------------ |
 | Project Manager | Gestão de projetos e atividades, relacionando recursos humanos e de rede |
 
 ### 5.7 Other
 
-| Submenu | Função |
-|---|---|
-| Contact Manager | Criação e gestão de contatos |
-| Layout Editor | Gestão de layouts e formas customizadas |
-| Reporting | Relatórios com Groovy e Persistence API |
+| Submenu                   | Função                                                            |
+| ------------------------- | ----------------------------------------------------------------- |
+| Contact Manager           | Criação e gestão de contatos                                      |
+| Layout Editor             | Gestão de layouts e formas customizadas                           |
+| Reporting                 | Relatórios com Groovy e Persistence API                           |
 | Synchronization Framework | Sincronização do inventário com dispositivos/NMS/sistemas legados |
-| Impact Analysis | Módulo de análise de impacto |
+| Impact Analysis           | Módulo de análise de impacto                                      |
 
 Observação: Impact Analysis está em categoria de integração e cai em Other porque não há aba própria de Integration no menu principal. Além disso, o nome está com chave vazia no módulo, podendo aparecer sem rótulo amigável dependendo da configuração.
 
 ### 5.8 Settings
 
-| Submenu | Função |
-|---|---|
-| Configuration Variables | Gestão de variáveis de configuração do sistema |
-| Validator Definition | Gestão de validadores (regras de código avaliadas ao recuperar objetos) |
-| Proxy Management | Gestão de proxies de inventário para integração com terceiros |
-| Filter Management | Gestão de filtros de busca/expansão de filhos, muito usados na navegação |
+| Submenu                 | Função                                                                   |
+| ----------------------- | ------------------------------------------------------------------------ |
+| Configuration Variables | Gestão de variáveis de configuração do sistema                           |
+| Validator Definition    | Gestão de validadores (regras de código avaliadas ao recuperar objetos)  |
+| Proxy Management        | Gestão de proxies de inventário para integração com terceiros            |
+| Filter Management       | Gestão de filtros de busca/expansão de filhos, muito usados na navegação |
 
 ### 5.9 About
 
-| Submenu | Função |
-|---|---|
-| About | Informações gerais da aplicação e módulos carregados |
+| Submenu | Função                                               |
+| ------- | ---------------------------------------------------- |
+| About   | Informações gerais da aplicação e módulos carregados |
 
 ## 6. Regras de exibição que impactam o menu
+
 1. O item só aparece se o usuário tiver privilégio de leitura e escrita para o módulo.
 2. O item só aparece se o módulo estiver habilitado.
 3. O rótulo exibido depende da tradução ativa.
 4. A ordem de categorias de topo é fixa no layout.
 
 ## 7. Conclusão executiva
+
 O frontend é modular e orientado a privilégios: a estrutura principal é estável, mas os submenus efetivos variam por perfil e habilitação dos módulos.  
 O menu principal cobre todo o ciclo de operação do inventário: modelagem, exploração, gestão física/lógica, processos de negócio, planejamento, configuração e auditoria.
 
 ## 8. Fontes no código
+
 - ModuleLayout.java
 - AbstractModule.java
 - ModuleRegistry.java
@@ -352,6 +357,7 @@ O menu principal cobre todo o ciclo de operação do inventário: modelagem, exp
 ## 9. Domínio de Locais Físicos (detalhamento funcional)
 
 ### 9.1 Premissa arquitetural importante
+
 No Kuwaiba, o domínio de locais físicos é orientado a metamodelo (metadata runtime). Isso significa que parte relevante das entidades e campos não é fixa no código Java: ela é definida no modelo de dados ativo no ambiente.
 
 Em termos práticos:
@@ -363,6 +369,7 @@ Em termos práticos:
 ### 9.2 Entidades de localização existentes no código-base
 
 #### 9.2.1 Hierarquia geográfica base
+
 Filtro de navegação por localização aplica explicitamente às classes:
 
 1. Contintent (como está escrito no código)
@@ -372,6 +379,7 @@ Filtro de navegação por localização aplica explicitamente às classes:
 5. GenericLocation
 
 #### 9.2.2 Classe raiz de localização física
+
 Há uma classe raiz para objetos com localização geográfica:
 
 1. GenericLocation
@@ -379,6 +387,7 @@ Há uma classe raiz para objetos com localização geográfica:
 E há referência histórica no DATAMODEL de que classes sob GenericPhysicalLocation receberam latitude/longitude.
 
 #### 9.2.3 Entidades físicas relacionadas (histórico de modelo)
+
 O DATAMODEL registra evolução de classes de localização física e estrutura de site/planta externa, por exemplo:
 
 1. Building (com atributo type adicionado historicamente)
@@ -402,6 +411,7 @@ No código analisado não há constante hardcoded para Site, Region ou SiteGroup
 ### 9.4 Campos do domínio de locais físicos
 
 #### 9.4.1 Campos transversais de objeto de inventário
+
 Na criação de objetos, o backend inicializa/espera campos base como:
 
 1. uuid
@@ -409,6 +419,7 @@ Na criação de objetos, o backend inicializa/espera campos base como:
 3. creationDate
 
 #### 9.4.2 Campos geoespaciais
+
 Para localização em mapa e sincronização geográfica, os atributos de classe são:
 
 1. latitude
@@ -421,6 +432,7 @@ Condição técnica para uso no OSP:
 3. No objeto, os atributos precisam estar disponíveis para leitura/escrita no fluxo usado.
 
 #### 9.4.3 Campos dinâmicos por metamodelo
+
 Além dos campos acima, cada entidade (Site, Region, SiteGroup, Building etc.) pode ter atributos próprios definidos via metadata, com regras como:
 
 1. obrigatório (mandatory)
@@ -431,6 +443,7 @@ Além dos campos acima, cada entidade (Site, Region, SiteGroup, Building etc.) p
 ### 9.5 Regras de negócio
 
 #### 9.5.1 Regras gerais de criação (backend)
+
 Ao criar objetos de localização/físicos, o backend aplica validações estruturais:
 
 1. não permite instanciar classes inDesign
@@ -440,6 +453,7 @@ Ao criar objetos de localização/físicos, o backend aplica validações estrut
 5. valida template compatível com a classe
 
 #### 9.5.2 Regras de atributos
+
 Durante createObject/copyTemplate:
 
 1. atributo mandatory sem valor gera erro
@@ -447,6 +461,7 @@ Durante createObject/copyTemplate:
 3. atributo list-type exige IDs válidos dos itens de lista
 
 #### 9.5.3 Regras de criação de nó no OSP
+
 Na janela de novo nó (fluxo de localização física em mapa):
 
 1. parent é obrigatório
@@ -460,6 +475,7 @@ Na janela de novo nó (fluxo de localização física em mapa):
 3. target de conexão deve ser compatível com GenericPhysicalNode (validação de subclasse)
 
 #### 9.5.5 Regra de sincronização geográfica
+
 No Outside Plant, se syncGeoPosition estiver ativo:
 
 1. mover nó no mapa atualiza latitude/longitude no objeto de inventário
@@ -475,6 +491,7 @@ No Outside Plant, se syncGeoPosition estiver ativo:
 ### 9.7 APIs existentes relevantes para o domínio
 
 #### 9.7.1 Metadata (descoberta de entidades/campos/regras)
+
 Prefixo: /v2.1.1/core/mem/
 
 1. getClass/{className}/{sessionId}
@@ -487,6 +504,7 @@ Prefixo: /v2.1.1/core/mem/
 Uso principal: descobrir se Site/Region/SiteGroup existem no metamodelo ativo e listar exatamente seus atributos.
 
 #### 9.7.2 Business entities (operação de dados)
+
 Prefixo: /v2.1.1/core/bem/
 
 1. createObject/{className}/{parentClassName}/{parentId}/{templateId}/{sessionId}
@@ -501,15 +519,16 @@ Prefixo: /v2.1.1/core/bem/
 
 ### 9.8 Matriz funcional por tipo de entidade de localização
 
-| Entidade | Origem | Campos típicos | Regras de negócio | Funcionalidades |
-|---|---|---|---|---|
-| GenericLocation | Classe base fixa | name, latitude, longitude + dinâmicos | mandatory, unique, canBeChild, tipo válido | Navegação, OSP, conexões |
-| City/State/Country/Continent | Hierarquia geográfica fixa no filtro | name + dinâmicos | contenção conforme metadata | filtros de navegação e organização |
-| Site (se modelado) | Subclasse dinâmica | name, geo + campos definidos no metamodelo local | mesmas regras gerais de InventoryObject + contenção | cadastro, navegação, mapa, conexão |
-| Region (se modelado) | Subclasse dinâmica | name + campos definidos no metamodelo local | mesmas regras gerais de InventoryObject + contenção | agrupamento geográfico e navegação |
-| SiteGroup (se modelado) | Subclasse dinâmica | name + campos definidos no metamodelo local | mesmas regras gerais de InventoryObject + contenção | agrupamento lógico/operacional de sites |
+| Entidade                     | Origem                               | Campos típicos                                   | Regras de negócio                                   | Funcionalidades                         |
+| ---------------------------- | ------------------------------------ | ------------------------------------------------ | --------------------------------------------------- | --------------------------------------- |
+| GenericLocation              | Classe base fixa                     | name, latitude, longitude + dinâmicos            | mandatory, unique, canBeChild, tipo válido          | Navegação, OSP, conexões                |
+| City/State/Country/Continent | Hierarquia geográfica fixa no filtro | name + dinâmicos                                 | contenção conforme metadata                         | filtros de navegação e organização      |
+| Site (se modelado)           | Subclasse dinâmica                   | name, geo + campos definidos no metamodelo local | mesmas regras gerais de InventoryObject + contenção | cadastro, navegação, mapa, conexão      |
+| Region (se modelado)         | Subclasse dinâmica                   | name + campos definidos no metamodelo local      | mesmas regras gerais de InventoryObject + contenção | agrupamento geográfico e navegação      |
+| SiteGroup (se modelado)      | Subclasse dinâmica                   | name + campos definidos no metamodelo local      | mesmas regras gerais de InventoryObject + contenção | agrupamento lógico/operacional de sites |
 
 ### 9.9 Como obter o inventário exato de campos no seu ambiente
+
 Como o domínio é metadata-driven, para um levantamento definitivo de Sites/Regiões/Site Groups no ambiente:
 
 1. buscar subclasses de GenericLocation via getSubClassesLight
@@ -518,4 +537,3 @@ Como o domínio é metadata-driven, para um levantamento definitivo de Sites/Reg
 4. validar hierarquia permitida com getPossibleChildren e canBeChild
 
 Esse fluxo entrega o catálogo real de entidades e campos, sem suposições.
-

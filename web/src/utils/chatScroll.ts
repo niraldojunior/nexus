@@ -17,7 +17,10 @@ export function scrollChatAnchorIntoView(
   });
 }
 
-export function scrollChatToBottom(container: HTMLElement | null, behavior: ScrollBehavior = 'smooth') {
+export function scrollChatToBottom(
+  container: HTMLElement | null,
+  behavior: ScrollBehavior = 'smooth',
+) {
   if (!container) return;
 
   container.scrollTo({

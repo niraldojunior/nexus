@@ -6,17 +6,17 @@
 
 TMFC003 + TMFC024 · TMF634 / TMF639 / TMF688
 
-| Campo | Valor |
-|---|---|
-| **Document Reference** | VTN-HLD-MOD02-RES |
-| **Versão** | 1.4 — draft |
-| **Data** | Agosto 2026 |
-| **Documento âncora** | VTN-HLD-OVERVIEW-001 |
-| **HLD predecessor** | VTN-HLD-MOD01-GEO (Geographic) |
-| **TMFCs cobertos** | TMFC003 — Resource Catalog Mgmt; TMFC024 — Resource Inventory Mgmt |
-| **Open APIs** | TMF634, TMF639, TMF664, TMF688 |
-| **Requisitos cobertos** | REQ-MOD02-001 a REQ-MOD02-028 |
-| **Status** | Em elaboração |
+| Campo                   | Valor                                                              |
+| ----------------------- | ------------------------------------------------------------------ |
+| **Document Reference**  | VTN-HLD-MOD02-RES                                                  |
+| **Versão**              | 1.4 — draft                                                        |
+| **Data**                | Agosto 2026                                                        |
+| **Documento âncora**    | VTN-HLD-OVERVIEW-001                                               |
+| **HLD predecessor**     | VTN-HLD-MOD01-GEO (Geographic)                                     |
+| **TMFCs cobertos**      | TMFC003 — Resource Catalog Mgmt; TMFC024 — Resource Inventory Mgmt |
+| **Open APIs**           | TMF634, TMF639, TMF664, TMF688                                     |
+| **Requisitos cobertos** | REQ-MOD02-001 a REQ-MOD02-028                                      |
+| **Status**              | Em elaboração                                                      |
 
 ---
 
@@ -56,36 +56,36 @@ Este documento é o segundo HLD de módulo da plataforma e estende o modelo arqu
 
 O codebase atual é TypeScript/Node com HTTP nativo, React/Vite e Neon Postgres. Ele já entrega a base TMF634, TMF639 e TMF664; os subdomínios especializados continuam em diferentes graus de aderência ao HLD alvo.
 
-| Requisito | Estado | Evidência atual | Gap principal | Bloqueador | Backlog |
-|---|---|---|---|---|---|
-| **REQ-MOD02-001** | Parcial | `ResourceService`, repositório Postgres, rotas TMF634, UI de catálogo e testes cobrem CRUD de ResourceSpecification. | UUID v7/`_origin`, lifecycle completo, catálogo de characteristics e governança multi-tenant. | Q-RES-001 | DEV-RES-001, DEV-X-001, DEV-X-004 |
-| **REQ-MOD02-002** | Parcial | ResourceCategory hierárquica é persistida no bootstrap e consultável por API/UI. | CRUD governado, versionamento e navegação completa; hoje é somente leitura. | Q-RES-001 | DEV-RES-001 |
-| **REQ-MOD02-003** | Parcial | ResourceFunctionSpecification tem CRUD e TMF664 ativa/suspende/termina Resources. | Templates compostos, parâmetros de ativação e validação contra catálogo. | — | DEV-RES-001 |
-| **REQ-MOD02-004** | Parcial | Manufacturer pode ser resolvido por Party no frontend/MCP e persistido no Resource. | Contrato canônico único de Manufacturer/Vendor como PartyRef e governança de fornecedor. | Q-RES-001 | DEV-RES-001, DEV-X-004 |
-| **REQ-MOD02-005** | Parcial | CRUD físico/lógico, filtros, paginação, workspace, place/Party e testes TMF639 estão ativos. | Bulk, histórico, características validadas, UUID v7 e `_origin`. | — | DEV-RES-002, DEV-X-001 |
-| **REQ-MOD02-006** | Parcial | Estados X.731 básicos, soft-delete e TMF664 são exercitados por testes. | Matriz completa de transições, razões, histórico e concorrência. | — | DEV-RES-002 |
-| **REQ-MOD02-007** | Parcial | ResourceRelationship persiste contenção e o inventário expõe relações. | Regras por Specification, ciclos, capacidade/slot e inversos governados. | Q-RES-012 | DEV-RES-002, DEV-RES-006 |
-| **REQ-MOD02-008** | Parcial | Support Structures são representáveis como PhysicalResource tipado e aparecem no viewport Geo. | Invariantes de poste/duto/manhole, owner/contrato, bulk GeoJSON e mapas específicos. | — | DEV-RES-002 |
-| **REQ-MOD02-009** | Parcial | CTO/Splitter são representáveis por catálogo, characteristics e relações genéricas. | Portas, razão óptica, ocupação, cascata e validações OSP dedicadas. | Q-RES-007 | DEV-RES-002 |
-| **REQ-MOD02-010** | Parcial | Cabos LineString podem ser carregados e exibidos no mapa Geo. | Segments/fibers, ocupação, continuidade, edição e importação geoespacial. | Q-RES-007 | DEV-RES-002 |
-| **REQ-MOD02-011** | Parcial | Splice é representável por Resource/Relationship genéricos. | Entidade operacional, validação de fibras/atenuação e manutenção transacional. | Q-RES-007 | DEV-RES-002 |
-| **REQ-MOD02-012** | Não implementado | Não há rota nem serviço de path computation; Property Graph aparece apenas na documentação. | Path, raiz comum, métricas ópticas, visualização e cache em escala. | Q-RES-004, Q-RES-010 | DEV-RES-003, DEV-X-005 |
-| **REQ-MOD02-013** | Parcial | Rack é representável como PhysicalResource contido em Site. | Elevação em U, face, ocupação, potência e conflitos de posição. | — | DEV-RES-004 |
-| **REQ-MOD02-014** | Parcial | Equipment possui modelo/fabricante/serial, CRUD, UI e resolução por catálogo. | Slots, funções, swap BPMN e regras específicas por classe. | MOD05 | DEV-RES-004 |
-| **REQ-MOD02-015** | Parcial | Card é representável por PhysicalResource e relação de contenção. | Compatibilidade de slot, capacidade e lifecycle dependente do chassis. | — | DEV-RES-004 |
-| **REQ-MOD02-016** | Parcial | Port é representável por catálogo/ResourceRelationship. | Tipo/direção/velocidade, ocupação exclusiva e terminação física. | — | DEV-RES-004 |
-| **REQ-MOD02-017** | Parcial | Power resources podem ser cadastrados genericamente. | Circuitos A/B, carga, capacidade, redundância e impacto de falha. | Q-RES-011 | DEV-RES-004 |
-| **REQ-MOD02-018** | Parcial | Relações `connectedTo` podem ligar Resources. | Endpoints tipados, simetria, exclusividade e continuidade física. | Q-RES-012 | DEV-RES-004, DEV-RES-006 |
-| **REQ-MOD02-019** | Parcial | Front/Rear Port são representáveis por tipos e `mirrorOf`. | Pareamento obrigatório, passagem interna e validação de DIO/DG. | — | DEV-RES-004 |
-| **REQ-MOD02-020** | Parcial | Prefix/IP/Range podem ser LogicalResources e a UI suporta inventário lógico. | Alocação IPAM, sobreposição, hierarquia de prefixos e reserva concorrente. | Q-RES-008 | DEV-RES-005 |
-| **REQ-MOD02-021** | Parcial | VRF e RouteTarget são representáveis por LogicalResource/characteristics. | Unicidade de RD/RT, membership, import/export e consultas específicas. | Q-RES-008 | DEV-RES-005 |
-| **REQ-MOD02-022** | Parcial | VLAN/VLAN Group são representáveis pelo inventário lógico. | Faixas, escopo, alocação, conflitos e vínculo a portas/serviços. | Q-RES-008 | DEV-RES-005 |
-| **REQ-MOD02-023** | Parcial | ASN/MPLS Label são representáveis por LogicalResource. | Pools, alocação, unicidade, escopo e lifecycle próprios. | Q-RES-008 | DEV-RES-005 |
-| **REQ-MOD02-024** | Divergente | Relações têm CRUD, mas `ResourceService` aceita qualquer string; a tabela de catálogo não possui API de governança. | Bootstrap + CRUD de RelationshipType, inversos, simetria, Audit e validação em writes. | Q-RES-012 | DEV-RES-006 |
-| **REQ-MOD02-025** | Parcial | Eventos de catálogo/inventário são persistidos em `tmf_event`, expostos via TMF688 e testados. | Outbox, Schema Registry, catálogo público, DLQ, reprocessamento e UUID v7. | — | DEV-X-002 |
-| **REQ-MOD02-026** | Não implementado | Duto existe apenas como Support Structure plana, com capacidade e ocupação digitadas em characteristics. | Contenção banco→duto→sub-duto→cabo, endpoints A/Z obrigatórios, trecho derivado e ocupação calculada. | Q-RES-014 | DEV-RES-007, DEV-RES-002 |
-| **REQ-MOD02-027** | Não implementado | Só existem validações de escrita; nenhuma rotina varre a base já carregada por script ou migração. | Catálogo de regras por API, varredura agendada, findings com ciclo de vida, score e evento TMF688. | — | DEV-RES-008, DEV-X-002 |
-| **REQ-MOD02-028** | Não implementado | Criar recurso composto exige uma chamada por objeto; a Specification não declara composição. | `childTemplate[]`, materialização transacional, pré-visualização e import em massa idempotente. | Q-RES-001 | DEV-RES-009, DEV-RES-001 |
+| Requisito         | Estado           | Evidência atual                                                                                                      | Gap principal                                                                                         | Bloqueador           | Backlog                           |
+| ----------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------- | --------------------------------- |
+| **REQ-MOD02-001** | Parcial          | `ResourceService`, repositório Postgres, rotas TMF634, UI de catálogo e testes cobrem CRUD de ResourceSpecification. | UUID v7/`_origin`, lifecycle completo, catálogo de characteristics e governança multi-tenant.         | Q-RES-001            | DEV-RES-001, DEV-X-001, DEV-X-004 |
+| **REQ-MOD02-002** | Parcial          | ResourceCategory hierárquica é persistida no bootstrap e consultável por API/UI.                                     | CRUD governado, versionamento e navegação completa; hoje é somente leitura.                           | Q-RES-001            | DEV-RES-001                       |
+| **REQ-MOD02-003** | Parcial          | ResourceFunctionSpecification tem CRUD e TMF664 ativa/suspende/termina Resources.                                    | Templates compostos, parâmetros de ativação e validação contra catálogo.                              | —                    | DEV-RES-001                       |
+| **REQ-MOD02-004** | Parcial          | Manufacturer pode ser resolvido por Party no frontend/MCP e persistido no Resource.                                  | Contrato canônico único de Manufacturer/Vendor como PartyRef e governança de fornecedor.              | Q-RES-001            | DEV-RES-001, DEV-X-004            |
+| **REQ-MOD02-005** | Parcial          | CRUD físico/lógico, filtros, paginação, workspace, place/Party e testes TMF639 estão ativos.                         | Bulk, histórico, características validadas, UUID v7 e `_origin`.                                      | —                    | DEV-RES-002, DEV-X-001            |
+| **REQ-MOD02-006** | Parcial          | Estados X.731 básicos, soft-delete e TMF664 são exercitados por testes.                                              | Matriz completa de transições, razões, histórico e concorrência.                                      | —                    | DEV-RES-002                       |
+| **REQ-MOD02-007** | Parcial          | ResourceRelationship persiste contenção e o inventário expõe relações.                                               | Regras por Specification, ciclos, capacidade/slot e inversos governados.                              | Q-RES-012            | DEV-RES-002, DEV-RES-006          |
+| **REQ-MOD02-008** | Parcial          | Support Structures são representáveis como PhysicalResource tipado e aparecem no viewport Geo.                       | Invariantes de poste/duto/manhole, owner/contrato, bulk GeoJSON e mapas específicos.                  | —                    | DEV-RES-002                       |
+| **REQ-MOD02-009** | Parcial          | CTO/Splitter são representáveis por catálogo, characteristics e relações genéricas.                                  | Portas, razão óptica, ocupação, cascata e validações OSP dedicadas.                                   | Q-RES-007            | DEV-RES-002                       |
+| **REQ-MOD02-010** | Parcial          | Cabos LineString podem ser carregados e exibidos no mapa Geo.                                                        | Segments/fibers, ocupação, continuidade, edição e importação geoespacial.                             | Q-RES-007            | DEV-RES-002                       |
+| **REQ-MOD02-011** | Parcial          | Splice é representável por Resource/Relationship genéricos.                                                          | Entidade operacional, validação de fibras/atenuação e manutenção transacional.                        | Q-RES-007            | DEV-RES-002                       |
+| **REQ-MOD02-012** | Não implementado | Não há rota nem serviço de path computation; Property Graph aparece apenas na documentação.                          | Path, raiz comum, métricas ópticas, visualização e cache em escala.                                   | Q-RES-004, Q-RES-010 | DEV-RES-003, DEV-X-005            |
+| **REQ-MOD02-013** | Parcial          | Rack é representável como PhysicalResource contido em Site.                                                          | Elevação em U, face, ocupação, potência e conflitos de posição.                                       | —                    | DEV-RES-004                       |
+| **REQ-MOD02-014** | Parcial          | Equipment possui modelo/fabricante/serial, CRUD, UI e resolução por catálogo.                                        | Slots, funções, swap BPMN e regras específicas por classe.                                            | MOD05                | DEV-RES-004                       |
+| **REQ-MOD02-015** | Parcial          | Card é representável por PhysicalResource e relação de contenção.                                                    | Compatibilidade de slot, capacidade e lifecycle dependente do chassis.                                | —                    | DEV-RES-004                       |
+| **REQ-MOD02-016** | Parcial          | Port é representável por catálogo/ResourceRelationship.                                                              | Tipo/direção/velocidade, ocupação exclusiva e terminação física.                                      | —                    | DEV-RES-004                       |
+| **REQ-MOD02-017** | Parcial          | Power resources podem ser cadastrados genericamente.                                                                 | Circuitos A/B, carga, capacidade, redundância e impacto de falha.                                     | Q-RES-011            | DEV-RES-004                       |
+| **REQ-MOD02-018** | Parcial          | Relações `connectedTo` podem ligar Resources.                                                                        | Endpoints tipados, simetria, exclusividade e continuidade física.                                     | Q-RES-012            | DEV-RES-004, DEV-RES-006          |
+| **REQ-MOD02-019** | Parcial          | Front/Rear Port são representáveis por tipos e `mirrorOf`.                                                           | Pareamento obrigatório, passagem interna e validação de DIO/DG.                                       | —                    | DEV-RES-004                       |
+| **REQ-MOD02-020** | Parcial          | Prefix/IP/Range podem ser LogicalResources e a UI suporta inventário lógico.                                         | Alocação IPAM, sobreposição, hierarquia de prefixos e reserva concorrente.                            | Q-RES-008            | DEV-RES-005                       |
+| **REQ-MOD02-021** | Parcial          | VRF e RouteTarget são representáveis por LogicalResource/characteristics.                                            | Unicidade de RD/RT, membership, import/export e consultas específicas.                                | Q-RES-008            | DEV-RES-005                       |
+| **REQ-MOD02-022** | Parcial          | VLAN/VLAN Group são representáveis pelo inventário lógico.                                                           | Faixas, escopo, alocação, conflitos e vínculo a portas/serviços.                                      | Q-RES-008            | DEV-RES-005                       |
+| **REQ-MOD02-023** | Parcial          | ASN/MPLS Label são representáveis por LogicalResource.                                                               | Pools, alocação, unicidade, escopo e lifecycle próprios.                                              | Q-RES-008            | DEV-RES-005                       |
+| **REQ-MOD02-024** | Divergente       | Relações têm CRUD, mas `ResourceService` aceita qualquer string; a tabela de catálogo não possui API de governança.  | Bootstrap + CRUD de RelationshipType, inversos, simetria, Audit e validação em writes.                | Q-RES-012            | DEV-RES-006                       |
+| **REQ-MOD02-025** | Parcial          | Eventos de catálogo/inventário são persistidos em `tmf_event`, expostos via TMF688 e testados.                       | Outbox, Schema Registry, catálogo público, DLQ, reprocessamento e UUID v7.                            | —                    | DEV-X-002                         |
+| **REQ-MOD02-026** | Não implementado | Duto existe apenas como Support Structure plana, com capacidade e ocupação digitadas em characteristics.             | Contenção banco→duto→sub-duto→cabo, endpoints A/Z obrigatórios, trecho derivado e ocupação calculada. | Q-RES-014            | DEV-RES-007, DEV-RES-002          |
+| **REQ-MOD02-027** | Não implementado | Só existem validações de escrita; nenhuma rotina varre a base já carregada por script ou migração.                   | Catálogo de regras por API, varredura agendada, findings com ciclo de vida, score e evento TMF688.    | —                    | DEV-RES-008, DEV-X-002            |
+| **REQ-MOD02-028** | Não implementado | Criar recurso composto exige uma chamada por objeto; a Specification não declara composição.                         | `childTemplate[]`, materialização transacional, pré-visualização e import em massa idempotente.       | Q-RES-001            | DEV-RES-009, DEV-RES-001          |
 
 ---
 
@@ -93,13 +93,13 @@ O codebase atual é TypeScript/Node com HTTP nativo, React/Vite e Neon Postgres.
 
 O módulo Resource implementa os TMFCs TMFC003 e TMFC024 expondo cinco grupos de entidades canônicas:
 
-| Entidade | API | Papel no modelo |
-|---|---|---|
-| **ResourceSpecification** | TMF634 | Definição de tipo de recurso no catálogo (modelo de OLT, tipo de cabo, classe de IP). |
-| **ResourceCategory** | TMF634 | Organização hierárquica navegável do catálogo (Equipamentos > Acesso > OLT). |
-| **ResourceFunctionSpecification** | TMF634 | Template funcional reutilizável (configuração padrão de POP). |
-| **PhysicalResource** | TMF639 | Instância de recurso físico (cabo, OLT, ONT, poste, CTO). |
-| **LogicalResource** | TMF639 | Instância de recurso lógico (IP, VLAN, VRF, ASN). |
+| Entidade                          | API    | Papel no modelo                                                                       |
+| --------------------------------- | ------ | ------------------------------------------------------------------------------------- |
+| **ResourceSpecification**         | TMF634 | Definição de tipo de recurso no catálogo (modelo de OLT, tipo de cabo, classe de IP). |
+| **ResourceCategory**              | TMF634 | Organização hierárquica navegável do catálogo (Equipamentos > Acesso > OLT).          |
+| **ResourceFunctionSpecification** | TMF634 | Template funcional reutilizável (configuração padrão de POP).                         |
+| **PhysicalResource**              | TMF639 | Instância de recurso físico (cabo, OLT, ONT, poste, CTO).                             |
+| **LogicalResource**               | TMF639 | Instância de recurso lógico (IP, VLAN, VRF, ASN).                                     |
 
 ### 3.1 Hierarquia de tipos TMF
 
@@ -217,48 +217,48 @@ O caminho feliz de um objeto composto — CTO com splitter e portas, banco de du
 
 O módulo Resource é composto por 28 requisitos, organizados em 7 blocos funcionais:
 
-| Bloco | Requisitos |
-|---|---|
-| **A — Catálogo (TMF634)** | REQ-MOD02-001 a 004 |
-| **B — Resource Inventory base (TMF639)** | REQ-MOD02-005 a 007 |
-| **C — Outside Plant georreferenciada** | REQ-MOD02-008 a 012 e 026 |
-| **D — Inside Plant** | REQ-MOD02-013 a 017 |
-| **E — Conectividade física** | REQ-MOD02-018 a 019 |
-| **F — Recursos lógicos** | REQ-MOD02-020 a 023 |
+| Bloco                                                                  | Requisitos                    |
+| ---------------------------------------------------------------------- | ----------------------------- |
+| **A — Catálogo (TMF634)**                                              | REQ-MOD02-001 a 004           |
+| **B — Resource Inventory base (TMF639)**                               | REQ-MOD02-005 a 007           |
+| **C — Outside Plant georreferenciada**                                 | REQ-MOD02-008 a 012 e 026     |
+| **D — Inside Plant**                                                   | REQ-MOD02-013 a 017           |
+| **E — Conectividade física**                                           | REQ-MOD02-018 a 019           |
+| **F — Recursos lógicos**                                               | REQ-MOD02-020 a 023           |
 | **G — Transversais (Relationships, Eventos, Integridade e Templates)** | REQ-MOD02-024, 025, 027 e 028 |
 
 ### 5.1 Tabela completa dos requisitos
 
-| ID | Título | Entidade TMF principal |
-|---|---|---|
-| **REQ-MOD02-001** | Resource Specification (catálogo de tipos de recurso) | *ResourceSpecification (TMF634)* |
-| **REQ-MOD02-002** | Resource Category (organização hierárquica do catálogo) | *ResourceCategory (TMF634)* |
-| **REQ-MOD02-003** | Resource Function Specification (templates funcionais) | *ResourceFunctionSpecification (TMF634)* |
-| **REQ-MOD02-004** | Manufacturer / Vendor (fabricantes e fornecedores) | *Party com role=manufacturer (TMF632 referenciado)* |
-| **REQ-MOD02-005** | Cadastro genérico de Resource (CRUD canônico) | *Resource (PhysicalResource | LogicalResource) (TMF639)* |
-| **REQ-MOD02-006** | Ciclo de vida operacional do Resource | *Resource.{resourceStatus, operationalState, administrativeState, usageState} + StateChangeEvent (TMF639 + TMF688)* |
-| **REQ-MOD02-007** | Hierarquia de contenção física entre Resources | *resourceRelationship com type=containsAsChild (TMF639)* |
-| **REQ-MOD02-008** | Support Structure (poste, manhole, torre, duto, caixa de emenda) | *PhysicalResource especializado (TMF639)* |
-| **REQ-MOD02-009** | Passive Device (CTO, NAP, Splitter externo, Emenda) | *PhysicalResource passivo georreferenciado (TMF639)* |
-| **REQ-MOD02-010** | Cable e Cable Segment georreferenciado | *PhysicalResource Cable + CableSegment (TMF639)* |
-| **REQ-MOD02-011** | Splice (Emenda de fibra óptica) | *PhysicalResource Splice (TMF639)* |
-| **REQ-MOD02-012** | Trajeto físico (Path computation) fim-a-fim | *Função sobre resourceRelationships (não é entidade própria)* |
-| **REQ-MOD02-013** | Rack (gabinete com elevação e ocupação em U) | *PhysicalResource Rack (TMF639)* |
-| **REQ-MOD02-014** | Equipment (OLT, switch, roteador, servidor, ONT/CPE) | *PhysicalResource Equipment (TMF639)* |
-| **REQ-MOD02-015** | Card / Módulo (placas de chassi) | *PhysicalResource Card (TMF639)* |
-| **REQ-MOD02-016** | Port (porta física) | *PhysicalResource Port (TMF639)* |
-| **REQ-MOD02-017** | Power Feed e Power Outlet (alimentação elétrica) | *PhysicalResource Power Feed/Outlet (TMF639)* |
-| **REQ-MOD02-018** | Conexão física (cable termination, patch cord, link) | *PhysicalResource Connection / Patch Cord (TMF639)* |
-| **REQ-MOD02-019** | Front Port / Rear Port (DIO, DG, passagem interna/externa) | *PhysicalResource Port especializado (TMF639)* |
-| **REQ-MOD02-020** | IPAM (Prefix, IP Address, Range) | *LogicalResource Prefix/IPAddress (TMF639)* |
-| **REQ-MOD02-021** | VRF e Route Target (isolamento de roteamento) | *LogicalResource VRF e RouteTarget (TMF639)* |
-| **REQ-MOD02-022** | VLAN e VLAN Group | *LogicalResource VLAN / VLANGroup (TMF639)* |
-| **REQ-MOD02-023** | ASN e MPLS Label | *LogicalResource ASN / MPLSLabel (TMF639)* |
-| **REQ-MOD02-024** | Resource Relationship (catálogo de relações tipadas) | *resourceRelationship com type catalog (TMF639)* |
-| **REQ-MOD02-025** | Eventos de domínio do Resource | *Event (TMF688)* |
-| **REQ-MOD02-026** | Infraestrutura subterrânea: banco de dutos, duto, sub-duto e trecho | *PhysicalResource especializado (TMF639)* |
-| **REQ-MOD02-027** | Integridade e completude do inventário físico | *Função sobre TMF639 com publicação TMF688* |
-| **REQ-MOD02-028** | Cadastro composto por template (materialização automática) | *ResourceSpecification (TMF634) → PhysicalResource (TMF639)* |
+| ID                | Título                                                              | Entidade TMF principal                                                                                              |
+| ----------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **REQ-MOD02-001** | Resource Specification (catálogo de tipos de recurso)               | _ResourceSpecification (TMF634)_                                                                                    |
+| **REQ-MOD02-002** | Resource Category (organização hierárquica do catálogo)             | _ResourceCategory (TMF634)_                                                                                         |
+| **REQ-MOD02-003** | Resource Function Specification (templates funcionais)              | _ResourceFunctionSpecification (TMF634)_                                                                            |
+| **REQ-MOD02-004** | Manufacturer / Vendor (fabricantes e fornecedores)                  | _Party com role=manufacturer (TMF632 referenciado)_                                                                 |
+| **REQ-MOD02-005** | Cadastro genérico de Resource (CRUD canônico)                       | *Resource (PhysicalResource                                                                                         | LogicalResource) (TMF639)* |
+| **REQ-MOD02-006** | Ciclo de vida operacional do Resource                               | _Resource.{resourceStatus, operationalState, administrativeState, usageState} + StateChangeEvent (TMF639 + TMF688)_ |
+| **REQ-MOD02-007** | Hierarquia de contenção física entre Resources                      | _resourceRelationship com type=containsAsChild (TMF639)_                                                            |
+| **REQ-MOD02-008** | Support Structure (poste, manhole, torre, duto, caixa de emenda)    | _PhysicalResource especializado (TMF639)_                                                                           |
+| **REQ-MOD02-009** | Passive Device (CTO, NAP, Splitter externo, Emenda)                 | _PhysicalResource passivo georreferenciado (TMF639)_                                                                |
+| **REQ-MOD02-010** | Cable e Cable Segment georreferenciado                              | _PhysicalResource Cable + CableSegment (TMF639)_                                                                    |
+| **REQ-MOD02-011** | Splice (Emenda de fibra óptica)                                     | _PhysicalResource Splice (TMF639)_                                                                                  |
+| **REQ-MOD02-012** | Trajeto físico (Path computation) fim-a-fim                         | _Função sobre resourceRelationships (não é entidade própria)_                                                       |
+| **REQ-MOD02-013** | Rack (gabinete com elevação e ocupação em U)                        | _PhysicalResource Rack (TMF639)_                                                                                    |
+| **REQ-MOD02-014** | Equipment (OLT, switch, roteador, servidor, ONT/CPE)                | _PhysicalResource Equipment (TMF639)_                                                                               |
+| **REQ-MOD02-015** | Card / Módulo (placas de chassi)                                    | _PhysicalResource Card (TMF639)_                                                                                    |
+| **REQ-MOD02-016** | Port (porta física)                                                 | _PhysicalResource Port (TMF639)_                                                                                    |
+| **REQ-MOD02-017** | Power Feed e Power Outlet (alimentação elétrica)                    | _PhysicalResource Power Feed/Outlet (TMF639)_                                                                       |
+| **REQ-MOD02-018** | Conexão física (cable termination, patch cord, link)                | _PhysicalResource Connection / Patch Cord (TMF639)_                                                                 |
+| **REQ-MOD02-019** | Front Port / Rear Port (DIO, DG, passagem interna/externa)          | _PhysicalResource Port especializado (TMF639)_                                                                      |
+| **REQ-MOD02-020** | IPAM (Prefix, IP Address, Range)                                    | _LogicalResource Prefix/IPAddress (TMF639)_                                                                         |
+| **REQ-MOD02-021** | VRF e Route Target (isolamento de roteamento)                       | _LogicalResource VRF e RouteTarget (TMF639)_                                                                        |
+| **REQ-MOD02-022** | VLAN e VLAN Group                                                   | _LogicalResource VLAN / VLANGroup (TMF639)_                                                                         |
+| **REQ-MOD02-023** | ASN e MPLS Label                                                    | _LogicalResource ASN / MPLSLabel (TMF639)_                                                                          |
+| **REQ-MOD02-024** | Resource Relationship (catálogo de relações tipadas)                | _resourceRelationship com type catalog (TMF639)_                                                                    |
+| **REQ-MOD02-025** | Eventos de domínio do Resource                                      | _Event (TMF688)_                                                                                                    |
+| **REQ-MOD02-026** | Infraestrutura subterrânea: banco de dutos, duto, sub-duto e trecho | _PhysicalResource especializado (TMF639)_                                                                           |
+| **REQ-MOD02-027** | Integridade e completude do inventário físico                       | _Função sobre TMF639 com publicação TMF688_                                                                         |
+| **REQ-MOD02-028** | Cadastro composto por template (materialização automática)          | _ResourceSpecification (TMF634) → PhysicalResource (TMF639)_                                                        |
 
 ### 5.2 Ordem de implementação sugerida
 
@@ -268,7 +268,6 @@ O módulo Resource é composto por 28 requisitos, organizados em 7 blocos funcio
 - **Fase 4 — Recursos lógicos:** REQ-020 a 023. Habilita serviços L3VPN, segmentação L2 e MPLS.
 - **Fase 5 — Transversais:** REQ-024, 025 e 028 são implementados em paralelo às fases anteriores (são habilitadores). REQ-028 antecipa ganho já na Fase 1, ao reduzir o custo de cadastro e de carga inicial.
 - **Fase 6 — Integridade:** REQ-027 entra quando houver massa carregada para varrer — na prática, junto com a primeira onda de migração.
-
 
 ---
 
@@ -291,21 +290,21 @@ O TMF634 estabelece ResourceSpecification como entidade-mãe do catálogo, com d
 
 Atributos canônicos da entidade ResourceSpecification (TMF634):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `id` | string | Sim | UUID v7 do catálogo Nexus. |
-| `name` | string | Sim | Nome do tipo (ex.: "OLT Huawei MA5800-X17", "Cabo Óptico Drop 1F"). |
-| `code` | string | Sim | Código curto único na plataforma (ex.: "OLT-HW-MA5800-X17"). |
-| `description` | string | Não | Descrição funcional completa. |
-| `category` | EntityRef | Sim | Referência a ResourceCategory (REQ-MOD02-002) para organização hierárquica do catálogo. |
-| `@type` | string | Sim | PhysicalResourceSpecification | LogicalResourceSpecification. |
-| `lifecycleStatus` | enum | Sim | InStudy | InDesign | Active | Retired. Apenas Active permite criar Resources. |
-| `version` | string | Não | Versão da especificação (ex.: "1.0", "2.3"). |
-| `validFor` | TimePeriod | Não | Período de validade da especificação. |
-| `resourceSpecCharacteristic` | array | Não | Atributos técnicos esperados: capacidade de portas, potência, peso, profundidade U, tecnologia (GPON/XGSPON), tipo conector. |
-| `attachment` | array | Não | Anexos: datasheets, manuais, fotos do fabricante. |
-| `relatedParty` | array | Não | Manufacturer/Vendor (referência a Party do Módulo 6). |
-| `resourceSpecRelationship` | array | Não | Relações entre especificações: "containsAsChild", "compatibleWith", "supersedes". |
+| Atributo TMF                 | Tipo       | Obrigatório | Observação V.tal                                                                                                             |
+| ---------------------------- | ---------- | :---------: | ---------------------------------------------------------------------------------------------------------------------------- |
+| `id`                         | string     |     Sim     | UUID v7 do catálogo Nexus.                                                                                                   |
+| `name`                       | string     |     Sim     | Nome do tipo (ex.: "OLT Huawei MA5800-X17", "Cabo Óptico Drop 1F").                                                          |
+| `code`                       | string     |     Sim     | Código curto único na plataforma (ex.: "OLT-HW-MA5800-X17").                                                                 |
+| `description`                | string     |     Não     | Descrição funcional completa.                                                                                                |
+| `category`                   | EntityRef  |     Sim     | Referência a ResourceCategory (REQ-MOD02-002) para organização hierárquica do catálogo.                                      |
+| `@type`                      | string     |     Sim     | PhysicalResourceSpecification                                                                                                | LogicalResourceSpecification. |
+| `lifecycleStatus`            | enum       |     Sim     | InStudy                                                                                                                      | InDesign                      | Active | Retired. Apenas Active permite criar Resources. |
+| `version`                    | string     |     Não     | Versão da especificação (ex.: "1.0", "2.3").                                                                                 |
+| `validFor`                   | TimePeriod |     Não     | Período de validade da especificação.                                                                                        |
+| `resourceSpecCharacteristic` | array      |     Não     | Atributos técnicos esperados: capacidade de portas, potência, peso, profundidade U, tecnologia (GPON/XGSPON), tipo conector. |
+| `attachment`                 | array      |     Não     | Anexos: datasheets, manuais, fotos do fabricante.                                                                            |
+| `relatedParty`               | array      |     Não     | Manufacturer/Vendor (referência a Party do Módulo 6).                                                                        |
+| `resourceSpecRelationship`   | array      |     Não     | Relações entre especificações: "containsAsChild", "compatibleWith", "supersedes".                                            |
 
 ### 6.4 Exemplo de payload
 
@@ -319,17 +318,37 @@ Atributos canônicos da entidade ResourceSpecification (TMF634):
   "lifecycleStatus": "Active",
   "version": "2.0",
   "resourceSpecCharacteristic": [
-    { "name": "Tecnologia",      "valueType": "enum",   "values": ["GPON","XGSPON","XGPON"], "mandatory": true },
-    { "name": "Numero_Slots",    "valueType": "int",    "mandatory": true, "defaultValue": 17 },
-    { "name": "Profundidade_U",  "valueType": "decimal","mandatory": true, "unit": "U",  "defaultValue": 9 },
-    { "name": "Potencia_Max_W",  "valueType": "int",    "mandatory": true, "unit": "W",  "defaultValue": 1800 },
-    { "name": "Peso_kg",         "valueType": "decimal","mandatory": false,"unit": "kg" }
+    {
+      "name": "Tecnologia",
+      "valueType": "enum",
+      "values": ["GPON", "XGSPON", "XGPON"],
+      "mandatory": true
+    },
+    { "name": "Numero_Slots", "valueType": "int", "mandatory": true, "defaultValue": 17 },
+    {
+      "name": "Profundidade_U",
+      "valueType": "decimal",
+      "mandatory": true,
+      "unit": "U",
+      "defaultValue": 9
+    },
+    {
+      "name": "Potencia_Max_W",
+      "valueType": "int",
+      "mandatory": true,
+      "unit": "W",
+      "defaultValue": 1800
+    },
+    { "name": "Peso_kg", "valueType": "decimal", "mandatory": false, "unit": "kg" }
   ],
   "relatedParty": [
     { "party": { "id": "party-huawei", "@referredType": "Organization" }, "role": "manufacturer" }
   ],
   "resourceSpecRelationship": [
-    { "type": "containsAsChild", "resourceSpec": { "id": "spec-card-gpon-h805", "@referredType": "ResourceSpecification" } }
+    {
+      "type": "containsAsChild",
+      "resourceSpec": { "id": "spec-card-gpon-h805", "@referredType": "ResourceSpecification" }
+    }
   ]
 }
 ```
@@ -342,53 +361,52 @@ Atributos canônicos da entidade ResourceSpecification (TMF634):
 
 ### 6.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar ResourceSpec** | Criar especificação com name, code, type (Physical/Logical), category, lifecycleStatus, resourceSpecCharacteristic. |
-| **RF-002** | **Versionar** | Suportar versionamento explícito via version + validFor. Versões anteriores ficam Retired mas Resources existentes permanecem. |
-| **RF-003** | **Atributos técnicos** | Definir resourceSpecCharacteristic com: name, valueType (string/int/decimal/enum/boolean/date), mandatory, configurable, validator (regex/range), defaultValue, unit. |
-| **RF-004** | **Anexos** | Anexar datasheets, manuais e fotos via attachment (link ou upload com hash). |
-| **RF-005** | **Relações entre specs** | Modelar resourceSpecRelationship para containsAsChild (ex.: chassi OLT contém placa), compatibleWith (ex.: SFP compatível com placa), supersedes (ex.: modelo novo substitui antigo). |
-| **RF-006** | **Editar e despublicar** | Editar com Audit; transicionar para Retired bloqueia criação de novos Resources mas preserva existentes. |
-| **RF-007** | **Listar e filtrar** | Listar com filtros por: category, type, lifecycleStatus, manufacturer, characteristic (ex.: GPON-only). |
-| **RF-008** | **Importar de catálogos externos** | Importar specs de catálogos públicos (ex.: NetBox device-type-library) com mapeamento para o formato Nexus. |
-| **RF-009** | **Exportar catálogo** | Exportar todo o catálogo em formato canônico para backup ou compartilhamento. |
-| **RF-010** | **Eventos** | Publicar TMF688 a cada criação/alteração de ResourceSpec. |
+| ID         | Nome                               | Descrição                                                                                                                                                                             |
+| ---------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar ResourceSpec**             | Criar especificação com name, code, type (Physical/Logical), category, lifecycleStatus, resourceSpecCharacteristic.                                                                   |
+| **RF-002** | **Versionar**                      | Suportar versionamento explícito via version + validFor. Versões anteriores ficam Retired mas Resources existentes permanecem.                                                        |
+| **RF-003** | **Atributos técnicos**             | Definir resourceSpecCharacteristic com: name, valueType (string/int/decimal/enum/boolean/date), mandatory, configurable, validator (regex/range), defaultValue, unit.                 |
+| **RF-004** | **Anexos**                         | Anexar datasheets, manuais e fotos via attachment (link ou upload com hash).                                                                                                          |
+| **RF-005** | **Relações entre specs**           | Modelar resourceSpecRelationship para containsAsChild (ex.: chassi OLT contém placa), compatibleWith (ex.: SFP compatível com placa), supersedes (ex.: modelo novo substitui antigo). |
+| **RF-006** | **Editar e despublicar**           | Editar com Audit; transicionar para Retired bloqueia criação de novos Resources mas preserva existentes.                                                                              |
+| **RF-007** | **Listar e filtrar**               | Listar com filtros por: category, type, lifecycleStatus, manufacturer, characteristic (ex.: GPON-only).                                                                               |
+| **RF-008** | **Importar de catálogos externos** | Importar specs de catálogos públicos (ex.: NetBox device-type-library) com mapeamento para o formato Nexus.                                                                           |
+| **RF-009** | **Exportar catálogo**              | Exportar todo o catálogo em formato canônico para backup ou compartilhamento.                                                                                                         |
+| **RF-010** | **Eventos**                        | Publicar TMF688 a cada criação/alteração de ResourceSpec.                                                                                                                             |
 
 ### 6.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | code é único globalmente na plataforma. |
-| **RN-002** | @type, name, code, category e lifecycleStatus são obrigatórios. |
-| **RN-003** | Apenas specs com lifecycleStatus=Active podem ser usadas para criar novos Resources. |
+| ID         | Regra de Negócio                                                                                                          |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | code é único globalmente na plataforma.                                                                                   |
+| **RN-002** | @type, name, code, category e lifecycleStatus são obrigatórios.                                                           |
+| **RN-003** | Apenas specs com lifecycleStatus=Active podem ser usadas para criar novos Resources.                                      |
 | **RN-004** | resourceSpecCharacteristic mandatory só pode ser adicionado a spec sem Resources instanciados, ou via migração explícita. |
-| **RN-005** | Spec em Retired preserva Resources existentes mas bloqueia criação de novos. |
-| **RN-006** | resourceSpecRelationship containsAsChild define implicitamente regras de contenção física (REQ-MOD02-007). |
-| **RN-007** | Toda alteração no catálogo gera Audit Trail e evento TMF688. |
+| **RN-005** | Spec em Retired preserva Resources existentes mas bloqueia criação de novos.                                              |
+| **RN-006** | resourceSpecRelationship containsAsChild define implicitamente regras de contenção física (REQ-MOD02-007).                |
+| **RN-007** | Toda alteração no catálogo gera Audit Trail e evento TMF688.                                                              |
 
 ### 6.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criação válida** | POST de PhysicalResourceSpecification "OLT Huawei MA5800-X17" com category, manufacturer e characteristics retorna 201. |
-| **CA-002** | **Unicidade de code** | POST com code já existente retorna 409. |
-| **CA-003** | **Validação de characteristic** | PATCH em Resource cujo valor de characteristic falha no validator da spec retorna 400. |
-| **CA-004** | **Retired bloqueia uso** | POST de Resource com resourceSpecification em Retired retorna 400. |
-| **CA-005** | **Versionamento** | Nova versão da spec gera ID distinto; versão anterior recebe validFor.endDateTime automaticamente. |
-| **CA-006** | **Import NetBox** | Importação de device-type YAML do NetBox gera ResourceSpec correspondente com mapeamento de atributos documentado. |
-| **CA-007** | **Evento publicado** | Toda criação/alteração publica evento no tópico resource.spec.v1. |
+| ID         | Critério                        | Resultado Esperado                                                                                                      |
+| ---------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Criação válida**              | POST de PhysicalResourceSpecification "OLT Huawei MA5800-X17" com category, manufacturer e characteristics retorna 201. |
+| **CA-002** | **Unicidade de code**           | POST com code já existente retorna 409.                                                                                 |
+| **CA-003** | **Validação de characteristic** | PATCH em Resource cujo valor de characteristic falha no validator da spec retorna 400.                                  |
+| **CA-004** | **Retired bloqueia uso**        | POST de Resource com resourceSpecification em Retired retorna 400.                                                      |
+| **CA-005** | **Versionamento**               | Nova versão da spec gera ID distinto; versão anterior recebe validFor.endDateTime automaticamente.                      |
+| **CA-006** | **Import NetBox**               | Importação de device-type YAML do NetBox gera ResourceSpec correspondente com mapeamento de atributos documentado.      |
+| **CA-007** | **Evento publicado**            | Toda criação/alteração publica evento no tópico resource.spec.v1.                                                       |
 
 ### 6.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Catálogo de tipos formal** | Biblioteca de modelos (Catalogue) | Data Model Manager (metamodelo) | Device Types + Module Types | **ResourceSpecification conforme TMF634** |
-| **Atributos técnicos por tipo** | Sim (parametrizado) | Sim (metamodelo) | Sim (custom fields + type) | **resourceSpecCharacteristic canônico** |
-| **Versionamento** | Parcial | Não identificado no levantamento | Não identificado no levantamento | **version + validFor explícitos** |
-| **Relações entre specs** | Parcial | Sim (containment) | Limitado | **resourceSpecRelationship tipado** |
-| **Anexos (datasheets, fotos)** | Sim | Sim | Sim (limitado) | **attachment com hash de integridade** |
-
+| Capacidade                      | Netwin                            | Kuwaiba                          | NetBox                           | Decisão Nexus                             |
+| ------------------------------- | --------------------------------- | -------------------------------- | -------------------------------- | ----------------------------------------- |
+| **Catálogo de tipos formal**    | Biblioteca de modelos (Catalogue) | Data Model Manager (metamodelo)  | Device Types + Module Types      | **ResourceSpecification conforme TMF634** |
+| **Atributos técnicos por tipo** | Sim (parametrizado)               | Sim (metamodelo)                 | Sim (custom fields + type)       | **resourceSpecCharacteristic canônico**   |
+| **Versionamento**               | Parcial                           | Não identificado no levantamento | Não identificado no levantamento | **version + validFor explícitos**         |
+| **Relações entre specs**        | Parcial                           | Sim (containment)                | Limitado                         | **resourceSpecRelationship tipado**       |
+| **Anexos (datasheets, fotos)**  | Sim                               | Sim                              | Sim (limitado)                   | **attachment com hash de integridade**    |
 
 ---
 
@@ -411,15 +429,15 @@ Sem categorias, o catálogo se torna uma lista plana ingerenciável (V.tal opera
 
 Atributos canônicos da entidade ResourceCategory (TMF634):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `id` | string | Sim | UUID v7. |
-| `name` | string | Sim | Nome da categoria (ex.: "Equipamentos de Acesso", "Cabos Ópticos Externos"). |
-| `code` | string | Sim | Código curto único (ex.: "EQ-ACC", "CB-EXT"). |
-| `parentCategory` | EntityRef | Não | Categoria pai. Nulo para categorias raiz. |
-| `lifecycleStatus` | enum | Sim | Active | Retired. |
-| `isRoot` | boolean | Não | true para categorias de topo. |
-| `resourceSpecification` | array | Não | Lista de specs membros (relação inversa). |
+| Atributo TMF            | Tipo      | Obrigatório | Observação V.tal                                                             |
+| ----------------------- | --------- | :---------: | ---------------------------------------------------------------------------- |
+| `id`                    | string    |     Sim     | UUID v7.                                                                     |
+| `name`                  | string    |     Sim     | Nome da categoria (ex.: "Equipamentos de Acesso", "Cabos Ópticos Externos"). |
+| `code`                  | string    |     Sim     | Código curto único (ex.: "EQ-ACC", "CB-EXT").                                |
+| `parentCategory`        | EntityRef |     Não     | Categoria pai. Nulo para categorias raiz.                                    |
+| `lifecycleStatus`       | enum      |     Sim     | Active                                                                       | Retired. |
+| `isRoot`                | boolean   |     Não     | true para categorias de topo.                                                |
+| `resourceSpecification` | array     |     Não     | Lista de specs membros (relação inversa).                                    |
 
 ### 7.4 Exemplo de payload
 
@@ -441,45 +459,44 @@ Atributos canônicos da entidade ResourceCategory (TMF634):
 
 ### 7.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar categoria** | Criar ResourceCategory com nome, código, categoria pai opcional. |
-| **RF-002** | **Hierarquia em árvore** | Suportar profundidade ilimitada via parentCategory recursivo. |
-| **RF-003** | **Categorias base V.tal** | Bootstrap automático: Equipamentos (Acesso, Agregação, Backbone), Cabos (Drop, Distribuição, Backbone), Infraestrutura (Postes, Dutos, CTOs), Recursos Lógicos (IPv4, IPv6, VLAN, ASN). |
-| **RF-004** | **Associar specs a categorias** | Definir categoria primária na criação da spec; suportar múltiplas categorias secundárias. |
-| **RF-005** | **Listar e filtrar** | Listar categorias em árvore; filtrar specs por categoria (incluindo descendentes). |
-| **RF-006** | **Editar e excluir** | Editar com Audit; bloquear exclusão de categoria com specs ou subcategorias. |
-| **RF-007** | **Contadores** | Expor contagem de specs e Resources instanciados por categoria (acumulado na subárvore). |
-| **RF-008** | **Eventos** | Publicar TMF688 a cada alteração no catálogo de categorias. |
+| ID         | Nome                            | Descrição                                                                                                                                                                               |
+| ---------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar categoria**             | Criar ResourceCategory com nome, código, categoria pai opcional.                                                                                                                        |
+| **RF-002** | **Hierarquia em árvore**        | Suportar profundidade ilimitada via parentCategory recursivo.                                                                                                                           |
+| **RF-003** | **Categorias base V.tal**       | Bootstrap automático: Equipamentos (Acesso, Agregação, Backbone), Cabos (Drop, Distribuição, Backbone), Infraestrutura (Postes, Dutos, CTOs), Recursos Lógicos (IPv4, IPv6, VLAN, ASN). |
+| **RF-004** | **Associar specs a categorias** | Definir categoria primária na criação da spec; suportar múltiplas categorias secundárias.                                                                                               |
+| **RF-005** | **Listar e filtrar**            | Listar categorias em árvore; filtrar specs por categoria (incluindo descendentes).                                                                                                      |
+| **RF-006** | **Editar e excluir**            | Editar com Audit; bloquear exclusão de categoria com specs ou subcategorias.                                                                                                            |
+| **RF-007** | **Contadores**                  | Expor contagem de specs e Resources instanciados por categoria (acumulado na subárvore).                                                                                                |
+| **RF-008** | **Eventos**                     | Publicar TMF688 a cada alteração no catálogo de categorias.                                                                                                                             |
 
 ### 7.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | code da categoria é único globalmente. |
-| **RN-002** | Nome único dentro do mesmo parentCategory. |
-| **RN-003** | Não é permitido ciclo na hierarquia. |
+| ID         | Regra de Negócio                                                                        |
+| ---------- | --------------------------------------------------------------------------------------- |
+| **RN-001** | code da categoria é único globalmente.                                                  |
+| **RN-002** | Nome único dentro do mesmo parentCategory.                                              |
+| **RN-003** | Não é permitido ciclo na hierarquia.                                                    |
 | **RN-004** | Exclusão bloqueada se houver specs ou subcategorias; permite-se transição para Retired. |
-| **RN-005** | Categorias-base V.tal são protegidas — alteração exige aprovação especial. |
-| **RN-006** | Toda alteração gera Audit Trail e evento TMF688. |
+| **RN-005** | Categorias-base V.tal são protegidas — alteração exige aprovação especial.              |
+| **RN-006** | Toda alteração gera Audit Trail e evento TMF688.                                        |
 
 ### 7.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criação válida** | POST de categoria "OLT" com parentCategory="Equipamentos de Acesso" retorna 201. |
-| **CA-002** | **Filtro recursivo** | GET /resourceSpecification?category=Equipamentos retorna specs de todas as categorias descendentes. |
-| **CA-003** | **Bloqueio de exclusão** | DELETE em categoria com specs ativas retorna 409. |
-| **CA-004** | **Contadores** | GET /resourceCategory/{id}/aggregate retorna count de specs e Resources na subárvore. |
+| ID         | Critério                 | Resultado Esperado                                                                                  |
+| ---------- | ------------------------ | --------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Criação válida**       | POST de categoria "OLT" com parentCategory="Equipamentos de Acesso" retorna 201.                    |
+| **CA-002** | **Filtro recursivo**     | GET /resourceSpecification?category=Equipamentos retorna specs de todas as categorias descendentes. |
+| **CA-003** | **Bloqueio de exclusão** | DELETE em categoria com specs ativas retorna 409.                                                   |
+| **CA-004** | **Contadores**           | GET /resourceCategory/{id}/aggregate retorna count de specs e Resources na subárvore.               |
 
 ### 7.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Organização hierárquica** | Fixa por dimensões (Catalogue) | Via classes do metamodelo | Por Manufacturer apenas | **ResourceCategory hierárquica e configurável** |
-| **Multi-classificação** | Não identificado no levantamento | Parcial | Não identificado no levantamento | **Sim (primária + secundárias)** |
-| **Bootstrap V.tal** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Categorias-base pré-populadas** |
-
+| Capacidade                  | Netwin                           | Kuwaiba                          | NetBox                           | Decisão Nexus                                   |
+| --------------------------- | -------------------------------- | -------------------------------- | -------------------------------- | ----------------------------------------------- |
+| **Organização hierárquica** | Fixa por dimensões (Catalogue)   | Via classes do metamodelo        | Por Manufacturer apenas          | **ResourceCategory hierárquica e configurável** |
+| **Multi-classificação**     | Não identificado no levantamento | Parcial                          | Não identificado no levantamento | **Sim (primária + secundárias)**                |
+| **Bootstrap V.tal**         | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Categorias-base pré-populadas**               |
 
 ---
 
@@ -502,16 +519,16 @@ O Netwin tem "Templates" no módulo Catalogue (templates de instalação típico
 
 Atributos canônicos da entidade ResourceFunctionSpecification (TMF634):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `id` | string | Sim | UUID v7. |
-| `name` | string | Sim | Nome do template (ex.: "OLT GPON Padrão 16 PON", "CTO 16 portas FTTH Padrão V.tal"). |
-| `code` | string | Sim | Código curto único. |
-| `description` | string | Não | Descrição funcional do template. |
-| `resourceSpecification` | array<EntityRef> | Sim | ResourceSpecifications que compõem o template (ex.: 1x OLT, 17x Placa, 1x Power Supply). |
-| `parameter` | array | Não | Parâmetros configuráveis do template (capacidade, redundância, etc.). |
-| `lifecycleStatus` | enum | Sim | Active | Retired. |
-| `validFor` | TimePeriod | Não | Período de validade. |
+| Atributo TMF            | Tipo             | Obrigatório | Observação V.tal                                                                         |
+| ----------------------- | ---------------- | :---------: | ---------------------------------------------------------------------------------------- |
+| `id`                    | string           |     Sim     | UUID v7.                                                                                 |
+| `name`                  | string           |     Sim     | Nome do template (ex.: "OLT GPON Padrão 16 PON", "CTO 16 portas FTTH Padrão V.tal").     |
+| `code`                  | string           |     Sim     | Código curto único.                                                                      |
+| `description`           | string           |     Não     | Descrição funcional do template.                                                         |
+| `resourceSpecification` | array<EntityRef> |     Sim     | ResourceSpecifications que compõem o template (ex.: 1x OLT, 17x Placa, 1x Power Supply). |
+| `parameter`             | array            |     Não     | Parâmetros configuráveis do template (capacidade, redundância, etc.).                    |
+| `lifecycleStatus`       | enum             |     Sim     | Active                                                                                   | Retired. |
+| `validFor`              | TimePeriod       |     Não     | Período de validade.                                                                     |
 
 ### 8.4 Exemplo de payload
 
@@ -523,12 +540,10 @@ Atributos canônicos da entidade ResourceFunctionSpecification (TMF634):
   "lifecycleStatus": "Active",
   "resourceSpecification": [
     { "id": "spec-olt-huawei-ma5800-x17", "quantity": 1 },
-    { "id": "spec-card-gpon-h805",        "quantity": 16 },
-    { "id": "spec-power-supply-2200w",    "quantity": 2 }
+    { "id": "spec-card-gpon-h805", "quantity": 16 },
+    { "id": "spec-power-supply-2200w", "quantity": 2 }
   ],
-  "parameter": [
-    { "name": "redundancia_alimentacao", "valueType": "boolean", "defaultValue": true }
-  ]
+  "parameter": [{ "name": "redundancia_alimentacao", "valueType": "boolean", "defaultValue": true }]
 }
 ```
 
@@ -539,43 +554,42 @@ Atributos canônicos da entidade ResourceFunctionSpecification (TMF634):
 
 ### 8.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Function Spec** | Criar template com nome, código, lista de specs componentes e parâmetros opcionais. |
+| ID         | Nome                                | Descrição                                                                                                                             |
+| ---------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Function Spec**             | Criar template com nome, código, lista de specs componentes e parâmetros opcionais.                                                   |
 | **RF-002** | **Instanciar a partir do template** | Endpoint POST /resourceFunctionSpecification/{id}/instantiate cria os Resources do template em lote, vinculados a um Site específico. |
-| **RF-003** | **Templates compostos** | Suportar templates que referenciam outros templates (composição). |
-| **RF-004** | **Parâmetros configuráveis** | Permitir parâmetros (ex.: número de placas adicionais) que ajustam a instanciação. |
-| **RF-005** | **Editar e versionar** | Editar template; versionamento via validFor preserva instâncias criadas a partir de versões anteriores. |
-| **RF-006** | **Listar e filtrar** | Listar templates por categoria, status, contendo determinada spec. |
-| **RF-007** | **Eventos** | Publicar TMF688 a cada criação/alteração/instanciação. |
+| **RF-003** | **Templates compostos**             | Suportar templates que referenciam outros templates (composição).                                                                     |
+| **RF-004** | **Parâmetros configuráveis**        | Permitir parâmetros (ex.: número de placas adicionais) que ajustam a instanciação.                                                    |
+| **RF-005** | **Editar e versionar**              | Editar template; versionamento via validFor preserva instâncias criadas a partir de versões anteriores.                               |
+| **RF-006** | **Listar e filtrar**                | Listar templates por categoria, status, contendo determinada spec.                                                                    |
+| **RF-007** | **Eventos**                         | Publicar TMF688 a cada criação/alteração/instanciação.                                                                                |
 
 ### 8.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Todas as resourceSpecifications referenciadas devem estar Active no momento da instanciação. |
-| **RN-002** | Templates Retired não permitem nova instanciação; instâncias existentes preservadas. |
+| ID         | Regra de Negócio                                                                              |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| **RN-001** | Todas as resourceSpecifications referenciadas devem estar Active no momento da instanciação.  |
+| **RN-002** | Templates Retired não permitem nova instanciação; instâncias existentes preservadas.          |
 | **RN-003** | A instanciação cria Resources em lote em transação única — falha em qualquer um reverte tudo. |
-| **RN-004** | Toda instanciação registra Audit Trail vinculado ao template usado. |
+| **RN-004** | Toda instanciação registra Audit Trail vinculado ao template usado.                           |
 
 ### 8.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criação válida** | POST de template "OLT GPON Padrão" com 1x OLT + 17x Placa GPON retorna 201. |
-| **CA-002** | **Instanciação** | POST /resourceFunctionSpecification/{id}/instantiate com Site alvo cria 18 Resources em transação. |
-| **CA-003** | **Falha transacional** | Falha em criar 1 dos Resources reverte todos os criados anteriormente na mesma instanciação. |
-| **CA-004** | **Spec Retired no template** | POST de instanciação com spec componente em Retired retorna 400. |
+| ID         | Critério                     | Resultado Esperado                                                                                 |
+| ---------- | ---------------------------- | -------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Criação válida**           | POST de template "OLT GPON Padrão" com 1x OLT + 17x Placa GPON retorna 201.                        |
+| **CA-002** | **Instanciação**             | POST /resourceFunctionSpecification/{id}/instantiate com Site alvo cria 18 Resources em transação. |
+| **CA-003** | **Falha transacional**       | Falha em criar 1 dos Resources reverte todos os criados anteriormente na mesma instanciação.       |
+| **CA-004** | **Spec Retired no template** | POST de instanciação com spec componente em Retired retorna 400.                                   |
 
 ### 8.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Templates de instalação** | Sim (Catalogue Templates) | Sim (Template Manager) | Sim (Device Type composições) | **ResourceFunctionSpecification conforme TMF634** |
-| **Instanciação em lote** | Sim | Sim | Parcial | **Endpoint dedicado /instantiate** |
-| **Parâmetros configuráveis** | Sim | Sim | Limitado | **parameter[] tipado** |
-| **Templates compostos** | Limitado | Sim | Limitado | **Sim (composição recursiva)** |
-
+| Capacidade                   | Netwin                    | Kuwaiba                | NetBox                        | Decisão Nexus                                     |
+| ---------------------------- | ------------------------- | ---------------------- | ----------------------------- | ------------------------------------------------- |
+| **Templates de instalação**  | Sim (Catalogue Templates) | Sim (Template Manager) | Sim (Device Type composições) | **ResourceFunctionSpecification conforme TMF634** |
+| **Instanciação em lote**     | Sim                       | Sim                    | Parcial                       | **Endpoint dedicado /instantiate**                |
+| **Parâmetros configuráveis** | Sim                       | Sim                    | Limitado                      | **parameter[] tipado**                            |
+| **Templates compostos**      | Limitado                  | Sim                    | Limitado                      | **Sim (composição recursiva)**                    |
 
 ---
 
@@ -598,11 +612,11 @@ Esta é uma decisão arquitetural deliberada: fabricantes não são entidade nov
 
 Atributos canônicos da entidade Party com role=manufacturer (TMF632 referenciado):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `party` | EntityRef | Sim | Referência a Party do Módulo 6 (Organization). |
-| `role` | enum | Sim | manufacturer | vendor | distributor. |
-| `validFor` | TimePeriod | Não | Período de validade do papel. |
+| Atributo TMF | Tipo       | Obrigatório | Observação V.tal                               |
+| ------------ | ---------- | :---------: | ---------------------------------------------- |
+| `party`      | EntityRef  |     Sim     | Referência a Party do Módulo 6 (Organization). |
+| `role`       | enum       |     Sim     | manufacturer                                   | vendor | distributor. |
+| `validFor`   | TimePeriod |     Não     | Período de validade do papel.                  |
 
 ### 9.4 Exemplo de payload
 
@@ -611,8 +625,8 @@ Atributos canônicos da entidade Party com role=manufacturer (TMF632 referenciad
   "id": "spec-olt-huawei-ma5800-x17",
   "name": "OLT Huawei MA5800-X17",
   "relatedParty": [
-    { "party": { "id": "party-huawei",   "@referredType": "Organization" }, "role": "manufacturer" },
-    { "party": { "id": "party-furukawa", "@referredType": "Organization" }, "role": "distributor"  }
+    { "party": { "id": "party-huawei", "@referredType": "Organization" }, "role": "manufacturer" },
+    { "party": { "id": "party-furukawa", "@referredType": "Organization" }, "role": "distributor" }
   ]
 }
 ```
@@ -624,37 +638,36 @@ Atributos canônicos da entidade Party com role=manufacturer (TMF632 referenciad
 
 ### 9.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Vincular fabricante a spec** | Adicionar relatedParty com role=manufacturer na ResourceSpec. |
-| **RF-002** | **Vincular fornecedor a Resource** | Adicionar relatedParty com role=vendor no Resource instanciado. |
-| **RF-003** | **Filtrar specs por fabricante** | GET /resourceSpecification?relatedParty.role=manufacturer&relatedParty.id={partyId}. |
-| **RF-004** | **Filtrar Resources por fornecedor** | GET /resource?relatedParty.role=vendor&relatedParty.id={partyId}. |
-| **RF-005** | **Bootstrap V.tal** | Pré-popular Parties de fabricantes comuns: Huawei, ZTE, Furukawa, Datacom, Cisco, Nokia, Padtec, DZS, Siae. |
+| ID         | Nome                                 | Descrição                                                                                                   |
+| ---------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Vincular fabricante a spec**       | Adicionar relatedParty com role=manufacturer na ResourceSpec.                                               |
+| **RF-002** | **Vincular fornecedor a Resource**   | Adicionar relatedParty com role=vendor no Resource instanciado.                                             |
+| **RF-003** | **Filtrar specs por fabricante**     | GET /resourceSpecification?relatedParty.role=manufacturer&relatedParty.id={partyId}.                        |
+| **RF-004** | **Filtrar Resources por fornecedor** | GET /resource?relatedParty.role=vendor&relatedParty.id={partyId}.                                           |
+| **RF-005** | **Bootstrap V.tal**                  | Pré-popular Parties de fabricantes comuns: Huawei, ZTE, Furukawa, Datacom, Cisco, Nokia, Padtec, DZS, Siae. |
 
 ### 9.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Uma spec pode ter apenas um manufacturer; pode ter múltiplos distributors. |
+| ID         | Regra de Negócio                                                                              |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| **RN-001** | Uma spec pode ter apenas um manufacturer; pode ter múltiplos distributors.                    |
 | **RN-002** | Um Resource pode ter um manufacturer (herdado da spec) e um vendor específico (de aquisição). |
-| **RN-003** | Excluir Party com role=manufacturer ativo em specs é bloqueado pelo Módulo 6. |
+| **RN-003** | Excluir Party com role=manufacturer ativo em specs é bloqueado pelo Módulo 6.                 |
 
 ### 9.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Vincular fabricante** | PATCH em ResourceSpec adicionando relatedParty com role=manufacturer é aceito. |
-| **CA-002** | **Filtro por fabricante** | GET com filtro retorna specs do fabricante informado. |
-| **CA-003** | **Bootstrap** | Bootstrap cria os ~10 fabricantes principais V.tal automaticamente. |
+| ID         | Critério                  | Resultado Esperado                                                             |
+| ---------- | ------------------------- | ------------------------------------------------------------------------------ |
+| **CA-001** | **Vincular fabricante**   | PATCH em ResourceSpec adicionando relatedParty com role=manufacturer é aceito. |
+| **CA-002** | **Filtro por fabricante** | GET com filtro retorna specs do fabricante informado.                          |
+| **CA-003** | **Bootstrap**             | Bootstrap cria os ~10 fabricantes principais V.tal automaticamente.            |
 
 ### 9.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Modelagem de fabricante** | Tabela própria | Subclasse de Party metamodelo | Entidade Manufacturer | **Party com role=manufacturer (TMF632 unificado)** |
-| **Vendor (fornecedor) por Resource** | Não identificado no levantamento | Via atributos custom | Não identificado no levantamento | **relatedParty com role=vendor** |
-
+| Capacidade                           | Netwin                           | Kuwaiba                       | NetBox                           | Decisão Nexus                                      |
+| ------------------------------------ | -------------------------------- | ----------------------------- | -------------------------------- | -------------------------------------------------- |
+| **Modelagem de fabricante**          | Tabela própria                   | Subclasse de Party metamodelo | Entidade Manufacturer            | **Party com role=manufacturer (TMF632 unificado)** |
+| **Vendor (fornecedor) por Resource** | Não identificado no levantamento | Via atributos custom          | Não identificado no levantamento | **relatedParty com role=vendor**                   |
 
 ---
 
@@ -677,24 +690,24 @@ O TMF639 define Resource como entidade abstrata com duas especializações: Phys
 
 Atributos canônicos da entidade Resource (PhysicalResource | LogicalResource) (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `id` | string | Sim | UUID v7 — identificador estável global. |
-| `name` | string | Sim | Nome operacional do Resource (ex.: "OLT-RJ-BOT-CO-01", "IP-10.20.30.40"). |
-| `code` | string | Não | Código curto V.tal opcional. |
-| `@type` | string | Sim | PhysicalResource | LogicalResource (refinado por specs específicas). |
-| `resourceSpecification` | EntityRef | Sim | Referência à ResourceSpecification que define o tipo (REQ-MOD02-001). |
-| `resourceStatus` | enum | Sim | standby | alarm | available | reserved | unknown | suspended. |
-| `operationalState` | enum | Sim | enable | disable. |
-| `administrativeState` | enum | Sim | locked | unlocked | shuttingDown. |
-| `usageState` | enum | Sim | idle | active | busy. |
-| `place` | EntityRef | Não | GeographicSite ou GeographicLocation (Módulo 1) onde o Resource está fisicamente. |
-| `relatedParty` | array | Não | Owner, manufacturer, vendor (Módulo 6). |
-| `resourceCharacteristic` | array | Não | Atributos específicos da instância conforme spec (serial, MAC, capacidade configurada etc.). |
-| `resourceRelationship` | array | Não | Relações com outros Resources (parent/child, conectado-a, alimentado-por). REQ-MOD02-024. |
-| `validFor` | TimePeriod | Não | Período de validade. |
-| `startOperatingDate` | datetime | Não | Data de início de operação. |
-| `endOperatingDate` | datetime | Não | Data prevista/efetiva de descomissionamento. |
+| Atributo TMF             | Tipo       | Obrigatório | Observação V.tal                                                                             |
+| ------------------------ | ---------- | :---------: | -------------------------------------------------------------------------------------------- |
+| `id`                     | string     |     Sim     | UUID v7 — identificador estável global.                                                      |
+| `name`                   | string     |     Sim     | Nome operacional do Resource (ex.: "OLT-RJ-BOT-CO-01", "IP-10.20.30.40").                    |
+| `code`                   | string     |     Não     | Código curto V.tal opcional.                                                                 |
+| `@type`                  | string     |     Sim     | PhysicalResource                                                                             | LogicalResource (refinado por specs específicas). |
+| `resourceSpecification`  | EntityRef  |     Sim     | Referência à ResourceSpecification que define o tipo (REQ-MOD02-001).                        |
+| `resourceStatus`         | enum       |     Sim     | standby                                                                                      | alarm                                             | available     | reserved | unknown | suspended. |
+| `operationalState`       | enum       |     Sim     | enable                                                                                       | disable.                                          |
+| `administrativeState`    | enum       |     Sim     | locked                                                                                       | unlocked                                          | shuttingDown. |
+| `usageState`             | enum       |     Sim     | idle                                                                                         | active                                            | busy.         |
+| `place`                  | EntityRef  |     Não     | GeographicSite ou GeographicLocation (Módulo 1) onde o Resource está fisicamente.            |
+| `relatedParty`           | array      |     Não     | Owner, manufacturer, vendor (Módulo 6).                                                      |
+| `resourceCharacteristic` | array      |     Não     | Atributos específicos da instância conforme spec (serial, MAC, capacidade configurada etc.). |
+| `resourceRelationship`   | array      |     Não     | Relações com outros Resources (parent/child, conectado-a, alimentado-por). REQ-MOD02-024.    |
+| `validFor`               | TimePeriod |     Não     | Período de validade.                                                                         |
+| `startOperatingDate`     | datetime   |     Não     | Data de início de operação.                                                                  |
+| `endOperatingDate`       | datetime   |     Não     | Data prevista/efetiva de descomissionamento.                                                 |
 
 ### 10.4 Exemplo de payload
 
@@ -704,7 +717,10 @@ Atributos canônicos da entidade Resource (PhysicalResource | LogicalResource) (
   "@type": "PhysicalResource",
   "name": "OLT-RJ-BOT-CO-01",
   "code": "OLT-001",
-  "resourceSpecification": { "id": "spec-olt-huawei-ma5800-x17", "@referredType": "ResourceSpecification" },
+  "resourceSpecification": {
+    "id": "spec-olt-huawei-ma5800-x17",
+    "@referredType": "ResourceSpecification"
+  },
   "resourceStatus": "available",
   "operationalState": "enable",
   "administrativeState": "unlocked",
@@ -712,18 +728,18 @@ Atributos canônicos da entidade Resource (PhysicalResource | LogicalResource) (
   "place": { "id": "site-rj-bot-co-01-cage-3", "@referredType": "GeographicSite" },
   "startOperatingDate": "2026-02-10T00:00:00Z",
   "resourceCharacteristic": [
-    { "name": "Serial",         "value": "HW2024001234" },
-    { "name": "Tecnologia",     "value": "GPON" },
+    { "name": "Serial", "value": "HW2024001234" },
+    { "name": "Tecnologia", "value": "GPON" },
     { "name": "MAC_Management", "value": "00:1A:2B:3C:4D:5E" },
-    { "name": "Firmware",       "value": "V800R022C00SPC100" },
-    { "name": "_asset.system",  "value": "SAP" },
-    { "name": "_asset.id",      "value": "100045321" },
-    { "name": "_asset.class",   "value": "EQUIP-TRANSMISSAO" },
-    { "name": "_asset.syncedAt","value": "2026-07-28T02:10:00Z" }
+    { "name": "Firmware", "value": "V800R022C00SPC100" },
+    { "name": "_asset.system", "value": "SAP" },
+    { "name": "_asset.id", "value": "100045321" },
+    { "name": "_asset.class", "value": "EQUIP-TRANSMISSAO" },
+    { "name": "_asset.syncedAt", "value": "2026-07-28T02:10:00Z" }
   ],
   "relatedParty": [
-    { "party": { "id": "party-huawei",   "@referredType": "Organization" }, "role": "manufacturer" },
-    { "party": { "id": "party-furukawa", "@referredType": "Organization" }, "role": "vendor"  }
+    { "party": { "id": "party-huawei", "@referredType": "Organization" }, "role": "manufacturer" },
+    { "party": { "id": "party-furukawa", "@referredType": "Organization" }, "role": "vendor" }
   ]
 }
 ```
@@ -736,62 +752,61 @@ Atributos canônicos da entidade Resource (PhysicalResource | LogicalResource) (
 
 ### 10.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Resource** | POST /resource com resourceSpecification, name, status inicial, place opcional, characteristics conforme spec. |
-| **RF-002** | **Validar contra spec** | Validar resourceCharacteristic do Resource contra resourceSpecCharacteristic da spec: obrigatórios, validadores, tipos. |
-| **RF-003** | **Atualizar Resource** | PATCH com partial update; campos imutáveis (id, resourceSpecification) rejeitados. |
-| **RF-004** | **Reposicionar Resource** | PATCH em place permite mover Resource entre Sites/Locations; mudança gera evento específico. |
-| **RF-005** | **Excluir/Desativar** | Bloquear exclusão de Resource com filhos (REQ-MOD02-007) ou conexões ativas; permitir transição para administrativeState=locked + status=suspended. |
-| **RF-006** | **Listar e filtrar** | Suportar filtros por: status, type, resourceSpecification, place (incluindo descendentes do Site), characteristic, relatedParty. |
-| **RF-007** | **Detalhar (GET)** | GET /resource/{id} expande resourceSpecification, place, relatedParty conforme parâmetro fields. |
-| **RF-008** | **Importação em massa** | POST /resource/bulk para criação em lote com validação completa e relatório de sucesso/falha por item. |
-| **RF-009** | **Histórico de estados** | Endpoint GET /resource/{id}/history retorna sequência de mudanças (via Event Store). |
-| **RF-010** | **Eventos** | Publicar TMF688: ResourceCreateEvent, ResourceAttributeValueChangeEvent, ResourceStateChangeEvent, ResourceDeleteEvent. |
+| ID         | Nome                                | Descrição                                                                                                                                                                                               |
+| ---------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Resource**                  | POST /resource com resourceSpecification, name, status inicial, place opcional, characteristics conforme spec.                                                                                          |
+| **RF-002** | **Validar contra spec**             | Validar resourceCharacteristic do Resource contra resourceSpecCharacteristic da spec: obrigatórios, validadores, tipos.                                                                                 |
+| **RF-003** | **Atualizar Resource**              | PATCH com partial update; campos imutáveis (id, resourceSpecification) rejeitados.                                                                                                                      |
+| **RF-004** | **Reposicionar Resource**           | PATCH em place permite mover Resource entre Sites/Locations; mudança gera evento específico.                                                                                                            |
+| **RF-005** | **Excluir/Desativar**               | Bloquear exclusão de Resource com filhos (REQ-MOD02-007) ou conexões ativas; permitir transição para administrativeState=locked + status=suspended.                                                     |
+| **RF-006** | **Listar e filtrar**                | Suportar filtros por: status, type, resourceSpecification, place (incluindo descendentes do Site), characteristic, relatedParty.                                                                        |
+| **RF-007** | **Detalhar (GET)**                  | GET /resource/{id} expande resourceSpecification, place, relatedParty conforme parâmetro fields.                                                                                                        |
+| **RF-008** | **Importação em massa**             | POST /resource/bulk para criação em lote com validação completa e relatório de sucesso/falha por item.                                                                                                  |
+| **RF-009** | **Histórico de estados**            | Endpoint GET /resource/{id}/history retorna sequência de mudanças (via Event Store).                                                                                                                    |
+| **RF-010** | **Eventos**                         | Publicar TMF688: ResourceCreateEvent, ResourceAttributeValueChangeEvent, ResourceStateChangeEvent, ResourceDeleteEvent.                                                                                 |
 | **RF-011** | **Referência de ativo corporativo** | Manter o grupo de characteristics `_asset` (`_asset.system`, `_asset.id`, `_asset.class`, `_asset.syncedAt`) apontando para o registro do ativo no ERP (SAP), pesquisável como qualquer characteristic. |
 
 > **`_asset` não é `_origin`.** `_origin` (C5, D-RES-001) registra **de onde o dado veio** na migração e é imutável depois da carga. `_asset` registra **qual ativo corporativo** corresponde ao recurso — é uma referência viva, que pode ser criada, corrigida e ressincronizada ao longo da vida do recurso. Um mesmo Resource pode ter `_origin` de um legado e `_asset` do SAP ao mesmo tempo, e nenhum dos dois é fonte de verdade técnica. A autoridade e a direção da sincronização estão em aberto — ver Q-RES-013.
 
 ### 10.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | resourceSpecification, name, resourceStatus, operationalState, administrativeState e usageState são obrigatórios na criação. |
-| **RN-002** | Atributo characteristic mandatory da spec é obrigatório no Resource. |
-| **RN-003** | place, quando informado, deve ser GeographicSite Active ou InConstruction (validação cross-module). |
-| **RN-004** | Resource não pode ser excluído fisicamente — apenas administrativamente desativado (administrativeState=locked + status=suspended). |
-| **RN-005** | Mudança de place de Resource Active emite warning se houver dependências (conexões físicas ativas). |
-| **RN-006** | Toda criação, alteração e mudança de estado publica evento TMF688 e gera Audit Trail. |
-| **RN-007** | code, quando informado, deve ser único dentro da mesma ResourceSpecification. |
-| **RN-008** | `_asset.*` é opcional: recurso sem ativo corporativo associado é válido e não bloqueia nenhum fluxo técnico. |
+| ID         | Regra de Negócio                                                                                                                                                      |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | resourceSpecification, name, resourceStatus, operationalState, administrativeState e usageState são obrigatórios na criação.                                          |
+| **RN-002** | Atributo characteristic mandatory da spec é obrigatório no Resource.                                                                                                  |
+| **RN-003** | place, quando informado, deve ser GeographicSite Active ou InConstruction (validação cross-module).                                                                   |
+| **RN-004** | Resource não pode ser excluído fisicamente — apenas administrativamente desativado (administrativeState=locked + status=suspended).                                   |
+| **RN-005** | Mudança de place de Resource Active emite warning se houver dependências (conexões físicas ativas).                                                                   |
+| **RN-006** | Toda criação, alteração e mudança de estado publica evento TMF688 e gera Audit Trail.                                                                                 |
+| **RN-007** | code, quando informado, deve ser único dentro da mesma ResourceSpecification.                                                                                         |
+| **RN-008** | `_asset.*` é opcional: recurso sem ativo corporativo associado é válido e não bloqueia nenhum fluxo técnico.                                                          |
 | **RN-009** | `_asset.*` nunca é fonte de verdade técnica — divergência entre ERP e inventário é registrada como finding (REQ-MOD02-027), não resolvida por sobrescrita automática. |
-| **RN-010** | `_asset.id`, quando informado, é único por `_asset.system` — dois recursos não referenciam o mesmo ativo corporativo. |
+| **RN-010** | `_asset.id`, quando informado, é único por `_asset.system` — dois recursos não referenciam o mesmo ativo corporativo.                                                 |
 
 ### 10.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criação válida** | POST com resourceSpec=spec-olt-huawei e characteristic Serial="HW001234" retorna 201. |
-| **CA-002** | **Spec Retired bloqueia** | POST com spec em Retired retorna 400. |
-| **CA-003** | **Characteristic obrigatório** | POST sem characteristic mandatory da spec retorna 400 explicando o atributo faltante. |
-| **CA-004** | **Validador de characteristic** | characteristic com valor falhando no validator regex retorna 400. |
-| **CA-005** | **Site Active validado** | POST com place em Site Retired retorna 400. |
-| **CA-006** | **Bloqueio de exclusão física** | DELETE /resource retorna 405 sempre; uso de PATCH com locked é o caminho correto. |
-| **CA-007** | **Filtro por Site** | GET /resource?place.id={siteId}&include=descendants retorna Resources do Site e sub-sites. |
-| **CA-008** | **Importação em massa** | POST /resource/bulk com 1000 itens retorna relatório com sucessos e falhas detalhadas. |
-| **CA-009** | **Evento publicado** | Criação publica ResourceCreateEvent em resource.{type}.v1 (ex.: resource.physical.v1). |
-| **CA-010** | **Referência de ativo** | Criar Resource com `_asset.system=SAP` e `_asset.id=100045321` permite consultá-lo por essa chave; repetir o mesmo `_asset.id` em outro Resource retorna 409. |
+| ID         | Critério                        | Resultado Esperado                                                                                                                                            |
+| ---------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Criação válida**              | POST com resourceSpec=spec-olt-huawei e characteristic Serial="HW001234" retorna 201.                                                                         |
+| **CA-002** | **Spec Retired bloqueia**       | POST com spec em Retired retorna 400.                                                                                                                         |
+| **CA-003** | **Characteristic obrigatório**  | POST sem characteristic mandatory da spec retorna 400 explicando o atributo faltante.                                                                         |
+| **CA-004** | **Validador de characteristic** | characteristic com valor falhando no validator regex retorna 400.                                                                                             |
+| **CA-005** | **Site Active validado**        | POST com place em Site Retired retorna 400.                                                                                                                   |
+| **CA-006** | **Bloqueio de exclusão física** | DELETE /resource retorna 405 sempre; uso de PATCH com locked é o caminho correto.                                                                             |
+| **CA-007** | **Filtro por Site**             | GET /resource?place.id={siteId}&include=descendants retorna Resources do Site e sub-sites.                                                                    |
+| **CA-008** | **Importação em massa**         | POST /resource/bulk com 1000 itens retorna relatório com sucessos e falhas detalhadas.                                                                        |
+| **CA-009** | **Evento publicado**            | Criação publica ResourceCreateEvent em resource.{type}.v1 (ex.: resource.physical.v1).                                                                        |
+| **CA-010** | **Referência de ativo**         | Criar Resource com `_asset.system=SAP` e `_asset.id=100045321` permite consultá-lo por essa chave; repetir o mesmo `_asset.id` em outro Resource retorna 409. |
 
 ### 10.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Modelagem CRUD canônica** | Formulários específicos por tipo | Genérico via metamodelo | Genérico com refinamento (DCIM) | **Resource conforme TMF639 (unificado)** |
-| **Estados operacionais** | Estado ciclo de vida (custom) | Atributos do metamodelo | status (limitado) | **4 estados TMF (status, op, adm, usage)** |
-| **Validação contra spec** | Sim (parametrizada) | Sim (metamodelo) | Sim (limitada) | **Validação canônica via spec** |
-| **Mudança de localização** | Reassignment manual | Sim | Sim (rack/location) | **Eventos específicos de mudança** |
-| **Soft-delete (sem exclusão física)** | Parcial | Sim | Sim | **Obrigatório (apenas locked)** |
-
+| Capacidade                            | Netwin                           | Kuwaiba                 | NetBox                          | Decisão Nexus                              |
+| ------------------------------------- | -------------------------------- | ----------------------- | ------------------------------- | ------------------------------------------ |
+| **Modelagem CRUD canônica**           | Formulários específicos por tipo | Genérico via metamodelo | Genérico com refinamento (DCIM) | **Resource conforme TMF639 (unificado)**   |
+| **Estados operacionais**              | Estado ciclo de vida (custom)    | Atributos do metamodelo | status (limitado)               | **4 estados TMF (status, op, adm, usage)** |
+| **Validação contra spec**             | Sim (parametrizada)              | Sim (metamodelo)        | Sim (limitada)                  | **Validação canônica via spec**            |
+| **Mudança de localização**            | Reassignment manual              | Sim                     | Sim (rack/location)             | **Eventos específicos de mudança**         |
+| **Soft-delete (sem exclusão física)** | Parcial                          | Sim                     | Sim                             | **Obrigatório (apenas locked)**            |
 
 ---
 
@@ -814,14 +829,14 @@ A modelagem ITU-T X.731 adotada pelo TMF639 (status, operational, administrative
 
 Atributos canônicos da entidade Resource.{resourceStatus, operationalState, administrativeState, usageState} + StateChangeEvent (TMF639 + TMF688):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceStatus` | enum | Sim | standby | alarm | available | reserved | unknown | suspended (X.731 status). |
-| `operationalState` | enum | Sim | enable | disable. |
-| `administrativeState` | enum | Sim | locked | unlocked | shuttingDown. |
-| `usageState` | enum | Sim | idle | active | busy. |
-| `statusReason` | string | Não | Motivo da última transição. |
-| `statusDate` | datetime | Sim | Data da última mudança em qualquer dimensão de status. |
+| Atributo TMF          | Tipo     | Obrigatório | Observação V.tal                                       |
+| --------------------- | -------- | :---------: | ------------------------------------------------------ |
+| `resourceStatus`      | enum     |     Sim     | standby                                                | alarm    | available     | reserved | unknown | suspended (X.731 status). |
+| `operationalState`    | enum     |     Sim     | enable                                                 | disable. |
+| `administrativeState` | enum     |     Sim     | locked                                                 | unlocked | shuttingDown. |
+| `usageState`          | enum     |     Sim     | idle                                                   | active   | busy.         |
+| `statusReason`        | string   |     Não     | Motivo da última transição.                            |
+| `statusDate`          | datetime |     Sim     | Data da última mudança em qualquer dimensão de status. |
 
 ### 11.4 Exemplo de payload
 
@@ -833,7 +848,7 @@ Atributos canônicos da entidade Resource.{resourceStatus, operationalState, adm
   "event": {
     "resource": { "id": "res-olt-rj-bot-co-01", "@referredType": "Resource" },
     "previousState": { "resourceStatus": "available", "administrativeState": "unlocked" },
-    "newState":      { "resourceStatus": "available", "administrativeState": "shuttingDown" },
+    "newState": { "resourceStatus": "available", "administrativeState": "shuttingDown" },
     "statusReason": "Iniciando janela de manutencao programada"
   }
 }
@@ -846,47 +861,46 @@ Atributos canônicos da entidade Resource.{resourceStatus, operationalState, adm
 
 ### 11.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Estados canônicos** | Suportar os 4 eixos X.731: status (6 valores), operationalState (2), administrativeState (3), usageState (3). |
-| **RF-002** | **Combinações canônicas** | Definir combinações nomeadas para UI: InOperation, InMaintenance, InDefect, Reserved, Decommissioned, Planned. |
-| **RF-003** | **Matriz de transições** | Configurar matriz de transições permitidas para cada dimensão (ex.: locked exige passar por shuttingDown se Resource estava active). |
-| **RF-004** | **Histórico via eventos** | Cada mudança publica ResourceStateChangeEvent TMF688 com estado anterior/novo e usuário. |
-| **RF-005** | **Consulta de histórico** | GET /resource/{id}/history retorna sequência cronológica. |
-| **RF-006** | **Restrição em provisionamento** | Bloquear alocação de Resource em status reserved ou suspended para novos serviços. |
-| **RF-007** | **Alerta operacional** | Mudança para alarm dispara notificação para equipes de operação configuráveis. |
-| **RF-008** | **Recompute automático** | usageState pode ser recalculado automaticamente a partir de consumo por Services/conexões. |
+| ID         | Nome                             | Descrição                                                                                                                            |
+| ---------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **RF-001** | **Estados canônicos**            | Suportar os 4 eixos X.731: status (6 valores), operationalState (2), administrativeState (3), usageState (3).                        |
+| **RF-002** | **Combinações canônicas**        | Definir combinações nomeadas para UI: InOperation, InMaintenance, InDefect, Reserved, Decommissioned, Planned.                       |
+| **RF-003** | **Matriz de transições**         | Configurar matriz de transições permitidas para cada dimensão (ex.: locked exige passar por shuttingDown se Resource estava active). |
+| **RF-004** | **Histórico via eventos**        | Cada mudança publica ResourceStateChangeEvent TMF688 com estado anterior/novo e usuário.                                             |
+| **RF-005** | **Consulta de histórico**        | GET /resource/{id}/history retorna sequência cronológica.                                                                            |
+| **RF-006** | **Restrição em provisionamento** | Bloquear alocação de Resource em status reserved ou suspended para novos serviços.                                                   |
+| **RF-007** | **Alerta operacional**           | Mudança para alarm dispara notificação para equipes de operação configuráveis.                                                       |
+| **RF-008** | **Recompute automático**         | usageState pode ser recalculado automaticamente a partir de consumo por Services/conexões.                                           |
 
 ### 11.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
+| ID         | Regra de Negócio                                                                                                         |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------ |
 | **RN-001** | Status inicial padrão na criação: standby + enable + unlocked + idle (Resource recém-cadastrado, ainda não em operação). |
-| **RN-002** | Transição para administrativeState=locked exige passagem por shuttingDown se usageState != idle. |
-| **RN-003** | operationalState=disable é tipicamente gerado por sistemas de monitoramento (alarmes), não por intervenção manual. |
-| **RN-004** | Recursos em resourceStatus=suspended ou administrativeState=locked não aceitam novas alocações. |
-| **RN-005** | Eventos de StateChange são imutáveis. |
-| **RN-006** | Mudanças críticas (locked, suspended) podem requerer aprovação via Process Orchestration (Módulo 5). |
+| **RN-002** | Transição para administrativeState=locked exige passagem por shuttingDown se usageState != idle.                         |
+| **RN-003** | operationalState=disable é tipicamente gerado por sistemas de monitoramento (alarmes), não por intervenção manual.       |
+| **RN-004** | Recursos em resourceStatus=suspended ou administrativeState=locked não aceitam novas alocações.                          |
+| **RN-005** | Eventos de StateChange são imutáveis.                                                                                    |
+| **RN-006** | Mudanças críticas (locked, suspended) podem requerer aprovação via Process Orchestration (Módulo 5).                     |
 
 ### 11.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Estado inicial** | POST cria Resource com status=standby, op=enable, adm=unlocked, usage=idle. |
-| **CA-002** | **Transição válida** | PATCH para administrativeState=locked em Resource active aceita apenas via shuttingDown intermediário. |
-| **CA-003** | **Evento publicado** | Toda mudança publica StateChangeEvent em resource.{type}.lifecycle.v1. |
+| ID         | Critério                 | Resultado Esperado                                                                                          |
+| ---------- | ------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Estado inicial**       | POST cria Resource com status=standby, op=enable, adm=unlocked, usage=idle.                                 |
+| **CA-002** | **Transição válida**     | PATCH para administrativeState=locked em Resource active aceita apenas via shuttingDown intermediário.      |
+| **CA-003** | **Evento publicado**     | Toda mudança publica StateChangeEvent em resource.{type}.lifecycle.v1.                                      |
 | **CA-004** | **Bloqueio em alocação** | POST de Service consumindo Resource em status=reserved retorna 409 (validação cross-module Service Domain). |
-| **CA-005** | **Histórico completo** | GET /resource/{id}/history retorna lista de mudanças em ordem cronológica. |
+| **CA-005** | **Histórico completo**   | GET /resource/{id}/history retorna lista de mudanças em ordem cronológica.                                  |
 
 ### 11.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Modelagem de estado** | Estado único (texto) | Sem ciclo formal | status único com choices | **X.731 (4 eixos) conforme TMF639** |
-| **Histórico de transições** | Não identificado no levantamento | Audit Trail global | Não identificado no levantamento | **StateChangeEvent (TMF688) imutável** |
-| **Combinações canônicas para UI** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim — 6 combinações nomeadas** |
-| **Aprovação para mudanças críticas** | Não identificado no levantamento | Workflow BPMN possível | Não identificado no levantamento | **Integração com Process Orchestration** |
-
+| Capacidade                           | Netwin                           | Kuwaiba                          | NetBox                           | Decisão Nexus                            |
+| ------------------------------------ | -------------------------------- | -------------------------------- | -------------------------------- | ---------------------------------------- |
+| **Modelagem de estado**              | Estado único (texto)             | Sem ciclo formal                 | status único com choices         | **X.731 (4 eixos) conforme TMF639**      |
+| **Histórico de transições**          | Não identificado no levantamento | Audit Trail global               | Não identificado no levantamento | **StateChangeEvent (TMF688) imutável**   |
+| **Combinações canônicas para UI**    | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim — 6 combinações nomeadas**         |
+| **Aprovação para mudanças críticas** | Não identificado no levantamento | Workflow BPMN possível           | Não identificado no levantamento | **Integração com Process Orchestration** |
 
 ---
 
@@ -909,12 +923,12 @@ Sem hierarquia de contenção, não é possível modelar com precisão a topolog
 
 Atributos canônicos da entidade resourceRelationship com type=containsAsChild (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceRelationship` | array | Não | Em Resource: lista de relações com outros Resources. |
-| `relationshipType` | enum | Sim | containsAsChild | containedBy | connectsTo | aliasOf | replaces. |
-| `resource` | EntityRef | Sim | Resource relacionado. |
-| `characteristic` | array | Não | Atributos da relação (ex.: posição em U no rack, slot na placa). |
+| Atributo TMF           | Tipo      | Obrigatório | Observação V.tal                                                 |
+| ---------------------- | --------- | :---------: | ---------------------------------------------------------------- |
+| `resourceRelationship` | array     |     Não     | Em Resource: lista de relações com outros Resources.             |
+| `relationshipType`     | enum      |     Sim     | containsAsChild                                                  | containedBy | connectsTo | aliasOf | replaces. |
+| `resource`             | EntityRef |     Sim     | Resource relacionado.                                            |
+| `characteristic`       | array     |     Não     | Atributos da relação (ex.: posição em U no rack, slot na placa). |
 
 ### 12.4 Exemplo de payload
 
@@ -922,13 +936,16 @@ Atributos canônicos da entidade resourceRelationship com type=containsAsChild (
 {
   "id": "res-card-gpon-rj-bot-001-slot-5",
   "name": "Card GPON Slot 5",
-  "resourceSpecification": { "id": "spec-card-gpon-h805", "@referredType": "ResourceSpecification" },
+  "resourceSpecification": {
+    "id": "spec-card-gpon-h805",
+    "@referredType": "ResourceSpecification"
+  },
   "resourceRelationship": [
-    { "relationshipType": "containedBy",
+    {
+      "relationshipType": "containedBy",
       "resource": { "id": "res-olt-rj-bot-co-01", "@referredType": "Resource" },
-      "characteristic": [
-        { "name": "slot", "value": 5 }
-      ] }
+      "characteristic": [{ "name": "slot", "value": 5 }]
+    }
   ]
 }
 ```
@@ -940,54 +957,53 @@ Atributos canônicos da entidade resourceRelationship com type=containsAsChild (
 
 ### 12.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
+| ID         | Nome                           | Descrição                                                                                                                  |
+| ---------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
 | **RF-001** | **Criar relação de contenção** | Adicionar entry em resourceRelationship do filho com type=containedBy e referência ao pai (ou no pai com containsAsChild). |
-| **RF-002** | **Validação contra catálogo** | Verificar que spec do filho está em resourceSpecRelationship.containsAsChild da spec do pai; caso contrário rejeitar. |
-| **RF-003** | **Posição física** | Suportar characteristic da relação para posição física: slot, U position, port number. |
-| **RF-004** | **Prevenção de ciclo** | Impedir que Resource seja contido em seu próprio descendente. |
-| **RF-005** | **Limites de capacidade** | Validar limites: número máximo de filhos do tipo X conforme spec do pai. |
-| **RF-006** | **Visualização hierárquica** | GET /resource/{id}/tree retorna árvore completa de contenção (descendentes). |
-| **RF-007** | **Visualização inversa** | GET /resource/{id}/parent retorna cadeia de containers (ancestrais até a raiz). |
-| **RF-008** | **Reposicionamento** | Permitir mover Resource filho para outro pai compatível (ex.: trocar placa de slot). |
-| **RF-009** | **Cascata de eventos** | Mudança de status em Resource pai propaga eventos informativos para filhos (não muda status filho automaticamente). |
-| **RF-010** | **Eventos** | Publicar ResourceRelationshipChangeEvent a cada criação/alteração de contenção. |
+| **RF-002** | **Validação contra catálogo**  | Verificar que spec do filho está em resourceSpecRelationship.containsAsChild da spec do pai; caso contrário rejeitar.      |
+| **RF-003** | **Posição física**             | Suportar characteristic da relação para posição física: slot, U position, port number.                                     |
+| **RF-004** | **Prevenção de ciclo**         | Impedir que Resource seja contido em seu próprio descendente.                                                              |
+| **RF-005** | **Limites de capacidade**      | Validar limites: número máximo de filhos do tipo X conforme spec do pai.                                                   |
+| **RF-006** | **Visualização hierárquica**   | GET /resource/{id}/tree retorna árvore completa de contenção (descendentes).                                               |
+| **RF-007** | **Visualização inversa**       | GET /resource/{id}/parent retorna cadeia de containers (ancestrais até a raiz).                                            |
+| **RF-008** | **Reposicionamento**           | Permitir mover Resource filho para outro pai compatível (ex.: trocar placa de slot).                                       |
+| **RF-009** | **Cascata de eventos**         | Mudança de status em Resource pai propaga eventos informativos para filhos (não muda status filho automaticamente).        |
+| **RF-010** | **Eventos**                    | Publicar ResourceRelationshipChangeEvent a cada criação/alteração de contenção.                                            |
 
 ### 12.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Resource pode ter no máximo um parent (containedBy é cardinalidade 1). |
+| ID         | Regra de Negócio                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------------------ |
+| **RN-001** | Resource pode ter no máximo um parent (containedBy é cardinalidade 1).                                       |
 | **RN-002** | Combinação spec-pai/spec-filho deve estar no catálogo (REQ-MOD02-001) — caso contrário, criação é rejeitada. |
-| **RN-003** | Não é permitido ciclo na hierarquia de contenção. |
-| **RN-004** | Limites de capacidade da spec do pai são validados (ex.: chassi com 17 slots não aceita 18ª placa). |
-| **RN-005** | characteristic de posição (slot, U) é único por pai — não há duas placas no mesmo slot. |
-| **RN-006** | Excluir Resource pai com filhos é bloqueado; é necessário desvincular ou desativar filhos primeiro. |
-| **RN-007** | Toda alteração de relação publica evento TMF688 e gera Audit Trail. |
+| **RN-003** | Não é permitido ciclo na hierarquia de contenção.                                                            |
+| **RN-004** | Limites de capacidade da spec do pai são validados (ex.: chassi com 17 slots não aceita 18ª placa).          |
+| **RN-005** | characteristic de posição (slot, U) é único por pai — não há duas placas no mesmo slot.                      |
+| **RN-006** | Excluir Resource pai com filhos é bloqueado; é necessário desvincular ou desativar filhos primeiro.          |
+| **RN-007** | Toda alteração de relação publica evento TMF688 e gera Audit Trail.                                          |
 
 ### 12.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Contenção válida** | POST de Card em OLT cujo spec pai aceita Card como filho retorna 201. |
-| **CA-002** | **Contenção inválida** | POST de Card em Rack diretamente (sem OLT intermediária) retorna 400. |
-| **CA-003** | **Slot conflitante** | POST de segunda Card no slot 5 da mesma OLT retorna 409 (slot já ocupado). |
-| **CA-004** | **Prevenção de ciclo** | PATCH tentando colocar Resource A como filho de B que já é descendente de A retorna 400. |
-| **CA-005** | **Limite de capacidade** | POST de 18ª Card em OLT com max=17 retorna 400 com mensagem específica. |
-| **CA-006** | **Visualização da árvore** | GET /resource/{id}/tree retorna estrutura aninhada com todos os Resources contidos. |
-| **CA-007** | **Reposicionar** | PATCH em resourceRelationship.resource para outro pai compatível é aceito; pai antigo perde a referência. |
-| **CA-008** | **Bloqueio de exclusão** | DELETE em Resource com filhos retorna 409 com lista de filhos. |
+| ID         | Critério                   | Resultado Esperado                                                                                        |
+| ---------- | -------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Contenção válida**       | POST de Card em OLT cujo spec pai aceita Card como filho retorna 201.                                     |
+| **CA-002** | **Contenção inválida**     | POST de Card em Rack diretamente (sem OLT intermediária) retorna 400.                                     |
+| **CA-003** | **Slot conflitante**       | POST de segunda Card no slot 5 da mesma OLT retorna 409 (slot já ocupado).                                |
+| **CA-004** | **Prevenção de ciclo**     | PATCH tentando colocar Resource A como filho de B que já é descendente de A retorna 400.                  |
+| **CA-005** | **Limite de capacidade**   | POST de 18ª Card em OLT com max=17 retorna 400 com mensagem específica.                                   |
+| **CA-006** | **Visualização da árvore** | GET /resource/{id}/tree retorna estrutura aninhada com todos os Resources contidos.                       |
+| **CA-007** | **Reposicionar**           | PATCH em resourceRelationship.resource para outro pai compatível é aceito; pai antigo perde a referência. |
+| **CA-008** | **Bloqueio de exclusão**   | DELETE em Resource com filhos retorna 409 com lista de filhos.                                            |
 
 ### 12.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Hierarquia formal de contenção** | Implícita (formulários) | Containment Manager | rack.devices, device.modules | **resourceRelationship containsAsChild (TMF639)** |
-| **Validação contra catálogo** | Limitada | Sim (metamodelo) | Sim (Device Type) | **Validação canônica via spec relationship** |
-| **Posição física (slot, U)** | Sim (campo específico) | Sim | Sim (Rack U position) | **characteristic da relação** |
-| **Limites de capacidade** | Limitada | Sim | Sim (Device Bays, Module Bays) | **Validação no save** |
-| **Reposicionamento** | Sim (manual) | Sim | Sim | **Sim com Audit** |
-
+| Capacidade                         | Netwin                  | Kuwaiba             | NetBox                         | Decisão Nexus                                     |
+| ---------------------------------- | ----------------------- | ------------------- | ------------------------------ | ------------------------------------------------- |
+| **Hierarquia formal de contenção** | Implícita (formulários) | Containment Manager | rack.devices, device.modules   | **resourceRelationship containsAsChild (TMF639)** |
+| **Validação contra catálogo**      | Limitada                | Sim (metamodelo)    | Sim (Device Type)              | **Validação canônica via spec relationship**      |
+| **Posição física (slot, U)**       | Sim (campo específico)  | Sim                 | Sim (Rack U position)          | **characteristic da relação**                     |
+| **Limites de capacidade**          | Limitada                | Sim                 | Sim (Device Bays, Module Bays) | **Validação no save**                             |
+| **Reposicionamento**               | Sim (manual)            | Sim                 | Sim                            | **Sim com Audit**                                 |
 
 ---
 
@@ -1012,53 +1028,57 @@ O Netwin trata Suportes (postes, dutos, manholes) como entidades de primeira cla
 
 Atributos canônicos da entidade PhysicalResource especializado (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | Tipo de estrutura (Poste-Eucalipto-10m, Manhole-AT, Duto-PVC-100mm, Torre-Triangular-30m, CaixaEmenda-FOSC). |
-| `place` | EntityRef | Sim | GeographicLocation. Point para postes/manholes/torres; LineString para dutos. |
-| `resourceCharacteristic` | array | Não | Atributos específicos: altura, material, propriedade (V.tal/concessionária), capacidade, identificação externa (Sicom, número da concessionária). |
-| `resourceRelationship` | array | Não | Relação compartilhamento com cabos/Resources que passam pela estrutura (type=supports). |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                                                                                                                  |
+| ------------------------ | --------- | :---------: | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resourceSpecification`  | EntityRef |     Sim     | Tipo de estrutura (Poste-Eucalipto-10m, Manhole-AT, Duto-PVC-100mm, Torre-Triangular-30m, CaixaEmenda-FOSC).                                      |
+| `place`                  | EntityRef |     Sim     | GeographicLocation. Point para postes/manholes/torres; LineString para dutos.                                                                     |
+| `resourceCharacteristic` | array     |     Não     | Atributos específicos: altura, material, propriedade (V.tal/concessionária), capacidade, identificação externa (Sicom, número da concessionária). |
+| `resourceRelationship`   | array     |     Não     | Relação compartilhamento com cabos/Resources que passam pela estrutura (type=supports).                                                           |
 
 ### 13.4 Exemplo de payload
 
 ```json
 [
-{
-  "id": "res-poste-rjbot-0001",
-  "@type": "PhysicalResource",
-  "name": "Poste RJ-BOT-0001",
-  "resourceSpecification": { "id": "spec-poste-eucalipto-10m" },
-  "place": { "id": "loc-point-rjbot-0001", "@referredType": "GeographicLocation" },
-  "resourceStatus": "available",
-  "operationalState": "enable",
-  "administrativeState": "unlocked",
-  "usageState": "active",
-  "resourceCharacteristic": [
-    { "name": "altura_m",     "value": 10 },
-    { "name": "material",     "value": "eucalipto" },
-    { "name": "owner",        "value": "V.tal" },
-    { "name": "max_cables",   "value": 8 },
-    { "name": "cables_atual", "value": 3 },
-    { "name": "Sicom_ID",     "value": "VT-POL-123456" }
-  ]
-},
-{
-  "id": "res-duto-rjbot-0001",
-  "@type": "PhysicalResource",
-  "name": "Duto Rua Voluntarios 100-200",
-  "resourceSpecification": { "id": "spec-duto-pvc-100mm" },
-  "place": { "id": "loc-linestring-rjbot-duto-001", "@referredType": "GeographicLocation" },
-  "resourceCharacteristic": [
-    { "name": "diametro_mm",   "value": 100 },
-    { "name": "comprimento_m", "value": 800 }
-  ],
-  "resourceRelationship": [
-    { "relationshipType": "endpointA",
-      "resource": { "id": "res-caixa-rjbot-0021", "@referredType": "Resource" } },
-    { "relationshipType": "endpointZ",
-      "resource": { "id": "res-caixa-rjbot-0022", "@referredType": "Resource" } }
-  ]
-}
+  {
+    "id": "res-poste-rjbot-0001",
+    "@type": "PhysicalResource",
+    "name": "Poste RJ-BOT-0001",
+    "resourceSpecification": { "id": "spec-poste-eucalipto-10m" },
+    "place": { "id": "loc-point-rjbot-0001", "@referredType": "GeographicLocation" },
+    "resourceStatus": "available",
+    "operationalState": "enable",
+    "administrativeState": "unlocked",
+    "usageState": "active",
+    "resourceCharacteristic": [
+      { "name": "altura_m", "value": 10 },
+      { "name": "material", "value": "eucalipto" },
+      { "name": "owner", "value": "V.tal" },
+      { "name": "max_cables", "value": 8 },
+      { "name": "cables_atual", "value": 3 },
+      { "name": "Sicom_ID", "value": "VT-POL-123456" }
+    ]
+  },
+  {
+    "id": "res-duto-rjbot-0001",
+    "@type": "PhysicalResource",
+    "name": "Duto Rua Voluntarios 100-200",
+    "resourceSpecification": { "id": "spec-duto-pvc-100mm" },
+    "place": { "id": "loc-linestring-rjbot-duto-001", "@referredType": "GeographicLocation" },
+    "resourceCharacteristic": [
+      { "name": "diametro_mm", "value": 100 },
+      { "name": "comprimento_m", "value": 800 }
+    ],
+    "resourceRelationship": [
+      {
+        "relationshipType": "endpointA",
+        "resource": { "id": "res-caixa-rjbot-0021", "@referredType": "Resource" }
+      },
+      {
+        "relationshipType": "endpointZ",
+        "resource": { "id": "res-caixa-rjbot-0022", "@referredType": "Resource" }
+      }
+    ]
+  }
 ]
 ```
 
@@ -1070,54 +1090,53 @@ Atributos canônicos da entidade PhysicalResource especializado (TMF639):
 
 ### 13.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Support Structure** | POST /resource com spec do tipo SupportStructure, place obrigatório (Point/LineString), characteristics conforme spec. |
-| **RF-002** | **Tipos canônicos V.tal** | Catálogo pré-populado: Poste-Eucalipto-10m, Poste-Concreto-12m, Poste-Concessionária-9m, Manhole-AT-Padrão, Manhole-Comercial, Duto-PVC-100mm, Duto-PEAD-50mm, Torre-Triangular-30m, Torre-Monopolo-25m, Caixa-Emenda-Aérea-FOSC, Caixa-Emenda-Subterrânea. |
-| **RF-003** | **Propriedade e SLA** | Suportar characteristic owner (V.tal | Light | Enel | Cemig | CPFL | Equatorial | outras concessionárias) e contractRef para postes alugados. |
-| **RF-004** | **Capacidade física** | Para postes: characteristic max_cables e cables_atual. Para dutos, capacidade e ocupação **não são characteristics digitadas** — são derivadas da contenção definida em REQ-MOD02-026. |
-| **RF-005** | **Validação de capacidade** | Bloquear passagem de novo cabo (REQ-MOD02-010) quando a via estiver ocupada, conforme RN-005 de REQ-MOD02-026. |
-| **RF-006** | **Identificadores externos** | Manter integração com sistemas legados via characteristic Sicom_ID, Geosite_OSP_ID, Concessionária_TAG. |
-| **RF-007** | **Trajeto de dutos** | Para dutos, place=LineString com sequência de coordenadas, traçada no editor geoespacial do navegador (REQ-MOD01-013) ou importada como GeoJSON. |
-| **RF-008** | **Cadastro em massa** | Importar lote de postes/dutos via CSV/GeoJSON com validação geométrica e de catálogo. |
-| **RF-009** | **Visualização no mapa** | Renderizar Support Structures no mapa com ícones diferenciados por tipo (REQ-MOD01-011). |
-| **RF-010** | **Inventário compartilhado** | Listar todos os cabos que passam por uma estrutura: GET /resource/{id}/supports. |
+| ID         | Nome                         | Descrição                                                                                                                                                                                                                                                   |
+| ---------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Support Structure**  | POST /resource com spec do tipo SupportStructure, place obrigatório (Point/LineString), characteristics conforme spec.                                                                                                                                      |
+| **RF-002** | **Tipos canônicos V.tal**    | Catálogo pré-populado: Poste-Eucalipto-10m, Poste-Concreto-12m, Poste-Concessionária-9m, Manhole-AT-Padrão, Manhole-Comercial, Duto-PVC-100mm, Duto-PEAD-50mm, Torre-Triangular-30m, Torre-Monopolo-25m, Caixa-Emenda-Aérea-FOSC, Caixa-Emenda-Subterrânea. |
+| **RF-003** | **Propriedade e SLA**        | Suportar characteristic owner (V.tal                                                                                                                                                                                                                        | Light | Enel | Cemig | CPFL | Equatorial | outras concessionárias) e contractRef para postes alugados. |
+| **RF-004** | **Capacidade física**        | Para postes: characteristic max_cables e cables_atual. Para dutos, capacidade e ocupação **não são characteristics digitadas** — são derivadas da contenção definida em REQ-MOD02-026.                                                                      |
+| **RF-005** | **Validação de capacidade**  | Bloquear passagem de novo cabo (REQ-MOD02-010) quando a via estiver ocupada, conforme RN-005 de REQ-MOD02-026.                                                                                                                                              |
+| **RF-006** | **Identificadores externos** | Manter integração com sistemas legados via characteristic Sicom_ID, Geosite_OSP_ID, Concessionária_TAG.                                                                                                                                                     |
+| **RF-007** | **Trajeto de dutos**         | Para dutos, place=LineString com sequência de coordenadas, traçada no editor geoespacial do navegador (REQ-MOD01-013) ou importada como GeoJSON.                                                                                                            |
+| **RF-008** | **Cadastro em massa**        | Importar lote de postes/dutos via CSV/GeoJSON com validação geométrica e de catálogo.                                                                                                                                                                       |
+| **RF-009** | **Visualização no mapa**     | Renderizar Support Structures no mapa com ícones diferenciados por tipo (REQ-MOD01-011).                                                                                                                                                                    |
+| **RF-010** | **Inventário compartilhado** | Listar todos os cabos que passam por uma estrutura: GET /resource/{id}/supports.                                                                                                                                                                            |
 
 ### 13.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | place é obrigatório para Support Structures — recurso de OSP sem georreferenciamento é inválido. |
-| **RN-002** | Postes de terceiros (owner != V.tal) exigem contractRef para faturamento de aluguel. |
-| **RN-003** | Duto sem via livre não aceita novos cabos — exigir expansão, sub-duto ou novo duto. A contagem de ocupação é derivada (REQ-MOD02-026 RN-004), nunca mantida à mão. |
-| **RN-004** | Excluir Support Structure com cabos passando é bloqueado — exigir realocação dos cabos primeiro. |
-| **RN-005** | Caixa de emenda só pode existir em pontos onde há cabo passando ou planejado. |
-| **RN-006** | Sicom_ID e Geosite_OSP_ID são únicos quando informados (rastreabilidade com sistemas legados). |
-| **RN-007** | Toda alteração geográfica (mover poste) gera evento crítico e exige Audit Trail. |
+| ID         | Regra de Negócio                                                                                                                                                                                                          |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | place é obrigatório para Support Structures — recurso de OSP sem georreferenciamento é inválido.                                                                                                                          |
+| **RN-002** | Postes de terceiros (owner != V.tal) exigem contractRef para faturamento de aluguel.                                                                                                                                      |
+| **RN-003** | Duto sem via livre não aceita novos cabos — exigir expansão, sub-duto ou novo duto. A contagem de ocupação é derivada (REQ-MOD02-026 RN-004), nunca mantida à mão.                                                        |
+| **RN-004** | Excluir Support Structure com cabos passando é bloqueado — exigir realocação dos cabos primeiro.                                                                                                                          |
+| **RN-005** | Caixa de emenda só pode existir em pontos onde há cabo passando ou planejado.                                                                                                                                             |
+| **RN-006** | Sicom_ID e Geosite_OSP_ID são únicos quando informados (rastreabilidade com sistemas legados).                                                                                                                            |
+| **RN-007** | Toda alteração geográfica (mover poste) gera evento crítico e exige Audit Trail.                                                                                                                                          |
 | **RN-008** | Support Structure linear (duto, banco de dutos) exige endpoints A e Z apontando para estruturas reais — ver REQ-MOD02-026 RN-001 e RN-002. Estrutura linear sem extremidades é detectada como finding pelo REQ-MOD02-027. |
 
 ### 13.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criar poste próprio** | POST com spec=Poste-Eucalipto-10m, place=Point, characteristic=[{altura:10},{material:eucalipto},{owner:V.tal}] retorna 201. |
-| **CA-002** | **Criar poste de terceiro** | POST com owner=Light + contractRef preenchido é aceito; sem contractRef retorna 400. |
-| **CA-003** | **Criar duto com trajeto** | POST com spec=Duto-PVC-100mm, place=LineString com 5 pontos e endpoints A/Z em caixas existentes retorna 201; sem endpoint retorna 422 (REQ-MOD02-026 CA-002). |
-| **CA-004** | **Capacidade esgotada** | Tentativa de adicionar cabo em duto sem via livre retorna 409, com a ocupação derivada na mensagem. |
-| **CA-005** | **Bloqueio de exclusão** | DELETE em poste com cabos passando retorna 409 com lista de cabos. |
-| **CA-006** | **Importação em lote** | POST /resource/bulk com 500 postes em GeoJSON retorna relatório com sucessos/falhas detalhados. |
-| **CA-007** | **Visualização** | GET /map/resources?type=SupportStructure&bbox=... retorna FeatureCollection com postes/manholes/dutos. |
+| ID         | Critério                    | Resultado Esperado                                                                                                                                             |
+| ---------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Criar poste próprio**     | POST com spec=Poste-Eucalipto-10m, place=Point, characteristic=[{altura:10},{material:eucalipto},{owner:V.tal}] retorna 201.                                   |
+| **CA-002** | **Criar poste de terceiro** | POST com owner=Light + contractRef preenchido é aceito; sem contractRef retorna 400.                                                                           |
+| **CA-003** | **Criar duto com trajeto**  | POST com spec=Duto-PVC-100mm, place=LineString com 5 pontos e endpoints A/Z em caixas existentes retorna 201; sem endpoint retorna 422 (REQ-MOD02-026 CA-002). |
+| **CA-004** | **Capacidade esgotada**     | Tentativa de adicionar cabo em duto sem via livre retorna 409, com a ocupação derivada na mensagem.                                                            |
+| **CA-005** | **Bloqueio de exclusão**    | DELETE em poste com cabos passando retorna 409 com lista de cabos.                                                                                             |
+| **CA-006** | **Importação em lote**      | POST /resource/bulk com 500 postes em GeoJSON retorna relatório com sucessos/falhas detalhados.                                                                |
+| **CA-007** | **Visualização**            | GET /map/resources?type=SupportStructure&bbox=... retorna FeatureCollection com postes/manholes/dutos.                                                         |
 
 ### 13.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Modelagem de Support Structures** | Sim (Outside Plant) | Subclasses no metamodelo | Não identificado no levantamento | **PhysicalResource tipado (TMF639)** |
-| **Propriedade (V.tal/terceiros)** | Sim | Atributo livre | Não identificado no levantamento | **characteristic owner + contractRef** |
-| **Capacidade de dutos** | Sim | Atributo do metamodelo | Não identificado no levantamento | **Derivada da contenção (REQ-MOD02-026), somente-leitura** |
-| **Trajeto de dutos no mapa** | Sim (Geosite OSP) | Limitado | Não identificado no levantamento | **LineString conforme TMF675** |
-| **Identificadores legados** | IDs internos | Custom attributes | Não identificado no levantamento | **Sicom_ID, Geosite_OSP_ID como characteristics** |
-
+| Capacidade                          | Netwin              | Kuwaiba                  | NetBox                           | Decisão Nexus                                              |
+| ----------------------------------- | ------------------- | ------------------------ | -------------------------------- | ---------------------------------------------------------- |
+| **Modelagem de Support Structures** | Sim (Outside Plant) | Subclasses no metamodelo | Não identificado no levantamento | **PhysicalResource tipado (TMF639)**                       |
+| **Propriedade (V.tal/terceiros)**   | Sim                 | Atributo livre           | Não identificado no levantamento | **characteristic owner + contractRef**                     |
+| **Capacidade de dutos**             | Sim                 | Atributo do metamodelo   | Não identificado no levantamento | **Derivada da contenção (REQ-MOD02-026), somente-leitura** |
+| **Trajeto de dutos no mapa**        | Sim (Geosite OSP)   | Limitado                 | Não identificado no levantamento | **LineString conforme TMF675**                             |
+| **Identificadores legados**         | IDs internos        | Custom attributes        | Não identificado no levantamento | **Sicom_ID, Geosite_OSP_ID como characteristics**          |
 
 ---
 
@@ -1140,45 +1159,49 @@ CTOs são entidade central da operação V.tal — são milhões de unidades dis
 
 Atributos canônicos da entidade PhysicalResource passivo georreferenciado (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | Tipo (CTO-Furukawa-16P, NAP-Furukawa-12P, Splitter-PLC-1x8-Externo, Caixa-Emenda-FOSC-A12-12F). |
-| `place` | EntityRef | Sim | GeographicLocation Point. |
-| `resourceCharacteristic` | array | Não | capacity_ports, ports_occupied (derivado), supporting_structure (poste/fachada onde está). |
-| `resourceRelationship` | array | Não | containsAsChild para Splitter; supportedBy para poste/estrutura. |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                                                                |
+| ------------------------ | --------- | :---------: | ----------------------------------------------------------------------------------------------- |
+| `resourceSpecification`  | EntityRef |     Sim     | Tipo (CTO-Furukawa-16P, NAP-Furukawa-12P, Splitter-PLC-1x8-Externo, Caixa-Emenda-FOSC-A12-12F). |
+| `place`                  | EntityRef |     Sim     | GeographicLocation Point.                                                                       |
+| `resourceCharacteristic` | array     |     Não     | capacity_ports, ports_occupied (derivado), supporting_structure (poste/fachada onde está).      |
+| `resourceRelationship`   | array     |     Não     | containsAsChild para Splitter; supportedBy para poste/estrutura.                                |
 
 ### 14.4 Exemplo de payload
 
 ```json
 [
-{
-  "id": "res-cto-rjbot-0001",
-  "name": "CTO-RJ-BOT-0001",
-  "resourceSpecification": { "id": "spec-cto-furukawa-16p" },
-  "place": { "id": "loc-point-cto-rjbot-0001", "@referredType": "GeographicLocation" },
-  "resourceStatus": "available",
-  "operationalState": "enable",
-  "administrativeState": "unlocked",
-  "usageState": "active",
-  "resourceCharacteristic": [
-    { "name": "capacity_ports", "value": 16 },
-    { "name": "modelo",         "value": "Furukawa CFOA-SC-AS-16P" }
-  ],
-  "resourceRelationship": [
-    { "relationshipType": "supportedBy",
-      "resource": { "id": "res-poste-rjbot-0001", "@referredType": "Resource" } }
-  ]
-},
-{
-  "id": "res-splitter-cto-rjbot-0001",
-  "name": "Splitter 1:8 CTO-RJ-BOT-0001",
-  "resourceSpecification": { "id": "spec-splitter-plc-1x8" },
-  "place": { "id": "loc-point-cto-rjbot-0001", "@referredType": "GeographicLocation" },
-  "resourceRelationship": [
-    { "relationshipType": "containedBy",
-      "resource": { "id": "res-cto-rjbot-0001", "@referredType": "Resource" } }
-  ]
-}
+  {
+    "id": "res-cto-rjbot-0001",
+    "name": "CTO-RJ-BOT-0001",
+    "resourceSpecification": { "id": "spec-cto-furukawa-16p" },
+    "place": { "id": "loc-point-cto-rjbot-0001", "@referredType": "GeographicLocation" },
+    "resourceStatus": "available",
+    "operationalState": "enable",
+    "administrativeState": "unlocked",
+    "usageState": "active",
+    "resourceCharacteristic": [
+      { "name": "capacity_ports", "value": 16 },
+      { "name": "modelo", "value": "Furukawa CFOA-SC-AS-16P" }
+    ],
+    "resourceRelationship": [
+      {
+        "relationshipType": "supportedBy",
+        "resource": { "id": "res-poste-rjbot-0001", "@referredType": "Resource" }
+      }
+    ]
+  },
+  {
+    "id": "res-splitter-cto-rjbot-0001",
+    "name": "Splitter 1:8 CTO-RJ-BOT-0001",
+    "resourceSpecification": { "id": "spec-splitter-plc-1x8" },
+    "place": { "id": "loc-point-cto-rjbot-0001", "@referredType": "GeographicLocation" },
+    "resourceRelationship": [
+      {
+        "relationshipType": "containedBy",
+        "resource": { "id": "res-cto-rjbot-0001", "@referredType": "Resource" }
+      }
+    ]
+  }
 ]
 ```
 
@@ -1190,49 +1213,48 @@ Atributos canônicos da entidade PhysicalResource passivo georreferenciado (TMF6
 
 ### 14.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Passive Device** | POST com spec, place e supportingStructure (relação com poste). |
-| **RF-002** | **Catálogo canônico V.tal** | Tipos pré-populados: CTO-16P, CTO-8P, NAP-Furukawa-12P, Splitter-PLC-1x8, Splitter-PLC-1x16, Splitter-PLC-1x32, Caixa-Emenda-Aérea, Caixa-Emenda-Subterrânea. |
-| **RF-003** | **Contenção de Splitter** | CTO contém 1 ou mais Splitters como Resource filho (REQ-MOD02-007). |
-| **RF-004** | **Portas de saída** | Cada Splitter tem ports filhas modeladas como PhysicalResource Port (REQ-MOD02-016) com input e outputs. |
-| **RF-005** | **Ocupação derivada** | ports_occupied é calculado a partir das portas filhas que têm conexão ativa (não armazenado, derivado). |
-| **RF-006** | **Vínculo a Support Structure** | resourceRelationship type=supportedBy aponta para o poste/manhole/fachada onde está fixada. |
-| **RF-007** | **Cascata de ciclo de vida** | Status do PassiveDevice impacta status das portas filhas (status reserved/suspended impede uso). |
-| **RF-008** | **Visualização no mapa** | Ícone específico no mapa diferencia CTOs por ocupação (vazia/parcial/cheia). |
-| **RF-009** | **Análise de capacidade** | Endpoint /resource/{id}/availability retorna portas disponíveis para conexão de novos clientes. |
+| ID         | Nome                            | Descrição                                                                                                                                                     |
+| ---------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Passive Device**        | POST com spec, place e supportingStructure (relação com poste).                                                                                               |
+| **RF-002** | **Catálogo canônico V.tal**     | Tipos pré-populados: CTO-16P, CTO-8P, NAP-Furukawa-12P, Splitter-PLC-1x8, Splitter-PLC-1x16, Splitter-PLC-1x32, Caixa-Emenda-Aérea, Caixa-Emenda-Subterrânea. |
+| **RF-003** | **Contenção de Splitter**       | CTO contém 1 ou mais Splitters como Resource filho (REQ-MOD02-007).                                                                                           |
+| **RF-004** | **Portas de saída**             | Cada Splitter tem ports filhas modeladas como PhysicalResource Port (REQ-MOD02-016) com input e outputs.                                                      |
+| **RF-005** | **Ocupação derivada**           | ports_occupied é calculado a partir das portas filhas que têm conexão ativa (não armazenado, derivado).                                                       |
+| **RF-006** | **Vínculo a Support Structure** | resourceRelationship type=supportedBy aponta para o poste/manhole/fachada onde está fixada.                                                                   |
+| **RF-007** | **Cascata de ciclo de vida**    | Status do PassiveDevice impacta status das portas filhas (status reserved/suspended impede uso).                                                              |
+| **RF-008** | **Visualização no mapa**        | Ícone específico no mapa diferencia CTOs por ocupação (vazia/parcial/cheia).                                                                                  |
+| **RF-009** | **Análise de capacidade**       | Endpoint /resource/{id}/availability retorna portas disponíveis para conexão de novos clientes.                                                               |
 
 ### 14.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Toda CTO deve estar supportedBy uma Support Structure (poste ou fachada). |
-| **RN-002** | A capacity_ports da CTO é determinada pela spec (não pode ser configurada manualmente). |
+| ID         | Regra de Negócio                                                                                |
+| ---------- | ----------------------------------------------------------------------------------------------- |
+| **RN-001** | Toda CTO deve estar supportedBy uma Support Structure (poste ou fachada).                       |
+| **RN-002** | A capacity_ports da CTO é determinada pela spec (não pode ser configurada manualmente).         |
 | **RN-003** | Tentativa de exceder capacity_ports da CTO ao conectar novo cliente retorna erro de capacidade. |
-| **RN-004** | Excluir CTO com portas ocupadas é bloqueado — exigir desconexão dos clientes primeiro. |
-| **RN-005** | Toda CTO tem ao menos 1 Splitter contido — sem splitter, a CTO não tem função operacional. |
-| **RN-006** | Tipos de splitter padrão V.tal: 1:8, 1:16, 1:32. Outras razões exigem aprovação especial. |
+| **RN-004** | Excluir CTO com portas ocupadas é bloqueado — exigir desconexão dos clientes primeiro.          |
+| **RN-005** | Toda CTO tem ao menos 1 Splitter contido — sem splitter, a CTO não tem função operacional.      |
+| **RN-006** | Tipos de splitter padrão V.tal: 1:8, 1:16, 1:32. Outras razões exigem aprovação especial.       |
 
 ### 14.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criar CTO completa** | POST de CTO + POST de Splitter 1:8 contido + POSTs de 8 portas: tudo aceito em sequência. |
-| **CA-002** | **Sem support structure** | POST de CTO sem supportingStructure retorna 400. |
-| **CA-003** | **Ocupação calculada** | GET /resource/{id} retorna ports_occupied derivado das portas com conexões ativas. |
-| **CA-004** | **Capacidade esgotada** | Tentar conectar 17º cliente em CTO de 16 portas retorna 409. |
-| **CA-005** | **Bloqueio de exclusão** | DELETE em CTO com clientes conectados retorna 409 com lista. |
-| **CA-006** | **Mapa diferenciado** | GET /map/resources?type=CTO renderiza com cores por nível de ocupação. |
+| ID         | Critério                  | Resultado Esperado                                                                        |
+| ---------- | ------------------------- | ----------------------------------------------------------------------------------------- |
+| **CA-001** | **Criar CTO completa**    | POST de CTO + POST de Splitter 1:8 contido + POSTs de 8 portas: tudo aceito em sequência. |
+| **CA-002** | **Sem support structure** | POST de CTO sem supportingStructure retorna 400.                                          |
+| **CA-003** | **Ocupação calculada**    | GET /resource/{id} retorna ports_occupied derivado das portas com conexões ativas.        |
+| **CA-004** | **Capacidade esgotada**   | Tentar conectar 17º cliente em CTO de 16 portas retorna 409.                              |
+| **CA-005** | **Bloqueio de exclusão**  | DELETE em CTO com clientes conectados retorna 409 com lista.                              |
+| **CA-006** | **Mapa diferenciado**     | GET /map/resources?type=CTO renderiza com cores por nível de ocupação.                    |
 
 ### 14.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Modelagem de CTO/NAP** | Entidade dedicada (Outside Plant) | PassiveDevice subclass | Não identificado no levantamento | **PhysicalResource via spec (TMF639)** |
-| **Containment de splitter** | Implícita | Sim (Containment Manager) | Não identificado no levantamento | **resourceRelationship containsAsChild** |
-| **Ocupação derivada** | Calculada | Calculada | Não identificado no levantamento | **Derivada de portas filhas em tempo real** |
-| **Vínculo a poste** | Sim | Sim (parent in OSP) | Não identificado no levantamento | **resourceRelationship supportedBy** |
-
+| Capacidade                  | Netwin                            | Kuwaiba                   | NetBox                           | Decisão Nexus                               |
+| --------------------------- | --------------------------------- | ------------------------- | -------------------------------- | ------------------------------------------- |
+| **Modelagem de CTO/NAP**    | Entidade dedicada (Outside Plant) | PassiveDevice subclass    | Não identificado no levantamento | **PhysicalResource via spec (TMF639)**      |
+| **Containment de splitter** | Implícita                         | Sim (Containment Manager) | Não identificado no levantamento | **resourceRelationship containsAsChild**    |
+| **Ocupação derivada**       | Calculada                         | Calculada                 | Não identificado no levantamento | **Derivada de portas filhas em tempo real** |
+| **Vínculo a poste**         | Sim                               | Sim (parent in OSP)       | Não identificado no levantamento | **resourceRelationship supportedBy**        |
 
 ---
 
@@ -1255,12 +1277,12 @@ Cabo óptico é a entidade mais sensível da OSP — sua modelagem incorreta cri
 
 Atributos canônicos da entidade PhysicalResource Cable + CableSegment (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | Tipo (Cabo-Optico-CFOA-12F, Cabo-Drop-Self-Supporting-1F, etc.). |
-| `place` | EntityRef | Sim | GeographicLocation LineString. |
-| `resourceCharacteristic` | array | Não | numero_fibras, tipo (CFOA/CFOI/Drop/Aéreo/Subterrâneo), comprimento_m, fabricante_etiqueta. |
-| `resourceRelationship` | array | Não | endpoint_A, endpoint_Z (em portas/splitters); passes_through (Support Structures). |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                                                            |
+| ------------------------ | --------- | :---------: | ------------------------------------------------------------------------------------------- |
+| `resourceSpecification`  | EntityRef |     Sim     | Tipo (Cabo-Optico-CFOA-12F, Cabo-Drop-Self-Supporting-1F, etc.).                            |
+| `place`                  | EntityRef |     Sim     | GeographicLocation LineString.                                                              |
+| `resourceCharacteristic` | array     |     Não     | numero_fibras, tipo (CFOA/CFOI/Drop/Aéreo/Subterrâneo), comprimento_m, fabricante_etiqueta. |
+| `resourceRelationship`   | array     |     Não     | endpoint_A, endpoint_Z (em portas/splitters); passes_through (Support Structures).          |
 
 ### 15.4 Exemplo de payload
 
@@ -1273,22 +1295,30 @@ Atributos canônicos da entidade PhysicalResource Cable + CableSegment (TMF639):
   "resourceStatus": "available",
   "operationalState": "enable",
   "resourceCharacteristic": [
-    { "name": "numero_fibras",       "value": 12 },
-    { "name": "tipo",                "value": "CFOA-SM-AS" },
-    { "name": "comprimento_m",       "value": 2400 },
+    { "name": "numero_fibras", "value": 12 },
+    { "name": "tipo", "value": "CFOA-SM-AS" },
+    { "name": "comprimento_m", "value": 2400 },
     { "name": "fabricante_etiqueta", "value": "FRK-2024-001234" }
   ],
   "resourceRelationship": [
-    { "relationshipType": "endpoint_A",
-      "resource": { "id": "res-rearport-dio01-bot-001", "@referredType": "Resource" } },
-    { "relationshipType": "endpoint_Z",
-      "resource": { "id": "res-splitter-primario-rjbot-arm-001-input", "@referredType": "Resource" } },
-    { "relationshipType": "passesThrough",
+    {
+      "relationshipType": "endpoint_A",
+      "resource": { "id": "res-rearport-dio01-bot-001", "@referredType": "Resource" }
+    },
+    {
+      "relationshipType": "endpoint_Z",
+      "resource": { "id": "res-splitter-primario-rjbot-arm-001-input", "@referredType": "Resource" }
+    },
+    {
+      "relationshipType": "passesThrough",
       "resource": { "id": "res-duto-rjbot-0001", "@referredType": "Resource" },
-      "characteristic": [{ "name": "sequencia", "value": 1 }] },
-    { "relationshipType": "passesThrough",
+      "characteristic": [{ "name": "sequencia", "value": 1 }]
+    },
+    {
+      "relationshipType": "passesThrough",
       "resource": { "id": "res-poste-rjbot-0001", "@referredType": "Resource" },
-      "characteristic": [{ "name": "sequencia", "value": 2 }] }
+      "characteristic": [{ "name": "sequencia", "value": 2 }]
+    }
   ]
 }
 ```
@@ -1301,60 +1331,59 @@ Atributos canônicos da entidade PhysicalResource Cable + CableSegment (TMF639):
 
 ### 15.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Cable** | POST com spec, place=LineString, endpoint_A, endpoint_Z, characteristic (numero_fibras, comprimento). |
-| **RF-002** | **Geração automática de Fibers** | Ao criar Cable, criar automaticamente N Resources Fiber (filhos por containsAsChild) conforme numero_fibras da spec. |
-| **RF-003** | **Trajeto sobre suportes** | Modelar passes_through como lista de Support Structures por onde o cabo passa, em ordem. |
-| **RF-004** | **Validação de capacidade** | Validar que cada Support Structure no trajeto tem capacidade disponível antes de aceitar o cabo. |
-| **RF-005** | **Endpoints tipados** | endpoint_A e endpoint_Z são referências a Port, Splitter input/output, ou Caixa de Emenda. |
-| **RF-006** | **Cable Segments** | Para cabos com mudança de tipo no meio do trajeto ou passagem por emenda, modelar como múltiplos Cable Segments ligados por Splices (REQ-MOD02-011). |
-| **RF-007** | **Atualização de trajeto** | Permitir editar place (LineString) com Audit Trail e revalidação de capacidades dos suportes. |
-| **RF-008** | **Visualização no mapa** | Renderizar cabos como linhas no mapa, com cores diferenciadas por tipo e status. |
-| **RF-009** | **Cálculo de ocupação de fibras** | GET /resource/{cableId}/fibers/availability retorna fibras livres vs ocupadas no cabo. |
-| **RF-010** | **Substituição de cabo** | Operação especial replace que substitui um cabo por outro preservando conexões nas portas. |
-| **RF-011** | **Trajeto de infraestrutura** | Expor, além do traçado geográfico (LineString), a sequência ordenada de infraestrutura atravessada — postes, caixas, bancos de dutos, dutos e sub-dutos (REQ-MOD02-026): `GET /resource/{cableId}/infra-path`. |
-| **RF-012** | **Lacunas de apoio** | Identificar trechos do cabo sem infraestrutura de apoio declarada, alimentando a regra correspondente do motor de integridade (REQ-MOD02-027). |
+| ID         | Nome                              | Descrição                                                                                                                                                                                                      |
+| ---------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Cable**                   | POST com spec, place=LineString, endpoint_A, endpoint_Z, characteristic (numero_fibras, comprimento).                                                                                                          |
+| **RF-002** | **Geração automática de Fibers**  | Ao criar Cable, criar automaticamente N Resources Fiber (filhos por containsAsChild) conforme numero_fibras da spec.                                                                                           |
+| **RF-003** | **Trajeto sobre suportes**        | Modelar passes_through como lista de Support Structures por onde o cabo passa, em ordem.                                                                                                                       |
+| **RF-004** | **Validação de capacidade**       | Validar que cada Support Structure no trajeto tem capacidade disponível antes de aceitar o cabo.                                                                                                               |
+| **RF-005** | **Endpoints tipados**             | endpoint_A e endpoint_Z são referências a Port, Splitter input/output, ou Caixa de Emenda.                                                                                                                     |
+| **RF-006** | **Cable Segments**                | Para cabos com mudança de tipo no meio do trajeto ou passagem por emenda, modelar como múltiplos Cable Segments ligados por Splices (REQ-MOD02-011).                                                           |
+| **RF-007** | **Atualização de trajeto**        | Permitir editar place (LineString) com Audit Trail e revalidação de capacidades dos suportes.                                                                                                                  |
+| **RF-008** | **Visualização no mapa**          | Renderizar cabos como linhas no mapa, com cores diferenciadas por tipo e status.                                                                                                                               |
+| **RF-009** | **Cálculo de ocupação de fibras** | GET /resource/{cableId}/fibers/availability retorna fibras livres vs ocupadas no cabo.                                                                                                                         |
+| **RF-010** | **Substituição de cabo**          | Operação especial replace que substitui um cabo por outro preservando conexões nas portas.                                                                                                                     |
+| **RF-011** | **Trajeto de infraestrutura**     | Expor, além do traçado geográfico (LineString), a sequência ordenada de infraestrutura atravessada — postes, caixas, bancos de dutos, dutos e sub-dutos (REQ-MOD02-026): `GET /resource/{cableId}/infra-path`. |
+| **RF-012** | **Lacunas de apoio**              | Identificar trechos do cabo sem infraestrutura de apoio declarada, alimentando a regra correspondente do motor de integridade (REQ-MOD02-027).                                                                 |
 
 > **Dois trajetos, não um.** O `place` LineString diz **por onde o cabo passa no mapa**; o trajeto de infraestrutura diz **em que ele se apoia**. Um cabo pode estar desenhado corretamente e ainda assim não ter duto nem poste declarado em parte do percurso — é uma lacuna de inventário, não um erro de geometria, e só a segunda visão a revela.
 
 ### 15.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Cable sem place (LineString) é inválido. |
-| **RN-002** | endpoint_A != endpoint_Z (cabo não pode ter ambos os endpoints no mesmo Resource). |
-| **RN-003** | Cada Fiber do Cable é criada como filha containsAsChild — quantidade derivada da spec. |
-| **RN-004** | Excluir Cable com fibras conectadas é bloqueado — exigir desconexão das fibras primeiro. |
-| **RN-005** | Mudança de trajeto (place) de cabo Active emite warning crítico. |
-| **RN-006** | Suporte da Cable Segments: cabo macro é Resource pai; cada segmento é Resource filho com trajeto parcial. |
-| **RN-007** | Comprimento (m) deve ser consistente com a soma dos comprimentos do LineString — validação tolerante a ±5%. |
-| **RN-008** | Cabo subterrâneo se apoia em duto ou sub-duto (`containedBy`), nunca diretamente no banco de dutos — a via é a unidade de ocupação (REQ-MOD02-026). |
+| ID         | Regra de Negócio                                                                                                                                                                            |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | Cable sem place (LineString) é inválido.                                                                                                                                                    |
+| **RN-002** | endpoint_A != endpoint_Z (cabo não pode ter ambos os endpoints no mesmo Resource).                                                                                                          |
+| **RN-003** | Cada Fiber do Cable é criada como filha containsAsChild — quantidade derivada da spec.                                                                                                      |
+| **RN-004** | Excluir Cable com fibras conectadas é bloqueado — exigir desconexão das fibras primeiro.                                                                                                    |
+| **RN-005** | Mudança de trajeto (place) de cabo Active emite warning crítico.                                                                                                                            |
+| **RN-006** | Suporte da Cable Segments: cabo macro é Resource pai; cada segmento é Resource filho com trajeto parcial.                                                                                   |
+| **RN-007** | Comprimento (m) deve ser consistente com a soma dos comprimentos do LineString — validação tolerante a ±5%.                                                                                 |
+| **RN-008** | Cabo subterrâneo se apoia em duto ou sub-duto (`containedBy`), nunca diretamente no banco de dutos — a via é a unidade de ocupação (REQ-MOD02-026).                                         |
 | **RN-009** | Cabo com `place` desenhado e sem infraestrutura de apoio em algum trecho é aceito no cadastro, mas gera finding de completude (REQ-MOD02-027) — o dado parcial é registrado, não escondido. |
 
 ### 15.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criar cabo de 12F** | POST de Cable com numero_fibras=12 cria automaticamente 12 Fibers como filhas. |
-| **CA-002** | **Endpoint inválido** | POST com endpoint_A apontando para CTO inexistente retorna 400. |
-| **CA-003** | **Capacidade de duto** | POST em trajeto que inclui duto cheio retorna 409. |
-| **CA-004** | **Bloqueio de exclusão** | DELETE em cabo com fibras conectadas a ONTs retorna 409. |
-| **CA-005** | **Ocupação de fibras** | GET /resource/{cableId}/fibers retorna lista com status de cada fibra. |
-| **CA-006** | **Substituição** | POST /resource/{cableId}/replace com novo cabo preserva conexões nas portas finais. |
+| ID         | Critério                      | Resultado Esperado                                                                                                                        |
+| ---------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Criar cabo de 12F**         | POST de Cable com numero_fibras=12 cria automaticamente 12 Fibers como filhas.                                                            |
+| **CA-002** | **Endpoint inválido**         | POST com endpoint_A apontando para CTO inexistente retorna 400.                                                                           |
+| **CA-003** | **Capacidade de duto**        | POST em trajeto que inclui duto cheio retorna 409.                                                                                        |
+| **CA-004** | **Bloqueio de exclusão**      | DELETE em cabo com fibras conectadas a ONTs retorna 409.                                                                                  |
+| **CA-005** | **Ocupação de fibras**        | GET /resource/{cableId}/fibers retorna lista com status de cada fibra.                                                                    |
+| **CA-006** | **Substituição**              | POST /resource/{cableId}/replace com novo cabo preserva conexões nas portas finais.                                                       |
 | **CA-007** | **Trajeto de infraestrutura** | `GET /resource/{cableId}/infra-path` devolve, em ordem, caixa → banco → duto → caixa do percurso subterrâneo e os postes do trecho aéreo. |
-| **CA-008** | **Lacuna de apoio** | Cabo com 300 m de traçado e apoio declarado em apenas 200 m gera finding com o trecho sem infraestrutura identificado. |
+| **CA-008** | **Lacuna de apoio**           | Cabo com 300 m de traçado e apoio declarado em apenas 200 m gera finding com o trecho sem infraestrutura identificado.                    |
 
 ### 15.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Modelagem de cabo georreferenciado** | Sim (OSP com trajeto) | PhysicalLink georreferenciado | Não identificado no levantamento | **PhysicalResource + LineString (TMF675)** |
-| **Fibras internas como sub-recursos** | Sim (sub-itens) | Sim (containment) | Não identificado no levantamento | **Containment containsAsChild (Fibras)** |
-| **Trajeto sobre suportes** | Sim | Sim | Não identificado no levantamento | **passesThrough relationship** |
-| **Validação de capacidade de duto** | Sim | Limitada | Não identificado no levantamento | **Validação cross-reference automática** |
-| **Cable Segments com emenda** | Limitado | Sim | Não identificado no levantamento | **Segmentos como Resources filhos do cabo macro** |
-
+| Capacidade                             | Netwin                | Kuwaiba                       | NetBox                           | Decisão Nexus                                     |
+| -------------------------------------- | --------------------- | ----------------------------- | -------------------------------- | ------------------------------------------------- |
+| **Modelagem de cabo georreferenciado** | Sim (OSP com trajeto) | PhysicalLink georreferenciado | Não identificado no levantamento | **PhysicalResource + LineString (TMF675)**        |
+| **Fibras internas como sub-recursos**  | Sim (sub-itens)       | Sim (containment)             | Não identificado no levantamento | **Containment containsAsChild (Fibras)**          |
+| **Trajeto sobre suportes**             | Sim                   | Sim                           | Não identificado no levantamento | **passesThrough relationship**                    |
+| **Validação de capacidade de duto**    | Sim                   | Limitada                      | Não identificado no levantamento | **Validação cross-reference automática**          |
+| **Cable Segments com emenda**          | Limitado              | Sim                           | Não identificado no levantamento | **Segmentos como Resources filhos do cabo macro** |
 
 ---
 
@@ -1377,12 +1406,12 @@ Sem Splices modeladas, o cálculo de trajeto fim-a-fim do sinal (REQ-MOD02-012) 
 
 Atributos canônicos da entidade PhysicalResource Splice (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | Tipo (Splice-Fusão, Splice-Mecânica). |
-| `place` | EntityRef | Não | Herdado da Caixa de Emenda que contém. |
-| `resourceCharacteristic` | array | Não | atenuacao_dB, tecnico_emendador, data_emenda. |
-| `resourceRelationship` | array | Sim | endpoint_A (Fiber), endpoint_B (Fiber), containedBy (Caixa de Emenda). |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                                       |
+| ------------------------ | --------- | :---------: | ---------------------------------------------------------------------- |
+| `resourceSpecification`  | EntityRef |     Sim     | Tipo (Splice-Fusão, Splice-Mecânica).                                  |
+| `place`                  | EntityRef |     Não     | Herdado da Caixa de Emenda que contém.                                 |
+| `resourceCharacteristic` | array     |     Não     | atenuacao_dB, tecnico_emendador, data_emenda.                          |
+| `resourceRelationship`   | array     |     Sim     | endpoint_A (Fiber), endpoint_B (Fiber), containedBy (Caixa de Emenda). |
 
 ### 16.4 Exemplo de payload
 
@@ -1394,17 +1423,23 @@ Atributos canônicos da entidade PhysicalResource Splice (TMF639):
   "resourceStatus": "available",
   "operationalState": "enable",
   "resourceCharacteristic": [
-    { "name": "atenuacao_dB",     "value": 0.12 },
-    { "name": "tecnico_emendador","value": "12345 - Joao Silva" },
-    { "name": "data_emenda",      "value": "2025-08-15T10:30:00Z" }
+    { "name": "atenuacao_dB", "value": 0.12 },
+    { "name": "tecnico_emendador", "value": "12345 - Joao Silva" },
+    { "name": "data_emenda", "value": "2025-08-15T10:30:00Z" }
   ],
   "resourceRelationship": [
-    { "relationshipType": "endpoint_A",
-      "resource": { "id": "res-fiber-cfoa-001-f3", "@referredType": "Resource" } },
-    { "relationshipType": "endpoint_B",
-      "resource": { "id": "res-fiber-cfoi-002-f1", "@referredType": "Resource" } },
-    { "relationshipType": "containedBy",
-      "resource": { "id": "res-caixa-emenda-rjbot-001", "@referredType": "Resource" } }
+    {
+      "relationshipType": "endpoint_A",
+      "resource": { "id": "res-fiber-cfoa-001-f3", "@referredType": "Resource" }
+    },
+    {
+      "relationshipType": "endpoint_B",
+      "resource": { "id": "res-fiber-cfoi-002-f1", "@referredType": "Resource" }
+    },
+    {
+      "relationshipType": "containedBy",
+      "resource": { "id": "res-caixa-emenda-rjbot-001", "@referredType": "Resource" }
+    }
   ]
 }
 ```
@@ -1416,46 +1451,45 @@ Atributos canônicos da entidade PhysicalResource Splice (TMF639):
 
 ### 16.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Splice** | POST com endpoint_A=Fiber1, endpoint_B=Fiber2, containedBy=CaixaEmenda, characteristic=atenuacao_dB. |
-| **RF-002** | **Validação de fibras livres** | Verificar que ambas as Fibers estão em status available antes de criar Splice. |
-| **RF-003** | **Atenuação medida** | Registrar atenuacao_dB medida no campo (OTDR ou measurer); valor superior ao threshold da spec aciona alerta. |
-| **RF-004** | **Rastreabilidade** | Ao consultar uma Fiber, expor a Splice (se existir) e a Fiber conectada do outro lado. |
-| **RF-005** | **Operação de emenda em massa** | Endpoint /splice/bulk permite emendar N fibras de um cabo nas N fibras de outro em transação única. |
-| **RF-006** | **Desfazer emenda** | PATCH para status=suspended marca Splice como inativa; DELETE remove com Audit. |
-| **RF-007** | **Histórico de emendas** | GET /resource/{caixa-emenda-id}/splices retorna histórico de splices feitas na caixa, ativas e inativas. |
+| ID         | Nome                            | Descrição                                                                                                     |
+| ---------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Splice**                | POST com endpoint_A=Fiber1, endpoint_B=Fiber2, containedBy=CaixaEmenda, characteristic=atenuacao_dB.          |
+| **RF-002** | **Validação de fibras livres**  | Verificar que ambas as Fibers estão em status available antes de criar Splice.                                |
+| **RF-003** | **Atenuação medida**            | Registrar atenuacao_dB medida no campo (OTDR ou measurer); valor superior ao threshold da spec aciona alerta. |
+| **RF-004** | **Rastreabilidade**             | Ao consultar uma Fiber, expor a Splice (se existir) e a Fiber conectada do outro lado.                        |
+| **RF-005** | **Operação de emenda em massa** | Endpoint /splice/bulk permite emendar N fibras de um cabo nas N fibras de outro em transação única.           |
+| **RF-006** | **Desfazer emenda**             | PATCH para status=suspended marca Splice como inativa; DELETE remove com Audit.                               |
+| **RF-007** | **Histórico de emendas**        | GET /resource/{caixa-emenda-id}/splices retorna histórico de splices feitas na caixa, ativas e inativas.      |
 
 ### 16.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Toda Splice tem exatamente duas fibras (endpoint_A != endpoint_B). |
-| **RN-002** | Uma Fiber pode estar em no máximo uma Splice ativa simultaneamente. |
+| ID         | Regra de Negócio                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------ |
+| **RN-001** | Toda Splice tem exatamente duas fibras (endpoint_A != endpoint_B).                               |
+| **RN-002** | Uma Fiber pode estar em no máximo uma Splice ativa simultaneamente.                              |
 | **RN-003** | atenuacao_dB acima de threshold (configurável por tipo, padrão 0.3 dB) gera alerta de qualidade. |
-| **RN-004** | Desfazer Splice libera ambas as fibras para reuso. |
-| **RN-005** | Splice é containedBy obrigatoriamente uma Caixa de Emenda ou DIO. |
-| **RN-006** | Toda operação de emenda gera Audit Trail (técnico, data, atenuação medida). |
+| **RN-004** | Desfazer Splice libera ambas as fibras para reuso.                                               |
+| **RN-005** | Splice é containedBy obrigatoriamente uma Caixa de Emenda ou DIO.                                |
+| **RN-006** | Toda operação de emenda gera Audit Trail (técnico, data, atenuação medida).                      |
 
 ### 16.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criar Splice válida** | POST emendando Fiber1 (livre) e Fiber2 (livre) retorna 201. |
-| **CA-002** | **Fiber já emendada** | POST com Fiber em Splice ativa retorna 409. |
-| **CA-003** | **Atenuação alta** | POST com atenuacao_dB=0.5 (acima do threshold 0.3) é aceito mas gera evento de qualidade. |
-| **CA-004** | **Bulk emenda** | POST /splice/bulk com 12 pares de fibras cria 12 Splices em transação única. |
-| **CA-005** | **Rastreabilidade** | GET /resource/{fiberId}/path retorna trajeto incluindo splices até a próxima ponta livre. |
+| ID         | Critério                | Resultado Esperado                                                                        |
+| ---------- | ----------------------- | ----------------------------------------------------------------------------------------- |
+| **CA-001** | **Criar Splice válida** | POST emendando Fiber1 (livre) e Fiber2 (livre) retorna 201.                               |
+| **CA-002** | **Fiber já emendada**   | POST com Fiber em Splice ativa retorna 409.                                               |
+| **CA-003** | **Atenuação alta**      | POST com atenuacao_dB=0.5 (acima do threshold 0.3) é aceito mas gera evento de qualidade. |
+| **CA-004** | **Bulk emenda**         | POST /splice/bulk com 12 pares de fibras cria 12 Splices em transação única.              |
+| **CA-005** | **Rastreabilidade**     | GET /resource/{fiberId}/path retorna trajeto incluindo splices até a próxima ponta livre. |
 
 ### 16.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Modelagem de emenda** | Sim (OSP) | PhysicalConnection | Não identificado no levantamento | **PhysicalResource Splice com 2 endpoints** |
-| **Atenuação medida** | Sim | Atributo livre | Não identificado no levantamento | **characteristic com threshold por spec** |
-| **Histórico de emendas** | Limitado | Audit Trail | Não identificado no levantamento | **Trail via eventos + characteristic data** |
-| **Validação de fibras livres** | Sim | Limitada | Não identificado no levantamento | **Cross-check automático antes do POST** |
-
+| Capacidade                     | Netwin    | Kuwaiba            | NetBox                           | Decisão Nexus                               |
+| ------------------------------ | --------- | ------------------ | -------------------------------- | ------------------------------------------- |
+| **Modelagem de emenda**        | Sim (OSP) | PhysicalConnection | Não identificado no levantamento | **PhysicalResource Splice com 2 endpoints** |
+| **Atenuação medida**           | Sim       | Atributo livre     | Não identificado no levantamento | **characteristic com threshold por spec**   |
+| **Histórico de emendas**       | Limitado  | Audit Trail        | Não identificado no levantamento | **Trail via eventos + characteristic data** |
+| **Validação de fibras livres** | Sim       | Limitada           | Não identificado no levantamento | **Cross-check automático antes do POST**    |
 
 ---
 
@@ -1476,40 +1510,48 @@ Path computation é o "consultar cadeia de relações" do modelo de inventário 
 
 ### 17.3 Mapeamento de atributos TMF
 
-| Atributo | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `fromResource.id` | string | Sim | Endpoint inicial do trajeto. |
-| `toResource.id` | string | Não | Endpoint final; quando ausente, a travessia segue até a próxima terminação. |
-| `resourceRelationship.relationshipType` | string | Sim | Somente tipos transitáveis e governados participam do grafo. |
-| `pathItem[]` | array | Sim | Sequência ordenada de Resources e relações atravessadas. |
-| `pathCharacteristic[]` | array | Não | Distância, atenuação, splice count e completude. |
+| Atributo                                | Tipo   | Obrigatório | Observação V.tal                                                            |
+| --------------------------------------- | ------ | :---------: | --------------------------------------------------------------------------- |
+| `fromResource.id`                       | string |     Sim     | Endpoint inicial do trajeto.                                                |
+| `toResource.id`                         | string |     Não     | Endpoint final; quando ausente, a travessia segue até a próxima terminação. |
+| `resourceRelationship.relationshipType` | string |     Sim     | Somente tipos transitáveis e governados participam do grafo.                |
+| `pathItem[]`                            | array  |     Sim     | Sequência ordenada de Resources e relações atravessadas.                    |
+| `pathCharacteristic[]`                  | array  |     Não     | Distância, atenuação, splice count e completude.                            |
 
 ### 17.4 Exemplo de payload
 
 ```json
 [
-{
-  "from": { "id": "res-port-olt-rjbot-co-01-card0-port0", "@referredType": "Resource" },
-  "to":   { "id": "res-ont-cliente-12345", "@referredType": "Resource" }
-},
-{
-  "path": [
-    { "resource": { "id": "res-port-olt-rjbot-co-01-card0-port0" }, "type": "Port", "site": "Central RJ Botafogo" },
-    { "resource": { "id": "res-jumper-001"                    }, "type": "PatchCord" },
-    { "resource": { "id": "res-frontport-dio01-001"           }, "type": "FrontPort" },
-    { "resource": { "id": "res-rearport-dio01-001"            }, "type": "RearPort" },
-    { "resource": { "id": "res-fiber-cfoa-001-f3"             }, "type": "Fiber" },
-    { "resource": { "id": "res-splice-rjbot-emenda-001-s003"  }, "type": "Splice", "attenuation_dB": 0.12 },
-    { "resource": { "id": "res-fiber-cfoi-002-f1"             }, "type": "Fiber" },
-    { "resource": { "id": "res-splitter-cto-rjbot-0001-out3"  }, "type": "SplitterOutput" },
-    { "resource": { "id": "res-fiber-drop-cliente-12345"      }, "type": "Fiber" },
-    { "resource": { "id": "res-ont-cliente-12345"             }, "type": "ONT" }
-  ],
-  "total_distance_m": 2680,
-  "total_attenuation_dB": 13.7,
-  "splice_count": 1,
-  "truncated": false
-}
+  {
+    "from": { "id": "res-port-olt-rjbot-co-01-card0-port0", "@referredType": "Resource" },
+    "to": { "id": "res-ont-cliente-12345", "@referredType": "Resource" }
+  },
+  {
+    "path": [
+      {
+        "resource": { "id": "res-port-olt-rjbot-co-01-card0-port0" },
+        "type": "Port",
+        "site": "Central RJ Botafogo"
+      },
+      { "resource": { "id": "res-jumper-001" }, "type": "PatchCord" },
+      { "resource": { "id": "res-frontport-dio01-001" }, "type": "FrontPort" },
+      { "resource": { "id": "res-rearport-dio01-001" }, "type": "RearPort" },
+      { "resource": { "id": "res-fiber-cfoa-001-f3" }, "type": "Fiber" },
+      {
+        "resource": { "id": "res-splice-rjbot-emenda-001-s003" },
+        "type": "Splice",
+        "attenuation_dB": 0.12
+      },
+      { "resource": { "id": "res-fiber-cfoi-002-f1" }, "type": "Fiber" },
+      { "resource": { "id": "res-splitter-cto-rjbot-0001-out3" }, "type": "SplitterOutput" },
+      { "resource": { "id": "res-fiber-drop-cliente-12345" }, "type": "Fiber" },
+      { "resource": { "id": "res-ont-cliente-12345" }, "type": "ONT" }
+    ],
+    "total_distance_m": 2680,
+    "total_attenuation_dB": 13.7,
+    "splice_count": 1,
+    "truncated": false
+  }
 ]
 ```
 
@@ -1520,57 +1562,56 @@ Path computation é o "consultar cadeia de relações" do modelo de inventário 
 
 ### 17.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Path from-to** | Endpoint POST /resource/path?from={resourceId}&to={resourceId} retorna sequência de Resources atravessados. |
-| **RF-002** | **Path single endpoint** | Endpoint POST /resource/path?from={resourceId} retorna trajeto completo até a próxima ponta (sem destino fixo). |
-| **RF-003** | **Metadados acumulados** | Resposta inclui: total_distance_m, total_attenuation_dB (somando perdas de splices + atenuação por km do cabo), splice_count, segments_count. |
-| **RF-004** | **Direção do path** | Suportar consulta unidirecional (OLT→ONT) ou bidirecional. |
-| **RF-005** | **Filtragem por tipo** | Permitir filtrar trajeto incluindo/excluindo certos tipos (ex.: apenas elementos passivos). |
-| **RF-006** | **Visualização no mapa** | Endpoint /resource/path/visualize retorna GeoJSON FeatureCollection com elementos do trajeto desenhados no mapa. |
-| **RF-007** | **Detecção de raiz comum** | Endpoint POST /resource/path/commonRoot retorna a raiz comum entre N clientes (útil em incidentes massivos). |
-| **RF-008** | **Cache e performance** | Trajetos frequentes (Central→ONT por cliente) podem ser cacheados; invalidação em mudanças de qualquer Resource do trajeto. |
-| **RF-009** | **Limite de profundidade** | Parâmetro maxHops para limitar travessia em queries de grafo (evita loops e queries pesadas). |
-| **RF-010** | **Trajeto civil do caminho** | Para um trajeto óptico calculado, devolver a infraestrutura civil correspondente: caixas, bancos de dutos, dutos, sub-dutos e postes atravessados, na ordem do percurso (REQ-MOD02-026). |
-| **RF-011** | **Impacto reverso de ativo civil** | A partir de uma caixa, banco, duto ou poste, listar os trajetos que o atravessam — insumo direto da análise de impacto do Módulo 3 (REQ-MOD03-008). |
+| ID         | Nome                               | Descrição                                                                                                                                                                                |
+| ---------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Path from-to**                   | Endpoint POST /resource/path?from={resourceId}&to={resourceId} retorna sequência de Resources atravessados.                                                                              |
+| **RF-002** | **Path single endpoint**           | Endpoint POST /resource/path?from={resourceId} retorna trajeto completo até a próxima ponta (sem destino fixo).                                                                          |
+| **RF-003** | **Metadados acumulados**           | Resposta inclui: total_distance_m, total_attenuation_dB (somando perdas de splices + atenuação por km do cabo), splice_count, segments_count.                                            |
+| **RF-004** | **Direção do path**                | Suportar consulta unidirecional (OLT→ONT) ou bidirecional.                                                                                                                               |
+| **RF-005** | **Filtragem por tipo**             | Permitir filtrar trajeto incluindo/excluindo certos tipos (ex.: apenas elementos passivos).                                                                                              |
+| **RF-006** | **Visualização no mapa**           | Endpoint /resource/path/visualize retorna GeoJSON FeatureCollection com elementos do trajeto desenhados no mapa.                                                                         |
+| **RF-007** | **Detecção de raiz comum**         | Endpoint POST /resource/path/commonRoot retorna a raiz comum entre N clientes (útil em incidentes massivos).                                                                             |
+| **RF-008** | **Cache e performance**            | Trajetos frequentes (Central→ONT por cliente) podem ser cacheados; invalidação em mudanças de qualquer Resource do trajeto.                                                              |
+| **RF-009** | **Limite de profundidade**         | Parâmetro maxHops para limitar travessia em queries de grafo (evita loops e queries pesadas).                                                                                            |
+| **RF-010** | **Trajeto civil do caminho**       | Para um trajeto óptico calculado, devolver a infraestrutura civil correspondente: caixas, bancos de dutos, dutos, sub-dutos e postes atravessados, na ordem do percurso (REQ-MOD02-026). |
+| **RF-011** | **Impacto reverso de ativo civil** | A partir de uma caixa, banco, duto ou poste, listar os trajetos que o atravessam — insumo direto da análise de impacto do Módulo 3 (REQ-MOD03-008).                                      |
 
 > **O grafo é derivado, não cadastrado.** Nenhuma aresta é persistida como entidade. Os vértices são os Resources reais e as arestas saem de `containedBy`, `connectedTo`, `endpointA`/`endpointZ` e `splice`. É a materialização do princípio §4.8: não existe objeto de cadastro cuja única razão de ser seja ligar outros dois. Isso vale igualmente para o trajeto civil — o trecho entre duas caixas é computado, não registrado.
 
 ### 17.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Path computation usa apenas relacionamentos ativos (status != suspended/locked). |
-| **RN-002** | Em caso de Fiber não emendada no meio do trajeto, resposta é parcial com indicador truncated=true. |
-| **RN-003** | Atenuação total é soma de: atenuacao_dB de splices + (distancia_m / 1000) * atenuacao_por_km da spec do cabo. |
-| **RN-004** | Cache de paths tem TTL máximo de 5 minutos; invalidação imediata em eventos de mudança nos Resources envolvidos. |
-| **RN-005** | maxHops padrão = 50 (suficiente para FTTH típico); queries excedendo retornam erro 414 com indicação. |
+| ID         | Regra de Negócio                                                                                                                                                 |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | Path computation usa apenas relacionamentos ativos (status != suspended/locked).                                                                                 |
+| **RN-002** | Em caso de Fiber não emendada no meio do trajeto, resposta é parcial com indicador truncated=true.                                                               |
+| **RN-003** | Atenuação total é soma de: atenuacao_dB de splices + (distancia_m / 1000) * atenuacao_por_km da spec do cabo.                                                    |
+| **RN-004** | Cache de paths tem TTL máximo de 5 minutos; invalidação imediata em eventos de mudança nos Resources envolvidos.                                                 |
+| **RN-005** | maxHops padrão = 50 (suficiente para FTTH típico); queries excedendo retornam erro 414 com indicação.                                                            |
 | **RN-006** | O trajeto civil é derivado do apoio declarado dos cabos do caminho; trecho sem apoio declarado aparece como lacuna explícita, nunca é preenchido por inferência. |
-| **RN-007** | Nenhuma rota do módulo cria, edita ou exclui aresta, trecho ou adjacência — o contrato expõe apenas leitura computada (§4.8). |
+| **RN-007** | Nenhuma rota do módulo cria, edita ou exclui aresta, trecho ou adjacência — o contrato expõe apenas leitura computada (§4.8).                                    |
 
 ### 17.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Path OLT→ONT** | POST /resource/path com OLT-port como from e ONT como to retorna trajeto completo com ~7-10 saltos. |
-| **CA-002** | **Atenuação total** | Resposta inclui total_attenuation_dB calculado dinamicamente. |
-| **CA-003** | **Path truncado** | Trajeto com fibra livre no meio retorna {truncated: true, lastResource: ...}. |
-| **CA-004** | **Visualização** | GET /resource/path/visualize retorna GeoJSON com elementos do trajeto. |
-| **CA-005** | **Raiz comum** | POST /resource/path/commonRoot com 5 IDs de ONTs retorna a CTO/cabo comum mais próximo. |
-| **CA-006** | **Performance** | Path típico de 8 saltos resolvido em < 500ms (95p) com Oracle Property Graph. |
-| **CA-007** | **Trajeto civil** | O mesmo path OLT→ONT devolve, sob demanda, a lista ordenada de caixas, bancos, dutos e postes atravessados, com as lacunas de apoio marcadas. |
+| ID         | Critério             | Resultado Esperado                                                                                                                                    |
+| ---------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Path OLT→ONT**     | POST /resource/path com OLT-port como from e ONT como to retorna trajeto completo com ~7-10 saltos.                                                   |
+| **CA-002** | **Atenuação total**  | Resposta inclui total_attenuation_dB calculado dinamicamente.                                                                                         |
+| **CA-003** | **Path truncado**    | Trajeto com fibra livre no meio retorna {truncated: true, lastResource: ...}.                                                                         |
+| **CA-004** | **Visualização**     | GET /resource/path/visualize retorna GeoJSON com elementos do trajeto.                                                                                |
+| **CA-005** | **Raiz comum**       | POST /resource/path/commonRoot com 5 IDs de ONTs retorna a CTO/cabo comum mais próximo.                                                               |
+| **CA-006** | **Performance**      | Path típico de 8 saltos resolvido em < 500ms (95p) com Oracle Property Graph.                                                                         |
+| **CA-007** | **Trajeto civil**    | O mesmo path OLT→ONT devolve, sob demanda, a lista ordenada de caixas, bancos, dutos e postes atravessados, com as lacunas de apoio marcadas.         |
 | **CA-008** | **Impacto de caixa** | Consulta a partir de uma caixa subterrânea lista os trajetos que passam por ela; a mesma consulta encadeada ao Módulo 3 devolve os serviços afetados. |
 
 ### 17.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Path computation fim-a-fim** | Limitada | Sim (nativo do grafo) | Limitada a circuits | **Sim — sobre Oracle Property Graph** |
-| **Atenuação acumulada** | Manual | Não identificado no levantamento | Não identificado no levantamento | **Calculada em tempo real** |
-| **Raiz comum entre clientes** | Não identificado no levantamento | Sim | Não identificado no levantamento | **Endpoint dedicado /commonRoot** |
-| **Visualização do trajeto no mapa** | Sim (Geosite OSP) | Sim | Não identificado no levantamento | **GeoJSON nativo** |
-| **Performance em escala** | Adequada para escala atual | Limitada (Neo4j embarcado) | Não identificado no levantamento | **Oracle Property Graph para 22M+ HPs** |
-
+| Capacidade                          | Netwin                           | Kuwaiba                          | NetBox                           | Decisão Nexus                           |
+| ----------------------------------- | -------------------------------- | -------------------------------- | -------------------------------- | --------------------------------------- |
+| **Path computation fim-a-fim**      | Limitada                         | Sim (nativo do grafo)            | Limitada a circuits              | **Sim — sobre Oracle Property Graph**   |
+| **Atenuação acumulada**             | Manual                           | Não identificado no levantamento | Não identificado no levantamento | **Calculada em tempo real**             |
+| **Raiz comum entre clientes**       | Não identificado no levantamento | Sim                              | Não identificado no levantamento | **Endpoint dedicado /commonRoot**       |
+| **Visualização do trajeto no mapa** | Sim (Geosite OSP)                | Sim                              | Não identificado no levantamento | **GeoJSON nativo**                      |
+| **Performance em escala**           | Adequada para escala atual       | Limitada (Neo4j embarcado)       | Não identificado no levantamento | **Oracle Property Graph para 22M+ HPs** |
 
 ---
 
@@ -1593,12 +1634,12 @@ Esta é uma decisão arquitetural deliberada e importante: o Rack é o "primeiro
 
 Atributos canônicos da entidade PhysicalResource Rack (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | Tipo (Rack-19pol-42U, Rack-19pol-47U, Open-Frame-19pol-45U). |
-| `place` | EntityRef | Sim | GeographicSite (Sub-Site Sala/Cage onde o Rack está fisicamente). |
-| `resourceCharacteristic` | array | Não | U_total, U_occupied (derivado), fabricante, modelo, lado_acesso (frontal/traseiro/ambos), peso_max_kg. |
-| `resourceRelationship` | array | Não | containsAsChild para Equipment com characteristic U_position. |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                                                                       |
+| ------------------------ | --------- | :---------: | ------------------------------------------------------------------------------------------------------ |
+| `resourceSpecification`  | EntityRef |     Sim     | Tipo (Rack-19pol-42U, Rack-19pol-47U, Open-Frame-19pol-45U).                                           |
+| `place`                  | EntityRef |     Sim     | GeographicSite (Sub-Site Sala/Cage onde o Rack está fisicamente).                                      |
+| `resourceCharacteristic` | array     |     Não     | U_total, U_occupied (derivado), fabricante, modelo, lado_acesso (frontal/traseiro/ambos), peso_max_kg. |
+| `resourceRelationship`   | array     |     Não     | containsAsChild para Equipment com characteristic U_position.                                          |
 
 ### 18.4 Exemplo de payload
 
@@ -1613,11 +1654,11 @@ Atributos canônicos da entidade PhysicalResource Rack (TMF639):
   "administrativeState": "unlocked",
   "usageState": "active",
   "resourceCharacteristic": [
-    { "name": "U_total",      "value": 42 },
-    { "name": "fabricante",   "value": "Schroff" },
-    { "name": "modelo",       "value": "Varistar-42U" },
-    { "name": "lado_acesso",  "value": "ambos" },
-    { "name": "peso_max_kg",  "value": 1500 }
+    { "name": "U_total", "value": 42 },
+    { "name": "fabricante", "value": "Schroff" },
+    { "name": "modelo", "value": "Varistar-42U" },
+    { "name": "lado_acesso", "value": "ambos" },
+    { "name": "peso_max_kg", "value": 1500 }
   ]
 }
 ```
@@ -1629,51 +1670,50 @@ Atributos canônicos da entidade PhysicalResource Rack (TMF639):
 
 ### 18.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Rack** | POST com spec, place (Sub-Site), characteristic (U_total, fabricante, modelo). |
-| **RF-002** | **Catálogo de Racks** | Tipos pré-populados: Rack-19pol-42U-Fechado, Rack-19pol-47U-Fechado, Open-Frame-19pol-45U, Rack-23pol-42U-Telecom. |
-| **RF-003** | **Posicionamento em U** | Equipamentos contidos têm characteristic U_position (1-42 para rack de 42U) e U_size (quantos Us ocupam). |
-| **RF-004** | **Validação de capacidade** | Bloquear inclusão de equipamento em posição U que sobreponha equipamento existente. |
-| **RF-005** | **Validação de limites** | Bloquear inclusão em U_position que excede U_total do rack. |
-| **RF-006** | **Ocupação derivada** | U_occupied é calculado em tempo real a partir da soma de U_size dos equipamentos contidos. |
+| ID         | Nome                        | Descrição                                                                                                                              |
+| ---------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Rack**              | POST com spec, place (Sub-Site), characteristic (U_total, fabricante, modelo).                                                         |
+| **RF-002** | **Catálogo de Racks**       | Tipos pré-populados: Rack-19pol-42U-Fechado, Rack-19pol-47U-Fechado, Open-Frame-19pol-45U, Rack-23pol-42U-Telecom.                     |
+| **RF-003** | **Posicionamento em U**     | Equipamentos contidos têm characteristic U_position (1-42 para rack de 42U) e U_size (quantos Us ocupam).                              |
+| **RF-004** | **Validação de capacidade** | Bloquear inclusão de equipamento em posição U que sobreponha equipamento existente.                                                    |
+| **RF-005** | **Validação de limites**    | Bloquear inclusão em U_position que excede U_total do rack.                                                                            |
+| **RF-006** | **Ocupação derivada**       | U_occupied é calculado em tempo real a partir da soma de U_size dos equipamentos contidos.                                             |
 | **RF-007** | **Visualização front view** | Endpoint GET /resource/{rackId}/elevation retorna representação visual do rack com posição dos equipamentos para renderização gráfica. |
-| **RF-008** | **Espaços livres** | Endpoint /resource/{rackId}/freeSpace retorna lista de intervalos U disponíveis. |
-| **RF-009** | **Movimentação intra-rack** | Permitir mover equipamento para outro U_position no mesmo Rack com Audit. |
-| **RF-010** | **Movimentação inter-rack** | Permitir mover equipamento para outro Rack (validação de espaço disponível no destino). |
+| **RF-008** | **Espaços livres**          | Endpoint /resource/{rackId}/freeSpace retorna lista de intervalos U disponíveis.                                                       |
+| **RF-009** | **Movimentação intra-rack** | Permitir mover equipamento para outro U_position no mesmo Rack com Audit.                                                              |
+| **RF-010** | **Movimentação inter-rack** | Permitir mover equipamento para outro Rack (validação de espaço disponível no destino).                                                |
 
 ### 18.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | place do Rack deve ser GeographicSite com category=SubSite (Sala, Cage) ou Site direto (excepcional). |
-| **RN-002** | U_total é determinado pela spec do Rack — não configurável manualmente. |
-| **RN-003** | U_position + U_size de equipamentos contidos não pode exceder U_total. |
-| **RN-004** | Não há sobreposição de equipamentos no mesmo U_position. |
-| **RN-005** | Excluir Rack com equipamentos é bloqueado. |
+| ID         | Regra de Negócio                                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | place do Rack deve ser GeographicSite com category=SubSite (Sala, Cage) ou Site direto (excepcional).             |
+| **RN-002** | U_total é determinado pela spec do Rack — não configurável manualmente.                                           |
+| **RN-003** | U_position + U_size de equipamentos contidos não pode exceder U_total.                                            |
+| **RN-004** | Não há sobreposição de equipamentos no mesmo U_position.                                                          |
+| **RN-005** | Excluir Rack com equipamentos é bloqueado.                                                                        |
 | **RN-006** | Mudança de place do Rack (move entre salas) é operação especial com aprovação e impacto em equipamentos contidos. |
 
 ### 18.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criar Rack** | POST com spec=Rack-19pol-42U, place=Sub-Site, characteristic[U_total:42] retorna 201. |
-| **CA-002** | **Posição válida** | POST de Equipment com U_position=10, U_size=2 em rack vazio é aceito. |
+| ID         | Critério                   | Resultado Esperado                                                                    |
+| ---------- | -------------------------- | ------------------------------------------------------------------------------------- |
+| **CA-001** | **Criar Rack**             | POST com spec=Rack-19pol-42U, place=Sub-Site, characteristic[U_total:42] retorna 201. |
+| **CA-002** | **Posição válida**         | POST de Equipment com U_position=10, U_size=2 em rack vazio é aceito.                 |
 | **CA-003** | **Sobreposição rejeitada** | POST de Equipment em U_position=11 (sobrepõe ao U_size=2 ocupando 10-11) retorna 409. |
-| **CA-004** | **Excede limite** | POST de Equipment com U_position=42, U_size=2 em rack U_total=42 retorna 400. |
-| **CA-005** | **Elevation view** | GET /resource/{rackId}/elevation retorna mapa visual completo (front e rear). |
-| **CA-006** | **Free space** | GET /resource/{rackId}/freeSpace retorna intervalos contínuos disponíveis. |
+| **CA-004** | **Excede limite**          | POST de Equipment com U_position=42, U_size=2 em rack U_total=42 retorna 400.         |
+| **CA-005** | **Elevation view**         | GET /resource/{rackId}/elevation retorna mapa visual completo (front e rear).         |
+| **CA-006** | **Free space**             | GET /resource/{rackId}/freeSpace retorna intervalos contínuos disponíveis.            |
 
 ### 18.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Modelagem de Rack** | Container genérico | Subclasse de Container | Entidade Rack dedicada | **PhysicalResource via spec (TMF639)** |
-| **Posicionamento em U** | Sim | Sim | Sim (nativo) | **characteristic U_position + U_size** |
-| **Validação de sobreposição** | Limitada | Sim | Sim | **Validação no save** |
-| **Elevation view** | Limitada | Sim | Sim (UI nativa) | **Endpoint /elevation** |
-| **Free space query** | Não identificado no levantamento | Limitada | Sim | **Endpoint /freeSpace** |
-
+| Capacidade                    | Netwin                           | Kuwaiba                | NetBox                 | Decisão Nexus                          |
+| ----------------------------- | -------------------------------- | ---------------------- | ---------------------- | -------------------------------------- |
+| **Modelagem de Rack**         | Container genérico               | Subclasse de Container | Entidade Rack dedicada | **PhysicalResource via spec (TMF639)** |
+| **Posicionamento em U**       | Sim                              | Sim                    | Sim (nativo)           | **characteristic U_position + U_size** |
+| **Validação de sobreposição** | Limitada                         | Sim                    | Sim                    | **Validação no save**                  |
+| **Elevation view**            | Limitada                         | Sim                    | Sim (UI nativa)        | **Endpoint /elevation**                |
+| **Free space query**          | Não identificado no levantamento | Limitada               | Sim                    | **Endpoint /freeSpace**                |
 
 ---
 
@@ -1696,51 +1736,53 @@ O TMF639 unifica equipamentos sob PhysicalResource — diferentemente do NetBox 
 
 Atributos canônicos da entidade PhysicalResource Equipment (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | Define a família/modelo (OLT, switch, router, ONT etc.). |
-| `place` | EntityRef | Não | GeographicSite (para ONT em ponto de instalação) ou herdado via containedBy (em Rack). |
-| `resourceCharacteristic` | array | Não | Serial (único por fabricante), MAC management, firmware, software_version, IP_management, ASN_local (router), capacity_specs. |
-| `resourceRelationship` | array | Não | containedBy (Rack), containsAsChild (Cards), connectedTo (uplinks). |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                                                                                              |
+| ------------------------ | --------- | :---------: | ----------------------------------------------------------------------------------------------------------------------------- |
+| `resourceSpecification`  | EntityRef |     Sim     | Define a família/modelo (OLT, switch, router, ONT etc.).                                                                      |
+| `place`                  | EntityRef |     Não     | GeographicSite (para ONT em ponto de instalação) ou herdado via containedBy (em Rack).                                        |
+| `resourceCharacteristic` | array     |     Não     | Serial (único por fabricante), MAC management, firmware, software_version, IP_management, ASN_local (router), capacity_specs. |
+| `resourceRelationship`   | array     |     Não     | containedBy (Rack), containsAsChild (Cards), connectedTo (uplinks).                                                           |
 
 ### 19.4 Exemplo de payload
 
 ```json
 [
-{
-  "id": "res-olt-rjbot-co-01",
-  "name": "OLT-RJ-BOT-CO-01",
-  "resourceSpecification": { "id": "spec-olt-huawei-ma5800-x17" },
-  "resourceStatus": "available",
-  "operationalState": "enable",
-  "resourceCharacteristic": [
-    { "name": "Serial",         "value": "HW2024001234" },
-    { "name": "MAC_management", "value": "00:1A:2B:3C:4D:5E" },
-    { "name": "IP_management",  "value": "10.255.1.1" },
-    { "name": "firmware",       "value": "V800R022C00SPC100" },
-    { "name": "PON_density",    "value": 256 }
-  ],
-  "resourceRelationship": [
-    { "relationshipType": "containedBy",
-      "resource": { "id": "res-rack-rjbot-co-01-gpon-n01", "@referredType": "Resource" },
-      "characteristic": [
-        { "name": "U_position", "value": 1 },
-        { "name": "U_size",     "value": 9 }
-      ] }
-  ]
-},
-{
-  "id": "res-ont-cliente-12345",
-  "name": "ONT-Cliente-12345",
-  "resourceSpecification": { "id": "spec-ont-huawei-hg8145x6" },
-  "place": { "id": "site-installation-cliente-12345", "@referredType": "GeographicSite" },
-  "resourceCharacteristic": [
-    { "name": "Serial",          "value": "HWTC87654321" },
-    { "name": "MAC_management",  "value": "AA:BB:CC:DD:EE:FF" },
-    { "name": "GPON_serial",     "value": "HWTC87654321" },
-    { "name": "firmware",        "value": "V5R022C10SPC100" }
-  ]
-}
+  {
+    "id": "res-olt-rjbot-co-01",
+    "name": "OLT-RJ-BOT-CO-01",
+    "resourceSpecification": { "id": "spec-olt-huawei-ma5800-x17" },
+    "resourceStatus": "available",
+    "operationalState": "enable",
+    "resourceCharacteristic": [
+      { "name": "Serial", "value": "HW2024001234" },
+      { "name": "MAC_management", "value": "00:1A:2B:3C:4D:5E" },
+      { "name": "IP_management", "value": "10.255.1.1" },
+      { "name": "firmware", "value": "V800R022C00SPC100" },
+      { "name": "PON_density", "value": 256 }
+    ],
+    "resourceRelationship": [
+      {
+        "relationshipType": "containedBy",
+        "resource": { "id": "res-rack-rjbot-co-01-gpon-n01", "@referredType": "Resource" },
+        "characteristic": [
+          { "name": "U_position", "value": 1 },
+          { "name": "U_size", "value": 9 }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "res-ont-cliente-12345",
+    "name": "ONT-Cliente-12345",
+    "resourceSpecification": { "id": "spec-ont-huawei-hg8145x6" },
+    "place": { "id": "site-installation-cliente-12345", "@referredType": "GeographicSite" },
+    "resourceCharacteristic": [
+      { "name": "Serial", "value": "HWTC87654321" },
+      { "name": "MAC_management", "value": "AA:BB:CC:DD:EE:FF" },
+      { "name": "GPON_serial", "value": "HWTC87654321" },
+      { "name": "firmware", "value": "V5R022C10SPC100" }
+    ]
+  }
 ]
 ```
 
@@ -1752,53 +1794,52 @@ Atributos canônicos da entidade PhysicalResource Equipment (TMF639):
 
 ### 19.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Equipment** | POST com spec, place ou containedBy, resourceCharacteristic (Serial obrigatório, MAC, firmware). |
-| **RF-002** | **Catálogo de modelos canônicos** | Catálogo pré-populado com modelos V.tal: OLT (Huawei MA5800, ZTE C300, Datacom DM4100); Switches (Cisco Catalyst 9300, Datacom DmSwitch); Routers (Juniper MX, Cisco ASR); ONTs (Huawei HG8145, ZTE F660); CPEs corporativos. |
-| **RF-003** | **Atributos por família** | Cada spec define seus resourceSpecCharacteristics: OLT tem PON_density; Switch tem ports_density; Router tem ASN; ONT tem GPON_serial. |
-| **RF-004** | **Validação contra spec** | Validação de characteristic obrigatórios (Serial sempre) e validadores (regex de Serial por fabricante). |
-| **RF-005** | **Posicionamento físico** | Para Rack-mountable: containedBy=Rack com U_position. Para ONT: place=InstallationPoint. |
-| **RF-006** | **Contenção de placas** | Equipamentos modulares (OLT chassi, Switch chassi, Router chassi) aceitam Cards como filhos containsAsChild (REQ-MOD02-015). |
-| **RF-007** | **Endereço de gerência** | characteristic IP_management e MAC_management são chaves para integração com sistemas de monitoramento (SNMP, NETCONF). |
-| **RF-008** | **Firmware tracking** | Mudança de firmware é evento auditado (publicação TMF688) com versão anterior e nova. |
+| ID         | Nome                                      | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Equipment**                       | POST com spec, place ou containedBy, resourceCharacteristic (Serial obrigatório, MAC, firmware).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **RF-002** | **Catálogo de modelos canônicos**         | Catálogo pré-populado com modelos V.tal: OLT (Huawei MA5800, ZTE C300, Datacom DM4100); Switches (Cisco Catalyst 9300, Datacom DmSwitch); Routers (Juniper MX, Cisco ASR); ONTs (Huawei HG8145, ZTE F660); CPEs corporativos.                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **RF-003** | **Atributos por família**                 | Cada spec define seus resourceSpecCharacteristics: OLT tem PON_density; Switch tem ports_density; Router tem ASN; ONT tem GPON_serial.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **RF-004** | **Validação contra spec**                 | Validação de characteristic obrigatórios (Serial sempre) e validadores (regex de Serial por fabricante).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **RF-005** | **Posicionamento físico**                 | Para Rack-mountable: containedBy=Rack com U_position. Para ONT: place=InstallationPoint.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **RF-006** | **Contenção de placas**                   | Equipamentos modulares (OLT chassi, Switch chassi, Router chassi) aceitam Cards como filhos containsAsChild (REQ-MOD02-015).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **RF-007** | **Endereço de gerência**                  | characteristic IP_management e MAC_management são chaves para integração com sistemas de monitoramento (SNMP, NETCONF).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **RF-008** | **Firmware tracking**                     | Mudança de firmware é evento auditado (publicação TMF688) com versão anterior e nova.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | **RF-009** | **Substituição (swap) via workflow BPMN** | A operação `POST /resource/{id}/swap` inicia um workflow BPMN orquestrado pelo Módulo 5 (Process Orchestration) que executa as etapas: (1) validação de compatibilidade entre equipamento antigo e novo; (2) reserva do equipamento novo; (3) transição do antigo para `shuttingDown`; (4) swap atômico preservando conexões filhas e ligações com Services; (5) ativação do novo (`Active`); (6) transição do antigo para `Retired`. Cada etapa gera Audit Trail e evento TMF688. **D-RES-004 (Jun/2026):** swap nunca é operação manual — é sempre orquestrada para garantir rastreabilidade e segurança operacional, especialmente em Centrais críticas. |
-| **RF-010** | **Decommissioning** | Procedimento padronizado: cascade events to dependent services, transition to status=suspended, allow physical removal. |
+| **RF-010** | **Decommissioning**                       | Procedimento padronizado: cascade events to dependent services, transition to status=suspended, allow physical removal.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 ### 19.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Serial é obrigatório para todo Equipment e único globalmente (rastreabilidade do fabricante). |
-| **RN-002** | MAC_management, quando informado, é único globalmente. |
-| **RN-003** | Equipment rack-mountable deve ter containedBy=Rack ou containedBy=Equipment-pai (cards em chassi). |
-| **RN-004** | ONT/CPE tem place=GeographicSite InstallationPoint (sem Rack), modelo cliente. |
-| **RN-005** | Mudança de firmware gera evento auditado. |
+| ID         | Regra de Negócio                                                                                                           |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | Serial é obrigatório para todo Equipment e único globalmente (rastreabilidade do fabricante).                              |
+| **RN-002** | MAC_management, quando informado, é único globalmente.                                                                     |
+| **RN-003** | Equipment rack-mountable deve ter containedBy=Rack ou containedBy=Equipment-pai (cards em chassi).                         |
+| **RN-004** | ONT/CPE tem place=GeographicSite InstallationPoint (sem Rack), modelo cliente.                                             |
+| **RN-005** | Mudança de firmware gera evento auditado.                                                                                  |
 | **RN-006** | Operação swap preserva: connections, services dependentes, atributos lógicos (IP gerência); altera: Serial, MAC, firmware. |
-| **RN-007** | Excluir Equipment com Cards/conexões/Services é bloqueado. |
+| **RN-007** | Excluir Equipment com Cards/conexões/Services é bloqueado.                                                                 |
 
 ### 19.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criar OLT em Rack** | POST com spec=OLT-Huawei-MA5800-X17, containedBy=Rack-GPON-N01, U_position=1, U_size=9, characteristic[Serial:HW2024001234] retorna 201. |
-| **CA-002** | **Criar ONT em InstallationPoint** | POST com spec=ONT-Huawei-HG8145X6, place=site-installation-cliente-12345, characteristic[Serial,MAC] retorna 201. |
-| **CA-003** | **Serial duplicado** | POST com Serial já existente retorna 409. |
-| **CA-004** | **Sem Rack para rack-mountable** | POST de OLT sem containedBy retorna 400. |
-| **CA-005** | **Cards em chassi** | POST de Card com containedBy=OLT-chassi é aceito (REQ-MOD02-015). |
-| **CA-006** | **Mudança de firmware** | PATCH em characteristic firmware publica ResourceAttributeValueChangeEvent. |
-| **CA-007** | **Swap orquestrado** | POST /resource/{id}/swap retorna 202 com `workflowInstanceId` do Módulo 5; consulta posterior ao Process Orchestration acompanha as etapas até conclusão. Ao final, conexões e Services dependentes apontam para o novo equipamento; o antigo está em status Retired. |
+| ID         | Critério                           | Resultado Esperado                                                                                                                                                                                                                                                    |
+| ---------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Criar OLT em Rack**              | POST com spec=OLT-Huawei-MA5800-X17, containedBy=Rack-GPON-N01, U_position=1, U_size=9, characteristic[Serial:HW2024001234] retorna 201.                                                                                                                              |
+| **CA-002** | **Criar ONT em InstallationPoint** | POST com spec=ONT-Huawei-HG8145X6, place=site-installation-cliente-12345, characteristic[Serial,MAC] retorna 201.                                                                                                                                                     |
+| **CA-003** | **Serial duplicado**               | POST com Serial já existente retorna 409.                                                                                                                                                                                                                             |
+| **CA-004** | **Sem Rack para rack-mountable**   | POST de OLT sem containedBy retorna 400.                                                                                                                                                                                                                              |
+| **CA-005** | **Cards em chassi**                | POST de Card com containedBy=OLT-chassi é aceito (REQ-MOD02-015).                                                                                                                                                                                                     |
+| **CA-006** | **Mudança de firmware**            | PATCH em characteristic firmware publica ResourceAttributeValueChangeEvent.                                                                                                                                                                                           |
+| **CA-007** | **Swap orquestrado**               | POST /resource/{id}/swap retorna 202 com `workflowInstanceId` do Módulo 5; consulta posterior ao Process Orchestration acompanha as etapas até conclusão. Ao final, conexões e Services dependentes apontam para o novo equipamento; o antigo está em status Retired. |
 
 ### 19.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
+| Capacidade                     | Netwin                | Kuwaiba                  | NetBox        | Decisão Nexus                             |
+| ------------------------------ | --------------------- | ------------------------ | ------------- | ----------------------------------------- |
 | **Unificação de equipamentos** | Entidades específicas | Subclasses no metamodelo | Device + role | **PhysicalResource via spec (unificado)** |
-| **Atributos por família** | Hardcoded | Metamodelo dinâmico | Custom Fields | **resourceSpecCharacteristic versionado** |
-| **Posição em Rack** | Sim | Sim | Sim (nativa) | **containedBy.characteristic U_position** |
-| **Serial único global** | Sim | Sim | Sim | **Validação canônica** |
-| **Swap preservando conexões** | Procedimento manual | Sim | Limitado | **Operação dedicada /swap** |
-
+| **Atributos por família**      | Hardcoded             | Metamodelo dinâmico      | Custom Fields | **resourceSpecCharacteristic versionado** |
+| **Posição em Rack**            | Sim                   | Sim                      | Sim (nativa)  | **containedBy.characteristic U_position** |
+| **Serial único global**        | Sim                   | Sim                      | Sim           | **Validação canônica**                    |
+| **Swap preservando conexões**  | Procedimento manual   | Sim                      | Limitado      | **Operação dedicada /swap**               |
 
 ---
 
@@ -1821,11 +1862,11 @@ Sem modelagem de Cards, o inventário precisaria embutir todas as portas diretam
 
 Atributos canônicos da entidade PhysicalResource Card (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | Tipo (Card-GPON-H805-GPBD, Card-Uplink-H801-X2CS, Line-Card-Cisco-XR-100G). |
-| `resourceCharacteristic` | array | Não | slot, Serial, ports_density, technology (GPON/XGSPON/Ethernet). |
-| `resourceRelationship` | array | Sim | containedBy (Equipment chassi), containsAsChild (Ports). |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                                            |
+| ------------------------ | --------- | :---------: | --------------------------------------------------------------------------- |
+| `resourceSpecification`  | EntityRef |     Sim     | Tipo (Card-GPON-H805-GPBD, Card-Uplink-H801-X2CS, Line-Card-Cisco-XR-100G). |
+| `resourceCharacteristic` | array     |     Não     | slot, Serial, ports_density, technology (GPON/XGSPON/Ethernet).             |
+| `resourceRelationship`   | array     |     Sim     | containedBy (Equipment chassi), containsAsChild (Ports).                    |
 
 ### 20.4 Exemplo de payload
 
@@ -1835,14 +1876,16 @@ Atributos canônicos da entidade PhysicalResource Card (TMF639):
   "name": "Card GPON Slot 0",
   "resourceSpecification": { "id": "spec-card-gpon-h805-gpbd" },
   "resourceCharacteristic": [
-    { "name": "Serial",        "value": "HW-CARD-2024-5678" },
-    { "name": "technology",    "value": "GPON" },
+    { "name": "Serial", "value": "HW-CARD-2024-5678" },
+    { "name": "technology", "value": "GPON" },
     { "name": "ports_density", "value": 16 }
   ],
   "resourceRelationship": [
-    { "relationshipType": "containedBy",
+    {
+      "relationshipType": "containedBy",
       "resource": { "id": "res-olt-rjbot-co-01", "@referredType": "Resource" },
-      "characteristic": [{ "name": "slot", "value": 0 }] }
+      "characteristic": [{ "name": "slot", "value": 0 }]
+    }
   ]
 }
 ```
@@ -1855,42 +1898,41 @@ Atributos canônicos da entidade PhysicalResource Card (TMF639):
 
 ### 20.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Card** | POST com spec, containedBy (chassi), characteristic slot e Serial. |
+| ID         | Nome                             | Descrição                                                                                      |
+| ---------- | -------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Card**                   | POST com spec, containedBy (chassi), characteristic slot e Serial.                             |
 | **RF-002** | **Validação de compatibilidade** | Verificar que a spec do chassi tem a spec do Card em resourceSpecRelationship.containsAsChild. |
-| **RF-003** | **Slot único** | Validar que o slot dentro do mesmo chassi é único. |
-| **RF-004** | **Geração automática de Ports** | Ao criar Card, criar automaticamente as Ports filhas conforme ports_density da spec. |
-| **RF-005** | **Hot swap** | Suportar operação de troca de Card preservando o chassi e demais Cards. |
-| **RF-006** | **Limites por chassi** | Validar limite máximo de Cards do chassi (ex.: 17 slots em OLT MA5800-X17). |
+| **RF-003** | **Slot único**                   | Validar que o slot dentro do mesmo chassi é único.                                             |
+| **RF-004** | **Geração automática de Ports**  | Ao criar Card, criar automaticamente as Ports filhas conforme ports_density da spec.           |
+| **RF-005** | **Hot swap**                     | Suportar operação de troca de Card preservando o chassi e demais Cards.                        |
+| **RF-006** | **Limites por chassi**           | Validar limite máximo de Cards do chassi (ex.: 17 slots em OLT MA5800-X17).                    |
 
 ### 20.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Card deve ser containedBy de Equipment com spec compatível. |
-| **RN-002** | slot é único dentro do mesmo chassi. |
-| **RN-003** | Quantidade de Ports filhas é determinada pela spec do Card. |
-| **RN-004** | Excluir Card com Ports conectadas é bloqueado. |
+| ID         | Regra de Negócio                                                             |
+| ---------- | ---------------------------------------------------------------------------- |
+| **RN-001** | Card deve ser containedBy de Equipment com spec compatível.                  |
+| **RN-002** | slot é único dentro do mesmo chassi.                                         |
+| **RN-003** | Quantidade de Ports filhas é determinada pela spec do Card.                  |
+| **RN-004** | Excluir Card com Ports conectadas é bloqueado.                               |
 | **RN-005** | Troca de Card (swap) preserva Ports e suas conexões quando spec equivalente. |
 
 ### 20.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criar Card** | POST com spec=Card-GPON-H805, containedBy=OLT-01, slot=0 retorna 201 e cria automaticamente 16 Ports filhas. |
-| **CA-002** | **Spec incompatível** | POST de Card em chassi cuja spec não permite retorna 400. |
-| **CA-003** | **Slot duplicado** | POST de segundo Card no slot 0 do mesmo chassi retorna 409. |
-| **CA-004** | **Bloqueio de exclusão** | DELETE em Card com Ports conectadas retorna 409. |
+| ID         | Critério                 | Resultado Esperado                                                                                           |
+| ---------- | ------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| **CA-001** | **Criar Card**           | POST com spec=Card-GPON-H805, containedBy=OLT-01, slot=0 retorna 201 e cria automaticamente 16 Ports filhas. |
+| **CA-002** | **Spec incompatível**    | POST de Card em chassi cuja spec não permite retorna 400.                                                    |
+| **CA-003** | **Slot duplicado**       | POST de segundo Card no slot 0 do mesmo chassi retorna 409.                                                  |
+| **CA-004** | **Bloqueio de exclusão** | DELETE em Card com Ports conectadas retorna 409.                                                             |
 
 ### 20.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Modelagem de Card** | Sim (placa) | Subclasse no metamodelo | Module + Module Bay | **PhysicalResource via spec (TMF639)** |
-| **Geração automática de Ports** | Limitada | Sim | Sim (Front/Rear Port template) | **Auto-gerado ao criar Card** |
-| **Hot swap** | Procedimento | Sim | Sim | **Operação dedicada** |
-
+| Capacidade                      | Netwin       | Kuwaiba                 | NetBox                         | Decisão Nexus                          |
+| ------------------------------- | ------------ | ----------------------- | ------------------------------ | -------------------------------------- |
+| **Modelagem de Card**           | Sim (placa)  | Subclasse no metamodelo | Module + Module Bay            | **PhysicalResource via spec (TMF639)** |
+| **Geração automática de Ports** | Limitada     | Sim                     | Sim (Front/Rear Port template) | **Auto-gerado ao criar Card**          |
+| **Hot swap**                    | Procedimento | Sim                     | Sim                            | **Operação dedicada**                  |
 
 ---
 
@@ -1913,11 +1955,11 @@ Ports são o nível de granularidade mais comum em queries operacionais ("qual c
 
 Atributos canônicos da entidade PhysicalResource Port (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | Tipo (Port-GPON, Port-Ethernet-10G, Port-Ethernet-100G, Port-SFP, Port-Console). |
-| `resourceCharacteristic` | array | Não | port_number (notação slot/subslot/port), port_type (GPON/Ethernet/SFP/Console), speed_gbps, connector_type (SC/APC, RJ45, LC). |
-| `resourceRelationship` | array | Sim | containedBy (Card ou Equipment), connectedTo (outra Port via conexão). |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                                                                                               |
+| ------------------------ | --------- | :---------: | ------------------------------------------------------------------------------------------------------------------------------ |
+| `resourceSpecification`  | EntityRef |     Sim     | Tipo (Port-GPON, Port-Ethernet-10G, Port-Ethernet-100G, Port-SFP, Port-Console).                                               |
+| `resourceCharacteristic` | array     |     Não     | port_number (notação slot/subslot/port), port_type (GPON/Ethernet/SFP/Console), speed_gbps, connector_type (SC/APC, RJ45, LC). |
+| `resourceRelationship`   | array     |     Sim     | containedBy (Card ou Equipment), connectedTo (outra Port via conexão).                                                         |
 
 ### 21.4 Exemplo de payload
 
@@ -1930,14 +1972,16 @@ Atributos canônicos da entidade PhysicalResource Port (TMF639):
   "operationalState": "enable",
   "usageState": "idle",
   "resourceCharacteristic": [
-    { "name": "port_number",     "value": "0/0/15" },
-    { "name": "port_type",       "value": "GPON" },
-    { "name": "connector_type",  "value": "SC/APC" },
+    { "name": "port_number", "value": "0/0/15" },
+    { "name": "port_type", "value": "GPON" },
+    { "name": "connector_type", "value": "SC/APC" },
     { "name": "etiqueta_fisica", "value": "PON-001-15" }
   ],
   "resourceRelationship": [
-    { "relationshipType": "containedBy",
-      "resource": { "id": "res-card-gpon-rjbot-001-slot-0", "@referredType": "Resource" } }
+    {
+      "relationshipType": "containedBy",
+      "resource": { "id": "res-card-gpon-rjbot-001-slot-0", "@referredType": "Resource" }
+    }
   ]
 }
 ```
@@ -1949,45 +1993,44 @@ Atributos canônicos da entidade PhysicalResource Port (TMF639):
 
 ### 21.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Port (auto via Card)** | Ports são tipicamente criadas automaticamente quando Card é criado (REQ-MOD02-015). |
-| **RF-002** | **Criar Port manual** | POST individual permitido em casos especiais (módulos pluggable, expansões). |
-| **RF-003** | **Listar Ports** | GET /resource?@type=Port&containedBy={cardId} retorna todas as portas do Card. |
-| **RF-004** | **Disponibilidade** | GET /resource/{portId} expõe se está available (sem conexão), reserved (planejada) ou active (conectada). |
-| **RF-005** | **Conexão física** | Port se conecta a outra Port via PhysicalResource Connection (REQ-MOD02-018). |
-| **RF-006** | **Estado operacional** | operationalState=disable indica porta administrativamente fora de uso, mesmo com cabo conectado. |
-| **RF-007** | **Filtros operacionais** | GET /resource?@type=Port&port_type=GPON&resourceStatus=available em determinado Site retorna PON livres para alocação. |
-| **RF-008** | **Etiquetagem** | characteristic etiqueta_fisica para correlação com etiqueta visual no campo. |
+| ID         | Nome                           | Descrição                                                                                                              |
+| ---------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Port (auto via Card)** | Ports são tipicamente criadas automaticamente quando Card é criado (REQ-MOD02-015).                                    |
+| **RF-002** | **Criar Port manual**          | POST individual permitido em casos especiais (módulos pluggable, expansões).                                           |
+| **RF-003** | **Listar Ports**               | GET /resource?@type=Port&containedBy={cardId} retorna todas as portas do Card.                                         |
+| **RF-004** | **Disponibilidade**            | GET /resource/{portId} expõe se está available (sem conexão), reserved (planejada) ou active (conectada).              |
+| **RF-005** | **Conexão física**             | Port se conecta a outra Port via PhysicalResource Connection (REQ-MOD02-018).                                          |
+| **RF-006** | **Estado operacional**         | operationalState=disable indica porta administrativamente fora de uso, mesmo com cabo conectado.                       |
+| **RF-007** | **Filtros operacionais**       | GET /resource?@type=Port&port_type=GPON&resourceStatus=available em determinado Site retorna PON livres para alocação. |
+| **RF-008** | **Etiquetagem**                | characteristic etiqueta_fisica para correlação com etiqueta visual no campo.                                           |
 
 ### 21.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | port_number é único dentro do mesmo Card pai. |
-| **RN-002** | Port só pode ter uma conexão física ativa simultaneamente. |
+| ID         | Regra de Negócio                                                                                    |
+| ---------- | --------------------------------------------------------------------------------------------------- |
+| **RN-001** | port_number é único dentro do mesmo Card pai.                                                       |
+| **RN-002** | Port só pode ter uma conexão física ativa simultaneamente.                                          |
 | **RN-003** | Notação padrão para port_number: "slot/subslot/port" (ex.: "0/0/15"); flexível para outros padrões. |
-| **RN-004** | Excluir Port com conexão ativa é bloqueado. |
-| **RN-005** | Mudança de operationalState publica evento (consumido por monitoramento e Service Assurance). |
+| **RN-004** | Excluir Port com conexão ativa é bloqueado.                                                         |
+| **RN-005** | Mudança de operationalState publica evento (consumido por monitoramento e Service Assurance).       |
 
 ### 21.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Auto-geração** | Criar Card de 16 portas cria 16 Ports automaticamente. |
-| **CA-002** | **port_number único** | POST de Port com port_number já existente no Card retorna 409. |
-| **CA-003** | **Disponibilidade** | GET /resource/{portId} retorna available para porta sem connectedTo. |
-| **CA-004** | **Conexão** | PATCH adicionando connectedTo a outra Port é aceito (via REQ-MOD02-018). |
-| **CA-005** | **Filtro PON livre** | GET /resource?type=Port&port_type=GPON&status=available em Central X retorna lista. |
+| ID         | Critério              | Resultado Esperado                                                                  |
+| ---------- | --------------------- | ----------------------------------------------------------------------------------- |
+| **CA-001** | **Auto-geração**      | Criar Card de 16 portas cria 16 Ports automaticamente.                              |
+| **CA-002** | **port_number único** | POST de Port com port_number já existente no Card retorna 409.                      |
+| **CA-003** | **Disponibilidade**   | GET /resource/{portId} retorna available para porta sem connectedTo.                |
+| **CA-004** | **Conexão**           | PATCH adicionando connectedTo a outra Port é aceito (via REQ-MOD02-018).            |
+| **CA-005** | **Filtro PON livre**  | GET /resource?type=Port&port_type=GPON&status=available em Central X retorna lista. |
 
 ### 21.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Port como entidade própria** | Sub-item de Card | ConnectivityElement subclass | Interface | **PhysicalResource Port (TMF639)** |
-| **Notação padrão port_number** | Variada | Variada | Padronizada | **slot/subslot/port** |
-| **Estado operacional independente** | Limitado | Sim | Sim | **op/adm state próprios** |
-
+| Capacidade                          | Netwin           | Kuwaiba                      | NetBox      | Decisão Nexus                      |
+| ----------------------------------- | ---------------- | ---------------------------- | ----------- | ---------------------------------- |
+| **Port como entidade própria**      | Sub-item de Card | ConnectivityElement subclass | Interface   | **PhysicalResource Port (TMF639)** |
+| **Notação padrão port_number**      | Variada          | Variada                      | Padronizada | **slot/subslot/port**              |
+| **Estado operacional independente** | Limitado         | Sim                          | Sim         | **op/adm state próprios**          |
 
 ---
 
@@ -2010,41 +2053,43 @@ A modelagem de energia é frequentemente ignorada em sistemas de inventário —
 
 Atributos canônicos da entidade PhysicalResource Power Feed/Outlet (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | Tipo (UPS-Eaton-200kVA, PDU-APC-Rack, PowerOutlet-C19, PowerPort-Equip-Std). |
-| `resourceCharacteristic` | array | Não | voltage_V, amperage_A, capacity_W, phase (single/three), connector_type (C13/C19/L6-30). |
-| `resourceRelationship` | array | Não | containedBy (PowerFeed em PowerPanel; Outlet em PDU); connectedTo (PowerPort em PowerOutlet). |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                                                              |
+| ------------------------ | --------- | :---------: | --------------------------------------------------------------------------------------------- |
+| `resourceSpecification`  | EntityRef |     Sim     | Tipo (UPS-Eaton-200kVA, PDU-APC-Rack, PowerOutlet-C19, PowerPort-Equip-Std).                  |
+| `resourceCharacteristic` | array     |     Não     | voltage_V, amperage_A, capacity_W, phase (single/three), connector_type (C13/C19/L6-30).      |
+| `resourceRelationship`   | array     |     Não     | containedBy (PowerFeed em PowerPanel; Outlet em PDU); connectedTo (PowerPort em PowerOutlet). |
 
 ### 22.4 Exemplo de payload
 
 ```json
 [
-{
-  "id": "res-ups-rjbot-co-01-principal",
-  "name": "UPS Principal RJ-BOT",
-  "resourceSpecification": { "id": "spec-ups-eaton-200kva" },
-  "place": { "id": "site-rjbot-co-01-andar2-sala-ups", "@referredType": "GeographicSite" },
-  "resourceCharacteristic": [
-    { "name": "capacity_kVA", "value": 200 },
-    { "name": "capacity_W",   "value": 180000 },
-    { "name": "phase",        "value": "three" }
-  ]
-},
-{
-  "id": "res-pdu-outlet-rjbot-rack-n01-c19-01",
-  "name": "Outlet C19-01 Rack-N01",
-  "resourceSpecification": { "id": "spec-power-outlet-c19" },
-  "resourceCharacteristic": [
-    { "name": "voltage_V",     "value": 220 },
-    { "name": "amperage_A",    "value": 16 },
-    { "name": "connector_type","value": "C19" }
-  ],
-  "resourceRelationship": [
-    { "relationshipType": "containedBy",
-      "resource": { "id": "res-pdu-rjbot-rack-n01-a", "@referredType": "Resource" } }
-  ]
-}
+  {
+    "id": "res-ups-rjbot-co-01-principal",
+    "name": "UPS Principal RJ-BOT",
+    "resourceSpecification": { "id": "spec-ups-eaton-200kva" },
+    "place": { "id": "site-rjbot-co-01-andar2-sala-ups", "@referredType": "GeographicSite" },
+    "resourceCharacteristic": [
+      { "name": "capacity_kVA", "value": 200 },
+      { "name": "capacity_W", "value": 180000 },
+      { "name": "phase", "value": "three" }
+    ]
+  },
+  {
+    "id": "res-pdu-outlet-rjbot-rack-n01-c19-01",
+    "name": "Outlet C19-01 Rack-N01",
+    "resourceSpecification": { "id": "spec-power-outlet-c19" },
+    "resourceCharacteristic": [
+      { "name": "voltage_V", "value": 220 },
+      { "name": "amperage_A", "value": 16 },
+      { "name": "connector_type", "value": "C19" }
+    ],
+    "resourceRelationship": [
+      {
+        "relationshipType": "containedBy",
+        "resource": { "id": "res-pdu-rjbot-rack-n01-a", "@referredType": "Resource" }
+      }
+    ]
+  }
 ]
 ```
 
@@ -2055,45 +2100,44 @@ Atributos canônicos da entidade PhysicalResource Power Feed/Outlet (TMF639):
 
 ### 22.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **PowerPanel (UPS/no-break)** | PhysicalResource representando UPS ou no-break com capacity_W total. |
-| **RF-002** | **PowerFeed** | PhysicalResource saída de PowerPanel; alimenta um ou mais PDUs. |
-| **RF-003** | **PDU em Rack** | PhysicalResource containedBy Rack; tem N PowerOutlets como filhos. |
-| **RF-004** | **PowerOutlet** | PhysicalResource (tomada/disjuntor) com voltage, amperage, connector_type. |
-| **RF-005** | **PowerPort em Equipment** | Equipamentos com alimentação têm PowerPorts (1 ou 2 para redundância) que se conectam a PowerOutlets. |
-| **RF-006** | **Conexão e redundância** | Equipment com 2 PowerPorts pode conectar em 2 PowerOutlets distintos para redundância A+B. |
-| **RF-007** | **Cálculo de carga** | Endpoint /resource/{panel}/loadCalculation soma capacity_W dos PowerPorts conectados em cascata. |
-| **RF-008** | **Análise de impacto elétrico** | Endpoint /resource/{panel}/impactAnalysis retorna lista de equipamentos afetados se o panel cair. |
-| **RF-009** | **Visualização da árvore** | GET /resource/{panel}/tree retorna árvore Panel → Feeds → PDUs → Outlets → Equipments. |
+| ID         | Nome                            | Descrição                                                                                             |
+| ---------- | ------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **RF-001** | **PowerPanel (UPS/no-break)**   | PhysicalResource representando UPS ou no-break com capacity_W total.                                  |
+| **RF-002** | **PowerFeed**                   | PhysicalResource saída de PowerPanel; alimenta um ou mais PDUs.                                       |
+| **RF-003** | **PDU em Rack**                 | PhysicalResource containedBy Rack; tem N PowerOutlets como filhos.                                    |
+| **RF-004** | **PowerOutlet**                 | PhysicalResource (tomada/disjuntor) com voltage, amperage, connector_type.                            |
+| **RF-005** | **PowerPort em Equipment**      | Equipamentos com alimentação têm PowerPorts (1 ou 2 para redundância) que se conectam a PowerOutlets. |
+| **RF-006** | **Conexão e redundância**       | Equipment com 2 PowerPorts pode conectar em 2 PowerOutlets distintos para redundância A+B.            |
+| **RF-007** | **Cálculo de carga**            | Endpoint /resource/{panel}/loadCalculation soma capacity_W dos PowerPorts conectados em cascata.      |
+| **RF-008** | **Análise de impacto elétrico** | Endpoint /resource/{panel}/impactAnalysis retorna lista de equipamentos afetados se o panel cair.     |
+| **RF-009** | **Visualização da árvore**      | GET /resource/{panel}/tree retorna árvore Panel → Feeds → PDUs → Outlets → Equipments.                |
 
 ### 22.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | PowerOutlet conecta a no máximo 1 PowerPort simultaneamente. |
+| ID         | Regra de Negócio                                                                                                              |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | PowerOutlet conecta a no máximo 1 PowerPort simultaneamente.                                                                  |
 | **RN-002** | Equipment com redundância elétrica (A+B) tem 2 PowerPorts; conectar ambos no mesmo Outlet anula a redundância (gera warning). |
-| **RN-003** | Soma de capacity_W dos consumidores não pode exceder capacidade do PowerPanel. |
-| **RN-004** | Excluir PowerPanel com Feeds ativos é bloqueado. |
+| **RN-003** | Soma de capacity_W dos consumidores não pode exceder capacidade do PowerPanel.                                                |
+| **RN-004** | Excluir PowerPanel com Feeds ativos é bloqueado.                                                                              |
 
 ### 22.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Modelagem completa** | Criar UPS → Feed → PDU → Outlet → conectar PowerPort de OLT: cadeia aceita. |
-| **CA-002** | **Sobrecarga detectada** | PATCH adicionando PowerPort que excede capacity do panel emite warning. |
-| **CA-003** | **Falsa redundância** | Conectar ambos PowerPorts (A+B) do mesmo equipamento ao mesmo Outlet emite warning. |
-| **CA-004** | **Análise de impacto** | GET /resource/{ups}/impactAnalysis retorna lista de equipamentos a jusante. |
+| ID         | Critério                 | Resultado Esperado                                                                  |
+| ---------- | ------------------------ | ----------------------------------------------------------------------------------- |
+| **CA-001** | **Modelagem completa**   | Criar UPS → Feed → PDU → Outlet → conectar PowerPort de OLT: cadeia aceita.         |
+| **CA-002** | **Sobrecarga detectada** | PATCH adicionando PowerPort que excede capacity do panel emite warning.             |
+| **CA-003** | **Falsa redundância**    | Conectar ambos PowerPorts (A+B) do mesmo equipamento ao mesmo Outlet emite warning. |
+| **CA-004** | **Análise de impacto**   | GET /resource/{ups}/impactAnalysis retorna lista de equipamentos a jusante.         |
 
 ### 22.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Modelagem de energia** | Limitada | Limitada | PowerPanel/Feed/Outlet (maduro) | **Adaptação do modelo NetBox ao TMF639** |
-| **Redundância A+B** | Limitada | Não identificado no levantamento | Sim | **Suportada via 2 PowerPorts** |
-| **Cálculo de carga** | Manual | Não identificado no levantamento | Sim (loadCalculation) | **Endpoint dedicado** |
-| **Análise de impacto elétrico** | Não identificado no levantamento | Não identificado no levantamento | Sim | **Endpoint /impactAnalysis** |
-
+| Capacidade                      | Netwin                           | Kuwaiba                          | NetBox                          | Decisão Nexus                            |
+| ------------------------------- | -------------------------------- | -------------------------------- | ------------------------------- | ---------------------------------------- |
+| **Modelagem de energia**        | Limitada                         | Limitada                         | PowerPanel/Feed/Outlet (maduro) | **Adaptação do modelo NetBox ao TMF639** |
+| **Redundância A+B**             | Limitada                         | Não identificado no levantamento | Sim                             | **Suportada via 2 PowerPorts**           |
+| **Cálculo de carga**            | Manual                           | Não identificado no levantamento | Sim (loadCalculation)           | **Endpoint dedicado**                    |
+| **Análise de impacto elétrico** | Não identificado no levantamento | Não identificado no levantamento | Sim                             | **Endpoint /impactAnalysis**             |
 
 ---
 
@@ -2116,11 +2160,11 @@ Sem conexões físicas modeladas, o inventário sabe "quais equipamentos existem
 
 Atributos canônicos da entidade PhysicalResource Connection / Patch Cord (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | Tipo (Jumper-SC/APC-3m, PatchCord-LC/LC-5m, CableTermination-FastConnect). |
-| `resourceCharacteristic` | array | Não | comprimento_m, connector_a, connector_z, tipo_meio (fibra/cobre), etiqueta_fisica. |
-| `resourceRelationship` | array | Sim | endpoint_A (Port), endpoint_Z (Port ou Fiber). |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                                                   |
+| ------------------------ | --------- | :---------: | ---------------------------------------------------------------------------------- |
+| `resourceSpecification`  | EntityRef |     Sim     | Tipo (Jumper-SC/APC-3m, PatchCord-LC/LC-5m, CableTermination-FastConnect).         |
+| `resourceCharacteristic` | array     |     Não     | comprimento_m, connector_a, connector_z, tipo_meio (fibra/cobre), etiqueta_fisica. |
+| `resourceRelationship`   | array     |     Sim     | endpoint_A (Port), endpoint_Z (Port ou Fiber).                                     |
 
 ### 23.4 Exemplo de payload
 
@@ -2133,17 +2177,21 @@ Atributos canônicos da entidade PhysicalResource Connection / Patch Cord (TMF63
   "operationalState": "enable",
   "usageState": "active",
   "resourceCharacteristic": [
-    { "name": "comprimento_m",   "value": 3 },
-    { "name": "connector_a",     "value": "SC/APC" },
-    { "name": "connector_z",     "value": "SC/APC" },
-    { "name": "tipo_meio",       "value": "fibra-monomodo" },
+    { "name": "comprimento_m", "value": 3 },
+    { "name": "connector_a", "value": "SC/APC" },
+    { "name": "connector_z", "value": "SC/APC" },
+    { "name": "tipo_meio", "value": "fibra-monomodo" },
     { "name": "etiqueta_fisica", "value": "JMP-001" }
   ],
   "resourceRelationship": [
-    { "relationshipType": "endpoint_A",
-      "resource": { "id": "res-port-olt-rjbot-co-01-card0-port0", "@referredType": "Resource" } },
-    { "relationshipType": "endpoint_Z",
-      "resource": { "id": "res-frontport-dio01-rjbot-co-01-001", "@referredType": "Resource" } }
+    {
+      "relationshipType": "endpoint_A",
+      "resource": { "id": "res-port-olt-rjbot-co-01-card0-port0", "@referredType": "Resource" }
+    },
+    {
+      "relationshipType": "endpoint_Z",
+      "resource": { "id": "res-frontport-dio01-rjbot-co-01-001", "@referredType": "Resource" }
+    }
   ]
 }
 ```
@@ -2155,46 +2203,45 @@ Atributos canônicos da entidade PhysicalResource Connection / Patch Cord (TMF63
 
 ### 23.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Conexão** | POST com spec, endpoint_A, endpoint_Z, characteristic (comprimento, etiqueta). |
-| **RF-002** | **Validação de compatibilidade** | Verificar que os tipos de conector dos endpoints e da conexão são compatíveis. |
-| **RF-003** | **Validação de Port disponível** | endpoint_A e endpoint_Z devem estar em status available antes da criação. |
-| **RF-004** | **Bidirecionalidade** | Conexão é inerentemente bidirecional — após criação, ambas as Ports passam a usageState=active. |
-| **RF-005** | **Etiquetagem** | characteristic etiqueta_fisica para correlação com etiqueta visual no campo. |
-| **RF-006** | **Desconexão** | DELETE em Connection libera ambas as Ports (usageState=idle) e gera Audit. |
-| **RF-007** | **Operação em massa** | Endpoint /connection/bulk para criar N conexões em transação (cabling em massa de novo rack). |
-| **RF-008** | **Eventos** | Publicar ConnectionCreateEvent, ConnectionDeleteEvent. |
+| ID         | Nome                             | Descrição                                                                                       |
+| ---------- | -------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Conexão**                | POST com spec, endpoint_A, endpoint_Z, characteristic (comprimento, etiqueta).                  |
+| **RF-002** | **Validação de compatibilidade** | Verificar que os tipos de conector dos endpoints e da conexão são compatíveis.                  |
+| **RF-003** | **Validação de Port disponível** | endpoint_A e endpoint_Z devem estar em status available antes da criação.                       |
+| **RF-004** | **Bidirecionalidade**            | Conexão é inerentemente bidirecional — após criação, ambas as Ports passam a usageState=active. |
+| **RF-005** | **Etiquetagem**                  | characteristic etiqueta_fisica para correlação com etiqueta visual no campo.                    |
+| **RF-006** | **Desconexão**                   | DELETE em Connection libera ambas as Ports (usageState=idle) e gera Audit.                      |
+| **RF-007** | **Operação em massa**            | Endpoint /connection/bulk para criar N conexões em transação (cabling em massa de novo rack).   |
+| **RF-008** | **Eventos**                      | Publicar ConnectionCreateEvent, ConnectionDeleteEvent.                                          |
 
 ### 23.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | endpoint_A != endpoint_Z (não conecta porta a si mesma). |
-| **RN-002** | Cada Port pode ter no máximo uma Connection ativa. |
-| **RN-003** | Tipos de conector incompatíveis (ex.: SC vs LC sem adaptador) são rejeitados. |
+| ID         | Regra de Negócio                                                                         |
+| ---------- | ---------------------------------------------------------------------------------------- |
+| **RN-001** | endpoint_A != endpoint_Z (não conecta porta a si mesma).                                 |
+| **RN-002** | Cada Port pode ter no máximo uma Connection ativa.                                       |
+| **RN-003** | Tipos de conector incompatíveis (ex.: SC vs LC sem adaptador) são rejeitados.            |
 | **RN-004** | Desconexão é livre se não houver Service ativo dependente; se houver, exige confirmação. |
-| **RN-005** | Toda conexão/desconexão publica evento (consumido por Service Assurance). |
+| **RN-005** | Toda conexão/desconexão publica evento (consumido por Service Assurance).                |
 
 ### 23.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criar Jumper interno** | POST com spec=Jumper-SC/APC-3m, endpoint_A=porta-OLT, endpoint_Z=frontport-DIO retorna 201. |
-| **CA-002** | **Port já ocupada** | POST conectando Port com Connection existente retorna 409. |
-| **CA-003** | **Conector incompatível** | POST com spec=Jumper-SC mas Port com conector LC retorna 400. |
-| **CA-004** | **Desconexão libera Port** | DELETE em Connection torna ambas as Ports available de novo. |
-| **CA-005** | **Bulk** | POST /connection/bulk com 16 patches retorna 201 com lista. |
+| ID         | Critério                   | Resultado Esperado                                                                          |
+| ---------- | -------------------------- | ------------------------------------------------------------------------------------------- |
+| **CA-001** | **Criar Jumper interno**   | POST com spec=Jumper-SC/APC-3m, endpoint_A=porta-OLT, endpoint_Z=frontport-DIO retorna 201. |
+| **CA-002** | **Port já ocupada**        | POST conectando Port com Connection existente retorna 409.                                  |
+| **CA-003** | **Conector incompatível**  | POST com spec=Jumper-SC mas Port com conector LC retorna 400.                               |
+| **CA-004** | **Desconexão libera Port** | DELETE em Connection torna ambas as Ports available de novo.                                |
+| **CA-005** | **Bulk**                   | POST /connection/bulk com 16 patches retorna 201 com lista.                                 |
 
 ### 23.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Conexão física como entidade** | Limitada | PhysicalConnection robusta | Cable com terminations | **PhysicalResource Connection (TMF639)** |
-| **Validação de compatibilidade** | Manual | Sim | Sim | **Validação no save** |
-| **Bidirecionalidade** | Implícita | Sim | Sim | **Nativa do modelo** |
-| **Etiquetagem física** | Sim (campos) | Sim (custom attr) | Sim (label) | **characteristic etiqueta_fisica** |
-
+| Capacidade                       | Netwin       | Kuwaiba                    | NetBox                 | Decisão Nexus                            |
+| -------------------------------- | ------------ | -------------------------- | ---------------------- | ---------------------------------------- |
+| **Conexão física como entidade** | Limitada     | PhysicalConnection robusta | Cable com terminations | **PhysicalResource Connection (TMF639)** |
+| **Validação de compatibilidade** | Manual       | Sim                        | Sim                    | **Validação no save**                    |
+| **Bidirecionalidade**            | Implícita    | Sim                        | Sim                    | **Nativa do modelo**                     |
+| **Etiquetagem física**           | Sim (campos) | Sim (custom attr)          | Sim (label)            | **characteristic etiqueta_fisica**       |
 
 ---
 
@@ -2217,11 +2264,11 @@ Em FTTH, todo cabo da rua que chega à Central termina em um Rear Port de DIO; d
 
 Atributos canônicos da entidade PhysicalResource Port especializado (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | Tipo (FrontPort-DIO-SC/APC, RearPort-DIO-SC/APC). |
-| `resourceCharacteristic` | array | Não | port_number, connector_type, rear_port_position (em FrontPort), front_port_position (em RearPort). |
-| `resourceRelationship` | array | Sim | containedBy (DIO/Panel), mirrorOf (par Front↔Rear). |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                                                                   |
+| ------------------------ | --------- | :---------: | -------------------------------------------------------------------------------------------------- |
+| `resourceSpecification`  | EntityRef |     Sim     | Tipo (FrontPort-DIO-SC/APC, RearPort-DIO-SC/APC).                                                  |
+| `resourceCharacteristic` | array     |     Não     | port_number, connector_type, rear_port_position (em FrontPort), front_port_position (em RearPort). |
+| `resourceRelationship`   | array     |     Sim     | containedBy (DIO/Panel), mirrorOf (par Front↔Rear).                                                |
 
 ### 24.4 Exemplo de payload
 
@@ -2231,15 +2278,19 @@ Atributos canônicos da entidade PhysicalResource Port especializado (TMF639):
   "name": "FrontPort 1 DIO-01",
   "resourceSpecification": { "id": "spec-frontport-dio-sc-apc" },
   "resourceCharacteristic": [
-    { "name": "port_number",         "value": 1 },
-    { "name": "connector_type",      "value": "SC/APC" },
-    { "name": "rear_port_position",  "value": 1 }
+    { "name": "port_number", "value": 1 },
+    { "name": "connector_type", "value": "SC/APC" },
+    { "name": "rear_port_position", "value": 1 }
   ],
   "resourceRelationship": [
-    { "relationshipType": "containedBy",
-      "resource": { "id": "res-dio-rjbot-co-01-001", "@referredType": "Resource" } },
-    { "relationshipType": "mirrorOf",
-      "resource": { "id": "res-rearport-dio01-rjbot-co-01-001", "@referredType": "Resource" } }
+    {
+      "relationshipType": "containedBy",
+      "resource": { "id": "res-dio-rjbot-co-01-001", "@referredType": "Resource" }
+    },
+    {
+      "relationshipType": "mirrorOf",
+      "resource": { "id": "res-rearport-dio01-rjbot-co-01-001", "@referredType": "Resource" }
+    }
   ]
 }
 ```
@@ -2251,39 +2302,38 @@ Atributos canônicos da entidade PhysicalResource Port especializado (TMF639):
 
 ### 24.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Auto-geração no DIO** | Criar DIO de 144F gera automaticamente 144 FrontPorts + 144 RearPorts com relação mirrorOf entre pares. |
-| **RF-002** | **Mirror automático** | resourceRelationship mirrorOf bidirecional é criada automaticamente entre Front-N e Rear-N. |
-| **RF-003** | **Passagem para path** | Path computation atravessa automaticamente Front↔Rear via mirrorOf como se fosse 1 hop. |
-| **RF-004** | **Validação no path** | Path validate verifica que conexões em FrontPort têm contraparte coerente em RearPort. |
-| **RF-005** | **Operação de troca de DIO** | Substituir DIO preserva mapeamento Front↔Rear e conexões existentes na operação swap. |
+| ID         | Nome                         | Descrição                                                                                               |
+| ---------- | ---------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Auto-geração no DIO**      | Criar DIO de 144F gera automaticamente 144 FrontPorts + 144 RearPorts com relação mirrorOf entre pares. |
+| **RF-002** | **Mirror automático**        | resourceRelationship mirrorOf bidirecional é criada automaticamente entre Front-N e Rear-N.             |
+| **RF-003** | **Passagem para path**       | Path computation atravessa automaticamente Front↔Rear via mirrorOf como se fosse 1 hop.                 |
+| **RF-004** | **Validação no path**        | Path validate verifica que conexões em FrontPort têm contraparte coerente em RearPort.                  |
+| **RF-005** | **Operação de troca de DIO** | Substituir DIO preserva mapeamento Front↔Rear e conexões existentes na operação swap.                   |
 
 ### 24.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Para cada DIO, número de FrontPorts = número de RearPorts. |
-| **RN-002** | Relação mirrorOf é 1-para-1 e bidirecional. |
-| **RN-003** | mirrorOf é criada automaticamente no provisionamento do DIO e nunca alterada manualmente. |
+| ID         | Regra de Negócio                                                                            |
+| ---------- | ------------------------------------------------------------------------------------------- |
+| **RN-001** | Para cada DIO, número de FrontPorts = número de RearPorts.                                  |
+| **RN-002** | Relação mirrorOf é 1-para-1 e bidirecional.                                                 |
+| **RN-003** | mirrorOf é criada automaticamente no provisionamento do DIO e nunca alterada manualmente.   |
 | **RN-004** | Excluir FrontPort ou RearPort individualmente é bloqueado — só via exclusão do DIO inteiro. |
 
 ### 24.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Auto-geração** | POST de DIO 144F cria 288 Ports (144 Front + 144 Rear) com 144 relações mirrorOf. |
-| **CA-002** | **Path atravessa DIO** | Path computation com cabo terminando em Rear-1 atravessa para Front-1 e segue. |
-| **CA-003** | **Bloqueio de delete** | DELETE em FrontPort individual retorna 405. |
+| ID         | Critério               | Resultado Esperado                                                                |
+| ---------- | ---------------------- | --------------------------------------------------------------------------------- |
+| **CA-001** | **Auto-geração**       | POST de DIO 144F cria 288 Ports (144 Front + 144 Rear) com 144 relações mirrorOf. |
+| **CA-002** | **Path atravessa DIO** | Path computation com cabo terminando em Rear-1 atravessa para Front-1 e segue.    |
+| **CA-003** | **Bloqueio de delete** | DELETE em FrontPort individual retorna 405.                                       |
 
 ### 24.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Front/Rear Port** | Não identificado no levantamento | Sim (Port com mirror) | Sim (nativo) | **Sim — auto-gerado no DIO** |
-| **Atravessamento no path** | Manual | Automático | Automático | **Automático via mirrorOf** |
-| **Auto-geração com DIO** | Sim | Sim | Sim (template) | **Sim — sem código adicional** |
-
+| Capacidade                 | Netwin                           | Kuwaiba               | NetBox         | Decisão Nexus                  |
+| -------------------------- | -------------------------------- | --------------------- | -------------- | ------------------------------ |
+| **Front/Rear Port**        | Não identificado no levantamento | Sim (Port com mirror) | Sim (nativo)   | **Sim — auto-gerado no DIO**   |
+| **Atravessamento no path** | Manual                           | Automático            | Automático     | **Automático via mirrorOf**    |
+| **Auto-geração com DIO**   | Sim                              | Sim                   | Sim (template) | **Sim — sem código adicional** |
 
 ---
 
@@ -2306,53 +2356,61 @@ IPAM é capacidade onde o NetBox é referência: modelagem hierárquica de Prefi
 
 Atributos canônicos da entidade LogicalResource Prefix/IPAddress (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | Tipo (Prefix-IPv4, Prefix-IPv6, IPAddress-IPv4, IPAddress-IPv6). |
-| `resourceCharacteristic` | array | Não | cidr (notação 10.0.0.0/24), family (4|6), role (Loopback/PointToPoint/Management/Customer), description. |
-| `resourceRelationship` | array | Não | containedBy (Prefix pai); assignedTo (Port/Interface ou Service); withinVRF (REQ-MOD02-021). |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                                                             |
+| ------------------------ | --------- | :---------: | -------------------------------------------------------------------------------------------- |
+| `resourceSpecification`  | EntityRef |     Sim     | Tipo (Prefix-IPv4, Prefix-IPv6, IPAddress-IPv4, IPAddress-IPv6).                             |
+| `resourceCharacteristic` | array     |     Não     | cidr (notação 10.0.0.0/24), family (4                                                        | 6), role (Loopback/PointToPoint/Management/Customer), description. |
+| `resourceRelationship`   | array     |     Não     | containedBy (Prefix pai); assignedTo (Port/Interface ou Service); withinVRF (REQ-MOD02-021). |
 
 ### 25.4 Exemplo de payload
 
 ```json
 [
-{
-  "id": "res-prefix-200-10-50-0-24",
-  "name": "200.10.50.0/24 - Corporate RJ",
-  "@type": "LogicalResource",
-  "resourceSpecification": { "id": "spec-prefix-ipv4" },
-  "resourceStatus": "available",
-  "resourceCharacteristic": [
-    { "name": "cidr",        "value": "200.10.50.0/24" },
-    { "name": "family",      "value": 4 },
-    { "name": "role",        "value": "Customer" },
-    { "name": "description", "value": "Bloco para clientes corporativos RJ" }
-  ],
-  "resourceRelationship": [
-    { "relationshipType": "containedBy",
-      "resource": { "id": "res-prefix-200-10-0-0-16", "@referredType": "Resource" } },
-    { "relationshipType": "withinVRF",
-      "resource": { "id": "res-vrf-corporate-rj", "@referredType": "Resource" } }
-  ]
-},
-{
-  "id": "res-ipaddr-200-10-50-100",
-  "name": "200.10.50.100",
-  "@type": "LogicalResource",
-  "resourceSpecification": { "id": "spec-ipaddress-ipv4" },
-  "resourceStatus": "available",
-  "usageState": "active",
-  "resourceCharacteristic": [
-    { "name": "address", "value": "200.10.50.100" },
-    { "name": "mask",    "value": "255.255.255.252" }
-  ],
-  "resourceRelationship": [
-    { "relationshipType": "containedBy",
-      "resource": { "id": "res-prefix-200-10-50-0-24", "@referredType": "Resource" } },
-    { "relationshipType": "assignedTo",
-      "resource": { "id": "res-port-cpe-cliente-67890", "@referredType": "Resource" } }
-  ]
-}
+  {
+    "id": "res-prefix-200-10-50-0-24",
+    "name": "200.10.50.0/24 - Corporate RJ",
+    "@type": "LogicalResource",
+    "resourceSpecification": { "id": "spec-prefix-ipv4" },
+    "resourceStatus": "available",
+    "resourceCharacteristic": [
+      { "name": "cidr", "value": "200.10.50.0/24" },
+      { "name": "family", "value": 4 },
+      { "name": "role", "value": "Customer" },
+      { "name": "description", "value": "Bloco para clientes corporativos RJ" }
+    ],
+    "resourceRelationship": [
+      {
+        "relationshipType": "containedBy",
+        "resource": { "id": "res-prefix-200-10-0-0-16", "@referredType": "Resource" }
+      },
+      {
+        "relationshipType": "withinVRF",
+        "resource": { "id": "res-vrf-corporate-rj", "@referredType": "Resource" }
+      }
+    ]
+  },
+  {
+    "id": "res-ipaddr-200-10-50-100",
+    "name": "200.10.50.100",
+    "@type": "LogicalResource",
+    "resourceSpecification": { "id": "spec-ipaddress-ipv4" },
+    "resourceStatus": "available",
+    "usageState": "active",
+    "resourceCharacteristic": [
+      { "name": "address", "value": "200.10.50.100" },
+      { "name": "mask", "value": "255.255.255.252" }
+    ],
+    "resourceRelationship": [
+      {
+        "relationshipType": "containedBy",
+        "resource": { "id": "res-prefix-200-10-50-0-24", "@referredType": "Resource" }
+      },
+      {
+        "relationshipType": "assignedTo",
+        "resource": { "id": "res-port-cpe-cliente-67890", "@referredType": "Resource" }
+      }
+    ]
+  }
 ]
 ```
 
@@ -2363,50 +2421,49 @@ Atributos canônicos da entidade LogicalResource Prefix/IPAddress (TMF639):
 
 ### 25.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar Prefix** | POST com cidr, family, role; sistema valida formato CIDR e calcula containment automático. |
-| **RF-002** | **Hierarquia automática** | Calcular Prefix pai automaticamente via lookup do bloco que contém o cidr informado. |
-| **RF-003** | **Criar IPAddress** | POST com ip individual; sistema localiza Prefix pai por containment. |
-| **RF-004** | **Reservas** | Atributo resourceStatus=reserved indica IP planejado mas não atribuído. |
-| **RF-005** | **Atribuição a interface** | Adicionar resourceRelationship assignedTo apontando para Port (interface lógica). |
-| **RF-006** | **Atribuição a Service** | Adicionar resourceRelationship assignedTo apontando para Service (cliente corporativo). |
-| **RF-007** | **Próximo IP livre** | Endpoint /resource/{prefixId}/nextAvailable retorna próximo IP livre no Prefix. |
-| **RF-008** | **Utilização do Prefix** | Endpoint /resource/{prefixId}/utilization retorna % de uso (alocados vs capacidade). |
-| **RF-009** | **Conflito de alocação** | Detectar e rejeitar alocação de IP já em uso em mesma VRF. |
-| **RF-010** | **Histórico de alocação** | Histórico completo de quais Resources/Services usaram um IP ao longo do tempo (via eventos). |
+| ID         | Nome                       | Descrição                                                                                    |
+| ---------- | -------------------------- | -------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar Prefix**           | POST com cidr, family, role; sistema valida formato CIDR e calcula containment automático.   |
+| **RF-002** | **Hierarquia automática**  | Calcular Prefix pai automaticamente via lookup do bloco que contém o cidr informado.         |
+| **RF-003** | **Criar IPAddress**        | POST com ip individual; sistema localiza Prefix pai por containment.                         |
+| **RF-004** | **Reservas**               | Atributo resourceStatus=reserved indica IP planejado mas não atribuído.                      |
+| **RF-005** | **Atribuição a interface** | Adicionar resourceRelationship assignedTo apontando para Port (interface lógica).            |
+| **RF-006** | **Atribuição a Service**   | Adicionar resourceRelationship assignedTo apontando para Service (cliente corporativo).      |
+| **RF-007** | **Próximo IP livre**       | Endpoint /resource/{prefixId}/nextAvailable retorna próximo IP livre no Prefix.              |
+| **RF-008** | **Utilização do Prefix**   | Endpoint /resource/{prefixId}/utilization retorna % de uso (alocados vs capacidade).         |
+| **RF-009** | **Conflito de alocação**   | Detectar e rejeitar alocação de IP já em uso em mesma VRF.                                   |
+| **RF-010** | **Histórico de alocação**  | Histórico completo de quais Resources/Services usaram um IP ao longo do tempo (via eventos). |
 
 ### 25.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | cidr deve ser sintaticamente válido (CIDR notation IPv4 ou IPv6). |
-| **RN-002** | IP duplicado dentro da mesma VRF é proibido. |
-| **RN-003** | Excluir Prefix com IPs alocados é bloqueado (libera alocações primeiro). |
+| ID         | Regra de Negócio                                                               |
+| ---------- | ------------------------------------------------------------------------------ |
+| **RN-001** | cidr deve ser sintaticamente válido (CIDR notation IPv4 ou IPv6).              |
+| **RN-002** | IP duplicado dentro da mesma VRF é proibido.                                   |
+| **RN-003** | Excluir Prefix com IPs alocados é bloqueado (libera alocações primeiro).       |
 | **RN-004** | Reserva tem TTL opcional — após expirar, IP volta a available automaticamente. |
-| **RN-005** | Atribuição a Service exige Service ativo (cross-validation com Módulo 3). |
+| **RN-005** | Atribuição a Service exige Service ativo (cross-validation com Módulo 3).      |
 
 ### 25.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criar Prefix /16** | POST com cidr=200.10.0.0/16, role=Customer retorna 201. |
+| ID         | Critério                  | Resultado Esperado                                                                  |
+| ---------- | ------------------------- | ----------------------------------------------------------------------------------- |
+| **CA-001** | **Criar Prefix /16**      | POST com cidr=200.10.0.0/16, role=Customer retorna 201.                             |
 | **CA-002** | **Hierarquia automática** | POST de Prefix /24 dentro de /16 já existente preenche automaticamente containedBy. |
-| **CA-003** | **Conflito de IP** | POST de IP já alocado em mesma VRF retorna 409. |
-| **CA-004** | **Next available** | GET /resource/{prefixId}/nextAvailable retorna próximo IP livre. |
-| **CA-005** | **Utilização** | GET retorna {total: 254, allocated: 100, utilization: 39.4}. |
-| **CA-006** | **Assignment** | PATCH adicionando assignedTo=Port é aceito; usageState=active. |
+| **CA-003** | **Conflito de IP**        | POST de IP já alocado em mesma VRF retorna 409.                                     |
+| **CA-004** | **Next available**        | GET /resource/{prefixId}/nextAvailable retorna próximo IP livre.                    |
+| **CA-005** | **Utilização**            | GET retorna {total: 254, allocated: 100, utilization: 39.4}.                        |
+| **CA-006** | **Assignment**            | PATCH adicionando assignedTo=Port é aceito; usageState=active.                      |
 
 ### 25.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **IPAM nativo** | Limitado (planilha) | Limitado | Sim — referência | **LogicalResource Prefix/IP (TMF639)** |
-| **Hierarquia automática** | Manual | Manual | Sim (lookup CIDR) | **Sim (lookup automático)** |
-| **Next available** | Não identificado no levantamento | Não identificado no levantamento | Sim (UI) | **Endpoint /nextAvailable** |
-| **Utilização** | Manual | Não identificado no levantamento | Sim (UI) | **Endpoint /utilization** |
-| **Conflito de alocação** | Manual | Não identificado no levantamento | Sim (validação) | **Validação canônica em VRF** |
-
+| Capacidade                | Netwin                           | Kuwaiba                          | NetBox            | Decisão Nexus                          |
+| ------------------------- | -------------------------------- | -------------------------------- | ----------------- | -------------------------------------- |
+| **IPAM nativo**           | Limitado (planilha)              | Limitado                         | Sim — referência  | **LogicalResource Prefix/IP (TMF639)** |
+| **Hierarquia automática** | Manual                           | Manual                           | Sim (lookup CIDR) | **Sim (lookup automático)**            |
+| **Next available**        | Não identificado no levantamento | Não identificado no levantamento | Sim (UI)          | **Endpoint /nextAvailable**            |
+| **Utilização**            | Manual                           | Não identificado no levantamento | Sim (UI)          | **Endpoint /utilization**              |
+| **Conflito de alocação**  | Manual                           | Não identificado no levantamento | Sim (validação)   | **Validação canônica em VRF**          |
 
 ---
 
@@ -2429,11 +2486,11 @@ VRF é elemento crítico para clientes corporativos (L3VPN) e segmentação inte
 
 Atributos canônicos da entidade LogicalResource VRF e RouteTarget (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | spec-vrf, spec-route-target. |
-| `resourceCharacteristic` | array | Não | rd (Route Distinguisher, formato ASN:NN), name, description; para RT: rt_value (formato ASN:NN), action (import/export/both). |
-| `resourceRelationship` | array | Não | VRF com RouteTargets (import/export); Prefixes/IPs withinVRF. |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                                                                                              |
+| ------------------------ | --------- | :---------: | ----------------------------------------------------------------------------------------------------------------------------- |
+| `resourceSpecification`  | EntityRef |     Sim     | spec-vrf, spec-route-target.                                                                                                  |
+| `resourceCharacteristic` | array     |     Não     | rd (Route Distinguisher, formato ASN:NN), name, description; para RT: rt_value (formato ASN:NN), action (import/export/both). |
+| `resourceRelationship`   | array     |     Não     | VRF com RouteTargets (import/export); Prefixes/IPs withinVRF.                                                                 |
 
 ### 26.4 Exemplo de payload
 
@@ -2444,14 +2501,18 @@ Atributos canônicos da entidade LogicalResource VRF e RouteTarget (TMF639):
   "@type": "LogicalResource",
   "resourceSpecification": { "id": "spec-vrf" },
   "resourceCharacteristic": [
-    { "name": "rd",          "value": "65000:12345" },
+    { "name": "rd", "value": "65000:12345" },
     { "name": "description", "value": "VRF L3VPN cliente 12345" }
   ],
   "resourceRelationship": [
-    { "relationshipType": "importsTarget",
-      "resource": { "id": "res-rt-12345-export", "@referredType": "Resource" } },
-    { "relationshipType": "exportsTarget",
-      "resource": { "id": "res-rt-12345-export", "@referredType": "Resource" } }
+    {
+      "relationshipType": "importsTarget",
+      "resource": { "id": "res-rt-12345-export", "@referredType": "Resource" }
+    },
+    {
+      "relationshipType": "exportsTarget",
+      "resource": { "id": "res-rt-12345-export", "@referredType": "Resource" }
+    }
   ]
 }
 ```
@@ -2463,41 +2524,40 @@ Atributos canônicos da entidade LogicalResource VRF e RouteTarget (TMF639):
 
 ### 26.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar VRF** | POST com name, rd (Route Distinguisher) único. |
-| **RF-002** | **Criar Route Target** | POST com rt_value, action (import|export|both). |
-| **RF-003** | **Associar RT a VRF** | PATCH em VRF adicionando resourceRelationship com RouteTargets. |
-| **RF-004** | **Listar Prefixes/IPs por VRF** | GET /resource?type=Prefix&withinVRF={vrfId} retorna escopo de endereçamento da VRF. |
-| **RF-005** | **Validação RD único** | rd é único globalmente — duas VRFs não podem compartilhar o mesmo RD. |
-| **RF-006** | **Topologia MPLS** | Endpoint /resource/{vrfId}/topology retorna grafo de VRFs conectadas via RTs comuns. |
+| ID         | Nome                            | Descrição                                                                            |
+| ---------- | ------------------------------- | ------------------------------------------------------------------------------------ |
+| **RF-001** | **Criar VRF**                   | POST com name, rd (Route Distinguisher) único.                                       |
+| **RF-002** | **Criar Route Target**          | POST com rt_value, action (import                                                    | export | both). |
+| **RF-003** | **Associar RT a VRF**           | PATCH em VRF adicionando resourceRelationship com RouteTargets.                      |
+| **RF-004** | **Listar Prefixes/IPs por VRF** | GET /resource?type=Prefix&withinVRF={vrfId} retorna escopo de endereçamento da VRF.  |
+| **RF-005** | **Validação RD único**          | rd é único globalmente — duas VRFs não podem compartilhar o mesmo RD.                |
+| **RF-006** | **Topologia MPLS**              | Endpoint /resource/{vrfId}/topology retorna grafo de VRFs conectadas via RTs comuns. |
 
 ### 26.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | rd é único globalmente (validação no save). |
-| **RN-002** | Excluir VRF com Prefixes ou IPs vinculados é bloqueado. |
-| **RN-003** | RT pode ser referenciado por múltiplos VRFs (relação N:N). |
+| ID         | Regra de Negócio                                                          |
+| ---------- | ------------------------------------------------------------------------- |
+| **RN-001** | rd é único globalmente (validação no save).                               |
+| **RN-002** | Excluir VRF com Prefixes ou IPs vinculados é bloqueado.                   |
+| **RN-003** | RT pode ser referenciado por múltiplos VRFs (relação N:N).                |
 | **RN-004** | VRF padrão (Internet/Default) tem nome reservado e não pode ser excluído. |
 
 ### 26.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criar VRF** | POST com name=CUSTOMER-12345 e rd=65000:12345 retorna 201. |
-| **CA-002** | **RD duplicado** | POST com rd já existente retorna 409. |
+| ID         | Critério          | Resultado Esperado                                                       |
+| ---------- | ----------------- | ------------------------------------------------------------------------ |
+| **CA-001** | **Criar VRF**     | POST com name=CUSTOMER-12345 e rd=65000:12345 retorna 201.               |
+| **CA-002** | **RD duplicado**  | POST com rd já existente retorna 409.                                    |
 | **CA-003** | **Listar escopo** | GET de Prefixes withinVRF=CUSTOMER-12345 retorna apenas Prefixes da VRF. |
-| **CA-004** | **Topologia** | GET /resource/{vrfId}/topology retorna VRFs conectadas via RTs comuns. |
+| **CA-004** | **Topologia**     | GET /resource/{vrfId}/topology retorna VRFs conectadas via RTs comuns.   |
 
 ### 26.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **VRF modelado** | Limitado | Limitado | Sim (nativo) | **LogicalResource VRF (TMF639)** |
-| **Route Target** | Não identificado no levantamento | Não identificado no levantamento | Sim | **LogicalResource RT** |
-| **Topologia MPLS** | Não identificado no levantamento | Não identificado no levantamento | Limitada | **Endpoint dedicado** |
-
+| Capacidade         | Netwin                           | Kuwaiba                          | NetBox       | Decisão Nexus                    |
+| ------------------ | -------------------------------- | -------------------------------- | ------------ | -------------------------------- |
+| **VRF modelado**   | Limitado                         | Limitado                         | Sim (nativo) | **LogicalResource VRF (TMF639)** |
+| **Route Target**   | Não identificado no levantamento | Não identificado no levantamento | Sim          | **LogicalResource RT**           |
+| **Topologia MPLS** | Não identificado no levantamento | Não identificado no levantamento | Limitada     | **Endpoint dedicado**            |
 
 ---
 
@@ -2520,37 +2580,37 @@ VLAN é capacidade básica de qualquer inventário de redes. NetBox modela VLAN 
 
 Atributos canônicos da entidade LogicalResource VLAN / VLANGroup (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | spec-vlan, spec-vlan-group. |
-| `resourceCharacteristic` | array | Não | vid (1-4094), name, role (Management/Customer/Service/Internal/Voice). |
-| `resourceRelationship` | array | Não | VLAN withinGroup (VLANGroup); VLAN assignedTo (Port/Card). |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                                       |
+| ------------------------ | --------- | :---------: | ---------------------------------------------------------------------- |
+| `resourceSpecification`  | EntityRef |     Sim     | spec-vlan, spec-vlan-group.                                            |
+| `resourceCharacteristic` | array     |     Não     | vid (1-4094), name, role (Management/Customer/Service/Internal/Voice). |
+| `resourceRelationship`   | array     |     Não     | VLAN withinGroup (VLANGroup); VLAN assignedTo (Port/Card).             |
 
 ### 27.4 Exemplo de payload
 
 ```json
 [
-{
-  "id": "res-vlan-group-mgmt-rj",
-  "name": "VLAN Group Management RJ",
-  "resourceSpecification": { "id": "spec-vlan-group" },
-  "resourceCharacteristic": [
-    { "name": "scope", "value": "region-rj" }
-  ]
-},
-{
-  "id": "res-vlan-mgmt-rj-100",
-  "name": "VLAN 100 - MGMT-RJ",
-  "resourceSpecification": { "id": "spec-vlan" },
-  "resourceCharacteristic": [
-    { "name": "vid",  "value": 100 },
-    { "name": "role", "value": "Management" }
-  ],
-  "resourceRelationship": [
-    { "relationshipType": "withinGroup",
-      "resource": { "id": "res-vlan-group-mgmt-rj", "@referredType": "Resource" } }
-  ]
-}
+  {
+    "id": "res-vlan-group-mgmt-rj",
+    "name": "VLAN Group Management RJ",
+    "resourceSpecification": { "id": "spec-vlan-group" },
+    "resourceCharacteristic": [{ "name": "scope", "value": "region-rj" }]
+  },
+  {
+    "id": "res-vlan-mgmt-rj-100",
+    "name": "VLAN 100 - MGMT-RJ",
+    "resourceSpecification": { "id": "spec-vlan" },
+    "resourceCharacteristic": [
+      { "name": "vid", "value": 100 },
+      { "name": "role", "value": "Management" }
+    ],
+    "resourceRelationship": [
+      {
+        "relationshipType": "withinGroup",
+        "resource": { "id": "res-vlan-group-mgmt-rj", "@referredType": "Resource" }
+      }
+    ]
+  }
 ]
 ```
 
@@ -2561,40 +2621,39 @@ Atributos canônicos da entidade LogicalResource VLAN / VLANGroup (TMF639):
 
 ### 27.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar VLANGroup** | POST com name, scope (region/site/global). |
-| **RF-002** | **Criar VLAN** | POST com vid, name, withinGroup opcional. |
-| **RF-003** | **Atribuir VLAN a Port** | PATCH em Port adicionando resourceRelationship assignedVLAN. |
-| **RF-004** | **VID único por Group** | Validar que vid é único dentro do mesmo VLANGroup. |
-| **RF-005** | **Range scanner** | Endpoint /vlan-group/{id}/availableVIDs retorna lista de VIDs livres. |
-| **RF-006** | **Q-in-Q** | Suportar VLAN tagging duplo (S-VLAN/C-VLAN) via characteristics adicionais. |
+| ID         | Nome                     | Descrição                                                                   |
+| ---------- | ------------------------ | --------------------------------------------------------------------------- |
+| **RF-001** | **Criar VLANGroup**      | POST com name, scope (region/site/global).                                  |
+| **RF-002** | **Criar VLAN**           | POST com vid, name, withinGroup opcional.                                   |
+| **RF-003** | **Atribuir VLAN a Port** | PATCH em Port adicionando resourceRelationship assignedVLAN.                |
+| **RF-004** | **VID único por Group**  | Validar que vid é único dentro do mesmo VLANGroup.                          |
+| **RF-005** | **Range scanner**        | Endpoint /vlan-group/{id}/availableVIDs retorna lista de VIDs livres.       |
+| **RF-006** | **Q-in-Q**               | Suportar VLAN tagging duplo (S-VLAN/C-VLAN) via characteristics adicionais. |
 
 ### 27.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | vid no range 1-4094. |
+| ID         | Regra de Negócio                                                          |
+| ---------- | ------------------------------------------------------------------------- |
+| **RN-001** | vid no range 1-4094.                                                      |
 | **RN-002** | Sem VLANGroup, vid é único globalmente; com Group, único dentro do Group. |
-| **RN-003** | Excluir VLAN com Ports atribuídas é bloqueado. |
+| **RN-003** | Excluir VLAN com Ports atribuídas é bloqueado.                            |
 
 ### 27.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Criar VLAN** | POST com vid=100, name=MGMT, withinGroup=GR-MGMT-RJ retorna 201. |
-| **CA-002** | **VID duplicado** | POST de segundo VLAN com mesmo vid no mesmo Group retorna 409. |
-| **CA-003** | **Atribuição** | PATCH em Port adicionando VLAN é aceito. |
-| **CA-004** | **Available VIDs** | GET retorna lista de VIDs livres no Group. |
+| ID         | Critério           | Resultado Esperado                                               |
+| ---------- | ------------------ | ---------------------------------------------------------------- |
+| **CA-001** | **Criar VLAN**     | POST com vid=100, name=MGMT, withinGroup=GR-MGMT-RJ retorna 201. |
+| **CA-002** | **VID duplicado**  | POST de segundo VLAN com mesmo vid no mesmo Group retorna 409.   |
+| **CA-003** | **Atribuição**     | PATCH em Port adicionando VLAN é aceito.                         |
+| **CA-004** | **Available VIDs** | GET retorna lista de VIDs livres no Group.                       |
 
 ### 27.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **VLAN modelado** | Sim | Sim | Sim — referência | **LogicalResource VLAN (TMF639)** |
-| **VLAN Group** | Não identificado no levantamento | Limitado | Sim | **LogicalResource VLANGroup** |
-| **Range scanner** | Não identificado no levantamento | Não identificado no levantamento | Sim | **Endpoint /availableVIDs** |
-
+| Capacidade        | Netwin                           | Kuwaiba                          | NetBox           | Decisão Nexus                     |
+| ----------------- | -------------------------------- | -------------------------------- | ---------------- | --------------------------------- |
+| **VLAN modelado** | Sim                              | Sim                              | Sim — referência | **LogicalResource VLAN (TMF639)** |
+| **VLAN Group**    | Não identificado no levantamento | Limitado                         | Sim              | **LogicalResource VLANGroup**     |
+| **Range scanner** | Não identificado no levantamento | Não identificado no levantamento | Sim              | **Endpoint /availableVIDs**       |
 
 ---
 
@@ -2617,11 +2676,11 @@ Capacidades de backbone que sustentam serviços para ISPs e corporativos. Modela
 
 Atributos canônicos da entidade LogicalResource ASN / MPLSLabel (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | spec-asn, spec-mpls-label, spec-mpls-circuit. |
-| `resourceCharacteristic` | array | Não | asn_value (2- ou 4-byte), public (true|false); MPLS: label_value, scope (router/global). |
-| `resourceRelationship` | array | Não | ASN assignedTo (Router); MPLSLabel allocatedBy (Router). |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                         |
+| ------------------------ | --------- | :---------: | -------------------------------------------------------- |
+| `resourceSpecification`  | EntityRef |     Sim     | spec-asn, spec-mpls-label, spec-mpls-circuit.            |
+| `resourceCharacteristic` | array     |     Não     | asn_value (2- ou 4-byte), public (true                   | false); MPLS: label_value, scope (router/global). |
+| `resourceRelationship`   | array     |     Não     | ASN assignedTo (Router); MPLSLabel allocatedBy (Router). |
 
 ### 28.4 Exemplo de payload
 
@@ -2633,7 +2692,7 @@ Atributos canônicos da entidade LogicalResource ASN / MPLSLabel (TMF639):
   "resourceSpecification": { "id": "spec-asn" },
   "resourceCharacteristic": [
     { "name": "asn_value", "value": 28631 },
-    { "name": "public",    "value": true }
+    { "name": "public", "value": true }
   ]
 }
 ```
@@ -2644,36 +2703,35 @@ Atributos canônicos da entidade LogicalResource ASN / MPLSLabel (TMF639):
 
 ### 28.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar ASN** | POST com asn_value, public (true|false). |
-| **RF-002** | **Atribuir ASN a Router** | PATCH em Router adicionando resourceRelationship hasASN. |
-| **RF-003** | **Alocar MPLS Label** | POST de MPLSLabel com label_value e allocatedBy=Router. |
-| **RF-004** | **Range de Labels disponíveis** | Endpoint /router/{id}/labelRange retorna labels livres. |
+| ID         | Nome                            | Descrição                                                |
+| ---------- | ------------------------------- | -------------------------------------------------------- |
+| **RF-001** | **Criar ASN**                   | POST com asn_value, public (true                         | false). |
+| **RF-002** | **Atribuir ASN a Router**       | PATCH em Router adicionando resourceRelationship hasASN. |
+| **RF-003** | **Alocar MPLS Label**           | POST de MPLSLabel com label_value e allocatedBy=Router.  |
+| **RF-004** | **Range de Labels disponíveis** | Endpoint /router/{id}/labelRange retorna labels livres.  |
 
 ### 28.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | asn_value público é único globalmente. |
+| ID         | Regra de Negócio                                  |
+| ---------- | ------------------------------------------------- |
+| **RN-001** | asn_value público é único globalmente.            |
 | **RN-002** | MPLS Label é único no escopo do Router que aloca. |
-| **RN-003** | Excluir ASN com Routers vinculados é bloqueado. |
+| **RN-003** | Excluir ASN com Routers vinculados é bloqueado.   |
 
 ### 28.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
+| ID         | Critério              | Resultado Esperado                                        |
+| ---------- | --------------------- | --------------------------------------------------------- |
 | **CA-001** | **Criar ASN público** | POST com asn_value=28631 (ASN público V.tal) retorna 201. |
-| **CA-002** | **ASN duplicado** | POST com asn_value já existente retorna 409. |
-| **CA-003** | **MPLS Label** | POST de label=16001 em router-mx10-rj retorna 201. |
+| **CA-002** | **ASN duplicado**     | POST com asn_value já existente retorna 409.              |
+| **CA-003** | **MPLS Label**        | POST de label=16001 em router-mx10-rj retorna 201.        |
 
 ### 28.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **ASN como recurso** | Não identificado no levantamento | Não identificado no levantamento | Sim | **LogicalResource ASN** |
+| Capacidade                | Netwin                           | Kuwaiba                          | NetBox   | Decisão Nexus                 |
+| ------------------------- | -------------------------------- | -------------------------------- | -------- | ----------------------------- |
+| **ASN como recurso**      | Não identificado no levantamento | Não identificado no levantamento | Sim      | **LogicalResource ASN**       |
 | **MPLS Label management** | Não identificado no levantamento | Não identificado no levantamento | Limitado | **LogicalResource MPLSLabel** |
-
 
 ---
 
@@ -2698,30 +2756,40 @@ Sem catálogo formal de relações, as relações tendem a proliferar com nomes 
 
 Atributos canônicos da entidade resourceRelationship com type catalog (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `relationshipType` | string | Sim | Vem do catálogo controlado de tipos. |
-| `resource` | EntityRef | Sim | Resource relacionado. |
-| `characteristic` | array | Não | Atributos específicos da relação (ex.: slot, U_position, sequencia). |
-| `validFor` | TimePeriod | Não | Período de validade da relação. |
+| Atributo TMF       | Tipo       | Obrigatório | Observação V.tal                                                     |
+| ------------------ | ---------- | :---------: | -------------------------------------------------------------------- |
+| `relationshipType` | string     |     Sim     | Vem do catálogo controlado de tipos.                                 |
+| `resource`         | EntityRef  |     Sim     | Resource relacionado.                                                |
+| `characteristic`   | array      |     Não     | Atributos específicos da relação (ex.: slot, U_position, sequencia). |
+| `validFor`         | TimePeriod |     Não     | Período de validade da relação.                                      |
 
 ### 29.4 Exemplo de payload
 
 ```json
 {
   "RelationshipTypes": [
-    { "code": "containedBy",       "inverse": "containsAsChild",  "symmetric": false, "scope": "physical" },
-    { "code": "containsAsChild",   "inverse": "containedBy",      "symmetric": false, "scope": "physical" },
-    { "code": "connectedTo",       "inverse": "connectedTo",      "symmetric": true,  "scope": "physical" },
-    { "code": "endpoint_A",        "inverse": "endpoint_Z_of",    "symmetric": false, "scope": "physical" },
-    { "code": "endpoint_Z",        "inverse": "endpoint_A_of",    "symmetric": false, "scope": "physical" },
-    { "code": "mirrorOf",          "inverse": "mirrorOf",         "symmetric": true,  "scope": "physical" },
-    { "code": "supportedBy",       "inverse": "supports",         "symmetric": false, "scope": "physical" },
-    { "code": "passesThrough",     "inverse": "traversedBy",      "symmetric": false, "scope": "physical" },
-    { "code": "assignedTo",        "inverse": "hasAssigned",      "symmetric": false, "scope": "logical"  },
-    { "code": "withinVRF",         "inverse": "containsResource", "symmetric": false, "scope": "logical"  },
-    { "code": "withinGroup",       "inverse": "groupContains",    "symmetric": false, "scope": "logical"  },
-    { "code": "replaces",          "inverse": "replacedBy",       "symmetric": false, "scope": "lifecycle"}
+    {
+      "code": "containedBy",
+      "inverse": "containsAsChild",
+      "symmetric": false,
+      "scope": "physical"
+    },
+    {
+      "code": "containsAsChild",
+      "inverse": "containedBy",
+      "symmetric": false,
+      "scope": "physical"
+    },
+    { "code": "connectedTo", "inverse": "connectedTo", "symmetric": true, "scope": "physical" },
+    { "code": "endpoint_A", "inverse": "endpoint_Z_of", "symmetric": false, "scope": "physical" },
+    { "code": "endpoint_Z", "inverse": "endpoint_A_of", "symmetric": false, "scope": "physical" },
+    { "code": "mirrorOf", "inverse": "mirrorOf", "symmetric": true, "scope": "physical" },
+    { "code": "supportedBy", "inverse": "supports", "symmetric": false, "scope": "physical" },
+    { "code": "passesThrough", "inverse": "traversedBy", "symmetric": false, "scope": "physical" },
+    { "code": "assignedTo", "inverse": "hasAssigned", "symmetric": false, "scope": "logical" },
+    { "code": "withinVRF", "inverse": "containsResource", "symmetric": false, "scope": "logical" },
+    { "code": "withinGroup", "inverse": "groupContains", "symmetric": false, "scope": "logical" },
+    { "code": "replaces", "inverse": "replacedBy", "symmetric": false, "scope": "lifecycle" }
   ]
 }
 ```
@@ -2732,48 +2800,47 @@ Atributos canônicos da entidade resourceRelationship com type catalog (TMF639):
 
 ### 29.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
+| ID         | Nome                               | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **RF-001** | **Bootstrap canônico do catálogo** | Pré-popular o catálogo de RelationshipTypes com tipos canônicos com semântica documentada: containedBy/containsAsChild (contenção física); connectedTo (conexão física bidirecional); endpoint_A/endpoint_Z (endpoints de Cable/Connection/Splice); mirrorOf (passagem interna em DIO); supportedBy (estrutura de apoio); passesThrough (trajeto sobre Support Structures); assignedTo (alocação lógica de IPs e VLANs); withinVRF/withinGroup (agrupamento lógico); replaces/replacedBy (substituição com preservação histórica); aliasOf (relação simbólica para integração legada). |
-| **RF-002** | **Extensibilidade via API** | Administradores do Catálogo podem criar novos RelationshipTypes via `POST /resourceRelationshipType` informando `code`, `inverse` (opcional), `symmetric` (boolean), `scope` (physical/logical/lifecycle) e `description`. Validação no save: `code` único globalmente; se `inverse` é informado, o tipo inverso deve existir e ser coerente (inverse do inverso é o próprio tipo). |
-| **RF-003** | **Inverso automático em relações** | Para relações assimétricas (containedBy↔containsAsChild) criadas em Resources, a inversa é criada automaticamente. |
-| **RF-004** | **Validação de tipo em uso** | Bloquear criação de `resourceRelationship` em Resources com `type` fora do catálogo. |
-| **RF-005** | **Consulta semântica** | Endpoint `/resource/{id}/relationships?type={type}` retorna relações filtradas por tipo. |
-| **RF-006** | **Grafo** | Suporte a queries de grafo via Oracle Property Graph: pathBetween(a,b), descendants(a), connectedComponent(a). |
-| **RF-007** | **Eventos do catálogo** | Toda criação/alteração de RelationshipType publica evento TMF688 no tópico `resource.relationshipType.v1`. |
-| **RF-008** | **Despublicação controlada** | RelationshipType pode ser transicionado para `Retired` mas não excluído fisicamente; tipos Retired não aceitam novas relações criadas, mas relações existentes permanecem. Bootstrap canônico é protegido — não pode ir para Retired sem aprovação especial. |
+| **RF-002** | **Extensibilidade via API**        | Administradores do Catálogo podem criar novos RelationshipTypes via `POST /resourceRelationshipType` informando `code`, `inverse` (opcional), `symmetric` (boolean), `scope` (physical/logical/lifecycle) e `description`. Validação no save: `code` único globalmente; se `inverse` é informado, o tipo inverso deve existir e ser coerente (inverse do inverso é o próprio tipo).                                                                                                                                                                                                    |
+| **RF-003** | **Inverso automático em relações** | Para relações assimétricas (containedBy↔containsAsChild) criadas em Resources, a inversa é criada automaticamente.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **RF-004** | **Validação de tipo em uso**       | Bloquear criação de `resourceRelationship` em Resources com `type` fora do catálogo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **RF-005** | **Consulta semântica**             | Endpoint `/resource/{id}/relationships?type={type}` retorna relações filtradas por tipo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **RF-006** | **Grafo**                          | Suporte a queries de grafo via Oracle Property Graph: pathBetween(a,b), descendants(a), connectedComponent(a).                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **RF-007** | **Eventos do catálogo**            | Toda criação/alteração de RelationshipType publica evento TMF688 no tópico `resource.relationshipType.v1`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **RF-008** | **Despublicação controlada**       | RelationshipType pode ser transicionado para `Retired` mas não excluído fisicamente; tipos Retired não aceitam novas relações criadas, mas relações existentes permanecem. Bootstrap canônico é protegido — não pode ir para Retired sem aprovação especial.                                                                                                                                                                                                                                                                                                                           |
 
 ### 29.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | `relationshipType` usado em uma relação deve existir no catálogo (Active ou Retired). |
-| **RN-002** | Para tipos assimétricos com inverso definido, inversa é criada automaticamente nas relações. |
-| **RN-003** | Relações têm `validFor`; podem ser desativadas com endDateTime sem exclusão física. |
-| **RN-004** | `code` de RelationshipType é único globalmente. |
+| ID         | Regra de Negócio                                                                                                                                                                               |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | `relationshipType` usado em uma relação deve existir no catálogo (Active ou Retired).                                                                                                          |
+| **RN-002** | Para tipos assimétricos com inverso definido, inversa é criada automaticamente nas relações.                                                                                                   |
+| **RN-003** | Relações têm `validFor`; podem ser desativadas com endDateTime sem exclusão física.                                                                                                            |
+| **RN-004** | `code` de RelationshipType é único globalmente.                                                                                                                                                |
 | **RN-005** | Tipos do bootstrap canônico (lista do RF-001) são protegidos — alteração estrutural exige aprovação especial; novos tipos via API entram com flag `extension=true` para distinção operacional. |
-| **RN-006** | Criação de novo RelationshipType exige role Administrador do Catálogo de Recursos e gera Audit Trail. |
+| **RN-006** | Criação de novo RelationshipType exige role Administrador do Catálogo de Recursos e gera Audit Trail.                                                                                          |
 
 ### 29.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Tipo válido em uso** | POST de relationship com type=containedBy é aceito. |
-| **CA-002** | **Tipo inválido em uso** | POST com type fora do catálogo retorna 400 com mensagem de tipo desconhecido. |
-| **CA-003** | **Inversa automática** | Criar containedBy A→B cria automaticamente containsAsChild B→A. |
+| ID         | Critério                    | Resultado Esperado                                                                                                                                                |
+| ---------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **Tipo válido em uso**      | POST de relationship com type=containedBy é aceito.                                                                                                               |
+| **CA-002** | **Tipo inválido em uso**    | POST com type fora do catálogo retorna 400 com mensagem de tipo desconhecido.                                                                                     |
+| **CA-003** | **Inversa automática**      | Criar containedBy A→B cria automaticamente containsAsChild B→A.                                                                                                   |
 | **CA-004** | **Criar novo tipo via API** | POST /resourceRelationshipType com `code=feedsPower`, `inverse=isPoweredBy`, `symmetric=false`, `scope=physical` retorna 201; novo tipo fica disponível para uso. |
-| **CA-005** | **Code duplicado** | POST de novo tipo com `code` já existente retorna 409. |
-| **CA-006** | **Bootstrap protegido** | PATCH alterando estrutura de tipo canônico (ex.: containedBy) retorna 403 sem role especial. |
-| **CA-007** | **Evento publicado** | Criação ou alteração de RelationshipType publica TMF688 em `resource.relationshipType.v1`. |
+| **CA-005** | **Code duplicado**          | POST de novo tipo com `code` já existente retorna 409.                                                                                                            |
+| **CA-006** | **Bootstrap protegido**     | PATCH alterando estrutura de tipo canônico (ex.: containedBy) retorna 403 sem role especial.                                                                      |
+| **CA-007** | **Evento publicado**        | Criação ou alteração de RelationshipType publica TMF688 em `resource.relationshipType.v1`.                                                                        |
 
 ### 29.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
+| Capacidade                      | Netwin                           | Kuwaiba                   | NetBox                           | Decisão Nexus                                     |
+| ------------------------------- | -------------------------------- | ------------------------- | -------------------------------- | ------------------------------------------------- |
 | **Catálogo formal de relações** | Não identificado no levantamento | Sim (relations especiais) | Não identificado no levantamento | **Catálogo controlado com semântica documentada** |
-| **Inverso automático** | Não identificado no levantamento | Sim | Não identificado no levantamento | **Automático para tipos assimétricos** |
-| **Grafo nativo** | Não identificado no levantamento | Sim | Limitado | **Sobre Oracle Property Graph** |
-
+| **Inverso automático**          | Não identificado no levantamento | Sim                       | Não identificado no levantamento | **Automático para tipos assimétricos**            |
+| **Grafo nativo**                | Não identificado no levantamento | Sim                       | Limitado                         | **Sobre Oracle Property Graph**                   |
 
 ---
 
@@ -2796,14 +2863,14 @@ O Resource Domain é o módulo de maior volume de eventos em V.tal — milhões 
 
 ### 30.3 Mapeamento de atributos TMF
 
-| Atributo | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `id` | UUID v7 | Sim | Identificador idempotente do evento. |
-| `eventType` | string | Sim | Nome canônico do evento Resource. |
-| `eventTime` | datetime | Sim | Instante UTC da mudança. |
-| `source` | string | Sim | Agregado produtor, como `resource.PhysicalResource`. |
-| `event` | object | Sim | Snapshot ou delta da entidade alterada. |
-| `correlationId` | string | Não | Correlação com Order, workflow ou migração. |
+| Atributo        | Tipo     | Obrigatório | Observação V.tal                                     |
+| --------------- | -------- | :---------: | ---------------------------------------------------- |
+| `id`            | UUID v7  |     Sim     | Identificador idempotente do evento.                 |
+| `eventType`     | string   |     Sim     | Nome canônico do evento Resource.                    |
+| `eventTime`     | datetime |     Sim     | Instante UTC da mudança.                             |
+| `source`        | string   |     Sim     | Agregado produtor, como `resource.PhysicalResource`. |
+| `event`         | object   |     Sim     | Snapshot ou delta da entidade alterada.              |
+| `correlationId` | string   |     Não     | Correlação com Order, workflow ou migração.          |
 
 ### 30.4 Exemplo de payload
 
@@ -2817,8 +2884,8 @@ O Resource Domain é o módulo de maior volume de eventos em V.tal — milhões 
   "event": {
     "resource": { "id": "res-olt-rjbot-co-01", "@referredType": "Resource" },
     "previousState": { "operationalState": "enable" },
-    "newState":      { "operationalState": "disable", "resourceStatus": "alarm" },
-    "statusReason":  "Falha hardware detectada por NMS"
+    "newState": { "operationalState": "disable", "resourceStatus": "alarm" },
+    "statusReason": "Falha hardware detectada por NMS"
   }
 }
 ```
@@ -2830,45 +2897,44 @@ O Resource Domain é o módulo de maior volume de eventos em V.tal — milhões 
 
 ### 30.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Publicação transacional** | Toda escrita em Resource publica evento via outbox pattern. |
-| **RF-002** | **Catálogo de eventos** | Manter catálogo formal: ResourceCreateEvent/ResourceDeleteEvent (soft); ResourceAttributeValueChangeEvent; ResourceStateChangeEvent (por dimensão X.731); ResourceRelationshipChangeEvent; ResourceSpecCreateEvent/ResourceSpecAttributeValueChangeEvent; ConnectionCreateEvent/ConnectionDeleteEvent; PathChangeEvent (mudanças que afetam paths cacheados). |
-| **RF-003** | **Tópicos canônicos** | Tópicos versionados: resource.physical.v1 (PhysicalResources); resource.logical.v1 (LogicalResources); resource.spec.v1 (Catálogo); resource.relationship.v1; resource.lifecycle.v1. |
-| **RF-004** | **Schema Registry** | Schemas em Avro/JSON Schema versionado. |
-| **RF-005** | **Idempotência** | eventId UUID v7 único; consumidores deduplicam. |
-| **RF-006** | **Correlation** | correlationId rastreável até OS originadora. |
-| **RF-007** | **Outbox pattern** | Eventos em outbox local, publicados após commit; falha de publicação tem retry exponencial. |
-| **RF-008** | **Dead Letter** | Eventos com falha persistente vão para tópico dead letter para análise. |
+| ID         | Nome                        | Descrição                                                                                                                                                                                                                                                                                                                                                     |
+| ---------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Publicação transacional** | Toda escrita em Resource publica evento via outbox pattern.                                                                                                                                                                                                                                                                                                   |
+| **RF-002** | **Catálogo de eventos**     | Manter catálogo formal: ResourceCreateEvent/ResourceDeleteEvent (soft); ResourceAttributeValueChangeEvent; ResourceStateChangeEvent (por dimensão X.731); ResourceRelationshipChangeEvent; ResourceSpecCreateEvent/ResourceSpecAttributeValueChangeEvent; ConnectionCreateEvent/ConnectionDeleteEvent; PathChangeEvent (mudanças que afetam paths cacheados). |
+| **RF-003** | **Tópicos canônicos**       | Tópicos versionados: resource.physical.v1 (PhysicalResources); resource.logical.v1 (LogicalResources); resource.spec.v1 (Catálogo); resource.relationship.v1; resource.lifecycle.v1.                                                                                                                                                                          |
+| **RF-004** | **Schema Registry**         | Schemas em Avro/JSON Schema versionado.                                                                                                                                                                                                                                                                                                                       |
+| **RF-005** | **Idempotência**            | eventId UUID v7 único; consumidores deduplicam.                                                                                                                                                                                                                                                                                                               |
+| **RF-006** | **Correlation**             | correlationId rastreável até OS originadora.                                                                                                                                                                                                                                                                                                                  |
+| **RF-007** | **Outbox pattern**          | Eventos em outbox local, publicados após commit; falha de publicação tem retry exponencial.                                                                                                                                                                                                                                                                   |
+| **RF-008** | **Dead Letter**             | Eventos com falha persistente vão para tópico dead letter para análise.                                                                                                                                                                                                                                                                                       |
 
 ### 30.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | Eventos são imutáveis após publicação. |
-| **RN-002** | Publicação é parte da transação de escrita. |
-| **RN-003** | Schemas versionados; breaking changes geram nova versão de tópico. |
-| **RN-004** | Retention: 30d em Kafka quente, indefinida em Data Lake. |
+| ID         | Regra de Negócio                                                         |
+| ---------- | ------------------------------------------------------------------------ |
+| **RN-001** | Eventos são imutáveis após publicação.                                   |
+| **RN-002** | Publicação é parte da transação de escrita.                              |
+| **RN-003** | Schemas versionados; breaking changes geram nova versão de tópico.       |
+| **RN-004** | Retention: 30d em Kafka quente, indefinida em Data Lake.                 |
 | **RN-005** | Eventos não contêm dados sensíveis em claro — apenas referências por ID. |
 
 ### 30.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Publicação no commit** | Criação de Resource publica evento no tópico. |
-| **CA-002** | **Outbox** | Falha de publicação reverte escrita. |
-| **CA-003** | **Schema válido** | Eventos com schema inválido vão para dead letter. |
-| **CA-004** | **Catálogo público** | GET /events/catalog retorna lista com schemas e exemplos. |
+| ID         | Critério                 | Resultado Esperado                                        |
+| ---------- | ------------------------ | --------------------------------------------------------- |
+| **CA-001** | **Publicação no commit** | Criação de Resource publica evento no tópico.             |
+| **CA-002** | **Outbox**               | Falha de publicação reverte escrita.                      |
+| **CA-003** | **Schema válido**        | Eventos com schema inválido vão para dead letter.         |
+| **CA-004** | **Catálogo público**     | GET /events/catalog retorna lista com schemas e exemplos. |
 
 ### 30.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Eventos canônicos** | Não identificado no levantamento | Não identificado no levantamento | Webhooks limitado | **TMF688 nativo** |
-| **Outbox pattern** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim** |
-| **Schema Registry** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Avro/JSON versionado** |
-| **Catálogo público** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **GET /events/catalog** |
-
+| Capacidade            | Netwin                           | Kuwaiba                          | NetBox                           | Decisão Nexus            |
+| --------------------- | -------------------------------- | -------------------------------- | -------------------------------- | ------------------------ |
+| **Eventos canônicos** | Não identificado no levantamento | Não identificado no levantamento | Webhooks limitado                | **TMF688 nativo**        |
+| **Outbox pattern**    | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim**                  |
+| **Schema Registry**   | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Avro/JSON versionado** |
+| **Catálogo público**  | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **GET /events/catalog**  |
 
 ---
 
@@ -2909,73 +2975,79 @@ A ocupação segue o princípio §4.10: `vias_ocupadas` não é campo digitado, 
 
 Atributos canônicos da entidade PhysicalResource especializado (TMF639):
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification` | EntityRef | Sim | Tipo: `BancoDutos-4vias`, `BancoDutos-6vias`, `Duto-PEAD-40mm`, `Duto-PVC-100mm`, `SubDuto-32mm`. |
-| `place` | EntityRef | Sim | GeographicLocation LineString para banco e duto; o duto filho herda a geometria do banco salvo override. |
-| `resourceRelationship` | array | Sim | `containedBy` para a hierarquia (duto→banco, sub-duto→duto, cabo→duto/sub-duto) e `endpointA`/`endpointZ` para as caixas. |
-| `resourceCharacteristic` | array | Não | `diametro_mm`, `material`, `profundidade_m`, `vias_totais`, `vias_ocupadas` (derivado), `ocupacao_pct` (derivado), `projeto_reserva`. |
-| `administrativeState` | enum | Sim | Soft-delete conforme C6 — `locked` em vez de exclusão física. |
+| Atributo TMF             | Tipo      | Obrigatório | Observação V.tal                                                                                                                      |
+| ------------------------ | --------- | :---------: | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `resourceSpecification`  | EntityRef |     Sim     | Tipo: `BancoDutos-4vias`, `BancoDutos-6vias`, `Duto-PEAD-40mm`, `Duto-PVC-100mm`, `SubDuto-32mm`.                                     |
+| `place`                  | EntityRef |     Sim     | GeographicLocation LineString para banco e duto; o duto filho herda a geometria do banco salvo override.                              |
+| `resourceRelationship`   | array     |     Sim     | `containedBy` para a hierarquia (duto→banco, sub-duto→duto, cabo→duto/sub-duto) e `endpointA`/`endpointZ` para as caixas.             |
+| `resourceCharacteristic` | array     |     Não     | `diametro_mm`, `material`, `profundidade_m`, `vias_totais`, `vias_ocupadas` (derivado), `ocupacao_pct` (derivado), `projeto_reserva`. |
+| `administrativeState`    | enum      |     Sim     | Soft-delete conforme C6 — `locked` em vez de exclusão física.                                                                         |
 
 ### 31.4 Exemplo de payload
 
 ```json
 [
-{
-  "id": "res-banco-mg-bh-0042",
-  "@type": "PhysicalResource",
-  "name": "Banco de dutos BH-CX0117→CX0118",
-  "resourceSpecification": { "id": "spec-banco-dutos-4vias" },
-  "place": { "id": "loc-linestring-mg-duto-0042", "@referredType": "GeographicLocation" },
-  "resourceStatus": "available",
-  "operationalState": "enable",
-  "administrativeState": "unlocked",
-  "resourceCharacteristic": [
-    { "name": "vias_totais",     "value": 4 },
-    { "name": "profundidade_m",  "value": 1.2 },
-    { "name": "vias_ocupadas",   "value": 2 },
-    { "name": "ocupacao_pct",    "value": 50 }
-  ],
-  "resourceRelationship": [
-    { "relationshipType": "endpointA",
-      "resource": { "id": "res-caixa-mg-bh-0117", "@referredType": "Resource" } },
-    { "relationshipType": "endpointZ",
-      "resource": { "id": "res-caixa-mg-bh-0118", "@referredType": "Resource" } }
-  ]
-},
-{
-  "id": "res-duto-mg-bh-0042-v1",
-  "@type": "PhysicalResource",
-  "name": "Duto 1 — Banco BH-CX0117→CX0118",
-  "resourceSpecification": { "id": "spec-duto-pead-40mm" },
-  "place": { "id": "loc-linestring-mg-duto-0042", "@referredType": "GeographicLocation" },
-  "resourceCharacteristic": [
-    { "name": "diametro_mm", "value": 40 }
-  ],
-  "resourceRelationship": [
-    { "relationshipType": "containedBy",
-      "resource": { "id": "res-banco-mg-bh-0042", "@referredType": "Resource" } }
-  ]
-},
-{
-  "id": "res-cabo-cfoa-001",
-  "@type": "PhysicalResource",
-  "name": "CFOA-001",
-  "resourceRelationship": [
-    { "relationshipType": "containedBy",
-      "resource": { "id": "res-duto-mg-bh-0042-v1", "@referredType": "Resource" } }
-  ]
-},
-{
-  "trechoDerivado": {
-    "from": { "id": "res-caixa-mg-bh-0117", "@referredType": "Resource" },
-    "to":   { "id": "res-caixa-mg-bh-0118", "@referredType": "Resource" },
-    "via":  { "id": "res-banco-mg-bh-0042", "@referredType": "Resource" },
-    "comprimento_m": 312,
-    "cabos": ["res-cabo-cfoa-001", "res-cabo-cfoi-114"],
-    "observacao": "Objeto de resposta computado; nao existe registro persistido de trecho."
+  {
+    "id": "res-banco-mg-bh-0042",
+    "@type": "PhysicalResource",
+    "name": "Banco de dutos BH-CX0117→CX0118",
+    "resourceSpecification": { "id": "spec-banco-dutos-4vias" },
+    "place": { "id": "loc-linestring-mg-duto-0042", "@referredType": "GeographicLocation" },
+    "resourceStatus": "available",
+    "operationalState": "enable",
+    "administrativeState": "unlocked",
+    "resourceCharacteristic": [
+      { "name": "vias_totais", "value": 4 },
+      { "name": "profundidade_m", "value": 1.2 },
+      { "name": "vias_ocupadas", "value": 2 },
+      { "name": "ocupacao_pct", "value": 50 }
+    ],
+    "resourceRelationship": [
+      {
+        "relationshipType": "endpointA",
+        "resource": { "id": "res-caixa-mg-bh-0117", "@referredType": "Resource" }
+      },
+      {
+        "relationshipType": "endpointZ",
+        "resource": { "id": "res-caixa-mg-bh-0118", "@referredType": "Resource" }
+      }
+    ]
+  },
+  {
+    "id": "res-duto-mg-bh-0042-v1",
+    "@type": "PhysicalResource",
+    "name": "Duto 1 — Banco BH-CX0117→CX0118",
+    "resourceSpecification": { "id": "spec-duto-pead-40mm" },
+    "place": { "id": "loc-linestring-mg-duto-0042", "@referredType": "GeographicLocation" },
+    "resourceCharacteristic": [{ "name": "diametro_mm", "value": 40 }],
+    "resourceRelationship": [
+      {
+        "relationshipType": "containedBy",
+        "resource": { "id": "res-banco-mg-bh-0042", "@referredType": "Resource" }
+      }
+    ]
+  },
+  {
+    "id": "res-cabo-cfoa-001",
+    "@type": "PhysicalResource",
+    "name": "CFOA-001",
+    "resourceRelationship": [
+      {
+        "relationshipType": "containedBy",
+        "resource": { "id": "res-duto-mg-bh-0042-v1", "@referredType": "Resource" }
+      }
+    ]
+  },
+  {
+    "trechoDerivado": {
+      "from": { "id": "res-caixa-mg-bh-0117", "@referredType": "Resource" },
+      "to": { "id": "res-caixa-mg-bh-0118", "@referredType": "Resource" },
+      "via": { "id": "res-banco-mg-bh-0042", "@referredType": "Resource" },
+      "comprimento_m": 312,
+      "cabos": ["res-cabo-cfoa-001", "res-cabo-cfoi-114"],
+      "observacao": "Objeto de resposta computado; nao existe registro persistido de trecho."
+    }
   }
-}
 ]
 ```
 
@@ -2987,58 +3059,58 @@ Atributos canônicos da entidade PhysicalResource especializado (TMF639):
 
 ### 31.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Criar banco de dutos** | POST com spec, place LineString e endpoints A/Z apontando para caixas existentes. |
-| **RF-002** | **Materializar vias** | Criar o banco já com seus N dutos filhos em uma operação, conforme o template da spec (REQ-MOD02-028). |
-| **RF-003** | **Sub-duto** | Permitir sub-dutos contidos em um duto, com a mesma semântica de ocupação. |
-| **RF-004** | **Passar cabo** | Registrar `containedBy` do cabo no duto ou sub-duto, validando via livre e compatibilidade de diâmetro. |
-| **RF-005** | **Trecho derivado** | `GET /resource/{caixa}/trechos` devolve os pares A↔Z com banco, comprimento e cabos — computado, sem entidade persistida. |
-| **RF-006** | **Ocupação derivada** | `vias_ocupadas` e `ocupacao_pct` são calculados a partir dos filhos; nunca aceitos no payload de escrita. |
-| **RF-007** | **Consulta por infraestrutura** | "Que cabos passam por este banco/duto/caixa" e a inversa "por onde passa este cabo", em ambos os sentidos. |
-| **RF-008** | **Reserva de via** | Reservar duto ou sub-duto para um projeto, com identificação do projeto e prazo, sem ocupá-lo fisicamente. |
-| **RF-009** | **Transição aéreo ↔ subterrâneo** | Representar a passagem poste → caixa na mesma cadeia de apoio do cabo, sem quebrar a continuidade do trajeto. |
-| **RF-010** | **Ocupação para planejamento** | Consulta agregada de ocupação por trecho, Região e Site, para decidir expansão civil. |
-| **RF-011** | **Cadastro em massa** | Importar bancos, dutos e caixas via CSV/GeoJSON com validação de endpoints e relatório por item. |
+| ID         | Nome                              | Descrição                                                                                                                 |
+| ---------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Criar banco de dutos**          | POST com spec, place LineString e endpoints A/Z apontando para caixas existentes.                                         |
+| **RF-002** | **Materializar vias**             | Criar o banco já com seus N dutos filhos em uma operação, conforme o template da spec (REQ-MOD02-028).                    |
+| **RF-003** | **Sub-duto**                      | Permitir sub-dutos contidos em um duto, com a mesma semântica de ocupação.                                                |
+| **RF-004** | **Passar cabo**                   | Registrar `containedBy` do cabo no duto ou sub-duto, validando via livre e compatibilidade de diâmetro.                   |
+| **RF-005** | **Trecho derivado**               | `GET /resource/{caixa}/trechos` devolve os pares A↔Z com banco, comprimento e cabos — computado, sem entidade persistida. |
+| **RF-006** | **Ocupação derivada**             | `vias_ocupadas` e `ocupacao_pct` são calculados a partir dos filhos; nunca aceitos no payload de escrita.                 |
+| **RF-007** | **Consulta por infraestrutura**   | "Que cabos passam por este banco/duto/caixa" e a inversa "por onde passa este cabo", em ambos os sentidos.                |
+| **RF-008** | **Reserva de via**                | Reservar duto ou sub-duto para um projeto, com identificação do projeto e prazo, sem ocupá-lo fisicamente.                |
+| **RF-009** | **Transição aéreo ↔ subterrâneo** | Representar a passagem poste → caixa na mesma cadeia de apoio do cabo, sem quebrar a continuidade do trajeto.             |
+| **RF-010** | **Ocupação para planejamento**    | Consulta agregada de ocupação por trecho, Região e Site, para decidir expansão civil.                                     |
+| **RF-011** | **Cadastro em massa**             | Importar bancos, dutos e caixas via CSV/GeoJSON com validação de endpoints e relatório por item.                          |
 
 ### 31.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
+| ID         | Regra de Negócio                                                                                                                                                               |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **RN-001** | Banco de dutos sem `endpointA` **e** `endpointZ` é inválido — é exatamente a inconsistência relatada na operação legada (caixa cadastrada, infraestrutura entre elas ausente). |
-| **RN-002** | Endpoints apontam para Support Structures reais (caixa, manhole, handhole, poste). Não é permitido criar objeto intermediário para servir de extremidade. |
-| **RN-003** | Trecho, adjacência e aresta de grafo são derivados; a API não expõe criação, edição ou exclusão de trecho. |
-| **RN-004** | `vias_ocupadas` e `ocupacao_pct` são somente-leitura; tentativa de escrita retorna 400. |
-| **RN-005** | Cabo só entra em duto ou sub-duto com via livre; excedente retorna 409 com a ocupação atual. |
-| **RN-006** | O duto filho herda a geometria do banco; override exige geometria própria explícita e é registrado em Audit Trail. |
-| **RN-007** | Excluir banco, duto ou sub-duto com cabo contido é bloqueado; desativação usa `administrativeState=locked` (C6). |
-| **RN-008** | Sub-duto só existe contido em duto; duto só existe contido em banco, salvo duto isolado declarado explicitamente pela spec. |
-| **RN-009** | Reserva de via tem prazo; expirada, a via volta a livre e o evento é publicado (TMF688). |
+| **RN-002** | Endpoints apontam para Support Structures reais (caixa, manhole, handhole, poste). Não é permitido criar objeto intermediário para servir de extremidade.                      |
+| **RN-003** | Trecho, adjacência e aresta de grafo são derivados; a API não expõe criação, edição ou exclusão de trecho.                                                                     |
+| **RN-004** | `vias_ocupadas` e `ocupacao_pct` são somente-leitura; tentativa de escrita retorna 400.                                                                                        |
+| **RN-005** | Cabo só entra em duto ou sub-duto com via livre; excedente retorna 409 com a ocupação atual.                                                                                   |
+| **RN-006** | O duto filho herda a geometria do banco; override exige geometria própria explícita e é registrado em Audit Trail.                                                             |
+| **RN-007** | Excluir banco, duto ou sub-duto com cabo contido é bloqueado; desativação usa `administrativeState=locked` (C6).                                                               |
+| **RN-008** | Sub-duto só existe contido em duto; duto só existe contido em banco, salvo duto isolado declarado explicitamente pela spec.                                                    |
+| **RN-009** | Reserva de via tem prazo; expirada, a via volta a livre e o evento é publicado (TMF688).                                                                                       |
 
 ### 31.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **Cenário da operação** | Cadastrar duas caixas subterrâneas, um banco de 4 vias entre elas e passar 2 cabos; `GET /resource/{caixa}/trechos` devolve o trecho A↔Z com os dois cabos — sem nenhum registro intermediário criado. |
-| **CA-002** | **Endpoint ausente** | POST de banco sem `endpointZ` retorna 422 com a mensagem apontando o endpoint faltante. |
-| **CA-003** | **Ocupação derivada** | Após passar o 2º cabo, `vias_ocupadas` = 2 e `ocupacao_pct` = 50 sem nenhuma escrita nesses campos. |
-| **CA-004** | **Ocupação escrita** | PATCH com `vias_ocupadas` no payload retorna 400. |
-| **CA-005** | **Via esgotada** | Passar o 5º cabo em banco de 4 vias sem sub-dutos retorna 409 com a ocupação atual. |
-| **CA-006** | **Trecho não cadastrável** | POST em qualquer rota de trecho retorna 404/405 — a entidade não existe no contrato. |
-| **CA-007** | **Sub-duto** | Duto de 40 mm com 2 sub-dutos aceita 1 cabo por sub-duto e reporta ocupação em ambos os níveis. |
-| **CA-008** | **Bloqueio de exclusão** | DELETE em duto com cabo contido retorna 409 com a lista de cabos. |
-| **CA-009** | **Reserva** | Via reservada para projeto não aceita cabo de outro projeto e volta a livre ao expirar, publicando evento. |
+| ID         | Critério                   | Resultado Esperado                                                                                                                                                                                     |
+| ---------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **CA-001** | **Cenário da operação**    | Cadastrar duas caixas subterrâneas, um banco de 4 vias entre elas e passar 2 cabos; `GET /resource/{caixa}/trechos` devolve o trecho A↔Z com os dois cabos — sem nenhum registro intermediário criado. |
+| **CA-002** | **Endpoint ausente**       | POST de banco sem `endpointZ` retorna 422 com a mensagem apontando o endpoint faltante.                                                                                                                |
+| **CA-003** | **Ocupação derivada**      | Após passar o 2º cabo, `vias_ocupadas` = 2 e `ocupacao_pct` = 50 sem nenhuma escrita nesses campos.                                                                                                    |
+| **CA-004** | **Ocupação escrita**       | PATCH com `vias_ocupadas` no payload retorna 400.                                                                                                                                                      |
+| **CA-005** | **Via esgotada**           | Passar o 5º cabo em banco de 4 vias sem sub-dutos retorna 409 com a ocupação atual.                                                                                                                    |
+| **CA-006** | **Trecho não cadastrável** | POST em qualquer rota de trecho retorna 404/405 — a entidade não existe no contrato.                                                                                                                   |
+| **CA-007** | **Sub-duto**               | Duto de 40 mm com 2 sub-dutos aceita 1 cabo por sub-duto e reporta ocupação em ambos os níveis.                                                                                                        |
+| **CA-008** | **Bloqueio de exclusão**   | DELETE em duto com cabo contido retorna 409 com a lista de cabos.                                                                                                                                      |
+| **CA-009** | **Reserva**                | Via reservada para projeto não aceita cabo de outro projeto e volta a livre ao expirar, publicando evento.                                                                                             |
 
 ### 31.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Banco de dutos como objeto** | Sim (Outside Plant) | Subclasse de contêiner físico no metamodelo | Não identificado no levantamento | **PhysicalResource tipado por spec (TMF639)** |
-| **Duto e sub-duto** | Sim | Containment do metamodelo | Não identificado no levantamento | **Contenção `banco ⊃ duto ⊃ sub-duto ⊃ cabo`** |
-| **Trecho entre caixas** | Linha de duto entre caixas | Derivado do containment e dos endpoints | Não identificado no levantamento | **Derivado dos endpoints — nunca cadastrado** |
-| **Entidade intermediária de aresta** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Proibida por princípio (§4.8)** |
-| **Ocupação de vias** | Sim | Atributo do metamodelo | Não identificado no levantamento | **Derivada dos filhos, somente-leitura** |
-| **Reserva de recurso** | Sim (reserva e alocação) | Não identificado no levantamento | Não identificado no levantamento | **Sim, com projeto e prazo** |
+| Capacidade                           | Netwin                           | Kuwaiba                                     | NetBox                           | Decisão Nexus                                  |
+| ------------------------------------ | -------------------------------- | ------------------------------------------- | -------------------------------- | ---------------------------------------------- |
+| **Banco de dutos como objeto**       | Sim (Outside Plant)              | Subclasse de contêiner físico no metamodelo | Não identificado no levantamento | **PhysicalResource tipado por spec (TMF639)**  |
+| **Duto e sub-duto**                  | Sim                              | Containment do metamodelo                   | Não identificado no levantamento | **Contenção `banco ⊃ duto ⊃ sub-duto ⊃ cabo`** |
+| **Trecho entre caixas**              | Linha de duto entre caixas       | Derivado do containment e dos endpoints     | Não identificado no levantamento | **Derivado dos endpoints — nunca cadastrado**  |
+| **Entidade intermediária de aresta** | Não identificado no levantamento | Não identificado no levantamento            | Não identificado no levantamento | **Proibida por princípio (§4.8)**              |
+| **Ocupação de vias**                 | Sim                              | Atributo do metamodelo                      | Não identificado no levantamento | **Derivada dos filhos, somente-leitura**       |
+| **Reserva de recurso**               | Sim (reserva e alocação)         | Não identificado no levantamento            | Não identificado no levantamento | **Sim, com projeto e prazo**                   |
 
 ---
 
@@ -3059,10 +3131,10 @@ O módulo Geographic não tem motor próprio: suas regras (Site sem `place`, Add
 
 Há dois tempos distintos de verificação, e confundi-los é a origem do problema relatado:
 
-| Tempo | Mecanismo | Alcance |
-|---|---|---|
-| **Escrita** | Validação transacional (RN dos demais requisitos) | Só o que passa pela API a partir de agora |
-| **Varredura** | Este requisito | Tudo que já está na base, inclusive carga legada e migração |
+| Tempo         | Mecanismo                                         | Alcance                                                     |
+| ------------- | ------------------------------------------------- | ----------------------------------------------------------- |
+| **Escrita**   | Validação transacional (RN dos demais requisitos) | Só o que passa pela API a partir de agora                   |
+| **Varredura** | Este requisito                                    | Tudo que já está na base, inclusive carga legada e migração |
 
 O caso documentado em `inspirations/geosite-legado.md` — caixas cadastradas, arcos cadastrados, linha de duto ausente — é indetectável por validação de escrita: o registro nasceu de carga em massa, de migração ou de uma regra que só passou a existir depois. Nenhum campo obrigatório está vazio; o que falta é uma entidade inteira. Sem varredura, a lacuna só aparece quando alguém vai a campo.
 
@@ -3072,50 +3144,50 @@ O catálogo de regras segue C9 — regra é dado, não código. Uma regra nova e
 
 ### 32.3 Mapeamento de atributos TMF
 
-| Atributo | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `ruleId` | string | Sim | Identificador estável da regra (ex.: `OSP-DUCT-NO-ENDPOINT`). |
-| `scope` | object | Sim | Módulo, tipo de recurso e filtro opcional por Região/Site/tenant. |
-| `severity` | enum | Sim | `bloqueante` \| `alta` \| `media`. |
-| `expression` | string | Sim | Predicado avaliado sobre o inventário; regra é dado, não código (C9). |
-| `remediationHint` | string | Sim | O que a operação deve fazer para resolver — sem isso o finding vira ruído. |
-| `owner` | EntityRef | Sim | Party responsável pelo tratamento (Módulo 6). |
-| `enabled` | boolean | Sim | Regra desabilitada preserva o histórico dos findings já abertos. |
-| `finding.state` | enum | Sim | `aberto` \| `em-tratamento` \| `dispensado` \| `resolvido`. |
-| `finding.justification` | string | Condicional | Obrigatório quando `state=dispensado`. |
+| Atributo                | Tipo      | Obrigatório | Observação V.tal                                                           |
+| ----------------------- | --------- | :---------: | -------------------------------------------------------------------------- |
+| `ruleId`                | string    |     Sim     | Identificador estável da regra (ex.: `OSP-DUCT-NO-ENDPOINT`).              |
+| `scope`                 | object    |     Sim     | Módulo, tipo de recurso e filtro opcional por Região/Site/tenant.          |
+| `severity`              | enum      |     Sim     | `bloqueante` \| `alta` \| `media`.                                         |
+| `expression`            | string    |     Sim     | Predicado avaliado sobre o inventário; regra é dado, não código (C9).      |
+| `remediationHint`       | string    |     Sim     | O que a operação deve fazer para resolver — sem isso o finding vira ruído. |
+| `owner`                 | EntityRef |     Sim     | Party responsável pelo tratamento (Módulo 6).                              |
+| `enabled`               | boolean   |     Sim     | Regra desabilitada preserva o histórico dos findings já abertos.           |
+| `finding.state`         | enum      |     Sim     | `aberto` \| `em-tratamento` \| `dispensado` \| `resolvido`.                |
+| `finding.justification` | string    | Condicional | Obrigatório quando `state=dispensado`.                                     |
 
 ### 32.4 Exemplo de payload
 
 ```json
 [
-{
-  "ruleId": "OSP-DUCT-NO-ENDPOINT",
-  "name": "Banco de dutos sem endpoint A ou Z",
-  "scope": { "module": "MOD02", "resourceType": "BancoDutos" },
-  "severity": "alta",
-  "expression": "resourceRelationship[endpointA] is null or resourceRelationship[endpointZ] is null",
-  "remediationHint": "Associar as caixas de extremidade; se a infraestrutura nao existe em campo, desativar o banco (administrativeState=locked).",
-  "owner": { "id": "party-eng-osp-mg", "@referredType": "Organization" },
-  "enabled": true
-},
-{
-  "findingId": "fnd-018fb2c9-4a71-7c02-9d55-6e21b0aa77e1",
-  "ruleId": "OSP-DUCT-NO-ENDPOINT",
-  "resource": { "id": "res-banco-mg-bh-0042", "@referredType": "Resource" },
-  "detectedAt": "2026-08-01T03:14:00Z",
-  "severity": "alta",
-  "state": "aberto",
-  "scanId": "scan-2026-08-01-mg",
-  "site": { "id": "site-mg-bh-co-03", "@referredType": "GeographicSite" }
-},
-{
-  "completenessScore": {
-    "scope": { "region": "MG" },
-    "score": 0.94,
-    "findingsByseverity": { "alta": 12, "media": 41 },
-    "computedAt": "2026-08-01T03:20:00Z"
+  {
+    "ruleId": "OSP-DUCT-NO-ENDPOINT",
+    "name": "Banco de dutos sem endpoint A ou Z",
+    "scope": { "module": "MOD02", "resourceType": "BancoDutos" },
+    "severity": "alta",
+    "expression": "resourceRelationship[endpointA] is null or resourceRelationship[endpointZ] is null",
+    "remediationHint": "Associar as caixas de extremidade; se a infraestrutura nao existe em campo, desativar o banco (administrativeState=locked).",
+    "owner": { "id": "party-eng-osp-mg", "@referredType": "Organization" },
+    "enabled": true
+  },
+  {
+    "findingId": "fnd-018fb2c9-4a71-7c02-9d55-6e21b0aa77e1",
+    "ruleId": "OSP-DUCT-NO-ENDPOINT",
+    "resource": { "id": "res-banco-mg-bh-0042", "@referredType": "Resource" },
+    "detectedAt": "2026-08-01T03:14:00Z",
+    "severity": "alta",
+    "state": "aberto",
+    "scanId": "scan-2026-08-01-mg",
+    "site": { "id": "site-mg-bh-co-03", "@referredType": "GeographicSite" }
+  },
+  {
+    "completenessScore": {
+      "scope": { "region": "MG" },
+      "score": 0.94,
+      "findingsByseverity": { "alta": 12, "media": 41 },
+      "computedAt": "2026-08-01T03:20:00Z"
+    }
   }
-}
 ]
 ```
 
@@ -3127,51 +3199,51 @@ O catálogo de regras segue C9 — regra é dado, não código. Uma regra nova e
 
 ### 32.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Catálogo administrável** | CRUD de regra por API com governança e auditoria (C9), sem lista fechada em código. |
-| **RF-002** | **Regras canônicas de bootstrap** | Conjunto inicial: recurso de OSP sem `place`; banco/duto sem endpoint A ou Z; cabo sem infraestrutura de apoio em algum trecho; CTO sem splitter contido; porta conectada a recurso `locked`/`terminated`; fibra emendada sem continuidade até uma terminação; Support Structure órfã; e as regras Geo — Site sem `place`, Address sem Location, Site `Active` sem recurso contido. |
-| **RF-003** | **Varredura sob demanda e agendada** | Disparar scan por API ou agenda, com escopo por Região, Site, tipo ou tenant. |
-| **RF-004** | **Ciclo de vida do finding** | Consultar, atribuir, tratar, dispensar com justificativa e resolver; reincidência reabre o mesmo `ruleId` para o mesmo recurso. |
-| **RF-005** | **Score de completude** | Calcular e expor score por Região, Site, tipo de recurso e tenant, com série histórica. |
-| **RF-006** | **Evento de severidade alta** | Publicar TMF688 ao abrir finding `alta` ou `bloqueante`, para consumo do Módulo 7 e das áreas de operação. |
-| **RF-007** | **Exportação** | Exportar findings e score em CSV/XLSX para tratamento em campo. |
-| **RF-008** | **Rastreabilidade da migração** | Filtrar findings por `_origin.system`, isolando o que veio de cada legado por onda de migração. |
+| ID         | Nome                                 | Descrição                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Catálogo administrável**           | CRUD de regra por API com governança e auditoria (C9), sem lista fechada em código.                                                                                                                                                                                                                                                                                                 |
+| **RF-002** | **Regras canônicas de bootstrap**    | Conjunto inicial: recurso de OSP sem `place`; banco/duto sem endpoint A ou Z; cabo sem infraestrutura de apoio em algum trecho; CTO sem splitter contido; porta conectada a recurso `locked`/`terminated`; fibra emendada sem continuidade até uma terminação; Support Structure órfã; e as regras Geo — Site sem `place`, Address sem Location, Site `Active` sem recurso contido. |
+| **RF-003** | **Varredura sob demanda e agendada** | Disparar scan por API ou agenda, com escopo por Região, Site, tipo ou tenant.                                                                                                                                                                                                                                                                                                       |
+| **RF-004** | **Ciclo de vida do finding**         | Consultar, atribuir, tratar, dispensar com justificativa e resolver; reincidência reabre o mesmo `ruleId` para o mesmo recurso.                                                                                                                                                                                                                                                     |
+| **RF-005** | **Score de completude**              | Calcular e expor score por Região, Site, tipo de recurso e tenant, com série histórica.                                                                                                                                                                                                                                                                                             |
+| **RF-006** | **Evento de severidade alta**        | Publicar TMF688 ao abrir finding `alta` ou `bloqueante`, para consumo do Módulo 7 e das áreas de operação.                                                                                                                                                                                                                                                                          |
+| **RF-007** | **Exportação**                       | Exportar findings e score em CSV/XLSX para tratamento em campo.                                                                                                                                                                                                                                                                                                                     |
+| **RF-008** | **Rastreabilidade da migração**      | Filtrar findings por `_origin.system`, isolando o que veio de cada legado por onda de migração.                                                                                                                                                                                                                                                                                     |
 
 ### 32.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
+| ID         | Regra de Negócio                                                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **RN-001** | O motor **não corrige** dado automaticamente. Corrigir sem análise apaga o sintoma e preserva a causa — tipicamente um erro de mapeamento na migração. |
-| **RN-002** | Dispensar finding exige justificativa e ator identificado; dispensa não apaga o registro. |
-| **RN-003** | Desabilitar regra não apaga findings já abertos; eles seguem consultáveis com a marca da regra desabilitada. |
-| **RN-004** | Finding resolvido é preservado para série histórica e auditoria (C6 — nada é excluído fisicamente). |
-| **RN-005** | Regra sem `remediationHint` e sem `owner` não pode ser habilitada — finding sem destinatário é ruído. |
-| **RN-006** | A varredura é somente-leitura e não pode degradar o SLA transacional; executa em réplica de leitura ou janela definida. |
-| **RN-007** | O score de completude é sempre publicado com o escopo e o timestamp; comparação entre escopos diferentes é inválida. |
+| **RN-002** | Dispensar finding exige justificativa e ator identificado; dispensa não apaga o registro.                                                              |
+| **RN-003** | Desabilitar regra não apaga findings já abertos; eles seguem consultáveis com a marca da regra desabilitada.                                           |
+| **RN-004** | Finding resolvido é preservado para série histórica e auditoria (C6 — nada é excluído fisicamente).                                                    |
+| **RN-005** | Regra sem `remediationHint` e sem `owner` não pode ser habilitada — finding sem destinatário é ruído.                                                  |
+| **RN-006** | A varredura é somente-leitura e não pode degradar o SLA transacional; executa em réplica de leitura ou janela definida.                                |
+| **RN-007** | O score de completude é sempre publicado com o escopo e o timestamp; comparação entre escopos diferentes é inválida.                                   |
 
 ### 32.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **O caso relatado** | Massa contendo caixas e um banco de dutos sem `endpointZ` gera finding `OSP-DUCT-NO-ENDPOINT` com severidade alta e publica TMF688. |
-| **CA-002** | **Regra por API** | Regra criada por API é aplicada na varredura seguinte sem alteração de código nem release. |
-| **CA-003** | **Score** | Após a detecção, o score da Região cai; após a correção e novo scan, retorna ao valor anterior. |
-| **CA-004** | **Dispensa** | Dispensar finding sem justificativa retorna 400; com justificativa, registra ator e motivo. |
-| **CA-005** | **Sem correção automática** | Nenhuma varredura altera recurso: o diff do inventário antes e depois do scan é vazio. |
-| **CA-006** | **Reincidência** | Recurso corrigido e novamente violado reabre finding do mesmo `ruleId`, com histórico encadeado. |
-| **CA-007** | **Regras Geo** | Site `Active` sem `place` aparece nos findings do mesmo motor, sem endpoint próprio no Módulo 1. |
-| **CA-008** | **Filtro por origem** | Consulta por `_origin.system=Netwin` isola os findings da onda de migração correspondente. |
+| ID         | Critério                    | Resultado Esperado                                                                                                                  |
+| ---------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **O caso relatado**         | Massa contendo caixas e um banco de dutos sem `endpointZ` gera finding `OSP-DUCT-NO-ENDPOINT` com severidade alta e publica TMF688. |
+| **CA-002** | **Regra por API**           | Regra criada por API é aplicada na varredura seguinte sem alteração de código nem release.                                          |
+| **CA-003** | **Score**                   | Após a detecção, o score da Região cai; após a correção e novo scan, retorna ao valor anterior.                                     |
+| **CA-004** | **Dispensa**                | Dispensar finding sem justificativa retorna 400; com justificativa, registra ator e motivo.                                         |
+| **CA-005** | **Sem correção automática** | Nenhuma varredura altera recurso: o diff do inventário antes e depois do scan é vazio.                                              |
+| **CA-006** | **Reincidência**            | Recurso corrigido e novamente violado reabre finding do mesmo `ruleId`, com histórico encadeado.                                    |
+| **CA-007** | **Regras Geo**              | Site `Active` sem `place` aparece nos findings do mesmo motor, sem endpoint próprio no Módulo 1.                                    |
+| **CA-008** | **Filtro por origem**       | Consulta por `_origin.system=Netwin` isola os findings da onda de migração correspondente.                                          |
 
 ### 32.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Detecção de inconsistência pós-carga** | Reports e indicadores de monitorização do cadastro | Não identificado no levantamento | Não identificado no levantamento | **Motor de varredura com catálogo de regras** |
-| **Regras administráveis sem release** | Não identificado no levantamento | Metamodelo administrável (classes e atributos) | Validações no modelo de dados | **Regra é dado (C9), criada por API** |
-| **Ciclo de vida do achado** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Finding com estado, dono e justificativa** |
-| **Score de completude** | Indicadores de cadastro | Não identificado no levantamento | Não identificado no levantamento | **Score por Região/Site/tipo, com histórico** |
-| **Correção automática** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Deliberadamente ausente — detectar, não corrigir** |
+| Capacidade                               | Netwin                                             | Kuwaiba                                        | NetBox                           | Decisão Nexus                                        |
+| ---------------------------------------- | -------------------------------------------------- | ---------------------------------------------- | -------------------------------- | ---------------------------------------------------- |
+| **Detecção de inconsistência pós-carga** | Reports e indicadores de monitorização do cadastro | Não identificado no levantamento               | Não identificado no levantamento | **Motor de varredura com catálogo de regras**        |
+| **Regras administráveis sem release**    | Não identificado no levantamento                   | Metamodelo administrável (classes e atributos) | Validações no modelo de dados    | **Regra é dado (C9), criada por API**                |
+| **Ciclo de vida do achado**              | Não identificado no levantamento                   | Não identificado no levantamento               | Não identificado no levantamento | **Finding com estado, dono e justificativa**         |
+| **Score de completude**                  | Indicadores de cadastro                            | Não identificado no levantamento               | Não identificado no levantamento | **Score por Região/Site/tipo, com histórico**        |
+| **Correção automática**                  | Não identificado no levantamento                   | Não identificado no levantamento               | Não identificado no levantamento | **Deliberadamente ausente — detectar, não corrigir** |
 
 ---
 
@@ -3196,61 +3268,61 @@ Materialização não cria exceção às invariantes: o template é executado **
 
 ### 33.3 Mapeamento de atributos TMF
 
-| Atributo TMF | Tipo | Obrigatório | Observação V.tal |
-|---|---|:---:|---|
-| `resourceSpecification.childTemplate[].specification` | EntityRef | Sim | Spec do filho a materializar; precisa ser permitida pela regra de contenção (REQ-MOD02-007). |
-| `resourceSpecification.childTemplate[].quantity` | integer | Sim | Quantidade a criar; aceita expressão sobre characteristic do pai (ex.: `vias_totais`). |
-| `resourceSpecification.childTemplate[].namePattern` | string | Sim | Padrão de nomenclatura com índice (ex.: `{parent.name}/P{index:02}`). |
-| `resourceSpecification.childTemplate[].characteristic` | array | Não | Valores default aplicados a cada filho materializado. |
-| `resourceSpecification.childTemplate[].childTemplate` | array | Não | Aninhamento: CTO → splitter → portas em um único nível de declaração. |
-| `resource.materializedFrom` | EntityRef | Não | Registra o template e a versão que originaram a instância, para auditoria. |
+| Atributo TMF                                           | Tipo      | Obrigatório | Observação V.tal                                                                             |
+| ------------------------------------------------------ | --------- | :---------: | -------------------------------------------------------------------------------------------- |
+| `resourceSpecification.childTemplate[].specification`  | EntityRef |     Sim     | Spec do filho a materializar; precisa ser permitida pela regra de contenção (REQ-MOD02-007). |
+| `resourceSpecification.childTemplate[].quantity`       | integer   |     Sim     | Quantidade a criar; aceita expressão sobre characteristic do pai (ex.: `vias_totais`).       |
+| `resourceSpecification.childTemplate[].namePattern`    | string    |     Sim     | Padrão de nomenclatura com índice (ex.: `{parent.name}/P{index:02}`).                        |
+| `resourceSpecification.childTemplate[].characteristic` | array     |     Não     | Valores default aplicados a cada filho materializado.                                        |
+| `resourceSpecification.childTemplate[].childTemplate`  | array     |     Não     | Aninhamento: CTO → splitter → portas em um único nível de declaração.                        |
+| `resource.materializedFrom`                            | EntityRef |     Não     | Registra o template e a versão que originaram a instância, para auditoria.                   |
 
 ### 33.4 Exemplo de payload
 
 ```json
 [
-{
-  "id": "spec-cto-furukawa-16p",
-  "@type": "ResourceSpecification",
-  "name": "CTO Furukawa 16P",
-  "lifecycleStatus": "Active",
-  "childTemplate": [
-    {
-      "specification": { "id": "spec-splitter-plc-1x16" },
-      "quantity": 1,
-      "namePattern": "Splitter 1:16 {parent.name}",
-      "childTemplate": [
-        {
-          "specification": { "id": "spec-port-optica" },
-          "quantity": 16,
-          "namePattern": "{parent.name}/P{index:02}",
-          "characteristic": [ { "name": "tipo_conector", "value": "SC/APC" } ]
-        }
-      ]
+  {
+    "id": "spec-cto-furukawa-16p",
+    "@type": "ResourceSpecification",
+    "name": "CTO Furukawa 16P",
+    "lifecycleStatus": "Active",
+    "childTemplate": [
+      {
+        "specification": { "id": "spec-splitter-plc-1x16" },
+        "quantity": 1,
+        "namePattern": "Splitter 1:16 {parent.name}",
+        "childTemplate": [
+          {
+            "specification": { "id": "spec-port-optica" },
+            "quantity": 16,
+            "namePattern": "{parent.name}/P{index:02}",
+            "characteristic": [{ "name": "tipo_conector", "value": "SC/APC" }]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "request": {
+      "name": "CTO-MG-BH-0117",
+      "resourceSpecification": { "id": "spec-cto-furukawa-16p" },
+      "place": { "id": "loc-point-cto-mg-bh-0117", "@referredType": "GeographicLocation" },
+      "materialize": true,
+      "preview": false
     }
-  ]
-},
-{
-  "request": {
-    "name": "CTO-MG-BH-0117",
-    "resourceSpecification": { "id": "spec-cto-furukawa-16p" },
-    "place": { "id": "loc-point-cto-mg-bh-0117", "@referredType": "GeographicLocation" },
-    "materialize": true,
-    "preview": false
+  },
+  {
+    "response": {
+      "created": 18,
+      "root": { "id": "res-cto-mg-bh-0117", "@referredType": "Resource" },
+      "children": [
+        { "id": "res-splitter-mg-bh-0117", "name": "Splitter 1:16 CTO-MG-BH-0117" },
+        { "id": "res-port-mg-bh-0117-p01", "name": "CTO-MG-BH-0117/P01" },
+        { "id": "res-port-mg-bh-0117-p16", "name": "CTO-MG-BH-0117/P16" }
+      ],
+      "materializedFrom": { "id": "spec-cto-furukawa-16p", "version": "2.1" }
+    }
   }
-},
-{
-  "response": {
-    "created": 18,
-    "root": { "id": "res-cto-mg-bh-0117", "@referredType": "Resource" },
-    "children": [
-      { "id": "res-splitter-mg-bh-0117", "name": "Splitter 1:16 CTO-MG-BH-0117" },
-      { "id": "res-port-mg-bh-0117-p01", "name": "CTO-MG-BH-0117/P01" },
-      { "id": "res-port-mg-bh-0117-p16", "name": "CTO-MG-BH-0117/P16" }
-    ],
-    "materializedFrom": { "id": "spec-cto-furukawa-16p", "version": "2.1" }
-  }
-}
 ]
 ```
 
@@ -3262,50 +3334,50 @@ Materialização não cria exceção às invariantes: o template é executado **
 
 ### 33.6 Requisitos Funcionais
 
-| ID | Nome | Descrição |
-|---|---|---|
-| **RF-001** | **Declarar composição** | Definir `childTemplate[]` na Specification, com aninhamento, quantidade, nomenclatura e defaults. |
-| **RF-002** | **Materializar em uma transação** | Criar o recurso e toda a sua árvore de filhos em uma operação atômica. |
-| **RF-003** | **Pré-visualização** | `preview=true` devolve a árvore que seria criada, com nomes resolvidos, sem persistir nada. |
-| **RF-004** | **Quantidade derivada** | Resolver `quantity` a partir de characteristic do pai (ex.: banco com `vias_totais=4` materializa 4 dutos). |
-| **RF-005** | **Nomenclatura configurável** | Aplicar `namePattern` com índice, nome do pai e characteristics, sem código específico por tipo. |
-| **RF-006** | **Import em massa com template** | Aceitar CSV/GeoJSON de pais e materializar os filhos de cada um, com relatório por item. |
-| **RF-007** | **Idempotência** | Retry de import não duplica instâncias já materializadas, usando chave de idempotência por item. |
-| **RF-008** | **Auditoria de origem** | Registrar em `materializedFrom` o template e a versão usados na materialização. |
+| ID         | Nome                              | Descrição                                                                                                   |
+| ---------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Declarar composição**           | Definir `childTemplate[]` na Specification, com aninhamento, quantidade, nomenclatura e defaults.           |
+| **RF-002** | **Materializar em uma transação** | Criar o recurso e toda a sua árvore de filhos em uma operação atômica.                                      |
+| **RF-003** | **Pré-visualização**              | `preview=true` devolve a árvore que seria criada, com nomes resolvidos, sem persistir nada.                 |
+| **RF-004** | **Quantidade derivada**           | Resolver `quantity` a partir de characteristic do pai (ex.: banco com `vias_totais=4` materializa 4 dutos). |
+| **RF-005** | **Nomenclatura configurável**     | Aplicar `namePattern` com índice, nome do pai e characteristics, sem código específico por tipo.            |
+| **RF-006** | **Import em massa com template**  | Aceitar CSV/GeoJSON de pais e materializar os filhos de cada um, com relatório por item.                    |
+| **RF-007** | **Idempotência**                  | Retry de import não duplica instâncias já materializadas, usando chave de idempotência por item.            |
+| **RF-008** | **Auditoria de origem**           | Registrar em `materializedFrom` o template e a versão usados na materialização.                             |
 
 ### 33.7 Regras de Negócio
 
-| ID | Regra de Negócio |
-|---|---|
-| **RN-001** | A materialização respeita as regras de contenção e todas as invariantes do cadastro manual — nunca as contorna. |
-| **RN-002** | Filhos herdam tenant, `place` e `_origin` do pai, salvo override explícito no template. |
-| **RN-003** | Falha em qualquer filho aborta a instância inteira; materialização parcial nunca é persistida. |
-| **RN-004** | Alterar o template não re-materializa instâncias existentes; a mudança vale para as próximas criações. |
+| ID         | Regra de Negócio                                                                                                                    |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | A materialização respeita as regras de contenção e todas as invariantes do cadastro manual — nunca as contorna.                     |
+| **RN-002** | Filhos herdam tenant, `place` e `_origin` do pai, salvo override explícito no template.                                             |
+| **RN-003** | Falha em qualquer filho aborta a instância inteira; materialização parcial nunca é persistida.                                      |
+| **RN-004** | Alterar o template não re-materializa instâncias existentes; a mudança vale para as próximas criações.                              |
 | **RN-005** | O resultado da materialização é idêntico ao do caminho manual equivalente — não existe atributo que só o template consiga produzir. |
-| **RN-006** | Excluir filho materializado segue as regras do próprio tipo (C6), sem tratamento especial por ter vindo de template. |
-| **RN-007** | Template com aninhamento acima do limite configurado é rejeitado na publicação da spec, não na criação da instância. |
+| **RN-006** | Excluir filho materializado segue as regras do próprio tipo (C6), sem tratamento especial por ter vindo de template.                |
+| **RN-007** | Template com aninhamento acima do limite configurado é rejeitado na publicação da spec, não na criação da instância.                |
 
 ### 33.8 Critérios de Aceite
 
-| ID | Critério | Resultado Esperado |
-|---|---|---|
-| **CA-001** | **CTO em uma chamada** | POST único com `materialize=true` cria CTO-16P, splitter e 16 portas nomeadas; o objeto resultante é idêntico ao obtido pelas 10 chamadas manuais. |
-| **CA-002** | **Pré-visualização** | `preview=true` devolve os 18 objetos previstos com nomes resolvidos e não persiste nada. |
-| **CA-003** | **Quantidade derivada** | Banco com `vias_totais=4` materializa exatamente 4 dutos (REQ-MOD02-026). |
-| **CA-004** | **Atomicidade** | Falha na criação do 12º filho não deixa nenhum objeto persistido — nem o pai. |
-| **CA-005** | **Import idempotente** | Import de 500 CTOs devolve relatório por item; o retry do mesmo arquivo não cria duplicata. |
-| **CA-006** | **Contenção respeitada** | Template que declara filho proibido pela regra de contenção é rejeitado na publicação da spec. |
-| **CA-007** | **Auditoria** | O recurso criado expõe `materializedFrom` com spec e versão. |
+| ID         | Critério                 | Resultado Esperado                                                                                                                                 |
+| ---------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | **CTO em uma chamada**   | POST único com `materialize=true` cria CTO-16P, splitter e 16 portas nomeadas; o objeto resultante é idêntico ao obtido pelas 10 chamadas manuais. |
+| **CA-002** | **Pré-visualização**     | `preview=true` devolve os 18 objetos previstos com nomes resolvidos e não persiste nada.                                                           |
+| **CA-003** | **Quantidade derivada**  | Banco com `vias_totais=4` materializa exatamente 4 dutos (REQ-MOD02-026).                                                                          |
+| **CA-004** | **Atomicidade**          | Falha na criação do 12º filho não deixa nenhum objeto persistido — nem o pai.                                                                      |
+| **CA-005** | **Import idempotente**   | Import de 500 CTOs devolve relatório por item; o retry do mesmo arquivo não cria duplicata.                                                        |
+| **CA-006** | **Contenção respeitada** | Template que declara filho proibido pela regra de contenção é rejeitado na publicação da spec.                                                     |
+| **CA-007** | **Auditoria**            | O recurso criado expõe `materializedFrom` com spec e versão.                                                                                       |
 
 ### 33.9 Mapeamento contra sistemas de referência
 
-| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
-|---|---|---|---|---|
-| **Template de equipamento** | Sim (Catalogue e templates de equipamentos) | Sim (metamodelo com containment e templates) | Sim (device types com component templates) | **`childTemplate[]` na ResourceSpecification (TMF634)** |
-| **Materialização de filhos na criação** | Sim, via templates do catálogo | Sim | Sim, ao instanciar device type | **Sim, transacional, com pré-visualização** |
-| **Quantidade derivada de characteristic** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim (ex.: `vias_totais` do banco de dutos)** |
-| **Import em massa com template** | Data Manager / carregamento massivo | Não identificado no levantamento | Sim, via API e scripts | **Sim, com relatório por item e idempotência** |
-| **Atomicidade da materialização** | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Tudo ou nada por instância** |
+| Capacidade                                | Netwin                                      | Kuwaiba                                      | NetBox                                     | Decisão Nexus                                           |
+| ----------------------------------------- | ------------------------------------------- | -------------------------------------------- | ------------------------------------------ | ------------------------------------------------------- |
+| **Template de equipamento**               | Sim (Catalogue e templates de equipamentos) | Sim (metamodelo com containment e templates) | Sim (device types com component templates) | **`childTemplate[]` na ResourceSpecification (TMF634)** |
+| **Materialização de filhos na criação**   | Sim, via templates do catálogo              | Sim                                          | Sim, ao instanciar device type             | **Sim, transacional, com pré-visualização**             |
+| **Quantidade derivada de characteristic** | Não identificado no levantamento            | Não identificado no levantamento             | Não identificado no levantamento           | **Sim (ex.: `vias_totais` do banco de dutos)**          |
+| **Import em massa com template**          | Data Manager / carregamento massivo         | Não identificado no levantamento             | Sim, via API e scripts                     | **Sim, com relatório por item e idempotência**          |
+| **Atomicidade da materialização**         | Não identificado no levantamento            | Não identificado no levantamento             | Não identificado no levantamento           | **Tudo ou nada por instância**                          |
 
 ---
 
@@ -3540,16 +3612,16 @@ ONT Cliente XYZ (PhysicalResource, spec: ONT-Huawei-HG8145X6)
 
 ### 34.3 Comparação dos dois cenários
 
-| Aspecto | Cenário A (Cliente Corporativo) | Cenário B (Central Office) |
-|---|---|---|
-| **Profundidade hierárquica Geographic** | 3 níveis (Building > Floor > InstallationPoint) | 4 níveis (CO > Floor > Room > Cage opcional) |
-| **Tipo de SiteSpec do "ponto"** | InstallationPoint | CentralOffice + sub-sites Room |
-| **Equipment principal** | CPE (1 unidade, place direto em Sub-Site) | OLT (N unidades em Racks) |
-| **Inside Plant local** | Mínimo (CPE em parede/rack pequeno) | Massivo (DIOs, dezenas de Racks, UPS) |
-| **Outside Plant relevante** | Apenas o cabo drop até o prédio | Cabos primários para N armários, milhares de clientes |
-| **Recursos lógicos relevantes** | VRF dedicada + IPs do cliente | VLANs de gerência, ASN da V.tal, IPs de uplink |
-| **Volume típico** | Centenas de milhares (HCs corporativos) | Centenas de Centrais |
-| **Frequência de mudança** | Alta (contratos novos, expansões) | Baixa (estrutura estável, equipamentos evoluem) |
+| Aspecto                                 | Cenário A (Cliente Corporativo)                 | Cenário B (Central Office)                            |
+| --------------------------------------- | ----------------------------------------------- | ----------------------------------------------------- |
+| **Profundidade hierárquica Geographic** | 3 níveis (Building > Floor > InstallationPoint) | 4 níveis (CO > Floor > Room > Cage opcional)          |
+| **Tipo de SiteSpec do "ponto"**         | InstallationPoint                               | CentralOffice + sub-sites Room                        |
+| **Equipment principal**                 | CPE (1 unidade, place direto em Sub-Site)       | OLT (N unidades em Racks)                             |
+| **Inside Plant local**                  | Mínimo (CPE em parede/rack pequeno)             | Massivo (DIOs, dezenas de Racks, UPS)                 |
+| **Outside Plant relevante**             | Apenas o cabo drop até o prédio                 | Cabos primários para N armários, milhares de clientes |
+| **Recursos lógicos relevantes**         | VRF dedicada + IPs do cliente                   | VLANs de gerência, ASN da V.tal, IPs de uplink        |
+| **Volume típico**                       | Centenas de milhares (HCs corporativos)         | Centenas de Centrais                                  |
+| **Frequência de mudança**               | Alta (contratos novos, expansões)               | Baixa (estrutura estável, equipamentos evoluem)       |
 
 ### 34.4 Padrões reaproveitáveis
 
@@ -3577,42 +3649,42 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
 
 ## 36. Contratos com outros módulos do Nexus
 
-| Módulo | Tipo de consumo | Detalhe |
-|---|---|---|
-| **Módulo 1 — Geographic** | Síncrono (referência) + Assíncrono (eventos) | Resource referencia GeographicSite/Location via place. Eventos Geographic disparam validações no Resource. |
-| **Módulo 3 — Service Domain** | Síncrono (referência) + Assíncrono (eventos) | ServiceInstance.supportingResource referencia Resources. Eventos Resource (StateChange) consumidos por Service Assurance. |
-| **Módulo 4 — Order & Fulfillment** | Síncrono (alocação) + Síncrono (Feasibility) | Orders alocam Resources (reservas), consultam disponibilidade via /availability. TMF664 Resource Function Activation usado para configurar Resources. |
-| **Módulo 5 — Process Orchestration** | Síncrono (BPMN tasks) | Workflows para swap de equipamento, decommissioning, mudanças críticas consultam e alteram Resources via API. |
-| **Módulo 6 — Party & Tenant** | Síncrono (referência) | Resources têm relatedParty com Owner, Manufacturer, Vendor, Tenant. Validação de existência da Party no save. |
-| **Módulo 7 — Analytics & Events** | Assíncrono (consumidor) | Todos os eventos TMF688 publicados pelo Resource Domain são consumidos pelo Data Lake. |
-| **Módulo 8 — Platform & Admin** | Síncrono (RBAC, Audit) | RBAC granular por tipo de Resource (ex.: apenas Engenharia OSP edita postes/dutos). |
+| Módulo                               | Tipo de consumo                              | Detalhe                                                                                                                                               |
+| ------------------------------------ | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Módulo 1 — Geographic**            | Síncrono (referência) + Assíncrono (eventos) | Resource referencia GeographicSite/Location via place. Eventos Geographic disparam validações no Resource.                                            |
+| **Módulo 3 — Service Domain**        | Síncrono (referência) + Assíncrono (eventos) | ServiceInstance.supportingResource referencia Resources. Eventos Resource (StateChange) consumidos por Service Assurance.                             |
+| **Módulo 4 — Order & Fulfillment**   | Síncrono (alocação) + Síncrono (Feasibility) | Orders alocam Resources (reservas), consultam disponibilidade via /availability. TMF664 Resource Function Activation usado para configurar Resources. |
+| **Módulo 5 — Process Orchestration** | Síncrono (BPMN tasks)                        | Workflows para swap de equipamento, decommissioning, mudanças críticas consultam e alteram Resources via API.                                         |
+| **Módulo 6 — Party & Tenant**        | Síncrono (referência)                        | Resources têm relatedParty com Owner, Manufacturer, Vendor, Tenant. Validação de existência da Party no save.                                         |
+| **Módulo 7 — Analytics & Events**    | Assíncrono (consumidor)                      | Todos os eventos TMF688 publicados pelo Resource Domain são consumidos pelo Data Lake.                                                                |
+| **Módulo 8 — Platform & Admin**      | Síncrono (RBAC, Audit)                       | RBAC granular por tipo de Resource (ex.: apenas Engenharia OSP edita postes/dutos).                                                                   |
 
 ---
 
 ## 37. Questões em aberto
 
-| ID | Questão | Status | Responsável |
-|---|---|---|---|
-| **Q-RES-001** | Catálogo inicial de ResourceSpecifications V.tal: quais modelos exatos de OLT, ONT, Switch, Router são suportados no MVP? Lista canônica precisa ser fechada. | *Aberta* | *Engenharia V.tal + Produto* |
-| **Q-RES-002** | Importação de catálogo NetBox device-type-library para acelerar bootstrap: licenciamento e curadoria. | *Aberta* | *Arquitetura + Engenharia* |
-| **Q-RES-004** | Oracle Property Graph: dimensionamento de licença para 22M+ HPs com queries de path em performance. | *Aberta* | *Arquitetura + Plataforma* |
-| **Q-RES-007** | Modelagem detalhada de Fibers internas a Cables: 100% das fibras de cada cabo são modeladas, ou apenas as ocupadas? Trade-off de volume vs completude. | *Aberta* | *Arquitetura + OSP V.tal* |
-| **Q-RES-008** | IPAM legado da V.tal (planilhas, sistemas internos): estratégia de carga inicial para MVP. | *Aberta* | *Backbone + Arquitetura* |
-| **Q-RES-010** | Cache de paths computados (REQ-MOD02-012): TTL configurável por tipo de path? Política de invalidação em massa. | *Aberta* | *Arquitetura + Performance* |
-| **Q-RES-011** | Modelagem de fontes de equipamento (PowerSupply interno vs PowerOutlet externo): granularidade necessária para Service Assurance? | *Aberta* | *Engenharia + Operações* |
-| **Q-RES-012** | Quais tipos operacionais adicionais devem complementar o bootstrap canônico de ResourceRelationship? | *Aberta* | *Operações V.tal* |
-| **Q-RES-013** | Qual a autoridade do dado de ativo corporativo no grupo `_asset`: o SAP escreve no Nexus, o Nexus consulta o SAP sob demanda, ou a referência é frouxa e sem sincronização? A resposta define se existe integração ou apenas correlação. | *Aberta* | *Arquitetura + Patrimônio V.tal* |
-| **Q-RES-014** | Sub-duto é Resource próprio contido no duto, ou characteristic de subdivisão do duto? Recurso próprio dá ocupação e reserva por sub-duto ao custo de multiplicar o volume de registros na escala nacional. | *Aberta* | *OSP + Arquitetura* |
+| ID            | Questão                                                                                                                                                                                                                                  | Status   | Responsável                      |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------- |
+| **Q-RES-001** | Catálogo inicial de ResourceSpecifications V.tal: quais modelos exatos de OLT, ONT, Switch, Router são suportados no MVP? Lista canônica precisa ser fechada.                                                                            | _Aberta_ | _Engenharia V.tal + Produto_     |
+| **Q-RES-002** | Importação de catálogo NetBox device-type-library para acelerar bootstrap: licenciamento e curadoria.                                                                                                                                    | _Aberta_ | _Arquitetura + Engenharia_       |
+| **Q-RES-004** | Oracle Property Graph: dimensionamento de licença para 22M+ HPs com queries de path em performance.                                                                                                                                      | _Aberta_ | _Arquitetura + Plataforma_       |
+| **Q-RES-007** | Modelagem detalhada de Fibers internas a Cables: 100% das fibras de cada cabo são modeladas, ou apenas as ocupadas? Trade-off de volume vs completude.                                                                                   | _Aberta_ | _Arquitetura + OSP V.tal_        |
+| **Q-RES-008** | IPAM legado da V.tal (planilhas, sistemas internos): estratégia de carga inicial para MVP.                                                                                                                                               | _Aberta_ | _Backbone + Arquitetura_         |
+| **Q-RES-010** | Cache de paths computados (REQ-MOD02-012): TTL configurável por tipo de path? Política de invalidação em massa.                                                                                                                          | _Aberta_ | _Arquitetura + Performance_      |
+| **Q-RES-011** | Modelagem de fontes de equipamento (PowerSupply interno vs PowerOutlet externo): granularidade necessária para Service Assurance?                                                                                                        | _Aberta_ | _Engenharia + Operações_         |
+| **Q-RES-012** | Quais tipos operacionais adicionais devem complementar o bootstrap canônico de ResourceRelationship?                                                                                                                                     | _Aberta_ | _Operações V.tal_                |
+| **Q-RES-013** | Qual a autoridade do dado de ativo corporativo no grupo `_asset`: o SAP escreve no Nexus, o Nexus consulta o SAP sob demanda, ou a referência é frouxa e sem sincronização? A resposta define se existe integração ou apenas correlação. | _Aberta_ | _Arquitetura + Patrimônio V.tal_ |
+| **Q-RES-014** | Sub-duto é Resource próprio contido no duto, ou characteristic de subdivisão do duto? Recurso próprio dá ocupação e reserva por sub-duto ao custo de multiplicar o volume de registros na escala nacional.                               | _Aberta_ | _OSP + Arquitetura_              |
 
 ### 37.1 Decisões resolvidas e seus impactos arquiteturais
 
-| Decisão | Requisitos impactados | Mudança aplicada |
-|---|---|---|
-| **D-RES-001 — Identidade e proveniência na migração** | REQ-MOD02-001, REQ-MOD02-005 e todos os demais Resources | Nexus gera UUID v7 canônico próprio; IDs legados preservados no grupo `_origin` como characteristics somente-leitura. Ver seção 37.2. |
-| **D-RES-002 — Postes próprios na V.tal** | REQ-MOD02-008 | Sem integração externa de sincronização; `owner` e `contractRef` permanecem como characteristics, sem necessidade de adapter de leitura para sistemas de concessionárias. |
-| **D-RES-003 — Service Assurance externa, preparar para futura migração** | REQ-MOD02-025 | O catálogo de eventos TMF688 já cobre as necessidades futuras de Service Assurance. O consumo permanece externo no MVP. |
-| **D-RES-004 — Swap via Módulo 5 (BPMN)** | REQ-MOD02-014 (RF-009 Substituição), REQ-MOD02-019 (swap de DIO) | `/resource/{id}/swap` inicia workflow no Módulo 5, que executa as etapas de forma orquestrada e auditável. |
-| **D-RES-005 — Catálogo de Relationships extensível** | REQ-MOD02-024 | RelationshipType é entidade com bootstrap + CRUD governado via API, não lista fechada hardcoded. |
+| Decisão                                                                  | Requisitos impactados                                            | Mudança aplicada                                                                                                                                                          |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D-RES-001 — Identidade e proveniência na migração**                    | REQ-MOD02-001, REQ-MOD02-005 e todos os demais Resources         | Nexus gera UUID v7 canônico próprio; IDs legados preservados no grupo `_origin` como characteristics somente-leitura. Ver seção 37.2.                                     |
+| **D-RES-002 — Postes próprios na V.tal**                                 | REQ-MOD02-008                                                    | Sem integração externa de sincronização; `owner` e `contractRef` permanecem como characteristics, sem necessidade de adapter de leitura para sistemas de concessionárias. |
+| **D-RES-003 — Service Assurance externa, preparar para futura migração** | REQ-MOD02-025                                                    | O catálogo de eventos TMF688 já cobre as necessidades futuras de Service Assurance. O consumo permanece externo no MVP.                                                   |
+| **D-RES-004 — Swap via Módulo 5 (BPMN)**                                 | REQ-MOD02-014 (RF-009 Substituição), REQ-MOD02-019 (swap de DIO) | `/resource/{id}/swap` inicia workflow no Módulo 5, que executa as etapas de forma orquestrada e auditável.                                                                |
+| **D-RES-005 — Catálogo de Relationships extensível**                     | REQ-MOD02-024                                                    | RelationshipType é entidade com bootstrap + CRUD governado via API, não lista fechada hardcoded.                                                                          |
 
 ### 37.2 Decisão de migração — Identidade e proveniência de Resources
 
@@ -3620,26 +3692,26 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
 
 **Sistemas de origem cobertos:**
 
-| Sistema de origem | Recursos migrados |
-|---|---|
-| Netwin (Openlabs) | Equipamentos de Inside Plant, cabos, splitters, CTOs |
-| Hexagon/Octave NetworkCore | Recursos de Outside Plant — Região 2 |
-| Octave EAM | Ativos físicos com ciclo de vida (racks, UPS, equipamentos gerais) |
-| Geosite OSP | Postes, dutos, manholes, trajetos de cabos |
-| OZMAP | Recursos OSP e Inside Plant da Um Telecom (pós-M&A) |
-| UMBOX | Recursos lógicos (IPs, VLANs) da Um Telecom (pós-M&A) |
+| Sistema de origem          | Recursos migrados                                                  |
+| -------------------------- | ------------------------------------------------------------------ |
+| Netwin (Openlabs)          | Equipamentos de Inside Plant, cabos, splitters, CTOs               |
+| Hexagon/Octave NetworkCore | Recursos de Outside Plant — Região 2                               |
+| Octave EAM                 | Ativos físicos com ciclo de vida (racks, UPS, equipamentos gerais) |
+| Geosite OSP                | Postes, dutos, manholes, trajetos de cabos                         |
+| OZMAP                      | Recursos OSP e Inside Plant da Um Telecom (pós-M&A)                |
+| UMBOX                      | Recursos lógicos (IPs, VLANs) da Um Telecom (pós-M&A)              |
 
 **Grupo canônico `_origin` para PhysicalResource e LogicalResource:**
 
-| Characteristic | Tipo | Obrigatório na migração | Descrição |
-|---|---|:---:|---|
-| `_origin.system` | string | Sim | Nome do sistema de origem (ex.: `Netwin`, `NetworkCore`, `Geosite`, `OZMAP`, `OctaveEAM`). |
-| `_origin.id` | string | Sim | Identificador da entidade no sistema de origem (ex.: `"EQP-12345"`, `"CAB-00987"`). |
-| `_origin.entity` | string | Sim | Nome do tipo de entidade no sistema de origem (ex.: `"Equipment"`, `"Cable"`, `"Splitter"`, `"IPPool"`). |
-| `_origin.migratedAt` | datetime | Sim | Timestamp ISO 8601 da migração. |
-| `_origin.migratedBy` | string | Sim | Identificador do job de migração (ex.: `"migration-job-netwin-osp-wave2-v1"`). |
-| `_origin.url` | string | Não | Deep link para a entidade no sistema de origem (quando disponível). |
-| `_origin.extra` | JSON string | Não | Atributos do sistema de origem sem correspondência no Nexus, preservados como JSON bruto para auditoria. Útil especialmente para campos proprietários do Netwin e Octave EAM. |
+| Characteristic       | Tipo        | Obrigatório na migração | Descrição                                                                                                                                                                     |
+| -------------------- | ----------- | :---------------------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `_origin.system`     | string      |           Sim           | Nome do sistema de origem (ex.: `Netwin`, `NetworkCore`, `Geosite`, `OZMAP`, `OctaveEAM`).                                                                                    |
+| `_origin.id`         | string      |           Sim           | Identificador da entidade no sistema de origem (ex.: `"EQP-12345"`, `"CAB-00987"`).                                                                                           |
+| `_origin.entity`     | string      |           Sim           | Nome do tipo de entidade no sistema de origem (ex.: `"Equipment"`, `"Cable"`, `"Splitter"`, `"IPPool"`).                                                                      |
+| `_origin.migratedAt` | datetime    |           Sim           | Timestamp ISO 8601 da migração.                                                                                                                                               |
+| `_origin.migratedBy` | string      |           Sim           | Identificador do job de migração (ex.: `"migration-job-netwin-osp-wave2-v1"`).                                                                                                |
+| `_origin.url`        | string      |           Não           | Deep link para a entidade no sistema de origem (quando disponível).                                                                                                           |
+| `_origin.extra`      | JSON string |           Não           | Atributos do sistema de origem sem correspondência no Nexus, preservados como JSON bruto para auditoria. Útil especialmente para campos proprietários do Netwin e Octave EAM. |
 
 **Exemplo de OLT migrada do Netwin:**
 
@@ -3653,14 +3725,17 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
   "operationalState": "enable",
   "administrativeState": "unlocked",
   "resourceCharacteristic": [
-    { "name": "Serial",          "value": "HW2024001234" },
-    { "name": "Tecnologia",      "value": "GPON" },
-    { "name": "_origin.system",      "value": "Netwin" },
-    { "name": "_origin.id",          "value": "EQP-00421" },
-    { "name": "_origin.entity",      "value": "ActiveEquipment" },
-    { "name": "_origin.migratedAt",  "value": "2026-10-01T02:00:00Z" },
-    { "name": "_origin.migratedBy",  "value": "migration-job-netwin-isp-wave1-v1" },
-    { "name": "_origin.extra",       "value": "{\"netwin_rack_position\":\"U1-U9\",\"netwin_status_code\":\"OP\"}" }
+    { "name": "Serial", "value": "HW2024001234" },
+    { "name": "Tecnologia", "value": "GPON" },
+    { "name": "_origin.system", "value": "Netwin" },
+    { "name": "_origin.id", "value": "EQP-00421" },
+    { "name": "_origin.entity", "value": "ActiveEquipment" },
+    { "name": "_origin.migratedAt", "value": "2026-10-01T02:00:00Z" },
+    { "name": "_origin.migratedBy", "value": "migration-job-netwin-isp-wave1-v1" },
+    {
+      "name": "_origin.extra",
+      "value": "{\"netwin_rack_position\":\"U1-U9\",\"netwin_status_code\":\"OP\"}"
+    }
   ]
 }
 ```
@@ -3674,12 +3749,12 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
   "name": "CFOA-RJ-BOT-001",
   "resourceSpecification": { "id": "spec-cabo-cfoa-12f" },
   "resourceCharacteristic": [
-    { "name": "numero_fibras",       "value": 12 },
-    { "name": "_origin.system",      "value": "Geosite" },
-    { "name": "_origin.id",          "value": "CAB-GEO-00987" },
-    { "name": "_origin.entity",      "value": "OpticalCable" },
-    { "name": "_origin.migratedAt",  "value": "2026-09-20T03:00:00Z" },
-    { "name": "_origin.migratedBy",  "value": "migration-job-geosite-osp-wave1-v2" }
+    { "name": "numero_fibras", "value": 12 },
+    { "name": "_origin.system", "value": "Geosite" },
+    { "name": "_origin.id", "value": "CAB-GEO-00987" },
+    { "name": "_origin.entity", "value": "OpticalCable" },
+    { "name": "_origin.migratedAt", "value": "2026-09-20T03:00:00Z" },
+    { "name": "_origin.migratedBy", "value": "migration-job-geosite-osp-wave1-v2" }
   ]
 }
 ```
@@ -3703,14 +3778,14 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
 
 ## 38. Controle de revisões
 
-| Versão | Data | Autor | Descrição |
-|---|---|---|---|
-| 1.0 | Junho 2026 | Produto — V.tal Nexus | Versão inicial do HLD do Módulo 2 — Nexus Resource Domain, com 25 requisitos alinhados a TMF634 e TMF639, e seção de cenários ilustrativos (Cliente Corporativo e Central Office). |
-| 1.1 | Junho 2026 | Produto — V.tal Nexus | Incorporação de D-RES-002 (postes), D-RES-003 (Service Assurance), D-RES-004 (swap via BPMN) e D-RES-005 (catálogo de Relationships extensível). |
-| 1.2 | Junho 2026 | Produto — V.tal Nexus | Formalização de D-RES-001 (estratégia de migração e identidade): UUID v7 Nexus-native e grupo `_origin` para PhysicalResource, LogicalResource e ResourceSpecification. |
-| 1.3 | Julho 2026 | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: substitui diagnóstico NestJS obsoleto pela cobertura real TMF634/639/664, adiciona matriz dos 25 requisitos, síntese arquitetural, anatomia/JSON normalizados e gaps ligados ao backlog `DEV-*`. |
-| 1.4 | Agosto 2026 | Produto — V.tal Nexus | Incorporação da consulta operacional de OSP (`inspirations/geosite-legado.md`): princípios 4.8 a 4.11; novos REQ-MOD02-026 (banco de dutos, duto, sub-duto e trecho derivado), REQ-MOD02-027 (integridade e completude) e REQ-MOD02-028 (cadastro composto por template); grupo `_asset` em REQ-MOD02-005; trajeto de infraestrutura em REQ-MOD02-010; trajeto civil e impacto reverso em REQ-MOD02-012; Q-RES-013 e Q-RES-014; backlog DEV-RES-007 a DEV-RES-009. |
+| Versão | Data        | Autor                    | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------ | ----------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1.0    | Junho 2026  | Produto — V.tal Nexus    | Versão inicial do HLD do Módulo 2 — Nexus Resource Domain, com 25 requisitos alinhados a TMF634 e TMF639, e seção de cenários ilustrativos (Cliente Corporativo e Central Office).                                                                                                                                                                                                                                                                                 |
+| 1.1    | Junho 2026  | Produto — V.tal Nexus    | Incorporação de D-RES-002 (postes), D-RES-003 (Service Assurance), D-RES-004 (swap via BPMN) e D-RES-005 (catálogo de Relationships extensível).                                                                                                                                                                                                                                                                                                                   |
+| 1.2    | Junho 2026  | Produto — V.tal Nexus    | Formalização de D-RES-001 (estratégia de migração e identidade): UUID v7 Nexus-native e grupo `_origin` para PhysicalResource, LogicalResource e ResourceSpecification.                                                                                                                                                                                                                                                                                            |
+| 1.3    | Julho 2026  | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: substitui diagnóstico NestJS obsoleto pela cobertura real TMF634/639/664, adiciona matriz dos 25 requisitos, síntese arquitetural, anatomia/JSON normalizados e gaps ligados ao backlog `DEV-*`.                                                                                                                                                                                                                           |
+| 1.4    | Agosto 2026 | Produto — V.tal Nexus    | Incorporação da consulta operacional de OSP (`inspirations/geosite-legado.md`): princípios 4.8 a 4.11; novos REQ-MOD02-026 (banco de dutos, duto, sub-duto e trecho derivado), REQ-MOD02-027 (integridade e completude) e REQ-MOD02-028 (cadastro composto por template); grupo `_asset` em REQ-MOD02-005; trajeto de infraestrutura em REQ-MOD02-010; trajeto civil e impacto reverso em REQ-MOD02-012; Q-RES-013 e Q-RES-014; backlog DEV-RES-007 a DEV-RES-009. |
 
 ---
 
-*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*
+_V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA_

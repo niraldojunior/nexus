@@ -35,7 +35,8 @@ const CLOB_COLUMNS = new Set([
 
 const JSON_COLUMNS = new Set(
   [...CLOB_COLUMNS].filter(
-    (column) => !['content', 'query', 'summary', 'title', 'description', 'message'].includes(column),
+    (column) =>
+      !['content', 'query', 'summary', 'title', 'description', 'message'].includes(column),
   ),
 );
 
@@ -73,10 +74,7 @@ export const transformOracleSchemaSql = (sql: string): string => {
   // Oracle requires DEFAULT before the inline NOT NULL constraint (SQLite/Postgres accept either
   // order). Reorder `NOT NULL DEFAULT <value>` → `DEFAULT <value> NOT NULL`, preserving any trailing
   // CHECK(...) — the default value is always a single token (quoted string or number/keyword).
-  output = output.replace(
-    /\bNOT NULL DEFAULT\s+('[^']*'|[^\s,)]+)/gi,
-    'DEFAULT $1 NOT NULL',
-  );
+  output = output.replace(/\bNOT NULL DEFAULT\s+('[^']*'|[^\s,)]+)/gi, 'DEFAULT $1 NOT NULL');
   output = output.replace(
     /json_extract\(event_data, '\$\.entityId'\)/g,
     "JSON_VALUE(event_data, '$.entityId' RETURNING VARCHAR2(36))",

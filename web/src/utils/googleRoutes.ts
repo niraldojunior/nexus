@@ -109,7 +109,10 @@ export async function computeWalkRouteMatrix(
  * Rota a pé única, com o traçado. Só é chamada no clique numa CDO da lista — a matriz
  * acima resolve a ordenação sem trazer geometria, e é a geometria que custa caro.
  */
-export async function computeWalkRoute(origin: LngLat, destination: LngLat): Promise<WalkRoute | null> {
+export async function computeWalkRoute(
+  origin: LngLat,
+  destination: LngLat,
+): Promise<WalkRoute | null> {
   const payload = await postRoutes<{
     routes?: Array<{
       distanceMeters?: number;

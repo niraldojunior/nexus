@@ -15,4 +15,3 @@
 
 - Usar modal para confirmações importantes.
 - Evitar modais longos quando uma página dedicada for melhor.
-

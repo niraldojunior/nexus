@@ -779,6 +779,36 @@ const routeGeoRequest = async ({
     }
   }
 
+  // Consulta comparativa de endereço: o modelo externo é normalizado pelo gateway Geonet
+  // e nunca exposto diretamente à UI. É leitura transitória, sem criar GeographicAddress no Nexus.
+  if (request.method === 'GET' && url.pathname === '/v1/geo/address-sources/geonet') {
+    const address = (url.searchParams.get('address') ?? '').trim();
+    const number = (url.searchParams.get('number') ?? '').trim();
+    if (!address) {
+      throw new AppError('address required', { code: 'GEONET_ADDRESS_REQUIRED', statusCode: 400 });
+    }
+    if (!runtime.geonetAddressGateway) {
+      return sendJson(response, 200, { status: 'not_configured', candidates: [] });
+    }
+    return sendJson(response, 200, {
+      status: 'ready',
+      candidates: await runtime.geonetAddressGateway.search(address, number || undefined),
+    });
+  }
+
+  const geonetDetailMatch = url.pathname.match(/^\/v1\/geo\/address-sources\/geonet\/([^/]+)$/);
+  if (geonetDetailMatch && request.method === 'GET') {
+    if (!runtime.geonetAddressGateway) {
+      return sendJson(response, 200, { status: 'not_configured', address: null });
+    }
+    return sendJson(response, 200, {
+      status: 'ready',
+      address: await runtime.geonetAddressGateway.detail(
+        decodeURIComponent(geonetDetailMatch[1] ?? ''),
+      ),
+    });
+  }
+
   const historyEntryMatch = url.pathname.match(/^\/v1\/geo\/search-history\/([^/]+)$/);
   if (historyEntryMatch && historyEntryMatch[1] && request.method === 'DELETE') {
     const user = await requireUser(runtime, geoContext);
@@ -3403,6 +3433,7 @@ export const runtimeOptionsFromConfig = (config: AppConfig): NexusRuntimeOptions
     ...(config.adminEmail ? { adminEmail: config.adminEmail } : {}),
     ...(config.adminPassword ? { adminPassword: config.adminPassword } : {}),
   },
+  ...(config.geonet ? { geonet: config.geonet } : {}),
 });
 
 const sourceIpOf = (request: IncomingMessage): string | undefined => {

@@ -6,11 +6,14 @@ import React from 'react';
  */
 export function Card({ children, interactive = false, pad = 16, style, ...rest }) {
   const [hover, setHover] = React.useState(false);
-  const lift = interactive && hover ? {
-    transform: 'translateY(-2px)',
-    borderColor: 'var(--border-strong)',
-    boxShadow: 'var(--shadow-gold)',
-  } : {};
+  const lift =
+    interactive && hover
+      ? {
+          transform: 'translateY(-2px)',
+          borderColor: 'var(--border-strong)',
+          boxShadow: 'var(--shadow-gold)',
+        }
+      : {};
   return (
     <div
       onMouseEnter={() => interactive && setHover(true)}
@@ -22,7 +25,8 @@ export function Card({ children, interactive = false, pad = 16, style, ...rest }
         boxShadow: 'var(--shadow-md)',
         padding: pad,
         cursor: interactive ? 'pointer' : 'default',
-        transition: 'transform var(--transition-normal), box-shadow var(--transition-normal), border-color var(--transition-normal)',
+        transition:
+          'transform var(--transition-normal), box-shadow var(--transition-normal), border-color var(--transition-normal)',
         ...lift,
         ...style,
       }}

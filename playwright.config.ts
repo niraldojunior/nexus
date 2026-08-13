@@ -13,7 +13,8 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   use: {
     baseURL: 'http://127.0.0.1:5200',
-    launchOptions: process.env.CI || !localChromiumPath ? {} : { executablePath: localChromiumPath },
+    launchOptions:
+      process.env.CI || !localChromiumPath ? {} : { executablePath: localChromiumPath },
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'off',

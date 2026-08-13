@@ -60,7 +60,10 @@ test('PostgresEventRepository persists, updates and queries TMF688 events', asyn
     assert.equal(fetched?.correlationId, 'corr-2');
     assert.equal(fetched?.eventData.status, 'retired');
 
-    const filtered = await repository.listEvents({ source: 'geo-service', correlationId: 'corr-2' });
+    const filtered = await repository.listEvents({
+      source: 'geo-service',
+      correlationId: 'corr-2',
+    });
     assert.equal(filtered.length, 1);
     assert.equal(filtered[0]?.id, 'event-1');
 

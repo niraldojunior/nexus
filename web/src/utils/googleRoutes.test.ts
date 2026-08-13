@@ -66,9 +66,27 @@ describe('bboxAround', () => {
 describe('computeWalkRouteMatrix', () => {
   it('reindexa a resposta por destinationIndex (a API não devolve em ordem)', async () => {
     mockFetch([
-      { originIndex: 0, destinationIndex: 2, distanceMeters: 453, duration: '365s', condition: 'ROUTE_EXISTS' },
-      { originIndex: 0, destinationIndex: 0, distanceMeters: 329, duration: '276s', condition: 'ROUTE_EXISTS' },
-      { originIndex: 0, destinationIndex: 1, distanceMeters: 443, duration: '357s', condition: 'ROUTE_EXISTS' },
+      {
+        originIndex: 0,
+        destinationIndex: 2,
+        distanceMeters: 453,
+        duration: '365s',
+        condition: 'ROUTE_EXISTS',
+      },
+      {
+        originIndex: 0,
+        destinationIndex: 0,
+        distanceMeters: 329,
+        duration: '276s',
+        condition: 'ROUTE_EXISTS',
+      },
+      {
+        originIndex: 0,
+        destinationIndex: 1,
+        distanceMeters: 443,
+        duration: '357s',
+        condition: 'ROUTE_EXISTS',
+      },
     ]);
 
     const legs = await computeWalkRouteMatrix(
@@ -87,7 +105,13 @@ describe('computeWalkRouteMatrix', () => {
   it('devolve null onde não existe rota', async () => {
     mockFetch([
       { originIndex: 0, destinationIndex: 0, condition: 'ROUTE_NOT_FOUND' },
-      { originIndex: 0, destinationIndex: 1, distanceMeters: 120, duration: '90s', condition: 'ROUTE_EXISTS' },
+      {
+        originIndex: 0,
+        destinationIndex: 1,
+        distanceMeters: 120,
+        duration: '90s',
+        condition: 'ROUTE_EXISTS',
+      },
     ]);
 
     const legs = await computeWalkRouteMatrix(

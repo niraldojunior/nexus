@@ -116,7 +116,11 @@ function departureZoomFor(
   viewportPx: number,
   currentZoom: number,
 ): number {
-  return clamp(zoomToFit(distanceMeters, lat, viewportPx), MIN_FLIGHT_ZOOM, Math.max(1, currentZoom - 1));
+  return clamp(
+    zoomToFit(distanceMeters, lat, viewportPx),
+    MIN_FLIGHT_ZOOM,
+    Math.max(1, currentZoom - 1),
+  );
 }
 
 // Encerra qualquer voo em curso neste mapa e abre um novo "turno" (token). Retorna o

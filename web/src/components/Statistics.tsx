@@ -1,4 +1,4 @@
-import { Award, BarChart3, MessageSquare, TrendingUp } from 'lucide-react'
+import { Award, BarChart3, MessageSquare, TrendingUp } from 'lucide-react';
 
 export default function Statistics() {
   const stats = [
@@ -6,27 +6,27 @@ export default function Statistics() {
       icon: MessageSquare,
       label: 'Mensagens Enviadas',
       value: '1,247',
-      change: '+12% esta semana'
+      change: '+12% esta semana',
     },
     {
       icon: TrendingUp,
       label: 'Tópicos Explorados',
       value: '24',
-      change: '+3 novos'
+      change: '+3 novos',
     },
     {
       icon: Award,
       label: 'Respostas Úteis',
       value: '89%',
-      change: '+5% em relação ao mês anterior'
+      change: '+5% em relação ao mês anterior',
     },
     {
       icon: BarChart3,
       label: 'Tempo Médio de Conversa',
       value: '12 min',
-      change: 'Aumentou em +2 min'
-    }
-  ]
+      change: 'Aumentou em +2 min',
+    },
+  ];
 
   return (
     <div className="flex flex-1 flex-col">
@@ -39,7 +39,7 @@ export default function Statistics() {
         <div className="mx-auto max-w-4xl">
           <div className="mb-12 grid grid-cols-1 gap-6 md:grid-cols-2">
             {stats.map((stat, index) => {
-              const Icon = stat.icon
+              const Icon = stat.icon;
 
               return (
                 <div
@@ -57,7 +57,7 @@ export default function Statistics() {
                     {stat.change}
                   </p>
                 </div>
-              )
+              );
             })}
           </div>
 
@@ -70,7 +70,7 @@ export default function Statistics() {
                 { hour: '08:00', activity: 12, width: '60%' },
                 { hour: '12:00', activity: 18, width: '90%' },
                 { hour: '16:00', activity: 15, width: '75%' },
-                { hour: '20:00', activity: 8, width: '40%' }
+                { hour: '20:00', activity: 8, width: '40%' },
               ].map((item, index) => (
                 <div key={index}>
                   <div className="mb-1 flex justify-between">
@@ -92,5 +92,5 @@ export default function Statistics() {
         </div>
       </div>
     </div>
-  )
+  );
 }

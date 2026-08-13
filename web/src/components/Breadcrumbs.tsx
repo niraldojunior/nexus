@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown } from 'lucide-react';
 
 export default function Breadcrumbs({ items }: { items: string[] }) {
   return (
@@ -6,12 +6,20 @@ export default function Breadcrumbs({ items }: { items: string[] }) {
       {items.map((item, index) => (
         <div key={item} className="flex items-center gap-3">
           {index > 0 ? <span className="text-app-muted">/</span> : null}
-          <span className={index === items.length - 1 ? 'font-semibold text-app-text' : 'font-medium text-app-muted'}>{item}</span>
+          <span
+            className={
+              index === items.length - 1
+                ? 'font-semibold text-app-text'
+                : 'font-medium text-app-muted'
+            }
+          >
+            {item}
+          </span>
           {index === items.length - 1 ? (
             <ChevronDown className="h-4 w-4 text-app-text" strokeWidth={1.8} />
           ) : null}
         </div>
       ))}
     </div>
-  )
+  );
 }

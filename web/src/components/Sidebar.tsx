@@ -80,13 +80,15 @@ const primaryRoleLabel = (roles?: string[]): string => {
   return roles[0] ?? 'Sem papéis';
 };
 
-const resourceCategoryItems: CategoryMenuItem[] = groupResourceCategories(RESOURCE_CATEGORY_DEFAULTS)
+const resourceCategoryItems: CategoryMenuItem[] = groupResourceCategories(
+  RESOURCE_CATEGORY_DEFAULTS,
+)
   .flatMap((group) => group.categories)
   .map((category) => ({ code: category.code, label: sidebarCategoryLabel(category) }));
 
-const serviceCategoryItems: CategoryMenuItem[] = listServiceCategories(SERVICE_CATEGORY_DEFAULTS).map(
-  (category) => ({ code: category.code, label: category.name }),
-);
+const serviceCategoryItems: CategoryMenuItem[] = listServiceCategories(
+  SERVICE_CATEGORY_DEFAULTS,
+).map((category) => ({ code: category.code, label: category.name }));
 
 export default function Sidebar({
   collapsed,
@@ -181,224 +183,230 @@ export default function Sidebar({
               }`
         }
       >
-      <div
-        className={`flex min-h-[53px] items-center pb-3 pt-3 ${
-          contentCollapsed ? 'justify-center px-0' : 'pl-[15px] pr-[15px]'
-        }`}
-      >
-        <button
-          type="button"
-          // Mesma geometria dos NavItem abaixo (px-[15px] + ícone 1.18rem + gap-4): a marca cai na
-          // mesma coluna dos ícones do menu e o "N" do wordmark alinha com a primeira letra de cada item.
-          className={`flex items-center gap-4 overflow-hidden whitespace-nowrap font-display text-[1.75rem] font-semibold leading-none tracking-[-0.03em] text-app-text transition-all duration-200 ease-in-out ${
-            contentCollapsed ? 'max-w-0 opacity-0 pointer-events-none' : 'max-w-[200px] opacity-100'
+        <div
+          className={`flex min-h-[53px] items-center pb-3 pt-3 ${
+            contentCollapsed ? 'justify-center px-0' : 'pl-[15px] pr-[15px]'
           }`}
         >
-          <NexusMark className="h-[1.18rem] w-[1.18rem] shrink-0" />
-          <span>Nexus</span>
-        </button>
-        <div className={`${contentCollapsed ? 'flex items-center' : 'ml-auto flex items-center'}`}>
-          {contentCollapsed ? (
-            // No rail recolhido, o primeiro botão é a marca do Nexus (mesma da barra de pesquisa
-            // do Geo mobile). Passar o mouse revela o ícone de abrir painel — a troca é só CSS,
-            // sem estado; o clique continua expandindo a barra.
-            <button
-              type="button"
-              onClick={onToggleCollapse}
-              className="group relative flex h-[42px] w-[42px] items-center justify-center rounded-[14px] border border-transparent text-app-text transition hover:border-app-border hover:bg-white hover:shadow-soft"
-              aria-label="Expandir barra lateral"
-            >
-              <NexusMark className="h-[1.62rem] w-[1.62rem] transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0" />
-              <PanelLeftOpen
-                className="absolute h-[1.15rem] w-[1.15rem] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
-                strokeWidth={1.8}
-              />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onToggleCollapse}
-              className="rounded-xl border border-transparent p-0 text-app-text transition hover:bg-app-accent-soft"
-              aria-label={collapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'}
-            >
-              {collapsed ? (
-                <PanelLeftOpen className="h-[1.15rem] w-[1.15rem]" strokeWidth={1.8} />
-              ) : (
-                <PanelLeftClose className="h-[1.15rem] w-[1.15rem]" strokeWidth={1.8} />
-              )}
-            </button>
-          )}
+          <button
+            type="button"
+            // Mesma geometria dos NavItem abaixo (px-[15px] + ícone 1.18rem + gap-4): a marca cai na
+            // mesma coluna dos ícones do menu e o "N" do wordmark alinha com a primeira letra de cada item.
+            className={`flex items-center gap-4 overflow-hidden whitespace-nowrap font-display text-[1.75rem] font-semibold leading-none tracking-[-0.03em] text-app-text transition-all duration-200 ease-in-out ${
+              contentCollapsed
+                ? 'max-w-0 opacity-0 pointer-events-none'
+                : 'max-w-[200px] opacity-100'
+            }`}
+          >
+            <NexusMark className="h-[1.18rem] w-[1.18rem] shrink-0" />
+            <span>Nexus</span>
+          </button>
+          <div
+            className={`${contentCollapsed ? 'flex items-center' : 'ml-auto flex items-center'}`}
+          >
+            {contentCollapsed ? (
+              // No rail recolhido, o primeiro botão é a marca do Nexus (mesma da barra de pesquisa
+              // do Geo mobile). Passar o mouse revela o ícone de abrir painel — a troca é só CSS,
+              // sem estado; o clique continua expandindo a barra.
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                className="group relative flex h-[42px] w-[42px] items-center justify-center rounded-[14px] border border-transparent text-app-text transition hover:border-app-border hover:bg-white hover:shadow-soft"
+                aria-label="Expandir barra lateral"
+              >
+                <NexusMark className="h-[1.62rem] w-[1.62rem] transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0" />
+                <PanelLeftOpen
+                  className="absolute h-[1.15rem] w-[1.15rem] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+                  strokeWidth={1.8}
+                />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                className="rounded-xl border border-transparent p-0 text-app-text transition hover:bg-app-accent-soft"
+                aria-label={collapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'}
+              >
+                {collapsed ? (
+                  <PanelLeftOpen className="h-[1.15rem] w-[1.15rem]" strokeWidth={1.8} />
+                ) : (
+                  <PanelLeftClose className="h-[1.15rem] w-[1.15rem]" strokeWidth={1.8} />
+                )}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="px-0">
-        <nav className="space-y-0.6">
-          {primaryItems
-            .filter(({ id }) => id === 'research')
-            .map(({ id, label, icon: Icon }) => (
-              <NavItem
-                key={id}
-                active={currentPage === 'research' && activeResearchSessionId === null}
-                icon={Icon}
-                label={label}
-                onClick={() => {
-                  onNewResearch();
-                  closeMobileDrawer();
-                }}
-                collapsed={contentCollapsed}
-              />
-            ))}
-        </nav>
-      </div>
-
-      <div className="relative min-h-0 flex-1 overflow-hidden">
-        <div className="h-full overflow-y-auto">
+        <div className="px-0">
           <nav className="space-y-0.6">
             {primaryItems
-              .filter(({ id }) => id !== 'research')
-              .map(({ id, label, icon: Icon }) => {
-                const isActive =
-                  (id === 'conversations' && (currentPage === 'conversas' || currentPage === 'conversation')) ||
-                  ((id === 'geo' || id === 'resource' || id === 'service' || id === 'order') &&
-                    currentPage === id);
-
-                const categoryMenu = categoryMenus[id];
-
-                return (
-                  <div key={id}>
-                    <NavItem
-                      active={isActive}
-                      icon={Icon}
-                      label={label}
-                      onClick={() => {
-                        if (id === 'conversations') {
-                          onSelectPage('conversas');
-                          closeMobileDrawer();
-                          return;
-                        }
-                        if (categoryMenu) {
-                          categoryMenu.onToggle();
-                          return;
-                        }
-                        onSelectPage(id);
-                        closeMobileDrawer();
-                      }}
-                      collapsed={contentCollapsed}
-                    />
-                    {categoryMenu && categoryMenu.open && !contentCollapsed ? (
-                      <div className="ml-[35px] mt-1 space-y-1 border-l border-app-border pl-3">
-                        {categoryMenu.items.map((item) => {
-                          const subItemActive = currentPage === id && categoryMenu.activeCode === item.code;
-                          return (
-                            <button
-                              key={item.code}
-                              type="button"
-                              onClick={() => {
-                                categoryMenu.onSelect(item.code);
-                                closeMobileDrawer();
-                              }}
-                              className={`flex h-[28px] w-full items-center rounded-[10px] px-3 text-left text-[0.84rem] transition ${
-                                subItemActive
-                                  ? 'bg-app-accent-soft font-semibold text-app-text'
-                                  : 'font-medium text-app-muted hover:bg-app-accent-soft hover:text-app-text'
-                              }`}
-                            >
-                              {item.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            {isAdmin ? (
-              <NavItem
-                active={currentPage === 'usuarios'}
-                icon={Users}
-                label="Usuários"
-                onClick={() => {
-                  onSelectPage('usuarios');
-                  closeMobileDrawer();
-                }}
-                collapsed={contentCollapsed}
-              />
-            ) : null}
-          </nav>
-
-          {!contentCollapsed ? (
-            <>
-              <div className="flex items-center justify-between pb-2 pl-4 pr-[15px] pt-3">
-                <span className="text-[0.8rem] font-medium text-app-muted">
-                  Conversas recentes
-                </span>
-              </div>
-
-              <div className="pb-2 pl-4 pr-1">
-                <ResearchHistoryPage
-                  activeSessionId={activeResearchSessionId}
-                  refreshTrigger={researchSessionRefreshTrigger}
-                  onSessionSelected={(sessionId) => {
-                    onSelectResearchSession?.(sessionId);
+              .filter(({ id }) => id === 'research')
+              .map(({ id, label, icon: Icon }) => (
+                <NavItem
+                  key={id}
+                  active={currentPage === 'research' && activeResearchSessionId === null}
+                  icon={Icon}
+                  label={label}
+                  onClick={() => {
+                    onNewResearch();
                     closeMobileDrawer();
                   }}
+                  collapsed={contentCollapsed}
                 />
-              </div>
-            </>
-          ) : null}
+              ))}
+          </nav>
         </div>
-      </div>
 
-      <div
-        className={`flex min-h-[56px] border-t border-app-border pl-[15px] pr-[15px] ${
-          contentCollapsed ? 'items-center justify-center' : 'items-center gap-4'
-        }`}
-      >
-        <div className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-app-accent text-app-text">
-          <span className="text-[1.12rem] font-medium">{initialOf(sessionUser?.name)}</span>
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <nav className="space-y-0.6">
+              {primaryItems
+                .filter(({ id }) => id !== 'research')
+                .map(({ id, label, icon: Icon }) => {
+                  const isActive =
+                    (id === 'conversations' &&
+                      (currentPage === 'conversas' || currentPage === 'conversation')) ||
+                    ((id === 'geo' || id === 'resource' || id === 'service' || id === 'order') &&
+                      currentPage === id);
+
+                  const categoryMenu = categoryMenus[id];
+
+                  return (
+                    <div key={id}>
+                      <NavItem
+                        active={isActive}
+                        icon={Icon}
+                        label={label}
+                        onClick={() => {
+                          if (id === 'conversations') {
+                            onSelectPage('conversas');
+                            closeMobileDrawer();
+                            return;
+                          }
+                          if (categoryMenu) {
+                            categoryMenu.onToggle();
+                            return;
+                          }
+                          onSelectPage(id);
+                          closeMobileDrawer();
+                        }}
+                        collapsed={contentCollapsed}
+                      />
+                      {categoryMenu && categoryMenu.open && !contentCollapsed ? (
+                        <div className="ml-[35px] mt-1 space-y-1 border-l border-app-border pl-3">
+                          {categoryMenu.items.map((item) => {
+                            const subItemActive =
+                              currentPage === id && categoryMenu.activeCode === item.code;
+                            return (
+                              <button
+                                key={item.code}
+                                type="button"
+                                onClick={() => {
+                                  categoryMenu.onSelect(item.code);
+                                  closeMobileDrawer();
+                                }}
+                                className={`flex h-[28px] w-full items-center rounded-[10px] px-3 text-left text-[0.84rem] transition ${
+                                  subItemActive
+                                    ? 'bg-app-accent-soft font-semibold text-app-text'
+                                    : 'font-medium text-app-muted hover:bg-app-accent-soft hover:text-app-text'
+                                }`}
+                              >
+                                {item.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              {isAdmin ? (
+                <NavItem
+                  active={currentPage === 'usuarios'}
+                  icon={Users}
+                  label="Usuários"
+                  onClick={() => {
+                    onSelectPage('usuarios');
+                    closeMobileDrawer();
+                  }}
+                  collapsed={contentCollapsed}
+                />
+              ) : null}
+            </nav>
+
+            {!contentCollapsed ? (
+              <>
+                <div className="flex items-center justify-between pb-2 pl-4 pr-[15px] pt-3">
+                  <span className="text-[0.8rem] font-medium text-app-muted">
+                    Conversas recentes
+                  </span>
+                </div>
+
+                <div className="pb-2 pl-4 pr-1">
+                  <ResearchHistoryPage
+                    activeSessionId={activeResearchSessionId}
+                    refreshTrigger={researchSessionRefreshTrigger}
+                    onSessionSelected={(sessionId) => {
+                      onSelectResearchSession?.(sessionId);
+                      closeMobileDrawer();
+                    }}
+                  />
+                </div>
+              </>
+            ) : null}
+          </div>
         </div>
-        {!contentCollapsed ? (
-          <>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[0.96rem] font-semibold leading-[1.1] text-app-text">
-                {sessionUser?.name ?? 'Usuário'}
+
+        <div
+          className={`flex min-h-[56px] border-t border-app-border pl-[15px] pr-[15px] ${
+            contentCollapsed ? 'items-center justify-center' : 'items-center gap-4'
+          }`}
+        >
+          <div className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-app-accent text-app-text">
+            <span className="text-[1.12rem] font-medium">{initialOf(sessionUser?.name)}</span>
+          </div>
+          {!contentCollapsed ? (
+            <>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[0.96rem] font-semibold leading-[1.1] text-app-text">
+                  {sessionUser?.name ?? 'Usuário'}
+                </div>
+                <div className="truncate text-[0.84rem] leading-[1.1] text-app-muted">
+                  {sessionUser?.email ?? primaryRoleLabel(sessionUser?.roles)}
+                </div>
               </div>
-              <div className="truncate text-[0.84rem] leading-[1.1] text-app-muted">
-                {sessionUser?.email ?? primaryRoleLabel(sessionUser?.roles)}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                onSelectPage('settings');
-                closeMobileDrawer();
-              }}
-              className={`rounded-xl border p-1.5 transition ${
-                settingsOpen
-                  ? 'border-app-border bg-white text-app-text shadow-soft'
-                  : 'border-transparent text-app-muted hover:bg-app-accent-soft hover:text-app-text'
-              }`}
-              aria-label="Configurações"
-            >
-              <Settings className="h-[1rem] w-[1rem]" strokeWidth={1.8} />
-            </button>
-            {onLogout ? (
               <button
                 type="button"
                 onClick={() => {
-                  onLogout();
+                  onSelectPage('settings');
                   closeMobileDrawer();
                 }}
-                className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:bg-app-accent-soft hover:text-app-text"
-                aria-label="Sair"
-                title="Sair"
+                className={`rounded-xl border p-1.5 transition ${
+                  settingsOpen
+                    ? 'border-app-border bg-white text-app-text shadow-soft'
+                    : 'border-transparent text-app-muted hover:bg-app-accent-soft hover:text-app-text'
+                }`}
+                aria-label="Configurações"
               >
-                <LogOut className="h-[1rem] w-[1rem]" strokeWidth={1.8} />
+                <Settings className="h-[1rem] w-[1rem]" strokeWidth={1.8} />
               </button>
-            ) : null}
-          </>
-        ) : null}
-      </div>
+              {onLogout ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onLogout();
+                    closeMobileDrawer();
+                  }}
+                  className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:bg-app-accent-soft hover:text-app-text"
+                  aria-label="Sair"
+                  title="Sair"
+                >
+                  <LogOut className="h-[1rem] w-[1rem]" strokeWidth={1.8} />
+                </button>
+              ) : null}
+            </>
+          ) : null}
+        </div>
       </aside>
     </>
   );
@@ -449,9 +457,7 @@ function NavItem({
       <span
         className={`overflow-hidden whitespace-nowrap text-[0.94rem] transition-all duration-200 ease-in-out ${
           active ? 'font-semibold' : 'font-normal'
-        } ${
-          collapsed ? 'max-w-0 opacity-0' : 'max-w-[160px] opacity-100'
-        }`}
+        } ${collapsed ? 'max-w-0 opacity-0' : 'max-w-[160px] opacity-100'}`}
       >
         {label}
       </span>

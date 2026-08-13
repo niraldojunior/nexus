@@ -102,11 +102,7 @@ export class AuthService {
     return (this.dummyHashPromise ??= hashPassword('nexus-invalid-account-placeholder'));
   }
 
-  async login(
-    email: string,
-    password: string,
-    meta: { ip?: string } = {},
-  ): Promise<LoginResult> {
+  async login(email: string, password: string, meta: { ip?: string } = {}): Promise<LoginResult> {
     if (!this.options.jwtSecret) {
       throw new AppError('autenticação não configurada (defina AUTH_JWT_SECRET)', {
         code: 'AUTH_NOT_CONFIGURED',
@@ -123,7 +119,12 @@ export class AuthService {
     const hash = credentials?.passwordHash ?? (await this.dummyHash());
     const passwordOk = await verifyPassword(password, hash);
 
-    if (!credentials || credentials.status !== 'active' || !credentials.passwordHash || !passwordOk) {
+    if (
+      !credentials ||
+      credentials.status !== 'active' ||
+      !credentials.passwordHash ||
+      !passwordOk
+    ) {
       this.rateLimiter.record(rateKey);
       throw GENERIC_LOGIN_ERROR;
     }

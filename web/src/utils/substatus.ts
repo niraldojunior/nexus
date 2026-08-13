@@ -34,7 +34,23 @@ const SUBSTATUS_SHORT: Record<string, string> = {
 
 // Conectivos que ficam em minúscula no meio do Title Case pt-BR (fallback).
 const SMALL_WORDS = new Set([
-  'de', 'da', 'do', 'das', 'dos', 'e', 'em', 'no', 'na', 'nos', 'nas', 'ou', 'a', 'o', 'para', 'p/', 'com',
+  'de',
+  'da',
+  'do',
+  'das',
+  'dos',
+  'e',
+  'em',
+  'no',
+  'na',
+  'nos',
+  'nas',
+  'ou',
+  'a',
+  'o',
+  'para',
+  'p/',
+  'com',
 ]);
 
 function normalizeKey(value: string): string {

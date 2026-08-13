@@ -22,6 +22,16 @@ export type OracleConfig = {
 
 export type AppDatabaseConfig = PostgresConfig | OracleConfig;
 
+export type GeonetConfig = {
+  apiBaseUrl: string;
+  tokenUrl: string;
+  clientId: string;
+  clientSecret: string;
+  companyId?: string;
+  scope: string;
+  timeoutMs: number;
+};
+
 export type AppConfig = {
   appName: string;
   authEnabled: boolean;
@@ -36,6 +46,7 @@ export type AppConfig = {
   adminPassword?: string;
   /** TTL do access token emitido pelo IdP local, em horas (default 12). */
   authAccessTokenTtlHours?: number;
+  geonet?: GeonetConfig;
   databaseUrl: string;
   /** Resolved by loadConfig; optional only for legacy programmatic test fixtures. */
   database?: AppDatabaseConfig;
@@ -64,6 +75,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv): AppConfig => {
   const nodeEnv = normalizeEnum(env.NODE_ENV, validEnvs, 'development');
   const logLevel = normalizeEnum(env.LOG_LEVEL, validLogLevels, 'info');
   const database = resolveDatabaseConfig(env, nodeEnv);
+  const geonet = geonetConfigOf(env);
 
   if (nodeEnv === 'production' && env.DATABASE_AUTO_SCHEMA === 'true') {
     throw new Error('DATABASE_AUTO_SCHEMA=true is not allowed in production.');
@@ -81,11 +93,29 @@ export const loadConfig = (env: NodeJS.ProcessEnv): AppConfig => {
     ...(env.ADMIN_EMAIL ? { adminEmail: env.ADMIN_EMAIL } : {}),
     ...(env.ADMIN_PASSWORD ? { adminPassword: env.ADMIN_PASSWORD } : {}),
     authAccessTokenTtlHours: normalizePositiveInteger(env.AUTH_ACCESS_TOKEN_TTL_HOURS, 12),
+    ...(geonet ? { geonet } : {}),
     databaseUrl: database.provider === 'postgres' ? database.url : database.connectString,
     database,
     logLevel,
     nodeEnv,
     port: normalizePort(env.PORT, 4001),
+  };
+};
+
+export const geonetConfigOf = (env: NodeJS.ProcessEnv): GeonetConfig | undefined => {
+  const apiBaseUrl = env.GEONET_API_BASE_URL?.trim();
+  const tokenUrl = env.GEONET_TOKEN_URL?.trim();
+  const clientId = env.GEONET_CLIENT_ID?.trim();
+  const clientSecret = env.GEONET_CLIENT_SECRET?.trim();
+  if (!apiBaseUrl || !tokenUrl || !clientId || !clientSecret) return undefined;
+  return {
+    apiBaseUrl,
+    tokenUrl,
+    clientId,
+    clientSecret,
+    ...(env.GEONET_COMPANY_ID?.trim() ? { companyId: env.GEONET_COMPANY_ID.trim() } : {}),
+    scope: env.GEONET_SCOPE?.trim() || 'fttx',
+    timeoutMs: normalizePositiveInteger(env.GEONET_TIMEOUT_MS, 5_000),
   };
 };
 
@@ -127,9 +157,16 @@ const resolveOracleObjectPrefix = (env: NodeJS.ProcessEnv): string => {
 // Oracle pool: ORACLE_POOL_* overrides the shared DATABASE_POOL_* defaults; timeouts arrive in
 // seconds (oracledb convention) and are converted to the milliseconds the pool config carries.
 const resolveOraclePoolConfig = (env: NodeJS.ProcessEnv): DatabasePoolConfig => {
-  const min = normalizeNonNegativeInteger(firstNonBlank(env.ORACLE_POOL_MIN, env.DATABASE_POOL_MIN), 1);
-  const max = normalizePositiveInteger(firstNonBlank(env.ORACLE_POOL_MAX, env.DATABASE_POOL_MAX), 5);
-  if (max < min) throw new Error('ORACLE_POOL_MAX must be greater than or equal to ORACLE_POOL_MIN.');
+  const min = normalizeNonNegativeInteger(
+    firstNonBlank(env.ORACLE_POOL_MIN, env.DATABASE_POOL_MIN),
+    1,
+  );
+  const max = normalizePositiveInteger(
+    firstNonBlank(env.ORACLE_POOL_MAX, env.DATABASE_POOL_MAX),
+    5,
+  );
+  if (max < min)
+    throw new Error('ORACLE_POOL_MAX must be greater than or equal to ORACLE_POOL_MIN.');
   const timeoutSeconds = normalizePositiveInteger(env.ORACLE_POOL_TIMEOUT_SECONDS, 30);
   const timeoutMs = timeoutSeconds * 1_000;
   return {

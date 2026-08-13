@@ -4,16 +4,16 @@
 
 ## Linguagem visual
 
-| Elemento | Regra |
-|---|---|
-| **Canvas** | `#E5E7EB` (surface-primary) |
-| **Cards** | Brancos, sombra suave |
-| **Accent** | Amarelo V.tal preciso — sem uso decorativo excessivo |
-| **Capa / Encerramento** | Rail escuro `#2E3238` |
-| **Textura** | Dot-grid |
-| **Eyebrow labels** | Caixa alta com letter-spacing |
-| **Barra inferior** | Tri-cor |
-| **Rodapé** | PÚBLICA |
+| Elemento                | Regra                                                |
+| ----------------------- | ---------------------------------------------------- |
+| **Canvas**              | `#E5E7EB` (surface-primary)                          |
+| **Cards**               | Brancos, sombra suave                                |
+| **Accent**              | Amarelo V.tal preciso — sem uso decorativo excessivo |
+| **Capa / Encerramento** | Rail escuro `#2E3238`                                |
+| **Textura**             | Dot-grid                                             |
+| **Eyebrow labels**      | Caixa alta com letter-spacing                        |
+| **Barra inferior**      | Tri-cor                                              |
+| **Rodapé**              | PÚBLICA                                              |
 
 ## Tom
 
@@ -21,4 +21,4 @@ Defesa de tese: enquadramento estratégico explícito, tradeoffs visíveis. **Nu
 
 ---
 
-*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*
+_V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA_

@@ -16,4 +16,3 @@
 - Usar tabelas para volumes médios e altos de dados.
 - Usar chips e badges para estados.
 - Usar cores de classe apenas onde houver significado técnico.
-

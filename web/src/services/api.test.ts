@@ -33,7 +33,9 @@ test('sendMessage surfaces backend error payloads', async () => {
   });
   vi.stubGlobal('fetch', fetchMock);
 
-  await expect(sendMessage([{ role: 'user', content: 'Hello' }])).rejects.toThrow('Falha controlada');
+  await expect(sendMessage([{ role: 'user', content: 'Hello' }])).rejects.toThrow(
+    'Falha controlada',
+  );
 });
 
 test('sendMessage rejects empty assistant responses', async () => {
@@ -45,5 +47,7 @@ test('sendMessage rejects empty assistant responses', async () => {
   });
   vi.stubGlobal('fetch', fetchMock);
 
-  await expect(sendMessage([{ role: 'user', content: 'Hello' }])).rejects.toThrow('A resposta do ChatGPT veio vazia.');
+  await expect(sendMessage([{ role: 'user', content: 'Hello' }])).rejects.toThrow(
+    'A resposta do ChatGPT veio vazia.',
+  );
 });

@@ -21,17 +21,17 @@ A V.tal é uma **infraestrutura de fibra neutra (wholesale)** — o cliente prim
 
 Node **22+**. Instale com `npm install`, copie `.env.example` para `.env` e ajuste.
 
-| Comando | O que faz |
-|---|---|
-| `npm run dev` | Stack local completa — backend em `127.0.0.1:4001`, Vite em `127.0.0.1:5200`. **Usa PowerShell** (`start-dev.ps1`); em shell POSIX use `dev:neon` + `web:dev`. |
-| `npm run dev:neon` | Só o backend, contra o Neon de dev |
-| `npm run web:dev` | Só o frontend Vite |
-| `npm run build` | Compila TypeScript para `dist/` |
-| `npm run typecheck` | `tsc --noEmit` na raiz **e** em `web/` |
-| `npm run lint` / `lint:fix` | ESLint |
-| `npm run format` / `format:fix` | Prettier |
-| `npm run docs:check` | Valida anatomia, JSON, links e rastreabilidade das functional specs |
-| `npm test` | Suíte completa: unit → integration → regression |
+| Comando                         | O que faz                                                                                                                                                      |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                   | Stack local completa — backend em `127.0.0.1:4001`, Vite em `127.0.0.1:5200`. **Usa PowerShell** (`start-dev.ps1`); em shell POSIX use `dev:neon` + `web:dev`. |
+| `npm run dev:neon`              | Só o backend, contra o Neon de dev                                                                                                                             |
+| `npm run web:dev`               | Só o frontend Vite                                                                                                                                             |
+| `npm run build`                 | Compila TypeScript para `dist/`                                                                                                                                |
+| `npm run typecheck`             | `tsc --noEmit` na raiz **e** em `web/`                                                                                                                         |
+| `npm run lint` / `lint:fix`     | ESLint                                                                                                                                                         |
+| `npm run format` / `format:fix` | Prettier                                                                                                                                                       |
+| `npm run docs:check`            | Valida anatomia, JSON, links e rastreabilidade das functional specs                                                                                            |
+| `npm test`                      | Suíte completa: unit → integration → regression                                                                                                                |
 
 O **CI** (`.github/workflows/ci.yml`) roda, nesta ordem: `docs:check` → `lint` → `typecheck` → `build` → `test`. Rode ao menos `docs:check`, `lint` e `typecheck` antes de considerar uma mudança pronta.
 
@@ -41,11 +41,11 @@ Setup de ambiente, variáveis do Vercel e layout Neon dev/prod: veja o [README.m
 
 ## 3. Testes
 
-| Camada | Comando | Runner | Escopo |
-|---|---|---|---|
-| Unit | `npm run test:unit` | Vitest (`vitest.config.ts`) | `test/**/*.spec.ts` + `web/src/**/*.test.tsx` |
+| Camada      | Comando                    | Runner                                  | Escopo                                          |
+| ----------- | -------------------------- | --------------------------------------- | ----------------------------------------------- |
+| Unit        | `npm run test:unit`        | Vitest (`vitest.config.ts`)             | `test/**/*.spec.ts` + `web/src/**/*.test.tsx`   |
 | Integration | `npm run test:integration` | `scripts/run-tests.mjs` sobre o `dist/` | `*.integration.spec.ts`, `*-management.spec.ts` |
-| Regression | `npm run test:regression` | Playwright | E2E de browser |
+| Regression  | `npm run test:regression`  | Playwright                              | E2E de browser                                  |
 
 Arquivo único no Vitest:
 
@@ -98,11 +98,11 @@ docs/
 
 ## 5. A tríade (decore isto)
 
-| Pergunta | Módulo | TMF | Pertence a |
-|---|---|---|---|
-| **Onde?** | 1 — Geographic | TMF673/674/675 | Site, Sub-Site, Address, Location |
-| **O quê?** | 2 — Resource | TMF634/639 | PhysicalResource, LogicalResource |
-| **Para quê / quem?** | 3 — Service | TMF633/638 | CFS, RFS, SubscriberID |
+| Pergunta             | Módulo         | TMF            | Pertence a                        |
+| -------------------- | -------------- | -------------- | --------------------------------- |
+| **Onde?**            | 1 — Geographic | TMF673/674/675 | Site, Sub-Site, Address, Location |
+| **O quê?**           | 2 — Resource   | TMF634/639     | PhysicalResource, LogicalResource |
+| **Para quê / quem?** | 3 — Service    | TMF633/638     | CFS, RFS, SubscriberID            |
 
 Nunca misture as camadas. Um serviço **referencia** recurso (`supportingResource`), nunca o contém. Um recurso **referencia** geografia (`place`), nunca a contém.
 
@@ -114,20 +114,20 @@ Estas decisões estão firmadas. Respeite-as; não as reabra sem pedido explíci
 
 > Tabela compacta para consulta rápida. A **forma longa** — com racional, exemplos, casos de borda e
 > o status real de cada decisão no código — está em `docs/1-overview/business-rules.md`. Consulte-a
-> antes de decidir qualquer coisa que dependa do *porquê* de uma regra.
+> antes de decidir qualquer coisa que dependa do _porquê_ de uma regra.
 
-| # | Decisão | Regra prática |
-|---|---|---|
-| **C1** | **TMF-first** | Toda entidade/atributo/evento segue o modelo canônico TMF. Extensão V.tal entra como `characteristic` tipada via catálogo — **nunca** campo hardcoded. |
-| **C2** | **Rack é a fronteira Geo↔Resource** | Acima do Rack (sala, andar, Central) = GeographicSite. Do Rack para dentro = PhysicalResource. |
-| **C3** | **Fronteira dupla do Service** | (a) Service ↔ Resource: serviço é intangível, referencia recurso via `supportingResource`. (b) CFS ↔ RFS: CFS = comercial (SubscriberID); RFS = técnico (consome recursos). CFS nunca referencia Resource diretamente. |
-| **C4** | **Home Passed não é Service** | HP = GeographicAddress (Mód.1) + viabilidade TMF645 (Mód.4). HC = ServiceInstance (Mód.3). ~22M HPs **não** geram 22M Services. |
-| **C5** | **Agnóstico à origem — `_origin`** | Nexus gera **UUID v7** próprio. IDs legados ficam em `characteristic` somente-leitura no grupo `_origin` (`_origin.system`, `.id`, `.entity`, `.migratedAt`, `.migratedBy`, `.url?`, `.extra?`). |
-| **C6** | **Soft-delete / soft-terminate** | Nada é excluído fisicamente. Resource → `administrativeState=locked`. Service → `state=terminated`. |
-| **C7** | **Event-driven (TMF688)** | Toda mudança relevante publica evento via outbox pattern, idempotente (UUID v7), schema versionado em Schema Registry. |
-| **C8** | **Multi-tenant / wholesale** | `relatedParty` com Tenant desde a criação. No Service, o subscriber do CFS é tipicamente um Tenant ISP (`modelo_comercial = wholesale \| direto`). |
-| **C9** | **Catálogos extensíveis via API** | RelationshipTypes e Specifications têm bootstrap canônico + CRUD via API com governança (Audit + TMF688). Sem listas fechadas hardcoded. |
-| **C10** | **Oracle-native + Property Graph** | Alvo arquitetural: Oracle 21c/23ai, com path computation (porta OLT→ONT) via Property Graph. **A implementação atual roda em Neon Postgres** — trate C10 como destino, não como estado presente. |
+| #       | Decisão                             | Regra prática                                                                                                                                                                                                          |
+| ------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **C1**  | **TMF-first**                       | Toda entidade/atributo/evento segue o modelo canônico TMF. Extensão V.tal entra como `characteristic` tipada via catálogo — **nunca** campo hardcoded.                                                                 |
+| **C2**  | **Rack é a fronteira Geo↔Resource** | Acima do Rack (sala, andar, Central) = GeographicSite. Do Rack para dentro = PhysicalResource.                                                                                                                         |
+| **C3**  | **Fronteira dupla do Service**      | (a) Service ↔ Resource: serviço é intangível, referencia recurso via `supportingResource`. (b) CFS ↔ RFS: CFS = comercial (SubscriberID); RFS = técnico (consome recursos). CFS nunca referencia Resource diretamente. |
+| **C4**  | **Home Passed não é Service**       | HP = GeographicAddress (Mód.1) + viabilidade TMF645 (Mód.4). HC = ServiceInstance (Mód.3). ~22M HPs **não** geram 22M Services.                                                                                        |
+| **C5**  | **Agnóstico à origem — `_origin`**  | Nexus gera **UUID v7** próprio. IDs legados ficam em `characteristic` somente-leitura no grupo `_origin` (`_origin.system`, `.id`, `.entity`, `.migratedAt`, `.migratedBy`, `.url?`, `.extra?`).                       |
+| **C6**  | **Soft-delete / soft-terminate**    | Nada é excluído fisicamente. Resource → `administrativeState=locked`. Service → `state=terminated`.                                                                                                                    |
+| **C7**  | **Event-driven (TMF688)**           | Toda mudança relevante publica evento via outbox pattern, idempotente (UUID v7), schema versionado em Schema Registry.                                                                                                 |
+| **C8**  | **Multi-tenant / wholesale**        | `relatedParty` com Tenant desde a criação. No Service, o subscriber do CFS é tipicamente um Tenant ISP (`modelo_comercial = wholesale \| direto`).                                                                     |
+| **C9**  | **Catálogos extensíveis via API**   | RelationshipTypes e Specifications têm bootstrap canônico + CRUD via API com governança (Audit + TMF688). Sem listas fechadas hardcoded.                                                                               |
+| **C10** | **Oracle-native + Property Graph**  | Alvo arquitetural: Oracle 21c/23ai, com path computation (porta OLT→ONT) via Property Graph. **A implementação atual roda em Neon Postgres** — trate C10 como destino, não como estado presente.                       |
 
 ---
 
@@ -144,20 +144,20 @@ Estas decisões estão firmadas. Respeite-as; não as reabra sem pedido explíci
 
 ## 8. Onde escrever cada tipo de conteúdo
 
-| Tipo de conteúdo | Pasta / arquivo |
-|---|---|
-| Propósito do produto, visão estratégica, tríade, módulos, roadmap | `docs/1-overview/product-overview.md` |
-| Regras de negócio transversais, decisões arquiteturais (C1–C10 e futuras) | `docs/1-overview/business-rules.md` |
-| Glossário de termos e acrônimos | `docs/1-overview/glossary.md` |
-| **Questão em aberto / decisão pendente** | `docs/1-overview/open-questions.md` — **registro único**; não crie listas paralelas |
-| Especificação funcional de um módulo (HLD) | `docs/2-functional-specs/0N-module-<nome>.md` |
-| Arquitetura de sistema, ADRs | `docs/3-system-design/architecture.md` |
-| Modelo de dados canônico, ERD, mapeamentos TMF | `docs/3-system-design/data-model.md` |
-| Integrações com legados e sistemas externos | `docs/3-system-design/integrations.md` |
-| Requisitos não-funcionais (performance, SLA, escala) | `docs/3-system-design/non-functional-requirements.md` |
-| RBAC, multi-tenancy, auditoria, segurança | `docs/3-system-design/security.md` |
-| Tokens, guidelines, componentes, UI | `docs/4-design-system/` (ver §10) |
-| Roadmap detalhado, milestones, critérios de aceite de fase | `docs/5-delivery-plan/` |
+| Tipo de conteúdo                                                          | Pasta / arquivo                                                                     |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Propósito do produto, visão estratégica, tríade, módulos, roadmap         | `docs/1-overview/product-overview.md`                                               |
+| Regras de negócio transversais, decisões arquiteturais (C1–C10 e futuras) | `docs/1-overview/business-rules.md`                                                 |
+| Glossário de termos e acrônimos                                           | `docs/1-overview/glossary.md`                                                       |
+| **Questão em aberto / decisão pendente**                                  | `docs/1-overview/open-questions.md` — **registro único**; não crie listas paralelas |
+| Especificação funcional de um módulo (HLD)                                | `docs/2-functional-specs/0N-module-<nome>.md`                                       |
+| Arquitetura de sistema, ADRs                                              | `docs/3-system-design/architecture.md`                                              |
+| Modelo de dados canônico, ERD, mapeamentos TMF                            | `docs/3-system-design/data-model.md`                                                |
+| Integrações com legados e sistemas externos                               | `docs/3-system-design/integrations.md`                                              |
+| Requisitos não-funcionais (performance, SLA, escala)                      | `docs/3-system-design/non-functional-requirements.md`                               |
+| RBAC, multi-tenancy, auditoria, segurança                                 | `docs/3-system-design/security.md`                                                  |
+| Tokens, guidelines, componentes, UI                                       | `docs/4-design-system/` (ver §10)                                                   |
+| Roadmap detalhado, milestones, critérios de aceite de fase                | `docs/5-delivery-plan/`                                                             |
 
 > Não crie arquivos fora desta taxonomia sem motivo explícito.
 
@@ -167,10 +167,10 @@ Estas decisões estão firmadas. Respeite-as; não as reabra sem pedido explíci
 
 Specs têm anatomia rígida. **Ao criar ou editar um HLD, leia primeiro:**
 
-| Playbook | Quando |
-|---|---|
-| `docs/2-functional-specs/_spec-template.md` | Anatomia do documento, template de requisito (9 sub-itens), método de validação |
-| `docs/2-functional-specs/_benchmark-systems.md` | Preencher a seção N.9 (Netwin / Kuwaiba / NetBox) |
+| Playbook                                        | Quando                                                                          |
+| ----------------------------------------------- | ------------------------------------------------------------------------------- |
+| `docs/2-functional-specs/_spec-template.md`     | Anatomia do documento, template de requisito (9 sub-itens), método de validação |
+| `docs/2-functional-specs/_benchmark-systems.md` | Preencher a seção N.9 (Netwin / Kuwaiba / NetBox)                               |
 
 ---
 
@@ -178,12 +178,12 @@ Specs têm anatomia rígida. **Ao criar ou editar um HLD, leia primeiro:**
 
 **`docs/4-design-system/SKILL.md` é a fonte normativa** para qualquer UI, componente, tela ou protótipo. É obrigatório lê-lo antes de gerar interface — ele carrega a linguagem visual vigente, que evolui mais rápido que este arquivo.
 
-| Onde | O quê |
-|---|---|
-| `tokens/` | Fonte de verdade visual: `colors` · `typography` · `spacing` · `effects` · `fonts` · `base` (CSS + JSON) |
-| `components/core/` | React: Badge · Button · Card · Input · MetricCard · StatusPill (cada um com `.d.ts` + `.prompt.md`) |
-| `ui_kits/nexus/` | Telas completas: Login · Shell · Dashboard · Inventory · Geo · Topology · Viability (+ `shared.jsx`, `data.js`) |
-| `guidelines/` | `colors` · `typography` · `spacing` · `principles` · `page-chrome` · `presentations` (PPTX) + showcases `*.card.html` |
+| Onde               | O quê                                                                                                                 |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `tokens/`          | Fonte de verdade visual: `colors` · `typography` · `spacing` · `effects` · `fonts` · `base` (CSS + JSON)              |
+| `components/core/` | React: Badge · Button · Card · Input · MetricCard · StatusPill (cada um com `.d.ts` + `.prompt.md`)                   |
+| `ui_kits/nexus/`   | Telas completas: Login · Shell · Dashboard · Inventory · Geo · Topology · Viability (+ `shared.jsx`, `data.js`)       |
+| `guidelines/`      | `colors` · `typography` · `spacing` · `principles` · `page-chrome` · `presentations` (PPTX) + showcases `*.card.html` |
 
 Para **código de produção**, a referência canônica de UI é o frontend real em `web/src`, não o UI kit — o kit é material de prototipagem.
 
@@ -201,24 +201,24 @@ Para **código de produção**, a referência canônica de UI é o frontend real
 
 ## 12. Referência rápida — Open APIs TMF por módulo
 
-| API | Nome | Módulo |
-|---|---|---|
-| TMF632 | Party Management | 6 — Party & Tenant |
-| TMF633 | Service Catalog | 3 — Service |
-| TMF634 | Resource Catalog | 2 — Resource |
-| TMF638 | Service Inventory | 3 — Service |
-| TMF639 | Resource Inventory | 2 — Resource |
-| TMF641 | Service Ordering | 4 — Order |
-| TMF645 | Service Qualification (Viabilidade) | 4 — Order |
-| TMF652 | Resource Order | 4 — Order |
-| TMF664 | Resource Function Activation | 2 + 4 |
-| TMF669 | Party Role | 6 — Party & Tenant |
-| TMF673 | Geographic Address | 1 — Geographic |
-| TMF674 | Geographic Site | 1 — Geographic |
-| TMF675 | Geographic Location | 1 — Geographic |
-| TMF688 | Event Management | Transversal |
-| TMF701 | Process Flow | 5 — Process Orchestration |
-| TMF724 | Document Management | 7 — Analytics & Events |
+| API    | Nome                                | Módulo                    |
+| ------ | ----------------------------------- | ------------------------- |
+| TMF632 | Party Management                    | 6 — Party & Tenant        |
+| TMF633 | Service Catalog                     | 3 — Service               |
+| TMF634 | Resource Catalog                    | 2 — Resource              |
+| TMF638 | Service Inventory                   | 3 — Service               |
+| TMF639 | Resource Inventory                  | 2 — Resource              |
+| TMF641 | Service Ordering                    | 4 — Order                 |
+| TMF645 | Service Qualification (Viabilidade) | 4 — Order                 |
+| TMF652 | Resource Order                      | 4 — Order                 |
+| TMF664 | Resource Function Activation        | 2 + 4                     |
+| TMF669 | Party Role                          | 6 — Party & Tenant        |
+| TMF673 | Geographic Address                  | 1 — Geographic            |
+| TMF674 | Geographic Site                     | 1 — Geographic            |
+| TMF675 | Geographic Location                 | 1 — Geographic            |
+| TMF688 | Event Management                    | Transversal               |
+| TMF701 | Process Flow                        | 5 — Process Orchestration |
+| TMF724 | Document Management                 | 7 — Analytics & Events    |
 
 ---
 
@@ -240,4 +240,4 @@ Para **código de produção**, a referência canônica de UI é o frontend real
 
 ---
 
-*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*
+_V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA_

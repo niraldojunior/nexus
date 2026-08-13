@@ -80,7 +80,9 @@ test('Searches API creates, lists, reads, updates and deletes searches', async (
   const fetched = await app.requestJson('GET', `/v1/searches/${search.id}`);
   assert.equal(fetched.statusCode, 200);
 
-  const updated = await app.requestJson('PUT', `/v1/searches/${search.id}`, { query: 'sites in SP' });
+  const updated = await app.requestJson('PUT', `/v1/searches/${search.id}`, {
+    query: 'sites in SP',
+  });
   assert.equal(updated.statusCode, 200);
   assert.equal((updated.body as { query: string }).query, 'sites in SP');
 

@@ -13,11 +13,11 @@ Este arquivo também é carregado em runtime pelo fallback local do Nexus Copilo
 
 Cada decisão traz o estado real no código, porque **cânone e implementação não coincidem em tudo**.
 
-| Status | Significado |
-|---|---|
-| ✅ **Implementado** | Existe e funciona no backend atual |
-| ⚠️ **Parcial** | Implementado com desvio ou cobertura incompleta |
-| 📐 **Previsto no design** | Decidido e documentado, ainda não construído |
+| Status                    | Significado                                     |
+| ------------------------- | ----------------------------------------------- |
+| ✅ **Implementado**       | Existe e funciona no backend atual              |
+| ⚠️ **Parcial**            | Implementado com desvio ou cobertura incompleta |
+| 📐 **Previsto no design** | Decidido e documentado, ainda não construído    |
 
 ---
 
@@ -26,11 +26,11 @@ Cada decisão traz o estado real no código, porque **cânone e implementação 
 O Nexus separa o inventário em três camadas que respondem a perguntas diferentes. Esta é a decisão
 da qual todas as outras derivam.
 
-| Pergunta | Camada | Entidades | Open APIs |
-|---|---|---|---|
-| **Onde?** | Geographic | GeographicSite, GeographicAddress, GeographicLocation | TMF673/674/675 |
-| **O quê?** | Resource | PhysicalResource, LogicalResource, ResourceSpecification | TMF634/639 |
-| **Para quê / para quem?** | Service | CFS, RFS, ServiceSpecification | TMF633/638 |
+| Pergunta                  | Camada     | Entidades                                                | Open APIs      |
+| ------------------------- | ---------- | -------------------------------------------------------- | -------------- |
+| **Onde?**                 | Geographic | GeographicSite, GeographicAddress, GeographicLocation    | TMF673/674/675 |
+| **O quê?**                | Resource   | PhysicalResource, LogicalResource, ResourceSpecification | TMF634/639     |
+| **Para quê / para quem?** | Service    | CFS, RFS, ServiceSpecification                           | TMF633/638     |
 
 **Regra de ouro — referência, nunca contenção:**
 
@@ -116,8 +116,8 @@ Status: ✅ **Implementado**.
 
 ## C4 — Home Passed não é Service
 
-**Regra.** *Home Passed* (HP) é **GeographicAddress** (Módulo 1) somado à viabilidade via TMF645
-(Módulo 4). *Home Connected* (HC) é que vira **ServiceInstance** (Módulo 3).
+**Regra.** _Home Passed_ (HP) é **GeographicAddress** (Módulo 1) somado à viabilidade via TMF645
+(Módulo 4). _Home Connected_ (HC) é que vira **ServiceInstance** (Módulo 3).
 
 **Racional.** É uma decisão de escala, não de semântica. A V.tal tem cerca de **22 milhões de HPs** —
 endereços que a fibra passa em frente e poderia atender. Persistir cada um como Service criaria 22
@@ -136,17 +136,17 @@ Status: ⚠️ **Parcial** — a regra é respeitada, mas a viabilidade TMF645 e
 **Regra.** O Nexus gera **identidade própria**. IDs de sistemas legados nunca são a chave primária —
 eles ficam preservados como `characteristic` somente-leitura no grupo `_origin`:
 
-| Campo | Conteúdo |
-|---|---|
-| `_origin.system` | Sistema de origem (ex.: `netwin`) |
-| `_origin.id` | Identificador no sistema de origem |
-| `_origin.entity` | Entidade/tabela de origem |
-| `_origin.migratedAt` | Timestamp da migração |
-| `_origin.migratedBy` | Autor/processo da migração |
-| `_origin.url` | *(opcional)* deep link para o registro legado |
-| `_origin.extra` | *(opcional)* payload adicional |
+| Campo                | Conteúdo                                      |
+| -------------------- | --------------------------------------------- |
+| `_origin.system`     | Sistema de origem (ex.: `netwin`)             |
+| `_origin.id`         | Identificador no sistema de origem            |
+| `_origin.entity`     | Entidade/tabela de origem                     |
+| `_origin.migratedAt` | Timestamp da migração                         |
+| `_origin.migratedBy` | Autor/processo da migração                    |
+| `_origin.url`        | _(opcional)_ deep link para o registro legado |
+| `_origin.extra`      | _(opcional)_ payload adicional                |
 
-**Racional.** Durante o *dual-running* com o Netwin, o mesmo ativo existe nos dois sistemas. Adotar o
+**Racional.** Durante o _dual-running_ com o Netwin, o mesmo ativo existe nos dois sistemas. Adotar o
 ID legado como chave amarraria o Nexus ao legado para sempre e impediria consolidar ativos vindos de
 fontes diferentes. Preservar a origem em `_origin` mantém a rastreabilidade de auditoria sem criar
 dependência estrutural.
@@ -161,10 +161,10 @@ pede **UUID v7** (ordenável no tempo, melhor para índice), mas `src/modules/ge
 
 **Regra.** Nada é excluído fisicamente do inventário.
 
-| Camada | Como "apagar" |
-|---|---|
+| Camada   | Como "apagar"                    |
+| -------- | -------------------------------- |
 | Resource | `administrativeState = 'locked'` |
-| Service | `state = 'terminated'` |
+| Service  | `state = 'terminated'`           |
 
 **Racional.** Inventário de rede é registro histórico. Um recurso desativado ainda precisa aparecer
 em auditoria, em análise de falha passada e em faturamento retroativo. Exclusão física destrói a
@@ -193,7 +193,7 @@ transacional e o Schema Registry são 📐 previstos no design.
 ## C8 — Multi-tenant e wholesale por premissa
 
 **Regra.** `relatedParty` com o Tenant é preenchido **desde a criação** da entidade. No módulo
-Service, o *subscriber* do CFS é tipicamente um **Tenant ISP**, não o usuário final.
+Service, o _subscriber_ do CFS é tipicamente um **Tenant ISP**, não o usuário final.
 
 **Racional.** A V.tal é infraestrutura de fibra **neutra**. O cliente que contrata é o ISP; o morador
 é cliente do ISP, não da V.tal. Tratar o subscriber como pessoa física por padrão inverte o modelo de
@@ -227,7 +227,7 @@ DEV-RES-006 e DEV-SVC-006).
 
 ## C10 — Oracle-native + Property Graph
 
-**Regra (alvo).** Stack Oracle 21c/23ai, com *path computation* (porta OLT → ONT) via Oracle Property
+**Regra (alvo).** Stack Oracle 21c/23ai, com _path computation_ (porta OLT → ONT) via Oracle Property
 Graph sobre o inventário de Resources.
 
 **Racional.** Rastrear o caminho óptico de ponta a ponta é uma consulta de grafo, não relacional:
@@ -258,7 +258,7 @@ inventar um registro apenas para amarrar outros dois, o modelo está errado.
 **Origem.** Consulta operacional com a área de rede externa, acesso e backbone, registrada em
 [`../2-functional-specs/inspirations/geosite-legado.md`](../2-functional-specs/inspirations/geosite-legado.md).
 O sistema legado de planta externa exige cadastrar **arcos** — a aresta do grafo — para representar
-infraestrutura subterrânea. A avaliação da operação foi direta: *"o arco nem existe"*.
+infraestrutura subterrânea. A avaliação da operação foi direta: _"o arco nem existe"_.
 
 **Racional.** O custo de uma entidade artificial não é só de usabilidade. Ela cria uma classe de
 inconsistência em que o objeto inventado está cadastrado e o objeto real não — o inventário passa em
@@ -269,12 +269,12 @@ caixas e arcos cadastrados, linha de duto ausente.
 Geo↔Resource continua no Rack). Atua sobre o que se pede ao usuário: a amarração sai da relação entre
 objetos reais, e o que é aresta vira consulta computada. Materializações concretas:
 
-| Onde | O que muda |
-|---|---|
-| `REQ-MOD02-026` | Banco de dutos ⊃ duto ⊃ sub-duto ⊃ cabo, com endpoints em caixas reais; trecho A↔Z é derivado |
-| `REQ-MOD02-012` | Grafo de path computation montado a partir de contenção e endpoints; nenhuma rota cria aresta |
-| `REQ-MOD02-027` | Ocupação e completude são detectadas, não digitadas |
-| `01-module-geo.md` §4.7 e `02-module-resource.md` §4.8 | Princípio declarado nos dois módulos |
+| Onde                                                   | O que muda                                                                                    |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `REQ-MOD02-026`                                        | Banco de dutos ⊃ duto ⊃ sub-duto ⊃ cabo, com endpoints em caixas reais; trecho A↔Z é derivado |
+| `REQ-MOD02-012`                                        | Grafo de path computation montado a partir de contenção e endpoints; nenhuma rota cria aresta |
+| `REQ-MOD02-027`                                        | Ocupação e completude são detectadas, não digitadas                                           |
+| `01-module-geo.md` §4.7 e `02-module-resource.md` §4.8 | Princípio declarado nos dois módulos                                                          |
 
 Status: 📐 **Previsto no design** — declarado nos HLDs 1 e 2; a implementação está nos itens
 `DEV-RES-007` e `DEV-RES-008`.
@@ -289,27 +289,27 @@ Status: 📐 **Previsto no design** — declarado nos HLDs 1 e 2; a implementaç
 
 Consolidado das divergências apontadas acima, para quem for planejar a evolução:
 
-| Decisão | Cânone | Código hoje |
-|---|---|---|
-| C5 | UUID v7 + grupo `_origin` | `randomUUID()` (v4); `_origin` inexistente |
-| C7 | Outbox transacional + Schema Registry | Rotas TMF688 sem outbox |
-| C10 | Oracle 21c/23ai + Property Graph | Neon Postgres |
-| C4 | 22M HPs como GeographicAddress | Regra respeitada, carga não feita |
-| C8 | `relatedParty`, RBAC e isolamento por tenant | Party existe; cobertura transversal é parcial |
-| C9 | Catálogos e RelationshipTypes governados | Specifications parciais; tipos de relação sem CRUD completo |
+| Decisão | Cânone                                       | Código hoje                                                 |
+| ------- | -------------------------------------------- | ----------------------------------------------------------- |
+| C5      | UUID v7 + grupo `_origin`                    | `randomUUID()` (v4); `_origin` inexistente                  |
+| C7      | Outbox transacional + Schema Registry        | Rotas TMF688 sem outbox                                     |
+| C10     | Oracle 21c/23ai + Property Graph             | Neon Postgres                                               |
+| C4      | 22M HPs como GeographicAddress               | Regra respeitada, carga não feita                           |
+| C8      | `relatedParty`, RBAC e isolamento por tenant | Party existe; cobertura transversal é parcial               |
+| C9      | Catálogos e RelationshipTypes governados     | Specifications parciais; tipos de relação sem CRUD completo |
 
 ---
 
 ## Referências
 
-| Onde | O quê |
-|---|---|
-| [`AGENTS.md`](../../AGENTS.md) | Tabela compacta C1–C10 + convenções para agentes de IA |
-| [`product-overview.md`](product-overview.md) | Visão de produto, módulos e roadmap |
-| [`glossary.md`](glossary.md) | Termos e acrônimos |
-| [`../2-functional-specs/`](../2-functional-specs/) | HLDs por módulo, com requisitos e critérios de aceite |
-| [`../3-system-design/`](../3-system-design/) | Arquitetura, modelo de dados, integrações, NFR e segurança |
+| Onde                                               | O quê                                                      |
+| -------------------------------------------------- | ---------------------------------------------------------- |
+| [`AGENTS.md`](../../AGENTS.md)                     | Tabela compacta C1–C10 + convenções para agentes de IA     |
+| [`product-overview.md`](product-overview.md)       | Visão de produto, módulos e roadmap                        |
+| [`glossary.md`](glossary.md)                       | Termos e acrônimos                                         |
+| [`../2-functional-specs/`](../2-functional-specs/) | HLDs por módulo, com requisitos e critérios de aceite      |
+| [`../3-system-design/`](../3-system-design/)       | Arquitetura, modelo de dados, integrações, NFR e segurança |
 
 ---
 
-*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*
+_V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA_

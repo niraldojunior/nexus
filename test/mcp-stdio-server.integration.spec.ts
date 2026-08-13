@@ -18,7 +18,12 @@ type JsonRpcResponse = {
 
 const startStdioServer = (databaseUrl: string) => {
   const child = spawn(process.execPath, ['--use-system-ca', serverPath], {
-    env: { ...process.env, DATABASE_URL: databaseUrl, NODE_ENV: 'test', DOTENV_CONFIG_QUIET: 'true' },
+    env: {
+      ...process.env,
+      DATABASE_URL: databaseUrl,
+      NODE_ENV: 'test',
+      DOTENV_CONFIG_QUIET: 'true',
+    },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
@@ -118,5 +123,8 @@ test('MCP stdio server reports JSON-RPC errors for invalid input', async (t) => 
   server.send({ id: 4, method: 'tools/call', params: { name: 'missing.tool', arguments: {} } });
   const missingTool = await server.nextMessage();
   assert.equal((missingTool.result as { ok: boolean }).ok, false);
-  assert.equal((missingTool.result as { error: { code: string } }).error.code, 'MCP_TOOL_NOT_FOUND');
+  assert.equal(
+    (missingTool.result as { error: { code: string } }).error.code,
+    'MCP_TOOL_NOT_FOUND',
+  );
 });

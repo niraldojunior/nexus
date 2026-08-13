@@ -28,7 +28,9 @@ export function StreetViewHero({ marker }: { marker: StreetViewMarker | null }) 
     const token = ++requestTokenRef.current;
     void fetchStreetViewAvailability(point).then((availability) => {
       if (requestTokenRef.current !== token || availability.status !== 'ok') return;
-      setImageUrl(streetViewStaticUrl(point, availability, { width: HERO_WIDTH, height: HERO_HEIGHT }));
+      setImageUrl(
+        streetViewStaticUrl(point, availability, { width: HERO_WIDTH, height: HERO_HEIGHT }),
+      );
     });
   }, [lng, lat]);
 

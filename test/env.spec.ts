@@ -10,6 +10,30 @@ test('loadConfig applies Nexus defaults', () => {
   assert.equal(config.authEnabled, true);
 });
 
+test('loadConfig habilita Geonet somente com a configuração server-side completa', () => {
+  const incomplete = loadConfig({
+    DATABASE_URL_DEV: 'postgresql://dev.example',
+    GEONET_API_BASE_URL: 'https://api.example/geographicAddressManagement/v1',
+  });
+  assert.equal(incomplete.geonet, undefined);
+
+  const configured = loadConfig({
+    DATABASE_URL_DEV: 'postgresql://dev.example',
+    GEONET_API_BASE_URL: 'https://api.example/geographicAddressManagement/v1',
+    GEONET_TOKEN_URL: 'https://api.example/auth/oauth/v2/token',
+    GEONET_CLIENT_ID: 'client',
+    GEONET_CLIENT_SECRET: 'secret',
+  });
+  assert.deepEqual(configured.geonet, {
+    apiBaseUrl: 'https://api.example/geographicAddressManagement/v1',
+    tokenUrl: 'https://api.example/auth/oauth/v2/token',
+    clientId: 'client',
+    clientSecret: 'secret',
+    scope: 'fttx',
+    timeoutMs: 5_000,
+  });
+});
+
 test('loadConfig normalizes explicit environment values', () => {
   const config = loadConfig({
     APP_NAME: 'nexus-test',

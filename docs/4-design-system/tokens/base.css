@@ -22,13 +22,32 @@ body {
 }
 
 /* ---- Headings ------------------------------------------------ */
-h1, h2, h3, h4 { margin: 0; color: var(--text-primary); }
-h1 { font: var(--text-h1); letter-spacing: var(--tracking-tight); }
-h2 { font: var(--text-h2); letter-spacing: var(--tracking-tight); }
-h3 { font: var(--text-h3); }
-p  { margin: 0; }
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  color: var(--text-primary);
+}
+h1 {
+  font: var(--text-h1);
+  letter-spacing: var(--tracking-tight);
+}
+h2 {
+  font: var(--text-h2);
+  letter-spacing: var(--tracking-tight);
+}
+h3 {
+  font: var(--text-h3);
+}
+p {
+  margin: 0;
+}
 
-a { color: inherit; text-decoration: none; }
+a {
+  color: inherit;
+  text-decoration: none;
+}
 
 /* ---- Eyebrow / section label -------------------------------- */
 .vt-eyebrow {
@@ -50,7 +69,10 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
-  transition: transform var(--transition-normal), box-shadow var(--transition-normal), border-color var(--transition-normal);
+  transition:
+    transform var(--transition-normal),
+    box-shadow var(--transition-normal),
+    border-color var(--transition-normal);
   cursor: pointer;
 }
 .vt-card-interactive:hover {
@@ -60,7 +82,11 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* ---- Data table --------------------------------------------- */
-.vt-table { width: 100%; border-collapse: collapse; text-align: left; }
+.vt-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
 .vt-table th {
   padding: 5px 10px;
   font: var(--text-eyebrow);
@@ -76,11 +102,25 @@ a { color: inherit; text-decoration: none; }
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
-.vt-table tbody tr { transition: background var(--transition-fast); }
-.vt-table tbody tr:hover { background: var(--surface-card-hover); }
+.vt-table tbody tr {
+  transition: background var(--transition-fast);
+}
+.vt-table tbody tr:hover {
+  background: var(--surface-card-hover);
+}
 
 /* ---- Scrollbar ---------------------------------------------- */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-full); }
-::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}

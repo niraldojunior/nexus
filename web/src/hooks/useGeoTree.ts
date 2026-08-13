@@ -79,7 +79,7 @@ export function useGeoTree(): GeoTree {
         setState((current) => {
           const nodesById = { ...current.nodesById };
           for (const node of page.nodes) nodesById[node.id] = node;
-          const previous = offset === 0 ? [] : current.childIds[nodeId] ?? [];
+          const previous = offset === 0 ? [] : (current.childIds[nodeId] ?? []);
           const merged = [...previous];
           for (const node of page.nodes) if (!merged.includes(node.id)) merged.push(node.id);
           return {
@@ -129,7 +129,8 @@ export function useGeoTree(): GeoTree {
         setExpandedRows(defaultExpandedRows({ rootIds, childIds, nodesById }));
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Falha ao carregar a hierarquia.');
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : 'Falha ao carregar a hierarquia.');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -180,7 +181,8 @@ export function useGeoTree(): GeoTree {
   );
 
   const childrenOf = useCallback(
-    (nodeId: string) => (state.childIds[nodeId] ?? []).map((id) => state.nodesById[id]).filter(Boolean),
+    (nodeId: string) =>
+      (state.childIds[nodeId] ?? []).map((id) => state.nodesById[id]).filter(Boolean),
     [state],
   );
 
@@ -259,4 +261,3 @@ export function useGeoTree(): GeoTree {
     revealNode,
   };
 }
-

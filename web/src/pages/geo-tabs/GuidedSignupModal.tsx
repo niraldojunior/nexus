@@ -2,12 +2,26 @@ import { useState, useMemo, type FormEvent } from 'react';
 import { ChevronLeft, MapPin } from 'lucide-react';
 import type { GeoStatus, GeoSpec, GeoSite } from '../../services/geoApi';
 import { postJson } from '../../services/geoApi';
-import { siteKindFromSpec, siteKindLabel, siteKindDescription, type SiteKind } from '../../utils/placeLabel';
+import {
+  siteKindFromSpec,
+  siteKindLabel,
+  siteKindDescription,
+  type SiteKind,
+} from '../../utils/placeLabel';
 
 type Step = 'kind' | 'location' | 'details';
 
 export type GuidedSignupModalProps = {
-  draftAddress: { street: string; streetNr?: string; city?: string; stateOrProvince?: string; postcode?: string; country: string; coordinates: [number, number]; label: string } | null;
+  draftAddress: {
+    street: string;
+    streetNr?: string;
+    city?: string;
+    stateOrProvince?: string;
+    postcode?: string;
+    country: string;
+    coordinates: [number, number];
+    label: string;
+  } | null;
   selectedSite: GeoSite | null;
   specs: GeoSpec[];
   sites: GeoSite[];
@@ -33,7 +47,11 @@ export function GuidedSignupModal({
 }: GuidedSignupModalProps) {
   const [step, setStep] = useState<Step>('kind');
   const [siteSpecificationId, setSiteSpecificationId] = useState(specs[0]?.id ?? '');
-  const [name, setName] = useState(draftAddress ? `${siteKindLabel[siteKindFromSpec(specById.get(siteSpecificationId))].split('/')[0].trim()} - ${draftAddress.street}` : '');
+  const [name, setName] = useState(
+    draftAddress
+      ? `${siteKindLabel[siteKindFromSpec(specById.get(siteSpecificationId))].split('/')[0].trim()} - ${draftAddress.street}`
+      : '',
+  );
   const [status, setStatus] = useState<GeoStatus>('planned');
   const [parentSiteId, setParentSiteId] = useState(selectedSite?.id ?? '');
   const [fedBySiteId, setFedBySiteId] = useState('');
@@ -43,7 +61,8 @@ export function GuidedSignupModal({
   const selectedKind = siteKindFromSpec(selectedSpec);
 
   const parentOptions = useMemo(
-    () => sites.filter((site) => isParentAllowed(selectedSpec, specById.get(site.siteSpecificationId))),
+    () =>
+      sites.filter((site) => isParentAllowed(selectedSpec, specById.get(site.siteSpecificationId))),
     [selectedSpec, sites, specById],
   );
 
@@ -124,7 +143,11 @@ export function GuidedSignupModal({
                   : 'Detalhes do local'}
             </h3>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
+          >
             ✕
           </button>
         </div>
@@ -164,15 +187,22 @@ export function GuidedSignupModal({
           {step === 'location' && (
             <div className="rounded-[18px] border-2 border-dashed border-app-border p-6 text-center">
               <MapPin className="mx-auto mb-3 h-8 w-8 text-app-muted" />
-              <div className="text-[0.9rem] font-semibold text-app-text">Localização selecionada</div>
+              <div className="text-[0.9rem] font-semibold text-app-text">
+                Localização selecionada
+              </div>
               <div className="mt-2 text-[0.84rem] text-app-muted">
                 {draftAddress ? (
                   <div>
                     <div className="font-semibold text-app-text">{draftAddress.label}</div>
-                    <div className="mt-1 text-[0.75rem]">[{draftAddress.coordinates[0].toFixed(5)}, {draftAddress.coordinates[1].toFixed(5)}]</div>
+                    <div className="mt-1 text-[0.75rem]">
+                      [{draftAddress.coordinates[0].toFixed(5)},{' '}
+                      {draftAddress.coordinates[1].toFixed(5)}]
+                    </div>
                   </div>
                 ) : selectedSite ? (
-                  <div>Herdado de <strong>{selectedSite.name}</strong></div>
+                  <div>
+                    Herdado de <strong>{selectedSite.name}</strong>
+                  </div>
                 ) : (
                   <div className="text-amber-600">⚠ Selecione um ponto no mapa para continuar</div>
                 )}
@@ -275,18 +305,22 @@ export function GuidedSignupModal({
         <div className="mt-5 flex justify-between gap-3 border-t border-app-border pt-4">
           <button
             type="button"
-            onClick={step === 'kind' ? onClose : () => setStep(step === 'details' ? 'location' : 'kind')}
+            onClick={
+              step === 'kind' ? onClose : () => setStep(step === 'details' ? 'location' : 'kind')
+            }
             className="geo-btn secondary"
           >
-            {step === 'kind' ? 'Cancelar' : <><ChevronLeft className="h-4 w-4" /> Voltar</>}
+            {step === 'kind' ? (
+              'Cancelar'
+            ) : (
+              <>
+                <ChevronLeft className="h-4 w-4" /> Voltar
+              </>
+            )}
           </button>
 
           {step === 'kind' && (
-            <button
-              type="button"
-              onClick={() => setStep('location')}
-              className="geo-btn primary"
-            >
+            <button type="button" onClick={() => setStep('location')} className="geo-btn primary">
               Continuar →
             </button>
           )}

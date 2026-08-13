@@ -28,9 +28,9 @@ services:
     healthcheck:
       test:
         [
-          "CMD",
-          "node",
-          "-e",
+          'CMD',
+          'node',
+          '-e',
           "fetch('http://127.0.0.1:4001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 30s
@@ -50,9 +50,9 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
     env_file: .env.docker
     volumes:
       - caddy_data:/data
@@ -75,8 +75,8 @@ services:
     networks: [nexus, dbnet]
     volumes:
       - ./legacy-data:/app/legacy-data:ro
-    entrypoint: ["node"]
-    command: ["dist/src/scripts/migrate-database.js"]
+    entrypoint: ['node']
+    command: ['dist/src/scripts/migrate-database.js']
 
 networks:
   nexus:

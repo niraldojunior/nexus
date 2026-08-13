@@ -164,11 +164,21 @@ function CreateUserForm({
         />
       </div>
       <div className="mt-3">
-        <PasswordStrengthField label="Senha" value={password} onChange={setPassword} showGenerator />
+        <PasswordStrengthField
+          label="Senha"
+          value={password}
+          onChange={setPassword}
+          showGenerator
+        />
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {ASSIGNABLE_ROLES.map((role) => (
-          <RoleChip key={role} role={role} active={roles.includes(role)} onToggle={() => toggleRole(role)} />
+          <RoleChip
+            key={role}
+            role={role}
+            active={roles.includes(role)}
+            onToggle={() => toggleRole(role)}
+          />
         ))}
       </div>
       <button
@@ -395,7 +405,10 @@ function ResetPasswordModal({
           />
 
           <div className="flex flex-col gap-1.5">
-            <label htmlFor={`${titleId}-confirm`} className="text-[0.78rem] font-medium text-app-muted">
+            <label
+              htmlFor={`${titleId}-confirm`}
+              className="text-[0.78rem] font-medium text-app-muted"
+            >
               Confirmar senha
             </label>
             <input

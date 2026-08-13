@@ -39,7 +39,11 @@ export async function openLoaderDb(options = {}) {
 async function openPostgres() {
   const url = process.env.DATABASE_URL_DEV ?? process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL_DEV (ou DATABASE_URL) não definido no .env');
-  const pool = new pg.Pool({ connectionString: url, ssl: sslFor(url), connectionTimeoutMillis: 20_000 });
+  const pool = new pg.Pool({
+    connectionString: url,
+    ssl: sslFor(url),
+    connectionTimeoutMillis: 20_000,
+  });
   const client = await pool.connect();
   return {
     provider: 'postgres',
@@ -76,7 +80,10 @@ async function bulkInsertPg(client, table, columns, rows, { onConflict = '' } = 
 
 async function openOracle() {
   const prefix = process.env.ORACLE_OBJECT_PREFIX;
-  if (!prefix) throw new Error('ORACLE_OBJECT_PREFIX obrigatório (ex.: NEXUS_DEV_) quando DATABASE_PROVIDER=oracle');
+  if (!prefix)
+    throw new Error(
+      'ORACLE_OBJECT_PREFIX obrigatório (ex.: NEXUS_DEV_) quando DATABASE_PROVIDER=oracle',
+    );
   const conn = await oracledb.getConnection({
     user: process.env.ORACLE_USER,
     password: process.env.ORACLE_PASSWORD,
@@ -85,7 +92,8 @@ async function openOracle() {
   return {
     provider: 'oracle',
     query: (sql, params = []) => oracleQuery(conn, prefix, sql, params),
-    bulkInsert: (table, columns, rows, opts) => bulkInsertOracle(conn, prefix, table, columns, rows, opts),
+    bulkInsert: (table, columns, rows, opts) =>
+      bulkInsertOracle(conn, prefix, table, columns, rows, opts),
     close: async () => {
       try {
         await conn.commit();
@@ -108,7 +116,8 @@ const lowerKeys = (row) =>
 // Strip Postgres integer/text casts the runtime translator does not handle (e.g. count(*)::int).
 const stripPgCasts = (sql) => sql.replace(/::(?:int|integer|bigint|smallint|text)\b/gi, '');
 
-const toOracleSql = (sql, prefix) => transformOracleQuery(stripPgCasts(sql).replace(/\$\d+/g, '?'), prefix);
+const toOracleSql = (sql, prefix) =>
+  transformOracleQuery(stripPgCasts(sql).replace(/\$\d+/g, '?'), prefix);
 
 async function oracleQuery(conn, prefix, sql, params) {
   const trimmed = sql.trim();
@@ -124,7 +133,10 @@ async function oracleQuery(conn, prefix, sql, params) {
   }
   const truncate = trimmed.match(/^TRUNCATE TABLE\s+([\s\S]+?)(?:\s+RESTART IDENTITY)?\s*$/i);
   if (truncate) {
-    for (const table of truncate[1].split(',').map((t) => t.trim()).filter(Boolean)) {
+    for (const table of truncate[1]
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean)) {
       await conn.execute(`DELETE FROM ${prefixed(table, prefix)}`, [], { autoCommit: false });
     }
     return { rows: [], rowCount: 0 };
@@ -133,12 +145,15 @@ async function oracleQuery(conn, prefix, sql, params) {
     outFormat: oracledb.OUT_FORMAT_OBJECT,
     autoCommit: false,
   });
-  return { rows: (res.rows ?? []).map(lowerKeys), rowCount: res.rowsAffected ?? res.rows?.length ?? 0 };
+  return {
+    rows: (res.rows ?? []).map(lowerKeys),
+    rowCount: res.rowsAffected ?? res.rows?.length ?? 0,
+  };
 }
 
 // ISO datetime strings bind to TIMESTAMP columns as Dates; everything else passes through.
 const normalizeBindValue = (value) =>
-  typeof value === 'string' && ISO_DATETIME.test(value) ? new Date(value) : value ?? null;
+  typeof value === 'string' && ISO_DATETIME.test(value) ? new Date(value) : (value ?? null);
 
 const bindDefFor = (column, rows) => {
   let maxLen = 1;
@@ -187,7 +202,9 @@ async function bulkInsertOracle(conn, prefix, table, columns, rows, { onConflict
   const ignoreDuplicates = /DO NOTHING/i.test(onConflict);
   let inserted = 0;
   for (const block of chunk(rows, 1000)) {
-    const data = block.map((row) => columns.map((column, i) => bindValueFor(row[column], bindDefs[i])));
+    const data = block.map((row) =>
+      columns.map((column, i) => bindValueFor(row[column], bindDefs[i])),
+    );
     const result = await conn.executeMany(sql, data, {
       autoCommit: false,
       bindDefs,
@@ -196,7 +213,8 @@ async function bulkInsertOracle(conn, prefix, table, columns, rows, { onConflict
     const errors = result.batchErrors ?? [];
     for (const error of errors) {
       // ORA-00001 = unique constraint violation, the Oracle analogue of ON CONFLICT DO NOTHING.
-      if (error.errorNum !== 1) throw new Error(`bulkInsert ${table}: ORA-${error.errorNum} ${error.message}`);
+      if (error.errorNum !== 1)
+        throw new Error(`bulkInsert ${table}: ORA-${error.errorNum} ${error.message}`);
     }
     inserted += block.length - errors.length;
   }

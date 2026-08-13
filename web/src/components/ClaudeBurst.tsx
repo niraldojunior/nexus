@@ -1,5 +1,5 @@
 interface ClaudeBurstProps {
-  className?: string
+  className?: string;
 }
 
 export default function ClaudeBurst({ className = '' }: ClaudeBurstProps) {
@@ -30,5 +30,5 @@ export default function ClaudeBurst({ className = '' }: ClaudeBurstProps) {
         <path d="M35.4 24.7L41.6 9.8" />
       </g>
     </svg>
-  )
+  );
 }

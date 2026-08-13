@@ -11,7 +11,10 @@ import {
 // senha segura. Componente controlado, reusado no modal de redefinição e no formulário de novo
 // usuário (UsersPage) para não haver dois padrões de senha na mesma tela.
 
-const STRENGTH_META: Record<PasswordStrength, { label: string; bar: string; text: string; filled: number }> = {
+const STRENGTH_META: Record<
+  PasswordStrength,
+  { label: string; bar: string; text: string; filled: number }
+> = {
   fraca: { label: 'Fraca', bar: 'bg-status-red', text: 'text-status-red', filled: 1 },
   media: { label: 'Média', bar: 'bg-status-amber', text: 'text-status-amber', filled: 2 },
   forte: { label: 'Forte', bar: 'bg-status-green', text: 'text-status-green', filled: 3 },

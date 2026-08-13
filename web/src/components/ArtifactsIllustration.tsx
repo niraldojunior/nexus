@@ -1,5 +1,5 @@
 interface ArtifactsIllustrationProps {
-  className?: string
+  className?: string;
 }
 
 export default function ArtifactsIllustration({ className = '' }: ArtifactsIllustrationProps) {
@@ -20,5 +20,5 @@ export default function ArtifactsIllustration({ className = '' }: ArtifactsIllus
         <path d="M80 52.5V77.3C80 81.1 85.2 82 86.5 78.4L92 63.1" />
       </g>
     </svg>
-  )
+  );
 }

@@ -39,7 +39,10 @@ afterEach(() => {
 
 describe('session', () => {
   it('guarda e lê token e usuário; autentica com token válido', () => {
-    setSession({ token: makeToken({ sub: 'ana', roles: ['inventory.reader'], exp: futureExp }), user });
+    setSession({
+      token: makeToken({ sub: 'ana', roles: ['inventory.reader'], exp: futureExp }),
+      user,
+    });
     expect(getToken()).toBeTruthy();
     expect(getSessionUser()?.name).toBe('Ana');
     expect(isAuthenticated()).toBe(true);

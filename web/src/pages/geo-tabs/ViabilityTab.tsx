@@ -39,7 +39,8 @@ const statusLabel = (status: string | undefined, substatus?: string): string => 
   if (status === 'active') return 'Ativa';
   // Caixa suspensa carrega o motivo (ds_estado_controle na origem) no substatus: mostrá-lo
   // entre parênteses diz por que ela não está viável, na versão curta (ver shortSubstatus).
-  if (status === 'suspended') return substatus ? `Suspensa (${shortSubstatus(substatus)})` : 'Suspensa';
+  if (status === 'suspended')
+    return substatus ? `Suspensa (${shortSubstatus(substatus)})` : 'Suspensa';
   return 'Indefinida';
 };
 
@@ -173,10 +174,8 @@ export function ViabilityTab({ origin, onSimulate }: ViabilityTabProps) {
   return (
     <div className="grid gap-2">
       <p className="px-1 text-[0.78rem] leading-snug text-app-muted">
-        {candidates.length === 1
-          ? '1 CDO encontrada'
-          : `${candidates.length} CDOs encontradas`}{' '}
-        num raio de {VIABILITY_RADIUS_METERS} m
+        {candidates.length === 1 ? '1 CDO encontrada' : `${candidates.length} CDOs encontradas`} num
+        raio de {VIABILITY_RADIUS_METERS} m
       </p>
 
       <ul className="grid gap-0.5">
@@ -191,7 +190,9 @@ export function ViabilityTab({ origin, onSimulate }: ViabilityTabProps) {
                 onClick={() => void select(candidate)}
                 aria-pressed={selected}
                 className={`flex w-full items-center gap-2.5 rounded-[10px] px-2 py-2 text-left transition ${
-                  selected ? 'bg-app-accent-soft text-app-text' : 'text-app-text hover:bg-app-accent-soft'
+                  selected
+                    ? 'bg-app-accent-soft text-app-text'
+                    : 'text-app-text hover:bg-app-accent-soft'
                 }`}
               >
                 <ResourceIcon
@@ -213,7 +214,10 @@ export function ViabilityTab({ origin, onSimulate }: ViabilityTabProps) {
                 </span>
                 <span className="flex shrink-0 items-center gap-1.5">
                   {pendingId === id ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-app-muted" aria-hidden="true" />
+                    <Loader2
+                      className="h-3.5 w-3.5 animate-spin text-app-muted"
+                      aria-hidden="true"
+                    />
                   ) : null}
                   <span className="text-[0.82rem] font-semibold tabular-nums text-app-text">
                     {candidate.mode === 'straight' ? '≈ ' : ''}

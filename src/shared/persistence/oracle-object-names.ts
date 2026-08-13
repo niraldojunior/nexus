@@ -57,7 +57,10 @@ export const quoteOracleReservedColumns = (sql: string): string => {
  * bare managed name.
  */
 export const rewriteTableReferences = (sql: string, prefix: string): string =>
-  sql.replace(TABLE_REFERENCE, (_match, keyword: string, table: string) => `${keyword}${prefix}${table}`);
+  sql.replace(
+    TABLE_REFERENCE,
+    (_match, keyword: string, table: string) => `${keyword}${prefix}${table}`,
+  );
 
 /**
  * Rewrites the names of objects a DDL statement CREATEs/ALTERs — tables, indexes and constraints —

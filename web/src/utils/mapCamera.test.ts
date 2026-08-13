@@ -131,7 +131,11 @@ describe('flyTo', () => {
     // interfere no segundo mapa).
     idleQueue = [];
     const withInset = makeMap(RIO, 20);
-    flyTo(withInset, { point: NEAR, scaleMeters: null, fitSpanMeters: 2000 }, { bottomInsetPx: 400 });
+    flyTo(
+      withInset,
+      { point: NEAR, scaleMeters: null, fitSpanMeters: 2000 },
+      { bottomInsetPx: 400 },
+    );
     flushIdle();
     const zoomWithInset = withInset.setZoom.mock.calls[0][0] as number;
     expect(zoomWithInset).toBeLessThanOrEqual(zoomNoInset);

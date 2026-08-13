@@ -15,4 +15,3 @@
 
 - Usar card para blocos de KPI, resumo e contexto.
 - Evitar cards sem conteúdo útil ou sem função clara.
-

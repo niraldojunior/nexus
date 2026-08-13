@@ -157,7 +157,8 @@ export class GeoCoverageService {
       bucket.total += row.cdo_total;
       bucket.available += row.cdo_available;
       const index = row.coverage_area_id ? indexByAreaId.get(row.coverage_area_id) : undefined;
-      if (index !== undefined) bucket.tally.set(index, (bucket.tally.get(index) ?? 0) + row.cdo_total);
+      if (index !== undefined)
+        bucket.tally.set(index, (bucket.tally.get(index) ?? 0) + row.cdo_total);
     }
 
     const cells = [...buckets.values()].map((bucket) => {
@@ -221,7 +222,11 @@ export class GeoCoverageService {
     };
   }
 
-  private fetchCells(range: GridRange, cellMeters: number, limit: number): Promise<CoverageCellRow[]> {
+  private fetchCells(
+    range: GridRange,
+    cellMeters: number,
+    limit: number,
+  ): Promise<CoverageCellRow[]> {
     return this.db.all<CoverageCellRow>(
       `SELECT grid_x, grid_y, cdo_total, cdo_available, coverage_area_id
          FROM geo_gpon_coverage_cell

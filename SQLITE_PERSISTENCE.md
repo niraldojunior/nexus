@@ -33,20 +33,24 @@ src/
 **Tabelas:**
 
 #### Usuários
+
 - `users` — ID, external_id (VT158145), name, email, timestamps
 - `searches` — ID, user_id (FK), query, filters (JSON), results (JSON), timestamp
 
 #### Geographic (Módulo Geo)
+
 - `geographic_locations` — Pontos, linhas, polígonos com geometria GeoJSON
 - `geographic_addresses` — Endereços com referência a locations
 - `geographic_site_specifications` — Catálogo de tipos de site
 - `geographic_sites` — Sites (CO, substação, etc.) com hierarquia e referências
 
 #### Resource (preparado para futuro)
+
 - `physical_resources` — Racks, equipamentos, cabos, etc.
 - `logical_resources` — Serviços de camada L2/L3
 
 #### Service (preparado para futuro)
+
 - `services_cfs` — Customer Facing Service (comercial)
 - `services_rfs` — Resource Facing Service (técnico)
 - `service_orders` — Ordens de serviço
@@ -307,4 +311,4 @@ Consulte [sqlite-database.ts](src/shared/persistence/sqlite-database.ts) para o 
 
 ---
 
-*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*
+_V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA_

@@ -3,7 +3,7 @@
 /**
  * Quick test script for Research API endpoints
  * Usage: node scripts/test-research-api.mjs
- * 
+ *
  * Make sure to:
  * 1. Set OPENAI_API_KEY environment variable
  * 2. Start dev server: npm run dev
@@ -135,7 +135,6 @@ async function main() {
     log('   3. Type a message and press Enter');
     log('   4. Watch ChatGPT responses appear in real-time');
     log('');
-
   } catch (error) {
     console.error('❌ Test suite failed:', error.message);
     process.exit(1);

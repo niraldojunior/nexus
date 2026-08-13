@@ -90,7 +90,6 @@ const emptyFormState = (): ServiceFormState => ({
   placeType: 'GeographicAddress',
 });
 
-
 const tabConfig: Record<
   ServiceTabId,
   {
@@ -126,7 +125,8 @@ const tabConfig: Record<
     ],
   },
   ServiceSpecification: {
-    description: 'Catálogo de especificações que tipam os serviços de cliente (CFS) e de rede (RFS).',
+    description:
+      'Catálogo de especificações que tipam os serviços de cliente (CFS) e de rede (RFS).',
     icon: FileText,
     buildColumns: () => [
       { key: 'name', label: 'Especificação' },
@@ -155,13 +155,15 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
   const [view, setView] = useState<ServiceView>('inventory');
   // O Inventário mostra CFS e RFS juntos; a tab só distingue catálogo de inventário — o servidor
   // sempre devolve CFS+RFS da categoria ativa juntos (ver buildServiceWorkspaceSnapshot).
-  const effectiveTab: ServiceTabId = view === 'catalog' ? 'ServiceSpecification' : 'CustomerFacingService';
+  const effectiveTab: ServiceTabId =
+    view === 'catalog' ? 'ServiceSpecification' : 'CustomerFacingService';
 
   const [page, setPage] = useState(1);
   const [columnFilters, setColumnFilters] = useState<Record<string, Set<string>>>({});
   const [openFilter, setOpenFilter] = useState<OpenFilterState | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [serviceCategories, setServiceCategories] = useState<ServiceCategory[]>(SERVICE_CATEGORY_DEFAULTS);
+  const [serviceCategories, setServiceCategories] =
+    useState<ServiceCategory[]>(SERVICE_CATEGORY_DEFAULTS);
   const [specificationOptions, setSpecificationOptions] = useState<ServiceSpecification[]>([]);
   const [customerFacingServices, setCustomerFacingServices] = useState<CustomerFacingService[]>([]);
   const [resourceFacingServices, setResourceFacingServices] = useState<ResourceFacingService[]>([]);
@@ -200,7 +202,8 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
 
   const servicesById = useMemo(() => {
     const map = new Map<string, ServiceEntity>();
-    for (const service of [...customerFacingServices, ...resourceFacingServices]) map.set(service.id, service);
+    for (const service of [...customerFacingServices, ...resourceFacingServices])
+      map.set(service.id, service);
     return map;
   }, [customerFacingServices, resourceFacingServices]);
 
@@ -220,7 +223,14 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
     return [...customerFacingServices, ...resourceFacingServices].filter(
       (service) => serviceCategoryCode(service, specificationsById) === category,
     );
-  }, [view, category, specificationOptions, customerFacingServices, resourceFacingServices, specificationsById]);
+  }, [
+    view,
+    category,
+    specificationOptions,
+    customerFacingServices,
+    resourceFacingServices,
+    specificationsById,
+  ]);
 
   // Valor exibido de uma coluna — usado para montar o domínio do filtro e para aplicá-lo, garantindo
   // que o filtro casa exatamente com o texto renderizado na célula.
@@ -257,7 +267,9 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
   const filteredItems = useMemo(() => {
     const entries = Object.entries(columnFilters).filter(([, values]) => values.size > 0);
     if (!entries.length) return categoryItems;
-    return categoryItems.filter((item) => entries.every(([key, values]) => values.has(columnValueFor(item, key))));
+    return categoryItems.filter((item) =>
+      entries.every(([key, values]) => values.has(columnValueFor(item, key))),
+    );
     // columnValueFor deriva de view + catálogos, cobertos abaixo.
   }, [categoryItems, columnFilters, view, specificationsById]);
 
@@ -299,7 +311,10 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
   const selectedOnPage = pageItems.filter((item) => selectedIds.has(item.id));
   const pageSelectionCount = selectedOnPage.length;
   const selectedCount = selectedIds.size;
-  const selectedTerminatePreview = selectedOnPage.slice(0, 3).map((item) => item.name).join(', ');
+  const selectedTerminatePreview = selectedOnPage
+    .slice(0, 3)
+    .map((item) => item.name)
+    .join(', ');
 
   const loadWorkspaceData = async (tab: ServiceTabId): Promise<void> => {
     setIsLoading(true);
@@ -307,7 +322,10 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
     try {
       // A categoria é escopada no servidor (evita o full-scan global do inventário); a
       // paginação/filtro de coluna continua no cliente sobre esse conjunto já bem menor.
-      const snapshot = await loadServiceWorkspaceSnapshot({ tab, ...(tab !== 'ServiceSpecification' ? { category } : {}) });
+      const snapshot = await loadServiceWorkspaceSnapshot({
+        tab,
+        ...(tab !== 'ServiceSpecification' ? { category } : {}),
+      });
       setSpecificationOptions(snapshot.serviceSpecificationOptions);
       // O backend não modela `code` em ServiceCategory; a árvore canônica do frontend é a referência
       // de navegação. Só usamos as categorias do servidor se elas trouxerem o código.
@@ -330,7 +348,8 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
 
   useEffect(() => {
     if (!selectAllRef.current) return;
-    selectAllRef.current.indeterminate = pageSelectionCount > 0 && pageSelectionCount < pageItems.length;
+    selectAllRef.current.indeterminate =
+      pageSelectionCount > 0 && pageSelectionCount < pageItems.length;
   }, [pageItems.length, pageSelectionCount]);
 
   // Trocar de categoria ou de sub-visão reinicia paginação, seleção e filtros.
@@ -373,7 +392,7 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
       category,
       serviceSpecificationId: entity?.serviceSpecificationId ?? '',
       state: entity?.state ?? 'designed',
-      subscriberId: isCfs ? (entity as CustomerFacingService | null)?.subscriberId ?? '' : '',
+      subscriberId: isCfs ? ((entity as CustomerFacingService | null)?.subscriberId ?? '') : '',
       supportingServiceIds: isCfs
         ? ((entity as CustomerFacingService | null)?.supportingService ?? []).map((ref) => ref.id)
         : [],
@@ -437,7 +456,9 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
 
   const openEditModal = (entity: ServiceEntity | ServiceSpecification) => {
     const tab: ServiceTabId =
-      view === 'catalog' ? 'ServiceSpecification' : ((entity as ServiceEntity)['@type'] as ServiceTabId);
+      view === 'catalog'
+        ? 'ServiceSpecification'
+        : ((entity as ServiceEntity)['@type'] as ServiceTabId);
     setModalState({ tab, mode: 'edit', entity });
   };
 
@@ -558,7 +579,9 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
             <td className="px-4 py-3">
               <StateBadge state={service.state} />
             </td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">{serviceBindingSummary(service)}</td>
+            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
+              {serviceBindingSummary(service)}
+            </td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">
               <div className="flex items-center gap-2">
                 <PlaceLabelCompact place={service.place?.[0]} directory={geoDirectory} />
@@ -586,7 +609,9 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
               <CategoryIcon className="h-7 w-7 shrink-0 text-app-muted" strokeWidth={2} />
               <h1 className="font-display text-4xl font-semibold text-app-text">{categoryName}</h1>
             </div>
-            <p className="mt-2 max-w-[820px] text-[0.96rem] text-app-muted">{activeTabConfig.description}</p>
+            <p className="mt-2 max-w-[820px] text-[0.96rem] text-app-muted">
+              {activeTabConfig.description}
+            </p>
           </div>
           <div className="mt-1 flex shrink-0 items-center gap-2">
             <div
@@ -749,7 +774,9 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
                 ? `${selectedCount} selecionados no total`
                 : filteredItems.length
                   ? `Mostrando ${(activePage - 1) * PAGE_SIZE + 1}–${Math.min(activePage * PAGE_SIZE, filteredItems.length)} de ${filteredItems.length} registro(s)${
-                      filteredItems.length !== categoryItems.length ? ` (filtrado de ${categoryItems.length})` : ''
+                      filteredItems.length !== categoryItems.length
+                        ? ` (filtrado de ${categoryItems.length})`
+                        : ''
                     }`
                   : categoryItems.length
                     ? 'Nenhum registro para os filtros aplicados'
@@ -851,9 +878,9 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
 
                 <div className="grid gap-4 text-[0.92rem] text-app-muted">
                   <p>
-                    O encerramento é lógico: os serviços passam ao estado Encerrado e saem da operação, mas
-                    permanecem no inventário para auditoria e rastreabilidade. Encerrar um RFS com CFS ativo é
-                    recusado pelo inventário.
+                    O encerramento é lógico: os serviços passam ao estado Encerrado e saem da
+                    operação, mas permanecem no inventário para auditoria e rastreabilidade.
+                    Encerrar um RFS com CFS ativo é recusado pelo inventário.
                   </p>
                   {selectedTerminatePreview ? (
                     <div className="rounded-[18px] border border-app-border bg-app-accent-soft px-4 py-3 text-[0.88rem] text-app-text">
@@ -981,11 +1008,18 @@ function ServiceModal({
             <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
               {isCatalog ? 'Catálogo de serviços' : 'Inventário de serviços'}
             </div>
-            <h2 id="service-modal-title" className="mt-1 font-display text-[1.4rem] font-semibold text-app-text">
+            <h2
+              id="service-modal-title"
+              className="mt-1 font-display text-[1.4rem] font-semibold text-app-text"
+            >
               {title}
             </h2>
           </div>
-          <button type="button" className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft" onClick={onClose}>
+          <button
+            type="button"
+            className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
+            onClick={onClose}
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -994,8 +1028,8 @@ function ServiceModal({
           <div className="mb-5 flex items-start gap-3 rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-3 text-[0.88rem] text-amber-800">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <span>
-              Um serviço de cliente precisa apoiar-se em ao menos um serviço de rede. Cadastre um RFS nesta
-              categoria antes de criar o CFS.
+              Um serviço de cliente precisa apoiar-se em ao menos um serviço de rede. Cadastre um
+              RFS nesta categoria antes de criar o CFS.
             </span>
           </div>
         ) : null}
@@ -1017,7 +1051,10 @@ function ServiceModal({
                   className="geo-input"
                   value={formState.serviceType}
                   onChange={(event) =>
-                    onChange({ ...formState, serviceType: event.target.value as ServiceSpecificationType })
+                    onChange({
+                      ...formState,
+                      serviceType: event.target.value as ServiceSpecificationType,
+                    })
                   }
                 >
                   <option value="CFS">CFS — serviço de cliente</option>
@@ -1042,7 +1079,9 @@ function ServiceModal({
                 <select
                   className="geo-input"
                   value={formState.serviceSpecificationId}
-                  onChange={(event) => onChange({ ...formState, serviceSpecificationId: event.target.value })}
+                  onChange={(event) =>
+                    onChange({ ...formState, serviceSpecificationId: event.target.value })
+                  }
                 >
                   <option value="">Selecione...</option>
                   {eligibleSpecs.map((spec) => (
@@ -1057,7 +1096,9 @@ function ServiceModal({
                 <select
                   className="geo-input"
                   value={formState.state}
-                  onChange={(event) => onChange({ ...formState, state: event.target.value as ServiceState })}
+                  onChange={(event) =>
+                    onChange({ ...formState, state: event.target.value as ServiceState })
+                  }
                 >
                   {SERVICE_STATE_ORDER.filter((state) => state !== 'terminated').map((state) => (
                     <option key={state} value={state}>
@@ -1073,7 +1114,9 @@ function ServiceModal({
                   <input
                     className="geo-input"
                     value={formState.subscriberId}
-                    onChange={(event) => onChange({ ...formState, subscriberId: event.target.value })}
+                    onChange={(event) =>
+                      onChange({ ...formState, subscriberId: event.target.value })
+                    }
                     placeholder="SUB778899"
                   />
                 </Field>
@@ -1081,7 +1124,14 @@ function ServiceModal({
 
               <Field label="Local">
                 <PlacePicker
-                  value={formState.placeId ? { id: formState.placeId, '@referredType': formState.placeType || 'GeographicAddress' } : null}
+                  value={
+                    formState.placeId
+                      ? {
+                          id: formState.placeId,
+                          '@referredType': formState.placeType || 'GeographicAddress',
+                        }
+                      : null
+                  }
                   onChange={(place) => {
                     onChange({
                       ...formState,
@@ -1190,7 +1240,9 @@ function CheckboxList({
             aria-label={option.label}
           />
           <span className="truncate">{option.label}</span>
-          {option.hint ? <span className="ml-auto shrink-0 text-[0.76rem] text-app-muted">{option.hint}</span> : null}
+          {option.hint ? (
+            <span className="ml-auto shrink-0 text-[0.76rem] text-app-muted">{option.hint}</span>
+          ) : null}
         </label>
       ))}
     </div>
@@ -1202,10 +1254,16 @@ function LayerBadge({ label }: { label: string }) {
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[0.74rem] font-semibold ${
-        isCfs ? 'border-app-accent-border bg-app-accent-soft text-app-text' : 'border-app-border bg-white text-app-muted'
+        isCfs
+          ? 'border-app-accent-border bg-app-accent-soft text-app-text'
+          : 'border-app-border bg-white text-app-muted'
       }`}
     >
-      {isCfs ? <Users className="h-3 w-3" aria-hidden /> : <Network className="h-3 w-3" aria-hidden />}
+      {isCfs ? (
+        <Users className="h-3 w-3" aria-hidden />
+      ) : (
+        <Network className="h-3 w-3" aria-hidden />
+      )}
       {label}
     </span>
   );
@@ -1219,7 +1277,9 @@ function StateBadge({ state }: { state: ServiceState }) {
         ? 'border-app-border bg-slate-50 text-app-muted'
         : 'border-amber-200 bg-amber-50 text-amber-800';
   return (
-    <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[0.74rem] font-semibold ${tone}`}>
+    <span
+      className={`inline-flex rounded-full border px-2.5 py-0.5 text-[0.74rem] font-semibold ${tone}`}
+    >
       {SERVICE_STATE_LABELS[state] ?? state}
     </span>
   );

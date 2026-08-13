@@ -20,7 +20,10 @@ test('ResearchPage renders confirmation action and appends the commit result', a
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
 
-    if (url === '/v1/research/sessions/session-1' && (!init || init.method === undefined || init.method === 'GET')) {
+    if (
+      url === '/v1/research/sessions/session-1' &&
+      (!init || init.method === undefined || init.method === 'GET')
+    ) {
       return new Response(
         JSON.stringify({
           '@type': 'ResearchSession',
@@ -103,14 +106,19 @@ test('ResearchPage renders confirmation action and appends the commit result', a
     ),
   );
   expect(await screen.findByText(/cadastrado com sucesso/i)).toBeInTheDocument();
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Confirmar cadastro' })).not.toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.queryByRole('button', { name: 'Confirmar cadastro' })).not.toBeInTheDocument(),
+  );
 });
 
 test('ResearchPage mostra todos os itens quando a confirmacao e em lote', async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
 
-    if (url === '/v1/research/sessions/session-batch' && (!init || init.method === undefined || init.method === 'GET')) {
+    if (
+      url === '/v1/research/sessions/session-batch' &&
+      (!init || init.method === undefined || init.method === 'GET')
+    ) {
       return new Response(
         JSON.stringify({
           '@type': 'ResearchSession',

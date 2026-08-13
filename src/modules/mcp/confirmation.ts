@@ -17,7 +17,12 @@ export type PendingMcpConfirmation = {
 export class PostgresMcpConfirmationRepository {
   public constructor(private readonly db: DatabaseClient) {}
 
-  public async create(input: Omit<PendingMcpConfirmation, 'token' | 'createdAt'> & { token?: string; createdAt?: string }): Promise<PendingMcpConfirmation> {
+  public async create(
+    input: Omit<PendingMcpConfirmation, 'token' | 'createdAt'> & {
+      token?: string;
+      createdAt?: string;
+    },
+  ): Promise<PendingMcpConfirmation> {
     const createdAt = input.createdAt ?? new Date().toISOString();
     const token = input.token ?? createCanonicalId();
     await this.db.run(
@@ -85,7 +90,10 @@ export class PostgresMcpConfirmationRepository {
     };
   }
 
-  public async consume(token: string, consumedAt = new Date().toISOString()): Promise<PendingMcpConfirmation | undefined> {
+  public async consume(
+    token: string,
+    consumedAt = new Date().toISOString(),
+  ): Promise<PendingMcpConfirmation | undefined> {
     const current = await this.get(token);
     if (!current) return undefined;
 

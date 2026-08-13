@@ -37,9 +37,7 @@ export const ConversasPage: React.FC<{
     // Filtrar e paginar
     let filtered = sessions;
     if (searchQuery.trim()) {
-      filtered = sessions.filter((s) =>
-        s.title.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+      filtered = sessions.filter((s) => s.title.toLowerCase().includes(searchQuery.toLowerCase()));
     }
     setFilteredSessions(filtered);
     setPage(1); // Reset para página 1 ao filtrar
@@ -59,9 +57,10 @@ export const ConversasPage: React.FC<{
       setSessions(
         data
           .filter((s: ResearchSession) => s.status === 'active')
-          .sort((a: ResearchSession, b: ResearchSession) =>
-            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-          )
+          .sort(
+            (a: ResearchSession, b: ResearchSession) =>
+              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+          ),
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
@@ -99,12 +98,8 @@ export const ConversasPage: React.FC<{
       <div className="mx-auto max-w-[1200px]">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="font-display text-4xl font-semibold text-app-text mb-2">
-            Conversas
-          </h1>
-          <p className="text-app-muted">
-            {filteredSessions.length} conversa(s) encontrada(s)
-          </p>
+          <h1 className="font-display text-4xl font-semibold text-app-text mb-2">Conversas</h1>
+          <p className="text-app-muted">{filteredSessions.length} conversa(s) encontrada(s)</p>
         </div>
 
         {/* Search */}
@@ -163,9 +158,7 @@ export const ConversasPage: React.FC<{
                   className="w-full flex items-start justify-between p-4 bg-white border border-app-border rounded-lg hover:border-app-accent-border hover:bg-app-accent-soft transition group text-left"
                 >
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-app-text truncate mb-1">
-                      {session.title}
-                    </h3>
+                    <h3 className="font-medium text-app-text truncate mb-1">{session.title}</h3>
                     <div className="flex items-center gap-1 text-xs text-app-muted">
                       <Clock className="h-3 w-3 flex-shrink-0" />
                       <span>

@@ -36,13 +36,33 @@ const SEED_TAG = 'vtal-scenarios';
 // coord = [lng, lat] (ordem GeoJSON, como o mapa espera). Os equipamentos ancorados
 // em cada site ganham um ponto próprio (jitter) ao redor desta coordenada.
 const SITE_GEO = {
-  'CO TIM':              { city: 'Rio de Janeiro', street: 'Av. Rio Branco, 1',                 coord: [-43.1786, -22.9035] },
-  'CO NIO':              { city: 'Rio de Janeiro', street: 'Av. N. Sra. de Copacabana, 500',    coord: [-43.1866, -22.9711] },
-  'POP IP Connect GPON': { city: 'Rio de Janeiro', street: 'Rua Conde de Bonfim, 300',          coord: [-43.2323, -22.9249] },
-  'CO Claro':            { city: 'Niterói',        street: 'Rua da Conceição, 100',             coord: [-43.1150, -22.8940] },
-  'POP IP Connect P2P':  { city: 'Niterói',        street: 'Av. Roberto Silveira, 200',         coord: [-43.1050, -22.9060] },
-  'POP Link Dedicado':   { city: 'São Gonçalo',    street: 'Rua Dr. Nilo Peçanha, 50',          coord: [-43.0537, -22.8268] },
-  'POP VPN L3':          { city: 'São Gonçalo',    street: 'Av. Presidente Kennedy, 800',       coord: [-43.0230, -22.8230] },
+  'CO TIM': { city: 'Rio de Janeiro', street: 'Av. Rio Branco, 1', coord: [-43.1786, -22.9035] },
+  'CO NIO': {
+    city: 'Rio de Janeiro',
+    street: 'Av. N. Sra. de Copacabana, 500',
+    coord: [-43.1866, -22.9711],
+  },
+  'POP IP Connect GPON': {
+    city: 'Rio de Janeiro',
+    street: 'Rua Conde de Bonfim, 300',
+    coord: [-43.2323, -22.9249],
+  },
+  'CO Claro': { city: 'Niterói', street: 'Rua da Conceição, 100', coord: [-43.115, -22.894] },
+  'POP IP Connect P2P': {
+    city: 'Niterói',
+    street: 'Av. Roberto Silveira, 200',
+    coord: [-43.105, -22.906],
+  },
+  'POP Link Dedicado': {
+    city: 'São Gonçalo',
+    street: 'Rua Dr. Nilo Peçanha, 50',
+    coord: [-43.0537, -22.8268],
+  },
+  'POP VPN L3': {
+    city: 'São Gonçalo',
+    street: 'Av. Presidente Kennedy, 800',
+    coord: [-43.023, -22.823],
+  },
 };
 
 // Specs de site por papel — CO, POP e o Ponto de instalação do assinante.
@@ -86,14 +106,24 @@ const siteSpecByName = new Map(); // nome da spec de site -> id
 const siteHasPlace = new Set(); // nomes de sites que já têm Location (place)
 const resourceSiteByName = new Map(); // resource name -> site name (âncora geográfica)
 
-let created = { resources: 0, rfs: 0, cfs: 0, specs: 0, parties: 0, sites: 0, sitesLocated: 0, equipLocated: 0 };
+let created = {
+  resources: 0,
+  rfs: 0,
+  cfs: 0,
+  specs: 0,
+  parties: 0,
+  sites: 0,
+  sitesLocated: 0,
+  equipLocated: 0,
+};
 let reused = { resources: 0, rfs: 0, cfs: 0 };
 let failures = [];
 
 async function bootstrapIndexes() {
   const ws = await api('GET', '/v1/service/workspace?tab=CustomerFacingService&limit=1&offset=0');
   for (const spec of ws.serviceSpecificationOptions ?? []) specByName.set(spec.name, spec.id);
-  for (const r of ws.resourceOptions ?? []) resourceByName.set(r.name, { id: r.id, '@type': r['@type'] });
+  for (const r of ws.resourceOptions ?? [])
+    resourceByName.set(r.name, { id: r.id, '@type': r['@type'] });
   for (const s of ws.customerFacingServices ?? []) cfsByName.set(s.name, { id: s.id });
   for (const s of ws.resourceFacingServices ?? []) rfsByName.set(s.name, { id: s.id });
 
@@ -174,13 +204,19 @@ async function ensureResourceSpec(name, category, resourceType) {
 
 async function ensureParty(name) {
   if (partyByName.has(name)) return partyByName.get(name);
-  const existing = await api('GET', `/tmf-api/partyManagement/v4/party?name=${encodeURIComponent(name)}&limit=5`);
+  const existing = await api(
+    'GET',
+    `/tmf-api/partyManagement/v4/party?name=${encodeURIComponent(name)}&limit=5`,
+  );
   const match = Array.isArray(existing) ? existing.find((p) => p.name === name) : undefined;
   if (match) {
     partyByName.set(name, match.id);
     return match.id;
   }
-  const party = await api('POST', '/tmf-api/partyManagement/v4/party', { name, partyType: 'Organization' });
+  const party = await api('POST', '/tmf-api/partyManagement/v4/party', {
+    name,
+    partyType: 'Organization',
+  });
   partyByName.set(name, party.id);
   created.parties++;
   return party.id;
@@ -208,7 +244,11 @@ function siteSpecNameFor(siteName) {
 async function ensureSite(name) {
   if (siteByName.has(name)) return siteByName.get(name);
   const siteSpecId = await ensureSiteSpec(siteSpecNameFor(name));
-  const site = await api('POST', '/v1/geo/sites', { name, siteSpecificationId: siteSpecId, status: 'active' });
+  const site = await api('POST', '/v1/geo/sites', {
+    name,
+    siteSpecificationId: siteSpecId,
+    status: 'active',
+  });
   siteByName.set(name, site.id);
   created.sites++;
   return site.id;
@@ -311,7 +351,9 @@ async function ensureRfs({ name, specId, category, resource, siteId, characteris
     category,
     state: 'active',
     supportingResource: [{ id: resource.id, '@referredType': resource['@type'], role: 'access' }],
-    place: siteId ? [{ id: siteId, '@referredType': 'GeographicSite', role: 'serviceLocation' }] : undefined,
+    place: siteId
+      ? [{ id: siteId, '@referredType': 'GeographicSite', role: 'serviceLocation' }]
+      : undefined,
     serviceCharacteristic: [tag(), ...characteristics],
   });
   const ref = { id: rfs.id };
@@ -320,7 +362,16 @@ async function ensureRfs({ name, specId, category, resource, siteId, characteris
   return ref;
 }
 
-async function ensureCfs({ name, specId, category, subscriberId, rfsId, partyId, siteId, characteristics = [] }) {
+async function ensureCfs({
+  name,
+  specId,
+  category,
+  subscriberId,
+  rfsId,
+  partyId,
+  siteId,
+  characteristics = [],
+}) {
   if (cfsByName.has(name)) {
     reused.cfs++;
     return cfsByName.get(name);
@@ -333,9 +384,17 @@ async function ensureCfs({ name, specId, category, subscriberId, rfsId, partyId,
     state: 'active',
     subscriberId,
     supportingService: [{ id: rfsId, '@referredType': 'ResourceFacingService', role: 'access' }],
-    relatedParty: partyId ? [{ id: partyId, '@referredType': 'Organization', role: 'subscriber' }] : undefined,
-    place: siteId ? [{ id: siteId, '@referredType': 'GeographicSite', role: 'installationAddress' }] : undefined,
-    serviceCharacteristic: [tag(), { name: 'SubscriberID', value: subscriberId, valueType: 'string' }, ...characteristics],
+    relatedParty: partyId
+      ? [{ id: partyId, '@referredType': 'Organization', role: 'subscriber' }]
+      : undefined,
+    place: siteId
+      ? [{ id: siteId, '@referredType': 'GeographicSite', role: 'installationAddress' }]
+      : undefined,
+    serviceCharacteristic: [
+      tag(),
+      { name: 'SubscriberID', value: subscriberId, valueType: 'string' },
+      ...characteristics,
+    ],
   });
   const ref = { id: cfs.id };
   cfsByName.set(name, ref);
@@ -386,7 +445,18 @@ async function seedFtth({ tenant, speedLabel, speedMbps, count }) {
   }
 }
 
-async function seedAtacado({ product, category, rfsSpecName, cfsSpecName, resourceType, resourceCategory, count, rfsPrefix, cfsPrefix, accessLabel }) {
+async function seedAtacado({
+  product,
+  category,
+  rfsSpecName,
+  cfsSpecName,
+  resourceType,
+  resourceCategory,
+  count,
+  rfsPrefix,
+  cfsPrefix,
+  accessLabel,
+}) {
   const resourceSpecId = await ensureResourceSpec(accessLabel, resourceCategory, resourceType);
   const rfsSpecId = await ensureServiceSpec(rfsSpecName, category, 'RFS');
   const cfsSpecId = await ensureServiceSpec(cfsSpecName, category, 'CFS');
@@ -399,7 +469,12 @@ async function seedAtacado({ product, category, rfsSpecName, cfsSpecName, resour
     const resourceName = `${accessLabel}-${pad(i)}`;
     resourceSiteByName.set(resourceName, siteName);
     try {
-      const resource = await ensureResource(resourceName, resourceSpecId, siteId, `${cfsPrefix}-${pad(i)}`);
+      const resource = await ensureResource(
+        resourceName,
+        resourceSpecId,
+        siteId,
+        `${cfsPrefix}-${pad(i)}`,
+      );
       const rfs = await ensureRfs({
         name: `${rfsPrefix}-${pad(i)}`,
         specId: rfsSpecId,
@@ -437,28 +512,52 @@ async function main() {
 
   // BU Atacado (B2B2B)
   await seedAtacado({
-    product: 'IP Connect GPON', category: 'Transport',
-    rfsSpecName: 'Acesso GPON Atacado', cfsSpecName: 'IP Connect GPON',
-    resourceType: 'Port', resourceCategory: 'Equipment.Access', accessLabel: 'PortaGPON',
-    count: 3, rfsPrefix: 'Acesso-GPON-IPC', cfsPrefix: 'IPConnect-GPON',
+    product: 'IP Connect GPON',
+    category: 'Transport',
+    rfsSpecName: 'Acesso GPON Atacado',
+    cfsSpecName: 'IP Connect GPON',
+    resourceType: 'Port',
+    resourceCategory: 'Equipment.Access',
+    accessLabel: 'PortaGPON',
+    count: 3,
+    rfsPrefix: 'Acesso-GPON-IPC',
+    cfsPrefix: 'IPConnect-GPON',
   });
   await seedAtacado({
-    product: 'IP Connect P2P', category: 'Transport',
-    rfsSpecName: 'Acesso P2P', cfsSpecName: 'IP Connect P2P',
-    resourceType: 'Port', resourceCategory: 'Equipment.Access', accessLabel: 'PortaP2P',
-    count: 4, rfsPrefix: 'Acesso-P2P', cfsPrefix: 'IPConnect-P2P',
+    product: 'IP Connect P2P',
+    category: 'Transport',
+    rfsSpecName: 'Acesso P2P',
+    cfsSpecName: 'IP Connect P2P',
+    resourceType: 'Port',
+    resourceCategory: 'Equipment.Access',
+    accessLabel: 'PortaP2P',
+    count: 4,
+    rfsPrefix: 'Acesso-P2P',
+    cfsPrefix: 'IPConnect-P2P',
   });
   await seedAtacado({
-    product: 'Link Dedicado', category: 'Enterprise',
-    rfsSpecName: 'Acesso Ethernet Dedicado', cfsSpecName: 'Link Dedicado Ethernet',
-    resourceType: 'Port', resourceCategory: 'Equipment.Access', accessLabel: 'PortaEth',
-    count: 3, rfsPrefix: 'Acesso-Ethernet', cfsPrefix: 'LinkDedicado',
+    product: 'Link Dedicado',
+    category: 'Enterprise',
+    rfsSpecName: 'Acesso Ethernet Dedicado',
+    cfsSpecName: 'Link Dedicado Ethernet',
+    resourceType: 'Port',
+    resourceCategory: 'Equipment.Access',
+    accessLabel: 'PortaEth',
+    count: 3,
+    rfsPrefix: 'Acesso-Ethernet',
+    cfsPrefix: 'LinkDedicado',
   });
   await seedAtacado({
-    product: 'VPN L3', category: 'Enterprise',
-    rfsSpecName: 'Transporte L3VPN', cfsSpecName: 'VPN L3',
-    resourceType: 'Port', resourceCategory: 'Equipment.Access', accessLabel: 'PortaPE',
-    count: 5, rfsPrefix: 'Transporte-L3VPN', cfsPrefix: 'VPN-L3',
+    product: 'VPN L3',
+    category: 'Enterprise',
+    rfsSpecName: 'Transporte L3VPN',
+    cfsSpecName: 'VPN L3',
+    resourceType: 'Port',
+    resourceCategory: 'Equipment.Access',
+    accessLabel: 'PortaPE',
+    count: 5,
+    rfsPrefix: 'Transporte-L3VPN',
+    cfsPrefix: 'VPN-L3',
   });
 
   // Posiciona os equipamentos no RJ (perto do seu CO/POP) — depois de todos criados.
@@ -469,7 +568,9 @@ async function main() {
   console.log(`RFS:      ${created.rfs} criados, ${reused.rfs} reaproveitados`);
   console.log(`CFS:      ${created.cfs} criados, ${reused.cfs} reaproveitados`);
   console.log(`Specs:    ${created.specs} | Parties: ${created.parties} | Sites: ${created.sites}`);
-  console.log(`Geo RJ:   ${created.sitesLocated} sites posicionados, ${created.equipLocated} equipamentos ancorados`);
+  console.log(
+    `Geo RJ:   ${created.sitesLocated} sites posicionados, ${created.equipLocated} equipamentos ancorados`,
+  );
   if (failures.length) {
     console.log(`\nFalhas (${failures.length}):`);
     for (const f of failures) console.log(`  - ${f}`);

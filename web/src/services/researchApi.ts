@@ -39,21 +39,28 @@ export async function sendResearchMessageStream(
   message: string,
   { onDelta, signal }: ResearchMessageStreamHandlers = {},
 ): Promise<ResearchMessageStreamResult> {
-  const response = await fetch(`${API_BASE_URL}/research/sessions/${encodeURIComponent(sessionId)}/messages/stream`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${localStorage.getItem('authToken') || 'change-me'}`,
+  const response = await fetch(
+    `${API_BASE_URL}/research/sessions/${encodeURIComponent(sessionId)}/messages/stream`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('authToken') || 'change-me'}`,
+      },
+      body: JSON.stringify({ message }),
+      signal,
     },
-    body: JSON.stringify({ message }),
-    signal,
-  });
+  );
 
   if (!response.ok || !response.body) {
-    const payload = await response.json().catch(() => null) as { message?: string; error?: string } | null;
-    const errorMessage = (typeof payload?.message === 'string' && payload.message.trim())
-      || (typeof payload?.error === 'string' && payload.error.trim())
-      || `Failed to send message: ${response.status}`;
+    const payload = (await response.json().catch(() => null)) as {
+      message?: string;
+      error?: string;
+    } | null;
+    const errorMessage =
+      (typeof payload?.message === 'string' && payload.message.trim()) ||
+      (typeof payload?.error === 'string' && payload.error.trim()) ||
+      `Failed to send message: ${response.status}`;
     throw new Error(errorMessage);
   }
 
@@ -103,28 +110,29 @@ export async function confirmResearchSessionAction(
   sessionId: string,
   confirmationToken: string,
 ): Promise<ResearchConfirmationResponse> {
-  const response = await fetch(`${API_BASE_URL}/research/sessions/${encodeURIComponent(sessionId)}/confirmations`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${localStorage.getItem('authToken') || 'change-me'}`,
+  const response = await fetch(
+    `${API_BASE_URL}/research/sessions/${encodeURIComponent(sessionId)}/confirmations`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('authToken') || 'change-me'}`,
+      },
+      body: JSON.stringify({ confirmationToken }),
     },
-    body: JSON.stringify({ confirmationToken }),
-  });
+  );
 
-  const payload = await response.json().catch(() => null) as
-    | ResearchConfirmationResponse
-    | { message?: string; error?: string }
-    | null;
+  const payload = (await response.json().catch(() => null)) as
+    ResearchConfirmationResponse | { message?: string; error?: string } | null;
 
   if (!response.ok) {
     const errorPayload = payload as { message?: string; error?: string } | null;
     const message = errorPayload
-      ? (typeof errorPayload.message === 'string' && errorPayload.message.trim()
-          ? errorPayload.message
-          : typeof errorPayload.error === 'string' && errorPayload.error.trim()
-            ? errorPayload.error
-            : `Confirmation request failed (${response.status})`)
+      ? typeof errorPayload.message === 'string' && errorPayload.message.trim()
+        ? errorPayload.message
+        : typeof errorPayload.error === 'string' && errorPayload.error.trim()
+          ? errorPayload.error
+          : `Confirmation request failed (${response.status})`
       : `Confirmation request failed (${response.status})`;
     throw new Error(message);
   }

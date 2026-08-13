@@ -36,7 +36,10 @@ test('ChatGPTProvider completa mensagens, usa endpoint sanitizado e propaga meta
 
   const provider = new ChatGPTProvider('secret-key', 'https://api.openai.com/v1/');
   const result = await provider.complete(
-    [{ role: 'system', content: 'Contexto' }, { role: 'user', content: 'Pergunta' }],
+    [
+      { role: 'system', content: 'Contexto' },
+      { role: 'user', content: 'Pergunta' },
+    ],
     'gpt-4o',
     0.2,
     120,
@@ -147,8 +150,22 @@ test('ChatGPTProvider monta contexto, histórico e mensagem atual ao chamar call
   await provider.call(
     'Contexto do sistema',
     [
-      { '@type': 'ResearchMessage', id: '1', researchSessionId: 'session-1', role: 'assistant', content: 'Anterior', createdAt: '2026-01-01T00:00:00.000Z' },
-      { '@type': 'ResearchMessage', id: '2', researchSessionId: 'session-1', role: 'user', content: 'Pergunta anterior', createdAt: '2026-01-01T00:00:00.000Z' },
+      {
+        '@type': 'ResearchMessage',
+        id: '1',
+        researchSessionId: 'session-1',
+        role: 'assistant',
+        content: 'Anterior',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        '@type': 'ResearchMessage',
+        id: '2',
+        researchSessionId: 'session-1',
+        role: 'user',
+        content: 'Pergunta anterior',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
     ],
     'Pergunta atual',
     'gpt-4o',
@@ -226,9 +243,15 @@ test('resolveResearchProvider roteia por prefixo de modelo e cai em null sem cha
 });
 
 test('resolveDefaultModel prefere Gemini quando a chave está presente', () => {
-  assert.equal(resolveDefaultModel({ GEMINI_API_KEY: 'k' } as NodeJS.ProcessEnv), 'gemini-2.5-flash');
   assert.equal(
-    resolveDefaultModel({ GEMINI_API_KEY: 'k', GEMINI_MODEL: 'gemini-2.5-pro' } as NodeJS.ProcessEnv),
+    resolveDefaultModel({ GEMINI_API_KEY: 'k' } as NodeJS.ProcessEnv),
+    'gemini-2.5-flash',
+  );
+  assert.equal(
+    resolveDefaultModel({
+      GEMINI_API_KEY: 'k',
+      GEMINI_MODEL: 'gemini-2.5-pro',
+    } as NodeJS.ProcessEnv),
     'gemini-2.5-pro',
   );
   assert.equal(resolveDefaultModel({ OPENAI_MODEL: 'gpt-4o' } as NodeJS.ProcessEnv), 'gpt-4o');
@@ -271,7 +294,9 @@ test('LocalKnowledgeProvider responde pergunta de capacidades sem colar trechos 
 
 test('LocalKnowledgeProvider informa indisponibilidade clara para operacoes de inventario sem MCP', async () => {
   const provider = new LocalKnowledgeProvider();
-  const result = await provider.complete([{ role: 'user', content: 'liste os sites do inventario' }]);
+  const result = await provider.complete([
+    { role: 'user', content: 'liste os sites do inventario' },
+  ]);
 
   assert.match(result.content, /nao pode usar MCP/i);
   assert.match(result.content, /nao consigo consultar dados reais do inventario/i);
@@ -279,7 +304,9 @@ test('LocalKnowledgeProvider informa indisponibilidade clara para operacoes de i
 
 test('LocalKnowledgeProvider entende que modelo de ONT e ResourceSpecification', async () => {
   const provider = new LocalKnowledgeProvider();
-  const result = await provider.complete([{ role: 'user', content: 'quero cadastrar um modelo de ONT F6201BV9.3.12 da Huawei' }]);
+  const result = await provider.complete([
+    { role: 'user', content: 'quero cadastrar um modelo de ONT F6201BV9.3.12 da Huawei' },
+  ]);
 
   assert.match(result.content, /modelo de ONT|catalogo de equipamento/i);
   assert.match(result.content, /Equipment\.CustomerPremises|Equipamentos de Cliente/i);
@@ -289,7 +316,9 @@ test('LocalKnowledgeProvider entende que modelo de ONT e ResourceSpecification',
 
 test('LocalKnowledgeProvider entende que remover modelo e soft-delete de ResourceSpecification', async () => {
   const provider = new LocalKnowledgeProvider();
-  const result = await provider.complete([{ role: 'user', content: 'remova o modelo F6201BV9.3.12 da ZTE' }]);
+  const result = await provider.complete([
+    { role: 'user', content: 'remova o modelo F6201BV9.3.12 da ZTE' },
+  ]);
 
   assert.match(result.content, /soft-delete|ResourceSpecification/i);
   assert.match(result.content, /sem exclusao fisica|nao faz exclusao fisica/i);
@@ -303,8 +332,22 @@ test('LocalKnowledgeProvider monta mensagens corretas ao chamar call', async () 
   await provider.call(
     'Contexto local',
     [
-      { '@type': 'ResearchMessage', id: '1', researchSessionId: 'session-1', role: 'assistant', content: 'Anterior', createdAt: '2026-01-01T00:00:00.000Z' },
-      { '@type': 'ResearchMessage', id: '2', researchSessionId: 'session-1', role: 'user', content: 'Pergunta anterior', createdAt: '2026-01-01T00:00:00.000Z' },
+      {
+        '@type': 'ResearchMessage',
+        id: '1',
+        researchSessionId: 'session-1',
+        role: 'assistant',
+        content: 'Anterior',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        '@type': 'ResearchMessage',
+        id: '2',
+        researchSessionId: 'session-1',
+        role: 'user',
+        content: 'Pergunta anterior',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
     ],
     'Pergunta atual',
   );

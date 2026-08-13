@@ -29,6 +29,7 @@ export type GoogleMarkerInstance = {
   setIcon: (icon: unknown) => void;
   setMap: (map: GoogleMapInstance | GoogleStreetViewPanoramaInstance | null) => void;
   setPosition: (position: { lat: number; lng: number }) => void;
+  setOptions: (options: Record<string, unknown>) => void;
   setZIndex: (zIndex: number) => void;
 };
 export type GoogleStreetViewPanoramaData = {
@@ -160,6 +161,9 @@ export type DraftAddress = {
   // ausentes num rascunho criado a partir de clique no mapa (ver reverseGeocode).
   placeId?: string;
   precision?: string;
+  // Texto originalmente digitado. O Geocoder pode resolver apenas o CEP e omitir o
+  // número nos address_components; a consulta Geonet ainda precisa preservá-lo.
+  sourceQuery?: string;
 };
 
 // Resultado tipado da geocodificação: em vez de engolir a falha num `null`, carrega o
@@ -249,16 +253,19 @@ export async function geocodeAddress(query: string): Promise<GeocodeOutcome> {
     }
     return {
       ok: true,
-      address: addressFromGooglePlace({
-        formatted_address: place.formatted_address,
-        address_components: place.address_components,
-        name: query,
-        place_id: place.place_id,
-        geometry: {
-          location: { lat: () => location.lat(), lng: () => location.lng() },
-          location_type: place.geometry?.location_type,
-        },
-      }),
+      address: {
+        ...addressFromGooglePlace({
+          formatted_address: place.formatted_address,
+          address_components: place.address_components,
+          name: query,
+          place_id: place.place_id,
+          geometry: {
+            location: { lat: () => location.lat(), lng: () => location.lng() },
+            location_type: place.geometry?.location_type,
+          },
+        }),
+        sourceQuery: query,
+      },
     };
   } catch (error) {
     return geocodeOutcomeFromCatch(error);

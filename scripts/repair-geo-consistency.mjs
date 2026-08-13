@@ -155,8 +155,11 @@ async function retypeSites(state) {
     if (site.status === 'terminated') continue;
     const targetSpecId = await specIdFor(site.name);
     if (!targetSpecId || site.siteSpecificationId === targetSpecId) continue;
-    summary.sitesRetipados.push(`${site.name} → ${site.name.startsWith('CO ') ? SPEC_CO : SPEC_POP}`);
-    if (APPLY) await api('PATCH', `/v1/geo/sites/${site.id}`, { siteSpecificationId: targetSpecId });
+    summary.sitesRetipados.push(
+      `${site.name} → ${site.name.startsWith('CO ') ? SPEC_CO : SPEC_POP}`,
+    );
+    if (APPLY)
+      await api('PATCH', `/v1/geo/sites/${site.id}`, { siteSpecificationId: targetSpecId });
   }
 
   return specByName;
@@ -184,7 +187,9 @@ async function repointServices(state, ghostToCanonical) {
 
     summary.servicosRepontados.push(`${service['@type']} ${service.name}`);
     if (APPLY) {
-      await api('PATCH', `/tmf-api/serviceInventoryManagement/v4/service/${service.id}`, { place: repointed });
+      await api('PATCH', `/tmf-api/serviceInventoryManagement/v4/service/${service.id}`, {
+        place: repointed,
+      });
     }
   }
 }
@@ -208,7 +213,9 @@ async function reanchorResources(state, siteForResource, specByName) {
     const site = siteForResource.get(resource.id);
     if (!site) {
       if (resource.place?.id) continue; // planta externa com coordenada própria; não mexe
-      summary.avisos.push(`Recurso "${resource.name}" sem serviço e sem local — deixado como está.`);
+      summary.avisos.push(
+        `Recurso "${resource.name}" sem serviço e sem local — deixado como está.`,
+      );
       continue;
     }
 
@@ -217,7 +224,9 @@ async function reanchorResources(state, siteForResource, specByName) {
     if (insideSite) {
       // Do rack para dentro: o lugar do recurso é o próprio CO/POP (C2).
       if (resource.place?.id === site.id) continue;
-      summary.recursosReancorados.push(`${resource.name} (${resource.resourceType}) → site ${site.name}`);
+      summary.recursosReancorados.push(
+        `${resource.name} (${resource.resourceType}) → site ${site.name}`,
+      );
       if (APPLY) {
         await api('PATCH', `/tmf-api/resourceInventoryManagement/v4/resource/${resource.id}`, {
           placeId: site.id,
@@ -229,9 +238,12 @@ async function reanchorResources(state, siteForResource, specByName) {
 
     // CPE do assinante (ONT): vira Home Connected com site "Ponto de instalação"
     // próprio, reaproveitando a Location e o Address que já existem.
-    const locationId = resource.place?.['@referredType'] === 'GeographicLocation' ? resource.place.id : null;
+    const locationId =
+      resource.place?.['@referredType'] === 'GeographicLocation' ? resource.place.id : null;
     if (!locationId) {
-      summary.avisos.push(`ONT "${resource.name}" sem coordenada própria — deixada no site ${site.name}.`);
+      summary.avisos.push(
+        `ONT "${resource.name}" sem coordenada própria — deixada no site ${site.name}.`,
+      );
       continue;
     }
     const address = state.addressByLocationId.get(locationId);
@@ -253,7 +265,6 @@ async function reanchorResources(state, siteForResource, specByName) {
       });
     }
   }
-
 }
 
 // Passo 5: apagar os andaimes Geo fabricados que ficaram sem nenhuma referência.
@@ -292,11 +303,15 @@ async function purgeOrphanScaffolding() {
     // para o vazio, e é o endereço que segura a referência à Location.
     const addrIds = (await client.query(orphanAddresses)).rows.map((r) => r.id);
     if (APPLY && addrIds.length) {
-      await client.query(`DELETE FROM tmf_geographic_address WHERE id = ANY($1::text[])`, [addrIds]);
+      await client.query(`DELETE FROM tmf_geographic_address WHERE id = ANY($1::text[])`, [
+        addrIds,
+      ]);
     }
     const locIds = (await client.query(orphanLocations)).rows.map((r) => r.id);
     if (APPLY && locIds.length) {
-      await client.query(`DELETE FROM tmf_geographic_location WHERE id = ANY($1::text[])`, [locIds]);
+      await client.query(`DELETE FROM tmf_geographic_location WHERE id = ANY($1::text[])`, [
+        locIds,
+      ]);
     }
     summary.andaimesPurgados = { locations: locIds.length, addresses: addrIds.length };
   } finally {
@@ -312,8 +327,12 @@ async function main() {
   const state = await snapshot();
   const { canonicalByName, ghostToCanonical } = resolveCanonicalSites(state.sites);
 
-  console.log(`Sites: ${state.sites.length} linhas → ${canonicalByName.size} canônicos, ${ghostToCanonical.size} duplicados.`);
-  console.log(`Serviços: ${state.cfs.length} CFS + ${state.rfs.length} RFS. Recursos: ${state.resources.length}.\n`);
+  console.log(
+    `Sites: ${state.sites.length} linhas → ${canonicalByName.size} canônicos, ${ghostToCanonical.size} duplicados.`,
+  );
+  console.log(
+    `Serviços: ${state.cfs.length} CFS + ${state.rfs.length} RFS. Recursos: ${state.resources.length}.\n`,
+  );
 
   // Mapa recurso → site canônico, derivado do RFS que o suporta (supportingResource).
   const siteById = new Map(state.sites.map((s) => [s.id, s]));
@@ -344,7 +363,10 @@ async function main() {
   line('CFS/RFS repontados', summary.servicosRepontados);
   line('Sites PI criados (ONT)', summary.sitesPiCriados);
   line('Recursos reancorados', summary.recursosReancorados);
-  line('Andaimes purgados', `${summary.andaimesPurgados.locations} locations / ${summary.andaimesPurgados.addresses} addresses`);
+  line(
+    'Andaimes purgados',
+    `${summary.andaimesPurgados.locations} locations / ${summary.andaimesPurgados.addresses} addresses`,
+  );
 
   if (summary.avisos.length) {
     console.log('\nAvisos:');

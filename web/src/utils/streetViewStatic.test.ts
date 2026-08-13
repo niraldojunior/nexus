@@ -37,7 +37,10 @@ describe('fetchStreetViewAvailability', () => {
   });
 
   it('mapeia ZERO_RESULTS para indisponível', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: async () => ({ status: 'ZERO_RESULTS' }) }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ json: async () => ({ status: 'ZERO_RESULTS' }) }),
+    );
 
     const result = await fetchStreetViewAvailability([-43.1079841, -22.8985597]);
 

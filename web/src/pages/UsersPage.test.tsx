@@ -78,7 +78,9 @@ describe('UsersPage — redefinir senha', () => {
     await userEvent.type(within(dialog).getByLabelText('Confirmar senha'), 'Senha1234567!');
     await userEvent.click(within(dialog).getByRole('button', { name: /Redefinir senha/ }));
 
-    await waitFor(() => expect(mocks.resetUserPassword).toHaveBeenCalledWith('usr-1', 'Senha1234567!'));
+    await waitFor(() =>
+      expect(mocks.resetUserPassword).toHaveBeenCalledWith('usr-1', 'Senha1234567!'),
+    );
   });
 
   it('fecha ao pressionar Esc', async () => {

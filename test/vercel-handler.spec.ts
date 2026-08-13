@@ -23,9 +23,14 @@ test('Vercel handler preserves root path and query string', () => {
 test('Vercel handler exports the same normalization behavior from repo root and web root', () => {
   assert.equal(rootNormalizeRequestUrl('/api/tmf-api/resourceType'), '/tmf-api/resourceType');
   assert.equal(webNormalizeRequestUrl('/api/tmf-api/resourceType'), '/tmf-api/resourceType');
-  assert.equal(rootNormalizeRequestUrl('/api/server?__nexusPath=/v1/research/sessions'), '/v1/research/sessions');
   assert.equal(
-    rootNormalizeRequestUrl('/api/server?__nexusPath=/tmf-api/resourceCatalogManagement/v4/resourceType'),
+    rootNormalizeRequestUrl('/api/server?__nexusPath=/v1/research/sessions'),
+    '/v1/research/sessions',
+  );
+  assert.equal(
+    rootNormalizeRequestUrl(
+      '/api/server?__nexusPath=/tmf-api/resourceCatalogManagement/v4/resourceType',
+    ),
     '/tmf-api/resourceCatalogManagement/v4/resourceType',
   );
 });

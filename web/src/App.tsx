@@ -222,7 +222,11 @@ function MetricGrid({ metrics }: { metrics: DomainMetric[] }) {
   );
 }
 
-function DomainOverview({ page }: { page: Exclude<PageId, 'assistant' | 'conversation' | 'research'> }) {
+function DomainOverview({
+  page,
+}: {
+  page: Exclude<PageId, 'assistant' | 'conversation' | 'research'>;
+}) {
   const cards = domainCards[page];
 
   return (
@@ -335,7 +339,9 @@ function ConversationPage({
                         {entry.content}
                       </p>
                     </div>
-                    {loading && pendingUserMessageId === entry.id ? <CopilotPendingResponse /> : null}
+                    {loading && pendingUserMessageId === entry.id ? (
+                      <CopilotPendingResponse />
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -518,7 +524,8 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     const expectedPath = appRoutePath({
       page: currentPage,
       sessionId: activeResearchSessionId ?? undefined,
-      conversationId: currentPage === 'conversation' ? (activeConversationId ?? undefined) : undefined,
+      conversationId:
+        currentPage === 'conversation' ? (activeConversationId ?? undefined) : undefined,
       resourceCategory: activeResourceCategory,
       serviceCategory: activeServiceCategory,
     });
@@ -769,7 +776,11 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
             <DomainPage page="geo" onOpenMainMenu={() => setSidebarCollapsed(false)} />
           </div>
         ) : (
-          <div className={currentPage === 'conversation' ? 'h-full overflow-hidden' : 'h-full overflow-y-auto'}>
+          <div
+            className={
+              currentPage === 'conversation' ? 'h-full overflow-hidden' : 'h-full overflow-y-auto'
+            }
+          >
             <div
               className={
                 currentPage === 'conversation'

@@ -198,7 +198,9 @@ test('histórico Geo: ranking por visitas, isolamento por usuário e limpeza', a
     token: userToken,
   });
   assert.equal(removed.statusCode, 204);
-  const afterRemove = await request(app.port, 'GET', '/v1/geo/search-history', { token: userToken });
+  const afterRemove = await request(app.port, 'GET', '/v1/geo/search-history', {
+    token: userToken,
+  });
   assert.equal((afterRemove.body as unknown[]).length, 1);
 
   const cleared = await request(app.port, 'DELETE', '/v1/geo/search-history', { token: userToken });
@@ -207,6 +209,8 @@ test('histórico Geo: ranking por visitas, isolamento por usuário e limpeza', a
   assert.equal((afterClear.body as unknown[]).length, 0);
 
   // Sem sessão de usuário real (token estático de máquina), o histórico exige requireUser.
-  const anon = await request(app.port, 'GET', '/v1/geo/search-history', { rawAuth: 'Bearer secret' });
+  const anon = await request(app.port, 'GET', '/v1/geo/search-history', {
+    rawAuth: 'Bearer secret',
+  });
   assert.equal(anon.statusCode, 401);
 });

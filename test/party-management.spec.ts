@@ -37,7 +37,9 @@ const requestJson = async (
         method,
         headers: {
           authorization: 'Bearer secret',
-          ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {}),
+          ...(payload
+            ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
+            : {}),
         },
       },
       (res) => {
@@ -60,7 +62,10 @@ const requestJson = async (
 
 test('TMF632 and TMF669 party endpoints create, search and terminate parties', async (t) => {
   const database = createTestDatabase();
-  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
   const port = await server.start();
   t.after(async () => {
     await server.stop();
@@ -105,26 +110,53 @@ test('TMF632 and TMF669 party endpoints create, search and terminate parties', a
   assert.equal(terminated.statusCode, 200);
   assert.equal((terminated.body as { status: string }).status, 'terminated');
 
-  const events = await requestJson(port, 'GET', '/tmf-api/eventManagement/v4/event?source=party.Organization');
+  const events = await requestJson(
+    port,
+    'GET',
+    '/tmf-api/eventManagement/v4/event?source=party.Organization',
+  );
   assert.equal(events.statusCode, 200);
-  assert.ok((events.body as Array<{ eventType: string }>).some((event) => event.eventType === 'PartyCreateEvent'));
+  assert.ok(
+    (events.body as Array<{ eventType: string }>).some(
+      (event) => event.eventType === 'PartyCreateEvent',
+    ),
+  );
 });
 
 test('bootstrap seeds manufacturer party roles for resource catalog combos', async (t) => {
   const database = createTestDatabase();
-  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
   const port = await server.start();
   t.after(async () => {
     await server.stop();
     database.cleanup();
   });
 
-  const response = await requestJson(port, 'GET', '/tmf-api/partyRoleManagement/v4/partyRole?status=active');
+  const response = await requestJson(
+    port,
+    'GET',
+    '/tmf-api/partyRoleManagement/v4/partyRole?status=active',
+  );
   assert.equal(response.statusCode, 200);
   assert.ok(Array.isArray(response.body));
 
-  const names = (response.body as Array<{ party: { name?: string }; name: string }>).map((item) => item.party.name ?? item.name);
-  for (const expected of ['VANTIVA', 'BLU-CASTLE', 'DATACOM', 'HUAWEI', 'ZTE', 'SAGEMCOM', 'NOKIA', 'TELLESCOM', 'ARCADYAN']) {
+  const names = (response.body as Array<{ party: { name?: string }; name: string }>).map(
+    (item) => item.party.name ?? item.name,
+  );
+  for (const expected of [
+    'VANTIVA',
+    'BLU-CASTLE',
+    'DATACOM',
+    'HUAWEI',
+    'ZTE',
+    'SAGEMCOM',
+    'NOKIA',
+    'TELLESCOM',
+    'ARCADYAN',
+  ]) {
     assert.ok(names.includes(expected), `expected bootstrap to include ${expected}`);
   }
 });

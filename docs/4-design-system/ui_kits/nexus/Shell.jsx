@@ -46,10 +46,34 @@ function Shell({ active, onNavigate, onLogout, children, title, subtitle, header
         >
           {!isCollapsed ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
-              <img src="../../assets/nexus-mark-white.svg" alt="Nexus" style={{ height: 30, flexShrink: 0 }} />
+              <img
+                src="../../assets/nexus-mark-white.svg"
+                alt="Nexus"
+                style={{ height: 30, flexShrink: 0 }}
+              />
               <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, letterSpacing: '-0.02em', color: '#fff', lineHeight: 1.1 }}>Nexus</span>
-                <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.45)' }}>Network inventory</span>
+                <span
+                  style={{
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 700,
+                    fontSize: 15,
+                    letterSpacing: '-0.02em',
+                    color: '#fff',
+                    lineHeight: 1.1,
+                  }}
+                >
+                  Nexus
+                </span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                    color: 'rgba(255,255,255,0.45)',
+                  }}
+                >
+                  Network inventory
+                </span>
               </div>
             </div>
           ) : null}
@@ -79,14 +103,14 @@ function Shell({ active, onNavigate, onLogout, children, title, subtitle, header
 
         <button
           type="button"
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              minHeight: 48,
-              marginBottom: 10,
-              padding: isCollapsed ? '0' : '0 14px',
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            minHeight: 48,
+            marginBottom: 10,
+            padding: isCollapsed ? '0' : '0 14px',
             border: '1px solid transparent',
             borderRadius: 16,
             background: 'rgba(255,255,255,0.045)',
@@ -99,7 +123,16 @@ function Shell({ active, onNavigate, onLogout, children, title, subtitle, header
           {!isCollapsed && <span style={{ fontSize: 13, fontWeight: 700 }}>Nova consulta</span>}
         </button>
 
-        <nav style={{ flex: 1, padding: '8px 0', display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto' }}>
+        <nav
+          style={{
+            flex: 1,
+            padding: '8px 0',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+            overflowY: 'auto',
+          }}
+        >
           {nav.map((item) => (
             <NavItem
               key={item.id}
@@ -111,7 +144,16 @@ function Shell({ active, onNavigate, onLogout, children, title, subtitle, header
           ))}
           <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '12px 8px' }} />
           {!isCollapsed && (
-            <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(255,255,255,0.3)', padding: '4px 12px 8px' }}>
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 800,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                color: 'rgba(255,255,255,0.3)',
+                padding: '4px 12px 8px',
+              }}
+            >
               Domínios
             </div>
           )}
@@ -126,12 +168,19 @@ function Shell({ active, onNavigate, onLogout, children, title, subtitle, header
           ))}
         </nav>
 
-        <div style={{ padding: isCollapsed ? '8px 0 0' : '12px 12px 14px', borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+        <div
+          style={{
+            padding: isCollapsed ? '8px 0 0' : '12px 12px 14px',
+            borderTop: '1px solid rgba(255,255,255,0.07)',
+          }}
+        >
           <div
             role="button"
             tabIndex={0}
             onClick={onLogout}
-            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onLogout(); }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') onLogout();
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -143,24 +192,37 @@ function Shell({ active, onNavigate, onLogout, children, title, subtitle, header
               justifyContent: isCollapsed ? 'center' : 'flex-start',
             }}
           >
-            <div style={{
-              width: 36,
-              height: 36,
-              borderRadius: '50%',
-              background: 'var(--vt-yellow)',
-              color: 'var(--vt-ink)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800,
-              fontSize: 12,
-              flexShrink: 0,
-            }}>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: '50%',
+                background: 'var(--vt-yellow)',
+                color: 'var(--vt-ink)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 800,
+                fontSize: 12,
+                flexShrink: 0,
+              }}
+            >
               NR
             </div>
             {!isCollapsed && (
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Niraldo R.</div>
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: '#fff',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  Niraldo R.
+                </div>
                 <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>Eng. de Rede</div>
               </div>
             )}
@@ -185,11 +247,41 @@ function Shell({ active, onNavigate, onLogout, children, title, subtitle, header
           }}
         >
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-tertiary)' }}>V.tal Nexus</div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>{title}</div>
-            {subtitle && <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{subtitle}</div>}
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 800,
+                textTransform: 'uppercase',
+                letterSpacing: '0.12em',
+                color: 'var(--text-tertiary)',
+              }}
+            >
+              V.tal Nexus
+            </div>
+            <div
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: 15,
+                fontWeight: 700,
+                letterSpacing: '-0.02em',
+                color: 'var(--text-primary)',
+              }}
+            >
+              {title}
+            </div>
+            {subtitle && (
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{subtitle}</div>
+            )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+            }}
+          >
             {headerRight}
           </div>
         </header>
@@ -220,9 +312,15 @@ function NavItem({ label, icon, active, onClick, collapsed }) {
         borderRadius: 16,
         cursor: 'pointer',
         justifyContent: collapsed ? 'center' : 'flex-start',
-        color: active ? '#fff' : (hover ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.52)'),
-        background: active ? 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.06))' : (hover ? 'rgba(255,255,255,0.06)' : 'transparent'),
-        boxShadow: active ? 'inset 0 1px 0 rgba(255,255,255,0.04), 0 4px 16px rgba(0,0,0,0.16)' : 'none',
+        color: active ? '#fff' : hover ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.52)',
+        background: active
+          ? 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.06))'
+          : hover
+            ? 'rgba(255,255,255,0.06)'
+            : 'transparent',
+        boxShadow: active
+          ? 'inset 0 1px 0 rgba(255,255,255,0.04), 0 4px 16px rgba(0,0,0,0.16)'
+          : 'none',
         fontSize: 14,
         fontWeight: active ? 600 : 500,
         fontFamily: 'var(--font-display)',
@@ -230,15 +328,17 @@ function NavItem({ label, icon, active, onClick, collapsed }) {
       }}
     >
       {active && !collapsed && (
-        <span style={{
-          position: 'absolute',
-          right: 0,
-          top: 9,
-          bottom: 9,
-          width: 3,
-          borderRadius: 999,
-          background: 'var(--vt-yellow)',
-        }} />
+        <span
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: 9,
+            bottom: 9,
+            width: 3,
+            borderRadius: 999,
+            background: 'var(--vt-yellow)',
+          }}
+        />
       )}
       <Icon name={icon} size={18} />
       {!collapsed && <span>{label}</span>}

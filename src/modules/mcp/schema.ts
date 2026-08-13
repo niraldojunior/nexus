@@ -75,7 +75,9 @@ export const validateJsonSchema = (
     if (!Array.isArray(value)) {
       return [{ path, message: 'expected array' }];
     }
-    return value.flatMap((item, index) => validateJsonSchema(item, schema.items, `${path}[${index}]`));
+    return value.flatMap((item, index) =>
+      validateJsonSchema(item, schema.items, `${path}[${index}]`),
+    );
   }
 
   if (schema.type !== 'object') {

@@ -42,10 +42,7 @@ export function PlacePicker({
   // Fechar ao clicar fora
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setOpen(false);
       }
     }
@@ -77,7 +74,9 @@ export function PlacePicker({
             <span className="text-app-muted">{placeholder}</span>
           )}
         </span>
-        <ChevronDown className={`h-4 w-4 text-app-muted shrink-0 transition ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          className={`h-4 w-4 text-app-muted shrink-0 transition ${open ? 'rotate-180' : ''}`}
+        />
       </button>
 
       {open && (
@@ -117,27 +116,33 @@ export function PlacePicker({
                       className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[8px] text-white text-[0.7rem] font-bold mt-0.5"
                       style={{
                         background:
-                          option.kind === 'CTO' ? '#1A9E7D'
-                          : option.kind === 'PI' ? '#8B7500'
-                          : option.kind === 'POP' ? '#004E89'
-                          : option.kind === 'CO' ? '#9B59B6'
-                          : '#5A5A5A',
+                          option.kind === 'CTO'
+                            ? '#1A9E7D'
+                            : option.kind === 'PI'
+                              ? '#8B7500'
+                              : option.kind === 'POP'
+                                ? '#004E89'
+                                : option.kind === 'CO'
+                                  ? '#9B59B6'
+                                  : '#5A5A5A',
                       }}
                     >
-                      {option.kind === 'PI' ? '📍'
-                       : option.kind === 'CTO' ? '🔧'
-                       : option.kind === 'POP' ? '🌐'
-                       : option.kind === 'CO' ? '🏢'
-                       : '📍'}
+                      {option.kind === 'PI'
+                        ? '📍'
+                        : option.kind === 'CTO'
+                          ? '🔧'
+                          : option.kind === 'POP'
+                            ? '🌐'
+                            : option.kind === 'CO'
+                              ? '🏢'
+                              : '📍'}
                     </span>
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[0.88rem] font-semibold text-app-text">
                       {option.label}
                     </div>
-                    <div className="truncate text-[0.75rem] text-app-muted">
-                      {option.sublabel}
-                    </div>
+                    <div className="truncate text-[0.75rem] text-app-muted">{option.sublabel}</div>
                   </div>
                 </button>
               ))

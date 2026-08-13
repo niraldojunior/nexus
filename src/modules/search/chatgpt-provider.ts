@@ -85,7 +85,7 @@ export class ChatGPTProvider {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({
           model,
@@ -208,7 +208,8 @@ export class ChatGPTProvider {
             const existing = toolCallsByIndex.get(index) ?? { arguments: '' };
             if (toolCallDelta.id) existing.id = toolCallDelta.id;
             if (toolCallDelta.function?.name) existing.name = toolCallDelta.function.name;
-            if (toolCallDelta.function?.arguments) existing.arguments += toolCallDelta.function.arguments;
+            if (toolCallDelta.function?.arguments)
+              existing.arguments += toolCallDelta.function.arguments;
             toolCallsByIndex.set(index, existing);
           }
         }
@@ -216,7 +217,9 @@ export class ChatGPTProvider {
     }
 
     const toolCalls: LLMToolCall[] = [...toolCallsByIndex.values()]
-      .filter((call): call is { id: string; name: string; arguments: string } => Boolean(call.id && call.name))
+      .filter((call): call is { id: string; name: string; arguments: string } =>
+        Boolean(call.id && call.name),
+      )
       .map((call) => ({
         id: call.id,
         name: call.name,
@@ -300,14 +303,16 @@ const toOpenAiMessage = (message: LLMConversationMessage): Record<string, unknow
 };
 
 const parseToolCalls = (
-  toolCalls: Array<{
-    id?: string;
-    type?: string;
-    function?: {
-      name?: string;
-      arguments?: string;
-    };
-  }> | undefined,
+  toolCalls:
+    | Array<{
+        id?: string;
+        type?: string;
+        function?: {
+          name?: string;
+          arguments?: string;
+        };
+      }>
+    | undefined,
 ): LLMToolCall[] => {
   if (!toolCalls) return [];
   return toolCalls.map((toolCall) => {
@@ -317,7 +322,9 @@ const parseToolCalls = (
     return {
       id: toolCall.id,
       name: toolCall.function.name,
-      arguments: toolCall.function.arguments ? JSON.parse(toolCall.function.arguments) as Record<string, unknown> : {},
+      arguments: toolCall.function.arguments
+        ? (JSON.parse(toolCall.function.arguments) as Record<string, unknown>)
+        : {},
     };
   });
 };

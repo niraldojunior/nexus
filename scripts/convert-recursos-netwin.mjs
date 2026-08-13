@@ -95,13 +95,21 @@ const ENRICH = !has('--no-enrich');
 // Filtro opcional por município (subconjunto que caiba na cota do Neon).
 // Fold: sem acento + maiúsculo, para casar "São Gonçalo" com "SAO GONCALO".
 const fold = (s) =>
-  String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase();
+  String(s ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+    .toUpperCase();
 const MUNI_FILTER = (() => {
   const set = new Set(argOf('--municipio', '').split(',').map(fold).filter(Boolean));
   return set.size ? set : null;
 })();
 const muniSlug = MUNI_FILTER
-  ? '_' + [...MUNI_FILTER].join('-').replace(/[^A-Z0-9]+/g, '').slice(0, 24)
+  ? '_' +
+    [...MUNI_FILTER]
+      .join('-')
+      .replace(/[^A-Z0-9]+/g, '')
+      .slice(0, 24)
   : '';
 const OUT_PATH = argOf('--out', IN_PATH.replace(/\.csv$/i, '') + '_CONVERTIDO' + muniSlug + '.csv');
 
@@ -111,9 +119,20 @@ const ORPHAN_ESTACAO = 'SEM ESTAÇÃO (SEM)';
 
 // Cabeçalho do layout destino (idêntico a legacy-data/recursos_niteroi.csv).
 const OUT_HEADER = [
-  'ESTACAO', 'CODIGO_EQUIPAMENTO', 'LAT', 'LONG', 'FABRICANTE',
-  'ds_grupo_operacional', 'ds_estado_controle', 'dt_data_estado_controle',
-  'STATUS', 'MODELO', 'TIPO', 'Tipo2', 'NOME_EQUIPAMENTO', 'Endereço',
+  'ESTACAO',
+  'CODIGO_EQUIPAMENTO',
+  'LAT',
+  'LONG',
+  'FABRICANTE',
+  'ds_grupo_operacional',
+  'ds_estado_controle',
+  'dt_data_estado_controle',
+  'STATUS',
+  'MODELO',
+  'TIPO',
+  'Tipo2',
+  'NOME_EQUIPAMENTO',
+  'Endereço',
 ];
 
 // Caixa de sanidade do loader — só para REPORTAR quantos pontos ele descartaria.
@@ -132,13 +151,17 @@ function parseCsvLine(line) {
     const ch = line[i];
     if (inQ) {
       if (ch === '"') {
-        if (line[i + 1] === '"') { cur += '"'; i++; }
-        else inQ = false;
+        if (line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else inQ = false;
       } else cur += ch;
     } else {
       if (ch === '"') inQ = true;
-      else if (ch === ',') { out.push(cur); cur = ''; }
-      else cur += ch;
+      else if (ch === ',') {
+        out.push(cur);
+        cur = '';
+      } else cur += ch;
     }
   }
   out.push(cur);
@@ -163,16 +186,24 @@ function estacaoToParen(raw) {
 
 const isSplitter = (cdCodigo, noModelo) =>
   /^S\d/.test(String(cdCodigo ?? '').trim()) ||
-  String(noModelo ?? '').trim().toUpperCase().startsWith('SPLITTER');
+  String(noModelo ?? '')
+    .trim()
+    .toUpperCase()
+    .startsWith('SPLITTER');
 
 // Classe da caixa = prefixo alfabético de cd_codigo. "CEOS-8"→"CEOS".
 function boxTipo2(cdCodigo) {
-  const m = String(cdCodigo ?? '').trim().match(/^([A-Za-z]+)/);
+  const m = String(cdCodigo ?? '')
+    .trim()
+    .match(/^([A-Za-z]+)/);
   return m ? m[1].toUpperCase() : 'Indefinido';
 }
 
 // Remove ';', CR/LF e espaços das pontas — o destino é delimitado por ';'.
-const cell = (v) => String(v ?? '').replace(/[;\r\n]+/g, ',').trim();
+const cell = (v) =>
+  String(v ?? '')
+    .replace(/[;\r\n]+/g, ',')
+    .trim();
 
 // Escreve latin-1; troca qualquer caractere > U+00FF por '?' (não deve ocorrer).
 function toLatin1(str) {
@@ -202,9 +233,15 @@ async function main() {
   let pending = '';
 
   const stats = {
-    linhas: 0, escritas: 0, caixas: 0, splitters: 0,
-    semEstacao: 0, enriquecidas: 0, foraDaCaixaLoader: 0,
-    statusNaoMapeado: 0, filtradas: 0,
+    linhas: 0,
+    escritas: 0,
+    caixas: 0,
+    splitters: 0,
+    semEstacao: 0,
+    enriquecidas: 0,
+    foraDaCaixaLoader: 0,
+    statusNaoMapeado: 0,
+    filtradas: 0,
   };
   const tipo2Dist = new Map();
   const STATUS_KNOWN = new Set(['Em Serviço', 'Fora de Serviço', 'Bloqueado']);
@@ -238,48 +275,55 @@ async function main() {
     // ESTACAO vazia não é descartada: recebe a estação sentinela e vai para o
     // nó agrupador que o loader cria sob demanda.
     let estacao = estacaoToParen(g('ESTACAO'));
-    if (!estacao) { estacao = ORPHAN_ESTACAO; stats.semEstacao++; }
+    if (!estacao) {
+      estacao = ORPHAN_ESTACAO;
+      stats.semEstacao++;
+    }
 
     const cdCodigo = g('cd_codigo');
     const noModelo = g('no_modelo');
     const splitter = isSplitter(cdCodigo, noModelo);
     const tipo2 = splitter ? 'SPLITTER' : boxTipo2(cdCodigo);
     tipo2Dist.set(tipo2, (tipo2Dist.get(tipo2) || 0) + 1);
-    if (splitter) stats.splitters++; else stats.caixas++;
+    if (splitter) stats.splitters++;
+    else stats.caixas++;
 
     // Endereço: original, ou fallback município para o item não cair em "Sem UF".
     let endereco = g('END_CDO');
     if (!endereco && ENRICH) {
       const mun = g('NOME_MUNICIPIO');
-      if (mun) { endereco = `${mun} - RJ`; stats.enriquecidas++; }
+      if (mun) {
+        endereco = `${mun} - RJ`;
+        stats.enriquecidas++;
+      }
     }
 
     // Diagnóstico da caixa de coord do loader (não altera a saída).
     const lat = Number(g('LAT'));
     const lng = Number(g('LONG'));
     if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      if (lat < LOADER_LAT[0] || lat > LOADER_LAT[1] ||
-          lng < LOADER_LNG[0] || lng > LOADER_LNG[1]) stats.foraDaCaixaLoader++;
+      if (lat < LOADER_LAT[0] || lat > LOADER_LAT[1] || lng < LOADER_LNG[0] || lng > LOADER_LNG[1])
+        stats.foraDaCaixaLoader++;
     }
 
     const status = g('no_nome_estado_operacional');
     if (status && !STATUS_KNOWN.has(status)) stats.statusNaoMapeado++;
 
     const rowOut = [
-      estacao,                         // ESTACAO
-      g('NUM_CDO'),                    // CODIGO_EQUIPAMENTO
-      g('LAT'),                        // LAT
-      g('LONG'),                       // LONG
-      g('FABRICANTE'),                 // FABRICANTE
-      g('ds_grupo_operacional'),       // ds_grupo_operacional
-      g('ds_estado_controle'),         // ds_estado_controle
-      g('dt_data_estado_controle'),    // dt_data_estado_controle
-      status,                          // STATUS
-      noModelo,                        // MODELO
-      g('cd_tipo'),                    // TIPO
-      tipo2,                           // Tipo2
-      cdCodigo,                        // NOME_EQUIPAMENTO
-      endereco,                        // Endereço
+      estacao, // ESTACAO
+      g('NUM_CDO'), // CODIGO_EQUIPAMENTO
+      g('LAT'), // LAT
+      g('LONG'), // LONG
+      g('FABRICANTE'), // FABRICANTE
+      g('ds_grupo_operacional'), // ds_grupo_operacional
+      g('ds_estado_controle'), // ds_estado_controle
+      g('dt_data_estado_controle'), // dt_data_estado_controle
+      status, // STATUS
+      noModelo, // MODELO
+      g('cd_tipo'), // TIPO
+      tipo2, // Tipo2
+      cdCodigo, // NOME_EQUIPAMENTO
+      endereco, // Endereço
     ].map(cell);
 
     await write(rowOut.join(';'));
@@ -293,21 +337,32 @@ async function main() {
   console.log(`Origem  : ${IN_PATH}`);
   console.log(`Destino : ${OUT_PATH}  (ISO-8859-1, ';')`);
   if (MUNI_FILTER) {
-    console.log(`Filtro município: ${[...MUNI_FILTER].join(', ')}  (descartadas ${stats.filtradas} de outros municípios)`);
+    console.log(
+      `Filtro município: ${[...MUNI_FILTER].join(', ')}  (descartadas ${stats.filtradas} de outros municípios)`,
+    );
   }
   console.log(`\nLinhas lidas      : ${stats.linhas}`);
-  console.log(`Linhas escritas   : ${stats.escritas}  (${stats.caixas} caixas + ${stats.splitters} splitters)`);
-  console.log(`Sem estação       : ${stats.semEstacao}  (ESTACAO vazia → agrupadas em "${ORPHAN_ESTACAO}")`);
-  if (ENRICH) console.log(`Endereços enriq.  : ${stats.enriquecidas}  (END_CDO vazio → "<município> - RJ")`);
+  console.log(
+    `Linhas escritas   : ${stats.escritas}  (${stats.caixas} caixas + ${stats.splitters} splitters)`,
+  );
+  console.log(
+    `Sem estação       : ${stats.semEstacao}  (ESTACAO vazia → agrupadas em "${ORPHAN_ESTACAO}")`,
+  );
+  if (ENRICH)
+    console.log(`Endereços enriq.  : ${stats.enriquecidas}  (END_CDO vazio → "<município> - RJ")`);
   if (stats.statusNaoMapeado) {
-    console.log(`STATUS fora do mapa: ${stats.statusNaoMapeado}  (ex.: "Em Manutenção"/"Com Defeito"; o loader trata como Bloqueado/suspended via resolveStatus)`);
+    console.log(
+      `STATUS fora do mapa: ${stats.statusNaoMapeado}  (ex.: "Em Manutenção"/"Com Defeito"; o loader trata como Bloqueado/suspended via resolveStatus)`,
+    );
   }
   console.log('\nDistribuição de Tipo2 (saída):');
   for (const [k, v] of [...tipo2Dist.entries()].sort((a, b) => b[1] - a[1])) {
     console.log(`  ${k.padEnd(14)} ${v}`);
   }
   if (stats.foraDaCaixaLoader) {
-    console.log(`\n⚠ ${stats.foraDaCaixaLoader} ponto(s) (${pct(stats.foraDaCaixaLoader)}) caem FORA da caixa de coordenadas`);
+    console.log(
+      `\n⚠ ${stats.foraDaCaixaLoader} ponto(s) (${pct(stats.foraDaCaixaLoader)}) caem FORA da caixa de coordenadas`,
+    );
     console.log(`  do load-recursos-netwin.mjs (LAT[${LOADER_LAT}], LNG[${LOADER_LNG}]) e seriam`);
     console.log(`  descartados na carga — ajuste LAT_RANGE/LNG_RANGE no loader antes do --apply.`);
   }

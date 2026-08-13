@@ -16,4 +16,3 @@
 - Usar botão primário para a ação principal da tela.
 - Usar botão secundário para ações complementares.
 - Evitar excesso de botões na mesma linha.
-

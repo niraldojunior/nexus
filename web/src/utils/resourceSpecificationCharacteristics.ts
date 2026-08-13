@@ -40,8 +40,11 @@ export function readResourceSpecificationCharacteristicString(
   name: ResourceSpecificationCharacteristicName,
 ): string {
   const characteristic = findResourceSpecificationCharacteristic(characteristics, name);
-  if (!characteristic || characteristic.value === undefined || characteristic.value === null) return '';
-  return typeof characteristic.value === 'string' ? characteristic.value : String(characteristic.value);
+  if (!characteristic || characteristic.value === undefined || characteristic.value === null)
+    return '';
+  return typeof characteristic.value === 'string'
+    ? characteristic.value
+    : String(characteristic.value);
 }
 
 export function readResourceSpecificationCharacteristicBooleanState(
@@ -49,7 +52,8 @@ export function readResourceSpecificationCharacteristicBooleanState(
   name: ResourceSpecificationCharacteristicName,
 ): '' | 'true' | 'false' {
   const characteristic = findResourceSpecificationCharacteristic(characteristics, name);
-  if (!characteristic || characteristic.value === undefined || characteristic.value === null) return '';
+  if (!characteristic || characteristic.value === undefined || characteristic.value === null)
+    return '';
   if (typeof characteristic.value === 'boolean') return characteristic.value ? 'true' : 'false';
   if (typeof characteristic.value === 'string') {
     const normalized = characteristic.value.trim().toLowerCase();
@@ -65,5 +69,9 @@ export function characteristicBooleanValue(value: '' | 'true' | 'false'): boolea
 }
 
 export function readResourceSpecificationStatusLabel(status: string | undefined): string {
-  return RESOURCE_SPEC_LIFECYCLE_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status ?? '-';
+  return (
+    RESOURCE_SPEC_LIFECYCLE_STATUS_OPTIONS.find((option) => option.value === status)?.label ??
+    status ??
+    '-'
+  );
 }

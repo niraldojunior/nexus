@@ -10,13 +10,13 @@ describe('PrecisionBadge', () => {
     expect(screen.getByText('Alta - ROOFTOP')).toBeInTheDocument();
   });
 
-  it('classifica RANGE_INTERPOLATED e GEOMETRIC_CENTER como Média', () => {
+  it('classifica RANGE_INTERPOLATED como Média e GEOMETRIC_CENTER como Baixa', () => {
     render(<PrecisionBadge locationType="RANGE_INTERPOLATED" />);
     expect(screen.getByText('Média - RANGE_INTERPOLATED')).toBeInTheDocument();
 
     cleanup();
     render(<PrecisionBadge locationType="GEOMETRIC_CENTER" />);
-    expect(screen.getByText('Média - GEOMETRIC_CENTER')).toBeInTheDocument();
+    expect(screen.getByText('Baixa - GEOMETRIC_CENTER')).toBeInTheDocument();
   });
 
   it('classifica APPROXIMATE como Baixa', () => {

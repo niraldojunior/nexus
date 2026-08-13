@@ -79,10 +79,7 @@ import { createCoverageOverlay, type CoverageOverlayHandle } from './geo-tabs/Co
 import { coverageSwatch, coverageSwatchDataUrl } from '../utils/coverageColor';
 import type { CoverageNeighborhood, CoverageResponse } from '../services/geoCoverageApi';
 import { bottomInsetForOverlay, flyTo, cancelFlight, type FlyTarget } from '../utils/mapCamera';
-import {
-  acquireDeviceLocation,
-  DEVICE_LOCATION_POOR_ACCURACY_M,
-} from '../utils/deviceLocation';
+import { acquireDeviceLocation, DEVICE_LOCATION_POOR_ACCURACY_M } from '../utils/deviceLocation';
 import { useGeoTree } from '../hooks/useGeoTree';
 import { useIsMobile } from '../hooks/useIsMobile';
 import {
@@ -102,6 +99,7 @@ import {
 import { useNavigation } from '../hooks/useNavigation';
 import {
   AddressDetailPanel,
+  type AddressPinLocation,
   BASE_MAP_LAYERS,
   CoordinateStreetView,
   GeoSearchBar,
@@ -289,6 +287,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const [addressLookup, setAddressLookup] = useState<{
     address: DraftAddress;
     source: 'search' | 'map';
+    pinLocation?: AddressPinLocation;
   } | null>(null);
   const [addressError, setAddressError] = useState<AddressSearchError | null>(null);
   // Drop simulado entre o endereço aberto na doca e a CDO escolhida na aba de
@@ -598,10 +597,30 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     setDraftAddress(null);
     setAddressError(null);
     setDropSimulation(null);
-    setAddressLookup({ address, source: 'search' });
-    setFocusRequest({ point: address.coordinates, scaleMeters: ADDRESS_FOCUS_SCALE_METERS });
-    setQuery(address.label);
+    setAddressLookup({
+      address,
+      source: 'search',
+      pinLocation: { coordinates: address.coordinates, source: 'google', precision: address.precision ?? 'Desconhecida' },
+    });
+    setQuery(address.sourceQuery?.trim() || address.label);
     setSearchSelection({ type: 'address', address });
+  }, []);
+
+  const onAddressLocationResolved = useCallback((location: AddressPinLocation) => {
+    setAddressLookup((current) => {
+      if (!current || current.source !== 'search') return current;
+      const previous = current.pinLocation;
+      if (
+        previous?.source === location.source &&
+        previous.coordinates[0] === location.coordinates[0] &&
+        previous.coordinates[1] === location.coordinates[1] &&
+        previous.precision === location.precision
+      ) {
+        return current;
+      }
+      return { ...current, pinLocation: location };
+    });
+    setFocusRequest({ point: location.coordinates, scaleMeters: ADDRESS_FOCUS_SCALE_METERS });
   }, []);
 
   const onAddressError = useCallback((err: AddressSearchError) => {
@@ -741,6 +760,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               minimizeSignal={sheetMinimizeSignal}
               onClose={onDeselect}
               onDropSimulation={onDropSimulation}
+              geonetEnabled={addressLookup.source === 'search'}
+              onLocationResolved={onAddressLocationResolved}
             />
           ) : detailOpen && detailTarget ? (
             <GeoDetailPanel
@@ -794,7 +815,9 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               selectedNode={selectedNode}
               draftAddress={draftAddress}
               addressPoint={
-                addressLookup?.source === 'search' ? addressLookup.address.coordinates : null
+                addressLookup?.source === 'search' && addressLookup.pinLocation
+                  ? addressLookup.pinLocation
+                  : null
               }
               dropSimulation={dropSimulation}
               focusRequest={focusRequest}
@@ -928,7 +951,7 @@ export function GoogleMapPanel({
   // Endereço resolvido pela busca (ver AddressDetailPanel) — cravado com o mesmo
   // alfinete de seleção, na ausência de um nó selecionado (os dois nunca coexistem,
   // ver onAddressFound/selectNode em GeoPage).
-  addressPoint?: [number, number] | null;
+  addressPoint?: AddressPinLocation | [number, number] | null;
   // Drop simulado entre o endereço e a CDO escolhida na aba de Viabilidade — estudo,
   // não planta: desenho próprio, animado, que some junto com o painel que o criou.
   dropSimulation?: DropSimulation | null;
@@ -977,9 +1000,9 @@ export function GoogleMapPanel({
   // Camada de calor da cobertura GPON (canvas em OverlayView, abaixo dos marcadores).
   const coverageOverlayRef = useRef<CoverageOverlayHandle | null>(null);
   const onCoverageHoverRef = useRef(onCoverageHover);
-  const coverageHitTestRef = useRef<((lng: number, lat: number) => CoverageNeighborhood | null) | null>(
-    null,
-  );
+  const coverageHitTestRef = useRef<
+    ((lng: number, lat: number) => CoverageNeighborhood | null) | null
+  >(null);
   const draftMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const selectionMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   // Ponto azul "minha localização", cravado quando o usuário pede a geolocalização do
@@ -1480,7 +1503,14 @@ export function GoogleMapPanel({
     // esse fallback, mexer no mapa apagava o alfinete de quem continua aberto no painel.
     const node =
       (selectedNodeId ? nodeByIdRef.current.get(selectedNodeId) : undefined) ?? selectedNode;
-    const point = node ? treeNodePoint(node) : (addressPoint ?? null);
+    const addressLocation = Array.isArray(addressPoint) ? undefined : addressPoint;
+    const point = node
+      ? treeNodePoint(node)
+      : addressLocation
+        ? addressLocation.coordinates
+        : Array.isArray(addressPoint)
+          ? addressPoint
+          : null;
     if (!point) {
       selectionMarkerRef.current?.setMap(null);
       selectionMarkerRef.current = null;
@@ -1505,6 +1535,7 @@ export function GoogleMapPanel({
     if (selectionMarkerRef.current) {
       selectionMarkerRef.current.setPosition({ lng, lat });
       selectionMarkerRef.current.setIcon(iconOptions);
+      selectionMarkerRef.current.setOptions({ title: node ? undefined : `Localização usada: ${addressLocation?.source === 'geonet' ? 'GEONET' : 'Google Maps'} · ${addressLocation?.precision ?? ''}` });
     } else {
       selectionMarkerRef.current = new maps.Marker({
         map: mapRef.current,
@@ -1512,6 +1543,7 @@ export function GoogleMapPanel({
         icon: iconOptions,
         zIndex: SELECTION_PIN_Z,
         clickable: false,
+        title: node ? undefined : `Localização usada: ${addressLocation?.source === 'geonet' ? 'GEONET' : 'Google Maps'} · ${addressLocation?.precision ?? ''}`,
       });
     }
   }, [mapsReady, selectedNodeId, selectedNode, nodes, addressPoint]);

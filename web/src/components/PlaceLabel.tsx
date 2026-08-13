@@ -21,17 +21,27 @@ export function PlaceLabel({ place, directory }: PlaceLabelProps) {
     return <span className="text-app-muted">—</span>;
   }
 
-  const IconForKind = resolved.kind === 'PI' ? MapPin
-    : resolved.kind === 'CTO' ? Network
-    : resolved.kind === 'POP' ? Layers
-    : resolved.kind === 'CO' ? Building2
-    : undefined;
+  const IconForKind =
+    resolved.kind === 'PI'
+      ? MapPin
+      : resolved.kind === 'CTO'
+        ? Network
+        : resolved.kind === 'POP'
+          ? Layers
+          : resolved.kind === 'CO'
+            ? Building2
+            : undefined;
 
-  const colorForKind = resolved.kind === 'CTO' ? '#1A9E7D'
-    : resolved.kind === 'PI' ? '#8B7500'
-    : resolved.kind === 'POP' ? '#004E89'
-    : resolved.kind === 'CO' ? '#9B59B6'
-    : '#5A5A5A';
+  const colorForKind =
+    resolved.kind === 'CTO'
+      ? '#1A9E7D'
+      : resolved.kind === 'PI'
+        ? '#8B7500'
+        : resolved.kind === 'POP'
+          ? '#004E89'
+          : resolved.kind === 'CO'
+            ? '#9B59B6'
+            : '#5A5A5A';
 
   // Linha secundária = Tipo · Endereço, mesmo formato do `sublabel` de PlaceOption.
   const sublabel = [resolved.typeLabel, resolved.address].filter(Boolean).join(' · ');
@@ -47,14 +57,8 @@ export function PlaceLabel({ place, directory }: PlaceLabelProps) {
         </span>
       )}
       <div className="min-w-0">
-        <div className="truncate text-[0.88rem] font-semibold text-app-text">
-          {resolved.name}
-        </div>
-        {sublabel && (
-          <div className="truncate text-[0.75rem] text-app-muted">
-            {sublabel}
-          </div>
-        )}
+        <div className="truncate text-[0.88rem] font-semibold text-app-text">{resolved.name}</div>
+        {sublabel && <div className="truncate text-[0.75rem] text-app-muted">{sublabel}</div>}
       </div>
     </div>
   );

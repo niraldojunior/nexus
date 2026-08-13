@@ -13,7 +13,13 @@ vi.mock('../utils/streetViewStatic', () => ({
 }));
 
 vi.mock('./GoogleStreetViewModal', () => ({
-  GoogleStreetViewModal: ({ marker, onClose }: { marker: { title: string }; onClose: () => void }) => (
+  GoogleStreetViewModal: ({
+    marker,
+    onClose,
+  }: {
+    marker: { title: string };
+    onClose: () => void;
+  }) => (
     <div role="dialog" aria-label={`Streetview · ${marker.title}`}>
       <button type="button" onClick={onClose}>
         Fechar modal
@@ -24,7 +30,11 @@ vi.mock('./GoogleStreetViewModal', () => ({
 
 afterEach(cleanup);
 
-const marker = { point: [-43.1079841, -22.8985597] as [number, number], title: 'CTO 101', iconUrl: 'data:cto' };
+const marker = {
+  point: [-43.1079841, -22.8985597] as [number, number],
+  title: 'CTO 101',
+  iconUrl: 'data:cto',
+};
 
 describe('StreetViewHero', () => {
   it('mostra o placeholder sem marker', () => {
@@ -55,7 +65,9 @@ describe('StreetViewHero', () => {
       status: 'ok',
       panoramaPoint: [-43.108, -22.8986],
     });
-    streetViewMocks.streetViewStaticUrl.mockReturnValue('https://maps.googleapis.com/maps/api/streetview?mock');
+    streetViewMocks.streetViewStaticUrl.mockReturnValue(
+      'https://maps.googleapis.com/maps/api/streetview?mock',
+    );
     render(<StreetViewHero marker={marker} />);
 
     const trigger = await screen.findByRole('button', { name: 'Abrir Streetview de CTO 101' });

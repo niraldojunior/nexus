@@ -17,8 +17,7 @@ import { NodeIcon } from './HierarchyTreeView';
 export type AddressSearchError = { term: string; status: string; message: string };
 
 export type GeoSearchSelection =
-  | { type: 'node'; node: GeoTreeNode }
-  | { type: 'address'; address: DraftAddress };
+  { type: 'node'; node: GeoTreeNode } | { type: 'address'; address: DraftAddress };
 
 export type GeoSearchBarProps = {
   query: string;
@@ -470,7 +469,9 @@ export function GeoSearchBar({
                 </div>
                 {historyOptions.map((option, index) => {
                   const label =
-                    option.type === 'history-node' ? option.node.label : option.address.label;
+                    option.type === 'history-node'
+                      ? option.node.label
+                      : option.address.sourceQuery?.trim() || option.address.label;
                   return (
                     <div
                       key={option.entryKey}

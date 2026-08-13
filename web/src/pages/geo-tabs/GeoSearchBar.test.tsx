@@ -332,7 +332,9 @@ describe('GeoSearchBar', () => {
     );
 
     fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
-    await waitFor(() => expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument(),
+    );
     fireEvent.click(screen.getByText('Rua Gavião Peixoto, Niterói'));
     fireEvent.click(screen.getByLabelText('Limpar busca'));
     await act(async () =>
@@ -378,7 +380,9 @@ describe('GeoSearchBar', () => {
     );
 
     fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
-    await waitFor(() => expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument(),
+    );
     fireEvent.click(screen.getByText('Rua Gavião Peixoto, Niterói'));
     fireEvent.click(screen.getByRole('button', { name: /Estação Icaraí/i }));
     await act(async () =>
@@ -448,7 +452,9 @@ describe('GeoSearchBar', () => {
     await act(async () => resolveGeocode({ ok: true, address }));
 
     expect(onAddressFound).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Editar seleção Estação Icaraí' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Editar seleção Estação Icaraí' }),
+    ).toBeInTheDocument();
   });
 
   it('descarta geocoding antigo quando a query é limpa externamente', async () => {
@@ -943,7 +949,9 @@ describe('GeoSearchBar histórico', () => {
     );
 
     fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
-    await waitFor(() => expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument(),
+    );
     fireEvent.click(screen.getByText('Rua Gavião Peixoto, Niterói'));
 
     expect(onAddressFound).toHaveBeenCalledWith(addressEntry.address);
@@ -1006,10 +1014,10 @@ describe('GeoSearchBar histórico', () => {
     );
 
     fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
-    await waitFor(() => expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument());
-    fireEvent.click(
-      screen.getByLabelText('Remover Rua Gavião Peixoto, Niterói do histórico'),
+    await waitFor(() =>
+      expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument(),
     );
+    fireEvent.click(screen.getByLabelText('Remover Rua Gavião Peixoto, Niterói do histórico'));
 
     expect(mocks.removeSearchHistoryEntry).toHaveBeenCalledWith('address:place:1');
   });

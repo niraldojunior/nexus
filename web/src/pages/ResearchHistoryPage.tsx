@@ -59,10 +59,11 @@ export const ResearchHistoryPage: React.FC<{
       setSessions(
         data
           .filter((s: ResearchSession) => s.status === 'active')
-          .sort((a: ResearchSession, b: ResearchSession) =>
-            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+          .sort(
+            (a: ResearchSession, b: ResearchSession) =>
+              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
           )
-          .slice(0, 20) // Only 20 most recent
+          .slice(0, 20), // Only 20 most recent
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
@@ -143,25 +144,15 @@ export const ResearchHistoryPage: React.FC<{
   };
 
   if (error) {
-    return (
-      <div className="px-3 py-2 text-xs text-red-600">
-        Erro ao carregar
-      </div>
-    );
+    return <div className="px-3 py-2 text-xs text-red-600">Erro ao carregar</div>;
   }
 
   return (
     <div className="flex flex-col gap-[2px]">
-      {loading && (
-        <div className="px-3 py-2 text-xs text-app-muted">
-          Carregando...
-        </div>
-      )}
+      {loading && <div className="px-3 py-2 text-xs text-app-muted">Carregando...</div>}
 
       {!loading && sessions.length === 0 && (
-        <div className="px-3 py-2 text-xs text-app-muted">
-          Nenhuma conversa ainda
-        </div>
+        <div className="px-3 py-2 text-xs text-app-muted">Nenhuma conversa ainda</div>
       )}
 
       {!loading &&
@@ -202,7 +193,9 @@ export const ResearchHistoryPage: React.FC<{
                   className="w-full pr-2 text-left"
                   title={session.title}
                 >
-                  <div className={`truncate text-[0.92rem] leading-[1.1] ${activeSessionId === session.id ? 'font-semibold text-app-text' : 'text-app-text'}`}>
+                  <div
+                    className={`truncate text-[0.92rem] leading-[1.1] ${activeSessionId === session.id ? 'font-semibold text-app-text' : 'text-app-text'}`}
+                  >
                     {session.title}
                   </div>
                 </button>

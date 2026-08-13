@@ -167,8 +167,8 @@ export const TEST_ORACLE_PREFIX = process.env.ORACLE_TEST_OBJECT_PREFIX ?? 'NEXU
 export const isOracleTestConfigured = (): boolean =>
   Boolean(
     firstNonBlank(process.env.ORACLE_CONNECTION_STRING, process.env.ORACLE_CONNECT_STRING) &&
-      process.env.ORACLE_USER &&
-      process.env.ORACLE_PASSWORD,
+    process.env.ORACLE_USER &&
+    process.env.ORACLE_PASSWORD,
   );
 
 // Guard analogous to assertNotProductionUrl: because PRD lives in the same schema, the suite (which

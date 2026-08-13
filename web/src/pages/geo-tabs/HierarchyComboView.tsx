@@ -22,7 +22,12 @@ const levelLabel = (level: number, parent?: GeoTreeNode): string =>
  * sob demanda da árvore: escolher um nível dispara a busca do seguinte, e a
  * cascata cresce enquanto houver filho. Escolher uma folha seleciona o item.
  */
-export function HierarchyComboView({ childrenOf, ensureChildren, rootNodes, onSelect }: HierarchyComboViewProps) {
+export function HierarchyComboView({
+  childrenOf,
+  ensureChildren,
+  rootNodes,
+  onSelect,
+}: HierarchyComboViewProps) {
   // path[i] = nó escolhido no nível i.
   const [path, setPath] = useState<GeoTreeNode[]>([]);
 

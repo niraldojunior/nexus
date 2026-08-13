@@ -1,26 +1,26 @@
-import { FormEvent, KeyboardEvent } from 'react'
-import { SendHorizontal } from 'lucide-react'
-import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea'
-import NexusLoadingMark from './NexusLoadingMark'
+import { FormEvent, KeyboardEvent } from 'react';
+import { SendHorizontal } from 'lucide-react';
+import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
+import NexusLoadingMark from './NexusLoadingMark';
 
 interface ComposerModelOption {
-  value: string
-  label: string
+  value: string;
+  label: string;
 }
 
 interface ComposerProps {
-  value: string
-  onChange: (value: string) => void
-  onSubmit: () => void
-  loading: boolean
-  placeholder: string
-  size: 'hero' | 'compact'
-  modelLabel: string
-  qualityLabel: string
-  autoFocus?: boolean
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  loading: boolean;
+  placeholder: string;
+  size: 'hero' | 'compact';
+  modelLabel: string;
+  qualityLabel: string;
+  autoFocus?: boolean;
   /** When provided together with `onModelChange`, the model badge becomes a real dropdown. */
-  models?: ComposerModelOption[]
-  onModelChange?: (value: string) => void
+  models?: ComposerModelOption[];
+  onModelChange?: (value: string) => void;
 }
 
 export default function Composer({
@@ -34,25 +34,25 @@ export default function Composer({
   qualityLabel,
   autoFocus = false,
   models,
-  onModelChange
+  onModelChange,
 }: ComposerProps) {
-  const isHero = size === 'hero'
-  const textareaRef = useAutoResizeTextarea(value, isHero ? 320 : 240)
-  const isModelSelectable = Boolean(models && models.length > 0 && onModelChange)
+  const isHero = size === 'hero';
+  const textareaRef = useAutoResizeTextarea(value, isHero ? 320 : 240);
+  const isModelSelectable = Boolean(models && models.length > 0 && onModelChange);
 
   const handleSubmit = (event: FormEvent) => {
-    event.preventDefault()
-    if (loading || !value.trim()) return
-    onSubmit()
-  }
+    event.preventDefault();
+    if (loading || !value.trim()) return;
+    onSubmit();
+  };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== 'Enter' || event.shiftKey) return
+    if (event.key !== 'Enter' || event.shiftKey) return;
 
-    event.preventDefault()
-    if (loading || !value.trim()) return
-    onSubmit()
-  }
+    event.preventDefault();
+    if (loading || !value.trim()) return;
+    onSubmit();
+  };
 
   return (
     <div>
@@ -91,7 +91,9 @@ export default function Composer({
         </button>
       </form>
 
-      <div className={`flex items-center gap-2 px-2 pt-2 text-[0.78rem] text-app-muted ${isHero ? 'justify-center' : ''}`}>
+      <div
+        className={`flex items-center gap-2 px-2 pt-2 text-[0.78rem] text-app-muted ${isHero ? 'justify-center' : ''}`}
+      >
         {isModelSelectable ? (
           <select
             value={modelLabel}
@@ -112,5 +114,5 @@ export default function Composer({
         <span className="rounded-full border border-app-border px-2.5 py-1">{qualityLabel}</span>
       </div>
     </div>
-  )
+  );
 }

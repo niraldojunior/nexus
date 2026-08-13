@@ -48,7 +48,14 @@ export class WeakPasswordError extends AppError {
 export async function hashPassword(password: string): Promise<string> {
   if (password.length < MIN_PASSWORD_LENGTH) throw new WeakPasswordError();
   const salt = randomBytes(SALT_BYTES);
-  const derived = await derive(password, salt, KEY_LENGTH, SCRYPT_COST, SCRYPT_BLOCK, SCRYPT_PARALLEL);
+  const derived = await derive(
+    password,
+    salt,
+    KEY_LENGTH,
+    SCRYPT_COST,
+    SCRYPT_BLOCK,
+    SCRYPT_PARALLEL,
+  );
   return `scrypt$${SCRYPT_COST}$${SCRYPT_BLOCK}$${SCRYPT_PARALLEL}$${salt.toString('base64')}$${derived.toString('base64')}`;
 }
 
@@ -58,7 +65,8 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const cost = Number(parts[1]);
   const block = Number(parts[2]);
   const parallel = Number(parts[3]);
-  if (!Number.isInteger(cost) || !Number.isInteger(block) || !Number.isInteger(parallel)) return false;
+  if (!Number.isInteger(cost) || !Number.isInteger(block) || !Number.isInteger(parallel))
+    return false;
   const salt = Buffer.from(parts[4] ?? '', 'base64');
   const expected = Buffer.from(parts[5] ?? '', 'base64');
   if (expected.length === 0) return false;

@@ -51,8 +51,7 @@ const STITCH_TOLERANCE_METERS = 0.5;
  */
 export function stitchDropPath(origin: LngLat, routePath: LngLat[], destination: LngLat): LngLat[] {
   if (!routePath.length) return [origin, destination];
-  const startsAtOrigin =
-    haversineMeters(origin, routePath[0]) <= STITCH_TOLERANCE_METERS;
+  const startsAtOrigin = haversineMeters(origin, routePath[0]) <= STITCH_TOLERANCE_METERS;
   const endsAtDestination =
     haversineMeters(destination, routePath[routePath.length - 1]) <= STITCH_TOLERANCE_METERS;
   const middle = routePath.slice(

@@ -24,4 +24,3 @@
 - Padding de componentes: 16px ou 24px.
 - Gaps internos: 8px a 16px.
 - Separação entre seções: 24px ou mais.
-

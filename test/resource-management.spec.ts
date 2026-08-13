@@ -37,7 +37,9 @@ const requestJson = async (
         method,
         headers: {
           authorization: 'Bearer secret',
-          ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {}),
+          ...(payload
+            ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
+            : {}),
         },
       },
       (res) => {
@@ -60,7 +62,10 @@ const requestJson = async (
 
 test('TMF634, TMF639 and TMF664 resource endpoints create and activate resources', async (t) => {
   const database = createTestDatabase();
-  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
   const port = await server.start();
   t.after(async () => {
     await server.stop();
@@ -85,33 +90,62 @@ test('TMF634, TMF639 and TMF664 resource endpoints create and activate resources
   });
   assert.equal(site.statusCode, 201);
 
-  const resourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
-    name: 'OLT MA5800',
-    category: 'Equipment.Access',
-    resourceType: 'OLT',
-    relatedParty: [
-      { id: (party.body as { id: string }).id, '@referredType': 'Organization', role: 'manufacturer' },
-    ],
-  });
+  const resourceSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    {
+      name: 'OLT MA5800',
+      category: 'Equipment.Access',
+      resourceType: 'OLT',
+      relatedParty: [
+        {
+          id: (party.body as { id: string }).id,
+          '@referredType': 'Organization',
+          role: 'manufacturer',
+        },
+      ],
+    },
+  );
   assert.equal(resourceSpec.statusCode, 201);
 
-  const categories = await requestJson(port, 'GET', '/tmf-api/resourceCatalogManagement/v4/resourceCategory');
+  const categories = await requestJson(
+    port,
+    'GET',
+    '/tmf-api/resourceCatalogManagement/v4/resourceCategory',
+  );
   assert.equal(categories.statusCode, 200);
   assert.ok(Array.isArray(categories.body));
-  assert.ok((categories.body as Array<{ code: string }>).some((category) => category.code === 'Equipment.Access'));
+  assert.ok(
+    (categories.body as Array<{ code: string }>).some(
+      (category) => category.code === 'Equipment.Access',
+    ),
+  );
 
-  const types = await requestJson(port, 'GET', '/tmf-api/resourceCatalogManagement/v4/resourceType');
+  const types = await requestJson(
+    port,
+    'GET',
+    '/tmf-api/resourceCatalogManagement/v4/resourceType',
+  );
   assert.equal(types.statusCode, 200);
   assert.ok(Array.isArray(types.body));
   assert.ok((types.body as Array<{ code: string }>).some((type) => type.code === 'OLT'));
 
-  const invalidResourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
-    name: 'OLT sem tipo',
-    category: 'Equipment.Access',
-  });
+  const invalidResourceSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    {
+      name: 'OLT sem tipo',
+      category: 'Equipment.Access',
+    },
+  );
   assert.equal(invalidResourceSpec.statusCode, 400);
   assert.equal((invalidResourceSpec.body as { error?: string }).error, 'RESOURCE_REQUIRED_FIELD');
-  assert.equal((invalidResourceSpec.body as { message?: string }).message, 'resourceType is required');
+  assert.equal(
+    (invalidResourceSpec.body as { message?: string }).message,
+    'resourceType is required',
+  );
 
   const workspace = await requestJson(
     port,
@@ -148,7 +182,9 @@ test('TMF634, TMF639 and TMF664 resource endpoints create and activate resources
     `/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${(resourceSpec.body as { id: string }).id}`,
   );
   assert.equal(fetchedDeletedSpec.statusCode, 200);
-  assert.ok((fetchedDeletedSpec.body as { validFor?: { endDateTime?: string } }).validFor?.endDateTime);
+  assert.ok(
+    (fetchedDeletedSpec.body as { validFor?: { endDateTime?: string } }).validFor?.endDateTime,
+  );
 
   const functionSpec = await requestJson(
     port,
@@ -160,34 +196,53 @@ test('TMF634, TMF639 and TMF664 resource endpoints create and activate resources
   );
   assert.equal(functionSpec.statusCode, 201);
 
-  const physicalResource = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'PhysicalResource',
-    name: 'OLT-BOT-01',
-    resourceSpecificationId: (resourceSpec.body as { id: string }).id,
-    placeId: (site.body as { id: string }).id,
-    placeType: 'GeographicSite',
-    relatedParty: [{ id: (party.body as { id: string }).id, '@referredType': 'Organization', role: 'owner' }],
-    manufacturer: 'Huawei',
-    model: 'MA5800',
-    serialNumber: 'SN-OLT-001',
-  });
+  const physicalResource = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceInventoryManagement/v4/resource',
+    {
+      '@type': 'PhysicalResource',
+      name: 'OLT-BOT-01',
+      resourceSpecificationId: (resourceSpec.body as { id: string }).id,
+      placeId: (site.body as { id: string }).id,
+      placeType: 'GeographicSite',
+      relatedParty: [
+        { id: (party.body as { id: string }).id, '@referredType': 'Organization', role: 'owner' },
+      ],
+      manufacturer: 'Huawei',
+      model: 'MA5800',
+      serialNumber: 'SN-OLT-001',
+    },
+  );
   assert.equal(physicalResource.statusCode, 201);
   assert.equal((physicalResource.body as { '@type': string })['@type'], 'PhysicalResource');
 
-  const logicalResource = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'LogicalResource',
-    name: 'VLAN 100',
-    resourceSpecificationId: (resourceSpec.body as { id: string }).id,
-    supportingPhysicalResourceId: (physicalResource.body as { id: string }).id,
-    relatedParty: [{ id: (party.body as { id: string }).id, '@referredType': 'Organization', role: 'owner' }],
-  });
+  const logicalResource = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceInventoryManagement/v4/resource',
+    {
+      '@type': 'LogicalResource',
+      name: 'VLAN 100',
+      resourceSpecificationId: (resourceSpec.body as { id: string }).id,
+      supportingPhysicalResourceId: (physicalResource.body as { id: string }).id,
+      relatedParty: [
+        { id: (party.body as { id: string }).id, '@referredType': 'Organization', role: 'owner' },
+      ],
+    },
+  );
   assert.equal(logicalResource.statusCode, 201);
   assert.equal((logicalResource.body as { '@type': string })['@type'], 'LogicalResource');
 
-  const activated = await requestJson(port, 'POST', '/tmf-api/resourceFunctionActivation/v4/resourceFunction', {
-    resourceId: (physicalResource.body as { id: string }).id,
-    action: 'activate',
-  });
+  const activated = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceFunctionActivation/v4/resourceFunction',
+    {
+      resourceId: (physicalResource.body as { id: string }).id,
+      action: 'activate',
+    },
+  );
   assert.equal(activated.statusCode, 200);
   assert.equal((activated.body as { status: string }).status, 'active');
 
@@ -206,7 +261,11 @@ test('TMF634, TMF639 and TMF664 resource endpoints create and activate resources
     '/tmf-api/eventManagement/v4/event?source=resource.PhysicalResource&eventType=ResourceCreateEvent',
   );
   assert.equal(events.statusCode, 200);
-  assert.ok((events.body as Array<{ eventType: string }>).some((event) => event.eventType === 'ResourceCreateEvent'));
+  assert.ok(
+    (events.body as Array<{ eventType: string }>).some(
+      (event) => event.eventType === 'ResourceCreateEvent',
+    ),
+  );
 });
 
 const createTestDatabase = (): { databaseUrl: string; cleanup: () => void } => {

@@ -58,14 +58,22 @@ describe('resourceIconFor', () => {
   it('legenda a CTO por status: vermelho suspenso, verde escuro ativo, laranja no resto', () => {
     expect(resourceIconFor({ resourceType: 'CTO', status: 'suspended' }).color).toBe('#ef4444');
     expect(resourceIconFor({ resourceType: 'CTO', status: 'active' }).color).toBe('#047857');
-    expect(resourceIconFor({ resourceType: 'CTO', status: 'planned' }).color).toBe(familyColor.passive);
-    expect(resourceIconFor({ resourceType: 'CTO', status: 'terminated' }).color).toBe(familyColor.passive);
+    expect(resourceIconFor({ resourceType: 'CTO', status: 'planned' }).color).toBe(
+      familyColor.passive,
+    );
+    expect(resourceIconFor({ resourceType: 'CTO', status: 'terminated' }).color).toBe(
+      familyColor.passive,
+    );
     expect(resourceIconFor({ resourceType: 'CTO' }).color).toBe(familyColor.passive);
   });
 
   it('não estende a legenda de status a outros tipos passivos', () => {
-    expect(resourceIconFor({ resourceType: 'Splitter', status: 'active' }).color).toBe(familyColor.passive);
-    expect(resourceIconFor({ resourceType: 'DIO', status: 'suspended' }).color).toBe(familyColor.passive);
+    expect(resourceIconFor({ resourceType: 'Splitter', status: 'active' }).color).toBe(
+      familyColor.passive,
+    );
+    expect(resourceIconFor({ resourceType: 'DIO', status: 'suspended' }).color).toBe(
+      familyColor.passive,
+    );
   });
 
   it('ignora status quando o recurso é passado só como código de tipo (string)', () => {
@@ -101,7 +109,9 @@ describe('resourceIconSvg', () => {
     // primeiro data-URL gerado "vencia" o cache e todo CTO seguinte saía com a cor
     // errada — era isso que fazia toda CTO aparecer verde no mapa.
     const active = resourceIconDataUrl(resourceIconFor({ resourceType: 'CTO', status: 'active' }));
-    const suspended = resourceIconDataUrl(resourceIconFor({ resourceType: 'CTO', status: 'suspended' }));
+    const suspended = resourceIconDataUrl(
+      resourceIconFor({ resourceType: 'CTO', status: 'suspended' }),
+    );
     const other = resourceIconDataUrl(resourceIconFor({ resourceType: 'CTO', status: 'planned' }));
 
     expect(decodeURIComponent(active)).toContain('#047857');
@@ -114,13 +124,32 @@ describe('resourceIconSvg', () => {
 
 describe('resourcePlant', () => {
   it('classifica a planta externa — o que existe na rua e tem coordenada própria', () => {
-    for (const code of ['CTO', 'Pole', 'Manhole', 'Duct', 'Splitter', 'BackboneCable', 'DropCable', 'Fiber']) {
+    for (const code of [
+      'CTO',
+      'Pole',
+      'Manhole',
+      'Duct',
+      'Splitter',
+      'BackboneCable',
+      'DropCable',
+      'Fiber',
+    ]) {
       expect(resourcePlant({ resourceType: code })).toBe('outdoor');
     }
   });
 
   it('classifica a planta interna — o que mora no rack da estação', () => {
-    for (const code of ['OLT', 'Card', 'Port', 'Rack', 'Switch', 'Router', 'PowerSupply', 'Jumper', 'PatchCord']) {
+    for (const code of [
+      'OLT',
+      'Card',
+      'Port',
+      'Rack',
+      'Switch',
+      'Router',
+      'PowerSupply',
+      'Jumper',
+      'PatchCord',
+    ]) {
       expect(resourcePlant({ resourceType: code })).toBe('indoor');
     }
   });

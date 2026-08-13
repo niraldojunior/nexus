@@ -1,5 +1,9 @@
 import { createElement } from 'react';
-import { resourceIconFor, type IconResourceLike, type ResourceIcon as ResourceIconSpec } from '../utils/resourceIcon';
+import {
+  resourceIconFor,
+  type IconResourceLike,
+  type ResourceIcon as ResourceIconSpec,
+} from '../utils/resourceIcon';
 
 export type ResourceIconProps = {
   resource: IconResourceLike | string | undefined;
@@ -66,5 +70,7 @@ export function ResourceIcon({ resource, variant = 'badge', size, className }: R
 // O `node` do lucide é uma lista de [tag, atributos]; createElement evita ter de
 // manter um switch por tipo de elemento SVG.
 function glyphChildren(icon: ResourceIconSpec) {
-  return icon.node.map(([tag, attrs], index) => createElement(tag, { ...attrs, key: `${icon.glyph}-${index}` }));
+  return icon.node.map(([tag, attrs], index) =>
+    createElement(tag, { ...attrs, key: `${icon.glyph}-${index}` }),
+  );
 }

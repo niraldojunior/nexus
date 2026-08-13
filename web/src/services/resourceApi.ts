@@ -201,7 +201,9 @@ export async function listResourceSpecifications({
 }
 
 export async function listResourceCategories(): Promise<ResourceCategory[]> {
-  return await requestJson<ResourceCategory[]>('/tmf-api/resourceCatalogManagement/v4/resourceCategory');
+  return await requestJson<ResourceCategory[]>(
+    '/tmf-api/resourceCatalogManagement/v4/resourceCategory',
+  );
 }
 
 export async function listResourceTypes(): Promise<ResourceType[]> {
@@ -231,33 +233,47 @@ export async function loadResourceWorkspaceSnapshot({
     offset: String(offset),
   });
   if (category) searchParams.set('category', category);
-  for (const id of resourceSpecificationIdIn ?? []) searchParams.append('resourceSpecificationIdIn', id);
+  for (const id of resourceSpecificationIdIn ?? [])
+    searchParams.append('resourceSpecificationIdIn', id);
   for (const type of resourceTypeIn ?? []) searchParams.append('resourceTypeIn', type);
   if (name) searchParams.set('name', name);
-  return await requestJson<ResourceWorkspaceSnapshot>(`/v1/resource/workspace?${searchParams.toString()}`);
+  return await requestJson<ResourceWorkspaceSnapshot>(
+    `/v1/resource/workspace?${searchParams.toString()}`,
+  );
 }
 
-export async function createResourceSpecification(payload: ResourceSpecificationPayload): Promise<ResourceSpecification> {
-  return await requestJson<ResourceSpecification>('/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
-    method: 'POST',
-    body: cleanObject(payload),
-  });
+export async function createResourceSpecification(
+  payload: ResourceSpecificationPayload,
+): Promise<ResourceSpecification> {
+  return await requestJson<ResourceSpecification>(
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    {
+      method: 'POST',
+      body: cleanObject(payload),
+    },
+  );
 }
 
 export async function updateResourceSpecification(
   id: string,
   payload: ResourceSpecificationPayload,
 ): Promise<ResourceSpecification> {
-  return await requestJson<ResourceSpecification>(`/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    body: cleanObject(payload),
-  });
+  return await requestJson<ResourceSpecification>(
+    `/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      body: cleanObject(payload),
+    },
+  );
 }
 
 export async function deleteResourceSpecification(id: string): Promise<ResourceSpecification> {
-  return await requestJson<ResourceSpecification>(`/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  });
+  return await requestJson<ResourceSpecification>(
+    `/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${encodeURIComponent(id)}`,
+    {
+      method: 'DELETE',
+    },
+  );
 }
 
 export async function listResources({
@@ -266,7 +282,9 @@ export async function listResources({
   offset,
   status,
   name,
-}: ListParams & { kind: Exclude<ResourceTab, 'ResourceSpecification'>; name?: string }): Promise<ResourceEntity[]> {
+}: ListParams & { kind: Exclude<ResourceTab, 'ResourceSpecification'>; name?: string }): Promise<
+  ResourceEntity[]
+> {
   const searchParams = new URLSearchParams({
     kind,
     limit: String(limit),
@@ -274,7 +292,9 @@ export async function listResources({
   });
   if (status) searchParams.set('status', status);
   if (name) searchParams.set('name', name);
-  return await requestJson<ResourceEntity[]>(`/tmf-api/resourceInventoryManagement/v4/resource?${searchParams.toString()}`);
+  return await requestJson<ResourceEntity[]>(
+    `/tmf-api/resourceInventoryManagement/v4/resource?${searchParams.toString()}`,
+  );
 }
 
 export async function createResource(
@@ -290,14 +310,20 @@ export async function updateResource(
   id: string,
   payload: PhysicalResourcePayload | LogicalResourcePayload,
 ): Promise<ResourceEntity> {
-  return await requestJson<ResourceEntity>(`/tmf-api/resourceInventoryManagement/v4/resource/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    body: cleanObject(payload as Record<string, unknown>),
-  });
+  return await requestJson<ResourceEntity>(
+    `/tmf-api/resourceInventoryManagement/v4/resource/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      body: cleanObject(payload as Record<string, unknown>),
+    },
+  );
 }
 
 export async function deleteResource(id: string): Promise<ResourceEntity> {
-  return await requestJson<ResourceEntity>(`/tmf-api/resourceInventoryManagement/v4/resource/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  });
+  return await requestJson<ResourceEntity>(
+    `/tmf-api/resourceInventoryManagement/v4/resource/${encodeURIComponent(id)}`,
+    {
+      method: 'DELETE',
+    },
+  );
 }

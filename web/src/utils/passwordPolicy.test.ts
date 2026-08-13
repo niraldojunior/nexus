@@ -18,7 +18,13 @@ describe('checkPassword', () => {
   });
 
   it('marca comprimento, minúscula, maiúscula, número e símbolo numa senha completa', () => {
-    expect(idsMet('Senha1234567!')).toEqual(['length', 'uppercase', 'lowercase', 'digit', 'symbol']);
+    expect(idsMet('Senha1234567!')).toEqual([
+      'length',
+      'uppercase',
+      'lowercase',
+      'digit',
+      'symbol',
+    ]);
   });
 
   it('aceita símbolos acentuados/não-ASCII como símbolo', () => {

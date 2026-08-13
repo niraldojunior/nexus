@@ -7,13 +7,13 @@ import React from 'react';
 export function Badge({ children, tone = 'neutral', dot = false, style, ...rest }) {
   const tones = {
     neutral: { bg: 'var(--surface-inset)', fg: 'var(--text-secondary)' },
-    green:   { bg: 'var(--status-green-soft)',  fg: 'var(--status-green)' },
-    blue:    { bg: 'var(--status-blue-soft)',   fg: 'var(--status-blue)' },
-    amber:   { bg: 'var(--status-amber-soft)',  fg: 'var(--status-amber)' },
-    red:     { bg: 'var(--status-red-soft)',    fg: 'var(--status-red)' },
-    purple:  { bg: 'var(--status-purple-soft)', fg: 'var(--status-purple)' },
-    brand:   { bg: 'var(--vt-yellow-dim)',      fg: '#9a7d00' },
-    ink:     { bg: 'var(--vt-ink)',             fg: 'var(--vt-yellow)' },
+    green: { bg: 'var(--status-green-soft)', fg: 'var(--status-green)' },
+    blue: { bg: 'var(--status-blue-soft)', fg: 'var(--status-blue)' },
+    amber: { bg: 'var(--status-amber-soft)', fg: 'var(--status-amber)' },
+    red: { bg: 'var(--status-red-soft)', fg: 'var(--status-red)' },
+    purple: { bg: 'var(--status-purple-soft)', fg: 'var(--status-purple)' },
+    brand: { bg: 'var(--vt-yellow-dim)', fg: '#9a7d00' },
+    ink: { bg: 'var(--vt-ink)', fg: 'var(--vt-yellow)' },
   };
   const t = tones[tone] || tones.neutral;
   return (

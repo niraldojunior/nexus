@@ -37,7 +37,9 @@ const requestJson = async (
         method,
         headers: {
           authorization: 'Bearer secret',
-          ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {}),
+          ...(payload
+            ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
+            : {}),
         },
       },
       (res) => {
@@ -60,7 +62,10 @@ const requestJson = async (
 
 test('TMF688 event endpoint lists and resolves events emitted by Geo', async (t) => {
   const database = createTestDatabase();
-  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
   const port = await server.start();
   t.after(async () => {
     await server.stop();
@@ -99,7 +104,11 @@ test('TMF688 event endpoint lists and resolves events emitted by Geo', async (t)
   assert.ok(siteEvent);
   assert.equal(siteEvent.eventType, 'GeographicSiteCreateEvent');
 
-  const eventById = await requestJson(port, 'GET', `/tmf-api/eventManagement/v4/event/${siteEvent.id}`);
+  const eventById = await requestJson(
+    port,
+    'GET',
+    `/tmf-api/eventManagement/v4/event/${siteEvent.id}`,
+  );
   assert.equal(eventById.statusCode, 200);
   assert.equal((eventById.body as { id: string }).id, siteEvent.id);
 });

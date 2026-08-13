@@ -2,7 +2,10 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
-import type { ViabilityCandidate, UseAddressViabilityResult } from '../../hooks/useAddressViability';
+import type {
+  ViabilityCandidate,
+  UseAddressViabilityResult,
+} from '../../hooks/useAddressViability';
 
 const useAddressViability = vi.fn<() => UseAddressViabilityResult>();
 const computeWalkRoute = vi.fn();
@@ -21,11 +24,7 @@ const { ViabilityTab } = await import('./ViabilityTab');
 
 const ORIGIN: [number, number] = [-43.1079, -22.8985];
 
-const cdo = (
-  name: string,
-  status: string,
-  point: [number, number],
-): GeoTreeNode => ({
+const cdo = (name: string, status: string, point: [number, number]): GeoTreeNode => ({
   id: `resource:${name}`,
   kind: 'resource',
   label: name,
@@ -169,7 +168,11 @@ describe('ViabilityTab', () => {
       [-43.1078, -22.8986],
       [-43.1082, -22.8989],
     ];
-    computeWalkRoute.mockResolvedValue({ distanceMeters: 118, durationSeconds: 95, path: roadPath });
+    computeWalkRoute.mockResolvedValue({
+      distanceMeters: 118,
+      durationSeconds: 95,
+      path: roadPath,
+    });
     useAddressViability.mockReturnValue(ready([candidate('CDOE-3701', 'active', 118, 'walk')]));
     const onSimulate = vi.fn();
 

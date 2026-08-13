@@ -3,7 +3,11 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import * as resourceApi from '../services/resourceApi';
-import type { LogicalResource, PhysicalResource, ResourceSpecification } from '../services/resourceApi';
+import type {
+  LogicalResource,
+  PhysicalResource,
+  ResourceSpecification,
+} from '../services/resourceApi';
 import ResourcePage from './ResourcePage';
 
 // 20 physical specs so the Equipment.Access catalog paginates client-side (>20 items with spec-ipam-2).
@@ -15,21 +19,51 @@ const physicalSpecs: ResourceSpecification[] = Array.from({ length: 20 }, (_, in
   resourceType: 'OLT',
   description: `Description ${index + 1}`,
   resourceSpecificationCharacteristic: [
-    { name: 'equipmentCode', value: `EQ-${index + 1}`, valueType: 'string' as const, group: 'identification' },
-    { name: 'equipmentFunction', value: 'Roteador', valueType: 'string' as const, group: 'identification' },
-    { name: 'model', value: `Model ${index + 1}`, valueType: 'string' as const, group: 'commercial' },
+    {
+      name: 'equipmentCode',
+      value: `EQ-${index + 1}`,
+      valueType: 'string' as const,
+      group: 'identification',
+    },
+    {
+      name: 'equipmentFunction',
+      value: 'Roteador',
+      valueType: 'string' as const,
+      group: 'identification',
+    },
+    {
+      name: 'model',
+      value: `Model ${index + 1}`,
+      valueType: 'string' as const,
+      group: 'commercial',
+    },
     { name: 'skuId', value: `SKU-${index + 1}`, valueType: 'string' as const, group: 'commercial' },
     { name: 'stockable', value: true, valueType: 'boolean' as const, group: 'capability' },
     { name: 'discontinued', value: false, valueType: 'boolean' as const, group: 'lifecycle' },
     { name: 'supportsSdWan', value: false, valueType: 'boolean' as const, group: 'capability' },
     { name: 'supportsVoice', value: false, valueType: 'boolean' as const, group: 'capability' },
-    { name: 'homologationDate', value: '2026-06-03', valueType: 'date' as const, group: 'commercial' },
+    {
+      name: 'homologationDate',
+      value: '2026-06-03',
+      valueType: 'date' as const,
+      group: 'commercial',
+    },
     { name: 'endOfLifeDate', value: '2026-07-03', valueType: 'date' as const, group: 'lifecycle' },
-    { name: 'endOfSupportLifeDate', value: '2026-07-03', valueType: 'date' as const, group: 'lifecycle' },
+    {
+      name: 'endOfSupportLifeDate',
+      value: '2026-07-03',
+      valueType: 'date' as const,
+      group: 'lifecycle',
+    },
     { name: 'lifecycleStatus', value: 'active', valueType: 'string' as const, group: 'lifecycle' },
   ],
   relatedParty: [
-    { id: 'party-datacom', '@referredType': 'Organization' as const, role: 'manufacturer', name: 'DATACOM' },
+    {
+      id: 'party-datacom',
+      '@referredType': 'Organization' as const,
+      role: 'manufacturer',
+      name: 'DATACOM',
+    },
   ],
 }));
 
@@ -176,7 +210,11 @@ type WorkspaceRequest = Parameters<typeof resourceApi.loadResourceWorkspaceSnaps
  */
 function buildSnapshot(
   request: WorkspaceRequest,
-  pools: { physical?: PhysicalResource[]; logical?: LogicalResource[]; specs?: ResourceSpecification[] } = {},
+  pools: {
+    physical?: PhysicalResource[];
+    logical?: LogicalResource[];
+    specs?: ResourceSpecification[];
+  } = {},
 ): resourceApi.ResourceWorkspaceSnapshot {
   const specs = pools.specs ?? resourceSpecifications;
 
@@ -192,13 +230,24 @@ function buildSnapshot(
   }
 
   const specById = new Map(specs.map((spec) => [spec.id, spec]));
-  const pool = request.tab === 'PhysicalResource' ? pools.physical ?? physicalResources : pools.logical ?? logicalResources;
+  const pool =
+    request.tab === 'PhysicalResource'
+      ? (pools.physical ?? physicalResources)
+      : (pools.logical ?? logicalResources);
   const filtered = pool.filter((resource) => {
     const specId = resource.resourceSpecification?.id ?? resource.resourceSpecificationId;
     const spec = specById.get(specId);
     if (request.category && spec?.category !== request.category) return false;
-    if (request.resourceSpecificationIdIn?.length && !request.resourceSpecificationIdIn.includes(specId)) return false;
-    if (request.resourceTypeIn?.length && (!spec || !request.resourceTypeIn.includes(spec.resourceType))) return false;
+    if (
+      request.resourceSpecificationIdIn?.length &&
+      !request.resourceSpecificationIdIn.includes(specId)
+    )
+      return false;
+    if (
+      request.resourceTypeIn?.length &&
+      (!spec || !request.resourceTypeIn.includes(spec.resourceType))
+    )
+      return false;
     return true;
   });
 
@@ -239,7 +288,9 @@ afterEach(() => {
 test('defaults to the first category and lists its physical inventory', async () => {
   render(<ResourcePage />);
 
-  expect(await screen.findByRole('heading', { name: 'Equipamentos de Acesso' })).toBeInTheDocument();
+  expect(
+    await screen.findByRole('heading', { name: 'Equipamentos de Acesso' }),
+  ).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Criar recurso' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Excluir selecionados' })).toBeInTheDocument();
   expect(screen.getByRole('tab', { name: 'Inventário' })).toHaveAttribute('aria-selected', 'true');
@@ -287,7 +338,10 @@ test('clicking a filterable header opens a picklist that narrows the inventory s
   const mixedPhysical = physicalResources.map((resource, index) => ({
     ...resource,
     resourceSpecificationId: index < 5 ? 'spec-2' : 'spec-1',
-    resourceSpecification: { id: index < 5 ? 'spec-2' : 'spec-1', '@referredType': 'ResourceSpecification' as const },
+    resourceSpecification: {
+      id: index < 5 ? 'spec-2' : 'spec-1',
+      '@referredType': 'ResourceSpecification' as const,
+    },
   }));
   loadResourceWorkspaceSnapshotMock.mockImplementation(async (request) =>
     buildSnapshot(request, { physical: mixedPhysical }),
@@ -334,7 +388,11 @@ test('switching to Catálogo lists specs scoped to the category with no Categori
   await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
 
   await waitFor(() =>
-    expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({ tab: 'ResourceSpecification', limit: 20, offset: 0 }),
+    expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({
+      tab: 'ResourceSpecification',
+      limit: 20,
+      offset: 0,
+    }),
   );
   expect((await screen.findAllByText('Model 1'))[0]).toBeInTheDocument();
   expect((await screen.findAllByText('OLT'))[0]).toBeInTheDocument();
@@ -405,7 +463,14 @@ test('logical category lists logical inventory and its modal scopes specs by cat
   expect(screen.getByLabelText(/Recurso Físico Associado/i)).toBeInTheDocument();
   expect(specSelect).toHaveTextContent('Bloco IPAM');
   // The supporting-physical-resource combobox is fetched on demand, bounded — not from a full inventory in memory.
-  await waitFor(() => expect(listResourcesMock).toHaveBeenCalledWith({ kind: 'PhysicalResource', limit: 200, offset: 0, status: 'active' }));
+  await waitFor(() =>
+    expect(listResourcesMock).toHaveBeenCalledWith({
+      kind: 'PhysicalResource',
+      limit: 200,
+      offset: 0,
+      status: 'active',
+    }),
+  );
 });
 
 test('resource specification editor omits Categoria but keeps the Tipo combobox', async () => {
@@ -503,7 +568,9 @@ test('bulk selection enables delete and reloads the inventory after deletion', a
   const user = userEvent.setup();
   const inventory: PhysicalResource[] = physicalResources.map((resource) => ({ ...resource }));
   loadResourceWorkspaceSnapshotMock.mockImplementation(async (request) =>
-    buildSnapshot(request, { physical: inventory.filter((resource) => resource.status === 'active') }),
+    buildSnapshot(request, {
+      physical: inventory.filter((resource) => resource.status === 'active'),
+    }),
   );
   deleteResourceMock.mockImplementation(async (id) => {
     const resource = inventory.find((item) => item.id === id);
@@ -516,7 +583,9 @@ test('bulk selection enables delete and reloads the inventory after deletion', a
   await screen.findAllByText('Physical 1');
   await user.click(screen.getAllByRole('checkbox', { name: 'Selecionar Physical 1' })[0]);
   await user.click(screen.getAllByRole('checkbox', { name: 'Selecionar Physical 2' })[0]);
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Excluir selecionados' })).toBeEnabled());
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Excluir selecionados' })).toBeEnabled(),
+  );
   await user.click(screen.getByRole('button', { name: 'Excluir selecionados' }));
   expect(await screen.findByRole('dialog')).toHaveTextContent('Excluir 2 selecionados?');
   await user.click(screen.getByRole('button', { name: 'Confirmar exclusão' }));

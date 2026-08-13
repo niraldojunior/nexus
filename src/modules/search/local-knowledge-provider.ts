@@ -25,10 +25,60 @@ const KNOWLEDGE_FILES = [
 ] as const;
 
 const STOP_WORDS = new Set([
-  'a', 'o', 'as', 'os', 'um', 'uma', 'de', 'da', 'do', 'das', 'dos', 'e', 'ou', 'em', 'no', 'na',
-  'nos', 'nas', 'para', 'por', 'com', 'sem', 'que', 'como', 'qual', 'quais', 'sobre', 'entre', 'ser',
-  'esta', 'este', 'esse', 'essa', 'isso', 'isto', 'mais', 'menos', 'muito', 'muita', 'muitas', 'muitos',
-  'ao', 'aos', 'se', 'sua', 'seu', 'suas', 'seus', 'uma', 'uns', 'umas', 'the', 'and', 'or',
+  'a',
+  'o',
+  'as',
+  'os',
+  'um',
+  'uma',
+  'de',
+  'da',
+  'do',
+  'das',
+  'dos',
+  'e',
+  'ou',
+  'em',
+  'no',
+  'na',
+  'nos',
+  'nas',
+  'para',
+  'por',
+  'com',
+  'sem',
+  'que',
+  'como',
+  'qual',
+  'quais',
+  'sobre',
+  'entre',
+  'ser',
+  'esta',
+  'este',
+  'esse',
+  'essa',
+  'isso',
+  'isto',
+  'mais',
+  'menos',
+  'muito',
+  'muita',
+  'muitas',
+  'muitos',
+  'ao',
+  'aos',
+  'se',
+  'sua',
+  'seu',
+  'suas',
+  'seus',
+  'uma',
+  'uns',
+  'umas',
+  'the',
+  'and',
+  'or',
 ]);
 
 let cachedDocuments: KnowledgeDocument[] | null = null;
@@ -245,12 +295,14 @@ const loadDocuments = (): KnowledgeDocument[] => {
     }
 
     const content = readFileSync(filePath, 'utf8');
-    return [{
-      title: entry.title,
-      path: entry.path,
-      content,
-      tokens: tokenize(`${entry.title} ${content}`),
-    }];
+    return [
+      {
+        title: entry.title,
+        path: entry.path,
+        content,
+        tokens: tokenize(`${entry.title} ${content}`),
+      },
+    ];
   });
 
   return cachedDocuments;
@@ -317,7 +369,9 @@ const buildOfflineAnswer = (userMessage: string): string => {
 
   const topEntries = ranked.slice(0, 3);
   const summaryLines = topEntries.flatMap((entry) =>
-    entry.snippets.slice(0, 1).map((snippet) => `- ${snippet.replace(/^#+\s*/, '').replace(/^[-*]\s*/, '')}`),
+    entry.snippets
+      .slice(0, 1)
+      .map((snippet) => `- ${snippet.replace(/^#+\s*/, '').replace(/^[-*]\s*/, '')}`),
   );
   const sourceLine = `Fontes locais: ${topEntries.map((entry) => entry.document.path).join(', ')}`;
 
@@ -333,7 +387,8 @@ export class LocalKnowledgeProvider {
     messages: LLMConversationMessage[],
     model = 'nexus-local-docs',
   ): Promise<LLMResponse> {
-    const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user')?.content ?? '';
+    const latestUserMessage =
+      [...messages].reverse().find((message) => message.role === 'user')?.content ?? '';
     return {
       content: buildOfflineAnswer(latestUserMessage),
       metadata: {

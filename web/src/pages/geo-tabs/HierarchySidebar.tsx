@@ -80,10 +80,25 @@ export function HierarchySidebar({
           <h2 className="font-display text-[0.98rem] font-semibold text-app-text">Hierarquia</h2>
           <div className="flex items-center gap-1.5">
             <div className="flex items-center rounded-[8px] border border-app-border p-0.5">
-              <ViewToggleButton active={view === 'tree'} icon={ListTree} label="Árvore" onClick={() => setView('tree')} />
-              <ViewToggleButton active={view === 'combos'} icon={GitBranch} label="Combos" onClick={() => setView('combos')} />
+              <ViewToggleButton
+                active={view === 'tree'}
+                icon={ListTree}
+                label="Árvore"
+                onClick={() => setView('tree')}
+              />
+              <ViewToggleButton
+                active={view === 'combos'}
+                icon={GitBranch}
+                label="Combos"
+                onClick={() => setView('combos')}
+              />
             </div>
-            <SidebarIconButton icon={RefreshCw} label="Atualizar" onClick={tree.reload} spinning={tree.loading} />
+            <SidebarIconButton
+              icon={RefreshCw}
+              label="Atualizar"
+              onClick={tree.reload}
+              spinning={tree.loading}
+            />
             <SidebarIconButton icon={Settings} label="Tipos de local" onClick={onOpenTypes} />
           </div>
         </div>
@@ -165,7 +180,9 @@ function ViewToggleButton({
       aria-label={label}
       aria-pressed={active}
       className={`flex h-6 w-6 items-center justify-center rounded-[6px] transition ${
-        active ? 'bg-app-accent text-app-text' : 'text-app-muted hover:bg-app-accent-soft hover:text-app-text'
+        active
+          ? 'bg-app-accent text-app-text'
+          : 'text-app-muted hover:bg-app-accent-soft hover:text-app-text'
       }`}
     >
       <Icon className="h-3.5 w-3.5" />

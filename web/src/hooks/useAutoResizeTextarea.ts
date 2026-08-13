@@ -9,7 +9,9 @@ export function useAutoResizeTextarea(value: string, maxHeight?: number) {
 
     textarea.style.height = '0px';
 
-    const nextHeight = maxHeight ? Math.min(textarea.scrollHeight, maxHeight) : textarea.scrollHeight;
+    const nextHeight = maxHeight
+      ? Math.min(textarea.scrollHeight, maxHeight)
+      : textarea.scrollHeight;
     textarea.style.height = `${nextHeight}px`;
     textarea.style.overflowY = maxHeight && textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
   }, [value, maxHeight]);

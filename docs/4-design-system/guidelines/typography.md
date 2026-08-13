@@ -19,4 +19,3 @@
 - Títulos de seção com forte peso visual.
 - Corpo com leitura confortável e compacta.
 - Rótulos, chips e cabeçalhos de tabela com tracking amplo.
-

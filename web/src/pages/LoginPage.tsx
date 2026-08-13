@@ -67,7 +67,9 @@ export default function LoginPage({ onSuccess }: { onSuccess?: () => void }) {
             ))}
           </div>
         </div>
-        <div className="relative text-[0.72rem] text-white/35">Holding V.tal · Tecto · nio internet</div>
+        <div className="relative text-[0.72rem] text-white/35">
+          Holding V.tal · Tecto · nio internet
+        </div>
       </div>
 
       {/* Painel do formulário */}

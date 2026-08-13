@@ -37,30 +37,30 @@ ao consumidor é a exceção que precisa ser declarada. Ver **C8** em [`business
 
 A decisão estruturante do Nexus é separar o inventário em três camadas que nunca se misturam:
 
-| Pergunta | Camada | Entidades | Open APIs |
-|---|---|---|---|
-| **Onde?** | Geographic | Site, Sub-Site, Address, Location | TMF673/674/675 |
-| **O quê?** | Resource | PhysicalResource, LogicalResource | TMF634/639 |
-| **Para quê / quem?** | Service | CFS, RFS, SubscriberID | TMF633/638 |
+| Pergunta             | Camada     | Entidades                         | Open APIs      |
+| -------------------- | ---------- | --------------------------------- | -------------- |
+| **Onde?**            | Geographic | Site, Sub-Site, Address, Location | TMF673/674/675 |
+| **O quê?**           | Resource   | PhysicalResource, LogicalResource | TMF634/639     |
+| **Para quê / quem?** | Service    | CFS, RFS, SubscriberID            | TMF633/638     |
 
-**Referência, nunca contenção:** um serviço *referencia* recurso via `supportingResource`; um recurso
-*referencia* geografia via `place`. Nenhum contém o outro.
+**Referência, nunca contenção:** um serviço _referencia_ recurso via `supportingResource`; um recurso
+_referencia_ geografia via `place`. Nenhum contém o outro.
 
 ---
 
 ## 4. Módulos e estado real
 
-| # | Módulo | Responde | Open APIs | Estado |
-|---|---|---|---|---|
-| 1 | **Geographic** | Onde | TMF673, TMF674, TMF675 | ⚠️ Base implementada; aderência parcial ao HLD 1.5 (inclui Cobertura GPON por bairro) |
-| 2 | **Resource** | O que existe | TMF634, TMF639, TMF664 | ⚠️ Base implementada; aderência parcial ao HLD 1.4 |
-| 3 | **Service** | Para quê / quem | TMF633, TMF638 | ⚠️ Base implementada; aderência parcial ao HLD 1.2 |
-| 4 | **Order & Fulfillment** | Viabilidade e provisionamento | TMF641, TMF645, TMF652 | ✅ Implementado |
-| 5 | **Process Orchestration** | Fluxo de processo | TMF701 | 📐 Previsto |
-| 6 | **Party & Tenant** | Quem é quem | TMF632, TMF669 | ✅ Implementado |
-| 7 | **Analytics & Events** | Eventos e documentos | TMF688, TMF724 | ⚠️ TMF688 ativo; TMF724 previsto |
-| — | **Search / Copilot** | Consulta em linguagem natural | — | ✅ Implementado |
-| — | **MCP** | Exposição das APIs TMF a clientes de IA | — | ✅ Implementado |
+| #   | Módulo                    | Responde                                | Open APIs              | Estado                                                                                |
+| --- | ------------------------- | --------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------- |
+| 1   | **Geographic**            | Onde                                    | TMF673, TMF674, TMF675 | ⚠️ Base implementada; aderência parcial ao HLD 1.5 (inclui Cobertura GPON por bairro) |
+| 2   | **Resource**              | O que existe                            | TMF634, TMF639, TMF664 | ⚠️ Base implementada; aderência parcial ao HLD 1.4                                    |
+| 3   | **Service**               | Para quê / quem                         | TMF633, TMF638         | ⚠️ Base implementada; aderência parcial ao HLD 1.2                                    |
+| 4   | **Order & Fulfillment**   | Viabilidade e provisionamento           | TMF641, TMF645, TMF652 | ✅ Implementado                                                                       |
+| 5   | **Process Orchestration** | Fluxo de processo                       | TMF701                 | 📐 Previsto                                                                           |
+| 6   | **Party & Tenant**        | Quem é quem                             | TMF632, TMF669         | ✅ Implementado                                                                       |
+| 7   | **Analytics & Events**    | Eventos e documentos                    | TMF688, TMF724         | ⚠️ TMF688 ativo; TMF724 previsto                                                      |
+| —   | **Search / Copilot**      | Consulta em linguagem natural           | —                      | ✅ Implementado                                                                       |
+| —   | **MCP**                   | Exposição das APIs TMF a clientes de IA | —                      | ✅ Implementado                                                                       |
 
 Legenda: ✅ contrato entregue · ⚠️ base executável com gaps rastreados · 📐 previsto no design.
 
@@ -70,11 +70,11 @@ As matrizes `2.3 Aderência ao codebase atual` dos três HLDs são a fonte detal
 
 ## 5. Superfície de API
 
-| Prefixo | Conteúdo |
-|---|---|
-| `/health` | Health check público |
-| `/v1/*` | API interna: `geo`, `resource/workspace`, `service/workspace`, `research`, `searches`, `users`, `bootstrap`, `chat/completions` |
-| `/tmf-api/*` | 14 Open APIs TM Forum v4 |
+| Prefixo      | Conteúdo                                                                                                                        |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `/health`    | Health check público                                                                                                            |
+| `/v1/*`      | API interna: `geo`, `resource/workspace`, `service/workspace`, `research`, `searches`, `users`, `bootstrap`, `chat/completions` |
+| `/tmf-api/*` | 14 Open APIs TM Forum v4                                                                                                        |
 
 Autenticação por bearer token em tudo exceto `/health`. Detalhe operacional no [`README.md`](../../README.md).
 
@@ -84,13 +84,13 @@ Autenticação por bearer token em tudo exceto `/health`. Detalhe operacional no
 
 Frontend React + Vite, com navegação lateral persistente:
 
-| Item | Conteúdo |
-|---|---|
+| Item                              | Conteúdo                                                    |
+| --------------------------------- | ----------------------------------------------------------- |
 | **Nova Conversa** / **Conversas** | Nexus Copilot — consulta ao inventário em linguagem natural |
-| **Locais** | Módulo Geo: árvore de hierarquia, mapa e detalhe de sites |
-| **Recursos** | Inventário físico e lógico, com catálogo de especificações |
-| **Serviços** | CFS/RFS e suas amarrações |
-| **Ordens** | Viabilidade e ordens de serviço/recurso |
+| **Locais**                        | Módulo Geo: árvore de hierarquia, mapa e detalhe de sites   |
+| **Recursos**                      | Inventário físico e lógico, com catálogo de especificações  |
+| **Serviços**                      | CFS/RFS e suas amarrações                                   |
+| **Ordens**                        | Viabilidade e ordens de serviço/recurso                     |
 
 O módulo Geo preserva a semântica TMF673/674/675 na interface: o Site **referencia** Address e
 Location, não os embute.
@@ -99,12 +99,12 @@ Location, não os embute.
 
 ## 7. Stack atual
 
-| Camada | Tecnologia |
-|---|---|
-| Backend | Node 22+ · TypeScript (ESM) · HTTP nativo |
-| Frontend | React 18 · Vite · Tailwind |
-| Banco | **Neon Postgres** |
-| Deploy | Vercel (Functions + estático) |
+| Camada   | Tecnologia                                |
+| -------- | ----------------------------------------- |
+| Backend  | Node 22+ · TypeScript (ESM) · HTTP nativo |
+| Frontend | React 18 · Vite · Tailwind                |
+| Banco    | **Neon Postgres**                         |
+| Deploy   | Vercel (Functions + estático)             |
 
 > ⚠️ O cânone **C10** define Oracle 21c/23ai + Property Graph como alvo arquitetural. A implementação
 > atual roda em Neon Postgres. Trate C10 como destino, não como estado presente.
@@ -155,28 +155,28 @@ O cenário que atravessa as três camadas e demonstra por que **Home Passed não
 
 ### 8.2 Demais cenários
 
-| Cenário | Onde está detalhado |
-|---|---|
-| Central Office GPON — OLT→Placa→Porta→DIO→Cabo→Splitter→CTO→ONT | [`02-module-resource.md`](../2-functional-specs/02-module-resource.md) §34.2 |
-| Cliente corporativo em condomínio empresarial (VRF + CPE + porta) | [`02-module-resource.md`](../2-functional-specs/02-module-resource.md) §34.1 |
-| Banda larga residencial via ISP (wholesale Bitstream) | [`03-module-service.md`](../2-functional-specs/03-module-service.md) §22.1 |
-| Link dedicado multiponto L3VPN (CFS→RFS acesso+transporte+backbone) | [`03-module-service.md`](../2-functional-specs/03-module-service.md) §22.2 |
-| CloudVoIP sobre link empresarial (`serviceRelationship dependsOn`) | [`03-module-service.md`](../2-functional-specs/03-module-service.md) §22.3 |
+| Cenário                                                                                                          | Onde está detalhado                                                          |
+| ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Central Office GPON — OLT→Placa→Porta→DIO→Cabo→Splitter→CTO→ONT                                                  | [`02-module-resource.md`](../2-functional-specs/02-module-resource.md) §34.2 |
+| Cliente corporativo em condomínio empresarial (VRF + CPE + porta)                                                | [`02-module-resource.md`](../2-functional-specs/02-module-resource.md) §34.1 |
+| Banda larga residencial via ISP (wholesale Bitstream)                                                            | [`03-module-service.md`](../2-functional-specs/03-module-service.md) §22.1   |
+| Link dedicado multiponto L3VPN (CFS→RFS acesso+transporte+backbone)                                              | [`03-module-service.md`](../2-functional-specs/03-module-service.md) §22.2   |
+| CloudVoIP sobre link empresarial (`serviceRelationship dependsOn`)                                               | [`03-module-service.md`](../2-functional-specs/03-module-service.md) §22.3   |
 | Infraestrutura subterrânea — caixa → banco de dutos → duto → cabo, com trecho derivado e sem entidade artificial | [`02-module-resource.md`](../2-functional-specs/02-module-resource.md) §31.8 |
 
 ---
 
 ## 9. Roadmap
 
-| Fase | Objetivo | Estado |
-|---|---|---|
-| **Fundação** | Bootstrap, config, persistência, auth, logging, CI | ✅ Concluída |
-| **Tríade — base** | Geographic, Resource e Service com Open APIs TMF | ✅ Concluída |
+| Fase                            | Objetivo                                           | Estado                    |
+| ------------------------------- | -------------------------------------------------- | ------------------------- |
+| **Fundação**                    | Bootstrap, config, persistência, auth, logging, CI | ✅ Concluída              |
+| **Tríade — base**               | Geographic, Resource e Service com Open APIs TMF   | ✅ Concluída              |
 | **Tríade — aderência aos HLDs** | Fechar gaps dos 57 requisitos e decisões pendentes | ⚠️ Em andamento (`DEV-*`) |
-| **Order & Party** | Viabilidade, ordens e multi-tenant | ✅ Concluída |
-| **Carga de dados** | Estações e recursos reais do Netwin | ⚠️ Em andamento |
-| **Convergência ao cânone** | UUID v7, `_origin`, outbox TMF688 | 📐 Pendente |
-| **Escala** | Migração Oracle + Property Graph, 22M HPs | 📐 Pendente |
+| **Order & Party**               | Viabilidade, ordens e multi-tenant                 | ✅ Concluída              |
+| **Carga de dados**              | Estações e recursos reais do Netwin                | ⚠️ Em andamento           |
+| **Convergência ao cânone**      | UUID v7, `_origin`, outbox TMF688                  | 📐 Pendente               |
+| **Escala**                      | Migração Oracle + Property Graph, 22M HPs          | 📐 Pendente               |
 
 O descompasso entre cânone e implementação está consolidado em
 [`business-rules.md`](business-rules.md#resumo-do-descompasso-cânone--código).
@@ -185,15 +185,15 @@ O descompasso entre cânone e implementação está consolidado em
 
 ## 10. Referências
 
-| Onde | O quê |
-|---|---|
-| [`business-rules.md`](business-rules.md) | Decisões C1–C10 com racional e status no código |
-| [`glossary.md`](glossary.md) | Termos, acrônimos e vocabulário do código |
-| [`../2-functional-specs/`](../2-functional-specs/) | HLDs por módulo |
-| [`../3-system-design/`](../3-system-design/) | Arquitetura, modelo de dados, integrações, NFR, segurança |
-| [`../5-delivery-plan/`](../5-delivery-plan/) | Roadmap detalhado, backlog e riscos |
-| [`AGENTS.md`](../../AGENTS.md) | Convenções para agentes de IA |
+| Onde                                               | O quê                                                     |
+| -------------------------------------------------- | --------------------------------------------------------- |
+| [`business-rules.md`](business-rules.md)           | Decisões C1–C10 com racional e status no código           |
+| [`glossary.md`](glossary.md)                       | Termos, acrônimos e vocabulário do código                 |
+| [`../2-functional-specs/`](../2-functional-specs/) | HLDs por módulo                                           |
+| [`../3-system-design/`](../3-system-design/)       | Arquitetura, modelo de dados, integrações, NFR, segurança |
+| [`../5-delivery-plan/`](../5-delivery-plan/)       | Roadmap detalhado, backlog e riscos                       |
+| [`AGENTS.md`](../../AGENTS.md)                     | Convenções para agentes de IA                             |
 
 ---
 
-*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*
+_V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA_

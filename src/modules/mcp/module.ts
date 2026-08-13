@@ -612,9 +612,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           }),
         )
       ).filter(
-        (
-          item,
-        ): item is { address: GeographicAddress; location: PointGeographicLocation } =>
+        (item): item is { address: GeographicAddress; location: PointGeographicLocation } =>
           item !== undefined,
       );
 

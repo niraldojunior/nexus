@@ -14,11 +14,11 @@ Consequências para o uso desta fonte:
 
 Três coisas diferentes carregam a palavra "Geosite" no material do Nexus. Só a primeira é o objeto deste arquivo:
 
-| Nome | O que é | Onde aparece |
-|---|---|---|
-| **Geosite-Legado** | Inventário georreferenciado de planta externa a ser substituído. Objeto deste arquivo, tratado como anti-referência. | Aqui; `../../3-system-design/integrations.md`; Q-INT-005 |
-| **Geosite Logradouros** | Provedor de endereço e geocodificação, premissa canônica (D-GEO-002). Permanece. | `01-module-geo.md` REQ-MOD01-002 |
-| **Geosite OSP** | Base cartográfica e camadas pré-configuradas reaproveitadas pelo mapa. Permanece. | `01-module-geo.md` REQ-MOD01-011 |
+| Nome                    | O que é                                                                                                              | Onde aparece                                             |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| **Geosite-Legado**      | Inventário georreferenciado de planta externa a ser substituído. Objeto deste arquivo, tratado como anti-referência. | Aqui; `../../3-system-design/integrations.md`; Q-INT-005 |
+| **Geosite Logradouros** | Provedor de endereço e geocodificação, premissa canônica (D-GEO-002). Permanece.                                     | `01-module-geo.md` REQ-MOD01-002                         |
+| **Geosite OSP**         | Base cartográfica e camadas pré-configuradas reaproveitadas pelo mapa. Permanece.                                    | `01-module-geo.md` REQ-MOD01-011                         |
 
 ---
 
@@ -70,11 +70,11 @@ Consequências relatadas:
 
 Caso concreto relatado:
 
-| Objeto | Estado no inventário |
-|---|---|
-| Caixas subterrâneas | Cadastradas |
-| Arcos | Cadastrados |
-| Linha de duto | **Ausente** |
+| Objeto              | Estado no inventário |
+| ------------------- | -------------------- |
+| Caixas subterrâneas | Cadastradas          |
+| Arcos               | Cadastrados          |
+| Linha de duto       | **Ausente**          |
 
 O inventário está formalmente preenchido — passa em qualquer validação de campo obrigatório — e ainda assim não descreve a infraestrutura real. Consequências: análise de infraestrutura inviável, investigação manual em campo, retrabalho operacional.
 
@@ -101,29 +101,29 @@ Leitura arquitetural: a fronteira web/desktop não caiu sobre uma funcionalidade
 
 Registradas como enunciadas pelo entrevistado, sem tradução para o vocabulário TMF:
 
-| Eixo | Necessidade |
-|---|---|
-| Arquitetura | Separação clara entre camada física e camada lógica; relacionamento entre ativos físicos e serviços; integração com sistemas corporativos. |
-| Operação | Plataforma preferencialmente 100% web; eliminação de dependências desktop; facilidade de uso pelas áreas operacionais. |
-| Modelagem | Representação fiel da infraestrutura real; eliminação de entidades artificiais; simplificação dos processos de cadastro. |
-| Governança de dados | Redução de inconsistências cadastrais; confiabilidade da informação; facilidade de auditoria e rastreabilidade. |
-| Rastreabilidade | Amarração ponta a ponta entre serviço entregue ao cliente e os ativos físicos que o suportam — circuitos, equipamentos, infraestrutura óptica, cabos. |
-| Sistemas corporativos | Integração com ERP/financeiro (SAP) — o número de ativo aparece como atributo nos sistemas legados (ver `nossis.md`, campo "Nº SAP"). |
+| Eixo                  | Necessidade                                                                                                                                           |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arquitetura           | Separação clara entre camada física e camada lógica; relacionamento entre ativos físicos e serviços; integração com sistemas corporativos.            |
+| Operação              | Plataforma preferencialmente 100% web; eliminação de dependências desktop; facilidade de uso pelas áreas operacionais.                                |
+| Modelagem             | Representação fiel da infraestrutura real; eliminação de entidades artificiais; simplificação dos processos de cadastro.                              |
+| Governança de dados   | Redução de inconsistências cadastrais; confiabilidade da informação; facilidade de auditoria e rastreabilidade.                                       |
+| Rastreabilidade       | Amarração ponta a ponta entre serviço entregue ao cliente e os ativos físicos que o suportam — circuitos, equipamentos, infraestrutura óptica, cabos. |
+| Sistemas corporativos | Integração com ERP/financeiro (SAP) — o número de ativo aparece como atributo nos sistemas legados (ver `nossis.md`, campo "Nº SAP").                 |
 
 ---
 
 ## 6. O que o Nexus decidiu a partir desta fonte
 
-| Ponto observado | Decisão Nexus | Onde está |
-|---|---|---|
-| Arco como objeto de cadastro | **Fidelidade física — zero entidades artificiais.** Arestas, trechos e adjacências são derivadas da contenção e dos endpoints; nunca cadastradas. | Princípio de design em `01-module-geo.md` §4 e `02-module-resource.md` §4 |
-| Infraestrutura subterrânea sem modelo próprio | Banco de dutos ⊃ duto ⊃ sub-duto ⊃ cabo, com endpoints A/Z em caixas reais e ocupação derivada. | REQ-MOD02-026 |
-| Desenho de duto exige desktop | Digitalização e edição de geometria no navegador, sem cliente instalado. | REQ-MOD01-013 |
-| Caixa e arco sem linha de duto | Motor de integridade e completude com varredura periódica, catálogo de regras administrável e findings rastreáveis. | REQ-MOD02-027 |
-| Cadastro complexo e sequencial | Materialização de filhos a partir da Specification, em uma transação. | REQ-MOD02-028 |
-| Rastreabilidade até o ativo físico | Trajeto óptico **e** civil; impacto reverso de ativo de OSP até o CFS. | REQ-MOD02-012, REQ-MOD03-008 |
-| Ativo corporativo (SAP) | Grupo de characteristics `_asset`, distinto de `_origin` (C5); o ERP permanece dono do estoque e da contabilização. | REQ-MOD02-005, `Q-RES-013` |
+| Ponto observado                               | Decisão Nexus                                                                                                                                     | Onde está                                                                 |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Arco como objeto de cadastro                  | **Fidelidade física — zero entidades artificiais.** Arestas, trechos e adjacências são derivadas da contenção e dos endpoints; nunca cadastradas. | Princípio de design em `01-module-geo.md` §4 e `02-module-resource.md` §4 |
+| Infraestrutura subterrânea sem modelo próprio | Banco de dutos ⊃ duto ⊃ sub-duto ⊃ cabo, com endpoints A/Z em caixas reais e ocupação derivada.                                                   | REQ-MOD02-026                                                             |
+| Desenho de duto exige desktop                 | Digitalização e edição de geometria no navegador, sem cliente instalado.                                                                          | REQ-MOD01-013                                                             |
+| Caixa e arco sem linha de duto                | Motor de integridade e completude com varredura periódica, catálogo de regras administrável e findings rastreáveis.                               | REQ-MOD02-027                                                             |
+| Cadastro complexo e sequencial                | Materialização de filhos a partir da Specification, em uma transação.                                                                             | REQ-MOD02-028                                                             |
+| Rastreabilidade até o ativo físico            | Trajeto óptico **e** civil; impacto reverso de ativo de OSP até o CFS.                                                                            | REQ-MOD02-012, REQ-MOD03-008                                              |
+| Ativo corporativo (SAP)                       | Grupo de characteristics `_asset`, distinto de `_origin` (C5); o ERP permanece dono do estoque e da contabilização.                               | REQ-MOD02-005, `Q-RES-013`                                                |
 
 ---
 
-*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*
+_V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA_

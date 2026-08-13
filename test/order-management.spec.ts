@@ -37,7 +37,9 @@ const requestJson = async (
         method,
         headers: {
           authorization: 'Bearer secret',
-          ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {}),
+          ...(payload
+            ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
+            : {}),
         },
       },
       (res) => {
@@ -60,7 +62,10 @@ const requestJson = async (
 
 test('TMF645, TMF641 and TMF652 order endpoints qualify and execute orders', async (t) => {
   const database = createTestDatabase();
-  const server = createApp({ config: createConfig(0, database.databaseUrl), logger: createLogger() });
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
   const port = await server.start();
   t.after(async () => {
     await server.stop();
@@ -85,44 +90,66 @@ test('TMF645, TMF641 and TMF652 order endpoints qualify and execute orders', asy
   });
   assert.equal(site.statusCode, 201);
 
-  const resourceSpec = await requestJson(port, 'POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
-    name: 'ONT',
-    category: 'Equipment.CustomerPremises',
-    resourceType: 'ONT',
-  });
+  const resourceSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    {
+      name: 'ONT',
+      category: 'Equipment.CustomerPremises',
+      resourceType: 'ONT',
+    },
+  );
   assert.equal(resourceSpec.statusCode, 201);
 
-  const resource = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'PhysicalResource',
-    name: 'ONT-0001',
-    resourceSpecificationId: (resourceSpec.body as { id: string }).id,
-    placeId: (site.body as { id: string }).id,
-    placeType: 'GeographicSite',
-    serialNumber: 'ONT-0001',
-  });
+  const resource = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceInventoryManagement/v4/resource',
+    {
+      '@type': 'PhysicalResource',
+      name: 'ONT-0001',
+      resourceSpecificationId: (resourceSpec.body as { id: string }).id,
+      placeId: (site.body as { id: string }).id,
+      placeType: 'GeographicSite',
+      serialNumber: 'ONT-0001',
+    },
+  );
   assert.equal(resource.statusCode, 201);
 
-  const resourceOrder = await requestJson(port, 'POST', '/tmf-api/resourceOrderingManagement/v4/resourceOrder', {
-    description: 'Provisionamento de recurso fisico',
-    relatedParty: [{ id: (party.body as { id: string }).id, '@referredType': 'Organization', role: 'requestor' }],
-    resourceOrderItem: [
-      {
-        action: 'add',
-        resource: {
-          '@type': 'PhysicalResource',
-          name: 'ONT-0002',
-          resourceSpecificationId: (resourceSpec.body as { id: string }).id,
-          placeId: (site.body as { id: string }).id,
-          placeType: 'GeographicSite',
-          serialNumber: 'ONT-0002',
+  const resourceOrder = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceOrderingManagement/v4/resourceOrder',
+    {
+      description: 'Provisionamento de recurso fisico',
+      relatedParty: [
+        {
+          id: (party.body as { id: string }).id,
+          '@referredType': 'Organization',
+          role: 'requestor',
         },
-      },
-    ],
-  });
+      ],
+      resourceOrderItem: [
+        {
+          action: 'add',
+          resource: {
+            '@type': 'PhysicalResource',
+            name: 'ONT-0002',
+            resourceSpecificationId: (resourceSpec.body as { id: string }).id,
+            placeId: (site.body as { id: string }).id,
+            placeType: 'GeographicSite',
+            serialNumber: 'ONT-0002',
+          },
+        },
+      ],
+    },
+  );
   assert.equal(resourceOrder.statusCode, 201);
   assert.equal((resourceOrder.body as { state: string }).state, 'completed');
   assert.equal(
-    ((resourceOrder.body as { resourceOrderItem: Array<{ resourceResult?: { '@type': string } }> }).resourceOrderItem[0]?.resourceResult?.['@type']),
+    (resourceOrder.body as { resourceOrderItem: Array<{ resourceResult?: { '@type': string } }> })
+      .resourceOrderItem[0]?.resourceResult?.['@type'],
     'PhysicalResource',
   );
 
@@ -135,38 +162,66 @@ test('TMF645, TMF641 and TMF652 order endpoints qualify and execute orders', asy
   assert.ok(Array.isArray(resourceOrderList.body));
   assert.equal((resourceOrderList.body as Array<{ id: string }>).length, 1);
 
-  const cfsSpec = await requestJson(port, 'POST', '/tmf-api/serviceCatalogManagement/v4/serviceSpecification', {
-    name: 'Bitstream GPON',
-    category: 'Broadband',
-    serviceType: 'CFS',
-  });
+  const cfsSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/serviceCatalogManagement/v4/serviceSpecification',
+    {
+      name: 'Bitstream GPON',
+      category: 'Broadband',
+      serviceType: 'CFS',
+    },
+  );
   assert.equal(cfsSpec.statusCode, 201);
 
-  const rfsSpec = await requestJson(port, 'POST', '/tmf-api/serviceCatalogManagement/v4/serviceSpecification', {
-    name: 'GPON Access',
-    category: 'Broadband',
-    serviceType: 'RFS',
-  });
+  const rfsSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/serviceCatalogManagement/v4/serviceSpecification',
+    {
+      name: 'GPON Access',
+      category: 'Broadband',
+      serviceType: 'RFS',
+    },
+  );
   assert.equal(rfsSpec.statusCode, 201);
 
   const rfs = await requestJson(port, 'POST', '/tmf-api/serviceInventoryManagement/v4/service', {
     '@type': 'ResourceFacingService',
     name: 'RFS GPON 1',
     serviceSpecificationId: (rfsSpec.body as { id: string }).id,
-    supportingResource: [{ id: (resource.body as { id: string }).id, '@referredType': 'PhysicalResource', role: 'access' }],
+    supportingResource: [
+      {
+        id: (resource.body as { id: string }).id,
+        '@referredType': 'PhysicalResource',
+        role: 'access',
+      },
+    ],
     state: 'active',
   });
   assert.equal(rfs.statusCode, 201);
 
-  const qualification = await requestJson(port, 'POST', '/tmf-api/serviceQualificationManagement/v4/serviceQualification', {
-    placeId: (site.body as { id: string }).id,
-    serviceSpecificationId: (cfsSpec.body as { id: string }).id,
-    relatedParty: [{ id: (party.body as { id: string }).id, '@referredType': 'Organization', role: 'requestor' }],
-  });
+  const qualification = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/serviceQualificationManagement/v4/serviceQualification',
+    {
+      placeId: (site.body as { id: string }).id,
+      serviceSpecificationId: (cfsSpec.body as { id: string }).id,
+      relatedParty: [
+        {
+          id: (party.body as { id: string }).id,
+          '@referredType': 'Organization',
+          role: 'requestor',
+        },
+      ],
+    },
+  );
   assert.equal(qualification.statusCode, 201);
   assert.equal((qualification.body as { state: string }).state, 'done');
   assert.equal(
-    ((qualification.body as { serviceQualificationItem: Array<{ eligibility: string }> }).serviceQualificationItem[0]?.eligibility),
+    (qualification.body as { serviceQualificationItem: Array<{ eligibility: string }> })
+      .serviceQualificationItem[0]?.eligibility,
     'qualified',
   );
 
@@ -179,30 +234,61 @@ test('TMF645, TMF641 and TMF652 order endpoints qualify and execute orders', asy
   assert.ok(Array.isArray(qualificationList.body));
   assert.equal((qualificationList.body as Array<{ id: string }>).length, 1);
 
-  const order = await requestJson(port, 'POST', '/tmf-api/serviceOrderingManagement/v4/serviceOrder', {
-    description: 'Ativacao do CFS principal',
-    relatedParty: [{ id: (party.body as { id: string }).id, '@referredType': 'Organization', role: 'subscriber' }],
-    serviceOrderItem: [
-      {
-        action: 'add',
-        service: {
-          '@type': 'CustomerFacingService',
-          name: 'CFS Bitstream 700',
-          serviceSpecificationId: (cfsSpec.body as { id: string }).id,
-          subscriberId: 'SUB-778899',
-          supportingService: [
-            { id: (rfs.body as { id: string }).id, '@referredType': 'ResourceFacingService', role: 'access' },
-          ],
-          relatedParty: [{ id: (party.body as { id: string }).id, '@referredType': 'Organization', role: 'subscriber' }],
-          place: [{ id: (site.body as { id: string }).id, '@referredType': 'GeographicSite', role: 'installationAddress' }],
-          serviceCharacteristic: [{ name: 'SubscriberID', value: 'SUB-778899', valueType: 'string' }],
+  const order = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/serviceOrderingManagement/v4/serviceOrder',
+    {
+      description: 'Ativacao do CFS principal',
+      relatedParty: [
+        {
+          id: (party.body as { id: string }).id,
+          '@referredType': 'Organization',
+          role: 'subscriber',
         },
-      },
-    ],
-  });
+      ],
+      serviceOrderItem: [
+        {
+          action: 'add',
+          service: {
+            '@type': 'CustomerFacingService',
+            name: 'CFS Bitstream 700',
+            serviceSpecificationId: (cfsSpec.body as { id: string }).id,
+            subscriberId: 'SUB-778899',
+            supportingService: [
+              {
+                id: (rfs.body as { id: string }).id,
+                '@referredType': 'ResourceFacingService',
+                role: 'access',
+              },
+            ],
+            relatedParty: [
+              {
+                id: (party.body as { id: string }).id,
+                '@referredType': 'Organization',
+                role: 'subscriber',
+              },
+            ],
+            place: [
+              {
+                id: (site.body as { id: string }).id,
+                '@referredType': 'GeographicSite',
+                role: 'installationAddress',
+              },
+            ],
+            serviceCharacteristic: [
+              { name: 'SubscriberID', value: 'SUB-778899', valueType: 'string' },
+            ],
+          },
+        },
+      ],
+    },
+  );
   assert.equal(order.statusCode, 201);
   assert.equal((order.body as { state: string }).state, 'completed');
-  const orderItem = (order.body as { serviceOrderItem: Array<{ serviceResult?: { id: string; '@type': string } }> }).serviceOrderItem[0];
+  const orderItem = (
+    order.body as { serviceOrderItem: Array<{ serviceResult?: { id: string; '@type': string } }> }
+  ).serviceOrderItem[0];
   assert.equal(orderItem?.serviceResult?.['@type'], 'CustomerFacingService');
 
   const orderList = await requestJson(
@@ -230,7 +316,11 @@ test('TMF645, TMF641 and TMF652 order endpoints qualify and execute orders', asy
   );
   assert.equal(events.statusCode, 200);
   assert.ok(Array.isArray(events.body));
-  assert.ok((events.body as Array<{ eventType: string }>).some((event) => event.eventType === 'ServiceQualificationCreateEvent'));
+  assert.ok(
+    (events.body as Array<{ eventType: string }>).some(
+      (event) => event.eventType === 'ServiceQualificationCreateEvent',
+    ),
+  );
 });
 
 const createTestDatabase = (): { databaseUrl: string; cleanup: () => void } => {

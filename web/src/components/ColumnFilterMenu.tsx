@@ -60,7 +60,11 @@ export default function ColumnFilterMenu({
             {label}
           </span>
           <div className="flex shrink-0 items-center gap-2 text-[0.72rem] font-semibold">
-            <button type="button" onClick={onSelectAll} className="text-app-muted transition hover:text-app-text">
+            <button
+              type="button"
+              onClick={onSelectAll}
+              className="text-app-muted transition hover:text-app-text"
+            >
               Tudo
             </button>
             <span className="text-app-border">·</span>
@@ -106,17 +110,23 @@ export default function ColumnFilterMenu({
                 >
                   <span
                     className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] border transition ${
-                      checked ? 'border-app-accent-border bg-app-accent' : 'border-app-border bg-white'
+                      checked
+                        ? 'border-app-accent-border bg-app-accent'
+                        : 'border-app-border bg-white'
                     }`}
                   >
-                    {checked ? <Check className="h-3 w-3 text-app-text" strokeWidth={3} aria-hidden /> : null}
+                    {checked ? (
+                      <Check className="h-3 w-3 text-app-text" strokeWidth={3} aria-hidden />
+                    ) : null}
                   </span>
                   <span className="truncate">{option}</span>
                 </button>
               );
             })
           ) : (
-            <div className="px-3 py-4 text-center text-[0.82rem] text-app-muted">Nenhum valor encontrado.</div>
+            <div className="px-3 py-4 text-center text-[0.82rem] text-app-muted">
+              Nenhum valor encontrado.
+            </div>
           )}
         </div>
       </div>

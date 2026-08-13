@@ -1,7 +1,7 @@
-import { ProjectCardData } from '../types'
+import { ProjectCardData } from '../types';
 
 export default function ProjectCard({ project }: { project: ProjectCardData }) {
-  const isExampleCard = Boolean(project.description)
+  const isExampleCard = Boolean(project.description);
 
   return (
     <article
@@ -10,7 +10,9 @@ export default function ProjectCard({ project }: { project: ProjectCardData }) {
       }`}
     >
       <div className={`flex items-center gap-3 ${isExampleCard ? 'mb-4.5' : 'mb-3'}`}>
-        <h2 className="text-[1rem] font-semibold tracking-[-0.02em] text-app-text">{project.title}</h2>
+        <h2 className="text-[1rem] font-semibold tracking-[-0.02em] text-app-text">
+          {project.title}
+        </h2>
         {project.badge ? (
           <span className="rounded-[999px] border border-app-accent-border bg-app-accent-soft px-3 py-1 text-[0.76rem] font-semibold uppercase tracking-[0.04em] text-app-text">
             {project.badge}
@@ -19,12 +21,16 @@ export default function ProjectCard({ project }: { project: ProjectCardData }) {
       </div>
 
       {project.description ? (
-        <p className="max-w-[48ch] text-[0.94rem] leading-[1.55] text-app-muted">{project.description}</p>
+        <p className="max-w-[48ch] text-[0.94rem] leading-[1.55] text-app-muted">
+          {project.description}
+        </p>
       ) : (
         <div className="flex-1" />
       )}
 
-      <div className="mt-auto pt-6 text-[0.86rem] font-medium uppercase tracking-[0.05em] text-app-muted">{project.updatedAt}</div>
+      <div className="mt-auto pt-6 text-[0.86rem] font-medium uppercase tracking-[0.05em] text-app-muted">
+        {project.updatedAt}
+      </div>
     </article>
-  )
+  );
 }

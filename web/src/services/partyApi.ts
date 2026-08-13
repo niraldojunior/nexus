@@ -110,5 +110,7 @@ function buildRoleListUrl(path: string, params: PartyRoleQuery): string {
 }
 
 export async function listPartyRoles(query: PartyRoleQuery): Promise<PartyRole[]> {
-  return await requestJson<PartyRole[]>(buildRoleListUrl('/partyRoleManagement/v4/partyRole', query));
+  return await requestJson<PartyRole[]>(
+    buildRoleListUrl('/partyRoleManagement/v4/partyRole', query),
+  );
 }

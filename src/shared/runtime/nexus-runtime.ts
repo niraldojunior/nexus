@@ -31,6 +31,10 @@ import { EventService, PostgresEventRepository } from '../tmf/index.js';
 import { OracleEventRepository } from '../tmf/oracle-event-repository.js';
 import { AuthService } from '../../modules/auth/index.js';
 import { GeoSearchHistoryRepository } from '../../modules/geo/search-history-repository.js';
+import {
+  GeonetAddressGateway,
+  type GeonetGatewayConfig,
+} from '../../modules/geo/geonet-address-gateway.js';
 
 export type NexusRuntimeUser = UserRecord;
 
@@ -43,6 +47,7 @@ export type NexusRuntimeOptions = {
     adminEmail?: string;
     adminPassword?: string;
   };
+  geonet?: GeonetGatewayConfig;
 };
 
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 12 * 60 * 60;
@@ -81,6 +86,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   await geoService.ensureBootstrapRelationshipTypes();
   const geoTreeService = new GeoTreeService(db);
   const geoCoverageService = new GeoCoverageService(db);
+  const geonetAddressGateway = options.geonet ? new GeonetAddressGateway(options.geonet) : null;
   const eventRepository = oracle ? new OracleEventRepository(db) : new PostgresEventRepository(db);
   const eventService = new EventService(eventRepository);
   const partyRepository = oracle ? new OraclePartyRepository(db) : new PostgresPartyRepository(db);
@@ -211,6 +217,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     geoService,
     geoTreeService,
     geoCoverageService,
+    geonetAddressGateway,
     eventRepository,
     eventService,
     partyRepository,

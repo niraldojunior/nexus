@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect } from 'react';
 import {
   Blocks,
   CreditCard,
@@ -11,16 +11,16 @@ import {
   UserCircle2,
   Wallet,
   Wrench,
-  X
-} from 'lucide-react'
-import { SettingsSection, SettingsSectionGroup } from '../types'
+  X,
+} from 'lucide-react';
+import { SettingsSection, SettingsSectionGroup } from '../types';
 
 interface SettingsModalProps {
-  isOpen: boolean
-  activeSection: SettingsSection
-  sections: SettingsSectionGroup[]
-  onClose: () => void
-  onSelectSection: (section: SettingsSection) => void
+  isOpen: boolean;
+  activeSection: SettingsSection;
+  sections: SettingsSectionGroup[];
+  onClose: () => void;
+  onSelectSection: (section: SettingsSection) => void;
 }
 
 const icons: Record<SettingsSection, typeof LayoutGrid> = {
@@ -34,27 +34,27 @@ const icons: Record<SettingsSection, typeof LayoutGrid> = {
   'claude-chrome': Globe,
   skills: Wrench,
   connectors: PlugZap,
-  plugins: Blocks
-}
+  plugins: Blocks,
+};
 
 export default function SettingsModal({
   isOpen,
   activeSection,
   sections,
   onClose,
-  onSelectSection
+  onSelectSection,
 }: SettingsModalProps) {
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) {
-    return null
+    return null;
   }
 
   return (
@@ -75,11 +75,13 @@ export default function SettingsModal({
           <div className="space-y-8 overflow-y-auto">
             {sections.map((sectionGroup) => (
               <div key={sectionGroup.title}>
-                <div className="px-3 pb-3 text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-app-muted">{sectionGroup.title}</div>
+                <div className="px-3 pb-3 text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+                  {sectionGroup.title}
+                </div>
                 <div className="space-y-1">
                   {sectionGroup.items.map((item) => {
-                    const Icon = icons[item.id]
-                    const active = item.id === activeSection
+                    const Icon = icons[item.id];
+                    const active = item.id === activeSection;
 
                     return (
                       <button
@@ -95,7 +97,7 @@ export default function SettingsModal({
                         <Icon className="h-6 w-6" strokeWidth={1.8} />
                         <span className="text-[1rem] font-medium">{item.label}</span>
                       </button>
-                    )
+                    );
                   })}
                 </div>
               </div>
@@ -108,7 +110,10 @@ export default function SettingsModal({
             <h2 className="font-display text-[2rem] font-semibold text-app-text">Habilidades</h2>
 
             <div className="flex items-center gap-3">
-              <button type="button" className="rounded-2xl border border-transparent p-3 text-app-text transition hover:border-app-border hover:bg-app-accent-soft">
+              <button
+                type="button"
+                className="rounded-2xl border border-transparent p-3 text-app-text transition hover:border-app-border hover:bg-app-accent-soft"
+              >
                 <Search className="h-6 w-6" strokeWidth={1.8} />
               </button>
               <button
@@ -123,7 +128,11 @@ export default function SettingsModal({
               >
                 Adicionar
               </button>
-              <button type="button" onClick={onClose} className="rounded-2xl border border-transparent p-3 text-app-text transition hover:border-app-border hover:bg-app-accent-soft">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-2xl border border-transparent p-3 text-app-text transition hover:border-app-border hover:bg-app-accent-soft"
+              >
                 <X className="h-6 w-6" strokeWidth={1.8} />
               </button>
             </div>
@@ -144,5 +153,5 @@ export default function SettingsModal({
         </div>
       </div>
     </div>
-  )
+  );
 }

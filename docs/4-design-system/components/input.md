@@ -16,4 +16,3 @@
 - Usar máscara quando o domínio exigir formato fixo.
 - Usar mono para códigos técnicos e IDs.
 - Agrupar inputs relacionados com espaçamento consistente.
-

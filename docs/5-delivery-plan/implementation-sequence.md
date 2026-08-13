@@ -12,16 +12,16 @@
 
 ## 2. Ondas
 
-| Onda | Escopo | Backlog | Dependências | Gate de saída |
-|---|---|---|---|---|
-| 0 | Qualidade documental e baseline | `docs:check` | Nenhuma | 53 REQ no resumo, corpo e matriz; gaps, Q/D e links rastreáveis. |
-| 1 | Identidade, eventos e segurança | DEV-X-001–004 | Q-ARQ-001, MOD06/MOD08 | C5/C7/C8/C9 comprovados em testes transversais. |
-| 2 | Catálogos Geo/Resource/Service | DEV-GEO-003, DEV-RES-001/006, DEV-SVC-001/006 | Q-GEO-001/004, Q-RES-001/012, Q-SVC-001/005 | Extensão por API sem deploy e strings inválidas rejeitadas. |
-| 3 | Geographic | DEV-GEO-001/002/004–006 | Geosite, Q-GEO-002/005/007/008/010 | Consultas, hierarquia, lifecycle, mapa e bulk aprovados. |
-| 4 | Resource sem path | DEV-RES-002/004/005 | Onda 3, Q-RES-007/008/011, MOD05 | OSP, ISP e LogicalResource aprovados em cenários. |
-| 5 | Path e persistência-alvo | DEV-RES-003, DEV-X-005 | Q-RES-004/010, Q-ARQ-001 | OLT→ONT correto e benchmark corporativo aprovado. |
-| 6 | Service | DEV-SVC-002–005 | Ondas 2/4, MOD05/MOD06, Q-SVC-002/004/006/007 | CFS/RFS, SubscriberID, impacto e cenários end-to-end aprovados. |
-| 7 | Migração e operação | Integrações, `_origin`, observabilidade | Ondas 1/3/4/6 | Dry-run, reconciliação, dual-running e rollback aprovados. |
+| Onda | Escopo                          | Backlog                                       | Dependências                                  | Gate de saída                                                    |
+| ---- | ------------------------------- | --------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------- |
+| 0    | Qualidade documental e baseline | `docs:check`                                  | Nenhuma                                       | 53 REQ no resumo, corpo e matriz; gaps, Q/D e links rastreáveis. |
+| 1    | Identidade, eventos e segurança | DEV-X-001–004                                 | Q-ARQ-001, MOD06/MOD08                        | C5/C7/C8/C9 comprovados em testes transversais.                  |
+| 2    | Catálogos Geo/Resource/Service  | DEV-GEO-003, DEV-RES-001/006, DEV-SVC-001/006 | Q-GEO-001/004, Q-RES-001/012, Q-SVC-001/005   | Extensão por API sem deploy e strings inválidas rejeitadas.      |
+| 3    | Geographic                      | DEV-GEO-001/002/004–006                       | Geosite, Q-GEO-002/005/007/008/010            | Consultas, hierarquia, lifecycle, mapa e bulk aprovados.         |
+| 4    | Resource sem path               | DEV-RES-002/004/005                           | Onda 3, Q-RES-007/008/011, MOD05              | OSP, ISP e LogicalResource aprovados em cenários.                |
+| 5    | Path e persistência-alvo        | DEV-RES-003, DEV-X-005                        | Q-RES-004/010, Q-ARQ-001                      | OLT→ONT correto e benchmark corporativo aprovado.                |
+| 6    | Service                         | DEV-SVC-002–005                               | Ondas 2/4, MOD05/MOD06, Q-SVC-002/004/006/007 | CFS/RFS, SubscriberID, impacto e cenários end-to-end aprovados.  |
+| 7    | Migração e operação             | Integrações, `_origin`, observabilidade       | Ondas 1/3/4/6                                 | Dry-run, reconciliação, dual-running e rollback aprovados.       |
 
 ## 3. Ordem dentro de cada domínio
 
@@ -56,16 +56,16 @@
 
 ## 4. Gates de qualidade
 
-| Gate | Critério |
-|---|---|
-| G0 — Documento | `npm run docs:check` aprovado. |
-| G1 — Código | lint, typecheck e build aprovados. |
-| G2 — Contrato | Testes unitários e integrados cobrem RF/RN/CA alterados. |
+| Gate            | Critério                                                                               |
+| --------------- | -------------------------------------------------------------------------------------- |
+| G0 — Documento  | `npm run docs:check` aprovado.                                                         |
+| G1 — Código     | lint, typecheck e build aprovados.                                                     |
+| G2 — Contrato   | Testes unitários e integrados cobrem RF/RN/CA alterados.                               |
 | G3 — Fronteiras | CFS→Resource direto, Resource contendo Geo e Service contendo Resource são rejeitados. |
-| G4 — Operação | Eventos, audit, autorização e retries possuem cenários de falha. |
-| G5 — Escala | Teste de volume/concorrência e benchmark do banco alvo atendem NFR aprovado. |
-| G6 — Migração | Contagens, `_origin`, reconciliação, dual-running e rollback aprovados. |
+| G4 — Operação   | Eventos, audit, autorização e retries possuem cenários de falha.                       |
+| G5 — Escala     | Teste de volume/concorrência e benchmark do banco alvo atendem NFR aprovado.           |
+| G6 — Migração   | Contagens, `_origin`, reconciliação, dual-running e rollback aprovados.                |
 
 ---
 
-*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*
+_V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA_

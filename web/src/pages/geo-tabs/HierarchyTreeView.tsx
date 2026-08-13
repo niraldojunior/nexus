@@ -24,7 +24,14 @@ export type HierarchyTreeViewProps = {
  * clique nele que busca o nível seguinte. Clicar no rótulo seleciona o item:
  * centraliza o mapa e abre o balão.
  */
-export function HierarchyTreeView({ rows, selectedNodeId, onSelect, onToggle, onLoadMore, onHover }: HierarchyTreeViewProps) {
+export function HierarchyTreeView({
+  rows,
+  selectedNodeId,
+  onSelect,
+  onToggle,
+  onLoadMore,
+  onHover,
+}: HierarchyTreeViewProps) {
   const selectedRef = useRef<HTMLDivElement | null>(null);
   // Última seleção já rolada para a vista. Evita brigar com a rolagem do usuário:
   // rola uma vez por seleção, e não a cada re-render (abrir outro ramo muda as

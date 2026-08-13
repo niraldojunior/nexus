@@ -8,11 +8,7 @@ import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 // trocar este emissor local pelo Apigee no futuro não toca o lado resource-server.
 
 const base64UrlEncode = (input: Buffer | string): string =>
-  Buffer.from(input)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
+  Buffer.from(input).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 
 export type AccessTokenSubject = {
   sub: string;

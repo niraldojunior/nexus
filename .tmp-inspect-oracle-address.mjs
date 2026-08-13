@@ -22,10 +22,12 @@ try {
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
   const columns = (result.rows ?? []).map((row) => row.columnName);
-  console.log(JSON.stringify({
-    tableExists: columns.length > 0,
-    searchColumns: columns.filter((column) => String(column).endsWith('_SEARCH')),
-  }));
+  console.log(
+    JSON.stringify({
+      tableExists: columns.length > 0,
+      searchColumns: columns.filter((column) => String(column).endsWith('_SEARCH')),
+    }),
+  );
 } finally {
   await connection.close();
 }

@@ -19,7 +19,7 @@ import {
   type BottomSheetSnapState,
 } from '../../components/BottomSheet';
 import { OverlayScrollArea } from '../../components/OverlayScrollArea';
-import { DOCK_WIDTH_CLASS, DOCK_ELEVATION_CLASS } from './dock';
+import { DOCK_WIDTH_CLASS, DOCK_ELEVATION_CLASS, DOCK_SEARCH_CLEARANCE_PT_CLASS } from './dock';
 
 const ADDRESS_DEBOUNCE_MS = 250;
 
@@ -350,7 +350,7 @@ export function ProjectSitePanel({
 
   return (
     <div
-      className={`${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
+      className={`${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock ${DOCK_SEARCH_CLEARANCE_PT_CLASS}`}
     >
       {header}
       <OverlayScrollArea className="px-3 py-3" hostClassName="min-h-0">

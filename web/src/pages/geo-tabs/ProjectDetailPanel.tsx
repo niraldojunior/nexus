@@ -11,7 +11,7 @@ import {
   useSheetSnapCommand,
   type BottomSheetSnapState,
 } from '../../components/BottomSheet';
-import { DOCK_WIDTH_CLASS, DOCK_ELEVATION_CLASS } from './dock';
+import { DOCK_WIDTH_CLASS, DOCK_ELEVATION_CLASS, DOCK_SEARCH_CLEARANCE_PT_CLASS } from './dock';
 import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
 import { readProjectIcon, ProjectIconError } from '../../utils/projectIconImage';
 
@@ -101,7 +101,7 @@ export function ProjectDetailPanel({
   };
 
   const headerBlock = (
-    <div className="flex items-start gap-2 border-y border-app-border px-3 py-3">
+    <div className="flex items-start gap-2 border-t border-app-border px-3 py-3">
       <button
         type="button"
         onClick={onBack}
@@ -185,11 +185,7 @@ export function ProjectDetailPanel({
   );
 
   const addSiteButton = (
-    <button
-      type="button"
-      onClick={onAddSite}
-      className="flex items-center gap-2 rounded-[10px] px-2 py-2 text-left text-[0.84rem] font-semibold text-app-text transition hover:bg-app-accent-soft"
-    >
+    <button type="button" onClick={onAddSite} className="geo-btn primary w-full justify-center">
       <Plus className="h-4 w-4" />
       Adicionar Local
     </button>
@@ -272,7 +268,7 @@ export function ProjectDetailPanel({
 
   return (
     <div
-      className={`${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
+      className={`${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock ${DOCK_SEARCH_CLEARANCE_PT_CLASS}`}
     >
       {headerBlock}
       <div className="border-b border-app-border px-3 py-2">{descriptionBlock}</div>

@@ -232,7 +232,7 @@ describe('GoogleMapPanel', () => {
 
     const legend = await screen.findByRole('group', { name: 'Legenda da cobertura GPON' });
     expect(legend).toHaveClass('bottom-8', 'left-1/2', '-translate-x-1/2');
-    expect(screen.getByText('Indisponível')).toBeInTheDocument();
+    expect(screen.getByText('Suspenso')).toBeInTheDocument();
     expect(screen.getByText('Disponível')).toBeInTheDocument();
     expect(screen.queryByText('Cobertura GPON')).not.toBeInTheDocument();
   });

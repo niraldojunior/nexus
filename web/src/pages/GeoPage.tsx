@@ -213,7 +213,7 @@ type DockView =
 // Lado do ícone de equipamento no mapa, em px. Um pouco menor que o pin de site
 // para o equipamento não competir com o local que o contém.
 const MARKER_ICON_SIZE = 26;
-// Recurso reduzido (escala 100–200 m): ponto menor para não poluir junto da cobertura.
+// Recurso reduzido (escala 50 m): ponto menor para não poluir junto da cobertura.
 const MARKER_ICON_SMALL_SIZE = 16;
 
 const EQUIPMENT_MARKER_Z = 1000;
@@ -364,14 +364,14 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const [hoverKey, setHoverKey] = useState<string | null>(null);
 
   // Infra passiva (recursos + cabos) da região visível do mapa — some acima de
-  // PASSIVE_INFRA_MAX_SCALE_METERS (200 m) e é buscada por bbox, não pela árvore.
+  // PASSIVE_INFRA_MAX_SCALE_METERS (50 m) e é buscada por bbox, não pela árvore.
   const [viewportInfra, setViewportInfra] = useState<GeoTreeNode[]>([]);
   // Verdadeiro enquanto a busca de infra passiva por viewport está em voo — alimenta a
   // barra de carga do mapa (ver mapDataLoading e MapLoadingBar).
   const [viewportLoading, setViewportLoading] = useState(false);
   const [scaleMeters, setScaleMeters] = useState<number | null>(null);
   // Região visível atual (identidade só muda no `idle`) — alimenta a busca de cobertura GPON,
-  // que roda em toda escala acima de 100 m, não só na de detalhe.
+  // que roda em toda escala de 50 m para cima, não só na de detalhe.
   const [viewportBounds, setViewportBounds] = useState<MapBounds | null>(null);
   const viewportFetchTokenRef = useRef(0);
   const viewportDebounceRef = useRef<number | undefined>(undefined);
@@ -417,7 +417,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const tree = useGeoTree();
   const { navParams, clearNav, goToResource } = useNavigation();
 
-  // Infra passiva só entra quando a escala está em ≤ 200 m; Estações (tree.mapNodes)
+  // Infra passiva só entra quando a escala está em ≤ 50 m; Estações (tree.mapNodes)
   // continuam visíveis, mas encolhem (5–50 km) e somem acima de 50 km — ver stationTier.
   const passiveInfraVisible = scaleMeters !== null && scaleMeters <= PASSIVE_INFRA_MAX_SCALE_METERS;
   const stationTier: StationTier = stationTierForScale(scaleMeters);
@@ -447,7 +447,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     projectSites,
   ]);
 
-  // Cobertura GPON da viewport (mapa de calor por bairro), acima de 100 m em qualquer escala.
+  // Cobertura GPON da viewport (mapa de calor por bairro), de 50 m para cima em qualquer escala.
   const { data: coverage, loading: coverageLoading } = useGponCoverage(viewportBounds, scaleMeters);
   const coverageVisible = coverageVisibleAtScale(scaleMeters);
   // Bairro sob o cursor sobre a mancha — vira o balão de hover (ver coverageBalloon).
@@ -455,7 +455,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     point: [number, number];
     neighborhood: CoverageNeighborhood;
   } | null>(null);
-  // Some com o balão de cobertura ao descer abaixo de 100 m (a mancha sai de cena).
+  // Some com o balão de cobertura ao descer abaixo de 50 m (a mancha sai de cena).
   useEffect(() => {
     if (!coverageVisible) setCoverageHover(null);
   }, [coverageVisible]);
@@ -1270,7 +1270,7 @@ export function GoogleMapPanel({
   coverage: CoverageResponse | null;
   // Como desenhar as Estações na escala atual: cheia (perto) ou pequena (longe).
   stationTier: StationTier;
-  // Como desenhar os Recursos (caixas/splitters): cheio (≤ 50 m) ou reduzido (100–200 m).
+  // Como desenhar os Recursos (caixas/splitters): cheio (≤ 20 m) ou reduzido (50 m).
   resourceTier: StationTier;
   // Bairro sob o cursor sobre a mancha (ou null) — vira o balão de hover no GeoPage.
   onCoverageHover: (
@@ -1647,7 +1647,7 @@ export function GoogleMapPanel({
       }
 
       const icon = resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
-      // O selecionado cresce; o resto segue o tier de escala (cheio ≤ 50 m, reduzido em 100–200 m).
+      // O selecionado cresce; o resto segue o tier de escala (cheio ≤ 20 m, reduzido em 50 m).
       const resourceBaseSize = resourceTier === 'small' ? MARKER_ICON_SMALL_SIZE : MARKER_ICON_SIZE;
       const size = selected ? MARKER_ICON_SIZE + 6 : resourceBaseSize;
       const iconOptions = {
@@ -1692,8 +1692,8 @@ export function GoogleMapPanel({
       }
     }
 
-    // Cada ponto é um ícone individual no mapa — sem agrupamento. Acima de 100 m a leitura da
-    // rede fica por conta da camada de cobertura GPON (ver CoverageOverlay), não de clusters.
+    // Cada ponto é um ícone individual no mapa — sem agrupamento. De 50 m para cima a leitura
+    // da rede fica por conta da camada de cobertura GPON (ver CoverageOverlay), não de clusters.
     for (const marker of activeMarkers) marker.setMap(mapRef.current);
   }, [mapsReady, nodes, selectedNodeId, stationTier, resourceTier]);
 
@@ -2296,7 +2296,7 @@ function CoverageLegend() {
       className="pointer-events-none absolute bottom-8 left-1/2 z-30 -translate-x-1/2 rounded-[14px] border border-app-border bg-white/90 px-2 py-2 text-[0.66rem] shadow-map-control backdrop-blur sm:px-3 sm:text-[0.72rem]"
     >
       <div className="flex items-center gap-1.5 sm:gap-2">
-        <span className="text-app-muted">Indisponível</span>
+        <span className="text-app-muted">Suspenso</span>
         <span
           className="h-2.5 w-16 rounded-full sm:w-24"
           style={{

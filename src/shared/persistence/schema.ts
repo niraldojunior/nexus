@@ -16,6 +16,8 @@ export const TABLE_NAMES = [
   'tmf_geographic_site',
   'tmf_geographic_site_status_history',
   'tmf_geographic_site_relationship',
+  'geo_project',
+  'geo_project_site',
   'tmf_geographic_relationship_type',
   'tmf_resource_specification',
   'tmf_resource_category',
@@ -499,6 +501,37 @@ export const SCHEMA_SQL = `
       );
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_relationship ON tmf_geographic_site_relationship(site_from_id, site_to_id);
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_relationship_reverse ON tmf_geographic_site_relationship(site_to_id, site_from_id);
+
+      -- Projeto de trabalho da página Locais (REQ-MOD01-015, estilo "Salvos" do Google Maps):
+      -- coleção nomeada de GeographicSite criados exclusivamente para aquele recorte de
+      -- trabalho. Não é entidade TMF — é projeção de plataforma, como geo_search_history.
+      -- Compartilhado por tenant (C8): qualquer usuário do tenant vê e edita.
+      CREATE TABLE IF NOT EXISTS geo_project (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL DEFAULT 'default',
+        name TEXT NOT NULL,
+        description TEXT,
+        icon_data_url TEXT,
+        created_by TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_geo_project_tenant ON geo_project(tenant_id, updated_at DESC);
+
+      -- Vínculo entre o projeto e os Sites criados dentro dele. O Site vinculado aqui é
+      -- excluído da árvore/busca de navegação (ver GeoTreeService) — só aparece com o
+      -- projeto aberto. Exclusão de projeto/local é soft-terminate (C6): esta tabela só
+      -- perde a linha de vínculo, o Site em si vira 'Retired'.
+      CREATE TABLE IF NOT EXISTS geo_project_site (
+        project_id TEXT NOT NULL,
+        site_id TEXT NOT NULL,
+        position INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (project_id, site_id),
+        FOREIGN KEY (project_id) REFERENCES geo_project(id),
+        FOREIGN KEY (site_id) REFERENCES tmf_geographic_site(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_geo_project_site_site ON geo_project_site(site_id);
 
       CREATE TABLE IF NOT EXISTS tmf_geographic_relationship_type (
         id TEXT PRIMARY KEY,

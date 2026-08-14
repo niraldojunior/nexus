@@ -261,6 +261,7 @@ export class GeoTreeService {
     const siteRows = await this.db.all<SiteRow>(
       `${SITE_SELECT}
        WHERE sp.category = 'Site' AND s.status NOT IN ('Retired', 'terminated') AND LOWER(s.name) LIKE LOWER(?)
+       ${PROJECT_SITE_EXCLUSION_SQL}
        ORDER BY s.name
        LIMIT ?`,
       [like, limit],
@@ -278,6 +279,26 @@ export class GeoTreeService {
     nodes.sort((left, right) => collator.compare(left.label, right.label));
 
     return nodes.slice(0, limit);
+  }
+
+  /**
+   * Sites por id, na mesma forma de nó (geometria, sublabel, endereço) que a árvore usa —
+   * sem o filtro de exclusão de Projeto (REQ-MOD01-015): é exatamente o caminho pelo qual
+   * um local de projeto ganha pin no mapa quando o projeto está aberto. A ordem dos ids de
+   * entrada é preservada na saída, para o chamador manter a posição salva em
+   * `geo_project_site.position`.
+   */
+  public async sitesByIds(ids: string[]): Promise<GeoTreeNode[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db.all<SiteRow>(
+      `${SITE_SELECT} WHERE s.id IN (${placeholders(ids)})`,
+      ids,
+    );
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return ids
+      .map((id) => byId.get(id))
+      .filter((row): row is SiteRow => Boolean(row))
+      .map((row) => this.toSiteNode(row, { hasChildren: false }));
   }
 
   /**
@@ -593,6 +614,7 @@ export class GeoTreeService {
     return await this.db.all<SiteRow>(
       `${SITE_SELECT}
        WHERE sp.category = 'Site' AND s.status NOT IN ('Retired', 'terminated')
+       ${PROJECT_SITE_EXCLUSION_SQL}
        ORDER BY s.name`,
     );
   }
@@ -793,6 +815,12 @@ const SITE_SELECT = `
     JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
     LEFT JOIN tmf_geographic_location l ON l.id = s.geographic_location_id
     LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id`;
+
+// Exclui da navegação (árvore, mapa de Estações e busca) qualquer Site vinculado a um
+// Projeto (REQ-MOD01-015): local criado para um recorte de trabalho fica visível só com
+// o projeto aberto — nunca na Hierarquia geral. Não se aplica a `childrenOfSite`: um
+// local de projeto nasce sem `parent_site_id`, então nunca aparece como filho de outro.
+const PROJECT_SITE_EXCLUSION_SQL = `AND NOT EXISTS (SELECT 1 FROM geo_project_site ps WHERE ps.site_id = s.id)`;
 
 // Recursos que pendem diretamente de um Site. Os três parâmetros são, em ordem:
 // id do site, id da Location do site, id do site (servingSite). A união repete o

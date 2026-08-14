@@ -15,8 +15,8 @@ const TABS: Array<{ id: TabId; label: string; icon: typeof Map }> = [
 
 /**
  * Seletor de abas para GeoPage.
- * Mostra: Mapa, Lista, Catálogo. A navegação por hierarquia (Árvore/Combos)
- * vive na sidebar fixa à esquerda do Mapa.
+ * Mostra: Mapa, Lista, Catálogo. A navegação por hierarquia (árvore) e os
+ * Projetos de trabalho vivem na sidebar fixa à esquerda do Mapa.
  */
 export function TabSelector({ currentTab, onTabChange }: TabSelectorProps) {
   return (

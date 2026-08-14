@@ -28,7 +28,6 @@ import {
   MapPin,
   Network,
   Plus,
-  X,
   type LucideIcon,
 } from 'lucide-react';
 import type {
@@ -92,7 +91,7 @@ import {
 import { ResourceIcon } from '../components/ResourceIcon';
 import {
   selectionPinDataUrl,
-  addressSourcePinDataUrl,
+  addressSourcePin,
   siteIconDataUrl,
   siteIconFor,
   SELECTION_PIN_ASPECT,
@@ -107,11 +106,15 @@ import {
   GeoSearchBar,
   GuidedSignupModal,
   HierarchySidebar,
+  type HierarchySidebarTab,
   IconInfoRow,
   MapBaseLayerSelector,
   MapLoadingBar,
   MapLocateButton,
+  Modal,
   PanelBarButton,
+  ProjectDetailPanel,
+  ProjectSitePanel,
   StatusBadge,
   DOCK_WIDTH_CLASS,
   DOCK_ELEVATION_CLASS,
@@ -120,6 +123,8 @@ import {
   type DropSimulation,
   type GeoSearchSelection,
 } from './geo-tabs';
+import { useGeoProjects } from '../hooks/useGeoProjects';
+import { fetchProjectSites } from '../services/geoProjectApi';
 import {
   DROP_ACCENT,
   DROP_INK,
@@ -196,6 +201,14 @@ function coverageBalloonOf(
 // Alvo do painel de detalhe aberto por clique — Site ou Recurso, cada um com o
 // corpo que sabe montar a partir dele (ver SiteDetailBody/ResourceDetailBody).
 type DetailTarget = { kind: 'site'; site: GeoSite } | { kind: 'resource'; node: GeoTreeNode };
+
+// O que a doca mostra quando nem endereço (`addressLookup`) nem detalhe de Site/Recurso
+// (`detailOpen`) está aberto — a hierarquia de sempre, ou um painel de Projeto de trabalho
+// (REQ-MOD01-015). `project-site` com `siteId: null` é criação; com id, edição.
+type DockView =
+  | { kind: 'hierarchy' }
+  | { kind: 'project'; projectId: string }
+  | { kind: 'project-site'; projectId: string; siteId: string | null };
 
 // Lado do ícone de equipamento no mapa, em px. Um pouco menor que o pin de site
 // para o equipamento não competir com o local que o contém.
@@ -306,6 +319,26 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // dockPanelOpen), e para não mudar quando o detalhe abre/fecha por cima dela —
   // é isso que faz a hierarquia "lembrar" o estado de antes ao fechar o detalhe.
   const [hierarchyCollapsed, setHierarchyCollapsed] = useState(isMobile);
+  // Aba ativa da hierarquia (Hierarquia | Projetos, REQ-MOD01-015) — hoisted para
+  // sobreviver a um painel de projeto se fechar e reabrir na mesma aba.
+  const [hierarchyTab, setHierarchyTab] = useState<HierarchySidebarTab>('hierarchy');
+  // Qual conteúdo a doca mostra quando nem endereço nem detalhe de Site/Recurso está
+  // aberto (ver a cadeia de precedência no render): a hierarquia de sempre, o painel de
+  // um Projeto ou o painel de criação/edição de um local exclusivo dele.
+  const [dockView, setDockView] = useState<DockView>({ kind: 'hierarchy' });
+  // Local escolhido no mapa para o novo local de um projeto (ver ProjectSitePanel/
+  // onTogglePickOnMap) — só é consultado quando `pickingProjectSite` está ativo; o clique
+  // no vazio do mapa entrega o resultado aqui em vez de abrir o painel de Endereço.
+  const [pickingProjectSite, setPickingProjectSite] = useState(false);
+  const [pickedProjectAddress, setPickedProjectAddress] = useState<DraftAddress | null>(null);
+  const [projectSites, setProjectSites] = useState<GeoTreeNode[]>([]);
+  const [projectSitesLoading, setProjectSitesLoading] = useState(false);
+  // Incrementado após criar/remover um local do projeto para forçar um novo GET — os
+  // demais estados (nome, descrição, ícone) já atualizam otimista via useGeoProjects.
+  const [projectSitesReloadToken, setProjectSitesReloadToken] = useState(0);
+  const projects = useGeoProjects();
+  // Projeto (ou local de projeto) atualmente aberto na doca — `null` fora desse fluxo.
+  const activeProjectId = dockView.kind !== 'hierarchy' ? dockView.projectId : null;
   const [query, setQuery] = useState('');
   // Resultado confirmado exibido como chip na barra. É separado de `query` para
   // distinguir texto em edição de uma seleção válida já vinculada ao mapa/painel.
@@ -393,15 +426,26 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     // Estações permanecem visíveis em qualquer escala (só mudam de tamanho por stationTier).
     const stations = tree.mapNodes;
     const base = passiveInfraVisible ? [...stations, ...viewportInfra] : stations;
+    // Locais do Projeto de trabalho aberto (REQ-MOD01-015) entram só enquanto a doca mostra
+    // aquele projeto — nunca somados aos nós da árvore, que já os excluem por completo.
+    const withProjectSites = dockView.kind !== 'hierarchy' ? [...base, ...projectSites] : base;
     // O item selecionado é imune à escala e ao viewport: recurso e cabo só existem em
     // `viewportInfra`, e sem isto afastar o mapa (ou arrastá-lo até a borda) apagaria o
     // ícone e o alfinete de quem está aberto no painel. Estação já vem sempre em
     // `tree.mapNodes`, então isto só adiciona quando o nó realmente sumiu da lista.
-    if (selectedNode?.geometry && !base.some((node) => node.id === selectedNode.id)) {
-      return [...base, selectedNode];
+    if (selectedNode?.geometry && !withProjectSites.some((node) => node.id === selectedNode.id)) {
+      return [...withProjectSites, selectedNode];
     }
-    return base;
-  }, [tree.mapNodes, viewportInfra, passiveInfraVisible, stationTier, selectedNode]);
+    return withProjectSites;
+  }, [
+    tree.mapNodes,
+    viewportInfra,
+    passiveInfraVisible,
+    stationTier,
+    selectedNode,
+    dockView,
+    projectSites,
+  ]);
 
   // Cobertura GPON da viewport (mapa de calor por bairro), acima de 100 m em qualquer escala.
   const { data: coverage, loading: coverageLoading } = useGponCoverage(viewportBounds, scaleMeters);
@@ -443,7 +487,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         ? detailTarget.kind === 'site'
           ? `site:${detailTarget.site.id}`
           : `resource:${detailTarget.node.id}`
-        : null;
+        : dockView.kind === 'project'
+          ? `project:${dockView.projectId}`
+          : dockView.kind === 'project-site'
+            ? `project-site:${dockView.projectId}:${dockView.siteId ?? 'new'}`
+            : null;
   const onMobileSheetSnapChange = useCallback(
     (state: BottomSheetSnapState) => {
       if (mobilePanelKey) setMobileSheetState({ panelKey: mobilePanelKey, state });
@@ -488,6 +536,53 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     void loadGeo();
   }, [loadGeo]);
 
+  // Locais do Projeto de trabalho aberto (REQ-MOD01-015) — já vêm com geometria resolvida
+  // (ver GeoTreeService.sitesByIds), então alimentam o mapa e a lista do painel sem busca
+  // extra. `projectSitesReloadToken` força um novo GET após criar/remover um local.
+  useEffect(() => {
+    if (!activeProjectId) {
+      setProjectSites([]);
+      return;
+    }
+    let cancelled = false;
+    setProjectSitesLoading(true);
+    void fetchProjectSites(activeProjectId)
+      .then((nodes) => {
+        if (!cancelled) setProjectSites(nodes);
+      })
+      .catch(() => {
+        if (!cancelled) setProjectSites([]);
+      })
+      .finally(() => {
+        if (!cancelled) setProjectSitesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId, projectSitesReloadToken]);
+
+  // Enquadra o conjunto de locais do projeto ao abrir (e a cada local criado/removido) —
+  // um único ponto voa direto, dois ou mais enquadram o retângulo que os contém.
+  useEffect(() => {
+    if (!activeProjectId) return;
+    const points = projectSites
+      .map(treeNodePoint)
+      .filter((point): point is [number, number] => point !== null);
+    if (points.length === 0) return;
+    const lngs = points.map((point) => point[0]);
+    const lats = points.map((point) => point[1]);
+    const center: [number, number] = [
+      (Math.min(...lngs) + Math.max(...lngs)) / 2,
+      (Math.min(...lats) + Math.max(...lats)) / 2,
+    ];
+    const span = pathSpanMeters(points);
+    setFocusRequest(
+      span > 0
+        ? { point: center, scaleMeters: null, fitSpanMeters: span }
+        : { point: center, scaleMeters: SITE_FOCUS_SCALE_METERS },
+    );
+  }, [activeProjectId, projectSites]);
+
   useEffect(() => {
     if (!selectedSite || !detailOpen) return;
     void getJson<GeoEvent[]>(`/v1/geo/sites/${selectedSite.id}/events`)
@@ -525,6 +620,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       setSelectedNode(node);
       setDraftAddress(null);
       setAddressLookup(null);
+      // Sai do fluxo de Projeto de trabalho: uma seleção normal (busca, árvore ou mapa)
+      // volta a doca para a Hierarquia, para não deixar um painel de projeto grudado no
+      // fundo depois que o usuário já mudou de assunto (ver dockView).
+      setDockView({ kind: 'hierarchy' });
       const point = treeNodePoint(node);
       if (point) {
         // Clique num item já visível no mapa não pede zoom (não rouba o enquadramento
@@ -563,9 +662,30 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     (node: GeoTreeNode) => selectNode(node, 'tree'),
     [selectNode],
   );
+  // Ids dos locais do Projeto de trabalho aberto — clicar num deles no mapa abre o painel
+  // de edição do local (ProjectSitePanel), não o GeoDetailPanel genérico: o Site não existe
+  // na Hierarquia (ver PROJECT_SITE_EXCLUSION_SQL) e o painel comum não saberia tratá-lo.
+  const projectSiteIds = useMemo(
+    () => new Set(projectSites.map((node) => node.id)),
+    [projectSites],
+  );
+
+  const openProjectSite = useCallback((projectId: string, node: GeoTreeNode) => {
+    setSelectedNode(node);
+    const point = treeNodePoint(node);
+    if (point) setFocusRequest({ point, scaleMeters: RESOURCE_FOCUS_SCALE_METERS });
+    setDockView({ kind: 'project-site', projectId, siteId: node.refId ?? null });
+  }, []);
+
   const selectNodeFromMap = useCallback(
-    (node: GeoTreeNode) => selectNode(node, 'map'),
-    [selectNode],
+    (node: GeoTreeNode) => {
+      if (activeProjectId && projectSiteIds.has(node.id)) {
+        openProjectSite(activeProjectId, node);
+        return;
+      }
+      selectNode(node, 'map');
+    },
+    [activeProjectId, projectSiteIds, openProjectSite, selectNode],
   );
 
   // Desfaz a seleção por completo: tira o alfinete, fecha o detalhe e limpa a busca. É o
@@ -579,6 +699,9 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     setDraftAddress(null);
     setAddressLookup(null);
     setDropSimulation(null);
+    setDockView({ kind: 'hierarchy' });
+    setPickingProjectSite(false);
+    setPickedProjectAddress(null);
     // Invalida o alvo da câmera junto com a seleção. Sem isto, uma mudança posterior
     // na geometria do Bottom Sheet pode reutilizar o alvo antigo e puxar o mapa de volta.
     setFocusRequest(null);
@@ -614,6 +737,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     setDraftAddress(null);
     setAddressError(null);
     setDropSimulation(null);
+    setDockView({ kind: 'hierarchy' });
     setAddressLookup({
       address,
       source: 'search',
@@ -623,6 +747,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
           coordinates: address.coordinates,
           source: 'google',
           precision: address.precision ?? 'Desconhecida',
+          label: address.label,
         },
       },
     });
@@ -630,30 +755,24 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     setSearchSelection({ type: 'address', address });
   }, []);
 
+  // Base escolhida (GEONET por padrão na abertura, ou a que o usuário marcar na chave do
+  // painel). A câmera pousa direto no alfinete escolhido e a barra de pesquisa passa a exibir
+  // o endereço daquela fonte. Só o chip da busca muda — `addressLookup.address` é a entrada de
+  // useGeonetAddress e mexer nela redispararia a consulta.
   const onAddressLocationResolved = useCallback((resolution: AddressLocationResolution) => {
+    const active =
+      resolution.mode === 'automatic' ? resolution.selected : resolution[resolution.selectedSource];
     setAddressLookup((current) => {
       if (!current || current.source !== 'search') return current;
       return { ...current, resolution };
     });
-    if (resolution.mode === 'automatic') {
-      setFocusRequest({
-        point: resolution.selected.coordinates,
-        scaleMeters: ADDRESS_FOCUS_SCALE_METERS,
-      });
-    } else if (resolution.selectedSource) {
-      setFocusRequest({
-        point: resolution[resolution.selectedSource].coordinates,
-        scaleMeters: ADDRESS_FOCUS_SCALE_METERS,
-      });
-    } else {
-      const [googleLng, googleLat] = resolution.google.coordinates;
-      const [geonetLng, geonetLat] = resolution.geonet.coordinates;
-      setFocusRequest({
-        point: [(googleLng + geonetLng) / 2, (googleLat + geonetLat) / 2],
-        scaleMeters: null,
-        fitSpanMeters: resolution.distanceMeters,
-      });
-    }
+    setFocusRequest({ point: active.coordinates, scaleMeters: ADDRESS_FOCUS_SCALE_METERS });
+    setQuery(active.label);
+    setSearchSelection((current) =>
+      current?.type === 'address' && current.address.label !== active.label
+        ? { type: 'address', address: { ...current.address, label: active.label } }
+        : current,
+    );
   }, []);
 
   const onAddressError = useCallback((err: AddressSearchError) => {
@@ -667,19 +786,31 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // uma nova pesquisa. O mapa só desenha o "+" para essa origem (`source: 'map'`) — o
   // alfinete fica reservado à busca, para não duplicar marcador na mesma coordenada (ver
   // GoogleMapPanel e a prop `addressPoint`).
-  const onMapAddressFound = useCallback((address: DraftAddress) => {
-    setSelectedNode(null);
-    setDetailOpen(false);
-    setAddressError(null);
-    setDraftAddress(address);
-    setDropSimulation(null);
-    setAddressLookup({ address, source: 'map' });
-    // O ponto veio de um clique no mapa — já está à vista, então só recentraliza, sem
-    // mexer no zoom. A centralização passa pelo mesmo voo dos demais focos (flyTo).
-    setFocusRequest({ point: address.coordinates, scaleMeters: null });
-    setQuery(address.label);
-    setSearchSelection({ type: 'address', address });
-  }, []);
+  const onMapAddressFound = useCallback(
+    (address: DraftAddress) => {
+      // "Escolher no mapa" do ProjectSitePanel (criação de local de projeto, REQ-MOD01-015)
+      // desvia o clique para o painel em vez de abrir o de Endereço — a doca não troca.
+      if (pickingProjectSite) {
+        setPickedProjectAddress(address);
+        setPickingProjectSite(false);
+        setFocusRequest({ point: address.coordinates, scaleMeters: null });
+        return;
+      }
+      setSelectedNode(null);
+      setDetailOpen(false);
+      setAddressError(null);
+      setDraftAddress(address);
+      setDropSimulation(null);
+      setDockView({ kind: 'hierarchy' });
+      setAddressLookup({ address, source: 'map' });
+      // O ponto veio de um clique no mapa — já está à vista, então só recentraliza, sem
+      // mexer no zoom. A centralização passa pelo mesmo voo dos demais focos (flyTo).
+      setFocusRequest({ point: address.coordinates, scaleMeters: null });
+      setQuery(address.label);
+      setSearchSelection({ type: 'address', address });
+    },
+    [pickingProjectSite],
+  );
 
   // Some quando o mouse sai do item; sem atraso perceptível, mas absorve o
   // instante entre uma linha da árvore e a próxima para o balão não piscar.
@@ -701,10 +832,62 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     setSelectedNode(node);
     setSearchSelection({ type: 'node', node });
     setAddressLookup(null);
+    setDockView({ kind: 'hierarchy' });
     setDetailTab(tab);
     setDetailOpen(true);
     setQuery(site.name);
   };
+
+  // Volta a doca para a Hierarquia (aba Projetos, ver hierarchyTab) e limpa qualquer
+  // estado do fluxo de local que ficou pendente — o "‹" do painel de Projeto e o excluir
+  // do menu ⋯ passam por aqui.
+  const closeProjectPanel = useCallback(() => {
+    setDockView({ kind: 'hierarchy' });
+    setSelectedNode(null);
+    setPickingProjectSite(false);
+    setPickedProjectAddress(null);
+  }, []);
+
+  // "+ Novo Projeto": cria e já abre o painel dele — é o pedido do usuário ("Ao clicar em
+  // novo projeto, vamos abrir um novo painel específico para projeto").
+  const handleCreateProject = useCallback(async () => {
+    const project = await projects.create();
+    setHierarchyTab('projects');
+    setDockView({ kind: 'project', projectId: project.id });
+  }, [projects]);
+
+  const handleOpenProject = useCallback((projectId: string) => {
+    setDockView({ kind: 'project', projectId });
+  }, []);
+
+  // Excluir projeto — pode vir da lista (ProjectListView, projeto fechado) ou do menu ⋯
+  // dentro do próprio painel dele; só fecha a doca quando o projeto excluído é o aberto.
+  const handleDeleteProject = useCallback(
+    (projectId: string) => {
+      void projects.remove(projectId);
+      if (dockView.kind !== 'hierarchy' && dockView.projectId === projectId) {
+        closeProjectPanel();
+      }
+    },
+    [projects, dockView, closeProjectPanel],
+  );
+
+  // Volta do painel de local (ProjectSitePanel) para o painel do projeto — usado pelo "‹"
+  // e, após salvar, junto com um novo `projectSitesReloadToken` para o GET refletir o local
+  // criado/editado/removido.
+  const backToProject = useCallback((projectId: string) => {
+    setDockView({ kind: 'project', projectId });
+    setPickingProjectSite(false);
+    setPickedProjectAddress(null);
+  }, []);
+
+  const handleProjectSiteSaved = useCallback(
+    (projectId: string) => {
+      setProjectSitesReloadToken((token) => token + 1);
+      backToProject(projectId);
+    },
+    [backToProject],
+  );
 
   // Monta o conteúdo do balão de preview a partir do nó sob o mouse. Fica aqui,
   // e não no painel do mapa, porque é aqui que se sabe o que fazer com cada
@@ -775,6 +958,13 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [addressError, createOpen, detailOpen, typeOpen]);
 
+  // Projeto do dockView atual, se houver — `undefined` enquanto a lista ainda carrega ou se
+  // o projeto foi excluído em outra aba; nesse caso o render cai de volta para a Hierarquia.
+  const activeProject =
+    dockView.kind !== 'hierarchy'
+      ? projects.projects.find((project) => project.id === dockView.projectId)
+      : undefined;
+
   return (
     <div className="relative h-full min-h-0 min-w-0 overflow-hidden bg-transparent flex flex-col">
       <main className="relative flex-1 min-h-0 min-w-0 overflow-hidden bg-[#eef2f6]">
@@ -830,6 +1020,46 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                 setCreateOpen(true);
               }}
             />
+          ) : dockView.kind === 'project-site' && activeProject ? (
+            <ProjectSitePanel
+              key={`${dockView.projectId}:${dockView.siteId ?? 'new'}`}
+              isMobile={isMobile}
+              projectId={dockView.projectId}
+              site={
+                dockView.siteId
+                  ? (projectSites.find((site) => site.refId === dockView.siteId) ?? null)
+                  : null
+              }
+              specs={specs}
+              pickedAddress={pickedProjectAddress}
+              pickingOnMap={pickingProjectSite}
+              onTogglePickOnMap={() => setPickingProjectSite((picking) => !picking)}
+              onSnapChange={onMobileSheetSnapChange}
+              minimizeSignal={sheetMinimizeSignal}
+              onBack={() => backToProject(dockView.projectId)}
+              onSaved={() => handleProjectSiteSaved(dockView.projectId)}
+            />
+          ) : dockView.kind === 'project' && activeProject ? (
+            <ProjectDetailPanel
+              isMobile={isMobile}
+              project={activeProject}
+              sites={projectSites}
+              sitesLoading={projectSitesLoading}
+              selectedSiteId={
+                selectedNode?.referredType === 'GeographicSite'
+                  ? (selectedNode.refId ?? null)
+                  : null
+              }
+              onSnapChange={onMobileSheetSnapChange}
+              minimizeSignal={sheetMinimizeSignal}
+              onUpdate={(patch) => void projects.update(dockView.projectId, patch)}
+              onDelete={() => handleDeleteProject(dockView.projectId)}
+              onBack={closeProjectPanel}
+              onAddSite={() =>
+                setDockView({ kind: 'project-site', projectId: dockView.projectId, siteId: null })
+              }
+              onOpenSite={(site) => openProjectSite(dockView.projectId, site)}
+            />
           ) : (
             <HierarchySidebar
               tree={tree}
@@ -839,6 +1069,13 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               onOpenTypes={() => setTypeOpen(true)}
               collapsed={hierarchyCollapsed}
               onCollapsedChange={setHierarchyCollapsed}
+              tab={hierarchyTab}
+              onTabChange={setHierarchyTab}
+              projects={projects.projects}
+              projectsLoading={projects.loading}
+              onCreateProject={() => void handleCreateProject()}
+              onOpenProject={handleOpenProject}
+              onDeleteProject={handleDeleteProject}
             />
           )}
 
@@ -869,7 +1106,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               // para só encolher a folha quando faz sentido.
               onManualNavigation={handleManualMapNavigation}
               selectionActive={
-                selectedNode !== null || addressLookup !== null || draftAddress !== null
+                selectedNode !== null ||
+                addressLookup !== null ||
+                draftAddress !== null ||
+                dockView.kind !== 'hierarchy'
               }
               onViewportChange={handleViewportChange}
               coverage={coverageVisible ? coverage : null}
@@ -897,8 +1137,23 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
             onAddressFound={onAddressFound}
             onAddressError={onAddressError}
             onClear={onDeselect}
-            hierarchyOpen={!addressLookup && !(detailOpen && detailTarget) && !hierarchyCollapsed}
-            onToggleHierarchy={() => setHierarchyCollapsed((collapsed) => !collapsed)}
+            hierarchyOpen={
+              !addressLookup &&
+              !(detailOpen && detailTarget) &&
+              dockView.kind === 'hierarchy' &&
+              !hierarchyCollapsed
+            }
+            onToggleHierarchy={() => {
+              // Fechado por um painel de Projeto: reabrir a Hierarquia volta a doca para
+              // ela, além de tirar o colapso — senão o ícone reabriria um painel que já
+              // não está visível (ver dockView).
+              if (dockView.kind !== 'hierarchy') {
+                setDockView({ kind: 'hierarchy' });
+                setHierarchyCollapsed(false);
+              } else {
+                setHierarchyCollapsed((collapsed) => !collapsed);
+              }
+            }}
             onOpenMainMenu={onOpenMainMenu}
           />
         </div>
@@ -1618,17 +1873,20 @@ export function GoogleMapPanel({
     for (const source of ['google', 'geonet'] as const) {
       const location = addressResolution[source];
       const selected = addressResolution.selectedSource === source;
+      const pin = addressSourcePin(source, selected);
       const icon = {
-        url: addressSourcePinDataUrl(source, selected),
-        scaledSize: new maps.Size(30, 40),
-        anchor: new maps.Point(15, 40),
+        url: pin.url,
+        scaledSize: new maps.Size(pin.width, pin.height),
+        anchor: new maps.Point(pin.anchorX, pin.anchorY),
       };
       const title = `${source === 'google' ? 'Google Maps' : 'GEONET'}${selected ? ' — selecionado' : ''}`;
+      // O pin escolhido fica por cima quando os dois pontos estão próximos.
+      const zIndex = selected ? SELECTION_PIN_Z + 1 : SELECTION_PIN_Z;
       const marker = addressSourceMarkersRef.current.get(source);
       if (marker) {
         marker.setPosition({ lng: location.coordinates[0], lat: location.coordinates[1] });
         marker.setIcon(icon);
-        marker.setOptions({ title });
+        marker.setOptions({ title, zIndex });
       } else {
         addressSourceMarkersRef.current.set(
           source,
@@ -1638,7 +1896,7 @@ export function GoogleMapPanel({
             icon,
             title,
             clickable: false,
-            zIndex: SELECTION_PIN_Z,
+            zIndex,
           }),
         );
       }
@@ -2895,56 +3153,6 @@ function TypeManagementModal({
         </button>
       </form>
     </Modal>
-  );
-}
-
-function Modal({
-  children,
-  title,
-  eyebrow,
-  onClose,
-  wide,
-}: {
-  children: ReactNode;
-  title: string;
-  eyebrow: string;
-  onClose: () => void;
-  wide?: boolean;
-}) {
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-6">
-      <div
-        className={`max-h-[90vh] overflow-auto rounded-[26px] border border-app-border bg-white p-5 shadow-modal ${wide ? 'w-full max-w-[920px]' : 'w-full max-w-[720px]'}`}
-      >
-        <div className="mb-4 flex items-start justify-between gap-4 border-b border-app-border pb-4">
-          <div>
-            <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-              {eyebrow}
-            </div>
-            <h3 className="mt-1 font-display text-[1.35rem] font-semibold text-app-text">
-              {title}
-            </h3>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>,
-    document.body,
   );
 }
 

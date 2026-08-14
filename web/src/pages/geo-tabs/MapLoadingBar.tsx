@@ -70,11 +70,14 @@ export function MapLoadingBar({
   if (!visible) return null;
 
   return (
+    // `top-[3px]` posiciona a barra logo ABAIXO da faixa de marca amarela — que é fixa no
+    // topo da janela (body::before), tem 3px e z-index 1000. Em `top-0` a barra ficava
+    // escondida atrás dela (foi o que fez parecer que o indicador não aparecia).
     <div
       role="progressbar"
       aria-label={label}
       aria-busy="true"
-      className="pointer-events-none absolute inset-x-0 top-0 z-30 h-[3px] overflow-hidden bg-app-ink/10"
+      className="pointer-events-none absolute inset-x-0 top-[3px] z-30 h-[3px] overflow-hidden bg-app-ink/10"
     >
       <div className="h-full w-full bg-app-ink/70 animate-vt-map-progress" />
     </div>

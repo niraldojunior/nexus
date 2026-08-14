@@ -31,6 +31,7 @@ import { EventService, PostgresEventRepository } from '../tmf/index.js';
 import { OracleEventRepository } from '../tmf/oracle-event-repository.js';
 import { AuthService } from '../../modules/auth/index.js';
 import { GeoSearchHistoryRepository } from '../../modules/geo/search-history-repository.js';
+import { GeoProjectRepository } from '../../modules/geo/project-repository.js';
 import {
   GeonetAddressGateway,
   type GeonetGatewayConfig,
@@ -76,6 +77,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     accessTokenTtlSeconds: options.auth?.accessTokenTtlSeconds ?? DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
   });
   const geoSearchHistoryRepository = new GeoSearchHistoryRepository(db);
+  const geoProjectRepository = new GeoProjectRepository(db);
   const searchRepository = oracle
     ? new OracleSearchRepository(db)
     : new PostgresSearchRepository(db);
@@ -210,6 +212,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     userRepository,
     authService,
     geoSearchHistoryRepository,
+    geoProjectRepository,
     searchRepository,
     researchRepository,
     searchService,

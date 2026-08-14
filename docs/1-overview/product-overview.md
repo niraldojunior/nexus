@@ -52,7 +52,7 @@ _referencia_ geografia via `place`. Nenhum contém o outro.
 
 | #   | Módulo                    | Responde                                | Open APIs              | Estado                                                                                |
 | --- | ------------------------- | --------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------- |
-| 1   | **Geographic**            | Onde                                    | TMF673, TMF674, TMF675 | ⚠️ Base implementada; aderência parcial ao HLD 1.5 (inclui Cobertura GPON por bairro) |
+| 1   | **Geographic**            | Onde                                    | TMF673, TMF674, TMF675 | ⚠️ Base implementada; aderência parcial ao HLD 1.8 (inclui Cobertura GPON por bairro e Projetos de Trabalho) |
 | 2   | **Resource**              | O que existe                            | TMF634, TMF639, TMF664 | ⚠️ Base implementada; aderência parcial ao HLD 1.4                                    |
 | 3   | **Service**               | Para quê / quem                         | TMF633, TMF638         | ⚠️ Base implementada; aderência parcial ao HLD 1.2                                    |
 | 4   | **Order & Fulfillment**   | Viabilidade e provisionamento           | TMF641, TMF645, TMF652 | ✅ Implementado                                                                       |

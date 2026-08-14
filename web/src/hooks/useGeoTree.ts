@@ -43,9 +43,6 @@ export type GeoTree = {
   toggle: (row: GeoTreeRow) => void;
   loadMore: (row: GeoTreeRow) => void;
   reload: () => void;
-  // Para a visão em combos, que navega por nó e não por linha.
-  childrenOf: (nodeId: string) => GeoTreeNode[];
-  ensureChildren: (nodeId: string) => void;
   nodeById: (nodeId: string) => GeoTreeNode | undefined;
   // Revela um nó: carrega e expande toda a cadeia de ancestrais até a raiz (nunca
   // recolhe) — usado ao selecionar um item pelo mapa ou pela busca, já que nada nasce
@@ -177,19 +174,6 @@ export function useGeoTree(): GeoTree {
     [loadChildren, state.childIds],
   );
 
-  const ensureChildren = useCallback(
-    (nodeId: string) => {
-      if (!state.childIds[nodeId]) void loadChildren(nodeId, 0);
-    },
-    [loadChildren, state.childIds],
-  );
-
-  const childrenOf = useCallback(
-    (nodeId: string) =>
-      (state.childIds[nodeId] ?? []).map((id) => state.nodesById[id]).filter(Boolean),
-    [state],
-  );
-
   /**
    * Revela um nó na árvore: expande toda a cadeia de ancestrais e carrega, de cima
    * para baixo, os níveis que ainda não vieram — para o nó existir como linha.
@@ -260,8 +244,6 @@ export function useGeoTree(): GeoTree {
       setExpandedRows(new Set());
       setReloadToken((token) => token + 1);
     },
-    childrenOf,
-    ensureChildren,
     nodeById: (nodeId: string) => state.nodesById[nodeId],
     revealNode,
   };

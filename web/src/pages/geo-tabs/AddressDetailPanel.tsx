@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
+  Building2,
   Crosshair,
   Fingerprint,
+  Hash,
   Info as InfoIcon,
   Loader2,
+  Map as MapIcon,
   MapPin,
+  Phone,
   Route,
   Target,
 } from 'lucide-react';
@@ -24,12 +28,17 @@ import { PanelBarButton } from './PanelBarButton';
 import { PrecisionBadge } from './PrecisionBadge';
 import { ViabilityTab, type DropSimulation } from './ViabilityTab';
 import { useGeonetAddress } from '../../hooks/useGeonetAddress';
+import { useViaCepAddress } from '../../hooks/useViaCepAddress';
 import type { GeonetAddressDetail } from '../../services/geonetAddressApi';
+import { cepFromText, formatCep, normalizeCep } from '../../utils/cep';
 import {
+  formatDivergenceMeters,
   resolveAddressLocation,
   type AddressLocationResolution,
   type AddressPinLocation,
 } from './addressLocationResolution';
+import { AddressSourceSwitch } from './AddressSourceSwitch';
+import { CorreiosIcon, GoogleMapsIcon, VtalIcon } from './AddressSourceIcons';
 export {
   selectPinLocation,
   type AddressLocationResolution,
@@ -98,14 +107,11 @@ export function AddressDetailPanel({
     [address, geonet.detail, resolutionKey, sourceChoice],
   );
   const activeLocation =
-    resolution.mode === 'automatic'
-      ? resolution.selected
-      : resolution.selectedSource
-        ? resolution[resolution.selectedSource]
-        : null;
-  const marker = activeLocation
-    ? addressStreetViewMarker({ ...address, coordinates: activeLocation.coordinates })
-    : null;
+    resolution.mode === 'automatic' ? resolution.selected : resolution[resolution.selectedSource];
+  const marker = addressStreetViewMarker({
+    ...address,
+    coordinates: activeLocation.coordinates,
+  });
 
   useEffect(() => {
     // A câmera só pode voar após a comparação terminar: enquanto o detalhe Geonet
@@ -239,39 +245,38 @@ function AddressOverview({
   onChooseSource,
 }: {
   address: DraftAddress;
-  marker: ReturnType<typeof addressStreetViewMarker> | null;
+  marker: ReturnType<typeof addressStreetViewMarker>;
   geonet: ReturnType<typeof useGeonetAddress>;
   resolution: AddressLocationResolution;
   onChooseSource: (source: AddressPinLocation['source']) => void;
 }) {
   const activeLocation =
-    resolution.mode === 'automatic'
-      ? resolution.selected
-      : resolution.selectedSource
-        ? resolution[resolution.selectedSource]
-        : null;
+    resolution.mode === 'automatic' ? resolution.selected : resolution[resolution.selectedSource];
   return (
     <div className="grid gap-3">
-      {resolution.mode === 'conflict' && !activeLocation ? (
-        <div className="rounded-[12px] border border-status-amber/30 bg-status-amber-soft px-3 py-2 text-[0.78rem] leading-snug text-app-text">
-          As localizaÃ§Ãµes retornadas divergem em {Math.round(resolution.distanceMeters)} m.
-          Selecione uma origem para continuar a anÃ¡lise.
+      {resolution.mode === 'conflict' ? (
+        // Divergência relevante: caixa vermelha pastel (mesmos tokens da precisão baixa) que
+        // explica a distância e hospeda a chave de troca de base. A caixa amarela antiga
+        // confundia com "precisão média"; a escolha ficava em botões soltos no rodapé de
+        // cada card. Agora decisão e diagnóstico ficam juntos.
+        <div className="rounded-[12px] border border-status-red/30 bg-status-red-soft px-3 py-2.5 text-[0.78rem] leading-snug text-app-text">
+          As localizações retornadas divergem em {formatDivergenceMeters(resolution.distanceMeters)}
+          . Selecione a base usada no alfinete e na análise de viabilidade.
+          <AddressSourceSwitch resolution={resolution} onChoose={onChooseSource} />
         </div>
-      ) : null}
-      <div className="px-1 py-1 text-[0.76rem] text-app-muted">
-        {activeLocation ? (
-          <>
-            Alfinete do mapa:{' '}
-            <span className="font-semibold">
-              {activeLocation.source === 'google' ? 'Google' : 'GEONET'}
-            </span>
-          </>
-        ) : (
-          'Selecione uma origem para continuar'
-        )}
-        {' · '}
-        {activeLocation?.precision ?? ''}
-      </div>
+      ) : (
+        <div className="px-1 py-1 text-[0.76rem] text-app-muted">
+          Alfinete do mapa:{' '}
+          <span className="font-semibold">
+            {activeLocation.source === 'google' ? 'Google' : 'GEONET'}
+          </span>
+          {' · '}
+          {activeLocation.precision}
+        </div>
+      )}
+      {/* GEONET primeiro: é a base preferencial da V.tal (ver selectPinLocation). O Google
+          vem logo abaixo como referência externa, e o DNE (Correios) fecha a Visão geral. */}
+      <GeonetAddressCard geonet={geonet} />
       <AddressSourceCard
         icon={<GoogleMapsIcon />}
         title="Google Maps"
@@ -281,15 +286,7 @@ function AddressOverview({
         <IconInfoRow
           icon={Crosshair}
           hint="Localização"
-          value={
-            marker ? (
-              <CoordinateStreetView marker={marker} />
-            ) : (
-              <span className="font-mono">
-                [{address.coordinates[0].toFixed(5)}, {address.coordinates[1].toFixed(5)}]
-              </span>
-            )
-          }
+          value={<CoordinateStreetView marker={marker} />}
         />
         <IconInfoRow
           icon={Target}
@@ -297,46 +294,10 @@ function AddressOverview({
           value={<PrecisionBadge locationType={address.precision} />}
         />
         <IconInfoRow icon={Fingerprint} hint="Place ID" value={address.placeId ?? '-'} mono />
-        {resolution.mode === 'conflict' ? (
-          <SourceChoiceButton source="google" resolution={resolution} onChoose={onChooseSource} />
-        ) : null}
       </AddressSourceCard>
-      <GeonetAddressCard geonet={geonet} resolution={resolution} onChooseSource={onChooseSource} />
+      <DneAddressCard address={address} geonet={geonet.detail} />
     </div>
   );
-}
-
-const GOOGLE_PRECISION_RANK: Record<string, number> = {
-  ROOFTOP: 3,
-  RANGE_INTERPOLATED: 2,
-  GEOMETRIC_CENTER: 1,
-  APPROXIMATE: 1,
-};
-
-export function legacySelectPinLocation(
-  address: DraftAddress,
-  geonet: GeonetAddressDetail | null,
-): AddressPinLocation {
-  const google = {
-    coordinates: address.coordinates,
-    source: 'google' as const,
-    precision: address.precision ?? 'Desconhecida',
-    rank: GOOGLE_PRECISION_RANK[address.precision ?? ''] ?? 0,
-  };
-  const geonetPrecision = geonet?.geolocationMethod
-    ? GEONET_PRECISION[geonet.geolocationMethod.trim().toUpperCase()]
-    : undefined;
-  const geonetRank = geonetPrecision
-    ? ({ Alta: 3, Média: 2, Baixa: 1 }[geonetPrecision.quality] ?? 0)
-    : 0;
-  if (geonet?.coordinates && geonetRank > google.rank) {
-    return {
-      coordinates: geonet.coordinates,
-      source: 'geonet',
-      precision: `${geonetPrecision?.quality} - ${geonetPrecision?.label}`,
-    };
-  }
-  return { coordinates: google.coordinates, source: google.source, precision: google.precision };
 }
 
 function AddressSourceCard({
@@ -361,15 +322,7 @@ function AddressSourceCard({
   );
 }
 
-function GeonetAddressCard({
-  geonet,
-  resolution,
-  onChooseSource,
-}: {
-  geonet: ReturnType<typeof useGeonetAddress>;
-  resolution: AddressLocationResolution;
-  onChooseSource: (source: AddressPinLocation['source']) => void;
-}) {
+function GeonetAddressCard({ geonet }: { geonet: ReturnType<typeof useGeonetAddress> }) {
   const selected = geonet.candidates.find((candidate) => candidate.addressId === geonet.selectedId);
   const detail: GeonetAddressDetail | null = geonet.detail ?? (selected ? { ...selected } : null);
   const selectedIndex = geonet.candidates.findIndex(
@@ -453,36 +406,80 @@ function GeonetAddressCard({
             value={<GeonetPrecisionBadge method={detail.geolocationMethod} />}
           />
           <IconInfoRow icon={Fingerprint} hint="Address ID" value={detail.addressId ?? '-'} mono />
-          {resolution.mode === 'conflict' ? (
-            <SourceChoiceButton source="geonet" resolution={resolution} onChoose={onChooseSource} />
-          ) : null}
         </>
       ) : null}
     </AddressSourceCard>
   );
 }
 
-function SourceChoiceButton({
-  source,
-  resolution,
-  onChoose,
-}: {
-  source: AddressPinLocation['source'];
-  resolution: Extract<AddressLocationResolution, { mode: 'conflict' }>;
-  onChoose: (source: AddressPinLocation['source']) => void;
-}) {
-  const selected = resolution.selectedSource === source;
-  const label = source === 'google' ? 'Google Maps' : 'GEONET';
+// CEP a consultar no DNE: primeiro o que foi digitado na busca (mais fiel à intenção),
+// depois o da base preferencial (GEONET) e, por fim, o do Google.
+function dneCepOf(address: DraftAddress, geonet: GeonetAddressDetail | null): string | null {
   return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      onClick={() => onChoose(source)}
-      className={`mt-2 w-full rounded-[10px] border px-2.5 py-1.5 text-[0.76rem] font-semibold transition ${selected ? 'border-app-accent-border bg-app-accent-soft text-app-text' : 'border-app-border bg-white text-app-text hover:border-app-accent-border'}`}
-    >
-      {selected ? `${label} selecionado` : `Usar ${label}`}
-    </button>
+    cepFromText(address.sourceQuery) ??
+    normalizeCep(geonet?.postcode) ??
+    normalizeCep(address.postcode)
+  );
+}
+
+// Endereçamento oficial dos Correios (base DNE) para o CEP consultado, via ViaCEP. Puramente
+// informativo — arbitra logradouro/bairro/localidade quando Google e GEONET divergem.
+function DneAddressCard({
+  address,
+  geonet,
+}: {
+  address: DraftAddress;
+  geonet: GeonetAddressDetail | null;
+}) {
+  const cep = dneCepOf(address, geonet);
+  const dne = useViaCepAddress(cep);
+  const locality = dne.address
+    ? [dne.address.localidade, dne.address.uf].filter(Boolean).join(' - ')
+    : '';
+  const street = dne.address
+    ? [dne.address.logradouro, dne.address.complemento].filter(Boolean).join(', ')
+    : '';
+  return (
+    <AddressSourceCard icon={<CorreiosIcon />} title="DNE (Correios)" tone="bg-app-sidebar/70">
+      {!cep ? (
+        <p className="py-1 text-[0.82rem] leading-snug text-app-muted">
+          Sem CEP na consulta para buscar no DNE.
+        </p>
+      ) : null}
+      {cep && dne.status === 'loading' ? (
+        <div className="flex items-center gap-2 py-2 text-[0.82rem] text-app-muted">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Consultando CEP no DNE...
+        </div>
+      ) : null}
+      {cep && dne.status === 'not_found' ? (
+        <p className="py-1 text-[0.82rem] leading-snug text-app-muted">
+          CEP {formatCep(cep)} não encontrado no DNE.
+        </p>
+      ) : null}
+      {cep && dne.status === 'error' ? (
+        <div className="grid gap-2 py-1 text-[0.82rem] leading-snug text-app-muted">
+          <span>{dne.error ?? 'Não foi possível consultar o CEP.'}</span>
+          <button
+            type="button"
+            onClick={dne.retry}
+            className="w-fit rounded-[10px] border border-app-border px-2.5 py-1 text-[0.76rem] font-semibold text-app-text transition hover:border-app-accent-border hover:bg-app-accent-soft"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      ) : null}
+      {dne.status === 'ready' && dne.address ? (
+        <>
+          <IconInfoRow icon={MapPin} hint="Logradouro" value={street || '-'} />
+          <IconInfoRow icon={Building2} hint="Bairro" value={dne.address.bairro || '-'} />
+          <IconInfoRow icon={MapIcon} hint="Localidade / UF" value={locality || '-'} />
+          <IconInfoRow icon={Hash} hint="CEP" value={formatCep(dne.address.cep)} mono />
+          <IconInfoRow icon={Fingerprint} hint="Código IBGE" value={dne.address.ibge || '-'} mono />
+          <IconInfoRow icon={Phone} hint="DDD" value={dne.address.ddd || '-'} />
+        </>
+      ) : null}
+    </AddressSourceCard>
   );
 }
 
@@ -552,34 +549,6 @@ function GeonetPrecisionBadge({ method }: { method?: string }) {
       className={`inline-flex items-center rounded-[999px] border px-2 py-0.5 text-[0.68rem] font-semibold tracking-[0.02em] ${precision?.className ?? 'border-app-border bg-app-sidebar text-app-muted'}`}
     >
       {text}
-    </span>
-  );
-}
-
-function GoogleMapsIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="#34A853" d="M3 5.5 9.5 2v16.5L3 22V5.5Z" />
-      <path fill="#4285F4" d="M9.5 2 16 5.5V22l-6.5-3.5V2Z" />
-      <path fill="#FBBC04" d="M16 5.5 21 2.8v16.5L16 22V5.5Z" />
-      <path
-        fill="#EA4335"
-        d="M12.75 7.1a3.35 3.35 0 0 0-3.35 3.35c0 2.52 3.35 6.3 3.35 6.3s3.35-3.78 3.35-6.3a3.35 3.35 0 0 0-3.35-3.35Zm0 4.6a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z"
-      />
-    </svg>
-  );
-}
-
-function VtalIcon() {
-  return (
-    <span
-      className="inline-flex h-4 w-4 items-center justify-center rounded-[4px] bg-app-text"
-      aria-hidden="true"
-    >
-      <svg className="h-3 w-3" viewBox="0 0 24 24">
-        <path fill="white" d="M2.5 3h4.1L12 16.2 17.4 3h4.1L12 21 2.5 3Z" />
-        <path fill="currentColor" className="text-app-accent" d="M21 15h2v3h-2z" />
-      </svg>
     </span>
   );
 }

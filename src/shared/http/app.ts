@@ -819,6 +819,128 @@ const routeGeoRequest = async ({
     return sendJson(response, 204, null);
   }
 
+  // Projetos de trabalho da página Locais (REQ-MOD01-015, estilo "Salvos" do Google Maps):
+  // coleções de locais compartilhadas por todo o tenant (C8), não por usuário — por isso
+  // `requireRoles`, não `requireUser`. Projeto em si não é entidade TMF (GeoProjectRepository
+  // fala com o banco direto, como o histórico de busca), mas cada local do projeto é um
+  // GeographicSite (TMF674) real, sempre criado/soft-terminado através do GeoService — nunca
+  // um DELETE físico (C6). A exclusão da Hierarquia é feita no próprio GeoTreeService
+  // (PROJECT_SITE_EXCLUSION_SQL).
+  if (url.pathname === '/v1/geo/projects') {
+    if (request.method === 'GET') {
+      requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+      return sendJson(response, 200, await runtime.geoProjectRepository.list(geoContext.tenantId));
+    }
+    if (request.method === 'POST') {
+      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+      const body = await readBody(request);
+      assertProjectIconSize(body.iconDataUrl);
+      const project = await runtime.geoProjectRepository.create(
+        geoContext.tenantId,
+        geoContext.actorSub,
+        {
+          name: String(body.name ?? '').trim() || 'Projeto sem título',
+          description: body.description ? String(body.description) : null,
+          iconDataUrl: body.iconDataUrl ? String(body.iconDataUrl) : null,
+        },
+      );
+      return sendJson(response, 201, project);
+    }
+  }
+
+  const projectMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)$/);
+  if (projectMatch?.[1]) {
+    const projectId = decodeURIComponent(projectMatch[1]);
+    if (request.method === 'PATCH') {
+      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+      const body = await readBody(request);
+      assertProjectIconSize(body.iconDataUrl);
+      const updated = await runtime.geoProjectRepository.update(geoContext.tenantId, projectId, {
+        ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
+        ...(body.description !== undefined
+          ? { description: body.description ? String(body.description) : null }
+          : {}),
+        ...(body.iconDataUrl !== undefined
+          ? { iconDataUrl: body.iconDataUrl ? String(body.iconDataUrl) : null }
+          : {}),
+      });
+      return sendJsonOrNotFound(response, updated, 'GEO_PROJECT_NOT_FOUND');
+    }
+    if (request.method === 'DELETE') {
+      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+      // Retira (soft-terminate, C6) cada local ANTES de apagar o vínculo do projeto: se
+      // uma transição falhar (ex.: local passou a ter dependência bloqueante), a exceção
+      // aborta aqui e o projeto continua íntegro — a ordem inversa deixaria o local sem
+      // projeto e sem estar Retired, vazando para a Hierarquia geral sem dono.
+      const siteIds = await runtime.geoProjectRepository.listSiteIds(
+        geoContext.tenantId,
+        projectId,
+      );
+      for (const siteId of siteIds) {
+        await geoService.transitionSite(
+          siteId,
+          { status: 'Retired', statusReason: 'Projeto de trabalho excluído' },
+          geoContext,
+        );
+      }
+      await runtime.geoProjectRepository.remove(geoContext.tenantId, projectId);
+      return sendJson(response, 204, null);
+    }
+  }
+
+  const projectSitesMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/sites$/);
+  if (projectSitesMatch?.[1]) {
+    const projectId = decodeURIComponent(projectSitesMatch[1]);
+    if (request.method === 'GET') {
+      requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+      const siteIds = await runtime.geoProjectRepository.listSiteIds(
+        geoContext.tenantId,
+        projectId,
+      );
+      return sendJson(response, 200, await geoTreeService.sitesByIds(siteIds));
+    }
+    if (request.method === 'POST') {
+      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+      const project = await runtime.geoProjectRepository.get(geoContext.tenantId, projectId);
+      if (!project) {
+        throw new AppError('project not found', {
+          code: 'GEO_PROJECT_NOT_FOUND',
+          statusCode: 404,
+        });
+      }
+      const body = await readBody(request);
+      const created = await geoService.createSiteAtAddress(
+        body as Parameters<typeof geoService.createSiteAtAddress>[0],
+        geoContext,
+      );
+      await runtime.geoProjectRepository.linkSite(projectId, created.site.id);
+      return sendJson(response, 201, created);
+    }
+  }
+
+  const projectSiteMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/sites\/([^/]+)$/);
+  if (projectSiteMatch?.[1] && projectSiteMatch[2] && request.method === 'DELETE') {
+    requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+    const projectId = decodeURIComponent(projectSiteMatch[1]);
+    const siteId = decodeURIComponent(projectSiteMatch[2]);
+    const siteIds = await runtime.geoProjectRepository.listSiteIds(geoContext.tenantId, projectId);
+    if (!siteIds.includes(siteId)) {
+      throw new AppError('project site not found', {
+        code: 'GEO_PROJECT_SITE_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    // Mesma ordem e mesmo motivo do DELETE de projeto: soft-terminate (C6) antes de
+    // desvincular, para uma falha na transição não deixar o local órfão e visível.
+    await geoService.transitionSite(
+      siteId,
+      { status: 'Retired', statusReason: 'Local removido do projeto' },
+      geoContext,
+    );
+    await runtime.geoProjectRepository.unlinkSite(projectId, siteId);
+    return sendJson(response, 204, null);
+  }
+
   // Árvore de navegação — um nível por chamada. Vem antes do roteador de
   // entidades porque `tree` não é uma entidade Geo, é uma projeção de leitura.
   if (request.method === 'GET' && url.pathname === '/v1/geo/tree/roots') {
@@ -2215,6 +2337,17 @@ const parseOptionalNumber = (value: string | null): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+// Recusa um ícone de projeto (REQ-MOD01-015) maior que GEO_PROJECT_ICON_MAX_CHARS antes de
+// gravar — a validação do cliente (web/src/utils/projectIconImage.ts) não pode ser a única
+// barreira contra um upload não processado.
+const assertProjectIconSize = (value: unknown): void => {
+  if (typeof value !== 'string' || value.length <= GEO_PROJECT_ICON_MAX_CHARS) return;
+  throw new AppError('project icon too large', {
+    code: 'GEO_PROJECT_ICON_TOO_LARGE',
+    statusCode: 413,
+  });
+};
+
 // Sem limit/offset explícitos, mantém o comportamento histórico (lista completa) para não quebrar
 // os consumidores que ainda dependem do catálogo inteiro — a paginação é opt-in por quem pede.
 const parseGeoListQuery = (
@@ -3420,6 +3553,17 @@ const ensureAuthorized = (request: IncomingMessage, config: AppConfig): Promise<
 
 // Papéis que administram contas de usuário (ver docs/3-system-design/security.md §3).
 const USER_ADMIN_ROLES = ['tenant.admin', 'platform.admin'] as const;
+
+// Mesmos papéis que GeoService.assertRole exige internamente para leitura/escrita de Site
+// (READ_ROLE/WRITE_ROLE, privados a service.ts) — os Projetos de trabalho (REQ-MOD01-015)
+// não passam pelo GeoService, então a rota HTTP replica a checagem aqui.
+const GEO_PROJECT_READ_ROLES = ['inventory.reader', 'platform.admin'] as const;
+const GEO_PROJECT_WRITE_ROLES = ['inventory.editor', 'platform.admin'] as const;
+
+// Teto do ícone de projeto (data URL): o cliente reduz para ~128×128 antes de enviar
+// (ver web/src/utils/projectIconImage.ts), então qualquer coisa acima disto é sinal de
+// upload não processado — recusar aqui evita gravar um blob grande na coluna CLOB.
+const GEO_PROJECT_ICON_MAX_CHARS = 120_000;
 
 // Deriva as opções de autenticação do runtime a partir da AppConfig — o runtime não lê env
 // direto (testabilidade), então a fronteira HTTP traduz config → options.

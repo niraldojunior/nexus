@@ -9,12 +9,12 @@ TMFC014 · TMF673 / TMF674 / TMF675
 | Campo                   | Valor                          |
 | ----------------------- | ------------------------------ |
 | **Document Reference**  | VTN-HLD-MOD01-GEO              |
-| **Versão**              | 1.7 — draft                    |
+| **Versão**              | 1.8 — draft                    |
 | **Data**                | Agosto 2026                    |
 | **Documento âncora**    | VTN-HLD-OVERVIEW-001           |
 | **TMFC coberto**        | TMFC014 — Geographic Site Mgmt |
 | **Open APIs**           | TMF673, TMF674, TMF675, TMF688 |
-| **Requisitos cobertos** | REQ-MOD01-001 a REQ-MOD01-014  |
+| **Requisitos cobertos** | REQ-MOD01-001 a REQ-MOD01-015  |
 | **Status**              | Em elaboração                  |
 
 ---
@@ -59,22 +59,23 @@ Este documento se ancora arquiteturalmente no documento de visão geral VTN-HLD-
 
 O HLD descreve o contrato funcional alvo. A tabela abaixo registra o estado verificado no backend, persistência, frontend e testes em julho de 2026. `Parcial` significa que existe uma base executável, mas ao menos um RF/CA obrigatório, requisito de escala ou regra canônica ainda não está entregue.
 
-| Requisito         | Estado           | Evidência atual                                                                                                                                                                                                                   | Gap principal                                                                                     | Bloqueador           | Backlog                  |
-| ----------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------- | ------------------------ |
-| **REQ-MOD01-001** | Parcial          | `GeoService`, `IGeoRepository`, rotas TMF675 e `geo.unit.spec.ts` validam e persistem Point/LineString/Polygon.                                                                                                                   | Consultas por raio/interseção, export GeoJSON, índice espacial e UUID v7.                         | Q-ARQ-001            | DEV-GEO-001, DEV-X-001   |
-| **REQ-MOD01-002** | Parcial          | CRUD TMF673, vínculo com Location e testes de rota estão ativos.                                                                                                                                                                  | Sugestão/geocodificação Geosite, versionamento e carga em massa.                                  | Q-GEO-005            | DEV-GEO-002, DEV-GEO-006 |
-| **REQ-MOD01-003** | Parcial          | CRUD de SiteSpecification e regras de contenção são exercitados em `geo.unit.spec.ts`.                                                                                                                                            | Categorias continuam fechadas no tipo TypeScript; falta lifecycle e consulta `allowedChildren`.   | Q-GEO-001            | DEV-GEO-003              |
-| **REQ-MOD01-004** | Parcial          | Região é representável por SiteSpecification e a árvore expõe raízes/filhos paginados.                                                                                                                                            | Filtros próprios, contadores acumulados e invariantes administrativas.                            | Q-GEO-001, Q-GEO-002 | DEV-GEO-004              |
-| **REQ-MOD01-005** | Parcial          | `relatedSite` e specs permitem classificação e agrupamento básico.                                                                                                                                                                | `siteType`, consulta de membros, filtros combinados e agregações de grupo.                        | Q-GEO-004            | DEV-GEO-004              |
-| **REQ-MOD01-006** | Parcial          | CRUD TMF674, `/v1/geo/workspace/site-at-address`, busca e frontend Geo estão testados.                                                                                                                                            | Filtros completos, bulk, múltiplos endereços e características governadas pelo catálogo.          | Q-GEO-001            | DEV-GEO-004, DEV-GEO-006 |
-| **REQ-MOD01-007** | Parcial          | `/v1/geo/tree/roots`, `children` e `search` entregam navegação lazy com contagens.                                                                                                                                                | Árvore completa dedicada, profundidade/ciclos e operações específicas de Sub-Site.                | Q-GEO-010            | DEV-GEO-004              |
-| **REQ-MOD01-008** | Parcial          | PATCH de status gera TMF688 e `/v1/geo/sites/{id}/events` expõe histórico bruto.                                                                                                                                                  | Máquina de transições, `statusDate`, histórico semântico e retenção.                              | Q-GEO-008            | DEV-GEO-004, DEV-X-002   |
-| **REQ-MOD01-009** | Parcial          | `validateContainment` verifica pares pai/filho configurados.                                                                                                                                                                      | Prevenção de ciclos ancestrais e API dinâmica de filhos permitidos.                               | Q-GEO-001            | DEV-GEO-003, DEV-GEO-004 |
-| **REQ-MOD01-010** | Parcial          | Criação, listagem e remoção de `relatedSite` persistem e publicam eventos.                                                                                                                                                        | Tipos governados, inversos automáticos, impact analysis e subgrafo.                               | Q-GEO-004            | DEV-GEO-004, DEV-X-003   |
-| **REQ-MOD01-011** | Parcial          | `GeoPage`, Google Maps, árvore sincronizada, camada de cobertura GPON por escala (REQ-MOD01-014) e `/v1/geo/tree/viewport` exibem Sites e infraestrutura passiva por bbox/escala.                                                 | Sync de coordenadas, camadas Geosite, proximidade e exportação PNG/GeoJSON.                       | Q-GEO-005, Q-GEO-007 | DEV-GEO-005              |
-| **REQ-MOD01-012** | Parcial          | Mudanças Geo persistem eventos consultáveis e cobertos por testes unitários/integrados.                                                                                                                                           | Outbox transacional, Schema Registry, catálogo público, DLQ e UUID v7.                            | Q-GEO-008            | DEV-X-002                |
-| **REQ-MOD01-013** | Não implementado | `GeoPage` e o mapa exibem e selecionam feições; nenhuma tela cria ou altera vértices.                                                                                                                                             | Editor de geometria completo: desenho, vértices, snap, split/merge, rascunho, import e histórico. | Q-GEO-011            | DEV-GEO-007, DEV-GEO-005 |
-| **REQ-MOD01-014** | Implementado     | `coverage-grid.ts`, `coverage-service.ts`, `/v1/geo/coverage`, `scripts/build-gpon-coverage.mjs` e a camada `CoverageOverlay` no `GeoPage`, com `geo.coverage.unit.spec.ts`, `geo.integration.spec.ts` e `coverageColor.test.ts`. | Takeup (portas ocupadas/totais) por bairro e regeneração incremental/orquestrada da grade.        | —                    | DEV-GEO-008              |
+| Requisito         | Estado           | Evidência atual                                                                                                                                                                                                                                                                                    | Gap principal                                                                                                       | Bloqueador           | Backlog                  |
+| ----------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------- | ------------------------ |
+| **REQ-MOD01-001** | Parcial          | `GeoService`, `IGeoRepository`, rotas TMF675 e `geo.unit.spec.ts` validam e persistem Point/LineString/Polygon.                                                                                                                                                                                    | Consultas por raio/interseção, export GeoJSON, índice espacial e UUID v7.                                           | Q-ARQ-001            | DEV-GEO-001, DEV-X-001   |
+| **REQ-MOD01-002** | Parcial          | CRUD TMF673, vínculo com Location e testes de rota estão ativos.                                                                                                                                                                                                                                   | Sugestão/geocodificação Geosite, versionamento e carga em massa.                                                    | Q-GEO-005            | DEV-GEO-002, DEV-GEO-006 |
+| **REQ-MOD01-003** | Parcial          | CRUD de SiteSpecification e regras de contenção são exercitados em `geo.unit.spec.ts`.                                                                                                                                                                                                             | Categorias continuam fechadas no tipo TypeScript; falta lifecycle e consulta `allowedChildren`.                     | Q-GEO-001            | DEV-GEO-003              |
+| **REQ-MOD01-004** | Parcial          | Região é representável por SiteSpecification e a árvore expõe raízes/filhos paginados.                                                                                                                                                                                                             | Filtros próprios, contadores acumulados e invariantes administrativas.                                              | Q-GEO-001, Q-GEO-002 | DEV-GEO-004              |
+| **REQ-MOD01-005** | Parcial          | `relatedSite` e specs permitem classificação e agrupamento básico.                                                                                                                                                                                                                                 | `siteType`, consulta de membros, filtros combinados e agregações de grupo.                                          | Q-GEO-004            | DEV-GEO-004              |
+| **REQ-MOD01-006** | Parcial          | CRUD TMF674, `/v1/geo/workspace/site-at-address`, busca e frontend Geo estão testados.                                                                                                                                                                                                             | Filtros completos, bulk, múltiplos endereços e características governadas pelo catálogo.                            | Q-GEO-001            | DEV-GEO-004, DEV-GEO-006 |
+| **REQ-MOD01-007** | Parcial          | `/v1/geo/tree/roots`, `children` e `search` entregam navegação lazy com contagens.                                                                                                                                                                                                                 | Árvore completa dedicada, profundidade/ciclos e operações específicas de Sub-Site.                                  | Q-GEO-010            | DEV-GEO-004              |
+| **REQ-MOD01-008** | Parcial          | PATCH de status gera TMF688 e `/v1/geo/sites/{id}/events` expõe histórico bruto.                                                                                                                                                                                                                   | Máquina de transições, `statusDate`, histórico semântico e retenção.                                                | Q-GEO-008            | DEV-GEO-004, DEV-X-002   |
+| **REQ-MOD01-009** | Parcial          | `validateContainment` verifica pares pai/filho configurados.                                                                                                                                                                                                                                       | Prevenção de ciclos ancestrais e API dinâmica de filhos permitidos.                                                 | Q-GEO-001            | DEV-GEO-003, DEV-GEO-004 |
+| **REQ-MOD01-010** | Parcial          | Criação, listagem e remoção de `relatedSite` persistem e publicam eventos.                                                                                                                                                                                                                         | Tipos governados, inversos automáticos, impact analysis e subgrafo.                                                 | Q-GEO-004            | DEV-GEO-004, DEV-X-003   |
+| **REQ-MOD01-011** | Parcial          | `GeoPage`, Google Maps, árvore sincronizada, camada de cobertura GPON por escala (REQ-MOD01-014) e `/v1/geo/tree/viewport` exibem Sites e infraestrutura passiva por bbox/escala.                                                                                                                  | Sync de coordenadas, camadas Geosite, proximidade e exportação PNG/GeoJSON.                                         | Q-GEO-005, Q-GEO-007 | DEV-GEO-005              |
+| **REQ-MOD01-012** | Parcial          | Mudanças Geo persistem eventos consultáveis e cobertos por testes unitários/integrados.                                                                                                                                                                                                            | Outbox transacional, Schema Registry, catálogo público, DLQ e UUID v7.                                              | Q-GEO-008            | DEV-X-002                |
+| **REQ-MOD01-013** | Não implementado | `GeoPage` e o mapa exibem e selecionam feições; nenhuma tela cria ou altera vértices.                                                                                                                                                                                                              | Editor de geometria completo: desenho, vértices, snap, split/merge, rascunho, import e histórico.                   | Q-GEO-011            | DEV-GEO-007, DEV-GEO-005 |
+| **REQ-MOD01-014** | Implementado     | `coverage-grid.ts`, `coverage-service.ts`, `/v1/geo/coverage`, `scripts/build-gpon-coverage.mjs` e a camada `CoverageOverlay` no `GeoPage`, com `geo.coverage.unit.spec.ts`, `geo.integration.spec.ts` e `coverageColor.test.ts`.                                                                  | Takeup (portas ocupadas/totais) por bairro e regeneração incremental/orquestrada da grade.                          | —                    | DEV-GEO-008              |
+| **REQ-MOD01-015** | Implementado     | `GeoProjectRepository`, rotas `/v1/geo/projects/*` em `app.ts`, exclusão de locais de projeto em `GeoTreeService` (`PROJECT_SITE_EXCLUSION_SQL`), `HierarchySidebar`/`ProjectListView`/`ProjectDetailPanel`/`ProjectSitePanel` no frontend, com `geo-project.unit.spec.ts` e testes de componente. | Promoção explícita de um local de projeto para o inventário sem soft-terminar o Site (hoje só ocorre por exclusão). | —                    | DEV-GEO-009              |
 
 ---
 
@@ -154,24 +155,25 @@ Toda operação de cadastro do módulo — inclusive digitalização de geometri
 
 ## 5. Resumo dos requisitos do módulo
 
-O módulo Geographic é composto por 14 requisitos, organizados conforme o fluxo natural de modelagem TMF: primeiro as entidades geoespaciais base (Location, Address), depois o catálogo (SiteSpecification), depois as instâncias (Region, Site, Sub-Site, ciclo de vida), depois as relações (contenção, topologia A↔Z) e finalmente as funcionalidades transversais (mapa, eventos, edição geoespacial, cobertura agregada por bairro).
+O módulo Geographic é composto por 15 requisitos, organizados conforme o fluxo natural de modelagem TMF: primeiro as entidades geoespaciais base (Location, Address), depois o catálogo (SiteSpecification), depois as instâncias (Region, Site, Sub-Site, ciclo de vida), depois as relações (contenção, topologia A↔Z) e finalmente as funcionalidades transversais (mapa, eventos, edição geoespacial, cobertura agregada por bairro, projetos de trabalho).
 
-| ID                | Título                                                        | Entidade TMF principal                                         |
-| ----------------- | ------------------------------------------------------------- | -------------------------------------------------------------- |
-| **REQ-MOD01-001** | Cadastro de Geographic Location (ponto, área, linha)          | _GeographicLocation (TMF675)_                                  |
-| **REQ-MOD01-002** | Cadastro de Geographic Address (endereço postal estruturado)  | _GeographicAddress (TMF673)_                                   |
-| **REQ-MOD01-003** | Catálogo de Geographic Site Specification (tipos de site)     | _GeographicSiteSpecification (TMF674)_                         |
-| **REQ-MOD01-004** | Cadastro de Região Geográfica (GeographicSite administrativo) | _GeographicSite com siteType=Region (TMF674)_                  |
-| **REQ-MOD01-005** | Classificação Funcional de Sites (siteType e grupo funcional) | _GeographicSite com siteType (TMF674) + grupo via relatedSite_ |
-| **REQ-MOD01-006** | Cadastro de Geographic Site (entidade central do módulo)      | _GeographicSite (TMF674)_                                      |
-| **REQ-MOD01-007** | Sub-Sites (andares, salas, cages como GeographicSite)         | _GeographicSite com category=SubSite (TMF674)_                 |
-| **REQ-MOD01-008** | Ciclo de Vida do Site (status, transições e histórico)        | _GeographicSite.status + StateChangeEvent (TMF674 + TMF688)_   |
-| **REQ-MOD01-009** | Regras de Contenção e Hierarquia entre Sites                  | _allowedParentSpec / allowedChildSpec em SiteSpec (TMF674)_    |
-| **REQ-MOD01-010** | Relações Topológicas A↔Z entre Sites                          | _relatedSite[] em GeographicSite (TMF674)_                     |
-| **REQ-MOD01-011** | Visão de Mapa Georreferenciado                                | _Não é entidade TMF — funcionalidade de UI sobre TMF674+675_   |
-| **REQ-MOD01-012** | Eventos de Domínio do Módulo Geographic                       | _Event (TMF688) — vários tipos_                                |
-| **REQ-MOD01-013** | Digitalização e edição de geometria no navegador              | _GeographicLocation (TMF675) — operação de edição_             |
-| **REQ-MOD01-014** | Cobertura GPON por bairro (mapa de calor)                     | _GeographicLocation (TMF675) — polígono de cobertura agregado_ |
+| ID                | Título                                                        | Entidade TMF principal                                                               |
+| ----------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **REQ-MOD01-001** | Cadastro de Geographic Location (ponto, área, linha)          | _GeographicLocation (TMF675)_                                                        |
+| **REQ-MOD01-002** | Cadastro de Geographic Address (endereço postal estruturado)  | _GeographicAddress (TMF673)_                                                         |
+| **REQ-MOD01-003** | Catálogo de Geographic Site Specification (tipos de site)     | _GeographicSiteSpecification (TMF674)_                                               |
+| **REQ-MOD01-004** | Cadastro de Região Geográfica (GeographicSite administrativo) | _GeographicSite com siteType=Region (TMF674)_                                        |
+| **REQ-MOD01-005** | Classificação Funcional de Sites (siteType e grupo funcional) | _GeographicSite com siteType (TMF674) + grupo via relatedSite_                       |
+| **REQ-MOD01-006** | Cadastro de Geographic Site (entidade central do módulo)      | _GeographicSite (TMF674)_                                                            |
+| **REQ-MOD01-007** | Sub-Sites (andares, salas, cages como GeographicSite)         | _GeographicSite com category=SubSite (TMF674)_                                       |
+| **REQ-MOD01-008** | Ciclo de Vida do Site (status, transições e histórico)        | _GeographicSite.status + StateChangeEvent (TMF674 + TMF688)_                         |
+| **REQ-MOD01-009** | Regras de Contenção e Hierarquia entre Sites                  | _allowedParentSpec / allowedChildSpec em SiteSpec (TMF674)_                          |
+| **REQ-MOD01-010** | Relações Topológicas A↔Z entre Sites                          | _relatedSite[] em GeographicSite (TMF674)_                                           |
+| **REQ-MOD01-011** | Visão de Mapa Georreferenciado                                | _Não é entidade TMF — funcionalidade de UI sobre TMF674+675_                         |
+| **REQ-MOD01-012** | Eventos de Domínio do Módulo Geographic                       | _Event (TMF688) — vários tipos_                                                      |
+| **REQ-MOD01-013** | Digitalização e edição de geometria no navegador              | _GeographicLocation (TMF675) — operação de edição_                                   |
+| **REQ-MOD01-014** | Cobertura GPON por bairro (mapa de calor)                     | _GeographicLocation (TMF675) — polígono de cobertura agregado_                       |
+| **REQ-MOD01-015** | Projetos de Trabalho (coleções de locais fora da Hierarquia)  | _GeographicSite (TMF674) — `geo_project`/`geo_project_site` são plataforma, não TMF_ |
 
 ### 5.1 Ordem de implementação sugerida
 
@@ -182,6 +184,7 @@ A ordem natural de construção respeita as dependências entre entidades:
 - **Camada 3 (governança):** REQ-008 (Ciclo de Vida) + REQ-009 (Contenção). Endurece a operação do dia a dia.
 - **Camada 4 (topologia e visualização):** REQ-010 (Relações A↔Z) + REQ-011 (Mapa) + REQ-013 (Edição de geometria) + REQ-014 (Cobertura GPON por bairro). Eleva a operação para análise topológica, torna o cadastro geoespacial autossuficiente no navegador e dá leitura de densidade/disponibilidade da planta em qualquer escala.
 - **Camada 5 (interoperabilidade):** REQ-012 (Eventos). Habilita módulos downstream e Data Lake — pode ser implementado em paralelo às camadas 2-4.
+- **Camada 6 (workspace de trabalho):** REQ-015 (Projetos de Trabalho). Depende do cadastro guiado por endereço (REQ-006) e do filtro de navegação (REQ-011) já existirem — é uma camada de plataforma sobre eles, não um novo tipo de entidade.
 
 ---
 
@@ -1724,9 +1727,108 @@ Exemplo ilustrativo do polígono de cobertura de um bairro conforme o contrato T
 
 ---
 
-## 20. Cenários ilustrativos da modelagem
+## 20. REQ-MOD01-015 — Projetos de Trabalho (coleções de locais fora da Hierarquia)
 
-### 20.1 Cenário A — Home Passed até Home Connected
+> **Entidade TMF:** GeographicSite (TMF674) — reaproveitado sem alteração; `geo_project`/`geo_project_site` são projeção de plataforma, não TMF  
+> **Open API TMF:** TMF674 — o local do projeto nasce pelo mesmo contrato de Site (REQ-MOD01-006)  
+> **Prioridade:** Média — ferramenta de trabalho de campo/planejamento, fora do caminho crítico de provisionamento  
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.8 — draft
+
+### 20.1 Descrição
+
+A página Locais ganha uma segunda aba na doca de navegação, ao lado da Hierarquia: **Projetos**, no espírito do painel "Salvos" do Google Maps. Um Projeto é uma coleção nomeada — com ícone e descrição — de locais criados exclusivamente para aquele recorte de trabalho (um levantamento de campo, uma proposta de expansão, um estudo de viabilidade em lote). Diferente de um Site cadastrado pela Hierarquia, um local de Projeto nasce **invisível** na árvore de navegação, na busca e no mapa geral: só aparece com o Projeto que o contém aberto na doca. Título e descrição do Projeto são editados inline — perder o foco do campo já salva, sem botão dedicado. Excluir o Projeto ou um de seus locais não apaga nada fisicamente (C6): encerra (`Retired`) os Sites vinculados e remove só o vínculo de plataforma. A visão em Combos, redundante com a árvore, é removida nesta mesma revisão.
+
+### 20.2 Racional arquitetural
+
+Um Projeto **não é uma entidade TMF**. É uma projeção de plataforma — como o histórico de busca (REQ-MOD01-011) e a grade de cobertura GPON (REQ-MOD01-014) — que vive em tabelas próprias (`geo_project`, `geo_project_site`), fala com o banco direto e nunca passa pelo `IGeoRepository` nem pelo contrato TMF674. O que ele contém, porém, **é** TMF puro: cada local de um Projeto é um `GeographicSite` (TMF674) real, criado pelo mesmo caso de uso de cadastro guiado por endereço que qualquer outro Site (REQ-MOD01-006) — a diferença é só a linha de vínculo em `geo_project_site` e um predicado de exclusão (`NOT EXISTS` sobre esse vínculo) nas consultas que alimentam a Hierarquia e a busca (REQ-MOD01-011). Não existe um segundo modelo de dado para "local provisório": o mesmo Site que hoje vive escondido num Projeto pode, a qualquer momento, virar Site de produção — basta que o vínculo em `geo_project_site` deixe de existir. Hoje isso só acontece por exclusão (que soft-termina o Site); uma promoção explícita para o inventário sem terminar o Site é extensão futura (ver §23).
+
+Escopo do Projeto é o **tenant** (C8), não o usuário: qualquer pessoa autorizada no tenant vê e edita os mesmos Projetos — é um caderno de equipe, não uma lista pessoal.
+
+### 20.3 Mapeamento de atributos TMF
+
+| Atributo                                 | Tipo   | Obrigatório | Observação V.tal                                                                                       |
+| ---------------------------------------- | ------ | :---------: | ------------------------------------------------------------------------------------------------------ |
+| `GeographicSite.*`                       | —      |      —      | Sem alteração de forma alguma no contrato TMF674 (REQ-MOD01-006) — o local de projeto é um Site comum. |
+| `geo_project.name`                       | string |     Sim     | Nome do projeto; default `"Projeto sem título"` na criação. Não é atributo TMF — coluna de plataforma. |
+| `geo_project.description`                | string |     Não     | Descrição livre, editada inline.                                                                       |
+| `geo_project.iconDataUrl`                | string |     Não     | Ícone carregado pelo usuário, reduzido no navegador para ~128×128 antes do envio.                      |
+| `geo_project.tenantId`                   | string |     Sim     | Escopo do Projeto (C8) — sem `userId`: visível a todo o tenant.                                        |
+| `geo_project_site.projectId` / `.siteId` | string |     Sim     | Vínculo N:N entre o Projeto e o `GeographicSite` que ele contém; `position` ordena a lista exibida.    |
+
+### 20.4 Exemplo de payload
+
+Não há um novo `@type` TMF: a criação de um local de projeto devolve exatamente o payload de `GeographicSite` do REQ-MOD01-006, pela mesma forma de `POST /v1/geo/workspace/site-at-address`. O que muda é a projeção de plataforma que descreve o Projeto em si:
+
+```json
+{
+  "id": "prj-018f9c40-2b11-7c9a-8e21-3a5f0d7c1122",
+  "tenantId": "vtal-rj",
+  "name": "Expansão Icaraí — levantamento",
+  "description": "Pontos candidatos a CDO para o projeto de adensamento do Q3.",
+  "iconDataUrl": "data:image/webp;base64,UklGRi4A...",
+  "createdBy": "niraldo.junior@vtal.com.br",
+  "siteCount": 12,
+  "createdAt": "2026-08-10T13:04:00Z",
+  "updatedAt": "2026-08-14T09:22:11Z"
+}
+```
+
+### 20.5 Pré-condições
+
+- O catálogo de `GeographicSiteSpecification` (REQ-MOD01-003) já tem ao menos um tipo de categoria `Site` publicado — é o que o formulário de local do projeto oferece no seletor de tipo.
+- O cadastro guiado por endereço (REQ-MOD01-006, `POST /v1/geo/workspace/site-at-address`) está disponível — é o caso de uso que o Projeto reaproveita para criar cada local.
+- A Hierarquia (REQ-MOD01-011) já filtra por `status NOT IN ('Retired', 'terminated')` — o predicado de exclusão de projeto se soma a esse filtro, não o substitui.
+
+### 20.6 Requisitos Funcionais
+
+| ID         | Nome                                   | Descrição                                                                                                                                                                                                        |
+| ---------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Duas abas na doca**                  | A doca de Locais mostra Hierarquia e Projetos como abas irmãs; a visão em Combos é removida (a árvore passa a ser o único modo de navegação hierárquica).                                                        |
+| **RF-002** | **Criar e abrir**                      | "+ Novo Projeto" cria o registro (nome default) e abre direto o painel de detalhe dele.                                                                                                                          |
+| **RF-003** | **Título e descrição inline**          | Título e descrição são editados no próprio painel; perder o foco do campo grava via `PATCH`, sem botão de salvar.                                                                                                |
+| **RF-004** | **Ícone carregável**                   | Clicar no ícone do projeto abre o seletor de arquivo do sistema operacional; a imagem é reduzida no navegador antes do envio.                                                                                    |
+| **RF-005** | **Lista de locais com scroll próprio** | O painel do projeto lista os locais vinculados em área com rolagem independente do cabeçalho (título/descrição); "Adicionar Local" é a primeira linha da lista.                                                  |
+| **RF-006** | **Local exclusivo do projeto**         | Um local criado por "Adicionar Local" vira `GeographicSite`, fica fora da árvore/busca/mapa geral e só aparece com o projeto aberto.                                                                             |
+| **RF-007** | **Endereço por busca ou por mapa**     | O formulário de novo local aceita endereço por autocomplete (Google Places) ou por um ponto escolhido diretamente no mapa.                                                                                       |
+| **RF-008** | **Enquadramento automático**           | Ao abrir um projeto, o mapa voa para enquadrar todos os seus locais (um único ponto: aproxima nele; dois ou mais: enquadra o retângulo que os contém).                                                           |
+| **RF-009** | **Exclusão em cascata soft**           | Excluir o projeto (menu ⋯) ou um local dele encerra (`Retired`) cada `GeographicSite` envolvido antes de apagar o vínculo de plataforma — nunca o contrário, para nenhum local ficar órfão e visível sem querer. |
+
+### 20.7 Regras de Negócio
+
+| ID         | Nome                                           | Descrição                                                                                                                                                                                  |
+| ---------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **RN-001** | **Projeto não é TMF**                          | `geo_project`/`geo_project_site` são tabelas de plataforma; nenhuma API `/tmf-api/*` as expõe — só `/v1/geo/projects/*`.                                                                   |
+| **RN-002** | **Local de projeto é Site real**               | Todo local criado num projeto é um `GeographicSite` (TMF674) válido, sujeito às mesmas regras de status, contenção e auditoria de qualquer Site (REQ-MOD01-006, -008, -009).               |
+| **RN-003** | **Visibilidade condicionada ao vínculo**       | Um Site some da Hierarquia/busca/mapa geral enquanto (e só enquanto) existir a linha correspondente em `geo_project_site` — a exclusão é dirigida pelo dado, não por uma flag na entidade. |
+| **RN-004** | **Escopo de tenant, não de usuário**           | Projetos são visíveis e editáveis por qualquer ator autorizado do tenant (C8); não há isolamento por usuário.                                                                              |
+| **RN-005** | **Soft-terminate sempre precede o desvínculo** | Nenhuma rota de exclusão remove a linha de `geo_project_site` antes de confirmar a transição do Site para `Retired`; uma falha na transição aborta a exclusão inteira (C6).                |
+| **RN-006** | **Reposicionar fica fora do escopo**           | Editar nome/tipo/status de um local de projeto já criado é suportado; mover o ponto no mapa é REQ-MOD01-013 e não é tratado por este requisito.                                            |
+
+### 20.8 Critérios de Aceite
+
+| ID         | Critério                                           | Resultado Esperado                                                                                                  |
+| ---------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | Criar um projeto e adicionar um local por endereço | O local aparece na lista do projeto e como pin no mapa; a árvore da Hierarquia e a busca não o encontram.           |
+| **CA-002** | Editar o título do projeto e clicar fora do campo  | O nome persiste (recarregar a página mantém o valor) sem qualquer clique em botão de salvar.                        |
+| **CA-003** | Carregar um ícone grande (vários MB)               | O ícone aparece reduzido no painel e na lista; o `PATCH` enviado ao servidor tem poucos KB, não o arquivo original. |
+| **CA-004** | Excluir um local do projeto                        | O local some da lista e do mapa; consultar o Site por `GET /v1/geo/sites/:id` mostra `status: Retired`.             |
+| **CA-005** | Excluir o projeto inteiro pelo menu ⋯              | Todos os locais vinculados ficam `Retired`; o projeto some da lista de Projetos.                                    |
+| **CA-006** | Abrir um projeto com 3+ locais espalhados          | A câmera enquadra todos os pins sem exigir zoom manual.                                                             |
+
+### 20.9 Mapeamento contra sistemas de referência
+
+| Capacidade                                                                              | Netwin                                                                                                                                                                                                                       | Kuwaiba                                                                                                                                   | NetBox                            | Decisão Nexus                                                                                                                                |
+| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Agrupador nomeado associável a locais**                                               | Sim — módulo "Projetos" (OSP/Utilitários do NOSSIS, evolução do Netwin): lista Nome/Criado por, `+ adicionar`, campo "Projeto" opcional no formulário de Site/Ponto de Instalação, e um "projeto ativo" de escopo de sessão. | Aproximação em **Pools** — criação e organização de pools customizados de objetos; não descrito como agrupador de locais especificamente. | Não identificado no levantamento. | Projeto (REQ-MOD01-015), compartilhado por tenant (C8), não por sessão.                                                                      |
+| **Local criado dentro do agrupador fica oculto do inventário geral até ação explícita** | Não identificado no levantamento — o "Projeto" do NOSSIS é só um agrupador opcional sobre Sites/Pontos de Instalação **já visíveis** nos módulos LOCAIS/OSP; a fonte não descreve ocultação.                                 | Não identificado no levantamento.                                                                                                         | Não identificado no levantamento. | Sim — `GeographicSite` vinculado a um projeto é excluído por predicado da árvore/busca até o vínculo ser desfeito.                           |
+| **Acesso rápido a itens recorrentes (favoritos)**                                       | Não identificado no levantamento (distinto do "projeto ativo" de sessão, que contextualiza operações, não é atalho de leitura).                                                                                              | Sim — **Favorites**, acesso rápido a objetos usados com frequência.                                                                       | Não identificado no levantamento. | Fora do escopo deste requisito — o Nexus já cobre isso com o histórico de busca (REQ-MOD01-011); Projeto é workspace de criação, não atalho. |
+| **Criação de entidade fora do fluxo de cadastro padrão**                                | Sim — o Projeto do NOSSIS é uma das vias indiretas de criação dentro do OSP (ao lado do Importador DXF), mas associa Sites já cadastrados por LOCAIS; não cria o Site em si.                                                 | Não identificado no levantamento.                                                                                                         | Não identificado no levantamento. | O local do projeto **é** criado pelo mesmo cadastro guiado por endereço do REQ-MOD01-006 — sem via de criação paralela.                      |
+
+---
+
+## 21. Cenários ilustrativos da modelagem
+
+### 21.1 Cenário A — Home Passed até Home Connected
 
 ```text
 GeographicAddress + GeographicLocation (HP)
@@ -1739,7 +1841,7 @@ GeographicAddress + GeographicLocation (HP)
 
 O cenário valida C4, a separação Address/Location/Site e a regra de referência entre Geo, Resource e Service.
 
-### 20.2 Cenário B — Central, sala, Rack e cadeia GPON
+### 21.2 Cenário B — Central, sala, Rack e cadeia GPON
 
 ```text
 Central (GeographicSite)
@@ -1751,7 +1853,7 @@ Central (GeographicSite)
 
 O cenário valida a hierarquia de Sub-Sites, a fronteira Geo↔Resource no Rack e a navegação conjunta árvore/mapa já existente no frontend.
 
-### 20.3 Padrões reaproveitáveis
+### 21.3 Padrões reaproveitáveis
 
 - Address, Location e Site são entidades distintas; referências substituem duplicação.
 - A árvore Geo termina antes do Rack; infraestrutura passiva e equipamentos são Resources.
@@ -1760,7 +1862,7 @@ O cenário valida a hierarquia de Sub-Sites, a fronteira Geo↔Resource no Rack 
 
 ---
 
-## 21. Síntese arquitetural do módulo
+## 22. Síntese arquitetural do módulo
 
 - **Geo é a fonte do “onde”.** Address, Location e Site têm identidades e ciclos de vida próprios.
 - **Catálogo governa a estrutura.** SiteSpecification define características e contenção; enums fechados no código são dívida registrada.
@@ -1770,7 +1872,7 @@ O cenário valida a hierarquia de Sub-Sites, a fronteira Geo↔Resource no Rack 
 
 ---
 
-## 22. Contratos com outros módulos do Nexus
+## 23. Contratos com outros módulos do Nexus
 
 O módulo Geographic é a fundação referenciada por praticamente todos os outros módulos. Os contratos de integração:
 
@@ -1786,7 +1888,7 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 
 ---
 
-## 23. Questões em aberto
+## 24. Questões em aberto
 
 | ID            | Questão                                                                                                                                                                                                                   | Status   | Responsável                      |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------- |
@@ -1800,14 +1902,14 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 | **Q-GEO-010** | A profundidade máxima da hierarquia de Sub-Sites tem limite prático? Caso de uso típico: CO > Andar > Sala > Cage (4 níveis); algum caso ultrapassa?                                                                      | _Aberta_ | _Engenharia V.tal_               |
 | **Q-GEO-011** | A edição de geometria no navegador (REQ-MOD01-013) exige workflow de aprovação no Módulo 5, ou bastam RBAC, motivo declarado e Audit Trail? A resposta muda o custo do editor e o tempo de resposta da operação de campo. | _Aberta_ | _Operações V.tal + Arquitetura_  |
 
-### 23.1 Decisões resolvidas
+### 24.1 Decisões resolvidas
 
 | ID            | Decisão                                                           | Impacto                                                                |
 | ------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| **D-GEO-001** | O Nexus gera UUID v7 próprio e preserva IDs legados em `_origin`. | Aplica-se a Site, Address e Location; detalhamento na seção 23.2.      |
+| **D-GEO-001** | O Nexus gera UUID v7 próprio e preserva IDs legados em `_origin`. | Aplica-se a Site, Address e Location; detalhamento na seção 24.2.      |
 | **D-GEO-002** | O provedor de geocodificação é o Geosite Logradouros.             | Resolve a antiga Q-GEO-009; a interface técnica continua em Q-GEO-005. |
 
-### 23.2 D-GEO-001 — Identidade e proveniência de entidades
+### 24.2 D-GEO-001 — Identidade e proveniência de entidades
 
 > **Princípio arquitetural (Jun/2026):** O Nexus é agnóstico à origem de seus dados. Todo identificador canônico é UUID v7 gerado pelo próprio Nexus, independente do sistema de origem. IDs legados são preservados como atributos customizados (`characteristic`) no grupo convencional `_origin`, exclusivamente para fins de rastreabilidade histórica, auditoria e suporte ao período de dual-running.
 
@@ -1871,18 +1973,19 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 
 ---
 
-## 24. Controle de revisões
+## 25. Controle de revisões
 
-| Versão | Data        | Autor                    | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------ | ----------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0    | Junho 2026  | Produto — V.tal Nexus    | Versão inicial do HLD do Módulo 1 — Nexus Geographic, alinhada a TMF673/674/675 e ao documento âncora VTN-HLD-OVERVIEW-001.                                                                                                                                                                                                                                                                                                                                 |
-| 1.1    | Junho 2026  | Produto — V.tal Nexus    | Formalização de D-GEO-001 (estratégia de migração): definição do princípio de agnósticidade à origem, grupo canônico `_origin` para todas as entidades geográficas, tabela de sistemas cobertos, payload de exemplo e regras de negócio.                                                                                                                                                                                                                    |
-| 1.2    | Julho 2026  | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: matriz de aderência dos 12 requisitos, cenários e síntese arquitetural, anatomia normalizada, JSON válido, questões namespaced e gaps ligados ao backlog `DEV-*`.                                                                                                                                                                                                                                                   |
-| 1.3    | Agosto 2026 | Produto — V.tal Nexus    | Incorporação da consulta operacional de OSP (`inspirations/geosite-legado.md`): princípios 4.7 (fidelidade física — zero entidades artificiais) e 4.8 (operação 100% web), novo REQ-MOD01-013 (digitalização e edição de geometria no navegador), Q-GEO-011, RN-001 do mapa redirecionada ao motor de integridade (REQ-MOD02-027) e backlog DEV-GEO-007.                                                                                                    |
-| 1.4    | Agosto 2026 | Engenharia — V.tal Nexus | Novo RN-007 (§12.7): mapa e árvore de navegação escondem Sub-Site e o recurso `Splitter` (Módulo 2), com pass-through do splitter para o primeiro descendente visível; os dois continuam acessíveis pelo painel de detalhe do local/recurso pai. `GeoTreeService.children` ganha o parâmetro `scope` (`'tree'` default para navegação, `'all'` para os painéis de detalhe).                                                                                 |
-| 1.5    | Agosto 2026 | Engenharia — V.tal Nexus | Novo REQ-MOD01-014 (Cobertura GPON por bairro): mapa de calor de disponibilidade/densidade derivado do raio de 300 m das CDOs, com polígono de bairro em TMF675 e grade de leitura `geo_gpon_coverage_cell` agregável por zoom. RF-004 do REQ-MOD01-011 substitui os clusters numerados pela troca de camadas por escala (planta → cobertura → polígono), com Estações que encolhem em 5–50 km e somem acima de 50 km. Seções 19–23 renumeradas para 20–24. |
-| 1.6    | Agosto 2026 | Engenharia — V.tal Nexus | Novo RF-008 (§19.6): suavização do contorno do polígono de cobertura por corner-cutting (Chaikin), na geração (`coverage-grid.ts`) e no traçado do canvas (`CoverageOverlay.ts`), eliminando o serrilhado da grade. Nova característica `_coverage.smoothIterations`. Correção dos números de §19 (raio real das CDOs é 200 m, célula de traçado é 50 m, agregação grossa é 250 m — desatualizados desde a v1.5).                                           |
-| 1.7    | Agosto 2026 | Engenharia — V.tal Nexus | Novo RF-009/RN-004/CA-007 (§19.6-19.8): descarta componente conexo abaixo de `minComponentCells` — fragmento de fronteira que o bairro dominante por célula (RN-001) deixa para o bairro perdedor em áreas densas, sem CDO visível próprio, poluindo o mapa. Nova característica `_coverage.minComponentCells`.                                                                                                                                             |
+| Versão | Data        | Autor                    | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------ | ----------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0    | Junho 2026  | Produto — V.tal Nexus    | Versão inicial do HLD do Módulo 1 — Nexus Geographic, alinhada a TMF673/674/675 e ao documento âncora VTN-HLD-OVERVIEW-001.                                                                                                                                                                                                                                                                                                                                                                       |
+| 1.1    | Junho 2026  | Produto — V.tal Nexus    | Formalização de D-GEO-001 (estratégia de migração): definição do princípio de agnósticidade à origem, grupo canônico `_origin` para todas as entidades geográficas, tabela de sistemas cobertos, payload de exemplo e regras de negócio.                                                                                                                                                                                                                                                          |
+| 1.2    | Julho 2026  | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: matriz de aderência dos 12 requisitos, cenários e síntese arquitetural, anatomia normalizada, JSON válido, questões namespaced e gaps ligados ao backlog `DEV-*`.                                                                                                                                                                                                                                                                                         |
+| 1.3    | Agosto 2026 | Produto — V.tal Nexus    | Incorporação da consulta operacional de OSP (`inspirations/geosite-legado.md`): princípios 4.7 (fidelidade física — zero entidades artificiais) e 4.8 (operação 100% web), novo REQ-MOD01-013 (digitalização e edição de geometria no navegador), Q-GEO-011, RN-001 do mapa redirecionada ao motor de integridade (REQ-MOD02-027) e backlog DEV-GEO-007.                                                                                                                                          |
+| 1.4    | Agosto 2026 | Engenharia — V.tal Nexus | Novo RN-007 (§12.7): mapa e árvore de navegação escondem Sub-Site e o recurso `Splitter` (Módulo 2), com pass-through do splitter para o primeiro descendente visível; os dois continuam acessíveis pelo painel de detalhe do local/recurso pai. `GeoTreeService.children` ganha o parâmetro `scope` (`'tree'` default para navegação, `'all'` para os painéis de detalhe).                                                                                                                       |
+| 1.5    | Agosto 2026 | Engenharia — V.tal Nexus | Novo REQ-MOD01-014 (Cobertura GPON por bairro): mapa de calor de disponibilidade/densidade derivado do raio de 300 m das CDOs, com polígono de bairro em TMF675 e grade de leitura `geo_gpon_coverage_cell` agregável por zoom. RF-004 do REQ-MOD01-011 substitui os clusters numerados pela troca de camadas por escala (planta → cobertura → polígono), com Estações que encolhem em 5–50 km e somem acima de 50 km. Seções 19–23 renumeradas para 20–24.                                       |
+| 1.6    | Agosto 2026 | Engenharia — V.tal Nexus | Novo RF-008 (§19.6): suavização do contorno do polígono de cobertura por corner-cutting (Chaikin), na geração (`coverage-grid.ts`) e no traçado do canvas (`CoverageOverlay.ts`), eliminando o serrilhado da grade. Nova característica `_coverage.smoothIterations`. Correção dos números de §19 (raio real das CDOs é 200 m, célula de traçado é 50 m, agregação grossa é 250 m — desatualizados desde a v1.5).                                                                                 |
+| 1.7    | Agosto 2026 | Engenharia — V.tal Nexus | Novo RF-009/RN-004/CA-007 (§19.6-19.8): descarta componente conexo abaixo de `minComponentCells` — fragmento de fronteira que o bairro dominante por célula (RN-001) deixa para o bairro perdedor em áreas densas, sem CDO visível próprio, poluindo o mapa. Nova característica `_coverage.minComponentCells`.                                                                                                                                                                                   |
+| 1.8    | Agosto 2026 | Engenharia — V.tal Nexus | Novo REQ-MOD01-015 (Projetos de Trabalho): aba "Projetos" na doca de Locais, no espírito do painel "Salvos" do Google Maps — coleções de `GeographicSite` criadas exclusivamente para um recorte de trabalho, ocultas da árvore/busca/mapa geral (tabelas de plataforma `geo_project`/`geo_project_site`, não-TMF), com exclusão soft (`Retired`, C6) em cascata. A visão em Combos é removida — a árvore passa a ser o único modo de navegação hierárquica. Seções 20–24 renumeradas para 21–25. |
 
 ---
 

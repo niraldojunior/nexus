@@ -279,11 +279,12 @@ referenciada por `place`).
 
 ## 8. Outros serviços auxiliares
 
-| Serviço                  | Uso                                                         | Observação                                                                              |
-| ------------------------ | ----------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| **Google Maps (JS API)** | Renderização do mapa e geocodificação interativa no browser | Somente a JS API está liberada corporativamente. Para massa, o caminho é o Geosite (§7) |
-| **Provedor LLM**         | Nexus Copilot                                               | Opcional. Sem `OPENAI_API_KEY`, cai em fallback local sobre `docs/`                     |
-| **MCP**                  | Exposição das APIs TMF a clientes de IA                     | Interno; sujeito ao mesmo RBAC e a confirmação explícita antes de writes                |
+| Serviço                  | Uso                                                         | Observação                                                                                                |
+| ------------------------ | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Google Maps (JS API)** | Renderização do mapa e geocodificação interativa no browser | Somente a JS API está liberada corporativamente. Para massa, o caminho é o Geosite (§7)                   |
+| **ViaCEP**               | Consulta pontual do DNE por CEP no painel de Endereço (Geo) | API pública sem credencial. Leitura transitória e informativa — **não** cria `GeographicAddress` no Nexus |
+| **Provedor LLM**         | Nexus Copilot                                               | Opcional. Sem `OPENAI_API_KEY`, cai em fallback local sobre `docs/`                                       |
+| **MCP**                  | Exposição das APIs TMF a clientes de IA                     | Interno; sujeito ao mesmo RBAC e a confirmação explícita antes de writes                                  |
 
 ---
 

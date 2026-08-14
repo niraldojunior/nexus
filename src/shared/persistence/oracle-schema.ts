@@ -16,6 +16,7 @@ const CLOB_COLUMNS = new Set([
   'event_data',
   'filters',
   'geometry',
+  'icon_data_url',
   'metadata',
   'note',
   'payload',
@@ -36,7 +37,9 @@ const CLOB_COLUMNS = new Set([
 const JSON_COLUMNS = new Set(
   [...CLOB_COLUMNS].filter(
     (column) =>
-      !['content', 'query', 'summary', 'title', 'description', 'message'].includes(column),
+      !['content', 'query', 'summary', 'title', 'description', 'message', 'icon_data_url'].includes(
+        column,
+      ),
   ),
 );
 

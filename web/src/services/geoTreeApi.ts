@@ -27,6 +27,9 @@ export type GeoTreeNode = {
   referredType?: 'GeographicSite' | 'PhysicalResource' | 'LogicalResource';
   // Categoria TMF674 da spec do local; com `sublabel` resolve o ícone do local.
   siteCategory?: string;
+  // Id da GeographicSiteSpecification do local (só em nó de Site) — pré-seleciona o tipo
+  // salvo no combo de edição de um local de projeto (REQ-MOD01-015).
+  siteSpecificationId?: string;
   // Code do catálogo de ResourceType — resolve o ícone (ver utils/resourceIcon).
   resourceType?: string;
   status?: string;

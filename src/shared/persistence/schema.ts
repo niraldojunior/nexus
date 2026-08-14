@@ -308,6 +308,12 @@ export const MIGRATIONS_SQL = `
   -- o tipo precisa ja ser o nativo. O transform do Oracle converte TIMESTAMPTZ mesmo assim.
   ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+  -- Projetos de trabalho (REQ-MOD01-015): status do projeto (herdado em cascata pelos Sites
+  -- vinculados) e, por local, observação de trabalho + id do endereço no GEONET.
+  ALTER TABLE geo_project ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'planned';
+  ALTER TABLE geo_project_site ADD COLUMN IF NOT EXISTS note TEXT;
+  ALTER TABLE geo_project_site ADD COLUMN IF NOT EXISTS geonet_address_id TEXT;
 `;
 
 export const SCHEMA_SQL = `
@@ -512,6 +518,11 @@ export const SCHEMA_SQL = `
         name TEXT NOT NULL,
         description TEXT,
         icon_data_url TEXT,
+        -- Status do projeto (planned|active|suspended|terminated, vocabulário de GeoStatus):
+        -- o projeto é a unidade de estado — mudar aqui cascateia (best-effort) para cada Site
+        -- vinculado via transitionSite (ver /v1/geo/projects/:id em app.ts). Um local de
+        -- projeto não tem status próprio editável; ele apenas herda este valor.
+        status TEXT NOT NULL DEFAULT 'planned',
         created_by TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -526,6 +537,13 @@ export const SCHEMA_SQL = `
         project_id TEXT NOT NULL,
         site_id TEXT NOT NULL,
         position INTEGER NOT NULL DEFAULT 0,
+        -- Observação de trabalho do local dentro do projeto — anotação de plataforma (como o
+        -- restante desta tabela), não um characteristic TMF (C1): não acompanha o Site se ele
+        -- for promovido ao inventário fora do projeto.
+        note TEXT,
+        -- Id do endereço no GEONET que originou este local — a base de endereçamento canônica
+        -- da V.tal (ver REQ-MOD01-015 §20). Todo local de projeto nasce amarrado a um id real.
+        geonet_address_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (project_id, site_id),
         FOREIGN KEY (project_id) REFERENCES geo_project(id),

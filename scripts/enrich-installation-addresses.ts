@@ -8,6 +8,14 @@
  *
  * O script trabalha diretamente no CSV e não grava dados no Nexus. As credenciais
  * de GEONET e Google Maps são carregadas do .env da raiz.
+ *
+ * Quando a origem não traz MUNICIPIO, o ViaCEP (a partir do CEP) também completa
+ * essa coluna antes de consultar GEONET/Google — sem isso, a checagem de
+ * coerência de cidade desses provedores rejeitaria todo candidato.
+ *
+ * Quando o CEP não é encontrado no DNE, repesca por rua+número+UF: o Google Maps
+ * descobre o município (o DNE não busca por endereço sem cidade) e então o DNE é
+ * consultado de verdade por UF+cidade+rua, trazendo o CEP correto (DNE_CEP).
  */
 
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
@@ -19,8 +27,8 @@ import {
   GeonetAddressGateway,
   type GeonetAddressCandidate,
   type GeonetAddressDetail,
-} from '../modules/geo/geonet-address-gateway.js';
-import { geonetConfigOf } from '../shared/config/env.js';
+} from '../src/modules/geo/geonet-address-gateway.js';
+import { geonetConfigOf } from '../src/shared/config/env.js';
 
 const SOURCE_COLUMNS = [
   'ID',
@@ -44,6 +52,7 @@ const ENRICHMENT_COLUMNS = [
   'GMAPS_ENDERECO',
   'GMAPS_LOCALIZACAO',
   'GMAPS_PRECISAO',
+  'DNE_CEP',
   'DNE_LOGRADOURO',
   'DNE_COMPLEMENTO',
   'DNE_BAIRRO',
@@ -66,7 +75,6 @@ const GOOGLE_COLUMNS = [
 // Colunas de auditoria que o próprio script acrescenta ao final do arquivo:
 // a consulta exata enviada a cada provedor e um resumo do processamento da linha.
 const LOG_COLUMNS = ['LOG_CONSULTA_GEONET', 'LOG_CONSULTA_GMAPS', 'LOG_GERAL'] as const;
-const OUTPUT_COLUMNS = [...ENRICHMENT_COLUMNS, ...LOG_COLUMNS] as const;
 
 type ColumnName = (typeof SOURCE_COLUMNS)[number] | (typeof ENRICHMENT_COLUMNS)[number];
 type Row = string[];
@@ -79,6 +87,7 @@ export type CsvDocument = {
 };
 
 export type DneAddress = {
+  cep: string;
   logradouro: string;
   complemento: string;
   bairro: string;
@@ -116,6 +125,11 @@ export type GeonetLookup = {
 
 export type AddressServices = {
   viaCep: (cep: string) => Promise<DneAddress | null>;
+  // Repescagem do DNE quando o CEP não é encontrado: descobre o município pelo
+  // Google Maps (rua + número + UF, sem depender de cidade) e então consulta o
+  // DNE de verdade por UF+cidade+rua. Opcional para não quebrar quem monta
+  // AddressServices manualmente (ex.: testes) sem essa capacidade.
+  viaCepByAddress?: (uf: string, street: string, number: string) => Promise<DneAddress | null>;
   geonet: (
     address: string,
     number: string,
@@ -130,9 +144,11 @@ export type EnrichmentSummary = {
   skippedRows: number;
   updatedRows: number;
   viaCep: ProviderSummary;
+  viaCepRetry: ProviderSummary;
   geonet: ProviderSummary;
   google: ProviderSummary;
   failures: number;
+  municipioFilled: number;
 };
 
 type ProviderSummary = {
@@ -270,12 +286,13 @@ export function applyDocumentToWorksheet(
     const headerCell = worksheet.getRow(1).getCell(position + 1);
     if (String(headerCell.text ?? '').trim() !== column) headerCell.value = column;
   }
+  // Percorre todas as colunas: o enriquecimento pode completar campos de
+  // origem vazios (ex.: MUNICIPIO via ViaCEP), não só as colunas de saída.
+  // Só a célula que realmente mudou é escrita, preservando formatação alheia.
   for (let rowIndex = 0; rowIndex < after.records.length; rowIndex += 1) {
     const source = before.records[rowIndex]!;
     const enriched = after.records[rowIndex]!;
-    for (const column of OUTPUT_COLUMNS) {
-      const position = index.get(column);
-      if (position === undefined) continue;
+    for (let position = 0; position < after.headers.length; position += 1) {
       if (source[position] === enriched[position]) continue;
       worksheet.getRow(rowIndex + 2).getCell(position + 1).value = enriched[position] || null;
     }
@@ -383,7 +400,7 @@ export const usage = (): string =>
     '',
     '--limit conta registros lógicos a partir de --start (padrão: 1).',
     '--threads define quantas linhas são consultadas simultaneamente (padrão: 1).',
-    '--checkpoint salva o arquivo a cada N linhas atualizadas (padrão: 200; 0 desliga).',
+    '--checkpoint salva o arquivo a cada N linhas processadas (padrão: 200; 0 desliga).',
     '--only executa apenas os provedores informados (viacep, geonet, gmaps; separados por vírgula).',
     '--overwrite força a reescrita das células mesmo que já estejam preenchidas.',
     'Sem --overwrite, linhas já completas (GEONET_ID, GMAPS_ID e DNE_LOGRADOURO dos provedores',
@@ -454,10 +471,13 @@ export function buildSearchAddress(
   return { geonetAddress, googleAddress, number };
 }
 
+// Município vazio na origem não é divergência: não há o que comparar. Nesse
+// caso a linha segue coerente e o MUNICIPIO é completado a partir do ViaCEP
+// (ver preenchimento logo após o bloco de ViaCEP em enrichRecords).
 export function isDneCoherent(dne: DneAddress, row: Row, index: Map<string, number>): boolean {
+  const rowCity = valueOf(row, index, 'MUNICIPIO');
   return (
-    sameText(dne.uf, valueOf(row, index, 'UF')) &&
-    sameText(dne.localidade, valueOf(row, index, 'MUNICIPIO'))
+    sameText(dne.uf, valueOf(row, index, 'UF')) && (rowCity === '' || sameText(dne.localidade, rowCity))
   );
 }
 
@@ -673,9 +693,11 @@ export async function enrichRecords(
     skippedRows: 0,
     updatedRows: 0,
     viaCep: emptyProviderSummary(),
+    viaCepRetry: emptyProviderSummary(),
     geonet: emptyProviderSummary(),
     google: emptyProviderSummary(),
     failures: 0,
+    municipioFilled: 0,
   };
   const first = options.start - 1;
   const last = Math.min(document.records.length, first + options.limit);
@@ -684,24 +706,30 @@ export async function enrichRecords(
   const runGeonet = providers.includes('geonet');
   const runGoogle = providers.includes('gmaps');
   const viaCepCache = new Map<string, Promise<DneAddress | null>>();
+  const viaCepRetryCache = new Map<string, Promise<DneAddress | null>>();
   const geonetCache = new Map<string, Promise<GeonetLookup | null>>();
   const googleCache = new Map<string, Promise<GoogleLookup | null>>();
 
-  // Checkpoint: grava o arquivo a cada N linhas efetivamente atualizadas.
-  // Só uma gravação por vez (guard `flushing`) — evita colisão do arquivo .tmp
-  // e reescritas sobrepostas quando há várias threads. Linhas puladas/inalteradas
-  // não contam, para não reescrever o arquivo à toa numa reexecução.
-  let dirtySinceFlush = 0;
+  // Checkpoint: grava o arquivo a cada N linhas processadas (consultadas nos
+  // provedores ativos), não só as que mudaram algum campo — uma consulta que não
+  // encontra nada também conta, senão um trecho longo de "não encontrado" atrasa
+  // o salvamento sem motivo. Só uma gravação por vez (guard `flushing`) — evita
+  // colisão do arquivo .tmp e reescritas sobrepostas quando há várias threads.
+  // Linhas puladas por já estarem completas (`rowNeedsWork` = false) não contam:
+  // elas nunca chegam a `runCheckpoint`, então não há nada de novo a salvar.
+  let processedSinceFlush = 0;
   let flushing = false;
-  const runCheckpoint = async (rowChanged: boolean): Promise<void> => {
+  const runCheckpoint = async (): Promise<void> => {
     if (!options.onCheckpoint || !options.checkpointEvery || options.checkpointEvery <= 0) return;
-    if (rowChanged) dirtySinceFlush += 1;
-    if (dirtySinceFlush < options.checkpointEvery || flushing) return;
-    dirtySinceFlush = 0;
+    processedSinceFlush += 1;
+    if (processedSinceFlush < options.checkpointEvery || flushing) return;
+    processedSinceFlush = 0;
     flushing = true;
     try {
       await options.onCheckpoint();
-      logger.log(`Checkpoint: progresso salvo (${summary.updatedRows} atualizada(s)).`);
+      logger.log(
+        `Checkpoint: progresso salvo (${summary.selected} processada(s), ${summary.updatedRows} atualizada(s)).`,
+      );
     } catch (error) {
       logger.warn(`Checkpoint falhou (não salvou desta vez): ${messageOf(error)}`);
     } finally {
@@ -725,12 +753,27 @@ export async function enrichRecords(
     const rowId = valueOf(row, index, 'ID') || `linha ${rowNumber + 2}`;
     const cep = normalizedCep(valueOf(row, index, 'CEP'));
     let dne: DneAddress | null = {
+      cep: valueOf(row, index, 'DNE_CEP'),
       logradouro: valueOf(row, index, 'DNE_LOGRADOURO'),
       complemento: valueOf(row, index, 'DNE_COMPLEMENTO'),
       bairro: valueOf(row, index, 'DNE_BAIRRO'),
       localidade: valueOf(row, index, 'DNE_LOCALIDADE'),
       uf: valueOf(row, index, 'UF'),
     };
+
+    const applyDneFields = (data: DneAddress): boolean =>
+      applyValues(
+        row,
+        index,
+        {
+          DNE_CEP: data.cep,
+          DNE_LOGRADOURO: data.logradouro,
+          DNE_COMPLEMENTO: data.complemento,
+          DNE_BAIRRO: data.bairro,
+          DNE_LOCALIDADE: data.localidade,
+        },
+        options.overwrite,
+      );
 
     // Se o DNE_LOGRADOURO já veio preenchido na origem, mantém os campos DNE
     // existentes e ignora os demais (não consulta o ViaCEP para reescrevê-los).
@@ -741,23 +784,43 @@ export async function enrichRecords(
         const result = await cached(viaCepCache, cep, () => services.viaCep(cep));
         if (!result) {
           summary.viaCep.notFound += 1;
-          viaCepOutcome = 'não encontrado';
           dne = null;
+          viaCepOutcome = 'não encontrado por CEP';
+          // CEP inválido no DNE: repesca pela rua/número/UF (o Google Maps descobre
+          // o município — o DNE em si não aceita busca sem cidade — e então a busca
+          // por endereço no DNE traz o registro oficial, CEP correto incluído).
+          if (services.viaCepByAddress) {
+            const street = rowStreet(row, index);
+            const number = valueOf(row, index, 'NUMERO');
+            const uf = valueOf(row, index, 'UF');
+            try {
+              const retryResult = await cached(
+                viaCepRetryCache,
+                `${uf}|${street}|${number}`,
+                () => services.viaCepByAddress!(uf, street, number),
+              );
+              if (retryResult) {
+                changed = applyDneFields(retryResult) || changed;
+                dne = retryResult;
+                summary.viaCepRetry.filled += 1;
+                viaCepOutcome = 'não encontrado por CEP; encontrado pela rua/número/UF';
+              } else {
+                summary.viaCepRetry.notFound += 1;
+                viaCepOutcome = 'não encontrado por CEP nem pela rua/número/UF';
+              }
+            } catch (retryError) {
+              summary.viaCepRetry.errors += 1;
+              summary.failures += 1;
+              viaCepOutcome = `não encontrado por CEP; repescagem por rua/número/UF falhou (${messageOf(retryError)})`;
+              logger.warn(
+                `[${rowId}] Repescagem do DNE por rua/número/UF falhou: ${messageOf(retryError)}`,
+              );
+            }
+          }
         } else if (!isDneCoherent(result, row, index)) {
           const fileCity = valueOf(row, index, 'MUNICIPIO');
           const fileUf = valueOf(row, index, 'UF');
-          changed =
-            applyValues(
-              row,
-              index,
-              {
-                DNE_LOGRADOURO: result.logradouro,
-                DNE_COMPLEMENTO: result.complemento,
-                DNE_BAIRRO: result.bairro,
-                DNE_LOCALIDADE: result.localidade,
-              },
-              options.overwrite,
-            ) || changed;
+          changed = applyDneFields(result) || changed;
           dne = result;
           summary.viaCep.mismatched += 1;
           viaCepOutcome = `preenchido (divergente: ViaCEP ${result.localidade}/${result.uf} vs arquivo ${fileCity}/${fileUf})`;
@@ -765,18 +828,7 @@ export async function enrichRecords(
             `[${rowId}] ViaCEP retornou UF/Município divergente (ViaCEP ${result.localidade}/${result.uf} vs arquivo ${fileCity}/${fileUf}); dados preenchidos mesmo assim.`,
           );
         } else {
-          changed =
-            applyValues(
-              row,
-              index,
-              {
-                DNE_LOGRADOURO: result.logradouro,
-                DNE_COMPLEMENTO: result.complemento,
-                DNE_BAIRRO: result.bairro,
-                DNE_LOCALIDADE: result.localidade,
-              },
-              options.overwrite,
-            ) || changed;
+          changed = applyDneFields(result) || changed;
           dne = result;
           summary.viaCep.filled += 1;
           viaCepOutcome = 'preenchido';
@@ -791,6 +843,19 @@ export async function enrichRecords(
     } else {
       summary.viaCep.skipped += 1;
       viaCepOutcome = 'DNE já preenchido';
+    }
+
+    // MUNICIPIO ausente na origem é completado a partir do DNE (recém-consultado
+    // ou já presente na linha). Roda fora do bloco acima para cobrir também o
+    // caso "DNE já preenchido" e mantém-se restrito a células vazias, independente
+    // de --overwrite: só serve para completar dado ausente, não para corrigir.
+    let municipioFilled = false;
+    if (dne?.localidade && !valueOf(row, index, 'MUNICIPIO')) {
+      municipioFilled = applyValues(row, index, { MUNICIPIO: dne.localidade }, false);
+      if (municipioFilled) {
+        changed = true;
+        summary.municipioFilled += 1;
+      }
     }
 
     const query = buildSearchAddress(row, index, dne);
@@ -871,13 +936,14 @@ export async function enrichRecords(
       summary.google.skipped += 1;
     }
 
-    const rowSummary = `ViaCEP=${viaCepOutcome}; GEONET=${geonetOutcome}; Google=${googleOutcome}; linha ${changed ? 'atualizada' : 'inalterada'}.`;
+    const municipioNote = municipioFilled ? ' MUNICIPIO completado via ViaCEP;' : '';
+    const rowSummary = `ViaCEP=${viaCepOutcome};${municipioNote} GEONET=${geonetOutcome}; Google=${googleOutcome}; linha ${changed ? 'atualizada' : 'inalterada'}.`;
     row[index.get('LOG_CONSULTA_GEONET')!] = geonetQuery;
     row[index.get('LOG_CONSULTA_GMAPS')!] = googleQuery;
     row[index.get('LOG_GERAL')!] = rowSummary;
     logger.log(`[${rowId}] ${rowSummary}`);
     if (changed) summary.updatedRows += 1;
-    await runCheckpoint(changed);
+    await runCheckpoint();
   };
 
   // Pool de concorrência: `threads` workers puxam linhas de um cursor
@@ -941,6 +1007,109 @@ function stringOf(value: unknown): string {
   return typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
 }
 
+function toDneAddress(body: Record<string, unknown>): DneAddress {
+  return {
+    cep: stringOf(body.cep),
+    logradouro: stringOf(body.logradouro),
+    complemento: stringOf(body.complemento),
+    bairro: stringOf(body.bairro),
+    localidade: stringOf(body.localidade),
+    uf: stringOf(body.uf),
+  };
+}
+
+// Faixa numérica embutida no complemento do DNE (ex.: "- de 612 a 1510 - lado
+// par"), usada para desempatar entre ruas com o mesmo nome mas CEPs diferentes
+// por trecho.
+function parseComplementoRange(complemento: string): [number, number] | null {
+  const match = /de\s+(\d+)(?:\/\d+)?\s+a\s+(\d+)(?:\/\d+)?/i.exec(complemento);
+  if (!match) return null;
+  const start = Number.parseInt(match[1]!, 10);
+  const end = Number.parseInt(match[2]!, 10);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  return start <= end ? [start, end] : [end, start];
+}
+
+// Escolhe, entre os resultados da busca do DNE por UF+cidade+rua, o que mais se
+// aproxima da rua e do número originais. A API não filtra por número — quando a
+// rua tem CEPs diferentes por trecho, o desempate usa a faixa do complemento.
+export function selectDneAddressCandidate(
+  candidates: DneAddress[],
+  street: string,
+  number: string,
+): DneAddress | null {
+  const targetStreet = normalized(street);
+  const targetNumber = Number.parseInt(number.replace(/\D/g, ''), 10);
+  let selected: DneAddress | null = null;
+  let highScore = -1;
+
+  candidates.forEach((candidate) => {
+    const candidateStreet = normalized(candidate.logradouro);
+    if (!candidateStreet) return;
+    let score: number;
+    if (candidateStreet === targetStreet) score = 4;
+    else if (candidateStreet.includes(targetStreet) || targetStreet.includes(candidateStreet))
+      score = 2;
+    else return;
+    const range = parseComplementoRange(candidate.complemento);
+    if (range && Number.isFinite(targetNumber)) {
+      const [start, end] = range;
+      score += targetNumber >= start && targetNumber <= end ? 4 : -2;
+    }
+    if (score > highScore) {
+      selected = candidate;
+      highScore = score;
+    }
+  });
+  return selected;
+}
+
+// Chamada bruta ao Geocoding API do Google, compartilhada entre o lookup normal
+// (colunas GMAPS_*) e a descoberta de município para a repescagem do DNE.
+async function googleGeocode(
+  address: string,
+  apiKey: string,
+  fetchImpl: typeof fetch,
+): Promise<GoogleGeocodeResult[]> {
+  const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+  url.searchParams.set('address', address);
+  url.searchParams.set('region', 'br');
+  url.searchParams.set('components', 'country:BR');
+  url.searchParams.set('language', 'pt-BR');
+  url.searchParams.set('key', apiKey);
+  const response = await fetchImpl(url, { signal: AbortSignal.timeout(10_000) });
+  const body = asRecord(await jsonResponse(response));
+  if (!response.ok)
+    throw new ProviderError(`HTTP ${response.status}.`, retryableHttpStatus(response.status));
+  const status = stringOf(body?.status);
+  if (status === 'ZERO_RESULTS') return [];
+  if (status !== 'OK') {
+    throw new ProviderError(
+      stringOf(body?.error_message) || `status ${status || 'desconhecido'}.`,
+      status === 'OVER_QUERY_LIMIT' || status === 'UNKNOWN_ERROR',
+    );
+  }
+  return Array.isArray(body?.results) ? (body.results as GoogleGeocodeResult[]) : [];
+}
+
+// Descobre o município via Google Maps a partir de rua+número+UF, sem cidade —
+// é a ponte para poder repescar o DNE, cuja busca por endereço exige cidade.
+async function discoverCityByGoogle(
+  uf: string,
+  street: string,
+  number: string,
+  apiKey: string,
+  fetchImpl: typeof fetch,
+): Promise<string | null> {
+  const address = [street, number, uf, 'Brasil'].filter(Boolean).join(', ');
+  const results = await googleGeocode(address, apiKey, fetchImpl);
+  const match = results.find((result) =>
+    sameText(componentOf(result, 'administrative_area_level_1')?.short_name, uf),
+  );
+  const city = match ? googleCityOf(match) : undefined;
+  return city && city.trim().length >= 3 ? city.trim() : null;
+}
+
 export function createAddressServices(
   env: NodeJS.ProcessEnv,
   fetchImpl: typeof fetch = fetch,
@@ -971,14 +1140,28 @@ export function createAddressServices(
         if (!response.ok) {
           throw new ProviderError(`HTTP ${response.status}.`, retryableHttpStatus(response.status));
         }
-        if (!body || body.erro === true) return null;
-        return {
-          logradouro: stringOf(body.logradouro),
-          complemento: stringOf(body.complemento),
-          bairro: stringOf(body.bairro),
-          localidade: stringOf(body.localidade),
-          uf: stringOf(body.uf),
-        };
+        // O ViaCEP às vezes devolve `erro` como string ("true") em vez de
+        // booleano — checagem por truthiness cobre os dois formatos.
+        if (!body || body.erro) return null;
+        return toDneAddress(body);
+      }),
+    viaCepByAddress: async (uf, street, number) =>
+      withRetry(async () => {
+        const city = await discoverCityByGoogle(uf, street, number, googleApiKey, fetchImpl);
+        if (!city || street.trim().length < 3) return null;
+        const response = await fetchImpl(
+          `https://viacep.com.br/ws/${encodeURIComponent(uf)}/${encodeURIComponent(city)}/${encodeURIComponent(street)}/json/`,
+          { signal: AbortSignal.timeout(10_000) },
+        );
+        if (!response.ok) {
+          throw new ProviderError(`HTTP ${response.status}.`, retryableHttpStatus(response.status));
+        }
+        const body = await jsonResponse(response);
+        const candidates = (Array.isArray(body) ? body : [])
+          .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+          .filter((item) => !item.erro)
+          .map(toDneAddress);
+        return selectDneAddressCandidate(candidates, street, number);
       }),
     geonet: async (address, number, row, index) =>
       lookupGeonet(gateway, address, number, row, index),
@@ -1031,26 +1214,8 @@ async function lookupGoogle(
   fetchImpl: typeof fetch = fetch,
 ): Promise<GoogleLookup | null> {
   return withRetry(async () => {
-    const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
-    url.searchParams.set('address', address);
-    url.searchParams.set('region', 'br');
-    url.searchParams.set('components', 'country:BR');
-    url.searchParams.set('language', 'pt-BR');
-    url.searchParams.set('key', apiKey);
-    const response = await fetchImpl(url, { signal: AbortSignal.timeout(10_000) });
-    const body = asRecord(await jsonResponse(response));
-    if (!response.ok)
-      throw new ProviderError(`HTTP ${response.status}.`, retryableHttpStatus(response.status));
-    const status = stringOf(body?.status);
-    if (status === 'ZERO_RESULTS') return null;
-    if (status !== 'OK') {
-      throw new ProviderError(
-        stringOf(body?.error_message) || `status ${status || 'desconhecido'}.`,
-        status === 'OVER_QUERY_LIMIT' || status === 'UNKNOWN_ERROR',
-      );
-    }
-    const rawResults = Array.isArray(body?.results) ? body.results : [];
-    const result = selectGoogleResult(rawResults as GoogleGeocodeResult[], row, index);
+    const rawResults = await googleGeocode(address, apiKey, fetchImpl);
+    const result = selectGoogleResult(rawResults, row, index);
     if (!result?.place_id || !result.formatted_address) return null;
     const location = result.geometry?.location;
     return {
@@ -1085,8 +1250,10 @@ function printSummary(summary: EnrichmentSummary): void {
     `Registros selecionados: ${summary.selected}; ignorados (já completos): ${summary.skippedRows}; atualizados: ${summary.updatedRows}.`,
   );
   console.log(format('ViaCEP', summary.viaCep));
+  console.log(format('ViaCEP (repescagem por rua/número/UF)', summary.viaCepRetry));
   console.log(format('GEONET', summary.geonet));
   console.log(format('Google Maps', summary.google));
+  console.log(`MUNICIPIO completado via ViaCEP: ${summary.municipioFilled}`);
 }
 
 function formatDuration(milliseconds: number): string {

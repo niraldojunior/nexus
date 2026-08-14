@@ -55,7 +55,7 @@ test('GeoProjectRepository cria, atualiza e lista projetos do tenant', async () 
   }
 });
 
-test('siteCount ignora locais encerrados (Retired)', async () => {
+test('siteCount conta todos os locais vinculados, mesmo Retired', async () => {
   const fixture = await createFixture();
   try {
     const spec = await createSiteSpec(fixture.runtime);
@@ -82,8 +82,11 @@ test('siteCount ignora locais encerrados (Retired)', async () => {
       statusReason: 'teste',
     });
 
+    // Com o status herdado do projeto (RF-010), um projeto Terminado tem todos os Sites
+    // Retired — filtrar por status faria a lista mostrar N locais e o contador dizer "0
+    // locais". siteCount conta o vínculo de plataforma, não o status do Site.
     reloaded = await fixture.runtime.geoProjectRepository.get(TENANT_ID, project.id);
-    assert.equal(reloaded?.siteCount, 1, 'local Retired não deve contar');
+    assert.equal(reloaded?.siteCount, 2, 'local Retired continua contando enquanto vinculado');
   } finally {
     fixture.database.cleanup();
   }

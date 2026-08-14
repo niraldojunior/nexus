@@ -1,20 +1,31 @@
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 import {
   applyDocumentToWorksheet,
   type AddressServices,
   buildSearchAddress,
+  createAddressServices,
+  type DneAddress,
   enrichRecords,
   parseCliArgs,
   parseSemicolonCsv,
+  selectDneAddressCandidate,
   selectGeonetCandidate,
   selectGoogleResult,
   serializeSemicolonCsv,
   worksheetToDocument,
   withRetry,
-} from '../src/scripts/enrich-installation-addresses.js';
+} from '../scripts/enrich-installation-addresses.js';
 import { AppError } from '../src/shared/errors/app-error.js';
+
+const fakeEnv: NodeJS.ProcessEnv = {
+  GEONET_API_BASE_URL: 'https://geonet.example.test/api',
+  GEONET_TOKEN_URL: 'https://geonet.example.test/oauth/token',
+  GEONET_CLIENT_ID: 'client-id',
+  GEONET_CLIENT_SECRET: 'client-secret',
+  GOOGLE_MAPS_API_KEY: 'fake-google-key',
+};
 
 const headers = [
   'ID',
@@ -39,6 +50,7 @@ const headers = [
   'DNE_COMPLEMENTO',
   'DNE_BAIRRO',
   'DNE_LOCALIDADE',
+  'DNE_CEP',
 ];
 
 const indexOf = (headersToIndex = headers): Map<string, number> =>
@@ -55,6 +67,7 @@ const row = (id: string, cep = '72887220'): string[] => [
   '28',
   'REFERENCIA',
   'Mercado Cristal',
+  '',
   '',
   '',
   '',
@@ -141,6 +154,7 @@ test('exige um limite explícito e interpreta as opções da CLI', () => {
 
 test('usa o DNE como endereço canônico e não inclui referência informal na consulta', () => {
   const values = buildSearchAddress(row('A'), indexOf(), {
+    cep: '72880000',
     logradouro: 'Quadra 6',
     complemento: '',
     bairro: 'Parque Nova Friburgo B',
@@ -215,6 +229,7 @@ test('enriquece somente o intervalo pedido, preserva dados existentes e reutiliz
     viaCep: async () => {
       calls.viaCep += 1;
       return {
+        cep: '72880000',
         logradouro: 'Quadra 6',
         complemento: '',
         bairro: 'Parque Nova Friburgo B',
@@ -274,6 +289,7 @@ test('consulta linhas simultaneamente conforme o número de threads', async () =
       await gate();
       inFlight -= 1;
       return {
+        cep: '72880000',
         logradouro: 'Quadra 6',
         complemento: '',
         bairro: 'Parque Nova Friburgo B',
@@ -301,6 +317,7 @@ test('acrescenta as colunas de log com as consultas enviadas e o resumo da linha
   const records = [row('ID-1')];
   const services: AddressServices = {
     viaCep: async () => ({
+      cep: '72880000',
       logradouro: 'Quadra 6',
       complemento: '',
       bairro: 'Parque Nova Friburgo B',
@@ -337,6 +354,7 @@ test('preenche o DNE mesmo com UF/Município divergente e registra no log', asyn
   const records = [row('ID-1')];
   const services: AddressServices = {
     viaCep: async () => ({
+      cep: '74000000',
       logradouro: 'Rua Outra',
       complemento: '',
       bairro: 'Centro',
@@ -358,9 +376,243 @@ test('preenche o DNE mesmo com UF/Município divergente e registra no log', asyn
   const at = (name: string): string => records[0]![document.headers.indexOf(name)]!;
   assert.equal(at('DNE_LOGRADOURO'), 'Rua Outra');
   assert.equal(at('DNE_LOCALIDADE'), 'Goiânia');
+  assert.equal(at('DNE_CEP'), '74000000');
   assert.equal(summary.viaCep.filled, 0);
   assert.equal(summary.viaCep.mismatched, 1);
   assert.match(at('LOG_GERAL'), /ViaCEP=preenchido \(divergente/);
+});
+
+test('completa MUNICIPIO vazio via ViaCEP antes do GEONET, sem tratar como divergência', async () => {
+  const record = row('ID-1');
+  record[2] = ''; // MUNICIPIO ausente na origem (caso do arquivo acerto.end.HC.faturamento).
+  const document = { bom: false, lineEnding: '\n' as const, headers: [...headers], records: [record] };
+  const services: AddressServices = {
+    viaCep: async () => ({
+      cep: '72880000',
+      logradouro: 'Quadra 6',
+      complemento: '',
+      bairro: 'Parque Nova Friburgo B',
+      localidade: 'Cidade Ocidental',
+      uf: 'GO',
+    }),
+    // Só "encontra" quando a linha já chega com MUNICIPIO preenchido — replica
+    // a checagem de coerência real do GEONET, que exige cidade compatível.
+    geonet: async (_address, _number, currentRow, index) => {
+      if (currentRow[index.get('MUNICIPIO')!] !== 'Cidade Ocidental') return null;
+      return {
+        id: 'geo-1',
+        formattedAddress: 'Quadra 6, 28',
+        location: '[-47.94,-16.09]',
+        precision: 'Endereço Interpolação',
+      };
+    },
+    google: async () => null,
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viacep', 'geonet'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('MUNICIPIO'), 'Cidade Ocidental');
+  assert.equal(at('GEONET_ID'), 'geo-1');
+  assert.equal(summary.municipioFilled, 1);
+  assert.equal(summary.viaCep.filled, 1);
+  assert.equal(summary.viaCep.mismatched, 0);
+  assert.match(at('LOG_GERAL'), /MUNICIPIO completado via ViaCEP/);
+});
+
+test('repesca por rua/número/UF quando o CEP não é encontrado, e preenche DNE_CEP', async () => {
+  const record = row('ID-1');
+  record[2] = ''; // MUNICIPIO vazio na origem, como no arquivo acerto.end.HC.faturamento.
+  const document = { bom: false, lineEnding: '\n' as const, headers: [...headers], records: [record] };
+  const calls = { viaCep: 0, viaCepByAddress: 0 };
+  const services: AddressServices = {
+    viaCep: async () => {
+      calls.viaCep += 1;
+      return null;
+    },
+    viaCepByAddress: async (uf, street, number) => {
+      calls.viaCepByAddress += 1;
+      assert.equal(uf, 'GO');
+      assert.equal(street, 'QUADRA 06 LOTE');
+      assert.equal(number, '28');
+      return {
+        cep: '72887-220',
+        logradouro: 'Quadra 6',
+        complemento: '',
+        bairro: 'Parque Nova Friburgo B',
+        localidade: 'Cidade Ocidental',
+        uf: 'GO',
+      };
+    },
+    geonet: async () => null,
+    google: async () => null,
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viacep'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('DNE_CEP'), '72887-220');
+  assert.equal(at('DNE_LOGRADOURO'), 'Quadra 6');
+  assert.equal(at('MUNICIPIO'), 'Cidade Ocidental');
+  assert.equal(summary.viaCep.notFound, 1);
+  assert.equal(summary.viaCepRetry.filled, 1);
+  assert.equal(summary.municipioFilled, 1);
+  assert.equal(calls.viaCepByAddress, 1);
+  assert.match(at('LOG_GERAL'), /encontrado pela rua\/número\/UF/);
+});
+
+test('repescagem sem sucesso não inventa dado e conta como não encontrada', async () => {
+  const record = row('ID-1');
+  record[2] = '';
+  const document = { bom: false, lineEnding: '\n' as const, headers: [...headers], records: [record] };
+  const services: AddressServices = {
+    viaCep: async () => null,
+    viaCepByAddress: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viacep'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('DNE_CEP'), '');
+  assert.equal(at('MUNICIPIO'), '');
+  assert.equal(summary.viaCepRetry.notFound, 1);
+  assert.match(at('LOG_GERAL'), /não encontrado por CEP nem pela rua\/número\/UF/);
+});
+
+test('trata "erro" do ViaCEP como string ou booleano e devolve o CEP encontrado', async () => {
+  const fetchImpl = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ erro: 'true' }), { status: 200 }))
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          cep: '01310-100',
+          logradouro: 'Avenida Paulista',
+          complemento: 'de 612 a 1510 - lado par',
+          bairro: 'Bela Vista',
+          localidade: 'São Paulo',
+          uf: 'SP',
+        }),
+        { status: 200 },
+      ),
+    );
+  const services = createAddressServices(fakeEnv, fetchImpl);
+
+  assert.equal(await services.viaCep('99999999'), null);
+  assert.deepEqual(await services.viaCep('01310100'), {
+    cep: '01310-100',
+    logradouro: 'Avenida Paulista',
+    complemento: 'de 612 a 1510 - lado par',
+    bairro: 'Bela Vista',
+    localidade: 'São Paulo',
+    uf: 'SP',
+  });
+});
+
+test('viaCepByAddress descobre o município pelo Google e busca o endereço no DNE de verdade', async () => {
+  const fetchImpl = vi.fn<typeof fetch>(async (input) => {
+    const url = String(input);
+    if (url.includes('maps.googleapis.com')) {
+      return new Response(
+        JSON.stringify({
+          status: 'OK',
+          results: [
+            {
+              formatted_address: 'Quadra 6, Cidade Ocidental - GO, Brasil',
+              address_components: [
+                { long_name: 'Cidade Ocidental', types: ['locality', 'political'] },
+                { short_name: 'GO', types: ['administrative_area_level_1', 'political'] },
+              ],
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    }
+    if (url.includes('viacep.com.br/ws/GO/Cidade%20Ocidental/Quadra%206/json/')) {
+      return new Response(
+        JSON.stringify([
+          {
+            cep: '72880-000',
+            logradouro: 'Quadra 6',
+            complemento: '',
+            bairro: 'Parque Nova Friburgo B',
+            localidade: 'Cidade Ocidental',
+            uf: 'GO',
+          },
+        ]),
+        { status: 200 },
+      );
+    }
+    throw new Error(`URL inesperada nesta simulação: ${url}`);
+  });
+  const services = createAddressServices(fakeEnv, fetchImpl);
+
+  const result = await services.viaCepByAddress!('GO', 'Quadra 6', '28');
+
+  assert.deepEqual(result, {
+    cep: '72880-000',
+    logradouro: 'Quadra 6',
+    complemento: '',
+    bairro: 'Parque Nova Friburgo B',
+    localidade: 'Cidade Ocidental',
+    uf: 'GO',
+  });
+});
+
+test('selectDneAddressCandidate escolhe pela faixa numérica do complemento e rejeita rua sem relação', () => {
+  const paulista: DneAddress[] = [
+    {
+      cep: '01310-100',
+      logradouro: 'Avenida Paulista',
+      complemento: 'de 612 a 1510 - lado par',
+      bairro: 'Bela Vista',
+      localidade: 'São Paulo',
+      uf: 'SP',
+    },
+    {
+      cep: '01310-200',
+      logradouro: 'Avenida Paulista',
+      complemento: 'de 1 a 610 - lado ímpar',
+      bairro: 'Bela Vista',
+      localidade: 'São Paulo',
+      uf: 'SP',
+    },
+  ];
+  assert.equal(selectDneAddressCandidate(paulista, 'Avenida Paulista', '900')?.cep, '01310-100');
+  assert.equal(selectDneAddressCandidate(paulista, 'Avenida Paulista', '50')?.cep, '01310-200');
+
+  const semRelacao: DneAddress[] = [
+    {
+      cep: '99999-000',
+      logradouro: 'Rua Sem Relação',
+      complemento: '',
+      bairro: '',
+      localidade: 'São Paulo',
+      uf: 'SP',
+    },
+  ];
+  assert.equal(selectDneAddressCandidate(semRelacao, 'Avenida Paulista', '28'), null);
 });
 
 test('detalha o motivo do erro do GEONET no log', async () => {
@@ -455,6 +707,7 @@ const countingServices = (calls: { viaCep: number; geonet: number; google: numbe
     viaCep: async () => {
       calls.viaCep += 1;
       return {
+        cep: '72880000',
         logradouro: 'Quadra 6',
         complemento: '',
         bairro: 'Parque Nova Friburgo B',
@@ -536,7 +789,7 @@ test('--overwrite reprocessa linha completa em vez de ignorá-la', async () => {
   assert.equal(calls.google, 1);
 });
 
-test('grava checkpoints a cada N linhas atualizadas e ignora linhas puladas', async () => {
+test('grava checkpoints a cada N linhas processadas e ignora linhas puladas', async () => {
   const calls = { viaCep: 0, geonet: 0, google: 0 };
   const records = Array.from({ length: 5 }, (_, index) => row(`ID-${index + 1}`, `7288700${index}`));
   let flushes = 0;
@@ -554,7 +807,7 @@ test('grava checkpoints a cada N linhas atualizadas e ignora linhas puladas', as
       },
     },
   );
-  // 5 linhas atualizadas com flush a cada 2 → checkpoints nas linhas 2 e 4.
+  // 5 linhas processadas com flush a cada 2 → checkpoints nas linhas 2 e 4.
   assert.equal(flushes, 2);
 
   let skippedFlushes = 0;
@@ -579,6 +832,36 @@ test('grava checkpoints a cada N linhas atualizadas e ignora linhas puladas', as
   );
   assert.equal(skippedSummary.skippedRows, 3);
   assert.equal(skippedFlushes, 0);
+});
+
+test('checkpoint conta linhas processadas mesmo quando nada foi encontrado (sem mudança)', async () => {
+  // Antes, o checkpoint só contava linha que mudou algum campo; um trecho longo
+  // de "não encontrado" (comum neste tipo de arquivo) atrasava o salvamento.
+  const records = Array.from({ length: 4 }, (_, index) => row(`ID-${index + 1}`, `7288700${index}`));
+  const services: AddressServices = {
+    viaCep: async () => null,
+    viaCepByAddress: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+  };
+  let flushes = 0;
+  const summary = await enrichRecords(
+    { bom: false, lineEnding: '\n', headers: [...headers], records },
+    services,
+    {
+      start: 1,
+      limit: 4,
+      overwrite: false,
+      threads: 1,
+      checkpointEvery: 2,
+      onCheckpoint: async () => {
+        flushes += 1;
+      },
+    },
+  );
+
+  assert.equal(summary.updatedRows, 0);
+  assert.equal(flushes, 2);
 });
 
 test('repete operação transitória antes de concluir', async () => {

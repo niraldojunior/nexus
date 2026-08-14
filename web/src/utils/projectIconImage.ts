@@ -1,8 +1,9 @@
 // Reduz o ícone de projeto (REQ-MOD01-015) carregado pelo usuário a um quadrado pequeno antes
 // de subir ao servidor — sem isto, uma foto de câmera (vários MB) viraria uma linha gigante na
 // tabela geo_project (ver GEO_PROJECT_ICON_MAX_CHARS em src/shared/http/app.ts, que recusa o
-// que passar disso no servidor). Recorte central 128×128, WebP (o navegador cai para PNG
-// sozinho quando o encoder não existe — canvas.toDataURL ignora o tipo pedido nesse caso).
+// que passar disso no servidor). Ajuste "contain" (nunca corta a imagem, sobra vira fundo
+// transparente) em 128×128, WebP (o navegador cai para PNG sozinho quando o encoder não
+// existe — canvas.toDataURL ignora o tipo pedido nesse caso).
 
 const MAX_SOURCE_BYTES = 5 * 1024 * 1024; // 5 MB
 const ICON_SIZE = 128;
@@ -38,10 +39,14 @@ function drawSquareDataUrl(source: ImageBitmap, size: number): string {
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new ProjectIconError('Não foi possível processar a imagem.');
 
-  const side = Math.min(source.width, source.height);
-  const sx = (source.width - side) / 2;
-  const sy = (source.height - side) / 2;
-  ctx.drawImage(source, sx, sy, side, side, 0, 0, size, size);
+  // Escala pelo menor fator (contain): a imagem inteira cabe no quadrado, sem cortar as
+  // bordas — o excedente vira fundo transparente, não um recorte perdido.
+  const scale = Math.min(size / source.width, size / source.height);
+  const drawWidth = source.width * scale;
+  const drawHeight = source.height * scale;
+  const dx = (size - drawWidth) / 2;
+  const dy = (size - drawHeight) / 2;
+  ctx.drawImage(source, 0, 0, source.width, source.height, dx, dy, drawWidth, drawHeight);
 
   return canvas.toDataURL('image/webp', 0.85);
 }

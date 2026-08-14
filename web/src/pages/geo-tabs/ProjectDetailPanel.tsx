@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ChevronLeft, MoreVertical, Plus, Trash2 } from 'lucide-react';
-import type { GeoProject } from '../../services/geoProjectApi';
+import type { GeoProject, GeoProjectSiteCascade } from '../../services/geoProjectApi';
+import type { GeoStatus } from '../../services/geoApi';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import { ProjectIcon } from './ProjectIcon';
 import { Modal } from './Modal';
@@ -15,6 +16,13 @@ import { DOCK_WIDTH_CLASS, DOCK_ELEVATION_CLASS, DOCK_SEARCH_CLEARANCE_PT_CLASS 
 import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
 import { readProjectIcon, ProjectIconError } from '../../utils/projectIconImage';
 
+const PROJECT_STATUS_OPTIONS: Array<{ value: GeoStatus; label: string }> = [
+  { value: 'planned', label: 'Planejado' },
+  { value: 'active', label: 'Ativo' },
+  { value: 'suspended', label: 'Suspenso' },
+  { value: 'terminated', label: 'Terminado' },
+];
+
 export type ProjectDetailPanelProps = {
   isMobile: boolean;
   project: GeoProject;
@@ -23,11 +31,14 @@ export type ProjectDetailPanelProps = {
   selectedSiteId?: string | null;
   onSnapChange?: (state: BottomSheetSnapState) => void;
   minimizeSignal?: number;
-  onUpdate: (patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl'>>) => void;
+  onUpdate: (
+    patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status'>>,
+  ) => Promise<{ siteCascade?: GeoProjectSiteCascade } | void>;
   onDelete: () => void;
   onBack: () => void;
   onAddSite: () => void;
   onOpenSite: (site: GeoTreeNode) => void;
+  onRemoveSite: (site: GeoTreeNode) => void;
 };
 
 /**
@@ -49,6 +60,7 @@ export function ProjectDetailPanel({
   onBack,
   onAddSite,
   onOpenSite,
+  onRemoveSite,
 }: ProjectDetailPanelProps) {
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
   const [titleDraft, setTitleDraft] = useState(project.name);
@@ -56,6 +68,10 @@ export function ProjectDetailPanel({
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [iconError, setIconError] = useState<string | null>(null);
+  const [pendingRemoveSite, setPendingRemoveSite] = useState<GeoTreeNode | null>(null);
+  // Aviso de cascata parcial (PATCH de status que mudou o projeto, mas alguns Sites não
+  // seguiram por causa de SITE_STATUS_TRANSITIONS) — some ao trocar de status de novo.
+  const [cascadeSkipped, setCascadeSkipped] = useState<number | null>(null);
   const descriptionRef = useAutoResizeTextarea(descriptionDraft, 160);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
@@ -65,6 +81,7 @@ export function ProjectDetailPanel({
   useEffect(() => {
     setTitleDraft(project.name);
     setDescriptionDraft(project.description ?? '');
+    setCascadeSkipped(null);
   }, [project.id]);
 
   const commitTitle = () => {
@@ -76,6 +93,14 @@ export function ProjectDetailPanel({
   const commitDescription = () => {
     const next = descriptionDraft.trim();
     if (next !== (project.description ?? '')) onUpdate({ description: next || null });
+  };
+
+  const handleStatusChange = async (status: GeoStatus) => {
+    setCascadeSkipped(null);
+    const result = await onUpdate({ status });
+    setCascadeSkipped(
+      result?.siteCascade && result.siteCascade.skipped > 0 ? result.siteCascade.skipped : null,
+    );
   };
 
   const handleTitleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -166,17 +191,43 @@ export function ProjectDetailPanel({
   );
 
   const descriptionBlock = (
-    <textarea
-      ref={descriptionRef}
-      value={descriptionDraft}
-      onChange={(event) => setDescriptionDraft(event.target.value)}
-      onBlur={commitDescription}
-      placeholder="Adicione uma descrição para este projeto…"
-      rows={1}
-      aria-label="Descrição do projeto"
-      className="-mx-1 w-full resize-none rounded-[8px] border border-transparent bg-transparent px-1 py-1 text-[0.84rem] leading-snug text-app-text outline-none transition placeholder:text-app-muted hover:border-app-border focus:border-app-accent-border focus:bg-white"
-    />
+    <div className="flex items-start gap-2">
+      <textarea
+        ref={descriptionRef}
+        value={descriptionDraft}
+        onChange={(event) => setDescriptionDraft(event.target.value)}
+        onBlur={commitDescription}
+        placeholder="Adicione uma descrição para este projeto…"
+        rows={1}
+        aria-label="Descrição do projeto"
+        className="-mx-1 w-full flex-1 resize-none rounded-[8px] border border-transparent bg-transparent px-1 py-1 text-[0.84rem] leading-snug text-app-text outline-none transition placeholder:text-app-muted hover:border-app-border focus:border-app-accent-border focus:bg-white"
+      />
+      <select
+        value={project.status}
+        onChange={(event) => void handleStatusChange(event.target.value as GeoStatus)}
+        aria-label="Status do projeto"
+        className="h-8 shrink-0 rounded-[10px] border border-app-border bg-white px-2 text-[0.76rem] font-semibold text-app-text outline-none transition hover:border-app-accent-border focus:border-app-accent-border"
+      >
+        {PROJECT_STATUS_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
   );
+
+  // Todo local herda o status do projeto (não é editável por local) — quando a cascata do
+  // último PATCH não conseguiu levar todos os locais junto (SITE_STATUS_TRANSITIONS), o
+  // painel avisa quantos ficaram para trás.
+  const cascadeNotice =
+    cascadeSkipped !== null ? (
+      <div className="rounded-[10px] border border-status-amber/30 bg-status-amber-soft px-2.5 py-2 text-[0.76rem] leading-snug text-app-text">
+        {cascadeSkipped === 1
+          ? '1 local não pôde seguir para o novo status.'
+          : `${cascadeSkipped} locais não puderam seguir para o novo status.`}
+      </div>
+    ) : null;
 
   const countLabel = (
     <span className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
@@ -200,19 +251,32 @@ export function ProjectDetailPanel({
       </div>
     ) : (
       sites.map((site) => (
-        <button
+        <div
           key={site.id}
-          type="button"
-          onClick={() => onOpenSite(site)}
-          className={`flex items-center gap-2 rounded-[10px] px-2 py-2 text-left transition ${
+          className={`group flex items-center gap-1 rounded-[10px] pr-1 transition ${
             selectedSiteId === site.refId ? 'bg-app-accent-soft' : 'hover:bg-app-accent-soft'
           }`}
         >
-          <NodeIcon node={site} />
-          <span className="min-w-0 flex-1 truncate text-[0.84rem] font-medium text-app-text">
-            {site.label}
-          </span>
-        </button>
+          <button
+            type="button"
+            onClick={() => onOpenSite(site)}
+            className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left"
+          >
+            <NodeIcon node={site} />
+            <span className="min-w-0 flex-1 truncate text-[0.84rem] font-medium text-app-text">
+              {site.label}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setPendingRemoveSite(site)}
+            title="Excluir local"
+            aria-label={`Excluir local ${site.label}`}
+            className="shrink-0 rounded-[8px] p-1.5 text-app-muted opacity-0 transition hover:bg-status-red-soft hover:text-status-red focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       ))
     );
 
@@ -245,6 +309,36 @@ export function ProjectDetailPanel({
     </Modal>
   ) : null;
 
+  const removeSiteConfirm = pendingRemoveSite ? (
+    <Modal onClose={() => setPendingRemoveSite(null)} title="Excluir local" eyebrow="Projetos">
+      <div className="grid gap-4">
+        <p className="text-[0.9rem] leading-snug text-app-text">
+          Excluir <strong>{pendingRemoveSite.label}</strong> deste projeto? O local será
+          encerrado.
+        </p>
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setPendingRemoveSite(null)}
+            className="geo-btn secondary"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onRemoveSite(pendingRemoveSite);
+              setPendingRemoveSite(null);
+            }}
+            className="geo-btn border-status-red/30 bg-status-red-soft text-status-red hover:brightness-95"
+          >
+            Excluir
+          </button>
+        </div>
+      </div>
+    </Modal>
+  ) : null;
+
   if (isMobile) {
     return (
       <BottomSheet onClose={onBack} onSnapChange={onSnapChange} snapCommand={snapCommand}>
@@ -253,6 +347,7 @@ export function ProjectDetailPanel({
             filho — um scroll interno roubaria o gesto touch da folha. */}
         <div className="min-w-0 overflow-hidden px-4 py-3">
           {descriptionBlock}
+          {cascadeNotice ? <div className="mt-2">{cascadeNotice}</div> : null}
           <div className="mt-3 border-t border-app-border pt-3">
             <div className="mb-1 flex items-center justify-between">{countLabel}</div>
             <div className="grid gap-0.5">
@@ -262,6 +357,7 @@ export function ProjectDetailPanel({
           </div>
         </div>
         {deleteConfirm}
+        {removeSiteConfirm}
       </BottomSheet>
     );
   }
@@ -271,7 +367,10 @@ export function ProjectDetailPanel({
       className={`${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock ${DOCK_SEARCH_CLEARANCE_PT_CLASS}`}
     >
       {headerBlock}
-      <div className="border-b border-app-border px-3 py-2">{descriptionBlock}</div>
+      <div className="grid gap-2 border-b border-app-border px-3 py-2">
+        {descriptionBlock}
+        {cascadeNotice}
+      </div>
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="px-3 pb-1 pt-3">{countLabel}</div>
         <OverlayScrollArea className="px-3 pb-3" hostClassName="min-h-0">
@@ -282,6 +381,7 @@ export function ProjectDetailPanel({
         </OverlayScrollArea>
       </div>
       {deleteConfirm}
+      {removeSiteConfirm}
     </div>
   );
 }

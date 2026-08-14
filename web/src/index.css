@@ -46,11 +46,13 @@ body::before {
 }
 
 /* Estado de carregamento reaproveitando a própria faixa de marca: enquanto o mapa (ou a
-   página) carrega, a faixa amarela engorda (3px → 5px) e blocos ink #243041 — o par
-   canônico do amarelo — marcham por ela. É um gradiente que se repete a cada 128px (bloco
-   de 44px + vão amarelo de 84px); a animação desloca exatamente um período (128px) por
-   ciclo, então os blocos entram e saem sem tempo morto. Ao terminar, volta ao amarelo
-   sólido de 3px. A classe é ligada/desligada em document.body pelo MapLoadingBar. */
+   página) carrega, a faixa amarela engorda (3px → 5px) e blocos de âmbar mais escuro
+   (#b8860b) — um tom da mesma família quente, uma "sombra" do próprio amarelo — marcham por
+   ela. Contraste moderado (visível, sem o peso do ink escuro). É um gradiente que se repete
+   a cada 128px (bloco de 44px + vão amarelo de 84px); a animação desloca exatamente um
+   período (128px) por ciclo, então os blocos entram e saem sem tempo morto. Ao terminar,
+   volta ao amarelo sólido de 3px. A classe é ligada/desligada em document.body pelo
+   MapLoadingBar. */
 @keyframes brand-bar-loading {
   from {
     background-position: 0 0;
@@ -64,8 +66,8 @@ body.geo-map-loading::before {
   height: 5px;
   background-image: linear-gradient(
     90deg,
-    #243041 0,
-    #243041 44px,
+    #b8860b 0,
+    #b8860b 44px,
     transparent 44px,
     transparent 128px
   );

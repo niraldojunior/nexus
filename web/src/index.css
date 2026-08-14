@@ -42,6 +42,42 @@ body::before {
   pointer-events: none;
 }
 
+/* Estado de carregamento reaproveitando a própria faixa de marca: quando o mapa (ou a
+   página) está carregando, a linha amarela do topo ganha um brilho que a percorre; ao
+   terminar, volta ao amarelo sólido. A classe é ligada/desligada em document.body pelo
+   MapLoadingBar. */
+@keyframes brand-bar-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+body.geo-map-loading::before {
+  background-image: linear-gradient(
+    90deg,
+    #ffd200 0%,
+    #ffe680 30%,
+    #ffffff 50%,
+    #ffe680 70%,
+    #ffd200 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: brand-bar-loading 1.15s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Sem movimento: a faixa fica sólida (sem o brilho varrendo); o anúncio de carga
+     continua pelo elemento sr-only do MapLoadingBar. */
+  body.geo-map-loading::before {
+    animation: none;
+    background-image: none;
+  }
+}
+
 button,
 input,
 select,
@@ -272,35 +308,6 @@ button:focus-visible {
 
 .animate-vt-rise {
   animation: vt-rise 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-/* Barra de progresso indeterminada do topo do mapa (ver MapLoadingBar): o segmento
-   percorre a faixa da esquerda para a direita enquanto houver carga de camada em voo. */
-@keyframes vt-map-progress {
-  0% {
-    transform: translateX(-100%) scaleX(0.35);
-  }
-  50% {
-    transform: translateX(20%) scaleX(0.6);
-  }
-  100% {
-    transform: translateX(100%) scaleX(0.35);
-  }
-}
-
-.animate-vt-map-progress {
-  transform-origin: left center;
-  animation: vt-map-progress 1.15s cubic-bezier(0.65, 0, 0.35, 1) infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  /* Com movimento reduzido a faixa fica estática e preenchida — continua dizendo
-     "carregando", sem a animação de vaivém. */
-  .animate-vt-map-progress {
-    animation: none;
-    transform: none;
-    opacity: 0.55;
-  }
 }
 
 .markdown-content > *:first-child {

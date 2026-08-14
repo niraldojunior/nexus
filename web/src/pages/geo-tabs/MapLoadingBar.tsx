@@ -7,15 +7,16 @@ const APPEAR_DELAY_MS = 120;
 // já que a busca por viewport dispara a cada `idle` e costuma resolver rápido.
 const MIN_VISIBLE_MS = 320;
 
-// Barra fina de progresso indeterminado no topo do mapa (estilo YouTube/GitHub): acende
-// enquanto qualquer camada do mapa está carregando (cobertura GPON, catálogo de locais,
-// recursos por viewport, hierarquia, script do Google Maps — ver `mapDataLoading` em
-// GeoPage) e some quando tudo termina. É chrome do mapa, irmã de MapLocateButton e
-// MapBaseLayerSelector — só desenha, não sabe o que está sendo carregado.
-//
-// O segmento é `app-ink`, não amarelo: a faixa de marca amarela fixa no topo da janela
-// (body::before) fica logo acima, e uma barra amarela aqui viraria uma segunda linha
-// amarela colada nela.
+// Nome da classe que aciona a animação da faixa de marca (ver body.geo-map-loading::before
+// em index.css). Ligada em document.body enquanto há carga, removida ao terminar.
+const BODY_LOADING_CLASS = 'geo-map-loading';
+
+// Indicador de carregamento do mapa: reaproveita a própria faixa de marca amarela fixa no
+// topo da janela (body::before) — enquanto qualquer camada carrega (cobertura GPON, catálogo
+// de locais, recursos por viewport, hierarquia, script do Google Maps — ver `mapDataLoading`
+// em GeoPage), a linha amarela ganha um brilho que a percorre; ao terminar, volta ao amarelo
+// sólido. Não desenha barra própria: só liga/desliga a classe na faixa existente e mantém um
+// anúncio acessível (sr-only) para leitores de tela.
 export function MapLoadingBar({
   busy,
   label = 'Carregando dados do mapa',
@@ -67,19 +68,24 @@ export function MapLoadingBar({
     [],
   );
 
+  // Liga a animação na faixa de marca enquanto o indicador está visível. A limpeza remove a
+  // classe em qualquer troca de `visible` e no desmonte (sair da página Geo), para a faixa
+  // não ficar animando fora de um carregamento.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const { body } = document;
+    if (visible) body.classList.add(BODY_LOADING_CLASS);
+    else body.classList.remove(BODY_LOADING_CLASS);
+    return () => body.classList.remove(BODY_LOADING_CLASS);
+  }, [visible]);
+
   if (!visible) return null;
 
+  // O visual é a própria faixa de marca (via classe no body); aqui fica só o anúncio para
+  // leitores de tela, fora da tela mas na árvore de acessibilidade.
   return (
-    // `top-[3px]` posiciona a barra logo ABAIXO da faixa de marca amarela — que é fixa no
-    // topo da janela (body::before), tem 3px e z-index 1000. Em `top-0` a barra ficava
-    // escondida atrás dela (foi o que fez parecer que o indicador não aparecia).
-    <div
-      role="progressbar"
-      aria-label={label}
-      aria-busy="true"
-      className="pointer-events-none absolute inset-x-0 top-[3px] z-30 h-[3px] overflow-hidden bg-app-ink/10"
-    >
-      <div className="h-full w-full bg-app-ink/70 animate-vt-map-progress" />
-    </div>
+    <span role="progressbar" aria-label={label} aria-busy="true" className="sr-only">
+      {label}
+    </span>
   );
 }

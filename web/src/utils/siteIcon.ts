@@ -174,18 +174,64 @@ export function selectionPinDataUrl(height: number): string {
   return value;
 }
 
-const addressSourcePinCache = new Map<string, string>();
+export type AddressSourcePin = {
+  url: string;
+  width: number;
+  height: number;
+  anchorX: number;
+  anchorY: number;
+};
 
-/** Pins distintos para comparar resultados externos de endereço no mapa Geo. */
-export function addressSourcePinDataUrl(source: 'google' | 'geonet', selected: boolean): string {
+// Gota com ponta arredondada num viewBox 40×52 (o resto é folga para a sombra). Ancorada na
+// ponta inferior (20, 46).
+const ADDRESS_PIN_PATH =
+  'M20 4 C 12 4 6 10 6 18 C 6 27 15 38 20 46 C 25 38 34 27 34 18 C 34 10 28 4 20 4 Z';
+
+// Glifos das duas fontes, gêmeos dos componentes JSX em geo-tabs/AddressSourceIcons.tsx —
+// aqui como string SVG porque o Google Maps não renderiza React. Centrados no miolo da gota
+// (translate+scale mapeiam o centro ~(12,12) do viewBox 24×24 para (20,18)).
+const GOOGLE_GLYPH =
+  '<g transform="translate(13.4 11.4) scale(0.55)">' +
+  '<path fill="#34A853" d="M3 5.5 9.5 2v16.5L3 22V5.5Z"/>' +
+  '<path fill="#4285F4" d="M9.5 2 16 5.5V22l-6.5-3.5V2Z"/>' +
+  '<path fill="#FBBC04" d="M16 5.5 21 2.8v16.5L16 22V5.5Z"/>' +
+  '<path fill="#EA4335" d="M12.75 7.1a3.35 3.35 0 0 0-3.35 3.35c0 2.52 3.35 6.3 3.35 6.3s3.35-3.78 3.35-6.3a3.35 3.35 0 0 0-3.35-3.35Zm0 4.6a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z"/>' +
+  '</g>';
+
+// V.tal V em tinta (#243041), sobre o disco branco — mesmo desenho do GoogleMapsIcon gêmeo.
+const GEONET_GLYPH =
+  '<g transform="translate(13.4 11.4) scale(0.55)"><path fill="#243041" d="M2.5 3h4.1L12 16.2 17.4 3h4.1L12 21 2.5 3Z"/></g>';
+
+const addressSourcePinCache = new Map<string, AddressSourcePin>();
+
+/**
+ * Alfinetes de comparação das fontes de endereço (Google × GEONET) no mapa Geo. Os dois
+ * compartilham o mesmo corpo em tinta com disco branco — a única diferença entre as fontes é o
+ * glifo do miolo (marca Google × marca V.tal). O escolhido ganha anel amarelo e ~15% de
+ * tamanho; a alternativa fica com contorno branco fino. Traz as próprias medidas (o chamador
+ * crava tamanho/âncora no Google Maps).
+ */
+export function addressSourcePin(source: 'google' | 'geonet', selected: boolean): AddressSourcePin {
   const key = `${source}:${selected}`;
   const cached = addressSourcePinCache.get(key);
   if (cached) return cached;
-  const fill = source === 'google' ? '#4285F4' : '#243041';
-  const inner = source === 'google' ? '#34A853' : '#FFD200';
+  const glyph = source === 'google' ? GOOGLE_GLYPH : GEONET_GLYPH;
+  const shadow = '<ellipse cx="20" cy="48.5" rx="6.5" ry="2" fill="rgba(15,23,42,0.25)"/>';
   const stroke = selected ? '#FFD200' : '#FFFFFF';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="40" viewBox="0 0 30 40" fill="none"><path d="M15 1C7.27 1 1 7.27 1 15c0 10.5 14 24 14 24s14-13.5 14-24C29 7.27 22.73 1 15 1Z" fill="${fill}" stroke="${stroke}" stroke-width="${selected ? 3 : 2}"/><circle cx="15" cy="15" r="6" fill="${inner}"/>${source === 'google' ? '<path d="M12 15h6M15 12v6" stroke="#fff" stroke-width="1.5"/>' : '<path d="M10.5 11.5 15 20l4.5-8.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'}</svg>`;
-  const value = toDataUrl(svg);
+  const strokeWidth = selected ? 2.5 : 1.75;
+  const pin =
+    `${shadow}<path d="${ADDRESS_PIN_PATH}" fill="#243041" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linejoin="round"/>` +
+    `<circle cx="20" cy="18" r="8" fill="#FFFFFF"/>${glyph}`;
+  const width = selected ? 34 : 30;
+  const height = Math.round((width * 52) / 40);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 40 52">${pin}</svg>`;
+  const value: AddressSourcePin = {
+    url: toDataUrl(svg),
+    width,
+    height,
+    anchorX: width / 2,
+    anchorY: (height * 46) / 52,
+  };
   addressSourcePinCache.set(key, value);
   return value;
 }

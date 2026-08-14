@@ -34,6 +34,11 @@ vi.mock('../../hooks/useAddressViability', async (importOriginal) => {
 const geonet = vi.fn();
 vi.mock('../../hooks/useGeonetAddress', () => ({ useGeonetAddress: () => geonet() }));
 
+// O card DNE (ViaCEP) faria uma chamada de rede real ao montar; aqui o hook é mockado para os
+// testes ficarem determinísticos. O default (idle) só mostra o cabeçalho do card.
+const viaCep = vi.fn();
+vi.mock('../../hooks/useViaCepAddress', () => ({ useViaCepAddress: () => viaCep() }));
+
 beforeEach(() => {
   viability.mockReturnValue({ status: 'ready', candidates: [], error: null });
   geonet.mockReturnValue({
@@ -45,11 +50,12 @@ beforeEach(() => {
     select: vi.fn(),
     retry: vi.fn(),
   });
+  viaCep.mockReturnValue({ status: 'idle', address: null, error: null, retry: vi.fn() });
 });
 afterEach(cleanup);
 
 describe('AddressDetailPanel', () => {
-  it('prioriza a coordenada Geonet somente quando sua precisão é superior', () => {
+  it('prioriza a coordenada Geonet no empate de precisão e cede ao Google quando pior', () => {
     const address: DraftAddress = {
       street: 'Rua Exemplo',
       country: 'BR',
@@ -57,18 +63,20 @@ describe('AddressDetailPanel', () => {
       label: 'Rua Exemplo',
       precision: 'RANGE_INTERPOLATED',
     };
-    expect(
-      selectPinLocation(address, {
-        formattedAddress: 'Rua Exemplo',
-        coordinates: [-43.2, -22.8],
-        geolocationMethod: 'Endereço Completo',
-      }),
-    ).toMatchObject({ source: 'geonet', coordinates: [-43.2, -22.8] });
+    // Empate (ambos rank 2): a base preferencial GEONET vence.
     expect(
       selectPinLocation(address, {
         formattedAddress: 'Rua Exemplo',
         coordinates: [-43.2, -22.8],
         geolocationMethod: 'Endereço Interpolação',
+      }),
+    ).toMatchObject({ source: 'geonet', coordinates: [-43.2, -22.8] });
+    // GEONET pior (Bairro, rank 1) que o Google (rank 2): o Google vence.
+    expect(
+      selectPinLocation(address, {
+        formattedAddress: 'Rua Exemplo',
+        coordinates: [-43.2, -22.8],
+        geolocationMethod: 'Bairro',
       }),
     ).toMatchObject({ source: 'google', coordinates: [-43.1, -22.9] });
   });
@@ -96,7 +104,9 @@ describe('AddressDetailPanel', () => {
       precision: 'RANGE_INTERPOLATED',
     };
     render(<AddressDetailPanel isMobile={false} address={address} onClose={vi.fn()} />);
-    await userEvent.click(screen.getByRole('radio', { name: 'Usar GEONET' }));
+    // GEONET (Endereço Completo, rank 3) supera o Google (RANGE_INTERPOLATED, rank 2): já nasce
+    // marcado na chave. Clicar nele é idempotente.
+    await userEvent.click(screen.getByRole('radio', { name: /GEONET/ }));
     await userEvent.click(screen.getByRole('button', { name: 'Viabilidade' }));
     expect(viability).toHaveBeenCalledWith([-43.2, -22.8], true);
   });
@@ -304,5 +314,85 @@ describe('AddressDetailPanel', () => {
     // Escolher a CDO recoloca a folha em mid, para o drop projetado voltar à vista.
     await userEvent.click(screen.getByRole('button', { name: /CDOE-1/ }));
     await waitFor(() => expect(sheet.style.height).toContain('48vh'));
+  });
+
+  // Google [-43.1, -22.9] × GEONET [-43.0995, -22.9] ficam ~51 m — passa do limite de 30 m e
+  // entra em conflito. Empate de precisão (ambos "alta"): a chave nasce marcada no GEONET.
+  const conflictGeonet = {
+    status: 'ready',
+    candidates: [{ addressId: '9', formattedAddress: 'Rua Exemplo (GEONET)' }],
+    selectedId: '9',
+    detail: {
+      addressId: '9',
+      formattedAddress: 'Rua Exemplo (GEONET)',
+      coordinates: [-43.0995, -22.9] as [number, number],
+      geolocationMethod: 'Endereço Completo',
+    },
+    error: null,
+    select: vi.fn(),
+    retry: vi.fn(),
+  };
+  const conflictAddress: DraftAddress = {
+    street: 'Rua Exemplo',
+    country: 'BR',
+    coordinates: [-43.1, -22.9],
+    label: 'Rua Exemplo (Google)',
+    precision: 'ROOFTOP',
+  };
+
+  it('mostra a caixa vermelha de divergência com a chave de base marcada no GEONET', () => {
+    geonet.mockReturnValue(conflictGeonet);
+    render(<AddressDetailPanel isMobile={false} address={conflictAddress} onClose={vi.fn()} />);
+
+    expect(screen.getByText(/divergem em/)).toHaveTextContent(/\d+ m/);
+    const group = screen.getByRole('radiogroup', { name: 'Base de localização' });
+    expect(group).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /GEONET/ })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: /Google Maps/ })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+  });
+
+  it('troca de base pela chave e usa a coordenada escolhida na viabilidade', async () => {
+    geonet.mockReturnValue(conflictGeonet);
+    render(<AddressDetailPanel isMobile={false} address={conflictAddress} onClose={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole('radio', { name: /Google Maps/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Viabilidade' }));
+    expect(viability).toHaveBeenCalledWith([-43.1, -22.9], true);
+  });
+
+  it('traz o endereçamento dos Correios no card DNE', () => {
+    viaCep.mockReturnValue({
+      status: 'ready',
+      address: {
+        cep: '24220-401',
+        logradouro: 'Rua Doutor Paulo César',
+        complemento: '',
+        bairro: 'Icaraí',
+        localidade: 'Niterói',
+        uf: 'RJ',
+        ibge: '3303302',
+        ddd: '21',
+      },
+      error: null,
+      retry: vi.fn(),
+    });
+    const address: DraftAddress = {
+      street: 'Rua Doutor Paulo César',
+      streetNr: '155',
+      postcode: '24220-401',
+      country: 'BR',
+      coordinates: [-43.1, -22.9],
+      label: 'Rua Doutor Paulo César, 155',
+    };
+
+    render(<AddressDetailPanel isMobile={false} address={address} onClose={vi.fn()} />);
+
+    expect(screen.getByText('DNE (Correios)')).toBeInTheDocument();
+    expect(screen.getByText('Icaraí')).toBeInTheDocument();
+    expect(screen.getByText('Niterói - RJ')).toBeInTheDocument();
+    expect(screen.getByText('3303302')).toBeInTheDocument();
   });
 });

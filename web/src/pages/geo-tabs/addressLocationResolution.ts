@@ -6,6 +6,9 @@ export type AddressPinLocation = {
   coordinates: [number, number];
   source: 'google' | 'geonet';
   precision: string;
+  // Endereço formatado da própria fonte — alimenta a barra de pesquisa ao trocar a base
+  // (ver GeoPage/onAddressLocationResolved). Google traz o `label`; GEONET, o `formattedAddress`.
+  label: string;
 };
 
 export type AddressLocationResolution =
@@ -15,7 +18,9 @@ export type AddressLocationResolution =
       google: AddressPinLocation;
       geonet: AddressPinLocation;
       distanceMeters: number;
-      selectedSource: AddressPinLocation['source'] | null;
+      // Em conflito a chave já nasce marcada na base vencedora (GEONET por padrão), nunca
+      // nula — o painel não trava e a aba Viabilidade fica sempre disponível.
+      selectedSource: AddressPinLocation['source'];
     };
 
 export const ADDRESS_COORDINATE_CONFLICT_METERS = 30;
@@ -45,23 +50,38 @@ const geonetPrecision = (method?: string): { rank: number; text: string } => {
   return values[normalized ?? ''] ?? { rank: 0, text: method ?? 'Desconhecida' };
 };
 
+const googleLocation = (address: DraftAddress): AddressPinLocation => ({
+  coordinates: address.coordinates,
+  source: 'google',
+  precision: address.precision ?? 'Desconhecida',
+  label: address.label,
+});
+
+const geonetLocation = (
+  address: DraftAddress,
+  geonet: GeonetAddressDetail,
+): AddressPinLocation => ({
+  coordinates: geonet.coordinates as [number, number],
+  source: 'geonet',
+  precision: geonetPrecision(geonet.geolocationMethod).text,
+  label: geonet.formattedAddress || address.label,
+});
+
+/**
+ * Base preferencial é o GEONET (base própria da V.tal). Ele vence sempre que tem coordenada
+ * e precisão IGUAL OU MELHOR que a do Google — o empate é dele. O Google só vence quando o
+ * GEONET não encontrou o endereço (sem coordenada) ou tem precisão pior.
+ */
 export function selectPinLocation(
   address: DraftAddress,
   geonet: GeonetAddressDetail | null,
 ): AddressPinLocation {
-  const google: AddressPinLocation = {
-    coordinates: address.coordinates,
-    source: 'google',
-    precision: address.precision ?? 'Desconhecida',
-  };
+  const googleRank = GOOGLE_PRECISION_RANK[address.precision ?? ''] ?? 0;
   const geonetInfo = geonetPrecision(geonet?.geolocationMethod);
-  if (
-    geonet?.coordinates &&
-    geonetInfo.rank > (GOOGLE_PRECISION_RANK[address.precision ?? ''] ?? 0)
-  ) {
-    return { coordinates: geonet.coordinates, source: 'geonet', precision: geonetInfo.text };
+  if (geonet?.coordinates && geonetInfo.rank >= googleRank) {
+    return geonetLocation(address, geonet);
   }
-  return google;
+  return googleLocation(address);
 }
 
 export function resolveAddressLocation(
@@ -71,18 +91,22 @@ export function resolveAddressLocation(
 ): AddressLocationResolution {
   const automatic = selectPinLocation(address, geonet);
   if (!geonet?.coordinates) return { mode: 'automatic', selected: automatic };
-  const google: AddressPinLocation = {
-    coordinates: address.coordinates,
-    source: 'google',
-    precision: address.precision ?? 'Desconhecida',
-  };
-  const geonetLocation: AddressPinLocation = {
-    coordinates: geonet.coordinates,
-    source: 'geonet',
-    precision: geonetPrecision(geonet.geolocationMethod).text,
-  };
-  const distanceMeters = haversineMeters(google.coordinates, geonetLocation.coordinates);
+  const google = googleLocation(address);
+  const geonetPin = geonetLocation(address, geonet);
+  const distanceMeters = haversineMeters(google.coordinates, geonetPin.coordinates);
   if (distanceMeters <= ADDRESS_COORDINATE_CONFLICT_METERS)
     return { mode: 'automatic', selected: automatic };
-  return { mode: 'conflict', google, geonet: geonetLocation, distanceMeters, selectedSource };
+  return {
+    mode: 'conflict',
+    google,
+    geonet: geonetPin,
+    distanceMeters,
+    selectedSource: selectedSource ?? automatic.source,
+  };
+}
+
+/** Distância da divergência em pt-BR: metros inteiros com separador de milhar (ex.: `1.240 m`). */
+export function formatDivergenceMeters(meters: number): string {
+  if (!Number.isFinite(meters)) return '-';
+  return `${Math.round(meters).toLocaleString('pt-BR')} m`;
 }

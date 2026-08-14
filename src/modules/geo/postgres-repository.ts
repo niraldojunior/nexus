@@ -960,36 +960,44 @@ export class PostgresGeoRepository implements IGeoRepository {
         )
       )?.count ?? 0,
     );
-    const activeResourceCount = Number(
-      (
-        await this.db.get<{ count: number }>(
-          `SELECT
-           (SELECT COUNT(*) FROM tmf_physical_resource WHERE status <> 'terminated' AND (place_id = ? OR serving_site_id = ?)) +
-           (SELECT COUNT(*) FROM tmf_logical_resource WHERE status <> 'terminated' AND (place_id = ? OR serving_site_id = ?)) AS count`,
-          [siteId, siteId, siteId, siteId],
-        )
-      )?.count ?? 0,
-    );
-    const activeServiceCount = Number(
-      (
-        await this.db.get<{ count: number }>(
-          `SELECT
-           (SELECT COUNT(*) FROM tmf_customer_facing_service WHERE COALESCE(state, status) <> 'terminated' AND place LIKE ?) +
-           (SELECT COUNT(*) FROM tmf_resource_facing_service WHERE COALESCE(state, status) <> 'terminated' AND place LIKE ?) AS count`,
-          [`%${siteId}%`, `%${siteId}%`],
-        )
-      )?.count ?? 0,
-    );
-    const activeOrderCount = Number(
-      (
-        await this.db.get<{ count: number }>(
-          `SELECT
-           (SELECT COUNT(*) FROM tmf_service_order WHERE state NOT IN ('completed', 'cancelled', 'failed') AND service_order_item LIKE ?) +
-           (SELECT COUNT(*) FROM tmf_resource_order WHERE state NOT IN ('completed', 'cancelled', 'failed') AND resource_order_item LIKE ?) AS count`,
-          [`%${siteId}%`, `%${siteId}%`],
-        )
-      )?.count ?? 0,
-    );
+    // Cada par abaixo somava as duas contagens num só round-trip via `SELECT (subquery) +
+    // (subquery) AS count` sem FROM no nível principal — válido em Postgres/SQLite, mas o
+    // Oracle exige FROM sempre (ORA-00923). Duas consultas com FROM de verdade, somadas em
+    // JS, funcionam nos três bancos sem precisar de tratamento por dialeto.
+    const countOf = async (sql: string, params: unknown[]): Promise<number> =>
+      Number((await this.db.get<{ count: number }>(sql, params))?.count ?? 0);
+    const [activeResourceCount, activeServiceCount, activeOrderCount] = await Promise.all([
+      Promise.all([
+        countOf(
+          `SELECT COUNT(*) AS count FROM tmf_physical_resource WHERE status <> 'terminated' AND (place_id = ? OR serving_site_id = ?)`,
+          [siteId, siteId],
+        ),
+        countOf(
+          `SELECT COUNT(*) AS count FROM tmf_logical_resource WHERE status <> 'terminated' AND (place_id = ? OR serving_site_id = ?)`,
+          [siteId, siteId],
+        ),
+      ]).then(([a, b]) => a + b),
+      Promise.all([
+        countOf(
+          `SELECT COUNT(*) AS count FROM tmf_customer_facing_service WHERE COALESCE(state, status) <> 'terminated' AND place LIKE ?`,
+          [`%${siteId}%`],
+        ),
+        countOf(
+          `SELECT COUNT(*) AS count FROM tmf_resource_facing_service WHERE COALESCE(state, status) <> 'terminated' AND place LIKE ?`,
+          [`%${siteId}%`],
+        ),
+      ]).then(([a, b]) => a + b),
+      Promise.all([
+        countOf(
+          `SELECT COUNT(*) AS count FROM tmf_service_order WHERE state NOT IN ('completed', 'cancelled', 'failed') AND service_order_item LIKE ?`,
+          [`%${siteId}%`],
+        ),
+        countOf(
+          `SELECT COUNT(*) AS count FROM tmf_resource_order WHERE state NOT IN ('completed', 'cancelled', 'failed') AND resource_order_item LIKE ?`,
+          [`%${siteId}%`],
+        ),
+      ]).then(([a, b]) => a + b),
+    ]);
 
     return {
       siteId,

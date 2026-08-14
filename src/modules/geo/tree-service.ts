@@ -44,6 +44,10 @@ export type GeoTreeNode = {
   // Categoria TMF674 da spec do local (Region | FunctionalGroup | Site | SubSite).
   // Com o nome do tipo (`sublabel`), é o que resolve o ícone do local no front.
   siteCategory?: string;
+  // Id da GeographicSiteSpecification do local (só em nó de Site) — o combo de tipo do
+  // painel de local de projeto (REQ-MOD01-015) precisa dele para pré-selecionar o tipo
+  // salvo; sem este campo o formulário de edição sempre reabria em branco.
+  siteSpecificationId?: string;
   // Code do catálogo de ResourceType (TMF634) — resolve o ícone no front.
   resourceType?: string;
   status?: string;
@@ -116,6 +120,7 @@ type SiteRow = {
   id: string;
   name: string;
   status: string;
+  site_specification_id: string;
   spec_name: string | null;
   spec_category: string | null;
   geographic_location_id: string | null;
@@ -563,6 +568,7 @@ export class GeoTreeService {
       label: row.name,
       refId: row.id,
       referredType: 'GeographicSite',
+      siteSpecificationId: row.site_specification_id,
       status: row.status,
       hasChildren: options.hasChildren,
     };
@@ -807,7 +813,7 @@ export class GeoTreeService {
 // ----------------------------------------------------------------- SQL ------
 
 const SITE_SELECT = `
-  SELECT s.id, s.name, s.status, s.geographic_location_id,
+  SELECT s.id, s.name, s.status, s.geographic_location_id, s.site_specification_id,
          sp.name AS spec_name, sp.category AS spec_category,
          l.geometry_type, l.geometry,
          a.city, a.state_or_province AS uf, a.street_name AS street

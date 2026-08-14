@@ -14,6 +14,7 @@ const project = (overrides: Partial<GeoProject> = {}): GeoProject => ({
   name: 'Expansão Icaraí',
   description: null,
   iconDataUrl: null,
+  status: 'planned',
   createdBy: null,
   siteCount: 0,
   createdAt: '2026-08-01T00:00:00Z',
@@ -38,11 +39,12 @@ const renderPanel = (overrides: Partial<Parameters<typeof ProjectDetailPanel>[0]
     project: project(),
     sites: [] as GeoTreeNode[],
     sitesLoading: false,
-    onUpdate: vi.fn(),
+    onUpdate: vi.fn().mockResolvedValue(undefined),
     onDelete: vi.fn(),
     onBack: vi.fn(),
     onAddSite: vi.fn(),
     onOpenSite: vi.fn(),
+    onRemoveSite: vi.fn(),
     ...overrides,
   };
   render(<ProjectDetailPanel {...props} />);
@@ -119,5 +121,38 @@ describe('ProjectDetailPanel', () => {
   it('mostra o estado vazio quando o projeto não tem locais', () => {
     renderPanel({ sites: [] });
     expect(screen.getByText(/nenhum local neste projeto ainda/i)).toBeInTheDocument();
+  });
+
+  it('trocar o status do projeto grava via onUpdate', () => {
+    const props = renderPanel();
+    fireEvent.change(screen.getByLabelText('Status do projeto'), {
+      target: { value: 'active' },
+    });
+    expect(props.onUpdate).toHaveBeenCalledWith({ status: 'active' });
+  });
+
+  it('mostra aviso quando a cascata de status deixa locais para trás', async () => {
+    const props = renderPanel({
+      onUpdate: vi.fn().mockResolvedValue({ siteCascade: { updated: 1, skipped: 2 } }),
+    });
+    fireEvent.change(screen.getByLabelText('Status do projeto'), {
+      target: { value: 'planned' },
+    });
+    expect(props.onUpdate).toHaveBeenCalledWith({ status: 'planned' });
+    expect(
+      await screen.findByText('2 locais não puderam seguir para o novo status.'),
+    ).toBeInTheDocument();
+  });
+
+  it('excluir um local da lista pede confirmação antes de chamar onRemoveSite', () => {
+    const target = site();
+    const props = renderPanel({ sites: [target] });
+
+    fireEvent.click(screen.getByRole('button', { name: /excluir local/i }));
+    expect(props.onRemoveSite).not.toHaveBeenCalled();
+    expect(screen.getByText(/será encerrado/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
+    expect(props.onRemoveSite).toHaveBeenCalledWith(target);
   });
 });

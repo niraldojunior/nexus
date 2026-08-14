@@ -8,6 +8,7 @@ import {
   fetchProjects,
   updateProject,
   type GeoProject,
+  type GeoProjectSiteCascade,
 } from '../services/geoProjectApi';
 
 // Dedupe da carga inicial: o backend serializa requisições e o StrictMode monta o componente
@@ -21,8 +22,8 @@ export type UseGeoProjectsResult = {
   create: () => Promise<GeoProject>;
   update: (
     id: string,
-    patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl'>>,
-  ) => Promise<void>;
+    patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status'>>,
+  ) => Promise<{ siteCascade?: GeoProjectSiteCascade }>;
   remove: (id: string) => Promise<void>;
 };
 
@@ -59,10 +60,11 @@ export function useGeoProjects(): UseGeoProjectsResult {
   const update = useCallback(
     async (
       id: string,
-      patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl'>>,
+      patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status'>>,
     ) => {
-      const updated = await updateProject(id, patch);
+      const { siteCascade, ...updated } = await updateProject(id, patch);
       setProjects((current) => current.map((item) => (item.id === id ? updated : item)));
+      return { siteCascade };
     },
     [],
   );

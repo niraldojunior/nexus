@@ -124,7 +124,12 @@ import {
   type GeoSearchSelection,
 } from './geo-tabs';
 import { useGeoProjects } from '../hooks/useGeoProjects';
-import { fetchProjectSites } from '../services/geoProjectApi';
+import {
+  fetchProjectSites,
+  removeProjectSite,
+  type CreatedProjectSite,
+  type ProjectSite,
+} from '../services/geoProjectApi';
 import {
   DROP_ACCENT,
   DROP_INK,
@@ -204,11 +209,13 @@ type DetailTarget = { kind: 'site'; site: GeoSite } | { kind: 'resource'; node: 
 
 // O que a doca mostra quando nem endereço (`addressLookup`) nem detalhe de Site/Recurso
 // (`detailOpen`) está aberto — a hierarquia de sempre, ou um painel de Projeto de trabalho
-// (REQ-MOD01-015). `project-site` com `siteId: null` é criação; com id, edição.
+// (REQ-MOD01-015). `site` é a janela de consulta/criação de local, aberta ao LADO do painel
+// do projeto (estilo Salvos → Listas do Google Maps) — não o substitui. `mode: 'create'` é
+// um novo local; `mode: 'view'` consulta/edita o `siteId` informado.
+type ProjectSiteView = { mode: 'create' } | { mode: 'view'; siteId: string };
 type DockView =
   | { kind: 'hierarchy' }
-  | { kind: 'project'; projectId: string }
-  | { kind: 'project-site'; projectId: string; siteId: string | null };
+  | { kind: 'project'; projectId: string; site: ProjectSiteView | null };
 
 // Lado do ícone de equipamento no mapa, em px. Um pouco menor que o pin de site
 // para o equipamento não competir com o local que o contém.
@@ -331,7 +338,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // no vazio do mapa entrega o resultado aqui em vez de abrir o painel de Endereço.
   const [pickingProjectSite, setPickingProjectSite] = useState(false);
   const [pickedProjectAddress, setPickedProjectAddress] = useState<DraftAddress | null>(null);
-  const [projectSites, setProjectSites] = useState<GeoTreeNode[]>([]);
+  const [projectSites, setProjectSites] = useState<ProjectSite[]>([]);
   const [projectSitesLoading, setProjectSitesLoading] = useState(false);
   // Incrementado após criar/remover um local do projeto para forçar um novo GET — os
   // demais estados (nome, descrição, ícone) já atualizam otimista via useGeoProjects.
@@ -488,10 +495,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
           ? `site:${detailTarget.site.id}`
           : `resource:${detailTarget.node.id}`
         : dockView.kind === 'project'
-          ? `project:${dockView.projectId}`
-          : dockView.kind === 'project-site'
-            ? `project-site:${dockView.projectId}:${dockView.siteId ?? 'new'}`
-            : null;
+          ? dockView.site
+            ? `project-site:${dockView.projectId}:${dockView.site.mode === 'view' ? dockView.site.siteId : 'new'}`
+            : `project:${dockView.projectId}`
+          : null;
   const onMobileSheetSnapChange = useCallback(
     (state: BottomSheetSnapState) => {
       if (mobilePanelKey) setMobileSheetState({ panelKey: mobilePanelKey, state });
@@ -671,10 +678,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   );
 
   const openProjectSite = useCallback((projectId: string, node: GeoTreeNode) => {
+    if (!node.refId) return;
     setSelectedNode(node);
     const point = treeNodePoint(node);
     if (point) setFocusRequest({ point, scaleMeters: RESOURCE_FOCUS_SCALE_METERS });
-    setDockView({ kind: 'project-site', projectId, siteId: node.refId ?? null });
+    setDockView({ kind: 'project', projectId, site: { mode: 'view', siteId: node.refId } });
   }, []);
 
   const selectNodeFromMap = useCallback(
@@ -839,11 +847,20 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   };
 
   // Volta a doca para a Hierarquia (aba Projetos, ver hierarchyTab) e limpa qualquer
-  // estado do fluxo de local que ficou pendente — o "‹" do painel de Projeto e o excluir
-  // do menu ⋯ passam por aqui.
+  // estado do fluxo de local que ficou pendente — o excluir do menu ⋯ e a exclusão de
+  // projeto passam por aqui.
   const closeProjectPanel = useCallback(() => {
     setDockView({ kind: 'hierarchy' });
     setSelectedNode(null);
+    setPickingProjectSite(false);
+    setPickedProjectAddress(null);
+  }, []);
+
+  // Fecha só a janela de consulta do local — o painel do projeto continua aberto ao lado
+  // (estilo Salvos → Listas do Google Maps, ver DockView/ProjectSiteView). É o botão "X" do
+  // ProjectSitePanel e, no mobile, o gesto de fechar a folha.
+  const closeProjectSite = useCallback((projectId: string) => {
+    setDockView({ kind: 'project', projectId, site: null });
     setPickingProjectSite(false);
     setPickedProjectAddress(null);
   }, []);
@@ -853,11 +870,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const handleCreateProject = useCallback(async () => {
     const project = await projects.create();
     setHierarchyTab('projects');
-    setDockView({ kind: 'project', projectId: project.id });
+    setDockView({ kind: 'project', projectId: project.id, site: null });
   }, [projects]);
 
   const handleOpenProject = useCallback((projectId: string) => {
-    setDockView({ kind: 'project', projectId });
+    setDockView({ kind: 'project', projectId, site: null });
   }, []);
 
   // Excluir projeto — pode vir da lista (ProjectListView, projeto fechado) ou do menu ⋯
@@ -872,22 +889,53 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     [projects, dockView, closeProjectPanel],
   );
 
-  // Volta do painel de local (ProjectSitePanel) para o painel do projeto — usado pelo "‹"
-  // e, após salvar, junto com um novo `projectSitesReloadToken` para o GET refletir o local
-  // criado/editado/removido.
-  const backToProject = useCallback((projectId: string) => {
-    setDockView({ kind: 'project', projectId });
-    setPickingProjectSite(false);
-    setPickedProjectAddress(null);
+  // Local recém-criado: sai do formulário direto para a consulta dele (não de volta para a
+  // lista do projeto) — é a leitura natural do fluxo ("acabei de criar, quero ver o que
+  // ficou"). `projectSitesReloadToken` força o próximo GET a incluir o local novo.
+  const handleProjectSiteCreated = useCallback(
+    (projectId: string, created: CreatedProjectSite) => {
+      setProjectSitesReloadToken((token) => token + 1);
+      setDockView({
+        kind: 'project',
+        projectId,
+        site: { mode: 'view', siteId: created.site.id },
+      });
+    },
+    [],
+  );
+
+  // Nome/tipo/observação editados no painel de consulta — só precisa de um novo GET; o
+  // local aberto continua o mesmo (ver ProjectSitePanel.onSiteChanged).
+  const handleProjectSiteChanged = useCallback(() => {
+    setProjectSitesReloadToken((token) => token + 1);
   }, []);
 
-  const handleProjectSiteSaved = useCallback(
+  // "Remover do projeto" dentro do painel de consulta: já resolvido no próprio painel (a
+  // chamada DELETE já aconteceu), só falta fechar a janela e atualizar a lista.
+  const handleProjectSiteRemoved = useCallback(
     (projectId: string) => {
       setProjectSitesReloadToken((token) => token + 1);
-      backToProject(projectId);
+      closeProjectSite(projectId);
     },
-    [backToProject],
+    [closeProjectSite],
   );
+
+  // Excluir direto pela lista do painel do projeto (botão que aparece no hover, ver
+  // ProjectDetailPanel) — sem abrir a janela de consulta primeiro. Fecha a janela também
+  // se por acaso o local excluído for o que estava aberto.
+  const handleQuickRemoveSite = useCallback(async (projectId: string, site: GeoTreeNode) => {
+    if (!site.refId) return;
+    await removeProjectSite(projectId, site.refId);
+    setProjectSitesReloadToken((token) => token + 1);
+    setDockView((current) =>
+      current.kind === 'project' &&
+      current.projectId === projectId &&
+      current.site?.mode === 'view' &&
+      current.site.siteId === site.refId
+        ? { kind: 'project', projectId, site: null }
+        : current,
+    );
+  }, []);
 
   // Monta o conteúdo do balão de preview a partir do nó sob o mouse. Fica aqui,
   // e não no painel do mapa, porque é aqui que se sabe o que fazer com cada
@@ -961,9 +1009,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Projeto do dockView atual, se houver — `undefined` enquanto a lista ainda carrega ou se
   // o projeto foi excluído em outra aba; nesse caso o render cai de volta para a Hierarquia.
   const activeProject =
-    dockView.kind !== 'hierarchy'
+    dockView.kind === 'project'
       ? projects.projects.find((project) => project.id === dockView.projectId)
       : undefined;
+  // Local aberto ao lado do projeto (criação ou consulta), se houver.
+  const activeProjectSiteView = dockView.kind === 'project' ? dockView.site : null;
 
   return (
     <div className="relative h-full min-h-0 min-w-0 overflow-hidden bg-transparent flex flex-col">
@@ -1020,46 +1070,62 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                 setCreateOpen(true);
               }}
             />
-          ) : dockView.kind === 'project-site' && activeProject ? (
-            <ProjectSitePanel
-              key={`${dockView.projectId}:${dockView.siteId ?? 'new'}`}
-              isMobile={isMobile}
-              projectId={dockView.projectId}
-              site={
-                dockView.siteId
-                  ? (projectSites.find((site) => site.refId === dockView.siteId) ?? null)
-                  : null
-              }
-              specs={specs}
-              pickedAddress={pickedProjectAddress}
-              pickingOnMap={pickingProjectSite}
-              onTogglePickOnMap={() => setPickingProjectSite((picking) => !picking)}
-              onSnapChange={onMobileSheetSnapChange}
-              minimizeSignal={sheetMinimizeSignal}
-              onBack={() => backToProject(dockView.projectId)}
-              onSaved={() => handleProjectSiteSaved(dockView.projectId)}
-            />
           ) : dockView.kind === 'project' && activeProject ? (
-            <ProjectDetailPanel
-              isMobile={isMobile}
-              project={activeProject}
-              sites={projectSites}
-              sitesLoading={projectSitesLoading}
-              selectedSiteId={
-                selectedNode?.referredType === 'GeographicSite'
-                  ? (selectedNode.refId ?? null)
-                  : null
-              }
-              onSnapChange={onMobileSheetSnapChange}
-              minimizeSignal={sheetMinimizeSignal}
-              onUpdate={(patch) => void projects.update(dockView.projectId, patch)}
-              onDelete={() => handleDeleteProject(dockView.projectId)}
-              onBack={closeProjectPanel}
-              onAddSite={() =>
-                setDockView({ kind: 'project-site', projectId: dockView.projectId, siteId: null })
-              }
-              onOpenSite={(site) => openProjectSite(dockView.projectId, site)}
-            />
+            <>
+              {/* No mobile as duas telas se substituem (uma folha por vez); no desktop
+                  ficam lado a lado, como Salvos → Listas do Google Maps: o painel do
+                  projeto continua visível enquanto a janela do local está aberta. */}
+              {!isMobile || !activeProjectSiteView ? (
+                <ProjectDetailPanel
+                  isMobile={isMobile}
+                  project={activeProject}
+                  sites={projectSites}
+                  sitesLoading={projectSitesLoading}
+                  selectedSiteId={
+                    activeProjectSiteView?.mode === 'view' ? activeProjectSiteView.siteId : null
+                  }
+                  onSnapChange={onMobileSheetSnapChange}
+                  minimizeSignal={sheetMinimizeSignal}
+                  onUpdate={(patch) => projects.update(dockView.projectId, patch)}
+                  onDelete={() => handleDeleteProject(dockView.projectId)}
+                  onBack={closeProjectPanel}
+                  onAddSite={() =>
+                    setDockView({
+                      kind: 'project',
+                      projectId: dockView.projectId,
+                      site: { mode: 'create' },
+                    })
+                  }
+                  onOpenSite={(site) => openProjectSite(dockView.projectId, site)}
+                  onRemoveSite={(site) => void handleQuickRemoveSite(dockView.projectId, site)}
+                />
+              ) : null}
+              {activeProjectSiteView ? (
+                <ProjectSitePanel
+                  key={`${dockView.projectId}:${activeProjectSiteView.mode === 'view' ? activeProjectSiteView.siteId : 'new'}`}
+                  isMobile={isMobile}
+                  projectId={dockView.projectId}
+                  project={activeProject}
+                  site={
+                    activeProjectSiteView.mode === 'view'
+                      ? (projectSites.find(
+                          (site) => site.refId === activeProjectSiteView.siteId,
+                        ) ?? null)
+                      : null
+                  }
+                  specs={specs}
+                  pickedAddress={pickedProjectAddress}
+                  pickingOnMap={pickingProjectSite}
+                  onTogglePickOnMap={() => setPickingProjectSite((picking) => !picking)}
+                  onSnapChange={onMobileSheetSnapChange}
+                  minimizeSignal={sheetMinimizeSignal}
+                  onClose={() => closeProjectSite(dockView.projectId)}
+                  onCreated={(created) => handleProjectSiteCreated(dockView.projectId, created)}
+                  onSiteChanged={handleProjectSiteChanged}
+                  onRemoved={() => handleProjectSiteRemoved(dockView.projectId)}
+                />
+              ) : null}
+            </>
           ) : (
             <HierarchySidebar
               tree={tree}
@@ -1567,6 +1633,26 @@ export function GoogleMapPanel({
       .catch(() => setMapsReady(false))
       .finally(() => setMapsLoading(false));
   }, [handleManualNavigation, onDraftAddress, selectedBaseLayer.googleMapTypeId]);
+
+  // O contêiner do mapa muda de largura sempre que uma doca aparece/some ao lado dele —
+  // hierarquia, painel de Projeto, e agora também a janela de consulta de um local de
+  // projeto (REQ-MOD01-015 §20), lado a lado como Salvos → Listas do Google Maps. Sem
+  // este observer, o Google Maps só percebe o novo tamanho do `<div>` de forma
+  // best-effort; disparar `resize` explicitamente garante o redesenho e mantém o centro
+  // geográfico atual (`center`) ancorado no meio do novo retângulo visível — é isso que
+  // "centraliza o alfinete" sem precisar recalcular um novo alvo de câmera.
+  useEffect(() => {
+    if (!mapsReady || !mapEl.current) return;
+    const maps = window.google?.maps;
+    if (!maps) return;
+    // ResizeObserver não existe no jsdom (testes) — mesmo guard do OverlayScrollArea.
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (mapRef.current) maps.event.trigger(mapRef.current, 'resize');
+    });
+    observer.observe(mapEl.current);
+    return () => observer.disconnect();
+  }, [mapsReady]);
 
   // Repassa os dados de cobertura para a camada de canvas quando mudam (ou saem de escala).
   useEffect(() => {

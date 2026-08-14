@@ -390,7 +390,7 @@ export function GeoSearchBar({
               }}
               onKeyDown={handleKeyDown}
               className={`h-full min-w-0 flex-1 rounded-l-2xl bg-transparent ${showMenuMark ? 'pl-2' : 'pl-4'} pr-2 text-[16px] text-app-text placeholder:text-app-muted focus:outline-none`}
-              placeholder="Pesquisar local, recurso ou endereço"
+              placeholder="Pesquise no Nexus"
               id="geo-search-input"
               autoComplete="off"
             />

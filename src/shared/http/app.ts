@@ -842,6 +842,7 @@ const routeGeoRequest = async ({
           name: String(body.name ?? '').trim() || 'Projeto sem título',
           description: body.description ? String(body.description) : null,
           iconDataUrl: body.iconDataUrl ? String(body.iconDataUrl) : null,
+          status: parseGeoProjectStatus(body.status) ?? 'planned',
         },
       );
       return sendJson(response, 201, project);
@@ -855,6 +856,11 @@ const routeGeoRequest = async ({
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
       const body = await readBody(request);
       assertProjectIconSize(body.iconDataUrl);
+      const current = await runtime.geoProjectRepository.get(geoContext.tenantId, projectId);
+      if (!current) {
+        throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
+      }
+      const nextStatus = parseGeoProjectStatus(body.status);
       const updated = await runtime.geoProjectRepository.update(geoContext.tenantId, projectId, {
         ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
         ...(body.description !== undefined
@@ -863,8 +869,39 @@ const routeGeoRequest = async ({
         ...(body.iconDataUrl !== undefined
           ? { iconDataUrl: body.iconDataUrl ? String(body.iconDataUrl) : null }
           : {}),
+        ...(nextStatus !== undefined ? { status: nextStatus } : {}),
       });
-      return sendJsonOrNotFound(response, updated, 'GEO_PROJECT_NOT_FOUND');
+      if (!updated) {
+        throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
+      }
+      // O projeto é a unidade de estado (REQ-MOD01-015 §20): quando o status muda,
+      // cascateia para cada Site vinculado. Best-effort — uma transição que a máquina
+      // canônica recusa (SITE_STATUS_TRANSITIONS em service.ts) não aborta as demais nem
+      // o PATCH; o chamador só sabe quantas ficaram para trás (siteCascade).
+      let siteCascade: { updated: number; skipped: number } | undefined;
+      if (nextStatus !== undefined && nextStatus !== current.status) {
+        const siteIds = await runtime.geoProjectRepository.listSiteIds(
+          geoContext.tenantId,
+          projectId,
+        );
+        siteCascade = { updated: 0, skipped: 0 };
+        for (const siteId of siteIds) {
+          try {
+            await geoService.transitionSite(
+              siteId,
+              {
+                status: nextStatus,
+                statusReason: `Status do projeto alterado para ${nextStatus}`,
+              },
+              geoContext,
+            );
+            siteCascade.updated += 1;
+          } catch {
+            siteCascade.skipped += 1;
+          }
+        }
+      }
+      return sendJson(response, 200, siteCascade ? { ...updated, siteCascade } : updated);
     }
     if (request.method === 'DELETE') {
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
@@ -893,11 +930,18 @@ const routeGeoRequest = async ({
     const projectId = decodeURIComponent(projectSitesMatch[1]);
     if (request.method === 'GET') {
       requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
-      const siteIds = await runtime.geoProjectRepository.listSiteIds(
-        geoContext.tenantId,
-        projectId,
-      );
-      return sendJson(response, 200, await geoTreeService.sitesByIds(siteIds));
+      const [siteIds, links] = await Promise.all([
+        runtime.geoProjectRepository.listSiteIds(geoContext.tenantId, projectId),
+        runtime.geoProjectRepository.listSiteLinks(geoContext.tenantId, projectId),
+      ]);
+      const linkBySiteId = new Map(links.map((link) => [link.siteId, link]));
+      const nodes = await geoTreeService.sitesByIds(siteIds);
+      const sites = nodes.map((node) => ({
+        ...node,
+        note: linkBySiteId.get(node.refId ?? '')?.note ?? null,
+        geonetAddressId: linkBySiteId.get(node.refId ?? '')?.geonetAddressId ?? null,
+      }));
+      return sendJson(response, 200, sites);
     }
     if (request.method === 'POST') {
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
@@ -909,36 +953,88 @@ const routeGeoRequest = async ({
         });
       }
       const body = await readBody(request);
+      const geonetAddressId =
+        typeof body.geonetAddressId === 'string' ? body.geonetAddressId.trim() : '';
+      if (!geonetAddressId) {
+        throw new AppError('geonet address id required to create a project site', {
+          code: 'GEO_PROJECT_SITE_GEONET_ADDRESS_REQUIRED',
+          statusCode: 400,
+        });
+      }
+      const siteInput =
+        body.site && typeof body.site === 'object' ? (body.site as Record<string, unknown>) : {};
+      // O local nasce com o status do projeto (herança, não escolha do formulário) — o que
+      // o cliente mandar em `site.status` é ignorado aqui de propósito.
       const created = await geoService.createSiteAtAddress(
-        body as Parameters<typeof geoService.createSiteAtAddress>[0],
+        {
+          ...(body as Parameters<typeof geoService.createSiteAtAddress>[0]),
+          site: { ...siteInput, status: project.status } as Parameters<
+            typeof geoService.createSiteAtAddress
+          >[0]['site'],
+        },
         geoContext,
       );
-      await runtime.geoProjectRepository.linkSite(projectId, created.site.id);
+      await runtime.geoProjectRepository.linkSite(projectId, created.site.id, { geonetAddressId });
+      const note = typeof body.note === 'string' && body.note.trim() ? body.note.trim() : null;
+      if (note) {
+        await runtime.geoProjectRepository.updateSiteLink(projectId, created.site.id, { note });
+      }
       return sendJson(response, 201, created);
     }
   }
 
   const projectSiteMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/sites\/([^/]+)$/);
-  if (projectSiteMatch?.[1] && projectSiteMatch[2] && request.method === 'DELETE') {
-    requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+  if (projectSiteMatch?.[1] && projectSiteMatch[2]) {
     const projectId = decodeURIComponent(projectSiteMatch[1]);
     const siteId = decodeURIComponent(projectSiteMatch[2]);
-    const siteIds = await runtime.geoProjectRepository.listSiteIds(geoContext.tenantId, projectId);
-    if (!siteIds.includes(siteId)) {
-      throw new AppError('project site not found', {
-        code: 'GEO_PROJECT_SITE_NOT_FOUND',
-        statusCode: 404,
-      });
+    if (request.method === 'PATCH') {
+      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+      const siteIds = await runtime.geoProjectRepository.listSiteIds(geoContext.tenantId, projectId);
+      if (!siteIds.includes(siteId)) {
+        throw new AppError('project site not found', {
+          code: 'GEO_PROJECT_SITE_NOT_FOUND',
+          statusCode: 404,
+        });
+      }
+      const body = await readBody(request);
+      // Nunca aceita `status` aqui: o local herda o do projeto (RN — ver PATCH de projeto
+      // acima); mudar isoladamente quebraria a herança sem o usuário perceber.
+      const site = await geoService.updateSite(
+        siteId,
+        {
+          ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
+          ...(body.siteSpecificationId !== undefined
+            ? { siteSpecificationId: String(body.siteSpecificationId) }
+            : {}),
+        },
+        geoContext,
+      );
+      const note =
+        body.note === null ? null : typeof body.note === 'string' ? body.note.trim() || null : undefined;
+      if (note !== undefined) {
+        await runtime.geoProjectRepository.updateSiteLink(projectId, siteId, { note });
+      }
+      return sendJson(response, 200, { site, note });
     }
-    // Mesma ordem e mesmo motivo do DELETE de projeto: soft-terminate (C6) antes de
-    // desvincular, para uma falha na transição não deixar o local órfão e visível.
-    await geoService.transitionSite(
-      siteId,
-      { status: 'Retired', statusReason: 'Local removido do projeto' },
-      geoContext,
-    );
-    await runtime.geoProjectRepository.unlinkSite(projectId, siteId);
-    return sendJson(response, 204, null);
+    if (request.method === 'DELETE') {
+      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+      const siteIds = await runtime.geoProjectRepository.listSiteIds(geoContext.tenantId, projectId);
+      if (!siteIds.includes(siteId)) {
+        throw new AppError('project site not found', {
+          code: 'GEO_PROJECT_SITE_NOT_FOUND',
+          statusCode: 404,
+        });
+      }
+      // Mesma ordem e mesmo motivo do DELETE de projeto: soft-terminate (C6) antes de
+      // desvincular, para uma falha na transição não deixar o local órfão e visível.
+      await geoService.transitionSite(
+        siteId,
+        { status: 'Retired', statusReason: 'Local removido do projeto' },
+        geoContext,
+      );
+      await runtime.geoProjectRepository.unlinkSite(projectId, siteId);
+      return sendJson(response, 204, null);
+    }
   }
 
   // Árvore de navegação — um nível por chamada. Vem antes do roteador de
@@ -2345,6 +2441,23 @@ const assertProjectIconSize = (value: unknown): void => {
   throw new AppError('project icon too large', {
     code: 'GEO_PROJECT_ICON_TOO_LARGE',
     statusCode: 413,
+  });
+};
+
+const GEO_PROJECT_STATUSES = ['planned', 'active', 'suspended', 'terminated'] as const;
+
+// `undefined` quando o corpo não trouxe `status` (patch parcial); lança quando trouxe um
+// valor fora do vocabulário de GeoProjectStatus.
+const parseGeoProjectStatus = (
+  value: unknown,
+): (typeof GEO_PROJECT_STATUSES)[number] | undefined => {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string' && (GEO_PROJECT_STATUSES as readonly string[]).includes(value)) {
+    return value as (typeof GEO_PROJECT_STATUSES)[number];
+  }
+  throw new AppError('invalid project status', {
+    code: 'GEO_PROJECT_STATUS_INVALID',
+    statusCode: 400,
   });
 };
 

@@ -13,6 +13,7 @@ const project = (overrides: Partial<GeoProject> = {}): GeoProject => ({
   name: 'Expansão Icaraí',
   description: null,
   iconDataUrl: null,
+  status: 'planned',
   createdBy: null,
   siteCount: 3,
   createdAt: '2026-08-01T00:00:00Z',
@@ -68,6 +69,19 @@ describe('ProjectListView', () => {
 
     fireEvent.click(screen.getByText('Expansão Icaraí'));
     expect(onOpen).toHaveBeenCalledWith('prj-1');
+  });
+
+  it('mostra o selo de status de cada projeto', () => {
+    render(
+      <ProjectListView
+        projects={[project({ status: 'active' })]}
+        loading={false}
+        onCreate={vi.fn()}
+        onOpen={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Ativo')).toBeInTheDocument();
   });
 
   it('excluir pede confirmação antes de chamar onDelete', () => {

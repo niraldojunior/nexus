@@ -83,7 +83,7 @@ describe('GeoSearchBar', () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText('Pesquisar local, recurso ou endereço');
+    const input = screen.getByPlaceholderText('Pesquise no Nexus');
     input.focus();
     fireEvent.change(input, { target: { value: 'Estação' } });
 
@@ -104,7 +104,7 @@ describe('GeoSearchBar', () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText('Pesquisar local, recurso ou endereço');
+    const input = screen.getByPlaceholderText('Pesquise no Nexus');
     input.focus();
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /Estação Icaraí/i })).toBeTruthy(),
@@ -133,7 +133,7 @@ describe('GeoSearchBar', () => {
       screen.getByRole('button', { name: 'Editar seleção Estação Icaraí' }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByPlaceholderText('Pesquisar local, recurso ou endereço'),
+      screen.queryByPlaceholderText('Pesquise no Nexus'),
     ).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Estação' })).toBeInTheDocument();
 
@@ -193,7 +193,7 @@ describe('GeoSearchBar', () => {
     chip.focus();
     await user.keyboard('{Enter}');
 
-    const input = await screen.findByPlaceholderText('Pesquisar local, recurso ou endereço');
+    const input = await screen.findByPlaceholderText('Pesquise no Nexus');
     await waitFor(() => expect(input).toHaveFocus());
   });
 
@@ -253,7 +253,7 @@ describe('GeoSearchBar', () => {
     await waitFor(() => expect(mocks.fetchTreeSearch).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByLabelText('Limpar busca'));
     await act(async () => resolveNodes([node]));
-    fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise no Nexus'));
 
     expect(screen.queryByRole('button', { name: /Estação Icaraí/i })).not.toBeInTheDocument();
   });
@@ -273,7 +273,7 @@ describe('GeoSearchBar', () => {
       />,
     );
 
-    fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise no Nexus'));
     // Com Promise.all a rejeição das previsões zerava tudo; com allSettled o resultado
     // de inventário sobrevive.
     await waitFor(() =>
@@ -298,7 +298,7 @@ describe('GeoSearchBar', () => {
       />,
     );
 
-    fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise no Nexus'));
     await waitFor(() =>
       expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument(),
     );
@@ -331,7 +331,7 @@ describe('GeoSearchBar', () => {
       />,
     );
 
-    fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise no Nexus'));
     await waitFor(() =>
       expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument(),
     );
@@ -379,7 +379,7 @@ describe('GeoSearchBar', () => {
       />,
     );
 
-    fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise no Nexus'));
     await waitFor(() =>
       expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument(),
     );
@@ -499,7 +499,7 @@ describe('GeoSearchBar', () => {
     await act(async () => resolveGeocode({ ok: true, address }));
 
     expect(onAddressFound).not.toHaveBeenCalled();
-    expect(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço')).toHaveValue('');
+    expect(screen.getByPlaceholderText('Pesquise no Nexus')).toHaveValue('');
   });
 
   it('representa endereço confirmado como chip com ícone de endereço e rótulo resolvido', () => {
@@ -554,7 +554,7 @@ describe('GeoSearchBar', () => {
     render(<Harness />);
     fireEvent.click(screen.getByLabelText('Limpar busca'));
 
-    const input = await screen.findByPlaceholderText('Pesquisar local, recurso ou endereço');
+    const input = await screen.findByPlaceholderText('Pesquise no Nexus');
     expect(input).toHaveValue('');
     expect(screen.queryByRole('button', { name: /Editar seleção/i })).not.toBeInTheDocument();
   });
@@ -594,7 +594,7 @@ describe('GeoSearchBar', () => {
     }
 
     render(<Harness />);
-    const input = screen.getByPlaceholderText('Pesquisar local, recurso ou endereço');
+    const input = screen.getByPlaceholderText('Pesquise no Nexus');
     input.focus();
     if (trigger === 'button') fireEvent.click(screen.getByRole('button', { name: 'Pesquisar' }));
     else fireEvent.keyDown(input, { key: 'Enter' });
@@ -627,7 +627,7 @@ describe('GeoSearchBar', () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText('Pesquisar local, recurso ou endereço');
+    const input = screen.getByPlaceholderText('Pesquise no Nexus');
     input.focus();
     fireEvent.click(screen.getByRole('button', { name: 'Pesquisar' }));
 
@@ -657,7 +657,7 @@ describe('GeoSearchBar', () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText('Pesquisar local, recurso ou endereço');
+    const input = screen.getByPlaceholderText('Pesquise no Nexus');
     input.focus();
     fireEvent.keyDown(input, { key: 'Enter' });
 
@@ -690,7 +690,7 @@ describe('GeoSearchBar', () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText('Pesquisar local, recurso ou endereço');
+    const input = screen.getByPlaceholderText('Pesquise no Nexus');
     input.focus();
     await waitFor(() =>
       expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument(),
@@ -716,7 +716,7 @@ describe('GeoSearchBar', () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText('Pesquisar local, recurso ou endereço');
+    const input = screen.getByPlaceholderText('Pesquise no Nexus');
     input.focus();
     expect(input).toHaveFocus();
     await waitFor(() => expect(screen.getByText('Estação Icaraí')).toBeInTheDocument());
@@ -741,7 +741,7 @@ describe('GeoSearchBar', () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText('Pesquisar local, recurso ou endereço');
+    const input = screen.getByPlaceholderText('Pesquise no Nexus');
     fireEvent.focus(input);
     await waitFor(() => expect(screen.getByText('Estação Icaraí')).toBeInTheDocument());
 
@@ -924,7 +924,7 @@ describe('GeoSearchBar histórico', () => {
       />,
     );
 
-    fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise no Nexus'));
     await waitFor(() => expect(screen.getByText('Recentes')).toBeInTheDocument());
     const items = screen.getAllByText(/Rua Gavião Peixoto, Niterói|Estação Icaraí/);
     // O endereço (5 visitas) vem antes da estação (2 visitas), na ordem devolvida pelo backend.
@@ -948,7 +948,7 @@ describe('GeoSearchBar histórico', () => {
       />,
     );
 
-    fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise no Nexus'));
     await waitFor(() =>
       expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument(),
     );
@@ -974,7 +974,7 @@ describe('GeoSearchBar histórico', () => {
       />,
     );
 
-    fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise no Nexus'));
     await waitFor(() => expect(screen.getByText('Locais e recursos')).toBeInTheDocument());
     expect(screen.queryByText('Recentes')).not.toBeInTheDocument();
   });
@@ -995,7 +995,7 @@ describe('GeoSearchBar histórico', () => {
     );
 
     expect(
-      screen.queryByPlaceholderText('Pesquisar local, recurso ou endereço'),
+      screen.queryByPlaceholderText('Pesquise no Nexus'),
     ).not.toBeInTheDocument();
     expect(screen.queryByText('Recentes')).not.toBeInTheDocument();
   });
@@ -1013,7 +1013,7 @@ describe('GeoSearchBar histórico', () => {
       />,
     );
 
-    fireEvent.focus(screen.getByPlaceholderText('Pesquisar local, recurso ou endereço'));
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise no Nexus'));
     await waitFor(() =>
       expect(screen.getByText('Rua Gavião Peixoto, Niterói')).toBeInTheDocument(),
     );
@@ -1038,7 +1038,7 @@ describe('GeoSearchBar histórico', () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText('Pesquisar local, recurso ou endereço');
+    const input = screen.getByPlaceholderText('Pesquise no Nexus');
     fireEvent.focus(input);
     await waitFor(() => expect(screen.getByText('Recentes')).toBeInTheDocument());
     // Item 0 = endereço, item 1 = estação. ArrowDown leva ao índice 1 e Enter seleciona.

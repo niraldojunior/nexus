@@ -1174,6 +1174,104 @@ test('App exposes health without auth and protected routes reject missing token'
   assert.equal((protectedRoute.body as { error: string }).error, 'AUTH_REQUIRED');
 });
 
+test('Projetos de trabalho: local exige GEONET, herda status do projeto, e a cascata de status do PATCH funciona', async (t) => {
+  const database = createTestDatabase();
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
+  const port = await server.start();
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
+
+  const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+    name: 'Ponto de Instalação',
+    category: 'Site',
+  });
+  assert.equal(spec.statusCode, 201);
+  const specId = (spec.body as { id: string }).id;
+
+  const project = await requestJson(port, 'POST', '/v1/geo/projects', { name: 'Projeto de teste' });
+  assert.equal(project.statusCode, 201);
+  const projectId = (project.body as { id: string; status: string }).id;
+  assert.equal((project.body as { status: string }).status, 'planned');
+
+  // RN-008: sem geonetAddressId, a criação de local é recusada.
+  const rejected = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
+    location: { geometryType: 'Point', geometry: { type: 'Point', coordinates: [-43.1, -22.9] } },
+    address: { street: 'Rua Teste' },
+    site: { name: 'Local sem Geonet', siteSpecificationId: specId },
+  });
+  assert.equal(rejected.statusCode, 400);
+  assert.equal(
+    (rejected.body as { error: string }).error,
+    'GEO_PROJECT_SITE_GEONET_ADDRESS_REQUIRED',
+  );
+
+  // RN-007: com geonetAddressId, cria — e ignora o status enviado pelo cliente (herda do
+  // projeto, que nasce 'planned').
+  const created = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
+    location: { geometryType: 'Point', geometry: { type: 'Point', coordinates: [-43.1, -22.9] } },
+    address: { street: 'Rua Teste' },
+    site: { name: 'Local A', siteSpecificationId: specId, status: 'Active' },
+    geonetAddressId: 'geonet-123',
+    note: 'observação de campo',
+  });
+  assert.equal(created.statusCode, 201);
+  const siteId = (created.body as { site: { id: string; status: string } }).site.id;
+  assert.equal((created.body as { site: { status: string } }).site.status, 'Planned');
+
+  // GET /sites devolve a observação e o id do Geonet junto do nó de árvore.
+  const sites = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
+  assert.equal(sites.statusCode, 200);
+  const siteNode = (
+    sites.body as Array<{ refId: string; note: string; geonetAddressId: string }>
+  ).find((node) => node.refId === siteId);
+  assert.equal(siteNode?.note, 'observação de campo');
+  assert.equal(siteNode?.geonetAddressId, 'geonet-123');
+
+  // PATCH de nome/tipo/observação do local, pela nova rota dedicada.
+  const patchedSite = await requestJson(
+    port,
+    'PATCH',
+    `/v1/geo/projects/${projectId}/sites/${siteId}`,
+    { name: 'Local A renomeado', note: 'nova observação' },
+  );
+  assert.equal(patchedSite.statusCode, 200);
+  assert.equal(
+    (patchedSite.body as { site: { name: string } }).site.name,
+    'Local A renomeado',
+  );
+  assert.equal((patchedSite.body as { note: string }).note, 'nova observação');
+
+  // RF-010: PATCH do projeto para 'active' cascateia (best-effort) para o Site vinculado.
+  const patchedProject = await requestJson(port, 'PATCH', `/v1/geo/projects/${projectId}`, {
+    status: 'active',
+  });
+  assert.equal(patchedProject.statusCode, 200);
+  assert.equal((patchedProject.body as { status: string }).status, 'active');
+  assert.equal(
+    (patchedProject.body as { siteCascade?: { updated: number; skipped: number } }).siteCascade
+      ?.updated,
+    1,
+  );
+
+  const siteAfterCascade = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}`);
+  assert.equal((siteAfterCascade.body as { status: string }).status, 'Active');
+
+  // RN-009: "Remover do projeto" desvincula o local (soft-terminate + unlink), C6.
+  const removed = await requestJson(
+    port,
+    'DELETE',
+    `/v1/geo/projects/${projectId}/sites/${siteId}`,
+  );
+  assert.equal(removed.statusCode, 204);
+  const sitesAfterRemove = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
+  assert.deepEqual(sitesAfterRemove.body, []);
+});
+
 test('App root returns Nexus shell html', async (t) => {
   const database = createTestDatabase();
   const server = createApp({

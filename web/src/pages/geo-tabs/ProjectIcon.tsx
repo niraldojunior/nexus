@@ -19,7 +19,7 @@ export function ProjectIcon({ iconDataUrl, size = 40, onChangeFile, label }: Pro
   const inputRef = useRef<HTMLInputElement>(null);
 
   const content = iconDataUrl ? (
-    <img src={iconDataUrl} alt="" className="h-full w-full object-cover" />
+    <img src={iconDataUrl} alt="" className="h-full w-full object-contain" />
   ) : (
     <FolderKanban className="h-1/2 w-1/2 text-app-muted" />
   );

@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import type { GeoProject } from '../../services/geoProjectApi';
 import { ProjectIcon } from './ProjectIcon';
 import { Modal } from './Modal';
+import { StatusBadge } from './StatusBadge';
 
 export type ProjectListViewProps = {
   projects: GeoProject[];
@@ -58,8 +59,9 @@ export function ProjectListView({
                   <span className="block truncate text-[0.86rem] font-semibold text-app-text">
                     {project.name}
                   </span>
-                  <span className="block text-[0.74rem] text-app-muted">
+                  <span className="mt-0.5 flex items-center gap-1.5 text-[0.74rem] text-app-muted">
                     {project.siteCount === 1 ? '1 local' : `${project.siteCount} locais`}
+                    <StatusBadge status={project.status} />
                   </span>
                 </span>
               </button>

@@ -22,7 +22,7 @@
     "migrate:neon": "npm run build && node dist/src/scripts/migrate-sqlite-to-neon.js",
     "db:migrate": "npm run build && node dist/src/scripts/migrate-database.js",
     "migrate:postgres-to-oracle": "npm run build && node dist/src/scripts/migrate-postgres-to-oracle.js",
-    "addresses:enrich": "npm run build && node --use-system-ca dist/src/scripts/enrich-installation-addresses.js",
+    "addresses:enrich": "npm run build && node --use-system-ca dist/scripts/enrich-installation-addresses.js",
     "mcp:tmf": "npm run build && node dist/src/modules/mcp/stdio-server.js",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",

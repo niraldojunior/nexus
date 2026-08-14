@@ -14,8 +14,8 @@
  * Isso apaga TUDO que vive nessas tabelas — não só o que `estacoes_carregar.mjs`
  * carregou. Inclui as 7 estações legadas de Niterói/São Gonçalo
  * (`load-estacoes-netwin.mjs`), a rede GPON de Icaraí (`seed-gpon-niteroi.mjs`,
- * a parte que é GeographicSite: Estação → Andar → Sala) e qualquer Site criado
- * manualmente pela UI. As specs do catálogo (Estação, Sala, Central Office,
+ * a parte que é GeographicSite: Central Office → Andar → Sala) e qualquer Site
+ * criado manualmente pela UI. As specs do catálogo (Central Office, Sala,
  * POP, Cabinet, Installation Point, Region...) também somem — o próximo load
  * que usa `ensureSpec`/`loadSpecsFast` recria o que precisar.
  *

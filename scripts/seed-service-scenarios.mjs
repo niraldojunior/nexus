@@ -66,7 +66,7 @@ const SITE_GEO = {
 };
 
 // Specs de site por papel — CO, POP e o Ponto de instalação do assinante.
-const SPEC_CO = 'Estação (CO)';
+const SPEC_CO = 'Central Office';
 const SPEC_POP = 'POP';
 const SPEC_PI = 'Ponto de instalação';
 

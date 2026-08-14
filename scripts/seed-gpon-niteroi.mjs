@@ -508,7 +508,7 @@ async function main() {
   // 1. Hierarquia de local: Estação → Andar → Sala GPON.
   const estacaoId = await ensureSite({
     name: 'Estação Icaraí',
-    specName: 'Estação (CO)',
+    specName: 'Central Office',
     category: 'Site',
     coord: CO_COORD,
     address: CO_ADDRESS,

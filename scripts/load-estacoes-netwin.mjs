@@ -292,7 +292,7 @@ async function main() {
   await bootstrap();
 
   const specRegion = await ensureSpec('Localidade', 'Region');
-  const specEstacao = await ensureSpec('Estação', 'Site');
+  const specCO = await ensureSpec('Central Office', 'Site');
   const specSala = await ensureSpec('Sala', 'SubSite');
 
   for (const row of rows) {
@@ -341,7 +341,7 @@ async function main() {
 
     const estacaoId = await ensureEstacao({
       name: estacaoName,
-      specId: specEstacao,
+      specId: specCO,
       coord: hasCoord ? coord : undefined,
       address: {
         street: endereco.street,

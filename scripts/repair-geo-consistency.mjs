@@ -47,7 +47,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 // Specs de site por papel. Hoje tudo cai em "Ponto de instalação"; CO e POP
 // ganham spec própria para que siteKindFromSpec() os classifique como CO/POP.
-const SPEC_CO = 'Estação (CO)';
+const SPEC_CO = 'Central Office';
 const SPEC_POP = 'POP';
 const SPEC_PI = 'Ponto de instalação';
 

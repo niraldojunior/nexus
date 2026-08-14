@@ -551,15 +551,15 @@ async function main() {
 
     // 0b. Nó agrupador para recursos sem estação de origem (criado sob demanda).
     // O TRUNCATE acima não toca em Geo, então o site sobrevive entre execuções e
-    // é reusado (idempotente). Reaproveita a site-spec "Estação" do load-estacoes.
+    // é reusado (idempotente). Reaproveita a site-spec "Central Office" do load-estacoes.
     if (criarNoOrfao) {
       const { rows: specSite } = await client.query(
-        `SELECT id FROM tmf_geographic_site_specification WHERE name = 'Estação' LIMIT 1`,
+        `SELECT id FROM tmf_geographic_site_specification WHERE name = 'Central Office' LIMIT 1`,
       );
       const siteSpecId = specSite[0]?.id;
       if (!siteSpecId) {
         throw new Error(
-          "site-specification 'Estação' não encontrada — rode load-estacoes-netwin.mjs antes",
+          "site-specification 'Central Office' não encontrada — rode load-estacoes-netwin.mjs antes",
         );
       }
       await client.query(

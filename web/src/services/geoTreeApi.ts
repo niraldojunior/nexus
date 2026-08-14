@@ -78,7 +78,7 @@ export const fetchTreeChildren = (
 export type MapBounds = { minLng: number; minLat: number; maxLng: number; maxLat: number };
 
 // Infra passiva (recursos + cabos) dentro da região visível do mapa — usada em escala de
-// detalhe (≤ 200 m), no lugar da expansão da árvore de Hierarquia.
+// detalhe (≤ 50 m), no lugar da expansão da árvore de Hierarquia.
 export const fetchViewportResources = (
   bounds: MapBounds,
   options: { limit?: number } = {},

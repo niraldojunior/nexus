@@ -1,4 +1,4 @@
-// Cliente da cobertura GPON por bairro (`/v1/geo/coverage`) — a fonte do mapa acima de 100 m,
+// Cliente da cobertura GPON por bairro (`/v1/geo/coverage`) — a fonte do mapa de 50 m para cima,
 // no lugar dos recursos individuais e dos clusters (ver GeoCoverageService no backend).
 
 import { getJson } from './geoApi';

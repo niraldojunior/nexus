@@ -28,11 +28,7 @@ export function ProjectListView({
 
   return (
     <div className="grid gap-3">
-      <button
-        type="button"
-        onClick={onCreate}
-        className="flex items-center gap-2 rounded-[12px] border border-dashed border-app-border px-3 py-2.5 text-[0.86rem] font-semibold text-app-text transition hover:border-app-accent-border hover:bg-app-accent-soft"
-      >
+      <button type="button" onClick={onCreate} className="geo-btn primary w-full justify-center">
         <Plus className="h-4 w-4" />
         Novo Projeto
       </button>

@@ -15,13 +15,13 @@ const SCALE_BAR_MAX_PX = 64;
 
 // Acima deste valor, a infra passiva (recursos + cabos) some do mapa. No lugar dela entra
 // a camada de cobertura GPON (ver COVERAGE_MIN_SCALE_METERS); Estações continuam visíveis.
-export const PASSIVE_INFRA_MAX_SCALE_METERS = 200;
+export const PASSIVE_INFRA_MAX_SCALE_METERS = 50;
 
-// Cobertura GPON (mapa de calor por bairro) entra ACIMA desta escala — "visível para
-// qualquer escala acima de 100 m". Em ≤ 100 m só a planta individual aparece; não há mais
-// cluster (bolas azuis numeradas foram removidas). Na faixa 100–200 m a mancha e os ícones
-// de caixa coexistem.
-export const COVERAGE_MIN_SCALE_METERS = 100;
+// Cobertura GPON (mapa de calor por bairro) entra a partir desta escala (inclusive) — "visível
+// para qualquer escala de 50 m para cima". Em ≤ 20 m só a planta individual aparece; não há mais
+// cluster (bolas azuis numeradas foram removidas). Em 50 m a mancha e os ícones reduzidos de
+// caixa coexistem — é o degrau de transição entre as duas camadas.
+export const COVERAGE_MIN_SCALE_METERS = 50;
 
 // Nível da cobertura por escala: grade fina de 150 m até aqui, grade grossa (750 m) até
 // COVERAGE_COARSE_MAX_SCALE_METERS e polígonos de bairro acima disso.
@@ -32,17 +32,17 @@ export const COVERAGE_COARSE_MAX_SCALE_METERS = 10_000;
 // já nas escalas de 1 e 2 km. Permanecem visíveis em qualquer escala, inclusive acima de 50 km.
 export const STATION_SMALL_MIN_SCALE_METERS = 1_000;
 
-// Recursos (caixas/splitters): tamanho cheio bem de perto (≤ 50 m) e reduzidos a partir de
-// 100 m — na faixa 100–200 m, onde ainda aparecem junto da cobertura, ícones menores poluem
+// Recursos (caixas/splitters): tamanho cheio bem de perto (≤ 20 m) e reduzidos a partir de
+// 50 m — no degrau de 50 m, onde ainda aparecem junto da cobertura, ícones menores poluem
 // menos (mesmo espírito da redução das estações em escala grande).
-export const RESOURCE_SMALL_MIN_SCALE_METERS = 100;
+export const RESOURCE_SMALL_MIN_SCALE_METERS = 50;
 
 export type CoverageLevel = 'fine' | 'coarse' | 'area';
 export type StationTier = 'full' | 'small';
 
-// Cobertura visível? Acima de 100 m, em qualquer escala.
+// Cobertura visível? De 50 m para cima, em qualquer escala.
 export const coverageVisibleAtScale = (scaleMeters: number | null): boolean =>
-  scaleMeters !== null && scaleMeters > COVERAGE_MIN_SCALE_METERS;
+  scaleMeters !== null && scaleMeters >= COVERAGE_MIN_SCALE_METERS;
 
 // Nível de cobertura a pedir ao servidor para a escala atual (ver GeoCoverageService).
 export function coverageLevelForScale(scaleMeters: number): CoverageLevel {
@@ -59,8 +59,8 @@ export function stationTierForScale(scaleMeters: number | null): StationTier {
   return 'full';
 }
 
-// Como desenhar o Recurso (caixa/splitter) na escala atual: cheio em zoom bem fechado (≤ 50 m),
-// reduzido a partir de 100 m (faixa 100–200 m).
+// Como desenhar o Recurso (caixa/splitter) na escala atual: cheio em zoom bem fechado (≤ 20 m),
+// reduzido a partir de 50 m.
 export function resourceTierForScale(scaleMeters: number | null): StationTier {
   if (scaleMeters === null) return 'full';
   if (scaleMeters >= RESOURCE_SMALL_MIN_SCALE_METERS) return 'small';
@@ -75,7 +75,7 @@ export const metersPerPixel = (zoom: number, latDeg: number): number =>
   (EARTH_METERS_PER_PIXEL_AT_ZOOM_0 * Math.cos((latDeg * Math.PI) / 180)) / 2 ** zoom;
 
 // Maior valor 1/2/5 × 10^n que não ultrapassa `maxMeters` — mesmo padrão de arredondamento
-// da barra de escala do Google/Leaflet, para o corte de 200 m corresponder ao que o usuário
+// da barra de escala do Google/Leaflet, para o corte de 50 m corresponder ao que o usuário
 // vê na `scaleControl`.
 const largestNiceValue = (maxMeters: number): number => {
   if (!Number.isFinite(maxMeters) || maxMeters <= 0) return 0;
@@ -126,7 +126,7 @@ export function zoomForScaleMeters(meters: number, latDeg: number): number {
 
 // Lê o valor da barra de escala nativa do Google (ex.: "100 m", "1 km") direto do DOM.
 // É exatamente o número que o usuário vê no canto do mapa e sobre o qual as regras de
-// escala (200 m / 100 m) são definidas — replicar o cálculo do Google por zoom+px erra por
+// escala (50 m / 20 m) são definidas — replicar o cálculo do Google por zoom+px erra por
 // um passo de arredondamento. Devolve null se o controle não for achado (cai no cálculo).
 export function readGoogleScaleMeters(container: HTMLElement | null): number | null {
   if (!container) return null;

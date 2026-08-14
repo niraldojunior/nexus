@@ -40,41 +40,46 @@ body::before {
   height: 3px;
   background: #ffd200;
   pointer-events: none;
+  /* A faixa engorda durante o carregamento (ver .geo-map-loading); a transição evita o
+     salto seco de 3px para 5px. */
+  transition: height 160ms ease;
 }
 
-/* Estado de carregamento reaproveitando a própria faixa de marca: quando o mapa (ou a
-   página) está carregando, a linha amarela do topo ganha um brilho que a percorre; ao
-   terminar, volta ao amarelo sólido. A classe é ligada/desligada em document.body pelo
-   MapLoadingBar. */
+/* Estado de carregamento reaproveitando a própria faixa de marca: enquanto o mapa (ou a
+   página) carrega, a faixa amarela engorda (3px → 5px) e blocos ink #243041 — o par
+   canônico do amarelo — marcham por ela. É um gradiente que se repete a cada 128px (bloco
+   de 44px + vão amarelo de 84px); a animação desloca exatamente um período (128px) por
+   ciclo, então os blocos entram e saem sem tempo morto. Ao terminar, volta ao amarelo
+   sólido de 3px. A classe é ligada/desligada em document.body pelo MapLoadingBar. */
 @keyframes brand-bar-loading {
-  0% {
-    background-position: 200% 0;
+  from {
+    background-position: 0 0;
   }
-  100% {
-    background-position: -200% 0;
+  to {
+    background-position: 128px 0;
   }
 }
 
 body.geo-map-loading::before {
+  height: 5px;
   background-image: linear-gradient(
     90deg,
-    #ffd200 0%,
-    #ffe680 30%,
-    #ffffff 50%,
-    #ffe680 70%,
-    #ffd200 100%
+    #243041 0,
+    #243041 44px,
+    transparent 44px,
+    transparent 128px
   );
-  background-size: 200% 100%;
-  background-repeat: no-repeat;
-  animation: brand-bar-loading 1.15s linear infinite;
+  background-size: 128px 100%;
+  background-repeat: repeat;
+  animation: brand-bar-loading 0.9s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* Sem movimento: a faixa fica sólida (sem o brilho varrendo); o anúncio de carga
-     continua pelo elemento sr-only do MapLoadingBar. */
+  /* Sem movimento: a faixa apenas engorda e fica sólida (sem os blocos marchando); o
+     anúncio de carga continua pelo elemento sr-only do MapLoadingBar. */
   body.geo-map-loading::before {
-    animation: none;
     background-image: none;
+    animation: none;
   }
 }
 

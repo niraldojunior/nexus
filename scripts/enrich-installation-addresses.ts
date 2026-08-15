@@ -16,6 +16,16 @@
  * Quando o CEP não é encontrado no DNE, repesca por rua+número+UF: o Google Maps
  * descobre o município (o DNE não busca por endereço sem cidade) e então o DNE é
  * consultado de verdade por UF+cidade+rua, trazendo o CEP correto (DNE_CEP).
+ *
+ * Quando o arquivo traz TENANT_LATITUDE/TENANT_LONGITUDE, essa coordenada também
+ * alimenta um geocoding reverso (preenche TENANT_GMAPS_ENDEREÇO_REVERSO quando o
+ * Gmaps está ativo) e uma terceira repescagem do DNE, usada só se as duas
+ * anteriores falharem. Antes de usar essas colunas, cada linha passa por um
+ * reparo automático: planilhas (Excel/LibreOffice sob locale pt-BR) costumam
+ * reformatar essas células — que são número puro — trocando o ponto decimal por
+ * separador de milhar (ex.: "-47.9441935" vira "-479.441.935"). O reparo remove
+ * os pontos e testa cada posição de separador contra a caixa geográfica da UF da
+ * própria linha; só aplica quando exatamente uma posição é plausível.
  */
 
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
@@ -76,6 +86,15 @@ const GOOGLE_COLUMNS = [
 // a consulta exata enviada a cada provedor e um resumo do processamento da linha.
 const LOG_COLUMNS = ['LOG_CONSULTA_GEONET', 'LOG_CONSULTA_GMAPS', 'LOG_GERAL'] as const;
 
+// Geolocalização do Tenant: opcional (nem todo arquivo traz), por isso fora de
+// SOURCE_COLUMNS/ENRICHMENT_COLUMNS — ensureLayout não as exige. O enriquecimento
+// por coordenada só roda quando as três colunas existem no cabeçalho do arquivo.
+const TENANT_LAT_COLUMN = 'TENANT_LATITUDE';
+const TENANT_LNG_COLUMN = 'TENANT_LONGITUDE';
+// Sem cedilha: é assim que a coluna existe de fato no onitel.HCs.v4.enriquecido.csv
+// (conferido byte a byte — "ENDERECO", não "ENDEREÇO").
+const TENANT_REVERSE_COLUMN = 'TENANT_GMAPS_ENDERECO_REVERSO';
+
 type ColumnName = (typeof SOURCE_COLUMNS)[number] | (typeof ENRICHMENT_COLUMNS)[number];
 type Row = string[];
 
@@ -130,6 +149,16 @@ export type AddressServices = {
   // DNE de verdade por UF+cidade+rua. Opcional para não quebrar quem monta
   // AddressServices manualmente (ex.: testes) sem essa capacidade.
   viaCepByAddress?: (uf: string, street: string, number: string) => Promise<DneAddress | null>;
+  // Segunda repescagem do DNE, usada quando a primeira (por rua/número/UF)
+  // também não resolve: geocoding reverso da coordenada do Tenant descobre
+  // UF/cidade/rua reais daquele ponto e consulta o DNE com esses dados.
+  // Opcional pelo mesmo motivo de viaCepByAddress.
+  viaCepByCoordinates?: (
+    uf: string,
+    lat: number,
+    lng: number,
+    number: string,
+  ) => Promise<DneAddress | null>;
   geonet: (
     address: string,
     number: string,
@@ -137,6 +166,9 @@ export type AddressServices = {
     index: Map<string, number>,
   ) => Promise<GeonetLookup | null>;
   google: (address: string, row: Row, index: Map<string, number>) => Promise<GoogleLookup | null>;
+  // Geocoding reverso da coordenada do Tenant, só para preencher
+  // TENANT_GMAPS_ENDEREÇO_REVERSO (não alimenta GMAPS_*). Opcional pelo mesmo motivo.
+  reverseGeocodeTenant?: (lat: number, lng: number) => Promise<string | null>;
 };
 
 export type EnrichmentSummary = {
@@ -145,10 +177,13 @@ export type EnrichmentSummary = {
   updatedRows: number;
   viaCep: ProviderSummary;
   viaCepRetry: ProviderSummary;
+  viaCepCoordRetry: ProviderSummary;
   geonet: ProviderSummary;
   google: ProviderSummary;
+  tenantReverse: ProviderSummary;
   failures: number;
   municipioFilled: number;
+  tenantCoordRepaired: number;
 };
 
 type ProviderSummary = {
@@ -432,6 +467,124 @@ function ensureLogColumns(document: CsvDocument): void {
 const valueOf = (row: Row, index: Map<string, number>, column: ColumnName): string =>
   row[index.get(column)!]?.trim() ?? '';
 
+// Mesma leitura de valueOf, mas para colunas opcionais (TENANT_*) que podem não
+// existir no cabeçalho — index.get devolve undefined em vez de estourar.
+const optionalValueOf = (row: Row, index: Map<string, number>, column: string): string => {
+  const position = index.get(column);
+  return position === undefined ? '' : (row[position]?.trim() ?? '');
+};
+
+// Caixa aproximada [latMin, latMax, lonMin, lonMax] por UF, com folga — mesma
+// fonte de dados de scripts/uf-geo.mjs, duplicada aqui de propósito: uf-geo.mjs
+// é JS puro, consumido direto por node pelos scripts de carga, e nunca passa
+// pelo build do tsc; importar dele quebraria em runtime (dist/ não copia
+// arquivos .mjs). É uma tabela estática de geografia — não muda de UF.
+const UF_BBOX: Record<string, [number, number, number, number]> = {
+  AC: [-11.4, -7.0, -74.2, -66.5],
+  AL: [-10.6, -8.7, -38.3, -35.0],
+  AP: [-1.3, 4.6, -54.9, -49.8],
+  AM: [-9.9, 2.3, -73.9, -56.0],
+  BA: [-18.5, -8.4, -46.7, -37.2],
+  CE: [-8.0, -2.6, -41.5, -37.1],
+  DF: [-16.2, -15.4, -48.4, -47.2],
+  ES: [-21.4, -17.8, -42.0, -39.5],
+  GO: [-19.6, -12.3, -53.4, -45.8],
+  MA: [-10.4, -0.9, -48.9, -41.7],
+  MT: [-18.1, -7.2, -61.7, -50.1],
+  MS: [-24.2, -17.1, -58.3, -50.8],
+  MG: [-23.0, -14.1, -51.1, -39.8],
+  PA: [-9.9, 2.7, -59.0, -45.9],
+  PB: [-8.4, -5.9, -38.9, -34.7],
+  PR: [-26.8, -22.4, -54.7, -47.9],
+  PE: [-9.6, -7.2, -41.5, -32.3],
+  PI: [-11.0, -2.6, -46.0, -40.3],
+  RJ: [-23.5, -20.6, -45.0, -40.8],
+  RN: [-7.0, -4.7, -38.7, -34.8],
+  RS: [-33.9, -26.9, -57.8, -49.5],
+  RO: [-13.8, -7.8, -66.9, -59.6],
+  RR: [-1.7, 5.4, -64.9, -58.9],
+  SC: [-29.5, -25.8, -54.0, -48.2],
+  SP: [-25.5, -19.6, -53.3, -44.0],
+  SE: [-11.7, -9.4, -38.4, -36.3],
+  TO: [-13.6, -5.0, -50.9, -45.6],
+};
+
+const BRAZIL_BBOX: [number, number, number, number] = [-34, 5.3, -74, -28];
+
+const bboxForUf = (uf: string): [number, number, number, number] =>
+  UF_BBOX[uf.trim().toUpperCase()] ?? BRAZIL_BBOX;
+
+// Reconstrói uma coordenada corrompida por reformatação de planilha: célula
+// puramente numérica como "-47.9441935" (ponto decimal), ao passar por
+// Excel/LibreOffice sob locale pt-BR, é lida como inteiro e reexportada com
+// pontos de milhar ("-479.441.935") — os dígitos sobrevivem, só a posição do
+// separador se perde. Remove todos os pontos e testa cada posição de separador
+// contra `range`; só devolve resultado quando exatamente uma posição cai dentro
+// da caixa (ambíguo ou nenhuma posição plausível: null, não inventa valor).
+export function repairCorruptedCoordinate(raw: string, range: [number, number]): number | null {
+  const sign = raw.startsWith('-') ? -1 : 1;
+  const body = raw.replace(/^[-+]/, '');
+  if (!/^[0-9.]+$/.test(body)) return null;
+  const digits = body.replace(/\./g, '');
+  if (digits.length < 2) return null;
+  let match: number | null = null;
+  for (let position = 1; position < digits.length; position += 1) {
+    const value = sign * Number(`${digits.slice(0, position)}.${digits.slice(position)}`);
+    if (value >= range[0] && value <= range[1]) {
+      if (match !== null) return null; // ambíguo: mais de uma posição plausível
+      match = value;
+    }
+  }
+  return match;
+}
+
+// Repara TENANT_LATITUDE/TENANT_LONGITUDE em memória (e grava de volta na
+// linha, para o CSV de saída já sair higienizado) quando o valor bruto não
+// parseia como número mas o padrão de corrupção de planilha é reconhecível.
+// Roda uma vez por linha visitada, independente de --only/--overwrite — é
+// higiene do dado de entrada, não um provedor de enriquecimento. Cada eixo é
+// tratado de forma independente: um já limpo não fica refém do outro estar
+// ambíguo.
+function repairTenantCoordinates(row: Row, index: Map<string, number>): boolean {
+  if (!index.has(TENANT_LAT_COLUMN) || !index.has(TENANT_LNG_COLUMN)) return false;
+  const bbox = bboxForUf(valueOf(row, index, 'UF'));
+  let changed = false;
+  const tryRepair = (column: string, range: [number, number]): void => {
+    const raw = optionalValueOf(row, index, column);
+    if (!raw || raw === '#N/D') return;
+    if (Number.isFinite(Number(raw.replace(',', '.')))) return; // já parseia: não mexe
+    const fixed = repairCorruptedCoordinate(raw, range);
+    if (fixed !== null) {
+      row[index.get(column)!] = String(fixed);
+      changed = true;
+    }
+  };
+  tryRepair(TENANT_LAT_COLUMN, [bbox[0], bbox[1]]);
+  tryRepair(TENANT_LNG_COLUMN, [bbox[2], bbox[3]]);
+  return changed;
+}
+
+// Coordenada do Tenant, quando o arquivo tem as três colunas TENANT_* e os
+// valores são numéricos. Tolerante a decimal com vírgula. Assume que
+// repairTenantCoordinates() já rodou para a linha (chamado uma vez no início
+// de processRow), então um valor ainda não-numérico aqui é mesmo irrecuperável.
+function tenantLocationOf(
+  row: Row,
+  index: Map<string, number>,
+): { lat: number; lng: number } | null {
+  if (!index.has(TENANT_LAT_COLUMN) || !index.has(TENANT_LNG_COLUMN)) return null;
+  const lat = Number(optionalValueOf(row, index, TENANT_LAT_COLUMN).replace(',', '.'));
+  const lng = Number(optionalValueOf(row, index, TENANT_LNG_COLUMN).replace(',', '.'));
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+}
+
+// A linha tem trabalho pendente de geocoding reverso do Tenant quando há
+// coordenada e a coluna de destino existe e ainda está vazia.
+function tenantReverseGeocodePending(row: Row, index: Map<string, number>): boolean {
+  if (!index.has(TENANT_REVERSE_COLUMN)) return false;
+  return Boolean(tenantLocationOf(row, index)) && !optionalValueOf(row, index, TENANT_REVERSE_COLUMN);
+}
+
 const normalized = (value: string): string =>
   value
     .normalize('NFD')
@@ -645,7 +798,10 @@ function rowNeedsWork(
   overwrite: boolean,
 ): boolean {
   if (overwrite) return true;
-  return providers.some((provider) => !valueOf(row, index, GATE_COLUMN[provider]));
+  if (providers.some((provider) => !valueOf(row, index, GATE_COLUMN[provider]))) return true;
+  // TENANT_GMAPS_ENDEREÇO_REVERSO é um campo novo: uma linha pode já estar
+  // completa nos demais provedores mas ainda sem o reverso do Tenant.
+  return providers.includes('gmaps') && tenantReverseGeocodePending(row, index);
 }
 
 function applyValues(
@@ -694,10 +850,13 @@ export async function enrichRecords(
     updatedRows: 0,
     viaCep: emptyProviderSummary(),
     viaCepRetry: emptyProviderSummary(),
+    viaCepCoordRetry: emptyProviderSummary(),
     geonet: emptyProviderSummary(),
     google: emptyProviderSummary(),
+    tenantReverse: emptyProviderSummary(),
     failures: 0,
     municipioFilled: 0,
+    tenantCoordRepaired: 0,
   };
   const first = options.start - 1;
   const last = Math.min(document.records.length, first + options.limit);
@@ -707,8 +866,10 @@ export async function enrichRecords(
   const runGoogle = providers.includes('gmaps');
   const viaCepCache = new Map<string, Promise<DneAddress | null>>();
   const viaCepRetryCache = new Map<string, Promise<DneAddress | null>>();
+  const viaCepCoordCache = new Map<string, Promise<DneAddress | null>>();
   const geonetCache = new Map<string, Promise<GeonetLookup | null>>();
   const googleCache = new Map<string, Promise<GoogleLookup | null>>();
+  const tenantReverseCache = new Map<string, Promise<string | null>>();
 
   // Checkpoint: grava o arquivo a cada N linhas processadas (consultadas nos
   // provedores ativos), não só as que mudaram algum campo — uma consulta que não
@@ -740,14 +901,21 @@ export async function enrichRecords(
   const processRow = async (rowNumber: number): Promise<void> => {
     const row = document.records[rowNumber]!;
     summary.selected += 1;
-    if (!rowNeedsWork(row, index, providers, options.overwrite)) {
+    // Higiene do dado de entrada roda para toda linha visitada, independente
+    // de --only/--overwrite e ANTES do gate de skip: uma linha já completa nos
+    // provedores mas com coordenada da tenant corrompida (e reparável) não pode
+    // ser pulada em silêncio, senão o reparo nunca acontece.
+    const coordinateRepaired = repairTenantCoordinates(row, index);
+    if (coordinateRepaired) summary.tenantCoordRepaired += 1;
+    if (!coordinateRepaired && !rowNeedsWork(row, index, providers, options.overwrite)) {
       summary.skippedRows += 1;
       return; // replica a linha atual: não toca em células nem em logs
     }
-    let changed = false;
+    let changed = coordinateRepaired;
     let viaCepOutcome = 'ignorado';
     let geonetOutcome = 'ignorado';
     let googleOutcome = 'ignorado';
+    let tenantReverseOutcome = 'ignorado';
     let geonetQuery = '';
     let googleQuery = '';
     const rowId = valueOf(row, index, 'ID') || `linha ${rowNumber + 2}`;
@@ -786,13 +954,13 @@ export async function enrichRecords(
           summary.viaCep.notFound += 1;
           dne = null;
           viaCepOutcome = 'não encontrado por CEP';
+          const uf = valueOf(row, index, 'UF');
+          const number = valueOf(row, index, 'NUMERO');
           // CEP inválido no DNE: repesca pela rua/número/UF (o Google Maps descobre
           // o município — o DNE em si não aceita busca sem cidade — e então a busca
           // por endereço no DNE traz o registro oficial, CEP correto incluído).
           if (services.viaCepByAddress) {
             const street = rowStreet(row, index);
-            const number = valueOf(row, index, 'NUMERO');
-            const uf = valueOf(row, index, 'UF');
             try {
               const retryResult = await cached(
                 viaCepRetryCache,
@@ -815,6 +983,39 @@ export async function enrichRecords(
               logger.warn(
                 `[${rowId}] Repescagem do DNE por rua/número/UF falhou: ${messageOf(retryError)}`,
               );
+            }
+          }
+
+          // Se a repescagem por rua/número/UF também não resolveu, tenta mais uma
+          // vez com a coordenada do Tenant (quando o arquivo a traz): geocoding
+          // reverso descobre UF/cidade/rua reais daquele ponto e consulta o DNE
+          // com esses dados — última carta antes de desistir da linha.
+          if (!dne) {
+            const location = tenantLocationOf(row, index);
+            if (location && services.viaCepByCoordinates) {
+              try {
+                const coordResult = await cached(
+                  viaCepCoordCache,
+                  `${uf}|${location.lat}|${location.lng}|${number}`,
+                  () => services.viaCepByCoordinates!(uf, location.lat, location.lng, number),
+                );
+                if (coordResult) {
+                  changed = applyDneFields(coordResult) || changed;
+                  dne = coordResult;
+                  summary.viaCepCoordRetry.filled += 1;
+                  viaCepOutcome += '; encontrado pela coordenada da tenant';
+                } else {
+                  summary.viaCepCoordRetry.notFound += 1;
+                  viaCepOutcome += '; não encontrado pela coordenada da tenant';
+                }
+              } catch (coordError) {
+                summary.viaCepCoordRetry.errors += 1;
+                summary.failures += 1;
+                viaCepOutcome += `; repescagem pela coordenada da tenant falhou (${messageOf(coordError)})`;
+                logger.warn(
+                  `[${rowId}] Repescagem do DNE pela coordenada da tenant falhou: ${messageOf(coordError)}`,
+                );
+              }
             }
           }
         } else if (!isDneCoherent(result, row, index)) {
@@ -936,8 +1137,49 @@ export async function enrichRecords(
       summary.google.skipped += 1;
     }
 
+    // Geocoding reverso da coordenada do Tenant: só preenche
+    // TENANT_GMAPS_ENDEREÇO_REVERSO, atrelado ao provedor Gmaps mas independente
+    // das colunas GMAPS_* (uma linha pode já ter GMAPS_ID e ainda faltar isto).
+    if (!runGoogle || !services.reverseGeocodeTenant) {
+      tenantReverseOutcome = 'desativado';
+    } else {
+      const location = tenantLocationOf(row, index);
+      if (!location) {
+        tenantReverseOutcome = 'sem coordenada da tenant';
+      } else if (!options.overwrite && optionalValueOf(row, index, TENANT_REVERSE_COLUMN)) {
+        summary.tenantReverse.skipped += 1;
+        tenantReverseOutcome = 'já preenchido';
+      } else {
+        try {
+          const address = await cached(
+            tenantReverseCache,
+            `${location.lat},${location.lng}`,
+            () => services.reverseGeocodeTenant!(location.lat, location.lng),
+          );
+          if (!address) {
+            summary.tenantReverse.notFound += 1;
+            tenantReverseOutcome = 'não encontrado';
+          } else {
+            changed =
+              applyValues(row, index, { [TENANT_REVERSE_COLUMN]: address }, options.overwrite) ||
+              changed;
+            summary.tenantReverse.filled += 1;
+            tenantReverseOutcome = 'preenchido';
+          }
+        } catch (error) {
+          summary.tenantReverse.errors += 1;
+          summary.failures += 1;
+          tenantReverseOutcome = 'erro';
+          logger.warn(`[${rowId}] Geocoding reverso da coordenada do Tenant falhou: ${messageOf(error)}`);
+        }
+      }
+    }
+
     const municipioNote = municipioFilled ? ' MUNICIPIO completado via ViaCEP;' : '';
-    const rowSummary = `ViaCEP=${viaCepOutcome};${municipioNote} GEONET=${geonetOutcome}; Google=${googleOutcome}; linha ${changed ? 'atualizada' : 'inalterada'}.`;
+    const coordRepairNote = coordinateRepaired
+      ? ' TENANT_LATITUDE/TENANT_LONGITUDE reparados (corrupção de planilha);'
+      : '';
+    const rowSummary = `ViaCEP=${viaCepOutcome};${municipioNote}${coordRepairNote} GEONET=${geonetOutcome}; Google=${googleOutcome}; TenantReverso=${tenantReverseOutcome}; linha ${changed ? 'atualizada' : 'inalterada'}.`;
     row[index.get('LOG_CONSULTA_GEONET')!] = geonetQuery;
     row[index.get('LOG_CONSULTA_GMAPS')!] = googleQuery;
     row[index.get('LOG_GERAL')!] = rowSummary;
@@ -1110,6 +1352,84 @@ async function discoverCityByGoogle(
   return city && city.trim().length >= 3 ? city.trim() : null;
 }
 
+// Chamada bruta de geocoding reverso do Google: mesma API do geocoding direto,
+// só troca `address` por `latlng`. Resultados vêm do mais específico (endereço
+// exato) ao mais genérico (bairro, cidade...).
+async function googleReverseGeocode(
+  lat: number,
+  lng: number,
+  apiKey: string,
+  fetchImpl: typeof fetch,
+): Promise<GoogleGeocodeResult[]> {
+  const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+  url.searchParams.set('latlng', `${lat},${lng}`);
+  url.searchParams.set('language', 'pt-BR');
+  url.searchParams.set('key', apiKey);
+  const response = await fetchImpl(url, { signal: AbortSignal.timeout(10_000) });
+  const body = asRecord(await jsonResponse(response));
+  if (!response.ok)
+    throw new ProviderError(`HTTP ${response.status}.`, retryableHttpStatus(response.status));
+  const status = stringOf(body?.status);
+  if (status === 'ZERO_RESULTS') return [];
+  if (status !== 'OK') {
+    throw new ProviderError(
+      stringOf(body?.error_message) || `status ${status || 'desconhecido'}.`,
+      status === 'OVER_QUERY_LIMIT' || status === 'UNKNOWN_ERROR',
+    );
+  }
+  return Array.isArray(body?.results) ? (body.results as GoogleGeocodeResult[]) : [];
+}
+
+// Entre os resultados do geocoding reverso, prefere o mais específico
+// (endereço exato); na falta dele, usa o primeiro — o Google já ordena do mais
+// para o menos específico.
+function pickReverseGeocodeResult(results: GoogleGeocodeResult[]): GoogleGeocodeResult | null {
+  return results.find((result) => result.types?.includes('street_address')) ?? results[0] ?? null;
+}
+
+// Extrai cidade e rua de um resultado de geocoding reverso já obtido, para a
+// segunda repescagem do DNE (a coordenada do Tenant, quando a busca por
+// rua/número/UF também falhou). Rejeita se a UF devolvida não bate com a do
+// arquivo — sinal de coordenada da tenant fora do endereço da instalação.
+// Recebe os resultados já buscados (não busca sozinha) para poder compartilhar
+// a mesma chamada HTTP com reverseGeocodeTenant via cache em createAddressServices.
+function pickCoherentReverseAddress(
+  results: GoogleGeocodeResult[],
+  uf: string,
+): { city: string; street: string } | null {
+  const picked = pickReverseGeocodeResult(results);
+  if (!picked) return null;
+  if (!sameText(componentOf(picked, 'administrative_area_level_1')?.short_name, uf)) return null;
+  const city = googleCityOf(picked);
+  const street = componentOf(picked, 'route')?.long_name;
+  return city && street && street.trim().length >= 3 ? { city: city.trim(), street: street.trim() } : null;
+}
+
+// Consulta o DNE por UF+cidade+rua e escolhe o melhor candidato — núcleo
+// compartilhado pelas duas repescagens (descoberta por rua/número/UF via
+// Google e descoberta por coordenada da tenant via geocoding reverso).
+async function queryDneAddress(
+  uf: string,
+  city: string,
+  street: string,
+  number: string,
+  fetchImpl: typeof fetch,
+): Promise<DneAddress | null> {
+  const response = await fetchImpl(
+    `https://viacep.com.br/ws/${encodeURIComponent(uf)}/${encodeURIComponent(city)}/${encodeURIComponent(street)}/json/`,
+    { signal: AbortSignal.timeout(10_000) },
+  );
+  if (!response.ok) {
+    throw new ProviderError(`HTTP ${response.status}.`, retryableHttpStatus(response.status));
+  }
+  const body = await jsonResponse(response);
+  const candidates = (Array.isArray(body) ? body : [])
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+    .filter((item) => !item.erro)
+    .map(toDneAddress);
+  return selectDneAddressCandidate(candidates, street, number);
+}
+
 export function createAddressServices(
   env: NodeJS.ProcessEnv,
   fetchImpl: typeof fetch = fetch,
@@ -1126,6 +1446,10 @@ export function createAddressServices(
       'Google Maps não configurado: informe GOOGLE_MAPS_API_KEY ou VITE_GOOGLE_MAPS_API_KEY.',
     );
   const gateway = new GeonetAddressGateway(geonetConfig, fetchImpl);
+  // Reverso é caro (uma chamada HTTP por coordenada) e serve duas features
+  // (TENANT_GMAPS_ENDEREÇO_REVERSO e a repescagem do DNE pela mesma
+  // coordenada) — cache aqui evita bater duas vezes no Google pela mesma linha.
+  const reverseGeocodeCache = new Map<string, Promise<GoogleGeocodeResult[]>>();
 
   return {
     viaCep: async (cep) =>
@@ -1149,24 +1473,28 @@ export function createAddressServices(
       withRetry(async () => {
         const city = await discoverCityByGoogle(uf, street, number, googleApiKey, fetchImpl);
         if (!city || street.trim().length < 3) return null;
-        const response = await fetchImpl(
-          `https://viacep.com.br/ws/${encodeURIComponent(uf)}/${encodeURIComponent(city)}/${encodeURIComponent(street)}/json/`,
-          { signal: AbortSignal.timeout(10_000) },
+        return queryDneAddress(uf, city, street, number, fetchImpl);
+      }),
+    viaCepByCoordinates: async (uf, lat, lng, number) =>
+      withRetry(async () => {
+        const results = await cached(reverseGeocodeCache, `${lat},${lng}`, () =>
+          googleReverseGeocode(lat, lng, googleApiKey, fetchImpl),
         );
-        if (!response.ok) {
-          throw new ProviderError(`HTTP ${response.status}.`, retryableHttpStatus(response.status));
-        }
-        const body = await jsonResponse(response);
-        const candidates = (Array.isArray(body) ? body : [])
-          .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
-          .filter((item) => !item.erro)
-          .map(toDneAddress);
-        return selectDneAddressCandidate(candidates, street, number);
+        const location = pickCoherentReverseAddress(results, uf);
+        if (!location) return null;
+        return queryDneAddress(uf, location.city, location.street, number, fetchImpl);
       }),
     geonet: async (address, number, row, index) =>
       lookupGeonet(gateway, address, number, row, index),
     google: async (address, row, index) =>
       lookupGoogle(address, googleApiKey, row, index, fetchImpl),
+    reverseGeocodeTenant: async (lat, lng) =>
+      withRetry(async () => {
+        const results = await cached(reverseGeocodeCache, `${lat},${lng}`, () =>
+          googleReverseGeocode(lat, lng, googleApiKey, fetchImpl),
+        );
+        return pickReverseGeocodeResult(results)?.formatted_address ?? null;
+      }),
   };
 }
 
@@ -1251,9 +1579,12 @@ function printSummary(summary: EnrichmentSummary): void {
   );
   console.log(format('ViaCEP', summary.viaCep));
   console.log(format('ViaCEP (repescagem por rua/número/UF)', summary.viaCepRetry));
+  console.log(format('ViaCEP (repescagem por coordenada da tenant)', summary.viaCepCoordRetry));
   console.log(format('GEONET', summary.geonet));
   console.log(format('Google Maps', summary.google));
+  console.log(format('Geocoding reverso da tenant', summary.tenantReverse));
   console.log(`MUNICIPIO completado via ViaCEP: ${summary.municipioFilled}`);
+  console.log(`TENANT_LATITUDE/LONGITUDE reparados (corrupção de planilha): ${summary.tenantCoordRepaired}`);
 }
 
 function formatDuration(milliseconds: number): string {

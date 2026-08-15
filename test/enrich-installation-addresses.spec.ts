@@ -10,6 +10,7 @@ import {
   enrichRecords,
   parseCliArgs,
   parseSemicolonCsv,
+  repairCorruptedCoordinate,
   selectDneAddressCandidate,
   selectGeonetCandidate,
   selectGoogleResult,
@@ -346,7 +347,7 @@ test('acrescenta as colunas de log com as consultas enviadas e o resumo da linha
   assert.match(at('LOG_CONSULTA_GMAPS'), /^Quadra 6, 28,/);
   assert.equal(
     at('LOG_GERAL'),
-    'ViaCEP=preenchido; GEONET=encontrado; Google=não encontrado; linha atualizada.',
+    'ViaCEP=preenchido; GEONET=encontrado; Google=não encontrado; TenantReverso=desativado; linha atualizada.',
   );
 });
 
@@ -690,7 +691,7 @@ test('com --only executa apenas o provedor selecionado', async () => {
   assert.equal(at('GMAPS_ID'), 'google-1');
   assert.equal(
     at('LOG_GERAL'),
-    'ViaCEP=desativado; GEONET=desativado; Google=encontrado; linha atualizada.',
+    'ViaCEP=desativado; GEONET=desativado; Google=encontrado; TenantReverso=desativado; linha atualizada.',
   );
 });
 
@@ -900,4 +901,400 @@ test('altera somente as células enriquecidas ao gravar uma planilha Excel', () 
   assert.equal(worksheet.getCell('L2').text, 'Quadra 6, 28');
   assert.equal(worksheet.getCell('A2').text, 'ID-1');
   assert.equal(worksheet.getCell('A2').font?.bold, true);
+});
+
+const tenantHeaders = [...headers, 'TENANT_LATITUDE', 'TENANT_LONGITUDE', 'TENANT_GMAPS_ENDERECO_REVERSO'];
+
+const rowWithTenant = (id: string, lat: string, lng: string, reverse = ''): string[] => [
+  ...row(id),
+  lat,
+  lng,
+  reverse,
+];
+
+test('geocoding reverso da coordenada da tenant preenche TENANT_GMAPS_ENDERECO_REVERSO quando o Gmaps está ativo', async () => {
+  const record = rowWithTenant('ID-1', '-16.09', '-47.94');
+  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  let calls = 0;
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+    reverseGeocodeTenant: async (lat, lng) => {
+      calls += 1;
+      assert.equal(lat, -16.09);
+      assert.equal(lng, -47.94);
+      return 'Quadra 6, Cidade Ocidental - GO, Brasil';
+    },
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['gmaps'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('TENANT_GMAPS_ENDERECO_REVERSO'), 'Quadra 6, Cidade Ocidental - GO, Brasil');
+  assert.equal(summary.tenantReverse.filled, 1);
+  assert.equal(calls, 1);
+  assert.match(at('LOG_GERAL'), /TenantReverso=preenchido/);
+});
+
+test('revisita linha já completa nos demais provedores só para preencher o reverso da tenant', async () => {
+  const record = rowWithTenant('ID-1', '-16.09', '-47.94');
+  // GMAPS_* já preenchido por completo: sem o novo campo a linha seria pulada.
+  record[14] = 'google-1';
+  record[15] = 'Quadra 6, 28';
+  record[16] = '[-47.94,-16.09]';
+  record[17] = 'ROOFTOP';
+  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  let googleCalls = 0;
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => {
+      googleCalls += 1;
+      return null;
+    },
+    reverseGeocodeTenant: async () => 'Quadra 6, Cidade Ocidental - GO, Brasil',
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['gmaps'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(summary.skippedRows, 0);
+  assert.equal(googleCalls, 0); // GMAPS_ID já preenchido: não refaz a consulta
+  assert.equal(at('TENANT_GMAPS_ENDERECO_REVERSO'), 'Quadra 6, Cidade Ocidental - GO, Brasil');
+  assert.equal(summary.tenantReverse.filled, 1);
+});
+
+test('não faz geocoding reverso da tenant quando gmaps não está entre os provedores selecionados', async () => {
+  const record = rowWithTenant('ID-1', '-16.09', '-47.94');
+  record[18] = 'Quadra 6'; // DNE_LOGRADOURO já preenchido: só o geonet ficaria pendente
+  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  let calls = 0;
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => ({
+      id: 'geo-1',
+      formattedAddress: 'Quadra 6, 28',
+      location: '[-47.94,-16.09]',
+      precision: 'Endereço Interpolação',
+    }),
+    google: async () => null,
+    reverseGeocodeTenant: async () => {
+      calls += 1;
+      return 'não deveria ser chamado';
+    },
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['geonet'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('TENANT_GMAPS_ENDERECO_REVERSO'), '');
+  assert.equal(summary.tenantReverse.filled, 0);
+  assert.equal(calls, 0);
+  assert.match(at('LOG_GERAL'), /TenantReverso=desativado/);
+});
+
+test('repesca o DNE pela coordenada da tenant quando a busca por rua/número/UF também falha', async () => {
+  const record = rowWithTenant('ID-1', '-16.09', '-47.94');
+  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  const calls = { viaCepByAddress: 0, viaCepByCoordinates: 0 };
+  const services: AddressServices = {
+    viaCep: async () => null,
+    viaCepByAddress: async () => {
+      calls.viaCepByAddress += 1;
+      return null;
+    },
+    viaCepByCoordinates: async (uf, lat, lng, number) => {
+      calls.viaCepByCoordinates += 1;
+      assert.equal(uf, 'GO');
+      assert.equal(lat, -16.09);
+      assert.equal(lng, -47.94);
+      assert.equal(number, '28');
+      return {
+        cep: '72880-000',
+        logradouro: 'Quadra 6',
+        complemento: '',
+        bairro: 'Parque Nova Friburgo B',
+        localidade: 'Cidade Ocidental',
+        uf: 'GO',
+      };
+    },
+    geonet: async () => null,
+    google: async () => null,
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viacep'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('DNE_CEP'), '72880-000');
+  assert.equal(at('DNE_LOGRADOURO'), 'Quadra 6');
+  assert.equal(summary.viaCepCoordRetry.filled, 1);
+  assert.equal(calls.viaCepByAddress, 1);
+  assert.equal(calls.viaCepByCoordinates, 1);
+  assert.match(at('LOG_GERAL'), /nem pela rua\/número\/UF; encontrado pela coordenada da tenant/);
+});
+
+test('repescagem pela coordenada da tenant sem sucesso não inventa dado', async () => {
+  const record = rowWithTenant('ID-1', '-16.09', '-47.94');
+  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  const services: AddressServices = {
+    viaCep: async () => null,
+    viaCepByAddress: async () => null,
+    viaCepByCoordinates: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viacep'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('DNE_CEP'), '');
+  assert.equal(summary.viaCepCoordRetry.notFound, 1);
+  assert.match(at('LOG_GERAL'), /nem pela rua\/número\/UF; não encontrado pela coordenada da tenant/);
+});
+
+test('viaCepByCoordinates faz geocoding reverso e busca o endereço no DNE de verdade', async () => {
+  const fetchImpl = vi.fn<typeof fetch>(async (input) => {
+    const url = String(input);
+    if (url.includes('maps.googleapis.com')) {
+      assert.match(url, /latlng=-16\.09%2C-47\.94/);
+      return new Response(
+        JSON.stringify({
+          status: 'OK',
+          results: [
+            {
+              types: ['street_address'],
+              formatted_address: 'Quadra 6, Cidade Ocidental - GO, Brasil',
+              address_components: [
+                { long_name: 'Quadra 6', types: ['route'] },
+                { long_name: 'Cidade Ocidental', types: ['locality', 'political'] },
+                { short_name: 'GO', types: ['administrative_area_level_1', 'political'] },
+              ],
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    }
+    if (url.includes('viacep.com.br/ws/GO/Cidade%20Ocidental/Quadra%206/json/')) {
+      return new Response(
+        JSON.stringify([
+          {
+            cep: '72880-000',
+            logradouro: 'Quadra 6',
+            complemento: '',
+            bairro: 'Parque Nova Friburgo B',
+            localidade: 'Cidade Ocidental',
+            uf: 'GO',
+          },
+        ]),
+        { status: 200 },
+      );
+    }
+    throw new Error(`URL inesperada nesta simulação: ${url}`);
+  });
+  const services = createAddressServices(fakeEnv, fetchImpl);
+
+  const result = await services.viaCepByCoordinates!('GO', -16.09, -47.94, '28');
+
+  assert.deepEqual(result, {
+    cep: '72880-000',
+    logradouro: 'Quadra 6',
+    complemento: '',
+    bairro: 'Parque Nova Friburgo B',
+    localidade: 'Cidade Ocidental',
+    uf: 'GO',
+  });
+});
+
+test('reverseGeocodeTenant devolve o endereço formatado da coordenada', async () => {
+  const fetchImpl = vi.fn<typeof fetch>(async () =>
+    new Response(
+      JSON.stringify({
+        status: 'OK',
+        results: [
+          {
+            types: ['street_address'],
+            formatted_address: 'Quadra 6, Cidade Ocidental - GO, Brasil',
+            address_components: [],
+          },
+        ],
+      }),
+      { status: 200 },
+    ),
+  );
+  const services = createAddressServices(fakeEnv, fetchImpl);
+
+  const result = await services.reverseGeocodeTenant!(-16.09, -47.94);
+
+  assert.equal(result, 'Quadra 6, Cidade Ocidental - GO, Brasil');
+});
+
+// GO: [-19.6, -12.3, -53.4, -45.8] (latMin, latMax, lonMin, lonMax)
+const GO_LAT_RANGE: [number, number] = [-19.6, -12.3];
+const GO_LNG_RANGE: [number, number] = [-53.4, -45.8];
+
+test('repairCorruptedCoordinate reconstrói o decimal quando só uma posição é plausível na UF', () => {
+  assert.equal(repairCorruptedCoordinate('-160.931.392', GO_LAT_RANGE), -16.0931392);
+  assert.equal(repairCorruptedCoordinate('-479.441.935', GO_LNG_RANGE), -47.9441935);
+});
+
+test('repairCorruptedCoordinate lida com ponto sobrando no fim (padrão de corrupção parcial)', () => {
+  assert.equal(repairCorruptedCoordinate('-16.071495.', GO_LAT_RANGE), -16.071495);
+});
+
+test('repairCorruptedCoordinate não inventa valor quando mais de uma posição é plausível', () => {
+  assert.equal(repairCorruptedCoordinate('-12345', [-50, 5]), null);
+});
+
+test('repairCorruptedCoordinate devolve null quando nenhuma posição cai na caixa da UF', () => {
+  assert.equal(repairCorruptedCoordinate('-999.999.999', GO_LAT_RANGE), null);
+  assert.equal(repairCorruptedCoordinate('abc', GO_LAT_RANGE), null);
+});
+
+test('enrichRecords repara TENANT_LATITUDE/LONGITUDE corrompidos e higieniza o CSV de saída', async () => {
+  const record = rowWithTenant('ID-1', '-160.931.392', '-479.441.935');
+  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viacep'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('TENANT_LATITUDE'), '-16.0931392');
+  assert.equal(at('TENANT_LONGITUDE'), '-47.9441935');
+  assert.equal(summary.tenantCoordRepaired, 1);
+  assert.match(at('LOG_GERAL'), /TENANT_LATITUDE\/TENANT_LONGITUDE reparados/);
+});
+
+test('reparo da coordenada da tenant tira a linha do skip mesmo com os demais provedores já completos', async () => {
+  const record = rowWithTenant('ID-1', '-160.931.392', '-479.441.935');
+  record[18] = 'Quadra 6'; // DNE_LOGRADOURO já preenchido: só a coordenada está quebrada
+  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  let viaCepCalls = 0;
+  const services: AddressServices = {
+    viaCep: async () => {
+      viaCepCalls += 1;
+      return null;
+    },
+    geonet: async () => null,
+    google: async () => null,
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viacep'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(summary.skippedRows, 0); // sem o reparo, essa linha seria pulada (DNE_LOGRADOURO já ok)
+  assert.equal(viaCepCalls, 0); // DNE_LOGRADOURO já preenchido: viacep nem é chamado
+  assert.equal(at('TENANT_LATITUDE'), '-16.0931392');
+  assert.equal(summary.tenantCoordRepaired, 1);
+  assert.equal(summary.updatedRows, 1);
+});
+
+test('coordenada da tenant irrecuperável não é alterada nem contada como reparada', async () => {
+  // Ambos os eixos fora de qualquer posição plausível para GO — nenhum se repara.
+  const record = rowWithTenant('ID-1', '-999.999.999', '-999.999.999');
+  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viacep'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(summary.tenantCoordRepaired, 0);
+  assert.equal(at('TENANT_LONGITUDE'), '-999.999.999');
+  assert.equal(at('TENANT_LATITUDE'), '-999.999.999');
+});
+
+test('repara a coordenada e, na mesma passada, consegue repescar o DNE por ela', async () => {
+  const record = rowWithTenant('ID-1', '-160.931.392', '-479.441.935');
+  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  const services: AddressServices = {
+    viaCep: async () => null,
+    viaCepByAddress: async () => null,
+    viaCepByCoordinates: async (uf, lat, lng, number) => {
+      assert.equal(uf, 'GO');
+      assert.equal(lat, -16.0931392);
+      assert.equal(lng, -47.9441935);
+      assert.equal(number, '28');
+      return {
+        cep: '72880-000',
+        logradouro: 'Quadra 6',
+        complemento: '',
+        bairro: 'Parque Nova Friburgo B',
+        localidade: 'Cidade Ocidental',
+        uf: 'GO',
+      };
+    },
+    geonet: async () => null,
+    google: async () => null,
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viacep'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('TENANT_LATITUDE'), '-16.0931392');
+  assert.equal(at('DNE_CEP'), '72880-000');
+  assert.equal(summary.tenantCoordRepaired, 1);
+  assert.equal(summary.viaCepCoordRetry.filled, 1);
 });

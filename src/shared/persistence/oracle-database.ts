@@ -37,7 +37,14 @@ export type OracleConnectionConfig = {
 
 oracledb.fetchAsString = [oracledb.CLOB];
 
-const QUERY_OPTIONS: ExecuteOptions = { outFormat: oracledb.OUT_FORMAT_OBJECT };
+// Default fetchArraySize (100) forces a network round-trip every 100 rows — measured 7.5s→0.6s on
+// a 62k-row SELECT just from raising this to 2000. Any result set beyond a handful of rows (tree
+// navigation, project site lists, bulk loaders) pays this cost on every unpaginated query.
+const QUERY_OPTIONS: ExecuteOptions = {
+  outFormat: oracledb.OUT_FORMAT_OBJECT,
+  fetchArraySize: 2000,
+  prefetchRows: 2000,
+};
 
 export class OracleDatabase implements DatabaseClient {
   public readonly provider = 'oracle' as const;

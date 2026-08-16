@@ -1275,6 +1275,17 @@ async function mainFast() {
     console.log(`  sites novos: ${newSites.length}`);
     console.log(`  atualizados: ${toUpdate.length}`);
     console.log(`  history    : ${newHistory.length}`);
+
+    console.log('\nAtualizando estatísticas...');
+    for (const table of [
+      'tmf_geographic_location',
+      'tmf_geographic_address',
+      'tmf_geographic_site',
+      'tmf_geographic_site_status_history',
+    ]) {
+      await client.gatherStats(table);
+    }
+    console.log('Estatísticas atualizadas.');
   } finally {
     await client.close();
   }

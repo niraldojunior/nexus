@@ -78,6 +78,60 @@ test('GeoService keeps repository state isolated from returned objects', async (
   assert.equal(stored.name, 'CO Botafogo');
 });
 
+test('GeoService persists source/accuracy provenance on Location and Address', async () => {
+  const service = new GeoService(new GeoRepository());
+  const location = await service.createLocation({
+    geometryType: 'Point',
+    geometry: { type: 'Point', coordinates: [-43.18, -22.9] },
+    accuracy: 'ROOFTOP',
+    sourceSystem: 'GOOGLE_MAPS',
+    sourceRef: 'place-id-123',
+    accuracyLevel: 'high',
+  });
+
+  assert.equal(location.sourceSystem, 'GOOGLE_MAPS');
+  assert.equal(location.sourceRef, 'place-id-123');
+  assert.equal(location.accuracyLevel, 'high');
+
+  const reloaded = await service.getLocation(location.id);
+  assert.equal(reloaded?.sourceSystem, 'GOOGLE_MAPS');
+  assert.equal(reloaded?.accuracyLevel, 'high');
+
+  const address = await service.createAddress({
+    street: 'Rua Cinco de Julho',
+    streetNr: '237',
+    city: 'Niterói',
+    stateOrProvince: 'RJ',
+    postcode: '24220110',
+    sourceSystem: 'GEONET',
+    sourceRef: 'geonet-addr-1',
+  });
+  assert.equal(address.sourceSystem, 'GEONET');
+  assert.equal(address.sourceRef, 'geonet-addr-1');
+
+  const reloadedAddress = await service.getAddress(address.id);
+  assert.equal(reloadedAddress?.sourceSystem, 'GEONET');
+  assert.equal(reloadedAddress?.sourceRef, 'geonet-addr-1');
+});
+
+test('GeoService persists Site.note and keeps it across an update that does not mention it', async () => {
+  const service = new GeoService(new GeoRepository());
+  const spec = await service.createSpec({ name: 'Central Office', category: 'Site' });
+  const created = await service.createSite({
+    name: 'CO Icaraí',
+    siteSpecificationId: spec.id,
+    note: 'Observação inicial',
+  });
+  assert.equal(created.note, 'Observação inicial');
+
+  const untouched = await service.updateSite(created.id, { name: 'CO Icaraí Renomeado' });
+  assert.equal(untouched.name, 'CO Icaraí Renomeado');
+  assert.equal(untouched.note, 'Observação inicial');
+
+  const cleared = await service.updateSite(created.id, { note: null });
+  assert.equal(cleared.note ?? null, null);
+});
+
 test('GeoService validates governed containment rules and stores relatedSite', async () => {
   const service = new GeoService(new GeoRepository());
   await service.ensureBootstrapRelationshipTypes();

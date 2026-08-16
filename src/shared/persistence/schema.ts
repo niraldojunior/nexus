@@ -314,6 +314,65 @@ export const MIGRATIONS_SQL = `
   ALTER TABLE geo_project ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'planned';
   ALTER TABLE geo_project_site ADD COLUMN IF NOT EXISTS note TEXT;
   ALTER TABLE geo_project_site ADD COLUMN IF NOT EXISTS geonet_address_id TEXT;
+
+  -- Procedência e precisão de Location/Address (pré-requisito do painel unificado de Local,
+  -- REQ-MOD01-016): de onde veio a coordenada/endereço (GEONET, Google Maps, um sistema
+  -- legado migrado, ou cadastro manual) e o nível de confiança normalizado do ponto.
+  -- accuracy (coluna já existente) segue guardando o texto cru da fonte (ex.: "ROOFTOP",
+  -- "ENDEREÇO COMPLETO"); accuracy_level é a normalização em high|medium|low|unknown.
+  ALTER TABLE tmf_geographic_location ADD COLUMN IF NOT EXISTS source_system TEXT;
+  ALTER TABLE tmf_geographic_location ADD COLUMN IF NOT EXISTS source_ref TEXT;
+  ALTER TABLE tmf_geographic_location ADD COLUMN IF NOT EXISTS accuracy_level TEXT;
+  ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS source_system TEXT;
+  ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS source_ref TEXT;
+  -- Observação livre do Site (aba Visão Geral do painel unificado) — campo comum, não
+  -- characteristic (C1 não se aplica: não é extensão de domínio, é anotação de trabalho,
+  -- como já era em geo_project_site.note antes desta migração).
+  ALTER TABLE tmf_geographic_site ADD COLUMN IF NOT EXISTS note TEXT;
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_source
+    ON tmf_geographic_address(tenant_id, source_system, source_ref);
+
+  -- Backfill 1: accuracy foi usada indevidamente para guardar a FONTE (ex.: 'GOOGLE_MAPS'
+  -- gravado por ProjectSitePanel/GuidedSignupModal ao criar local por endereço escolhido no
+  -- mapa) em vez da precisão. Move o valor para source_system e limpa accuracy — daqui em
+  -- diante accuracy guarda só o texto de precisão cru da fonte.
+  UPDATE tmf_geographic_location
+     SET source_system = 'GOOGLE_MAPS', accuracy = NULL
+   WHERE accuracy = 'GOOGLE_MAPS' AND source_system IS NULL;
+
+  -- Backfill 2: id GEONET gravado em geo_project_site (só alcançável para local de projeto)
+  -- migra para tmf_geographic_address.source_system/source_ref, disponível a qualquer Site.
+  -- Subconsulta correlacionada (não UPDATE...FROM) para permanecer portável ao Oracle —
+  -- transformOracleSchemaSql não reescreve UPDATE...FROM, que é sintaxe exclusiva do Postgres.
+  UPDATE tmf_geographic_address
+     SET source_system = 'GEONET',
+         source_ref = (
+           SELECT ps.geonet_address_id FROM geo_project_site ps
+             JOIN tmf_geographic_site s ON s.id = ps.site_id
+            WHERE s.geographic_address_id = tmf_geographic_address.id
+              AND ps.geonet_address_id IS NOT NULL
+            LIMIT 1
+         )
+   WHERE source_system IS NULL
+     AND EXISTS (
+           SELECT 1 FROM geo_project_site ps
+             JOIN tmf_geographic_site s ON s.id = ps.site_id
+            WHERE s.geographic_address_id = tmf_geographic_address.id
+              AND ps.geonet_address_id IS NOT NULL
+         );
+
+  -- Backfill 3: observação de local de projeto migra para a coluna comum do Site.
+  UPDATE tmf_geographic_site
+     SET note = (
+           SELECT ps.note FROM geo_project_site ps
+            WHERE ps.site_id = tmf_geographic_site.id AND ps.note IS NOT NULL
+            LIMIT 1
+         )
+   WHERE note IS NULL
+     AND EXISTS (
+           SELECT 1 FROM geo_project_site ps
+            WHERE ps.site_id = tmf_geographic_site.id AND ps.note IS NOT NULL
+         );
 `;
 
 export const SCHEMA_SQL = `

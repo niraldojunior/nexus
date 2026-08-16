@@ -18,6 +18,19 @@ export type GeoGeometry =
   | { type: 'LineString'; coordinates: Array<[number, number]> }
   | { type: 'Polygon'; coordinates: Array<Array<[number, number]>> };
 
+// Fonte externa que originou o dado — o usuário escolhe entre GEONET/Google Maps no modal
+// de edição de endereço; os demais valores vêm de cargas de migração ou cadastro manual.
+export type GeoSourceSystem =
+  | 'GEONET'
+  | 'GOOGLE_MAPS'
+  | 'NETWIN'
+  | 'GEOSITE'
+  | 'NETWORKCORE'
+  | 'GEOPLEX'
+  | 'MANUAL';
+
+export type GeoAccuracyLevel = 'high' | 'medium' | 'low' | 'unknown';
+
 export type GeoLocation = {
   '@type': 'GeographicLocation';
   id: string;
@@ -25,7 +38,11 @@ export type GeoLocation = {
   geometryType: 'Point' | 'LineString' | 'Polygon';
   geometry: GeoGeometry;
   spatialRef: string;
+  accuracy?: string;
   referencePoint?: string;
+  sourceSystem?: GeoSourceSystem;
+  sourceRef?: string;
+  accuracyLevel?: GeoAccuracyLevel;
 };
 
 export type GeoAddress = {
@@ -40,6 +57,8 @@ export type GeoAddress = {
   country?: string;
   geographicLocationId?: string;
   place?: { id: string; '@referredType': 'GeographicLocation' };
+  sourceSystem?: GeoSourceSystem;
+  sourceRef?: string;
 };
 
 export type GeoSpecCategory = 'Region' | 'FunctionalGroup' | 'Site' | 'SubSite';
@@ -75,6 +94,7 @@ export type GeoSite = {
   parentSite?: { id: string; '@referredType': 'GeographicSite' };
   relatedSite: RelatedSite[];
   relatedParty: Array<{ id: string; role?: string; '@referredType': 'Party' }>;
+  note?: string | null;
   characteristic: Array<{ group?: string; name: string; value: unknown; valueType?: string }>;
 };
 

@@ -1,5 +1,4 @@
 export { TabSelector, type TabSelectorProps, type TabId } from './TabSelector';
-export { GuidedSignupModal, type GuidedSignupModalProps } from './GuidedSignupModal';
 export { AddEquipmentModal, type AddEquipmentModalProps } from './AddEquipmentModal';
 export {
   HierarchySidebar,
@@ -11,7 +10,8 @@ export { Modal, type ModalProps } from './Modal';
 export { ProjectIcon, type ProjectIconProps } from './ProjectIcon';
 export { ProjectListView, type ProjectListViewProps } from './ProjectListView';
 export { ProjectDetailPanel, type ProjectDetailPanelProps } from './ProjectDetailPanel';
-export { ProjectSitePanel, type ProjectSitePanelProps } from './ProjectSitePanel';
+export { SitePanel, type SitePanelProps } from './SitePanel';
+export { SiteAddressModal, type SiteAddressModalProps } from './SiteAddressModal';
 export {
   GeoSearchBar,
   type GeoSearchBarProps,

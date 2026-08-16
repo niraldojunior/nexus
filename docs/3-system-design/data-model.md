@@ -244,10 +244,18 @@ outro hemisfério. Cargas anteriores já sofreram com coordenada corrompida.
 | Geometria válida         | `SDO_GEOM.VALIDATE_GEOMETRY_WITH_CONTEXT`                             |
 | Coerência com o endereço | Ponto deve cair no polígono do município declarado                    |
 | Sem coordenada           | Marcado para curadoria; **fica fora da viabilidade** até geocodificar |
+| Procedência               | `sourceSystem`/`sourceRef` — de qual fonte externa veio a coordenada/endereço (GEONET, Google Maps, um sistema legado migrado, ou cadastro manual) |
+| Precisão                  | `accuracyLevel` (`high\|medium\|low\|unknown`) — normalização do texto cru de precisão da fonte, para comparar candidatos de bases divergentes sem repetir o vocabulário de cada uma |
 
 > A geocodificação é provida pelo **Geosite Logradouros** (base DNE + módulo Geonet), que abstrai
 > internamente o fallback para o Google — ver [`integrations.md`](integrations.md) §7. O que
 > permanece em aberto é a **capacidade de lote** para a carga inicial dos 22M endereços (`Q-INT-005`).
+>
+> **Implementação atual (Neon Postgres, pré-migração Oracle — C10):** `sourceSystem`/`sourceRef` em
+> `tmf_geographic_location`/`tmf_geographic_address` e `accuracyLevel` em `tmf_geographic_location`
+> já existem no schema runtime, gravados pelo painel unificado de Local (REQ-MOD01-016,
+> `docs/2-functional-specs/01-module-geo.md` §21) — a coluna `DIMINFO`/`SDO_GEOM` acima permanece
+> destino, não estado presente.
 
 ---
 

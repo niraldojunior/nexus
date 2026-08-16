@@ -14,35 +14,19 @@ import {
   Ban,
   Barcode,
   Boxes,
-  Building,
-  Building2,
   ChevronLeft,
   Cpu,
   Crosshair,
   Database,
   Factory,
-  Hash,
-  History,
   Info as InfoIcon,
   Loader2,
   MapPin,
-  Network,
-  Plus,
-  type LucideIcon,
 } from 'lucide-react';
-import type {
-  GeoStatus,
-  GeoSiteStatus,
-  GeoLocation,
-  GeoAddress,
-  GeoSpec,
-  GeoSite,
-  GeoEvent,
-} from '../services/geoApi';
-import { getJson, postJson, patchJson } from '../services/geoApi';
-import { siteKindFromSpec, siteKindLabel, formatAddress } from '../utils/placeLabel';
+import type { GeoStatus, GeoSpec, GeoSite } from '../services/geoApi';
+import { getJson, postJson } from '../services/geoApi';
+import { siteKindFromSpec, siteKindLabel } from '../utils/placeLabel';
 import {
-  SITE_STATUS_OPTIONS,
   siteStatusLabel,
   siteSpecLabel,
   siteSpecCategoryLabel,
@@ -89,13 +73,7 @@ import { bottomInsetForOverlay, flyTo, cancelFlight, type FlyTarget } from '../u
 import { acquireDeviceLocation, DEVICE_LOCATION_POOR_ACCURACY_M } from '../utils/deviceLocation';
 import { useGeoTree } from '../hooks/useGeoTree';
 import { useIsMobile } from '../hooks/useIsMobile';
-import {
-  plantLabel,
-  resourceIconFor,
-  resourceIconDataUrl,
-  resourcePlant,
-  type ResourcePlant,
-} from '../utils/resourceIcon';
+import { resourceIconFor, resourceIconDataUrl } from '../utils/resourceIcon';
 import { ResourceIcon } from '../components/ResourceIcon';
 import {
   selectionPinDataUrl,
@@ -112,7 +90,6 @@ import {
   BASE_MAP_LAYERS,
   CoordinateStreetView,
   GeoSearchBar,
-  GuidedSignupModal,
   HierarchySidebar,
   type HierarchySidebarTab,
   IconInfoRow,
@@ -122,7 +99,7 @@ import {
   Modal,
   PanelBarButton,
   ProjectDetailPanel,
-  ProjectSitePanel,
+  SitePanel,
   StatusBadge,
   DOCK_WIDTH_CLASS,
   DOCK_ELEVATION_CLASS,
@@ -132,12 +109,7 @@ import {
   type GeoSearchSelection,
 } from './geo-tabs';
 import { useGeoProjects } from '../hooks/useGeoProjects';
-import {
-  fetchProjectSites,
-  removeProjectSite,
-  type CreatedProjectSite,
-  type ProjectSite,
-} from '../services/geoProjectApi';
+import { fetchProjectSites, removeProjectSite, type ProjectSite } from '../services/geoProjectApi';
 import {
   DROP_ACCENT,
   DROP_INK,
@@ -156,10 +128,8 @@ import {
 import { OverlayScrollArea } from '../components/OverlayScrollArea';
 import { StreetViewHero } from '../components/StreetViewHero';
 import { streetViewTargetsForGeometry } from '../utils/streetViewTargets';
-import { resourceStreetViewMarker, siteStreetViewMarker } from '../utils/streetViewMarker';
+import { resourceStreetViewMarker } from '../utils/streetViewMarker';
 import type { StreetViewMarker } from '../utils/streetViewPanorama';
-
-type DetailTab = 'overview' | 'subsites' | 'topology' | 'lifecycle' | 'resources';
 
 // Conteúdo do balão flutuante de preview, ancorado no item sob o mouse (árvore
 // ou mapa). É montado no GeoPage e apenas desenhado pelo painel do mapa — assim
@@ -293,16 +263,6 @@ const resourceStatusLabel: Record<GeoStatus, string> = {
   terminated: 'Terminado',
 };
 
-const relationshipTypeLabel = (type: string): string => {
-  const labels: Record<string, string> = {
-    fedBy: 'Alimentado por',
-    feeds: 'Alimenta',
-    nearby: 'Próximo de',
-    contains: 'Contém',
-  };
-  return labels[type] || type;
-};
-
 export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => void } = {}) {
   // Hoisted para o topo: o valor inicial de `hierarchyCollapsed` depende dele — no
   // mobile a página abre com o mapa em foco (hierarquia fechada), no desktop a doca
@@ -310,7 +270,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const isMobile = useIsMobile();
   const [sites, setSites] = useState<GeoSite[]>([]);
   const [specs, setSpecs] = useState<GeoSpec[]>([]);
-  const [events, setEvents] = useState<GeoEvent[]>([]);
   const [draftAddress, setDraftAddress] = useState<DraftAddress | null>(null);
   // Endereço resolvido pela busca (Google) ou por clique no mapa (reverse geocode) —
   // ocupa a mesma doca dos painéis de detalhe, nunca junto com eles (ver
@@ -328,10 +287,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Viabilidade. Mora aqui, e não no painel, porque quem desenha é o mapa; o painel só
   // o produz e o apaga ao se desmontar (ver ViabilityTab).
   const [dropSimulation, setDropSimulation] = useState<DropSimulation | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [detailTab, setDetailTab] = useState<DetailTab>('overview');
   // Colapso da hierarquia, hoisted de HierarchySidebar: precisa viver aqui para a
   // barra de pesquisa decidir se flutua sobre o mapa ou fica dentro da doca (ver
   // dockPanelOpen), e para não mudar quando o detalhe abre/fecha por cima dela —
@@ -344,7 +301,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // aberto (ver a cadeia de precedência no render): a hierarquia de sempre, o painel de
   // um Projeto ou o painel de criação/edição de um local exclusivo dele.
   const [dockView, setDockView] = useState<DockView>({ kind: 'hierarchy' });
-  // Local escolhido no mapa para o novo local de um projeto (ver ProjectSitePanel/
+  // Local escolhido no mapa para o novo local de um projeto (ver SitePanel/
   // onTogglePickOnMap) — só é consultado quando `pickingProjectSite` está ativo; o clique
   // no vazio do mapa entrega o resultado aqui em vez de abrir o painel de Endereço.
   const [pickingProjectSite, setPickingProjectSite] = useState(false);
@@ -490,7 +447,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // GoogleMapPanel (mapsReady) e somado à barra por lá.
   const mapDataLoading = loading || tree.busy || viewportLoading || coverageLoading;
 
-  const specById = useMemo(() => new Map(specs.map((item) => [item.id, item])), [specs]);
   const siteById = useMemo(() => new Map(sites.map((item) => [item.id, item])), [sites]);
   const selectedSiteId =
     selectedNode?.referredType === 'GeographicSite' ? (selectedNode.refId ?? null) : null;
@@ -607,13 +563,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     );
   }, [activeProjectId, projectSites]);
 
-  useEffect(() => {
-    if (!selectedSite || !detailOpen) return;
-    void getJson<GeoEvent[]>(`/v1/geo/sites/${selectedSite.id}/events`)
-      .then(setEvents)
-      .catch(() => setEvents([]));
-  }, [detailOpen, selectedSite]);
-
   // Responder a parâmetros de navegação (ex: vindo de Recursos/Serviços)
   useEffect(() => {
     if (!navParams || navParams.page !== 'geo') return;
@@ -663,7 +612,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       }
       tree.revealNode(node.id, { expandSelf: node.hasChildren });
       if (node.kind === 'site' || node.kind === 'resource') {
-        setDetailTab('overview');
         setDetailOpen(true);
         // Nome e identidade do item vão para a barra como seleção confirmada.
         setQuery(node.label);
@@ -687,8 +635,9 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     [selectNode],
   );
   // Ids dos locais do Projeto de trabalho aberto — clicar num deles no mapa abre o painel
-  // de edição do local (ProjectSitePanel), não o GeoDetailPanel genérico: o Site não existe
-  // na Hierarquia (ver PROJECT_SITE_EXCLUSION_SQL) e o painel comum não saberia tratá-lo.
+  // unificado de Local em contexto de projeto (SitePanel), não o GeoDetailPanel genérico: o
+  // Site não existe na Hierarquia (ver PROJECT_SITE_EXCLUSION_SQL) e o painel comum não
+  // saberia tratá-lo.
   const projectSiteIds = useMemo(
     () => new Set(projectSites.map((node) => node.id)),
     [projectSites],
@@ -805,16 +754,17 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   }, []);
 
   // Clique no vazio do mapa — reverse geocode do ponto, que larga o "+" de rascunho
-  // (`draftAddress`, usado pelo GuidedSignupModal para cadastrar um site ali) e abre o
-  // painel de endereço na doca. Consulta é seleção: some qualquer nó em curso (mesma doca,
-  // um painel por vez) — é a terceira porta de troca de seleção, junto do X da busca e de
-  // uma nova pesquisa. O mapa só desenha o "+" para essa origem (`source: 'map'`) — o
-  // alfinete fica reservado à busca, para não duplicar marcador na mesma coordenada (ver
-  // GoogleMapPanel e a prop `addressPoint`).
+  // (`draftAddress`, o marcador visual do ponto escolhido) e abre o painel de endereço na
+  // doca. Consulta é seleção: some qualquer nó em curso (mesma doca, um painel por vez) — é
+  // a terceira porta de troca de seleção, junto do X da busca e de uma nova pesquisa. O
+  // mapa só desenha o "+" para essa origem (`source: 'map'`) — o alfinete fica reservado à
+  // busca, para não duplicar marcador na mesma coordenada (ver GoogleMapPanel e a prop
+  // `addressPoint`).
   const onMapAddressFound = useCallback(
     (address: DraftAddress) => {
-      // "Escolher no mapa" do ProjectSitePanel (criação de local de projeto, REQ-MOD01-015)
-      // desvia o clique para o painel em vez de abrir o de Endereço — a doca não troca.
+      // "Escolher no mapa" do painel unificado de Local (criação de local de projeto,
+      // REQ-MOD01-015) desvia o clique para o painel em vez de abrir o de Endereço — a
+      // doca não troca.
       if (pickingProjectSite) {
         setPickedProjectAddress(address);
         setPickingProjectSite(false);
@@ -852,17 +802,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     }
   }, []);
 
-  const openDetail = (site: GeoSite, tab: DetailTab = 'overview') => {
-    const node = siteNodeOf(site);
-    setSelectedNode(node);
-    setSearchSelection({ type: 'node', node });
-    setAddressLookup(null);
-    setDockView({ kind: 'hierarchy' });
-    setDetailTab(tab);
-    setDetailOpen(true);
-    setQuery(site.name);
-  };
-
   // Volta a doca para a Hierarquia (aba Projetos, ver hierarchyTab) e limpa qualquer
   // estado do fluxo de local que ficou pendente — o excluir do menu ⋯ e a exclusão de
   // projeto passam por aqui.
@@ -875,7 +814,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
 
   // Fecha só a janela de consulta do local — o painel do projeto continua aberto ao lado
   // (estilo Salvos → Listas do Google Maps, ver DockView/ProjectSiteView). É o botão "X" do
-  // ProjectSitePanel e, no mobile, o gesto de fechar a folha.
+  // SitePanel e, no mobile, o gesto de fechar a folha.
   const closeProjectSite = useCallback((projectId: string) => {
     setDockView({ kind: 'project', projectId, site: null });
     setPickingProjectSite(false);
@@ -915,7 +854,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // (bug reportado); o `projects.reload()` em seguida reconcilia com o servidor sem
   // travar a UI (o `inFlight` do hook já deduplica sob StrictMode).
   const handleProjectSiteCreated = useCallback(
-    (projectId: string, created: CreatedProjectSite) => {
+    (projectId: string, created: { site: GeoSite }) => {
       setProjectSitesReloadToken((token) => token + 1);
       projects.adjustSiteCount(projectId, 1);
       void projects.reload();
@@ -929,7 +868,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   );
 
   // Nome/tipo/observação editados no painel de consulta — só precisa de um novo GET; o
-  // local aberto continua o mesmo (ver ProjectSitePanel.onSiteChanged).
+  // local aberto continua o mesmo (ver SitePanel.onChanged).
   const handleProjectSiteChanged = useCallback(() => {
     setProjectSitesReloadToken((token) => token + 1);
   }, []);
@@ -1029,13 +968,13 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Esc fecha o painel de detalhe — mas só quando nenhum outro modal está
   // aberto, senão a tecla fecharia os dois de uma vez.
   useEffect(() => {
-    if (!detailOpen || createOpen || typeOpen || addressError) return;
+    if (!detailOpen || typeOpen || addressError) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setDetailOpen(false);
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [addressError, createOpen, detailOpen, typeOpen]);
+  }, [addressError, detailOpen, typeOpen]);
 
   // Projeto do dockView atual, se houver — `undefined` enquanto a lista ainda carrega ou se
   // o projeto foi excluído em outra aba; nesse caso o render cai de volta para a Hierarquia.
@@ -1067,39 +1006,42 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               geonetEnabled={addressLookup.source === 'search'}
               onLocationResolved={onAddressLocationResolved}
             />
-          ) : detailOpen && detailTarget ? (
+          ) : detailOpen && detailTarget?.kind === 'site' ? (
+            // Painel unificado de Local (REQ-MOD01-016), aberto pela Hierarquia, busca ou
+            // clique no mapa — a `key` força remontar ao trocar de site (senão a pilha
+            // interna de drill-down em sub-locais sobreviveria de um site para outro).
+            <SitePanel
+              key={`site:${detailTarget.site.id}`}
+              isMobile={isMobile}
+              mode="view"
+              siteId={detailTarget.site.id}
+              project={null}
+              specs={specs}
+              sites={sites}
+              pickedAddress={null}
+              pickingOnMap={false}
+              onTogglePickOnMap={() => undefined}
+              onSnapChange={onMobileSheetSnapChange}
+              minimizeSignal={sheetMinimizeSignal}
+              // Voltar (‹) só fecha o painel — a seleção fica de pé, então a hierarquia
+              // reaparece já expandida e rolada até o nó (ver HierarchyTreeView), com o
+              // alfinete ainda no mapa. Desfazer a seleção por completo é o X da barra de
+              // pesquisa (onClear) e, no mobile, arrastar a folha para baixo (onClose).
+              onBack={() => setDetailOpen(false)}
+              onClose={onDeselect}
+              onCreated={() => undefined}
+              onChanged={() => void loadGeo()}
+              onOpenResource={goToResource}
+            />
+          ) : detailOpen && detailTarget?.kind === 'resource' ? (
             <GeoDetailPanel
               isMobile={isMobile}
               target={detailTarget}
               onSnapChange={onMobileSheetSnapChange}
               minimizeSignal={sheetMinimizeSignal}
-              tab={detailTab}
-              sites={sites}
-              specById={specById}
-              siteById={siteById}
-              events={events}
-              onTab={setDetailTab}
-              onOpenSite={(next) => openDetail(next, 'overview')}
               onOpenResource={goToResource}
-              // Voltar (‹) só fecha o painel — a seleção fica de pé, então a
-              // hierarquia reaparece já expandida e rolada até o nó (ver
-              // HierarchyTreeView), com o alfinete ainda no mapa. Desfazer a seleção
-              // por completo é o X da barra de pesquisa (onClear) e, no mobile,
-              // arrastar a folha para baixo (onClose).
               onBack={() => setDetailOpen(false)}
               onClose={onDeselect}
-              onChanged={async () => {
-                if (!selectedSite) return;
-                await loadGeo();
-                const updatedEvents = await getJson<GeoEvent[]>(
-                  `/v1/geo/sites/${selectedSite.id}/events`,
-                ).catch(() => []);
-                setEvents(updatedEvents);
-              }}
-              onCreateSubSite={() => {
-                setDetailOpen(false);
-                setCreateOpen(true);
-              }}
             />
           ) : dockView.kind === 'project' && activeProject ? (
             <>
@@ -1132,19 +1074,15 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                 />
               ) : null}
               {activeProjectSiteView ? (
-                <ProjectSitePanel
+                <SitePanel
                   key={`${dockView.projectId}:${activeProjectSiteView.mode === 'view' ? activeProjectSiteView.siteId : 'new'}`}
                   isMobile={isMobile}
-                  projectId={dockView.projectId}
+                  mode={activeProjectSiteView.mode}
+                  siteId={activeProjectSiteView.mode === 'view' ? activeProjectSiteView.siteId : null}
                   project={activeProject}
-                  site={
-                    activeProjectSiteView.mode === 'view'
-                      ? (projectSites.find(
-                          (site) => site.refId === activeProjectSiteView.siteId,
-                        ) ?? null)
-                      : null
-                  }
+                  projectId={dockView.projectId}
                   specs={specs}
+                  sites={sites}
                   pickedAddress={pickedProjectAddress}
                   pickingOnMap={pickingProjectSite}
                   onTogglePickOnMap={() => setPickingProjectSite((picking) => !picking)}
@@ -1152,8 +1090,16 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                   minimizeSignal={sheetMinimizeSignal}
                   onClose={() => closeProjectSite(dockView.projectId)}
                   onCreated={(created) => handleProjectSiteCreated(dockView.projectId, created)}
-                  onSiteChanged={handleProjectSiteChanged}
-                  onRemoved={() => handleProjectSiteRemoved(dockView.projectId)}
+                  onChanged={handleProjectSiteChanged}
+                  onOpenResource={goToResource}
+                  onRemoveFromProject={
+                    activeProjectSiteView.mode === 'view' && activeProject.status !== 'terminated'
+                      ? async () => {
+                          await removeProjectSite(dockView.projectId, activeProjectSiteView.siteId);
+                          handleProjectSiteRemoved(dockView.projectId);
+                        }
+                      : undefined
+                  }
                 />
               ) : null}
             </>
@@ -1255,22 +1201,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
           />
         </div>
       </main>
-
-      {createOpen ? (
-        <GuidedSignupModal
-          draftAddress={draftAddress}
-          selectedSite={selectedSite}
-          specs={specs}
-          sites={sites}
-          specById={specById}
-          onClose={() => setCreateOpen(false)}
-          onCreated={async () => {
-            setCreateOpen(false);
-            setDraftAddress(null);
-            await loadGeo();
-          }}
-        />
-      ) : null}
 
       {typeOpen ? (
         <TypeManagementModal
@@ -2518,100 +2448,40 @@ function FallbackMap({
   );
 }
 
-// Painel de detalhe do item selecionado (Site ou Recurso) — dock à esquerda no
-// desktop (mesma coluna da hierarquia, um painel por vez) e bottom sheet
-// arrastável no mobile. Nasce do clique na árvore, no mapa ou na busca (ver
-// selectNode em GeoPage), nunca de um modal: o Google Maps também abre o
-// detalhe do lugar como painel, não popup.
+// Painel de detalhe de um Recurso selecionado — dock à esquerda no desktop (mesma
+// coluna da hierarquia, um painel por vez) e bottom sheet arrastável no mobile. Nasce
+// do clique na árvore, no mapa ou na busca (ver selectNode em GeoPage), nunca de um
+// modal. O detalhe de Site tem casca própria — ver SitePanel (REQ-MOD01-016).
 function GeoDetailPanel({
   isMobile,
   target,
-  tab,
-  sites,
-  specById,
-  siteById,
-  events,
-  onTab,
-  onOpenSite,
   onOpenResource,
   onBack,
   onClose,
-  onChanged,
-  onCreateSubSite,
   onSnapChange,
   minimizeSignal,
 }: {
   isMobile: boolean;
-  target: DetailTarget;
-  tab: DetailTab;
-  sites: GeoSite[];
-  specById: Map<string, GeoSpec>;
-  siteById: Map<string, GeoSite>;
-  events: GeoEvent[];
-  onTab: (tab: DetailTab) => void;
-  onOpenSite: (site: GeoSite) => void;
+  target: Extract<DetailTarget, { kind: 'resource' }>;
   onOpenResource: (resourceId: string) => void;
   onBack: () => void;
   onClose: () => void;
-  onChanged: () => Promise<void>;
-  onCreateSubSite: () => void;
   onSnapChange?: (state: BottomSheetSnapState) => void;
   // Contador que, ao incrementar, encolhe a folha para peek (ver BottomSheet).
   minimizeSignal?: number;
 }) {
-  // Detalhe de Site/Recurso não tem pedido próprio de encaixe — só repassa o
+  // Detalhe de Recurso não tem pedido próprio de encaixe — só repassa o
   // `minimizeSignal` (peek na navegação manual do mapa) como comando para a folha.
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
-  const eyebrow =
-    target.kind === 'site'
-      ? `Site · ${siteSpecLabel(specById.get(target.site.siteSpecificationId))}`
-      : (target.node.sublabel ?? resourceIconFor(target.node.resourceType ?? '').label);
-  const title = target.kind === 'site' ? target.site.name : target.node.label;
+  const eyebrow = target.node.sublabel ?? resourceIconFor(target.node.resourceType ?? '').label;
+  const title = target.node.label;
 
-  // Hoisted de SiteDetailBody: o hero (foto do topo) precisa do ponto do Site aqui
-  // no painel, então a busca por endereço/geometria sob demanda mora neste nível
-  // para os dois (hero e corpo) lerem o mesmo resultado, sem buscar duas vezes — o
-  // backend de dev atende requisições em série (ver AGENTS.md).
-  const { address: siteAddress, point: sitePoint } = useSitePlace(
-    target.kind === 'site' ? target.site : null,
-  );
-  const resourcePoint =
-    target.kind === 'resource'
-      ? streetViewTargetsForGeometry(target.node.geometry)[0]?.point
-      : undefined;
-  const heroMarker: StreetViewMarker | null =
-    target.kind === 'site'
-      ? sitePoint
-        ? siteStreetViewMarker(
-            target.site,
-            specById.get(target.site.siteSpecificationId),
-            sitePoint,
-          )
-        : null
-      : resourcePoint
-        ? resourceStreetViewMarker(target.node, resourcePoint)
-        : null;
+  const resourcePoint = streetViewTargetsForGeometry(target.node.geometry)[0]?.point;
+  const heroMarker: StreetViewMarker | null = resourcePoint
+    ? resourceStreetViewMarker(target.node, resourcePoint)
+    : null;
 
-  const body =
-    target.kind === 'site' ? (
-      <SiteDetailBody
-        site={target.site}
-        address={siteAddress}
-        point={sitePoint}
-        tab={tab}
-        sites={sites}
-        specById={specById}
-        siteById={siteById}
-        events={events}
-        onTab={onTab}
-        onOpenSite={onOpenSite}
-        onOpenResource={onOpenResource}
-        onChanged={onChanged}
-        onCreateSubSite={onCreateSubSite}
-      />
-    ) : (
-      <ResourceDetailBody node={target.node} onOpenResource={onOpenResource} />
-    );
+  const body = <ResourceDetailBody node={target.node} onOpenResource={onOpenResource} />;
 
   const header = (
     <div className="flex items-start gap-2 border-y border-app-border px-3 py-3">
@@ -2666,280 +2536,6 @@ function GeoDetailPanel({
         <div className="px-3 py-3">{body}</div>
       </OverlayScrollArea>
     </div>
-  );
-}
-
-// Corpo do detalhe de um Site: abas de visão geral, sub-locais, recursos
-// hospedados, topologia e ciclo de vida. Extraído do antigo modal — o cabeçalho
-// (título/eyebrow/fechar) agora é responsabilidade do GeoDetailPanel.
-function SiteDetailBody({
-  site,
-  address,
-  point,
-  tab,
-  sites,
-  specById,
-  siteById,
-  events,
-  onTab,
-  onOpenSite,
-  onOpenResource,
-  onChanged,
-  onCreateSubSite,
-}: {
-  site: GeoSite;
-  address: GeoAddress | null;
-  point: [number, number] | null;
-  tab: DetailTab;
-  sites: GeoSite[];
-  specById: Map<string, GeoSpec>;
-  siteById: Map<string, GeoSite>;
-  events: GeoEvent[];
-  onTab: (tab: DetailTab) => void;
-  onOpenSite: (site: GeoSite) => void;
-  onOpenResource: (resourceId: string) => void;
-  onChanged: () => Promise<void>;
-  onCreateSubSite: () => void;
-}) {
-  const spec = specById.get(site.siteSpecificationId);
-  // O conteúdo do local vem do mesmo endpoint que alimenta a árvore, e só quando
-  // o painel abre: sub-locais e recursos hospedados são os filhos diretos dele.
-  const { subSites, resources, loading: childrenLoading } = useSiteChildren(site.id);
-  const [relationshipTarget, setRelationshipTarget] = useState('');
-  const [relationshipType, setRelationshipType] = useState('fedBy');
-  const [nextStatus, setNextStatus] = useState<GeoSiteStatus>(site.status);
-
-  const addRelationship = async () => {
-    if (!relationshipTarget || !relationshipType.trim()) return;
-    await postJson(`/v1/geo/sites/${site.id}/relationships`, {
-      relatedSiteId: relationshipTarget,
-      relationshipType,
-    });
-    await onChanged();
-  };
-
-  const changeStatus = async () => {
-    await patchJson(`/v1/geo/sites/${site.id}`, { status: nextStatus });
-    await onChanged();
-  };
-
-  const siteMarker = point ? siteStreetViewMarker(site, spec, point) : null;
-  // `_origin.extra` é somente-leitura, gravado por cargas de migração (ver
-  // scripts/estacoes_carregar.mjs) — nunca editável pela UI (C5, service.ts).
-  const siteOriginExtra = site.characteristic.find((c) => c.name === '_origin.extra')?.value as
-    { sistemaOrigem?: string } | undefined;
-
-  return (
-    <>
-      {/* Barra de ações abaixo do título, estilo Google Maps: ícone em cima,
-          rótulo embaixo. Sub-locais e Recursos levam contador — eles são a
-          única porta de entrada para o que saiu da árvore, então o número
-          precisa ser visível de fora. Street View fica ao lado da coordenada
-          (ver aba Visão geral), não solto na barra. */}
-      <div className="mb-4 flex flex-wrap gap-1 border-b border-app-border pb-3">
-        {(
-          [
-            ['overview', 'Visão geral', InfoIcon, null],
-            ['subsites', 'Sub-locais', Building2, subSites.length],
-            ['resources', 'Recursos', Boxes, resources.length],
-            ['topology', 'Topologia', Network, null],
-            ['lifecycle', 'Ciclo de vida', History, null],
-          ] as Array<[DetailTab, string, LucideIcon, number | null]>
-        ).map(([id, label, icon, count]) => (
-          <PanelBarButton
-            key={id}
-            icon={icon}
-            label={label}
-            badge={count}
-            active={tab === id}
-            onClick={() => onTab(id)}
-          />
-        ))}
-      </div>
-
-      {tab === 'overview' ? (
-        <div className="grid gap-1">
-          <IconInfoRow icon={Activity} hint="Status" value={<StatusBadge status={site.status} />} />
-          <IconInfoRow
-            icon={MapPin}
-            hint="Endereço"
-            value={address ? formatAddress(address) : 'Sem endereço'}
-          />
-          <IconInfoRow
-            icon={Crosshair}
-            hint="Localização"
-            value={siteMarker ? <CoordinateStreetView marker={siteMarker} /> : 'Não localizado'}
-          />
-          <IconInfoRow
-            icon={Building}
-            hint="ParentSite"
-            value={
-              site.parentSite
-                ? (siteById.get(site.parentSite.id)?.name ?? site.parentSite.id)
-                : 'Nenhum'
-            }
-          />
-          <IconInfoRow icon={Hash} hint="ID" value={site.id} mono />
-          {siteOriginExtra?.sistemaOrigem ? (
-            <IconInfoRow
-              icon={InfoIcon}
-              hint="Sistema de origem"
-              value={siteOriginExtra.sistemaOrigem}
-            />
-          ) : null}
-        </div>
-      ) : null}
-
-      {tab === 'subsites' ? (
-        <div>
-          <div className="mb-3 flex items-start justify-between gap-3">
-            <div className="min-w-0 break-words text-[0.82rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
-              Espaços internos do site (sala, andar, gaveta, etc)
-            </div>
-            <button
-              type="button"
-              className="geo-btn primary shrink-0"
-              onClick={onCreateSubSite}
-              aria-label="Adicionar sub-local"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-          </div>
-          {childrenLoading ? (
-            <LoadingRow label="Carregando sub-locais…" />
-          ) : subSites.length ? (
-            <div className="grid gap-2">
-              {subSites.map((child) => (
-                <button
-                  key={child.id}
-                  type="button"
-                  onClick={() => {
-                    const target = child.refId ? siteById.get(child.refId) : undefined;
-                    if (target) onOpenSite(target);
-                  }}
-                  className="flex w-full min-w-0 items-start gap-2.5 rounded-[14px] border border-app-border px-3 py-2.5 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
-                >
-                  <img
-                    src={siteIconDataUrl(
-                      siteIconFor(
-                        siteKindFromSpec({ category: child.siteCategory, name: child.sublabel }),
-                        child.status,
-                      ),
-                      { size: 28 },
-                    )}
-                    alt=""
-                    className="h-7 w-7 shrink-0"
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">
-                      {child.label}
-                    </span>
-                    <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
-                      {siteSpecNameLabel(child.sublabel) ?? 'Sub-local'} · {siteStatusLabel(child.status)}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">
-                    Abrir
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
-              Este local ainda não possui sub-locais.
-            </div>
-          )}
-        </div>
-      ) : null}
-
-      {tab === 'topology' ? (
-        <div className="grid gap-4">
-          <SimpleRows
-            rows={site.relatedSite.map((rel) => [
-              relationshipTypeLabel(rel.relationshipType),
-              siteById.get(rel.id)?.name ?? rel.id,
-              rel.id,
-            ])}
-            empty="Sem relações topológicas."
-          />
-          <div className="grid min-w-0 gap-2 rounded-[14px] border border-app-border p-3">
-            <select
-              value={relationshipType}
-              onChange={(event) => setRelationshipType(event.target.value)}
-              className="geo-input"
-            >
-              {['fedBy', 'feeds', 'nearby', 'contains'].map((value) => (
-                <option key={value} value={value}>
-                  {relationshipTypeLabel(value)}
-                </option>
-              ))}
-            </select>
-            <select
-              value={relationshipTarget}
-              onChange={(event) => setRelationshipTarget(event.target.value)}
-              className="geo-input"
-            >
-              <option value="">Site relacionado</option>
-              {sites
-                .filter((item) => item.id !== site.id)
-                .map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-            </select>
-            <button
-              type="button"
-              className="geo-btn primary justify-center"
-              onClick={() => void addRelationship()}
-            >
-              Adicionar
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {tab === 'lifecycle' ? (
-        <div className="grid gap-4">
-          <div className="grid min-w-0 gap-2 rounded-[14px] border border-app-border p-3">
-            <select
-              value={nextStatus}
-              onChange={(event) => setNextStatus(event.target.value as GeoSiteStatus)}
-              className="geo-input"
-            >
-              {SITE_STATUS_OPTIONS.map(({ value, label }) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="geo-btn primary justify-center"
-              onClick={() => void changeStatus()}
-            >
-              Mudar status
-            </button>
-          </div>
-          <SimpleRows
-            rows={events.map((event) => [
-              new Date(event.eventTime).toLocaleString('pt-BR'),
-              event.eventType,
-              event.source,
-            ])}
-            empty="Sem eventos registrados."
-          />
-        </div>
-      ) : null}
-
-      {tab === 'resources' ? (
-        <SiteResourcesTab
-          resources={resources}
-          loading={childrenLoading}
-          onOpenResource={onOpenResource}
-        />
-      ) : null}
-    </>
   );
 }
 
@@ -3103,98 +2699,6 @@ function useResourceChildren(node: GeoTreeNode): { children: GeoTreeNode[]; load
   return { children: nodes, loading };
 }
 
-// Recursos hospedados no local, agrupados por planta. É aqui que vive tudo que
-// saiu do mapa e da hierarquia: OLT, placa, porta, DIO e o equipamento de
-// cliente. A fronteira Geo × Resource (C3) fica preservada — a lista é
-// referencial e o detalhe abre no módulo Resource.
-function SiteResourcesTab({
-  resources,
-  loading,
-  onOpenResource,
-}: {
-  resources: GeoTreeNode[];
-  loading: boolean;
-  onOpenResource: (resourceId: string) => void;
-}) {
-  const groups = useMemo(() => {
-    const byPlant = new Map<ResourcePlant, GeoTreeNode[]>();
-    for (const resource of resources) {
-      const plant = resourcePlant(resource.resourceType ?? '');
-      const list = byPlant.get(plant) ?? [];
-      list.push(resource);
-      byPlant.set(plant, list);
-    }
-    // Ordem de leitura: o que está na rua, o que está no rack, o que está no
-    // cliente, e por último o que não é físico.
-    const order: ResourcePlant[] = ['outdoor', 'indoor', 'customer', 'logical'];
-    return order
-      .map((plant) => ({ plant, items: byPlant.get(plant) ?? [] }))
-      .filter((group) => group.items.length > 0);
-  }, [resources]);
-
-  if (loading) {
-    return <LoadingRow label="Carregando recursos…" />;
-  }
-
-  if (!groups.length) {
-    return (
-      <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
-        Nenhum recurso registrado neste local.
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-4">
-      {groups.map(({ plant, items }) => (
-        <section key={plant}>
-          <h4 className="mb-1.5 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-            {plantLabel[plant]} · {items.length}
-          </h4>
-          <div className="grid gap-2">
-            {items.map((resource) => {
-              const icon = resourceIconFor({
-                resourceType: resource.resourceType ?? '',
-                status: resource.status,
-              });
-              return (
-                <button
-                  key={resource.id}
-                  type="button"
-                  onClick={() => (resource.refId ? onOpenResource(resource.refId) : undefined)}
-                  className="flex w-full min-w-0 items-start gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
-                >
-                  <ResourceIcon
-                    resource={{
-                      resourceType: resource.resourceType ?? '',
-                      status: resource.status,
-                    }}
-                    variant="badge"
-                    size={26}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">
-                      {resource.label}
-                    </span>
-                    <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
-                      {[icon.label, resource.detail?.model, resource.detail?.serialNumber]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">
-                    Abrir
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
-}
-
 function TypeManagementModal({
   specs,
   onClose,
@@ -3291,36 +2795,6 @@ function LoadingRow({ label }: { label: string }) {
   );
 }
 
-function SimpleRows({ rows, empty }: { rows: string[][]; empty: string }) {
-  if (!rows.length)
-    return (
-      <div className="rounded-[14px] border border-dashed border-app-border p-3 text-[0.84rem] text-app-muted">
-        {empty}
-      </div>
-    );
-  return (
-    <div className="grid min-w-0 rounded-[14px] border border-app-border">
-      {rows.map((row) => (
-        <div
-          key={row.join('|')}
-          className="grid min-w-0 gap-1 border-b border-app-border px-3 py-2.5 last:border-b-0"
-        >
-          {row.map((cell, index) => (
-            <div
-              key={`${cell}-${index}`}
-              className={`min-w-0 break-words text-[0.82rem] leading-snug [overflow-wrap:anywhere] ${
-                index === 0 ? 'font-semibold text-app-text' : 'text-app-muted'
-              }`}
-            >
-              {cell}
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function Th({ children }: { children: ReactNode }) {
   return (
     <th className="border-b border-app-border px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
@@ -3342,78 +2816,4 @@ function siteNodeOf(site: GeoSite): GeoTreeNode {
     status: site.status,
     hasChildren: false,
   };
-}
-
-// Endereço e coordenada do local aberto. Buscados por id sob demanda: carregar os
-// ~10 mil endereços e geometrias do acervo só para preencher dois campos de um
-// modal era o que fazia a página abrir devagar. `site` nulo (alvo é Recurso, não
-// Site) é um no-op — hoisted para GeoDetailPanel, que atende os dois, então só
-// busca quando o alvo realmente é um Site (ver GeoDetailPanel).
-function useSitePlace(site: GeoSite | null): {
-  address: GeoAddress | null;
-  point: [number, number] | null;
-} {
-  const [address, setAddress] = useState<GeoAddress | null>(null);
-  const [point, setPoint] = useState<[number, number] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setAddress(null);
-    setPoint(null);
-
-    if (site?.address?.id) {
-      void getJson<GeoAddress>(`/v1/geo/addresses/${site.address.id}`)
-        .then((data) => !cancelled && setAddress(data))
-        .catch(() => undefined);
-    }
-    if (site?.place?.id) {
-      void getJson<GeoLocation>(`/v1/geo/locations/${site.place.id}`)
-        .then((data) => {
-          if (cancelled || data.geometry.type !== 'Point') return;
-          setPoint(data.geometry.coordinates);
-        })
-        .catch(() => undefined);
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [site?.address?.id, site?.place?.id]);
-
-  return { address, point };
-}
-
-// Conteúdo do local: os mesmos filhos diretos que a árvore mostraria, separados
-// em sub-locais e recursos para as duas abas do modal.
-function useSiteChildren(siteId: string): {
-  subSites: GeoTreeNode[];
-  resources: GeoTreeNode[];
-  loading: boolean;
-} {
-  const [nodes, setNodes] = useState<GeoTreeNode[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setNodes([]);
-    setLoading(true);
-    // scope 'all': as abas Sub-locais e Recursos são a porta de entrada declarada para
-    // o que a árvore e o mapa escondem (sala/andar e Splitter) — precisam ver tudo.
-    void fetchTreeChildren(`site:${siteId}`, { scope: 'all' })
-      .then((page) => !cancelled && setNodes(page.nodes))
-      .catch(() => undefined)
-      .finally(() => !cancelled && setLoading(false));
-    return () => {
-      cancelled = true;
-    };
-  }, [siteId]);
-
-  return useMemo(
-    () => ({
-      subSites: nodes.filter((node) => node.kind === 'site'),
-      resources: nodes.filter((node) => node.kind === 'resource'),
-      loading,
-    }),
-    [nodes, loading],
-  );
 }

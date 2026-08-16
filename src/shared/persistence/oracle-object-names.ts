@@ -31,6 +31,15 @@ const TABLE_REFERENCE = new RegExp(
   'gi',
 );
 
+// Postgres/SQLite let a statement reference its own table by its bare name anywhere in it — e.g.
+// `UPDATE tmf_geographic_address SET x = (SELECT ... WHERE tmf_geographic_address.id = ...)`, a
+// correlated subquery using the updated table as its own implicit alias. TABLE_REFERENCE only
+// prefixes the `UPDATE tmf_geographic_address` occurrence (keyword-anchored); the bare correlated
+// reference stays unprefixed and Oracle can't resolve it (ORA-00904). Matches only a managed table
+// name immediately followed by `.`, so a column or alias that happens to share the name is untouched
+// — same closed-set guarantee as TABLE_REFERENCE, just anchored on the trailing dot instead.
+const TABLE_DOT_REFERENCE = new RegExp(`\\b(${TABLE_ALTERNATION})(?=\\.)`, 'gi');
+
 /** `tmf_party` + `NEXUS_DEV_` → `NEXUS_DEV_tmf_party`. */
 export const prefixed = (name: string, prefix: string): string => `${prefix}${name}`;
 
@@ -56,11 +65,16 @@ export const quoteOracleReservedColumns = (sql: string): string => {
  * columns are left alone because they are never in TABLE_NAMES / never follow these keywords as a
  * bare managed name.
  */
-export const rewriteTableReferences = (sql: string, prefix: string): string =>
-  sql.replace(
+export const rewriteTableReferences = (sql: string, prefix: string): string => {
+  const withKeywordRefs = sql.replace(
     TABLE_REFERENCE,
     (_match, keyword: string, table: string) => `${keyword}${prefix}${table}`,
   );
+  return withKeywordRefs.replace(
+    TABLE_DOT_REFERENCE,
+    (_match, table: string) => `${prefix}${table}`,
+  );
+};
 
 /**
  * Rewrites the names of objects a DDL statement CREATEs/ALTERs — tables, indexes and constraints —

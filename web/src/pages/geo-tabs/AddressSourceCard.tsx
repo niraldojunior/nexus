@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 
 // Card compartilhado pelas fontes de endereço (GEONET, Google Maps, DNE/Correios) — usado
-// pela Visão geral do painel de Endereço (AddressDetailPanel) e pela aba Endereço do painel
-// de local de projeto (ProjectSitePanel). Extraído para os dois painéis renderizarem
-// exatamente o mesmo cartão em vez de duas marcações quase-iguais divergindo com o tempo.
+// pela Visão geral do painel de Endereço (AddressDetailPanel) e pelo modal de edição de
+// endereço do painel unificado de Local (SiteAddressModal). Extraído para os painéis
+// renderizarem exatamente o mesmo cartão em vez de marcações quase-iguais divergindo com o tempo.
 export function AddressSourceCard({
   icon,
   title,

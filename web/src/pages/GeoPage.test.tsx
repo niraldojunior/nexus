@@ -139,11 +139,15 @@ function installGoogleMapsMock() {
 }
 
 // Nó de seleção mínimo, com geometria — o suficiente para o painel considerar que há algo
-// aberto (selectionActive) e para o alfinete ter um ponto.
+// aberto (selectionActive) e para o alfinete ter um ponto. `sublabel` identifica CO/Estação
+// para siteKindFromSpec (Fase 3, REQ-MOD01-016) — só CO segue a régua de stationTier no
+// mapa; qualquer outro tipo de Site seguiria resourceTier.
 const selectionNode = (id = 'site:1'): GeoTreeNode => ({
   id,
   kind: 'site',
   label: 'Estação',
+  sublabel: 'Central Office',
+  siteCategory: 'Site',
   hasChildren: false,
   geometry: { type: 'Point', coordinates: [-43.1, -22.9] },
 });
@@ -253,6 +257,40 @@ describe('GoogleMapPanel', () => {
         coverage={null}
         stationTier="small"
         resourceTier="full"
+        onCoverageHover={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(googleMocks.markerCtor).toHaveBeenCalled());
+    const siteOptions = googleMocks.markerCtor.mock.calls
+      .map(([options]) => options as { icon?: { scaledSize?: { width?: number } } })
+      .find((options) => options.icon?.scaledSize?.width !== undefined);
+    expect(siteOptions?.icon?.scaledSize?.width).toBe(14);
+  });
+
+  it('site não-CO (ex.: Ponto de Instalação) segue resourceTier, não stationTier', async () => {
+    const installationPoint: GeoTreeNode = {
+      ...selectionNode('site:2'),
+      label: 'PI Rua Miguel de Frias',
+      sublabel: 'Installation Point',
+    };
+    render(
+      <GoogleMapPanel
+        nodes={[installationPoint]}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        coverage={null}
+        // stationTier "full" provaria o bug se o código usasse a régua errada — só CO usa
+        // stationTier; qualquer outro tipo de Site (Fase 3, REQ-MOD01-016) usa resourceTier.
+        stationTier="full"
+        resourceTier="small"
         onCoverageHover={vi.fn()}
       />,
     );

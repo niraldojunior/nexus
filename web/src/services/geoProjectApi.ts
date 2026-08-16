@@ -17,8 +17,8 @@ import type { GeoTreeNode } from './geoTreeApi';
 // Mesmo vocabulário de GeoStatus — o projeto é a unidade de estado (REQ-MOD01-015): mudar
 // o status do projeto cascateia (best-effort) para cada Site vinculado. Enquanto o projeto
 // está em curso, o local não tem status próprio editável, só herda este valor — uma vez que
-// o projeto termina (status 'terminated'), o local passa a ter vida própria e ganha controle
-// de status independente pela rota geral de Site (ver ProjectSitePanel.tsx changeSiteStatus).
+// o projeto termina (status 'terminated'), o local passa a ter vida própria (Active) e ganha
+// controle de status independente no painel unificado de Local (SiteOverviewTab).
 export type GeoProjectStatus = GeoStatus;
 
 export type GeoProject = {

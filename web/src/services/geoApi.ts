@@ -107,6 +107,31 @@ export type GeoEvent = {
   eventData: Record<string, unknown>;
 };
 
+// Registro de auditoria (aba Histórico do painel unificado de Local, REQ-MOD01-016) —
+// `before`/`after` são o estado do Site antes/depois da mutação, usados para montar o
+// diff "o que mudou".
+export type GeoAuditLog = {
+  '@type': 'GeoAuditLog';
+  id: string;
+  tenantId: string;
+  actorSub: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  eventTime: string;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+  traceId: string;
+  sourceIp?: string;
+};
+
+// Origem de um Site (aba Visão Geral): de onde ele veio — carga de migração, Projeto de
+// trabalho (mesmo depois de terminado, RF-010) ou cadastro manual pela UI.
+export type SiteOrigin =
+  | { kind: 'import'; system: string }
+  | { kind: 'project'; projectId: string; projectName: string }
+  | { kind: 'manual'; actorSub: string; createdAt: string };
+
 const authHeaders = (): HeadersInit => ({
   'Content-Type': 'application/json',
   Authorization: `Bearer ${localStorage.getItem('authToken') || 'change-me'}`,
@@ -149,3 +174,24 @@ export const listGeoLocations = () => getJson<GeoLocation[]>('/v1/geo/locations'
 export const listGeoSiteSpecifications = () => getJson<GeoSpec[]>('/v1/geo/site-specifications');
 export const listGeoSiteEvents = (siteId: string) =>
   getJson<GeoEvent[]>(`/v1/geo/sites/${siteId}/events`);
+export const fetchSiteAudit = (siteId: string) =>
+  getJson<GeoAuditLog[]>(`/v1/geo/sites/${siteId}/audit`);
+export const fetchSiteOrigin = (siteId: string) =>
+  getJson<SiteOrigin>(`/v1/geo/sites/${siteId}/origin`);
+
+// Vínculo de Recurso com o Site (aba Recursos do painel unificado) — a escrita é do módulo
+// Resource (C2/C3), mas a rota fica agrupada em Site porque é daqui que o usuário decide.
+export const linkSiteResource = (siteId: string, resourceId: string) =>
+  postJson<{ '@type': 'PhysicalResource' | 'LogicalResource'; id: string }>(
+    `/v1/geo/sites/${siteId}/resources`,
+    { resourceId },
+  );
+
+export const unlinkSiteResource = (
+  siteId: string,
+  resourceId: string,
+  mode: 'unlink' | 'terminate' = 'unlink',
+): Promise<void> =>
+  deleteJson(
+    `/v1/geo/sites/${siteId}/resources/${encodeURIComponent(resourceId)}?mode=${mode}`,
+  );

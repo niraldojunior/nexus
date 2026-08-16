@@ -459,6 +459,40 @@ export class GeoService {
         codeToSpec.set(definition.code, updatedSpec);
       }
 
+      // Specificações geridas pelo bootstrap nunca deveriam duplicar `code`, mas duas instâncias
+      // do backend subindo ao mesmo tempo podem correr: cada uma monta seu próprio snapshot de
+      // `existingSpecs` antes da outra commitar, e ambas criam a mesma spec "nova". Este passo se
+      // autocura a cada boot — reaponta sites presos na cópia órfã para a canônica (a que este
+      // loop efetivamente ligou ao grafo de containment) e aposenta a órfã.
+      const activeBootstrapSpecsByCode = new Map<string, GeographicSiteSpecification[]>();
+      for (const spec of existingSpecs) {
+        if (!spec._bootstrapProtected || spec.lifecycleStatus !== 'Active') continue;
+        const group = activeBootstrapSpecsByCode.get(spec.code) ?? [];
+        group.push(spec);
+        activeBootstrapSpecsByCode.set(spec.code, group);
+      }
+      for (const [code, group] of activeBootstrapSpecsByCode) {
+        if (group.length <= 1) continue;
+        const canonical = codeToSpec.get(code) ?? group[0]!;
+        for (const duplicate of group) {
+          if (duplicate.id === canonical.id) continue;
+          const strandedSites = await this.repository.listSites({
+            siteSpecificationId: duplicate.id,
+          });
+          for (const strandedSite of strandedSites) {
+            await this.repository.upsertSite({
+              ...strandedSite,
+              siteSpecificationId: canonical.id,
+            });
+          }
+          await this.repository.upsertSpec({
+            ...duplicate,
+            lifecycleStatus: 'Retired',
+            _bootstrapProtected: false,
+          });
+        }
+      }
+
       return {
         created,
         updated,

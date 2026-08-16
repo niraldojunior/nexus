@@ -674,7 +674,7 @@ export class GeoTreeService {
   }
 
   // Site dono do recurso, se a filiação for direta (mesmas três formas de
-  // RESOURCE_AT_SITE_WHERE, na direção inversa: dado o recurso, qual é o Site).
+  // siteResourceSource, na direção inversa: dado o recurso, qual é o Site).
   // `null` quando o recurso pende de outro recurso — pathTo então sobe pela aresta.
   private async findDirectOwningSite(resourceId: string): Promise<string | null> {
     const resource =
@@ -875,19 +875,22 @@ const SITE_VIEWPORT_POINT_WHERE = `
   AND (l.geometry::jsonb->'coordinates'->>0)::float8 BETWEEN ? AND ?
   AND (l.geometry::jsonb->'coordinates'->>1)::float8 BETWEEN ? AND ?`;
 
-// Recursos que pendem diretamente de um Site. Os três parâmetros são, em ordem:
-// id do site, id da Location do site, id do site (servingSite). A união repete o
-// bloco para PhysicalResource e LogicalResource — daí os parâmetros irem em dobro.
-const RESOURCE_AT_SITE_WHERE = `
-  r.place_id = ?
-  OR r.place_id = ?
-  OR (
-    r.serving_site_id = ?
-    AND NOT EXISTS (
-      SELECT 1 FROM tmf_resource_relationship e
-       WHERE e.resource_to_id = r.id
-         AND e.relationship_type IN ('containsAsChild', 'connectedTo')
-    )
+// Recursos que pendem diretamente de um Site têm três formas de filiação — `place_id` no
+// próprio site, `place_id` na Location do site, ou `serving_site_id` do site sem aresta de
+// entrada ainda. As três viviam num único OR (RESOURCE_AT_SITE_WHERE); combinado assim, o
+// NOT EXISTS da terceira forma fica preso dentro do OR e o CBO do Oracle não consegue mais
+// desmembrá-lo num HASH JOIN ANTI — cai num FILTER correlacionado que varre
+// tmf_resource_relationship inteira (1,3M linhas) a cada linha candidata de recurso, travando
+// a expansão de uma Estação com planta externa densa (minutos, não segundos). Separadas em
+// blocos UNION ALL próprios (ver siteResourceSource), cada forma fica livre para usar seu
+// próprio índice — a terceira usa idx_tmf_resource_relationship_reverse como anti-join.
+const RESOURCE_BY_PLACE_WHERE = 'r.place_id = ?';
+const RESOURCE_BY_SERVING_SITE_WHERE = `
+  r.serving_site_id = ?
+  AND NOT EXISTS (
+    SELECT 1 FROM tmf_resource_relationship e
+     WHERE e.resource_to_id = r.id
+       AND e.relationship_type IN ('containsAsChild', 'connectedTo')
   )`;
 
 // Predicado que exclui item interno (Splitter — ver INTERNAL_RESOURCE_TYPE) da
@@ -911,30 +914,47 @@ const RESOURCE_SOURCE_SYSTEM_SQL =
   `(SELECT ce->>'value' FROM jsonb_array_elements(NULLIF(r.characteristics, '')::jsonb) AS ce ` +
   `WHERE ce->>'name' = 'system' AND ce->>'group' = '_origin' LIMIT 1)`;
 
-// Recursos pendendo direto de um Site, por escopo — mesmas colunas e parâmetros nas
-// duas variantes, só muda o filtro de item interno (sem placeholder extra).
+// Um bloco da fonte de siteResourceSource: uma entidade (Physical/Logical), uma forma de
+// filiação. LEFT JOIN em location (não JOIN) e sem filtro de status, ao contrário de
+// viewportBlock — um recurso sem geometria própria (ex.: porta dentro de um rack) ou já
+// terminated continua listado como filho do Site (scope: 'all' é o painel de detalhe).
+const siteResourceEntityBlock = (
+  entity: 'PhysicalResource' | 'LogicalResource',
+  where: string,
+  extra: string,
+): string => {
+  const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
+  const manufacturer = entity === 'PhysicalResource' ? 'r.manufacturer' : 'NULL';
+  const model = entity === 'PhysicalResource' ? 'r.model' : 'NULL';
+  const serial = entity === 'PhysicalResource' ? 'r.serial_number' : 'NULL';
+  const substatus = entity === 'PhysicalResource' ? RESOURCE_SUBSTATUS_SQL : 'NULL';
+  return `
+  SELECT r.id, r.name, '${entity}' AS entity_type, r.resource_type, r.status,
+         rs.name AS spec_name, ${manufacturer} AS manufacturer, ${model} AS model, ${serial} AS serial_number,
+         ${substatus} AS substatus,
+         ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
+         l.geometry_type, l.geometry
+    FROM ${table} r
+    LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
+   WHERE (${where}) ${extra}`;
+};
+
+// Recursos pendendo direto de um Site, por escopo. Três blocos por entidade (place_id no
+// site, place_id na Location, servingSite sem aresta de entrada) — nunca um OR combinando as
+// três, ver RESOURCE_BY_SERVING_SITE_WHERE. Parâmetros na ordem: site.id, location.id,
+// site.id, repetidos para PhysicalResource e depois LogicalResource (6 no total) — mesma
+// ordem que childrenOfSite já monta em `resourceParams`.
 const siteResourceSource = (scope: GeoTreeScope): string => {
   const extra = hideInternalResourceSql(scope);
-  return `
-  SELECT r.id, r.name, 'PhysicalResource' AS entity_type, r.resource_type, r.status,
-         rs.name AS spec_name, r.manufacturer, r.model, r.serial_number,
-         ${RESOURCE_SUBSTATUS_SQL} AS substatus,
-         ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
-         l.geometry_type, l.geometry
-    FROM tmf_physical_resource r
-    LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-    LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
-   WHERE (${RESOURCE_AT_SITE_WHERE}) ${extra}
-  UNION ALL
-  SELECT r.id, r.name, 'LogicalResource' AS entity_type, r.resource_type, r.status,
-         rs.name AS spec_name, NULL AS manufacturer, NULL AS model, NULL AS serial_number,
-         NULL AS substatus,
-         ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
-         l.geometry_type, l.geometry
-    FROM tmf_logical_resource r
-    LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-    LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
-   WHERE (${RESOURCE_AT_SITE_WHERE}) ${extra}`;
+  const blocksFor = (entity: 'PhysicalResource' | 'LogicalResource'): string[] => [
+    siteResourceEntityBlock(entity, RESOURCE_BY_PLACE_WHERE, extra),
+    siteResourceEntityBlock(entity, RESOURCE_BY_PLACE_WHERE, extra),
+    siteResourceEntityBlock(entity, RESOURCE_BY_SERVING_SITE_WHERE, extra),
+  ];
+  return [...blocksFor('PhysicalResource'), ...blocksFor('LogicalResource')].join(
+    '\n  UNION ALL\n',
+  );
 };
 
 // Recursos cuja geometria cai num bbox do mapa. Ponto e cabo ficam em blocos separados

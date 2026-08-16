@@ -171,7 +171,12 @@ export type CreatePhysicalResourceInput = {
   validFor?: TimePeriod;
 };
 
-export type UpdatePhysicalResourceInput = Partial<CreatePhysicalResourceInput>;
+// `placeId: null` desvincula o recurso do local atual (aba Recursos do painel unificado de
+// Local, REQ-MOD01-016) — distinto de `placeId` ausente (nenhuma mudança pedida), que
+// `Partial<>` sozinho não conseguiria expressar.
+export type UpdatePhysicalResourceInput = Omit<Partial<CreatePhysicalResourceInput>, 'placeId'> & {
+  placeId?: string | null;
+};
 
 export type CreateLogicalResourceInput = {
   name: string;
@@ -189,7 +194,10 @@ export type CreateLogicalResourceInput = {
   validFor?: TimePeriod;
 };
 
-export type UpdateLogicalResourceInput = Partial<CreateLogicalResourceInput>;
+// Mesmo motivo do UpdatePhysicalResourceInput: `placeId: null` desvincula explicitamente.
+export type UpdateLogicalResourceInput = Omit<Partial<CreateLogicalResourceInput>, 'placeId'> & {
+  placeId?: string | null;
+};
 
 export type ResourceFunctionActivationInput = {
   resourceId: string;

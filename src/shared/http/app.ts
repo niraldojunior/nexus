@@ -1207,6 +1207,106 @@ const routeGeoRequest = async ({
     );
   }
 
+  // Origem do local (aba Visão Geral do painel unificado, REQ-MOD01-016): de onde este Site
+  // veio — três formas mutuamente exclusivas, checadas nesta ordem. `_origin.system` (C5)
+  // vem de uma carga de migração (ver scripts/estacoes_carregar.mjs); o vínculo em
+  // geo_project_site sobrevive ao término do projeto (Fase 2), então continua respondendo
+  // 'project' mesmo com o local já liberado; sem nenhum dos dois, cai no autor do evento de
+  // criação (tmf_audit_log) — cadastro manual pela UI.
+  const originMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/origin$/);
+  if (originMatch && request.method === 'GET') {
+    const siteId = decodeURIComponent(originMatch[1] ?? '');
+    const site = await geoService.getSite(siteId, geoContext);
+    if (!site) {
+      throw new AppError('site not found', { code: 'GEO_SITE_NOT_FOUND', statusCode: 404 });
+    }
+    const originSystem = site.characteristic.find((c) => c.name === '_origin.system')?.value;
+    if (typeof originSystem === 'string' && originSystem) {
+      return sendJson(response, 200, { kind: 'import', system: originSystem });
+    }
+    const project = await runtime.geoProjectRepository.findProjectBySiteId(
+      geoContext.tenantId,
+      siteId,
+    );
+    if (project) {
+      return sendJson(response, 200, {
+        kind: 'project',
+        projectId: project.projectId,
+        projectName: project.projectName,
+      });
+    }
+    const audit = await geoService.listSiteAudit(siteId, geoContext);
+    const createEntry = audit.find((entry) => entry.action === 'create');
+    return sendJson(response, 200, {
+      kind: 'manual',
+      actorSub: createEntry?.actorSub ?? 'desconhecido',
+      createdAt: createEntry?.eventTime ?? '',
+    });
+  }
+
+  // Vínculo de Recurso com o Site (aba Recursos do painel unificado de Local,
+  // REQ-MOD01-016). Fica em src/shared/http/app.ts, não em geoService, porque a escrita é
+  // do módulo Resource (C2/C3: fronteira Geo↔Resource) — aqui só se resolve o tipo
+  // (Physical/Logical) e se delega a `resourceService`, como o restante do roteamento de
+  // recursos (`routeResourceRequest`).
+  const siteResourcesMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/resources$/);
+  if (siteResourcesMatch?.[1] && request.method === 'POST') {
+    requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+    const siteId = decodeURIComponent(siteResourcesMatch[1]);
+    const site = await geoService.getSite(siteId, geoContext);
+    if (!site) {
+      throw new AppError('site not found', { code: 'GEO_SITE_NOT_FOUND', statusCode: 404 });
+    }
+    const body = await readBody(request);
+    const resourceId = typeof body.resourceId === 'string' ? body.resourceId.trim() : '';
+    if (!resourceId) {
+      throw new AppError('resourceId required', {
+        code: 'GEO_SITE_RESOURCE_ID_REQUIRED',
+        statusCode: 400,
+      });
+    }
+    const resource = await runtime.resourceService.getResource(resourceId);
+    if (!resource) {
+      throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
+    }
+    const linked =
+      resource['@type'] === 'PhysicalResource'
+        ? await runtime.resourceService.updatePhysicalResource(resourceId, {
+            placeId: siteId,
+            placeType: 'GeographicSite',
+          })
+        : await runtime.resourceService.updateLogicalResource(resourceId, {
+            placeId: siteId,
+            placeType: 'GeographicSite',
+          });
+    return sendJson(response, 200, linked);
+  }
+
+  const siteResourceMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/resources\/([^/]+)$/);
+  if (siteResourceMatch?.[1] && siteResourceMatch[2] && request.method === 'DELETE') {
+    requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+    const resourceId = decodeURIComponent(siteResourceMatch[2]);
+    const resource = await runtime.resourceService.getResource(resourceId);
+    if (!resource) {
+      throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
+    }
+    // 'unlink' (default): só desfaz a relação com o Site, o recurso continua no acervo.
+    // 'terminate': soft-termina o recurso (C6), como excluí-lo pelo módulo Recursos.
+    const mode = url.searchParams.get('mode') === 'terminate' ? 'terminate' : 'unlink';
+    if (mode === 'terminate') {
+      if (resource['@type'] === 'PhysicalResource') {
+        await runtime.resourceService.deletePhysicalResource(resourceId);
+      } else {
+        await runtime.resourceService.deleteLogicalResource(resourceId);
+      }
+    } else if (resource['@type'] === 'PhysicalResource') {
+      await runtime.resourceService.updatePhysicalResource(resourceId, { placeId: null });
+    } else {
+      await runtime.resourceService.updateLogicalResource(resourceId, { placeId: null });
+    }
+    return sendJson(response, 204, null);
+  }
+
   const referencesMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/references$/);
   if (referencesMatch && request.method === 'GET') {
     return sendJson(

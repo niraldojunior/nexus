@@ -1374,6 +1374,131 @@ test('Projetos de trabalho: terminar o projeto libera os locais (viram Active, n
   );
 });
 
+test('Painel unificado de Local: Origem do Site e vínculo/desvínculo de Recurso', async (t) => {
+  const database = createTestDatabase();
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
+  const port = await server.start();
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
+
+  const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
+
+  // Origem 'manual': Site criado direto por /v1/geo/sites, sem projeto e sem _origin.system.
+  const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+    name: 'Ponto de Instalação Origem',
+    category: 'Site',
+  });
+  const site = await requestJson(port, 'POST', '/v1/geo/sites', {
+    name: 'Site Cadastro Livre',
+    siteSpecificationId: idOf(spec),
+  });
+  assert.equal(site.statusCode, 201);
+  const siteId = idOf(site);
+
+  const manualOrigin = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}/origin`);
+  assert.equal(manualOrigin.statusCode, 200);
+  assert.equal((manualOrigin.body as { kind: string }).kind, 'manual');
+
+  // Origem 'project': Site nascido dentro de um Projeto de trabalho.
+  const project = await requestJson(port, 'POST', '/v1/geo/projects', { name: 'Projeto Origem' });
+  const projectSite = await requestJson(
+    port,
+    'POST',
+    `/v1/geo/projects/${idOf(project)}/sites`,
+    {
+      location: {
+        geometryType: 'Point',
+        geometry: { type: 'Point', coordinates: [-43.15, -22.91] },
+      },
+      address: { street: 'Rua Origem Projeto' },
+      site: { name: 'Site do Projeto Origem', siteSpecificationId: idOf(spec) },
+      geonetAddressId: 'geonet-origem-1',
+    },
+  );
+  const projectSiteId = (projectSite.body as { site: { id: string } }).site.id;
+  const projectOrigin = await requestJson(port, 'GET', `/v1/geo/sites/${projectSiteId}/origin`);
+  assert.equal(projectOrigin.statusCode, 200);
+  assert.deepEqual(projectOrigin.body, {
+    kind: 'project',
+    projectId: idOf(project),
+    projectName: 'Projeto Origem',
+  });
+
+  // Vínculo/desvínculo de Recurso (aba Recursos): linkar, desvincular (o recurso continua
+  // existindo, só perde o place) e terminar (soft-terminate, C6).
+  const resourceSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    { name: 'OLT Origem', category: 'Equipment.Access', resourceType: 'OLT' },
+  );
+  const resource = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceInventoryManagement/v4/resource',
+    {
+      '@type': 'PhysicalResource',
+      name: 'OLT Painel Unificado',
+      resourceSpecificationId: idOf(resourceSpec),
+    },
+  );
+  assert.equal(resource.statusCode, 201);
+  const resourceId = idOf(resource);
+
+  const linked = await requestJson(port, 'POST', `/v1/geo/sites/${siteId}/resources`, {
+    resourceId,
+  });
+  assert.equal(linked.statusCode, 200);
+  assert.equal(
+    (linked.body as { place?: { id: string } }).place?.id,
+    siteId,
+  );
+
+  const siteResources = await requestJson(port, 'GET', `/v1/geo/tree/children?nodeId=site:${siteId}&scope=all`);
+  assert.equal(siteResources.statusCode, 200);
+  assert.deepEqual(
+    (siteResources.body as { nodes: Array<{ label: string }> }).nodes.map((n) => n.label),
+    ['OLT Painel Unificado'],
+  );
+
+  const unlinked = await requestJson(
+    port,
+    'DELETE',
+    `/v1/geo/sites/${siteId}/resources/${resourceId}?mode=unlink`,
+  );
+  assert.equal(unlinked.statusCode, 204);
+  const resourceAfterUnlink = await requestJson(
+    port,
+    'GET',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${resourceId}`,
+  );
+  assert.equal((resourceAfterUnlink.body as { place?: unknown }).place, undefined);
+  assert.notEqual(
+    (resourceAfterUnlink.body as { status: string }).status,
+    'terminated',
+  );
+
+  // Relinka e agora termina (mode=terminate) — soft-terminate, não DELETE físico.
+  await requestJson(port, 'POST', `/v1/geo/sites/${siteId}/resources`, { resourceId });
+  const terminated = await requestJson(
+    port,
+    'DELETE',
+    `/v1/geo/sites/${siteId}/resources/${resourceId}?mode=terminate`,
+  );
+  assert.equal(terminated.statusCode, 204);
+  const resourceAfterTerminate = await requestJson(
+    port,
+    'GET',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${resourceId}`,
+  );
+  assert.equal((resourceAfterTerminate.body as { status: string }).status, 'terminated');
+});
+
 test('App root returns Nexus shell html', async (t) => {
   const database = createTestDatabase();
   const server = createApp({

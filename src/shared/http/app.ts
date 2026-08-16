@@ -2592,6 +2592,7 @@ const parseGeoListQuery = (
     | 'suspended'
     | 'terminated';
   siteSpecificationId?: string;
+  siteSpecificationIds?: string[];
   parentSiteId?: string | null;
   descendantOfSiteId?: string;
   characteristicName?: string;
@@ -2619,6 +2620,13 @@ const parseGeoListQuery = (
   const siteSpecificationId = params.get('siteSpecificationId');
   if (siteSpecificationId) {
     (query as { siteSpecificationId?: string }).siteSpecificationId = siteSpecificationId;
+  }
+  const siteSpecificationIds = params.get('siteSpecificationIds');
+  if (siteSpecificationIds) {
+    (query as { siteSpecificationIds?: string[] }).siteSpecificationIds = siteSpecificationIds
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
   }
   if (params.has('parentSiteId')) {
     const value = params.get('parentSiteId');

@@ -77,6 +77,7 @@ export interface IGeoRepository {
       name?: string;
       status?: GeographicSite['status'];
       siteSpecificationId?: string;
+      siteSpecificationIds?: string[];
       parentSiteId?: string | null;
       descendantOfSiteId?: string;
       characteristicName?: string;

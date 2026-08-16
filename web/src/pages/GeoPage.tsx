@@ -24,7 +24,7 @@ import {
   MapPin,
 } from 'lucide-react';
 import type { GeoStatus, GeoSpec, GeoSite } from '../services/geoApi';
-import { getJson, postJson } from '../services/geoApi';
+import { getJson, postJson, listGeoSites } from '../services/geoApi';
 import { siteKindFromSpec, siteKindLabel } from '../utils/placeLabel';
 import {
   siteStatusLabel,
@@ -491,18 +491,27 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       : mobileSheetState?.panelKey === mobilePanelKey
         ? mobileSheetState.state
         : null;
-  // Catálogo de locais: sites e tipos são dezenas de linhas e alimentam os modais
-  // de cadastro e detalhe. O acervo pesado (endereços, geometrias e a planta
-  // inteira) não vem mais por aqui — cada nó da árvore traz a sua geometria, e o
-  // resto se busca por id quando o modal abre.
+  // Catálogo de locais: as specs são dezenas de linhas e alimentam os modais de
+  // cadastro e detalhe (via `parentOptions` em SiteOverviewTab, para o seletor de
+  // local pai). `sites`, porém, deixou de ser "dezenas de linhas" — 62 mil
+  // Installation Points de uma carga só já bastam para travar a página (a
+  // consulta sem filtro nem tinha LIMIT). Especificações-folha (sem
+  // allowedChildSpecIds, ex.: Installation Point, Cabinet) nunca são pai de
+  // ninguém, então nunca precisam entrar aqui — só as que podem conter algo
+  // (Region, CO, POP, Floor, Room…), um conjunto que cresce com a topologia da
+  // rede, não com a quantidade de pontos de instalação. O acervo pesado
+  // (endereços, geometrias e a planta inteira) não vem por aqui de qualquer
+  // forma — cada nó da árvore traz a sua geometria, e o resto se busca por id
+  // quando o modal abre.
   const loadGeo = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [siteData, specData] = await Promise.all([
-        getJson<GeoSite[]>('/v1/geo/sites'),
-        getJson<GeoSpec[]>('/v1/geo/site-specifications'),
-      ]);
+      const specData = await getJson<GeoSpec[]>('/v1/geo/site-specifications');
+      const containerSpecIds = specData
+        .filter((spec) => spec.allowedChildSpecIds.length > 0)
+        .map((spec) => spec.id);
+      const siteData = await listGeoSites({ siteSpecificationIds: containerSpecIds });
       setSites(siteData);
       setSpecs(specData);
     } catch (err) {

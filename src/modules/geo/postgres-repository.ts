@@ -632,6 +632,7 @@ export class PostgresGeoRepository implements IGeoRepository {
       name?: string;
       status?: GeographicSite['status'];
       siteSpecificationId?: string;
+      siteSpecificationIds?: string[];
       parentSiteId?: string | null;
       descendantOfSiteId?: string;
       characteristicName?: string;
@@ -658,6 +659,12 @@ export class PostgresGeoRepository implements IGeoRepository {
     if (query?.siteSpecificationId) {
       conditions.push('site_specification_id = ?');
       params.push(query.siteSpecificationId);
+    }
+    if (query?.siteSpecificationIds && query.siteSpecificationIds.length > 0) {
+      conditions.push(
+        `site_specification_id IN (${query.siteSpecificationIds.map(() => '?').join(', ')})`,
+      );
+      params.push(...query.siteSpecificationIds);
     }
     if (query?.descendantOfSiteId) {
       const descendantIds = await this.collectDescendantSiteIds(query.descendantOfSiteId, query);

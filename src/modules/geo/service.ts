@@ -1973,6 +1973,7 @@ export class GeoService {
       name?: string;
       status?: GeoSiteStatus | GeoSiteStatusAlias;
       siteSpecificationId?: string;
+      siteSpecificationIds?: string[];
       parentSiteId?: string | null;
       descendantOfSiteId?: string;
       characteristicName?: string;

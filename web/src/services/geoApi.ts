@@ -168,7 +168,13 @@ export async function deleteJson(url: string): Promise<void> {
   if (!response.ok) throw new Error(`DELETE ${url} falhou (${response.status})`);
 }
 
-export const listGeoSites = () => getJson<GeoSite[]>('/v1/geo/sites');
+export const listGeoSites = (options?: { siteSpecificationIds?: string[] }) => {
+  const query =
+    options?.siteSpecificationIds && options.siteSpecificationIds.length > 0
+      ? `?siteSpecificationIds=${options.siteSpecificationIds.map(encodeURIComponent).join(',')}`
+      : '';
+  return getJson<GeoSite[]>(`/v1/geo/sites${query}`);
+};
 export const listGeoAddresses = () => getJson<GeoAddress[]>('/v1/geo/addresses');
 export const listGeoLocations = () => getJson<GeoLocation[]>('/v1/geo/locations');
 export const listGeoSiteSpecifications = () => getJson<GeoSpec[]>('/v1/geo/site-specifications');

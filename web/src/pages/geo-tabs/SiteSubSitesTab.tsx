@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, MoreHorizontal, Plus } from 'lucide-react';
 import { patchJson, postJson, type GeoSpec } from '../../services/geoApi';
 import { fetchTreeChildren, type GeoTreeNode } from '../../services/geoTreeApi';
-import { siteSpecLabel } from '../../utils/geoLabels';
+import { allowedChildSpecsOf, siteSpecLabel } from '../../utils/geoLabels';
 import { NodeIcon } from './HierarchyTreeView';
 import { Modal } from './Modal';
 
@@ -14,19 +14,6 @@ export type SiteSubSitesTabProps = {
   onOpenSubSite: (siteId: string) => void;
   onChanged: () => void;
 };
-
-// Specs de categoria SubSite que a spec do pai aceita como filho — a mesma checagem de
-// contenção que o backend faz em validateContainment, só para não oferecer no combo um
-// tipo que o PATCH recusaria de qualquer forma.
-const allowedChildSpecsOf = (parentSpec: GeoSpec | undefined, specs: GeoSpec[]): GeoSpec[] =>
-  !parentSpec
-    ? []
-    : specs.filter(
-        (spec) =>
-          spec.category === 'SubSite' &&
-          parentSpec.allowedChildSpecIds.includes(spec.id) &&
-          spec.allowedParentSpecIds.includes(parentSpec.id),
-      );
 
 type CreateTarget = { parentId: string; parentLabel: string; parentSpecificationId: string };
 type PendingDelete = { id: string; label: string };

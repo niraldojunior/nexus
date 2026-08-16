@@ -107,3 +107,24 @@ export function siteSpecNameLabel(name: string | undefined): string | undefined 
   if (!name) return undefined;
   return SITE_SPEC_LABEL_BY_NAME.get(name) ?? name;
 }
+
+// --- Containment (que tipo de sub-local cabe embaixo de qual pai) ---------------------
+
+// Specs de categoria SubSite que a spec do pai aceita como filho — a mesma checagem
+// bidirecional que o backend faz em validateContainment (src/modules/geo/service.ts), só
+// para não oferecer no combo um tipo que o PATCH recusaria de qualquer forma. Único cálculo
+// para os dois lugares que precisam dele: o combo de criação de sub-local (SiteSubSitesTab)
+// e o combo de tipo no cabeçalho do painel ao visualizar um sub-local já existente
+// (SitePanel/ViewHeader) — os dois usavam a mesma regra, um copiado do outro.
+export function allowedChildSpecsOf(
+  parentSpec: GeoSpec | undefined,
+  specs: GeoSpec[],
+): GeoSpec[] {
+  if (!parentSpec) return [];
+  return specs.filter(
+    (spec) =>
+      spec.category === 'SubSite' &&
+      parentSpec.allowedChildSpecIds.includes(spec.id) &&
+      spec.allowedParentSpecIds.includes(parentSpec.id),
+  );
+}

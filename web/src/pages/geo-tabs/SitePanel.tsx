@@ -16,7 +16,7 @@ import { fetchGeonetCandidates, fetchGeonetDetail, type GeonetAddressCandidate }
 import type { DraftAddress } from '../../utils/googleMaps';
 import { useSiteDetail } from '../../hooks/useSiteDetail';
 import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
-import { siteSpecLabel } from '../../utils/geoLabels';
+import { allowedChildSpecsOf, siteSpecLabel } from '../../utils/geoLabels';
 import { siteStreetViewMarker } from '../../utils/streetViewMarker';
 import {
   BottomSheet,
@@ -107,11 +107,34 @@ export function SitePanel({
   const [confirmingRemoveFromProject, setConfirmingRemoveFromProject] = useState(false);
   const [removingFromProject, setRemovingFromProject] = useState(false);
 
-  const siteSpecs = specs.filter(
-    (spec) =>
-      spec.category === 'Site' &&
-      (spec.lifecycleStatus === 'Active' || spec.id === detail.site?.siteSpecificationId),
-  );
+  const specById = new Map(specs.map((spec) => [spec.id, spec]));
+  const currentSpec = detail.site ? specById.get(detail.site.siteSpecificationId) : undefined;
+
+  // Combo de tipo do cabeçalho (ViewHeader) e do formulário de criação de Site raiz
+  // (CreateBody). Um sub-local (categoria SubSite) não escolhe livremente entre CO/POP/
+  // Cabinet/Ponto de Instalação — só entre os tipos que a spec do PAI aceita como filho
+  // (mesma regra de SiteSubSitesTab.allowedChildSpecsOf); os demais casos (criação de Site
+  // raiz, ou visualização de um Site que não é sub-local) seguem a lista fixa de tipos
+  // category:'Site'. `sites` já é o catálogo "container" (specs com filhos permitidos —
+  // ver GeoPage.loadGeo), então o pai de qualquer sub-local sempre está nele.
+  const parentSite =
+    currentSpec?.category === 'SubSite' && detail.site?.parentSite?.id
+      ? sites.find((candidate) => candidate.id === detail.site?.parentSite?.id)
+      : undefined;
+  const siteSpecs =
+    currentSpec?.category === 'SubSite'
+      ? (() => {
+          const parentSpec = parentSite ? specById.get(parentSite.siteSpecificationId) : undefined;
+          const options = allowedChildSpecsOf(parentSpec, specs);
+          return options.some((spec) => spec.id === currentSpec.id)
+            ? options
+            : [...options, currentSpec];
+        })()
+      : specs.filter(
+          (spec) =>
+            spec.category === 'Site' &&
+            (spec.lifecycleStatus === 'Active' || spec.id === detail.site?.siteSpecificationId),
+        );
 
   const handleBack = () => {
     if (stack.length > 1) {
@@ -153,7 +176,6 @@ export function SitePanel({
 
   const isCreating = mode === 'create' || !currentSiteId;
 
-  const specById = new Map(specs.map((spec) => [spec.id, spec]));
   const point = detail.location?.geometry.type === 'Point' ? detail.location.geometry.coordinates : null;
   const heroMarker =
     detail.site && point

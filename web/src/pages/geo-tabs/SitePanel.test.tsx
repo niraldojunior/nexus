@@ -167,6 +167,44 @@ describe('SitePanel', () => {
     expect(screen.getByLabelText('Status do local')).toBeInTheDocument();
   });
 
+  // Regressão: o combo de tipo do cabeçalho oferecia sempre a lista fixa de tipos
+  // category:'Site' (CO/POP/Cabinet/Ponto de Instalação…), mesmo ao visualizar um
+  // sub-local (categoria SubSite) — que nunca está nessa lista. Um sub-local só pode
+  // trocar entre os tipos que a spec do PAI aceita como filho.
+  it('sub-local: combo de tipo oferece só os tipos aceitos pelo pai, não a lista fixa de Site', () => {
+    const co = spec({
+      id: 'spec-co',
+      name: 'Central Office',
+      code: 'CO',
+      category: 'Site',
+      allowedChildSpecIds: ['spec-room'],
+    });
+    const room = spec({
+      id: 'spec-room',
+      name: 'Room',
+      code: 'ROOM',
+      category: 'SubSite',
+      allowedParentSpecIds: ['spec-co'],
+    });
+    const installationPoint = spec({ id: 'spec-pi', code: 'INSTALLATION_POINT' });
+    const coSite = site({ id: 'co-1', name: 'Icaraí (ICI)', siteSpecificationId: 'spec-co' });
+    const roomSite = site({
+      id: 'room-1',
+      name: 'Sala 1',
+      siteSpecificationId: 'spec-room',
+      parentSite: { id: 'co-1', '@referredType': 'GeographicSite' },
+    });
+
+    renderPanel(
+      { siteId: 'room-1', specs: [co, room, installationPoint], sites: [coSite, roomSite] },
+      { site: roomSite },
+    );
+
+    const combo = screen.getByLabelText('Tipo de local') as HTMLSelectElement;
+    const optionLabels = Array.from(combo.options).map((option) => option.text);
+    expect(optionLabels).toEqual(['Sala']);
+  });
+
   it('modo criação: botão Criar local fica desabilitado até um candidato Geonet ser escolhido', async () => {
     mocks.fetchGeonetCandidates.mockResolvedValue({
       status: 'ready',

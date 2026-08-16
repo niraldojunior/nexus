@@ -49,6 +49,7 @@ async function openPostgres() {
     provider: 'postgres',
     query: (sql, params) => client.query(sql, params),
     bulkInsert: (table, columns, rows, opts) => bulkInsertPg(client, table, columns, rows, opts),
+    gatherStats: (table) => client.query(`ANALYZE ${table}`),
     close: async () => {
       client.release();
       await pool.end();
@@ -94,6 +95,7 @@ async function openOracle() {
     query: (sql, params = []) => oracleQuery(conn, prefix, sql, params),
     bulkInsert: (table, columns, rows, opts) =>
       bulkInsertOracle(conn, prefix, table, columns, rows, opts),
+    gatherStats: (table) => gatherStatsOracle(conn, prefix, table),
     close: async () => {
       try {
         await conn.commit();
@@ -141,9 +143,13 @@ async function oracleQuery(conn, prefix, sql, params) {
     }
     return { rows: [], rowCount: 0 };
   }
+  // fetchArraySize default (100) forces a round-trip every 100 rows — the loaders' bootstrap
+  // SELECTs (specs, projects, existing sites/addresses) can return tens of thousands of rows.
   const res = await conn.execute(toOracleSql(sql, prefix), (params ?? []).map(normalizeBindValue), {
     outFormat: oracledb.OUT_FORMAT_OBJECT,
     autoCommit: false,
+    fetchArraySize: 2000,
+    prefetchRows: 2000,
   });
   return {
     rows: (res.rows ?? []).map(lowerKeys),
@@ -222,4 +228,22 @@ async function bulkInsertOracle(conn, prefix, table, columns, rows, { onConflict
     inserted += block.length - errors.length;
   }
   return inserted;
+}
+
+// Optimizer statistics go stale after any bulk load — the CBO then picks plans sized for the row
+// counts it saw at the last GATHER (e.g. it once thought geo_project_site had 6 rows when it had
+// 62,492), turning cheap joins into nested-loop scans. Table names fold to uppercase unquoted, same
+// as every other DDL/DML this adapter emits — GATHER_TABLE_STATS' tabname is looked up against the
+// data dictionary, which stores unquoted identifiers uppercase.
+async function gatherStatsOracle(conn, prefix, table) {
+  const tableName = prefixed(table, prefix).toUpperCase();
+  await conn.execute(
+    `BEGIN DBMS_STATS.GATHER_TABLE_STATS(
+       ownname => USER, tabname => :1, cascade => TRUE,
+       estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+       method_opt => 'FOR ALL COLUMNS SIZE AUTO'
+     ); END;`,
+    [tableName],
+    { autoCommit: false },
+  );
 }

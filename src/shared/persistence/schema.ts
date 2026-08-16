@@ -139,16 +139,12 @@ export const MIGRATIONS_SQL = `
   ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS street_nr_search TEXT;
   ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS city_search TEXT;
   ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS postcode_search TEXT;
-  UPDATE tmf_geographic_address
-     SET street_search = LOWER(TRANSLATE(street_name,
-           'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
-           'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc')),
-         street_nr_search = LOWER(REPLACE(REPLACE(COALESCE(street_nr, ''), ' ', ''), '-', '')),
-         city_search = LOWER(TRANSLATE(COALESCE(city, ''),
-           'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
-           'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc')),
-         postcode_search = REPLACE(REPLACE(COALESCE(postcode, ''), ' ', ''), '-', '')
-   WHERE street_search IS NULL OR street_nr_search IS NULL OR city_search IS NULL OR postcode_search IS NULL;
+  -- The one-time backfill of these four columns (for rows written before they existed) used to run
+  -- here as an UPDATE ... WHERE col IS NULL OR col IS NULL OR ... — a predicate that can't be
+  -- served by a single index, so on every boot with DATABASE_AUTO_SCHEMA=true it forced a full
+  -- table scan of tmf_geographic_address (783k rows in dev today) even though every write already
+  -- populates these columns (see PostgresGeoRepository). Moved to a standalone, run-once script:
+  -- node scripts/backfill-address-search.mjs --apply
   CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_search
     ON tmf_geographic_address(tenant_id, postcode_search, street_nr_search);
   CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_street_search
@@ -314,6 +310,27 @@ export const MIGRATIONS_SQL = `
   ALTER TABLE geo_project ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'planned';
   ALTER TABLE geo_project_site ADD COLUMN IF NOT EXISTS note TEXT;
   ALTER TABLE geo_project_site ADD COLUMN IF NOT EXISTS geonet_address_id TEXT;
+
+  -- Índices que faltavam para a escala de carga massiva de Sites/Recursos (issue #52).
+  -- Sem o primeiro, todo NOT EXISTS por resource_to_id (GeoTreeService
+  -- .childrenOfSite / .sitesWithChildren, "planta externa da estação ainda sem pai")
+  -- só tinha a PK (resource_from_id, resource_to_id, relationship_type) para varrer —
+  -- inútil quando a busca entra por resource_to_id, forçando INDEX FAST FULL SCAN da
+  -- tabela inteira a cada expansão de nó na árvore.
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_relationship_reverse
+    ON tmf_resource_relationship(resource_to_id, relationship_type);
+  -- geo_project_site só tinha a PK (project_id, site_id) — todo ORDER BY ps.position
+  -- (listagem de locais de um projeto, na ordem salva) ordenava em memória.
+  CREATE INDEX IF NOT EXISTS idx_geo_project_site_project_position
+    ON geo_project_site(project_id, position);
+  -- Cobre o filtro mais comum da árvore/workspace (tenant + tipo de local + status) sem
+  -- cair no índice solto de tenant_id sozinho.
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_tenant_spec_status
+    ON tmf_geographic_site(tenant_id, site_specification_id, status);
+  -- Par com idx_tmf_physical_resource_serving_site: a mesma consulta filtra por
+  -- serving_site_id e descarta Splitter (INTERNAL_RESOURCE_TYPE) logo em seguida.
+  CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_serving_type
+    ON tmf_physical_resource(serving_site_id, resource_type);
 `;
 
 export const SCHEMA_SQL = `

@@ -880,6 +880,18 @@ async function main() {
     console.log(`  splitters órfãos: ${orphanResources.length}  (avulsos, sob o nó agrupador)`);
     console.log(`  relacionamentos : ${relationships.length}`);
     console.log(`  total recursos na base: ${check.n}`);
+
+    console.log('\nAtualizando estatísticas...');
+    for (const table of [
+      'tmf_resource_specification',
+      'tmf_geographic_location',
+      'tmf_geographic_address',
+      'tmf_physical_resource',
+      'tmf_resource_relationship',
+    ]) {
+      await client.gatherStats(table);
+    }
+    console.log('Estatísticas atualizadas.');
   } finally {
     await client.close();
   }

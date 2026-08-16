@@ -25,9 +25,13 @@ type CdoRow = {
   geometry: string | null;
 };
 
-// Mesmo recorte de scripts/build-gpon-coverage.mjs: só PhysicalResource CTO, não terminada, com
-// nome começando em CDO (verificado de novo em JS após o LIKE — LIKE 'CDO%' já filtra o grosso no
-// banco, mas o regex é quem decide de fato, para não depender de espaço/caixa da coluna).
+// Mesmo recorte de scripts/build-gpon-coverage.mjs: só PhysicalResource CTO com nome
+// começando em CDO (verificado de novo em JS após o LIKE — LIKE 'CDO%' já filtra o grosso
+// no banco, mas o regex é quem decide de fato, para não depender de espaço/caixa da
+// coluna). Diferente do build-gpon-coverage (que mapeia active/demais como
+// disponível/indisponível para o mapa de calor), aqui só entra CDO com status = 'active'
+// ("Ativa" na UI, ver ViabilityTab.tsx) — uma CDO suspensa/bloqueada não é candidata
+// viável para um drop novo.
 const CDO_NAME = /^\s*CDO/i;
 
 // As duas expressões de coordenada abaixo precisam ficar exatamente nesta forma textual: é o que
@@ -38,7 +42,7 @@ const NEARBY_CDO_SQL = `
     FROM tmf_physical_resource r
     JOIN tmf_geographic_location l ON l.id = r.place_id
    WHERE r.resource_type = 'CTO'
-     AND r.status <> 'terminated'
+     AND r.status = 'active'
      AND UPPER(r.name) LIKE 'CDO%'
      AND l.geometry_type = 'Point'
      AND (l.geometry::jsonb->'coordinates'->>0)::float8 BETWEEN ? AND ?

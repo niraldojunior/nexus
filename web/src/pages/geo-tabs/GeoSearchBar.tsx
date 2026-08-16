@@ -13,6 +13,7 @@ import { useGeoSearchHistory } from '../../hooks/useGeoSearchHistory';
 import { DOCK_SEARCH_WIDTH_CLASS } from './dock';
 import { HierarchyIcon } from './HierarchyIcon';
 import { NodeIcon } from './HierarchyTreeView';
+import { siteSpecNameLabel } from '../../utils/geoLabels';
 
 export type AddressSearchError = { term: string; status: string; message: string };
 
@@ -357,8 +358,9 @@ export function GeoSearchBar({
                 aria-label={
                   selection.type === 'address'
                     ? 'Endereço'
-                    : (selection.node.sublabel ??
-                      (selection.node.kind === 'site' ? 'Estação' : 'Recurso'))
+                    : selection.node.kind === 'site'
+                      ? (siteSpecNameLabel(selection.node.sublabel) ?? 'Estação')
+                      : (selection.node.sublabel ?? 'Recurso')
                 }
                 className="shrink-0"
               >
@@ -525,7 +527,12 @@ export function GeoSearchBar({
                       </span>
                       {node.sublabel || node.detail?.address ? (
                         <span className="block truncate text-[0.72rem] text-app-muted">
-                          {[node.sublabel, node.detail?.address].filter(Boolean).join(' · ')}
+                          {[
+                            node.kind === 'site' ? (siteSpecNameLabel(node.sublabel) ?? node.sublabel) : node.sublabel,
+                            node.detail?.address,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
                         </span>
                       ) : null}
                     </span>

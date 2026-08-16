@@ -15,13 +15,7 @@ import {
 import { DOCK_WIDTH_CLASS, DOCK_ELEVATION_CLASS, DOCK_SEARCH_CLEARANCE_PT_CLASS } from './dock';
 import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
 import { readProjectIcon, ProjectIconError } from '../../utils/projectIconImage';
-
-const PROJECT_STATUS_OPTIONS: Array<{ value: GeoStatus; label: string }> = [
-  { value: 'planned', label: 'Planejado' },
-  { value: 'active', label: 'Ativo' },
-  { value: 'suspended', label: 'Suspenso' },
-  { value: 'terminated', label: 'Terminado' },
-];
+import { PROJECT_STATUS_OPTIONS } from '../../utils/geoLabels';
 
 export type ProjectDetailPanelProps = {
   isMobile: boolean;

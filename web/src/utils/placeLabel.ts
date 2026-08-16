@@ -3,6 +3,7 @@
 // diretório Geo já disponível nos endpoints /v1/geo/*.
 
 import type { GeoAddress, GeoLocation, GeoSite, GeoSpec } from '../services/geoApi';
+import { siteSpecLabel } from './geoLabels';
 
 // Tipo semântico de local, derivado da categoria TMF + nome do tipo.
 // Substitui o antigo "layerForSpec" baseado só em string do nome.
@@ -128,7 +129,7 @@ export function listPlaceOptions(directory: GeoDirectory): PlaceOption[] {
     const spec = directory.specById.get(site.siteSpecificationId);
     const kind = siteKindFromSpec(spec);
     const address = site.address ? directory.addressById.get(site.address.id) : undefined;
-    const typeLabel = spec?.name ?? siteKindLabel[kind];
+    const typeLabel = spec ? siteSpecLabel(spec) : siteKindLabel[kind];
     const addressText = address ? formatAddress(address) : '';
     options.push({
       id: site.id,
@@ -175,7 +176,7 @@ function labelForSite(site: GeoSite, directory: GeoDirectory): ResolvedPlaceLabe
   return {
     name: site.name,
     kind,
-    typeLabel: spec?.name ?? siteKindLabel[kind],
+    typeLabel: spec ? siteSpecLabel(spec) : siteKindLabel[kind],
     address: address ? formatAddress(address) : null,
     id: site.id,
     resolved: true,

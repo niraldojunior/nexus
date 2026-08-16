@@ -5,6 +5,7 @@ import type { GeoTreeRow } from '../../utils/geoHierarchy';
 import { ResourceIcon } from '../../components/ResourceIcon';
 import { siteIconDataUrl, siteIconFor } from '../../utils/siteIcon';
 import { siteKindFromSpec } from '../../utils/placeLabel';
+import { siteSpecNameLabel } from '../../utils/geoLabels';
 
 export type HierarchyTreeViewProps = {
   rows: GeoTreeRow[];
@@ -137,7 +138,11 @@ function TreeRow({
           onMouseLeave={() => onHover?.(null)}
           onFocus={() => onHover?.(node)}
           onBlur={() => onHover?.(null)}
-          title={node.sublabel ? `${node.label} · ${node.sublabel}` : node.label}
+          title={
+            node.sublabel
+              ? `${node.label} · ${node.kind === 'site' ? (siteSpecNameLabel(node.sublabel) ?? node.sublabel) : node.sublabel}`
+              : node.label
+          }
           className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left leading-tight"
         >
           <NodeIcon node={node} />
@@ -180,7 +185,7 @@ export function NodeIcon({ node }: { node: GeoTreeNode }) {
   }
   if (node.kind === 'site') {
     const kind = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
-    const icon = siteIconFor(kind, node.status === 'terminated' ? 'terminated' : 'active');
+    const icon = siteIconFor(kind, node.status);
     return <img src={siteIconDataUrl(icon, { size: 20 })} alt="" className="h-5 w-5 shrink-0" />;
   }
   const Icon = node.kind === 'uf' ? Map : node.kind === 'city' ? Building2 : FolderTree;

@@ -9,7 +9,6 @@
 
 import { renderIconSvg, toDataUrl, type IconNode } from './resourceIcon';
 import { siteKindLabel, type SiteKind } from './placeLabel';
-import type { GeoStatus } from '../services/geoApi';
 
 export type SiteIcon = {
   kind: SiteKind;
@@ -31,11 +30,13 @@ export const siteKindColor: Record<SiteKind, string> = {
   SITE: '#ffd200', // --vt-yellow
 };
 
-// O estado de vida do site vence o tipo: um local terminado ou suspenso precisa
-// gritar isso, não o seu papel na rede.
-const STATUS_COLOR: Partial<Record<GeoStatus, string>> = {
-  terminated: '#94a3b8', // --text-tertiary
-  suspended: '#f59e0b', // --status-amber
+// O estado de vida do site vence o tipo: um local aposentado ou em desativação precisa
+// gritar isso, não o seu papel na rede. Chaves no vocabulário canônico de
+// GeographicSite.status (GeoSiteStatus) — quem chama passa `site.status`/`node.status`
+// direto, sem cast, já que a busca abaixo é seguro para qualquer string.
+const STATUS_COLOR: Record<string, string> = {
+  Retired: '#94a3b8', // --text-tertiary
+  InDeactivation: '#f59e0b', // --status-amber
 };
 
 const ICONS: Record<SiteKind, { glyph: string; node: IconNode }> = {
@@ -115,7 +116,7 @@ const ICONS: Record<SiteKind, { glyph: string; node: IconNode }> = {
   },
 };
 
-export function siteIconFor(kind: SiteKind, status?: GeoStatus): SiteIcon {
+export function siteIconFor(kind: SiteKind, status?: string): SiteIcon {
   const entry = ICONS[kind] ?? ICONS.SITE;
   return {
     kind,

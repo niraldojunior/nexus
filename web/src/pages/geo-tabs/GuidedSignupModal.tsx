@@ -1,6 +1,6 @@
 import { useState, useMemo, type FormEvent } from 'react';
 import { ChevronLeft, MapPin } from 'lucide-react';
-import type { GeoStatus, GeoSpec, GeoSite } from '../../services/geoApi';
+import type { GeoSiteStatus, GeoSpec, GeoSite } from '../../services/geoApi';
 import { postJson } from '../../services/geoApi';
 import {
   siteKindFromSpec,
@@ -8,6 +8,7 @@ import {
   siteKindDescription,
   type SiteKind,
 } from '../../utils/placeLabel';
+import { SITE_STATUS_OPTIONS, siteSpecLabel } from '../../utils/geoLabels';
 
 type Step = 'kind' | 'location' | 'details';
 
@@ -52,7 +53,7 @@ export function GuidedSignupModal({
       ? `${siteKindLabel[siteKindFromSpec(specById.get(siteSpecificationId))].split('/')[0].trim()} - ${draftAddress.street}`
       : '',
   );
-  const [status, setStatus] = useState<GeoStatus>('planned');
+  const [status, setStatus] = useState<GeoSiteStatus>('Planned');
   const [parentSiteId, setParentSiteId] = useState(selectedSite?.id ?? '');
   const [fedBySiteId, setFedBySiteId] = useState('');
   const [saving, setSaving] = useState(false);
@@ -225,7 +226,7 @@ export function GuidedSignupModal({
                     <option value="">Selecione...</option>
                     {specs.map((spec) => (
                       <option key={spec.id} value={spec.id}>
-                        {spec.name}
+                        {siteSpecLabel(spec)}
                       </option>
                     ))}
                   </select>
@@ -249,13 +250,14 @@ export function GuidedSignupModal({
                   </label>
                   <select
                     value={status}
-                    onChange={(event) => setStatus(event.target.value as GeoStatus)}
+                    onChange={(event) => setStatus(event.target.value as GeoSiteStatus)}
                     className="geo-input mt-2"
                   >
-                    <option value="planned">Planejado</option>
-                    <option value="active">Ativo</option>
-                    <option value="suspended">Suspenso</option>
-                    <option value="terminated">Terminado</option>
+                    {SITE_STATUS_OPTIONS.map(({ value, label }) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

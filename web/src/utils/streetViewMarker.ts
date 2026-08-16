@@ -1,4 +1,3 @@
-import type { GeoStatus } from '../services/geoApi';
 import { resourceIconDataUrl, resourceIconFor, type IconResourceLike } from './resourceIcon';
 import { selectionPinDataUrl, siteIconDataUrl, siteIconFor } from './siteIcon';
 import { siteKindFromSpec } from './placeLabel';
@@ -7,7 +6,7 @@ import type { StreetViewMarker } from './streetViewPanorama';
 const STREET_VIEW_MARKER_SIZE = 40;
 
 export function siteStreetViewMarker(
-  site: { name: string; status?: GeoStatus },
+  site: { name: string; status?: string },
   spec: { category?: string; name?: string } | undefined,
   point: [number, number],
 ): StreetViewMarker {

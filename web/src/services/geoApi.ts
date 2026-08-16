@@ -3,7 +3,15 @@
 // ResourcePage e ServicePage. Não muda o modelo canônico TMF — apenas expõe
 // os dados já existentes para que outras telas resolvam rótulos amigáveis.
 
+// Vocabulário de GeoProject.status (REQ-MOD01-015) — NÃO é o status de GeographicSite,
+// que usa o vocabulário canônico de 5 estados abaixo (GeoSiteStatus). Os dois nunca
+// colidem como chave de dicionário porque um é lowercase e o outro PascalCase, mas são
+// domínios diferentes — não use GeoStatus para status de site.
 export type GeoStatus = 'planned' | 'active' | 'suspended' | 'terminated';
+
+// Vocabulário canônico de GeographicSite.status (src/modules/geo/domain.ts GeoSiteStatus)
+// — o que a API realmente devolve em /v1/geo/sites e /v1/geo/tree/*.
+export type GeoSiteStatus = 'Planned' | 'InConstruction' | 'Active' | 'InDeactivation' | 'Retired';
 
 export type GeoGeometry =
   | { type: 'Point'; coordinates: [number, number] }
@@ -41,7 +49,9 @@ export type GeoSpec = {
   id: string;
   href: string;
   name: string;
+  code: string;
   category: GeoSpecCategory;
+  lifecycleStatus: 'Active' | 'Retired';
   allowedParentSpecIds: string[];
   allowedChildSpecIds: string[];
 };
@@ -57,7 +67,7 @@ export type GeoSite = {
   id: string;
   href: string;
   name: string;
-  status: GeoStatus;
+  status: GeoSiteStatus;
   siteSpecificationId: string;
   siteSpecification: { id: string; '@referredType': 'GeographicSiteSpecification' };
   place?: { id: string; '@referredType': 'GeographicLocation' };

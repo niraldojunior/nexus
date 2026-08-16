@@ -11,7 +11,9 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import type { GeoSpec, GeoStatus } from '../../services/geoApi';
+import type { GeoSiteStatus, GeoSpec } from '../../services/geoApi';
+import { patchJson } from '../../services/geoApi';
+import { SITE_STATUS_OPTIONS, siteSpecLabel } from '../../utils/geoLabels';
 import {
   createProjectSite,
   removeProjectSite,
@@ -44,7 +46,6 @@ import { GoogleMapsIcon, VtalIcon } from './AddressSourceIcons';
 import { IconInfoRow } from './IconInfoRow';
 import { Modal } from './Modal';
 import { PanelBarButton } from './PanelBarButton';
-import { StatusBadge } from './StatusBadge';
 import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
 
 const ADDRESS_DEBOUNCE_MS = 250;
@@ -83,8 +84,10 @@ const googleGeocodeInFlight = new Map<string, ReturnType<typeof geocodeAddress>>
  * pede um endereço com ID real do GEONET (por busca ou por um ponto escolhido no mapa,
  * reconsultado no GEONET), nome, tipo e observação — sem status: o local nasce e permanece
  * com o status do projeto (herança, não escolha do formulário). Em consulta, mostra a foto de
- * Street View, título e tipo editáveis no cabeçalho (mesmo espírito do painel de Projeto) e
- * duas abas: Visão geral (tipo, status herdado, observação) e Endereço (GEONET + Google Maps).
+ * Street View, título e tipo editáveis no cabeçalho (o tipo só aparece ali, não se repete na
+ * aba Visão geral) e duas abas: Visão geral (status — herdado do projeto enquanto ele está em
+ * curso, ou próprio + "Projeto de origem" depois que o projeto termina, ver projectTerminated
+ * — e observação) e Endereço (GEONET + Google Maps).
  */
 export function ProjectSitePanel({
   isMobile,
@@ -104,16 +107,46 @@ export function ProjectSitePanel({
 }: ProjectSitePanelProps) {
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
   const mode: 'create' | 'view' = site ? 'view' : 'create';
-  const siteSpecs = specs.filter((spec) => spec.category === 'Site');
+  const siteSpecs = specs.filter(
+    (spec) =>
+      spec.category === 'Site' &&
+      (spec.lifecycleStatus === 'Active' || spec.id === site?.siteSpecificationId),
+  );
+
+  // Maioria dos locais de projeto é Ponto de Instalação — evita que quem cria esqueça de
+  // trocar a combo e salve com o primeiro tipo da lista (era Cabinet/Gabinete, alfabético).
+  const defaultSiteSpecId =
+    siteSpecs.find((spec) => spec.code === 'INSTALLATION_POINT')?.id ?? siteSpecs[0]?.id ?? '';
 
   const [nameDraft, setNameDraft] = useState(site?.label ?? '');
   const [siteSpecificationId, setSiteSpecificationId] = useState(
-    site?.siteSpecificationId ?? siteSpecs[0]?.id ?? '',
+    site?.siteSpecificationId ?? defaultSiteSpecId,
   );
   const [noteDraft, setNoteDraft] = useState(site?.note ?? '');
   const [tab, setTab] = useState<'overview' | 'address'>('overview');
   const noteRef = useAutoResizeTextarea(noteDraft, 160);
   const titleInputRef = useRef<HTMLInputElement>(null);
+
+  // O local só ganha status próprio quando o projeto que o originou termina (ver
+  // changeSiteStatus abaixo) — enquanto o projeto está em curso, nenhuma info de status
+  // aparece neste painel (nem herdada, nem editável).
+  const [nextSiteStatus, setNextSiteStatus] = useState<GeoSiteStatus>(
+    (site?.status as GeoSiteStatus) ?? 'Active',
+  );
+  const [changingSiteStatus, setChangingSiteStatus] = useState(false);
+
+  // `site` chega `null` no primeiro render logo após criar — a lista do projeto ainda não
+  // recarregou (ver handleProjectSiteCreated em GeoPage.tsx) — e só é preenchido quando o
+  // refetch termina, sem remontar este painel (a `key` já fixou no siteId novo). Sem este
+  // efeito, nome/tipo/observação/status ficam presos nos valores em branco/primeira opção do
+  // render de criação que passou batendo, mesmo depois do local real chegar via prop.
+  useEffect(() => {
+    if (!site) return;
+    setNameDraft(site.label);
+    setSiteSpecificationId(site.siteSpecificationId ?? defaultSiteSpecId);
+    setNoteDraft(site.note ?? '');
+    setNextSiteStatus((site.status as GeoSiteStatus) ?? 'Active');
+  }, [site?.refId]);
 
   // Busca GEONET (criação) — texto digitado ou herdado do reverse geocode do clique no mapa.
   const [addressQuery, setAddressQuery] = useState('');
@@ -246,6 +279,23 @@ export function ProjectSitePanel({
     if (next !== (site.note ?? '')) void patchSite({ note: next || null });
   };
 
+  // Fora da rota /projects/:id/sites/:siteId (que nunca aceita status — ver app.ts): uma vez
+  // que o projeto terminou, o local edita seu próprio status pela rota geral de Site, como
+  // qualquer local avulso (mesmo padrão do SiteDetailBody em GeoPage.tsx).
+  const changeSiteStatus = async () => {
+    if (!site?.refId) return;
+    setChangingSiteStatus(true);
+    setError(null);
+    try {
+      await patchJson(`/v1/geo/sites/${site.refId}`, { status: nextSiteStatus });
+      onSiteChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível mudar o status.');
+    } finally {
+      setChangingSiteStatus(false);
+    }
+  };
+
   const handleRemove = async () => {
     if (!site?.refId) return;
     setConfirmingRemove(false);
@@ -350,7 +400,7 @@ export function ProjectSitePanel({
           <option value="">Selecione...</option>
           {siteSpecs.map((spec) => (
             <option key={spec.id} value={spec.id}>
-              {spec.name}
+              {siteSpecLabel(spec)}
             </option>
           ))}
         </select>
@@ -370,13 +420,6 @@ export function ProjectSitePanel({
         />
       </div>
 
-      <div className="flex items-center gap-2 rounded-[12px] border border-app-border bg-app-panel px-3 py-2">
-        <StatusBadge status={project.status} />
-        <span className="text-[0.76rem] text-app-muted">
-          Este local nasce com o status do projeto.
-        </span>
-      </div>
-
       {error ? <p className="text-[0.8rem] text-status-red">{error}</p> : null}
 
       <div className="flex items-center justify-end border-t border-app-border pt-4">
@@ -392,23 +435,41 @@ export function ProjectSitePanel({
     </div>
   );
 
+  // Enquanto o projeto está em curso, o status do local é só um reflexo do status do
+  // projeto (cascata best-effort) — sem controle próprio aqui, ver comentário em
+  // changeSiteStatus. Terminado o projeto, o local vira uma entidade com vida própria: ganha
+  // o controle de status que ele nunca teve (editável) e um registro do projeto que o
+  // originou (só leitura, não editável).
+  const projectTerminated = project.status === 'terminated';
+
   const viewOverviewTab = site ? (
     <div className="grid gap-3">
-      <IconInfoRow
-        icon={InfoIcon}
-        hint="Tipo de local"
-        value={siteSpecs.find((spec) => spec.id === siteSpecificationId)?.name ?? '—'}
-      />
-      <div className="flex items-center gap-2 py-1">
-        {/* O status mostrado é o do projeto (fonte confiável do alias usado por StatusBadge),
-            não `site.status` — o valor canônico devolvido pela árvore (ex.: "Active") não bate
-            com o vocabulário de GeoStatus, e a cascata (best-effort) garante que os dois
-            raramente divergem de qualquer forma. */}
-        <StatusBadge status={project.status} />
-        <span className="text-[0.72rem] text-app-muted">
-          Herdado do projeto — mude o status do projeto para alterar.
-        </span>
-      </div>
+      {projectTerminated ? (
+        <>
+          <IconInfoRow icon={InfoIcon} hint="Projeto de origem" value={project.name} />
+          <div className="grid min-w-0 gap-2 rounded-[14px] border border-app-border p-3">
+            <select
+              value={nextSiteStatus}
+              onChange={(event) => setNextSiteStatus(event.target.value as GeoSiteStatus)}
+              className="geo-input"
+            >
+              {SITE_STATUS_OPTIONS.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="geo-btn primary justify-center"
+              disabled={changingSiteStatus}
+              onClick={() => void changeSiteStatus()}
+            >
+              {changingSiteStatus ? 'Salvando…' : 'Mudar status'}
+            </button>
+          </div>
+        </>
+      ) : null}
       <div className="grid gap-1.5">
         <label className="text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">
           Observação
@@ -492,7 +553,7 @@ export function ProjectSitePanel({
   const heroMarker =
     site && point
       ? siteStreetViewMarker(
-          { name: site.label, status: site.status as GeoStatus | undefined },
+          { name: site.label, status: site.status },
           siteSpecs.find((spec) => spec.id === site.siteSpecificationId),
           point,
         )
@@ -530,7 +591,7 @@ export function ProjectSitePanel({
         >
           {siteSpecs.map((spec) => (
             <option key={spec.id} value={spec.id}>
-              {spec.name}
+              {siteSpecLabel(spec)}
             </option>
           ))}
         </select>

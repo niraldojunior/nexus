@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import type {
   GeoStatus,
+  GeoSiteStatus,
   GeoLocation,
   GeoAddress,
   GeoSpec,
@@ -40,6 +41,13 @@ import type {
 } from '../services/geoApi';
 import { getJson, postJson, patchJson } from '../services/geoApi';
 import { siteKindFromSpec, siteKindLabel, formatAddress } from '../utils/placeLabel';
+import {
+  SITE_STATUS_OPTIONS,
+  siteStatusLabel,
+  siteSpecLabel,
+  siteSpecCategoryLabel,
+  siteSpecNameLabel,
+} from '../utils/geoLabels';
 import {
   fetchTreeChildren,
   fetchViewportResources,
@@ -275,7 +283,10 @@ const MAP_STYLES = [
   { featureType: 'poi', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
 ];
 
-const statusLabel: Record<GeoStatus, string> = {
+// Só para o balão de Recurso (linha ~980) — status de Resource é um vocabulário à parte
+// do de GeographicSite (ver siteStatusLabel/SITE_STATUS_OPTIONS em utils/geoLabels.ts),
+// fora do escopo desta rodada de tradução.
+const resourceStatusLabel: Record<GeoStatus, string> = {
   planned: 'Planejado',
   active: 'Ativo',
   suspended: 'Suspenso',
@@ -949,16 +960,15 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     if (detailOpen && selectedNode?.id === node.id) return null;
     const point = treeNodePoint(node);
     if (!point) return null;
-    const status = statusLabel[(node.status as GeoStatus) ?? 'active'];
 
     if (node.kind === 'site') {
       const kindOfSite = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
-      const icon = siteIconFor(kindOfSite, (node.status as GeoStatus) ?? 'active');
+      const icon = siteIconFor(kindOfSite, node.status);
       // O pin do local é centrado na coordenada e cresce quando selecionado.
       const pinSize = SITE_ICON_SIZE + 8;
       const rows: Array<[string, string]> = [
         ['Endereço', node.detail?.address ?? 'Sem endereço'],
-        ['Status', status],
+        ['Status', siteStatusLabel(node.status)],
       ];
       if (node.detail?.substatus) rows.push(['Substatus', node.detail.substatus]);
       if (node.detail?.model) rows.push(['Modelo', node.detail.model]);
@@ -967,12 +977,13 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         point,
         offset: [0, -(pinSize / 2 + 6)],
         iconUrl: siteIconDataUrl(icon, { size: 40 }),
-        eyebrow: node.sublabel ?? siteKindLabel[kindOfSite],
+        eyebrow: siteSpecNameLabel(node.sublabel) ?? siteKindLabel[kindOfSite],
         title: node.label,
         rows,
       };
     }
 
+    const status = resourceStatusLabel[(node.status as GeoStatus) ?? 'active'];
     const icon = resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
     // Cabo não tem pin: o balão nasce sobre o traçado, sem folga de ícone.
     const isCable = Boolean(treeNodeRoute(node));
@@ -1697,7 +1708,7 @@ export function GoogleMapPanel({
 
       if (node.kind === 'site') {
         const kind = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
-        const icon = siteIconFor(kind, (node.status as GeoStatus) ?? 'active');
+        const icon = siteIconFor(kind, node.status);
         // O selecionado cresce; o resto segue o tier de escala (cheio perto, pequeno em 5–50 km).
         const baseSize = stationTier === 'small' ? SITE_ICON_SMALL_SIZE : SITE_ICON_SIZE;
         const size = selected ? SITE_ICON_SIZE + 8 : baseSize;
@@ -2451,7 +2462,7 @@ function FallbackMap({
         const icon = isSite
           ? siteIconFor(
               siteKindFromSpec({ category: node.siteCategory, name: node.sublabel }),
-              (node.status as GeoStatus) ?? 'active',
+              node.status,
             )
           : resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
         const url = isSite
@@ -2528,7 +2539,7 @@ function GeoDetailPanel({
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
   const eyebrow =
     target.kind === 'site'
-      ? `Site · ${specById.get(target.site.siteSpecificationId)?.name ?? 'Tipo não informado'}`
+      ? `Site · ${siteSpecLabel(specById.get(target.site.siteSpecificationId))}`
       : (target.node.sublabel ?? resourceIconFor(target.node.resourceType ?? '').label);
   const title = target.kind === 'site' ? target.site.name : target.node.label;
 
@@ -2671,7 +2682,7 @@ function SiteDetailBody({
   const { subSites, resources, loading: childrenLoading } = useSiteChildren(site.id);
   const [relationshipTarget, setRelationshipTarget] = useState('');
   const [relationshipType, setRelationshipType] = useState('fedBy');
-  const [nextStatus, setNextStatus] = useState<GeoStatus>(site.status);
+  const [nextStatus, setNextStatus] = useState<GeoSiteStatus>(site.status);
 
   const addRelationship = async () => {
     if (!relationshipTarget || !relationshipType.trim()) return;
@@ -2787,7 +2798,7 @@ function SiteDetailBody({
                     src={siteIconDataUrl(
                       siteIconFor(
                         siteKindFromSpec({ category: child.siteCategory, name: child.sublabel }),
-                        (child.status as GeoStatus) ?? 'active',
+                        child.status,
                       ),
                       { size: 28 },
                     )}
@@ -2799,8 +2810,7 @@ function SiteDetailBody({
                       {child.label}
                     </span>
                     <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
-                      {child.sublabel ?? 'Sub-local'} ·{' '}
-                      {statusLabel[(child.status as GeoStatus) ?? 'active']}
+                      {siteSpecNameLabel(child.sublabel) ?? 'Sub-local'} · {siteStatusLabel(child.status)}
                     </span>
                   </span>
                   <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">
@@ -2869,10 +2879,10 @@ function SiteDetailBody({
           <div className="grid min-w-0 gap-2 rounded-[14px] border border-app-border p-3">
             <select
               value={nextStatus}
-              onChange={(event) => setNextStatus(event.target.value as GeoStatus)}
+              onChange={(event) => setNextStatus(event.target.value as GeoSiteStatus)}
               className="geo-input"
             >
-              {Object.entries(statusLabel).map(([value, label]) => (
+              {SITE_STATUS_OPTIONS.map(({ value, label }) => (
                 <option key={value} value={value}>
                   {label}
                 </option>
@@ -3201,9 +3211,11 @@ function TypeManagementModal({
             {specs.map((spec) => (
               <tr key={spec.id} className="border-t border-app-border">
                 <td className="px-4 py-3 text-[0.88rem] font-semibold text-app-text">
-                  {spec.name}
+                  {siteSpecLabel(spec)}
                 </td>
-                <td className="px-4 py-3 text-[0.84rem] text-app-muted">{spec.category}</td>
+                <td className="px-4 py-3 text-[0.84rem] text-app-muted">
+                  {siteSpecCategoryLabel(spec.category)}
+                </td>
                 <td className="px-4 py-3 text-[0.84rem] text-app-muted">
                   {spec.allowedChildSpecIds.length || '-'}
                 </td>
@@ -3226,7 +3238,7 @@ function TypeManagementModal({
         >
           {['Region', 'FunctionalGroup', 'Site', 'SubSite'].map((item) => (
             <option key={item} value={item}>
-              {item}
+              {siteSpecCategoryLabel(item)}
             </option>
           ))}
         </select>

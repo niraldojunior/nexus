@@ -15,6 +15,7 @@ import {
   selectGeonetCandidate,
   selectGoogleResult,
   serializeSemicolonCsv,
+  type ViabCandidate,
   worksheetToDocument,
   withRetry,
 } from '../scripts/enrich-installation-addresses.js';
@@ -106,6 +107,7 @@ test('exige um limite explícito e interpreta as opções da CLI', () => {
     threads: 1,
     checkpoint: 200,
     providers: ['viacep', 'geonet', 'gmaps'],
+    viabRadius: 300,
   });
   assert.deepEqual(parseCliArgs(['--file', 'entrada.csv', '--all', '--threads', '4']), {
     file: 'entrada.csv',
@@ -116,6 +118,7 @@ test('exige um limite explícito e interpreta as opções da CLI', () => {
     threads: 4,
     checkpoint: 200,
     providers: ['viacep', 'geonet', 'gmaps'],
+    viabRadius: 300,
   });
   assert.deepEqual(parseCliArgs(['--file', 'entrada.csv', '--all', '--only', 'google,geonet']), {
     file: 'entrada.csv',
@@ -126,6 +129,7 @@ test('exige um limite explícito e interpreta as opções da CLI', () => {
     threads: 1,
     checkpoint: 200,
     providers: ['gmaps', 'geonet'],
+    viabRadius: 300,
   });
   const checkpointOf = (args: string[]): number => {
     const parsed = parseCliArgs(args);
@@ -150,6 +154,49 @@ test('exige um limite explícito e interpreta as opções da CLI', () => {
   assert.throws(
     () => parseCliArgs(['--file', 'entrada.csv', '--all', '--limit', '1']),
     /exatamente um/,
+  );
+});
+
+test('--only viab exige --viab-origin; aliases resolvem para viab; --viab-radius é aceito', () => {
+  assert.throws(
+    () => parseCliArgs(['--file', 'entrada.csv', '--all', '--only', 'viab']),
+    /--viab-origin é obrigatório/,
+  );
+  const parsed = parseCliArgs([
+    '--file',
+    'entrada.csv',
+    '--all',
+    '--only',
+    'fuzzy,cdo,cdoe',
+    '--viab-origin',
+    'gmaps',
+    '--viab-radius',
+    '150',
+  ]);
+  assert.deepEqual(parsed, {
+    file: 'entrada.csv',
+    output: 'entrada.csv',
+    start: 1,
+    limit: Number.MAX_SAFE_INTEGER,
+    overwrite: false,
+    threads: 1,
+    checkpoint: 200,
+    providers: ['viab'],
+    viabOrigin: 'gmaps',
+    viabRadius: 150,
+  });
+  assert.throws(
+    () =>
+      parseCliArgs([
+        '--file',
+        'entrada.csv',
+        '--all',
+        '--only',
+        'viab',
+        '--viab-origin',
+        'invalido',
+      ]),
+    /--viab-origin não reconhece/,
   );
 });
 
@@ -279,7 +326,9 @@ test('enriquece somente o intervalo pedido, preserva dados existentes e reutiliz
 
 test('consulta linhas simultaneamente conforme o número de threads', async () => {
   // CEPs distintos evitam o cache, forçando uma consulta real por linha.
-  const records = Array.from({ length: 6 }, (_, index) => row(`ID-${index + 1}`, `7288700${index}`));
+  const records = Array.from({ length: 6 }, (_, index) =>
+    row(`ID-${index + 1}`, `7288700${index}`),
+  );
   let inFlight = 0;
   let maxInFlight = 0;
   const gate = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
@@ -347,7 +396,7 @@ test('acrescenta as colunas de log com as consultas enviadas e o resumo da linha
   assert.match(at('LOG_CONSULTA_GMAPS'), /^Quadra 6, 28,/);
   assert.equal(
     at('LOG_GERAL'),
-    'ViaCEP=preenchido; GEONET=encontrado; Google=não encontrado; TenantReverso=desativado; linha atualizada.',
+    'ViaCEP=preenchido; GEONET=encontrado; Google=não encontrado; TenantReverso=desativado; Viab=desativado; linha atualizada.',
   );
 });
 
@@ -386,7 +435,12 @@ test('preenche o DNE mesmo com UF/Município divergente e registra no log', asyn
 test('completa MUNICIPIO vazio via ViaCEP antes do GEONET, sem tratar como divergência', async () => {
   const record = row('ID-1');
   record[2] = ''; // MUNICIPIO ausente na origem (caso do arquivo acerto.end.HC.faturamento).
-  const document = { bom: false, lineEnding: '\n' as const, headers: [...headers], records: [record] };
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...headers],
+    records: [record],
+  };
   const services: AddressServices = {
     viaCep: async () => ({
       cep: '72880000',
@@ -430,7 +484,12 @@ test('completa MUNICIPIO vazio via ViaCEP antes do GEONET, sem tratar como diver
 test('repesca por rua/número/UF quando o CEP não é encontrado, e preenche DNE_CEP', async () => {
   const record = row('ID-1');
   record[2] = ''; // MUNICIPIO vazio na origem, como no arquivo acerto.end.HC.faturamento.
-  const document = { bom: false, lineEnding: '\n' as const, headers: [...headers], records: [record] };
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...headers],
+    records: [record],
+  };
   const calls = { viaCep: 0, viaCepByAddress: 0 };
   const services: AddressServices = {
     viaCep: async () => {
@@ -477,7 +536,12 @@ test('repesca por rua/número/UF quando o CEP não é encontrado, e preenche DNE
 test('repescagem sem sucesso não inventa dado e conta como não encontrada', async () => {
   const record = row('ID-1');
   record[2] = '';
-  const document = { bom: false, lineEnding: '\n' as const, headers: [...headers], records: [record] };
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...headers],
+    records: [record],
+  };
   const services: AddressServices = {
     viaCep: async () => null,
     viaCepByAddress: async () => null,
@@ -691,7 +755,7 @@ test('com --only executa apenas o provedor selecionado', async () => {
   assert.equal(at('GMAPS_ID'), 'google-1');
   assert.equal(
     at('LOG_GERAL'),
-    'ViaCEP=desativado; GEONET=desativado; Google=encontrado; TenantReverso=desativado; linha atualizada.',
+    'ViaCEP=desativado; GEONET=desativado; Google=encontrado; TenantReverso=desativado; Viab=desativado; linha atualizada.',
   );
 });
 
@@ -792,7 +856,9 @@ test('--overwrite reprocessa linha completa em vez de ignorá-la', async () => {
 
 test('grava checkpoints a cada N linhas processadas e ignora linhas puladas', async () => {
   const calls = { viaCep: 0, geonet: 0, google: 0 };
-  const records = Array.from({ length: 5 }, (_, index) => row(`ID-${index + 1}`, `7288700${index}`));
+  const records = Array.from({ length: 5 }, (_, index) =>
+    row(`ID-${index + 1}`, `7288700${index}`),
+  );
   let flushes = 0;
   await enrichRecords(
     { bom: false, lineEnding: '\n', headers: [...headers], records },
@@ -838,7 +904,9 @@ test('grava checkpoints a cada N linhas processadas e ignora linhas puladas', as
 test('checkpoint conta linhas processadas mesmo quando nada foi encontrado (sem mudança)', async () => {
   // Antes, o checkpoint só contava linha que mudou algum campo; um trecho longo
   // de "não encontrado" (comum neste tipo de arquivo) atrasava o salvamento.
-  const records = Array.from({ length: 4 }, (_, index) => row(`ID-${index + 1}`, `7288700${index}`));
+  const records = Array.from({ length: 4 }, (_, index) =>
+    row(`ID-${index + 1}`, `7288700${index}`),
+  );
   const services: AddressServices = {
     viaCep: async () => null,
     viaCepByAddress: async () => null,
@@ -903,7 +971,12 @@ test('altera somente as células enriquecidas ao gravar uma planilha Excel', () 
   assert.equal(worksheet.getCell('A2').font?.bold, true);
 });
 
-const tenantHeaders = [...headers, 'TENANT_LATITUDE', 'TENANT_LONGITUDE', 'TENANT_GMAPS_ENDERECO_REVERSO'];
+const tenantHeaders = [
+  ...headers,
+  'TENANT_LATITUDE',
+  'TENANT_LONGITUDE',
+  'TENANT_GMAPS_ENDERECO_REVERSO',
+];
 
 const rowWithTenant = (id: string, lat: string, lng: string, reverse = ''): string[] => [
   ...row(id),
@@ -914,7 +987,12 @@ const rowWithTenant = (id: string, lat: string, lng: string, reverse = ''): stri
 
 test('geocoding reverso da coordenada da tenant preenche TENANT_GMAPS_ENDERECO_REVERSO quando o Gmaps está ativo', async () => {
   const record = rowWithTenant('ID-1', '-16.09', '-47.94');
-  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...tenantHeaders],
+    records: [record],
+  };
   let calls = 0;
   const services: AddressServices = {
     viaCep: async () => null,
@@ -950,7 +1028,12 @@ test('revisita linha já completa nos demais provedores só para preencher o rev
   record[15] = 'Quadra 6, 28';
   record[16] = '[-47.94,-16.09]';
   record[17] = 'ROOFTOP';
-  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...tenantHeaders],
+    records: [record],
+  };
   let googleCalls = 0;
   const services: AddressServices = {
     viaCep: async () => null,
@@ -980,7 +1063,12 @@ test('revisita linha já completa nos demais provedores só para preencher o rev
 test('não faz geocoding reverso da tenant quando gmaps não está entre os provedores selecionados', async () => {
   const record = rowWithTenant('ID-1', '-16.09', '-47.94');
   record[18] = 'Quadra 6'; // DNE_LOGRADOURO já preenchido: só o geonet ficaria pendente
-  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...tenantHeaders],
+    records: [record],
+  };
   let calls = 0;
   const services: AddressServices = {
     viaCep: async () => null,
@@ -1014,7 +1102,12 @@ test('não faz geocoding reverso da tenant quando gmaps não está entre os prov
 
 test('repesca o DNE pela coordenada da tenant quando a busca por rua/número/UF também falha', async () => {
   const record = rowWithTenant('ID-1', '-16.09', '-47.94');
-  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...tenantHeaders],
+    records: [record],
+  };
   const calls = { viaCepByAddress: 0, viaCepByCoordinates: 0 };
   const services: AddressServices = {
     viaCep: async () => null,
@@ -1060,7 +1153,12 @@ test('repesca o DNE pela coordenada da tenant quando a busca por rua/número/UF 
 
 test('repescagem pela coordenada da tenant sem sucesso não inventa dado', async () => {
   const record = rowWithTenant('ID-1', '-16.09', '-47.94');
-  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...tenantHeaders],
+    records: [record],
+  };
   const services: AddressServices = {
     viaCep: async () => null,
     viaCepByAddress: async () => null,
@@ -1080,7 +1178,10 @@ test('repescagem pela coordenada da tenant sem sucesso não inventa dado', async
   const at = (name: string): string => record[document.headers.indexOf(name)]!;
   assert.equal(at('DNE_CEP'), '');
   assert.equal(summary.viaCepCoordRetry.notFound, 1);
-  assert.match(at('LOG_GERAL'), /nem pela rua\/número\/UF; não encontrado pela coordenada da tenant/);
+  assert.match(
+    at('LOG_GERAL'),
+    /nem pela rua\/número\/UF; não encontrado pela coordenada da tenant/,
+  );
 });
 
 test('viaCepByCoordinates faz geocoding reverso e busca o endereço no DNE de verdade', async () => {
@@ -1138,20 +1239,21 @@ test('viaCepByCoordinates faz geocoding reverso e busca o endereço no DNE de ve
 });
 
 test('reverseGeocodeTenant devolve o endereço formatado da coordenada', async () => {
-  const fetchImpl = vi.fn<typeof fetch>(async () =>
-    new Response(
-      JSON.stringify({
-        status: 'OK',
-        results: [
-          {
-            types: ['street_address'],
-            formatted_address: 'Quadra 6, Cidade Ocidental - GO, Brasil',
-            address_components: [],
-          },
-        ],
-      }),
-      { status: 200 },
-    ),
+  const fetchImpl = vi.fn<typeof fetch>(
+    async () =>
+      new Response(
+        JSON.stringify({
+          status: 'OK',
+          results: [
+            {
+              types: ['street_address'],
+              formatted_address: 'Quadra 6, Cidade Ocidental - GO, Brasil',
+              address_components: [],
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
   );
   const services = createAddressServices(fakeEnv, fetchImpl);
 
@@ -1184,7 +1286,12 @@ test('repairCorruptedCoordinate devolve null quando nenhuma posição cai na cai
 
 test('enrichRecords repara TENANT_LATITUDE/LONGITUDE corrompidos e higieniza o CSV de saída', async () => {
   const record = rowWithTenant('ID-1', '-160.931.392', '-479.441.935');
-  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...tenantHeaders],
+    records: [record],
+  };
   const services: AddressServices = {
     viaCep: async () => null,
     geonet: async () => null,
@@ -1209,7 +1316,12 @@ test('enrichRecords repara TENANT_LATITUDE/LONGITUDE corrompidos e higieniza o C
 test('reparo da coordenada da tenant tira a linha do skip mesmo com os demais provedores já completos', async () => {
   const record = rowWithTenant('ID-1', '-160.931.392', '-479.441.935');
   record[18] = 'Quadra 6'; // DNE_LOGRADOURO já preenchido: só a coordenada está quebrada
-  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...tenantHeaders],
+    records: [record],
+  };
   let viaCepCalls = 0;
   const services: AddressServices = {
     viaCep: async () => {
@@ -1239,7 +1351,12 @@ test('reparo da coordenada da tenant tira a linha do skip mesmo com os demais pr
 test('coordenada da tenant irrecuperável não é alterada nem contada como reparada', async () => {
   // Ambos os eixos fora de qualquer posição plausível para GO — nenhum se repara.
   const record = rowWithTenant('ID-1', '-999.999.999', '-999.999.999');
-  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...tenantHeaders],
+    records: [record],
+  };
   const services: AddressServices = {
     viaCep: async () => null,
     geonet: async () => null,
@@ -1262,7 +1379,12 @@ test('coordenada da tenant irrecuperável não é alterada nem contada como repa
 
 test('repara a coordenada e, na mesma passada, consegue repescar o DNE por ela', async () => {
   const record = rowWithTenant('ID-1', '-160.931.392', '-479.441.935');
-  const document = { bom: false, lineEnding: '\n' as const, headers: [...tenantHeaders], records: [record] };
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...tenantHeaders],
+    records: [record],
+  };
   const services: AddressServices = {
     viaCep: async () => null,
     viaCepByAddress: async () => null,
@@ -1297,4 +1419,301 @@ test('repara a coordenada e, na mesma passada, consegue repescar o DNE por ela',
   assert.equal(at('DNE_CEP'), '72880-000');
   assert.equal(summary.tenantCoordRepaired, 1);
   assert.equal(summary.viaCepCoordRetry.filled, 1);
+});
+
+// ---------------------------------------------------------- viab (CDOs próximas) ---
+
+// GMAPS_LOCALIZACAO (índice 16 em `headers`) é a origem usada nos testes abaixo — o
+// mesmo formato JSON.stringify([lng, lat]) que este script grava nessa coluna.
+const viabRow = (id: string, origin: [number, number] | null = [-43.104, -22.901]): string[] => {
+  const record = row(id);
+  if (origin) record[16] = JSON.stringify(origin);
+  return record;
+};
+
+const viabDocument = (
+  records: string[][],
+): { bom: false; lineEnding: '\n'; headers: string[]; records: string[][] } => ({
+  bom: false,
+  lineEnding: '\n',
+  headers: [...headers],
+  records,
+});
+
+const cdoCandidate = (id: string, straightMeters: number): ViabCandidate => ({
+  id,
+  name: `CDO-${id}`,
+  lng: -43.104,
+  lat: -22.901,
+  straightMeters,
+});
+
+test('viab grava as 3 melhores por caminhada, reordenando as candidatas', async () => {
+  const record = viabRow('ID-1');
+  const document = viabDocument([record]);
+  const candidates = [
+    cdoCandidate('cdo-1', 50),
+    cdoCandidate('cdo-2', 80),
+    cdoCandidate('cdo-3', 120),
+    cdoCandidate('cdo-4', 150),
+    cdoCandidate('cdo-5', 200),
+  ];
+  // Distâncias a pé propositalmente fora da ordem da linha reta: o ranking final deve
+  // seguir a caminhada (cdo-3, cdo-2, cdo-5), não a ordem de chegada das candidatas.
+  const walkDistances = [280, 60, 45, 290, 70];
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+    nearbyCdos: async () => candidates,
+    walkRouteMatrix: async (_origin, destinations) =>
+      destinations.map((_, index) => ({ distanceMeters: walkDistances[index]! })),
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viab'],
+    viabOrigin: 'gmaps',
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('VIAB_FUZZY_CDOE_1_ID'), 'cdo-3');
+  assert.equal(at('VIAB_FUZZY_CDOE_1_DISTANCIA'), '45');
+  assert.equal(at('VIAB_FUZZY_CDOE_2_ID'), 'cdo-2');
+  assert.equal(at('VIAB_FUZZY_CDOE_2_DISTANCIA'), '60');
+  assert.equal(at('VIAB_FUZZY_CDOE_3_ID'), 'cdo-5');
+  assert.equal(at('VIAB_FUZZY_CDOE_3_DISTANCIA'), '70');
+  assert.match(at('LOG_VIAB'), /5 candidata\(s\)/);
+  assert.match(at('LOG_VIAB'), /3 gravada\(s\)/);
+  assert.equal(summary.viab.filled, 1);
+  assert.equal(summary.viabStraightFallback, 0);
+});
+
+test('viab descarta candidata com caminhada acima do raio mesmo com linha reta dentro dele', async () => {
+  const record = viabRow('ID-1');
+  const document = viabDocument([record]);
+  const candidates = [cdoCandidate('cdo-perto', 90), cdoCandidate('cdo-longe-a-pe', 100)];
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+    nearbyCdos: async () => candidates,
+    // cdo-longe-a-pe tem linha reta de 100 m (dentro do raio) mas rota a pé de 350 m
+    // (fora do raio de 300 m) — precisa ser descartada, não gravada em linha reta.
+    walkRouteMatrix: async () => [{ distanceMeters: 90 }, { distanceMeters: 350 }],
+  };
+
+  await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viab'],
+    viabOrigin: 'gmaps',
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('VIAB_FUZZY_CDOE_1_ID'), 'cdo-perto');
+  assert.equal(at('VIAB_FUZZY_CDOE_2_ID'), '');
+  assert.equal(at('VIAB_FUZZY_CDOE_3_ID'), '');
+});
+
+test('viab cai para linha reta marcada quando a Routes API não acha rota a pé', async () => {
+  const record = viabRow('ID-1');
+  const document = viabDocument([record]);
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+    nearbyCdos: async () => [cdoCandidate('cdo-1', 90)],
+    walkRouteMatrix: async () => [null],
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viab'],
+    viabOrigin: 'gmaps',
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('VIAB_FUZZY_CDOE_1_ID'), 'cdo-1');
+  assert.equal(at('VIAB_FUZZY_CDOE_1_DISTANCIA'), '90 (linha reta)');
+  assert.match(at('LOG_VIAB'), /1 por linha reta \(sem rota\)/);
+  assert.equal(summary.viabStraightFallback, 1);
+});
+
+test('viab pula linha sem coordenada de referência, sem consultar nada', async () => {
+  const record = viabRow('ID-1', null); // GMAPS_LOCALIZACAO vazio
+  const document = viabDocument([record]);
+  let nearbyCalls = 0;
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+    nearbyCdos: async () => {
+      nearbyCalls += 1;
+      return [];
+    },
+    walkRouteMatrix: async () => [],
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viab'],
+    viabOrigin: 'gmaps',
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(nearbyCalls, 0);
+  assert.match(at('LOG_VIAB'), /sem coordenada de referência \(gmaps\)/);
+  assert.equal(summary.viab.skipped, 1);
+});
+
+test('viab: LOG_VIAB preenchido pula a linha sem --overwrite; --overwrite reescreve e limpa slots', async () => {
+  const record = viabRow('ID-1');
+  const document = viabDocument([record]);
+  let nearbyCalls = 0;
+  const manyServices: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+    nearbyCdos: async () => {
+      nearbyCalls += 1;
+      return [cdoCandidate('cdo-1', 50), cdoCandidate('cdo-2', 80), cdoCandidate('cdo-3', 120)];
+    },
+    walkRouteMatrix: async () => [
+      { distanceMeters: 50 },
+      { distanceMeters: 80 },
+      { distanceMeters: 120 },
+    ],
+  };
+
+  await enrichRecords(document, manyServices, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viab'],
+    viabOrigin: 'gmaps',
+  });
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('VIAB_FUZZY_CDOE_3_ID'), 'cdo-3');
+  assert.equal(nearbyCalls, 1);
+
+  // Reexecução sem --overwrite: LOG_VIAB já preenchido — a linha inteira é pulada
+  // (rowNeedsWork), nenhuma nova consulta é feita.
+  const summaryRerun = await enrichRecords(document, manyServices, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viab'],
+    viabOrigin: 'gmaps',
+  });
+  assert.equal(nearbyCalls, 1);
+  assert.equal(summaryRerun.skippedRows, 1);
+
+  // Com --overwrite, reconsulta e — como agora só há 1 candidata — limpa os slots 2 e 3.
+  const oneService: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+    nearbyCdos: async () => {
+      nearbyCalls += 1;
+      return [cdoCandidate('cdo-unico', 30)];
+    },
+    walkRouteMatrix: async () => [{ distanceMeters: 30 }],
+  };
+  await enrichRecords(document, oneService, {
+    start: 1,
+    limit: 1,
+    overwrite: true,
+    threads: 1,
+    providers: ['viab'],
+    viabOrigin: 'gmaps',
+  });
+  assert.equal(nearbyCalls, 2);
+  assert.equal(at('VIAB_FUZZY_CDOE_1_ID'), 'cdo-unico');
+  assert.equal(at('VIAB_FUZZY_CDOE_2_ID'), '');
+  assert.equal(at('VIAB_FUZZY_CDOE_3_ID'), '');
+});
+
+test('viab reutiliza a mesma consulta para coordenadas iguais em linhas diferentes', async () => {
+  const recordA = viabRow('ID-1');
+  const recordB = viabRow('ID-2');
+  const document = viabDocument([recordA, recordB]);
+  let nearbyCalls = 0;
+  let routeCalls = 0;
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+    nearbyCdos: async () => {
+      nearbyCalls += 1;
+      return [cdoCandidate('cdo-1', 50)];
+    },
+    walkRouteMatrix: async () => {
+      routeCalls += 1;
+      return [{ distanceMeters: 50 }];
+    },
+  };
+
+  await enrichRecords(document, services, {
+    start: 1,
+    limit: 2,
+    overwrite: false,
+    threads: 1,
+    providers: ['viab'],
+    viabOrigin: 'gmaps',
+  });
+
+  assert.equal(nearbyCalls, 1);
+  assert.equal(routeCalls, 1);
+  const idOf = (record: string[]): string =>
+    record[document.headers.indexOf('VIAB_FUZZY_CDOE_1_ID')]!;
+  assert.equal(idOf(recordA), 'cdo-1');
+  assert.equal(idOf(recordB), 'cdo-1');
+});
+
+test('viab: ensureViabColumns só acrescenta as colunas quando o provider está ativo', () => {
+  const withoutViab = viabDocument([row('ID-1')]);
+  const withViab = viabDocument([row('ID-2')]);
+  return Promise.all([
+    enrichRecords(
+      withoutViab,
+      { viaCep: async () => null, geonet: async () => null, google: async () => null },
+      {
+        start: 1,
+        limit: 1,
+        overwrite: false,
+        threads: 1,
+        providers: ['viacep'],
+      },
+    ),
+    enrichRecords(
+      withViab,
+      { viaCep: async () => null, geonet: async () => null, google: async () => null },
+      {
+        start: 1,
+        limit: 1,
+        overwrite: false,
+        threads: 1,
+        providers: ['viab'],
+        viabOrigin: 'gmaps',
+      },
+    ),
+  ]).then(() => {
+    assert.ok(!withoutViab.headers.includes('VIAB_FUZZY_CDOE_1_ID'));
+    assert.ok(withViab.headers.includes('VIAB_FUZZY_CDOE_1_ID'));
+    assert.ok(withViab.headers.includes('LOG_VIAB'));
+  });
 });

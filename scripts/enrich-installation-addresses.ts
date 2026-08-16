@@ -26,6 +26,17 @@
  * separador de milhar (ex.: "-47.9441935" vira "-479.441.935"). O reparo remove
  * os pontos e testa cada posição de separador contra a caixa geográfica da UF da
  * própria linha; só aplica quando exatamente uma posição é plausível.
+ *
+ * Enriquecimento de viabilidade (--only viab, opt-in — nunca roda sem --only citá-lo):
+ * acha até 3 CDOs a até 300 m (--viab-radius) da coordenada de referência escolhida em
+ * --viab-origin (geonet | gmaps | tenant — a coluna de localização já preenchida no
+ * arquivo por aquele provedor) e grava VIAB_FUZZY_CDOE_{1,2,3}_{ID,NOME,DISTANCIA} com a
+ * distância a pé (Routes API do Google; cai para linha reta marcada "(linha reta)"
+ * quando a rota falha). Este modo abre o Oracle diretamente com as credenciais ORACLE_*
+ * do .env — é o único banco com as CDOs do Brasil inteiro, sempre, independentemente de
+ * DATABASE_PROVIDER no ambiente. Exige GOOGLE_MAPS_API_KEY para a rota a pé, mas não
+ * exige GEONET. LOG_VIAB marca a linha como processada (inclusive "nenhuma CDO
+ * encontrada"), então reexecuções sem --overwrite não repetem consulta nem cobrança.
  */
 
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
@@ -38,7 +49,10 @@ import {
   type GeonetAddressCandidate,
   type GeonetAddressDetail,
 } from '../src/modules/geo/geonet-address-gateway.js';
-import { geonetConfigOf } from '../src/shared/config/env.js';
+import { findNearbyCdos } from '../src/modules/geo/nearby-cdo.js';
+import { databaseConfigOf, geonetConfigOf, loadConfig } from '../src/shared/config/env.js';
+import type { DatabaseClient } from '../src/shared/persistence/database-client.js';
+import { createDatabaseClient } from '../src/shared/persistence/database-factory.js';
 
 const SOURCE_COLUMNS = [
   'ID',
@@ -86,6 +100,28 @@ const GOOGLE_COLUMNS = [
 // a consulta exata enviada a cada provedor e um resumo do processamento da linha.
 const LOG_COLUMNS = ['LOG_CONSULTA_GEONET', 'LOG_CONSULTA_GMAPS', 'LOG_GERAL'] as const;
 
+// Saída do provider opcional 'viab' (ver Provider/--only): até 3 CDOs mais próximas da
+// coordenada de referência, dentro do raio de busca, com a distância a pé. Só entram no
+// cabeçalho quando 'viab' está ativo — arquivo processado sem ele não ganha colunas que
+// nunca serão preenchidas (mesmo espírito de ensureLogColumns, ver ensureViabColumns).
+const VIAB_COLUMNS = [
+  'VIAB_FUZZY_CDOE_1_ID',
+  'VIAB_FUZZY_CDOE_1_NOME',
+  'VIAB_FUZZY_CDOE_1_DISTANCIA',
+  'VIAB_FUZZY_CDOE_2_ID',
+  'VIAB_FUZZY_CDOE_2_NOME',
+  'VIAB_FUZZY_CDOE_2_DISTANCIA',
+  'VIAB_FUZZY_CDOE_3_ID',
+  'VIAB_FUZZY_CDOE_3_NOME',
+  'VIAB_FUZZY_CDOE_3_DISTANCIA',
+] as const;
+
+// Auditoria + marca de "já processado" do provider 'viab': guarda a coordenada de
+// referência usada e o desfecho (achou, não achou, sem coordenada, erro). É o campo-sinal
+// do gate de skip (ver GATE_COLUMN) — inclusive quando nenhuma CDO é encontrada, para não
+// reconsultar banco e recobrar a Routes API a cada execução (ver rowNeedsWork).
+const VIAB_LOG_COLUMN = 'LOG_VIAB';
+
 // Geolocalização do Tenant: opcional (nem todo arquivo traz), por isso fora de
 // SOURCE_COLUMNS/ENRICHMENT_COLUMNS — ensureLayout não as exige. O enriquecimento
 // por coordenada só roda quando as três colunas existem no cabeçalho do arquivo.
@@ -95,7 +131,11 @@ const TENANT_LNG_COLUMN = 'TENANT_LONGITUDE';
 // (conferido byte a byte — "ENDERECO", não "ENDEREÇO").
 const TENANT_REVERSE_COLUMN = 'TENANT_GMAPS_ENDERECO_REVERSO';
 
-type ColumnName = (typeof SOURCE_COLUMNS)[number] | (typeof ENRICHMENT_COLUMNS)[number];
+type ColumnName =
+  | (typeof SOURCE_COLUMNS)[number]
+  | (typeof ENRICHMENT_COLUMNS)[number]
+  | (typeof VIAB_COLUMNS)[number]
+  | typeof VIAB_LOG_COLUMN;
 type Row = string[];
 
 export type CsvDocument = {
@@ -142,6 +182,26 @@ export type GeonetLookup = {
   precision: string;
 };
 
+// Coordenada de referência do provider 'viab' — sempre [lng, lat], mesma convenção do
+// GeoJSON e de coordinatesToCell.
+export type ViabOrigin = { lng: number; lat: number };
+
+// Uma CDO candidata: id canônico do PhysicalResource no Nexus (C5), nome de exibição e
+// distância em linha reta até a origem — mesma forma de NearbyCdo em
+// src/modules/geo/nearby-cdo.ts (não importado do tipo por nome para o script continuar
+// falando só a linguagem de AddressServices).
+export type ViabCandidate = {
+  id: string;
+  name: string;
+  lng: number;
+  lat: number;
+  straightMeters: number;
+};
+
+// Uma perna de rota a pé (Routes API) — só a distância importa aqui, a duração não é
+// gravada em planilha.
+export type WalkLeg = { distanceMeters: number };
+
 export type AddressServices = {
   viaCep: (cep: string) => Promise<DneAddress | null>;
   // Repescagem do DNE quando o CEP não é encontrado: descobre o município pelo
@@ -169,6 +229,17 @@ export type AddressServices = {
   // Geocoding reverso da coordenada do Tenant, só para preencher
   // TENANT_GMAPS_ENDEREÇO_REVERSO (não alimenta GMAPS_*). Opcional pelo mesmo motivo.
   reverseGeocodeTenant?: (lat: number, lng: number) => Promise<string | null>;
+  // CDOs candidatas dentro do raio de busca a partir da coordenada de referência do
+  // provider 'viab'. Opcional: só existe quando o script abriu o Oracle (ver runCli) —
+  // ausente em testes que não citam 'viab' em --only.
+  nearbyCdos?: (origin: ViabOrigin, radiusMeters: number) => Promise<ViabCandidate[]>;
+  // Distância a pé (Routes API) da mesma origem para cada candidata, na mesma ordem de
+  // `destinations`; `null` onde o Google não achou rota a pé. Opcional pelo mesmo motivo
+  // de nearbyCdos — os dois nascem juntos em createAddressServices.
+  walkRouteMatrix?: (
+    origin: ViabOrigin,
+    destinations: ViabOrigin[],
+  ) => Promise<Array<WalkLeg | null>>;
 };
 
 export type EnrichmentSummary = {
@@ -181,9 +252,13 @@ export type EnrichmentSummary = {
   geonet: ProviderSummary;
   google: ProviderSummary;
   tenantReverse: ProviderSummary;
+  viab: ProviderSummary;
   failures: number;
   municipioFilled: number;
   tenantCoordRepaired: number;
+  // Quantos slots VIAB_FUZZY_CDOE_*_DISTANCIA foram gravados com fallback de linha reta
+  // (Routes API não achou rota a pé para aquela CDO) em vez de distância a pé real.
+  viabStraightFallback: number;
 };
 
 type ProviderSummary = {
@@ -194,8 +269,11 @@ type ProviderSummary = {
   skipped: number;
 };
 
-type Provider = 'viacep' | 'geonet' | 'gmaps';
+type Provider = 'viacep' | 'geonet' | 'gmaps' | 'viab';
 
+// 'viab' fica fora do default de propósito: precisa de --viab-origin informado na
+// inicialização (ver parseCliArgs) e abre o Oracle + cobra a Routes API a cada
+// coordenada distinta — não é algo que deva ligar sozinho num --all sem o operador pedir.
 const ALL_PROVIDERS: readonly Provider[] = ['viacep', 'geonet', 'gmaps'];
 
 // Aceita apelidos comuns em `--only` (ex.: "google" e "dne").
@@ -206,7 +284,36 @@ const PROVIDER_ALIASES: Record<string, Provider> = {
   gmaps: 'gmaps',
   google: 'gmaps',
   googlemaps: 'gmaps',
+  viab: 'viab',
+  viabilidade: 'viab',
+  fuzzy: 'viab',
+  cdo: 'viab',
+  cdoe: 'viab',
 };
+
+// Fonte da coordenada de referência do provider 'viab': a mesma coordenada já presente
+// na linha (GEONET_LOCALIZACAO/GMAPS_LOCALIZACAO, preenchidas por este mesmo script, ou
+// TENANT_LATITUDE/TENANT_LONGITUDE do arquivo de origem).
+type ViabOriginSource = 'geonet' | 'gmaps' | 'tenant';
+
+const VIAB_ORIGIN_SOURCES: readonly ViabOriginSource[] = ['geonet', 'gmaps', 'tenant'];
+
+function parseViabOriginSource(value: string): ViabOriginSource {
+  const normalizedValue = value.trim().toLowerCase();
+  if ((VIAB_ORIGIN_SOURCES as readonly string[]).includes(normalizedValue)) {
+    return normalizedValue as ViabOriginSource;
+  }
+  throw new Error(`--viab-origin não reconhece "${value}". Use geonet, gmaps ou tenant.`);
+}
+
+// Raio de busca padrão do provider 'viab', em metros — mesmo raio da aba Viabilidade do
+// painel de Endereço (ver web/src/hooks/useAddressViability.ts).
+const DEFAULT_VIAB_RADIUS_METERS = 300;
+
+// Teto de candidatas mandadas à Routes API por coordenada de referência. O raio já
+// restringe o volume, mas um trecho denso pode ter dezenas de CDOs, e cada destino da
+// matriz é cobrado — 10 é folgado para achar as 3 melhores por caminhada.
+const VIAB_MAX_CANDIDATES = 10;
 
 type CliOptions = {
   file: string;
@@ -217,6 +324,8 @@ type CliOptions = {
   threads: number;
   checkpoint: number;
   providers: readonly Provider[];
+  viabOrigin?: ViabOriginSource;
+  viabRadius: number;
 };
 
 class ProviderError extends Error {
@@ -315,7 +424,7 @@ export function applyDocumentToWorksheet(
   after: CsvDocument,
 ): void {
   const index = ensureLayout(after.headers);
-  for (const column of LOG_COLUMNS) {
+  for (const column of [...LOG_COLUMNS, ...VIAB_COLUMNS, VIAB_LOG_COLUMN]) {
     const position = index.get(column);
     if (position === undefined) continue;
     const headerCell = worksheet.getRow(1).getCell(position + 1);
@@ -342,7 +451,8 @@ function parseProviders(value: string): Provider[] {
   if (requested.length === 0) throw new Error('--only requer ao menos um provedor.');
   const selected = requested.map((token) => {
     const provider = PROVIDER_ALIASES[token];
-    if (!provider) throw new Error(`--only não reconhece "${token}". Use viacep, geonet ou gmaps.`);
+    if (!provider)
+      throw new Error(`--only não reconhece "${token}". Use viacep, geonet, gmaps ou viab.`);
     return provider;
   });
   return [...new Set(selected)];
@@ -358,6 +468,8 @@ export function parseCliArgs(args: string[]): CliOptions | 'help' {
   let threads = 1;
   let checkpoint = 200;
   let providers: readonly Provider[] = ALL_PROVIDERS;
+  let viabOrigin: ViabOriginSource | undefined;
+  let viabRadius = DEFAULT_VIAB_RADIUS_METERS;
 
   const requiredValue = (index: number, flag: string): string => {
     const value = args[index + 1];
@@ -407,6 +519,12 @@ export function parseCliArgs(args: string[]): CliOptions | 'help' {
     } else if (arg === '--only') {
       providers = parseProviders(requiredValue(index, arg));
       index += 1;
+    } else if (arg === '--viab-origin') {
+      viabOrigin = parseViabOriginSource(requiredValue(index, arg));
+      index += 1;
+    } else if (arg === '--viab-radius') {
+      viabRadius = positiveInteger(requiredValue(index, arg), arg);
+      index += 1;
     } else {
       throw new Error(`Argumento desconhecido: ${arg}`);
     }
@@ -415,6 +533,11 @@ export function parseCliArgs(args: string[]): CliOptions | 'help' {
   if (!file) throw new Error('--file é obrigatório.');
   if (all === (limit !== undefined))
     throw new Error('Informe exatamente um entre --limit N e --all.');
+  if (providers.includes('viab') && !viabOrigin) {
+    throw new Error(
+      '--viab-origin é obrigatório quando --only inclui viab. Use geonet, gmaps ou tenant.',
+    );
+  }
   return {
     file,
     output: output || file,
@@ -424,6 +547,8 @@ export function parseCliArgs(args: string[]): CliOptions | 'help' {
     threads,
     checkpoint,
     providers,
+    ...(viabOrigin ? { viabOrigin } : {}),
+    viabRadius,
   };
 }
 
@@ -436,10 +561,21 @@ export const usage = (): string =>
     '--limit conta registros lógicos a partir de --start (padrão: 1).',
     '--threads define quantas linhas são consultadas simultaneamente (padrão: 1).',
     '--checkpoint salva o arquivo a cada N linhas processadas (padrão: 200; 0 desliga).',
-    '--only executa apenas os provedores informados (viacep, geonet, gmaps; separados por vírgula).',
+    '--only executa apenas os provedores informados (viacep, geonet, gmaps, viab; separados por',
+    '  vírgula).',
     '--overwrite força a reescrita das células mesmo que já estejam preenchidas.',
-    'Sem --overwrite, linhas já completas (GEONET_ID, GMAPS_ID e DNE_LOGRADOURO dos provedores',
-    'ativos preenchidos) são ignoradas; nas demais, só células vazias são preenchidas.',
+    'Sem --overwrite, linhas já completas (GEONET_ID, GMAPS_ID, DNE_LOGRADOURO e LOG_VIAB dos',
+    'provedores ativos preenchidos) são ignoradas; nas demais, só células vazias são preenchidas.',
+    '',
+    'viab (opt-in, Oracle-only): até 3 CDOs (VIAB_FUZZY_CDOE_1..3_ID/NOME/DISTANCIA) num raio de',
+    '--viab-radius metros (padrão 300) da coordenada de referência, com a distância a pé (Routes',
+    '  API). Requer --viab-origin e abre o Oracle direto usando as credenciais ORACLE_* do .env,',
+    '  sempre — é o único banco com as CDOs do Brasil inteiro, independente de DATABASE_PROVIDER.',
+    '--viab-origin <geonet|gmaps|tenant> escolhe a coordenada de referência já presente na linha',
+    '  (GEONET_LOCALIZACAO, GMAPS_LOCALIZACAO ou TENANT_LATITUDE/LONGITUDE); obrigatório com viab',
+    '  ativo. Linha sem essa coordenada é pulada, sem erro. Suba ORACLE_POOL_MAX junto com',
+    '  --threads (padrão do pool Oracle é 5).',
+    '--viab-radius <metros> raio de busca do provider viab (padrão: 300).',
   ].join('\n');
 
 const headerIndexOf = (headers: string[]): Map<string, number> =>
@@ -454,14 +590,24 @@ function ensureLayout(headers: string[]): Map<string, number> {
   return index;
 }
 
-// Acrescenta as colunas de log ao final do cabeçalho quando ainda não existem,
-// para que o script funcione com arquivos que não as tenham. As linhas ganham
-// as células vazias correspondentes no passo de padding do enrichRecords.
-function ensureLogColumns(document: CsvDocument): void {
+// Acrescenta ao cabeçalho as colunas que ainda não existem, para o script funcionar com
+// arquivos que não as tenham. As linhas ganham as células vazias correspondentes no
+// passo de padding do enrichRecords — por isso precisa rodar antes dele.
+function appendMissingColumns(document: CsvDocument, columns: readonly string[]): void {
   const existing = new Set(document.headers.map((header) => header.trim()));
-  for (const column of LOG_COLUMNS) {
+  for (const column of columns) {
     if (!existing.has(column)) document.headers.push(column);
   }
+}
+
+// Colunas de log: sempre acrescentadas, para todo arquivo.
+function ensureLogColumns(document: CsvDocument): void {
+  appendMissingColumns(document, LOG_COLUMNS);
+}
+
+// Colunas VIAB_FUZZY_CDOE_*: só quando o provider 'viab' está ativo (ver enrichRecords).
+function ensureViabColumns(document: CsvDocument): void {
+  appendMissingColumns(document, [...VIAB_COLUMNS, VIAB_LOG_COLUMN]);
 }
 
 const valueOf = (row: Row, index: Map<string, number>, column: ColumnName): string =>
@@ -582,7 +728,40 @@ function tenantLocationOf(
 // coordenada e a coluna de destino existe e ainda está vazia.
 function tenantReverseGeocodePending(row: Row, index: Map<string, number>): boolean {
   if (!index.has(TENANT_REVERSE_COLUMN)) return false;
-  return Boolean(tenantLocationOf(row, index)) && !optionalValueOf(row, index, TENANT_REVERSE_COLUMN);
+  return (
+    Boolean(tenantLocationOf(row, index)) && !optionalValueOf(row, index, TENANT_REVERSE_COLUMN)
+  );
+}
+
+// Coordenada de referência do provider 'viab', lida da fonte escolhida em --viab-origin.
+// `null` quando a coluna não existe (TENANT_*, opcional), está vazia, ou o conteúdo não é
+// legível — "se não existir no arquivo, não faça": a linha é pulada sem consultar nada
+// (ver bloco viab em processRow). GEONET_LOCALIZACAO/GMAPS_LOCALIZACAO guardam
+// JSON.stringify([lng, lat]) (ver coordinatesToCell) — o mesmo formato que este script
+// grava nelas.
+function viabOriginOf(
+  row: Row,
+  index: Map<string, number>,
+  source: ViabOriginSource,
+): ViabOrigin | null {
+  if (source === 'tenant') {
+    const location = tenantLocationOf(row, index);
+    return location ? { lng: location.lng, lat: location.lat } : null;
+  }
+  const column = source === 'geonet' ? 'GEONET_LOCALIZACAO' : 'GMAPS_LOCALIZACAO';
+  const raw = valueOf(row, index, column);
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length === 2) {
+      const [lng, lat] = parsed as [unknown, unknown];
+      if (Number.isFinite(lng) && Number.isFinite(lat))
+        return { lng: Number(lng), lat: Number(lat) };
+    }
+  } catch {
+    // Célula num formato inesperado (ex.: editada manualmente): trata como ausente.
+  }
+  return null;
 }
 
 const normalized = (value: string): string =>
@@ -630,7 +809,8 @@ export function buildSearchAddress(
 export function isDneCoherent(dne: DneAddress, row: Row, index: Map<string, number>): boolean {
   const rowCity = valueOf(row, index, 'MUNICIPIO');
   return (
-    sameText(dne.uf, valueOf(row, index, 'UF')) && (rowCity === '' || sameText(dne.localidade, rowCity))
+    sameText(dne.uf, valueOf(row, index, 'UF')) &&
+    (rowCity === '' || sameText(dne.localidade, rowCity))
   );
 }
 
@@ -782,10 +962,14 @@ function allPresent(row: Row, index: Map<string, number>, columns: readonly stri
 
 // Campo-sinal que marca cada provedor como "feito" para uma linha. O gate de
 // skip usa apenas estes campos (não o conjunto completo de colunas do provedor).
+// LOG_VIAB (não uma coluna VIAB_FUZZY_CDOE_*) é o gate de 'viab' de propósito: ele é
+// escrito mesmo quando nenhuma CDO é encontrada, então "nenhuma CDO em 300 m" também
+// conta como processado e não é reconsultado a cada execução.
 const GATE_COLUMN: Record<Provider, ColumnName> = {
   viacep: 'DNE_LOGRADOURO',
   geonet: 'GEONET_ID',
   gmaps: 'GMAPS_ID',
+  viab: VIAB_LOG_COLUMN,
 };
 
 // A linha é trabalhada quando --overwrite está ligado ou quando, entre os
@@ -832,14 +1016,18 @@ const emptyProviderSummary = (): ProviderSummary => ({
 export async function enrichRecords(
   document: CsvDocument,
   services: AddressServices,
-  options: Pick<CliOptions, 'start' | 'limit' | 'overwrite' | 'threads'> & {
-    providers?: readonly Provider[];
-    checkpointEvery?: number;
-    onCheckpoint?: () => Promise<void>;
-  },
+  options: Pick<CliOptions, 'start' | 'limit' | 'overwrite' | 'threads'> &
+    Partial<Pick<CliOptions, 'viabOrigin' | 'viabRadius'>> & {
+      providers?: readonly Provider[];
+      checkpointEvery?: number;
+      onCheckpoint?: () => Promise<void>;
+    },
   logger: Pick<Console, 'warn' | 'log'> = console,
 ): Promise<EnrichmentSummary> {
+  const providers = options.providers ?? ALL_PROVIDERS;
+  const runViab = providers.includes('viab');
   ensureLogColumns(document);
+  if (runViab) ensureViabColumns(document);
   const index = ensureLayout(document.headers);
   document.records.forEach((row) => {
     while (row.length < document.headers.length) row.push('');
@@ -854,13 +1042,14 @@ export async function enrichRecords(
     geonet: emptyProviderSummary(),
     google: emptyProviderSummary(),
     tenantReverse: emptyProviderSummary(),
+    viab: emptyProviderSummary(),
     failures: 0,
     municipioFilled: 0,
     tenantCoordRepaired: 0,
+    viabStraightFallback: 0,
   };
   const first = options.start - 1;
   const last = Math.min(document.records.length, first + options.limit);
-  const providers = options.providers ?? ALL_PROVIDERS;
   const runViaCep = providers.includes('viacep');
   const runGeonet = providers.includes('geonet');
   const runGoogle = providers.includes('gmaps');
@@ -870,6 +1059,9 @@ export async function enrichRecords(
   const geonetCache = new Map<string, Promise<GeonetLookup | null>>();
   const googleCache = new Map<string, Promise<GoogleLookup | null>>();
   const tenantReverseCache = new Map<string, Promise<string | null>>();
+  const viabRadius = options.viabRadius ?? DEFAULT_VIAB_RADIUS_METERS;
+  const viabCache = new Map<string, Promise<ViabCandidate[]>>();
+  const viabRouteCache = new Map<string, Promise<Array<WalkLeg | null>>>();
 
   // Checkpoint: grava o arquivo a cada N linhas processadas (consultadas nos
   // provedores ativos), não só as que mudaram algum campo — uma consulta que não
@@ -916,6 +1108,7 @@ export async function enrichRecords(
     let geonetOutcome = 'ignorado';
     let googleOutcome = 'ignorado';
     let tenantReverseOutcome = 'ignorado';
+    let viabOutcome = 'ignorado';
     let geonetQuery = '';
     let googleQuery = '';
     const rowId = valueOf(row, index, 'ID') || `linha ${rowNumber + 2}`;
@@ -962,10 +1155,8 @@ export async function enrichRecords(
           if (services.viaCepByAddress) {
             const street = rowStreet(row, index);
             try {
-              const retryResult = await cached(
-                viaCepRetryCache,
-                `${uf}|${street}|${number}`,
-                () => services.viaCepByAddress!(uf, street, number),
+              const retryResult = await cached(viaCepRetryCache, `${uf}|${street}|${number}`, () =>
+                services.viaCepByAddress!(uf, street, number),
               );
               if (retryResult) {
                 changed = applyDneFields(retryResult) || changed;
@@ -1151,10 +1342,8 @@ export async function enrichRecords(
         tenantReverseOutcome = 'já preenchido';
       } else {
         try {
-          const address = await cached(
-            tenantReverseCache,
-            `${location.lat},${location.lng}`,
-            () => services.reverseGeocodeTenant!(location.lat, location.lng),
+          const address = await cached(tenantReverseCache, `${location.lat},${location.lng}`, () =>
+            services.reverseGeocodeTenant!(location.lat, location.lng),
           );
           if (!address) {
             summary.tenantReverse.notFound += 1;
@@ -1170,7 +1359,96 @@ export async function enrichRecords(
           summary.tenantReverse.errors += 1;
           summary.failures += 1;
           tenantReverseOutcome = 'erro';
-          logger.warn(`[${rowId}] Geocoding reverso da coordenada do Tenant falhou: ${messageOf(error)}`);
+          logger.warn(
+            `[${rowId}] Geocoding reverso da coordenada do Tenant falhou: ${messageOf(error)}`,
+          );
+        }
+      }
+    }
+
+    // Viabilidade (VIAB_FUZZY_CDOE_1..3): até 3 CDOs a --viab-radius m da coordenada de
+    // referência (--viab-origin), com a distância a pé. LOG_VIAB é escrito em todo
+    // desfecho DETERMINÍSTICO (achou, não achou, sem coordenada) — é o próprio gate de
+    // skip (ver GATE_COLUMN/rowNeedsWork) — mas fica de fora em erro, para a linha ser
+    // reconsultada na próxima execução em vez de ficar marcada como concluída à toa.
+    if (!runViab) {
+      viabOutcome = 'desativado';
+    } else if (!options.viabOrigin) {
+      viabOutcome = 'origem da coordenada não configurada (--viab-origin)';
+    } else if (!options.overwrite && valueOf(row, index, VIAB_LOG_COLUMN)) {
+      summary.viab.skipped += 1;
+      viabOutcome = 'já preenchido';
+    } else if (!services.nearbyCdos || !services.walkRouteMatrix) {
+      viabOutcome = 'desativado';
+    } else {
+      const origin = viabOriginOf(row, index, options.viabOrigin);
+      if (!origin) {
+        summary.viab.skipped += 1;
+        viabOutcome = `sem coordenada de referência (${options.viabOrigin})`;
+        changed =
+          applyValues(row, index, { [VIAB_LOG_COLUMN]: viabOutcome }, options.overwrite) || changed;
+      } else {
+        try {
+          const originKey = `${origin.lng.toFixed(6)},${origin.lat.toFixed(6)}`;
+          const nearby = await cached(viabCache, originKey, () =>
+            services.nearbyCdos!(origin, viabRadius),
+          );
+          if (!nearby.length) {
+            summary.viab.notFound += 1;
+            viabOutcome = `origem=${options.viabOrigin} [${origin.lng},${origin.lat}]; nenhuma CDO em ${viabRadius} m`;
+            changed =
+              applyValues(row, index, { [VIAB_LOG_COLUMN]: viabOutcome }, options.overwrite) ||
+              changed;
+          } else {
+            const legs = await cached(viabRouteCache, originKey, () =>
+              services.walkRouteMatrix!(
+                origin,
+                nearby.map((candidate) => ({ lng: candidate.lng, lat: candidate.lat })),
+              ),
+            );
+            const ranked = nearby
+              .map((candidate, candidateIndex) => {
+                const leg = legs[candidateIndex];
+                return leg
+                  ? { ...candidate, distanceMeters: leg.distanceMeters, mode: 'walk' as const }
+                  : {
+                      ...candidate,
+                      distanceMeters: candidate.straightMeters,
+                      mode: 'straight' as const,
+                    };
+              })
+              .filter((candidate) => candidate.distanceMeters <= viabRadius)
+              .sort((left, right) => {
+                if (left.mode !== right.mode) return left.mode === 'walk' ? -1 : 1;
+                return left.distanceMeters - right.distanceMeters;
+              })
+              .slice(0, 3);
+
+            const straightCount = ranked.filter(
+              (candidate) => candidate.mode === 'straight',
+            ).length;
+            viabOutcome =
+              `origem=${options.viabOrigin} [${origin.lng},${origin.lat}]; ${nearby.length} candidata(s) ≤${viabRadius} m; ` +
+              `${ranked.length} gravada(s)${straightCount ? `; ${straightCount} por linha reta (sem rota)` : ''}`;
+            const values: Record<string, string> = { [VIAB_LOG_COLUMN]: viabOutcome };
+            for (let slot = 0; slot < 3; slot += 1) {
+              const n = slot + 1;
+              const candidate = ranked[slot];
+              values[`VIAB_FUZZY_CDOE_${n}_ID`] = candidate ? candidate.id : '';
+              values[`VIAB_FUZZY_CDOE_${n}_NOME`] = candidate ? candidate.name : '';
+              values[`VIAB_FUZZY_CDOE_${n}_DISTANCIA`] = candidate
+                ? `${Math.round(candidate.distanceMeters)}${candidate.mode === 'straight' ? ' (linha reta)' : ''}`
+                : '';
+            }
+            changed = applyValues(row, index, values, options.overwrite) || changed;
+            summary.viab.filled += 1;
+            summary.viabStraightFallback += straightCount;
+          }
+        } catch (error) {
+          summary.viab.errors += 1;
+          summary.failures += 1;
+          viabOutcome = `erro (${messageOf(error)})`;
+          logger.warn(`[${rowId}] Viabilidade (CDOs próximas) falhou: ${messageOf(error)}`);
         }
       }
     }
@@ -1179,7 +1457,7 @@ export async function enrichRecords(
     const coordRepairNote = coordinateRepaired
       ? ' TENANT_LATITUDE/TENANT_LONGITUDE reparados (corrupção de planilha);'
       : '';
-    const rowSummary = `ViaCEP=${viaCepOutcome};${municipioNote}${coordRepairNote} GEONET=${geonetOutcome}; Google=${googleOutcome}; TenantReverso=${tenantReverseOutcome}; linha ${changed ? 'atualizada' : 'inalterada'}.`;
+    const rowSummary = `ViaCEP=${viaCepOutcome};${municipioNote}${coordRepairNote} GEONET=${geonetOutcome}; Google=${googleOutcome}; TenantReverso=${tenantReverseOutcome}; Viab=${viabOutcome}; linha ${changed ? 'atualizada' : 'inalterada'}.`;
     row[index.get('LOG_CONSULTA_GEONET')!] = geonetQuery;
     row[index.get('LOG_CONSULTA_GMAPS')!] = googleQuery;
     row[index.get('LOG_GERAL')!] = rowSummary;
@@ -1217,10 +1495,9 @@ function geonetErrorDetail(error: unknown): string {
   const candidate = error as { code?: unknown; statusCode?: unknown };
   const code = typeof candidate.code === 'string' ? candidate.code : undefined;
   const status = Number(candidate.statusCode);
-  const tags = [
-    code,
-    Number.isFinite(status) && status > 0 ? `HTTP ${status}` : undefined,
-  ].filter(Boolean);
+  const tags = [code, Number.isFinite(status) && status > 0 ? `HTTP ${status}` : undefined].filter(
+    Boolean,
+  );
   return tags.length > 0 ? `${messageOf(error)} [${tags.join(', ')}]` : messageOf(error);
 }
 
@@ -1402,7 +1679,9 @@ function pickCoherentReverseAddress(
   if (!sameText(componentOf(picked, 'administrative_area_level_1')?.short_name, uf)) return null;
   const city = googleCityOf(picked);
   const street = componentOf(picked, 'route')?.long_name;
-  return city && street && street.trim().length >= 3 ? { city: city.trim(), street: street.trim() } : null;
+  return city && street && street.trim().length >= 3
+    ? { city: city.trim(), street: street.trim() }
+    : null;
 }
 
 // Consulta o DNE por UF+cidade+rua e escolhe o melhor candidato — núcleo
@@ -1430,12 +1709,78 @@ async function queryDneAddress(
   return selectDneAddressCandidate(candidates, street, number);
 }
 
+// ---------------------------------------------------------- Routes API (viab) ---
+//
+// Distância a pé de uma origem para N destinos numa única chamada — versão Node do
+// mesmo `computeRouteMatrix` de web/src/utils/googleRoutes.ts, portada porque aquele
+// módulo lê a chave de `import.meta.env` (Vite) e não é importável do backend/script.
+// A resposta da API não vem ordenada — é reindexada por `destinationIndex`.
+const VIAB_ROUTE_MATRIX_URL = 'https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix';
+const VIAB_MATRIX_FIELD_MASK = 'originIndex,destinationIndex,distanceMeters,condition';
+
+type RouteMatrixElement = {
+  destinationIndex?: number;
+  distanceMeters?: number;
+  condition?: string;
+};
+
+async function computeWalkRouteMatrix(
+  origin: ViabOrigin,
+  destinations: ViabOrigin[],
+  apiKey: string,
+  fetchImpl: typeof fetch,
+): Promise<Array<WalkLeg | null>> {
+  const empty = destinations.map(() => null);
+  if (!destinations.length) return [];
+  const waypoint = (point: ViabOrigin) => ({
+    waypoint: { location: { latLng: { latitude: point.lat, longitude: point.lng } } },
+  });
+  const response = await fetchImpl(VIAB_ROUTE_MATRIX_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': apiKey,
+      'X-Goog-FieldMask': VIAB_MATRIX_FIELD_MASK,
+    },
+    body: JSON.stringify({
+      origins: [waypoint(origin)],
+      destinations: destinations.map(waypoint),
+      travelMode: 'WALK',
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) {
+    throw new ProviderError(
+      `Routes API HTTP ${response.status}.`,
+      retryableHttpStatus(response.status),
+    );
+  }
+  const elements = (await jsonResponse(response)) as RouteMatrixElement[] | null;
+  if (!Array.isArray(elements)) return empty;
+
+  const legs: Array<WalkLeg | null> = [...empty];
+  for (const element of elements) {
+    const destinationIndex = element.destinationIndex;
+    if (
+      destinationIndex === undefined ||
+      destinationIndex < 0 ||
+      destinationIndex >= destinations.length
+    )
+      continue;
+    if (element.condition !== 'ROUTE_EXISTS' || element.distanceMeters === undefined) continue;
+    legs[destinationIndex] = { distanceMeters: element.distanceMeters };
+  }
+  return legs;
+}
+
 export function createAddressServices(
   env: NodeJS.ProcessEnv,
   fetchImpl: typeof fetch = fetch,
+  deps: { db?: DatabaseClient; providers?: readonly Provider[] } = {},
 ): AddressServices {
+  const activeProviders = deps.providers ?? ALL_PROVIDERS;
   const geonetConfig = geonetConfigOf(env);
-  if (!geonetConfig) {
+  if (activeProviders.includes('geonet') && !geonetConfig) {
     throw new Error(
       'GEONET não configurado: informe GEONET_API_BASE_URL, TOKEN_URL, CLIENT_ID e CLIENT_SECRET.',
     );
@@ -1445,13 +1790,13 @@ export function createAddressServices(
     throw new Error(
       'Google Maps não configurado: informe GOOGLE_MAPS_API_KEY ou VITE_GOOGLE_MAPS_API_KEY.',
     );
-  const gateway = new GeonetAddressGateway(geonetConfig, fetchImpl);
+  const gateway = geonetConfig ? new GeonetAddressGateway(geonetConfig, fetchImpl) : null;
   // Reverso é caro (uma chamada HTTP por coordenada) e serve duas features
   // (TENANT_GMAPS_ENDEREÇO_REVERSO e a repescagem do DNE pela mesma
   // coordenada) — cache aqui evita bater duas vezes no Google pela mesma linha.
   const reverseGeocodeCache = new Map<string, Promise<GoogleGeocodeResult[]>>();
 
-  return {
+  const services: AddressServices = {
     viaCep: async (cep) =>
       withRetry(async () => {
         const response = await fetchImpl(
@@ -1484,8 +1829,10 @@ export function createAddressServices(
         if (!location) return null;
         return queryDneAddress(uf, location.city, location.street, number, fetchImpl);
       }),
-    geonet: async (address, number, row, index) =>
-      lookupGeonet(gateway, address, number, row, index),
+    geonet: async (address, number, row, index) => {
+      if (!gateway) throw new Error('GEONET não configurado.');
+      return lookupGeonet(gateway, address, number, row, index);
+    },
     google: async (address, row, index) =>
       lookupGoogle(address, googleApiKey, row, index, fetchImpl),
     reverseGeocodeTenant: async (lat, lng) =>
@@ -1496,6 +1843,16 @@ export function createAddressServices(
         return pickReverseGeocodeResult(results)?.formatted_address ?? null;
       }),
   };
+
+  if (deps.db) {
+    const db = deps.db;
+    services.nearbyCdos = async (origin, radiusMeters) =>
+      findNearbyCdos(db, origin, { radiusMeters, limit: VIAB_MAX_CANDIDATES });
+    services.walkRouteMatrix = async (origin, destinations) =>
+      withRetry(() => computeWalkRouteMatrix(origin, destinations, googleApiKey, fetchImpl));
+  }
+
+  return services;
 }
 
 async function lookupGeonet(
@@ -1583,8 +1940,14 @@ function printSummary(summary: EnrichmentSummary): void {
   console.log(format('GEONET', summary.geonet));
   console.log(format('Google Maps', summary.google));
   console.log(format('Geocoding reverso da tenant', summary.tenantReverse));
+  console.log(format('Viabilidade (VIAB_FUZZY_CDOE_*)', summary.viab));
   console.log(`MUNICIPIO completado via ViaCEP: ${summary.municipioFilled}`);
-  console.log(`TENANT_LATITUDE/LONGITUDE reparados (corrupção de planilha): ${summary.tenantCoordRepaired}`);
+  console.log(
+    `TENANT_LATITUDE/LONGITUDE reparados (corrupção de planilha): ${summary.tenantCoordRepaired}`,
+  );
+  console.log(
+    `Viabilidade — slots gravados por linha reta (sem rota a pé): ${summary.viabStraightFallback}`,
+  );
 }
 
 function formatDuration(milliseconds: number): string {
@@ -1601,55 +1964,93 @@ function formatDuration(milliseconds: number): string {
   return parts.join(' ');
 }
 
+// Abre o Oracle para o provider 'viab' — sempre Oracle, sempre, independente de
+// DATABASE_PROVIDER no ambiente: é o único banco com as CDOs do Brasil inteiro (o
+// Postgres/Neon guarda um recorte). As credenciais vêm das mesmas variáveis ORACLE_* do
+// .env que o resto do projeto usa (ver resolveDatabaseConfig em shared/config/env.ts).
+// Loga o alvo aberto (nunca a senha) para o operador conferir o ambiente (NEXUS_DEV_ vs
+// NEXUS_PRD_) antes de a planilha inteira sair preenchida com o banco errado.
+async function openOracleForViab(): Promise<DatabaseClient> {
+  const databaseConfig = (() => {
+    try {
+      return databaseConfigOf(
+        loadConfig({ ...process.env, DATABASE_PROVIDER: 'oracle', DATABASE_AUTO_SCHEMA: 'false' }),
+      );
+    } catch (error) {
+      throw new Error(
+        `Enriquecimento de viabilidade (--only viab) é Oracle-only: ${messageOf(error)}`,
+      );
+    }
+  })();
+  if (databaseConfig.provider !== 'oracle') {
+    throw new Error('Enriquecimento de viabilidade (--only viab) é Oracle-only.');
+  }
+  console.log(
+    `Oracle (viabilidade): connectString=${databaseConfig.connectString} · usuário=${databaseConfig.user} · prefixo=${databaseConfig.objectPrefix}`,
+  );
+  const client = createDatabaseClient(databaseConfig);
+  await client.initialize();
+  return client;
+}
+
 export async function runCli(options: CliOptions): Promise<EnrichmentSummary> {
   const startedAt = Date.now();
   loadEnv({ quiet: true });
-  const services = createAddressServices(process.env);
-  const inputType = extname(options.file).toLowerCase();
-  const outputType = extname(options.output).toLowerCase();
-  if (inputType !== outputType) {
-    throw new Error('A extensão de --out deve ser igual à extensão do arquivo de entrada.');
-  }
-
-  let summary: EnrichmentSummary;
-  if (inputType === '.csv') {
-    const document = parseSemicolonCsv(await readFile(options.file, 'utf8'));
-    const onCheckpoint = (): Promise<void> =>
-      atomicWrite(options.output, serializeSemicolonCsv(document));
-    summary = await enrichRecords(document, services, {
-      ...options,
-      checkpointEvery: options.checkpoint,
-      onCheckpoint,
+  const runViab = options.providers.includes('viab');
+  const db = runViab ? await openOracleForViab() : null;
+  try {
+    const services = createAddressServices(process.env, fetch, {
+      ...(db ? { db } : {}),
+      providers: options.providers,
     });
-    await atomicWrite(options.output, serializeSemicolonCsv(document));
-  } else if (inputType === '.xlsx') {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(options.file);
-    const worksheet = workbook.worksheets[0];
-    if (!worksheet) throw new Error('A planilha não contém abas.');
-    const document = worksheetToDocument(worksheet);
-    const before: CsvDocument = {
-      ...document,
-      headers: [...document.headers],
-      records: document.records.map((row) => [...row]),
-    };
-    const onCheckpoint = async (): Promise<void> => {
+    const inputType = extname(options.file).toLowerCase();
+    const outputType = extname(options.output).toLowerCase();
+    if (inputType !== outputType) {
+      throw new Error('A extensão de --out deve ser igual à extensão do arquivo de entrada.');
+    }
+
+    let summary: EnrichmentSummary;
+    if (inputType === '.csv') {
+      const document = parseSemicolonCsv(await readFile(options.file, 'utf8'));
+      const onCheckpoint = (): Promise<void> =>
+        atomicWrite(options.output, serializeSemicolonCsv(document));
+      summary = await enrichRecords(document, services, {
+        ...options,
+        checkpointEvery: options.checkpoint,
+        onCheckpoint,
+      });
+      await atomicWrite(options.output, serializeSemicolonCsv(document));
+    } else if (inputType === '.xlsx') {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(options.file);
+      const worksheet = workbook.worksheets[0];
+      if (!worksheet) throw new Error('A planilha não contém abas.');
+      const document = worksheetToDocument(worksheet);
+      const before: CsvDocument = {
+        ...document,
+        headers: [...document.headers],
+        records: document.records.map((row) => [...row]),
+      };
+      const onCheckpoint = async (): Promise<void> => {
+        applyDocumentToWorksheet(worksheet, before, document);
+        await atomicWrite(options.output, new Uint8Array(await workbook.xlsx.writeBuffer()));
+      };
+      summary = await enrichRecords(document, services, {
+        ...options,
+        checkpointEvery: options.checkpoint,
+        onCheckpoint,
+      });
       applyDocumentToWorksheet(worksheet, before, document);
       await atomicWrite(options.output, new Uint8Array(await workbook.xlsx.writeBuffer()));
-    };
-    summary = await enrichRecords(document, services, {
-      ...options,
-      checkpointEvery: options.checkpoint,
-      onCheckpoint,
-    });
-    applyDocumentToWorksheet(worksheet, before, document);
-    await atomicWrite(options.output, new Uint8Array(await workbook.xlsx.writeBuffer()));
-  } else {
-    throw new Error('Formato não suportado. Use CSV (.csv) ou Excel (.xlsx).');
+    } else {
+      throw new Error('Formato não suportado. Use CSV (.csv) ou Excel (.xlsx).');
+    }
+    printSummary(summary);
+    console.log(`Tempo total de processamento: ${formatDuration(Date.now() - startedAt)}.`);
+    return summary;
+  } finally {
+    if (db) await db.close();
   }
-  printSummary(summary);
-  console.log(`Tempo total de processamento: ${formatDuration(Date.now() - startedAt)}.`);
-  return summary;
 }
 
 async function main(): Promise<void> {

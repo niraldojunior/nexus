@@ -250,6 +250,32 @@ export class GeoTreeService {
   }
 
   /**
+   * Sites (categoria 'Site') dentro de um bbox do mapa, na mesma escala de detalhe de
+   * `resourcesInViewport` — o único tipo de Site com visibilidade em qualquer escala é CO/
+   * Estação, e esse já vem sempre de `roots()`; os demais (POP, CDO, Ponto de Instalação…)
+   * só aparecem no mapa por aqui, quando o usuário aproxima. O chamador (GET
+   * /v1/geo/tree/viewport) devolve o resultado somado ao de `resourcesInViewport` — o
+   * cliente não distingue as duas fontes, os dois são `GeoTreeNode`.
+   */
+  public async sitesInViewport(
+    bounds: { minLng: number; minLat: number; maxLng: number; maxLat: number },
+    options: { limit?: number } = {},
+  ): Promise<GeoTreeNode[]> {
+    const limit = clamp(options.limit ?? VIEWPORT_MAX_RESULTS, 1, VIEWPORT_MAX_RESULTS);
+    const bboxQuad = [bounds.minLng, bounds.maxLng, bounds.minLat, bounds.maxLat];
+
+    const rows = await this.db.all<SiteRow>(
+      `${SITE_SELECT}
+       WHERE ${SITE_VIEWPORT_POINT_WHERE}
+       ${PROJECT_SITE_EXCLUSION_SQL}
+       LIMIT ?`,
+      [...bboxQuad, limit],
+    );
+
+    return rows.map((row) => this.toSiteNode(row, { hasChildren: false }));
+  }
+
+  /**
    * Busca por nome para a barra de pesquisa: Estações (Site, nunca SubSite — sala/andar
    * não é alvo de busca) e Recursos (physical/logical, Splitter incluso — diferente do
    * mapa e da árvore, buscar pelo nome do splitter continua encontrando-o), por substring
@@ -823,10 +849,31 @@ const SITE_SELECT = `
     LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id`;
 
 // Exclui da navegação (árvore, mapa de Estações e busca) qualquer Site vinculado a um
-// Projeto (REQ-MOD01-015): local criado para um recorte de trabalho fica visível só com
-// o projeto aberto — nunca na Hierarquia geral. Não se aplica a `childrenOfSite`: um
-// local de projeto nasce sem `parent_site_id`, então nunca aparece como filho de outro.
-const PROJECT_SITE_EXCLUSION_SQL = `AND NOT EXISTS (SELECT 1 FROM geo_project_site ps WHERE ps.site_id = s.id)`;
+// Projeto de trabalho EM CURSO (REQ-MOD01-015): local criado para um recorte de trabalho
+// fica visível só com o projeto aberto — nunca na Hierarquia geral. Uma vez que o projeto
+// termina, o local ganha vida própria (RF-010) e volta a esta navegação — o vínculo em
+// geo_project_site permanece (não é apagado), só deixa de esconder o Site; é o que sustenta
+// a Origem "Projeto XPTO" no painel de Local. Não se aplica a `childrenOfSite`: um local de
+// projeto nasce sem `parent_site_id`, então nunca aparece como filho de outro.
+const PROJECT_SITE_EXCLUSION_SQL = `AND NOT EXISTS (
+  SELECT 1 FROM geo_project_site ps
+    JOIN geo_project p ON p.id = ps.project_id
+   WHERE ps.site_id = s.id AND p.status <> 'terminated'
+)`;
+
+// Site (categoria 'Site', nunca Region/FunctionalGroup/SubSite) dentro de um bbox do mapa —
+// fonte de `sitesInViewport`, o par de `resourcesInViewport` para o Site: CO/Estação é o
+// único tipo com visibilidade em qualquer escala (sempre vem de `roots()`); qualquer outro
+// tipo de Site (POP, CDO, Ponto de Instalação…) só aparece no mapa em escala de detalhe
+// (≤ 50 m), pela mesma régua de tier de um Recurso. Mesmo predicado de bbox de
+// VIEWPORT_POINT_WHERE, para aproveitar o índice de expressão
+// idx_tmf_geographic_location_point_lnglat. 4 parâmetros: minLng, maxLng, minLat, maxLat.
+const SITE_VIEWPORT_POINT_WHERE = `
+  sp.category = 'Site'
+  AND s.status NOT IN ('Retired', 'terminated')
+  AND l.geometry_type = 'Point'
+  AND (l.geometry::jsonb->'coordinates'->>0)::float8 BETWEEN ? AND ?
+  AND (l.geometry::jsonb->'coordinates'->>1)::float8 BETWEEN ? AND ?`;
 
 // Recursos que pendem diretamente de um Site. Os três parâmetros são, em ordem:
 // id do site, id da Location do site, id do site (servingSite). A união repete o

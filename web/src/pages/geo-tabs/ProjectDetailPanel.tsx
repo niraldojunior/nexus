@@ -6,6 +6,7 @@ import type { GeoTreeNode } from '../../services/geoTreeApi';
 import { ProjectIcon } from './ProjectIcon';
 import { Modal } from './Modal';
 import { NodeIcon } from './HierarchyTreeView';
+import { StatusBadge } from './StatusBadge';
 import { OverlayScrollArea } from '../../components/OverlayScrollArea';
 import {
   BottomSheet,
@@ -196,18 +197,27 @@ export function ProjectDetailPanel({
         aria-label="Descrição do projeto"
         className="-mx-1 w-full flex-1 resize-none rounded-[8px] border border-transparent bg-transparent px-1 py-1 text-[0.84rem] leading-snug text-app-text outline-none transition placeholder:text-app-muted hover:border-app-border focus:border-app-accent-border focus:bg-white"
       />
-      <select
-        value={project.status}
-        onChange={(event) => void handleStatusChange(event.target.value as GeoStatus)}
-        aria-label="Status do projeto"
-        className="h-8 shrink-0 rounded-[10px] border border-app-border bg-white px-2 text-[0.76rem] font-semibold text-app-text outline-none transition hover:border-app-accent-border focus:border-app-accent-border"
-      >
-        {PROJECT_STATUS_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      {/* Projeto terminado não volta (RF-010): a combo de troca de status some — os
+          locais já foram liberados (viraram Ativo, vida própria) e o projeto passa a
+          ser só um registro histórico. */}
+      {project.status === 'terminated' ? (
+        <div className="flex h-8 shrink-0 items-center">
+          <StatusBadge status={project.status} />
+        </div>
+      ) : (
+        <select
+          value={project.status}
+          onChange={(event) => void handleStatusChange(event.target.value as GeoStatus)}
+          aria-label="Status do projeto"
+          className="h-8 shrink-0 rounded-[10px] border border-app-border bg-white px-2 text-[0.76rem] font-semibold text-app-text outline-none transition hover:border-app-accent-border focus:border-app-accent-border"
+        >
+          {PROJECT_STATUS_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   );
 

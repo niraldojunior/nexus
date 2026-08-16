@@ -441,15 +441,21 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const stationTier: StationTier = stationTierForScale(scaleMeters);
   const resourceTier: StationTier = resourceTierForScale(scaleMeters);
   const mapNodes = useMemo(() => {
-    // Estações permanecem visíveis em qualquer escala (só mudam de tamanho por stationTier).
+    // CO/Estação permanece visível em qualquer escala (só muda de tamanho por stationTier).
     const stations = tree.mapNodes;
-    const base = passiveInfraVisible ? [...stations, ...viewportInfra] : stations;
+    // `viewportInfra` já soma Recursos e Sites não-CO da região visível (ver
+    // GeoTreeService.sitesInViewport) — um CO dentro do bbox também vem nessa resposta
+    // (a consulta não distingue tipo de Site), então filtra pelos ids que `stations` já
+    // cobre para não desenhar dois marcadores na mesma coordenada.
+    const stationIds = new Set(stations.map((node) => node.id));
+    const passiveInfra = viewportInfra.filter((node) => !stationIds.has(node.id));
+    const base = passiveInfraVisible ? [...stations, ...passiveInfra] : stations;
     // Locais do Projeto de trabalho aberto (REQ-MOD01-015) entram só enquanto a doca mostra
     // aquele projeto — nunca somados aos nós da árvore, que já os excluem por completo.
     const withProjectSites = dockView.kind !== 'hierarchy' ? [...base, ...projectSites] : base;
     // O item selecionado é imune à escala e ao viewport: recurso e cabo só existem em
     // `viewportInfra`, e sem isto afastar o mapa (ou arrastá-lo até a borda) apagaria o
-    // ícone e o alfinete de quem está aberto no painel. Estação já vem sempre em
+    // ícone e o alfinete de quem está aberto no painel. CO já vem sempre em
     // `tree.mapNodes`, então isto só adiciona quando o nó realmente sumiu da lista.
     if (selectedNode?.geometry && !withProjectSites.some((node) => node.id === selectedNode.id)) {
       return [...withProjectSites, selectedNode];
@@ -903,16 +909,23 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Local recém-criado: sai do formulário direto para a consulta dele (não de volta para a
   // lista do projeto) — é a leitura natural do fluxo ("acabei de criar, quero ver o que
   // ficou"). `projectSitesReloadToken` força o próximo GET a incluir o local novo.
+  //
+  // `adjustSiteCount` atualiza a lista de Projetos (ProjectListView) na hora — sem ele o
+  // contador ficava preso ao valor carregado no mount até um reload de página inteiro
+  // (bug reportado); o `projects.reload()` em seguida reconcilia com o servidor sem
+  // travar a UI (o `inFlight` do hook já deduplica sob StrictMode).
   const handleProjectSiteCreated = useCallback(
     (projectId: string, created: CreatedProjectSite) => {
       setProjectSitesReloadToken((token) => token + 1);
+      projects.adjustSiteCount(projectId, 1);
+      void projects.reload();
       setDockView({
         kind: 'project',
         projectId,
         site: { mode: 'view', siteId: created.site.id },
       });
     },
-    [],
+    [projects],
   );
 
   // Nome/tipo/observação editados no painel de consulta — só precisa de um novo GET; o
@@ -926,27 +939,34 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const handleProjectSiteRemoved = useCallback(
     (projectId: string) => {
       setProjectSitesReloadToken((token) => token + 1);
+      projects.adjustSiteCount(projectId, -1);
+      void projects.reload();
       closeProjectSite(projectId);
     },
-    [closeProjectSite],
+    [closeProjectSite, projects],
   );
 
   // Excluir direto pela lista do painel do projeto (botão que aparece no hover, ver
   // ProjectDetailPanel) — sem abrir a janela de consulta primeiro. Fecha a janela também
   // se por acaso o local excluído for o que estava aberto.
-  const handleQuickRemoveSite = useCallback(async (projectId: string, site: GeoTreeNode) => {
-    if (!site.refId) return;
-    await removeProjectSite(projectId, site.refId);
-    setProjectSitesReloadToken((token) => token + 1);
-    setDockView((current) =>
-      current.kind === 'project' &&
-      current.projectId === projectId &&
-      current.site?.mode === 'view' &&
-      current.site.siteId === site.refId
-        ? { kind: 'project', projectId, site: null }
-        : current,
-    );
-  }, []);
+  const handleQuickRemoveSite = useCallback(
+    async (projectId: string, site: GeoTreeNode) => {
+      if (!site.refId) return;
+      await removeProjectSite(projectId, site.refId);
+      setProjectSitesReloadToken((token) => token + 1);
+      projects.adjustSiteCount(projectId, -1);
+      void projects.reload();
+      setDockView((current) =>
+        current.kind === 'project' &&
+        current.projectId === projectId &&
+        current.site?.mode === 'view' &&
+        current.site.siteId === site.refId
+          ? { kind: 'project', projectId, site: null }
+          : current,
+      );
+    },
+    [projects],
+  );
 
   // Monta o conteúdo do balão de preview a partir do nó sob o mouse. Fica aqui,
   // e não no painel do mapa, porque é aqui que se sabe o que fazer com cada
@@ -1709,8 +1729,13 @@ export function GoogleMapPanel({
       if (node.kind === 'site') {
         const kind = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
         const icon = siteIconFor(kind, node.status);
+        // CO/Estação segue a régua de Estação (cheio perto, pequeno em 5–50 km, nunca some);
+        // qualquer outro tipo de Site (POP, CDO, Ponto de Instalação…) segue a régua de
+        // Recurso — mesmo tier de on/off de um Recurso, já que só existe no mapa na mesma
+        // escala de detalhe (ver GeoTreeService.sitesInViewport).
+        const siteTier = kind === 'CO' ? stationTier : resourceTier;
         // O selecionado cresce; o resto segue o tier de escala (cheio perto, pequeno em 5–50 km).
-        const baseSize = stationTier === 'small' ? SITE_ICON_SMALL_SIZE : SITE_ICON_SIZE;
+        const baseSize = siteTier === 'small' ? SITE_ICON_SMALL_SIZE : SITE_ICON_SIZE;
         const size = selected ? SITE_ICON_SIZE + 8 : baseSize;
         const iconOptions = {
           url: siteIconDataUrl(icon, { size }),

@@ -861,6 +861,15 @@ const routeGeoRequest = async ({
         throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
       }
       const nextStatus = parseGeoProjectStatus(body.status);
+      // Projeto terminado não volta: terminar é o fim do ciclo de vida do projeto, não um
+      // estado como os demais — os locais já ganharam vida própria (ver cascata abaixo) e o
+      // projeto passa a ser só um registro histórico (Origem no painel de Local).
+      if (current.status === 'terminated' && nextStatus !== undefined && nextStatus !== 'terminated') {
+        throw new AppError('terminated project status is immutable', {
+          code: 'GEO_PROJECT_TERMINATED_IMMUTABLE',
+          statusCode: 409,
+        });
+      }
       const updated = await runtime.geoProjectRepository.update(geoContext.tenantId, projectId, {
         ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
         ...(body.description !== undefined
@@ -878,23 +887,27 @@ const routeGeoRequest = async ({
       // cascateia para cada Site vinculado. Best-effort — uma transição que a máquina
       // canônica recusa (SITE_STATUS_TRANSITIONS em service.ts) não aborta as demais nem
       // o PATCH; o chamador só sabe quantas ficaram para trás (siteCascade).
+      //
+      // 'terminated' é o único status que NÃO usa a tradução direta de GeoStatusAlias
+      // (que mapearia para Retired): terminar o projeto libera os locais — eles viram
+      // Active, com vida própria, e o projeto passa a ser só a Origem histórica deles
+      // (ver PROJECT_SITE_EXCLUSION_SQL em tree-service.ts, que volta a mostrá-los na
+      // Hierarquia/busca/mapa geral assim que o projeto termina).
       let siteCascade: { updated: number; skipped: number } | undefined;
       if (nextStatus !== undefined && nextStatus !== current.status) {
         const siteIds = await runtime.geoProjectRepository.listSiteIds(
           geoContext.tenantId,
           projectId,
         );
+        const cascadeStatus = nextStatus === 'terminated' ? 'active' : nextStatus;
+        const statusReason =
+          nextStatus === 'terminated'
+            ? 'Projeto de origem concluído — local liberado para o inventário'
+            : `Status do projeto alterado para ${nextStatus}`;
         siteCascade = { updated: 0, skipped: 0 };
         for (const siteId of siteIds) {
           try {
-            await geoService.transitionSite(
-              siteId,
-              {
-                status: nextStatus,
-                statusReason: `Status do projeto alterado para ${nextStatus}`,
-              },
-              geoContext,
-            );
+            await geoService.transitionSite(siteId, { status: cascadeStatus, statusReason }, geoContext);
             siteCascade.updated += 1;
           } catch {
             siteCascade.skipped += 1;
@@ -1078,7 +1091,10 @@ const routeGeoRequest = async ({
   }
 
   // Infra passiva por região visível do mapa — fonte usada em escala de detalhe (≤ 200 m),
-  // no lugar da expansão da árvore (ver GeoTreeService.resourcesInViewport).
+  // no lugar da expansão da árvore (ver GeoTreeService.resourcesInViewport). Soma os Sites
+  // não-CO da mesma região (GeoTreeService.sitesInViewport, Fase 3 do painel unificado de
+  // Local): CO/Estação já vem sempre de roots(), qualquer outro tipo de Site segue a mesma
+  // régua de escala de um Recurso — uma chamada só, não duas (backend de dev serializado).
   if (request.method === 'GET' && url.pathname === '/v1/geo/tree/viewport') {
     const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
     const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
@@ -1096,14 +1112,12 @@ const routeGeoRequest = async ({
       });
     }
     const limit = parseOptionalNumber(url.searchParams.get('limit'));
-    return sendJson(
-      response,
-      200,
-      geoTreeService.resourcesInViewport(
-        { minLng, minLat, maxLng, maxLat },
-        limit !== undefined ? { limit } : {},
-      ),
-    );
+    const bounds = { minLng, minLat, maxLng, maxLat };
+    const [resources, sites] = await Promise.all([
+      geoTreeService.resourcesInViewport(bounds, limit !== undefined ? { limit } : {}),
+      geoTreeService.sitesInViewport(bounds, limit !== undefined ? { limit } : {}),
+    ]);
+    return sendJson(response, 200, [...resources, ...sites]);
   }
 
   // Mapa de calor de cobertura GPON por bairro — fonte do mapa acima de 100 m, no lugar dos

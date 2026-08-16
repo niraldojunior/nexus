@@ -144,6 +144,12 @@ describe('ProjectDetailPanel', () => {
     ).toBeInTheDocument();
   });
 
+  it('projeto terminado esconde a combo de status (RF-010: não volta)', () => {
+    renderPanel({ project: project({ status: 'terminated' }) });
+    expect(screen.queryByLabelText('Status do projeto')).not.toBeInTheDocument();
+    expect(screen.getByText('Terminado')).toBeInTheDocument();
+  });
+
   it('excluir um local da lista pede confirmação antes de chamar onRemoveSite', () => {
     const target = site();
     const props = renderPanel({ sites: [target] });

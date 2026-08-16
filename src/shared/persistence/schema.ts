@@ -318,8 +318,8 @@ export const MIGRATIONS_SQL = `
   -- Procedência e precisão de Location/Address (pré-requisito do painel unificado de Local,
   -- REQ-MOD01-016): de onde veio a coordenada/endereço (GEONET, Google Maps, um sistema
   -- legado migrado, ou cadastro manual) e o nível de confiança normalizado do ponto.
-  -- accuracy (coluna já existente) segue guardando o texto cru da fonte (ex.: "ROOFTOP",
-  -- "ENDEREÇO COMPLETO"); accuracy_level é a normalização em high|medium|low|unknown.
+  -- accuracy (coluna já existente) segue guardando o texto cru da fonte (ex.: "ROOFTOP" ou
+  -- "ENDEREÇO COMPLETO") -- accuracy_level é a normalização em high|medium|low|unknown.
   ALTER TABLE tmf_geographic_location ADD COLUMN IF NOT EXISTS source_system TEXT;
   ALTER TABLE tmf_geographic_location ADD COLUMN IF NOT EXISTS source_ref TEXT;
   ALTER TABLE tmf_geographic_location ADD COLUMN IF NOT EXISTS accuracy_level TEXT;

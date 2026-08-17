@@ -163,9 +163,11 @@ export async function patchJson<T = unknown>(url: string, body: unknown): Promis
   return (await response.json()) as T;
 }
 
-export async function deleteJson(url: string): Promise<void> {
+export async function deleteJson<T = void>(url: string): Promise<T> {
   const response = await fetch(url, { method: 'DELETE', headers: authHeaders() });
   if (!response.ok) throw new Error(`DELETE ${url} falhou (${response.status})`);
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
 }
 
 export const listGeoSites = (options?: { siteSpecificationIds?: string[] }) => {

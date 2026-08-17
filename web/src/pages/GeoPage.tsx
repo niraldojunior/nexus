@@ -652,13 +652,25 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     [projectSites],
   );
 
-  const openProjectSite = useCallback((projectId: string, node: GeoTreeNode) => {
-    if (!node.refId) return;
-    setSelectedNode(node);
-    const point = treeNodePoint(node);
-    if (point) setFocusRequest({ point, scaleMeters: RESOURCE_FOCUS_SCALE_METERS });
-    setDockView({ kind: 'project', projectId, site: { mode: 'view', siteId: node.refId } });
-  }, []);
+  const openProjectSite = useCallback(
+    (projectId: string, node: GeoTreeNode) => {
+      if (!node.refId) return;
+      // Projeto terminado (RF-010): o local já ganhou vida própria (Active, sem herdar mais
+      // status do projeto) — abre o painel comum de Local, não o painel de projeto, que só
+      // faz sentido enquanto o projeto está em curso. O vínculo em `geo_project_site`
+      // continua existindo (é a Origem histórica do local), mas não é mais o dono dele.
+      const project = projects.projects.find((item) => item.id === projectId);
+      if (project?.status === 'terminated') {
+        selectNode(node, 'map');
+        return;
+      }
+      setSelectedNode(node);
+      const point = treeNodePoint(node);
+      if (point) setFocusRequest({ point, scaleMeters: RESOURCE_FOCUS_SCALE_METERS });
+      setDockView({ kind: 'project', projectId, site: { mode: 'view', siteId: node.refId } });
+    },
+    [projects.projects, selectNode],
+  );
 
   const selectNodeFromMap = useCallback(
     (node: GeoTreeNode) => {
@@ -843,13 +855,17 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   }, []);
 
   // Excluir projeto — pode vir da lista (ProjectListView, projeto fechado) ou do menu ⋯
-  // dentro do próprio painel dele; só fecha a doca quando o projeto excluído é o aberto.
+  // dentro do próprio painel dele. Aguarda a resposta do servidor (pode conter locais
+  // bloqueados que mantiveram o projeto vivo, issue #58): só fecha a doca quando o projeto
+  // excluído é o aberto E o servidor confirmou `deleted: true`. Erro/summary propagam para o
+  // chamador (ProjectListView/ProjectDetailPanel) mostrar o estado real, nunca `void`.
   const handleDeleteProject = useCallback(
-    (projectId: string) => {
-      void projects.remove(projectId);
-      if (dockView.kind !== 'hierarchy' && dockView.projectId === projectId) {
+    async (projectId: string) => {
+      const summary = await projects.remove(projectId);
+      if (summary.deleted && dockView.kind !== 'hierarchy' && dockView.projectId === projectId) {
         closeProjectPanel();
       }
+      return summary;
     },
     [projects, dockView, closeProjectPanel],
   );

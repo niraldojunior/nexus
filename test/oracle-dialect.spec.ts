@@ -105,6 +105,11 @@ test('inlineRows differs by dialect: Postgres VALUES (N binds), Oracle JSON_TABL
   assert.throws(() => dialectFor('oracle').inlineRows([], 'v', 'id'), /at least one value/);
 });
 
+test('newRowId is a bind-free expression, one per dialect (issue #58)', () => {
+  assert.equal(dialectFor('postgres').newRowId(), 'gen_random_uuid()::text');
+  assert.equal(dialectFor('oracle').newRowId(), 'LOWER(RAWTOHEX(SYS_GUID()))');
+});
+
 test('every managed table name is prefixed in a table position', () => {
   for (const table of TABLE_NAMES) {
     const rewritten = rewriteTableReferences(`SELECT 1 FROM ${table} x`, PREFIX);

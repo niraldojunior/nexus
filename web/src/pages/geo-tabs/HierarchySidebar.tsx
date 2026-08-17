@@ -1,6 +1,6 @@
 import { RefreshCw, Settings } from 'lucide-react';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
-import type { GeoProject } from '../../services/geoProjectApi';
+import type { GeoProject, GeoProjectDeleteSummary } from '../../services/geoProjectApi';
 import type { GeoTree } from '../../hooks/useGeoTree';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { DOCK_WIDTH_CLASS, DOCK_SEARCH_CLEARANCE_PT_CLASS, DOCK_ELEVATION_CLASS } from './dock';
@@ -32,7 +32,7 @@ export type HierarchySidebarProps = {
   projectsLoading: boolean;
   onCreateProject: () => void;
   onOpenProject: (projectId: string) => void;
-  onDeleteProject: (projectId: string) => void;
+  onDeleteProject: (projectId: string) => Promise<GeoProjectDeleteSummary>;
 };
 
 /**

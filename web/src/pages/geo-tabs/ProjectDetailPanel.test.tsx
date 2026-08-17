@@ -92,17 +92,35 @@ describe('ProjectDetailPanel', () => {
     expect(props.onUpdate).toHaveBeenCalledWith({ description: 'Levantamento de campo do Q3' });
   });
 
-  it('menu ⋯ abre e Excluir projeto pede confirmação antes de chamar onDelete', () => {
-    const props = renderPanel();
+  it('menu ⋯ abre e Excluir projeto pede confirmação (com a contagem de locais) antes de chamar onDelete', async () => {
+    const props = renderPanel({
+      project: project({ siteCount: 3 }),
+      onDelete: vi.fn().mockResolvedValue({ deleted: true, retired: 3, skipped: 0, blocked: 0 }),
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'Mais opções do projeto' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Excluir projeto' }));
 
     expect(props.onDelete).not.toHaveBeenCalled();
-    expect(screen.getByText(/os locais criados neste projeto serão/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/3 locais criados neste projeto serão encerrados/i),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
     expect(props.onDelete).toHaveBeenCalledTimes(1);
+    await screen.findByRole('button', { name: 'Mais opções do projeto' });
+  });
+
+  it('local bloqueado mantém o painel aberto e avisa, em vez de fechar silenciosamente (issue #58)', async () => {
+    renderPanel({
+      onDelete: vi.fn().mockResolvedValue({ deleted: false, retired: 0, skipped: 0, blocked: 1 }),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mais opções do projeto' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Excluir projeto' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
+
+    expect(await screen.findByText(/1 local não pôde ser encerrado/i)).toBeInTheDocument();
   });
 
   it('Adicionar Local chama onAddSite', () => {

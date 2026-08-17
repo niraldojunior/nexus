@@ -35,8 +35,21 @@ export type GeoProject = {
 };
 
 // Quantos locais a cascata de status conseguiu (e não conseguiu) transicionar — só vem no
-// PATCH que muda `status` (ver /v1/geo/projects/:id em app.ts).
-export type GeoProjectSiteCascade = { updated: number; skipped: number };
+// PATCH que muda `status` (ver /v1/geo/projects/:id em app.ts). `blocked` só aparece quando
+// algum local tem dependência ativa (filho/relacionamento/recurso/serviço/ordem).
+export type GeoProjectSiteCascade = { updated: number; skipped: number; blocked?: number };
+
+// Resposta do DELETE /v1/geo/projects/:id: o projeto só é excluído (`deleted: true`) quando
+// TODOS os locais puderam ser encerrados — havendo algum bloqueado, o projeto e seus vínculos
+// são mantidos íntegros (ver comentário da rota em app.ts) e `blockedSiteIds` traz uma amostra
+// para o usuário resolver as pendências antes de tentar de novo.
+export type GeoProjectDeleteSummary = {
+  deleted: boolean;
+  retired: number;
+  skipped: number;
+  blocked: number;
+  blockedSiteIds?: string[];
+};
 
 // Local de um projeto, na mesma forma de nó que a árvore usa, acrescido da anotação de
 // trabalho e do endereço GEONET de origem (ver geo_project_site em schema.ts).
@@ -86,7 +99,8 @@ export const updateProject = (
 ): Promise<GeoProject & { siteCascade?: GeoProjectSiteCascade }> =>
   patchJson<GeoProject & { siteCascade?: GeoProjectSiteCascade }>(`${BASE_URL}/${id}`, patch);
 
-export const deleteProject = (id: string): Promise<void> => deleteJson(`${BASE_URL}/${id}`);
+export const deleteProject = (id: string): Promise<GeoProjectDeleteSummary> =>
+  deleteJson<GeoProjectDeleteSummary>(`${BASE_URL}/${id}`);
 
 // Locais do projeto já vêm na forma de GeoTreeNode (mesma que a árvore usa), com geometria
 // resolvida — é o que dá pin/balão/voo de câmera de graça no mapa (ver GeoTreeService.sitesByIds).

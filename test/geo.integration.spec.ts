@@ -1374,6 +1374,139 @@ test('Projetos de trabalho: terminar o projeto libera os locais (viram Active, n
   );
 });
 
+// issue #58: DELETE /v1/geo/projects/:id passou a operar em massa (GeoService.transitionProjectSites)
+// em vez de um laço um-a-um por local, e a responder 200 com um resumo em vez de 204 silencioso —
+// um projeto com local bloqueado agora é MANTIDO íntegro, em vez de ficar pela metade para sempre.
+test('DELETE /v1/geo/projects/:id: encerra os locais e devolve um resumo; 404 para id inexistente', async (t) => {
+  const database = createTestDatabase();
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
+  const port = await server.start();
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
+
+  const missing = await requestJson(port, 'DELETE', '/v1/geo/projects/does-not-exist');
+  assert.equal(missing.statusCode, 404);
+  assert.equal((missing.body as { error: string }).error, 'GEO_PROJECT_NOT_FOUND');
+
+  const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+    name: 'Ponto de Instalação Delete',
+    category: 'Site',
+  });
+  const specId = (spec.body as { id: string }).id;
+
+  const project = await requestJson(port, 'POST', '/v1/geo/projects', { name: 'Projeto a apagar' });
+  const projectId = (project.body as { id: string }).id;
+
+  const created = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
+    location: { geometryType: 'Point', geometry: { type: 'Point', coordinates: [-43.3, -22.8] } },
+    address: { street: 'Rua a Apagar' },
+    site: { name: 'Local a Apagar', siteSpecificationId: specId },
+    geonetAddressId: 'geonet-delete-1',
+  });
+  const siteId = (created.body as { site: { id: string } }).site.id;
+
+  const deleted = await requestJson(port, 'DELETE', `/v1/geo/projects/${projectId}`);
+  assert.equal(deleted.statusCode, 200);
+  assert.deepEqual(deleted.body, { deleted: true, retired: 1, skipped: 0, blocked: 0 });
+
+  // Não há GET /v1/geo/projects/:id — confirma pela lista que o projeto sumiu.
+  const projectsAfter = await requestJson(port, 'GET', '/v1/geo/projects');
+  assert.ok(!(projectsAfter.body as Array<{ id: string }>).some((p) => p.id === projectId));
+  const siteAfter = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}`);
+  assert.equal((siteAfter.body as { status: string }).status, 'Retired');
+});
+
+test('DELETE /v1/geo/projects/:id: local bloqueado mantém o projeto e os vínculos íntegros', async (t) => {
+  const database = createTestDatabase();
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
+  const port = await server.start();
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
+
+  const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+    name: 'Ponto de Instalação Bloqueio',
+    category: 'Site',
+  });
+  const specId = (spec.body as { id: string }).id;
+
+  const project = await requestJson(port, 'POST', '/v1/geo/projects', {
+    name: 'Projeto com local bloqueado',
+  });
+  const projectId = (project.body as { id: string }).id;
+
+  const freeSite = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
+    location: { geometryType: 'Point', geometry: { type: 'Point', coordinates: [-43.4, -22.7] } },
+    address: { street: 'Rua Livre' },
+    site: { name: 'Local Livre', siteSpecificationId: specId },
+    geonetAddressId: 'geonet-bloqueio-1',
+  });
+  const freeSiteId = (freeSite.body as { site: { id: string } }).site.id;
+
+  const blockedSite = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
+    location: { geometryType: 'Point', geometry: { type: 'Point', coordinates: [-43.5, -22.6] } },
+    address: { street: 'Rua Bloqueada' },
+    site: { name: 'Local Bloqueado', siteSpecificationId: specId },
+    geonetAddressId: 'geonet-bloqueio-2',
+  });
+  const blockedSiteId = (blockedSite.body as { site: { id: string } }).site.id;
+
+  const feederSite = await requestJson(port, 'POST', '/v1/geo/sites', {
+    name: 'Alimentador do Bloqueado',
+    siteSpecificationId: specId,
+  });
+  const feederSiteId = (feederSite.body as { id: string }).id;
+
+  const relationship = await requestJson(
+    port,
+    'POST',
+    `/v1/geo/sites/${blockedSiteId}/relationships`,
+    { relatedSiteId: feederSiteId, relationshipType: 'fedBy' },
+  );
+  assert.equal(relationship.statusCode, 201);
+
+  const deleted = await requestJson(port, 'DELETE', `/v1/geo/projects/${projectId}`);
+  assert.equal(deleted.statusCode, 200);
+  const summary = deleted.body as {
+    deleted: boolean;
+    retired: number;
+    blocked: number;
+    blockedSiteIds?: string[];
+  };
+  assert.equal(summary.deleted, false);
+  assert.equal(summary.retired, 1);
+  assert.equal(summary.blocked, 1);
+  assert.deepEqual(summary.blockedSiteIds, [blockedSiteId]);
+
+  // Projeto continua existindo, com os dois vínculos intactos.
+  const projectsAfter = await requestJson(port, 'GET', '/v1/geo/projects');
+  assert.ok((projectsAfter.body as Array<{ id: string }>).some((p) => p.id === projectId));
+  const sitesAfter = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
+  assert.equal((sitesAfter.body as unknown[]).length, 2);
+
+  assert.equal(
+    ((await requestJson(port, 'GET', `/v1/geo/sites/${freeSiteId}`)).body as { status: string })
+      .status,
+    'Retired',
+  );
+  assert.equal(
+    ((await requestJson(port, 'GET', `/v1/geo/sites/${blockedSiteId}`)).body as { status: string })
+      .status,
+    'Planned',
+  );
+});
+
+
+
 test('Painel unificado de Local: Origem do Site e vínculo/desvínculo de Recurso', async (t) => {
   const database = createTestDatabase();
   const server = createApp({

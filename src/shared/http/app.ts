@@ -886,14 +886,16 @@ const routeGeoRequest = async ({
       // O projeto é a unidade de estado (REQ-MOD01-015 §20): quando o status muda,
       // cascateia para cada Site vinculado. Best-effort — uma transição que a máquina
       // canônica recusa (SITE_STATUS_TRANSITIONS em service.ts) não aborta as demais nem
-      // o PATCH; o chamador só sabe quantas ficaram para trás (siteCascade).
+      // o PATCH; o chamador só sabe quantas ficaram para trás (siteCascade). A cascata roda
+      // em massa (transitionProjectSites), não um `transitionSite` por local — um projeto
+      // com dezenas de milhares de locais (issue #58) nunca terminaria num laço um-a-um.
       //
       // 'terminated' é o único status que NÃO usa a tradução direta de GeoStatusAlias
       // (que mapearia para Retired): terminar o projeto libera os locais — eles viram
       // Active, com vida própria, e o projeto passa a ser só a Origem histórica deles
       // (ver PROJECT_SITE_EXCLUSION_SQL em tree-service.ts, que volta a mostrá-los na
       // Hierarquia/busca/mapa geral assim que o projeto termina).
-      let siteCascade: { updated: number; skipped: number } | undefined;
+      let siteCascade: { updated: number; skipped: number; blocked?: number } | undefined;
       if (nextStatus !== undefined && nextStatus !== current.status) {
         const siteIds = await runtime.geoProjectRepository.listSiteIds(
           geoContext.tenantId,
@@ -904,37 +906,55 @@ const routeGeoRequest = async ({
           nextStatus === 'terminated'
             ? 'Projeto de origem concluído — local liberado para o inventário'
             : `Status do projeto alterado para ${nextStatus}`;
-        siteCascade = { updated: 0, skipped: 0 };
-        for (const siteId of siteIds) {
-          try {
-            await geoService.transitionSite(siteId, { status: cascadeStatus, statusReason }, geoContext);
-            siteCascade.updated += 1;
-          } catch {
-            siteCascade.skipped += 1;
-          }
-        }
+        const cascadeResult = await geoService.transitionProjectSites(
+          projectId,
+          siteIds,
+          cascadeStatus,
+          statusReason,
+          geoContext,
+        );
+        siteCascade = {
+          updated: cascadeResult.updated,
+          skipped: cascadeResult.skipped,
+          ...(cascadeResult.blocked.length > 0 ? { blocked: cascadeResult.blocked.length } : {}),
+        };
       }
       return sendJson(response, 200, siteCascade ? { ...updated, siteCascade } : updated);
     }
     if (request.method === 'DELETE') {
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
-      // Retira (soft-terminate, C6) cada local ANTES de apagar o vínculo do projeto: se
-      // uma transição falhar (ex.: local passou a ter dependência bloqueante), a exceção
-      // aborta aqui e o projeto continua íntegro — a ordem inversa deixaria o local sem
-      // projeto e sem estar Retired, vazando para a Hierarquia geral sem dono.
+      const current = await runtime.geoProjectRepository.get(geoContext.tenantId, projectId);
+      if (!current) {
+        throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
+      }
+      // Retira (soft-terminate, C6) cada local em massa ANTES de apagar o vínculo do projeto
+      // (transitionProjectSites — um laço um-a-um nunca terminaria num projeto com dezenas de
+      // milhares de locais, issue #58). Local com dependência bloqueante fica de fora e o
+      // projeto é MANTIDO íntegro com todos os vínculos — a ordem inversa (apagar o projeto
+      // primeiro) deixaria esse local sem projeto e sem estar Retired, vazando para a
+      // Hierarquia geral sem dono.
       const siteIds = await runtime.geoProjectRepository.listSiteIds(
         geoContext.tenantId,
         projectId,
       );
-      for (const siteId of siteIds) {
-        await geoService.transitionSite(
-          siteId,
-          { status: 'Retired', statusReason: 'Projeto de trabalho excluído' },
-          geoContext,
-        );
+      const result = await geoService.transitionProjectSites(
+        projectId,
+        siteIds,
+        'Retired',
+        'Projeto de trabalho excluído',
+        geoContext,
+      );
+      const deleted = result.blocked.length === 0;
+      if (deleted) {
+        await runtime.geoProjectRepository.remove(geoContext.tenantId, projectId);
       }
-      await runtime.geoProjectRepository.remove(geoContext.tenantId, projectId);
-      return sendJson(response, 204, null);
+      return sendJson(response, 200, {
+        deleted,
+        retired: result.updated,
+        skipped: result.skipped,
+        blocked: result.blocked.length,
+        ...(result.blocked.length > 0 ? { blockedSiteIds: result.blocked.slice(0, 20) } : {}),
+      });
     }
   }
 

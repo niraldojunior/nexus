@@ -18,6 +18,7 @@ export const TABLE_NAMES = [
   'tmf_geographic_site_relationship',
   'geo_project',
   'geo_project_site',
+  'geo_project_area',
   'tmf_geographic_relationship_type',
   'tmf_resource_specification',
   'tmf_resource_category',
@@ -626,6 +627,34 @@ export const SCHEMA_SQL = `
         FOREIGN KEY (site_id) REFERENCES tmf_geographic_site(id)
       );
       CREATE INDEX IF NOT EXISTS idx_geo_project_site_site ON geo_project_site(site_id);
+
+      -- Manchas de concentração/dispersão de um Projeto (REQ-MOD01-017): agrupamento espacial
+      -- dos Sites de um projeto carregado em massa, gerado por scripts/build-project-areas.mjs
+      -- (dist/src/modules/geo/project-area-grid.ts). A geometria da mancha em si é um Polygon
+      -- comum em tmf_geographic_location (reference_point 'PROJECT:<projectId>'); esta tabela
+      -- guarda o vínculo com o projeto e o resto do relatório (mesmo espírito de
+      -- geo_project_site.note: extensão de plataforma, não characteristic TMF — C1 não se
+      -- aplica). Artefato derivado e regenerável (como geo_gpon_coverage_cell): toda execução
+      -- do script SUBSTITUI a geração anterior do projeto — exceção consciente a C6.
+      CREATE TABLE IF NOT EXISTS geo_project_area (
+        project_id TEXT NOT NULL,
+        location_id TEXT NOT NULL,
+        -- concentration (>= minSites locais) | dispersion (< minSites) — ver PROJECT_AREA_MIN_SITES.
+        kind TEXT NOT NULL,
+        site_count INTEGER NOT NULL DEFAULT 0,
+        -- Amostra de ids de Site do componente (JSON array de string, cap ~50) — diagnóstico de
+        -- dispersão sem precisar reconsultar geo_project_site inteiro.
+        site_ids TEXT,
+        centroid_lng REAL,
+        centroid_lat REAL,
+        area_km2 REAL,
+        position INTEGER NOT NULL DEFAULT 0,
+        generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (project_id, location_id),
+        FOREIGN KEY (project_id) REFERENCES geo_project(id),
+        FOREIGN KEY (location_id) REFERENCES tmf_geographic_location(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_geo_project_area_project ON geo_project_area(project_id, position);
 
       CREATE TABLE IF NOT EXISTS tmf_geographic_relationship_type (
         id TEXT PRIMARY KEY,

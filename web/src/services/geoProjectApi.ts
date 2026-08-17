@@ -12,7 +12,7 @@ import {
   type GeoSite,
   type GeoStatus,
 } from './geoApi';
-import type { GeoTreeNode } from './geoTreeApi';
+import type { GeoTreeNode, MapBounds } from './geoTreeApi';
 
 // Mesmo vocabulário de GeoStatus — o projeto é a unidade de estado (REQ-MOD01-015): mudar
 // o status do projeto cascateia (best-effort) para cada Site vinculado. Enquanto o projeto
@@ -86,9 +86,29 @@ export type CreatedProjectSite = {
   site: GeoSite;
 };
 
+// Mancha de concentração/dispersão do projeto (REQ-MOD01-017), gerada por
+// scripts/build-project-areas.mjs — ver ProjectAreaOverlay.ts para o desenho no mapa.
+export type ProjectAreaPolygon = { type: 'Polygon'; coordinates: Array<Array<[number, number]>> };
+
+export type ProjectArea = {
+  id: string;
+  kind: 'concentration' | 'dispersion';
+  siteCount: number;
+  geometry: ProjectAreaPolygon;
+  siteIds: string[];
+  centroid: [number, number] | null;
+  areaKm2: number | null;
+  generatedAt: string;
+};
+
 const BASE_URL = '/v1/geo/projects';
 
 export const fetchProjects = (): Promise<GeoProject[]> => getJson<GeoProject[]>(BASE_URL);
+
+// Manchas já geradas para o projeto (vazio se nenhuma foi gerada ainda — o painel volta ao
+// comportamento de sempre, listando/desenhando os locais individuais).
+export const fetchProjectAreas = (projectId: string): Promise<ProjectArea[]> =>
+  getJson<{ areas: ProjectArea[] }>(`${BASE_URL}/${projectId}/areas`).then((res) => res.areas);
 
 export const createProject = (name?: string): Promise<GeoProject> =>
   postJson<GeoProject>(BASE_URL, name?.trim() ? { name: name.trim() } : {});
@@ -104,8 +124,26 @@ export const deleteProject = (id: string): Promise<GeoProjectDeleteSummary> =>
 
 // Locais do projeto já vêm na forma de GeoTreeNode (mesma que a árvore usa), com geometria
 // resolvida — é o que dá pin/balão/voo de câmera de graça no mapa (ver GeoTreeService.sitesByIds).
-export const fetchProjectSites = (projectId: string): Promise<ProjectSite[]> =>
-  getJson<ProjectSite[]>(`${BASE_URL}/${projectId}/sites`);
+//
+// `bounds` restringe a busca à região visível do mapa (REQ-MOD01-017) — usado quando o projeto
+// já tem manchas geradas, para não baixar dezenas de milhares de locais de uma vez; sem
+// `bounds`, mantém o comportamento de sempre (todos os locais, na ordem salva). `limit` também
+// vale para a lista do painel (sem `bounds`), para um projeto grande não travar a UI.
+export const fetchProjectSites = (
+  projectId: string,
+  options: { bounds?: MapBounds; limit?: number } = {},
+): Promise<ProjectSite[]> => {
+  const params = new URLSearchParams();
+  if (options.bounds) {
+    params.set('minLng', String(options.bounds.minLng));
+    params.set('minLat', String(options.bounds.minLat));
+    params.set('maxLng', String(options.bounds.maxLng));
+    params.set('maxLat', String(options.bounds.maxLat));
+  }
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  const query = params.toString();
+  return getJson<ProjectSite[]>(`${BASE_URL}/${projectId}/sites${query ? `?${query}` : ''}`);
+};
 
 export const createProjectSite = (
   projectId: string,

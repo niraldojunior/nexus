@@ -7,6 +7,7 @@ import {
 } from '../src/shared/persistence/oracle-dialect-lint.js';
 import {
   ORACLE_JSON_CONSTRAINTS_SQL,
+  ORACLE_SCHEMA_SQL,
   splitOracleStatements,
 } from '../src/shared/persistence/oracle-schema.js';
 import {
@@ -159,6 +160,27 @@ test('research_session.context is never IS JSON-constrained, but mcp_confirmatio
   assert.ok(
     statements.some((s) => /\bmcp_confirmation\b[\s\S]*\(\s*context\s+IS JSON\s*\)/i.test(s)),
     'mcp_confirmation.context should still carry its IS JSON constraint',
+  );
+});
+
+test('geo_project_area (REQ-MOD01-017) survives the Oracle schema transform', () => {
+  // TEXT -> VARCHAR2/CLOB, INTEGER -> NUMBER(10), REAL -> BINARY_DOUBLE, DATETIME -> TIMESTAMP,
+  // NOT NULL DEFAULT reordered before the inline constraint (see transformOracleSchemaSql).
+  assert.match(ORACLE_SCHEMA_SQL, /CREATE TABLE geo_project_area/);
+  assert.match(ORACLE_SCHEMA_SQL, /site_count NUMBER\(10\) DEFAULT 0 NOT NULL/);
+  assert.match(ORACLE_SCHEMA_SQL, /centroid_lng BINARY_DOUBLE/);
+  assert.match(ORACLE_SCHEMA_SQL, /generated_at TIMESTAMP\(6\) WITH TIME ZONE/);
+  assert.doesNotMatch(
+    ORACLE_SCHEMA_SQL.split('CREATE TABLE geo_project_area')[1]!.split(';')[0]!,
+    /\bTEXT\b/,
+  );
+
+  // site_ids genuinely stores a JSON array (sample of Site ids) — its CHECK(... IS JSON) must
+  // be emitted, unlike the research_session.context exclusion above.
+  const statements = splitOracleStatements(ORACLE_JSON_CONSTRAINTS_SQL);
+  assert.ok(
+    statements.some((s) => /\bgeo_project_area\b[\s\S]*\(\s*site_ids\s+IS JSON\s*\)/i.test(s)),
+    'geo_project_area.site_ids should carry an IS JSON constraint',
   );
 });
 

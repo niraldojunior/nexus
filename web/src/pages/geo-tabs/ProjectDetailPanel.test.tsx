@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ProjectDetailPanel } from './ProjectDetailPanel';
-import type { GeoProject } from '../../services/geoProjectApi';
+import type { GeoProject, ProjectArea } from '../../services/geoProjectApi';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 
 afterEach(() => {
@@ -30,6 +30,28 @@ const site = (overrides: Partial<GeoTreeNode> = {}): GeoTreeNode => ({
   referredType: 'GeographicSite',
   status: 'planned',
   hasChildren: false,
+  ...overrides,
+});
+
+const area = (overrides: Partial<ProjectArea> = {}): ProjectArea => ({
+  id: 'loc-1',
+  kind: 'concentration',
+  siteCount: 10,
+  geometry: {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [0, 0],
+        [0, 1],
+        [1, 1],
+        [0, 0],
+      ],
+    ],
+  },
+  siteIds: [],
+  centroid: [0, 0],
+  areaKm2: 1,
+  generatedAt: '2026-08-17T00:00:00Z',
   ...overrides,
 });
 
@@ -178,5 +200,20 @@ describe('ProjectDetailPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
     expect(props.onRemoveSite).toHaveBeenCalledWith(target);
+  });
+
+  it('sem manchas, a contagem usa sites.length (comportamento de sempre)', () => {
+    renderPanel({ sites: [site(), site({ id: 'site:s2', refId: 's2' })] });
+    expect(screen.getByText('2 locais')).toBeInTheDocument();
+  });
+
+  it('com manchas geradas (REQ-MOD01-017), a contagem usa project.siteCount e avisa a página parcial', () => {
+    renderPanel({
+      project: project({ siteCount: 3514 }),
+      sites: [site()],
+      areas: [area({ kind: 'concentration' }), area({ id: 'loc-2', kind: 'dispersion' })],
+    });
+    expect(screen.getByText('3514 locais (mostrando 1)')).toBeInTheDocument();
+    expect(screen.getByText('1 concentração · 1 dispersão')).toBeInTheDocument();
   });
 });

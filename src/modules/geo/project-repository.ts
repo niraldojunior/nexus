@@ -55,6 +55,40 @@ export type UpdateGeoProjectSiteLinkInput = {
   note?: string | null;
 };
 
+// Mancha de agrupamento espacial dos locais de um Projeto (REQ-MOD01-017), gerada por
+// scripts/build-project-areas.mjs — ver src/modules/geo/project-area-grid.ts para o algoritmo.
+// A geometria em si vive em tmf_geographic_location (Polygon, TMF675); esta forma é a junção
+// pronta para o mapa (id da Location + geometria + classificação), sem o chamador precisar
+// saber que a mancha é uma Location por baixo.
+export type GeoProjectArea = {
+  id: string;
+  kind: 'concentration' | 'dispersion';
+  siteCount: number;
+  geometry: import('./domain.js').GeoJSONPolygon;
+  siteIds: string[];
+  centroid: [number, number] | null;
+  areaKm2: number | null;
+  generatedAt: string;
+};
+
+export type CreateProjectAreaInput = {
+  locationId: string;
+  kind: 'concentration' | 'dispersion';
+  siteCount: number;
+  siteIds: string[];
+  centroid: [number, number];
+  areaKm2: number;
+};
+
+// Location (Polygon) que o chamador (scripts/build-project-areas.mjs) já monta pronta para
+// gravação — mesma forma que build-gpon-coverage.mjs monta para tmf_geographic_location.
+export type CreateProjectAreaLocationInput = {
+  id: string;
+  href: string;
+  geometry: string;
+  characteristics: string;
+};
+
 type ProjectRow = {
   id: string;
   tenantId: string;
@@ -257,5 +291,138 @@ export class GeoProjectRepository {
       [projectId, siteId],
     );
     return result.changes > 0;
+  }
+
+  // Manchas de concentração/dispersão do projeto (REQ-MOD01-017), geradas por
+  // scripts/build-project-areas.mjs. A geometria vem de tmf_geographic_location; o resto do
+  // relatório (siteIds de amostra, centroide, área) fica em colunas próprias de
+  // geo_project_area — mesma extensão de plataforma que geo_project_site.note, não
+  // characteristic TMF (C1 não se aplica).
+  async listAreas(tenantId: string, projectId: string): Promise<GeoProjectArea[]> {
+    const rows = await this.db.all<{
+      locationId: string;
+      kind: 'concentration' | 'dispersion';
+      siteCount: number;
+      siteIds: string | null;
+      centroidLng: number | null;
+      centroidLat: number | null;
+      areaKm2: number | null;
+      generatedAt: string;
+      geometry: string | null;
+    }>(
+      `SELECT pa.location_id AS locationId, pa.kind, pa.site_count AS siteCount,
+              pa.site_ids AS siteIds, pa.centroid_lng AS centroidLng,
+              pa.centroid_lat AS centroidLat, pa.area_km2 AS areaKm2,
+              pa.generated_at AS generatedAt, l.geometry
+         FROM geo_project_area pa
+         JOIN geo_project p ON p.id = pa.project_id
+         JOIN tmf_geographic_location l ON l.id = pa.location_id
+        WHERE p.tenant_id = ? AND pa.project_id = ?
+        ORDER BY pa.position`,
+      [tenantId, projectId],
+    );
+
+    return rows
+      .map((row) => {
+        const geometry = parseAreaGeometry(row.geometry);
+        if (!geometry) return null;
+        const centroid =
+          row.centroidLng !== null && row.centroidLat !== null
+            ? ([Number(row.centroidLng), Number(row.centroidLat)] as [number, number])
+            : null;
+        return {
+          id: row.locationId,
+          kind: row.kind,
+          siteCount: Number(row.siteCount) || 0,
+          geometry,
+          siteIds: parseSiteIds(row.siteIds),
+          centroid,
+          areaKm2: row.areaKm2 !== null ? Number(row.areaKm2) : null,
+          generatedAt: row.generatedAt,
+        } satisfies GeoProjectArea;
+      })
+      .filter((area): area is GeoProjectArea => area !== null);
+  }
+
+  // SUBSTITUI a geração anterior do projeto (idempotente por escopo, como
+  // build-gpon-coverage.mjs): apaga os vínculos e as Locations `PROJECT:<projectId>` antigas
+  // antes de gravar as novas. Usado pelo script de geração (que fala direto com o loader-db
+  // via SQL equivalente, para bulkInsert em massa) e disponível ao chamador HTTP na mesma forma.
+  async replaceAreas(
+    tenantId: string,
+    projectId: string,
+    locations: CreateProjectAreaLocationInput[],
+    areas: CreateProjectAreaInput[],
+  ): Promise<void> {
+    const project = await this.get(tenantId, projectId);
+    if (!project) return;
+
+    const existing = await this.db.all<{ locationId: string }>(
+      `SELECT location_id AS locationId FROM geo_project_area WHERE project_id = ?`,
+      [projectId],
+    );
+    if (existing.length > 0) {
+      await this.db.run(`DELETE FROM geo_project_area WHERE project_id = ?`, [projectId]);
+      for (const row of existing) {
+        await this.db.run(`DELETE FROM tmf_geographic_location WHERE id = ?`, [row.locationId]);
+      }
+    }
+
+    for (const location of locations) {
+      await this.db.run(
+        `INSERT INTO tmf_geographic_location
+            (id, href, geometry_type, geometry, spatial_ref, reference_point, characteristics)
+         VALUES (?, ?, 'Polygon', ?, 'EPSG:4326', ?, ?)`,
+        [
+          location.id,
+          location.href,
+          location.geometry,
+          `PROJECT:${projectId}`,
+          location.characteristics,
+        ],
+      );
+    }
+    for (const [position, area] of areas.entries()) {
+      await this.db.run(
+        `INSERT INTO geo_project_area
+            (project_id, location_id, kind, site_count, site_ids, centroid_lng, centroid_lat, area_km2, position)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          projectId,
+          area.locationId,
+          area.kind,
+          area.siteCount,
+          JSON.stringify(area.siteIds),
+          area.centroid[0],
+          area.centroid[1],
+          area.areaKm2,
+          position,
+        ],
+      );
+    }
+    await this.db.run(`UPDATE geo_project SET updated_at = ? WHERE id = ?`, [
+      new Date().toISOString(),
+      projectId,
+    ]);
+  }
+}
+
+function parseAreaGeometry(raw: string | null): import('./domain.js').GeoJSONPolygon | null {
+  if (!raw) return null;
+  try {
+    const geometry = JSON.parse(raw);
+    return geometry?.type === 'Polygon' ? geometry : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseSiteIds(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
   }
 }

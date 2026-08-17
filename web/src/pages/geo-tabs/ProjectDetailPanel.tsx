@@ -4,6 +4,7 @@ import type {
   GeoProject,
   GeoProjectDeleteSummary,
   GeoProjectSiteCascade,
+  ProjectArea,
 } from '../../services/geoProjectApi';
 import type { GeoStatus } from '../../services/geoApi';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
@@ -27,6 +28,10 @@ export type ProjectDetailPanelProps = {
   project: GeoProject;
   sites: GeoTreeNode[];
   sitesLoading: boolean;
+  // Manchas de concentração/dispersão do projeto (REQ-MOD01-017), geradas por
+  // scripts/build-project-areas.mjs — vazio quando o projeto não tem manchas ainda. Quando
+  // presentes, `sites` é só uma PÁGINA (o total real é `project.siteCount`).
+  areas?: ProjectArea[];
   selectedSiteId?: string | null;
   onSnapChange?: (state: BottomSheetSnapState) => void;
   minimizeSignal?: number;
@@ -51,6 +56,7 @@ export function ProjectDetailPanel({
   project,
   sites,
   sitesLoading,
+  areas = [],
   selectedSiteId,
   onSnapChange,
   minimizeSignal,
@@ -267,11 +273,26 @@ export function ProjectDetailPanel({
     </div>
   ) : null;
 
+  // Com manchas geradas (REQ-MOD01-017), `sites` é só uma página — o total real é
+  // `project.siteCount`; sem manchas, os dois coincidem (lista completa, como sempre).
+  const hasAreas = areas.length > 0;
+  const totalCount = hasAreas ? project.siteCount : sites.length;
   const countLabel = (
     <span className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-      {sites.length === 1 ? '1 local' : `${sites.length} locais`}
+      {totalCount === 1 ? '1 local' : `${totalCount} locais`}
+      {hasAreas && sites.length < totalCount ? ` (mostrando ${sites.length})` : ''}
     </span>
   );
+
+  const concentrationCount = areas.filter((area) => area.kind === 'concentration').length;
+  const dispersionCount = areas.filter((area) => area.kind === 'dispersion').length;
+  const areasSummary = hasAreas ? (
+    <div className="px-3 pb-1 text-[0.76rem] text-app-muted">
+      {concentrationCount === 1 ? '1 concentração' : `${concentrationCount} concentrações`}
+      {' · '}
+      {dispersionCount === 1 ? '1 dispersão' : `${dispersionCount} dispersões`}
+    </div>
+  ) : null;
 
   const addSiteButton = (
     <button type="button" onClick={onAddSite} className="geo-btn primary w-full justify-center">
@@ -357,8 +378,7 @@ export function ProjectDetailPanel({
     <Modal onClose={() => setPendingRemoveSite(null)} title="Excluir local" eyebrow="Projetos">
       <div className="grid gap-4">
         <p className="text-[0.9rem] leading-snug text-app-text">
-          Excluir <strong>{pendingRemoveSite.label}</strong> deste projeto? O local será
-          encerrado.
+          Excluir <strong>{pendingRemoveSite.label}</strong> deste projeto? O local será encerrado.
         </p>
         <div className="flex justify-end gap-2">
           <button
@@ -395,6 +415,7 @@ export function ProjectDetailPanel({
           {deleteNoticeBlock ? <div className="mt-2">{deleteNoticeBlock}</div> : null}
           <div className="mt-3 border-t border-app-border pt-3">
             <div className="mb-1 flex items-center justify-between">{countLabel}</div>
+            {areasSummary}
             <div className="grid gap-0.5">
               {addSiteButton}
               {siteRows}
@@ -419,6 +440,7 @@ export function ProjectDetailPanel({
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="px-3 pb-1 pt-3">{countLabel}</div>
+        {areasSummary}
         <OverlayScrollArea className="px-3 pb-3" hostClassName="min-h-0">
           <div className="grid gap-0.5">
             {addSiteButton}

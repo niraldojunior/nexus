@@ -162,6 +162,22 @@ export type GeographicSiteReferences = {
   blocking: boolean;
 };
 
+// Fonte externa que originou o dado (procedência) — pré-requisito do painel unificado de
+// Local (REQ-MOD01-016): GEONET/Google Maps por escolha do usuário no modal de endereço, um
+// sistema legado migrado (Netwin/Geosite/NetworkCore/Geoplex), ou cadastro manual.
+export type GeoSourceSystem =
+  | 'GEONET'
+  | 'GOOGLE_MAPS'
+  | 'NETWIN'
+  | 'GEOSITE'
+  | 'NETWORKCORE'
+  | 'GEOPLEX'
+  | 'MANUAL';
+
+// Nível de confiança normalizado do ponto, derivado do texto cru de `accuracy` (que
+// permanece na forma como a fonte devolveu, ex. "ROOFTOP", "ENDEREÇO COMPLETO").
+export type GeoAccuracyLevel = 'high' | 'medium' | 'low' | 'unknown';
+
 export type GeographicLocation = {
   '@type': 'GeographicLocation';
   id: string;
@@ -172,6 +188,11 @@ export type GeographicLocation = {
   spatialRef: string;
   accuracy?: string;
   referencePoint?: string;
+  // Procedência: quem gerou esta coordenada e a referência dela na fonte (id GEONET,
+  // placeId do Google, id do registro legado).
+  sourceSystem?: GeoSourceSystem;
+  sourceRef?: string;
+  accuracyLevel?: GeoAccuracyLevel;
   validFor?: TimePeriod;
   characteristic: Characteristic[];
 };
@@ -189,6 +210,8 @@ export type GeographicAddress = {
   country?: string;
   geographicLocationId?: string;
   place?: { id: string; '@referredType': 'GeographicLocation' };
+  sourceSystem?: GeoSourceSystem;
+  sourceRef?: string;
   validFor?: TimePeriod;
   characteristic: Characteristic[];
 };
@@ -260,5 +283,8 @@ export type GeographicSite = {
   parentSite?: { id: string; '@referredType': 'GeographicSite' };
   relatedSite: GeographicSiteRelationship[];
   relatedParty: Array<{ id: string; role?: string; '@referredType': 'Party' }>;
+  // Observação livre do local (aba Visão Geral do painel unificado, REQ-MOD01-016) — campo
+  // comum, não characteristic (C1 não se aplica: anotação de trabalho, não extensão TMF).
+  note?: string | null;
   characteristic: Characteristic[];
 };

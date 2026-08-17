@@ -66,6 +66,24 @@ export function formatAddress(address: GeoAddress): string {
     .join(', ');
 }
 
+// Rótulo da fonte para o parêntese final do endereço na aba Visão Geral do painel de Local
+// (ex.: "Rua Cinco de Julho, 237, Niterói, RJ, 24220110 (geonet)").
+const SOURCE_SYSTEM_LABEL: Record<string, string> = {
+  GEONET: 'geonet',
+  GOOGLE_MAPS: 'google maps',
+  NETWIN: 'netwin',
+  GEOSITE: 'geosite',
+  NETWORKCORE: 'networkcore',
+  GEOPLEX: 'geoplex',
+  MANUAL: 'cadastro livre',
+};
+
+export function formatAddressWithSource(address: GeoAddress): string {
+  const base = formatAddress(address);
+  const sourceLabel = address.sourceSystem ? SOURCE_SYSTEM_LABEL[address.sourceSystem] : undefined;
+  return sourceLabel ? `${base} (${sourceLabel})` : base;
+}
+
 export function formatCoordinates(coordinates: [number, number]): string {
   return `${coordinates[1].toFixed(5)}, ${coordinates[0].toFixed(5)}`;
 }

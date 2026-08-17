@@ -1,10 +1,12 @@
 import type {
+  GeoAccuracyLevel,
   GeoBulkItemStatus,
   GeoBulkJobStatus,
   GeoBulkMode,
   GeoBulkTarget,
   GeoGeometryType,
   GeoSiteStatus,
+  GeoSourceSystem,
   GeographicRelationshipType,
   GeographicSiteSpecificationCategory,
   GeographicSiteSpecificationLifecycleStatus,
@@ -29,6 +31,9 @@ export type GeographicLocationRow = {
   spatial_ref: string;
   accuracy: string | null;
   reference_point: string | null;
+  source_system: GeoSourceSystem | null;
+  source_ref: string | null;
+  accuracy_level: GeoAccuracyLevel | null;
   valid_for_start: string | null;
   valid_for_end: string | null;
   characteristics: string | null;
@@ -46,6 +51,8 @@ export type GeographicAddressRow = {
   postcode: string | null;
   country: string;
   geographic_location_id: string | null;
+  source_system: GeoSourceSystem | null;
+  source_ref: string | null;
   valid_for_start: string | null;
   valid_for_end: string | null;
   characteristics: string | null;
@@ -89,6 +96,7 @@ export type GeographicSiteRow = {
   parent_site_id: string | null;
   related_party: string | null;
   site_addresses: string | null;
+  note: string | null;
   characteristics: string | null;
 };
 

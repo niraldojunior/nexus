@@ -279,12 +279,17 @@ export class ResourceService {
     if (input.resourceSpecificationId !== undefined)
       await this.getResourceSpecificationOrThrow(input.resourceSpecificationId);
 
+    // `place` some do objeto base (não só do spread condicional de baixo) porque
+    // `placeId: null` (desvincular do local, aba Recursos do painel unificado, C2) precisa
+    // apagar um `current.place` existente — `exactOptionalPropertyTypes` não aceita
+    // `place: undefined` explícito, só a chave ausente.
+    const { place: _currentPlace, ...currentWithoutPlace } = current;
     const place =
       input.placeId !== undefined
         ? await this.resolvePlace(input.placeId, input.placeType)
         : current.place;
     const updated = await this.repository.upsertPhysicalResource({
-      ...current,
+      ...currentWithoutPlace,
       name: input.name !== undefined ? input.name.trim() : current.name,
       resourceSpecificationId: input.resourceSpecificationId ?? current.resourceSpecificationId,
       resourceSpecification: {
@@ -390,6 +395,10 @@ export class ResourceService {
     if (input.name !== undefined) assertName(input.name);
     if (input.resourceSpecificationId !== undefined)
       await this.getResourceSpecificationOrThrow(input.resourceSpecificationId);
+    // `place` some do objeto base (mesmo motivo do updatePhysicalResource): só assim
+    // `placeId: null` (desvincular do local) consegue apagar um `current.place` existente
+    // sob `exactOptionalPropertyTypes`.
+    const { place: _currentPlace, ...currentWithoutPlace } = current;
     const place =
       input.placeId !== undefined
         ? await this.resolvePlace(input.placeId, input.placeType)
@@ -402,7 +411,7 @@ export class ResourceService {
           : undefined;
 
     const updated = await this.repository.upsertLogicalResource({
-      ...current,
+      ...currentWithoutPlace,
       name: input.name !== undefined ? input.name.trim() : current.name,
       resourceSpecificationId: input.resourceSpecificationId ?? current.resourceSpecificationId,
       resourceSpecification: {
@@ -572,7 +581,7 @@ export class ResourceService {
   }
 
   private async resolvePlace(
-    placeId: string | undefined,
+    placeId: string | null | undefined,
     placeType: string | undefined,
   ): Promise<{ id: string; '@referredType': string } | undefined> {
     if (!placeId) return undefined;

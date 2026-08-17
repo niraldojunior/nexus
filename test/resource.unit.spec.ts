@@ -260,6 +260,19 @@ test('ResourceService creates, mutates and terminates inventory resources', asyn
   assert.equal(updatedLogical.name, 'VLAN 100A');
   assert.equal(updatedLogical.supportingPhysicalResourceId, physical.id);
 
+  // `placeId: null` desvincula o recurso do Site (aba Recursos do painel unificado de
+  // Local, REQ-MOD01-016) — `undefined` (campo ausente) não deve mexer no place existente.
+  assert.equal(updatedPhysical.place?.id, place.id);
+  const unchangedPlace = await service.updatePhysicalResource(physical.id, { name: 'sem mudança' });
+  assert.equal(unchangedPlace.place?.id, place.id);
+  const unlinkedPhysical = await service.updatePhysicalResource(physical.id, { placeId: null });
+  assert.equal(unlinkedPhysical.place, undefined);
+  const relinkedPhysical = await service.updatePhysicalResource(physical.id, { placeId: place.id });
+  assert.equal(relinkedPhysical.place?.id, place.id);
+
+  const unlinkedLogical = await service.updateLogicalResource(logical.id, { placeId: null });
+  assert.equal(unlinkedLogical.place, undefined);
+
   const related = await service.addResourceRelationship(physical.id, {
     id: logical.id,
     relationshipType: 'supports',

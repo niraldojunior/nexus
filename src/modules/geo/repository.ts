@@ -230,6 +230,7 @@ export class GeoRepository implements IGeoRepository {
       name?: string;
       status?: GeographicSite['status'];
       siteSpecificationId?: string;
+      siteSpecificationIds?: string[];
       parentSiteId?: string | null;
       descendantOfSiteId?: string;
       characteristicName?: string;
@@ -246,6 +247,11 @@ export class GeoRepository implements IGeoRepository {
       if (query?.name && !site.name.toLowerCase().includes(query.name.toLowerCase())) return false;
       if (query?.status && site.status !== query.status) return false;
       if (query?.siteSpecificationId && site.siteSpecificationId !== query.siteSpecificationId)
+        return false;
+      if (
+        query?.siteSpecificationIds &&
+        !query.siteSpecificationIds.includes(site.siteSpecificationId)
+      )
         return false;
       if (query?.parentSiteId !== undefined) {
         const currentParentId = site.parentSite?.id ?? null;

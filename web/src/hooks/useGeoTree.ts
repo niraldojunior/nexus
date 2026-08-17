@@ -5,10 +5,11 @@
 // cada expansão busca no servidor apenas os filhos diretos do nó clicado.
 //
 // Duas saídas alimentam a tela: `rows` (as linhas visíveis, já achatadas e
-// indentadas) e `mapNodes` (as Estações, que servem de âncora sempre visível no
-// mapa). Recursos e cabos (infra passiva) não vêm mais daqui — GeoPage os busca
-// pela região visível do mapa (ver fetchViewportResources em geoTreeApi.ts),
-// independente do que está aberto na árvore.
+// indentadas) e `mapNodes` (as Estações/CO, único tipo de Site com visibilidade em
+// qualquer escala — ver siteKindFromSpec e mapScale.ts). Qualquer outro tipo de Site
+// (POP, CDO, Ponto de Instalação…), Recursos e cabos (infra passiva) não vêm mais
+// daqui — GeoPage os busca pela região visível do mapa em escala de detalhe (ver
+// fetchViewportResources em geoTreeApi.ts), independente do que está aberto na árvore.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -25,6 +26,7 @@ import {
   type GeoTreeRow,
   type GeoTreeState,
 } from '../utils/geoHierarchy';
+import { siteKindFromSpec } from '../utils/placeLabel';
 
 export type { GeoTreeRow };
 
@@ -147,11 +149,19 @@ export function useGeoTree(): GeoTree {
     [state, expandedRows, loadingNodes],
   );
 
-  // Estações sempre no mapa: todas já vieram na resposta de raízes, independente
-  // do que está aberto na árvore. Infra passiva (recursos e cabos) não entra mais
-  // aqui — vem do viewport do mapa, buscada em GeoPage.
+  // Só CO/Estação é visível no mapa em qualquer escala — é o único tipo de Site com essa
+  // regra; qualquer outro tipo (POP, CDO, Ponto de Instalação…) segue a régua de escala de
+  // um Recurso e só entra pelo viewport do mapa (ver GeoPage.viewportInfra e
+  // GeoTreeService.sitesInViewport). Todo CO já vem na resposta de raízes, independente do
+  // que está aberto na árvore.
   const mapNodes = useMemo(
-    () => Object.values(state.nodesById).filter((node) => node.kind === 'site' && node.geometry),
+    () =>
+      Object.values(state.nodesById).filter(
+        (node) =>
+          node.kind === 'site' &&
+          node.geometry &&
+          siteKindFromSpec({ category: node.siteCategory, name: node.sublabel }) === 'CO',
+      ),
     [state.nodesById],
   );
 

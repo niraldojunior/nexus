@@ -25,6 +25,10 @@ export type UseGeoProjectsResult = {
     patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status'>>,
   ) => Promise<{ siteCascade?: GeoProjectSiteCascade }>;
   remove: (id: string) => Promise<void>;
+  // Ajuste otimista do contador de locais (criar/remover local de dentro do painel do
+  // projeto) — sem isto, `siteCount` só era carregado uma vez no mount e a lista de
+  // Projetos mostrava um número desatualizado até um reload de página inteiro.
+  adjustSiteCount: (id: string, delta: number) => void;
 };
 
 export function useGeoProjects(): UseGeoProjectsResult {
@@ -74,5 +78,13 @@ export function useGeoProjects(): UseGeoProjectsResult {
     await deleteProject(id);
   }, []);
 
-  return { projects, loading, reload, create, update, remove };
+  const adjustSiteCount = useCallback((id: string, delta: number) => {
+    setProjects((current) =>
+      current.map((item) =>
+        item.id === id ? { ...item, siteCount: Math.max(0, item.siteCount + delta) } : item,
+      ),
+    );
+  }, []);
+
+  return { projects, loading, reload, create, update, remove, adjustSiteCount };
 }

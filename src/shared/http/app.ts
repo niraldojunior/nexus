@@ -861,6 +861,15 @@ const routeGeoRequest = async ({
         throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
       }
       const nextStatus = parseGeoProjectStatus(body.status);
+      // Projeto terminado não volta: terminar é o fim do ciclo de vida do projeto, não um
+      // estado como os demais — os locais já ganharam vida própria (ver cascata abaixo) e o
+      // projeto passa a ser só um registro histórico (Origem no painel de Local).
+      if (current.status === 'terminated' && nextStatus !== undefined && nextStatus !== 'terminated') {
+        throw new AppError('terminated project status is immutable', {
+          code: 'GEO_PROJECT_TERMINATED_IMMUTABLE',
+          statusCode: 409,
+        });
+      }
       const updated = await runtime.geoProjectRepository.update(geoContext.tenantId, projectId, {
         ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
         ...(body.description !== undefined
@@ -878,23 +887,27 @@ const routeGeoRequest = async ({
       // cascateia para cada Site vinculado. Best-effort — uma transição que a máquina
       // canônica recusa (SITE_STATUS_TRANSITIONS em service.ts) não aborta as demais nem
       // o PATCH; o chamador só sabe quantas ficaram para trás (siteCascade).
+      //
+      // 'terminated' é o único status que NÃO usa a tradução direta de GeoStatusAlias
+      // (que mapearia para Retired): terminar o projeto libera os locais — eles viram
+      // Active, com vida própria, e o projeto passa a ser só a Origem histórica deles
+      // (ver PROJECT_SITE_EXCLUSION_SQL em tree-service.ts, que volta a mostrá-los na
+      // Hierarquia/busca/mapa geral assim que o projeto termina).
       let siteCascade: { updated: number; skipped: number } | undefined;
       if (nextStatus !== undefined && nextStatus !== current.status) {
         const siteIds = await runtime.geoProjectRepository.listSiteIds(
           geoContext.tenantId,
           projectId,
         );
+        const cascadeStatus = nextStatus === 'terminated' ? 'active' : nextStatus;
+        const statusReason =
+          nextStatus === 'terminated'
+            ? 'Projeto de origem concluído — local liberado para o inventário'
+            : `Status do projeto alterado para ${nextStatus}`;
         siteCascade = { updated: 0, skipped: 0 };
         for (const siteId of siteIds) {
           try {
-            await geoService.transitionSite(
-              siteId,
-              {
-                status: nextStatus,
-                statusReason: `Status do projeto alterado para ${nextStatus}`,
-              },
-              geoContext,
-            );
+            await geoService.transitionSite(siteId, { status: cascadeStatus, statusReason }, geoContext);
             siteCascade.updated += 1;
           } catch {
             siteCascade.skipped += 1;
@@ -1078,7 +1091,10 @@ const routeGeoRequest = async ({
   }
 
   // Infra passiva por região visível do mapa — fonte usada em escala de detalhe (≤ 200 m),
-  // no lugar da expansão da árvore (ver GeoTreeService.resourcesInViewport).
+  // no lugar da expansão da árvore (ver GeoTreeService.resourcesInViewport). Soma os Sites
+  // não-CO da mesma região (GeoTreeService.sitesInViewport, Fase 3 do painel unificado de
+  // Local): CO/Estação já vem sempre de roots(), qualquer outro tipo de Site segue a mesma
+  // régua de escala de um Recurso — uma chamada só, não duas (backend de dev serializado).
   if (request.method === 'GET' && url.pathname === '/v1/geo/tree/viewport') {
     const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
     const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
@@ -1096,14 +1112,12 @@ const routeGeoRequest = async ({
       });
     }
     const limit = parseOptionalNumber(url.searchParams.get('limit'));
-    return sendJson(
-      response,
-      200,
-      geoTreeService.resourcesInViewport(
-        { minLng, minLat, maxLng, maxLat },
-        limit !== undefined ? { limit } : {},
-      ),
-    );
+    const bounds = { minLng, minLat, maxLng, maxLat };
+    const [resources, sites] = await Promise.all([
+      geoTreeService.resourcesInViewport(bounds, limit !== undefined ? { limit } : {}),
+      geoTreeService.sitesInViewport(bounds, limit !== undefined ? { limit } : {}),
+    ]);
+    return sendJson(response, 200, [...resources, ...sites]);
   }
 
   // Mapa de calor de cobertura GPON por bairro — fonte do mapa acima de 100 m, no lugar dos
@@ -1191,6 +1205,106 @@ const routeGeoRequest = async ({
       200,
       geoService.listSiteAudit(decodeURIComponent(auditMatch[1] ?? ''), geoContext),
     );
+  }
+
+  // Origem do local (aba Visão Geral do painel unificado, REQ-MOD01-016): de onde este Site
+  // veio — três formas mutuamente exclusivas, checadas nesta ordem. `_origin.system` (C5)
+  // vem de uma carga de migração (ver scripts/estacoes_carregar.mjs); o vínculo em
+  // geo_project_site sobrevive ao término do projeto (Fase 2), então continua respondendo
+  // 'project' mesmo com o local já liberado; sem nenhum dos dois, cai no autor do evento de
+  // criação (tmf_audit_log) — cadastro manual pela UI.
+  const originMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/origin$/);
+  if (originMatch && request.method === 'GET') {
+    const siteId = decodeURIComponent(originMatch[1] ?? '');
+    const site = await geoService.getSite(siteId, geoContext);
+    if (!site) {
+      throw new AppError('site not found', { code: 'GEO_SITE_NOT_FOUND', statusCode: 404 });
+    }
+    const originSystem = site.characteristic.find((c) => c.name === '_origin.system')?.value;
+    if (typeof originSystem === 'string' && originSystem) {
+      return sendJson(response, 200, { kind: 'import', system: originSystem });
+    }
+    const project = await runtime.geoProjectRepository.findProjectBySiteId(
+      geoContext.tenantId,
+      siteId,
+    );
+    if (project) {
+      return sendJson(response, 200, {
+        kind: 'project',
+        projectId: project.projectId,
+        projectName: project.projectName,
+      });
+    }
+    const audit = await geoService.listSiteAudit(siteId, geoContext);
+    const createEntry = audit.find((entry) => entry.action === 'create');
+    return sendJson(response, 200, {
+      kind: 'manual',
+      actorSub: createEntry?.actorSub ?? 'desconhecido',
+      createdAt: createEntry?.eventTime ?? '',
+    });
+  }
+
+  // Vínculo de Recurso com o Site (aba Recursos do painel unificado de Local,
+  // REQ-MOD01-016). Fica em src/shared/http/app.ts, não em geoService, porque a escrita é
+  // do módulo Resource (C2/C3: fronteira Geo↔Resource) — aqui só se resolve o tipo
+  // (Physical/Logical) e se delega a `resourceService`, como o restante do roteamento de
+  // recursos (`routeResourceRequest`).
+  const siteResourcesMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/resources$/);
+  if (siteResourcesMatch?.[1] && request.method === 'POST') {
+    requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+    const siteId = decodeURIComponent(siteResourcesMatch[1]);
+    const site = await geoService.getSite(siteId, geoContext);
+    if (!site) {
+      throw new AppError('site not found', { code: 'GEO_SITE_NOT_FOUND', statusCode: 404 });
+    }
+    const body = await readBody(request);
+    const resourceId = typeof body.resourceId === 'string' ? body.resourceId.trim() : '';
+    if (!resourceId) {
+      throw new AppError('resourceId required', {
+        code: 'GEO_SITE_RESOURCE_ID_REQUIRED',
+        statusCode: 400,
+      });
+    }
+    const resource = await runtime.resourceService.getResource(resourceId);
+    if (!resource) {
+      throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
+    }
+    const linked =
+      resource['@type'] === 'PhysicalResource'
+        ? await runtime.resourceService.updatePhysicalResource(resourceId, {
+            placeId: siteId,
+            placeType: 'GeographicSite',
+          })
+        : await runtime.resourceService.updateLogicalResource(resourceId, {
+            placeId: siteId,
+            placeType: 'GeographicSite',
+          });
+    return sendJson(response, 200, linked);
+  }
+
+  const siteResourceMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/resources\/([^/]+)$/);
+  if (siteResourceMatch?.[1] && siteResourceMatch[2] && request.method === 'DELETE') {
+    requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+    const resourceId = decodeURIComponent(siteResourceMatch[2]);
+    const resource = await runtime.resourceService.getResource(resourceId);
+    if (!resource) {
+      throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
+    }
+    // 'unlink' (default): só desfaz a relação com o Site, o recurso continua no acervo.
+    // 'terminate': soft-termina o recurso (C6), como excluí-lo pelo módulo Recursos.
+    const mode = url.searchParams.get('mode') === 'terminate' ? 'terminate' : 'unlink';
+    if (mode === 'terminate') {
+      if (resource['@type'] === 'PhysicalResource') {
+        await runtime.resourceService.deletePhysicalResource(resourceId);
+      } else {
+        await runtime.resourceService.deleteLogicalResource(resourceId);
+      }
+    } else if (resource['@type'] === 'PhysicalResource') {
+      await runtime.resourceService.updatePhysicalResource(resourceId, { placeId: null });
+    } else {
+      await runtime.resourceService.updateLogicalResource(resourceId, { placeId: null });
+    }
+    return sendJson(response, 204, null);
   }
 
   const referencesMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/references$/);
@@ -2478,6 +2592,7 @@ const parseGeoListQuery = (
     | 'suspended'
     | 'terminated';
   siteSpecificationId?: string;
+  siteSpecificationIds?: string[];
   parentSiteId?: string | null;
   descendantOfSiteId?: string;
   characteristicName?: string;
@@ -2505,6 +2620,13 @@ const parseGeoListQuery = (
   const siteSpecificationId = params.get('siteSpecificationId');
   if (siteSpecificationId) {
     (query as { siteSpecificationId?: string }).siteSpecificationId = siteSpecificationId;
+  }
+  const siteSpecificationIds = params.get('siteSpecificationIds');
+  if (siteSpecificationIds) {
+    (query as { siteSpecificationIds?: string[] }).siteSpecificationIds = siteSpecificationIds
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
   }
   if (params.has('parentSiteId')) {
     const value = params.get('parentSiteId');

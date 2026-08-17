@@ -5,6 +5,7 @@ import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import type {
   Characteristic,
   CharacteristicValueType,
+  GeoAccuracyLevel,
   GeographicAddress,
   GeoAuditLog,
   GeoBulkJob,
@@ -27,6 +28,7 @@ import type {
   GeoSiteStatus,
   GeoSiteStatusAlias,
   GeoOutboxMessage,
+  GeoSourceSystem,
   TimePeriod,
 } from './domain.js';
 import type { GeographicAddressQuery, IGeoRepository } from './geo-repository-interface.js';
@@ -38,6 +40,9 @@ type LocationInput = {
   spatialRef?: string;
   accuracy?: string;
   referencePoint?: string;
+  sourceSystem?: GeoSourceSystem;
+  sourceRef?: string;
+  accuracyLevel?: GeoAccuracyLevel;
   validFor?: TimePeriod;
   characteristic?: Characteristic[];
 };
@@ -50,6 +55,8 @@ export type AddressInput = {
   postcode?: string;
   country?: string;
   geographicLocationId?: string;
+  sourceSystem?: GeoSourceSystem;
+  sourceRef?: string;
   validFor?: TimePeriod;
   characteristic?: Characteristic[];
 };
@@ -81,6 +88,7 @@ export type SiteInput = {
   siteAddress?: Array<{ id: string; role: 'principal' | 'dispatch' | 'billing' }>;
   parentSiteId?: string;
   relatedParty?: Array<{ id: string; role?: string }>;
+  note?: string | null;
   characteristic?: Characteristic[];
   relatedSite?: Array<{ id: string; relationshipType: string; validFor?: TimePeriod }>;
 };
@@ -521,6 +529,9 @@ export class GeoService {
         spatialRef: input.spatialRef ?? 'EPSG:4326',
         ...(input.accuracy ? { accuracy: input.accuracy } : {}),
         ...(input.referencePoint ? { referencePoint: input.referencePoint } : {}),
+        ...(input.sourceSystem ? { sourceSystem: input.sourceSystem } : {}),
+        ...(input.sourceRef ? { sourceRef: input.sourceRef } : {}),
+        ...(input.accuracyLevel ? { accuracyLevel: input.accuracyLevel } : {}),
         ...(input.validFor ? { validFor: input.validFor } : {}),
         characteristic: input.characteristic ?? [],
       });
@@ -563,6 +574,15 @@ export class GeoService {
         ...(input.referencePoint !== undefined
           ? optional('referencePoint', input.referencePoint)
           : optional('referencePoint', current.referencePoint)),
+        ...(input.sourceSystem !== undefined
+          ? optional('sourceSystem', input.sourceSystem)
+          : optional('sourceSystem', current.sourceSystem)),
+        ...(input.sourceRef !== undefined
+          ? optional('sourceRef', input.sourceRef)
+          : optional('sourceRef', current.sourceRef)),
+        ...(input.accuracyLevel !== undefined
+          ? optional('accuracyLevel', input.accuracyLevel)
+          : optional('accuracyLevel', current.accuracyLevel)),
         ...(input.validFor !== undefined
           ? optional('validFor', input.validFor)
           : optional('validFor', current.validFor)),
@@ -611,6 +631,8 @@ export class GeoService {
         ...(location
           ? { place: { id: location.id, '@referredType': 'GeographicLocation' as const } }
           : {}),
+        ...(input.sourceSystem ? { sourceSystem: input.sourceSystem } : {}),
+        ...(input.sourceRef ? { sourceRef: input.sourceRef } : {}),
         ...(input.validFor ? { validFor: input.validFor } : {}),
         characteristic: input.characteristic ?? [],
       });
@@ -672,6 +694,12 @@ export class GeoService {
               place: { id: location.id, '@referredType': 'GeographicLocation' as const },
             }
           : {}),
+        ...(input.sourceSystem !== undefined
+          ? optional('sourceSystem', input.sourceSystem)
+          : optional('sourceSystem', current.sourceSystem)),
+        ...(input.sourceRef !== undefined
+          ? optional('sourceRef', input.sourceRef)
+          : optional('sourceRef', current.sourceRef)),
         ...(input.validFor !== undefined
           ? optional('validFor', input.validFor)
           : optional('validFor', current.validFor)),
@@ -1052,6 +1080,7 @@ export class GeoService {
           : {}),
         relatedSite: [],
         relatedParty: normalizeSiteRelatedParty(input.relatedParty, ctx),
+        ...(input.note ? { note: input.note } : {}),
         characteristic,
       });
       await this.repository.appendSiteStatusHistory({
@@ -1183,6 +1212,7 @@ export class GeoService {
         relatedParty: input.relatedParty
           ? normalizeSiteRelatedParty(input.relatedParty, ctx)
           : current.relatedParty,
+        ...(input.note !== undefined ? optional('note', input.note) : optional('note', current.note)),
         characteristic,
         relatedSite: current.relatedSite,
       });
@@ -1943,6 +1973,7 @@ export class GeoService {
       name?: string;
       status?: GeoSiteStatus | GeoSiteStatusAlias;
       siteSpecificationId?: string;
+      siteSpecificationIds?: string[];
       parentSiteId?: string | null;
       descendantOfSiteId?: string;
       characteristicName?: string;

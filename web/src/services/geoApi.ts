@@ -18,6 +18,19 @@ export type GeoGeometry =
   | { type: 'LineString'; coordinates: Array<[number, number]> }
   | { type: 'Polygon'; coordinates: Array<Array<[number, number]>> };
 
+// Fonte externa que originou o dado — o usuário escolhe entre GEONET/Google Maps no modal
+// de edição de endereço; os demais valores vêm de cargas de migração ou cadastro manual.
+export type GeoSourceSystem =
+  | 'GEONET'
+  | 'GOOGLE_MAPS'
+  | 'NETWIN'
+  | 'GEOSITE'
+  | 'NETWORKCORE'
+  | 'GEOPLEX'
+  | 'MANUAL';
+
+export type GeoAccuracyLevel = 'high' | 'medium' | 'low' | 'unknown';
+
 export type GeoLocation = {
   '@type': 'GeographicLocation';
   id: string;
@@ -25,7 +38,11 @@ export type GeoLocation = {
   geometryType: 'Point' | 'LineString' | 'Polygon';
   geometry: GeoGeometry;
   spatialRef: string;
+  accuracy?: string;
   referencePoint?: string;
+  sourceSystem?: GeoSourceSystem;
+  sourceRef?: string;
+  accuracyLevel?: GeoAccuracyLevel;
 };
 
 export type GeoAddress = {
@@ -40,6 +57,8 @@ export type GeoAddress = {
   country?: string;
   geographicLocationId?: string;
   place?: { id: string; '@referredType': 'GeographicLocation' };
+  sourceSystem?: GeoSourceSystem;
+  sourceRef?: string;
 };
 
 export type GeoSpecCategory = 'Region' | 'FunctionalGroup' | 'Site' | 'SubSite';
@@ -75,6 +94,7 @@ export type GeoSite = {
   parentSite?: { id: string; '@referredType': 'GeographicSite' };
   relatedSite: RelatedSite[];
   relatedParty: Array<{ id: string; role?: string; '@referredType': 'Party' }>;
+  note?: string | null;
   characteristic: Array<{ group?: string; name: string; value: unknown; valueType?: string }>;
 };
 
@@ -86,6 +106,31 @@ export type GeoEvent = {
   source: string;
   eventData: Record<string, unknown>;
 };
+
+// Registro de auditoria (aba Histórico do painel unificado de Local, REQ-MOD01-016) —
+// `before`/`after` são o estado do Site antes/depois da mutação, usados para montar o
+// diff "o que mudou".
+export type GeoAuditLog = {
+  '@type': 'GeoAuditLog';
+  id: string;
+  tenantId: string;
+  actorSub: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  eventTime: string;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+  traceId: string;
+  sourceIp?: string;
+};
+
+// Origem de um Site (aba Visão Geral): de onde ele veio — carga de migração, Projeto de
+// trabalho (mesmo depois de terminado, RF-010) ou cadastro manual pela UI.
+export type SiteOrigin =
+  | { kind: 'import'; system: string }
+  | { kind: 'project'; projectId: string; projectName: string }
+  | { kind: 'manual'; actorSub: string; createdAt: string };
 
 const authHeaders = (): HeadersInit => ({
   'Content-Type': 'application/json',
@@ -123,9 +168,36 @@ export async function deleteJson(url: string): Promise<void> {
   if (!response.ok) throw new Error(`DELETE ${url} falhou (${response.status})`);
 }
 
-export const listGeoSites = () => getJson<GeoSite[]>('/v1/geo/sites');
+export const listGeoSites = (options?: { siteSpecificationIds?: string[] }) => {
+  const query =
+    options?.siteSpecificationIds && options.siteSpecificationIds.length > 0
+      ? `?siteSpecificationIds=${options.siteSpecificationIds.map(encodeURIComponent).join(',')}`
+      : '';
+  return getJson<GeoSite[]>(`/v1/geo/sites${query}`);
+};
 export const listGeoAddresses = () => getJson<GeoAddress[]>('/v1/geo/addresses');
 export const listGeoLocations = () => getJson<GeoLocation[]>('/v1/geo/locations');
 export const listGeoSiteSpecifications = () => getJson<GeoSpec[]>('/v1/geo/site-specifications');
 export const listGeoSiteEvents = (siteId: string) =>
   getJson<GeoEvent[]>(`/v1/geo/sites/${siteId}/events`);
+export const fetchSiteAudit = (siteId: string) =>
+  getJson<GeoAuditLog[]>(`/v1/geo/sites/${siteId}/audit`);
+export const fetchSiteOrigin = (siteId: string) =>
+  getJson<SiteOrigin>(`/v1/geo/sites/${siteId}/origin`);
+
+// Vínculo de Recurso com o Site (aba Recursos do painel unificado) — a escrita é do módulo
+// Resource (C2/C3), mas a rota fica agrupada em Site porque é daqui que o usuário decide.
+export const linkSiteResource = (siteId: string, resourceId: string) =>
+  postJson<{ '@type': 'PhysicalResource' | 'LogicalResource'; id: string }>(
+    `/v1/geo/sites/${siteId}/resources`,
+    { resourceId },
+  );
+
+export const unlinkSiteResource = (
+  siteId: string,
+  resourceId: string,
+  mode: 'unlink' | 'terminate' = 'unlink',
+): Promise<void> =>
+  deleteJson(
+    `/v1/geo/sites/${siteId}/resources/${encodeURIComponent(resourceId)}?mode=${mode}`,
+  );

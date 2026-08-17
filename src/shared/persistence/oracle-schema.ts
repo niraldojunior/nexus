@@ -94,6 +94,10 @@ export const transformOracleSchemaSql = (sql: string): string => {
   // predicate — JSON_VALUE(... RETURNING NUMBER) is NULL for non-Point geometries (their
   // coordinates[0] is an array, not a number), so those rows are excluded from the index anyway.
   output = output.replace(/\s+WHERE\s+geometry_type\s*=\s*'Point'/gi, '');
+  // Oracle has no LIMIT — mesmo dentro de uma subquery correlacionada de UPDATE...SET (ver
+  // Backfill 2/3 em schema.ts), sem isto o parser Oracle estoura ORA-00907 no `)` que segue.
+  // FETCH FIRST n ROWS ONLY é ANSI e válido nos dois contextos (SELECT de topo e subquery).
+  output = output.replace(/\bLIMIT\s+(\d+)\b/gi, 'FETCH FIRST $1 ROWS ONLY');
   output = quoteOracleReservedColumns(output);
   return output;
 };

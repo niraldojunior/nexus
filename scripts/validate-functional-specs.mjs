@@ -13,8 +13,8 @@ const specs = [
     prefix: 'REQ-MOD01-',
     questionPrefix: 'Q-GEO-',
     decisionPrefix: 'D-GEO-',
-    count: 15,
-    version: '1.8',
+    count: 16,
+    version: '1.11',
     illustrative: new Set(),
   },
   {

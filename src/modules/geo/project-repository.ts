@@ -186,6 +186,24 @@ export class GeoProjectRepository {
     return rows.map((row) => row.siteId);
   }
 
+  // Reverso de listSiteIds: dado um Site, qual Projeto o originou (se algum) — usado pela
+  // Origem do painel unificado de Local (REQ-MOD01-016). O vínculo permanece mesmo depois
+  // do projeto terminar (Fase 2), então isto continua respondendo mesmo com o Site já
+  // liberado (Active, fora da árvore-exclusão) — Origem é histórico, não estado atual.
+  async findProjectBySiteId(
+    tenantId: string,
+    siteId: string,
+  ): Promise<{ projectId: string; projectName: string } | null> {
+    const row = await this.db.get<{ projectId: string; projectName: string }>(
+      `SELECT p.id AS projectId, p.name AS projectName
+         FROM geo_project_site ps
+         JOIN geo_project p ON p.id = ps.project_id
+        WHERE p.tenant_id = ? AND ps.site_id = ?`,
+      [tenantId, siteId],
+    );
+    return row ?? null;
+  }
+
   async linkSite(
     projectId: string,
     siteId: string,

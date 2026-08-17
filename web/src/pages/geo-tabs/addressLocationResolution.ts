@@ -84,6 +84,24 @@ export function selectPinLocation(
   return googleLocation(address);
 }
 
+// Normaliza o texto cru de precisão de qualquer fonte (Google ou GEONET) para o vocabulário
+// de `GeoAccuracyLevel` gravado em `tmf_geographic_location.accuracy_level` — reaproveita os
+// mesmos ranques de GOOGLE_PRECISION_RANK/geonetPrecision já usados para decidir a base
+// vencedora, em vez de manter um terceiro dicionário de precisão.
+export function accuracyLevelOf(
+  source: 'google' | 'geonet',
+  rawAccuracy: string | undefined,
+): 'high' | 'medium' | 'low' | 'unknown' {
+  const rank =
+    source === 'google'
+      ? (GOOGLE_PRECISION_RANK[rawAccuracy ?? ''] ?? 0)
+      : geonetPrecision(rawAccuracy).rank;
+  if (rank >= 3) return 'high';
+  if (rank >= 2) return 'medium';
+  if (rank >= 1) return 'low';
+  return 'unknown';
+}
+
 export function resolveAddressLocation(
   address: DraftAddress,
   geonet: GeonetAddressDetail | null,

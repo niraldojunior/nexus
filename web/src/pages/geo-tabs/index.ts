@@ -34,6 +34,7 @@ export { PanelBarButton } from './PanelBarButton';
 export { MapBaseLayerSelector, BASE_MAP_LAYERS, type MapBaseLayer } from './MapBaseLayerSelector';
 export { MapLocateButton, type DeviceLocation } from './MapLocateButton';
 export { MapLoadingBar } from './MapLoadingBar';
+export { MapLayerControl, type MapLayerControlProps } from './MapLayerControl';
 export {
   DOCK_WIDTH_CLASS,
   DOCK_SEARCH_WIDTH_CLASS,

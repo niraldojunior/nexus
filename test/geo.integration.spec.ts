@@ -805,6 +805,49 @@ test('Geo tree viewport serves passive infra by bounding box, independent of hie
   const piNode = insideNodes.find((item) => item.label === 'PI Icaraí Viewport');
   assert.equal(piNode?.kind, 'site');
 
+  // `include` (RF-011, controle de camadas do mapa) restringe o que o servidor busca — com um
+  // grupo desligado no cliente, a requisição nem pede aquele shape.
+  const insideBboxUrl = (include: string) =>
+    `/v1/geo/tree/viewport?minLng=-43.12&minLat=-22.92&maxLng=-43.10&maxLat=-22.90&include=${include}`;
+
+  const onlyResourcePoints = await requestJson(port, 'GET', insideBboxUrl('resource-points'));
+  assert.equal(onlyResourcePoints.statusCode, 200);
+  assert.deepEqual(
+    (onlyResourcePoints.body as GeoTreeResponseNode[]).map((item) => item.label),
+    ['CDOE-1108'],
+  );
+
+  const onlyResourceLines = await requestJson(port, 'GET', insideBboxUrl('resource-lines'));
+  assert.equal(onlyResourceLines.statusCode, 200);
+  assert.deepEqual(
+    (onlyResourceLines.body as GeoTreeResponseNode[]).map((item) => item.label),
+    ['Cabo Primário 01'],
+  );
+
+  const onlySites = await requestJson(port, 'GET', insideBboxUrl('sites'));
+  assert.equal(onlySites.statusCode, 200);
+  assert.deepEqual(
+    (onlySites.body as GeoTreeResponseNode[]).map((item) => item.label),
+    ['PI Icaraí Viewport'],
+  );
+
+  // Camadas de recurso combinadas (sem Sites): caixa + cabo, sem o Ponto de Instalação.
+  const resourcesOnly = await requestJson(
+    port,
+    'GET',
+    insideBboxUrl('resource-points,resource-lines'),
+  );
+  assert.equal(resourcesOnly.statusCode, 200);
+  assert.deepEqual((resourcesOnly.body as GeoTreeResponseNode[]).map((item) => item.label).sort(), [
+    'CDOE-1108',
+    'Cabo Primário 01',
+  ]);
+
+  // Token desconhecido é ignorado; nenhum token reconhecido não busca nada.
+  const unknownInclude = await requestJson(port, 'GET', insideBboxUrl('bogus'));
+  assert.equal(unknownInclude.statusCode, 200);
+  assert.deepEqual(unknownInclude.body, []);
+
   // Bbox longe da região: nada volta.
   const outsideBbox = await requestJson(
     port,
@@ -1270,10 +1313,7 @@ test('Projetos de trabalho: local exige GEONET, herda status do projeto, e a cas
     { name: 'Local A renomeado', note: 'nova observação' },
   );
   assert.equal(patchedSite.statusCode, 200);
-  assert.equal(
-    (patchedSite.body as { site: { name: string } }).site.name,
-    'Local A renomeado',
-  );
+  assert.equal((patchedSite.body as { site: { name: string } }).site.name, 'Local A renomeado');
   assert.equal((patchedSite.body as { note: string }).note, 'nova observação');
 
   // RF-010: PATCH do projeto para 'active' cascateia (best-effort) para o Site vinculado.
@@ -1347,10 +1387,7 @@ test('Projetos de trabalho: terminar o projeto libera os locais (viram Active, n
   });
   assert.equal(terminated.statusCode, 200);
   assert.equal((terminated.body as { status: string }).status, 'terminated');
-  assert.equal(
-    (terminated.body as { siteCascade?: { updated: number } }).siteCascade?.updated,
-    1,
-  );
+  assert.equal((terminated.body as { siteCascade?: { updated: number } }).siteCascade?.updated, 1);
 
   const siteAfterTermination = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}`);
   assert.equal((siteAfterTermination.body as { status: string }).status, 'Active');
@@ -1368,10 +1405,7 @@ test('Projetos de trabalho: terminar o projeto libera os locais (viram Active, n
     status: 'active',
   });
   assert.equal(reopen.statusCode, 409);
-  assert.equal(
-    (reopen.body as { error: string }).error,
-    'GEO_PROJECT_TERMINATED_IMMUTABLE',
-  );
+  assert.equal((reopen.body as { error: string }).error, 'GEO_PROJECT_TERMINATED_IMMUTABLE');
 });
 
 // issue #58: DELETE /v1/geo/projects/:id passou a operar em massa (GeoService.transitionProjectSites)
@@ -1505,8 +1539,6 @@ test('DELETE /v1/geo/projects/:id: local bloqueado mantém o projeto e os víncu
   );
 });
 
-
-
 test('Painel unificado de Local: Origem do Site e vínculo/desvínculo de Recurso', async (t) => {
   const database = createTestDatabase();
   const server = createApp({
@@ -1539,20 +1571,15 @@ test('Painel unificado de Local: Origem do Site e vínculo/desvínculo de Recurs
 
   // Origem 'project': Site nascido dentro de um Projeto de trabalho.
   const project = await requestJson(port, 'POST', '/v1/geo/projects', { name: 'Projeto Origem' });
-  const projectSite = await requestJson(
-    port,
-    'POST',
-    `/v1/geo/projects/${idOf(project)}/sites`,
-    {
-      location: {
-        geometryType: 'Point',
-        geometry: { type: 'Point', coordinates: [-43.15, -22.91] },
-      },
-      address: { street: 'Rua Origem Projeto' },
-      site: { name: 'Site do Projeto Origem', siteSpecificationId: idOf(spec) },
-      geonetAddressId: 'geonet-origem-1',
+  const projectSite = await requestJson(port, 'POST', `/v1/geo/projects/${idOf(project)}/sites`, {
+    location: {
+      geometryType: 'Point',
+      geometry: { type: 'Point', coordinates: [-43.15, -22.91] },
     },
-  );
+    address: { street: 'Rua Origem Projeto' },
+    site: { name: 'Site do Projeto Origem', siteSpecificationId: idOf(spec) },
+    geonetAddressId: 'geonet-origem-1',
+  });
   const projectSiteId = (projectSite.body as { site: { id: string } }).site.id;
   const projectOrigin = await requestJson(port, 'GET', `/v1/geo/sites/${projectSiteId}/origin`);
   assert.equal(projectOrigin.statusCode, 200);
@@ -1587,12 +1614,13 @@ test('Painel unificado de Local: Origem do Site e vínculo/desvínculo de Recurs
     resourceId,
   });
   assert.equal(linked.statusCode, 200);
-  assert.equal(
-    (linked.body as { place?: { id: string } }).place?.id,
-    siteId,
-  );
+  assert.equal((linked.body as { place?: { id: string } }).place?.id, siteId);
 
-  const siteResources = await requestJson(port, 'GET', `/v1/geo/tree/children?nodeId=site:${siteId}&scope=all`);
+  const siteResources = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/tree/children?nodeId=site:${siteId}&scope=all`,
+  );
   assert.equal(siteResources.statusCode, 200);
   assert.deepEqual(
     (siteResources.body as { nodes: Array<{ label: string }> }).nodes.map((n) => n.label),
@@ -1611,10 +1639,7 @@ test('Painel unificado de Local: Origem do Site e vínculo/desvínculo de Recurs
     `/tmf-api/resourceInventoryManagement/v4/resource/${resourceId}`,
   );
   assert.equal((resourceAfterUnlink.body as { place?: unknown }).place, undefined);
-  assert.notEqual(
-    (resourceAfterUnlink.body as { status: string }).status,
-    'terminated',
-  );
+  assert.notEqual((resourceAfterUnlink.body as { status: string }).status, 'terminated');
 
   // Relinka e agora termina (mode=terminate) — soft-terminate, não DELETE físico.
   await requestJson(port, 'POST', `/v1/geo/sites/${siteId}/resources`, { resourceId });
@@ -1630,6 +1655,124 @@ test('Painel unificado de Local: Origem do Site e vínculo/desvínculo de Recurs
     `/tmf-api/resourceInventoryManagement/v4/resource/${resourceId}`,
   );
   assert.equal((resourceAfterTerminate.body as { status: string }).status, 'terminated');
+});
+
+test('Manchas de Projeto (REQ-MOD01-017): GET /areas lê o que o script grava, e GET /sites filtra por bbox e limita a página', async (t) => {
+  const database = createTestDatabase();
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
+  const port = await server.start();
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
+
+  // Mesma instância que o app usa — a mancha é semeada direto nas tabelas de projeção, como
+  // faz scripts/build-project-areas.mjs (INSERT em tmf_geographic_location + geo_project_area).
+  const db = createDatabaseClient(databaseConfigOf(createConfig(0, database.databaseUrl)));
+
+  const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+    name: 'Ponto de Instalação Mancha',
+    category: 'Site',
+  });
+  const specId = (spec.body as { id: string }).id;
+
+  const project = await requestJson(port, 'POST', '/v1/geo/projects', { name: 'Projeto Manchas' });
+  const projectId = (project.body as { id: string }).id;
+
+  // Dois locais dentro de uma mesma mancha (Icaraí), um fora dela (bem distante).
+  const createSite = async (name: string, coordinates: [number, number]) => {
+    const response = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
+      location: { geometryType: 'Point', geometry: { type: 'Point', coordinates } },
+      address: { street: 'Rua Teste' },
+      site: { name, siteSpecificationId: specId },
+      geonetAddressId: `geonet-${name}`,
+    });
+    assert.equal(response.statusCode, 201);
+    return (response.body as { site: { id: string } }).site.id;
+  };
+  const nearSiteId = await createSite('Local Icaraí', [-43.106, -22.906]);
+  const farSiteId = await createSite('Local Distante', [10, 10]);
+
+  // Semeia a mancha de concentração cobrindo só o local de Icaraí — mesma forma que o script
+  // grava (Polygon em tmf_geographic_location + vínculo em geo_project_area).
+  const locationId = '33333333-3333-7333-8333-333333333333';
+  await db.run(
+    `INSERT INTO tmf_geographic_location
+       (id, href, geometry_type, geometry, spatial_ref, reference_point, characteristics)
+     VALUES (?, ?, 'Polygon', ?, 'EPSG:4326', ?, '[]')`,
+    [
+      locationId,
+      `/tmf-api/geographicLocationManagement/v4/geographicLocation/${locationId}`,
+      JSON.stringify({
+        type: 'Polygon',
+        coordinates: [
+          [
+            [-43.108, -22.908],
+            [-43.1, -22.908],
+            [-43.1, -22.902],
+            [-43.108, -22.902],
+            [-43.108, -22.908],
+          ],
+        ],
+      }),
+      `PROJECT:${projectId}`,
+    ],
+  );
+  await db.run(
+    `INSERT INTO geo_project_area
+       (project_id, location_id, kind, site_count, site_ids, centroid_lng, centroid_lat, area_km2, position)
+     VALUES (?, ?, 'concentration', 1, ?, -43.106, -22.906, 0.25, 0)`,
+    [projectId, locationId, JSON.stringify([nearSiteId])],
+  );
+
+  const areas = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/areas`);
+  assert.equal(areas.statusCode, 200);
+  const areaList = (areas.body as { areas: Array<Record<string, unknown>> }).areas;
+  assert.equal(areaList.length, 1);
+  assert.equal(areaList[0]?.kind, 'concentration');
+  assert.equal(areaList[0]?.siteCount, 1);
+  assert.deepEqual(areaList[0]?.siteIds, [nearSiteId]);
+  assert.deepEqual(areaList[0]?.centroid, [-43.106, -22.906]);
+  assert.equal((areaList[0]?.geometry as { type: string })?.type, 'Polygon');
+
+  // GET /sites com bbox devolve só o local dentro da caixa (Icaraí), não o distante.
+  const bboxSites = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/projects/${projectId}/sites?minLng=-43.2&minLat=-23&maxLng=-43&maxLat=-22.8`,
+  );
+  assert.equal(bboxSites.statusCode, 200);
+  const bboxRefIds = (bboxSites.body as Array<{ refId: string }>).map((node) => node.refId);
+  assert.deepEqual(bboxRefIds, [nearSiteId]);
+
+  // bbox longe de ambos os locais devolve lista vazia.
+  const emptyBbox = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/projects/${projectId}/sites?minLng=0&minLat=0&maxLng=1&maxLat=1`,
+  );
+  assert.deepEqual(emptyBbox.body, []);
+
+  // Sem bbox, `limit` pagina a lista completa (2 locais) — mantém o comportamento de sempre.
+  const limited = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites?limit=1`);
+  assert.equal((limited.body as unknown[]).length, 1);
+  const full = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
+  const fullRefIds = (full.body as Array<{ refId: string }>).map((node) => node.refId);
+  assert.deepEqual(new Set(fullRefIds), new Set([nearSiteId, farSiteId]));
+
+  // Projeto sem manchas geradas: GET /areas devolve lista vazia.
+  const otherProject = await requestJson(port, 'POST', '/v1/geo/projects', {
+    name: 'Projeto Sem Manchas',
+  });
+  const otherAreas = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/projects/${(otherProject.body as { id: string }).id}/areas`,
+  );
+  assert.deepEqual(otherAreas.body, { areas: [] });
 });
 
 test('App root returns Nexus shell html', async (t) => {

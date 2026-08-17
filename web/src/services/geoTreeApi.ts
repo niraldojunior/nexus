@@ -9,6 +9,7 @@
 // sem precisar do diretório completo de Locations.
 
 import { getJson, type GeoGeometry } from './geoApi';
+import type { ViewportShape } from '../utils/mapLayers';
 
 export type GeoTreeNodeKind = 'uf' | 'city' | 'group' | 'site' | 'resource';
 
@@ -81,10 +82,12 @@ export const fetchTreeChildren = (
 export type MapBounds = { minLng: number; minLat: number; maxLng: number; maxLat: number };
 
 // Infra passiva (recursos + cabos) dentro da região visível do mapa — usada em escala de
-// detalhe (≤ 50 m), no lugar da expansão da árvore de Hierarquia.
+// detalhe (≤ 50 m), no lugar da expansão da árvore de Hierarquia. `include` restringe o que o
+// servidor busca (RF-011, controle de camadas do mapa — ver utils/mapLayers.viewportInclude);
+// omitido, busca tudo (compatibilidade — o caminho quente da maioria dos chamadores).
 export const fetchViewportResources = (
   bounds: MapBounds,
-  options: { limit?: number } = {},
+  options: { limit?: number; include?: ViewportShape[] } = {},
 ): Promise<GeoTreeNode[]> => {
   const params = new URLSearchParams({
     minLng: String(bounds.minLng),
@@ -93,6 +96,7 @@ export const fetchViewportResources = (
     maxLat: String(bounds.maxLat),
   });
   if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.include !== undefined) params.set('include', options.include.join(','));
   return getJson<GeoTreeNode[]>(`/v1/geo/tree/viewport?${params.toString()}`);
 };
 

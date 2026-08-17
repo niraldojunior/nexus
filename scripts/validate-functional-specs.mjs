@@ -13,8 +13,8 @@ const specs = [
     prefix: 'REQ-MOD01-',
     questionPrefix: 'Q-GEO-',
     decisionPrefix: 'D-GEO-',
-    count: 16,
-    version: '1.11',
+    count: 17,
+    version: '1.14',
     illustrative: new Set(),
   },
   {
@@ -125,7 +125,13 @@ for (const definition of specs) {
     );
     if (
       !benchmark ||
-      !benchmark[1].includes('| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |')
+      // Espaços em torno de cada célula toleram o alinhamento de coluna do Prettier (a
+      // largura da coluna é a do maior valor, então o cabeçalho quase sempre tem
+      // preenchimento à direita) — checar substring literal com espaço único quebra assim
+      // que qualquer célula da coluna cresce.
+      !/\|\s*Capacidade\s*\|\s*Netwin\s*\|\s*Kuwaiba\s*\|\s*NetBox\s*\|\s*Decisão Nexus\s*\|/u.test(
+        benchmark[1],
+      )
     ) {
       fail(`${definition.file}: ${id} sem tabela N.${benchmarkHeading} completa de benchmark`);
     } else {
@@ -160,8 +166,10 @@ for (const definition of specs) {
     }
   }
 
-  const headerVersion = text.match(/\| \*\*Versão\*\* \| ([^|]+) \|/u)?.[1];
-  const revisionVersions = [...text.matchAll(/^\| (\d+\.\d+) \| [^|]+ \| [^|]+ \|/gmu)].map(
+  // `\s*` (não espaço literal único) em torno de cada pipe — mesma razão do check de
+  // benchmark acima: o Prettier preenche a célula até a largura da coluna.
+  const headerVersion = text.match(/\|\s*\*\*Versão\*\*\s*\|([^|]+)\|/u)?.[1];
+  const revisionVersions = [...text.matchAll(/^\|\s*(\d+\.\d+)\s*\|[^|]+\|[^|]+\|/gmu)].map(
     (match) => match[1],
   );
   const latestRevision = revisionVersions.at(-1);
@@ -175,7 +183,7 @@ for (const definition of specs) {
       `${definition.file}: versão esperada ${definition.version}, encontrada ${headerVersion?.trim() ?? 'ausente'}`,
     );
   }
-  if (!/\| \*\*Status\*\* \| Em elaboração \|/u.test(text)) {
+  if (!/\|\s*\*\*Status\*\*\s*\|\s*Em elaboração\s*\|/u.test(text)) {
     fail(`${definition.file}: status do documento deve permanecer Em elaboração`);
   }
   if (/\bQ-\d{3}\b|\bD-\d+\b/u.test(text)) {

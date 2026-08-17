@@ -70,7 +70,12 @@ const addressKey = ([lng, lat]: LngLat): string => `${lng.toFixed(6)},${lat.toFi
 
 async function fetchViability(origin: LngLat): Promise<ViabilityCandidate[]> {
   const bounds = bboxAround(origin, VIABILITY_RADIUS_METERS);
-  const nodes = await fetchViewportResources(bounds, { limit: VIEWPORT_LIMIT });
+  // Só CDO (Recurso pontual) é candidato (ver isEligibleCdo) — pedir só 'resource-points' poupa
+  // os blocos de cabo e a consulta de Sites em toda abertura da aba Viabilidade.
+  const nodes = await fetchViewportResources(bounds, {
+    limit: VIEWPORT_LIMIT,
+    include: ['resource-points'],
+  });
 
   // O bbox é o quadrado que circunscreve o círculo; o corte redondo é aqui.
   const nearby = nodes

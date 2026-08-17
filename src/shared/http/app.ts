@@ -864,7 +864,11 @@ const routeGeoRequest = async ({
       // Projeto terminado não volta: terminar é o fim do ciclo de vida do projeto, não um
       // estado como os demais — os locais já ganharam vida própria (ver cascata abaixo) e o
       // projeto passa a ser só um registro histórico (Origem no painel de Local).
-      if (current.status === 'terminated' && nextStatus !== undefined && nextStatus !== 'terminated') {
+      if (
+        current.status === 'terminated' &&
+        nextStatus !== undefined &&
+        nextStatus !== 'terminated'
+      ) {
         throw new AppError('terminated project status is immutable', {
           code: 'GEO_PROJECT_TERMINATED_IMMUTABLE',
           statusCode: 409,
@@ -958,17 +962,54 @@ const routeGeoRequest = async ({
     }
   }
 
+  // Manchas de concentração/dispersão do projeto (REQ-MOD01-017), geradas por
+  // scripts/build-project-areas.mjs — não há geração pela API, só leitura do que o script já
+  // gravou (mesmo modelo somente-leitura da cobertura GPON, GET /v1/geo/coverage).
+  const projectAreasMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/areas$/);
+  if (projectAreasMatch?.[1] && request.method === 'GET') {
+    const projectId = decodeURIComponent(projectAreasMatch[1]);
+    requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+    const areas = await runtime.geoProjectRepository.listAreas(geoContext.tenantId, projectId);
+    return sendJson(response, 200, { areas });
+  }
+
   const projectSitesMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/sites$/);
   if (projectSitesMatch?.[1]) {
     const projectId = decodeURIComponent(projectSitesMatch[1]);
     if (request.method === 'GET') {
       requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+      const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
+      const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
+      const maxLng = parseOptionalNumber(url.searchParams.get('maxLng'));
+      const maxLat = parseOptionalNumber(url.searchParams.get('maxLat'));
+      const limit = parseOptionalNumber(url.searchParams.get('limit'));
+      const hasBounds =
+        minLng !== undefined &&
+        minLat !== undefined &&
+        maxLng !== undefined &&
+        maxLat !== undefined;
+
+      // Projeto com manchas geradas (REQ-MOD01-017) só precisa dos locais da região visível —
+      // o cliente busca por bbox como já faz para infra sem projeto (fetchViewportResources).
+      // Sem bbox, mantém o caminho de sempre (todos os locais, na ordem salva), com `limit`
+      // opcional para a lista do painel não baixar dezenas de milhares de linhas de uma vez.
+      if (hasBounds) {
+        const nodes = await geoTreeService.projectSitesInViewport(
+          projectId,
+          { minLng, minLat, maxLng, maxLat },
+          limit !== undefined ? { limit } : {},
+        );
+        const sites = nodes.map((node) => ({ ...node, note: null, geonetAddressId: null }));
+        return sendJson(response, 200, sites);
+      }
+
       const [siteIds, links] = await Promise.all([
         runtime.geoProjectRepository.listSiteIds(geoContext.tenantId, projectId),
         runtime.geoProjectRepository.listSiteLinks(geoContext.tenantId, projectId),
       ]);
+      const scopedIds = limit !== undefined ? siteIds.slice(0, limit) : siteIds;
       const linkBySiteId = new Map(links.map((link) => [link.siteId, link]));
-      const nodes = await geoTreeService.sitesByIds(siteIds);
+      const nodes = await geoTreeService.sitesByIds(scopedIds);
       const sites = nodes.map((node) => ({
         ...node,
         note: linkBySiteId.get(node.refId ?? '')?.note ?? null,
@@ -1022,7 +1063,10 @@ const routeGeoRequest = async ({
     const siteId = decodeURIComponent(projectSiteMatch[2]);
     if (request.method === 'PATCH') {
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
-      const siteIds = await runtime.geoProjectRepository.listSiteIds(geoContext.tenantId, projectId);
+      const siteIds = await runtime.geoProjectRepository.listSiteIds(
+        geoContext.tenantId,
+        projectId,
+      );
       if (!siteIds.includes(siteId)) {
         throw new AppError('project site not found', {
           code: 'GEO_PROJECT_SITE_NOT_FOUND',
@@ -1043,7 +1087,11 @@ const routeGeoRequest = async ({
         geoContext,
       );
       const note =
-        body.note === null ? null : typeof body.note === 'string' ? body.note.trim() || null : undefined;
+        body.note === null
+          ? null
+          : typeof body.note === 'string'
+            ? body.note.trim() || null
+            : undefined;
       if (note !== undefined) {
         await runtime.geoProjectRepository.updateSiteLink(projectId, siteId, { note });
       }
@@ -1051,7 +1099,10 @@ const routeGeoRequest = async ({
     }
     if (request.method === 'DELETE') {
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
-      const siteIds = await runtime.geoProjectRepository.listSiteIds(geoContext.tenantId, projectId);
+      const siteIds = await runtime.geoProjectRepository.listSiteIds(
+        geoContext.tenantId,
+        projectId,
+      );
       if (!siteIds.includes(siteId)) {
         throw new AppError('project site not found', {
           code: 'GEO_PROJECT_SITE_NOT_FOUND',
@@ -1115,6 +1166,12 @@ const routeGeoRequest = async ({
   // não-CO da mesma região (GeoTreeService.sitesInViewport, Fase 3 do painel unificado de
   // Local): CO/Estação já vem sempre de roots(), qualquer outro tipo de Site segue a mesma
   // régua de escala de um Recurso — uma chamada só, não duas (backend de dev serializado).
+  //
+  // `include` (RF-011, controle de camadas do mapa) restringe o que é buscado: lista por
+  // vírgula de 'sites' | 'resource-points' | 'resource-lines'. Ausente = tudo (compatibilidade
+  // — useAddressViability e qualquer chamador que ainda não conhece o parâmetro); presente,
+  // só os tokens reconhecidos contam, e nenhum reconhecido busca nada (mapa com o grupo
+  // inteiro desligado no controle de camadas não deve gerar consulta nenhuma).
   if (request.method === 'GET' && url.pathname === '/v1/geo/tree/viewport') {
     const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
     const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
@@ -1133,9 +1190,28 @@ const routeGeoRequest = async ({
     }
     const limit = parseOptionalNumber(url.searchParams.get('limit'));
     const bounds = { minLng, minLat, maxLng, maxLat };
+    const includeParam = url.searchParams.get('include');
+    const includeTokens = includeParam
+      ?.split(',')
+      .map((token) => token.trim())
+      .filter(
+        (token): token is 'sites' | 'resource-points' | 'resource-lines' =>
+          token === 'sites' || token === 'resource-points' || token === 'resource-lines',
+      );
+    const wantSites = includeTokens === undefined || includeTokens.includes('sites');
+    const wantResourcePoints =
+      includeTokens === undefined || includeTokens.includes('resource-points');
+    const wantResourceLines =
+      includeTokens === undefined || includeTokens.includes('resource-lines');
+    const limitOptions = limit !== undefined ? { limit } : {};
     const [resources, sites] = await Promise.all([
-      geoTreeService.resourcesInViewport(bounds, limit !== undefined ? { limit } : {}),
-      geoTreeService.sitesInViewport(bounds, limit !== undefined ? { limit } : {}),
+      wantResourcePoints || wantResourceLines
+        ? geoTreeService.resourcesInViewport(bounds, {
+            ...limitOptions,
+            shapes: { point: wantResourcePoints, line: wantResourceLines },
+          })
+        : Promise.resolve([]),
+      wantSites ? geoTreeService.sitesInViewport(bounds, limitOptions) : Promise.resolve([]),
     ]);
     return sendJson(response, 200, [...resources, ...sites]);
   }

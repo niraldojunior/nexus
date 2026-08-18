@@ -162,7 +162,7 @@ export class GeoCoverageService {
               a.min_lng, a.min_lat, a.max_lng, a.max_lat, l.geometry
          FROM geo_gpon_coverage_area a
          JOIN tmf_geographic_location l ON l.id = a.location_id
-        WHERE a.level = ?
+        WHERE a.lod_level = ?
           AND a.min_lng <= ? AND a.max_lng >= ?
           AND a.min_lat <= ? AND a.max_lat >= ?
         ORDER BY a.cdo_total DESC

@@ -1230,15 +1230,16 @@ export const SCHEMA_SQL = `
       -- Índice de leitura por polígono de cobertura (1 linha por Location "GPON:"/"GPON-CITY:"/
       -- "GPON-UF:"), com bbox e estatística DESNORMALIZADOS — evita, no recorte por viewport, ter
       -- que varrer geo_gpon_coverage_cell (milhões de linhas) e reparsear characteristics (dezenas
-      -- de MB) a cada requisição. \`level\` espelha os três níveis de detalhe que
+      -- de MB) a cada requisição. lod_level espelha os três níveis de detalhe que
       -- scripts/build-gpon-coverage.mjs grava: neighborhood (bairro, célula fina) até 500 m de
       -- escala, city (município) até 10 km, uf (estado) acima disso — ver coverageLevelForScale no
-      -- frontend. Artefato derivado e regenerável, como geo_gpon_coverage_cell: toda execução do
-      -- script SUBSTITUI a geração anterior do escopo/nível.
+      -- frontend. (Nome da coluna evita "level": palavra reservada do Oracle, usada em
+      -- CONNECT BY LEVEL.) Artefato derivado e regenerável, como geo_gpon_coverage_cell: toda
+      -- execução do script SUBSTITUI a geração anterior do escopo/nível.
       CREATE TABLE IF NOT EXISTS geo_gpon_coverage_area (
         tenant_id TEXT NOT NULL DEFAULT 'default',
         location_id TEXT NOT NULL,
-        level TEXT NOT NULL,
+        lod_level TEXT NOT NULL,
         cell_size_m INTEGER NOT NULL,
         min_lng REAL NOT NULL,
         min_lat REAL NOT NULL,
@@ -1257,9 +1258,9 @@ export const SCHEMA_SQL = `
         PRIMARY KEY (tenant_id, location_id)
       );
       CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_area_bbox
-        ON geo_gpon_coverage_area(tenant_id, level, min_lng, max_lng, min_lat, max_lat);
+        ON geo_gpon_coverage_area(tenant_id, lod_level, min_lng, max_lng, min_lat, max_lat);
       CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_area_rank
-        ON geo_gpon_coverage_area(tenant_id, level, cdo_total);
+        ON geo_gpon_coverage_area(tenant_id, lod_level, cdo_total);
 `;
 
 // Rewrites the SQLite-dialect schema DDL to its Postgres equivalent: SQLite type names to

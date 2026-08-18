@@ -233,7 +233,7 @@ async function ensureCoverageAreaTable(client) {
     const ddl = `CREATE TABLE geo_gpon_coverage_area (
       tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
       location_id VARCHAR2(36 CHAR) NOT NULL,
-      level VARCHAR2(255 CHAR) NOT NULL,
+      lod_level VARCHAR2(255 CHAR) NOT NULL,
       cell_size_m NUMBER(10) NOT NULL,
       min_lng BINARY_DOUBLE NOT NULL,
       min_lat BINARY_DOUBLE NOT NULL,
@@ -262,7 +262,7 @@ async function ensureCoverageAreaTable(client) {
   await client.query(`CREATE TABLE IF NOT EXISTS geo_gpon_coverage_area (
     tenant_id TEXT NOT NULL DEFAULT 'default',
     location_id TEXT NOT NULL,
-    level TEXT NOT NULL,
+    lod_level TEXT NOT NULL,
     cell_size_m INTEGER NOT NULL,
     min_lng REAL NOT NULL,
     min_lat REAL NOT NULL,
@@ -281,10 +281,10 @@ async function ensureCoverageAreaTable(client) {
     PRIMARY KEY (tenant_id, location_id)
   )`);
   await client.query(
-    `CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_area_bbox ON geo_gpon_coverage_area(tenant_id, level, min_lng, max_lng, min_lat, max_lat)`,
+    `CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_area_bbox ON geo_gpon_coverage_area(tenant_id, lod_level, min_lng, max_lng, min_lat, max_lat)`,
   );
   await client.query(
-    `CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_area_rank ON geo_gpon_coverage_area(tenant_id, level, cdo_total)`,
+    `CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_area_rank ON geo_gpon_coverage_area(tenant_id, lod_level, cdo_total)`,
   );
 }
 
@@ -508,7 +508,7 @@ async function main() {
         areaRows.push({
           tenant_id: TENANT,
           location_id: locId,
-          level: levelConfig.level,
+          lod_level: levelConfig.level,
           cell_size_m: levelConfig.cellMeters,
           min_lng: bounds.minLng,
           min_lat: bounds.minLat,
@@ -610,7 +610,7 @@ async function main() {
           [
             'tenant_id',
             'location_id',
-            'level',
+            'lod_level',
             'cell_size_m',
             'min_lng',
             'min_lat',

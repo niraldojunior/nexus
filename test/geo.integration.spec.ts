@@ -959,7 +959,7 @@ test('Geo coverage serves the GPON heat grid and neighborhood polygons by boundi
     // grava em geo_gpon_coverage_area para o nível neighborhood.
     await db.run(
       `INSERT INTO geo_gpon_coverage_area
-         (tenant_id, location_id, level, cell_size_m, min_lng, min_lat, max_lng, max_lat,
+         (tenant_id, location_id, lod_level, cell_size_m, min_lng, min_lat, max_lng, max_lat,
           area_key, neighborhood, city, uf, cdo_total, cdo_available, covered_area_km2)
        VALUES ('default', ?, 'neighborhood', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.25)`,
       [

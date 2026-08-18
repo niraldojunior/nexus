@@ -19,6 +19,7 @@ const KNOWLEDGE_FILES = [
   { title: 'Regras de negocio', path: 'docs/1-overview/business-rules.md' },
   { title: 'Glossario', path: 'docs/1-overview/glossary.md' },
   { title: 'Nexus Copilot', path: 'docs/1-overview/nexus-copilot-training.md' },
+  { title: 'Estrategia de plataforma', path: 'docs/1-overview/platform-strategy.md' },
   { title: 'Modulo Geographic', path: 'docs/2-functional-specs/01-module-geo.md' },
   { title: 'Modulo Resource', path: 'docs/2-functional-specs/02-module-resource.md' },
   { title: 'Modulo Service', path: 'docs/2-functional-specs/03-module-service.md' },

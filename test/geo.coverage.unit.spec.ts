@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import {
+  aggregateCells,
   buildCoverage,
   connectedComponents,
   haversineMeters,
@@ -8,6 +9,7 @@ import {
   neighborhoodStats,
   stampCells,
   tracePolygon,
+  tracePolygonsFromCells,
   COVERAGE_CELL_METERS,
   COVERAGE_RADIUS_METERS,
   type CdoPoint,
@@ -233,4 +235,69 @@ test('buildCoverage compõe componentes, geometria e estatística por bairro', (
     assert.equal(component.geometry.type, 'Polygon');
     assert.ok(component.cells.length > 0);
   }
+});
+
+test('aggregateCells não infla a cobertura: duas CDOs distantes não se conectam num bloco maior', () => {
+  // Duas CDOs bem separadas (>> raio de 200 m) num raio de 50 km — nada de comum entre elas.
+  const cdos = [cdo(...ICARAI), cdo(-43.4, -23.0, { neighborhoodKey: 'RJ|Rio de Janeiro|Barra' })];
+  const fine = stampCells(cdos, COVERAGE_CELL_METERS, COVERAGE_RADIUS_METERS);
+
+  // Reestampar com raio == célula grossa (a abordagem antiga) faria cada CDO "pintar" um disco
+  // de 2 km — ainda bem menor que os ~50 km de distância real entre elas, então esse teste por
+  // si não provaria a regressão; o que importa é que a AGREGAÇÃO da grade fina nunca cria
+  // cobertura fora de onde a grade fina já tinha: nenhuma célula grossa entre as duas CDOs.
+  const coarse = aggregateCells(fine, COVERAGE_CELL_METERS, 2000, (key) => key.split('|')[0]!);
+  const components = tracePolygonsFromCells(coarse, 2000, { minComponentCells: 1 });
+  assert.equal(components.length, 2, 'cada CDO isolada vira seu próprio componente, sem se tocar');
+
+  // A área coberta por célula grossa nunca excede o raio real: toda célula grossa marcada tem
+  // pelo menos uma célula fina real dentro dela (nenhuma célula "extra" surge da agregação).
+  const fineKeys = new Set(fine.map((cell) => `${cell.gridX},${cell.gridY}`));
+  for (const cell of coarse) {
+    const factor = Math.round(2000 / COVERAGE_CELL_METERS);
+    let hasRealFineCell = false;
+    for (let dx = 0; dx < factor && !hasRealFineCell; dx += 1) {
+      for (let dy = 0; dy < factor && !hasRealFineCell; dy += 1) {
+        if (fineKeys.has(`${cell.gridX * factor + dx},${cell.gridY * factor + dy}`)) {
+          hasRealFineCell = true;
+        }
+      }
+    }
+    assert.ok(hasRealFineCell, 'célula grossa sem nenhuma célula fina real dentro — cobertura inflada');
+  }
+});
+
+test('aggregateCells soma a estatística das células finas e resolve a chave dominante', () => {
+  const fine: CoverageCell[] = [
+    { gridX: 0, gridY: 0, cdoTotal: 3, cdoAvailable: 2, neighborhoodKey: 'RJ|Niterói|Icaraí' },
+    { gridX: 1, gridY: 0, cdoTotal: 1, cdoAvailable: 0, neighborhoodKey: 'RJ|Niterói|Fonseca' },
+  ];
+  // factor 2: as duas células finas (0,0) e (1,0) caem na MESMA célula grossa (0,0).
+  const coarse = aggregateCells(fine, 50, 100, (key) => key);
+  assert.equal(coarse.length, 1);
+  assert.equal(coarse[0]!.cdoTotal, 4);
+  assert.equal(coarse[0]!.cdoAvailable, 2);
+  assert.equal(coarse[0]!.neighborhoodKey, 'RJ|Niterói|Icaraí', 'Icaraí domina (3 > 1)');
+});
+
+test('aggregateCells trunca a chave de bairro para cidade/estado', () => {
+  const fine: CoverageCell[] = [
+    { gridX: 0, gridY: 0, cdoTotal: 1, cdoAvailable: 1, neighborhoodKey: 'RJ|Niterói|Icaraí' },
+  ];
+  const cityKey = (key: string) => key.split('|').slice(0, 2).join('|');
+  const ufKey = (key: string) => key.split('|')[0]!;
+  assert.equal(aggregateCells(fine, 50, 500, cityKey)[0]!.neighborhoodKey, 'RJ|Niterói');
+  assert.equal(aggregateCells(fine, 50, 2000, ufKey)[0]!.neighborhoodKey, 'RJ');
+});
+
+test('tracePolygonsFromCells produz os mesmos componentes que buildCoverage para a mesma grade', () => {
+  const cdos = [cdo(...ICARAI), cdo(ICARAI[0] + 0.0009, ICARAI[1] + 0.0009)];
+  const viaBuildCoverage = buildCoverage(cdos);
+  const fine = stampCells(cdos, COVERAGE_CELL_METERS, COVERAGE_RADIUS_METERS);
+  const viaDirect = tracePolygonsFromCells(fine, COVERAGE_CELL_METERS);
+  assert.equal(viaDirect.length, viaBuildCoverage.components.length);
+  assert.deepEqual(
+    viaDirect.map((c) => c.geometry),
+    viaBuildCoverage.components.map((c) => c.geometry),
+  );
 });

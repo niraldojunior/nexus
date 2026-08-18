@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import type { GeoProject } from '../../services/geoProjectApi';
+import type { GeoProject, GeoProjectDeleteSummary } from '../../services/geoProjectApi';
 import { ProjectIcon } from './ProjectIcon';
 import { Modal } from './Modal';
 import { StatusBadge } from './StatusBadge';
@@ -10,7 +10,7 @@ export type ProjectListViewProps = {
   loading: boolean;
   onCreate: () => void;
   onOpen: (projectId: string) => void;
-  onDelete: (projectId: string) => void;
+  onDelete: (projectId: string) => Promise<GeoProjectDeleteSummary>;
 };
 
 /**
@@ -26,6 +26,38 @@ export function ProjectListView({
   onDelete,
 }: ProjectListViewProps) {
   const [pendingDelete, setPendingDelete] = useState<GeoProject | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  // Some locais podem ter dependência ativa e ficar de fora (issue #58) — o projeto é
+  // mantido íntegro nesse caso, e o usuário precisa saber por quê ele continua na lista.
+  const [deleteNotice, setDeleteNotice] = useState<{
+    projectName: string;
+    message: string;
+  } | null>(null);
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    try {
+      const summary = await onDelete(pendingDelete.id);
+      setPendingDelete(null);
+      if (!summary.deleted) {
+        setDeleteNotice({
+          projectName: pendingDelete.name,
+          message:
+            summary.blocked === 1
+              ? '1 local não pôde ser encerrado (tem recurso, serviço ou sub-local ativo) — o projeto foi mantido.'
+              : `${summary.blocked} locais não puderam ser encerrados (têm recurso, serviço ou sub-local ativo) — o projeto foi mantido.`,
+        });
+      }
+    } catch {
+      setDeleteNotice({
+        projectName: pendingDelete.name,
+        message: 'Não foi possível excluir o projeto. Tente novamente.',
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <div className="grid gap-3">
@@ -79,30 +111,41 @@ export function ProjectListView({
         </div>
       )}
 
+      {deleteNotice ? (
+        <div className="rounded-[10px] border border-status-amber/30 bg-status-amber-soft px-2.5 py-2 text-[0.76rem] leading-snug text-app-text">
+          <strong>{deleteNotice.projectName}</strong>: {deleteNotice.message}
+        </div>
+      ) : null}
+
       {pendingDelete ? (
-        <Modal onClose={() => setPendingDelete(null)} title="Excluir projeto" eyebrow="Projetos">
+        <Modal
+          onClose={() => (deleting ? undefined : setPendingDelete(null))}
+          title="Excluir projeto"
+          eyebrow="Projetos"
+        >
           <div className="grid gap-4">
             <p className="text-[0.9rem] leading-snug text-app-text">
-              Excluir <strong>{pendingDelete.name}</strong>? Os locais criados neste projeto serão
-              encerrados.
+              Excluir <strong>{pendingDelete.name}</strong>?{' '}
+              {pendingDelete.siteCount === 1
+                ? '1 local criado neste projeto será encerrado.'
+                : `${pendingDelete.siteCount} locais criados neste projeto serão encerrados.`}
             </p>
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setPendingDelete(null)}
+                disabled={deleting}
                 className="geo-btn secondary"
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  onDelete(pendingDelete.id);
-                  setPendingDelete(null);
-                }}
-                className="geo-btn border-status-red/30 bg-status-red-soft text-status-red hover:brightness-95"
+                onClick={() => void confirmDelete()}
+                disabled={deleting}
+                className="geo-btn border-status-red/30 bg-status-red-soft text-status-red hover:brightness-95 disabled:opacity-60"
               >
-                Excluir
+                {deleting ? 'Encerrando locais…' : 'Excluir'}
               </button>
             </div>
           </div>

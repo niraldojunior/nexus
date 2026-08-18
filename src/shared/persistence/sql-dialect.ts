@@ -18,6 +18,14 @@ export interface SqlDialect {
     alias: string,
     column: string,
   ): { sql: string; binds: unknown[] };
+  /**
+   * A bind-free SQL expression that evaluates to a fresh random id string per row — for
+   * `INSERT ... SELECT` statements that create one row per candidate without a JS-side loop
+   * generating an id per row (impractical at bulk-operation scale, tens of thousands of rows).
+   * Not a canonical UUID v7 (C5 governs entity ids like Site/Resource/Service; this is a
+   * derived audit-trail row, same trade-off already accepted by the bulk data loaders).
+   */
+  newRowId(): string;
 }
 
 const requireNonEmpty = (values: readonly unknown[]): void => {
@@ -31,6 +39,7 @@ const postgresDialect: SqlDialect = {
     const rows = values.map(() => '(?)').join(', ');
     return { sql: `(VALUES ${rows}) AS ${alias}(${column})`, binds: [...values] };
   },
+  newRowId: () => 'gen_random_uuid()::text',
 };
 
 const oracleDialect: SqlDialect = {
@@ -43,6 +52,7 @@ const oracleDialect: SqlDialect = {
       `COLUMNS (${column} VARCHAR2(4000) PATH '$'))) ${alias}`;
     return { sql, binds: [JSON.stringify(values)] };
   },
+  newRowId: () => 'LOWER(RAWTOHEX(SYS_GUID()))',
 };
 
 export const dialectFor = (provider: DatabaseProvider): SqlDialect =>

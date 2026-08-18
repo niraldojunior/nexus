@@ -1308,6 +1308,74 @@ export class GeoService {
     });
   }
 
+  // Versão em massa de transitionSite, para os locais de um Projeto de trabalho (REQ-MOD01-015):
+  // excluir/mudar o status de um projeto com dezenas de milhares de locais vinculados via um
+  // laço um-a-um nunca termina (issue #58 — ONITEL, 62 mil locais). Em vez disso, calcula os
+  // bloqueados em conjunto (listBlockedSiteIds) e encerra o resto numa única operação em massa
+  // (bulkTransitionSites), gravando UM evento-resumo em vez de um por site (mesmo trade-off já
+  // aceito pelos scripts de carga em massa — não é o evento-a-evento fiel de C7, mas é o único
+  // caminho viável nesta escala). Local bloqueado (filho/relacionamento/recurso/serviço/ordem
+  // ativo) fica de fora e é reportado — quem chama decide o que fazer com o projeto.
+  public async transitionProjectSites(
+    projectId: string,
+    siteIds: string[],
+    status: GeoSiteStatus | GeoSiteStatusAlias,
+    statusReason: string | undefined,
+    context?: RequestContext,
+  ): Promise<{ updated: number; skipped: number; blocked: string[] }> {
+    const ctx = this.resolveContext(context);
+    this.assertRole(ctx, WRITE_ROLE);
+    const toStatus = normalizeSiteStatus(status);
+    validateStatus(toStatus);
+    if (siteIds.length === 0) return { updated: 0, skipped: 0, blocked: [] };
+
+    const allowedFromStatuses = (Object.keys(SITE_STATUS_TRANSITIONS) as GeoSiteStatus[]).filter(
+      (from) => SITE_STATUS_TRANSITIONS[from].includes(toStatus),
+    );
+
+    const blocked =
+      toStatus === 'InDeactivation' || toStatus === 'Retired'
+        ? await this.repository.listBlockedSiteIds(siteIds, { tenantId: ctx.tenantId })
+        : [];
+    const blockedSet = new Set(blocked);
+    const candidateIds = siteIds.filter((id) => !blockedSet.has(id));
+
+    let updated = 0;
+    if (candidateIds.length > 0 && allowedFromStatuses.length > 0) {
+      const statusDate = new Date().toISOString();
+      updated = await this.repository.transaction(async () => {
+        const result = await this.repository.bulkTransitionSites(candidateIds, {
+          toStatus,
+          allowedFromStatuses,
+          statusDate,
+          ...(statusReason ? { statusReason } : {}),
+          tenantId: ctx.tenantId,
+          actorSub: ctx.actorSub,
+          traceId: ctx.traceId,
+        });
+        await this.recordMutation(
+          ctx,
+          'bulk-transition',
+          'GeoProject',
+          projectId,
+          { siteCount: siteIds.length },
+          { toStatus, updated: result.updated, blocked: blocked.length },
+          'GeographicSiteBulkStatusChangeEvent',
+          {
+            projectId,
+            toStatus,
+            requested: siteIds.length,
+            updated: result.updated,
+            blocked: blocked.length,
+          },
+        );
+        return result.updated;
+      });
+    }
+
+    return { updated, skipped: candidateIds.length - updated, blocked };
+  }
+
   public async createSiteAtAddress(
     input: SiteAtAddressInput,
     context?: RequestContext,

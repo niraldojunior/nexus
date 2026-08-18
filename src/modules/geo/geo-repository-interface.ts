@@ -122,6 +122,23 @@ export interface IGeoRepository {
   getSiteReferences(siteId: string, scope?: GeoTenantScope): Awaitable<GeographicSiteReferences>;
   countSiteDescendants(siteId: string, scope?: GeoTenantScope): Awaitable<number>;
 
+  // Versões em conjunto de getSiteReferences/transitionSite, para operações em massa (ex.: excluir
+  // um Projeto de trabalho com dezenas de milhares de locais vinculados) — evitam o custo de N
+  // idas ao banco por site que tornava essas rotas impraticáveis em escala (issue #58).
+  listBlockedSiteIds(siteIds: string[], scope?: GeoTenantScope): Awaitable<string[]>;
+  bulkTransitionSites(
+    siteIds: string[],
+    input: {
+      toStatus: GeographicSite['status'];
+      allowedFromStatuses: GeographicSite['status'][];
+      statusDate: string;
+      statusReason?: string;
+      tenantId: string;
+      actorSub: string;
+      traceId: string;
+    },
+  ): Awaitable<{ updated: number }>;
+
   appendAudit(audit: GeoAuditLog): Awaitable<GeoAuditLog>;
   listAuditForEntity(entityId: string, scope?: GeoTenantScope): Awaitable<GeoAuditLog[]>;
   appendEvent(event: GeoEvent): Awaitable<GeoEvent>;

@@ -8,6 +8,7 @@ import {
   fetchProjects,
   updateProject,
   type GeoProject,
+  type GeoProjectDeleteSummary,
   type GeoProjectSiteCascade,
 } from '../services/geoProjectApi';
 
@@ -24,7 +25,7 @@ export type UseGeoProjectsResult = {
     id: string,
     patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status'>>,
   ) => Promise<{ siteCascade?: GeoProjectSiteCascade }>;
-  remove: (id: string) => Promise<void>;
+  remove: (id: string) => Promise<GeoProjectDeleteSummary>;
   // Ajuste otimista do contador de locais (criar/remover local de dentro do painel do
   // projeto) — sem isto, `siteCount` só era carregado uma vez no mount e a lista de
   // Projetos mostrava um número desatualizado até um reload de página inteiro.
@@ -73,9 +74,16 @@ export function useGeoProjects(): UseGeoProjectsResult {
     [],
   );
 
+  // Espera a resposta do servidor antes de mexer na lista: excluir 62 mil locais pode deixar
+  // um local bloqueado (dependência ativa) e manter o projeto — tirar da lista de forma
+  // otimista faria o projeto sumir e voltar sozinho no próximo reload, sem o usuário entender
+  // por quê (issue #58). Erros propagam para quem chamou tratar (nunca `void`).
   const remove = useCallback(async (id: string) => {
-    setProjects((current) => current.filter((item) => item.id !== id));
-    await deleteProject(id);
+    const summary = await deleteProject(id);
+    if (summary.deleted) {
+      setProjects((current) => current.filter((item) => item.id !== id));
+    }
+    return summary;
   }, []);
 
   const adjustSiteCount = useCallback((id: string, delta: number) => {

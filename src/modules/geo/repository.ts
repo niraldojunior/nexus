@@ -26,6 +26,7 @@ import {
   normalizeStreetNumberSearch,
   normalizeStreetSearch,
 } from './address-normalization.js';
+import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 
 type ContainmentRule = {
   parentSpecId: string;
@@ -428,6 +429,79 @@ export class GeoRepository implements IGeoRepository {
 
   public countSiteDescendants(siteId: string, scope?: GeoTenantScope): number {
     return this.collectDescendantSiteIds(siteId, scope).size;
+  }
+
+  // Versão em conjunto de getSiteReferences (issue #58) — mesma régua, sobre uma lista de ids.
+  // O repositório em memória não modela Resource/Service/Order (getSiteReferences acima também
+  // devolve 0 para eles), então só filho ativo e relacionamento ativo bloqueiam aqui.
+  public listBlockedSiteIds(siteIds: string[], scope?: GeoTenantScope): string[] {
+    const idSet = new Set(siteIds);
+    const blocked = new Set<string>();
+    for (const site of this.sites.values()) {
+      if (
+        site.parentSite &&
+        idSet.has(site.parentSite.id) &&
+        site.status !== 'Retired' &&
+        matchesTenant(site.tenantId, scope?.tenantId)
+      ) {
+        blocked.add(site.parentSite.id);
+      }
+    }
+    for (const id of siteIds) {
+      const hasActiveRelationship = (this.siteRelationships.get(id) ?? []).some(
+        (item) => !item.validFor?.endDateTime,
+      );
+      if (hasActiveRelationship) blocked.add(id);
+    }
+    return [...blocked];
+  }
+
+  // Versão em conjunto de transitionSite (upsertSite + appendSiteStatusHistory), para o mesmo
+  // cenário de escala.
+  public bulkTransitionSites(
+    siteIds: string[],
+    input: {
+      toStatus: GeographicSite['status'];
+      allowedFromStatuses: GeographicSite['status'][];
+      statusDate: string;
+      statusReason?: string;
+      tenantId: string;
+      actorSub: string;
+      traceId: string;
+    },
+  ): { updated: number } {
+    let updated = 0;
+    for (const id of siteIds) {
+      const site = this.sites.get(id);
+      if (!site) continue;
+      if (!matchesTenant(site.tenantId, input.tenantId)) continue;
+      if (!input.allowedFromStatuses.includes(site.status)) continue;
+      this.statusHistory.push(
+        cloneStatusHistory({
+          '@type': 'GeographicSiteStatusHistoryEntry',
+          id: createCanonicalId(),
+          siteId: site.id,
+          tenantId: site.tenantId ?? input.tenantId,
+          fromStatus: site.status,
+          toStatus: input.toStatus,
+          statusDate: input.statusDate,
+          ...(input.statusReason ? { statusReason: input.statusReason } : {}),
+          actorSub: input.actorSub,
+          traceId: input.traceId,
+        }),
+      );
+      this.sites.set(
+        id,
+        cloneSite({
+          ...site,
+          status: input.toStatus,
+          statusDate: input.statusDate,
+          ...(input.statusReason ? { statusReason: input.statusReason } : {}),
+        }),
+      );
+      updated += 1;
+    }
+    return { updated };
   }
 
   public appendAudit(audit: GeoAuditLog): GeoAuditLog {

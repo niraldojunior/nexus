@@ -1,5 +1,6 @@
-// Cliente da cobertura GPON por bairro (`/v1/geo/coverage`) — a fonte do mapa de 50 m para cima,
-// no lugar dos recursos individuais e dos clusters (ver GeoCoverageService no backend).
+// Cliente da cobertura GPON (`/v1/geo/coverage`) — a fonte do mapa de 50 m para cima, no lugar
+// dos recursos individuais e dos clusters (ver GeoCoverageService no backend). `level` escolhe
+// o LOD: polígono de bairro, de município ou de estado (ver coverageLevelForScale).
 
 import { getJson } from './geoApi';
 import type { MapBounds } from './geoTreeApi';
@@ -27,13 +28,14 @@ export type CoverageArea = {
   id: string;
   neighborhoodIndex: number;
   geometry: CoveragePolygon;
+  // [minLng, minLat, maxLng, maxLat] — usado pelo canvas para culling sem reprocessar a
+  // geometria a cada frame (ver CoverageOverlay.draw).
+  bounds?: [number, number, number, number];
 };
 
 export type CoverageResponse = {
   level: CoverageLevel;
   grid: { sizeMeters: number; projection: 'EPSG:3857' };
-  // fine: [gridX, gridY, cdoTotal, cdoAvailable, neighborhoodIndex]
-  // coarse: [gridX, gridY, cdoTotal, cdoAvailable]
   cells: number[][];
   areas: CoverageArea[];
   neighborhoods: CoverageNeighborhood[];

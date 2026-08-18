@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ChevronLeft, MoreVertical, Plus, Trash2 } from 'lucide-react';
-import type { GeoProject, GeoProjectSiteCascade } from '../../services/geoProjectApi';
+import type {
+  GeoProject,
+  GeoProjectDeleteSummary,
+  GeoProjectSiteCascade,
+  ProjectArea,
+} from '../../services/geoProjectApi';
 import type { GeoStatus } from '../../services/geoApi';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import { ProjectIcon } from './ProjectIcon';
@@ -23,13 +28,17 @@ export type ProjectDetailPanelProps = {
   project: GeoProject;
   sites: GeoTreeNode[];
   sitesLoading: boolean;
+  // Manchas de concentração/dispersão do projeto (REQ-MOD01-017), geradas por
+  // scripts/build-project-areas.mjs — vazio quando o projeto não tem manchas ainda. Quando
+  // presentes, `sites` é só uma PÁGINA (o total real é `project.siteCount`).
+  areas?: ProjectArea[];
   selectedSiteId?: string | null;
   onSnapChange?: (state: BottomSheetSnapState) => void;
   minimizeSignal?: number;
   onUpdate: (
     patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status'>>,
   ) => Promise<{ siteCascade?: GeoProjectSiteCascade } | void>;
-  onDelete: () => void;
+  onDelete: () => Promise<GeoProjectDeleteSummary>;
   onBack: () => void;
   onAddSite: () => void;
   onOpenSite: (site: GeoTreeNode) => void;
@@ -47,6 +56,7 @@ export function ProjectDetailPanel({
   project,
   sites,
   sitesLoading,
+  areas = [],
   selectedSiteId,
   onSnapChange,
   minimizeSignal,
@@ -67,6 +77,10 @@ export function ProjectDetailPanel({
   // Aviso de cascata parcial (PATCH de status que mudou o projeto, mas alguns Sites não
   // seguiram por causa de SITE_STATUS_TRANSITIONS) — some ao trocar de status de novo.
   const [cascadeSkipped, setCascadeSkipped] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  // Local bloqueado (dependência ativa) mantém o projeto vivo em vez de sumir (issue #58) —
+  // o painel precisa dizer por que ele continua aberto, em vez de fechar silenciosamente.
+  const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
   const descriptionRef = useAutoResizeTextarea(descriptionDraft, 160);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
@@ -77,6 +91,7 @@ export function ProjectDetailPanel({
     setTitleDraft(project.name);
     setDescriptionDraft(project.description ?? '');
     setCascadeSkipped(null);
+    setDeleteNotice(null);
   }, [project.id]);
 
   const commitTitle = () => {
@@ -96,6 +111,25 @@ export function ProjectDetailPanel({
     setCascadeSkipped(
       result?.siteCascade && result.siteCascade.skipped > 0 ? result.siteCascade.skipped : null,
     );
+  };
+
+  const handleConfirmDelete = async () => {
+    setDeleting(true);
+    try {
+      const summary = await onDelete();
+      setConfirmDelete(false);
+      if (!summary.deleted) {
+        setDeleteNotice(
+          summary.blocked === 1
+            ? '1 local não pôde ser encerrado (tem recurso, serviço ou sub-local ativo) — o projeto foi mantido.'
+            : `${summary.blocked} locais não puderam ser encerrados (têm recurso, serviço ou sub-local ativo) — o projeto foi mantido.`,
+        );
+      }
+    } catch {
+      setDeleteNotice('Não foi possível excluir o projeto. Tente novamente.');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleTitleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -233,11 +267,32 @@ export function ProjectDetailPanel({
       </div>
     ) : null;
 
+  const deleteNoticeBlock = deleteNotice ? (
+    <div className="rounded-[10px] border border-status-amber/30 bg-status-amber-soft px-2.5 py-2 text-[0.76rem] leading-snug text-app-text">
+      {deleteNotice}
+    </div>
+  ) : null;
+
+  // Com manchas geradas (REQ-MOD01-017), `sites` é só uma página — o total real é
+  // `project.siteCount`; sem manchas, os dois coincidem (lista completa, como sempre).
+  const hasAreas = areas.length > 0;
+  const totalCount = hasAreas ? project.siteCount : sites.length;
   const countLabel = (
     <span className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-      {sites.length === 1 ? '1 local' : `${sites.length} locais`}
+      {totalCount === 1 ? '1 local' : `${totalCount} locais`}
+      {hasAreas && sites.length < totalCount ? ` (mostrando ${sites.length})` : ''}
     </span>
   );
+
+  const concentrationCount = areas.filter((area) => area.kind === 'concentration').length;
+  const dispersionCount = areas.filter((area) => area.kind === 'dispersion').length;
+  const areasSummary = hasAreas ? (
+    <div className="px-3 pb-1 text-[0.76rem] text-app-muted">
+      {concentrationCount === 1 ? '1 concentração' : `${concentrationCount} concentrações`}
+      {' · '}
+      {dispersionCount === 1 ? '1 dispersão' : `${dispersionCount} dispersões`}
+    </div>
+  ) : null;
 
   const addSiteButton = (
     <button type="button" onClick={onAddSite} className="geo-btn primary w-full justify-center">
@@ -285,28 +340,34 @@ export function ProjectDetailPanel({
     );
 
   const deleteConfirm = confirmDelete ? (
-    <Modal onClose={() => setConfirmDelete(false)} title="Excluir projeto" eyebrow="Projetos">
+    <Modal
+      onClose={() => (deleting ? undefined : setConfirmDelete(false))}
+      title="Excluir projeto"
+      eyebrow="Projetos"
+    >
       <div className="grid gap-4">
         <p className="text-[0.9rem] leading-snug text-app-text">
-          Excluir <strong>{project.name}</strong>? Os locais criados neste projeto serão encerrados.
+          Excluir <strong>{project.name}</strong>?{' '}
+          {project.siteCount === 1
+            ? '1 local criado neste projeto será encerrado.'
+            : `${project.siteCount} locais criados neste projeto serão encerrados.`}
         </p>
         <div className="flex justify-end gap-2">
           <button
             type="button"
             onClick={() => setConfirmDelete(false)}
+            disabled={deleting}
             className="geo-btn secondary"
           >
             Cancelar
           </button>
           <button
             type="button"
-            onClick={() => {
-              setConfirmDelete(false);
-              onDelete();
-            }}
-            className="geo-btn border-status-red/30 bg-status-red-soft text-status-red hover:brightness-95"
+            onClick={() => void handleConfirmDelete()}
+            disabled={deleting}
+            className="geo-btn border-status-red/30 bg-status-red-soft text-status-red hover:brightness-95 disabled:opacity-60"
           >
-            Excluir
+            {deleting ? 'Encerrando locais…' : 'Excluir'}
           </button>
         </div>
       </div>
@@ -317,8 +378,7 @@ export function ProjectDetailPanel({
     <Modal onClose={() => setPendingRemoveSite(null)} title="Excluir local" eyebrow="Projetos">
       <div className="grid gap-4">
         <p className="text-[0.9rem] leading-snug text-app-text">
-          Excluir <strong>{pendingRemoveSite.label}</strong> deste projeto? O local será
-          encerrado.
+          Excluir <strong>{pendingRemoveSite.label}</strong> deste projeto? O local será encerrado.
         </p>
         <div className="flex justify-end gap-2">
           <button
@@ -352,8 +412,10 @@ export function ProjectDetailPanel({
         <div className="min-w-0 overflow-hidden px-4 py-3">
           {descriptionBlock}
           {cascadeNotice ? <div className="mt-2">{cascadeNotice}</div> : null}
+          {deleteNoticeBlock ? <div className="mt-2">{deleteNoticeBlock}</div> : null}
           <div className="mt-3 border-t border-app-border pt-3">
             <div className="mb-1 flex items-center justify-between">{countLabel}</div>
+            {areasSummary}
             <div className="grid gap-0.5">
               {addSiteButton}
               {siteRows}
@@ -374,9 +436,11 @@ export function ProjectDetailPanel({
       <div className="grid gap-2 border-b border-app-border px-3 py-2">
         {descriptionBlock}
         {cascadeNotice}
+        {deleteNoticeBlock}
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="px-3 pb-1 pt-3">{countLabel}</div>
+        {areasSummary}
         <OverlayScrollArea className="px-3 pb-3" hostClassName="min-h-0">
           <div className="grid gap-0.5">
             {addSiteButton}

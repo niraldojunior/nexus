@@ -84,8 +84,8 @@ describe('ProjectListView', () => {
     expect(screen.getByText('Ativo')).toBeInTheDocument();
   });
 
-  it('excluir pede confirmação antes de chamar onDelete', () => {
-    const onDelete = vi.fn();
+  it('excluir pede confirmação (com a contagem de locais) antes de chamar onDelete', async () => {
+    const onDelete = vi.fn().mockResolvedValue({ deleted: true, retired: 3, skipped: 0, blocked: 0 });
     render(
       <ProjectListView
         projects={[project()]}
@@ -97,11 +97,12 @@ describe('ProjectListView', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /excluir projeto expansão icaraí/i }));
-    expect(screen.getByText(/os locais criados neste projeto serão/i)).toBeInTheDocument();
+    expect(screen.getByText(/3 locais criados neste projeto serão encerrados/i)).toBeInTheDocument();
     expect(onDelete).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
     expect(onDelete).toHaveBeenCalledWith('prj-1');
+    await screen.findByRole('button', { name: /novo projeto/i });
   });
 
   it('cancelar a confirmação não chama onDelete', () => {
@@ -120,7 +121,48 @@ describe('ProjectListView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     expect(onDelete).not.toHaveBeenCalled();
     expect(
-      screen.queryByText(/os locais criados neste projeto serão/i),
+      screen.queryByText(/locais criados neste projeto serão encerrados/i),
     ).not.toBeInTheDocument();
+  });
+
+  it('local bloqueado mantém o projeto e avisa, em vez de sumir da lista (issue #58)', async () => {
+    const onDelete = vi.fn().mockResolvedValue({ deleted: false, retired: 2, skipped: 1, blocked: 1 });
+    render(
+      <ProjectListView
+        projects={[project()]}
+        loading={false}
+        onCreate={vi.fn()}
+        onOpen={vi.fn()}
+        onDelete={onDelete}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /excluir projeto expansão icaraí/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
+
+    expect(
+      await screen.findByText(/1 local não pôde ser encerrado/i),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Expansão Icaraí').length).toBeGreaterThan(0);
+  });
+
+  it('erro na exclusão avisa em vez de falhar silenciosamente', async () => {
+    const onDelete = vi.fn().mockRejectedValue(new Error('network'));
+    render(
+      <ProjectListView
+        projects={[project()]}
+        loading={false}
+        onCreate={vi.fn()}
+        onOpen={vi.fn()}
+        onDelete={onDelete}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /excluir projeto expansão icaraí/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
+
+    expect(
+      await screen.findByText(/não foi possível excluir o projeto/i),
+    ).toBeInTheDocument();
   });
 });

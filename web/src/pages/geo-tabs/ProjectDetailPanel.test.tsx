@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ProjectDetailPanel } from './ProjectDetailPanel';
-import type { GeoProject } from '../../services/geoProjectApi';
+import type { GeoProject, ProjectArea } from '../../services/geoProjectApi';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 
 afterEach(() => {
@@ -30,6 +30,28 @@ const site = (overrides: Partial<GeoTreeNode> = {}): GeoTreeNode => ({
   referredType: 'GeographicSite',
   status: 'planned',
   hasChildren: false,
+  ...overrides,
+});
+
+const area = (overrides: Partial<ProjectArea> = {}): ProjectArea => ({
+  id: 'loc-1',
+  kind: 'concentration',
+  siteCount: 10,
+  geometry: {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [0, 0],
+        [0, 1],
+        [1, 1],
+        [0, 0],
+      ],
+    ],
+  },
+  siteIds: [],
+  centroid: [0, 0],
+  areaKm2: 1,
+  generatedAt: '2026-08-17T00:00:00Z',
   ...overrides,
 });
 
@@ -92,17 +114,35 @@ describe('ProjectDetailPanel', () => {
     expect(props.onUpdate).toHaveBeenCalledWith({ description: 'Levantamento de campo do Q3' });
   });
 
-  it('menu ⋯ abre e Excluir projeto pede confirmação antes de chamar onDelete', () => {
-    const props = renderPanel();
+  it('menu ⋯ abre e Excluir projeto pede confirmação (com a contagem de locais) antes de chamar onDelete', async () => {
+    const props = renderPanel({
+      project: project({ siteCount: 3 }),
+      onDelete: vi.fn().mockResolvedValue({ deleted: true, retired: 3, skipped: 0, blocked: 0 }),
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'Mais opções do projeto' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Excluir projeto' }));
 
     expect(props.onDelete).not.toHaveBeenCalled();
-    expect(screen.getByText(/os locais criados neste projeto serão/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/3 locais criados neste projeto serão encerrados/i),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
     expect(props.onDelete).toHaveBeenCalledTimes(1);
+    await screen.findByRole('button', { name: 'Mais opções do projeto' });
+  });
+
+  it('local bloqueado mantém o painel aberto e avisa, em vez de fechar silenciosamente (issue #58)', async () => {
+    renderPanel({
+      onDelete: vi.fn().mockResolvedValue({ deleted: false, retired: 0, skipped: 0, blocked: 1 }),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mais opções do projeto' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Excluir projeto' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
+
+    expect(await screen.findByText(/1 local não pôde ser encerrado/i)).toBeInTheDocument();
   });
 
   it('Adicionar Local chama onAddSite', () => {
@@ -160,5 +200,20 @@ describe('ProjectDetailPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
     expect(props.onRemoveSite).toHaveBeenCalledWith(target);
+  });
+
+  it('sem manchas, a contagem usa sites.length (comportamento de sempre)', () => {
+    renderPanel({ sites: [site(), site({ id: 'site:s2', refId: 's2' })] });
+    expect(screen.getByText('2 locais')).toBeInTheDocument();
+  });
+
+  it('com manchas geradas (REQ-MOD01-017), a contagem usa project.siteCount e avisa a página parcial', () => {
+    renderPanel({
+      project: project({ siteCount: 3514 }),
+      sites: [site()],
+      areas: [area({ kind: 'concentration' }), area({ id: 'loc-2', kind: 'dispersion' })],
+    });
+    expect(screen.getByText('3514 locais (mostrando 1)')).toBeInTheDocument();
+    expect(screen.getByText('1 concentração · 1 dispersão')).toBeInTheDocument();
   });
 });

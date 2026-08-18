@@ -33,6 +33,17 @@ export const COVERAGE_CELL_METERS = 50;
 // Fator de agregação da grade grossa (750 m): a API soma 5×5 células finas num GROUP BY.
 export const COVERAGE_COARSE_FACTOR = 5;
 
+// Célula de traçado dos níveis agregados (escala de município/estado) que
+// scripts/build-gpon-coverage.mjs grava em geo_gpon_coverage_area (ver GeoCoverageService). Estes
+// níveis NÃO re-estampam os pontos com um raio maior — isso incharia a mancha muito além da
+// cobertura real (uma CDO isolada "pintando" um disco de 2 km em vez dos 200 m reais, criando
+// falso positivo de cobertura em área sem CDO nenhuma). Em vez disso, `aggregateCells` agrega a
+// grade fina já estampada em COVERAGE_CELL_METERS/COVERAGE_RADIUS_METERS (o raio real) para esta
+// resolução mais grossa — só a resolução de TRAÇADO muda por nível; a área coberta é sempre a
+// verdadeira, nunca maior.
+export const COVERAGE_CITY_CELL_METERS = 500;
+export const COVERAGE_UF_CELL_METERS = 2000;
+
 // Tamanho mínimo (em células) de um componente conexo para virar polígono. Numa área densa,
 // onde bairros vizinhos se sobrepõem, o "bairro dominante por célula" (dominantNeighborhood)
 // deixa fragmentos de 1-3 células para o bairro perdedor — sobras do disco de 200 m que o
@@ -530,22 +541,17 @@ export function tracePolygon(
 
 // ----------------------------------------------------------------- composição ----
 
-export function buildCoverage(
-  cdos: CdoPoint[],
-  options: {
-    cellMeters?: number;
-    radiusMeters?: number;
-    smoothIterations?: number;
-    minComponentCells?: number;
-  } = {},
-): CoverageResult {
-  const cellMeters = options.cellMeters ?? COVERAGE_CELL_METERS;
-  const radiusMeters = options.radiusMeters ?? COVERAGE_RADIUS_METERS;
+// Agrupa por bairro, separa em componentes conexos e traça o polígono de cada um — a metade
+// "geometria" de buildCoverage, isolada para poder rodar sobre uma grade AGREGADA (ver
+// aggregateCells) em vez de sempre estampar os pontos de novo. Exportada para os níveis
+// city/uf (scripts/build-gpon-coverage.mjs) reusarem sem duplicar o agrupamento/traçado.
+export function tracePolygonsFromCells(
+  cells: CoverageCell[],
+  cellMeters: number,
+  options: { smoothIterations?: number; minComponentCells?: number } = {},
+): CoverageComponent[] {
   const smoothIterations = options.smoothIterations ?? COVERAGE_SMOOTH_ITERATIONS;
   const minComponentCells = options.minComponentCells ?? COVERAGE_MIN_COMPONENT_CELLS;
-
-  const cells = stampCells(cdos, cellMeters, radiusMeters);
-  const neighborhoods = neighborhoodStats(cdos, cells, cellMeters);
 
   const cellsByNeighborhood = new Map<string, CoverageCell[]>();
   for (const cell of cells) {
@@ -563,6 +569,79 @@ export function buildCoverage(
       components.push({ neighborhoodKey, geometry, cells: componentCells });
     }
   }
+  return components;
+}
+
+// Agrega uma grade FINA já estampada (o raio real de cobertura, COVERAGE_RADIUS_METERS) para uma
+// resolução mais grossa — uma célula grossa existe SE E SÓ SE alguma célula fina dela existir,
+// com a estatística somada e o bairro dominante entre as finas que a compõem. Ao contrário de
+// re-estampar os pontos com um raio maior (o que fazia o nível estado "pintar" um disco de 2 km
+// por CDO, bem além dos 200 m reais — falso positivo de cobertura), a área coberta nunca cresce
+// além do que a grade fina já mostrava; só a resolução do traçado muda. `remapKey` deriva a
+// chave do nível mais grosso a partir da chave (de bairro) da célula fina — ex.:
+// "UF|Cidade|Bairro" → cidade "UF|Cidade" → estado "UF".
+export function aggregateCells(
+  fineCells: CoverageCell[],
+  fineCellMeters: number,
+  coarseCellMeters: number,
+  remapKey: (fineNeighborhoodKey: string) => string,
+): CoverageCell[] {
+  const factor = Math.max(1, Math.round(coarseCellMeters / fineCellMeters));
+  const buckets = new Map<
+    string,
+    { gridX: number; gridY: number; total: number; available: number; tally: Map<string, number> }
+  >();
+  for (const cell of fineCells) {
+    const gridX = Math.floor(cell.gridX / factor);
+    const gridY = Math.floor(cell.gridY / factor);
+    const key = cellKey(gridX, gridY);
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { gridX, gridY, total: 0, available: 0, tally: new Map() };
+      buckets.set(key, bucket);
+    }
+    bucket.total += cell.cdoTotal;
+    bucket.available += cell.cdoAvailable;
+    const aggregatedKey = remapKey(cell.neighborhoodKey);
+    bucket.tally.set(aggregatedKey, (bucket.tally.get(aggregatedKey) ?? 0) + cell.cdoTotal);
+  }
+
+  return [...buckets.values()].map((bucket) => {
+    let dominant = '';
+    let best = -1;
+    for (const [key, count] of bucket.tally) {
+      if (count > best) {
+        best = count;
+        dominant = key;
+      }
+    }
+    return {
+      gridX: bucket.gridX,
+      gridY: bucket.gridY,
+      cdoTotal: bucket.total,
+      cdoAvailable: bucket.available,
+      neighborhoodKey: dominant,
+    };
+  });
+}
+
+export function buildCoverage(
+  cdos: CdoPoint[],
+  options: {
+    cellMeters?: number;
+    radiusMeters?: number;
+    smoothIterations?: number;
+    minComponentCells?: number;
+  } = {},
+): CoverageResult {
+  const cellMeters = options.cellMeters ?? COVERAGE_CELL_METERS;
+  const radiusMeters = options.radiusMeters ?? COVERAGE_RADIUS_METERS;
+  const smoothIterations = options.smoothIterations ?? COVERAGE_SMOOTH_ITERATIONS;
+  const minComponentCells = options.minComponentCells ?? COVERAGE_MIN_COMPONENT_CELLS;
+
+  const cells = stampCells(cdos, cellMeters, radiusMeters);
+  const neighborhoods = neighborhoodStats(cdos, cells, cellMeters);
+  const components = tracePolygonsFromCells(cells, cellMeters, { smoothIterations, minComponentCells });
 
   return { components, neighborhoods, cellMeters, radiusMeters };
 }

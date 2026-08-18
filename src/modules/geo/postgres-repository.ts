@@ -1,4 +1,5 @@
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import { dialectFor } from '../../shared/persistence/sql-dialect.js';
 import type {
   GeographicAddress,
   GeoAuditLog,
@@ -42,6 +43,17 @@ import type {
   GeographicSiteSpecificationRow,
   GeographicSiteStatusHistoryRow,
 } from './rows.js';
+
+// Tamanho de bloco para listBlockedSiteIds/bulkTransitionSites (issue #58): grande o bastante
+// para poucas idas ao banco, longe do teto de binds do protocolo Postgres (~65 mil parâmetros)
+// mesmo somando os demais binds da consulta.
+const BULK_SITE_CHUNK_SIZE = 5000;
+
+const chunk = <T>(items: readonly T[], size: number): T[][] => {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+};
 
 export class PostgresGeoRepository implements IGeoRepository {
   constructor(private db: DatabaseClient) {}
@@ -1026,6 +1038,149 @@ export class PostgresGeoRepository implements IGeoRepository {
 
   public async countSiteDescendants(siteId: string, scope?: GeoTenantScope): Promise<number> {
     return (await this.collectDescendantSiteIds(siteId, scope)).length;
+  }
+
+  // Versão em conjunto de getSiteReferences, para não pagar N idas ao banco (6 cada) por site
+  // numa operação em massa (issue #58: excluir um Projeto com dezenas de milhares de locais
+  // vinculados). `siteIds` é varrido em blocos via SqlDialect.inlineRows — Postgres teria N
+  // binds (perto do teto do protocolo em listas muito grandes) e Oracle prefere JSON_TABLE a um
+  // IN-list de milhares de posições.
+  public async listBlockedSiteIds(siteIds: string[], scope?: GeoTenantScope): Promise<string[]> {
+    if (siteIds.length === 0) return [];
+    const dialect = dialectFor(this.db.provider);
+    const tenantFilter = scope?.tenantId ? 'AND tenant_id = ?' : '';
+    const tenantParams = scope?.tenantId ? [scope.tenantId] : [];
+    const blocked = new Set<string>();
+
+    for (const idsChunk of chunk(siteIds, BULK_SITE_CHUNK_SIZE)) {
+      const childSeed = dialect.inlineRows(idsChunk, 'v', 'id');
+      const childRows = await this.db.all<{ id: string }>(
+        `SELECT DISTINCT parent_site_id AS id
+           FROM tmf_geographic_site
+          WHERE parent_site_id IN (SELECT id FROM ${childSeed.sql})
+            AND status <> 'Retired' ${tenantFilter}`,
+        [...childSeed.binds, ...tenantParams],
+      );
+      for (const row of childRows) blocked.add(row.id);
+
+      const relSeed = dialect.inlineRows(idsChunk, 'v', 'id');
+      const relRows = await this.db.all<{ id: string }>(
+        `SELECT DISTINCT site_from_id AS id
+           FROM tmf_geographic_site_relationship
+          WHERE site_from_id IN (SELECT id FROM ${relSeed.sql})
+            AND valid_for_end IS NULL`,
+        relSeed.binds,
+      );
+      for (const row of relRows) blocked.add(row.id);
+
+      for (const table of ['tmf_physical_resource', 'tmf_logical_resource']) {
+        const seed = dialect.inlineRows(idsChunk, 'v', 'id');
+        const rows = await this.db.all<{ id: string | null }>(
+          `SELECT place_id AS id FROM ${table}
+            WHERE status <> 'terminated' AND place_id IN (SELECT id FROM ${seed.sql})
+           UNION
+           SELECT serving_site_id AS id FROM ${table}
+            WHERE status <> 'terminated' AND serving_site_id IN (SELECT id FROM ${seed.sql})`,
+          [...seed.binds, ...seed.binds],
+        );
+        for (const row of rows) if (row.id) blocked.add(row.id);
+      }
+    }
+
+    // Service/Order referenciam o Site por texto solto (`place LIKE '%siteId%'`, sem FK/índice —
+    // ver getSiteReferences acima), então não dá para filtrar por siteIds no SQL. Em vez de repetir
+    // o LIKE por site (o que a versão de um site já paga), varre cada tabela ativa UMA vez e cruza
+    // os ids embutidos no texto contra o conjunto pedido — O(linhas ativas), não O(siteIds).
+    const idSet = new Set(siteIds);
+    const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+    const scanEmbeddedIds = async (sql: string) => {
+      const rows = await this.db.all<{ text: string | null }>(sql);
+      for (const row of rows) {
+        if (!row.text) continue;
+        for (const match of row.text.matchAll(uuidPattern)) {
+          if (idSet.has(match[0])) blocked.add(match[0]);
+        }
+      }
+    };
+    await scanEmbeddedIds(
+      `SELECT place AS text FROM tmf_customer_facing_service WHERE COALESCE(state, status) <> 'terminated' AND place IS NOT NULL`,
+    );
+    await scanEmbeddedIds(
+      `SELECT place AS text FROM tmf_resource_facing_service WHERE COALESCE(state, status) <> 'terminated' AND place IS NOT NULL`,
+    );
+    await scanEmbeddedIds(
+      `SELECT service_order_item AS text FROM tmf_service_order WHERE state NOT IN ('completed', 'cancelled', 'failed')`,
+    );
+    await scanEmbeddedIds(
+      `SELECT resource_order_item AS text FROM tmf_resource_order WHERE state NOT IN ('completed', 'cancelled', 'failed')`,
+    );
+
+    return [...blocked];
+  }
+
+  // Versão em conjunto de transitionSite (upsertSite + appendSiteStatusHistory), para o mesmo
+  // cenário de escala. Por bloco: grava o histórico ANTES do UPDATE (para capturar o from_status
+  // real, via self-join) e atualiza só quem ainda está num status de origem permitido — quem já
+  // chegou ao alvo (ex.: retomada de uma exclusão que morreu na metade) não gera histórico
+  // duplicado nem soma em `updated`.
+  public async bulkTransitionSites(
+    siteIds: string[],
+    input: {
+      toStatus: GeographicSite['status'];
+      allowedFromStatuses: GeographicSite['status'][];
+      statusDate: string;
+      statusReason?: string;
+      tenantId: string;
+      actorSub: string;
+      traceId: string;
+    },
+  ): Promise<{ updated: number }> {
+    if (siteIds.length === 0 || input.allowedFromStatuses.length === 0) return { updated: 0 };
+    const dialect = dialectFor(this.db.provider);
+    const fromPlaceholders = input.allowedFromStatuses.map(() => '?').join(', ');
+    let updated = 0;
+
+    for (const idsChunk of chunk(siteIds, BULK_SITE_CHUNK_SIZE)) {
+      const historySeed = dialect.inlineRows(idsChunk, 'v', 'id');
+      await this.db.run(
+        `INSERT INTO tmf_geographic_site_status_history
+            (id, site_id, tenant_id, from_status, to_status, status_date, status_reason, actor_sub, trace_id)
+         SELECT ${dialect.newRowId()}, s.id, s.tenant_id, s.status, ?, ?, ?, ?, ?
+           FROM tmf_geographic_site s
+          WHERE s.tenant_id = ? AND s.status IN (${fromPlaceholders})
+            AND s.id IN (SELECT id FROM ${historySeed.sql})`,
+        [
+          input.toStatus,
+          input.statusDate,
+          input.statusReason ?? null,
+          input.actorSub,
+          input.traceId,
+          input.tenantId,
+          ...input.allowedFromStatuses,
+          ...historySeed.binds,
+        ],
+      );
+
+      const updateSeed = dialect.inlineRows(idsChunk, 'v', 'id');
+      const result = await this.db.run(
+        `UPDATE tmf_geographic_site
+            SET status = ?, status_date = ?, status_reason = ?, updated_at = ?
+          WHERE tenant_id = ? AND status IN (${fromPlaceholders})
+            AND id IN (SELECT id FROM ${updateSeed.sql})`,
+        [
+          input.toStatus,
+          input.statusDate,
+          input.statusReason ?? null,
+          input.statusDate,
+          input.tenantId,
+          ...input.allowedFromStatuses,
+          ...updateSeed.binds,
+        ],
+      );
+      updated += result.changes;
+    }
+
+    return { updated };
   }
 
   public async appendAudit(audit: GeoAuditLog): Promise<GeoAuditLog> {

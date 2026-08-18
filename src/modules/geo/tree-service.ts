@@ -223,28 +223,40 @@ export class GeoTreeService {
    * expansão da árvore. Um cabo entra se qualquer vértice da rota cair no bbox; um ponto
    * entra se a própria coordenada cair. `status = 'terminated'` fica de fora (C6), e
    * Splitter também — ele não tem ponto próprio no mapa (mora na Location da caixa).
+   *
+   * `shapes` restringe o que é buscado (RF-011, controle de camadas do mapa): com um dos dois
+   * desligado, o UNION ALL nem inclui os blocos daquele shape — não é filtro pós-consulta, é
+   * menos SQL executado. Default (sem `shapes`) busca os dois, como sempre.
    */
   public async resourcesInViewport(
     bounds: { minLng: number; minLat: number; maxLng: number; maxLat: number },
-    options: { limit?: number } = {},
+    options: { limit?: number; shapes?: { point?: boolean; line?: boolean } } = {},
   ): Promise<GeoTreeNode[]> {
+    const shapes = {
+      point: options.shapes?.point ?? true,
+      line: options.shapes?.line ?? true,
+    };
+    if (!shapes.point && !shapes.line) return [];
+
     // Diferente da árvore (paginada de 500), o viewport devolve TUDO que cai na área
     // visível: um bairro denso passa de mil caixas, e truncar em 500 deixava regiões
     // inteiras vazias no mapa. Como a busca só roda em escala de detalhe (≤ 200 m), a
     // própria área limita o volume; VIEWPORT_MAX_RESULTS é só uma válvula de segurança.
     const limit = clamp(options.limit ?? VIEWPORT_MAX_RESULTS, 1, VIEWPORT_MAX_RESULTS);
-    // Um jogo de 4 (minLng, maxLng, minLat, maxLat) por bloco do UNION ALL em
-    // VIEWPORT_RESOURCE_SOURCE: Physical-ponto, Physical-cabo, Logical-ponto, Logical-cabo
-    // — daí os 4 jogos. Ponto e cabo ficam em blocos separados (não num OR) para o bloco de
-    // ponto poder usar o índice de expressão idx_tmf_geographic_location_point_lnglat.
+    // Um jogo de 4 (minLng, maxLng, minLat, maxLat) por bloco do UNION ALL de
+    // viewportResourceSource — um por shape incluído (1, 2 ou 4 blocos). Ponto e cabo ficam
+    // em blocos separados (não num OR) para o bloco de ponto poder usar o índice de expressão
+    // idx_tmf_geographic_location_point_lnglat.
     const bboxQuad = [bounds.minLng, bounds.maxLng, bounds.minLat, bounds.maxLat];
+    const source = viewportResourceSource(shapes);
+    const blockCount = (shapes.point ? 2 : 0) + (shapes.line ? 2 : 0);
 
     // Sem ORDER BY: o mapa não precisa de ordem, e ordenar por nome enviesava o corte do
     // LIMIT (devolvia os 500 primeiros nomes, sumindo com bairros inteiros).
-    const rows = await this.db.all<ResourceRow>(
-      `SELECT * FROM (${VIEWPORT_RESOURCE_SOURCE}) AS t LIMIT ?`,
-      [...bboxQuad, ...bboxQuad, ...bboxQuad, ...bboxQuad, limit],
-    );
+    const rows = await this.db.all<ResourceRow>(`SELECT * FROM (${source}) AS t LIMIT ?`, [
+      ...Array.from({ length: blockCount }, () => bboxQuad).flat(),
+      limit,
+    ]);
 
     return await this.toResourceNodes(rows, 'tree');
   }
@@ -270,6 +282,33 @@ export class GeoTreeService {
        ${PROJECT_SITE_EXCLUSION_SQL}
        LIMIT ?`,
       [...bboxQuad, limit],
+    );
+
+    return rows.map((row) => this.toSiteNode(row, { hasChildren: false }));
+  }
+
+  /**
+   * Locais de UM Projeto de trabalho dentro de um bbox do mapa (REQ-MOD01-017) — o par de
+   * `sitesInViewport` restrito a um `projectId`, para o mapa carregar um projeto com dezenas
+   * de milhares de locais (ex.: 25.507 no "Onitel - Brasília") sem baixar tudo de uma vez
+   * quando ele já tem manchas de concentração/dispersão geradas (o pin individual só entra em
+   * ≤ 50 m — ver PASSIVE_INFRA_MAX_SCALE_METERS no cliente). Sem `PROJECT_SITE_EXCLUSION_SQL`
+   * (o oposto de `sitesInViewport`): é exatamente o caminho que revela local de projeto.
+   */
+  public async projectSitesInViewport(
+    projectId: string,
+    bounds: { minLng: number; minLat: number; maxLng: number; maxLat: number },
+    options: { limit?: number } = {},
+  ): Promise<GeoTreeNode[]> {
+    const limit = clamp(options.limit ?? VIEWPORT_MAX_RESULTS, 1, VIEWPORT_MAX_RESULTS);
+    const bboxQuad = [bounds.minLng, bounds.maxLng, bounds.minLat, bounds.maxLat];
+
+    const rows = await this.db.all<SiteRow>(
+      `${SITE_SELECT}
+       JOIN geo_project_site ps ON ps.site_id = s.id AND ps.project_id = ?
+       WHERE ${SITE_VIEWPORT_POINT_WHERE}
+       LIMIT ?`,
+      [projectId, ...bboxQuad, limit],
     );
 
     return rows.map((row) => this.toSiteNode(row, { hasChildren: false }));
@@ -999,14 +1038,20 @@ const viewportBlock = (entity: 'PhysicalResource' | 'LogicalResource', where: st
    WHERE r.status <> 'terminated' AND (${where})`;
 };
 
-// Ordem dos blocos (e, portanto, dos parâmetros): Physical-ponto, Physical-cabo,
-// Logical-ponto, Logical-cabo — ver resourcesInViewport.
-const VIEWPORT_RESOURCE_SOURCE = [
-  viewportBlock('PhysicalResource', VIEWPORT_POINT_WHERE),
-  viewportBlock('PhysicalResource', VIEWPORT_LINE_WHERE),
-  viewportBlock('LogicalResource', VIEWPORT_POINT_WHERE),
-  viewportBlock('LogicalResource', VIEWPORT_LINE_WHERE),
-].join('\n  UNION ALL\n');
+// Ordem canônica dos blocos (e, portanto, dos parâmetros posicionais): Physical-ponto,
+// Physical-cabo, Logical-ponto, Logical-cabo. Uma requisição do controle de camadas do mapa
+// (RF-011, REQ-MOD01-011) pode pedir só um dos dois shapes — `viewportResourceSource` monta o
+// UNION ALL só com os blocos pedidos, preservando esta ordem para o chamador (resourcesInViewport)
+// empilhar os `bboxQuad` corretos. No Oracle os binds são ligados por ordem de aparição (não por
+// nome), então montar o SQL dinamicamente é seguro desde que os parâmetros sigam a mesma ordem.
+function viewportResourceSource(shapes: { point: boolean; line: boolean }): string {
+  const blocks: string[] = [];
+  if (shapes.point) blocks.push(viewportBlock('PhysicalResource', VIEWPORT_POINT_WHERE));
+  if (shapes.line) blocks.push(viewportBlock('PhysicalResource', VIEWPORT_LINE_WHERE));
+  if (shapes.point) blocks.push(viewportBlock('LogicalResource', VIEWPORT_POINT_WHERE));
+  if (shapes.line) blocks.push(viewportBlock('LogicalResource', VIEWPORT_LINE_WHERE));
+  return blocks.join('\n  UNION ALL\n');
+}
 
 // Recursos (physical/logical) por substring de nome — a busca da barra de pesquisa não
 // se restringe a um site nem a um bbox, então reusa `viewportBlock` só pela forma das

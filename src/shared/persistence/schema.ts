@@ -18,6 +18,7 @@ export const TABLE_NAMES = [
   'tmf_geographic_site_relationship',
   'geo_project',
   'geo_project_site',
+  'geo_project_area',
   'tmf_geographic_relationship_type',
   'tmf_resource_specification',
   'tmf_resource_category',
@@ -50,6 +51,7 @@ export const TABLE_NAMES = [
   'tmf_relationship_type_catalog',
   'tmf_characteristic_group_catalog',
   'geo_gpon_coverage_cell',
+  'geo_gpon_coverage_area',
 ] as const;
 
 // Column migrations added after the base schema so databases created before these columns get
@@ -627,6 +629,34 @@ export const SCHEMA_SQL = `
       );
       CREATE INDEX IF NOT EXISTS idx_geo_project_site_site ON geo_project_site(site_id);
 
+      -- Manchas de concentração/dispersão de um Projeto (REQ-MOD01-017): agrupamento espacial
+      -- dos Sites de um projeto carregado em massa, gerado por scripts/build-project-areas.mjs
+      -- (dist/src/modules/geo/project-area-grid.ts). A geometria da mancha em si é um Polygon
+      -- comum em tmf_geographic_location (reference_point 'PROJECT:<projectId>'); esta tabela
+      -- guarda o vínculo com o projeto e o resto do relatório (mesmo espírito de
+      -- geo_project_site.note: extensão de plataforma, não characteristic TMF — C1 não se
+      -- aplica). Artefato derivado e regenerável (como geo_gpon_coverage_cell): toda execução
+      -- do script SUBSTITUI a geração anterior do projeto — exceção consciente a C6.
+      CREATE TABLE IF NOT EXISTS geo_project_area (
+        project_id TEXT NOT NULL,
+        location_id TEXT NOT NULL,
+        -- concentration (>= minSites locais) | dispersion (< minSites) — ver PROJECT_AREA_MIN_SITES.
+        kind TEXT NOT NULL,
+        site_count INTEGER NOT NULL DEFAULT 0,
+        -- Amostra de ids de Site do componente (JSON array de string, cap ~50) — diagnóstico de
+        -- dispersão sem precisar reconsultar geo_project_site inteiro.
+        site_ids TEXT,
+        centroid_lng REAL,
+        centroid_lat REAL,
+        area_km2 REAL,
+        position INTEGER NOT NULL DEFAULT 0,
+        generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (project_id, location_id),
+        FOREIGN KEY (project_id) REFERENCES geo_project(id),
+        FOREIGN KEY (location_id) REFERENCES tmf_geographic_location(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_geo_project_area_project ON geo_project_area(project_id, position);
+
       CREATE TABLE IF NOT EXISTS tmf_geographic_relationship_type (
         id TEXT PRIMARY KEY,
         href TEXT NOT NULL,
@@ -1196,6 +1226,41 @@ export const SCHEMA_SQL = `
         ON geo_gpon_coverage_cell(grid_size_m, grid_x, grid_y);
       CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_cell_area
         ON geo_gpon_coverage_cell(coverage_area_id);
+
+      -- Índice de leitura por polígono de cobertura (1 linha por Location "GPON:"/"GPON-CITY:"/
+      -- "GPON-UF:"), com bbox e estatística DESNORMALIZADOS — evita, no recorte por viewport, ter
+      -- que varrer geo_gpon_coverage_cell (milhões de linhas) e reparsear characteristics (dezenas
+      -- de MB) a cada requisição. lod_level espelha os três níveis de detalhe que
+      -- scripts/build-gpon-coverage.mjs grava: neighborhood (bairro, célula fina) até 500 m de
+      -- escala, city (município) até 10 km, uf (estado) acima disso — ver coverageLevelForScale no
+      -- frontend. (Nome da coluna evita "level": palavra reservada do Oracle, usada em
+      -- CONNECT BY LEVEL.) Artefato derivado e regenerável, como geo_gpon_coverage_cell: toda
+      -- execução do script SUBSTITUI a geração anterior do escopo/nível.
+      CREATE TABLE IF NOT EXISTS geo_gpon_coverage_area (
+        tenant_id TEXT NOT NULL DEFAULT 'default',
+        location_id TEXT NOT NULL,
+        lod_level TEXT NOT NULL,
+        cell_size_m INTEGER NOT NULL,
+        min_lng REAL NOT NULL,
+        min_lat REAL NOT NULL,
+        max_lng REAL NOT NULL,
+        max_lat REAL NOT NULL,
+        area_key TEXT NOT NULL,
+        neighborhood TEXT,
+        city TEXT,
+        uf TEXT,
+        cdo_total INTEGER NOT NULL DEFAULT 0,
+        cdo_available INTEGER NOT NULL DEFAULT 0,
+        covered_area_km2 REAL NOT NULL DEFAULT 0,
+        ports_total INTEGER,
+        ports_used INTEGER,
+        generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (tenant_id, location_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_area_bbox
+        ON geo_gpon_coverage_area(tenant_id, lod_level, min_lng, max_lng, min_lat, max_lat);
+      CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_area_rank
+        ON geo_gpon_coverage_area(tenant_id, lod_level, cdo_total);
 `;
 
 // Rewrites the SQLite-dialect schema DDL to its Postgres equivalent: SQLite type names to

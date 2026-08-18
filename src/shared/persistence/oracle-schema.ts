@@ -29,6 +29,7 @@ const CLOB_COLUMNS = new Set([
   'service_qualification_item',
   'service_relationships',
   'site_addresses',
+  'site_ids',
   'supporting_resources',
   'supporting_services',
   'warnings',

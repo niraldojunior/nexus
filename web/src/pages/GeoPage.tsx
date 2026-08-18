@@ -34,7 +34,6 @@ import {
 } from '../utils/geoLabels';
 import {
   fetchTreeChildren,
-  fetchViewportResources,
   treeNodePoint,
   treeNodeRoute,
   type GeoTreeNode,
@@ -64,10 +63,21 @@ import {
   stationTierForScale,
   resourceTierForScale,
   type StationTier,
+  type CoverageLevel,
 } from '../utils/mapScale';
 import { useGponCoverage } from '../hooks/useGponCoverage';
+import { useViewportInfra } from '../hooks/useViewportInfra';
+import { useMapLayers } from '../hooks/useMapLayers';
+import {
+  viewportInclude,
+  ALL_MAP_LAYERS_VISIBLE,
+  type MapLayerGroupId,
+  type MapLayerId,
+  type MapLayerVisibility,
+} from '../utils/mapLayers';
 import { createCoverageOverlay, type CoverageOverlayHandle } from './geo-tabs/CoverageOverlay';
 import { coverageSwatch, coverageSwatchDataUrl } from '../utils/coverageColor';
+import { projectAreaSwatchDataUrl } from '../utils/projectAreaColor';
 import type { CoverageNeighborhood, CoverageResponse } from '../services/geoCoverageApi';
 import { bottomInsetForOverlay, flyTo, cancelFlight, type FlyTarget } from '../utils/mapCamera';
 import { acquireDeviceLocation, DEVICE_LOCATION_POOR_ACCURACY_M } from '../utils/deviceLocation';
@@ -94,6 +104,7 @@ import {
   type HierarchySidebarTab,
   IconInfoRow,
   MapBaseLayerSelector,
+  MapLayerControl,
   MapLoadingBar,
   MapLocateButton,
   Modal,
@@ -109,7 +120,17 @@ import {
   type GeoSearchSelection,
 } from './geo-tabs';
 import { useGeoProjects } from '../hooks/useGeoProjects';
-import { fetchProjectSites, removeProjectSite, type ProjectSite } from '../services/geoProjectApi';
+import {
+  fetchProjectAreas,
+  fetchProjectSites,
+  removeProjectSite,
+  type ProjectArea,
+  type ProjectSite,
+} from '../services/geoProjectApi';
+import {
+  createProjectAreaOverlay,
+  type ProjectAreaOverlayHandle,
+} from './geo-tabs/ProjectAreaOverlay';
 import {
   DROP_ACCENT,
   DROP_INK,
@@ -149,21 +170,28 @@ type MapBalloon = {
   rows: Array<[string, string]>;
 };
 
-// Balão de hover da cobertura GPON: o bairro sob o cursor, com os números da rede. Não é um
-// item pontual (não tem ícone de local/recurso), então usa um swatch da cor de disponibilidade.
+// Balão de hover da cobertura GPON: a área sob o cursor, com os números da rede. Não é um item
+// pontual (não tem ícone de local/recurso), então usa um swatch da cor de disponibilidade. O
+// título e a linha de localização mudam com o nível (LOD): bairro mostra município/UF; município
+// mostra só o UF; estado não repete o próprio nome.
 function coverageBalloonOf(
   hover: { point: [number, number]; neighborhood: CoverageNeighborhood } | null,
+  level: CoverageLevel | undefined,
 ): MapBalloon | null {
   if (!hover) return null;
   const { neighborhood, point } = hover;
   const pct = Math.round(neighborhood.availabilityRatio * 100);
-  const rows: Array<[string, string]> = [
-    ['Município', `${neighborhood.city}/${neighborhood.uf}`],
+  const title =
+    level === 'uf' ? neighborhood.uf : level === 'city' ? neighborhood.city : neighborhood.neighborhood;
+  const rows: Array<[string, string]> = [];
+  if (level === 'city') rows.push(['Estado', neighborhood.uf]);
+  else if (level !== 'uf') rows.push(['Município', `${neighborhood.city}/${neighborhood.uf}`]);
+  rows.push(
     ['CDOs', String(neighborhood.cdoTotal)],
     ['Disponíveis', `${neighborhood.cdoAvailable} (${pct}%)`],
     ['Indisponíveis', String(neighborhood.cdoUnavailable)],
     ['Área coberta', `${neighborhood.coveredAreaKm2.toFixed(2)} km²`],
-  ];
+  );
   // Takeup (portas ocupadas / totais) entra quando a carga trouxer o dado — hoje é null.
   if (neighborhood.portsTotal !== null && neighborhood.portsTotal > 0) {
     const used = neighborhood.portsUsed ?? 0;
@@ -176,7 +204,28 @@ function coverageBalloonOf(
     offset: [0, -12],
     iconUrl: coverageSwatchDataUrl(neighborhood.availabilityRatio),
     eyebrow: 'Cobertura GPON',
-    title: neighborhood.neighborhood,
+    title,
+    rows,
+  };
+}
+
+// Balão de hover de uma mancha de Projeto (REQ-MOD01-017): classe (concentração/dispersão) e
+// contagem de locais. Mesmo espírito de coverageBalloonOf — não é item pontual, usa swatch.
+function projectAreaBalloonOf(
+  hover: { point: [number, number]; area: ProjectArea } | null,
+): MapBalloon | null {
+  if (!hover) return null;
+  const { area, point } = hover;
+  const kindLabel = area.kind === 'concentration' ? 'Concentração' : 'Dispersão';
+  const rows: Array<[string, string]> = [['Locais', String(area.siteCount)]];
+  if (area.areaKm2 !== null) rows.push(['Área', `${area.areaKm2.toFixed(2)} km²`]);
+  return {
+    key: `project-area:${area.id}`,
+    point,
+    offset: [0, -12],
+    iconUrl: projectAreaSwatchDataUrl(area.kind),
+    eyebrow: 'Projeto',
+    title: kindLabel,
     rows,
   };
 }
@@ -192,8 +241,7 @@ type DetailTarget = { kind: 'site'; site: GeoSite } | { kind: 'resource'; node: 
 // um novo local; `mode: 'view'` consulta/edita o `siteId` informado.
 type ProjectSiteView = { mode: 'create' } | { mode: 'view'; siteId: string };
 type DockView =
-  | { kind: 'hierarchy' }
-  | { kind: 'project'; projectId: string; site: ProjectSiteView | null };
+  { kind: 'hierarchy' } | { kind: 'project'; projectId: string; site: ProjectSiteView | null };
 
 // Lado do ícone de equipamento no mapa, em px. Um pouco menor que o pin de site
 // para o equipamento não competir com o local que o contém.
@@ -244,6 +292,21 @@ const CABLE_STROKE_WEIGHT: Record<string, number> = {
 const DEFAULT_CENTER = { lat: -22.9068, lng: -43.1075 };
 // Aguarda a janela nativa de duplo clique antes de tratar clique simples no mapa.
 const MAP_SINGLE_CLICK_DELAY_MS = 500;
+
+// Página da lista de locais no painel de Projeto (REQ-MOD01-017), quando ele já tem manchas
+// de concentração/dispersão geradas — o total real aparece via `project.siteCount`, não pelo
+// tamanho desta página (um projeto como "Onitel - Brasília" tem 25 mil locais).
+const PROJECT_PANEL_SITE_LIMIT = 200;
+
+// Default de `onProjectAreaHover` — só usado pelos testes que montam GoogleMapPanel sem um
+// Projeto em jogo (GeoPage sempre passa o setter de estado real).
+const noopProjectAreaHover = (): void => {};
+
+// Defaults dos handlers do controle de camadas (RF-011) — só usados pelos testes que montam
+// GoogleMapPanel sem o controle em jogo (GeoPage sempre passa os callbacks reais de useMapLayers).
+const noopToggleMapLayer = (): void => {};
+const noopToggleMapLayerGroup = (): void => {};
+const noopResetMapLayers = (): void => {};
 
 // O basemap é contexto, não conteúdo: POI comercial some por inteiro e os demais
 // POIs perdem o ícone (o texto fica, como referência de orientação) para não
@@ -311,6 +374,14 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Incrementado após criar/remover um local do projeto para forçar um novo GET — os
   // demais estados (nome, descrição, ícone) já atualizam otimista via useGeoProjects.
   const [projectSitesReloadToken, setProjectSitesReloadToken] = useState(0);
+  // Manchas de concentração/dispersão do projeto aberto (REQ-MOD01-017), geradas por
+  // scripts/build-project-areas.mjs. Vazio quando o projeto não tem manchas geradas — nesse
+  // caso o mapa mantém o comportamento de sempre (todos os locais, em qualquer escala).
+  const [projectAreas, setProjectAreas] = useState<ProjectArea[]>([]);
+  const hasProjectAreas = projectAreas.length > 0;
+  // Locais do projeto visíveis no MAPA quando ele tem manchas geradas (busca por bbox, ver o
+  // efeito abaixo) — distinto de `projectSites`, que nesse caso vira a página do painel.
+  const [projectViewportSites, setProjectViewportSites] = useState<ProjectSite[]>([]);
   const projects = useGeoProjects();
   // Projeto (ou local de projeto) atualmente aberto na doca — `null` fora desse fluxo.
   const activeProjectId = dockView.kind !== 'hierarchy' ? dockView.projectId : null;
@@ -338,78 +409,66 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const [selectedNode, setSelectedNode] = useState<GeoTreeNode | null>(null);
   const [hoverKey, setHoverKey] = useState<string | null>(null);
 
-  // Infra passiva (recursos + cabos) da região visível do mapa — some acima de
-  // PASSIVE_INFRA_MAX_SCALE_METERS (50 m) e é buscada por bbox, não pela árvore.
-  const [viewportInfra, setViewportInfra] = useState<GeoTreeNode[]>([]);
-  // Verdadeiro enquanto a busca de infra passiva por viewport está em voo — alimenta a
-  // barra de carga do mapa (ver mapDataLoading e MapLoadingBar).
-  const [viewportLoading, setViewportLoading] = useState(false);
   const [scaleMeters, setScaleMeters] = useState<number | null>(null);
   // Região visível atual (identidade só muda no `idle`) — alimenta a busca de cobertura GPON,
   // que roda em toda escala de 50 m para cima, não só na de detalhe.
   const [viewportBounds, setViewportBounds] = useState<MapBounds | null>(null);
-  const viewportFetchTokenRef = useRef(0);
-  const viewportDebounceRef = useRef<number | undefined>(undefined);
-  const lastViewportKeyRef = useRef<string | null>(null);
 
-  // Chamado pelo mapa a cada `idle` (fim de pan/zoom) com os limites e a escala atuais.
-  // Debounced e deduplicado por bbox arredondado, para não disparar uma busca a cada
-  // frame de arraste — só quando o usuário para de mexer no mapa.
+  // Chamado pelo mapa a cada `idle` (fim de pan/zoom) com os limites e a escala atuais — só
+  // registra estado; a busca de infra passiva/cobertura vive nos hooks abaixo
+  // (useViewportInfra/useGponCoverage), que já debouncam e deduplicam por conta própria.
   const handleViewportChange = useCallback((bounds: MapBounds, meters: number) => {
     setScaleMeters(meters);
     setViewportBounds(bounds);
-    if (viewportDebounceRef.current !== undefined) {
-      window.clearTimeout(viewportDebounceRef.current);
-      viewportDebounceRef.current = undefined;
-    }
-    if (meters > PASSIVE_INFRA_MAX_SCALE_METERS) {
-      lastViewportKeyRef.current = null;
-      setViewportInfra([]);
-      setViewportLoading(false);
-      return;
-    }
-    const key = [bounds.minLng, bounds.minLat, bounds.maxLng, bounds.maxLat]
-      .map((value) => value.toFixed(4))
-      .join(',');
-    if (key === lastViewportKeyRef.current) return;
-    viewportDebounceRef.current = window.setTimeout(() => {
-      lastViewportKeyRef.current = key;
-      const token = ++viewportFetchTokenRef.current;
-      setViewportLoading(true);
-      void fetchViewportResources(bounds)
-        .then((resources) => {
-          if (viewportFetchTokenRef.current === token) setViewportInfra(resources);
-        })
-        .catch(() => {
-          if (viewportFetchTokenRef.current === token) setViewportInfra([]);
-        })
-        .finally(() => {
-          if (viewportFetchTokenRef.current === token) setViewportLoading(false);
-        });
-    }, 250);
   }, []);
 
   const tree = useGeoTree();
   const { navParams, clearNav, goToResource } = useNavigation();
 
-  // Infra passiva só entra quando a escala está em ≤ 50 m; Estações (tree.mapNodes)
-  // continuam visíveis, mas encolhem (5–50 km) e somem acima de 50 km — ver stationTier.
+  // Controle de camadas do mapa (RF-011, REQ-MOD01-011): liga/desliga fetch + render por
+  // grupo, persistido em localStorage. `include` fica memoizado pelas flags que realmente
+  // importam para o viewport — sem isso, `viewportInclude` devolveria uma referência de array
+  // nova a cada render e o useEffect de useViewportInfra reentraria em loop.
+  const mapLayers = useMapLayers();
+  const viewportShapesInclude = useMemo(
+    () => viewportInclude(mapLayers.layers),
+    [mapLayers.layers.sites, mapLayers.layers.resourcePoints, mapLayers.layers.resourceLines],
+  );
+
+  // Infra passiva (recursos + Sites não-CO) só entra quando a escala está em ≤ 50 m; Estações
+  // (tree.mapNodes) continuam visíveis, mas encolhem (5–50 km) e somem acima de 50 km — ver
+  // stationTier. `viewportShapesInclude` restringe o que o servidor busca conforme as camadas
+  // ligadas (ver useViewportInfra/geoTreeApi.fetchViewportResources).
   const passiveInfraVisible = scaleMeters !== null && scaleMeters <= PASSIVE_INFRA_MAX_SCALE_METERS;
+  const { data: viewportInfra, loading: viewportLoading } = useViewportInfra(
+    viewportBounds,
+    scaleMeters,
+    viewportShapesInclude,
+  );
   const stationTier: StationTier = stationTierForScale(scaleMeters);
   const resourceTier: StationTier = resourceTierForScale(scaleMeters);
   const mapNodes = useMemo(() => {
-    // CO/Estação permanece visível em qualquer escala (só muda de tamanho por stationTier).
-    const stations = tree.mapNodes;
-    // `viewportInfra` já soma Recursos e Sites não-CO da região visível (ver
-    // GeoTreeService.sitesInViewport) — um CO dentro do bbox também vem nessa resposta
-    // (a consulta não distingue tipo de Site), então filtra pelos ids que `stations` já
-    // cobre para não desenhar dois marcadores na mesma coordenada.
-    const stationIds = new Set(stations.map((node) => node.id));
+    // CO/Estação permanece visível em qualquer escala (só muda de tamanho por stationTier);
+    // a camada "Estações" do controle desliga só o desenho — a árvore precisa do fetch de
+    // qualquer forma (ver MAP_LAYER_GROUPS em utils/mapLayers.ts).
+    const stations = mapLayers.layers.stations ? tree.mapNodes : [];
+    // `viewportInfra` já soma Recursos e Sites não-CO da região visível, filtrados pelo
+    // servidor conforme `viewportShapesInclude` (ver GeoTreeService.sitesInViewport) — um CO
+    // dentro do bbox também vem nessa resposta (a consulta não distingue tipo de Site), então
+    // filtra pelos ids da árvore INTEIRA (não só `stations`, que pode estar vazio com a
+    // camada desligada) para não desenhar um CO duplicado como "Ponto" com Estações off.
+    const stationIds = new Set(tree.mapNodes.map((node) => node.id));
     const passiveInfra = viewportInfra.filter((node) => !stationIds.has(node.id));
     const base = passiveInfraVisible ? [...stations, ...passiveInfra] : stations;
     // Locais do Projeto de trabalho aberto (REQ-MOD01-015) entram só enquanto a doca mostra
-    // aquele projeto — nunca somados aos nós da árvore, que já os excluem por completo.
-    const withProjectSites = dockView.kind !== 'hierarchy' ? [...base, ...projectSites] : base;
+    // aquele projeto — nunca somados aos nós da árvore, que já os excluem por completo. Com
+    // manchas geradas (REQ-MOD01-017), o pin individual só entra na mesma régua de escala da
+    // infra passiva (≤ 50 m) — em escala mais aberta, a mancha do overlay já representa o
+    // conjunto — e vem de `projectViewportSites` (buscado por bbox), não da página do painel.
+    const projectSitesVisible =
+      dockView.kind !== 'hierarchy' && (!hasProjectAreas || passiveInfraVisible);
+    const projectSitesForMap = hasProjectAreas ? projectViewportSites : projectSites;
+    const withProjectSites = projectSitesVisible ? [...base, ...projectSitesForMap] : base;
     // O item selecionado é imune à escala e ao viewport: recurso e cabo só existem em
     // `viewportInfra`, e sem isto afastar o mapa (ou arrastá-lo até a borda) apagaria o
     // ícone e o alfinete de quem está aberto no painel. CO já vem sempre em
@@ -423,14 +482,22 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     viewportInfra,
     passiveInfraVisible,
     stationTier,
+    mapLayers.layers.stations,
     selectedNode,
     dockView,
     projectSites,
+    projectViewportSites,
+    hasProjectAreas,
   ]);
 
   // Cobertura GPON da viewport (mapa de calor por bairro), de 50 m para cima em qualquer escala.
-  const { data: coverage, loading: coverageLoading } = useGponCoverage(viewportBounds, scaleMeters);
-  const coverageVisible = coverageVisibleAtScale(scaleMeters);
+  // Camada "Cobertura GPON" desligada corta a busca inteira: bounds nulo já limpa `coverage` e
+  // zera o dedupe interno do hook, então religar refaz o fetch sem precisar mexer no mapa.
+  const { data: coverage, loading: coverageLoading } = useGponCoverage(
+    mapLayers.layers.coverage ? viewportBounds : null,
+    scaleMeters,
+  );
+  const coverageVisible = coverageVisibleAtScale(scaleMeters) && mapLayers.layers.coverage;
   // Bairro sob o cursor sobre a mancha — vira o balão de hover (ver coverageBalloon).
   const [coverageHover, setCoverageHover] = useState<{
     point: [number, number];
@@ -440,6 +507,16 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   useEffect(() => {
     if (!coverageVisible) setCoverageHover(null);
   }, [coverageVisible]);
+
+  // Mancha do Projeto sob o cursor — vira o balão de hover (ver projectAreaBalloonOf).
+  const [projectAreaHover, setProjectAreaHover] = useState<{
+    point: [number, number];
+    area: ProjectArea;
+  } | null>(null);
+  // Some com o balão ao fechar o projeto ou ao perder as manchas (regeração/erro).
+  useEffect(() => {
+    if (!hasProjectAreas) setProjectAreaHover(null);
+  }, [hasProjectAreas]);
 
   // Qualquer camada do mapa ainda em voo — vira a barra de progresso no topo do mapa (ver
   // MapLoadingBar). Cargas internas dos painéis (Viabilidade, GEONET, eventos) têm spinner
@@ -525,22 +602,39 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     void loadGeo();
   }, [loadGeo]);
 
-  // Locais do Projeto de trabalho aberto (REQ-MOD01-015) — já vêm com geometria resolvida
-  // (ver GeoTreeService.sitesByIds), então alimentam o mapa e a lista do painel sem busca
-  // extra. `projectSitesReloadToken` força um novo GET após criar/remover um local.
+  // Manchas do projeto aberto (REQ-MOD01-017) e a lista de locais do painel. Com manchas
+  // geradas, a lista do painel é só uma PÁGINA (PROJECT_PANEL_SITE_LIMIT) — o total real vem
+  // de `project.siteCount`; sem manchas, mantém o comportamento de sempre (todos os locais,
+  // já com geometria resolvida — ver GeoTreeService.sitesByIds). `projectSitesReloadToken`
+  // força um novo GET após criar/remover um local.
   useEffect(() => {
     if (!activeProjectId) {
+      setProjectAreas([]);
       setProjectSites([]);
       return;
     }
     let cancelled = false;
     setProjectSitesLoading(true);
-    void fetchProjectSites(activeProjectId)
+    void fetchProjectAreas(activeProjectId)
+      .then((areas) => {
+        if (cancelled) return areas;
+        setProjectAreas(areas);
+        return areas;
+      })
+      .then((areas) =>
+        fetchProjectSites(
+          activeProjectId,
+          areas.length > 0 ? { limit: PROJECT_PANEL_SITE_LIMIT } : {},
+        ),
+      )
       .then((nodes) => {
         if (!cancelled) setProjectSites(nodes);
       })
       .catch(() => {
-        if (!cancelled) setProjectSites([]);
+        if (!cancelled) {
+          setProjectAreas([]);
+          setProjectSites([]);
+        }
       })
       .finally(() => {
         if (!cancelled) setProjectSitesLoading(false);
@@ -550,13 +644,65 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     };
   }, [activeProjectId, projectSitesReloadToken]);
 
-  // Enquadra o conjunto de locais do projeto ao abrir (e a cada local criado/removido) —
-  // um único ponto voa direto, dois ou mais enquadram o retângulo que os contém.
+  // Locais do projeto VISÍVEIS NO MAPA, quando ele tem manchas geradas: busca por bbox (mesmo
+  // padrão de handleViewportChange/viewportInfra), só ativa em ≤ 50 m — em escala mais aberta,
+  // a mancha do overlay já representa o conjunto. Sem manchas, o mapa usa `projectSites`
+  // (lista completa) diretamente, como sempre.
+  const projectViewportFetchTokenRef = useRef(0);
+  const projectViewportDebounceRef = useRef<number | undefined>(undefined);
+  const lastProjectViewportKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeProjectId || !hasProjectAreas || !viewportBounds || !passiveInfraVisible) {
+      if (projectViewportDebounceRef.current !== undefined) {
+        window.clearTimeout(projectViewportDebounceRef.current);
+        projectViewportDebounceRef.current = undefined;
+      }
+      lastProjectViewportKeyRef.current = null;
+      setProjectViewportSites([]);
+      return;
+    }
+    const key = [
+      activeProjectId,
+      viewportBounds.minLng,
+      viewportBounds.minLat,
+      viewportBounds.maxLng,
+      viewportBounds.maxLat,
+    ]
+      .map((value) => (typeof value === 'number' ? value.toFixed(4) : value))
+      .join(',');
+    if (key === lastProjectViewportKeyRef.current) return;
+    if (projectViewportDebounceRef.current !== undefined) {
+      window.clearTimeout(projectViewportDebounceRef.current);
+    }
+    projectViewportDebounceRef.current = window.setTimeout(() => {
+      lastProjectViewportKeyRef.current = key;
+      const token = ++projectViewportFetchTokenRef.current;
+      void fetchProjectSites(activeProjectId, { bounds: viewportBounds })
+        .then((nodes) => {
+          if (projectViewportFetchTokenRef.current === token) setProjectViewportSites(nodes);
+        })
+        .catch(() => {
+          if (projectViewportFetchTokenRef.current === token) setProjectViewportSites([]);
+        });
+    }, 250);
+    return () => {
+      if (projectViewportDebounceRef.current !== undefined) {
+        window.clearTimeout(projectViewportDebounceRef.current);
+      }
+    };
+  }, [activeProjectId, hasProjectAreas, viewportBounds, passiveInfraVisible]);
+
+  // Enquadra o projeto ao abrir. Com manchas geradas, usa o bbox dos POLÍGONOS (representa o
+  // projeto inteiro, não só a página carregada no painel); sem manchas, usa os pontos dos
+  // locais já carregados (comportamento de sempre) — um único ponto voa direto, dois ou mais
+  // enquadram o retângulo que os contém.
   useEffect(() => {
     if (!activeProjectId) return;
-    const points = projectSites
-      .map(treeNodePoint)
-      .filter((point): point is [number, number] => point !== null);
+    const points = hasProjectAreas
+      ? projectAreas.flatMap((area) => area.geometry.coordinates[0] ?? [])
+      : projectSites
+          .map(treeNodePoint)
+          .filter((point): point is [number, number] => point !== null);
     if (points.length === 0) return;
     const lngs = points.map((point) => point[0]);
     const lats = points.map((point) => point[1]);
@@ -570,7 +716,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         ? { point: center, scaleMeters: null, fitSpanMeters: span }
         : { point: center, scaleMeters: SITE_FOCUS_SCALE_METERS },
     );
-  }, [activeProjectId, projectSites]);
+  }, [activeProjectId, hasProjectAreas, projectAreas, projectSites]);
 
   // Responder a parâmetros de navegação (ex: vindo de Recursos/Serviços)
   useEffect(() => {
@@ -652,13 +798,25 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     [projectSites],
   );
 
-  const openProjectSite = useCallback((projectId: string, node: GeoTreeNode) => {
-    if (!node.refId) return;
-    setSelectedNode(node);
-    const point = treeNodePoint(node);
-    if (point) setFocusRequest({ point, scaleMeters: RESOURCE_FOCUS_SCALE_METERS });
-    setDockView({ kind: 'project', projectId, site: { mode: 'view', siteId: node.refId } });
-  }, []);
+  const openProjectSite = useCallback(
+    (projectId: string, node: GeoTreeNode) => {
+      if (!node.refId) return;
+      // Projeto terminado (RF-010): o local já ganhou vida própria (Active, sem herdar mais
+      // status do projeto) — abre o painel comum de Local, não o painel de projeto, que só
+      // faz sentido enquanto o projeto está em curso. O vínculo em `geo_project_site`
+      // continua existindo (é a Origem histórica do local), mas não é mais o dono dele.
+      const project = projects.projects.find((item) => item.id === projectId);
+      if (project?.status === 'terminated') {
+        selectNode(node, 'map');
+        return;
+      }
+      setSelectedNode(node);
+      const point = treeNodePoint(node);
+      if (point) setFocusRequest({ point, scaleMeters: RESOURCE_FOCUS_SCALE_METERS });
+      setDockView({ kind: 'project', projectId, site: { mode: 'view', siteId: node.refId } });
+    },
+    [projects.projects, selectNode],
+  );
 
   const selectNodeFromMap = useCallback(
     (node: GeoTreeNode) => {
@@ -843,13 +1001,17 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   }, []);
 
   // Excluir projeto — pode vir da lista (ProjectListView, projeto fechado) ou do menu ⋯
-  // dentro do próprio painel dele; só fecha a doca quando o projeto excluído é o aberto.
+  // dentro do próprio painel dele. Aguarda a resposta do servidor (pode conter locais
+  // bloqueados que mantiveram o projeto vivo, issue #58): só fecha a doca quando o projeto
+  // excluído é o aberto E o servidor confirmou `deleted: true`. Erro/summary propagam para o
+  // chamador (ProjectListView/ProjectDetailPanel) mostrar o estado real, nunca `void`.
   const handleDeleteProject = useCallback(
-    (projectId: string) => {
-      void projects.remove(projectId);
-      if (dockView.kind !== 'hierarchy' && dockView.projectId === projectId) {
+    async (projectId: string) => {
+      const summary = await projects.remove(projectId);
+      if (summary.deleted && dockView.kind !== 'hierarchy' && dockView.projectId === projectId) {
         closeProjectPanel();
       }
+      return summary;
     },
     [projects, dockView, closeProjectPanel],
   );
@@ -922,7 +1084,9 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // ação: quem abre o detalhe é o clique, não o hover.
   const balloon = useMemo<MapBalloon | null>(() => {
     const node = mapNodes.find((item) => item.id === hoverKey) ?? null;
-    if (!node || !hoverKey) return coverageBalloonOf(coverageHover);
+    if (!node || !hoverKey) {
+      return projectAreaBalloonOf(projectAreaHover) ?? coverageBalloonOf(coverageHover, coverage?.level);
+    }
     // O painel de detalhe já mostra tipo/endereço/status do mesmo item — o
     // balão por cima seria redundante enquanto ele está aberto.
     if (detailOpen && selectedNode?.id === node.id) return null;
@@ -972,7 +1136,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       title: node.label,
       rows,
     };
-  }, [detailOpen, hoverKey, selectedNode?.id, mapNodes, coverageHover]);
+  }, [detailOpen, hoverKey, selectedNode?.id, mapNodes, coverageHover, coverage?.level, projectAreaHover]);
 
   // Esc fecha o painel de detalhe — mas só quando nenhum outro modal está
   // aberto, senão a tecla fecharia os dois de uma vez.
@@ -1063,6 +1227,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                   project={activeProject}
                   sites={projectSites}
                   sitesLoading={projectSitesLoading}
+                  areas={projectAreas}
                   selectedSiteId={
                     activeProjectSiteView?.mode === 'view' ? activeProjectSiteView.siteId : null
                   }
@@ -1087,7 +1252,9 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                   key={`${dockView.projectId}:${activeProjectSiteView.mode === 'view' ? activeProjectSiteView.siteId : 'new'}`}
                   isMobile={isMobile}
                   mode={activeProjectSiteView.mode}
-                  siteId={activeProjectSiteView.mode === 'view' ? activeProjectSiteView.siteId : null}
+                  siteId={
+                    activeProjectSiteView.mode === 'view' ? activeProjectSiteView.siteId : null
+                  }
                   project={activeProject}
                   projectId={dockView.projectId}
                   specs={specs}
@@ -1168,10 +1335,17 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               stationTier={stationTier}
               resourceTier={resourceTier}
               onCoverageHover={setCoverageHover}
+              projectAreas={projectAreas}
+              onProjectAreaHover={setProjectAreaHover}
               autoLocateOnOpen={isMobile}
               // Qualquer camada do mapa em carga acende a barra fina no topo do mapa; o
               // script do Google Maps é somado à barra dentro do painel (ver MapLoadingBar).
               busy={mapDataLoading}
+              mapLayers={mapLayers.layers}
+              onToggleMapLayer={mapLayers.toggleLayer}
+              onToggleMapLayerGroup={mapLayers.toggleGroup}
+              onResetMapLayers={mapLayers.resetLayers}
+              mapLayersAllVisible={mapLayers.allVisible}
             />
           </div>
 
@@ -1265,8 +1439,15 @@ export function GoogleMapPanel({
   stationTier,
   resourceTier,
   onCoverageHover,
+  projectAreas = [],
+  onProjectAreaHover = noopProjectAreaHover,
   autoLocateOnOpen = false,
   busy = false,
+  mapLayers = ALL_MAP_LAYERS_VISIBLE,
+  onToggleMapLayer = noopToggleMapLayer,
+  onToggleMapLayerGroup = noopToggleMapLayerGroup,
+  onResetMapLayers = noopResetMapLayers,
+  mapLayersAllVisible = true,
 }: {
   nodes: GeoTreeNode[];
   // Nó selecionado inteiro (não só o id): o alfinete precisa da geometria mesmo quando o
@@ -1312,6 +1493,13 @@ export function GoogleMapPanel({
   onCoverageHover: (
     hover: { point: [number, number]; neighborhood: CoverageNeighborhood } | null,
   ) => void;
+  // Manchas de concentração/dispersão do Projeto aberto (REQ-MOD01-017), ou lista vazia
+  // quando o projeto não tem manchas geradas — o painel só as desenha na camada de canvas
+  // (ver ProjectAreaOverlay); a busca é do chamador. Opcional: default vazio para os testes
+  // que montam o painel sem um Projeto em jogo.
+  projectAreas?: ProjectArea[];
+  // Mancha sob o cursor (ou null) — vira o balão de hover no GeoPage.
+  onProjectAreaHover?: (hover: { point: [number, number]; area: ProjectArea } | null) => void;
   // Só o mobile salta sozinho para a posição do dispositivo ao abrir (ver efeito de
   // auto-localização); no desktop o pulo fica reservado ao clique no botão.
   autoLocateOnOpen?: boolean;
@@ -1319,6 +1507,15 @@ export function GoogleMapPanel({
   // acende a barra fina no topo (ver MapLoadingBar). O carregamento do próprio script do
   // Google Maps é somado a isto internamente (mapsLoading).
   busy?: boolean;
+  // Controle de camadas do mapa (RF-011, REQ-MOD01-011) — o painel só renderiza o botão/lista
+  // (MapLayerControl); fetch e render condicionais são decididos pelo chamador (mapNodes,
+  // coverage, useViewportInfra em GeoPage). Opcional com default "tudo visível", para os
+  // testes existentes que montam GoogleMapPanel sem o controle em jogo continuarem passando.
+  mapLayers?: MapLayerVisibility;
+  onToggleMapLayer?: (id: MapLayerId) => void;
+  onToggleMapLayerGroup?: (groupId: MapLayerGroupId) => void;
+  onResetMapLayers?: () => void;
+  mapLayersAllVisible?: boolean;
 }) {
   const selectedNodeId = selectedNode?.id ?? null;
   const mapEl = useRef<HTMLDivElement>(null);
@@ -1336,6 +1533,13 @@ export function GoogleMapPanel({
   const coverageHitTestRef = useRef<
     ((lng: number, lat: number) => CoverageNeighborhood | null) | null
   >(null);
+  // Camada das manchas de concentração/dispersão do Projeto (REQ-MOD01-017), mesma técnica
+  // de canvas da cobertura GPON.
+  const projectAreaOverlayRef = useRef<ProjectAreaOverlayHandle | null>(null);
+  const onProjectAreaHoverRef = useRef(onProjectAreaHover);
+  const projectAreaHitTestRef = useRef<((lng: number, lat: number) => ProjectArea | null) | null>(
+    null,
+  );
   const draftMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const selectionMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const addressSourceMarkersRef = useRef<Map<'google' | 'geonet', GoogleMarkerInstance>>(new Map());
@@ -1485,6 +1689,10 @@ export function GoogleMapPanel({
   }, [onCoverageHover]);
 
   useEffect(() => {
+    onProjectAreaHoverRef.current = onProjectAreaHover;
+  }, [onProjectAreaHover]);
+
+  useEffect(() => {
     if (!GOOGLE_MAPS_KEY || !mapEl.current) return;
     void loadGoogleMaps(GOOGLE_MAPS_KEY)
       .then(() => {
@@ -1598,6 +1806,23 @@ export function GoogleMapPanel({
           onCoverageHoverRef.current(neighborhood ? { point: [lng, lat], neighborhood } : null);
         });
 
+        // Camada das manchas de concentração/dispersão do Projeto (REQ-MOD01-017), mesma
+        // técnica de canvas — o hover sobre a mancha vira o balão de classe/contagem.
+        projectAreaOverlayRef.current = createProjectAreaOverlay(maps, mapRef.current);
+        projectAreaHitTestRef.current = projectAreaOverlayRef.current.hitTest;
+        let lastProjectAreaHoverAt = 0;
+        mapRef.current.addListener('mousemove', (event: GoogleMapMouseEvent) => {
+          const hitTest = projectAreaHitTestRef.current;
+          if (!hitTest) return;
+          const now = Date.now();
+          if (now - lastProjectAreaHoverAt < 50) return;
+          lastProjectAreaHoverAt = now;
+          const lng = event.latLng.lng();
+          const lat = event.latLng.lat();
+          const area = hitTest(lng, lat);
+          onProjectAreaHoverRef.current(area ? { point: [lng, lat], area } : null);
+        });
+
         setMapsReady(true);
       })
       .catch(() => setMapsReady(false))
@@ -1635,6 +1860,22 @@ export function GoogleMapPanel({
       coverageOverlayRef.current?.destroy();
       coverageOverlayRef.current = null;
       coverageHitTestRef.current = null;
+    },
+    [],
+  );
+
+  // Repassa as manchas do Projeto para a camada de canvas quando mudam (projeto trocado,
+  // manchas carregadas, ou lista esvaziada ao fechar o projeto).
+  useEffect(() => {
+    projectAreaOverlayRef.current?.setData(projectAreas);
+  }, [projectAreas, mapsReady]);
+
+  // Descarta a camada de manchas no desmonte, junto do mapa.
+  useEffect(
+    () => () => {
+      projectAreaOverlayRef.current?.destroy();
+      projectAreaOverlayRef.current = null;
+      projectAreaHitTestRef.current = null;
     },
     [],
   );
@@ -2341,6 +2582,13 @@ export function GoogleMapPanel({
       <MapLoadingBar busy={busy || mapsLoading} />
       <MapBaseLayerSelector value={baseLayerId} onChange={setBaseLayerId} />
       <MapLocateButton onLocate={handleDeviceLocate} />
+      <MapLayerControl
+        layers={mapLayers}
+        onToggleLayer={onToggleMapLayer}
+        onToggleGroup={onToggleMapLayerGroup}
+        onReset={onResetMapLayers}
+        allVisible={mapLayersAllVisible}
+      />
       {coverage ? <CoverageLegend /> : null}
       {balloon ? createPortal(<MapBalloonCard balloon={balloon} />, balloonNode) : null}
     </>

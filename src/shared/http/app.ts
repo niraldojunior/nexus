@@ -23,6 +23,7 @@ import { prependNexusCopilotContext } from '../../modules/search/nexus-copilot-c
 import { SearchService } from '../../modules/search/service.js';
 import { createNexusMcpModule } from '../../modules/mcp/index.js';
 import type { GeoService } from '../../modules/geo/service.js';
+import type { CoverageLevel } from '../../modules/geo/coverage-service.js';
 import type { GeoTreeService } from '../../modules/geo/tree-service.js';
 import type { OrderService } from '../../modules/order/service.js';
 import {
@@ -864,7 +865,11 @@ const routeGeoRequest = async ({
       // Projeto terminado não volta: terminar é o fim do ciclo de vida do projeto, não um
       // estado como os demais — os locais já ganharam vida própria (ver cascata abaixo) e o
       // projeto passa a ser só um registro histórico (Origem no painel de Local).
-      if (current.status === 'terminated' && nextStatus !== undefined && nextStatus !== 'terminated') {
+      if (
+        current.status === 'terminated' &&
+        nextStatus !== undefined &&
+        nextStatus !== 'terminated'
+      ) {
         throw new AppError('terminated project status is immutable', {
           code: 'GEO_PROJECT_TERMINATED_IMMUTABLE',
           statusCode: 409,
@@ -886,14 +891,16 @@ const routeGeoRequest = async ({
       // O projeto é a unidade de estado (REQ-MOD01-015 §20): quando o status muda,
       // cascateia para cada Site vinculado. Best-effort — uma transição que a máquina
       // canônica recusa (SITE_STATUS_TRANSITIONS em service.ts) não aborta as demais nem
-      // o PATCH; o chamador só sabe quantas ficaram para trás (siteCascade).
+      // o PATCH; o chamador só sabe quantas ficaram para trás (siteCascade). A cascata roda
+      // em massa (transitionProjectSites), não um `transitionSite` por local — um projeto
+      // com dezenas de milhares de locais (issue #58) nunca terminaria num laço um-a-um.
       //
       // 'terminated' é o único status que NÃO usa a tradução direta de GeoStatusAlias
       // (que mapearia para Retired): terminar o projeto libera os locais — eles viram
       // Active, com vida própria, e o projeto passa a ser só a Origem histórica deles
       // (ver PROJECT_SITE_EXCLUSION_SQL em tree-service.ts, que volta a mostrá-los na
       // Hierarquia/busca/mapa geral assim que o projeto termina).
-      let siteCascade: { updated: number; skipped: number } | undefined;
+      let siteCascade: { updated: number; skipped: number; blocked?: number } | undefined;
       if (nextStatus !== undefined && nextStatus !== current.status) {
         const siteIds = await runtime.geoProjectRepository.listSiteIds(
           geoContext.tenantId,
@@ -904,38 +911,67 @@ const routeGeoRequest = async ({
           nextStatus === 'terminated'
             ? 'Projeto de origem concluído — local liberado para o inventário'
             : `Status do projeto alterado para ${nextStatus}`;
-        siteCascade = { updated: 0, skipped: 0 };
-        for (const siteId of siteIds) {
-          try {
-            await geoService.transitionSite(siteId, { status: cascadeStatus, statusReason }, geoContext);
-            siteCascade.updated += 1;
-          } catch {
-            siteCascade.skipped += 1;
-          }
-        }
+        const cascadeResult = await geoService.transitionProjectSites(
+          projectId,
+          siteIds,
+          cascadeStatus,
+          statusReason,
+          geoContext,
+        );
+        siteCascade = {
+          updated: cascadeResult.updated,
+          skipped: cascadeResult.skipped,
+          ...(cascadeResult.blocked.length > 0 ? { blocked: cascadeResult.blocked.length } : {}),
+        };
       }
       return sendJson(response, 200, siteCascade ? { ...updated, siteCascade } : updated);
     }
     if (request.method === 'DELETE') {
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
-      // Retira (soft-terminate, C6) cada local ANTES de apagar o vínculo do projeto: se
-      // uma transição falhar (ex.: local passou a ter dependência bloqueante), a exceção
-      // aborta aqui e o projeto continua íntegro — a ordem inversa deixaria o local sem
-      // projeto e sem estar Retired, vazando para a Hierarquia geral sem dono.
+      const current = await runtime.geoProjectRepository.get(geoContext.tenantId, projectId);
+      if (!current) {
+        throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
+      }
+      // Retira (soft-terminate, C6) cada local em massa ANTES de apagar o vínculo do projeto
+      // (transitionProjectSites — um laço um-a-um nunca terminaria num projeto com dezenas de
+      // milhares de locais, issue #58). Local com dependência bloqueante fica de fora e o
+      // projeto é MANTIDO íntegro com todos os vínculos — a ordem inversa (apagar o projeto
+      // primeiro) deixaria esse local sem projeto e sem estar Retired, vazando para a
+      // Hierarquia geral sem dono.
       const siteIds = await runtime.geoProjectRepository.listSiteIds(
         geoContext.tenantId,
         projectId,
       );
-      for (const siteId of siteIds) {
-        await geoService.transitionSite(
-          siteId,
-          { status: 'Retired', statusReason: 'Projeto de trabalho excluído' },
-          geoContext,
-        );
+      const result = await geoService.transitionProjectSites(
+        projectId,
+        siteIds,
+        'Retired',
+        'Projeto de trabalho excluído',
+        geoContext,
+      );
+      const deleted = result.blocked.length === 0;
+      if (deleted) {
+        await runtime.geoProjectRepository.remove(geoContext.tenantId, projectId);
       }
-      await runtime.geoProjectRepository.remove(geoContext.tenantId, projectId);
-      return sendJson(response, 204, null);
+      return sendJson(response, 200, {
+        deleted,
+        retired: result.updated,
+        skipped: result.skipped,
+        blocked: result.blocked.length,
+        ...(result.blocked.length > 0 ? { blockedSiteIds: result.blocked.slice(0, 20) } : {}),
+      });
     }
+  }
+
+  // Manchas de concentração/dispersão do projeto (REQ-MOD01-017), geradas por
+  // scripts/build-project-areas.mjs — não há geração pela API, só leitura do que o script já
+  // gravou (mesmo modelo somente-leitura da cobertura GPON, GET /v1/geo/coverage).
+  const projectAreasMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/areas$/);
+  if (projectAreasMatch?.[1] && request.method === 'GET') {
+    const projectId = decodeURIComponent(projectAreasMatch[1]);
+    requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+    const areas = await runtime.geoProjectRepository.listAreas(geoContext.tenantId, projectId);
+    return sendJson(response, 200, { areas });
   }
 
   const projectSitesMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/sites$/);
@@ -943,12 +979,38 @@ const routeGeoRequest = async ({
     const projectId = decodeURIComponent(projectSitesMatch[1]);
     if (request.method === 'GET') {
       requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+      const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
+      const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
+      const maxLng = parseOptionalNumber(url.searchParams.get('maxLng'));
+      const maxLat = parseOptionalNumber(url.searchParams.get('maxLat'));
+      const limit = parseOptionalNumber(url.searchParams.get('limit'));
+      const hasBounds =
+        minLng !== undefined &&
+        minLat !== undefined &&
+        maxLng !== undefined &&
+        maxLat !== undefined;
+
+      // Projeto com manchas geradas (REQ-MOD01-017) só precisa dos locais da região visível —
+      // o cliente busca por bbox como já faz para infra sem projeto (fetchViewportResources).
+      // Sem bbox, mantém o caminho de sempre (todos os locais, na ordem salva), com `limit`
+      // opcional para a lista do painel não baixar dezenas de milhares de linhas de uma vez.
+      if (hasBounds) {
+        const nodes = await geoTreeService.projectSitesInViewport(
+          projectId,
+          { minLng, minLat, maxLng, maxLat },
+          limit !== undefined ? { limit } : {},
+        );
+        const sites = nodes.map((node) => ({ ...node, note: null, geonetAddressId: null }));
+        return sendJson(response, 200, sites);
+      }
+
       const [siteIds, links] = await Promise.all([
         runtime.geoProjectRepository.listSiteIds(geoContext.tenantId, projectId),
         runtime.geoProjectRepository.listSiteLinks(geoContext.tenantId, projectId),
       ]);
+      const scopedIds = limit !== undefined ? siteIds.slice(0, limit) : siteIds;
       const linkBySiteId = new Map(links.map((link) => [link.siteId, link]));
-      const nodes = await geoTreeService.sitesByIds(siteIds);
+      const nodes = await geoTreeService.sitesByIds(scopedIds);
       const sites = nodes.map((node) => ({
         ...node,
         note: linkBySiteId.get(node.refId ?? '')?.note ?? null,
@@ -1002,7 +1064,10 @@ const routeGeoRequest = async ({
     const siteId = decodeURIComponent(projectSiteMatch[2]);
     if (request.method === 'PATCH') {
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
-      const siteIds = await runtime.geoProjectRepository.listSiteIds(geoContext.tenantId, projectId);
+      const siteIds = await runtime.geoProjectRepository.listSiteIds(
+        geoContext.tenantId,
+        projectId,
+      );
       if (!siteIds.includes(siteId)) {
         throw new AppError('project site not found', {
           code: 'GEO_PROJECT_SITE_NOT_FOUND',
@@ -1023,7 +1088,11 @@ const routeGeoRequest = async ({
         geoContext,
       );
       const note =
-        body.note === null ? null : typeof body.note === 'string' ? body.note.trim() || null : undefined;
+        body.note === null
+          ? null
+          : typeof body.note === 'string'
+            ? body.note.trim() || null
+            : undefined;
       if (note !== undefined) {
         await runtime.geoProjectRepository.updateSiteLink(projectId, siteId, { note });
       }
@@ -1031,7 +1100,10 @@ const routeGeoRequest = async ({
     }
     if (request.method === 'DELETE') {
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
-      const siteIds = await runtime.geoProjectRepository.listSiteIds(geoContext.tenantId, projectId);
+      const siteIds = await runtime.geoProjectRepository.listSiteIds(
+        geoContext.tenantId,
+        projectId,
+      );
       if (!siteIds.includes(siteId)) {
         throw new AppError('project site not found', {
           code: 'GEO_PROJECT_SITE_NOT_FOUND',
@@ -1095,6 +1167,12 @@ const routeGeoRequest = async ({
   // não-CO da mesma região (GeoTreeService.sitesInViewport, Fase 3 do painel unificado de
   // Local): CO/Estação já vem sempre de roots(), qualquer outro tipo de Site segue a mesma
   // régua de escala de um Recurso — uma chamada só, não duas (backend de dev serializado).
+  //
+  // `include` (RF-011, controle de camadas do mapa) restringe o que é buscado: lista por
+  // vírgula de 'sites' | 'resource-points' | 'resource-lines'. Ausente = tudo (compatibilidade
+  // — useAddressViability e qualquer chamador que ainda não conhece o parâmetro); presente,
+  // só os tokens reconhecidos contam, e nenhum reconhecido busca nada (mapa com o grupo
+  // inteiro desligado no controle de camadas não deve gerar consulta nenhuma).
   if (request.method === 'GET' && url.pathname === '/v1/geo/tree/viewport') {
     const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
     const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
@@ -1113,16 +1191,38 @@ const routeGeoRequest = async ({
     }
     const limit = parseOptionalNumber(url.searchParams.get('limit'));
     const bounds = { minLng, minLat, maxLng, maxLat };
+    const includeParam = url.searchParams.get('include');
+    const includeTokens = includeParam
+      ?.split(',')
+      .map((token) => token.trim())
+      .filter(
+        (token): token is 'sites' | 'resource-points' | 'resource-lines' =>
+          token === 'sites' || token === 'resource-points' || token === 'resource-lines',
+      );
+    const wantSites = includeTokens === undefined || includeTokens.includes('sites');
+    const wantResourcePoints =
+      includeTokens === undefined || includeTokens.includes('resource-points');
+    const wantResourceLines =
+      includeTokens === undefined || includeTokens.includes('resource-lines');
+    const limitOptions = limit !== undefined ? { limit } : {};
     const [resources, sites] = await Promise.all([
-      geoTreeService.resourcesInViewport(bounds, limit !== undefined ? { limit } : {}),
-      geoTreeService.sitesInViewport(bounds, limit !== undefined ? { limit } : {}),
+      wantResourcePoints || wantResourceLines
+        ? geoTreeService.resourcesInViewport(bounds, {
+            ...limitOptions,
+            shapes: { point: wantResourcePoints, line: wantResourceLines },
+          })
+        : Promise.resolve([]),
+      wantSites ? geoTreeService.sitesInViewport(bounds, limitOptions) : Promise.resolve([]),
     ]);
     return sendJson(response, 200, [...resources, ...sites]);
   }
 
-  // Mapa de calor de cobertura GPON por bairro — fonte do mapa acima de 100 m, no lugar dos
-  // recursos individuais e dos clusters (ver GeoCoverageService). `level`: fine (células de
-  // 150 m), coarse (agregado 750 m) ou area (polígonos de bairro). Recorte por bbox.
+  // Mapa de calor de cobertura GPON — fonte do mapa acima de 100 m, no lugar dos recursos
+  // individuais e dos clusters (ver GeoCoverageService). `level`: fine (células de 50 m) ou
+  // coarse (agregado 250 m) — grade de calor, hoje sem uso no frontend; neighborhood (polígono
+  // de bairro), city (polígono de município) ou uf (polígono de estado) — o LOD real usado pelo
+  // mapa, escolhido por escala (ver coverageLevelForScale no frontend). `area` é aceito como
+  // alias de `neighborhood` — nome do nível antes da LOD por município/estado. Recorte por bbox.
   if (request.method === 'GET' && url.pathname === '/v1/geo/coverage') {
     const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
     const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
@@ -1140,7 +1240,15 @@ const routeGeoRequest = async ({
       });
     }
     const levelParam = url.searchParams.get('level');
-    const level = levelParam === 'coarse' || levelParam === 'area' ? levelParam : 'fine';
+    const level: CoverageLevel =
+      levelParam === 'coarse' ||
+      levelParam === 'city' ||
+      levelParam === 'uf' ||
+      levelParam === 'neighborhood'
+        ? levelParam
+        : levelParam === 'area'
+          ? 'neighborhood'
+          : 'fine';
     return sendJson(
       response,
       200,

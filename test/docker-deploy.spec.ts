@@ -106,7 +106,9 @@ test('docker-compose mantém as cargas fora do `up` (perfil tools)', () => {
 
 test('docker-compose publica 80/443 pelo web e propaga os args do Vite', () => {
   const compose = readRepoFile('docker-compose.yml');
-  assert.match(compose, /"443:443"/);
+  // Aspas simples ou duplas: o Prettier normaliza YAML para aspas simples, e o
+  // estilo de aspas não muda o valor — só o conteúdo "443:443" importa aqui.
+  assert.match(compose, /["']443:443["']/);
   assert.match(compose, /VITE_GOOGLE_MAPS_API_KEY/);
   assert.match(compose, /VITE_AUTH_TOKEN/);
 });

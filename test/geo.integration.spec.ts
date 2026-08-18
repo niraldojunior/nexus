@@ -908,6 +908,10 @@ test('Geo coverage serves the GPON heat grid and neighborhood polygons by boundi
       { group: '_coverage', name: 'coveredAreaKm2', value: 0.25, valueType: 'decimal' },
     ]);
 
+  // Bbox fixo do polígono semeado (as duas áreas do teste compartilham o mesmo quadrado, por
+  // simplicidade) — geo_gpon_coverage_area guarda o bbox pronto, como build-gpon-coverage.mjs.
+  const AREA_BOUNDS = { minLng: -43.108, minLat: -22.908, maxLng: -43.1, maxLat: -22.902 };
+
   const seedArea = async (
     locId: string,
     stat: {
@@ -951,6 +955,28 @@ test('Geo coverage serves the GPON heat grid and neighborhood polygons by boundi
         [COVERAGE_CELL_METERS, cell.gx, cell.gy, locId, cell.total, cell.avail],
       );
     }
+    // Índice de leitura por polígono (ver GeoCoverageService.areaIndexLevel) — o que o loader
+    // grava em geo_gpon_coverage_area para o nível neighborhood.
+    await db.run(
+      `INSERT INTO geo_gpon_coverage_area
+         (tenant_id, location_id, lod_level, cell_size_m, min_lng, min_lat, max_lng, max_lat,
+          area_key, neighborhood, city, uf, cdo_total, cdo_available, covered_area_km2)
+       VALUES ('default', ?, 'neighborhood', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.25)`,
+      [
+        locId,
+        COVERAGE_CELL_METERS,
+        AREA_BOUNDS.minLng,
+        AREA_BOUNDS.minLat,
+        AREA_BOUNDS.maxLng,
+        AREA_BOUNDS.maxLat,
+        stat.key,
+        stat.neighborhood,
+        stat.city,
+        stat.uf,
+        stat.cdoTotal,
+        stat.cdoAvailable,
+      ],
+    );
   };
 
   // Alinha as células ao mesmo mapeamento bbox→grade do serviço, ancorando em Icaraí.
@@ -1037,21 +1063,48 @@ test('Geo coverage serves the GPON heat grid and neighborhood polygons by boundi
   assert.equal(totalCdo, 9);
   assert.equal(totalAvail, 3);
 
-  // area: polígonos de bairro com geometria e estatística.
-  const area = await requestJson(port, 'GET', `/v1/geo/coverage?${bbox}&level=area`);
-  assert.equal(area.statusCode, 200);
-  const areaBody = area.body as {
+  // neighborhood: polígonos de bairro com geometria e estatística, lidos do índice
+  // geo_gpon_coverage_area (1 round-trip, sem varrer a grade nem characteristics).
+  const neighborhoodLevel = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/coverage?${bbox}&level=neighborhood`,
+  );
+  assert.equal(neighborhoodLevel.statusCode, 200);
+  const neighborhoodBody = neighborhoodLevel.body as {
     level: string;
-    areas: Array<{ id: string; neighborhoodIndex: number; geometry: { type: string } }>;
-    neighborhoods: Array<{ neighborhood: string }>;
+    areas: Array<{
+      id: string;
+      neighborhoodIndex: number;
+      geometry: { type: string };
+      bounds: [number, number, number, number];
+    }>;
+    neighborhoods: Array<{ neighborhood: string; cdoTotal: number; cdoAvailable: number }>;
   };
-  assert.equal(areaBody.level, 'area');
-  assert.equal(areaBody.areas.length, 2);
-  assert.equal(areaBody.neighborhoods.length, 2);
-  for (const polygon of areaBody.areas) {
+  assert.equal(neighborhoodBody.level, 'neighborhood');
+  assert.equal(neighborhoodBody.areas.length, 2);
+  assert.equal(neighborhoodBody.neighborhoods.length, 2);
+  for (const polygon of neighborhoodBody.areas) {
     assert.equal(polygon.geometry.type, 'Polygon');
     assert.ok(polygon.neighborhoodIndex >= 0);
+    assert.deepEqual(polygon.bounds, [
+      AREA_BOUNDS.minLng,
+      AREA_BOUNDS.minLat,
+      AREA_BOUNDS.maxLng,
+      AREA_BOUNDS.maxLat,
+    ]);
   }
+  const icaraiArea = neighborhoodBody.neighborhoods.find((item) => item.neighborhood === 'Icaraí');
+  assert.ok(icaraiArea);
+  assert.equal(icaraiArea!.cdoTotal, 5);
+  assert.equal(icaraiArea!.cdoAvailable, 3);
+
+  // `area` é aceito como alias de `neighborhood` (nome do nível antes da LOD por
+  // município/estado) — mesma resposta.
+  const areaAlias = await requestJson(port, 'GET', `/v1/geo/coverage?${bbox}&level=area`);
+  assert.equal(areaAlias.statusCode, 200);
+  assert.equal((areaAlias.body as { level: string }).level, 'neighborhood');
+  assert.equal((areaAlias.body as { areas: unknown[] }).areas.length, 2);
 
   // bbox distante: nada volta.
   const empty = await requestJson(

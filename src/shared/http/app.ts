@@ -23,6 +23,7 @@ import { prependNexusCopilotContext } from '../../modules/search/nexus-copilot-c
 import { SearchService } from '../../modules/search/service.js';
 import { createNexusMcpModule } from '../../modules/mcp/index.js';
 import type { GeoService } from '../../modules/geo/service.js';
+import type { CoverageLevel } from '../../modules/geo/coverage-service.js';
 import type { GeoTreeService } from '../../modules/geo/tree-service.js';
 import type { OrderService } from '../../modules/order/service.js';
 import {
@@ -1216,9 +1217,12 @@ const routeGeoRequest = async ({
     return sendJson(response, 200, [...resources, ...sites]);
   }
 
-  // Mapa de calor de cobertura GPON por bairro — fonte do mapa acima de 100 m, no lugar dos
-  // recursos individuais e dos clusters (ver GeoCoverageService). `level`: fine (células de
-  // 150 m), coarse (agregado 750 m) ou area (polígonos de bairro). Recorte por bbox.
+  // Mapa de calor de cobertura GPON — fonte do mapa acima de 100 m, no lugar dos recursos
+  // individuais e dos clusters (ver GeoCoverageService). `level`: fine (células de 50 m) ou
+  // coarse (agregado 250 m) — grade de calor, hoje sem uso no frontend; neighborhood (polígono
+  // de bairro), city (polígono de município) ou uf (polígono de estado) — o LOD real usado pelo
+  // mapa, escolhido por escala (ver coverageLevelForScale no frontend). `area` é aceito como
+  // alias de `neighborhood` — nome do nível antes da LOD por município/estado. Recorte por bbox.
   if (request.method === 'GET' && url.pathname === '/v1/geo/coverage') {
     const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
     const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
@@ -1236,7 +1240,15 @@ const routeGeoRequest = async ({
       });
     }
     const levelParam = url.searchParams.get('level');
-    const level = levelParam === 'coarse' || levelParam === 'area' ? levelParam : 'fine';
+    const level: CoverageLevel =
+      levelParam === 'coarse' ||
+      levelParam === 'city' ||
+      levelParam === 'uf' ||
+      levelParam === 'neighborhood'
+        ? levelParam
+        : levelParam === 'area'
+          ? 'neighborhood'
+          : 'fine';
     return sendJson(
       response,
       200,

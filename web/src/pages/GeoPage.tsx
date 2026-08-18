@@ -63,6 +63,7 @@ import {
   stationTierForScale,
   resourceTierForScale,
   type StationTier,
+  type CoverageLevel,
 } from '../utils/mapScale';
 import { useGponCoverage } from '../hooks/useGponCoverage';
 import { useViewportInfra } from '../hooks/useViewportInfra';
@@ -169,21 +170,28 @@ type MapBalloon = {
   rows: Array<[string, string]>;
 };
 
-// Balão de hover da cobertura GPON: o bairro sob o cursor, com os números da rede. Não é um
-// item pontual (não tem ícone de local/recurso), então usa um swatch da cor de disponibilidade.
+// Balão de hover da cobertura GPON: a área sob o cursor, com os números da rede. Não é um item
+// pontual (não tem ícone de local/recurso), então usa um swatch da cor de disponibilidade. O
+// título e a linha de localização mudam com o nível (LOD): bairro mostra município/UF; município
+// mostra só o UF; estado não repete o próprio nome.
 function coverageBalloonOf(
   hover: { point: [number, number]; neighborhood: CoverageNeighborhood } | null,
+  level: CoverageLevel | undefined,
 ): MapBalloon | null {
   if (!hover) return null;
   const { neighborhood, point } = hover;
   const pct = Math.round(neighborhood.availabilityRatio * 100);
-  const rows: Array<[string, string]> = [
-    ['Município', `${neighborhood.city}/${neighborhood.uf}`],
+  const title =
+    level === 'uf' ? neighborhood.uf : level === 'city' ? neighborhood.city : neighborhood.neighborhood;
+  const rows: Array<[string, string]> = [];
+  if (level === 'city') rows.push(['Estado', neighborhood.uf]);
+  else if (level !== 'uf') rows.push(['Município', `${neighborhood.city}/${neighborhood.uf}`]);
+  rows.push(
     ['CDOs', String(neighborhood.cdoTotal)],
     ['Disponíveis', `${neighborhood.cdoAvailable} (${pct}%)`],
     ['Indisponíveis', String(neighborhood.cdoUnavailable)],
     ['Área coberta', `${neighborhood.coveredAreaKm2.toFixed(2)} km²`],
-  ];
+  );
   // Takeup (portas ocupadas / totais) entra quando a carga trouxer o dado — hoje é null.
   if (neighborhood.portsTotal !== null && neighborhood.portsTotal > 0) {
     const used = neighborhood.portsUsed ?? 0;
@@ -196,7 +204,7 @@ function coverageBalloonOf(
     offset: [0, -12],
     iconUrl: coverageSwatchDataUrl(neighborhood.availabilityRatio),
     eyebrow: 'Cobertura GPON',
-    title: neighborhood.neighborhood,
+    title,
     rows,
   };
 }
@@ -1077,7 +1085,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const balloon = useMemo<MapBalloon | null>(() => {
     const node = mapNodes.find((item) => item.id === hoverKey) ?? null;
     if (!node || !hoverKey) {
-      return projectAreaBalloonOf(projectAreaHover) ?? coverageBalloonOf(coverageHover);
+      return projectAreaBalloonOf(projectAreaHover) ?? coverageBalloonOf(coverageHover, coverage?.level);
     }
     // O painel de detalhe já mostra tipo/endereço/status do mesmo item — o
     // balão por cima seria redundante enquanto ele está aberto.
@@ -1128,7 +1136,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       title: node.label,
       rows,
     };
-  }, [detailOpen, hoverKey, selectedNode?.id, mapNodes, coverageHover, projectAreaHover]);
+  }, [detailOpen, hoverKey, selectedNode?.id, mapNodes, coverageHover, coverage?.level, projectAreaHover]);
 
   // Esc fecha o painel de detalhe — mas só quando nenhum outro modal está
   // aberto, senão a tecla fecharia os dois de uma vez.

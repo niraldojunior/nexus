@@ -17,16 +17,20 @@ const SCALE_BAR_MAX_PX = 64;
 // a camada de cobertura GPON (ver COVERAGE_MIN_SCALE_METERS); Estações continuam visíveis.
 export const PASSIVE_INFRA_MAX_SCALE_METERS = 50;
 
-// Cobertura GPON (mapa de calor por bairro) entra a partir desta escala (inclusive) — "visível
-// para qualquer escala de 50 m para cima". Em ≤ 20 m só a planta individual aparece; não há mais
-// cluster (bolas azuis numeradas foram removidas). Em 50 m a mancha e os ícones reduzidos de
-// caixa coexistem — é o degrau de transição entre as duas camadas.
+// Cobertura GPON (mapa de calor por bairro/município/estado) entra a partir desta escala
+// (inclusive) — "visível para qualquer escala de 50 m para cima". Em ≤ 20 m só a planta
+// individual aparece; não há mais cluster (bolas azuis numeradas foram removidas). Em 50 m a
+// mancha e os ícones reduzidos de caixa coexistem — é o degrau de transição entre as duas
+// camadas.
 export const COVERAGE_MIN_SCALE_METERS = 50;
 
-// Nível da cobertura por escala: grade fina de 150 m até aqui, grade grossa (750 m) até
-// COVERAGE_COARSE_MAX_SCALE_METERS e polígonos de bairro acima disso.
-export const COVERAGE_FINE_MAX_SCALE_METERS = 500;
-export const COVERAGE_COARSE_MAX_SCALE_METERS = 10_000;
+// LOD da cobertura por escala (REQ-MOD01-014): polígono de bairro até aqui, de município até
+// COVERAGE_CITY_MAX_SCALE_METERS e de estado acima disso. Em zoom aberto um bairro é sub-pixel
+// — nada se perde visualmente subindo de nível, e o payload cai de ~30 MB (12 mil bairros) para
+// algumas centenas de KB (ver GeoCoverageService.areaIndexLevel e
+// scripts/build-gpon-coverage.mjs).
+export const COVERAGE_NEIGHBORHOOD_MAX_SCALE_METERS = 500;
+export const COVERAGE_CITY_MAX_SCALE_METERS = 10_000;
 
 // Estações: tamanho cheio até aqui; a partir de 1 km viram pontos pequenos (sem agrupamento) —
 // já nas escalas de 1 e 2 km. Permanecem visíveis em qualquer escala, inclusive acima de 50 km.
@@ -37,18 +41,20 @@ export const STATION_SMALL_MIN_SCALE_METERS = 1_000;
 // menos (mesmo espírito da redução das estações em escala grande).
 export const RESOURCE_SMALL_MIN_SCALE_METERS = 50;
 
-export type CoverageLevel = 'fine' | 'coarse' | 'area';
+export type CoverageLevel = 'neighborhood' | 'city' | 'uf';
 export type StationTier = 'full' | 'small';
 
 // Cobertura visível? De 50 m para cima, em qualquer escala.
 export const coverageVisibleAtScale = (scaleMeters: number | null): boolean =>
   scaleMeters !== null && scaleMeters >= COVERAGE_MIN_SCALE_METERS;
 
-// Nível de cobertura a pedir ao servidor para a escala atual (ver GeoCoverageService).
+// Nível de cobertura a pedir ao servidor para a escala atual (ver
+// GeoCoverageService.areaIndexLevel): bairro em zoom de detalhe, município em escala
+// intermediária, estado (e país) em zoom bem aberto.
 export function coverageLevelForScale(scaleMeters: number): CoverageLevel {
-  if (scaleMeters <= COVERAGE_FINE_MAX_SCALE_METERS) return 'fine';
-  if (scaleMeters <= COVERAGE_COARSE_MAX_SCALE_METERS) return 'coarse';
-  return 'area';
+  if (scaleMeters <= COVERAGE_NEIGHBORHOOD_MAX_SCALE_METERS) return 'neighborhood';
+  if (scaleMeters <= COVERAGE_CITY_MAX_SCALE_METERS) return 'city';
+  return 'uf';
 }
 
 // Como desenhar a Estação na escala atual: cheia (perto) ou pequena (longe). Nunca oculta —

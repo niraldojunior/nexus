@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  COVERAGE_CITY_MAX_SCALE_METERS,
   COVERAGE_MIN_SCALE_METERS,
+  COVERAGE_NEIGHBORHOOD_MAX_SCALE_METERS,
   PASSIVE_INFRA_MAX_SCALE_METERS,
   RESOURCE_SMALL_MIN_SCALE_METERS,
+  coverageLevelForScale,
   coverageVisibleAtScale,
   resourceTierForScale,
 } from './mapScale';
@@ -26,5 +29,14 @@ describe('régua de escala do mapa Geo', () => {
     expect(resourceTierForScale(100)).toBe('small');
     expect(resourceTierForScale(20)).toBe('full');
     expect(resourceTierForScale(null)).toBe('full');
+  });
+
+  it('nível de cobertura sobe de bairro para município e depois estado, por escala (LOD)', () => {
+    expect(coverageLevelForScale(50)).toBe('neighborhood');
+    expect(coverageLevelForScale(COVERAGE_NEIGHBORHOOD_MAX_SCALE_METERS)).toBe('neighborhood');
+    expect(coverageLevelForScale(COVERAGE_NEIGHBORHOOD_MAX_SCALE_METERS + 1)).toBe('city');
+    expect(coverageLevelForScale(COVERAGE_CITY_MAX_SCALE_METERS)).toBe('city');
+    expect(coverageLevelForScale(COVERAGE_CITY_MAX_SCALE_METERS + 1)).toBe('uf');
+    expect(coverageLevelForScale(1_000_000)).toBe('uf');
   });
 });

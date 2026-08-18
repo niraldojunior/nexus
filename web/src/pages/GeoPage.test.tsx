@@ -208,8 +208,8 @@ describe('GoogleMapPanel', () => {
 
   it('mostra a legenda de cobertura GPON quando a camada está visível', async () => {
     const coverage = {
-      level: 'fine' as const,
-      grid: { sizeMeters: 150, projection: 'EPSG:3857' as const },
+      level: 'neighborhood' as const,
+      grid: { sizeMeters: 50, projection: 'EPSG:3857' as const },
       cells: [],
       areas: [],
       neighborhoods: [],

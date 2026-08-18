@@ -1,17 +1,31 @@
 #!/usr/bin/env node
 /**
- * Geração do mapa de calor de cobertura GPON por bairro (REQ-MOD01-014).
+ * Geração do mapa de calor de cobertura GPON, em três níveis de detalhe (REQ-MOD01-014).
  *
- * A partir da posição das CDOs (caixas de distribuição óptica) já inventariadas, calcula
- * a cobertura consolidando o disco de 300 m de cada CDO numa grade de células de 150 m
- * (ver src/modules/geo/coverage-grid.ts) e grava dois artefatos:
+ * A partir da posição das CDOs (caixas de distribuição óptica) já inventariadas, calcula a
+ * cobertura consolidando o disco de cobertura de cada CDO numa grade de células — e grava o
+ * resultado em TRÊS ESCALAS (LOD), para o mapa nunca precisar pedir os 12 mil+ polígonos de
+ * bairro numa visão de país inteiro:
  *
- *   · POLÍGONO por bairro  → tmf_geographic_location (Polygon, TMF675), um por componente
- *     conexo da grade daquele bairro. `reference_point` = "GPON:<uf>|<city>|<bairro>" e as
- *     estatísticas do bairro em characteristics no grupo `_coverage`. É a geometria que o
- *     mapa desenha em escala de cidade/estado, e a fonte do balão de hover.
- *   · GRADE fina de 150 m   → geo_gpon_coverage_cell (projeção de leitura), com quantas
- *     CDOs (total e disponíveis) cobrem cada célula. A API agrega 150 m → 750 m por zoom.
+ *   · neighborhood (bairro)   — célula fina (--cell, default 50 m), agregada por
+ *     `<uf>|<city>|<bairro>`. `reference_point` = "GPON:<uf>|<city>|<bairro>".
+ *   · city (município)        — célula de COVERAGE_CITY_CELL_METERS (500 m), agregada por
+ *     `<uf>|<city>`. `reference_point` = "GPON-CITY:<uf>|<city>".
+ *   · uf (estado)              — célula de COVERAGE_UF_CELL_METERS (2000 m), agregada por
+ *     `<uf>`. `reference_point` = "GPON-UF:<uf>".
+ *
+ * Cada polígono (qualquer nível) vira uma Location (TMF675) em tmf_geographic_location, com a
+ * estatística do grupo `_coverage` em characteristics — igual a antes. O que muda é que cada
+ * polígono TAMBÉM grava uma linha em geo_gpon_coverage_area (bbox + estatística desnormalizados,
+ * ver src/modules/geo/coverage-service.ts), o índice que a API lê por viewport sem precisar
+ * reparsear characteristics nem varrer a grade de células. A grade fina em si
+ * (geo_gpon_coverage_cell) só é gravada para o nível `neighborhood` — city/uf não têm grade,
+ * só o polígono e a linha de índice; o frontend escolhe o nível pela escala (mapScale.ts).
+ *
+ * Nos níveis city/uf o raio de cobertura passado ao algoritmo é IGUAL à célula, não ao raio real
+ * de uma CDO — o objetivo não é o disco físico de 200 m, é garantir que toda CDO marque pelo
+ * menos uma célula da grade grossa (ver o comentário de COVERAGE_CITY_CELL_METERS em
+ * coverage-grid.ts para o porquê da margem).
  *
  * Uma CDO é PhysicalResource com resource_type 'CTO' e nome começando em "CDO" (o tipo
  * sozinho traria CEO/CEOS, que são caixas de emenda — mesma regra da aba de Viabilidade).
@@ -19,19 +33,26 @@
  * fora (C6). O bairro vem de tmf_geographic_address.locality; quando o parser de endereço
  * da carga deixou ali um número (endereço curto), cai em "Sem bairro".
  *
- * Idempotente por escopo: cada execução SUBSTITUI a geração anterior do escopo (apaga as
- * Locations "GPON:" daquele município e suas células, e reggrava). É exceção consciente a
- * C6 — são artefatos derivados e regeneráveis, não inventário (igual ao --truncate da carga
- * de recursos).
+ * Idempotente por escopo E por nível: cada execução SUBSTITUI a geração anterior do escopo em
+ * cada nível ativo (apaga as Locations do prefixo daquele nível dentro do escopo e suas linhas
+ * de índice/células, e reggrava). É exceção consciente a C6 — são artefatos derivados e
+ * regeneráveis, não inventário (igual ao --truncate da carga de recursos).
+ *
+ * ⚠️ Regeneração parcial por `--city` é segura para os níveis `neighborhood` e `city` (o
+ * agregado de cada um é auto-contido dentro do escopo pedido), mas NÃO para `uf` — o polígono
+ * do estado precisa de TODAS as cidades daquele estado, não só da filtrada. Por isso, com
+ * `--city` ativo, o nível `uf` é automaticamente pulado (nem apagado, nem regravado) — rode sem
+ * `--city` (ou só com `--uf`) para atualizar o nível estadual.
  *
  * Requer o dist compilado (npm run build) — importa o algoritmo de coverage-grid.
  *
  * Uso:
- *   node scripts/build-gpon-coverage.mjs                        # dry-run, base inteira
- *   node scripts/build-gpon-coverage.mjs --apply                # base inteira
- *   node scripts/build-gpon-coverage.mjs --city "Niterói" --apply
+ *   node scripts/build-gpon-coverage.mjs                        # dry-run, base inteira, 3 níveis
+ *   node scripts/build-gpon-coverage.mjs --apply                # base inteira, 3 níveis
+ *   node scripts/build-gpon-coverage.mjs --city "Niterói" --apply   # neighborhood + city só
  *   node scripts/build-gpon-coverage.mjs --uf RJ --apply
- *   node scripts/build-gpon-coverage.mjs --cell 50 --radius 200 --apply
+ *   node scripts/build-gpon-coverage.mjs --levels neighborhood --apply   # só o nível de bairro
+ *   node scripts/build-gpon-coverage.mjs --cell 50 --radius 200 --apply  # afeta só `neighborhood`
  *   node scripts/build-gpon-coverage.mjs --smooth 2 --apply        # corner-cutting do contorno
  *   # cross-DB: lê as CDOs do Oracle e grava a cobertura no Postgres/Neon
  *   node scripts/build-gpon-coverage.mjs --source oracle --target postgres --uf RJ --apply
@@ -43,9 +64,11 @@ import { openLoaderDb } from './loader-db.mjs';
 import {
   buildCoverage,
   COVERAGE_CELL_METERS,
+  COVERAGE_CITY_CELL_METERS,
   COVERAGE_RADIUS_METERS,
   COVERAGE_SMOOTH_ITERATIONS,
   COVERAGE_MIN_COMPONENT_CELLS,
+  COVERAGE_UF_CELL_METERS,
 } from '../dist/src/modules/geo/coverage-grid.js';
 
 loadEnv();
@@ -61,25 +84,38 @@ const APPLY = has('--apply');
 const CITY = argOf('--city', null);
 const UF = argOf('--uf', null);
 const TENANT = argOf('--tenant', 'default');
+
+// Afetam só o nível `neighborhood` — city/uf usam célula/raio fixos (ver LEVELS abaixo), porque
+// são o traçado do índice de LOD, não um parâmetro de qualidade que o operador ajuste.
 const CELL_METERS = Number(argOf('--cell', String(COVERAGE_CELL_METERS)));
 const RADIUS_METERS = Number(argOf('--radius', String(COVERAGE_RADIUS_METERS)));
 
 // Iterações de corner-cutting (Chaikin) aplicadas ao traçado do polígono — ver coverage-grid.ts.
-// 0 desliga a suavização e volta ao contorno em escada.
+// 0 desliga a suavização e volta ao contorno em escada. Vale para os três níveis.
 const SMOOTH_ITERATIONS = Number(argOf('--smooth', String(COVERAGE_SMOOTH_ITERATIONS)));
 
 // Descarta componentes conexos menores que isto (em células) antes de traçar o polígono — em
 // área densa, o "bairro dominante por célula" deixa fragmentos de fronteira (1-3 células) para
 // o bairro perdedor, que só poluem o mapa (sem CDO visível dentro, quase sempre vermelhos por
 // serem sobra de um bairro pouco disponível). Não afeta a estatística do bairro (cdoTotal etc.
-// continuam contando os CDOs reais). 0 desliga o filtro.
+// continuam contando os CDOs reais). 0 desliga o filtro. Só para `neighborhood` — city/uf usam
+// 1 (uma cidade pequena pode ser só 1-2 células na grade grossa; descartar seria perder o
+// município inteiro do mapa).
 const MIN_COMPONENT_CELLS = Number(argOf('--min-cells', String(COVERAGE_MIN_COMPONENT_CELLS)));
 
 // Resolução do ÍNDICE de células gravado (geo_gpon_coverage_cell), que serve só para achar
 // polígonos por bbox — o polígono em si continua traçado em `--cell` (suave). Com `--index-cell`
 // maior que `--cell`, agrega o índice (célula grossa → polígono dominante), reduzindo MUITO as
 // linhas gravadas — útil quando o destino tem pouco espaço (ex.: Neon). Default: igual a --cell.
+// Só se aplica ao nível `neighborhood` (o único que grava geo_gpon_coverage_cell).
 const INDEX_CELL_METERS = Number(argOf('--index-cell', String(CELL_METERS)));
+
+// Quais níveis (re)gerar nesta execução — default os três. Útil para iterar rápido num nível só
+// (ex.: ajustar --smooth do bairro sem regravar city/uf, que são baratos mas desnecessários).
+const LEVELS_ARG = argOf('--levels', 'neighborhood,city,uf')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
 
 // Cross-DB: `--source` é de onde vêm as CDOs; `--target` é onde a cobertura é gravada. Sem
 // eles, cai no DATABASE_PROVIDER (mesmo banco para ler e gravar). Ex.: `--source oracle
@@ -108,6 +144,37 @@ function neighborhoodOf(row) {
   if (streetNr && locality === streetNr) return 'Sem bairro';
   return locality;
 }
+
+// Descrição de cada nível de LOD: como agregar as CDOs (remapKey), célula/raio de traçado, piso
+// de componente e o prefixo de reference_point usado tanto para gravar quanto para escopar a
+// regeneração. `active` é reavaliado em main() depois que --levels/--city são conhecidos.
+const LEVELS = [
+  {
+    level: 'neighborhood',
+    prefix: 'GPON:',
+    cellMeters: CELL_METERS,
+    radiusMeters: RADIUS_METERS,
+    minComponentCells: MIN_COMPONENT_CELLS,
+    remapKey: (cdo) => cdo.neighborhoodKey,
+  },
+  {
+    level: 'city',
+    prefix: 'GPON-CITY:',
+    cellMeters: COVERAGE_CITY_CELL_METERS,
+    radiusMeters: COVERAGE_CITY_CELL_METERS,
+    minComponentCells: 1,
+    remapKey: (cdo) => `${cdo.uf}|${cdo.city}`,
+  },
+  {
+    level: 'uf',
+    prefix: 'GPON-UF:',
+    cellMeters: COVERAGE_UF_CELL_METERS,
+    radiusMeters: COVERAGE_UF_CELL_METERS,
+    minComponentCells: 1,
+    remapKey: (cdo) => cdo.uf,
+  },
+];
+const KNOWN_LEVELS = new Set(LEVELS.map((entry) => entry.level));
 
 // Garante a tabela de projeção geo_gpon_coverage_cell — o loader é dono dela, então a cria
 // se faltar em vez de depender de um restart do backend (schema init). DDL por provider: o
@@ -158,6 +225,69 @@ async function ensureCoverageTable(client) {
   );
 }
 
+// Garante geo_gpon_coverage_area — mesmo espírito/motivo de ensureCoverageTable acima. Os
+// índices por bbox (idx_geo_gpon_coverage_area_bbox/_rank) ficam a cargo do schema init do app
+// no Oracle, igual a geo_gpon_coverage_cell; no Postgres o próprio script já os cria.
+async function ensureCoverageAreaTable(client) {
+  if (client.provider === 'oracle') {
+    const ddl = `CREATE TABLE geo_gpon_coverage_area (
+      tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
+      location_id VARCHAR2(36 CHAR) NOT NULL,
+      level VARCHAR2(255 CHAR) NOT NULL,
+      cell_size_m NUMBER(10) NOT NULL,
+      min_lng BINARY_DOUBLE NOT NULL,
+      min_lat BINARY_DOUBLE NOT NULL,
+      max_lng BINARY_DOUBLE NOT NULL,
+      max_lat BINARY_DOUBLE NOT NULL,
+      area_key VARCHAR2(255 CHAR) NOT NULL,
+      neighborhood VARCHAR2(255 CHAR),
+      city VARCHAR2(255 CHAR),
+      uf VARCHAR2(255 CHAR),
+      cdo_total NUMBER(10) DEFAULT 0 NOT NULL,
+      cdo_available NUMBER(10) DEFAULT 0 NOT NULL,
+      covered_area_km2 BINARY_DOUBLE DEFAULT 0 NOT NULL,
+      ports_total NUMBER(10),
+      ports_used NUMBER(10),
+      generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (tenant_id, location_id)
+    )`;
+    try {
+      await client.query(ddl);
+      console.log('Tabela geo_gpon_coverage_area criada no Oracle.');
+    } catch (error) {
+      if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
+    }
+    return;
+  }
+  await client.query(`CREATE TABLE IF NOT EXISTS geo_gpon_coverage_area (
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    location_id TEXT NOT NULL,
+    level TEXT NOT NULL,
+    cell_size_m INTEGER NOT NULL,
+    min_lng REAL NOT NULL,
+    min_lat REAL NOT NULL,
+    max_lng REAL NOT NULL,
+    max_lat REAL NOT NULL,
+    area_key TEXT NOT NULL,
+    neighborhood TEXT,
+    city TEXT,
+    uf TEXT,
+    cdo_total INTEGER NOT NULL DEFAULT 0,
+    cdo_available INTEGER NOT NULL DEFAULT 0,
+    covered_area_km2 REAL NOT NULL DEFAULT 0,
+    ports_total INTEGER,
+    ports_used INTEGER,
+    generated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, location_id)
+  )`);
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_area_bbox ON geo_gpon_coverage_area(tenant_id, level, min_lng, max_lng, min_lat, max_lat)`,
+  );
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_area_rank ON geo_gpon_coverage_area(tenant_id, level, cdo_total)`,
+  );
+}
+
 // Insere ids em blocos e devolve uma cláusula DELETE ... WHERE col IN (...) por bloco.
 async function deleteByIds(client, table, column, ids) {
   let removed = 0;
@@ -173,6 +303,51 @@ async function deleteByIds(client, table, column, ids) {
   return removed;
 }
 
+// Bbox [minLng, minLat, maxLng, maxLat] do anel externo do polígono — vai para
+// geo_gpon_coverage_area, é o que a API usa pra recortar por viewport sem tocar na geometria.
+function polygonBounds(geometry) {
+  const ring = geometry.coordinates[0] ?? [];
+  let minLng = Infinity;
+  let minLat = Infinity;
+  let maxLng = -Infinity;
+  let maxLat = -Infinity;
+  for (const [lng, lat] of ring) {
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+  return { minLng, minLat, maxLng, maxLat };
+}
+
+// Escopo em JS: reference_point = "<prefix><uf>|<city>|<bairro>" (neighborhood),
+// "<prefix><uf>|<city>" (city) ou "<prefix><uf>" (uf). Sem --city/--uf, tudo entra. Um filtro
+// que o nível não tem componente para (ex.: --city num reference_point de nível `uf`, que só
+// tem uf) é ignorado nesse componente — mas esse caso nunca chega aqui: o nível `uf` é
+// desativado inteiro quando --city está setado (ver activeLevels).
+function inScope(referencePoint, prefix) {
+  const key = String(referencePoint ?? '').slice(prefix.length);
+  const [uf, city] = key.split('|');
+  if (UF && (uf ?? '').toUpperCase() !== UF.toUpperCase()) return false;
+  if (CITY && city !== undefined && city !== CITY) return false;
+  return true;
+}
+
+// Quais níveis esta execução deve (re)gerar: interseção de --levels com a lista conhecida,
+// exceto `uf` quando --city está ativo (ver ⚠️ no cabeçalho do arquivo — polígono estadual
+// precisa de todas as cidades do estado, não só da filtrada).
+function activeLevels() {
+  const requested = LEVELS_ARG.filter((name) => KNOWN_LEVELS.has(name));
+  const invalid = LEVELS_ARG.filter((name) => !KNOWN_LEVELS.has(name));
+  if (invalid.length > 0) throw new Error(`--levels desconhecido(s): ${invalid.join(', ')}`);
+  if (requested.length === 0) throw new Error('--levels não pode ficar vazio');
+  return LEVELS.filter((entry) => {
+    if (!requested.includes(entry.level)) return false;
+    if (entry.level === 'uf' && CITY) return false;
+    return true;
+  });
+}
+
 async function main() {
   if (!Number.isFinite(CELL_METERS) || CELL_METERS <= 0) throw new Error('--cell inválido');
   if (!Number.isFinite(RADIUS_METERS) || RADIUS_METERS <= 0) throw new Error('--radius inválido');
@@ -184,6 +359,10 @@ async function main() {
   }
   if (!Number.isFinite(MIN_COMPONENT_CELLS) || MIN_COMPONENT_CELLS < 0) {
     throw new Error('--min-cells inválido');
+  }
+  const levels = activeLevels();
+  if (CITY && LEVELS_ARG.includes('uf')) {
+    console.log('Nível uf : pulado (regeneração parcial por --city não cobre o estado inteiro)');
   }
 
   const source = await openLoaderDb({ provider: SOURCE_PROVIDER });
@@ -259,9 +438,7 @@ async function main() {
     const scopeLabel =
       [CITY && `city=${CITY}`, UF && `uf=${UF}`].filter(Boolean).join(' · ') || 'base inteira';
     console.log(`Escopo   : ${scopeLabel}`);
-    console.log(
-      `Grade    : célula ${CELL_METERS} m · raio de cobertura ${RADIUS_METERS} m · suavização ${SMOOTH_ITERATIONS}x · mínimo ${MIN_COMPONENT_CELLS} células`,
-    );
+    console.log(`Níveis   : ${levels.map((entry) => entry.level).join(', ')}`);
     console.log(
       `CDOs     : ${cdos.length} elegíveis${skippedGeometry ? ` (${skippedGeometry} sem geometria válida)` : ''}`,
     );
@@ -271,33 +448,97 @@ async function main() {
       return;
     }
 
-    // ---- algoritmo ----
-    const { components, neighborhoods } = buildCoverage(cdos, {
-      cellMeters: CELL_METERS,
-      radiusMeters: RADIUS_METERS,
-      smoothIterations: SMOOTH_ITERATIONS,
-      minComponentCells: MIN_COMPONENT_CELLS,
-    });
-    const cellCount = components.reduce((sum, component) => sum + component.cells.length, 0);
-    const vertexCount = components.reduce(
-      (sum, component) =>
-        sum + component.geometry.coordinates.reduce((inner, ring) => inner + ring.length, 0),
-      0,
-    );
-    const avgVertices = components.length ? (vertexCount / components.length).toFixed(1) : '0';
-
-    neighborhoods.sort((a, b) => b.cdoTotal - a.cdoTotal);
-    console.log(`Bairros  : ${neighborhoods.length}`);
-    console.log(`Componentes (polígonos): ${components.length}`);
-    console.log(`Células  : ${cellCount}`);
-    console.log(`Vértices : ${vertexCount} total · ${avgVertices} em média por polígono`);
-    console.log('\nTop bairros por CDOs:');
-    for (const stat of neighborhoods.slice(0, 10)) {
-      const pct = (stat.availabilityRatio * 100).toFixed(1);
-      console.log(
-        `   ${stat.neighborhood} (${stat.city}/${stat.uf}): ` +
-          `${stat.cdoTotal} CDOs · ${stat.cdoAvailable} disp. (${pct}%) · ${stat.coveredAreaKm2.toFixed(2)} km²`,
+    // ---- algoritmo, por nível ----
+    // writesByLevel guarda o que cada nível vai gravar (locations/areaRows/cells), calculado já
+    // no dry-run para o relatório sair idêntico ao --apply real.
+    const writesByLevel = [];
+    for (const levelConfig of levels) {
+      const cdosForLevel = cdos.map((cdo) => ({
+        ...cdo,
+        neighborhoodKey: levelConfig.remapKey(cdo),
+      }));
+      const { components, neighborhoods } = buildCoverage(cdosForLevel, {
+        cellMeters: levelConfig.cellMeters,
+        radiusMeters: levelConfig.radiusMeters,
+        smoothIterations: SMOOTH_ITERATIONS,
+        minComponentCells: levelConfig.minComponentCells,
+      });
+      const cellCount = components.reduce((sum, component) => sum + component.cells.length, 0);
+      const vertexCount = components.reduce(
+        (sum, component) =>
+          sum + component.geometry.coordinates.reduce((inner, ring) => inner + ring.length, 0),
+        0,
       );
+      const avgVertices = components.length ? (vertexCount / components.length).toFixed(1) : '0';
+
+      neighborhoods.sort((a, b) => b.cdoTotal - a.cdoTotal);
+      console.log(`\n[${levelConfig.level}] célula ${levelConfig.cellMeters} m`);
+      console.log(`  áreas      : ${neighborhoods.length}`);
+      console.log(`  componentes: ${components.length}`);
+      console.log(`  células    : ${cellCount}`);
+      console.log(`  vértices   : ${vertexCount} total · ${avgVertices} em média por polígono`);
+      console.log('  top 5 por CDOs:');
+      for (const stat of neighborhoods.slice(0, 5)) {
+        const pct = (stat.availabilityRatio * 100).toFixed(1);
+        const label =
+          levelConfig.level === 'uf' ? stat.uf : levelConfig.level === 'city' ? stat.city : stat.neighborhood;
+        console.log(
+          `     ${label}: ${stat.cdoTotal} CDOs · ${stat.cdoAvailable} disp. (${pct}%) · ${stat.coveredAreaKm2.toFixed(2)} km²`,
+        );
+      }
+
+      const statByKey = new Map(neighborhoods.map((stat) => [stat.key, stat]));
+      const locations = [];
+      const areaRows = [];
+      const cells = [];
+      for (const component of components) {
+        const stat = statByKey.get(component.neighborhoodKey);
+        if (!stat) continue;
+        const locId = randomUUID();
+        locations.push({
+          id: locId,
+          href: `/tmf-api/geographicLocationManagement/v4/geographicLocation/${locId}`,
+          geometry_type: 'Polygon',
+          geometry: JSON.stringify(component.geometry),
+          spatial_ref: 'EPSG:4326',
+          reference_point: `${levelConfig.prefix}${component.neighborhoodKey}`.slice(0, 255),
+          characteristics: JSON.stringify(coverageChars(stat, levelConfig)),
+        });
+        const bounds = polygonBounds(component.geometry);
+        areaRows.push({
+          tenant_id: TENANT,
+          location_id: locId,
+          level: levelConfig.level,
+          cell_size_m: levelConfig.cellMeters,
+          min_lng: bounds.minLng,
+          min_lat: bounds.minLat,
+          max_lng: bounds.maxLng,
+          max_lat: bounds.maxLat,
+          area_key: component.neighborhoodKey,
+          neighborhood: levelConfig.level === 'neighborhood' ? stat.neighborhood : null,
+          city: levelConfig.level === 'uf' ? null : stat.city,
+          uf: stat.uf,
+          cdo_total: stat.cdoTotal,
+          cdo_available: stat.cdoAvailable,
+          covered_area_km2: stat.coveredAreaKm2,
+          ports_total: null,
+          ports_used: null,
+        });
+        if (levelConfig.level === 'neighborhood') {
+          for (const cell of component.cells) {
+            cells.push({
+              tenant_id: TENANT,
+              grid_size_m: CELL_METERS,
+              grid_x: cell.gridX,
+              grid_y: cell.gridY,
+              coverage_area_id: locId,
+              cdo_total: cell.cdoTotal,
+              cdo_available: cell.cdoAvailable,
+            });
+          }
+        }
+      }
+      writesByLevel.push({ levelConfig, locations, areaRows, cells });
     }
 
     if (!APPLY) {
@@ -305,99 +546,119 @@ async function main() {
       return;
     }
 
-    // ---- gravação ----
-    const statByKey = new Map(neighborhoods.map((stat) => [stat.key, stat]));
-    const locations = [];
-    const cells = [];
-    for (const component of components) {
-      const stat = statByKey.get(component.neighborhoodKey);
-      if (!stat) continue;
-      const locId = randomUUID();
-      locations.push({
-        id: locId,
-        href: `/tmf-api/geographicLocationManagement/v4/geographicLocation/${locId}`,
-        geometry_type: 'Polygon',
-        geometry: JSON.stringify(component.geometry),
-        spatial_ref: 'EPSG:4326',
-        reference_point: `GPON:${component.neighborhoodKey}`.slice(0, 255),
-        characteristics: JSON.stringify(coverageChars(stat)),
-      });
-      for (const cell of component.cells) {
-        cells.push({
-          tenant_id: TENANT,
-          grid_size_m: CELL_METERS,
-          grid_x: cell.gridX,
-          grid_y: cell.gridY,
-          coverage_area_id: locId,
-          cdo_total: cell.cdoTotal,
-          cdo_available: cell.cdoAvailable,
-        });
-      }
-    }
-
     // ---- gravação no DESTINO ----
-    // A tabela de projeção é do loader — cria se faltar (dispensa restart do backend).
+    // As tabelas de projeção são do loader — cria se faltar (dispensa restart do backend).
     await ensureCoverageTable(target);
+    await ensureCoverageAreaTable(target);
 
     await target.query('BEGIN');
     // ROLLBACK explícito em erro: no Oracle o `close()` do loader-db faz commit() no
     // finally, então sem isto uma falha no meio (ex.: insert de células) deixaria os
     // polígonos já inseridos comitados — cobertura parcial. Como é idempotente por
-    // escopo, a próxima execução limparia, mas melhor não gravar lixo de saída.
+    // escopo/nível, a próxima execução limparia, mas melhor não gravar lixo de saída.
     try {
-      // Substitui a geração anterior DO ESCOPO: acha as Locations "GPON:" do escopo, apaga
-      // suas células e depois as próprias Locations. Filtra o escopo em JS (uf/city do
-      // reference_point) para não depender de LIKE com acento/caractere especial.
-      const { rows: existing } = await target.query(
-        `SELECT id, reference_point FROM tmf_geographic_location WHERE reference_point LIKE 'GPON:%'`,
-      );
-      const staleIds = existing.filter((row) => inScope(row.reference_point)).map((row) => row.id);
-      const removedCells = await deleteByIds(
-        target,
-        'geo_gpon_coverage_cell',
-        'coverage_area_id',
-        staleIds,
-      );
-      const removedAreas = await deleteByIds(target, 'tmf_geographic_location', 'id', staleIds);
+      let removedAreasTotal = 0;
+      let removedCellsTotal = 0;
+      let removedIndexTotal = 0;
+      let insertedLocationsTotal = 0;
+      let insertedCellsTotal = 0;
+      let insertedIndexTotal = 0;
 
-      const insertedLocations = await target.bulkInsert(
-        'tmf_geographic_location',
-        [
-          'id',
-          'href',
-          'geometry_type',
-          'geometry',
-          'spatial_ref',
-          'reference_point',
-          'characteristics',
-        ],
-        locations,
-      );
-      // Índice de células gravado na resolução de --index-cell (agrega o fino se for maior).
-      const indexCells = aggregateIndex(cells);
-      // DO NOTHING protege a fronteira entre municípios em cargas por-cidade: uma célula já
-      // gravada por outro município (não apagada por este escopo) é preservada.
-      const insertedCells = await target.bulkInsert(
-        'geo_gpon_coverage_cell',
-        [
-          'tenant_id',
-          'grid_size_m',
-          'grid_x',
-          'grid_y',
-          'coverage_area_id',
-          'cdo_total',
-          'cdo_available',
-        ],
-        indexCells,
-        { onConflict: 'ON CONFLICT (tenant_id, grid_size_m, grid_x, grid_y) DO NOTHING' },
-      );
+      for (const { levelConfig, locations, areaRows, cells } of writesByLevel) {
+        // Substitui a geração anterior DO ESCOPO, NESTE NÍVEL: acha as Locations do prefixo do
+        // nível, apaga suas células/índice e depois as próprias Locations. Filtra o escopo em JS
+        // (uf/city do reference_point) para não depender de LIKE com acento/caractere especial.
+        const { rows: existing } = await target.query(
+          `SELECT id, reference_point FROM tmf_geographic_location WHERE reference_point LIKE $1`,
+          [`${levelConfig.prefix}%`],
+        );
+        const staleIds = existing
+          .filter((row) => inScope(row.reference_point, levelConfig.prefix))
+          .map((row) => row.id);
+
+        if (levelConfig.level === 'neighborhood') {
+          removedCellsTotal += await deleteByIds(
+            target,
+            'geo_gpon_coverage_cell',
+            'coverage_area_id',
+            staleIds,
+          );
+        }
+        removedIndexTotal += await deleteByIds(
+          target,
+          'geo_gpon_coverage_area',
+          'location_id',
+          staleIds,
+        );
+        removedAreasTotal += await deleteByIds(target, 'tmf_geographic_location', 'id', staleIds);
+
+        insertedLocationsTotal += await target.bulkInsert(
+          'tmf_geographic_location',
+          [
+            'id',
+            'href',
+            'geometry_type',
+            'geometry',
+            'spatial_ref',
+            'reference_point',
+            'characteristics',
+          ],
+          locations,
+        );
+        insertedIndexTotal += await target.bulkInsert(
+          'geo_gpon_coverage_area',
+          [
+            'tenant_id',
+            'location_id',
+            'level',
+            'cell_size_m',
+            'min_lng',
+            'min_lat',
+            'max_lng',
+            'max_lat',
+            'area_key',
+            'neighborhood',
+            'city',
+            'uf',
+            'cdo_total',
+            'cdo_available',
+            'covered_area_km2',
+            'ports_total',
+            'ports_used',
+          ],
+          areaRows,
+        );
+        if (levelConfig.level === 'neighborhood') {
+          // Índice de células gravado na resolução de --index-cell (agrega o fino se for maior).
+          const indexCells = aggregateIndex(cells);
+          // DO NOTHING protege a fronteira entre municípios em cargas por-cidade: uma célula já
+          // gravada por outro município (não apagada por este escopo) é preservada.
+          insertedCellsTotal += await target.bulkInsert(
+            'geo_gpon_coverage_cell',
+            [
+              'tenant_id',
+              'grid_size_m',
+              'grid_x',
+              'grid_y',
+              'coverage_area_id',
+              'cdo_total',
+              'cdo_available',
+            ],
+            indexCells,
+            { onConflict: 'ON CONFLICT (tenant_id, grid_size_m, grid_x, grid_y) DO NOTHING' },
+          );
+        }
+      }
 
       await target.query('COMMIT');
 
       console.log('\nGravado:');
-      console.log(`  removidos (regeneração): ${removedAreas} polígonos · ${removedCells} células`);
-      console.log(`  polígonos de cobertura : ${insertedLocations}`);
-      console.log(`  células de grade        : ${insertedCells}`);
+      console.log(
+        `  removidos (regeneração): ${removedAreasTotal} polígonos · ${removedCellsTotal} células · ${removedIndexTotal} linhas de índice`,
+      );
+      console.log(`  polígonos de cobertura : ${insertedLocationsTotal}`);
+      console.log(`  linhas de índice (área): ${insertedIndexTotal}`);
+      console.log(`  células de grade        : ${insertedCellsTotal}`);
     } catch (err) {
       await target.query('ROLLBACK');
       throw err;
@@ -463,18 +724,10 @@ function aggregateIndex(cells) {
   return out;
 }
 
-// Escopo em JS: reference_point = "GPON:<uf>|<city>|<bairro>". Sem --city/--uf, tudo entra.
-function inScope(referencePoint) {
-  const key = String(referencePoint ?? '').replace(/^GPON:/, '');
-  const [uf, city] = key.split('|');
-  if (UF && (uf ?? '').toUpperCase() !== UF.toUpperCase()) return false;
-  if (CITY && (city ?? '') !== CITY) return false;
-  return true;
-}
-
-function coverageChars(stat) {
+function coverageChars(stat, levelConfig) {
   return [
     { group: '_coverage', name: 'kind', value: 'GponCoverage', valueType: 'string' },
+    { group: '_coverage', name: 'level', value: levelConfig.level, valueType: 'string' },
     { group: '_coverage', name: 'neighborhood', value: stat.neighborhood, valueType: 'string' },
     { group: '_coverage', name: 'city', value: stat.city, valueType: 'string' },
     { group: '_coverage', name: 'uf', value: stat.uf, valueType: 'string' },
@@ -499,8 +752,18 @@ function coverageChars(stat) {
       value: stat.coveredAreaKm2,
       valueType: 'decimal',
     },
-    { group: '_coverage', name: 'radiusMeters', value: RADIUS_METERS, valueType: 'integer' },
-    { group: '_coverage', name: 'cellSizeMeters', value: CELL_METERS, valueType: 'integer' },
+    {
+      group: '_coverage',
+      name: 'radiusMeters',
+      value: levelConfig.radiusMeters,
+      valueType: 'integer',
+    },
+    {
+      group: '_coverage',
+      name: 'cellSizeMeters',
+      value: levelConfig.cellMeters,
+      valueType: 'integer',
+    },
     {
       group: '_coverage',
       name: 'smoothIterations',
@@ -510,7 +773,7 @@ function coverageChars(stat) {
     {
       group: '_coverage',
       name: 'minComponentCells',
-      value: MIN_COMPONENT_CELLS,
+      value: levelConfig.minComponentCells,
       valueType: 'integer',
     },
     { group: '_coverage', name: 'generatedAt', value: GENERATED_AT, valueType: 'date' },

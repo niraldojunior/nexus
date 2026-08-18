@@ -33,6 +33,17 @@ export const COVERAGE_CELL_METERS = 50;
 // Fator de agregação da grade grossa (750 m): a API soma 5×5 células finas num GROUP BY.
 export const COVERAGE_COARSE_FACTOR = 5;
 
+// Célula de traçado dos níveis agregados (escala de município/estado) que
+// scripts/build-gpon-coverage.mjs grava em geo_gpon_coverage_area (ver GeoCoverageService).
+// O raio de cobertura passado ao stampCells nesses níveis é IGUAL à célula (não ao raio real de
+// 200 m de uma CDO): o objetivo aqui não é o disco físico da CDO, é garantir que cada CDO marque
+// pelo menos uma célula da grade grossa, para o município/estado aparecer no polígono mesmo com
+// poucas CDOs. Isso exige raio >= metade da diagonal da célula (cellMeters·√2/2 ≈ 0,71×cellMeters,
+// pior caso: CDO exatamente no canto, equidistante dos 4 centros vizinhos) — raio == célula tem
+// margem folgada sobre esse mínimo.
+export const COVERAGE_CITY_CELL_METERS = 500;
+export const COVERAGE_UF_CELL_METERS = 2000;
+
 // Tamanho mínimo (em células) de um componente conexo para virar polígono. Numa área densa,
 // onde bairros vizinhos se sobrepõem, o "bairro dominante por célula" (dominantNeighborhood)
 // deixa fragmentos de 1-3 células para o bairro perdedor — sobras do disco de 200 m que o

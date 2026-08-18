@@ -1473,6 +1473,182 @@ test('coordenada da tenant irrecuperável não é alterada nem contada como repa
   assert.equal(at('TENANT_LATITUDE'), '-999.999.999');
 });
 
+test('enrichRecords separa TENANT_LATITUDE/LONGITUDE quando vêm colados numa única célula (TENANT_LONGITUDE)', async () => {
+  // Padrão real: copiar "lat, lng" do Google Maps direto para uma célula só — TENANT_LATITUDE
+  // fica vazia e TENANT_LONGITUDE carrega as duas coordenadas separadas por vírgula.
+  const record = rowWithTenant('ID-1', '', '-16.09,-47.94');
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...tenantHeaders],
+    records: [record],
+  };
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viacep'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('TENANT_LATITUDE'), '-16.09');
+  assert.equal(at('TENANT_LONGITUDE'), '-47.94');
+  assert.equal(summary.tenantCoordRepaired, 1);
+  assert.match(at('LOG_GERAL'), /TENANT_LATITUDE\/TENANT_LONGITUDE reparados/);
+});
+
+test('separa a célula colada mesmo com espaço depois da vírgula ("lat, lng")', async () => {
+  const record = rowWithTenant('ID-1', '', '-16.09, -47.94');
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...tenantHeaders],
+    records: [record],
+  };
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+  };
+
+  await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viacep'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('TENANT_LATITUDE'), '-16.09');
+  assert.equal(at('TENANT_LONGITUDE'), '-47.94');
+});
+
+test('não separa a célula colada quando os valores caem fora do Brasil inteiro', async () => {
+  // -99.09 não é uma latitude plausível em lugar nenhum do Brasil (BRAZIL_BBOX):
+  // lixo óbvio, não é o padrão esperado, não mexe.
+  const record = rowWithTenant('ID-1', '', '-99.09,-47.94');
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...tenantHeaders],
+    records: [record],
+  };
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viacep'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('TENANT_LATITUDE'), '');
+  assert.equal(at('TENANT_LONGITUDE'), '-99.09,-47.94');
+  assert.equal(summary.tenantCoordRepaired, 0);
+});
+
+test('separa a célula colada mesmo fora da caixa apertada da UF, desde que dentro do Brasil', async () => {
+  // Caso real: arquivo com UF=GO na linha, mas a coordenada colada aponta pra São Paulo
+  // (-23.58,-46.60) — fora da caixa de GO, mas um ponto plausível no Brasil. Não há posição de
+  // separador pra desambiguar aqui (o par já veio partido em dois números), então a checagem é
+  // "é um ponto plausível no Brasil?", não "está na UF certa?" — ver splitCombinedTenantCoordinate.
+  const record = rowWithTenant('ID-1', '', '-23.588061,-46.604037');
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...tenantHeaders],
+    records: [record],
+  };
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viacep'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('TENANT_LATITUDE'), '-23.588061');
+  assert.equal(at('TENANT_LONGITUDE'), '-46.604037');
+  assert.equal(summary.tenantCoordRepaired, 1);
+});
+
+test('não separa quando TENANT_LONGITUDE é "N/A" (sem coordenada, não é o padrão colado)', async () => {
+  const record = rowWithTenant('ID-1', '', 'N/A');
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...tenantHeaders],
+    records: [record],
+  };
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viacep'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('TENANT_LATITUDE'), '');
+  assert.equal(at('TENANT_LONGITUDE'), 'N/A');
+  assert.equal(summary.tenantCoordRepaired, 0);
+});
+
+test('não mexe na célula colada quando TENANT_LATITUDE já está preenchida', async () => {
+  const record = rowWithTenant('ID-1', '-16.09', '-16.09,-47.94');
+  const document = {
+    bom: false,
+    lineEnding: '\n' as const,
+    headers: [...tenantHeaders],
+    records: [record],
+  };
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viacep'],
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('TENANT_LATITUDE'), '-16.09');
+  assert.equal(at('TENANT_LONGITUDE'), '-16.09,-47.94');
+  assert.equal(summary.tenantCoordRepaired, 0);
+});
+
 test('repara a coordenada e, na mesma passada, consegue repescar o DNE por ela', async () => {
   const record = rowWithTenant('ID-1', '-160.931.392', '-479.441.935');
   const document = {

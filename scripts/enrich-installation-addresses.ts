@@ -20,12 +20,16 @@
  * Quando o arquivo traz TENANT_LATITUDE/TENANT_LONGITUDE, essa coordenada também
  * alimenta um geocoding reverso (preenche TENANT_GMAPS_ENDEREÇO_REVERSO quando o
  * Gmaps está ativo) e uma terceira repescagem do DNE, usada só se as duas
- * anteriores falharem. Antes de usar essas colunas, cada linha passa por um
- * reparo automático: planilhas (Excel/LibreOffice sob locale pt-BR) costumam
- * reformatar essas células — que são número puro — trocando o ponto decimal por
- * separador de milhar (ex.: "-47.9441935" vira "-479.441.935"). O reparo remove
- * os pontos e testa cada posição de separador contra a caixa geográfica da UF da
- * própria linha; só aplica quando exatamente uma posição é plausível.
+ * anteriores falharem. Antes de usar essas colunas, cada linha passa por um reparo
+ * automático que reconhece dois padrões de corrupção: (1) as duas coordenadas
+ * coladas juntas numa única célula — TENANT_LATITUDE vazia e TENANT_LONGITUDE com
+ * "lat,lng" (cópia de "lat, lng" do Google Maps direto para uma célula só) — que é
+ * separada em duas quando ambos os valores caem na caixa geográfica da UF da linha;
+ * e (2) planilhas (Excel/LibreOffice sob locale pt-BR) que reformatam células —
+ * número puro — trocando o ponto decimal por separador de milhar (ex.:
+ * "-47.9441935" vira "-479.441.935"), reparado removendo os pontos e testando cada
+ * posição de separador contra a mesma caixa geográfica; só aplica quando
+ * exatamente uma posição é plausível.
  *
  * Enriquecimento de viabilidade (--only viab, opt-in — nunca roda sem --only citá-lo):
  * acha até 3 CDOs a até 300 m (--viab-radius) da coordenada de referência escolhida em
@@ -728,17 +732,56 @@ export function repairCorruptedCoordinate(raw: string, range: [number, number]):
   return match;
 }
 
+// Reconstrói TENANT_LATITUDE/TENANT_LONGITUDE quando as duas coordenadas foram
+// coladas juntas numa única célula — TENANT_LATITUDE vazia e TENANT_LONGITUDE
+// com "lat,lng" (ex.: "-22.34521,-43.683371") — padrão de copiar "lat, lng" do
+// Google Maps (menu de contexto → coordenadas) direto para uma célula só, em
+// vez de uma coluna por eixo. Só separa quando: LAT está vazia e LNG tem
+// exatamente dois números separados por vírgula. A checagem geográfica usa
+// BRAZIL_BBOX (não a caixa da UF da linha, ao contrário de
+// repairCorruptedCoordinate): aqui não há posição de separador pra desambiguar
+// — o par já veio partido em dois números plausíveis —, então só descarta lixo
+// óbvio (ex.: latitude positiva, fora do Brasil). Um TENANT_LATITUDE capturado
+// perto da fronteira do estado (ou por engano numa UF vizinha) é comum e não
+// deve ficar sem separar só por estourar a caixa apertada da própria UF —
+// visto em dados reais: coordenadas de SP/RS coladas num arquivo cuja UF
+// declarada era RJ.
+function splitCombinedTenantCoordinate(row: Row, index: Map<string, number>): boolean {
+  const lat = optionalValueOf(row, index, TENANT_LAT_COLUMN);
+  const lng = optionalValueOf(row, index, TENANT_LNG_COLUMN);
+  if (lat || !lng) return false;
+  const parts = lng.split(',');
+  if (parts.length !== 2) return false;
+  const [latPart, lngPart] = parts.map((part) => part.trim()) as [string, string];
+  const latValue = Number(latPart);
+  const lngValue = Number(lngPart);
+  if (!Number.isFinite(latValue) || !Number.isFinite(lngValue)) return false;
+  if (
+    latValue < BRAZIL_BBOX[0] ||
+    latValue > BRAZIL_BBOX[1] ||
+    lngValue < BRAZIL_BBOX[2] ||
+    lngValue > BRAZIL_BBOX[3]
+  ) {
+    return false;
+  }
+  row[index.get(TENANT_LAT_COLUMN)!] = latPart;
+  row[index.get(TENANT_LNG_COLUMN)!] = lngPart;
+  return true;
+}
+
 // Repara TENANT_LATITUDE/TENANT_LONGITUDE em memória (e grava de volta na
 // linha, para o CSV de saída já sair higienizado) quando o valor bruto não
-// parseia como número mas o padrão de corrupção de planilha é reconhecível.
-// Roda uma vez por linha visitada, independente de --only/--overwrite — é
-// higiene do dado de entrada, não um provedor de enriquecimento. Cada eixo é
-// tratado de forma independente: um já limpo não fica refém do outro estar
-// ambíguo.
+// parseia como número mas um padrão de corrupção conhecido é reconhecível —
+// hoje, dois: (1) as coordenadas coladas juntas numa célula só (ver
+// splitCombinedTenantCoordinate) e (2) ponto decimal virando separador de
+// milhar numa reformatação de planilha (ver repairCorruptedCoordinate). Roda
+// uma vez por linha visitada, independente de --only/--overwrite — é higiene
+// do dado de entrada, não um provedor de enriquecimento. Cada eixo é tratado
+// de forma independente: um já limpo não fica refém do outro estar ambíguo.
 function repairTenantCoordinates(row: Row, index: Map<string, number>): boolean {
   if (!index.has(TENANT_LAT_COLUMN) || !index.has(TENANT_LNG_COLUMN)) return false;
   const bbox = bboxForUf(valueOf(row, index, 'UF'));
-  let changed = false;
+  let changed = splitCombinedTenantCoordinate(row, index);
   const tryRepair = (column: string, range: [number, number]): void => {
     const raw = optionalValueOf(row, index, column);
     if (!raw || raw === '#N/D') return;

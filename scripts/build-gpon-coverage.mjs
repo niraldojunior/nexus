@@ -22,10 +22,14 @@
  * (geo_gpon_coverage_cell) só é gravada para o nível `neighborhood` — city/uf não têm grade,
  * só o polígono e a linha de índice; o frontend escolhe o nível pela escala (mapScale.ts).
  *
- * Nos níveis city/uf o raio de cobertura passado ao algoritmo é IGUAL à célula, não ao raio real
- * de uma CDO — o objetivo não é o disco físico de 200 m, é garantir que toda CDO marque pelo
- * menos uma célula da grade grossa (ver o comentário de COVERAGE_CITY_CELL_METERS em
- * coverage-grid.ts para o porquê da margem).
+ * A grade é estampada UMA VEZ, na resolução real (--cell/--radius, raio físico de uma CDO) — o
+ * "chão de verdade". Os níveis city/uf NÃO re-estampam os pontos com um raio maior (isso inflava
+ * a mancha bem além da cobertura real: uma CDO isolada "pintava" um disco de 2 km em vez dos
+ * 200 m reais — falso positivo de cobertura numa área sem CDO nenhuma). Em vez disso, eles
+ * AGREGAM a grade fina já estampada para a resolução mais grossa (aggregateCells, em
+ * coverage-grid.ts): só a resolução do TRAÇADO muda por nível, a área coberta nunca passa da
+ * real. A estatística (cdoTotal, disponibilidade, área coberta) sempre soma sobre a grade fina
+ * remapeada para a chave do nível — não a agregada — para não herdar essa mesma distorção.
  *
  * Uma CDO é PhysicalResource com resource_type 'CTO' e nome começando em "CDO" (o tipo
  * sozinho traria CEO/CEOS, que são caixas de emenda — mesma regra da aba de Viabilidade).
@@ -52,7 +56,7 @@
  *   node scripts/build-gpon-coverage.mjs --city "Niterói" --apply   # neighborhood + city só
  *   node scripts/build-gpon-coverage.mjs --uf RJ --apply
  *   node scripts/build-gpon-coverage.mjs --levels neighborhood --apply   # só o nível de bairro
- *   node scripts/build-gpon-coverage.mjs --cell 50 --radius 200 --apply  # afeta só `neighborhood`
+ *   node scripts/build-gpon-coverage.mjs --cell 50 --radius 200 --apply  # a estampagem, base de todos os níveis
  *   node scripts/build-gpon-coverage.mjs --smooth 2 --apply        # corner-cutting do contorno
  *   # cross-DB: lê as CDOs do Oracle e grava a cobertura no Postgres/Neon
  *   node scripts/build-gpon-coverage.mjs --source oracle --target postgres --uf RJ --apply
@@ -62,7 +66,10 @@ import { randomUUID } from 'node:crypto';
 import { config as loadEnv } from 'dotenv';
 import { openLoaderDb } from './loader-db.mjs';
 import {
-  buildCoverage,
+  aggregateCells,
+  neighborhoodStats,
+  stampCells,
+  tracePolygonsFromCells,
   COVERAGE_CELL_METERS,
   COVERAGE_CITY_CELL_METERS,
   COVERAGE_RADIUS_METERS,
@@ -85,8 +92,8 @@ const CITY = argOf('--city', null);
 const UF = argOf('--uf', null);
 const TENANT = argOf('--tenant', 'default');
 
-// Afetam só o nível `neighborhood` — city/uf usam célula/raio fixos (ver LEVELS abaixo), porque
-// são o traçado do índice de LOD, não um parâmetro de qualidade que o operador ajuste.
+// A estampagem real (raio físico de uma CDO) — base de TODOS os níveis, inclusive city/uf, que
+// agregam esta grade fina em vez de re-estampar com uma célula/raio maior (ver cabeçalho).
 const CELL_METERS = Number(argOf('--cell', String(COVERAGE_CELL_METERS)));
 const RADIUS_METERS = Number(argOf('--radius', String(COVERAGE_RADIUS_METERS)));
 
@@ -145,33 +152,32 @@ function neighborhoodOf(row) {
   return locality;
 }
 
-// Descrição de cada nível de LOD: como agregar as CDOs (remapKey), célula/raio de traçado, piso
-// de componente e o prefixo de reference_point usado tanto para gravar quanto para escopar a
-// regeneração. `active` é reavaliado em main() depois que --levels/--city são conhecidos.
+// Descrição de cada nível de LOD: célula de traçado, piso de componente, o prefixo de
+// reference_point usado tanto para gravar quanto para escopar a regeneração, e `keyOf` — deriva
+// a chave do nível a partir da chave de BAIRRO (`<uf>|<city>|<bairro>`, já a forma de
+// `cdo.neighborhoodKey`/`cell.neighborhoodKey`) por simples truncamento, sem re-estampar nada.
+// `active` é reavaliado em main() depois que --levels/--city são conhecidos.
 const LEVELS = [
   {
     level: 'neighborhood',
     prefix: 'GPON:',
     cellMeters: CELL_METERS,
-    radiusMeters: RADIUS_METERS,
     minComponentCells: MIN_COMPONENT_CELLS,
-    remapKey: (cdo) => cdo.neighborhoodKey,
+    keyOf: (bairroKey) => bairroKey,
   },
   {
     level: 'city',
     prefix: 'GPON-CITY:',
     cellMeters: COVERAGE_CITY_CELL_METERS,
-    radiusMeters: COVERAGE_CITY_CELL_METERS,
     minComponentCells: 1,
-    remapKey: (cdo) => `${cdo.uf}|${cdo.city}`,
+    keyOf: (bairroKey) => bairroKey.split('|').slice(0, 2).join('|'),
   },
   {
     level: 'uf',
     prefix: 'GPON-UF:',
     cellMeters: COVERAGE_UF_CELL_METERS,
-    radiusMeters: COVERAGE_UF_CELL_METERS,
     minComponentCells: 1,
-    remapKey: (cdo) => cdo.uf,
+    keyOf: (bairroKey) => bairroKey.split('|')[0],
   },
 ];
 const KNOWN_LEVELS = new Set(LEVELS.map((entry) => entry.level));
@@ -448,18 +454,33 @@ async function main() {
       return;
     }
 
-    // ---- algoritmo, por nível ----
-    // writesByLevel guarda o que cada nível vai gravar (locations/areaRows/cells), calculado já
-    // no dry-run para o relatório sair idêntico ao --apply real.
+    // ---- algoritmo ----
+    // Estampagem ÚNICA, na resolução real (--cell/--radius) — o chão de verdade de onde vem a
+    // geometria dos três níveis (ver cabeçalho do arquivo). writesByLevel guarda o que cada nível
+    // vai gravar (locations/areaRows/cells), calculado já no dry-run para o relatório sair
+    // idêntico ao --apply real.
+    const fineCells = stampCells(cdos, CELL_METERS, RADIUS_METERS);
     const writesByLevel = [];
     for (const levelConfig of levels) {
-      const cdosForLevel = cdos.map((cdo) => ({
-        ...cdo,
-        neighborhoodKey: levelConfig.remapKey(cdo),
-      }));
-      const { components, neighborhoods } = buildCoverage(cdosForLevel, {
-        cellMeters: levelConfig.cellMeters,
-        radiusMeters: levelConfig.radiusMeters,
+      const isNeighborhood = levelConfig.level === 'neighborhood';
+      const cdosForLevel = isNeighborhood
+        ? cdos
+        : cdos.map((cdo) => ({ ...cdo, neighborhoodKey: levelConfig.keyOf(cdo.neighborhoodKey) }));
+
+      // Estatística (CDOs reais, disponibilidade, área coberta) sempre soma a grade FINA — só
+      // remapeada para a chave do nível — nunca a agregada, para não herdar a distorção que a
+      // agregação evita na geometria.
+      const statsCells = isNeighborhood
+        ? fineCells
+        : fineCells.map((cell) => ({ ...cell, neighborhoodKey: levelConfig.keyOf(cell.neighborhoodKey) }));
+      const neighborhoods = neighborhoodStats(cdosForLevel, statsCells, CELL_METERS);
+
+      // Geometria (o traçado do polígono) usa a grade agregada na resolução do nível — mais
+      // barata de transmitir, mas nunca maior que onde a grade fina real já mostrava cobertura.
+      const geometryCells = isNeighborhood
+        ? fineCells
+        : aggregateCells(fineCells, CELL_METERS, levelConfig.cellMeters, levelConfig.keyOf);
+      const components = tracePolygonsFromCells(geometryCells, levelConfig.cellMeters, {
         smoothIterations: SMOOTH_ITERATIONS,
         minComponentCells: levelConfig.minComponentCells,
       });
@@ -755,7 +776,7 @@ function coverageChars(stat, levelConfig) {
     {
       group: '_coverage',
       name: 'radiusMeters',
-      value: levelConfig.radiusMeters,
+      value: RADIUS_METERS,
       valueType: 'integer',
     },
     {

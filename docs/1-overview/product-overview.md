@@ -2,7 +2,8 @@
 
 > Ponto de entrada da documentação do V.tal Nexus. Descreve o propósito, a organização do domínio, o
 > estado real dos módulos e o roadmap. Decisões arquiteturais com racional ficam em
-> [`business-rules.md`](business-rules.md); termos, em [`glossary.md`](glossary.md).
+> [`business-rules.md`](business-rules.md); termos, em [`glossary.md`](glossary.md); a tese de
+> posicionamento como plataforma multi-vertical, em [`platform-strategy.md`](platform-strategy.md).
 
 ---
 
@@ -50,17 +51,17 @@ _referencia_ geografia via `place`. Nenhum contém o outro.
 
 ## 4. Módulos e estado real
 
-| #   | Módulo                    | Responde                                | Open APIs              | Estado                                                                                                        |
-| --- | ------------------------- | --------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------- |
+| #   | Módulo                    | Responde                                | Open APIs              | Estado                                                                                                                                     |
+| --- | ------------------------- | --------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | 1   | **Geographic**            | Onde                                    | TMF673, TMF674, TMF675 | ⚠️ Base implementada; aderência parcial ao HLD 1.11 (inclui Cobertura GPON por bairro, Projetos de Trabalho e o Painel Unificado de Local) |
-| 2   | **Resource**              | O que existe                            | TMF634, TMF639, TMF664 | ⚠️ Base implementada; aderência parcial ao HLD 1.4                                                            |
-| 3   | **Service**               | Para quê / quem                         | TMF633, TMF638         | ⚠️ Base implementada; aderência parcial ao HLD 1.2                                                            |
-| 4   | **Order & Fulfillment**   | Viabilidade e provisionamento           | TMF641, TMF645, TMF652 | ✅ Implementado                                                                                               |
-| 5   | **Process Orchestration** | Fluxo de processo                       | TMF701                 | 📐 Previsto                                                                                                   |
-| 6   | **Party & Tenant**        | Quem é quem                             | TMF632, TMF669         | ✅ Implementado                                                                                               |
-| 7   | **Analytics & Events**    | Eventos e documentos                    | TMF688, TMF724         | ⚠️ TMF688 ativo; TMF724 previsto                                                                              |
-| —   | **Search / Copilot**      | Consulta em linguagem natural           | —                      | ✅ Implementado                                                                                               |
-| —   | **MCP**                   | Exposição das APIs TMF a clientes de IA | —                      | ✅ Implementado                                                                                               |
+| 2   | **Resource**              | O que existe                            | TMF634, TMF639, TMF664 | ⚠️ Base implementada; aderência parcial ao HLD 1.4                                                                                         |
+| 3   | **Service**               | Para quê / quem                         | TMF633, TMF638         | ⚠️ Base implementada; aderência parcial ao HLD 1.2                                                                                         |
+| 4   | **Order & Fulfillment**   | Viabilidade e provisionamento           | TMF641, TMF645, TMF652 | ✅ Implementado                                                                                                                            |
+| 5   | **Process Orchestration** | Fluxo de processo                       | TMF701                 | 📐 Previsto                                                                                                                                |
+| 6   | **Party & Tenant**        | Quem é quem                             | TMF632, TMF669         | ✅ Implementado                                                                                                                            |
+| 7   | **Analytics & Events**    | Eventos e documentos                    | TMF688, TMF724         | ⚠️ TMF688 ativo; TMF724 previsto                                                                                                           |
+| —   | **Search / Copilot**      | Consulta em linguagem natural           | —                      | ✅ Implementado                                                                                                                            |
+| —   | **MCP**                   | Exposição das APIs TMF a clientes de IA | —                      | ✅ Implementado                                                                                                                            |
 
 Legenda: ✅ contrato entregue · ⚠️ base executável com gaps rastreados · 📐 previsto no design.
 
@@ -185,14 +186,15 @@ O descompasso entre cânone e implementação está consolidado em
 
 ## 10. Referências
 
-| Onde                                               | O quê                                                     |
-| -------------------------------------------------- | --------------------------------------------------------- |
-| [`business-rules.md`](business-rules.md)           | Decisões C1–C10 com racional e status no código           |
-| [`glossary.md`](glossary.md)                       | Termos, acrônimos e vocabulário do código                 |
-| [`../2-functional-specs/`](../2-functional-specs/) | HLDs por módulo                                           |
-| [`../3-system-design/`](../3-system-design/)       | Arquitetura, modelo de dados, integrações, NFR, segurança |
-| [`../5-delivery-plan/`](../5-delivery-plan/)       | Roadmap detalhado, backlog e riscos                       |
-| [`AGENTS.md`](../../AGENTS.md)                     | Convenções para agentes de IA                             |
+| Onde                                               | O quê                                                      |
+| -------------------------------------------------- | ---------------------------------------------------------- |
+| [`business-rules.md`](business-rules.md)           | Decisões C1–C10 com racional e status no código            |
+| [`glossary.md`](glossary.md)                       | Termos, acrônimos e vocabulário do código                  |
+| [`platform-strategy.md`](platform-strategy.md)     | Tese de posicionamento como plataforma SaaS multi-vertical |
+| [`../2-functional-specs/`](../2-functional-specs/) | HLDs por módulo                                            |
+| [`../3-system-design/`](../3-system-design/)       | Arquitetura, modelo de dados, integrações, NFR, segurança  |
+| [`../5-delivery-plan/`](../5-delivery-plan/)       | Roadmap detalhado, backlog e riscos                        |
+| [`AGENTS.md`](../../AGENTS.md)                     | Convenções para agentes de IA                              |
 
 ---
 

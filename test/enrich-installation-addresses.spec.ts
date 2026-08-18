@@ -10,6 +10,7 @@ import {
   enrichRecords,
   parseCliArgs,
   parseSemicolonCsv,
+  ProviderError,
   repairCorruptedCoordinate,
   selectDneAddressCandidate,
   selectGeonetCandidate,
@@ -108,6 +109,7 @@ test('exige um limite explícito e interpreta as opções da CLI', () => {
     checkpoint: 200,
     providers: ['viacep', 'geonet', 'gmaps'],
     viabRadius: 300,
+    viabStraightOnly: false,
   });
   assert.deepEqual(parseCliArgs(['--file', 'entrada.csv', '--all', '--threads', '4']), {
     file: 'entrada.csv',
@@ -119,6 +121,7 @@ test('exige um limite explícito e interpreta as opções da CLI', () => {
     checkpoint: 200,
     providers: ['viacep', 'geonet', 'gmaps'],
     viabRadius: 300,
+    viabStraightOnly: false,
   });
   assert.deepEqual(parseCliArgs(['--file', 'entrada.csv', '--all', '--only', 'google,geonet']), {
     file: 'entrada.csv',
@@ -130,6 +133,7 @@ test('exige um limite explícito e interpreta as opções da CLI', () => {
     checkpoint: 200,
     providers: ['gmaps', 'geonet'],
     viabRadius: 300,
+    viabStraightOnly: false,
   });
   const checkpointOf = (args: string[]): number => {
     const parsed = parseCliArgs(args);
@@ -184,6 +188,7 @@ test('--only viab exige --viab-origin; aliases resolvem para viab; --viab-radius
     providers: ['viab'],
     viabOrigin: 'gmaps',
     viabRadius: 150,
+    viabStraightOnly: false,
   });
   assert.throws(
     () =>
@@ -198,6 +203,47 @@ test('--only viab exige --viab-origin; aliases resolvem para viab; --viab-radius
       ]),
     /--viab-origin não reconhece/,
   );
+});
+
+test('--viab-origin aceita "melhor" (delega a fonte à coluna MELHOR por linha)', () => {
+  const parsed = parseCliArgs([
+    '--file',
+    'entrada.csv',
+    '--all',
+    '--only',
+    'viab',
+    '--viab-origin',
+    'melhor',
+  ]);
+  assert.notEqual(parsed, 'help');
+  assert.equal((parsed as { viabOrigin: string }).viabOrigin, 'melhor');
+});
+
+test('--viab-straight liga viabStraightOnly (desligado por padrão)', () => {
+  const withoutFlag = parseCliArgs([
+    '--file',
+    'entrada.csv',
+    '--all',
+    '--only',
+    'viab',
+    '--viab-origin',
+    'gmaps',
+  ]);
+  assert.notEqual(withoutFlag, 'help');
+  assert.equal((withoutFlag as { viabStraightOnly: boolean }).viabStraightOnly, false);
+
+  const withFlag = parseCliArgs([
+    '--file',
+    'entrada.csv',
+    '--all',
+    '--only',
+    'viab',
+    '--viab-origin',
+    'gmaps',
+    '--viab-straight',
+  ]);
+  assert.notEqual(withFlag, 'help');
+  assert.equal((withFlag as { viabStraightOnly: boolean }).viabStraightOnly, true);
 });
 
 test('usa o DNE como endereço canônico e não inclui referência informal na consulta', () => {
@@ -948,6 +994,56 @@ test('repete operação transitória antes de concluir', async () => {
   assert.equal(attempts, 2);
 });
 
+test('withRetry aceita opções: mais tentativas e backoff base configurável', async () => {
+  let attempts = 0;
+  const result = await withRetry(
+    async () => {
+      attempts += 1;
+      if (attempts < 4) throw new TypeError('falha temporária');
+      return 'ok';
+    },
+    { attempts: 5, baseDelayMs: 1 },
+  );
+
+  assert.equal(result, 'ok');
+  assert.equal(attempts, 4);
+});
+
+test('withRetry usa o Retry-After do provedor em vez do backoff exponencial padrão', async () => {
+  let attempts = 0;
+  const start = Date.now();
+  const result = await withRetry(
+    async () => {
+      attempts += 1;
+      if (attempts === 1) throw new ProviderError('Routes API HTTP 429.', true, 20);
+      return 'ok';
+    },
+    { baseDelayMs: 5_000, maxDelayMs: 30_000 },
+  );
+  const elapsed = Date.now() - start;
+
+  assert.equal(result, 'ok');
+  assert.equal(attempts, 2);
+  assert.ok(elapsed < 1_000, `esperava usar o retryAfterMs (20ms) em vez do baseDelayMs, levou ${elapsed}ms`);
+});
+
+test('withRetry limita o Retry-After ao maxDelayMs configurado', async () => {
+  let attempts = 0;
+  const start = Date.now();
+  await withRetry(
+    async () => {
+      attempts += 1;
+      if (attempts === 1) throw new ProviderError('Routes API HTTP 429.', true, 5_000);
+      return 'ok';
+    },
+    { maxDelayMs: 30 },
+  );
+  const elapsed = Date.now() - start;
+
+  assert.equal(attempts, 2);
+  assert.ok(elapsed < 500, `esperava respeitar o teto de 30ms, levou ${elapsed}ms`);
+});
+
 test('altera somente as células enriquecidas ao gravar uma planilha Excel', () => {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Endereços');
@@ -1492,6 +1588,72 @@ test('viab grava as 3 melhores por caminhada, reordenando as candidatas', async 
   assert.equal(summary.viabStraightFallback, 0);
 });
 
+test('--viab-straight nunca chama a Routes API; grava tudo em linha reta', async () => {
+  const record = viabRow('ID-1');
+  const document = viabDocument([record]);
+  const candidates = [cdoCandidate('cdo-1', 50), cdoCandidate('cdo-2', 80), cdoCandidate('cdo-3', 120)];
+  let routeCalls = 0;
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+    nearbyCdos: async () => candidates,
+    walkRouteMatrix: async () => {
+      routeCalls += 1;
+      throw new Error('não deveria ser chamado com --viab-straight');
+    },
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viab'],
+    viabOrigin: 'gmaps',
+    viabStraightOnly: true,
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(routeCalls, 0);
+  assert.equal(at('VIAB_FUZZY_CDOE_1_ID'), 'cdo-1');
+  assert.equal(at('VIAB_FUZZY_CDOE_1_DISTANCIA'), '50 (linha reta)');
+  assert.equal(at('VIAB_FUZZY_CDOE_2_ID'), 'cdo-2');
+  assert.equal(at('VIAB_FUZZY_CDOE_2_DISTANCIA'), '80 (linha reta)');
+  assert.equal(at('VIAB_FUZZY_CDOE_3_ID'), 'cdo-3');
+  assert.equal(at('VIAB_FUZZY_CDOE_3_DISTANCIA'), '120 (linha reta)');
+  assert.match(at('LOG_VIAB'), /3 por linha reta \(sem rota\)/);
+  assert.equal(summary.viab.filled, 1);
+  assert.equal(summary.viabStraightFallback, 3);
+});
+
+test('--viab-straight não exige services.walkRouteMatrix', async () => {
+  const record = viabRow('ID-1');
+  const document = viabDocument([record]);
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+    nearbyCdos: async () => [cdoCandidate('cdo-1', 30)],
+    // sem walkRouteMatrix — não pode ser exigido quando viabStraightOnly está ligado.
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 1,
+    overwrite: false,
+    threads: 1,
+    providers: ['viab'],
+    viabOrigin: 'gmaps',
+    viabStraightOnly: true,
+  });
+
+  const at = (name: string): string => record[document.headers.indexOf(name)]!;
+  assert.equal(at('VIAB_FUZZY_CDOE_1_ID'), 'cdo-1');
+  assert.equal(at('VIAB_FUZZY_CDOE_1_DISTANCIA'), '30 (linha reta)');
+  assert.equal(summary.viab.filled, 1);
+});
+
 test('viab descarta candidata com caminhada acima do raio mesmo com linha reta dentro dele', async () => {
   const record = viabRow('ID-1');
   const document = viabDocument([record]);
@@ -1682,6 +1844,97 @@ test('viab reutiliza a mesma consulta para coordenadas iguais em linhas diferent
     record[document.headers.indexOf('VIAB_FUZZY_CDOE_1_ID')]!;
   assert.equal(idOf(recordA), 'cdo-1');
   assert.equal(idOf(recordB), 'cdo-1');
+});
+
+test('viab-origin=melhor usa, por linha, a fonte indicada na coluna MELHOR', async () => {
+  const headersWithMelhor = [...headers, 'MELHOR'];
+  const geonetOrigin: [number, number] = [-43.2, -22.8];
+  const gmapsOrigin: [number, number] = [-43.104, -22.901];
+
+  const makeRow = (id: string, melhor: string): string[] => {
+    const record = row(id);
+    record[12] = JSON.stringify(geonetOrigin); // GEONET_LOCALIZACAO
+    record[16] = JSON.stringify(gmapsOrigin); // GMAPS_LOCALIZACAO
+    return [...record, melhor];
+  };
+
+  const recordGeonet = makeRow('ID-1', 'geonet');
+  const recordGmaps = makeRow('ID-2', 'gmaps');
+  const recordBlank = makeRow('ID-3', '');
+  const recordInvalid = makeRow('ID-4', 'xyz');
+
+  const document = {
+    bom: false as const,
+    lineEnding: '\n' as const,
+    headers: headersWithMelhor,
+    records: [recordGeonet, recordGmaps, recordBlank, recordInvalid],
+  };
+
+  const seenOrigins: Array<{ lng: number; lat: number }> = [];
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+    nearbyCdos: async (origin) => {
+      seenOrigins.push(origin);
+      return [cdoCandidate('cdo-1', 50)];
+    },
+    walkRouteMatrix: async (_origin, destinations) => destinations.map(() => ({ distanceMeters: 40 })),
+  };
+
+  const summary = await enrichRecords(document, services, {
+    start: 1,
+    limit: 4,
+    overwrite: false,
+    threads: 1,
+    providers: ['viab'],
+    viabOrigin: 'melhor',
+  });
+
+  const at = (record: string[], name: string): string => record[document.headers.indexOf(name)]!;
+
+  assert.equal(at(recordGeonet, 'VIAB_FUZZY_CDOE_1_ID'), 'cdo-1');
+  assert.match(at(recordGeonet, 'LOG_VIAB'), /origem=geonet/);
+  assert.equal(at(recordGmaps, 'VIAB_FUZZY_CDOE_1_ID'), 'cdo-1');
+  assert.match(at(recordGmaps, 'LOG_VIAB'), /origem=gmaps/);
+  assert.match(
+    at(recordBlank, 'LOG_VIAB'),
+    /sem coordenada de referência \(melhor: MELHOR vazio ou não reconhecido\)/,
+  );
+  assert.match(
+    at(recordInvalid, 'LOG_VIAB'),
+    /sem coordenada de referência \(melhor: MELHOR vazio ou não reconhecido\)/,
+  );
+  assert.equal(summary.viab.filled, 2);
+  assert.equal(summary.viab.skipped, 2);
+  assert.deepEqual(seenOrigins, [
+    { lng: geonetOrigin[0], lat: geonetOrigin[1] },
+    { lng: gmapsOrigin[0], lat: gmapsOrigin[1] },
+  ]);
+});
+
+test('viab-origin=melhor falha rápido quando o arquivo não tem coluna MELHOR', async () => {
+  const document = viabDocument([viabRow('ID-1')]); // headers sem MELHOR (ver `headers` no topo do arquivo)
+  const services: AddressServices = {
+    viaCep: async () => null,
+    geonet: async () => null,
+    google: async () => null,
+    nearbyCdos: async () => {
+      throw new Error('não deveria consultar CDOs — deveria falhar antes, no ensureLayout');
+    },
+  };
+
+  await assert.rejects(
+    enrichRecords(document, services, {
+      start: 1,
+      limit: 1,
+      overwrite: false,
+      threads: 1,
+      providers: ['viab'],
+      viabOrigin: 'melhor',
+    }),
+    /--viab-origin=melhor requer uma coluna "MELHOR"/,
+  );
 });
 
 test('viab: ensureViabColumns só acrescenta as colunas quando o provider está ativo', () => {

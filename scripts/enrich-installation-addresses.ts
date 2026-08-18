@@ -30,13 +30,18 @@
  * Enriquecimento de viabilidade (--only viab, opt-in — nunca roda sem --only citá-lo):
  * acha até 3 CDOs a até 300 m (--viab-radius) da coordenada de referência escolhida em
  * --viab-origin (geonet | gmaps | tenant — a coluna de localização já preenchida no
- * arquivo por aquele provedor) e grava VIAB_FUZZY_CDOE_{1,2,3}_{ID,NOME,DISTANCIA} com a
+ * arquivo por aquele provedor; ou melhor — lê, linha a linha, a coluna MELHOR do próprio
+ * arquivo, com um desses três valores, para casos em que o melhor provedor varia por
+ * endereço) e grava VIAB_FUZZY_CDOE_{1,2,3}_{ID,NOME,DISTANCIA} com a
  * distância a pé (Routes API do Google; cai para linha reta marcada "(linha reta)"
- * quando a rota falha). Este modo abre o Oracle diretamente com as credenciais ORACLE_*
+ * quando a rota falha, ou sempre em linha reta com --viab-straight, que desliga a Routes
+ * API por completo). Este modo abre o Oracle diretamente com as credenciais ORACLE_*
  * do .env — é o único banco com as CDOs do Brasil inteiro, sempre, independentemente de
- * DATABASE_PROVIDER no ambiente. Exige GOOGLE_MAPS_API_KEY para a rota a pé, mas não
- * exige GEONET. LOG_VIAB marca a linha como processada (inclusive "nenhuma CDO
- * encontrada"), então reexecuções sem --overwrite não repetem consulta nem cobrança.
+ * DATABASE_PROVIDER no ambiente. Exige GOOGLE_MAPS_API_KEY (createAddressServices o exige
+ * sempre, mesmo com --viab-straight — a chave segue configurada, só a chamada à Routes API
+ * é que não acontece), mas não exige GEONET. LOG_VIAB marca a linha como processada
+ * (inclusive "nenhuma CDO encontrada"), então reexecuções sem --overwrite não repetem
+ * consulta nem cobrança.
  */
 
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
@@ -293,17 +298,37 @@ const PROVIDER_ALIASES: Record<string, Provider> = {
 
 // Fonte da coordenada de referência do provider 'viab': a mesma coordenada já presente
 // na linha (GEONET_LOCALIZACAO/GMAPS_LOCALIZACAO, preenchidas por este mesmo script, ou
-// TENANT_LATITUDE/TENANT_LONGITUDE do arquivo de origem).
-type ViabOriginSource = 'geonet' | 'gmaps' | 'tenant';
+// TENANT_LATITUDE/TENANT_LONGITUDE do arquivo de origem) — ou 'melhor', que delega a
+// escolha à coluna MELHOR do próprio arquivo, linha a linha (ver melhorSourceOf).
+type ViabOriginSource = 'geonet' | 'gmaps' | 'tenant' | 'melhor';
 
-const VIAB_ORIGIN_SOURCES: readonly ViabOriginSource[] = ['geonet', 'gmaps', 'tenant'];
+const VIAB_ORIGIN_SOURCES: readonly ViabOriginSource[] = ['geonet', 'gmaps', 'tenant', 'melhor'];
 
 function parseViabOriginSource(value: string): ViabOriginSource {
   const normalizedValue = value.trim().toLowerCase();
   if ((VIAB_ORIGIN_SOURCES as readonly string[]).includes(normalizedValue)) {
     return normalizedValue as ViabOriginSource;
   }
-  throw new Error(`--viab-origin não reconhece "${value}". Use geonet, gmaps ou tenant.`);
+  throw new Error(`--viab-origin não reconhece "${value}". Use geonet, gmaps, tenant ou melhor.`);
+}
+
+// Coluna opcional que, quando --viab-origin=melhor, informa por linha qual provedor usar
+// como coordenada de referência (geonet | gmaps | tenant) — para arquivos já revisados
+// manualmente em que o provedor mais confiável varia por endereço (ex.:
+// legacy-data/loviz.HC.v4.enriquecido.fuzzy.csv). Fora de SOURCE_COLUMNS/ENRICHMENT_COLUMNS
+// pelo mesmo motivo de TENANT_LAT_COLUMN: opcional, ensureLayout não a exige.
+const MELHOR_COLUMN = 'MELHOR';
+
+// Resolve a fonte efetiva de uma linha quando --viab-origin=melhor, lendo a coluna MELHOR.
+// Valor vazio ou não reconhecido (célula em branco, erro de digitação, etc.): null — a
+// linha é pulada sem consultar nada, mesmo espírito do restante do provider viab (ver
+// viabOriginOf/processRow), nunca lança erro por causa de uma célula ruim isolada.
+function melhorSourceOf(
+  row: Row,
+  index: Map<string, number>,
+): Exclude<ViabOriginSource, 'melhor'> | null {
+  const raw = optionalValueOf(row, index, MELHOR_COLUMN).trim().toLowerCase();
+  return raw === 'geonet' || raw === 'gmaps' || raw === 'tenant' ? raw : null;
 }
 
 // Raio de busca padrão do provider 'viab', em metros — mesmo raio da aba Viabilidade do
@@ -326,12 +351,22 @@ type CliOptions = {
   providers: readonly Provider[];
   viabOrigin?: ViabOriginSource;
   viabRadius: number;
+  // Quando true, o provider 'viab' nunca chama a Routes API: toda candidata é gravada com
+  // a distância em linha reta (mode 'straight'), marcada "(linha reta)" como se a rota a
+  // pé tivesse falhado para todas. Evita o custo/latência da Routes API quando só a
+  // distância aproximada interessa (ver --viab-straight em parseCliArgs).
+  viabStraightOnly: boolean;
 };
 
-class ProviderError extends Error {
+export class ProviderError extends Error {
   public constructor(
     message: string,
     public readonly retryable: boolean,
+    // Preenchido a partir do header Retry-After quando o provedor manda (Routes API em
+    // 429 de quota) — withRetry usa isso em vez do backoff exponencial, porque quota
+    // por minuto não se resolve em ~1.5s de espera (ver isso no reprocessamento de
+    // 2026-08: 2k/18k linhas esgotaram as 3 tentativas padrão).
+    public readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = 'ProviderError';
@@ -470,6 +505,7 @@ export function parseCliArgs(args: string[]): CliOptions | 'help' {
   let providers: readonly Provider[] = ALL_PROVIDERS;
   let viabOrigin: ViabOriginSource | undefined;
   let viabRadius = DEFAULT_VIAB_RADIUS_METERS;
+  let viabStraightOnly = false;
 
   const requiredValue = (index: number, flag: string): string => {
     const value = args[index + 1];
@@ -525,6 +561,8 @@ export function parseCliArgs(args: string[]): CliOptions | 'help' {
     } else if (arg === '--viab-radius') {
       viabRadius = positiveInteger(requiredValue(index, arg), arg);
       index += 1;
+    } else if (arg === '--viab-straight') {
+      viabStraightOnly = true;
     } else {
       throw new Error(`Argumento desconhecido: ${arg}`);
     }
@@ -535,7 +573,7 @@ export function parseCliArgs(args: string[]): CliOptions | 'help' {
     throw new Error('Informe exatamente um entre --limit N e --all.');
   if (providers.includes('viab') && !viabOrigin) {
     throw new Error(
-      '--viab-origin é obrigatório quando --only inclui viab. Use geonet, gmaps ou tenant.',
+      '--viab-origin é obrigatório quando --only inclui viab. Use geonet, gmaps, tenant ou melhor.',
     );
   }
   return {
@@ -549,6 +587,7 @@ export function parseCliArgs(args: string[]): CliOptions | 'help' {
     providers,
     ...(viabOrigin ? { viabOrigin } : {}),
     viabRadius,
+    viabStraightOnly,
   };
 }
 
@@ -571,11 +610,16 @@ export const usage = (): string =>
     '--viab-radius metros (padrão 300) da coordenada de referência, com a distância a pé (Routes',
     '  API). Requer --viab-origin e abre o Oracle direto usando as credenciais ORACLE_* do .env,',
     '  sempre — é o único banco com as CDOs do Brasil inteiro, independente de DATABASE_PROVIDER.',
-    '--viab-origin <geonet|gmaps|tenant> escolhe a coordenada de referência já presente na linha',
-    '  (GEONET_LOCALIZACAO, GMAPS_LOCALIZACAO ou TENANT_LATITUDE/LONGITUDE); obrigatório com viab',
-    '  ativo. Linha sem essa coordenada é pulada, sem erro. Suba ORACLE_POOL_MAX junto com',
-    '  --threads (padrão do pool Oracle é 5).',
+    '--viab-origin <geonet|gmaps|tenant|melhor> escolhe a coordenada de referência já presente',
+    '  na linha (GEONET_LOCALIZACAO, GMAPS_LOCALIZACAO ou TENANT_LATITUDE/LONGITUDE); obrigatório',
+    '  com viab ativo. Linha sem essa coordenada é pulada, sem erro. "melhor" lê, linha a linha,',
+    '  a coluna MELHOR do arquivo (valores geonet, gmaps ou tenant) em vez de uma fonte fixa para',
+    '  o arquivo inteiro; linha sem MELHOR preenchido (ou com valor não reconhecido) é pulada.',
+    '  Suba ORACLE_POOL_MAX junto com --threads (padrão do pool Oracle é 5).',
     '--viab-radius <metros> raio de busca do provider viab (padrão: 300).',
+    '--viab-straight desliga a Routes API: toda candidata é gravada com a distância em linha',
+    '  reta (marcada "(linha reta)"), sem chamar o Google para a rota a pé. Mais rápido e sem',
+    '  custo de Routes API; use quando só a distância aproximada importar.',
   ].join('\n');
 
 const headerIndexOf = (headers: string[]): Map<string, number> =>
@@ -738,17 +782,20 @@ function tenantReverseGeocodePending(row: Row, index: Map<string, number>): bool
 // legível — "se não existir no arquivo, não faça": a linha é pulada sem consultar nada
 // (ver bloco viab em processRow). GEONET_LOCALIZACAO/GMAPS_LOCALIZACAO guardam
 // JSON.stringify([lng, lat]) (ver coordinatesToCell) — o mesmo formato que este script
-// grava nelas.
+// grava nelas. Quando source é 'melhor', a fonte real é resolvida por linha via
+// melhorSourceOf (coluna MELHOR); sem valor reconhecido nessa coluna, null (mesma regra).
 function viabOriginOf(
   row: Row,
   index: Map<string, number>,
   source: ViabOriginSource,
 ): ViabOrigin | null {
-  if (source === 'tenant') {
+  const resolvedSource = source === 'melhor' ? melhorSourceOf(row, index) : source;
+  if (!resolvedSource) return null;
+  if (resolvedSource === 'tenant') {
     const location = tenantLocationOf(row, index);
     return location ? { lng: location.lng, lat: location.lat } : null;
   }
-  const column = source === 'geonet' ? 'GEONET_LOCALIZACAO' : 'GMAPS_LOCALIZACAO';
+  const column = resolvedSource === 'geonet' ? 'GEONET_LOCALIZACAO' : 'GMAPS_LOCALIZACAO';
   const raw = valueOf(row, index, column);
   if (!raw) return null;
   try {
@@ -915,7 +962,20 @@ export function selectGoogleResult(
   return selected;
 }
 
-export async function withRetry<T>(operation: () => Promise<T>, attempts = 3): Promise<T> {
+export type RetryOptions = {
+  attempts?: number;
+  baseDelayMs?: number;
+  // Teto pro delay, inclusive quando ele vem de Retry-After — sem isso, um provedor
+  // pedindo uma espera exagerada travaria o worker por tempo desproporcional.
+  maxDelayMs?: number;
+};
+
+export async function withRetry<T>(
+  operation: () => Promise<T>,
+  options: number | RetryOptions = 3,
+): Promise<T> {
+  const { attempts = 3, baseDelayMs = 500, maxDelayMs = Infinity } =
+    typeof options === 'number' ? { attempts: options } : options;
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -924,7 +984,9 @@ export async function withRetry<T>(operation: () => Promise<T>, attempts = 3): P
       lastError = error;
       const retryable = error instanceof ProviderError ? error.retryable : isTransientError(error);
       if (!retryable || attempt === attempts) break;
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 500 * 2 ** (attempt - 1)));
+      const retryAfterMs = error instanceof ProviderError ? error.retryAfterMs : undefined;
+      const delay = Math.min(retryAfterMs ?? baseDelayMs * 2 ** (attempt - 1), maxDelayMs);
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, delay));
     }
   }
   throw lastError;
@@ -1017,7 +1079,7 @@ export async function enrichRecords(
   document: CsvDocument,
   services: AddressServices,
   options: Pick<CliOptions, 'start' | 'limit' | 'overwrite' | 'threads'> &
-    Partial<Pick<CliOptions, 'viabOrigin' | 'viabRadius'>> & {
+    Partial<Pick<CliOptions, 'viabOrigin' | 'viabRadius' | 'viabStraightOnly'>> & {
       providers?: readonly Provider[];
       checkpointEvery?: number;
       onCheckpoint?: () => Promise<void>;
@@ -1029,6 +1091,14 @@ export async function enrichRecords(
   ensureLogColumns(document);
   if (runViab) ensureViabColumns(document);
   const index = ensureLayout(document.headers);
+  // Falha rápido, antes de processar qualquer linha: sem a coluna MELHOR, toda linha cairia
+  // em "MELHOR vazio ou não reconhecido" silenciosamente (ver melhorSourceOf) — mais barato
+  // avisar aqui do que descobrir isso só depois de rodar o arquivo inteiro.
+  if (runViab && options.viabOrigin === 'melhor' && !index.has(MELHOR_COLUMN)) {
+    throw new Error(
+      `--viab-origin=melhor requer uma coluna "${MELHOR_COLUMN}" no arquivo (valores geonet, gmaps ou tenant); este arquivo não a tem.`,
+    );
+  }
   document.records.forEach((row) => {
     while (row.length < document.headers.length) row.push('');
   });
@@ -1378,13 +1448,20 @@ export async function enrichRecords(
     } else if (!options.overwrite && valueOf(row, index, VIAB_LOG_COLUMN)) {
       summary.viab.skipped += 1;
       viabOutcome = 'já preenchido';
-    } else if (!services.nearbyCdos || !services.walkRouteMatrix) {
+    } else if (!services.nearbyCdos || (!options.viabStraightOnly && !services.walkRouteMatrix)) {
       viabOutcome = 'desativado';
     } else {
+      // Rótulo só para os logs: quando --viab-origin=melhor, mostra a fonte que a coluna
+      // MELHOR indicou para esta linha específica, não o literal "melhor" (pouco útil para
+      // auditoria depois, já que varia linha a linha).
+      const originLabel =
+        options.viabOrigin === 'melhor'
+          ? (melhorSourceOf(row, index) ?? 'melhor: MELHOR vazio ou não reconhecido')
+          : options.viabOrigin;
       const origin = viabOriginOf(row, index, options.viabOrigin);
       if (!origin) {
         summary.viab.skipped += 1;
-        viabOutcome = `sem coordenada de referência (${options.viabOrigin})`;
+        viabOutcome = `sem coordenada de referência (${originLabel})`;
         changed =
           applyValues(row, index, { [VIAB_LOG_COLUMN]: viabOutcome }, options.overwrite) || changed;
       } else {
@@ -1395,17 +1472,22 @@ export async function enrichRecords(
           );
           if (!nearby.length) {
             summary.viab.notFound += 1;
-            viabOutcome = `origem=${options.viabOrigin} [${origin.lng},${origin.lat}]; nenhuma CDO em ${viabRadius} m`;
+            viabOutcome = `origem=${originLabel} [${origin.lng},${origin.lat}]; nenhuma CDO em ${viabRadius} m`;
             changed =
               applyValues(row, index, { [VIAB_LOG_COLUMN]: viabOutcome }, options.overwrite) ||
               changed;
           } else {
-            const legs = await cached(viabRouteCache, originKey, () =>
-              services.walkRouteMatrix!(
-                origin,
-                nearby.map((candidate) => ({ lng: candidate.lng, lat: candidate.lat })),
-              ),
-            );
+            // --viab-straight: nenhuma chamada à Routes API — todas as candidatas caem no
+            // ramo `!leg` abaixo e são gravadas em linha reta, como se a rota a pé tivesse
+            // falhado para todas (mesmo fallback já usado quando o Google não acha rota).
+            const legs = options.viabStraightOnly
+              ? nearby.map((): WalkLeg | null => null)
+              : await cached(viabRouteCache, originKey, () =>
+                  services.walkRouteMatrix!(
+                    origin,
+                    nearby.map((candidate) => ({ lng: candidate.lng, lat: candidate.lat })),
+                  ),
+                );
             const ranked = nearby
               .map((candidate, candidateIndex) => {
                 const leg = legs[candidateIndex];
@@ -1428,7 +1510,7 @@ export async function enrichRecords(
               (candidate) => candidate.mode === 'straight',
             ).length;
             viabOutcome =
-              `origem=${options.viabOrigin} [${origin.lng},${origin.lat}]; ${nearby.length} candidata(s) ≤${viabRadius} m; ` +
+              `origem=${originLabel} [${origin.lng},${origin.lat}]; ${nearby.length} candidata(s) ≤${viabRadius} m; ` +
               `${ranked.length} gravada(s)${straightCount ? `; ${straightCount} por linha reta (sem rota)` : ''}`;
             const values: Record<string, string> = { [VIAB_LOG_COLUMN]: viabOutcome };
             for (let slot = 0; slot < 3; slot += 1) {
@@ -1508,6 +1590,17 @@ function googleApiKeyOf(env: NodeJS.ProcessEnv): string | undefined {
 
 function retryableHttpStatus(status: number): boolean {
   return status === 429 || status >= 500;
+}
+
+// Retry-After vem em segundos (delay-seconds) ou como data HTTP (RFC 9110) — o Google
+// manda o primeiro formato, mas os dois são cobertos aqui sem custo extra.
+function retryAfterMsOf(response: Response): number | undefined {
+  const header = response.headers.get('retry-after');
+  if (!header) return undefined;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const dateMs = Date.parse(header);
+  return Number.isFinite(dateMs) ? Math.max(0, dateMs - Date.now()) : undefined;
 }
 
 async function jsonResponse(response: Response): Promise<unknown> {
@@ -1753,6 +1846,7 @@ async function computeWalkRouteMatrix(
     throw new ProviderError(
       `Routes API HTTP ${response.status}.`,
       retryableHttpStatus(response.status),
+      retryAfterMsOf(response),
     );
   }
   const elements = (await jsonResponse(response)) as RouteMatrixElement[] | null;
@@ -1849,7 +1943,14 @@ export function createAddressServices(
     services.nearbyCdos = async (origin, radiusMeters) =>
       findNearbyCdos(db, origin, { radiusMeters, limit: VIAB_MAX_CANDIDATES });
     services.walkRouteMatrix = async (origin, destinations) =>
-      withRetry(() => computeWalkRouteMatrix(origin, destinations, googleApiKey, fetchImpl));
+      withRetry(() => computeWalkRouteMatrix(origin, destinations, googleApiKey, fetchImpl), {
+        // Mais tentativas e teto mais alto que o resto dos provedores: 429 aqui costuma
+        // ser quota por minuto (não erro transiente pontual), então o backoff exponencial
+        // padrão (3 tentativas, ~1.5s no total) esgota rápido demais em lotes grandes.
+        attempts: 6,
+        baseDelayMs: 2_000,
+        maxDelayMs: 30_000,
+      });
   }
 
   return services;

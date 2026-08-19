@@ -123,6 +123,7 @@ import { useGeoProjects } from '../hooks/useGeoProjects';
 import {
   fetchProjectAreas,
   fetchProjectSites,
+  projectIdOfNode,
   removeProjectSite,
   type ProjectArea,
   type ProjectSite,
@@ -231,8 +232,12 @@ function projectAreaBalloonOf(
 }
 
 // Alvo do painel de detalhe aberto por clique — Site ou Recurso, cada um com o
-// corpo que sabe montar a partir dele (ver SiteDetailBody/ResourceDetailBody).
-type DetailTarget = { kind: 'site'; site: GeoSite } | { kind: 'resource'; node: GeoTreeNode };
+// corpo que sabe montar a partir dele (ver SiteDetailBody/ResourceDetailBody). O lado 'site'
+// guarda só o id: `SitePanel` resolve todo o detalhe por id via `useSiteDetail`, e o catálogo
+// `sites` só contém specs "container" (ver loadGeo) — um Site de spec folha (Ponto de
+// Instalação, Cabinet) nunca estaria lá, então derivar o alvo dali deixava o painel sem abrir
+// para esses casos (e para local de Projeto, sempre INSTALLATION_POINT).
+type DetailTarget = { kind: 'site'; siteId: string } | { kind: 'resource'; node: GeoTreeNode };
 
 // O que a doca mostra quando nem endereço (`addressLookup`) nem detalhe de Site/Recurso
 // (`detailOpen`) está aberto — a hierarquia de sempre, ou um painel de Projeto de trabalho
@@ -524,25 +529,23 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // GoogleMapPanel (mapsReady) e somado à barra por lá.
   const mapDataLoading = loading || tree.busy || viewportLoading || coverageLoading;
 
-  const siteById = useMemo(() => new Map(sites.map((item) => [item.id, item])), [sites]);
   const selectedSiteId =
     selectedNode?.referredType === 'GeographicSite' ? (selectedNode.refId ?? null) : null;
-  const selectedSite = selectedSiteId ? (siteById.get(selectedSiteId) ?? null) : null;
   const selectedResourceNode = selectedNode?.kind === 'resource' ? selectedNode : null;
   // Alvo do painel de detalhe — deriva da mesma seleção usada pelo mapa e pela
   // árvore, então abrir por clique ou por deep-link (navParams) é o mesmo caminho.
   const detailTarget = useMemo<DetailTarget | null>(() => {
-    if (selectedSite) return { kind: 'site', site: selectedSite };
+    if (selectedSiteId) return { kind: 'site', siteId: selectedSiteId };
     if (selectedResourceNode) return { kind: 'resource', node: selectedResourceNode };
     return null;
-  }, [selectedSite, selectedResourceNode]);
+  }, [selectedSiteId, selectedResourceNode]);
   const mobilePanelKey = !isMobile
     ? null
     : addressLookup
       ? `address:${addressLookup.address.coordinates.join(',')}`
       : detailOpen && detailTarget
         ? detailTarget.kind === 'site'
-          ? `site:${detailTarget.site.id}`
+          ? `site:${detailTarget.siteId}`
           : `resource:${detailTarget.node.id}`
         : dockView.kind === 'project'
           ? dockView.site
@@ -789,15 +792,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     (node: GeoTreeNode) => selectNode(node, 'tree'),
     [selectNode],
   );
-  // Ids dos locais do Projeto de trabalho aberto — clicar num deles no mapa abre o painel
-  // unificado de Local em contexto de projeto (SitePanel), não o GeoDetailPanel genérico: o
-  // Site não existe na Hierarquia (ver PROJECT_SITE_EXCLUSION_SQL) e o painel comum não
-  // saberia tratá-lo.
-  const projectSiteIds = useMemo(
-    () => new Set(projectSites.map((node) => node.id)),
-    [projectSites],
-  );
-
   const openProjectSite = useCallback(
     (projectId: string, node: GeoTreeNode) => {
       if (!node.refId) return;
@@ -811,6 +805,9 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         return;
       }
       setSelectedNode(node);
+      // Um painel de cada vez na doca: sem isto, o painel genérico de Local (detailTarget)
+      // cobriria o par ProjectDetailPanel + SitePanel logo abaixo dele.
+      setDetailOpen(false);
       const point = treeNodePoint(node);
       if (point) setFocusRequest({ point, scaleMeters: RESOURCE_FOCUS_SCALE_METERS });
       setDockView({ kind: 'project', projectId, site: { mode: 'view', siteId: node.refId } });
@@ -820,13 +817,19 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
 
   const selectNodeFromMap = useCallback(
     (node: GeoTreeNode) => {
-      if (activeProjectId && projectSiteIds.has(node.id)) {
+      // Clicar num pin de local do Projeto de trabalho aberto abre o painel unificado de Local
+      // em contexto de projeto (SitePanel ao lado do ProjectDetailPanel), não o painel comum: o
+      // Site não existe na Hierarquia (ver PROJECT_SITE_EXCLUSION_SQL). O vínculo viaja
+      // carimbado no próprio nó (ver ProjectSite.projectId em geoProjectApi.ts) — não num Set
+      // derivado de `projectSites`, que é só a página de 200 do painel e não cobre os pins que
+      // vêm de `projectViewportSites` quando o projeto tem manchas geradas (REQ-MOD01-017).
+      if (activeProjectId && projectIdOfNode(node) === activeProjectId) {
         openProjectSite(activeProjectId, node);
         return;
       }
       selectNode(node, 'map');
     },
-    [activeProjectId, projectSiteIds, openProjectSite, selectNode],
+    [activeProjectId, openProjectSite, selectNode],
   );
 
   // Desfaz a seleção por completo: tira o alfinete, fecha o detalhe e limpa a busca. É o
@@ -1184,10 +1187,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
             // clique no mapa — a `key` força remontar ao trocar de site (senão a pilha
             // interna de drill-down em sub-locais sobreviveria de um site para outro).
             <SitePanel
-              key={`site:${detailTarget.site.id}`}
+              key={`site:${detailTarget.siteId}`}
               isMobile={isMobile}
               mode="view"
-              siteId={detailTarget.site.id}
+              siteId={detailTarget.siteId}
               project={null}
               specs={specs}
               sites={sites}

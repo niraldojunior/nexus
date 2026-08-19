@@ -52,10 +52,16 @@ export type GeoProjectDeleteSummary = {
 };
 
 // Local de um projeto, na mesma forma de nó que a árvore usa, acrescido da anotação de
-// trabalho e do endereço GEONET de origem (ver geo_project_site em schema.ts).
+// trabalho e do endereço GEONET de origem (ver geo_project_site em schema.ts). `projectId` é
+// carimbado pelo cliente (não vem do servidor) — o nó sobrevive em `nodeByIdRef` dentro de
+// GoogleMapPanel e volta carimbado no clique do marcador, para o roteamento do clique no mapa
+// (GeoPage.selectNodeFromMap) reconhecer um local de projeto mesmo quando ele não está na
+// página de 200 carregada no painel (projeto com manchas geradas, REQ-MOD01-017, busca por
+// bbox via `projectViewportSites`).
 export type ProjectSite = GeoTreeNode & {
   note: string | null;
   geonetAddressId: string | null;
+  projectId: string;
 };
 
 export type CreateProjectSiteInput = {
@@ -142,8 +148,18 @@ export const fetchProjectSites = (
   }
   if (options.limit !== undefined) params.set('limit', String(options.limit));
   const query = params.toString();
-  return getJson<ProjectSite[]>(`${BASE_URL}/${projectId}/sites${query ? `?${query}` : ''}`);
+  // O servidor não devolve `projectId` na linha (é implícito na rota) — carimbado aqui, nos
+  // dois caminhos (com e sem `bounds`), para o nó levar o vínculo consigo até o clique no mapa.
+  return getJson<Omit<ProjectSite, 'projectId'>[]>(
+    `${BASE_URL}/${projectId}/sites${query ? `?${query}` : ''}`,
+  ).then((nodes) => nodes.map((node) => ({ ...node, projectId })));
 };
+
+// Devolve o `projectId` carimbado por `fetchProjectSites`, ou `null` para qualquer outro
+// `GeoTreeNode` (árvore, busca, infra passiva) — usado por GeoPage.selectNodeFromMap para
+// distinguir um pin de projeto de um pin comum sem depender de qual lista o alimentou.
+export const projectIdOfNode = (node: GeoTreeNode): string | null =>
+  (node as Partial<ProjectSite>).projectId ?? null;
 
 export const createProjectSite = (
   projectId: string,

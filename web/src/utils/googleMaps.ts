@@ -9,6 +9,13 @@ export type GoogleMapBounds = {
   getSouthWest: () => GoogleLatLng;
 };
 export type GoogleMapTypeId = 'roadmap' | 'satellite' | 'hybrid' | 'terrain';
+// Um item de `styles` do MapOptions do Google — usado para diferenciar o MUB "Branco" do
+// roadmap padrão (ver BASE_MAP_LAYERS em MapBaseLayerSelector).
+export type GoogleMapStyle = {
+  featureType?: string;
+  elementType?: string;
+  stylers: Array<Record<string, string | number>>;
+};
 export type GoogleMapInstance = {
   addListener: (eventName: string, listener: (event: GoogleMapMouseEvent) => void) => void;
   getBounds: () => GoogleMapBounds | undefined;
@@ -20,6 +27,9 @@ export type GoogleMapInstance = {
   panTo: (position: { lat: number; lng: number }) => void;
   setZoom: (zoom: number) => void;
   setMapTypeId: (mapTypeId: GoogleMapTypeId) => void;
+  // Troca `styles` (e outras MapOptions) depois do mapa já construído — é o que permite o
+  // MUB alternar o estilo sem recriar o mapa (ver o efeito de troca de MUB em GeoPage).
+  setOptions: (options: { styles?: GoogleMapStyle[] }) => void;
 };
 export type GoogleStreetViewPanoramaInstance = {
   setVisible: (visible: boolean) => void;

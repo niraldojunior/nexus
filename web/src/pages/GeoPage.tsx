@@ -313,14 +313,6 @@ const noopToggleMapLayer = (): void => {};
 const noopToggleMapLayerGroup = (): void => {};
 const noopResetMapLayers = (): void => {};
 
-// O basemap é contexto, não conteúdo: POI comercial some por inteiro e os demais
-// POIs perdem o ícone (o texto fica, como referência de orientação) para não
-// competirem com os pins de local, equipamento e rota de cabo do inventário.
-const MAP_STYLES = [
-  { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-];
-
 // Só para o balão de Recurso (linha ~980) — status de Resource é um vocabulário à parte
 // do de GeographicSite (ver siteStatusLabel/SITE_STATUS_OPTIONS em utils/geoLabels.ts),
 // fora do escopo desta rodada de tradução.
@@ -1718,7 +1710,7 @@ export function GoogleMapPanel({
           rotateControl: false,
           cameraControl: false,
           scaleControl: true,
-          styles: MAP_STYLES,
+          styles: selectedBaseLayer.mapStyles,
         });
         mapRef.current.addListener('click', (event: GoogleMapMouseEvent) => {
           const lat = event.latLng.lat();
@@ -1830,7 +1822,12 @@ export function GoogleMapPanel({
       })
       .catch(() => setMapsReady(false))
       .finally(() => setMapsLoading(false));
-  }, [handleManualNavigation, onDraftAddress, selectedBaseLayer.googleMapTypeId]);
+  }, [
+    handleManualNavigation,
+    onDraftAddress,
+    selectedBaseLayer.googleMapTypeId,
+    selectedBaseLayer.mapStyles,
+  ]);
 
   // O contêiner do mapa muda de largura sempre que uma doca aparece/some ao lado dele —
   // hierarquia, painel de Projeto, e agora também a janela de consulta de um local de
@@ -1886,6 +1883,9 @@ export function GoogleMapPanel({
   useEffect(() => {
     if (!mapsReady || !mapRef.current || !selectedBaseLayer) return;
     mapRef.current.setMapTypeId(selectedBaseLayer.googleMapTypeId);
+    // `mapTypeId` sozinho não basta: Mapa e Branco usam o mesmo `roadmap`, o que muda é o
+    // `styles` (ver BASE_MAP_LAYERS em MapBaseLayerSelector).
+    mapRef.current.setOptions({ styles: selectedBaseLayer.mapStyles });
   }, [mapsReady, selectedBaseLayer]);
 
   // Pins dos nós visíveis. Local é quadrado arredondado e recurso é círculo —

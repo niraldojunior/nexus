@@ -24,6 +24,7 @@ const googleMocks = vi.hoisted(() => ({
   mapPanTo: vi.fn(),
   mapSetZoom: vi.fn(),
   mapSetMapTypeId: vi.fn(),
+  mapSetOptions: vi.fn(),
   markerCtor: vi.fn(),
   circleCtor: vi.fn(),
   circleSetCenter: vi.fn(),
@@ -59,6 +60,7 @@ function installGoogleMapsMock() {
     panTo: googleMocks.mapPanTo,
     setZoom: googleMocks.mapSetZoom,
     setMapTypeId: googleMocks.mapSetMapTypeId,
+    setOptions: googleMocks.mapSetOptions,
   };
 
   Object.defineProperty(window, 'google', {
@@ -783,13 +785,18 @@ describe('GoogleMapPanel', () => {
 
     await waitFor(() => expect(googleMocks.mapSetMapTypeId).toHaveBeenCalledWith('roadmap'));
 
-    await user.click(
-      screen.getByRole('button', { name: 'Trocar base cartográfica para Satélite' }),
-    );
+    await user.click(screen.getByRole('button', { name: /Selecionar base cartográfica/i }));
+    await user.click(screen.getByRole('option', { name: 'Satélite' }));
     await waitFor(() => expect(googleMocks.mapSetMapTypeId).toHaveBeenLastCalledWith('hybrid'));
 
-    await user.click(screen.getByRole('button', { name: 'Trocar base cartográfica para Mapa' }));
+    await user.click(screen.getByRole('button', { name: /Selecionar base cartográfica/i }));
+    await user.click(screen.getByRole('option', { name: 'Branco' }));
     await waitFor(() => expect(googleMocks.mapSetMapTypeId).toHaveBeenLastCalledWith('roadmap'));
+    expect(googleMocks.mapSetOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        styles: expect.arrayContaining([expect.objectContaining({ elementType: 'geometry' })]),
+      }),
+    );
   });
 
   it('crava o alfinete de seleção no endereço encontrado pela busca, sem nó selecionado', async () => {

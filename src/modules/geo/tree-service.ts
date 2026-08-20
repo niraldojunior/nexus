@@ -258,7 +258,7 @@ export class GeoTreeService {
       limit,
     ]);
 
-    return await this.toResourceNodes(rows, 'tree');
+    return await this.toResourceNodes(rows, 'tree', { childCounts: false });
   }
 
   /**
@@ -645,11 +645,27 @@ export class GeoTreeService {
     return node;
   }
 
-  private async toResourceNodes(rows: ResourceRow[], scope: GeoTreeScope): Promise<GeoTreeNode[]> {
-    const childCounts = await this.countResourceChildren(
-      rows.map((row) => row.id),
-      scope,
-    );
+  // `childCounts: false` (o mapa — ver resourcesInViewport) pula a CTE recursiva de
+  // countResourceChildren inteira — o maior custo isolado da consulta de viewport: cada pan
+  // pagava uma travessia do grafo de relacionamentos semeada com até 10.000 ids só para
+  // preencher `hasChildren`. Sem contar de verdade, o nó vem OTIMISTA (`hasChildren: true`), não
+  // `false`: `GeoPage.selectNode` usa esse campo para decidir `expandSelf` ao clicar um recurso
+  // no mapa (revela os filhos dele na árvore lateral — ex.: o splitter de uma CDO). Um falso
+  // positivo custa 1 requisição de `children` vazia só no clique; um falso negativo (`false`)
+  // esconderia filhos de verdade sem o usuário saber que existem — pior troca. Default `true`
+  // (com contagem real) preserva o comportamento para os demais chamadores (árvore, busca).
+  private async toResourceNodes(
+    rows: ResourceRow[],
+    scope: GeoTreeScope,
+    options: { childCounts?: boolean } = {},
+  ): Promise<GeoTreeNode[]> {
+    const wantChildCounts = options.childCounts ?? true;
+    const childCounts = wantChildCounts
+      ? await this.countResourceChildren(
+          rows.map((row) => row.id),
+          scope,
+        )
+      : new Map<string, number>();
 
     return rows.map((row) => {
       const node: GeoTreeNode = {
@@ -658,7 +674,7 @@ export class GeoTreeService {
         label: row.name,
         refId: row.id,
         referredType: row.entity_type,
-        hasChildren: (childCounts.get(row.id) ?? 0) > 0,
+        hasChildren: wantChildCounts ? (childCounts.get(row.id) ?? 0) > 0 : true,
       };
       if (row.resource_type) node.resourceType = row.resource_type;
       if (row.spec_name) node.sublabel = row.spec_name;

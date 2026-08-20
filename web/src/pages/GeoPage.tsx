@@ -48,6 +48,7 @@ import {
   type GoogleInfoWindowInstance,
   type GoogleMapInstance,
   type GoogleMapMouseEvent,
+  type GoogleMapsApi,
   type GoogleMarkerInstance,
   type GooglePolylineInstance,
 } from '../utils/googleMaps';
@@ -265,6 +266,57 @@ const SITE_ICON_SMALL_SIZE = 14;
 // A Estação desenha ACIMA dos equipamentos (z maior): ela é a referência mais importante,
 // então nunca fica escondida atrás de uma caixa/splitter que compartilha a coordenada.
 const SITE_MARKER_Z = 1500;
+
+// Ícone/z-index de um pin de nó (Site ou Recurso), na mesma lógica que o efeito de
+// marcadores usava inline — extraído para ser reusado tanto na criação/reposicionamento em
+// massa (quando `nodes` muda) quanto no efeito de troca de seleção, que toca só os 1-2
+// marcadores cujo estado `selected` de fato mudou (ver os dois `useEffect` de marcadores
+// logo abaixo). Mantém a mesma regra visual: o selecionado cresce, o resto segue o tier de
+// escala (cheio perto, reduzido em zoom baixo).
+function buildPointMarkerVisual(
+  maps: GoogleMapsApi['maps'],
+  node: GeoTreeNode,
+  selected: boolean,
+  stationTier: StationTier,
+  resourceTier: StationTier,
+): { iconOptions: Record<string, unknown>; zIndex: number; title: string } {
+  if (node.kind === 'site') {
+    const kind = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
+    const icon = siteIconFor(kind, node.status);
+    // CO/Estação segue a régua de Estação (cheio perto, pequeno em 5–50 km, nunca some);
+    // qualquer outro tipo de Site (POP, CDO, Ponto de Instalação…) segue a régua de
+    // Recurso — mesmo tier de on/off de um Recurso, já que só existe no mapa na mesma
+    // escala de detalhe (ver GeoTreeService.sitesInViewport).
+    const siteTier = kind === 'CO' ? stationTier : resourceTier;
+    const baseSize = siteTier === 'small' ? SITE_ICON_SMALL_SIZE : SITE_ICON_SIZE;
+    const size = selected ? SITE_ICON_SIZE + 8 : baseSize;
+    return {
+      iconOptions: {
+        url: siteIconDataUrl(icon, { size }),
+        scaledSize: new maps.Size(size, size),
+        anchor: new maps.Point(size / 2, size / 2),
+      },
+      zIndex: selected ? SITE_MARKER_Z + 1 : SITE_MARKER_Z,
+      title: `${node.label} · ${icon.label}`,
+    };
+  }
+
+  const icon = resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
+  const resourceBaseSize = resourceTier === 'small' ? MARKER_ICON_SMALL_SIZE : MARKER_ICON_SIZE;
+  const size = selected ? MARKER_ICON_SIZE + 6 : resourceBaseSize;
+  return {
+    iconOptions: {
+      url: resourceIconDataUrl(icon, { size }),
+      scaledSize: new maps.Size(size, size),
+      // Âncora no canto inferior-esquerdo: o equipamento fica acima e à direita da
+      // coordenada. Um equipamento dentro de um CO compartilha a coordenada exata do
+      // local, e centrado ficaria escondido atrás do pin.
+      anchor: new maps.Point(0, size),
+    },
+    zIndex: selected ? EQUIPMENT_MARKER_Z + 1 : EQUIPMENT_MARKER_Z,
+    title: `${node.label} · ${icon.label}`,
+  };
+}
 
 // A rota do cabo fica abaixo de todos os pins — é o fundo por onde a rede passa.
 const CABLE_ROUTE_Z = 10;
@@ -1888,16 +1940,25 @@ export function GoogleMapPanel({
     mapRef.current.setOptions({ styles: selectedBaseLayer.mapStyles });
   }, [mapsReady, selectedBaseLayer]);
 
+  // Referência à última seleção aplicada aos marcadores — o que o efeito de troca de seleção
+  // (logo abaixo) usa para saber qual marcador "desligar" sem precisar que o efeito de
+  // criação/reposicionamento (este aqui) rode de novo.
+  const appliedSelectedNodeIdRef = useRef<string | null>(null);
+
   // Pins dos nós visíveis. Local é quadrado arredondado e recurso é círculo —
   // é o que deixa dizer "isto é um lugar" e "isto é um equipamento" sem legenda.
   //
-  // Marcadores são reusados por id (nunca destruídos/recriados à toa) e agrupados por
-  // MarkerClusterer — com dezenas de milhares de recursos, mostrar um marker por ponto sem
-  // agrupamento é o que travava o mapa; selecionar um nó não recriava só ele, recriava todos.
+  // Marcadores são reusados por id (nunca destruídos/recriados à toa). Não depende de
+  // `selectedNodeId`: trocar a seleção NÃO deve reprocessar todos os N marcadores — o
+  // alfinete de seleção (selectionMarkerRef, efeito à parte) já marca sem ambiguidade o item
+  // ativo, e o efeito seguinte cuida só de destacar o ícone por baixo dele. Sem essa separação,
+  // clicar um pin reescrevia setIcon/setPosition/setZIndex nos milhares de marcadores visíveis
+  // — o maior custo de interação do mapa em área densa.
   useEffect(() => {
     const maps = window.google?.maps;
     if (!mapsReady || !mapRef.current || !maps) return;
 
+    const selectedNodeIdAtRun = appliedSelectedNodeIdRef.current;
     const visibleIds = new Set<string>();
     const activeMarkers: GoogleMarkerInstance[] = [];
 
@@ -1906,74 +1967,20 @@ export function GoogleMapPanel({
       visibleIds.add(node.id);
       nodeByIdRef.current.set(node.id, node);
       const [lng, lat] = node.geometry.coordinates;
-      const selected = node.id === selectedNodeId;
+      const selected = node.id === selectedNodeIdAtRun;
       const existing = markersRef.current.get(node.id);
+      const visual = buildPointMarkerVisual(maps, node, selected, stationTier, resourceTier);
 
-      if (node.kind === 'site') {
-        const kind = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
-        const icon = siteIconFor(kind, node.status);
-        // CO/Estação segue a régua de Estação (cheio perto, pequeno em 5–50 km, nunca some);
-        // qualquer outro tipo de Site (POP, CDO, Ponto de Instalação…) segue a régua de
-        // Recurso — mesmo tier de on/off de um Recurso, já que só existe no mapa na mesma
-        // escala de detalhe (ver GeoTreeService.sitesInViewport).
-        const siteTier = kind === 'CO' ? stationTier : resourceTier;
-        // O selecionado cresce; o resto segue o tier de escala (cheio perto, pequeno em 5–50 km).
-        const baseSize = siteTier === 'small' ? SITE_ICON_SMALL_SIZE : SITE_ICON_SIZE;
-        const size = selected ? SITE_ICON_SIZE + 8 : baseSize;
-        const iconOptions = {
-          url: siteIconDataUrl(icon, { size }),
-          scaledSize: new maps.Size(size, size),
-          anchor: new maps.Point(size / 2, size / 2),
-        };
-        const zIndex = selected ? SITE_MARKER_Z + 1 : SITE_MARKER_Z;
-        if (existing) {
-          existing.setPosition({ lng, lat });
-          existing.setIcon(iconOptions);
-          existing.setZIndex(zIndex);
-        } else {
-          const marker = new maps.Marker({
-            position: { lng, lat },
-            title: `${node.label} · ${icon.label}`,
-            icon: iconOptions,
-            zIndex,
-          });
-          marker.addListener('click', () =>
-            onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node),
-          );
-          marker.addListener('mouseover', () =>
-            onHoverNodeRef.current(nodeByIdRef.current.get(node.id) ?? node),
-          );
-          marker.addListener('mouseout', () => onHoverNodeRef.current(null));
-          markersRef.current.set(node.id, marker);
-        }
-        const markerForNode = markersRef.current.get(node.id);
-        if (markerForNode) activeMarkers.push(markerForNode);
-        continue;
-      }
-
-      const icon = resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
-      // O selecionado cresce; o resto segue o tier de escala (cheio ≤ 20 m, reduzido em 50 m).
-      const resourceBaseSize = resourceTier === 'small' ? MARKER_ICON_SMALL_SIZE : MARKER_ICON_SIZE;
-      const size = selected ? MARKER_ICON_SIZE + 6 : resourceBaseSize;
-      const iconOptions = {
-        url: resourceIconDataUrl(icon, { size }),
-        scaledSize: new maps.Size(size, size),
-        // Âncora no canto inferior-esquerdo: o equipamento fica acima e à
-        // direita da coordenada. Um equipamento dentro de um CO compartilha a
-        // coordenada exata do local, e centrado ficaria escondido atrás do pin.
-        anchor: new maps.Point(0, size),
-      };
-      const zIndex = selected ? EQUIPMENT_MARKER_Z + 1 : EQUIPMENT_MARKER_Z;
       if (existing) {
         existing.setPosition({ lng, lat });
-        existing.setIcon(iconOptions);
-        existing.setZIndex(zIndex);
+        existing.setIcon(visual.iconOptions);
+        existing.setZIndex(visual.zIndex);
       } else {
         const marker = new maps.Marker({
           position: { lng, lat },
-          title: `${node.label} · ${icon.label}`,
-          icon: iconOptions,
-          zIndex,
+          title: visual.title,
+          icon: visual.iconOptions,
+          zIndex: visual.zIndex,
         });
         marker.addListener('click', () =>
           onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node),
@@ -2000,7 +2007,29 @@ export function GoogleMapPanel({
     // Cada ponto é um ícone individual no mapa — sem agrupamento. De 50 m para cima a leitura
     // da rede fica por conta da camada de cobertura GPON (ver CoverageOverlay), não de clusters.
     for (const marker of activeMarkers) marker.setMap(mapRef.current);
-  }, [mapsReady, nodes, selectedNodeId, stationTier, resourceTier]);
+  }, [mapsReady, nodes, stationTier, resourceTier]);
+
+  // Troca de seleção: toca só os 1-2 marcadores cujo `selected` de fato mudou (o que estava
+  // selecionado antes e o que passou a estar agora), em vez de reprocessar todos os N do efeito
+  // acima. Precisa do mesmo `buildPointMarkerVisual` para o ícone crescer/voltar ao tamanho do
+  // tier — o resto (posição, criação/remoção) é responsabilidade exclusiva do outro efeito.
+  useEffect(() => {
+    const maps = window.google?.maps;
+    if (!mapsReady || !maps) return;
+    const previousId = appliedSelectedNodeIdRef.current;
+    appliedSelectedNodeIdRef.current = selectedNodeId;
+    if (previousId === selectedNodeId) return;
+
+    for (const id of [previousId, selectedNodeId]) {
+      if (!id) continue;
+      const marker = markersRef.current.get(id);
+      const node = nodeByIdRef.current.get(id);
+      if (!marker || !node || node.geometry?.type !== 'Point') continue;
+      const visual = buildPointMarkerVisual(maps, node, id === selectedNodeId, stationTier, resourceTier);
+      marker.setIcon(visual.iconOptions);
+      marker.setZIndex(visual.zIndex);
+    }
+  }, [mapsReady, selectedNodeId, stationTier, resourceTier]);
 
   useEffect(() => {
     const maps = window.google?.maps;

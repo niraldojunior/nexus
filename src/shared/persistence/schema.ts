@@ -52,6 +52,7 @@ export const TABLE_NAMES = [
   'tmf_characteristic_group_catalog',
   'geo_gpon_coverage_cell',
   'geo_gpon_coverage_area',
+  'geo_map_feature',
 ] as const;
 
 // Column migrations added after the base schema so databases created before these columns get
@@ -392,6 +393,63 @@ export const MIGRATIONS_SQL = `
   -- serving_site_id e descarta Splitter (INTERNAL_RESOURCE_TYPE) logo em seguida.
   CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_serving_type
     ON tmf_physical_resource(serving_site_id, resource_type);
+
+  -- Reengenharia da exibição de recursos no mapa (issue #69, Fase 2): "aparece no mapa" vira
+  -- propriedade do catálogo (C9) em vez da string literal espalhada pelo SQL do viewport
+  -- (r.resource_type IS DISTINCT FROM 'Splitter', ver tree-service.ts) — só que, ao contrário
+  -- de um simples "outdoor sim/não" por categoria, o corte real também depende de existência
+  -- própria no mapa: Splitter mora na Location da caixa que o contém e nunca teve ponto
+  -- próprio, então continua excluído por fora (INTERNAL_RESOURCE_TYPE), não por esta coluna.
+  -- NULL (tipo desconhecido/migrado, sem linha no catálogo) é tratado como "mostra" por quem lê
+  -- — omitir o que não se sabe classificar é pior do que mostrar demais, mesma régua que
+  -- resourcePlant() já aplica no cliente para tipo sem ícone. O "code NOT IN (DIO, Splitter)"
+  -- no backfill espelha PLANT_BY_CODE.DIO (indoor apesar da categoria) e o próprio
+  -- INTERNAL_RESOURCE_TYPE, para nenhum dos dois nascer com map_presence = 1.
+  -- INTEGER (1/0), não BOOLEAN: nenhuma outra coluna deste schema usa BOOLEAN (o transform para
+  -- Oracle não tem regra para o tipo, e o Oracle desta base não é 23c+) — todo flag existente
+  -- (is_bootstrap, is_protected, is_symmetric...) já é INTEGER — mesma convenção aqui.
+  ALTER TABLE tmf_resource_type ADD COLUMN IF NOT EXISTS map_presence INTEGER;
+  UPDATE tmf_resource_type
+     SET map_presence = CASE
+       WHEN category_code IN ('Infrastructure.Passive', 'Cable.OutsidePlant')
+            AND code NOT IN ('DIO', 'Splitter') THEN 1
+       ELSE 0
+     END
+   WHERE map_presence IS NULL;
+
+  -- Índice de exibição do mapa (geo_map_feature) — artefato derivado e regenerável, mesma
+  -- postura de geo_gpon_coverage_area: uma linha por feature visível (ponto de Site/Recurso
+  -- outdoor, ou trecho de cabo já recortado no tile — ver src/modules/geo/map-tile.ts), pronta
+  -- para o cliente desenhar sem JOIN, sem parse de JSON, sem grafo de relacionamentos. A PK É o
+  -- índice de leitura: servir um tile é uma igualdade em 4 colunas. entity_id é o uuid puro (não
+  -- "resource:<uuid>") para caber em VARCHAR2(36 CHAR) no Oracle (toda coluna *_id ganha esse
+  -- tamanho — ver oracleTextType em oracle-schema.ts) — feature_kind reconstrói o prefixo do
+  -- GeoTreeNode.id do lado do serviço. Reconstruído por scripts/build-map-features.mjs, ainda
+  -- sem write-through (mesma defasagem, limitada ao intervalo de rebuild, que
+  -- geo_gpon_coverage_area já tem hoje — ver o comentário dela mais abaixo).
+  CREATE TABLE IF NOT EXISTS geo_map_feature (
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    tile_z INTEGER NOT NULL,
+    tile_x INTEGER NOT NULL,
+    tile_y INTEGER NOT NULL,
+    entity_id TEXT NOT NULL,
+    shape TEXT NOT NULL CHECK(shape IN ('point', 'line')),
+    feature_kind TEXT NOT NULL CHECK(feature_kind IN ('resource', 'site')),
+    entity_type TEXT NOT NULL,
+    type_code TEXT,
+    site_category TEXT,
+    status TEXT,
+    label TEXT NOT NULL,
+    sublabel TEXT,
+    lng DOUBLE PRECISION NOT NULL,
+    lat DOUBLE PRECISION NOT NULL,
+    geometry TEXT,
+    rank INTEGER NOT NULL DEFAULT 0,
+    generated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape)
+  );
+  CREATE INDEX IF NOT EXISTS idx_geo_map_feature_tile
+    ON geo_map_feature(tenant_id, tile_z, tile_x, tile_y, rank);
 `;
 
 export const SCHEMA_SQL = `

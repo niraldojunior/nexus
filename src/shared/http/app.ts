@@ -1217,6 +1217,34 @@ const routeGeoRequest = async ({
     return sendJson(response, 200, [...resources, ...sites]);
   }
 
+  // Leitura por tile do índice de exibição do mapa (geo_map_feature — Fase 2 da reengenharia
+  // de performance, issue #69), substituto gradual de /v1/geo/tree/viewport no caminho quente
+  // do mapa: uma igualdade de 4 colunas contra a PK, sem JOIN nem grafo — o custo não cresce
+  // com o tamanho do acervo. Endereçável por tile (não por bbox) de propósito: o cliente decide
+  // quais (z,x,y) faltam no seu cache local (ver useViewportInfra) e busca só esses, um tile
+  // por requisição. z/x/y fora do que scripts/build-map-features.mjs gerou simplesmente não bate
+  // linha nenhuma — devolve [], mesmo comportamento de bbox vazio no endpoint de viewport.
+  if (request.method === 'GET' && url.pathname === '/v1/geo/map/tile') {
+    const z = parseOptionalNumber(url.searchParams.get('z'));
+    const x = parseOptionalNumber(url.searchParams.get('x'));
+    const y = parseOptionalNumber(url.searchParams.get('y'));
+    if (
+      z === undefined ||
+      x === undefined ||
+      y === undefined ||
+      !Number.isInteger(z) ||
+      !Number.isInteger(x) ||
+      !Number.isInteger(y)
+    ) {
+      throw new AppError('z, x and y are required integers', {
+        code: 'GEO_MAP_TILE_COORDS_REQUIRED',
+        statusCode: 400,
+      });
+    }
+    const features = await runtime.geoMapTileService.tile({ z, x, y });
+    return sendJson(response, 200, features);
+  }
+
   // Mapa de calor de cobertura GPON — fonte do mapa acima de 100 m, no lugar dos recursos
   // individuais e dos clusters (ver GeoCoverageService). `level`: fine (células de 50 m) ou
   // coarse (agregado 250 m) — grade de calor, hoje sem uso no frontend; neighborhood (polígono

@@ -424,9 +424,8 @@ export const MIGRATIONS_SQL = `
   -- índice de leitura: servir um tile é uma igualdade em 4 colunas. entity_id é o uuid puro (não
   -- "resource:<uuid>") para caber em VARCHAR2(36 CHAR) no Oracle (toda coluna *_id ganha esse
   -- tamanho — ver oracleTextType em oracle-schema.ts) — feature_kind reconstrói o prefixo do
-  -- GeoTreeNode.id do lado do serviço. Reconstruído por scripts/build-map-features.mjs, ainda
-  -- sem write-through (mesma defasagem, limitada ao intervalo de rebuild, que
-  -- geo_gpon_coverage_area já tem hoje — ver o comentário dela mais abaixo).
+  -- GeoTreeNode.id do lado do serviço. Reconstruível por scripts/build-map-features.mjs e
+  -- mantido por write-through nos writes unitários de Resource/Site/Location.
   CREATE TABLE IF NOT EXISTS geo_map_feature (
     tenant_id TEXT NOT NULL DEFAULT 'default',
     tile_z INTEGER NOT NULL,

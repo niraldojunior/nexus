@@ -4,6 +4,7 @@ import { OracleGeoRepository } from '../../modules/geo/oracle-repository.js';
 import { GeoService } from '../../modules/geo/service.js';
 import { GeoTreeService } from '../../modules/geo/tree-service.js';
 import { GeoMapTileService } from '../../modules/geo/map-tile-service.js';
+import { GeoMapFeatureSynchronizer } from '../../modules/geo/map-feature-synchronizer.js';
 import { GeoCoverageService } from '../../modules/geo/coverage-service.js';
 import { OrderService } from '../../modules/order/service.js';
 import { PostgresOrderRepository } from '../../modules/order/postgres-repository.js';
@@ -84,7 +85,8 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     : new PostgresSearchRepository(db);
   const researchRepository = oracle ? new OracleResearchRepository(db) : new ResearchRepository(db);
   const geoRepository = oracle ? new OracleGeoRepository(db) : new PostgresGeoRepository(db);
-  const geoService = new GeoService(geoRepository);
+  const mapFeatureSynchronizer = new GeoMapFeatureSynchronizer(db);
+  const geoService = new GeoService(geoRepository, mapFeatureSynchronizer);
   await geoService.ensureBootstrapSpecifications();
   await geoService.ensureBootstrapRelationshipTypes();
   const geoTreeService = new GeoTreeService(db);
@@ -101,6 +103,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     : new PostgresResourceRepository(db);
   await resourceRepository.initialize();
   const resourceService = new ResourceService(resourceRepository, eventService, {
+    mapFeatureSynchronizer,
     lookupPlace: async (id) => {
       const site = await geoService.getSite(id);
       if (site) {

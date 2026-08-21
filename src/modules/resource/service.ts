@@ -25,6 +25,7 @@ import type {
   UpdateResourceSpecificationInput,
 } from './domain.js';
 import type { IResourceRepository } from './resource-repository-interface.js';
+import type { MapFeatureSynchronizer } from '../geo/map-feature-synchronizer.js';
 
 type ResourceServiceDependencies = {
   lookupPlace?: (
@@ -39,6 +40,7 @@ type ResourceServiceDependencies = {
     | Promise<{ id: string; '@referredType': string; href?: string; name?: string } | undefined>
     | { id: string; '@referredType': string; href?: string; name?: string }
     | undefined;
+  mapFeatureSynchronizer?: MapFeatureSynchronizer;
 };
 
 export class ResourceService {
@@ -266,6 +268,7 @@ export class ResourceService {
       await this.addResourceRelationship(stored.id, relationship);
     }
     const finalResource = await this.getPhysicalResourceOrThrow(stored.id);
+    await this.syncMapFeature(finalResource);
     await this.emit('ResourceCreateEvent', finalResource.id, 'PhysicalResource', finalResource);
     return finalResource;
   }
@@ -314,6 +317,8 @@ export class ResourceService {
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
     });
 
+    await this.syncMapFeature(updated);
+
     await this.emit(
       current.status !== updated.status
         ? 'ResourceStateChangeEvent'
@@ -335,6 +340,7 @@ export class ResourceService {
       usageState: 'idle',
       validFor: buildTimePeriod(current.validFor?.startDateTime, new Date().toISOString()),
     });
+    await this.syncMapFeature(terminated);
     await this.emit('ResourceStateChangeEvent', terminated.id, 'PhysicalResource', terminated);
     return terminated;
   }
@@ -593,6 +599,12 @@ export class ResourceService {
       id: lookup.id,
       '@referredType': placeType ?? lookup['@referredType'] ?? 'GeographicLocation',
     };
+  }
+
+  private async syncMapFeature(resource: PhysicalResource): Promise<void> {
+    // Resource ainda não possui tenant próprio no modelo de persistência; o inventário
+    // atual é servido pelo tenant default, mesma regra do endpoint de tiles.
+    await this.dependencies.mapFeatureSynchronizer?.syncEntity(resource.id, 'default');
   }
 
   private async getResourceSpecificationOrThrow(id: string): Promise<ResourceSpecification> {

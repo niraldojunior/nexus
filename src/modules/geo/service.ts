@@ -33,6 +33,7 @@ import type {
 } from './domain.js';
 import type { GeographicAddressQuery, IGeoRepository } from './geo-repository-interface.js';
 import { normalizeCountrySearch } from './address-normalization.js';
+import type { MapFeatureSynchronizer } from './map-feature-synchronizer.js';
 
 type LocationInput = {
   geometryType: 'Point' | 'LineString' | 'Polygon';
@@ -372,7 +373,10 @@ const SITE_STATUS_TRANSITIONS: Record<GeoSiteStatus, GeoSiteStatus[]> = {
 };
 
 export class GeoService {
-  public constructor(private readonly repository: IGeoRepository) {}
+  public constructor(
+    private readonly repository: IGeoRepository,
+    private readonly mapFeatureSynchronizer?: MapFeatureSynchronizer,
+  ) {}
 
   public async ensureBootstrapSpecifications(context?: RequestContext): Promise<{
     created: number;
@@ -561,7 +565,7 @@ export class GeoService {
     const geometry = input.geometry ?? current.geometry;
     validateGeometry(geometryType, geometry);
 
-    return await this.repository.transaction(async () => {
+    const updatedLocation = await this.repository.transaction(async () => {
       const updated = await this.repository.upsertLocation({
         ...current,
         tenantId: current.tenantId ?? ctx.tenantId,
@@ -599,6 +603,8 @@ export class GeoService {
       );
       return updated;
     });
+    await this.mapFeatureSynchronizer?.syncLocation(updatedLocation.id, ctx.tenantId);
+    return updatedLocation;
   }
 
   public async createAddress(
@@ -1057,7 +1063,7 @@ export class GeoService {
       : undefined;
     const siteAddress = this.normalizeSiteAddresses(input.siteAddress, address);
     const id = createCanonicalId();
-    return await this.repository.transaction(async () => {
+    const createdSite = await this.repository.transaction(async () => {
       const site = await this.repository.upsertSite({
         '@type': 'GeographicSite',
         id,
@@ -1115,6 +1121,8 @@ export class GeoService {
       );
       return stored;
     });
+    await this.mapFeatureSynchronizer?.syncEntity(createdSite.id, ctx.tenantId);
+    return createdSite;
   }
 
   public async updateSite(
@@ -1183,7 +1191,7 @@ export class GeoService {
       input.characteristic ?? current.characteristic,
     );
 
-    return await this.repository.transaction(async () => {
+    const updatedSite = await this.repository.transaction(async () => {
       const statusDate =
         current.status !== status
           ? (input.statusDate ?? new Date().toISOString())
@@ -1244,6 +1252,8 @@ export class GeoService {
       );
       return updated;
     });
+    await this.mapFeatureSynchronizer?.syncEntity(updatedSite.id, ctx.tenantId);
+    return updatedSite;
   }
 
   public async transitionSite(
@@ -1273,7 +1283,7 @@ export class GeoService {
       : undefined;
     if (parentSite) this.validateStatusCompatibleWithAncestors(toStatus, parentSite);
 
-    return await this.repository.transaction(async () => {
+    const transitioned = await this.repository.transaction(async () => {
       const statusDate = input.statusDate ?? new Date().toISOString();
       const updated = await this.repository.upsertSite({
         ...current,
@@ -1306,6 +1316,8 @@ export class GeoService {
       );
       return updated;
     });
+    await this.mapFeatureSynchronizer?.syncEntity(transitioned.id, ctx.tenantId);
+    return transitioned;
   }
 
   // Versão em massa de transitionSite, para os locais de um Projeto de trabalho (REQ-MOD01-015):

@@ -12,7 +12,7 @@ import { config as loadEnv } from 'dotenv';
 import oracledb, { type Connection } from 'oracledb';
 import { createCanonicalId } from '../shared/utils/canonical-id.js';
 import { prefixed } from '../shared/persistence/oracle-object-names.js';
-import { MAP_TILE_ZOOM } from '../modules/geo/map-tile.js';
+import { lngLatToTile, MAP_TILE_ZOOM } from '../modules/geo/map-tile.js';
 
 // A carga é operada por arquivo .env do projeto; esse arquivo deve prevalecer sobre
 // valores antigos deixados no processo/shell por tentativas anteriores.
@@ -23,6 +23,7 @@ configureOracleClient();
 type Args = {
   apply: boolean;
   resume: boolean;
+  finalizeOnly: boolean;
   refreshMap: boolean;
   jobId?: string;
   ufId?: number;
@@ -84,7 +85,9 @@ try {
       await ensureControlTables(target);
       const job = await openJob(source, target, args);
       await ensureCatalog(target);
-      await runLoad(source, target, job.id, job.scn, job.lastPiId, job);
+      if (!args.finalizeOnly) {
+        await runLoad(source, target, job.id, job.scn, job.lastPiId, job);
+      }
       await resolveParents(target, job.id);
       const mapFeatures = await refreshMapFeatures(target, job.id);
       await target.execute(
@@ -632,53 +635,103 @@ async function refreshMapFeatures(target: Connection, jobId: string): Promise<nu
     [args.tenantId, jobId],
   );
   console.log(JSON.stringify({ jobId, stage: 'map-index', action: 'insert' }));
-  // Tile e coordenadas são calculados dentro do Oracle. Assim não há N round-trips,
-  // nem materialização de milhões de geometrias no processo Node.
-  const inserted = await target.execute(
-    `INSERT INTO ${t('geo_map_feature')}
-      (tenant_id,tile_z,tile_x,tile_y,entity_id,shape,feature_kind,entity_type,
-       type_code,site_category,status,label,sublabel,lng,lat,geometry,rank,generated_at)
-     WITH candidates AS (
-       SELECT r.id entity_id, 'resource' feature_kind, 'PhysicalResource' entity_type,
-              r.resource_type type_code, NULL site_category, r.status status, r.name label,
-              NULL sublabel,
-              JSON_VALUE(l.geometry, '$.coordinates[0]' RETURNING NUMBER NULL ON ERROR) lng,
-              JSON_VALUE(l.geometry, '$.coordinates[1]' RETURNING NUMBER NULL ON ERROR) lat
-         FROM ${touch} touch
-         JOIN ${identities} identity ON identity.source_entity='${SOURCE_ENTITY}'
-          AND identity.source_id=touch.source_id AND identity.target_role='primary'
-         JOIN ${t('tmf_physical_resource')} r ON r.id=identity.nexus_id
-         JOIN ${t('tmf_geographic_location')} l ON l.id=r.place_id
-        WHERE touch.job_id=:jobId AND r.status <> 'terminated'
-          AND r.resource_type <> 'Splitter' AND l.geometry_type='Point'
-       UNION ALL
-       SELECT s.id entity_id, 'site' feature_kind, 'GeographicSite' entity_type,
-              NULL type_code, spec.category site_category, s.status status, s.name label,
-              spec.code sublabel,
-              JSON_VALUE(l.geometry, '$.coordinates[0]' RETURNING NUMBER NULL ON ERROR) lng,
-              JSON_VALUE(l.geometry, '$.coordinates[1]' RETURNING NUMBER NULL ON ERROR) lat
-         FROM ${touch} touch
-         JOIN ${identities} identity ON identity.source_entity='${SOURCE_ENTITY}'
-          AND identity.source_id=touch.source_id AND identity.target_role='primary'
-         JOIN ${t('tmf_geographic_site')} s ON s.id=identity.nexus_id
-         JOIN ${t('tmf_geographic_site_specification')} spec ON spec.id=s.site_specification_id
-         JOIN ${t('tmf_geographic_location')} l ON l.id=s.geographic_location_id
-        WHERE touch.job_id=:jobId AND spec.category IN ('Site','SubSite')
-          AND s.status NOT IN ('Retired','terminated') AND l.geometry_type='Point'
-     )
-     SELECT :tenantId,
-            ${MAP_TILE_ZOOM},
-            FLOOR((lng + 180) / 360 * POWER(2, ${MAP_TILE_ZOOM})),
-            FLOOR((1 - LN(TAN(lat * ACOS(-1) / 180) + 1 / COS(lat * ACOS(-1) / 180)) / ACOS(-1)) / 2 * POWER(2, ${MAP_TILE_ZOOM})),
-            entity_id,'point',feature_kind,entity_type,type_code,site_category,status,label,sublabel,
-            lng,lat,NULL,0,SYSTIMESTAMP
-       FROM candidates
-      WHERE lng BETWEEN -180 AND 180 AND lat BETWEEN -85 AND 85`,
-    { jobId, tenantId: args.tenantId },
+  // Algumas versões antigas do Oracle encerram a sessão ao aplicar JSON_VALUE sobre CLOB.
+  // Lemos somente os candidatos da onda e gravamos em blocos: evita o protocolo incompatível
+  // e ainda preserva poucos round-trips (um executeMany para cada mil features).
+  const candidates = await target.execute<{
+    ID: string;
+    ENTITY_TYPE: 'PhysicalResource' | 'GeographicSite';
+    RESOURCE_TYPE: string | null;
+    SITE_CATEGORY: string | null;
+    STATUS: string | null;
+    NAME: string;
+    SUBLABEL: string | null;
+    GEOMETRY: string;
+  }>(
+    `SELECT r.id AS "ID", 'PhysicalResource' AS "ENTITY_TYPE", r.resource_type AS "RESOURCE_TYPE",
+            NULL AS "SITE_CATEGORY", r.status AS "STATUS", r.name AS "NAME", NULL AS "SUBLABEL",
+            l.geometry AS "GEOMETRY"
+       FROM ${touch} touch
+       JOIN ${identities} identity ON identity.source_entity='${SOURCE_ENTITY}'
+        AND identity.source_id=touch.source_id AND identity.target_role='primary'
+       JOIN ${t('tmf_physical_resource')} r ON r.id=identity.nexus_id
+       JOIN ${t('tmf_geographic_location')} l ON l.id=r.place_id
+      WHERE touch.job_id=:jobId AND r.status <> 'terminated'
+        AND r.resource_type <> 'Splitter' AND l.geometry_type='Point'
+     UNION ALL
+     SELECT s.id AS "ID", 'GeographicSite' AS "ENTITY_TYPE", NULL AS "RESOURCE_TYPE",
+            spec.category AS "SITE_CATEGORY", s.status AS "STATUS", s.name AS "NAME", spec.code AS "SUBLABEL",
+            l.geometry AS "GEOMETRY"
+       FROM ${touch} touch
+       JOIN ${identities} identity ON identity.source_entity='${SOURCE_ENTITY}'
+        AND identity.source_id=touch.source_id AND identity.target_role='primary'
+       JOIN ${t('tmf_geographic_site')} s ON s.id=identity.nexus_id
+       JOIN ${t('tmf_geographic_site_specification')} spec ON spec.id=s.site_specification_id
+       JOIN ${t('tmf_geographic_location')} l ON l.id=s.geographic_location_id
+      WHERE touch.job_id=:jobId AND spec.category IN ('Site','SubSite')
+        AND s.status NOT IN ('Retired','terminated') AND l.geometry_type='Point'`,
+    { jobId },
+    { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
-  const count = inserted.rowsAffected ?? 0;
-  console.log(JSON.stringify({ jobId, stage: 'map-index', inserted: count }));
-  return count;
+
+  const features: unknown[][] = [];
+  for (const candidate of candidates.rows ?? []) {
+    try {
+      const coordinates = JSON.parse(candidate.GEOMETRY).coordinates;
+      const [lng, lat] = coordinates as [unknown, unknown];
+      if (
+        typeof lng !== 'number' ||
+        typeof lat !== 'number' ||
+        !Number.isFinite(lng) ||
+        !Number.isFinite(lat) ||
+        lng < -180 ||
+        lng > 180 ||
+        lat < -85 ||
+        lat > 85
+      ) {
+        continue;
+      }
+      const tile = lngLatToTile(lng, lat, MAP_TILE_ZOOM);
+      features.push([
+        args.tenantId,
+        tile.z,
+        tile.x,
+        tile.y,
+        candidate.ID,
+        'point',
+        candidate.ENTITY_TYPE === 'GeographicSite' ? 'site' : 'resource',
+        candidate.ENTITY_TYPE,
+        candidate.RESOURCE_TYPE,
+        candidate.SITE_CATEGORY,
+        candidate.STATUS,
+        candidate.NAME,
+        candidate.SUBLABEL,
+        lng,
+        lat,
+      ]);
+    } catch {
+      // Geometria inválida não gera feature; o recurso continua preservado no inventário.
+    }
+  }
+
+  const insertSql = `INSERT INTO ${t('geo_map_feature')}
+    (tenant_id,tile_z,tile_x,tile_y,entity_id,shape,feature_kind,entity_type,
+     type_code,site_category,status,label,sublabel,lng,lat,geometry,rank,generated_at)
+    VALUES (:1,:2,:3,:4,:5,:6,:7,:8,:9,:10,:11,:12,:13,:14,:15,NULL,0,SYSTIMESTAMP)`;
+  const batchSize = 1000;
+  for (let offset = 0; offset < features.length; offset += batchSize) {
+    const batch = features.slice(offset, offset + batchSize);
+    await target.executeMany(insertSql, batch);
+    console.log(
+      JSON.stringify({
+        jobId,
+        stage: 'map-index',
+        inserted: Math.min(offset + batch.length, features.length),
+        total: features.length,
+      }),
+    );
+  }
+  return features.length;
 }
 
 async function openJob(source: Connection, target: Connection, input: Args) {
@@ -921,9 +974,13 @@ function parseArgs(argv: string[]): Args {
     );
   const jobId = get('--job-id');
   const sourceScn = get('--source-scn');
+  const finalizeOnly = argv.includes('--finalize-only');
+  if (finalizeOnly && !argv.includes('--resume'))
+    throw new Error('--finalize-only exige --resume --job-id.');
   return {
     apply: argv.includes('--apply'),
     resume: argv.includes('--resume'),
+    finalizeOnly,
     refreshMap: argv.includes('--refresh-map'),
     batchSize,
     tenantId: get('--tenant-id') ?? 'default',

@@ -3,7 +3,32 @@
 // controle flutuante (MapLayerControl) e o serviço HTTP (geoTreeApi.fetchViewportResources),
 // para os três lerem o mesmo catálogo e a mesma regra de tri-state de grupo.
 
-export type MapLayerId = 'stations' | 'sites' | 'coverage' | 'resourcePoints' | 'resourceLines';
+export type MapLayerId =
+  | 'stations'
+  | 'sites'
+  | 'coverage'
+  | 'resourcePoints'
+  | 'resourceLines'
+  | 'netwinPole'
+  | 'netwinManhole'
+  | 'netwinTower'
+  | 'netwinCto'
+  | 'netwinDio'
+  | 'netwinRisingTube'
+  | 'netwinSpliceClosure'
+  | 'netwinPedestal'
+  | 'netwinSupportBracket'
+  | 'netwinCableTunnel'
+  | 'netwinIronPipe'
+  | 'netwinBuilding'
+  | 'netwinCentral'
+  | 'netwinRoom'
+  | 'netwinTechnicalRoom'
+  | 'netwinCabinet'
+  | 'netwinCustomerSite'
+  | 'netwinRemoteUnit'
+  | 'netwinAdvancedRemoteUnit'
+  | 'netwinTechnicalContainer';
 
 export type MapLayerVisibility = Record<MapLayerId, boolean>;
 
@@ -13,9 +38,29 @@ export const ALL_MAP_LAYERS_VISIBLE: MapLayerVisibility = {
   coverage: true,
   resourcePoints: true,
   resourceLines: true,
+  netwinPole: true,
+  netwinManhole: true,
+  netwinTower: true,
+  netwinCto: true,
+  netwinDio: true,
+  netwinRisingTube: true,
+  netwinSpliceClosure: true,
+  netwinPedestal: true,
+  netwinSupportBracket: true,
+  netwinCableTunnel: true,
+  netwinIronPipe: true,
+  netwinBuilding: true,
+  netwinCentral: true,
+  netwinRoom: true,
+  netwinTechnicalRoom: true,
+  netwinCabinet: true,
+  netwinCustomerSite: true,
+  netwinRemoteUnit: true,
+  netwinAdvancedRemoteUnit: true,
+  netwinTechnicalContainer: true,
 };
 
-export type MapLayerGroupId = 'locations' | 'coverage' | 'resources';
+export type MapLayerGroupId = 'locations' | 'coverage' | 'resources' | 'netwinInfrastructure';
 
 type MapLayerEntry = { id: MapLayerId; label: string; hint: string };
 
@@ -53,6 +98,33 @@ export const MAP_LAYER_GROUPS: readonly MapLayerGroup[] = [
       { id: 'resourceLines', label: 'Cabos e dutos', hint: 'Traçado na rua' },
     ],
   },
+  {
+    id: 'netwinInfrastructure',
+    label: 'Infraestrutura Netwin',
+    hint: 'Filtros por tipo para validação da carga',
+    children: [
+      { id: 'netwinPole', label: 'Postes', hint: 'Pole' },
+      { id: 'netwinManhole', label: 'Caixas subterrâneas', hint: 'Manhole' },
+      { id: 'netwinTower', label: 'Torres', hint: 'Tower' },
+      { id: 'netwinCto', label: 'CTOs e CDOIs', hint: 'CTO' },
+      { id: 'netwinDio', label: 'DIOs', hint: 'DIO' },
+      { id: 'netwinRisingTube', label: 'Tubos de subida', hint: 'RisingTube' },
+      { id: 'netwinSpliceClosure', label: 'Caixas de emenda', hint: 'SpliceClosure' },
+      { id: 'netwinPedestal', label: 'Pedestais', hint: 'Pedestal' },
+      { id: 'netwinSupportBracket', label: 'Suportes', hint: 'SupportBracket' },
+      { id: 'netwinCableTunnel', label: 'Túneis de cabos', hint: 'CableTunnel' },
+      { id: 'netwinIronPipe', label: 'Tubos de ferro', hint: 'IronPipe' },
+      { id: 'netwinBuilding', label: 'Edificações', hint: 'BUILDING' },
+      { id: 'netwinCentral', label: 'Centrais / POPs', hint: 'CENTRAL_POP_LEGACY' },
+      { id: 'netwinRoom', label: 'Salas', hint: 'ROOM' },
+      { id: 'netwinTechnicalRoom', label: 'Salas técnicas', hint: 'TECHNICAL_ROOM' },
+      { id: 'netwinCabinet', label: 'Armários', hint: 'CABINET' },
+      { id: 'netwinCustomerSite', label: 'Sites de cliente', hint: 'CUSTOMER_SITE' },
+      { id: 'netwinRemoteUnit', label: 'Unidades remotas', hint: 'REMOTE_UNIT' },
+      { id: 'netwinAdvancedRemoteUnit', label: 'Unidades remotas avançadas', hint: 'ADVANCED_REMOTE_UNIT' },
+      { id: 'netwinTechnicalContainer', label: 'Contêineres técnicos', hint: 'TECHNICAL_CONTAINER' },
+    ],
+  },
 ];
 
 export type GroupVisibility = 'all' | 'some' | 'none';
@@ -84,6 +156,56 @@ export function setGroupVisibility(
 }
 
 export type ViewportShape = 'sites' | 'resource-points' | 'resource-lines';
+
+type MapFeatureLayerLike = {
+  kind: 'resource' | 'site';
+  shape: 'point' | 'line';
+  typeCode?: string;
+  sublabel?: string;
+};
+
+const NETWIN_RESOURCE_LAYER_BY_TYPE: Partial<Record<string, MapLayerId>> = {
+  Pole: 'netwinPole',
+  Manhole: 'netwinManhole',
+  Tower: 'netwinTower',
+  CTO: 'netwinCto',
+  DIO: 'netwinDio',
+  RisingTube: 'netwinRisingTube',
+  SpliceClosure: 'netwinSpliceClosure',
+  Pedestal: 'netwinPedestal',
+  SupportBracket: 'netwinSupportBracket',
+  CableTunnel: 'netwinCableTunnel',
+  IronPipe: 'netwinIronPipe',
+};
+
+const NETWIN_SITE_LAYER_BY_SPEC: Partial<Record<string, MapLayerId>> = {
+  BUILDING: 'netwinBuilding',
+  CENTRAL_POP_LEGACY: 'netwinCentral',
+  ROOM: 'netwinRoom',
+  TECHNICAL_ROOM: 'netwinTechnicalRoom',
+  CABINET: 'netwinCabinet',
+  CUSTOMER_SITE: 'netwinCustomerSite',
+  REMOTE_UNIT: 'netwinRemoteUnit',
+  ADVANCED_REMOTE_UNIT: 'netwinAdvancedRemoteUnit',
+  TECHNICAL_CONTAINER: 'netwinTechnicalContainer',
+};
+
+// O tile Ã© compartilhado por todos os filtros. As camadas gerais evitam fetch
+// desnecessÃ¡rio; as camadas Netwin filtram cada classe sem multiplicar chamadas.
+export function isMapFeatureVisible(
+  feature: MapFeatureLayerLike,
+  visibility: MapLayerVisibility,
+): boolean {
+  if (feature.kind === 'site') {
+    if (!visibility.sites) return false;
+    const layer = feature.sublabel ? NETWIN_SITE_LAYER_BY_SPEC[feature.sublabel] : undefined;
+    return layer === undefined || visibility[layer];
+  }
+  if (feature.shape === 'line') return visibility.resourceLines;
+  if (!visibility.resourcePoints) return false;
+  const layer = feature.typeCode ? NETWIN_RESOURCE_LAYER_BY_TYPE[feature.typeCode] : undefined;
+  return layer === undefined || visibility[layer];
+}
 
 // O que pedir a /v1/geo/tree/viewport para a visibilidade atual — omitido (`undefined`) quando
 // tudo está ligado, para o caminho quente não carregar um parâmetro extra à toa.

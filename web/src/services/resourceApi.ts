@@ -1,4 +1,5 @@
 import type { Party } from './partyApi';
+import { invalidateMapTiles } from '../utils/mapTileCache';
 
 const API_BASE_URL = '/tmf-api';
 
@@ -300,30 +301,36 @@ export async function listResources({
 export async function createResource(
   payload: PhysicalResourcePayload | LogicalResourcePayload,
 ): Promise<ResourceEntity> {
-  return await requestJson<ResourceEntity>('/tmf-api/resourceInventoryManagement/v4/resource', {
+  const resource = await requestJson<ResourceEntity>('/tmf-api/resourceInventoryManagement/v4/resource', {
     method: 'POST',
     body: cleanObject(payload as Record<string, unknown>),
   });
+  if (payload['@type'] === 'PhysicalResource') invalidateMapTiles();
+  return resource;
 }
 
 export async function updateResource(
   id: string,
   payload: PhysicalResourcePayload | LogicalResourcePayload,
 ): Promise<ResourceEntity> {
-  return await requestJson<ResourceEntity>(
+  const resource = await requestJson<ResourceEntity>(
     `/tmf-api/resourceInventoryManagement/v4/resource/${encodeURIComponent(id)}`,
     {
       method: 'PATCH',
       body: cleanObject(payload as Record<string, unknown>),
     },
   );
+  if (payload['@type'] === 'PhysicalResource') invalidateMapTiles();
+  return resource;
 }
 
 export async function deleteResource(id: string): Promise<ResourceEntity> {
-  return await requestJson<ResourceEntity>(
+  const resource = await requestJson<ResourceEntity>(
     `/tmf-api/resourceInventoryManagement/v4/resource/${encodeURIComponent(id)}`,
     {
       method: 'DELETE',
     },
   );
+  invalidateMapTiles();
+  return resource;
 }

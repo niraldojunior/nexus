@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   ALL_MAP_LAYERS_VISIBLE,
   groupVisibility,
+  isMapFeatureVisible,
   readStoredLayers,
   setGroupVisibility,
   viewportInclude,
@@ -73,6 +74,35 @@ describe('viewportInclude', () => {
   it('estações e cobertura não entram no include (não vêm do viewport)', () => {
     const visibility = { ...ALL_MAP_LAYERS_VISIBLE, stations: false, coverage: false };
     expect(viewportInclude(visibility)).toBeUndefined();
+  });
+});
+
+describe('isMapFeatureVisible', () => {
+  it('filtra cada tipo de recurso Netwin sem esconder recursos de outros catálogos', () => {
+    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, netwinTower: false };
+    expect(
+      isMapFeatureVisible({ kind: 'resource', shape: 'point', typeCode: 'Tower' }, visibility),
+    ).toBe(false);
+    expect(
+      isMapFeatureVisible({ kind: 'resource', shape: 'point', typeCode: 'OLT' }, visibility),
+    ).toBe(true);
+  });
+
+  it('filtra sites Netwin pelo código da specification armazenado no tile', () => {
+    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, netwinTechnicalRoom: false };
+    expect(
+      isMapFeatureVisible(
+        { kind: 'site', shape: 'point', sublabel: 'TECHNICAL_ROOM' },
+        visibility,
+      ),
+    ).toBe(false);
+  });
+
+  it('mantém as camadas gerais como interruptores principais', () => {
+    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourcePoints: false };
+    expect(
+      isMapFeatureVisible({ kind: 'resource', shape: 'point', typeCode: 'Pole' }, visibility),
+    ).toBe(false);
   });
 });
 

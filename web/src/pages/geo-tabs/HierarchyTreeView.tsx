@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Building2, FolderTree, Loader2, Map, Plus } 
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import type { GeoTreeRow } from '../../utils/geoHierarchy';
 import { ResourceIcon } from '../../components/ResourceIcon';
+import { resourceIconFor } from '../../utils/resourceIcon';
 import { siteIconDataUrl, siteIconFor } from '../../utils/siteIcon';
 import { siteKindFromSpec } from '../../utils/placeLabel';
 import { siteSpecNameLabel } from '../../utils/geoLabels';
@@ -138,11 +139,11 @@ function TreeRow({
           onMouseLeave={() => onHover?.(null)}
           onFocus={() => onHover?.(node)}
           onBlur={() => onHover?.(null)}
-          title={
-            node.sublabel
-              ? `${node.label} · ${node.kind === 'site' ? (siteSpecNameLabel(node.sublabel) ?? node.sublabel) : node.sublabel}`
-              : node.label
-          }
+          title={`${node.label} · ${
+            node.kind === 'site'
+              ? (siteSpecNameLabel(node.sublabel) ?? node.sublabel ?? 'Local')
+              : resourceIconFor(node.resourceType ?? '').label
+          }`}
           className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left leading-tight"
         >
           <NodeIcon node={node} />

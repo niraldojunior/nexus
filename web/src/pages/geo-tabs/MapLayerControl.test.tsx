@@ -84,6 +84,24 @@ describe('MapLayerControl', () => {
     expect(onToggleLayer).toHaveBeenCalledWith('resourceLines');
   });
 
+  it('expõe e alterna os tipos importados do Netwin individualmente', async () => {
+    const user = userEvent.setup();
+    const onToggleLayer = vi.fn();
+    render(
+      <MapLayerControl
+        layers={ALL_MAP_LAYERS_VISIBLE}
+        onToggleLayer={onToggleLayer}
+        onToggleGroup={vi.fn()}
+        onReset={vi.fn()}
+        allVisible
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Camadas do mapa' }));
+    await user.click(screen.getByRole('switch', { name: 'Tubos de subida' }));
+    expect(onToggleLayer).toHaveBeenCalledWith('netwinRisingTube');
+    expect(screen.getByRole('switch', { name: 'Salas técnicas' })).toBeInTheDocument();
+  });
+
   it('emite o id do grupo ao clicar no switch de um grupo com sub-camadas', async () => {
     const user = userEvent.setup();
     const onToggleGroup = vi.fn();

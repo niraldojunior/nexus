@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Boxes, Layers, MapPin, Radar, X, type LucideIcon } from 'lucide-react';
+import { Boxes, Layers, MapPin, Network, Radar, X, type LucideIcon } from 'lucide-react';
 import {
   MAP_LAYER_GROUPS,
   groupVisibility,
@@ -14,6 +14,7 @@ const GROUP_ICONS: Record<MapLayerGroupId, LucideIcon> = {
   locations: MapPin,
   coverage: Radar,
   resources: Boxes,
+  netwinInfrastructure: Network,
 };
 
 export type MapLayerControlProps = {
@@ -57,7 +58,7 @@ function LayerSwitch({
 
 // Controle de camadas do mapa (RF-011, REQ-MOD01-011): liga/desliga o que o mapa busca e
 // desenha, agrupado em Locais/Cobertura/Recursos — cada camada corta fetch, não só o desenho
-// (ver useViewportInfra e o parâmetro `include` de /v1/geo/tree/viewport). Fica ancorado no
+// (ver useMapTiles, filtro client-side sobre GET /v1/geo/map/tile). Fica ancorado no
 // canto superior direito, aberto/fechado como o MUB (ver MapBaseLayerSelector) — mesmo cromo
 // de controle flutuante (shadow-map-control, foco em app-accent).
 export function MapLayerControl({
@@ -123,7 +124,7 @@ export function MapLayerControl({
           id={panelId}
           role="dialog"
           aria-label="Camadas do mapa"
-          className="absolute right-0 top-[calc(100%+8px)] w-[248px] rounded-[14px] border border-app-border bg-white p-2 shadow-map-control-lg"
+          className="absolute right-0 top-[calc(100%+8px)] max-h-[calc(100vh-96px)] w-[248px] overflow-y-auto rounded-[14px] border border-app-border bg-white p-2 shadow-map-control-lg"
         >
           <div className="flex items-center justify-between px-1.5 pb-1.5 pt-0.5">
             <span className="text-[0.8rem] font-semibold text-app-text">Camadas</span>

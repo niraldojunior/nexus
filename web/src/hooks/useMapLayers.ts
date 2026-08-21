@@ -19,7 +19,7 @@ export type UseMapLayers = {
   toggleLayer: (id: MapLayerId) => void;
   toggleGroup: (groupId: MapLayerGroupId) => void;
   resetLayers: () => void;
-  // Verdadeiro só quando as cinco camadas estão ligadas — alimenta o indicador de "mapa
+  // Verdadeiro só quando todas as camadas estão ligadas — alimenta o indicador de "mapa
   // filtrado" no botão fechado do controle.
   allVisible: boolean;
   groupVisibility: (groupId: MapLayerGroupId) => ReturnType<typeof groupVisibility>;

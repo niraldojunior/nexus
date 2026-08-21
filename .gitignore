@@ -9,5 +9,9 @@ coverage
 .tmp*.err
 backups
 
+# Oracle Instant Client é instalação local (binários e DLLs); nunca versionar.
+/.tools/oracle-instantclient*/
+/.tools/instantclient*/
+
 # Dados legados de migração (entrada/saída das cargas Netwin) — não versionar
 /legacy-data/

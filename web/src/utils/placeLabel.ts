@@ -69,10 +69,36 @@ export function siteKindFromSpec(spec?: {
   return 'SITE';
 }
 
+// Rótulo curto de um item de GeographicSubAddress (TMF673) — usa `name` quando o usuário
+// informou (ex.: "Torre B"), senão deriva do número/nível conforme o tipo.
+function formatSubAddressItem(item: {
+  type: string;
+  name?: string;
+  subUnitNumber?: string;
+  levelNumber?: string;
+}): string | undefined {
+  if (item.name) return item.name;
+  if (item.type === 'unit' && item.subUnitNumber) return `ap. ${item.subUnitNumber}`;
+  if (item.type === 'floor' && item.levelNumber) return `${item.levelNumber}º`;
+  if (item.levelNumber) return item.levelNumber;
+  if (item.subUnitNumber) return item.subUnitNumber;
+  return undefined;
+}
+
 export function formatAddress(address: GeoAddress): string {
-  return [address.street, address.streetNr, address.city, address.stateOrProvince, address.postcode]
+  const base = [
+    address.street,
+    address.streetNr,
+    address.city,
+    address.stateOrProvince,
+    address.postcode,
+  ]
     .filter(Boolean)
     .join(', ');
+  const subParts = (address.subAddress ?? [])
+    .map(formatSubAddressItem)
+    .filter((part): part is string => Boolean(part));
+  return subParts.length > 0 ? `${base} — ${subParts.join(' · ')}` : base;
 }
 
 // Rótulo da fonte para o parêntese final do endereço na aba Visão Geral do painel de Local

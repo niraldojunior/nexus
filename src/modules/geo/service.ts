@@ -19,6 +19,7 @@ import type {
   GeographicSiteReferences,
   GeographicSiteRelationship,
   GeographicSiteRole,
+  GeographicSubAddress,
   GeographicSiteSpecification,
   GeographicSiteSpecificationCategory,
   GeographicSiteSpecificationCharacteristic,
@@ -32,7 +33,7 @@ import type {
   GeoSourceSystem,
   TimePeriod,
 } from './domain.js';
-import { defaultSiteRoleFor, GEO_SITE_ROLES } from './domain.js';
+import { defaultSiteRoleFor, GEO_SITE_ROLES, GEO_SUB_ADDRESS_TYPES } from './domain.js';
 import type { GeographicAddressQuery, IGeoRepository } from './geo-repository-interface.js';
 import { normalizeCountrySearch } from './address-normalization.js';
 import type { MapFeatureSynchronizer } from './map-feature-synchronizer.js';
@@ -58,6 +59,7 @@ export type AddressInput = {
   postcode?: string;
   country?: string;
   geographicLocationId?: string;
+  subAddress?: GeographicSubAddress[];
   sourceSystem?: GeoSourceSystem;
   sourceRef?: string;
   validFor?: TimePeriod;
@@ -655,6 +657,7 @@ export class GeoService {
     this.assertRole(ctx, WRITE_ROLE);
     this.assertOriginWriteAllowed(ctx, input.characteristic ?? []);
     assertRequiredString(input.street, 'street');
+    validateSubAddress(input.subAddress);
     const id = createCanonicalId();
     const location = input.geographicLocationId
       ? await this.getLocationOrThrow(input.geographicLocationId, ctx)
@@ -677,6 +680,7 @@ export class GeoService {
         ...(location
           ? { place: { id: location.id, '@referredType': 'GeographicLocation' as const } }
           : {}),
+        ...(input.subAddress ? { subAddress: input.subAddress } : {}),
         ...(input.sourceSystem ? { sourceSystem: input.sourceSystem } : {}),
         ...(input.sourceRef ? { sourceRef: input.sourceRef } : {}),
         ...(input.validFor ? { validFor: input.validFor } : {}),
@@ -707,6 +711,7 @@ export class GeoService {
     const locationId = input.geographicLocationId ?? current.geographicLocationId;
     const location = locationId ? await this.getLocationOrThrow(locationId, ctx) : undefined;
     if (input.street !== undefined) assertRequiredString(input.street, 'street');
+    validateSubAddress(input.subAddress);
     const normalizedCountry =
       input.country !== undefined ? normalizeCountry(input.country) : current.country;
     const normalizedPostcode =
@@ -740,6 +745,9 @@ export class GeoService {
               place: { id: location.id, '@referredType': 'GeographicLocation' as const },
             }
           : {}),
+        ...(input.subAddress !== undefined
+          ? optional('subAddress', input.subAddress)
+          : optional('subAddress', current.subAddress)),
         ...(input.sourceSystem !== undefined
           ? optional('sourceSystem', input.sourceSystem)
           : optional('sourceSystem', current.sourceSystem)),
@@ -3340,6 +3348,18 @@ const validateSiteRole: (role: string) => asserts role is GeographicSiteRole = (
       code: 'GEO_SPEC_INVALID_SITE_ROLE',
       statusCode: 400,
     });
+  }
+};
+
+const validateSubAddress = (subAddress: GeographicSubAddress[] | undefined): void => {
+  if (!subAddress) return;
+  for (const item of subAddress) {
+    if (!GEO_SUB_ADDRESS_TYPES.includes(item.type)) {
+      throw new AppError('invalid sub-address type', {
+        code: 'GEO_ADDRESS_INVALID_SUB_ADDRESS_TYPE',
+        statusCode: 400,
+      });
+    }
   }
 };
 

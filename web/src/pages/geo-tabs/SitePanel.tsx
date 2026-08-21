@@ -276,6 +276,7 @@ export function SitePanel({
           siteId={detail.site.id}
           currentAddressId={detail.site.address?.id}
           currentLocationId={detail.site.place?.id}
+          currentSubAddress={detail.address?.subAddress}
           onClose={() => setAddressModalOpen(false)}
           onSaved={() => {
             void detail.reload();

@@ -177,9 +177,9 @@ export class PostgresGeoRepository implements IGeoRepository {
       `INSERT INTO tmf_geographic_address
        (id, href, tenant_id, street_type, street_name, street_search, street_nr, street_nr_search,
         city, city_search, state_or_province, postcode, postcode_search, country,
-        geographic_location_id, source_system, source_ref,
+        geographic_location_id, sub_address, source_system, source_ref,
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        tenant_id = excluded.tenant_id,
@@ -195,6 +195,7 @@ export class PostgresGeoRepository implements IGeoRepository {
        postcode_search = excluded.postcode_search,
        country = excluded.country,
        geographic_location_id = excluded.geographic_location_id,
+       sub_address = excluded.sub_address,
        source_system = excluded.source_system,
        source_ref = excluded.source_ref,
        valid_for_start = excluded.valid_for_start,
@@ -217,6 +218,7 @@ export class PostgresGeoRepository implements IGeoRepository {
         normalizePostcodeSearch(address.postcode) || null,
         address.country || null,
         address.geographicLocationId || null,
+        address.subAddress ? JSON.stringify(address.subAddress) : null,
         address.sourceSystem || null,
         address.sourceRef || null,
         address.validFor?.startDateTime || null,
@@ -237,9 +239,9 @@ export class PostgresGeoRepository implements IGeoRepository {
     await this.db.run(
       `INSERT INTO tmf_geographic_address
        (id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode,
-        country, geographic_location_id, source_system, source_ref,
+        country, geographic_location_id, sub_address, source_system, source_ref,
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        tenant_id = excluded.tenant_id,
@@ -251,6 +253,7 @@ export class PostgresGeoRepository implements IGeoRepository {
        postcode = excluded.postcode,
        country = excluded.country,
        geographic_location_id = excluded.geographic_location_id,
+       sub_address = excluded.sub_address,
        source_system = excluded.source_system,
        source_ref = excluded.source_ref,
        valid_for_start = excluded.valid_for_start,
@@ -269,6 +272,7 @@ export class PostgresGeoRepository implements IGeoRepository {
         address.postcode || null,
         address.country || null,
         address.geographicLocationId || null,
+        address.subAddress ? JSON.stringify(address.subAddress) : null,
         address.sourceSystem || null,
         address.sourceRef || null,
         address.validFor?.startDateTime || null,
@@ -292,7 +296,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     }
     const row = await this.db.get<GeographicAddressRow>(
       `SELECT id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
-              geographic_location_id, source_system, source_ref, valid_for_start, valid_for_end, characteristics
+              geographic_location_id, sub_address, source_system, source_ref, valid_for_start, valid_for_end, characteristics
        FROM tmf_geographic_address WHERE ${conditions.join(' AND ')}`,
       params,
     );
@@ -375,7 +379,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const hasOffset = query?.offset !== undefined;
     const sql = [
       `SELECT id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
-              geographic_location_id, source_system, source_ref, valid_for_start, valid_for_end,
+              geographic_location_id, sub_address, source_system, source_ref, valid_for_start, valid_for_end,
               ${query?.includeCharacteristics === false ? 'NULL' : 'characteristics'} AS characteristics
        FROM tmf_geographic_address`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
@@ -1584,6 +1588,7 @@ export class PostgresGeoRepository implements IGeoRepository {
       result.geographicLocationId = row.geographic_location_id;
       result.place = { id: row.geographic_location_id, '@referredType': 'GeographicLocation' };
     }
+    if (row.sub_address) result.subAddress = JSON.parse(row.sub_address);
     if (row.source_system) result.sourceSystem = row.source_system;
     if (row.source_ref) result.sourceRef = row.source_ref;
     if (row.valid_for_start || row.valid_for_end) {

@@ -52,6 +52,7 @@ export type GeographicAddressRow = {
   postcode: string | null;
   country: string;
   geographic_location_id: string | null;
+  sub_address: string | null;
   source_system: GeoSourceSystem | null;
   source_ref: string | null;
   valid_for_start: string | null;

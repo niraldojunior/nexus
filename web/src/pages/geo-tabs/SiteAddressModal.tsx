@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Crosshair, Loader2, MapPin, Search, Target } from 'lucide-react';
-import { patchJson, postJson, type GeoAddress, type GeoLocation } from '../../services/geoApi';
+import {
+  patchJson,
+  postJson,
+  type GeoAddress,
+  type GeoLocation,
+  type GeoSubAddress,
+} from '../../services/geoApi';
 import {
   fetchGeonetCandidates,
   fetchGeonetDetail,
@@ -35,9 +41,24 @@ export type SiteAddressModalProps = {
   siteId: string;
   currentAddressId?: string | null;
   currentLocationId?: string | null;
+  // GeographicSubAddress (TMF673) já cadastrado — pré-preenche Torre/Bloco/Andar/Unidade ao
+  // reabrir o modal para editar um endereço que já tem sub-endereço.
+  currentSubAddress?: GeoSubAddress[];
   onClose: () => void;
   onSaved: () => void;
 };
+
+// Um item por tipo (building/tower/block/floor/unit) é suficiente para o caso de uso hoje
+// (torre → andar → unidade em cascata); múltiplas torres/blocos no mesmo endereço ficam para
+// quando houver demanda real.
+const subAddressFieldOf = (
+  subAddress: GeoSubAddress[] | undefined,
+  type: GeoSubAddress['type'],
+): string =>
+  subAddress?.find((item) => item.type === type)?.name ??
+  subAddress?.find((item) => item.type === type)?.subUnitNumber ??
+  subAddress?.find((item) => item.type === type)?.levelNumber ??
+  '';
 
 /**
  * Modal de edição de endereço do painel unificado de Local (REQ-MOD01-016): o usuário
@@ -51,10 +72,15 @@ export function SiteAddressModal({
   siteId,
   currentAddressId,
   currentLocationId,
+  currentSubAddress,
   onClose,
   onSaved,
 }: SiteAddressModalProps) {
   const [base, setBase] = useState<AddressSourceBase>('geonet');
+  const [tower, setTower] = useState(() => subAddressFieldOf(currentSubAddress, 'tower'));
+  const [block, setBlock] = useState(() => subAddressFieldOf(currentSubAddress, 'block'));
+  const [floor, setFloor] = useState(() => subAddressFieldOf(currentSubAddress, 'floor'));
+  const [unit, setUnit] = useState(() => subAddressFieldOf(currentSubAddress, 'unit'));
   const [query, setQuery] = useState('');
   const [predictionsOpen, setPredictionsOpen] = useState(false);
   const [geonetPredictions, setGeonetPredictions] = useState<GeonetAddressCandidate[]>([]);
@@ -167,6 +193,16 @@ export function SiteAddressModal({
         sourceRef: selected.sourceRef,
         accuracyLevel,
       };
+      const subAddress: GeoSubAddress[] = [
+        ...(tower.trim() ? [{ '@type': 'GeographicSubAddress' as const, type: 'tower' as const, name: tower.trim() }] : []),
+        ...(block.trim() ? [{ '@type': 'GeographicSubAddress' as const, type: 'block' as const, name: block.trim() }] : []),
+        ...(floor.trim()
+          ? [{ '@type': 'GeographicSubAddress' as const, type: 'floor' as const, levelNumber: floor.trim() }]
+          : []),
+        ...(unit.trim()
+          ? [{ '@type': 'GeographicSubAddress' as const, type: 'unit' as const, subUnitNumber: unit.trim() }]
+          : []),
+      ];
       const addressPayload = {
         street: selected.street,
         streetNr: selected.streetNr,
@@ -174,6 +210,7 @@ export function SiteAddressModal({
         stateOrProvince: selected.stateOrProvince,
         postcode: selected.postcode,
         country: selected.country,
+        subAddress,
         sourceSystem,
         sourceRef: selected.sourceRef,
       };
@@ -324,6 +361,45 @@ export function SiteAddressModal({
             </div>
           </div>
         ) : null}
+
+        {/* GeographicSubAddress (TMF673) — localiza torre/bloco/andar/unidade dentro do
+            endereço único de um condomínio. Todos opcionais e independentes do endereço
+            escolhido acima. */}
+        <div className="grid gap-1.5">
+          <label className="text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">
+            Sub-endereço (opcional)
+          </label>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <input
+              value={tower}
+              onChange={(event) => setTower(event.target.value)}
+              placeholder="Torre"
+              aria-label="Torre"
+              className="geo-input"
+            />
+            <input
+              value={block}
+              onChange={(event) => setBlock(event.target.value)}
+              placeholder="Bloco"
+              aria-label="Bloco"
+              className="geo-input"
+            />
+            <input
+              value={floor}
+              onChange={(event) => setFloor(event.target.value)}
+              placeholder="Andar"
+              aria-label="Andar"
+              className="geo-input"
+            />
+            <input
+              value={unit}
+              onChange={(event) => setUnit(event.target.value)}
+              placeholder="Unidade"
+              aria-label="Unidade"
+              className="geo-input"
+            />
+          </div>
+        </div>
 
         {error ? <p className="text-[0.8rem] text-status-red">{error}</p> : null}
 

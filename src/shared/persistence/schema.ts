@@ -157,6 +157,7 @@ export const MIGRATIONS_SQL = `
   ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS street_nr_search TEXT;
   ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS city_search TEXT;
   ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS postcode_search TEXT;
+  ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS sub_address TEXT;
   -- The one-time backfill of these four columns (for rows written before they existed) used to run
   -- here as an UPDATE ... WHERE col IS NULL OR col IS NULL OR ... — a predicate that can't be
   -- served by a single index, so on every boot with DATABASE_AUTO_SCHEMA=true it forced a full
@@ -604,6 +605,7 @@ export const SCHEMA_SQL = `
         postcode TEXT,
         postcode_search TEXT,
         geographic_location_id TEXT,
+        sub_address TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
         characteristics TEXT,

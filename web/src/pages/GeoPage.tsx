@@ -31,6 +31,8 @@ import {
   siteSpecLabel,
   siteSpecCategoryLabel,
   siteSpecNameLabel,
+  siteRoleLabel,
+  SITE_ROLE_OPTIONS,
 } from '../utils/geoLabels';
 import {
   fetchTreeChildren,
@@ -3213,6 +3215,7 @@ function TypeManagementModal({
 }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<GeoSpec['category']>('Site');
+  const [siteRole, setSiteRole] = useState<GeoSpec['siteRole']>('network');
   const [saving, setSaving] = useState(false);
 
   const submit = async (event: FormEvent) => {
@@ -3220,7 +3223,7 @@ function TypeManagementModal({
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await postJson('/v1/geo/site-specifications', { name, category });
+      await postJson('/v1/geo/site-specifications', { name, category, siteRole });
       setName('');
       await onChanged();
     } finally {
@@ -3236,6 +3239,7 @@ function TypeManagementModal({
             <tr>
               <Th>Nome</Th>
               <Th>Categoria</Th>
+              <Th>Papel</Th>
               <Th>Filhos permitidos</Th>
             </tr>
           </thead>
@@ -3249,6 +3253,9 @@ function TypeManagementModal({
                   {siteSpecCategoryLabel(spec.category)}
                 </td>
                 <td className="px-4 py-3 text-[0.84rem] text-app-muted">
+                  {siteRoleLabel(spec.siteRole)}
+                </td>
+                <td className="px-4 py-3 text-[0.84rem] text-app-muted">
                   {spec.allowedChildSpecIds.length || '-'}
                 </td>
               </tr>
@@ -3256,7 +3263,7 @@ function TypeManagementModal({
           </tbody>
         </table>
       </div>
-      <form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_180px_auto]">
+      <form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_180px_180px_auto]">
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -3271,6 +3278,17 @@ function TypeManagementModal({
           {['Region', 'FunctionalGroup', 'Site', 'SubSite'].map((item) => (
             <option key={item} value={item}>
               {siteSpecCategoryLabel(item)}
+            </option>
+          ))}
+        </select>
+        <select
+          value={siteRole}
+          onChange={(event) => setSiteRole(event.target.value as GeoSpec['siteRole'])}
+          className="geo-input"
+        >
+          {SITE_ROLE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
             </option>
           ))}
         </select>

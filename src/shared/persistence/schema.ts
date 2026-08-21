@@ -124,6 +124,18 @@ export const MIGRATIONS_SQL = `
   ALTER TABLE tmf_geographic_site_specification ADD COLUMN IF NOT EXISTS code TEXT;
   ALTER TABLE tmf_geographic_site_specification ADD COLUMN IF NOT EXISTS lifecycle_status TEXT;
   ALTER TABLE tmf_geographic_site_specification ADD COLUMN IF NOT EXISTS is_bootstrap INTEGER DEFAULT 0;
+  ALTER TABLE tmf_geographic_site_specification ADD COLUMN IF NOT EXISTS site_role TEXT;
+  -- Backfill idempotente do eixo funcional (C11). Sem UNIQUE(code): specs podem estar
+  -- duplicadas por corrida de bootstrap, então usamos WHERE code IN (...) em vez de assumir
+  -- 1 linha por code.
+  UPDATE tmf_geographic_site_specification SET site_role = 'grouping'
+    WHERE site_role IS NULL AND code IN ('REGION', 'FUNCTIONAL_GROUP');
+  UPDATE tmf_geographic_site_specification SET site_role = 'property'
+    WHERE site_role IS NULL AND code IN ('CONDOMINIUM', 'BLOCK', 'BUILDING');
+  UPDATE tmf_geographic_site_specification SET site_role = 'service'
+    WHERE site_role IS NULL AND code IN ('CUSTOMER_SITE');
+  UPDATE tmf_geographic_site_specification SET site_role = 'network'
+    WHERE site_role IS NULL;
   CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_specification_code ON tmf_geographic_site_specification(code);
   CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_specification_lifecycle ON tmf_geographic_site_specification(lifecycle_status);
   CREATE TABLE IF NOT EXISTS tmf_geographic_site_spec_containment_rule (
@@ -611,6 +623,7 @@ export const SCHEMA_SQL = `
         name TEXT NOT NULL,
         code TEXT NOT NULL,
         category TEXT NOT NULL,
+        site_role TEXT,
         lifecycle_status TEXT NOT NULL DEFAULT 'Active',
         description TEXT,
         allowed_parent_spec_ids TEXT,

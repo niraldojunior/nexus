@@ -42,6 +42,7 @@ const spec = (overrides: Partial<GeoSpec> = {}): GeoSpec => ({
   name: 'Installation Point',
   code: 'INSTALLATION_POINT',
   category: 'Site',
+  siteRole: 'service',
   lifecycleStatus: 'Active',
   allowedParentSpecIds: [],
   allowedChildSpecIds: [],

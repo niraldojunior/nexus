@@ -8,6 +8,7 @@ import type {
   GeoSiteStatus,
   GeoSourceSystem,
   GeographicRelationshipType,
+  GeographicSiteRole,
   GeographicSiteSpecificationCategory,
   GeographicSiteSpecificationLifecycleStatus,
 } from './domain.js';
@@ -64,6 +65,7 @@ export type GeographicSiteSpecificationRow = {
   name: string;
   code: string;
   category: GeographicSiteSpecificationCategory;
+  site_role: GeographicSiteRole | null;
   lifecycle_status: GeographicSiteSpecificationLifecycleStatus;
   description: string | null;
   allowed_parent_spec_ids: string | null;

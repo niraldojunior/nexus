@@ -18,6 +18,7 @@ import type {
   GeographicSite,
   GeographicSiteReferences,
   GeographicSiteRelationship,
+  GeographicSiteRole,
   GeographicSiteSpecification,
   GeographicSiteSpecificationCategory,
   GeographicSiteSpecificationCharacteristic,
@@ -31,6 +32,7 @@ import type {
   GeoSourceSystem,
   TimePeriod,
 } from './domain.js';
+import { defaultSiteRoleFor, GEO_SITE_ROLES } from './domain.js';
 import type { GeographicAddressQuery, IGeoRepository } from './geo-repository-interface.js';
 import { normalizeCountrySearch } from './address-normalization.js';
 import type { MapFeatureSynchronizer } from './map-feature-synchronizer.js';
@@ -69,6 +71,7 @@ type SpecInput = {
   code?: string;
   description?: string;
   category: GeographicSiteSpecificationCategory;
+  siteRole?: GeographicSiteRole;
   lifecycleStatus?: GeographicSiteSpecificationLifecycleStatus;
   validFor?: TimePeriod;
   allowedParentSpec?: SpecRefInput[];
@@ -180,6 +183,7 @@ type BootstrapDefinition = {
   name: string;
   code: string;
   category: GeographicSiteSpecificationCategory;
+  siteRole: GeographicSiteRole;
   description: string;
   allowedParentCodes: string[];
   allowedChildCodes: string[];
@@ -190,6 +194,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Region',
     code: 'REGION',
     category: 'Region',
+    siteRole: 'grouping',
     description: 'Agrupador territorial hierárquico para estados, regiões e macroáreas.',
     allowedParentCodes: ['REGION'],
     allowedChildCodes: ['REGION', 'CO', 'POP', 'CABINET', 'INSTALLATION_POINT', 'CONDOMINIUM'],
@@ -198,6 +203,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Functional Group',
     code: 'FUNCTIONAL_GROUP',
     category: 'FunctionalGroup',
+    siteRole: 'grouping',
     description: 'Agrupador lógico sem containment físico direto.',
     allowedParentCodes: [],
     allowedChildCodes: [],
@@ -206,6 +212,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Central Office',
     code: 'CO',
     category: 'Site',
+    siteRole: 'network',
     description: 'Estação ou central com salas e pavimentos internos.',
     allowedParentCodes: ['REGION'],
     allowedChildCodes: ['FLOOR', 'ROOM'],
@@ -214,6 +221,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'POP',
     code: 'POP',
     category: 'Site',
+    siteRole: 'network',
     description: 'Ponto de presença com sublocais internos governados.',
     allowedParentCodes: ['REGION'],
     allowedChildCodes: ['FLOOR', 'ROOM'],
@@ -222,6 +230,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Cabinet',
     code: 'CABINET',
     category: 'Site',
+    siteRole: 'network',
     description: 'Gabinete externo ou armário de distribuição.',
     allowedParentCodes: ['REGION'],
     allowedChildCodes: [],
@@ -230,6 +239,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Installation Point',
     code: 'INSTALLATION_POINT',
     category: 'Site',
+    siteRole: 'service',
     description: 'Ponto de instalação associado ao atendimento.',
     allowedParentCodes: ['REGION'],
     allowedChildCodes: [],
@@ -238,6 +248,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Condominium',
     code: 'CONDOMINIUM',
     category: 'Site',
+    siteRole: 'property',
     description: 'Condominio residencial ou comercial que agrupa blocos fisicos no mesmo endereco.',
     allowedParentCodes: ['REGION'],
     allowedChildCodes: ['BLOCK'],
@@ -246,6 +257,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Building Block',
     code: 'BLOCK',
     category: 'SubSite',
+    siteRole: 'property',
     description: 'Bloco fisico subordinado a um condominio.',
     allowedParentCodes: ['CONDOMINIUM'],
     allowedChildCodes: [],
@@ -254,6 +266,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Floor',
     code: 'FLOOR',
     category: 'SubSite',
+    siteRole: 'network',
     description: 'Pavimento interno subordinado a CO ou POP.',
     allowedParentCodes: ['CO', 'POP'],
     allowedChildCodes: ['ROOM'],
@@ -262,6 +275,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Room',
     code: 'ROOM',
     category: 'SubSite',
+    siteRole: 'network',
     description: 'Sala interna subordinada a CO, POP ou piso.',
     allowedParentCodes: ['CO', 'POP', 'FLOOR'],
     allowedChildCodes: ['CAGE'],
@@ -270,6 +284,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Cage',
     code: 'CAGE',
     category: 'SubSite',
+    siteRole: 'network',
     description: 'Área segmentada dentro de sala técnica.',
     allowedParentCodes: ['ROOM'],
     allowedChildCodes: [],
@@ -326,6 +341,7 @@ const matchesBootstrapSpecification = (
   existing.code === definition.code &&
   existing.description === definition.description &&
   existing.category === definition.category &&
+  existing.siteRole === definition.siteRole &&
   existing.lifecycleStatus === 'Active' &&
   existing._bootstrapProtected === true;
 
@@ -404,6 +420,7 @@ export class GeoService {
               code: definition.code,
               description: definition.description,
               category: definition.category,
+              siteRole: definition.siteRole,
               lifecycleStatus: 'Active',
               validFor: {},
               specCharacteristic: [],
@@ -425,6 +442,7 @@ export class GeoService {
               code: definition.code,
               description: definition.description,
               category: definition.category,
+              siteRole: definition.siteRole,
               lifecycleStatus: 'Active',
               ...(existing.validFor ? { validFor: existing.validFor } : {}),
               specCharacteristic: existing.specCharacteristic,
@@ -732,6 +750,7 @@ export class GeoService {
     this.assertRole(ctx, CATALOG_ROLE);
     assertRequiredString(input.name, 'name');
     validateSpecCategory(input.category);
+    if (input.siteRole !== undefined) validateSiteRole(input.siteRole);
 
     const code = normalizeSpecificationCode(input.code ?? input.name);
     if (await this.repository.getSpecByCode(code)) {
@@ -762,6 +781,7 @@ export class GeoService {
           code,
           ...(input.description !== undefined ? { description: input.description } : {}),
           category: input.category,
+          siteRole: input.siteRole ?? defaultSiteRoleFor(input.category),
           lifecycleStatus: input.lifecycleStatus ?? 'Active',
           ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
           specCharacteristic: characteristics,
@@ -808,6 +828,7 @@ export class GeoService {
         statusCode: 409,
       });
     }
+    if (input.siteRole !== undefined) validateSiteRole(input.siteRole);
 
     const nextAllowedParentSpecIds = resolveSpecIdList(
       input.allowedParentSpec,
@@ -885,6 +906,7 @@ export class GeoService {
               ? { description: current.description }
               : {}),
           category: current.category,
+          siteRole: input.siteRole ?? current.siteRole,
           lifecycleStatus: nextLifecycleStatus,
           ...(input.validFor !== undefined
             ? { validFor: input.validFor }
@@ -2804,6 +2826,7 @@ export class GeoService {
     code: string;
     description?: string;
     category: GeographicSiteSpecificationCategory;
+    siteRole?: GeographicSiteRole;
     lifecycleStatus: GeographicSiteSpecificationLifecycleStatus;
     validFor?: TimePeriod;
     specCharacteristic: GeographicSiteSpecificationCharacteristic[];
@@ -2819,6 +2842,7 @@ export class GeoService {
       code: input.code,
       ...(input.description !== undefined ? { description: input.description } : {}),
       category: input.category,
+      siteRole: input.siteRole ?? defaultSiteRoleFor(input.category),
       lifecycleStatus: input.lifecycleStatus,
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
       specCharacteristic: input.specCharacteristic,
@@ -3281,6 +3305,17 @@ const validateSpecCategory: (
   if (!['Region', 'FunctionalGroup', 'Site', 'SubSite'].includes(category)) {
     throw new AppError('invalid site specification category', {
       code: 'GEO_SPEC_CATEGORY_INVALID',
+      statusCode: 400,
+    });
+  }
+};
+
+const validateSiteRole: (role: string) => asserts role is GeographicSiteRole = (
+  role: string,
+): asserts role is GeographicSiteRole => {
+  if (!GEO_SITE_ROLES.includes(role as GeographicSiteRole)) {
+    throw new AppError('invalid site specification role', {
+      code: 'GEO_SPEC_INVALID_SITE_ROLE',
       statusCode: 400,
     });
   }

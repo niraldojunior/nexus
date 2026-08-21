@@ -16,6 +16,7 @@ import type {
   GeographicSiteStatusHistoryEntry,
   GeoOutboxMessage,
 } from './domain.js';
+import { defaultSiteRoleFor } from './domain.js';
 import type {
   GeographicAddressQuery,
   GeoTenantScope,
@@ -398,14 +399,15 @@ export class PostgresGeoRepository implements IGeoRepository {
 
     await this.db.run(
       `INSERT INTO tmf_geographic_site_specification
-       (id, href, name, code, category, lifecycle_status, description, allowed_parent_spec_ids, allowed_child_spec_ids,
+       (id, href, name, code, category, site_role, lifecycle_status, description, allowed_parent_spec_ids, allowed_child_spec_ids,
         valid_for_start, valid_for_end, characteristics, is_bootstrap, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
        code = excluded.code,
        category = excluded.category,
+       site_role = excluded.site_role,
        lifecycle_status = excluded.lifecycle_status,
        description = excluded.description,
        allowed_parent_spec_ids = excluded.allowed_parent_spec_ids,
@@ -421,6 +423,7 @@ export class PostgresGeoRepository implements IGeoRepository {
         spec.name,
         spec.code,
         spec.category,
+        spec.siteRole ?? defaultSiteRoleFor(spec.category),
         spec.lifecycleStatus,
         spec.description || null,
         JSON.stringify(spec.allowedParentSpecIds),
@@ -439,7 +442,7 @@ export class PostgresGeoRepository implements IGeoRepository {
 
   public async getSpec(id: string): Promise<GeographicSiteSpecification | undefined> {
     const row = await this.db.get<GeographicSiteSpecificationRow>(
-      `SELECT id, href, name, code, category, lifecycle_status, description,
+      `SELECT id, href, name, code, category, site_role, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
               characteristics, is_bootstrap
        FROM tmf_geographic_site_specification
@@ -453,7 +456,7 @@ export class PostgresGeoRepository implements IGeoRepository {
 
   public async getSpecByCode(code: string): Promise<GeographicSiteSpecification | undefined> {
     const row = await this.db.get<GeographicSiteSpecificationRow>(
-      `SELECT id, href, name, code, category, lifecycle_status, description,
+      `SELECT id, href, name, code, category, site_role, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
               characteristics, is_bootstrap
        FROM tmf_geographic_site_specification
@@ -496,7 +499,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      `SELECT id, href, name, code, category, lifecycle_status, description,
+      `SELECT id, href, name, code, category, site_role, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
               characteristics, is_bootstrap
        FROM tmf_geographic_site_specification`,
@@ -1453,7 +1456,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const referencedRows =
       referencedIds.size > 0
         ? await this.db.all<GeographicSiteSpecificationRow>(
-            `SELECT id, href, name, code, category, lifecycle_status, description,
+            `SELECT id, href, name, code, category, site_role, lifecycle_status, description,
                     allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
                     characteristics, is_bootstrap
              FROM tmf_geographic_site_specification
@@ -1487,6 +1490,7 @@ export class PostgresGeoRepository implements IGeoRepository {
         name: row.name,
         code: row.code,
         category: row.category,
+        siteRole: row.site_role ?? defaultSiteRoleFor(row.category),
         lifecycleStatus: row.lifecycle_status,
         ...(row.description ? { description: row.description } : {}),
         ...(row.valid_for_start || row.valid_for_end
@@ -1696,6 +1700,7 @@ export class PostgresGeoRepository implements IGeoRepository {
       name: row.name,
       code: row.code,
       category: row.category,
+      siteRole: row.site_role ?? defaultSiteRoleFor(row.category),
       '@referredType': 'GeographicSiteSpecification',
     };
   }

@@ -63,6 +63,10 @@ export type GeoAddress = {
 
 export type GeoSpecCategory = 'Region' | 'FunctionalGroup' | 'Site' | 'SubSite';
 
+// Eixo funcional (C11): o que o site É (network/property/service), ortogonal a `category`
+// (onde ele cabe na hierarquia). Ver src/modules/geo/domain.ts GeographicSiteRole.
+export type GeoSiteRole = 'grouping' | 'network' | 'property' | 'service';
+
 export type GeoSpec = {
   '@type': 'GeographicSiteSpecification';
   id: string;
@@ -70,6 +74,7 @@ export type GeoSpec = {
   name: string;
   code: string;
   category: GeoSpecCategory;
+  siteRole: GeoSiteRole;
   lifecycleStatus: 'Active' | 'Retired';
   allowedParentSpecIds: string[];
   allowedChildSpecIds: string[];

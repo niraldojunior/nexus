@@ -443,18 +443,18 @@ async function ensureCatalog(target: Connection) {
     ['DIO', 'Distribuidor interno óptico'],
   ] as const)
     await ensureResourceType(target, code, name);
-  for (const [code, category] of [
-    ['BUILDING', 'Site'],
-    ['CENTRAL_POP_LEGACY', 'Site'],
-    ['ROOM', 'SubSite'],
-    ['TECHNICAL_ROOM', 'SubSite'],
-    ['CABINET', 'Site'],
-    ['CUSTOMER_SITE', 'Site'],
-    ['REMOTE_UNIT', 'Site'],
-    ['ADVANCED_REMOTE_UNIT', 'Site'],
-    ['TECHNICAL_CONTAINER', 'Site'],
+  for (const [code, category, siteRole] of [
+    ['BUILDING', 'Site', 'property'],
+    ['CENTRAL_POP_LEGACY', 'Site', 'network'],
+    ['ROOM', 'SubSite', 'network'],
+    ['TECHNICAL_ROOM', 'SubSite', 'network'],
+    ['CABINET', 'Site', 'network'],
+    ['CUSTOMER_SITE', 'Site', 'service'],
+    ['REMOTE_UNIT', 'Site', 'network'],
+    ['ADVANCED_REMOTE_UNIT', 'Site', 'network'],
+    ['TECHNICAL_CONTAINER', 'Site', 'network'],
   ] as const)
-    await ensureSiteSpec(target, code, category);
+    await ensureSiteSpec(target, code, category, siteRole);
 }
 
 async function ensureCategory(target: Connection, code: string, name: string) {
@@ -478,7 +478,7 @@ async function ensureResourceType(target: Connection, code: string, name: string
     status: 'active',
   });
 }
-async function ensureSiteSpec(target: Connection, code: string, category: string) {
+async function ensureSiteSpec(target: Connection, code: string, category: string, siteRole: string) {
   const exists = await target.execute<{ ID: string }>(
     `SELECT id AS "ID" FROM ${t('tmf_geographic_site_specification')} WHERE code=:1`,
     [code],
@@ -487,13 +487,14 @@ async function ensureSiteSpec(target: Connection, code: string, category: string
   if (exists.rows?.[0]) return;
   const id = createCanonicalId();
   await target.execute(
-    `INSERT INTO ${t('tmf_geographic_site_specification')} (id,href,name,code,category,lifecycle_status,characteristics,is_bootstrap) VALUES (:1,:2,:3,:4,:5,'Active','[]',0)`,
+    `INSERT INTO ${t('tmf_geographic_site_specification')} (id,href,name,code,category,site_role,lifecycle_status,characteristics,is_bootstrap) VALUES (:1,:2,:3,:4,:5,:6,'Active','[]',0)`,
     [
       id,
       `/tmf-api/geographicSiteManagement/v4/geographicSiteSpecification/${id}`,
       code,
       code,
       category,
+      siteRole,
     ],
   );
 }

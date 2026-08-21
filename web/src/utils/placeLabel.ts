@@ -34,8 +34,17 @@ export const siteKindDescription: Record<SiteKind, string> = {
 // coerente sem precisar editar código.
 // Aceita a spec inteira ou só o par categoria+nome — é o que os nós da árvore de
 // navegação carregam, sem precisar do catálogo completo em memória.
-export function siteKindFromSpec(spec?: { category?: string; name?: string }): SiteKind {
+export function siteKindFromSpec(spec?: {
+  category?: string;
+  name?: string;
+  siteRole?: string;
+}): SiteKind {
   if (!spec?.name) return spec?.category === 'SubSite' ? 'SUBSITE' : 'SITE';
+  // Eixo funcional (C11) tem precedência quando presente — specs ad-hoc sem siteRole caem
+  // no fallback por categoria/substring abaixo.
+  if (spec.siteRole === 'grouping') return 'REGION';
+  if (spec.siteRole === 'service') return 'PI';
+  if (spec.siteRole === 'property') return spec.category === 'SubSite' ? 'SUBSITE' : 'SITE';
   if (spec.category === 'Region') return 'REGION';
   if (spec.category === 'FunctionalGroup') return 'REGION';
   if (spec.category === 'SubSite') return 'SUBSITE';

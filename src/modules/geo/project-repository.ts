@@ -11,7 +11,7 @@ import type { DatabaseClient } from '../../shared/persistence/database-client.js
 // estado do REQ-MOD01-015: mudar o status do projeto cascateia (best-effort) para cada Site
 // vinculado via GeoService.transitionSite (ver /v1/geo/projects/:id em app.ts). Um local de
 // projeto não tem status próprio editável, só herda este valor.
-export type GeoProjectStatus = 'planned' | 'active' | 'suspended' | 'terminated';
+export type GeoProjectStatus = 'planned' | 'active' | 'suspended' | 'terminated' | 'cancelled';
 
 export type GeoProject = {
   id: string;
@@ -25,6 +25,11 @@ export type GeoProject = {
   // um projeto Terminado tem todos os Sites Retired; filtrar por status faria a lista mostrar
   // N locais e o contador dizer "0 locais".
   siteCount: number;
+  resourceCount: number;
+  infrastructureCount: number;
+  areaCount: number;
+  archivedAt: string | null;
+  archivedBy: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -51,6 +56,17 @@ export type GeoProjectSiteLink = {
   geonetAddressId: string | null;
 };
 
+export type GeoProjectResourceLink = {
+  id: string;
+  resourceId: string;
+  resourceKind: 'PhysicalResource' | 'LogicalResource';
+  originKind: 'created' | 'linked';
+  position: number;
+  linkedAt: string;
+  detachedAt: string | null;
+  detachedReason: string | null;
+};
+
 export type UpdateGeoProjectSiteLinkInput = {
   note?: string | null;
 };
@@ -64,6 +80,7 @@ export type GeoProjectArea = {
   id: string;
   kind: 'concentration' | 'dispersion';
   siteCount: number;
+  resourceCount: number;
   geometry: import('./domain.js').GeoJSONPolygon;
   siteIds: string[];
   centroid: [number, number] | null;
@@ -98,6 +115,11 @@ type ProjectRow = {
   status: GeoProjectStatus;
   createdBy: string | null;
   siteCount: number | string;
+  resourceCount: number | string;
+  infrastructureCount: number | string;
+  areaCount: number | string;
+  archivedAt: string | null;
+  archivedBy: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -112,7 +134,14 @@ const PROJECT_SELECT = `
   SELECT p.id, p.tenant_id AS tenantId, p.name, p.description,
          p.icon_data_url AS iconDataUrl, p.status, p.created_by AS createdBy,
          p.created_at AS createdAt, p.updated_at AS updatedAt,
-         (SELECT COUNT(*) FROM geo_project_site ps WHERE ps.project_id = p.id) AS siteCount
+         p.archived_at AS archivedAt, p.archived_by AS archivedBy,
+         (SELECT COUNT(*) FROM geo_project_site ps WHERE ps.project_id = p.id) AS siteCount,
+         (SELECT COUNT(*) FROM geo_project_resource pr WHERE pr.project_id = p.id AND pr.detached_at IS NULL) AS resourceCount,
+         (SELECT COUNT(*) FROM geo_project_resource pr
+            JOIN tmf_physical_resource r ON r.id = pr.resource_id
+            JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+           WHERE pr.project_id = p.id AND pr.detached_at IS NULL AND rs.category = 'Infrastructure.Passive') AS infrastructureCount,
+         (SELECT COUNT(*) FROM geo_project_area pa WHERE pa.project_id = p.id) AS areaCount
     FROM geo_project p
 `;
 
@@ -125,6 +154,11 @@ const toProject = (row: ProjectRow): GeoProject => ({
   status: row.status,
   createdBy: row.createdBy,
   siteCount: Number(row.siteCount) || 0,
+  resourceCount: Number(row.resourceCount) || 0,
+  infrastructureCount: Number(row.infrastructureCount) || 0,
+  areaCount: Number(row.areaCount) || 0,
+  archivedAt: row.archivedAt,
+  archivedBy: row.archivedBy,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 });
@@ -134,7 +168,7 @@ export class GeoProjectRepository {
 
   async list(tenantId: string): Promise<GeoProject[]> {
     const rows = await this.db.all<ProjectRow>(
-      `${PROJECT_SELECT} WHERE p.tenant_id = ? ORDER BY p.updated_at DESC`,
+      `${PROJECT_SELECT} WHERE p.tenant_id = ? AND p.archived_at IS NULL ORDER BY p.updated_at DESC`,
       [tenantId],
     );
     return rows.map(toProject);
@@ -146,6 +180,15 @@ export class GeoProjectRepository {
       [tenantId, id],
     );
     return row ? toProject(row) : null;
+  }
+
+  async archive(tenantId: string, id: string, actorSub: string): Promise<GeoProject | null> {
+    await this.db.run(
+      `UPDATE geo_project SET archived_at = ?, archived_by = ?, updated_at = ?
+        WHERE tenant_id = ? AND id = ? AND archived_at IS NULL`,
+      [new Date().toISOString(), actorSub, new Date().toISOString(), tenantId, id],
+    );
+    return this.get(tenantId, id);
   }
 
   async create(
@@ -218,6 +261,82 @@ export class GeoProjectRepository {
       [tenantId, projectId],
     );
     return rows.map((row) => row.siteId);
+  }
+
+  async listSiteLinksPage(
+    tenantId: string,
+    projectId: string,
+    limit: number,
+    offset: number,
+  ): Promise<GeoProjectSiteLink[]> {
+    const rows = await this.db.all<ProjectSiteLinkRow>(
+      `SELECT ps.site_id AS siteId, ps.note, ps.geonet_address_id AS geonetAddressId
+         FROM geo_project_site ps JOIN geo_project p ON p.id = ps.project_id
+        WHERE p.tenant_id = ? AND ps.project_id = ?
+        ORDER BY ps.position LIMIT ? OFFSET ?`,
+      [tenantId, projectId, limit, offset],
+    );
+    return rows;
+  }
+
+  async listResourceLinks(
+    tenantId: string,
+    projectId: string,
+    options: { limit?: number; offset?: number; includeDetached?: boolean } = {},
+  ): Promise<GeoProjectResourceLink[]> {
+    const rows = await this.db.all<GeoProjectResourceLink>(
+      `SELECT pr.id, pr.resource_id AS resourceId, pr.resource_kind AS resourceKind,
+              pr.origin_kind AS originKind, pr.position, pr.linked_at AS linkedAt,
+              pr.detached_at AS detachedAt, pr.detached_reason AS detachedReason
+         FROM geo_project_resource pr JOIN geo_project p ON p.id = pr.project_id
+        WHERE p.tenant_id = ? AND pr.project_id = ? ${options.includeDetached ? '' : 'AND pr.detached_at IS NULL'}
+        ORDER BY pr.position LIMIT ? OFFSET ?`,
+      [tenantId, projectId, options.limit ?? 50, options.offset ?? 0],
+    );
+    return rows;
+  }
+
+  async findOpenProjectByResourceId(
+    tenantId: string,
+    resourceId: string,
+  ): Promise<{ projectId: string; projectName: string } | null> {
+    return (await this.db.get<{ projectId: string; projectName: string }>(
+      `SELECT p.id AS projectId, p.name AS projectName
+         FROM geo_project_resource pr JOIN geo_project p ON p.id = pr.project_id
+        WHERE p.tenant_id = ? AND pr.resource_id = ? AND pr.detached_at IS NULL
+          AND p.status NOT IN ('terminated', 'cancelled') AND p.archived_at IS NULL`,
+      [tenantId, resourceId],
+    )) ?? null;
+  }
+
+  async linkResource(
+    projectId: string,
+    resourceId: string,
+    resourceKind: 'PhysicalResource' | 'LogicalResource',
+    originKind: 'created' | 'linked',
+    actorSub: string,
+  ): Promise<GeoProjectResourceLink> {
+    const now = new Date().toISOString();
+    const max = await this.db.get<{ maxPos: number | null }>(
+      `SELECT MAX(position) AS maxPos FROM geo_project_resource WHERE project_id = ?`, [projectId],
+    );
+    const link: GeoProjectResourceLink = { id: randomUUID(), resourceId, resourceKind, originKind, position: (max?.maxPos ?? -1) + 1, linkedAt: now, detachedAt: null, detachedReason: null };
+    await this.db.run(
+      `INSERT INTO geo_project_resource (id, project_id, resource_id, resource_kind, origin_kind, position, linked_at, linked_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [link.id, projectId, resourceId, resourceKind, originKind, link.position, now, actorSub],
+    );
+    await this.db.run(`UPDATE geo_project SET updated_at = ? WHERE id = ?`, [now, projectId]);
+    return link;
+  }
+
+  async detachResource(projectId: string, resourceId: string, actorSub: string, reason: string): Promise<boolean> {
+    const result = await this.db.run(
+      `UPDATE geo_project_resource SET detached_at = ?, detached_by = ?, detached_reason = ?
+        WHERE project_id = ? AND resource_id = ? AND detached_at IS NULL`,
+      [new Date().toISOString(), actorSub, reason, projectId, resourceId],
+    );
+    return result.changes > 0;
   }
 
   // Reverso de listSiteIds: dado um Site, qual Projeto o originou (se algum) — usado pela
@@ -303,6 +422,7 @@ export class GeoProjectRepository {
       locationId: string;
       kind: 'concentration' | 'dispersion';
       siteCount: number;
+      resourceCount: number;
       siteIds: string | null;
       centroidLng: number | null;
       centroidLat: number | null;
@@ -311,6 +431,8 @@ export class GeoProjectRepository {
       geometry: string | null;
     }>(
       `SELECT pa.location_id AS locationId, pa.kind, pa.site_count AS siteCount,
+              (SELECT COUNT(*) FROM geo_project_area_resource par
+                WHERE par.project_id = pa.project_id AND par.location_id = pa.location_id) AS resourceCount,
               pa.site_ids AS siteIds, pa.centroid_lng AS centroidLng,
               pa.centroid_lat AS centroidLat, pa.area_km2 AS areaKm2,
               pa.generated_at AS generatedAt, l.geometry
@@ -334,6 +456,7 @@ export class GeoProjectRepository {
           id: row.locationId,
           kind: row.kind,
           siteCount: Number(row.siteCount) || 0,
+          resourceCount: Number(row.resourceCount) || 0,
           geometry,
           siteIds: parseSiteIds(row.siteIds),
           centroid,

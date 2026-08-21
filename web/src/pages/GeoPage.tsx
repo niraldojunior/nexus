@@ -1373,6 +1373,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                     })
                   }
                   onOpenSite={(site) => openProjectSite(dockView.projectId, site)}
+                  onOpenResource={(resource) => selectNode(resource, 'search')}
+                  onFocusArea={(area) => {
+                    if (area.centroid) setFocusRequest({ point: area.centroid, scaleMeters: 1500 });
+                  }}
                   onRemoveSite={(site) => void handleQuickRemoveSite(dockView.projectId, site)}
                 />
               ) : null}

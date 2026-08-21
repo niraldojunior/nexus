@@ -9,7 +9,7 @@ TMFC014 · TMF673 / TMF674 / TMF675
 | Campo                   | Valor                          |
 | ----------------------- | ------------------------------ |
 | **Document Reference**  | VTN-HLD-MOD01-GEO              |
-| **Versão**              | 1.16 — draft                   |
+| **Versão**              | 1.17 — draft                   |
 | **Data**                | Agosto 2026                    |
 | **Documento âncora**    | VTN-HLD-OVERVIEW-001           |
 | **TMFC coberto**        | TMFC014 — Geographic Site Mgmt |
@@ -1740,7 +1740,7 @@ Exemplo ilustrativo do polígono de cobertura de um bairro conforme o contrato T
 > **Entidade TMF:** GeographicSite (TMF674) — reaproveitado sem alteração; `geo_project`/`geo_project_site` são projeção de plataforma, não TMF  
 > **Open API TMF:** TMF674 — o local do projeto nasce pelo mesmo contrato de Site (REQ-MOD01-006)  
 > **Prioridade:** Média — ferramenta de trabalho de campo/planejamento, fora do caminho crítico de provisionamento  
-> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.15 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.17 — draft
 
 ### 20.1 Descrição
 
@@ -1980,7 +1980,7 @@ O local em si continua sendo o `GeographicSite` do REQ-MOD01-006 — o que muda 
 > **Entidade TMF:** GeographicLocation (TMF675) — polígono de agrupamento espacial; não cria entidade nova  
 > **Open API TMF:** TMF675 — consulta geoespacial de área de agrupamento  
 > **Prioridade:** Média — leitura operacional de um Projeto de trabalho carregado em massa  
-> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.13 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.17 — draft
 
 ### 22.1 Descrição
 
@@ -2258,6 +2258,7 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 | 1.14   | Agosto 2026 | Engenharia — V.tal Nexus | Novo RF-011/CA-008 do REQ-MOD01-011 (Controle de camadas do mapa): controle flutuante no canto superior direito do mapa, agrupado em Locais (Estações · Pontos e sub-locais), Cobertura GPON e Recursos (Caixas e equipamentos · Cabos e dutos) — `MapLayerControl`/`useMapLayers` no frontend, persistido em `localStorage`. Desligar uma camada corta a requisição, não só o desenho: `GET /v1/geo/tree/viewport` ganha o parâmetro `include` (`sites`\|`resource-points`\|`resource-lines`), consumido em `GeoTreeService.resourcesInViewport`/`sitesInViewport`; `GET /v1/geo/coverage` deixa de ser chamado com a camada de Cobertura desligada. Novo hook `useViewportInfra` substitui o fetch que antes vivia preso ao callback de `idle` do mapa — religar uma camada agora refaz a busca sem exigir pan/zoom. Item aberto no painel de detalhe permanece visível mesmo com a camada dele desligada.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 1.15   | Agosto 2026 | Engenharia — V.tal Nexus | Correção do REQ-MOD01-015: clicar no pin de um local de Projeto no mapa não abria o painel de consulta — o roteamento do clique (`GeoPage.selectNodeFromMap`) checava um `Set` derivado só da página de 200 locais do painel, que não cobre os pins buscados por bbox quando o projeto tem manchas geradas (REQ-MOD01-017). Novo RF-012: o vínculo de projeto passa a ser carimbado no próprio nó (`ProjectSite.projectId`, `geoProjectApi.fetchProjectSites`) em vez de reconstruído por lista. Correção adjacente: `DetailTarget` (painel comum de Local) deixa de depender do catálogo `sites` (só specs "container", ver §2.3) para resolver o Site clicado — um Site de spec folha (Ponto de Instalação, Cabinet) ou o local de um projeto **terminado** clicado no mapa não abria painel nenhum; agora resolve por id via `useSiteDetail`, como o próprio `SitePanel` já fazia. Novo CA-012.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 1.16   | Agosto 2026 | Engenharia — V.tal Nexus | Novo RF-012 do REQ-MOD01-011 (Seleção de base cartográfica/MUB): quarta opção de basemap **Branco** (`styles` que zeram vias, água, POI e limite de lote, mantendo rótulo de município/bairro em cinza tênue) para as manchas de Cobertura GPON (REQ-MOD01-014) e de Projeto (REQ-MOD01-017) lerem sem competir com a cor do basemap; item **Geonet** listado com selo "em breve", ainda não selecionável. `BASE_MAP_LAYERS` (`MapBaseLayerSelector`) passa a carregar o `mapStyles` por opção, e o `GoogleMapInstance.setOptions` (novo em `googleMaps.ts`) aplica o estilo na troca — antes só `setMapTypeId` era chamado, insuficiente entre Mapa e Branco (os dois usam `roadmap`). Duplo clique no botão do MUB cicla direto para o próximo selecionável (wrap-around, pulando o Geonet), sem abrir a lista. |
+| 1.17   | Agosto 2026 | Engenharia — V.tal Nexus | Painel de Projeto organizado em Locais, Infraestrutura, Recursos, Cobertura e Pesquisar. Vínculo histórico explícito para Resources, arquivamento terminal, paginação e busca combinada; Cobertura expõe Resources por mancha. |
 
 ---
 

@@ -867,7 +867,7 @@ const routeGeoRequest = async ({
       // estado como os demais — os locais já ganharam vida própria (ver cascata abaixo) e o
       // projeto passa a ser só um registro histórico (Origem no painel de Local).
       if (
-        current.status === 'terminated' &&
+        (current.status === 'terminated' || current.status === 'cancelled') &&
         nextStatus !== undefined &&
         nextStatus !== 'terminated'
       ) {
@@ -902,15 +902,18 @@ const routeGeoRequest = async ({
       // (ver PROJECT_SITE_EXCLUSION_SQL em tree-service.ts, que volta a mostrá-los na
       // Hierarquia/busca/mapa geral assim que o projeto termina).
       let siteCascade: { updated: number; skipped: number; blocked?: number } | undefined;
+      let resourceCascade: { updated: number; skipped: number } | undefined;
       if (nextStatus !== undefined && nextStatus !== current.status) {
         const siteIds = await runtime.geoProjectRepository.listSiteIds(
           geoContext.tenantId,
           projectId,
         );
-        const cascadeStatus = nextStatus === 'terminated' ? 'active' : nextStatus;
+        const cascadeStatus = nextStatus === 'terminated' ? 'active' : nextStatus === 'cancelled' ? 'terminated' : nextStatus;
         const statusReason =
           nextStatus === 'terminated'
             ? 'Projeto de origem concluído — local liberado para o inventário'
+            : nextStatus === 'cancelled'
+              ? 'Projeto cancelado — local encerrado'
             : `Status do projeto alterado para ${nextStatus}`;
         const cascadeResult = await geoService.transitionProjectSites(
           projectId,
@@ -924,8 +927,34 @@ const routeGeoRequest = async ({
           skipped: cascadeResult.skipped,
           ...(cascadeResult.blocked.length > 0 ? { blocked: cascadeResult.blocked.length } : {}),
         };
+        // Recursos seguem o mesmo estado do Projeto, mas permanecem entidades TMF
+        // independentes. Terminar libera; cancelar encerra e bloqueia.
+        const resourceLinks = await runtime.geoProjectRepository.listResourceLinks(
+          geoContext.tenantId, projectId, { limit: 100000 },
+        );
+        let resourcesUpdated = 0;
+        for (const link of resourceLinks) {
+          const resource = await runtime.resourceService.getResource(link.resourceId);
+          if (!resource) continue;
+          const resourcePatch = nextStatus === 'terminated'
+            ? { status: 'active', administrativeState: 'unlocked', operationalState: 'enabled' }
+            : nextStatus === 'cancelled'
+              ? { status: 'terminated', administrativeState: 'locked', operationalState: 'disabled' }
+              : nextStatus === 'active'
+                ? { status: 'active', administrativeState: 'unlocked', operationalState: 'enabled' }
+                : nextStatus === 'suspended'
+                  ? { status: 'suspended', administrativeState: 'locked', operationalState: 'disabled' }
+                  : { status: 'inactive', administrativeState: 'locked', operationalState: 'disabled' };
+          if (resource['@type'] === 'LogicalResource') {
+            await runtime.resourceService.updateLogicalResource(link.resourceId, resourcePatch as Parameters<typeof runtime.resourceService.updateLogicalResource>[1]);
+          } else {
+            await runtime.resourceService.updatePhysicalResource(link.resourceId, resourcePatch as Parameters<typeof runtime.resourceService.updatePhysicalResource>[1]);
+          }
+          resourcesUpdated += 1;
+        }
+        resourceCascade = { updated: resourcesUpdated, skipped: resourceLinks.length - resourcesUpdated };
       }
-      return sendJson(response, 200, siteCascade ? { ...updated, siteCascade } : updated);
+      return sendJson(response, 200, siteCascade ? { ...updated, siteCascade, resourceCascade } : updated);
     }
     if (request.method === 'DELETE') {
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
@@ -933,40 +962,108 @@ const routeGeoRequest = async ({
       if (!current) {
         throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
       }
-      // Retira (soft-terminate, C6) cada local em massa ANTES de apagar o vínculo do projeto
-      // (transitionProjectSites — um laço um-a-um nunca terminaria num projeto com dezenas de
-      // milhares de locais, issue #58). Local com dependência bloqueante fica de fora e o
-      // projeto é MANTIDO íntegro com todos os vínculos — a ordem inversa (apagar o projeto
-      // primeiro) deixaria esse local sem projeto e sem estar Retired, vazando para a
-      // Hierarquia geral sem dono.
-      const siteIds = await runtime.geoProjectRepository.listSiteIds(
-        geoContext.tenantId,
-        projectId,
-      );
-      const result = await geoService.transitionProjectSites(
-        projectId,
-        siteIds,
-        'Retired',
-        'Projeto de trabalho excluído',
-        geoContext,
-      );
-      const deleted = result.blocked.length === 0;
-      if (deleted) {
-        await runtime.geoProjectRepository.remove(geoContext.tenantId, projectId);
+      // Arquivamento é administrativo: preserva Sites, Resources e todos os vínculos
+      // históricos. O ciclo de vida já deve ter chegado a um estado terminal.
+      if (current.status !== 'terminated' && current.status !== 'cancelled') {
+        throw new AppError('only terminal projects can be archived', {
+          code: 'GEO_PROJECT_ARCHIVE_REQUIRES_TERMINAL_STATUS', statusCode: 409,
+        });
       }
-      return sendJson(response, 200, {
-        deleted,
-        retired: result.updated,
-        skipped: result.skipped,
-        blocked: result.blocked.length,
-        ...(result.blocked.length > 0 ? { blockedSiteIds: result.blocked.slice(0, 20) } : {}),
-      });
+      const archived = await runtime.geoProjectRepository.archive(geoContext.tenantId, projectId, geoContext.actorSub);
+      return sendJson(response, 200, { archived: Boolean(archived), project: archived });
     }
   }
 
   // Manchas de concentração/dispersão do projeto (REQ-MOD01-017), geradas por
   // scripts/build-project-areas.mjs — não há geração pela API, só leitura do que o script já
   // gravou (mesmo modelo somente-leitura da cobertura GPON, GET /v1/geo/coverage).
+  // Resources are kept as independent TMF entities; this endpoint exposes the explicit
+  // platform association required by the Project workspace.
+  const projectResourcesMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/resources$/);
+  if (projectResourcesMatch?.[1]) {
+    const projectId = decodeURIComponent(projectResourcesMatch[1]);
+    if (request.method === 'GET') {
+      requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+      const limit = Math.min(Math.max(parseOptionalNumber(url.searchParams.get('limit')) ?? 50, 1), 100);
+      const offset = Math.max(parseOptionalNumber(url.searchParams.get('offset')) ?? 0, 0);
+      const links = await runtime.geoProjectRepository.listResourceLinks(geoContext.tenantId, projectId, { limit, offset });
+      const nodes = await geoTreeService.resourcesByIds(links.map((link) => link.resourceId));
+      const items = url.searchParams.get('view') === 'infrastructure'
+        ? nodes.filter((node) => ['Pole', 'Duct', 'Manhole', 'CTO', 'DIO', 'Splitter'].includes(node.resourceType ?? ''))
+        : nodes;
+      return sendJson(response, 200, { items, offset, limit, hasMore: links.length === limit });
+    }
+    if (request.method === 'POST') {
+      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+      const project = await runtime.geoProjectRepository.get(geoContext.tenantId, projectId);
+      if (!project || project.archivedAt) throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
+      if (project.status === 'terminated' || project.status === 'cancelled') throw new AppError('terminal project cannot receive resources', { code: 'GEO_PROJECT_TERMINAL', statusCode: 409 });
+      const body = await readBody(request);
+      const kind = body['@type'] === 'LogicalResource' || body.supportingPhysicalResourceId ? 'LogicalResource' : 'PhysicalResource';
+      const state = project.status === 'active' ? { status: 'active', administrativeState: 'unlocked', operationalState: 'enabled' } : project.status === 'suspended' ? { status: 'suspended', administrativeState: 'locked', operationalState: 'disabled' } : { status: 'inactive', administrativeState: 'locked', operationalState: 'disabled' };
+      const created = kind === 'LogicalResource'
+        ? await runtime.resourceService.createLogicalResource({ ...body, ...state } as Parameters<typeof runtime.resourceService.createLogicalResource>[0])
+        : await runtime.resourceService.createPhysicalResource({ ...body, ...state } as Parameters<typeof runtime.resourceService.createPhysicalResource>[0]);
+      await runtime.geoProjectRepository.linkResource(projectId, created.id, kind, 'created', geoContext.actorSub);
+      return sendJson(response, 201, created);
+    }
+  }
+
+  const projectResourceMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/resources\/([^/]+)$/);
+  if (projectResourceMatch?.[1] && projectResourceMatch[2]) {
+    const projectId = decodeURIComponent(projectResourceMatch[1]);
+    const resourceId = decodeURIComponent(projectResourceMatch[2]);
+    if (request.method === 'POST') {
+      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+      const project = await runtime.geoProjectRepository.get(geoContext.tenantId, projectId);
+      if (!project || project.archivedAt) throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
+      if (project.status === 'terminated' || project.status === 'cancelled') throw new AppError('terminal project cannot receive resources', { code: 'GEO_PROJECT_TERMINAL', statusCode: 409 });
+      const occupied = await runtime.geoProjectRepository.findOpenProjectByResourceId(geoContext.tenantId, resourceId);
+      if (occupied && occupied.projectId !== projectId) throw new AppError('resource already belongs to an open project', { code: 'GEO_PROJECT_RESOURCE_CONFLICT', statusCode: 409 });
+      const resource = await runtime.resourceService.getResource(resourceId);
+      if (!resource) throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
+      await runtime.geoProjectRepository.linkResource(projectId, resourceId, resource['@type'], 'linked', geoContext.actorSub);
+      return sendJson(response, 201, resource);
+    }
+    if (request.method === 'DELETE') {
+      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+      const detached = await runtime.geoProjectRepository.detachResource(projectId, resourceId, geoContext.actorSub, 'Desvinculado manualmente do projeto');
+      if (!detached) throw new AppError('project resource link not found', { code: 'GEO_PROJECT_RESOURCE_NOT_FOUND', statusCode: 404 });
+      const resource = await runtime.resourceService.getResource(resourceId);
+      if (resource?.['@type'] === 'LogicalResource') await runtime.resourceService.deleteLogicalResource(resourceId);
+      if (resource?.['@type'] === 'PhysicalResource') await runtime.resourceService.deletePhysicalResource(resourceId);
+      return sendJson(response, 200, { detached: true });
+    }
+  }
+
+  const projectSearchMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/search$/);
+  if (projectSearchMatch?.[1] && request.method === 'GET') {
+    requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+    const projectId = decodeURIComponent(projectSearchMatch[1]);
+    const query = (url.searchParams.get('q') ?? '').trim().toLocaleLowerCase();
+    const limit = Math.min(Math.max(parseOptionalNumber(url.searchParams.get('limit')) ?? 50, 1), 100);
+    const offset = Math.max(parseOptionalNumber(url.searchParams.get('offset')) ?? 0, 0);
+    if (query.length < 2) return sendJson(response, 200, { items: [], offset, limit, hasMore: false });
+    const [siteIds, links] = await Promise.all([runtime.geoProjectRepository.listSiteIds(geoContext.tenantId, projectId), runtime.geoProjectRepository.listResourceLinks(geoContext.tenantId, projectId, { limit: 10000 })]);
+    const [sites, resources] = await Promise.all([geoTreeService.sitesByIds(siteIds), geoTreeService.resourcesByIds(links.map((link) => link.resourceId))]);
+    const all = [...sites, ...resources].filter((item) => `${item.label} ${item.sublabel ?? ''} ${item.resourceType ?? ''}`.toLocaleLowerCase().includes(query));
+    return sendJson(response, 200, { items: all.slice(offset, offset + limit), offset, limit, hasMore: all.length > offset + limit });
+  }
+
+  const projectCandidatesMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/resource-candidates$/);
+  if (projectCandidatesMatch?.[1] && request.method === 'GET') {
+    requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+    const projectId = decodeURIComponent(projectCandidatesMatch[1]);
+    const query = (url.searchParams.get('q') ?? '').trim();
+    const resources = await runtime.resourceService.listResources({ ...(query ? { name: query } : {}), limit: 50 });
+    const available = [] as Resource[];
+    for (const resource of resources) {
+      const linked = await runtime.geoProjectRepository.findOpenProjectByResourceId(geoContext.tenantId, resource.id);
+      if (!linked || linked.projectId === projectId) available.push(resource);
+    }
+    return sendJson(response, 200, available);
+  }
+
   const projectAreasMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/areas$/);
   if (projectAreasMatch?.[1] && request.method === 'GET') {
     const projectId = decodeURIComponent(projectAreasMatch[1]);
@@ -985,6 +1082,7 @@ const routeGeoRequest = async ({
       const maxLng = parseOptionalNumber(url.searchParams.get('maxLng'));
       const maxLat = parseOptionalNumber(url.searchParams.get('maxLat'));
       const limit = parseOptionalNumber(url.searchParams.get('limit'));
+      const offset = Math.max(parseOptionalNumber(url.searchParams.get('offset')) ?? 0, 0);
       const hasBounds =
         minLng !== undefined &&
         minLat !== undefined &&
@@ -1005,11 +1103,9 @@ const routeGeoRequest = async ({
         return sendJson(response, 200, sites);
       }
 
-      const [siteIds, links] = await Promise.all([
-        runtime.geoProjectRepository.listSiteIds(geoContext.tenantId, projectId),
-        runtime.geoProjectRepository.listSiteLinks(geoContext.tenantId, projectId),
-      ]);
-      const scopedIds = limit !== undefined ? siteIds.slice(0, limit) : siteIds;
+      const pageLimit = Math.min(Math.max(limit ?? 50, 1), 100);
+      const links = await runtime.geoProjectRepository.listSiteLinksPage(geoContext.tenantId, projectId, pageLimit, offset);
+      const scopedIds = links.map((link) => link.siteId);
       const linkBySiteId = new Map(links.map((link) => [link.siteId, link]));
       const nodes = await geoTreeService.sitesByIds(scopedIds);
       const sites = nodes.map((node) => ({
@@ -1017,7 +1113,7 @@ const routeGeoRequest = async ({
         note: linkBySiteId.get(node.refId ?? '')?.note ?? null,
         geonetAddressId: linkBySiteId.get(node.refId ?? '')?.geonetAddressId ?? null,
       }));
-      return sendJson(response, 200, sites);
+      return sendJson(response, 200, { items: sites, offset, limit: pageLimit, hasMore: links.length === pageLimit });
     }
     if (request.method === 'POST') {
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
@@ -2756,7 +2852,7 @@ const assertProjectIconSize = (value: unknown): void => {
   });
 };
 
-const GEO_PROJECT_STATUSES = ['planned', 'active', 'suspended', 'terminated'] as const;
+const GEO_PROJECT_STATUSES = ['planned', 'active', 'suspended', 'terminated', 'cancelled'] as const;
 
 // `undefined` quando o corpo não trouxe `status` (patch parcial); lança quando trouxe um
 // valor fora do vocabulário de GeoProjectStatus.

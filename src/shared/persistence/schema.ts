@@ -18,7 +18,9 @@ export const TABLE_NAMES = [
   'tmf_geographic_site_relationship',
   'geo_project',
   'geo_project_site',
+  'geo_project_resource',
   'geo_project_area',
+  'geo_project_area_resource',
   'tmf_geographic_relationship_type',
   'tmf_resource_specification',
   'tmf_resource_category',
@@ -312,6 +314,30 @@ export const MIGRATIONS_SQL = `
   -- Projetos de trabalho (REQ-MOD01-015): status do projeto (herdado em cascata pelos Sites
   -- vinculados) e, por local, observação de trabalho + id do endereço no GEONET.
   ALTER TABLE geo_project ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'planned';
+  ALTER TABLE geo_project ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+  ALTER TABLE geo_project ADD COLUMN IF NOT EXISTS archived_by TEXT;
+  CREATE TABLE IF NOT EXISTS geo_project_resource (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    resource_id TEXT NOT NULL,
+    resource_kind TEXT NOT NULL,
+    origin_kind TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    linked_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    linked_by TEXT,
+    detached_at TIMESTAMPTZ,
+    detached_by TEXT,
+    detached_reason TEXT,
+    FOREIGN KEY (project_id) REFERENCES geo_project(id)
+  );
+  CREATE TABLE IF NOT EXISTS geo_project_area_resource (
+    project_id TEXT NOT NULL,
+    location_id TEXT NOT NULL,
+    resource_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (project_id, location_id, resource_id),
+    FOREIGN KEY (project_id, location_id) REFERENCES geo_project_area(project_id, location_id)
+  );
   ALTER TABLE geo_project_site ADD COLUMN IF NOT EXISTS note TEXT;
   ALTER TABLE geo_project_site ADD COLUMN IF NOT EXISTS geonet_address_id TEXT;
 
@@ -386,6 +412,10 @@ export const MIGRATIONS_SQL = `
   -- (listagem de locais de um projeto, na ordem salva) ordenava em memória.
   CREATE INDEX IF NOT EXISTS idx_geo_project_site_project_position
     ON geo_project_site(project_id, position);
+  CREATE INDEX IF NOT EXISTS idx_geo_project_resource_project_position
+    ON geo_project_resource(project_id, position);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_geo_project_resource_open_resource
+    ON geo_project_resource(resource_id) WHERE detached_at IS NULL;
   -- Cobre o filtro mais comum da árvore/workspace (tenant + tipo de local + status) sem
   -- cair no índice solto de tenant_id sozinho.
   CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_tenant_spec_status
@@ -689,6 +719,8 @@ export const SCHEMA_SQL = `
         -- projeto não tem status próprio editável; ele apenas herda este valor.
         status TEXT NOT NULL DEFAULT 'planned',
         created_by TEXT,
+        archived_at DATETIME,
+        archived_by TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -715,6 +747,29 @@ export const SCHEMA_SQL = `
         FOREIGN KEY (site_id) REFERENCES tmf_geographic_site(id)
       );
       CREATE INDEX IF NOT EXISTS idx_geo_project_site_site ON geo_project_site(site_id);
+
+      -- Vínculo histórico explícito Projeto ↔ Resource. A entidade Resource continua sendo
+      -- TMF634/639 independente; esta projeção só registra a origem e o ciclo de trabalho.
+      CREATE TABLE IF NOT EXISTS geo_project_resource (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        resource_kind TEXT NOT NULL,
+        origin_kind TEXT NOT NULL,
+        position INTEGER NOT NULL DEFAULT 0,
+        linked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        linked_by TEXT,
+        detached_at DATETIME,
+        detached_by TEXT,
+        detached_reason TEXT,
+        FOREIGN KEY (project_id) REFERENCES geo_project(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_geo_project_resource_project_position
+        ON geo_project_resource(project_id, position);
+      CREATE INDEX IF NOT EXISTS idx_geo_project_resource_resource
+        ON geo_project_resource(resource_id, detached_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_geo_project_resource_open_resource
+        ON geo_project_resource(resource_id) WHERE detached_at IS NULL;
 
       -- Manchas de concentração/dispersão de um Projeto (REQ-MOD01-017): agrupamento espacial
       -- dos Sites de um projeto carregado em massa, gerado por scripts/build-project-areas.mjs
@@ -743,6 +798,18 @@ export const SCHEMA_SQL = `
         FOREIGN KEY (location_id) REFERENCES tmf_geographic_location(id)
       );
       CREATE INDEX IF NOT EXISTS idx_geo_project_area_project ON geo_project_area(project_id, position);
+
+      -- Índice derivado para as contagens de Cobertura. É regenerável, como as manchas.
+      CREATE TABLE IF NOT EXISTS geo_project_area_resource (
+        project_id TEXT NOT NULL,
+        location_id TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (project_id, location_id, resource_id),
+        FOREIGN KEY (project_id, location_id) REFERENCES geo_project_area(project_id, location_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_geo_project_area_resource_project_location
+        ON geo_project_area_resource(project_id, location_id);
 
       CREATE TABLE IF NOT EXISTS tmf_geographic_relationship_type (
         id TEXT PRIMARY KEY,

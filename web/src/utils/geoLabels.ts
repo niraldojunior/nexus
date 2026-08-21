@@ -3,7 +3,8 @@
 // domínio/banco (C1, TMF-first) — este arquivo é a única fonte de tradução para exibição,
 // para que nenhuma página mantenha seu próprio dicionário local duplicado.
 
-import type { GeoSiteStatus, GeoSpec, GeoSpecCategory, GeoStatus } from '../services/geoApi';
+import type { GeoSiteStatus, GeoSpec, GeoSpecCategory } from '../services/geoApi';
+import type { GeoProjectStatus } from '../services/geoProjectApi';
 
 // --- Status de GeographicSite (5 estados canônicos, PascalCase) -----------------------
 
@@ -21,11 +22,12 @@ export function siteStatusLabel(status: string | undefined): string {
 
 // --- Status de GeoProject (vocabulário separado, 4 estados lowercase) -----------------
 
-export const PROJECT_STATUS_OPTIONS: ReadonlyArray<{ value: GeoStatus; label: string }> = [
+export const PROJECT_STATUS_OPTIONS: ReadonlyArray<{ value: GeoProjectStatus; label: string }> = [
   { value: 'planned', label: 'Planejado' },
   { value: 'active', label: 'Ativo' },
   { value: 'suspended', label: 'Suspenso' },
   { value: 'terminated', label: 'Terminado' },
+  { value: 'cancelled', label: 'Cancelado' },
 ];
 
 export function projectStatusLabel(status: string | undefined): string {
@@ -42,6 +44,7 @@ const STATUS_BADGE_META: Record<string, { label: string; tone: StatusTone }> = {
   active: { label: 'Ativo', tone: 'green' },
   suspended: { label: 'Suspenso', tone: 'red' },
   terminated: { label: 'Terminado', tone: 'neutral' },
+  cancelled: { label: 'Cancelado', tone: 'red' },
   Planned: { label: 'Planejado', tone: 'amber' },
   InConstruction: { label: 'Em Construção', tone: 'amber' },
   Active: { label: 'Ativo', tone: 'green' },

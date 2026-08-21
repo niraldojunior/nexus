@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ChevronLeft, MoreVertical, Plus, Trash2 } from 'lucide-react';
-import type {
+import {
   GeoProject,
   GeoProjectDeleteSummary,
   GeoProjectSiteCascade,
   ProjectArea,
+  fetchProjectResources,
+  searchProject,
 } from '../../services/geoProjectApi';
-import type { GeoStatus } from '../../services/geoApi';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import { ProjectIcon } from './ProjectIcon';
 import { Modal } from './Modal';
@@ -42,6 +43,8 @@ export type ProjectDetailPanelProps = {
   onBack: () => void;
   onAddSite: () => void;
   onOpenSite: (site: GeoTreeNode) => void;
+  onOpenResource?: (resource: GeoTreeNode) => void;
+  onFocusArea?: (area: ProjectArea) => void;
   onRemoveSite: (site: GeoTreeNode) => void;
 };
 
@@ -65,6 +68,8 @@ export function ProjectDetailPanel({
   onBack,
   onAddSite,
   onOpenSite,
+  onOpenResource,
+  onFocusArea,
   onRemoveSite,
 }: ProjectDetailPanelProps) {
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
@@ -78,6 +83,11 @@ export function ProjectDetailPanel({
   // seguiram por causa de SITE_STATUS_TRANSITIONS) — some ao trocar de status de novo.
   const [cascadeSkipped, setCascadeSkipped] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [tab, setTab] = useState<'sites' | 'infrastructure' | 'resources' | 'coverage' | 'search'>('sites');
+  const [resources, setResources] = useState<GeoTreeNode[]>([]);
+  const [resourcesLoading, setResourcesLoading] = useState(false);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<GeoTreeNode[]>([]);
   // Local bloqueado (dependência ativa) mantém o projeto vivo em vez de sumir (issue #58) —
   // o painel precisa dizer por que ele continua aberto, em vez de fechar silenciosamente.
   const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
@@ -105,7 +115,7 @@ export function ProjectDetailPanel({
     if (next !== (project.description ?? '')) onUpdate({ description: next || null });
   };
 
-  const handleStatusChange = async (status: GeoStatus) => {
+  const handleStatusChange = async (status: GeoProject['status']) => {
     setCascadeSkipped(null);
     const result = await onUpdate({ status });
     setCascadeSkipped(
@@ -113,12 +123,31 @@ export function ProjectDetailPanel({
     );
   };
 
+  useEffect(() => {
+    if (tab !== 'resources' && tab !== 'infrastructure') return;
+    let stale = false;
+    setResourcesLoading(true);
+    void fetchProjectResources(project.id, { view: tab === 'infrastructure' ? 'infrastructure' : 'all' })
+      .then((page) => { if (!stale) setResources(page.items); })
+      .finally(() => { if (!stale) setResourcesLoading(false); });
+    return () => { stale = true; };
+  }, [project.id, tab]);
+
+  useEffect(() => {
+    if (tab !== 'search' || query.trim().length < 2) { setResults([]); return; }
+    let stale = false;
+    const timer = window.setTimeout(() => {
+      void searchProject(project.id, query.trim()).then((page) => { if (!stale) setResults(page.items); });
+    }, 250);
+    return () => { stale = true; window.clearTimeout(timer); };
+  }, [project.id, query, tab]);
+
   const handleConfirmDelete = async () => {
     setDeleting(true);
     try {
       const summary = await onDelete();
       setConfirmDelete(false);
-      if (!summary.deleted) {
+      if (!summary.archived && !summary.deleted) {
         setDeleteNotice(
           summary.blocked === 1
             ? '1 local não pôde ser encerrado (tem recurso, serviço ou sub-local ativo) — o projeto foi mantido.'
@@ -241,7 +270,7 @@ export function ProjectDetailPanel({
       ) : (
         <select
           value={project.status}
-          onChange={(event) => void handleStatusChange(event.target.value as GeoStatus)}
+          onChange={(event) => void handleStatusChange(event.target.value as GeoProject['status'])}
           aria-label="Status do projeto"
           className="h-8 shrink-0 rounded-[10px] border border-app-border bg-white px-2 text-[0.76rem] font-semibold text-app-text outline-none transition hover:border-app-accent-border focus:border-app-accent-border"
         >
@@ -339,6 +368,41 @@ export function ProjectDetailPanel({
       ))
     );
 
+  const tabBar = (
+    <div className="flex gap-1 overflow-x-auto border-b border-app-border px-3 py-2" role="tablist" aria-label="Conteúdo do projeto">
+      {([
+        ['sites', 'Locais'], ['infrastructure', 'Infraestrutura'], ['resources', 'Recursos'], ['coverage', 'Cobertura'], ['search', 'Pesquisar'],
+      ] as const).map(([value, label]) => (
+        <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}
+          className={`shrink-0 rounded-[8px] px-2.5 py-1.5 text-[0.76rem] font-semibold ${tab === value ? 'bg-app-accent-soft text-app-accent' : 'text-app-muted hover:bg-app-accent-soft'}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const resourceRows = resourcesLoading ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Carregando recursos…</p>
+    : resources.length === 0 ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Nenhum recurso nesta visão.</p>
+    : resources.map((resource) => <button key={resource.id} type="button" onClick={() => onOpenResource?.(resource)} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-2 text-left hover:bg-app-accent-soft">
+      <NodeIcon node={resource} /><span className="min-w-0 flex-1 truncate text-[0.84rem] font-medium text-app-text">{resource.label}</span><span className="text-[0.68rem] text-app-muted">{resource.referredType === 'LogicalResource' ? 'Lógico' : resource.resourceType ?? 'Físico'}</span>
+    </button>);
+
+  const coverageRows = areas.length === 0 ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Nenhuma mancha de cobertura gerada.</p>
+    : areas.map((area) => <button key={area.id} type="button" onClick={() => onFocusArea?.(area)} className="grid w-full grid-cols-[1fr_auto] gap-x-2 rounded-[10px] px-2 py-2 text-left hover:bg-app-accent-soft">
+      <span className="text-[0.84rem] font-medium text-app-text">{area.kind === 'concentration' ? 'Concentração' : 'Dispersão'}</span>
+      <span className="text-[0.72rem] text-app-muted">{area.areaKm2?.toFixed(2) ?? '—'} km²</span>
+      <span className="text-[0.72rem] text-app-muted">{area.siteCount} locais · {area.resourceCount} recursos</span>
+    </button>);
+
+  const searchRows = query.trim().length < 2 ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Digite ao menos 2 caracteres.</p>
+    : results.length === 0 ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Nenhum resultado.</p>
+    : results.map((item) => <button key={item.id} type="button" onClick={() => item.kind === 'site' ? onOpenSite(item) : onOpenResource?.(item)} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-2 text-left hover:bg-app-accent-soft"><NodeIcon node={item} /><span className="min-w-0 flex-1 truncate text-[0.84rem] font-medium text-app-text">{item.label}</span><span className="text-[0.68rem] text-app-muted">{item.kind === 'site' ? 'Local' : 'Recurso'}</span></button>);
+
+  const tabContent = tab === 'sites' ? <><div className="mb-1 flex items-center justify-between">{countLabel}</div>{areasSummary}<div className="grid gap-0.5">{addSiteButton}{siteRows}</div></>
+    : tab === 'coverage' ? <div className="grid gap-0.5">{coverageRows}</div>
+    : tab === 'search' ? <div className="grid gap-2"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar local ou recurso" className="h-9 rounded-[9px] border border-app-border bg-white px-2 text-[0.82rem] outline-none focus:border-app-accent-border" />{searchRows}</div>
+    : <div className="grid gap-0.5"><p className="px-2 pb-2 text-[0.72rem] font-semibold uppercase tracking-[.08em] text-app-muted">{tab === 'infrastructure' ? `${project.infrastructureCount ?? 0} itens de infraestrutura` : `${project.resourceCount ?? 0} recursos`}</p>{resourceRows}</div>;
+
   const deleteConfirm = confirmDelete ? (
     <Modal
       onClose={() => (deleting ? undefined : setConfirmDelete(false))}
@@ -413,14 +477,7 @@ export function ProjectDetailPanel({
           {descriptionBlock}
           {cascadeNotice ? <div className="mt-2">{cascadeNotice}</div> : null}
           {deleteNoticeBlock ? <div className="mt-2">{deleteNoticeBlock}</div> : null}
-          <div className="mt-3 border-t border-app-border pt-3">
-            <div className="mb-1 flex items-center justify-between">{countLabel}</div>
-            {areasSummary}
-            <div className="grid gap-0.5">
-              {addSiteButton}
-              {siteRows}
-            </div>
-          </div>
+          <div className="mt-3 border-t border-app-border pt-2">{tabBar}<div className="pt-3">{tabContent}</div></div>
         </div>
         {deleteConfirm}
         {removeSiteConfirm}
@@ -439,13 +496,9 @@ export function ProjectDetailPanel({
         {deleteNoticeBlock}
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="px-3 pb-1 pt-3">{countLabel}</div>
-        {areasSummary}
+        {tabBar}
         <OverlayScrollArea className="px-3 pb-3" hostClassName="min-h-0">
-          <div className="grid gap-0.5">
-            {addSiteButton}
-            {siteRows}
-          </div>
+          <div className="grid gap-0.5 pt-3">{tabContent}</div>
         </OverlayScrollArea>
       </div>
       {deleteConfirm}

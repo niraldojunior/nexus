@@ -22,10 +22,12 @@ export type SiteIcon = {
 // GeoPage.tsx e o sprite do <canvas> de InfraOverlay.ts (Fase 3, issue #69), mesmo motivo de
 // MARKER_ICON_SIZE em resourceIcon.ts. Um pouco maior que o de equipamento: o local é o
 // contexto, o equipamento é o detalhe dentro dele.
-export const SITE_ICON_SIZE = 30;
+// Em 20 m, o Site mantém o tamanho que antes era usado no degrau de 50 m.
+export const SITE_ICON_SIZE = 14;
 // Estação encolhida (≥ 1 km): ponto pequeno, sem agrupamento — só o suficiente para situar a
 // Central sem poluir a visão de cidade/estado (ver stationTierForScale).
-export const SITE_ICON_SMALL_SIZE = 14;
+// Em 50 m, reduz 50% em relação à régua de 20 m.
+export const SITE_ICON_SMALL_SIZE = 7;
 
 // Espelha os tokens do design system (docs/4-design-system/tokens/colors.css).
 // Precisa existir em JS porque o Google Maps só aceita hex literal.

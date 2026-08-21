@@ -10,7 +10,6 @@ import {
   type GeoAddress,
   type GeoLocation,
   type GeoSite,
-  type GeoStatus,
 } from './geoApi';
 import type { GeoTreeNode, MapBounds } from './geoTreeApi';
 
@@ -19,7 +18,7 @@ import type { GeoTreeNode, MapBounds } from './geoTreeApi';
 // está em curso, o local não tem status próprio editável, só herda este valor — uma vez que
 // o projeto termina (status 'terminated'), o local passa a ter vida própria (Active) e ganha
 // controle de status independente no painel unificado de Local (SiteOverviewTab).
-export type GeoProjectStatus = GeoStatus;
+export type GeoProjectStatus = 'planned' | 'active' | 'suspended' | 'terminated' | 'cancelled';
 
 export type GeoProject = {
   id: string;
@@ -30,6 +29,11 @@ export type GeoProject = {
   status: GeoProjectStatus;
   createdBy: string | null;
   siteCount: number;
+  resourceCount?: number;
+  infrastructureCount?: number;
+  areaCount?: number;
+  archivedAt?: string | null;
+  archivedBy?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -44,10 +48,13 @@ export type GeoProjectSiteCascade = { updated: number; skipped: number; blocked?
 // são mantidos íntegros (ver comentário da rota em app.ts) e `blockedSiteIds` traz uma amostra
 // para o usuário resolver as pendências antes de tentar de novo.
 export type GeoProjectDeleteSummary = {
-  deleted: boolean;
-  retired: number;
-  skipped: number;
-  blocked: number;
+  archived?: boolean;
+  project?: GeoProject;
+  /** @deprecated compatibility with the pre-archive endpoint. */
+  deleted?: boolean;
+  retired?: number;
+  skipped?: number;
+  blocked?: number;
   blockedSiteIds?: string[];
 };
 
@@ -100,6 +107,7 @@ export type ProjectArea = {
   id: string;
   kind: 'concentration' | 'dispersion';
   siteCount: number;
+  resourceCount?: number;
   geometry: ProjectAreaPolygon;
   siteIds: string[];
   centroid: [number, number] | null;
@@ -137,7 +145,7 @@ export const deleteProject = (id: string): Promise<GeoProjectDeleteSummary> =>
 // vale para a lista do painel (sem `bounds`), para um projeto grande não travar a UI.
 export const fetchProjectSites = (
   projectId: string,
-  options: { bounds?: MapBounds; limit?: number } = {},
+  options: { bounds?: MapBounds; limit?: number; offset?: number } = {},
 ): Promise<ProjectSite[]> => {
   const params = new URLSearchParams();
   if (options.bounds) {
@@ -147,13 +155,36 @@ export const fetchProjectSites = (
     params.set('maxLat', String(options.bounds.maxLat));
   }
   if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.offset !== undefined) params.set('offset', String(options.offset));
   const query = params.toString();
   // O servidor não devolve `projectId` na linha (é implícito na rota) — carimbado aqui, nos
   // dois caminhos (com e sem `bounds`), para o nó levar o vínculo consigo até o clique no mapa.
-  return getJson<Omit<ProjectSite, 'projectId'>[]>(
+  return getJson<Omit<ProjectSite, 'projectId'>[] | { items: Omit<ProjectSite, 'projectId'>[] }>(
     `${BASE_URL}/${projectId}/sites${query ? `?${query}` : ''}`,
-  ).then((nodes) => nodes.map((node) => ({ ...node, projectId })));
+  ).then((result) => (Array.isArray(result) ? result : result.items).map((node) => ({ ...node, projectId })));
 };
+
+export type ProjectPagedResult = { items: GeoTreeNode[]; offset: number; limit: number; hasMore: boolean };
+
+export const fetchProjectResources = (
+  projectId: string,
+  options: { view?: 'all' | 'infrastructure'; limit?: number; offset?: number } = {},
+): Promise<ProjectPagedResult> => {
+  const params = new URLSearchParams();
+  if (options.view) params.set('view', options.view);
+  params.set('limit', String(options.limit ?? 50));
+  params.set('offset', String(options.offset ?? 0));
+  return getJson<ProjectPagedResult>(`${BASE_URL}/${projectId}/resources?${params}`);
+};
+
+export const searchProject = (projectId: string, q: string, offset = 0): Promise<ProjectPagedResult> =>
+  getJson<ProjectPagedResult>(`${BASE_URL}/${projectId}/search?q=${encodeURIComponent(q)}&limit=50&offset=${offset}`);
+
+export const linkProjectResource = (projectId: string, resourceId: string): Promise<unknown> =>
+  postJson(`${BASE_URL}/${projectId}/resources/${resourceId}`, {});
+
+export const unlinkProjectResource = (projectId: string, resourceId: string): Promise<{ detached: boolean }> =>
+  deleteJson<{ detached: boolean }>(`${BASE_URL}/${projectId}/resources/${resourceId}`);
 
 // Devolve o `projectId` carimbado por `fetchProjectSites`, ou `null` para qualquer outro
 // `GeoTreeNode` (árvore, busca, infra passiva) — usado por GeoPage.selectNodeFromMap para

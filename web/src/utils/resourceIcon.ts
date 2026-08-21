@@ -44,9 +44,11 @@ export const familyColor: Record<ResourceFamily, string> = {
 // mesmo tamanho pra não haver salto visual entre um pin selecionado (Marker) e o resto da
 // planta ao redor dele (canvas). Um pouco menor que o pin de site pra não competir com o local
 // que o contém.
-export const MARKER_ICON_SIZE = 26;
-// Recurso reduzido (escala 50 m): ponto menor para não poluir junto da cobertura.
-export const MARKER_ICON_SMALL_SIZE = 16;
+// Em 20 m, usa o tamanho que antes era aplicado em 50 m: dá mais espaço para leitura
+// da planta sem perder a identificação do tipo (CTO, poste, caixa etc.).
+export const MARKER_ICON_SIZE = 16;
+// Em 50 m, reduz mais 50% para coexistir com a camada de cobertura sem poluição visual.
+export const MARKER_ICON_SMALL_SIZE = 8;
 
 // Espessura do traço de cabo no mapa, por code do catálogo — mesmo motivo de MARKER_ICON_SIZE
 // acima (Polyline em GeoPage.tsx e canvas em InfraOverlay.ts desenham o mesmo traço).

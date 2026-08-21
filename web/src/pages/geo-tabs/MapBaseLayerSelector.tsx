@@ -146,7 +146,7 @@ function LayerPreview({
 }) {
   const Icon = PREVIEW_ICONS[layer.previewTone];
   const dimensions =
-    size === 'compact' ? 'h-12 w-[68px] rounded-[7px]' : 'h-12 w-[76px] rounded-[7px]';
+    size === 'compact' ? 'h-8 w-8 rounded-[7px]' : 'h-12 w-[76px] rounded-[7px]';
 
   return (
     <div
@@ -237,7 +237,7 @@ export function MapBaseLayerSelector({
           onDoubleClick={selectNextLayer}
           className="rounded-[10px] border border-app-border bg-white p-1 shadow-map-control transition hover:border-app-accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
         >
-          <LayerPreview layer={alternateLayer} showLabel />
+          <LayerPreview layer={alternateLayer} />
         </button>
       </div>
     );

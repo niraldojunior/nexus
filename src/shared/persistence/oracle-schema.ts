@@ -67,6 +67,14 @@ export const transformOracleSchemaSql = (sql: string): string => {
     .replace(/\bREAL\b/g, 'BINARY_DOUBLE')
     .replace(/\bINTEGER\b/g, 'NUMBER(10)');
 
+  // Oracle não implementa índices parciais (`WHERE detached_at IS NULL`). A expressão
+  // indexada entrega a mesma regra: valores NULL não participam da unicidade, logo só o
+  // vínculo ainda aberto de um Resource é exclusivo.
+  output = output.replace(
+    /CREATE UNIQUE INDEX\s+([a-zA-Z0-9_]+)\s+ON\s+([a-zA-Z0-9_]+)\s*\(resource_id\)\s+WHERE\s+detached_at\s+IS\s+NULL/gi,
+    'CREATE UNIQUE INDEX $1 ON $2(CASE WHEN detached_at IS NULL THEN resource_id END)',
+  );
+
   output = output.replace(
     /^(\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s+TEXT\b/gm,
     (_match, indent: string, column: string) => `${indent}${column} ${oracleTextType(column)}`,

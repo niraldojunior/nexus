@@ -10,6 +10,7 @@
 
 import type { GoogleMapInstance, GoogleMapsApi } from '../../utils/googleMaps';
 import { buildFastProjection } from './CoverageOverlay';
+import { toDataUrl } from '../../utils/resourceIcon';
 import type { MapDensityCell, MapDensityResponse } from '../../services/geoMapDensityApi';
 
 type Maps = GoogleMapsApi['maps'];
@@ -24,6 +25,25 @@ const MAX_RADIUS_PX = 26;
 // Raio de captura do hover, somado ao raio do disco — o alvo é generoso porque a célula
 // representa uma área, não um objeto pontual.
 const HIT_SLACK_PX = 4;
+
+// Espelha --vt-ink (docs/4-design-system/tokens/colors.css) — precisa existir em JS porque o
+// canvas não lê variável CSS. Mesma tinta neutra de resourceIcon.ts (family 'logical'), não uma
+// cor nova: um disco de densidade não representa um tipo/família de recurso, é agregado.
+const DENSITY_FILL = 'rgba(36, 48, 65, 0.28)';
+const DENSITY_STROKE = 'rgba(36, 48, 65, 0.55)';
+
+// Swatch do balão de hover (ver densityBalloonOf em GeoPage.tsx) — mesmo --vt-ink acima, sólido
+// e com anel branco, no mesmo padrão de contraste que renderIconSvg já usa para pin sobre
+// qualquer basemap. Memoizado: é um único desenho para o domínio inteiro (não varia por célula).
+let densitySwatchCache: string | null = null;
+export function densitySwatchDataUrl(): string {
+  if (densitySwatchCache) return densitySwatchCache;
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">' +
+    '<circle cx="12" cy="12" r="9" fill="#243041" stroke="#ffffff" stroke-width="2"/></svg>';
+  densitySwatchCache = toDataUrl(svg);
+  return densitySwatchCache;
+}
 
 export type DensityOverlayHandle = {
   setData: (data: MapDensityResponse | null) => void;
@@ -133,10 +153,10 @@ export function createDensityOverlay(maps: Maps, map: GoogleMapInstance): Densit
         // e o contorno mantém a célula legível quando está isolada.
         context.beginPath();
         context.arc(x, y, radius, 0, Math.PI * 2);
-        context.fillStyle = 'rgba(36, 48, 65, 0.28)';
+        context.fillStyle = DENSITY_FILL;
         context.fill();
         context.lineWidth = 1;
-        context.strokeStyle = 'rgba(36, 48, 65, 0.55)';
+        context.strokeStyle = DENSITY_STROKE;
         context.stroke();
 
         drawn.push({ x, y, radius, cell });

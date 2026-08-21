@@ -228,6 +228,7 @@ export function SitePanel({
         <SiteOverviewTab
           site={detail.site}
           address={detail.address}
+          location={detail.location}
           origin={detail.origin}
           sites={sites}
           specById={specById}

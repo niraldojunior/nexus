@@ -92,7 +92,7 @@ export const MAP_LAYER_GROUPS: readonly MapLayerGroup[] = [
   },
   {
     id: 'resources',
-    label: 'Recursos',
+    label: 'Recursos de Rede',
     children: [
       { id: 'resourcePoints', label: 'Caixas e equipamentos', hint: 'CTOs, splitters, ONTs…' },
       { id: 'resourceLines', label: 'Cabos e dutos', hint: 'Traçado na rua' },
@@ -100,7 +100,7 @@ export const MAP_LAYER_GROUPS: readonly MapLayerGroup[] = [
   },
   {
     id: 'netwinInfrastructure',
-    label: 'Infraestrutura Netwin',
+    label: 'Infraestrutura Civil',
     hint: 'Filtros por tipo para validação da carga',
     children: [
       { id: 'netwinPole', label: 'Postes', hint: 'Pole' },

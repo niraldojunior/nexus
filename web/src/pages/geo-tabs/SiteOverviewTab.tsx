@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { MapPin } from 'lucide-react';
-import type { GeoAddress, GeoSite, GeoSiteStatus, GeoSpec, SiteOrigin } from '../../services/geoApi';
+import type { GeoAddress, GeoLocation, GeoSite, GeoSiteStatus, GeoSpec, SiteOrigin } from '../../services/geoApi';
 import { SITE_STATUS_OPTIONS, siteSpecLabel } from '../../utils/geoLabels';
 import { formatAddressWithSource } from '../../utils/placeLabel';
 import { StatusBadge } from './StatusBadge';
@@ -10,6 +10,7 @@ import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
 export type SiteOverviewTabProps = {
   site: GeoSite;
   address: GeoAddress | null;
+  location?: GeoLocation | null;
   origin: SiteOrigin | null;
   sites: GeoSite[];
   specById: Map<string, GeoSpec>;
@@ -34,6 +35,7 @@ const originLabel = (origin: SiteOrigin | null): string => {
 export function SiteOverviewTab({
   site,
   address,
+  location,
   origin,
   sites,
   specById,
@@ -183,6 +185,17 @@ export function SiteOverviewTab({
           </span>
         </button>
       </div>
+
+      {!address && location?.geometry.type === 'Point' ? (
+        <div className="grid min-w-0 grid-cols-[82px_minmax(0,1fr)] gap-x-3 py-2">
+          <div className="min-w-0 break-words pt-1.5 text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.06em] text-app-muted [overflow-wrap:anywhere]">
+            Coordenadas
+          </div>
+          <div className="min-w-0 break-words px-1.5 py-1 text-[0.84rem] leading-snug text-app-text [overflow-wrap:anywhere]">
+            {location.geometry.coordinates[1].toFixed(6)}, {location.geometry.coordinates[0].toFixed(6)}
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid min-w-0 grid-cols-[82px_minmax(0,1fr)] gap-x-3 py-2">
         <div className="min-w-0 break-words pt-1.5 text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.06em] text-app-muted [overflow-wrap:anywhere]">

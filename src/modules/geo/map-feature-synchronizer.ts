@@ -36,7 +36,10 @@ export class GeoMapFeatureSynchronizer implements MapFeatureSynchronizer {
        SELECT id FROM tmf_geographic_site WHERE geographic_location_id = ?`,
       [locationId, locationId],
     );
-    await this.syncEntities(rows.map((row) => row.id), tenantId);
+    await this.syncEntities(
+      rows.map((row) => row.id),
+      tenantId,
+    );
   }
 
   public async syncEntities(entityIds: string[], tenantId: string): Promise<void> {
@@ -73,6 +76,16 @@ export class GeoMapFeatureSynchronizer implements MapFeatureSynchronizer {
   }
 }
 
+// Feature pontual do índice. `shape` é literal ('point' — o write-through só cobre ponto; cabo
+// continua vindo do rebuild batch), `geometry` é NULL (só linha carrega traçado) e `rank` é 0.
+// Exportado para o teste de aridade: a lista de colunas e a de VALUES são escritas à mão em
+// linhas diferentes, e um `?` sobrando não quebra typecheck nem lint — só estoura em runtime,
+// no primeiro recurso pontual que passar por aqui.
+export const MAP_FEATURE_POINT_INSERT_SQL = `INSERT INTO geo_map_feature
+      (tenant_id,tile_z,tile_x,tile_y,entity_id,shape,feature_kind,entity_type,
+       type_code,site_category,status,label,sublabel,lng,lat,geometry,rank)
+     VALUES (?,?,?,?,?,'point',?,?,?,?,?,?,?,?,?,NULL,0)`;
+
 async function insertFeature(
   db: DatabaseExecutor,
   tenantId: string,
@@ -98,26 +111,20 @@ async function insertFeature(
   const lng = Number(coordinates[0]);
   const lat = Number(coordinates[1]);
   const tile = tileForPoint([lng, lat], MAP_TILE_ZOOM);
-  await db.execute(
-    `INSERT INTO geo_map_feature
-      (tenant_id,tile_z,tile_x,tile_y,entity_id,shape,feature_kind,entity_type,
-       type_code,site_category,status,label,sublabel,lng,lat,geometry,rank)
-     VALUES (?,?,?,?,?,'point',?,?,?,?,?,?,?,?,?,?,NULL,0)`,
-    [
-      tenantId,
-      tile.z,
-      tile.x,
-      tile.y,
-      candidate.entity_id,
-      candidate.feature_kind,
-      candidate.entity_type,
-      candidate.type_code,
-      candidate.site_category,
-      candidate.status,
-      candidate.label,
-      candidate.sublabel,
-      lng,
-      lat,
-    ],
-  );
+  await db.execute(MAP_FEATURE_POINT_INSERT_SQL, [
+    tenantId,
+    tile.z,
+    tile.x,
+    tile.y,
+    candidate.entity_id,
+    candidate.feature_kind,
+    candidate.entity_type,
+    candidate.type_code,
+    candidate.site_category,
+    candidate.status,
+    candidate.label,
+    candidate.sublabel,
+    lng,
+    lat,
+  ]);
 }

@@ -8,6 +8,7 @@ import type {
   GeoSiteStatus,
   GeoSourceSystem,
   GeographicRelationshipType,
+  GeographicSiteRole,
   GeographicSiteSpecificationCategory,
   GeographicSiteSpecificationLifecycleStatus,
 } from './domain.js';
@@ -51,6 +52,7 @@ export type GeographicAddressRow = {
   postcode: string | null;
   country: string;
   geographic_location_id: string | null;
+  sub_address: string | null;
   source_system: GeoSourceSystem | null;
   source_ref: string | null;
   valid_for_start: string | null;
@@ -64,6 +66,7 @@ export type GeographicSiteSpecificationRow = {
   name: string;
   code: string;
   category: GeographicSiteSpecificationCategory;
+  site_role: GeographicSiteRole | null;
   lifecycle_status: GeographicSiteSpecificationLifecycleStatus;
   description: string | null;
   allowed_parent_spec_ids: string | null;

@@ -31,6 +31,8 @@ import {
   siteSpecLabel,
   siteSpecCategoryLabel,
   siteSpecNameLabel,
+  siteRoleLabel,
+  SITE_ROLE_OPTIONS,
 } from '../utils/geoLabels';
 import {
   fetchTreeChildren,
@@ -78,6 +80,7 @@ import {
   type MapLayerGroupId,
   type MapLayerId,
   type MapLayerVisibility,
+  type MapSiteRole,
 } from '../utils/mapLayers';
 import { createCoverageOverlay, type CoverageOverlayHandle } from './geo-tabs/CoverageOverlay';
 import { coverageSwatch, coverageSwatchDataUrl } from '../utils/coverageColor';
@@ -252,7 +255,7 @@ function projectAreaBalloonOf(
 // guarda só o id: `SitePanel` resolve todo o detalhe por id via `useSiteDetail`, e o catálogo
 // `sites` só contém specs "container" (ver loadGeo) — um Site de spec folha (Ponto de
 // Instalação, Cabinet) nunca estaria lá, então derivar o alvo dali deixava o painel sem abrir
-// para esses casos (e para local de Projeto, sempre INSTALLATION_POINT).
+// para esses casos (e para local de Projeto, sempre CUSTOMER_SITE).
 type DetailTarget = { kind: 'site'; siteId: string } | { kind: 'resource'; node: GeoTreeNode };
 
 // O que a doca mostra quando nem endereço (`addressLookup`) nem detalhe de Site/Recurso
@@ -518,7 +521,21 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const mapLayers = useMapLayers();
   const viewportShapesInclude = useMemo(
     () => viewportInclude(mapLayers.layers),
-    [mapLayers.layers.sites, mapLayers.layers.resourcePoints, mapLayers.layers.resourceLines],
+    [
+      mapLayers.layers.siteNetwork,
+      mapLayers.layers.siteProperty,
+      mapLayers.layers.siteService,
+      mapLayers.layers.siteSublocal,
+      mapLayers.layers.resourcePoints,
+      mapLayers.layers.resourceLines,
+    ],
+  );
+  // Papel funcional (siteRole, C11) por code de spec, para o seletor de camadas roteirar cada
+  // feature de site para o grupo certo (Sites de Rede / Imóveis / Sites de Serviço /
+  // Sub-locais) sem depender de coluna nova em geo_map_feature (ver isMapFeatureVisible).
+  const siteRoleByCode = useMemo(
+    () => new Map(specs.map((spec) => [spec.code, spec.siteRole] as const)),
+    [specs],
   );
 
   // Infra passiva (recursos + Sites não-CO + cabos) só entra quando a escala está em ≤ 100 m;
@@ -532,6 +549,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     scaleMeters,
     viewportShapesInclude,
     mapLayers.layers,
+    siteRoleByCode,
   );
   // Um CO dentro do tile também vira feature 'site'. Filtra pelos
   // ids da árvore INTEIRA (não só as Estações visíveis, que podem estar com a camada desligada)
@@ -1477,6 +1495,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               onToggleMapLayerGroup={mapLayers.toggleGroup}
               onResetMapLayers={mapLayers.resetLayers}
               mapLayersAllVisible={mapLayers.allVisible}
+              siteRoleByCode={siteRoleByCode}
             />
           </div>
 
@@ -1582,6 +1601,7 @@ export function GoogleMapPanel({
   onToggleMapLayerGroup = noopToggleMapLayerGroup,
   onResetMapLayers = noopResetMapLayers,
   mapLayersAllVisible = true,
+  siteRoleByCode,
 }: {
   nodes: GeoTreeNode[];
   // Infra passiva (recursos + Sites não-CO + cabos) da região visível, desenhada por
@@ -1663,6 +1683,10 @@ export function GoogleMapPanel({
   onToggleMapLayerGroup?: (groupId: MapLayerGroupId) => void;
   onResetMapLayers?: () => void;
   mapLayersAllVisible?: boolean;
+  // Papel funcional (siteRole, C11) por code de spec — refina o ícone de Site desenhado pelo
+  // InfraOverlay (CO/POP/CTO) além da heurística por substring. Opcional: sem catálogo em mãos
+  // (testes, ou carregamento inicial), o InfraOverlay cai no fallback por nome.
+  siteRoleByCode?: ReadonlyMap<string, MapSiteRole>;
 }) {
   const selectedNodeId = selectedNode?.id ?? null;
   const mapEl = useRef<HTMLDivElement>(null);
@@ -2100,8 +2124,16 @@ export function GoogleMapPanel({
       resourceMarkerSize,
       siteMarkerSize,
       excludeNodeId: selectedNodeId,
+      roleByCode: siteRoleByCode,
     });
-  }, [infraFeatures, resourceMarkerSize, siteMarkerSize, selectedNodeId, mapsReady]);
+  }, [
+    infraFeatures,
+    resourceMarkerSize,
+    siteMarkerSize,
+    selectedNodeId,
+    mapsReady,
+    siteRoleByCode,
+  ]);
 
   // Descarta a camada de infra passiva no desmonte, junto do mapa.
   useEffect(
@@ -3213,6 +3245,7 @@ function TypeManagementModal({
 }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<GeoSpec['category']>('Site');
+  const [siteRole, setSiteRole] = useState<GeoSpec['siteRole']>('network');
   const [saving, setSaving] = useState(false);
 
   const submit = async (event: FormEvent) => {
@@ -3220,7 +3253,7 @@ function TypeManagementModal({
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await postJson('/v1/geo/site-specifications', { name, category });
+      await postJson('/v1/geo/site-specifications', { name, category, siteRole });
       setName('');
       await onChanged();
     } finally {
@@ -3236,6 +3269,7 @@ function TypeManagementModal({
             <tr>
               <Th>Nome</Th>
               <Th>Categoria</Th>
+              <Th>Papel</Th>
               <Th>Filhos permitidos</Th>
             </tr>
           </thead>
@@ -3249,6 +3283,9 @@ function TypeManagementModal({
                   {siteSpecCategoryLabel(spec.category)}
                 </td>
                 <td className="px-4 py-3 text-[0.84rem] text-app-muted">
+                  {siteRoleLabel(spec.siteRole)}
+                </td>
+                <td className="px-4 py-3 text-[0.84rem] text-app-muted">
                   {spec.allowedChildSpecIds.length || '-'}
                 </td>
               </tr>
@@ -3256,7 +3293,7 @@ function TypeManagementModal({
           </tbody>
         </table>
       </div>
-      <form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_180px_auto]">
+      <form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_180px_180px_auto]">
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -3271,6 +3308,17 @@ function TypeManagementModal({
           {['Region', 'FunctionalGroup', 'Site', 'SubSite'].map((item) => (
             <option key={item} value={item}>
               {siteSpecCategoryLabel(item)}
+            </option>
+          ))}
+        </select>
+        <select
+          value={siteRole}
+          onChange={(event) => setSiteRole(event.target.value as GeoSpec['siteRole'])}
+          className="geo-input"
+        >
+          {SITE_ROLE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
             </option>
           ))}
         </select>

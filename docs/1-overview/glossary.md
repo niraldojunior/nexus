@@ -69,6 +69,17 @@ rótulos de UI, status e prosa ficam em **português**.
 > Distinção crítica: _"modelo de ONT"_ é `ResourceSpecification` (catálogo). _"a ONT instalada"_ é
 > `PhysicalResource` (instância).
 
+**Papel do site (`siteRole`, C11).** Dentro de `Geographic`, todo `GeographicSite` tem também um
+eixo **funcional** — o que ele É — ortogonal à `category` estrutural (onde ele cabe na hierarquia):
+
+| Termo               | `siteRole` | Definição                                                                                                                                                             |
+| -------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Network Site**     | `network`  | Infraestrutura de rede: Estação (CO), POP, armário, sala técnica, unidade remota — onde equipamento é instalado                                                       |
+| **Property Site**    | `property` | Imóvel: condomínio (MDU), edificação, bloco — agrupa unidades sob o mesmo endereço                                                                                    |
+| **Service Site**     | `service`  | Unidade atendida: casa, apartamento — o `CUSTOMER_SITE` para onde o serviço é entregue                                                                                |
+| **Agrupamento**      | `grouping` | Região/Grupo Funcional — agrupador territorial ou lógico, sem correspondência física direta                                                                          |
+| **Installation Point (PI)** | —   | ⚠️ Aposentado como `GeographicSiteSpecification` (C11, C6) — PI é recurso de rede (capacidade reservável), não lugar. Cadastro existente migrou para `CUSTOMER_SITE`. PI como `PhysicalResource` de primeira classe é dívida (Q-GEO-012) |
+
 ---
 
 ## 4. Planta e elementos de rede

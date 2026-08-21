@@ -124,6 +124,18 @@ export const MIGRATIONS_SQL = `
   ALTER TABLE tmf_geographic_site_specification ADD COLUMN IF NOT EXISTS code TEXT;
   ALTER TABLE tmf_geographic_site_specification ADD COLUMN IF NOT EXISTS lifecycle_status TEXT;
   ALTER TABLE tmf_geographic_site_specification ADD COLUMN IF NOT EXISTS is_bootstrap INTEGER DEFAULT 0;
+  ALTER TABLE tmf_geographic_site_specification ADD COLUMN IF NOT EXISTS site_role TEXT;
+  -- Backfill idempotente do eixo funcional (C11). Sem UNIQUE(code): specs podem estar
+  -- duplicadas por corrida de bootstrap, então usamos WHERE code IN (...) em vez de assumir
+  -- 1 linha por code.
+  UPDATE tmf_geographic_site_specification SET site_role = 'grouping'
+    WHERE site_role IS NULL AND code IN ('REGION', 'FUNCTIONAL_GROUP');
+  UPDATE tmf_geographic_site_specification SET site_role = 'property'
+    WHERE site_role IS NULL AND code IN ('CONDOMINIUM', 'BLOCK', 'BUILDING');
+  UPDATE tmf_geographic_site_specification SET site_role = 'service'
+    WHERE site_role IS NULL AND code IN ('CUSTOMER_SITE');
+  UPDATE tmf_geographic_site_specification SET site_role = 'network'
+    WHERE site_role IS NULL;
   CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_specification_code ON tmf_geographic_site_specification(code);
   CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_specification_lifecycle ON tmf_geographic_site_specification(lifecycle_status);
   CREATE TABLE IF NOT EXISTS tmf_geographic_site_spec_containment_rule (
@@ -145,6 +157,7 @@ export const MIGRATIONS_SQL = `
   ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS street_nr_search TEXT;
   ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS city_search TEXT;
   ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS postcode_search TEXT;
+  ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS sub_address TEXT;
   -- The one-time backfill of these four columns (for rows written before they existed) used to run
   -- here as an UPDATE ... WHERE col IS NULL OR col IS NULL OR ... — a predicate that can't be
   -- served by a single index, so on every boot with DATABASE_AUTO_SCHEMA=true it forced a full
@@ -592,6 +605,7 @@ export const SCHEMA_SQL = `
         postcode TEXT,
         postcode_search TEXT,
         geographic_location_id TEXT,
+        sub_address TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
         characteristics TEXT,
@@ -611,6 +625,7 @@ export const SCHEMA_SQL = `
         name TEXT NOT NULL,
         code TEXT NOT NULL,
         category TEXT NOT NULL,
+        site_role TEXT,
         lifecycle_status TEXT NOT NULL DEFAULT 'Active',
         description TEXT,
         allowed_parent_spec_ids TEXT,

@@ -30,6 +30,7 @@ const CLOB_COLUMNS = new Set([
   'service_relationships',
   'site_addresses',
   'site_ids',
+  'sub_address',
   'supporting_resources',
   'supporting_services',
   'warnings',

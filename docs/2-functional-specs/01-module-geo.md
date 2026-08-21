@@ -9,12 +9,12 @@ TMFC014 · TMF673 / TMF674 / TMF675
 | Campo                   | Valor                          |
 | ----------------------- | ------------------------------ |
 | **Document Reference**  | VTN-HLD-MOD01-GEO              |
-| **Versão**              | 1.17 — draft                   |
+| **Versão**              | 1.18 — draft                   |
 | **Data**                | Agosto 2026                    |
 | **Documento âncora**    | VTN-HLD-OVERVIEW-001           |
 | **TMFC coberto**        | TMFC014 — Geographic Site Mgmt |
 | **Open APIs**           | TMF673, TMF674, TMF675, TMF688 |
-| **Requisitos cobertos** | REQ-MOD01-001 a REQ-MOD01-017  |
+| **Requisitos cobertos** | REQ-MOD01-001 a REQ-MOD01-018  |
 | **Status**              | Em elaboração                  |
 
 ---
@@ -78,6 +78,7 @@ O HLD descreve o contrato funcional alvo. A tabela abaixo registra o estado veri
 | **REQ-MOD01-015** | Implementado     | `GeoProjectRepository` (com `status` cascateado e `note`/`geonetAddressId` por local, e o vínculo `geo_project_site` preservado após o término — não mais apagado), rotas `/v1/geo/projects/*` em `app.ts` (terminar cascateia para `Active`, não `Retired`; projeto terminado é imutável), exclusão de locais de projeto em `GeoTreeService` restrita a projeto em curso (`PROJECT_SITE_EXCLUSION_SQL`), `HierarchySidebar`/`ProjectListView`/`ProjectDetailPanel`/`SitePanel` no frontend, com `geo-project.unit.spec.ts`, o novo caso "terminar libera os locais" em `geo.integration.spec.ts` e testes de componente. | Promoção explícita de um local de projeto para o inventário sem soft-terminar o Site (hoje só ocorre por exclusão).                                                                                               | —                    | DEV-GEO-009              |
 | **REQ-MOD01-016** | Implementado     | `SitePanel`/`SiteOverviewTab`/`SiteSubSitesTab`/`SiteResourcesTab`/`SiteHistoryTab`/`SiteAddressModal` no frontend, rotas `GET /v1/geo/sites/:id/origin` e `POST`/`DELETE /v1/geo/sites/:siteId/resources[/:resourceId]` em `app.ts`, `sourceSystem`/`sourceRef`/`accuracyLevel` em `GeographicLocation`/`GeographicAddress` e `note` em `GeographicSite`, com `resource.unit.spec.ts` (desvínculo `placeId: null`), `geo.integration.spec.ts` (Origem + vínculo/desvínculo de recurso) e testes de componente (`SitePanel`, `SiteOverviewTab`, `SiteAddressModal`).                                                      | Aba Sub-locais e Recursos sem teste de componente dedicado (cobertas por integração de rota); reconciliação de fontes divergentes de endereço (GEONET × Google) ainda não estendida de Endereço avulso para Site. | —                    | DEV-GEO-010              |
 | **REQ-MOD01-017** | Implementado     | `project-area-grid.ts`, `scripts/build-project-areas.mjs`, `GeoProjectRepository.listAreas`/`replaceAreas`, `GeoTreeService.projectSitesInViewport`, rotas `GET /v1/geo/projects/:id/areas` e `/sites` com bbox/limit em `app.ts`, e a camada `ProjectAreaOverlay` no `GeoPage`, com `geo-project-area.unit.spec.ts`, o novo caso em `geo.integration.spec.ts` e `projectAreaColor.test.ts`. Gerado e validado contra o projeto real "Onitel - Novo Gama" (3.514 locais).                                                                                                                                                 | Geração é só por script (sem botão na UI) e não recalcula sozinha ao criar/remover local do projeto depois de gerada.                                                                                             | —                    | DEV-GEO-011              |
+| **REQ-MOD01-018** | Parcial          | `site_role` em `tmf_geographic_site_specification` (bootstrap, validação `createSpec`/`updateSpec`, `TypeManagementModal`), `GeographicSubAddress` em `tmf_geographic_address` (`SiteAddressModal`, `formatAddress`), migração `INSTALLATION_POINT → CUSTOMER_SITE` e o grupo "Locais" do seletor de camadas do mapa reorganizado por papel, com `geo.unit.spec.ts`, `mapLayers.test.ts` e testes de componente. | Installation Point como `PhysicalResource` de primeira classe (Módulo 2); filtro de camadas por papel roda só no cliente, sem coluna `site_role` em `geo_map_feature`. | Q-GEO-012, Q-GEO-013 | DEV-GEO-012              |
 
 ---
 
@@ -178,6 +179,7 @@ O módulo Geographic é composto por 16 requisitos, organizados conforme o fluxo
 | **REQ-MOD01-015** | Projetos de Trabalho (coleções de locais fora da Hierarquia)  | _GeographicSite (TMF674) — `geo_project`/`geo_project_site` são plataforma, não TMF_ |
 | **REQ-MOD01-016** | Painel Unificado de Local                                     | _GeographicSite (TMF674) — reaproveitado sem alteração de forma_                     |
 | **REQ-MOD01-017** | Manchas de Concentração e Dispersão de Projeto                | _GeographicLocation (TMF675) — polígono de agrupamento espacial_                     |
+| **REQ-MOD01-018** | Papel do site e Sub-endereço (siteRole + GeographicSubAddress) | _GeographicSiteSpecification.siteRole (TMF674) + GeographicSubAddress (TMF673)_      |
 
 ### 5.1 Ordem de implementação sugerida
 
@@ -1748,7 +1750,7 @@ A página Locais ganha uma segunda aba na doca de navegação, ao lado da Hierar
 
 ### 20.2 Racional arquitetural
 
-Um Projeto **não é uma entidade TMF**. É uma projeção de plataforma — como o histórico de busca (REQ-MOD01-011) e a grade de cobertura GPON (REQ-MOD01-014) — que vive em tabelas próprias (`geo_project`, `geo_project_site`), fala com o banco direto e nunca passa pelo `IGeoRepository` nem pelo contrato TMF674. O que ele contém, porém, **é** TMF puro: cada local de um Projeto é um `GeographicSite` (TMF674) real, criado pelo mesmo caso de uso de cadastro guiado por endereço que qualquer outro Site (REQ-MOD01-006) — a diferença é só a linha de vínculo em `geo_project_site` e um predicado de exclusão (`NOT EXISTS` sobre esse vínculo) nas consultas que alimentam a Hierarquia e a busca (REQ-MOD01-011). Não existe um segundo modelo de dado para "local provisório": o mesmo Site que hoje vive escondido num Projeto pode, a qualquer momento, virar Site de produção — basta que o vínculo em `geo_project_site` deixe de existir. Hoje isso só acontece por exclusão (que soft-termina o Site); uma promoção explícita para o inventário sem terminar o Site é extensão futura (ver §26).
+Um Projeto **não é uma entidade TMF**. É uma projeção de plataforma — como o histórico de busca (REQ-MOD01-011) e a grade de cobertura GPON (REQ-MOD01-014) — que vive em tabelas próprias (`geo_project`, `geo_project_site`), fala com o banco direto e nunca passa pelo `IGeoRepository` nem pelo contrato TMF674. O que ele contém, porém, **é** TMF puro: cada local de um Projeto é um `GeographicSite` (TMF674) real, criado pelo mesmo caso de uso de cadastro guiado por endereço que qualquer outro Site (REQ-MOD01-006) — a diferença é só a linha de vínculo em `geo_project_site` e um predicado de exclusão (`NOT EXISTS` sobre esse vínculo) nas consultas que alimentam a Hierarquia e a busca (REQ-MOD01-011). Não existe um segundo modelo de dado para "local provisório": o mesmo Site que hoje vive escondido num Projeto pode, a qualquer momento, virar Site de produção — basta que o vínculo em `geo_project_site` deixe de existir. Hoje isso só acontece por exclusão (que soft-termina o Site); uma promoção explícita para o inventário sem terminar o Site é extensão futura (ver §27).
 
 Escopo do Projeto é o **tenant** (C8), não o usuário: qualquer pessoa autorizada no tenant vê e edita os mesmos Projetos — é um caderno de equipe, não uma lista pessoal.
 
@@ -2090,9 +2092,115 @@ Exemplo ilustrativo de uma mancha de concentração conforme o contrato TMF675, 
 
 ---
 
-## 23. Cenários ilustrativos da modelagem
+## 23. REQ-MOD01-018 — Papel do site e Sub-endereço (siteRole + GeographicSubAddress)
 
-### 23.1 Cenário A — Home Passed até Home Connected
+> **Entidade TMF:** GeographicSiteSpecification.siteRole (TMF674) + GeographicSubAddress (TMF673)  
+> **Open API TMF:** TMF673 — Geographic Address Management API · TMF674 — Geographic Site Management API  
+> **Prioridade:** Alta — corrige distinção conceitual usada por viabilidade, take rate e cadastro de MDU  
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.18 — draft
+
+### 23.1 Descrição
+
+O cadastro Geo tipava um `GeographicSite` por um único eixo — `category` (`Region | FunctionalGroup | Site | SubSite`), que é **estrutural**: diz onde o nó cabe na hierarquia, não o que ele é. Um Central Office, um condomínio e a casa de um assinante eram todos `category: 'Site'`, indistinguíveis. Este requisito introduz o eixo **funcional**, `siteRole` (`grouping | network | property | service`), na `GeographicSiteSpecification` — Network Site (CO, POP, armário: infraestrutura de rede) ≠ Property Site (condomínio/MDU: imóvel) ≠ Service Site (a unidade atendida). Introduz também `GeographicSubAddress` (TMF673) em `GeographicAddress`, para localizar torre/bloco/andar/unidade dentro do endereço único de um condomínio, e migra `INSTALLATION_POINT` — cadastrado incorretamente como site spec — para `CUSTOMER_SITE`, o novo tipo com `siteRole: 'service'`.
+
+### 23.2 Racional arquitetural
+
+`siteRole` vive na **spec**, não no site — herda de C1 (extensão via catálogo, nunca campo hardcoded): o papel de um Site é uma propriedade do seu tipo, resolvida uma vez no bootstrap/CRUD de `GeographicSiteSpecification`, não recalculada por instância. Dois casos motivam a decisão: a casa unifamiliar, onde um `CUSTOMER_SITE` (`service`) pendura direto numa `REGION` com um único `GeographicAddress`; e o MDU 3×10, onde `CONDOMINIUM`/`BLOCK` (`property`) agrupam múltiplos `CUSTOMER_SITE` (`service`) sob o mesmo endereço, diferenciados por `GeographicSubAddress` (torre → andar → unidade, em cascata). Sem o segundo eixo, não há como reaproveitar viabilidade e infraestrutura interna do prédio, nem medir take rate por MDU.
+
+`INSTALLATION_POINT` conceitualmente não é um lugar: é recurso de rede, capacidade reservável com ciclo de vida próprio (`projected → built → available → reserved → in_use → decommissioned`), hoje sem modelagem equivalente no Módulo 2 (dívida registrada em Q-GEO-012). A spec foi aposentada — `lifecycleStatus: Retired`, C6, nunca DELETE físico — e o cadastro existente migrado para `CUSTOMER_SITE` via script dedicado, rodando em Postgres e Oracle.
+
+### 23.3 Mapeamento de atributos TMF
+
+| Atributo                               | Tipo   | Obrigatório | Observação V.tal                                                                                                             |
+| --------------------------------------- | ------ | :---------: | -------------------------------------------------------------------------------------------------------------------------- |
+| `GeographicSiteSpecification.siteRole`  | enum   |     Sim     | `grouping` \| `network` \| `property` \| `service` — default resolvido por `category` quando ausente (specs legadas/ad-hoc). |
+| `GeographicAddress.subAddress`          | array  |     Não     | Lista de `GeographicSubAddress`, em cascata (torre → andar → unidade).                                                       |
+| `GeographicSubAddress.type`             | enum   |     Sim     | `building` \| `tower` \| `block` \| `floor` \| `unit`.                                                                       |
+| `GeographicSubAddress.name`             | string |     Não     | Rótulo livre (ex.: "Torre B").                                                                                              |
+| `GeographicSubAddress.subUnitNumber`    | string |     Não     | Número da unidade (ex.: "704").                                                                                             |
+| `GeographicSubAddress.levelNumber`      | string |     Não     | Número do pavimento (ex.: "7").                                                                                             |
+
+### 23.4 Exemplo de payload
+
+Exemplo ilustrativo de uma `GeographicSiteSpecification` com `siteRole` e de um `GeographicAddress` com `subAddress` em cascata, conforme os contratos TMF674/TMF673:
+
+```json
+{
+  "siteSpecification": {
+    "id": "spec-customer-site",
+    "@type": "GeographicSiteSpecification",
+    "name": "Customer Site",
+    "code": "CUSTOMER_SITE",
+    "category": "Site",
+    "siteRole": "service",
+    "lifecycleStatus": "Active"
+  },
+  "address": {
+    "id": "addr-mdu-3x10",
+    "@type": "GeographicAddress",
+    "street": "Rua Cinco de Julho",
+    "streetNr": "237",
+    "city": "Niterói",
+    "stateOrProvince": "RJ",
+    "postcode": "24220110",
+    "subAddress": [
+      { "@type": "GeographicSubAddress", "type": "tower", "name": "Torre B" },
+      { "@type": "GeographicSubAddress", "type": "floor", "levelNumber": "7" },
+      { "@type": "GeographicSubAddress", "type": "unit", "subUnitNumber": "704" }
+    ]
+  }
+}
+```
+
+### 23.5 Pré-condições
+
+- Existe pelo menos uma `GeographicSiteSpecification` bootstrapada com `siteRole` resolvido (ver REQ-MOD01-003).
+- Para a migração `INSTALLATION_POINT → CUSTOMER_SITE`, o backend já subiu ao menos uma vez com o bootstrap desta fase, materializando a spec `CUSTOMER_SITE`.
+
+### 23.6 Requisitos Funcionais
+
+| ID         | Nome                                    | Descrição                                                                                                                        |
+| ---------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **RF-001** | **Papel na spec**                        | Toda `GeographicSiteSpecification` carrega `siteRole`, resolvido no bootstrap e validado em `createSpec`/`updateSpec`.            |
+| **RF-002** | **Combo de papel no catálogo**           | `TypeManagementModal` expõe combo "Papel do site" na criação e coluna "Papel" na listagem de tipos.                               |
+| **RF-003** | **Sub-endereço em cascata**              | `GeographicAddress` aceita lista de `GeographicSubAddress` (torre/bloco/andar/unidade), validada contra a lista fechada TMF.       |
+| **RF-004** | **Formulário de sub-endereço**           | `SiteAddressModal` expõe campos Torre/Bloco/Andar/Unidade, opcionais e independentes do endereço buscado.                         |
+| **RF-005** | **Endereço formatado com sub-endereço**  | `formatAddress` concatena o sub-endereço ao endereço base (ex.: "Rua X, 100, Niterói, RJ — Torre B · 7º · ap. 704").               |
+| **RF-006** | **Migração de Installation Point**       | Script dedicado migra sites de `INSTALLATION_POINT` para `CUSTOMER_SITE` em Postgres e Oracle, dry-run por padrão.                 |
+| **RF-007** | **Seletor de camadas por papel**         | O grupo "Locais" do seletor de camadas do mapa roteia cada Site por `siteRole` (Sites de Rede/Imóveis/Sites de Serviço/Sub-locais), 100% em português. |
+
+### 23.7 Regras de Negócio
+
+| ID         | Nome                                     | Descrição                                                                                                             |
+| ---------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| **RN-001** | **Papel vive na spec**                     | `siteRole` é atributo da `GeographicSiteSpecification`, nunca do `GeographicSite` — instância herda o papel do tipo.  |
+| **RN-002** | **Installation Point nunca é excluído**    | A spec `INSTALLATION_POINT` permanece no catálogo com `lifecycleStatus: Retired` (C6) — nunca DELETE físico.          |
+| **RN-003** | **Sub-endereço não substitui Address**     | `GeographicSubAddress` é sempre subordinado a um `GeographicAddress`; nunca existe isoladamente.                      |
+| **RN-004** | **Nome de coluna reservado**               | A coluna de persistência é `site_role`, nunca `role` — palavra reservada no Oracle.                                   |
+
+### 23.8 Critérios de Aceite
+
+| ID         | Critério                                                                 | Resultado Esperado                                                                                                                |
+| ---------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **CA-001** | Criar uma spec sem informar `siteRole` explicitamente                     | `siteRole` é resolvido pelo default de `category` (`Region`/`FunctionalGroup` → `grouping`, resto → `network`).                  |
+| **CA-002** | Gravar um `GeographicAddress` com `subAddress` de três níveis             | Round-trip preserva os três itens na ordem gravada; `formatAddress` concatena os três.                                            |
+| **CA-003** | Rodar o script de migração em dry-run e depois com `--apply`              | Dry-run só reporta contagem; `--apply` reaponta os sites, corrige `geo_map_feature.sublabel` e não deixa regra de contenção órfã. |
+| **CA-004** | Abrir o seletor de camadas do mapa                                        | O grupo "Locais" mostra Sites de Rede/Imóveis/Sites de Serviço/Sub-locais, sem código cru de spec em inglês.                      |
+
+### 23.9 Mapeamento contra sistemas de referência
+
+| Capacidade                                                   | Netwin                                                                                     | Kuwaiba                                                                       | NetBox                            | Decisão Nexus                                                                                                                 |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Distinção entre site de rede, imóvel e unidade atendida**      | Tipagem única por tabela de tipos, sem eixo funcional separado.                               | Não identificado no levantamento — `GenericObjectList` não separa por papel.       | Não identificado no levantamento.   | **Eixo `siteRole` ortogonal a `category` na `GeographicSiteSpecification` (grouping/network/property/service)**              |
+| **Sub-endereço de MDU (torre/bloco/andar/unidade)**               | Campos livres de complemento no cadastro de endereço, sem estrutura tipada.                    | Não identificado no levantamento.                                                   | Não identificado no levantamento.   | **`GeographicSubAddress` (TMF673) em cascata, tipado e validado contra lista fechada**                                       |
+| **Installation Point como local vs. como recurso**                | PI é local cadastrado como Site, sem ciclo de vida de recurso reservável.                      | Não identificado no levantamento.                                                   | Não identificado no levantamento.   | **PI aposentado como site spec (C6); migrado para `CUSTOMER_SITE`; PI como `PhysicalResource` fica como dívida (Q-GEO-012)** |
+
+---
+
+
+## 24. Cenários ilustrativos da modelagem
+
+### 24.1 Cenário A — Home Passed até Home Connected
 
 ```text
 GeographicAddress + GeographicLocation (HP)
@@ -2105,7 +2213,7 @@ GeographicAddress + GeographicLocation (HP)
 
 O cenário valida C4, a separação Address/Location/Site e a regra de referência entre Geo, Resource e Service.
 
-### 23.2 Cenário B — Central, sala, Rack e cadeia GPON
+### 24.2 Cenário B — Central, sala, Rack e cadeia GPON
 
 ```text
 Central (GeographicSite)
@@ -2117,7 +2225,7 @@ Central (GeographicSite)
 
 O cenário valida a hierarquia de Sub-Sites, a fronteira Geo↔Resource no Rack e a navegação conjunta árvore/mapa já existente no frontend.
 
-### 23.3 Padrões reaproveitáveis
+### 24.3 Padrões reaproveitáveis
 
 - Address, Location e Site são entidades distintas; referências substituem duplicação.
 - A árvore Geo termina antes do Rack; infraestrutura passiva e equipamentos são Resources.
@@ -2126,7 +2234,7 @@ O cenário valida a hierarquia de Sub-Sites, a fronteira Geo↔Resource no Rack 
 
 ---
 
-## 24. Síntese arquitetural do módulo
+## 25. Síntese arquitetural do módulo
 
 - **Geo é a fonte do “onde”.** Address, Location e Site têm identidades e ciclos de vida próprios.
 - **Catálogo governa a estrutura.** SiteSpecification define características e contenção; enums fechados no código são dívida registrada.
@@ -2136,7 +2244,7 @@ O cenário valida a hierarquia de Sub-Sites, a fronteira Geo↔Resource no Rack 
 
 ---
 
-## 25. Contratos com outros módulos do Nexus
+## 26. Contratos com outros módulos do Nexus
 
 O módulo Geographic é a fundação referenciada por praticamente todos os outros módulos. Os contratos de integração:
 
@@ -2152,7 +2260,7 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 
 ---
 
-## 26. Questões em aberto
+## 27. Questões em aberto
 
 | ID            | Questão                                                                                                                                                                                                                   | Status   | Responsável                      |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------- |
@@ -2165,6 +2273,8 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 | **Q-GEO-008** | O catálogo de eventos publicados em produção deve ter quais SLAs de disponibilidade e latência fim-a-fim?                                                                                                                 | _Aberta_ | _Arquitetura + Plataforma_       |
 | **Q-GEO-010** | A profundidade máxima da hierarquia de Sub-Sites tem limite prático? Caso de uso típico: CO > Andar > Sala > Cage (4 níveis); algum caso ultrapassa?                                                                      | _Aberta_ | _Engenharia V.tal_               |
 | **Q-GEO-011** | A edição de geometria no navegador (REQ-MOD01-013) exige workflow de aprovação no Módulo 5, ou bastam RBAC, motivo declarado e Audit Trail? A resposta muda o custo do editor e o tempo de resposta da operação de campo. | _Aberta_ | _Operações V.tal + Arquitetura_  |
+| **Q-GEO-012** | O Installation Point (PI) deve virar `PhysicalResource` de primeira classe no Módulo 2 (`@type=InstallationPoint`, ciclo `projected → built → available → reserved → in_use → decommissioned`, exposto como `ServiceabilityPoint` na TMF645)? Hoje `INSTALLATION_POINT` foi aposentado como `GeographicSiteSpecification` (C11, C6) e o cadastro existente migrou para `CUSTOMER_SITE`, mas não há nada equivalente no MOD02. | _Aberta_ | _Engenharia + Produto_ |
+| **Q-GEO-013** | Vale mover o filtro de camadas do mapa por `siteRole` (hoje só client-side, a partir do catálogo de specs em memória) para o servidor, com uma coluna `site_role` em `geo_map_feature`? Reduziria payload em zooms muito abertos com muitos sites, ao custo de mais uma coluna no índice de 1.5M+ linhas. | _Aberta_ | _Arquitetura + Performance_ |
 
 ### 26.1 Decisões resolvidas
 
@@ -2237,7 +2347,7 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 
 ---
 
-## 27. Controle de revisões
+## 28. Controle de revisões
 
 | Versão | Data        | Autor                    | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ------ | ----------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -2259,6 +2369,7 @@ O módulo Geographic é a fundação referenciada por praticamente todos os outr
 | 1.15   | Agosto 2026 | Engenharia — V.tal Nexus | Correção do REQ-MOD01-015: clicar no pin de um local de Projeto no mapa não abria o painel de consulta — o roteamento do clique (`GeoPage.selectNodeFromMap`) checava um `Set` derivado só da página de 200 locais do painel, que não cobre os pins buscados por bbox quando o projeto tem manchas geradas (REQ-MOD01-017). Novo RF-012: o vínculo de projeto passa a ser carimbado no próprio nó (`ProjectSite.projectId`, `geoProjectApi.fetchProjectSites`) em vez de reconstruído por lista. Correção adjacente: `DetailTarget` (painel comum de Local) deixa de depender do catálogo `sites` (só specs "container", ver §2.3) para resolver o Site clicado — um Site de spec folha (Ponto de Instalação, Cabinet) ou o local de um projeto **terminado** clicado no mapa não abria painel nenhum; agora resolve por id via `useSiteDetail`, como o próprio `SitePanel` já fazia. Novo CA-012.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 1.16   | Agosto 2026 | Engenharia — V.tal Nexus | Novo RF-012 do REQ-MOD01-011 (Seleção de base cartográfica/MUB): quarta opção de basemap **Branco** (`styles` que zeram vias, água, POI e limite de lote, mantendo rótulo de município/bairro em cinza tênue) para as manchas de Cobertura GPON (REQ-MOD01-014) e de Projeto (REQ-MOD01-017) lerem sem competir com a cor do basemap; item **Geonet** listado com selo "em breve", ainda não selecionável. `BASE_MAP_LAYERS` (`MapBaseLayerSelector`) passa a carregar o `mapStyles` por opção, e o `GoogleMapInstance.setOptions` (novo em `googleMaps.ts`) aplica o estilo na troca — antes só `setMapTypeId` era chamado, insuficiente entre Mapa e Branco (os dois usam `roadmap`). Duplo clique no botão do MUB cicla direto para o próximo selecionável (wrap-around, pulando o Geonet), sem abrir a lista. |
 | 1.17   | Agosto 2026 | Engenharia — V.tal Nexus | Painel de Projeto organizado em Locais, Infraestrutura, Recursos, Cobertura e Pesquisar. Vínculo histórico explícito para Resources, arquivamento terminal, paginação e busca combinada; Cobertura expõe Resources por mancha. |
+| 1.18   | Agosto 2026 | Engenharia — V.tal Nexus | Novo REQ-MOD01-018 (Papel do site e Sub-endereço): eixo funcional `siteRole` (`grouping\|network\|property\|service`) na `GeographicSiteSpecification`, ortogonal a `category` — Network Site/Property Site/Service Site em vez de tudo `category: 'Site'`. Novo `GeographicSubAddress` (TMF673) em `GeographicAddress`, para torre/bloco/andar/unidade de um MDU. `INSTALLATION_POINT` aposentado como site spec (`lifecycleStatus: Retired`, C6) — cadastro existente migrado para `CUSTOMER_SITE` via script dedicado. Grupo "Locais" do seletor de camadas do mapa (REQ-MOD01-011) reorganizado por `siteRole` em vez de categoria estrutural. Nova decisão canônica C11 em `business-rules.md`. Seções 23–27 renumeradas para 24–28. |
 
 ---
 

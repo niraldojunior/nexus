@@ -276,6 +276,7 @@ export function SitePanel({
           siteId={detail.site.id}
           currentAddressId={detail.site.address?.id}
           currentLocationId={detail.site.place?.id}
+          currentSubAddress={detail.address?.subAddress}
           onClose={() => setAddressModalOpen(false)}
           onSaved={() => {
             void detail.reload();
@@ -457,7 +458,7 @@ function CreateBody({
   onCreated: (result: { site: GeoSite }) => void;
 }) {
   const defaultSiteSpecId =
-    specs.find((spec) => spec.code === 'INSTALLATION_POINT')?.id ?? specs[0]?.id ?? '';
+    specs.find((spec) => spec.code === 'CUSTOMER_SITE')?.id ?? specs[0]?.id ?? '';
   const [nameDraft, setNameDraft] = useState('');
   const [siteSpecificationId, setSiteSpecificationId] = useState(defaultSiteSpecId);
   const [noteDraft, setNoteDraft] = useState('');

@@ -16,6 +16,7 @@ import type {
   GeographicSiteStatusHistoryEntry,
   GeoOutboxMessage,
 } from './domain.js';
+import { defaultSiteRoleFor } from './domain.js';
 import type {
   GeographicAddressQuery,
   GeoTenantScope,
@@ -176,9 +177,9 @@ export class PostgresGeoRepository implements IGeoRepository {
       `INSERT INTO tmf_geographic_address
        (id, href, tenant_id, street_type, street_name, street_search, street_nr, street_nr_search,
         city, city_search, state_or_province, postcode, postcode_search, country,
-        geographic_location_id, source_system, source_ref,
+        geographic_location_id, sub_address, source_system, source_ref,
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        tenant_id = excluded.tenant_id,
@@ -194,6 +195,7 @@ export class PostgresGeoRepository implements IGeoRepository {
        postcode_search = excluded.postcode_search,
        country = excluded.country,
        geographic_location_id = excluded.geographic_location_id,
+       sub_address = excluded.sub_address,
        source_system = excluded.source_system,
        source_ref = excluded.source_ref,
        valid_for_start = excluded.valid_for_start,
@@ -216,6 +218,7 @@ export class PostgresGeoRepository implements IGeoRepository {
         normalizePostcodeSearch(address.postcode) || null,
         address.country || null,
         address.geographicLocationId || null,
+        address.subAddress ? JSON.stringify(address.subAddress) : null,
         address.sourceSystem || null,
         address.sourceRef || null,
         address.validFor?.startDateTime || null,
@@ -236,9 +239,9 @@ export class PostgresGeoRepository implements IGeoRepository {
     await this.db.run(
       `INSERT INTO tmf_geographic_address
        (id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode,
-        country, geographic_location_id, source_system, source_ref,
+        country, geographic_location_id, sub_address, source_system, source_ref,
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        tenant_id = excluded.tenant_id,
@@ -250,6 +253,7 @@ export class PostgresGeoRepository implements IGeoRepository {
        postcode = excluded.postcode,
        country = excluded.country,
        geographic_location_id = excluded.geographic_location_id,
+       sub_address = excluded.sub_address,
        source_system = excluded.source_system,
        source_ref = excluded.source_ref,
        valid_for_start = excluded.valid_for_start,
@@ -268,6 +272,7 @@ export class PostgresGeoRepository implements IGeoRepository {
         address.postcode || null,
         address.country || null,
         address.geographicLocationId || null,
+        address.subAddress ? JSON.stringify(address.subAddress) : null,
         address.sourceSystem || null,
         address.sourceRef || null,
         address.validFor?.startDateTime || null,
@@ -291,7 +296,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     }
     const row = await this.db.get<GeographicAddressRow>(
       `SELECT id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
-              geographic_location_id, source_system, source_ref, valid_for_start, valid_for_end, characteristics
+              geographic_location_id, sub_address, source_system, source_ref, valid_for_start, valid_for_end, characteristics
        FROM tmf_geographic_address WHERE ${conditions.join(' AND ')}`,
       params,
     );
@@ -374,7 +379,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const hasOffset = query?.offset !== undefined;
     const sql = [
       `SELECT id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
-              geographic_location_id, source_system, source_ref, valid_for_start, valid_for_end,
+              geographic_location_id, sub_address, source_system, source_ref, valid_for_start, valid_for_end,
               ${query?.includeCharacteristics === false ? 'NULL' : 'characteristics'} AS characteristics
        FROM tmf_geographic_address`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
@@ -398,14 +403,15 @@ export class PostgresGeoRepository implements IGeoRepository {
 
     await this.db.run(
       `INSERT INTO tmf_geographic_site_specification
-       (id, href, name, code, category, lifecycle_status, description, allowed_parent_spec_ids, allowed_child_spec_ids,
+       (id, href, name, code, category, site_role, lifecycle_status, description, allowed_parent_spec_ids, allowed_child_spec_ids,
         valid_for_start, valid_for_end, characteristics, is_bootstrap, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
        code = excluded.code,
        category = excluded.category,
+       site_role = excluded.site_role,
        lifecycle_status = excluded.lifecycle_status,
        description = excluded.description,
        allowed_parent_spec_ids = excluded.allowed_parent_spec_ids,
@@ -421,6 +427,7 @@ export class PostgresGeoRepository implements IGeoRepository {
         spec.name,
         spec.code,
         spec.category,
+        spec.siteRole ?? defaultSiteRoleFor(spec.category),
         spec.lifecycleStatus,
         spec.description || null,
         JSON.stringify(spec.allowedParentSpecIds),
@@ -439,7 +446,7 @@ export class PostgresGeoRepository implements IGeoRepository {
 
   public async getSpec(id: string): Promise<GeographicSiteSpecification | undefined> {
     const row = await this.db.get<GeographicSiteSpecificationRow>(
-      `SELECT id, href, name, code, category, lifecycle_status, description,
+      `SELECT id, href, name, code, category, site_role, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
               characteristics, is_bootstrap
        FROM tmf_geographic_site_specification
@@ -453,7 +460,7 @@ export class PostgresGeoRepository implements IGeoRepository {
 
   public async getSpecByCode(code: string): Promise<GeographicSiteSpecification | undefined> {
     const row = await this.db.get<GeographicSiteSpecificationRow>(
-      `SELECT id, href, name, code, category, lifecycle_status, description,
+      `SELECT id, href, name, code, category, site_role, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
               characteristics, is_bootstrap
        FROM tmf_geographic_site_specification
@@ -496,7 +503,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      `SELECT id, href, name, code, category, lifecycle_status, description,
+      `SELECT id, href, name, code, category, site_role, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
               characteristics, is_bootstrap
        FROM tmf_geographic_site_specification`,
@@ -1453,7 +1460,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const referencedRows =
       referencedIds.size > 0
         ? await this.db.all<GeographicSiteSpecificationRow>(
-            `SELECT id, href, name, code, category, lifecycle_status, description,
+            `SELECT id, href, name, code, category, site_role, lifecycle_status, description,
                     allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
                     characteristics, is_bootstrap
              FROM tmf_geographic_site_specification
@@ -1487,6 +1494,7 @@ export class PostgresGeoRepository implements IGeoRepository {
         name: row.name,
         code: row.code,
         category: row.category,
+        siteRole: row.site_role ?? defaultSiteRoleFor(row.category),
         lifecycleStatus: row.lifecycle_status,
         ...(row.description ? { description: row.description } : {}),
         ...(row.valid_for_start || row.valid_for_end
@@ -1580,6 +1588,7 @@ export class PostgresGeoRepository implements IGeoRepository {
       result.geographicLocationId = row.geographic_location_id;
       result.place = { id: row.geographic_location_id, '@referredType': 'GeographicLocation' };
     }
+    if (row.sub_address) result.subAddress = JSON.parse(row.sub_address);
     if (row.source_system) result.sourceSystem = row.source_system;
     if (row.source_ref) result.sourceRef = row.source_ref;
     if (row.valid_for_start || row.valid_for_end) {
@@ -1696,6 +1705,7 @@ export class PostgresGeoRepository implements IGeoRepository {
       name: row.name,
       code: row.code,
       category: row.category,
+      siteRole: row.site_role ?? defaultSiteRoleFor(row.category),
       '@referredType': 'GeographicSiteSpecification',
     };
   }

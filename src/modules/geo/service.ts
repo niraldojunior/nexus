@@ -18,6 +18,8 @@ import type {
   GeographicSite,
   GeographicSiteReferences,
   GeographicSiteRelationship,
+  GeographicSiteRole,
+  GeographicSubAddress,
   GeographicSiteSpecification,
   GeographicSiteSpecificationCategory,
   GeographicSiteSpecificationCharacteristic,
@@ -31,6 +33,7 @@ import type {
   GeoSourceSystem,
   TimePeriod,
 } from './domain.js';
+import { defaultSiteRoleFor, GEO_SITE_ROLES, GEO_SUB_ADDRESS_TYPES } from './domain.js';
 import type { GeographicAddressQuery, IGeoRepository } from './geo-repository-interface.js';
 import { normalizeCountrySearch } from './address-normalization.js';
 import type { MapFeatureSynchronizer } from './map-feature-synchronizer.js';
@@ -56,6 +59,7 @@ export type AddressInput = {
   postcode?: string;
   country?: string;
   geographicLocationId?: string;
+  subAddress?: GeographicSubAddress[];
   sourceSystem?: GeoSourceSystem;
   sourceRef?: string;
   validFor?: TimePeriod;
@@ -69,6 +73,7 @@ type SpecInput = {
   code?: string;
   description?: string;
   category: GeographicSiteSpecificationCategory;
+  siteRole?: GeographicSiteRole;
   lifecycleStatus?: GeographicSiteSpecificationLifecycleStatus;
   validFor?: TimePeriod;
   allowedParentSpec?: SpecRefInput[];
@@ -180,9 +185,14 @@ type BootstrapDefinition = {
   name: string;
   code: string;
   category: GeographicSiteSpecificationCategory;
+  siteRole: GeographicSiteRole;
   description: string;
   allowedParentCodes: string[];
   allowedChildCodes: string[];
+  // Default 'Active'. INSTALLATION_POINT usa 'Retired' (C6 — nunca DELETE físico): o
+  // cadastro migrou para CUSTOMER_SITE (Fase 2), mas o tipo legado permanece no catálogo,
+  // apenas inativo, para não quebrar sites históricos que ainda apontam para ele.
+  lifecycleStatus?: GeographicSiteSpecificationLifecycleStatus;
 };
 
 const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
@@ -190,14 +200,24 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Region',
     code: 'REGION',
     category: 'Region',
+    siteRole: 'grouping',
     description: 'Agrupador territorial hierárquico para estados, regiões e macroáreas.',
     allowedParentCodes: ['REGION'],
-    allowedChildCodes: ['REGION', 'CO', 'POP', 'CABINET', 'INSTALLATION_POINT', 'CONDOMINIUM'],
+    allowedChildCodes: [
+      'REGION',
+      'CO',
+      'POP',
+      'CABINET',
+      'INSTALLATION_POINT',
+      'CUSTOMER_SITE',
+      'CONDOMINIUM',
+    ],
   },
   {
     name: 'Functional Group',
     code: 'FUNCTIONAL_GROUP',
     category: 'FunctionalGroup',
+    siteRole: 'grouping',
     description: 'Agrupador lógico sem containment físico direto.',
     allowedParentCodes: [],
     allowedChildCodes: [],
@@ -206,6 +226,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Central Office',
     code: 'CO',
     category: 'Site',
+    siteRole: 'network',
     description: 'Estação ou central com salas e pavimentos internos.',
     allowedParentCodes: ['REGION'],
     allowedChildCodes: ['FLOOR', 'ROOM'],
@@ -214,6 +235,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'POP',
     code: 'POP',
     category: 'Site',
+    siteRole: 'network',
     description: 'Ponto de presença com sublocais internos governados.',
     allowedParentCodes: ['REGION'],
     allowedChildCodes: ['FLOOR', 'ROOM'],
@@ -222,6 +244,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Cabinet',
     code: 'CABINET',
     category: 'Site',
+    siteRole: 'network',
     description: 'Gabinete externo ou armário de distribuição.',
     allowedParentCodes: ['REGION'],
     allowedChildCodes: [],
@@ -230,14 +253,26 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Installation Point',
     code: 'INSTALLATION_POINT',
     category: 'Site',
+    siteRole: 'service',
     description: 'Ponto de instalação associado ao atendimento.',
     allowedParentCodes: ['REGION'],
+    allowedChildCodes: [],
+    lifecycleStatus: 'Retired',
+  },
+  {
+    name: 'Customer Site',
+    code: 'CUSTOMER_SITE',
+    category: 'Site',
+    siteRole: 'service',
+    description: 'Unidade atendida (casa, apartamento) — destino do atendimento ao cliente final.',
+    allowedParentCodes: ['REGION', 'CONDOMINIUM', 'BLOCK', 'BUILDING'],
     allowedChildCodes: [],
   },
   {
     name: 'Condominium',
     code: 'CONDOMINIUM',
     category: 'Site',
+    siteRole: 'property',
     description: 'Condominio residencial ou comercial que agrupa blocos fisicos no mesmo endereco.',
     allowedParentCodes: ['REGION'],
     allowedChildCodes: ['BLOCK'],
@@ -246,6 +281,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Building Block',
     code: 'BLOCK',
     category: 'SubSite',
+    siteRole: 'property',
     description: 'Bloco fisico subordinado a um condominio.',
     allowedParentCodes: ['CONDOMINIUM'],
     allowedChildCodes: [],
@@ -254,6 +290,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Floor',
     code: 'FLOOR',
     category: 'SubSite',
+    siteRole: 'network',
     description: 'Pavimento interno subordinado a CO ou POP.',
     allowedParentCodes: ['CO', 'POP'],
     allowedChildCodes: ['ROOM'],
@@ -262,6 +299,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Room',
     code: 'ROOM',
     category: 'SubSite',
+    siteRole: 'network',
     description: 'Sala interna subordinada a CO, POP ou piso.',
     allowedParentCodes: ['CO', 'POP', 'FLOOR'],
     allowedChildCodes: ['CAGE'],
@@ -270,6 +308,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     name: 'Cage',
     code: 'CAGE',
     category: 'SubSite',
+    siteRole: 'network',
     description: 'Área segmentada dentro de sala técnica.',
     allowedParentCodes: ['ROOM'],
     allowedChildCodes: [],
@@ -326,7 +365,8 @@ const matchesBootstrapSpecification = (
   existing.code === definition.code &&
   existing.description === definition.description &&
   existing.category === definition.category &&
-  existing.lifecycleStatus === 'Active' &&
+  existing.siteRole === definition.siteRole &&
+  existing.lifecycleStatus === (definition.lifecycleStatus ?? 'Active') &&
   existing._bootstrapProtected === true;
 
 const matchesBootstrapRelationshipType = (
@@ -404,7 +444,8 @@ export class GeoService {
               code: definition.code,
               description: definition.description,
               category: definition.category,
-              lifecycleStatus: 'Active',
+              siteRole: definition.siteRole,
+              lifecycleStatus: definition.lifecycleStatus ?? 'Active',
               validFor: {},
               specCharacteristic: [],
               allowedParentSpecIds: [],
@@ -425,7 +466,8 @@ export class GeoService {
               code: definition.code,
               description: definition.description,
               category: definition.category,
-              lifecycleStatus: 'Active',
+              siteRole: definition.siteRole,
+              lifecycleStatus: definition.lifecycleStatus ?? 'Active',
               ...(existing.validFor ? { validFor: existing.validFor } : {}),
               specCharacteristic: existing.specCharacteristic,
               allowedParentSpecIds: existing.allowedParentSpecIds,
@@ -615,6 +657,7 @@ export class GeoService {
     this.assertRole(ctx, WRITE_ROLE);
     this.assertOriginWriteAllowed(ctx, input.characteristic ?? []);
     assertRequiredString(input.street, 'street');
+    validateSubAddress(input.subAddress);
     const id = createCanonicalId();
     const location = input.geographicLocationId
       ? await this.getLocationOrThrow(input.geographicLocationId, ctx)
@@ -637,6 +680,7 @@ export class GeoService {
         ...(location
           ? { place: { id: location.id, '@referredType': 'GeographicLocation' as const } }
           : {}),
+        ...(input.subAddress ? { subAddress: input.subAddress } : {}),
         ...(input.sourceSystem ? { sourceSystem: input.sourceSystem } : {}),
         ...(input.sourceRef ? { sourceRef: input.sourceRef } : {}),
         ...(input.validFor ? { validFor: input.validFor } : {}),
@@ -667,6 +711,7 @@ export class GeoService {
     const locationId = input.geographicLocationId ?? current.geographicLocationId;
     const location = locationId ? await this.getLocationOrThrow(locationId, ctx) : undefined;
     if (input.street !== undefined) assertRequiredString(input.street, 'street');
+    validateSubAddress(input.subAddress);
     const normalizedCountry =
       input.country !== undefined ? normalizeCountry(input.country) : current.country;
     const normalizedPostcode =
@@ -700,6 +745,9 @@ export class GeoService {
               place: { id: location.id, '@referredType': 'GeographicLocation' as const },
             }
           : {}),
+        ...(input.subAddress !== undefined
+          ? optional('subAddress', input.subAddress)
+          : optional('subAddress', current.subAddress)),
         ...(input.sourceSystem !== undefined
           ? optional('sourceSystem', input.sourceSystem)
           : optional('sourceSystem', current.sourceSystem)),
@@ -732,6 +780,7 @@ export class GeoService {
     this.assertRole(ctx, CATALOG_ROLE);
     assertRequiredString(input.name, 'name');
     validateSpecCategory(input.category);
+    if (input.siteRole !== undefined) validateSiteRole(input.siteRole);
 
     const code = normalizeSpecificationCode(input.code ?? input.name);
     if (await this.repository.getSpecByCode(code)) {
@@ -762,6 +811,7 @@ export class GeoService {
           code,
           ...(input.description !== undefined ? { description: input.description } : {}),
           category: input.category,
+          siteRole: input.siteRole ?? defaultSiteRoleFor(input.category),
           lifecycleStatus: input.lifecycleStatus ?? 'Active',
           ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
           specCharacteristic: characteristics,
@@ -808,6 +858,7 @@ export class GeoService {
         statusCode: 409,
       });
     }
+    if (input.siteRole !== undefined) validateSiteRole(input.siteRole);
 
     const nextAllowedParentSpecIds = resolveSpecIdList(
       input.allowedParentSpec,
@@ -885,6 +936,7 @@ export class GeoService {
               ? { description: current.description }
               : {}),
           category: current.category,
+          siteRole: input.siteRole ?? current.siteRole,
           lifecycleStatus: nextLifecycleStatus,
           ...(input.validFor !== undefined
             ? { validFor: input.validFor }
@@ -2804,6 +2856,7 @@ export class GeoService {
     code: string;
     description?: string;
     category: GeographicSiteSpecificationCategory;
+    siteRole?: GeographicSiteRole;
     lifecycleStatus: GeographicSiteSpecificationLifecycleStatus;
     validFor?: TimePeriod;
     specCharacteristic: GeographicSiteSpecificationCharacteristic[];
@@ -2819,6 +2872,7 @@ export class GeoService {
       code: input.code,
       ...(input.description !== undefined ? { description: input.description } : {}),
       category: input.category,
+      siteRole: input.siteRole ?? defaultSiteRoleFor(input.category),
       lifecycleStatus: input.lifecycleStatus,
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
       specCharacteristic: input.specCharacteristic,
@@ -3283,6 +3337,29 @@ const validateSpecCategory: (
       code: 'GEO_SPEC_CATEGORY_INVALID',
       statusCode: 400,
     });
+  }
+};
+
+const validateSiteRole: (role: string) => asserts role is GeographicSiteRole = (
+  role: string,
+): asserts role is GeographicSiteRole => {
+  if (!GEO_SITE_ROLES.includes(role as GeographicSiteRole)) {
+    throw new AppError('invalid site specification role', {
+      code: 'GEO_SPEC_INVALID_SITE_ROLE',
+      statusCode: 400,
+    });
+  }
+};
+
+const validateSubAddress = (subAddress: GeographicSubAddress[] | undefined): void => {
+  if (!subAddress) return;
+  for (const item of subAddress) {
+    if (!GEO_SUB_ADDRESS_TYPES.includes(item.type)) {
+      throw new AppError('invalid sub-address type', {
+        code: 'GEO_ADDRESS_INVALID_SUB_ADDRESS_TYPE',
+        statusCode: 400,
+      });
+    }
   }
 };
 

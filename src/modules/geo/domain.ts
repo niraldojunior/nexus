@@ -37,6 +37,17 @@ export type GeoSiteStatusAlias = 'planned' | 'active' | 'suspended' | 'terminate
 export type GeographicSiteSpecificationCategory = 'Region' | 'FunctionalGroup' | 'Site' | 'SubSite';
 export type GeographicSiteSpecificationLifecycleStatus = 'Active' | 'Retired';
 
+// Eixo funcional (C11): o que o site É, ortogonal a `category` (onde ele cabe na hierarquia).
+export type GeographicSiteRole = 'grouping' | 'network' | 'property' | 'service';
+
+export const GEO_SITE_ROLES: GeographicSiteRole[] = ['grouping', 'network', 'property', 'service'];
+
+/** Default de `siteRole` para specs legadas (`site_role IS NULL`) ou ad-hoc sem papel explícito. */
+export function defaultSiteRoleFor(category: GeographicSiteSpecificationCategory): GeographicSiteRole {
+  if (category === 'Region' || category === 'FunctionalGroup') return 'grouping';
+  return 'network';
+}
+
 export type GeographicSiteRelationship = {
   id: string;
   relationshipType: string;
@@ -197,6 +208,28 @@ export type GeographicLocation = {
   characteristic: Characteristic[];
 };
 
+// TMF673: sub-endereço dentro de um GeographicAddress — localiza torre/bloco/andar/unidade
+// dentro do endereço único de um condomínio (ex.: Torre B, 7º andar, ap. 704). Ocorrências em
+// cascata (múltiplos itens formam o caminho completo).
+export type GeographicSubAddressType = 'building' | 'tower' | 'block' | 'floor' | 'unit';
+
+export const GEO_SUB_ADDRESS_TYPES: GeographicSubAddressType[] = [
+  'building',
+  'tower',
+  'block',
+  'floor',
+  'unit',
+];
+
+export type GeographicSubAddress = {
+  '@type': 'GeographicSubAddress';
+  id?: string;
+  type: GeographicSubAddressType;
+  name?: string;
+  subUnitNumber?: string;
+  levelNumber?: string;
+};
+
 export type GeographicAddress = {
   '@type': 'GeographicAddress';
   id: string;
@@ -210,6 +243,7 @@ export type GeographicAddress = {
   country?: string;
   geographicLocationId?: string;
   place?: { id: string; '@referredType': 'GeographicLocation' };
+  subAddress?: GeographicSubAddress[];
   sourceSystem?: GeoSourceSystem;
   sourceRef?: string;
   validFor?: TimePeriod;
@@ -222,6 +256,7 @@ export type GeographicSiteSpecificationRef = {
   name: string;
   code: string;
   category: GeographicSiteSpecificationCategory;
+  siteRole: GeographicSiteRole;
   '@referredType': 'GeographicSiteSpecification';
 };
 
@@ -247,6 +282,7 @@ export type GeographicSiteSpecification = {
   name: string;
   code: string;
   category: GeographicSiteSpecificationCategory;
+  siteRole: GeographicSiteRole;
   lifecycleStatus: GeographicSiteSpecificationLifecycleStatus;
   description?: string;
   validFor?: TimePeriod;

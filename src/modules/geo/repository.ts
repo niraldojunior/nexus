@@ -642,6 +642,7 @@ const toSpecRef = (spec: GeographicSiteSpecification): GeographicSiteSpecificati
   name: spec.name,
   code: spec.code,
   category: spec.category,
+  siteRole: spec.siteRole,
   '@referredType': 'GeographicSiteSpecification',
 });
 

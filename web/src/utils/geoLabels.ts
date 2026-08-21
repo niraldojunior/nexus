@@ -3,7 +3,7 @@
 // domínio/banco (C1, TMF-first) — este arquivo é a única fonte de tradução para exibição,
 // para que nenhuma página mantenha seu próprio dicionário local duplicado.
 
-import type { GeoSiteStatus, GeoSpec, GeoSpecCategory } from '../services/geoApi';
+import type { GeoSiteRole, GeoSiteStatus, GeoSpec, GeoSpecCategory } from '../services/geoApi';
 import type { GeoProjectStatus } from '../services/geoProjectApi';
 
 // --- Status de GeographicSite (5 estados canônicos, PascalCase) -----------------------
@@ -69,6 +69,26 @@ export function siteSpecCategoryLabel(category: string | undefined): string {
   return (category && SITE_SPEC_CATEGORY_LABELS[category as GeoSpecCategory]) ?? category ?? '—';
 }
 
+// --- Papel funcional (siteRole, C11) do site: o que o site É, não onde ele cabe ------
+
+export const SITE_ROLE_OPTIONS: ReadonlyArray<{ value: GeoSiteRole; label: string }> = [
+  { value: 'grouping', label: 'Agrupamento' },
+  { value: 'network', label: 'Site de Rede' },
+  { value: 'property', label: 'Imóvel' },
+  { value: 'service', label: 'Site de Serviço' },
+];
+
+const SITE_ROLE_LABELS: Record<GeoSiteRole, string> = {
+  grouping: 'Agrupamento',
+  network: 'Site de Rede',
+  property: 'Imóvel',
+  service: 'Site de Serviço',
+};
+
+export function siteRoleLabel(role: string | undefined): string {
+  return (role && SITE_ROLE_LABELS[role as GeoSiteRole]) ?? role ?? '—';
+}
+
 // --- Nome de GeographicSiteSpecification (tipos de site) ------------------------------
 // Cobre os tipos do bootstrap canônico (src/modules/geo/service.ts BOOTSTRAP_SPECIFICATIONS).
 // Tipos criados ad-hoc via catálogo (TypeManagementModal) não têm entrada aqui e caem no
@@ -85,6 +105,13 @@ const SITE_SPEC_TRANSLATIONS: ReadonlyArray<{ code: string; name: string; label:
   { code: 'FLOOR', name: 'Floor', label: 'Pavimento' },
   { code: 'ROOM', name: 'Room', label: 'Sala' },
   { code: 'CAGE', name: 'Cage', label: 'Área Segmentada' },
+  { code: 'BUILDING', name: 'Building', label: 'Edificação' },
+  { code: 'CENTRAL_POP_LEGACY', name: 'Central/POP Legacy', label: 'Central/POP (legado)' },
+  { code: 'TECHNICAL_ROOM', name: 'Technical Room', label: 'Sala Técnica' },
+  { code: 'CUSTOMER_SITE', name: 'Customer Site', label: 'Site de Cliente' },
+  { code: 'REMOTE_UNIT', name: 'Remote Unit', label: 'Unidade Remota' },
+  { code: 'ADVANCED_REMOTE_UNIT', name: 'Advanced Remote Unit', label: 'Unidade Remota Avançada' },
+  { code: 'TECHNICAL_CONTAINER', name: 'Technical Container', label: 'Contêiner Técnico' },
 ];
 
 const SITE_SPEC_LABEL_BY_CODE = new Map(

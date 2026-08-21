@@ -34,8 +34,17 @@ export const siteKindDescription: Record<SiteKind, string> = {
 // coerente sem precisar editar código.
 // Aceita a spec inteira ou só o par categoria+nome — é o que os nós da árvore de
 // navegação carregam, sem precisar do catálogo completo em memória.
-export function siteKindFromSpec(spec?: { category?: string; name?: string }): SiteKind {
+export function siteKindFromSpec(spec?: {
+  category?: string;
+  name?: string;
+  siteRole?: string;
+}): SiteKind {
   if (!spec?.name) return spec?.category === 'SubSite' ? 'SUBSITE' : 'SITE';
+  // Eixo funcional (C11) tem precedência quando presente — specs ad-hoc sem siteRole caem
+  // no fallback por categoria/substring abaixo.
+  if (spec.siteRole === 'grouping') return 'REGION';
+  if (spec.siteRole === 'service') return 'PI';
+  if (spec.siteRole === 'property') return spec.category === 'SubSite' ? 'SUBSITE' : 'SITE';
   if (spec.category === 'Region') return 'REGION';
   if (spec.category === 'FunctionalGroup') return 'REGION';
   if (spec.category === 'SubSite') return 'SUBSITE';
@@ -60,10 +69,36 @@ export function siteKindFromSpec(spec?: { category?: string; name?: string }): S
   return 'SITE';
 }
 
+// Rótulo curto de um item de GeographicSubAddress (TMF673) — usa `name` quando o usuário
+// informou (ex.: "Torre B"), senão deriva do número/nível conforme o tipo.
+function formatSubAddressItem(item: {
+  type: string;
+  name?: string;
+  subUnitNumber?: string;
+  levelNumber?: string;
+}): string | undefined {
+  if (item.name) return item.name;
+  if (item.type === 'unit' && item.subUnitNumber) return `ap. ${item.subUnitNumber}`;
+  if (item.type === 'floor' && item.levelNumber) return `${item.levelNumber}º`;
+  if (item.levelNumber) return item.levelNumber;
+  if (item.subUnitNumber) return item.subUnitNumber;
+  return undefined;
+}
+
 export function formatAddress(address: GeoAddress): string {
-  return [address.street, address.streetNr, address.city, address.stateOrProvince, address.postcode]
+  const base = [
+    address.street,
+    address.streetNr,
+    address.city,
+    address.stateOrProvince,
+    address.postcode,
+  ]
     .filter(Boolean)
     .join(', ');
+  const subParts = (address.subAddress ?? [])
+    .map(formatSubAddressItem)
+    .filter((part): part is string => Boolean(part));
+  return subParts.length > 0 ? `${base} — ${subParts.join(' · ')}` : base;
 }
 
 // Rótulo da fonte para o parêntese final do endereço na aba Visão Geral do painel de Local

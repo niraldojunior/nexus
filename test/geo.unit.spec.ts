@@ -187,7 +187,7 @@ test('GeoService bootstraps governed specifications and blocks containment chang
   const service = new GeoService(new GeoRepository());
   const bootstrap = await service.ensureBootstrapSpecifications();
 
-  assert.equal(bootstrap.specs.length, 11);
+  assert.equal(bootstrap.specs.length, 12);
 
   const regionSpec = bootstrap.specs.find((item) => item.code === 'REGION');
   const centralSpec = bootstrap.specs.find((item) => item.code === 'CO');
@@ -220,33 +220,33 @@ test('GeoService self-heals duplicate bootstrap specifications left by a boot ra
   const service = new GeoService(repository);
 
   const first = await service.ensureBootstrapSpecifications();
-  const installationPoint = first.specs.find((item) => item.code === 'INSTALLATION_POINT');
-  assert.ok(installationPoint);
+  const customerSite = first.specs.find((item) => item.code === 'CUSTOMER_SITE');
+  assert.ok(customerSite);
 
   // Simula duas instâncias do backend subindo ao mesmo tempo: a segunda monta seu próprio
   // snapshot antes de ver o commit da primeira e insere outra linha Active com o mesmo code.
   const duplicate = await repository.upsertSpec({
-    ...installationPoint,
+    ...customerSite,
     id: '00000000-0000-7000-8000-000000000001',
     href: '/tmf-api/geographicSiteManagement/v4/geographicSiteSpecification/00000000-0000-7000-8000-000000000001',
   });
   const strandedSite = await service.createSite({
-    name: 'PI orfao',
+    name: 'CUSTOMER_SITE orfao',
     siteSpecificationId: duplicate.id,
   });
 
   const healed = await service.ensureBootstrapSpecifications();
   const survivors = healed.specs.filter(
-    (item) => item.code === 'INSTALLATION_POINT' && item.lifecycleStatus === 'Active',
+    (item) => item.code === 'CUSTOMER_SITE' && item.lifecycleStatus === 'Active',
   );
   assert.equal(survivors.length, 1);
-  assert.equal(survivors[0]?.id, installationPoint.id);
+  assert.equal(survivors[0]?.id, customerSite.id);
 
   const retiredDuplicate = healed.specs.find((item) => item.id === duplicate.id);
   assert.equal(retiredDuplicate?.lifecycleStatus, 'Retired');
 
   const repairedSite = await service.getSite(strandedSite.id);
-  assert.equal(repairedSite?.siteSpecificationId, installationPoint.id);
+  assert.equal(repairedSite?.siteSpecificationId, customerSite.id);
 });
 
 test('GeoService updates status and records TMF688 events', async () => {

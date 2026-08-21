@@ -45,6 +45,19 @@ export type GeoLocation = {
   accuracyLevel?: GeoAccuracyLevel;
 };
 
+// TMF673: sub-endereço dentro do GeographicAddress — localiza torre/bloco/andar/unidade dentro
+// do endereço único de um condomínio (ex.: Torre B, 7º andar, ap. 704).
+export type GeoSubAddressType = 'building' | 'tower' | 'block' | 'floor' | 'unit';
+
+export type GeoSubAddress = {
+  '@type': 'GeographicSubAddress';
+  id?: string;
+  type: GeoSubAddressType;
+  name?: string;
+  subUnitNumber?: string;
+  levelNumber?: string;
+};
+
 export type GeoAddress = {
   '@type': 'GeographicAddress';
   id: string;
@@ -57,11 +70,16 @@ export type GeoAddress = {
   country?: string;
   geographicLocationId?: string;
   place?: { id: string; '@referredType': 'GeographicLocation' };
+  subAddress?: GeoSubAddress[];
   sourceSystem?: GeoSourceSystem;
   sourceRef?: string;
 };
 
 export type GeoSpecCategory = 'Region' | 'FunctionalGroup' | 'Site' | 'SubSite';
+
+// Eixo funcional (C11): o que o site É (network/property/service), ortogonal a `category`
+// (onde ele cabe na hierarquia). Ver src/modules/geo/domain.ts GeographicSiteRole.
+export type GeoSiteRole = 'grouping' | 'network' | 'property' | 'service';
 
 export type GeoSpec = {
   '@type': 'GeographicSiteSpecification';
@@ -70,6 +88,7 @@ export type GeoSpec = {
   name: string;
   code: string;
   category: GeoSpecCategory;
+  siteRole: GeoSiteRole;
   lifecycleStatus: 'Active' | 'Retired';
   allowedParentSpecIds: string[];
   allowedChildSpecIds: string[];

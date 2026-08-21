@@ -248,7 +248,7 @@ O desenho alvo completo sobre essa stack está em
 
 ---
 
-## Fidelidade física — princípio transversal (candidato a C11)
+## Fidelidade física — princípio transversal (candidato a próxima decisão canônica)
 
 **Regra.** Todo objeto que a operação cadastra corresponde a algo que existe no mundo físico e que
 alguém pode tocar em campo. Arestas de grafo, trechos, vãos e adjacências são **derivados** das
@@ -279,9 +279,54 @@ objetos reais, e o que é aresta vira consulta computada. Materializações conc
 Status: 📐 **Previsto no design** — declarado nos HLDs 1 e 2; a implementação está nos itens
 `DEV-RES-007` e `DEV-RES-008`.
 
-> A promoção deste princípio a **C11** — e a consequente atualização da tabela do `AGENTS.md` —
-> depende de Q-ARQ-003, que decide se decisões novas expandem a lista C1–C10 ou passam a viver em
-> `docs/3-system-design/adr/`. Até lá, ele vale como princípio transversal registrado aqui.
+> A promoção deste princípio a decisão canônica numerada — e a consequente atualização da tabela
+> do `AGENTS.md` — depende de Q-ARQ-003, que decide se decisões novas expandem a lista C1–C11 ou
+> passam a viver em `docs/3-system-design/adr/`. Até lá, ele vale como princípio transversal
+> registrado aqui. (O slot C11 já foi ocupado pela decisão do papel do site — ver abaixo.)
+
+---
+
+## C11 — Papel do site (`siteRole`)
+
+**Regra.** Todo `GeographicSiteSpecification` carrega um segundo eixo, ortogonal a `category`
+(estrutural: `Region | FunctionalGroup | Site | SubSite`, onde o nó cabe na hierarquia):
+`siteRole` (funcional: `grouping | network | property | service`, **o que** o nó é). O papel vive
+na spec, não no site — herda de C1 (extensão via catálogo, nunca campo hardcoded).
+
+| `siteRole` | Rótulo pt-BR    | Exemplos de spec                                                                       |
+| ---------- | --------------- | --------------------------------------------------------------------------------------- |
+| `grouping` | Agrupamento     | `REGION`, `FUNCTIONAL_GROUP`                                                            |
+| `network`  | Site de Rede    | `CO`, `POP`, `CABINET`, `FLOOR`, `ROOM`, `CAGE`, unidades remotas, salas técnicas        |
+| `property` | Imóvel          | `CONDOMINIUM`, `BLOCK`, `BUILDING`                                                      |
+| `service`  | Site de Serviço | `CUSTOMER_SITE` (unidade atendida: casa, apartamento)                                   |
+
+**Racional — os dois casos que motivaram a decisão.**
+
+- **Casa unifamiliar (caso simples).** Um `CUSTOMER_SITE` de `siteRole: service` pendura direto
+  numa `REGION`. O endereço tem uma única `GeographicAddress`; não há sub-endereço.
+- **MDU 3×10 (caso composto).** O condomínio é um `CONDOMINIUM` (`property`), com blocos
+  (`BLOCK`, `property`) e, dentro de cada bloco, as unidades atendidas (`CUSTOMER_SITE`,
+  `service`) — todas compartilhando o mesmo `GeographicAddress` do condomínio, diferenciadas por
+  `GeographicSubAddress` (TMF673: torre/bloco/andar/unidade). Sem o eixo `siteRole`, um CO, um
+  condomínio e a casa de um assinante eram todos `category: 'Site'`, indistinguíveis — impossível
+  reaproveitar viabilidade e infraestrutura interna do prédio, ou medir take rate por MDU.
+
+**Fronteira Site (lugar) × Installation Point (recurso).** `INSTALLATION_POINT` estava cadastrado
+como `GeographicSiteSpecification`, mas conceitualmente é recurso de rede (capacidade reservável:
+`projected → built → available → reserved → in_use → decommissioned`), não lugar. A spec foi
+aposentada (`lifecycleStatus: Retired`, C6 — nunca DELETE físico); o cadastro existente migrou
+para `CUSTOMER_SITE`. O PI como `PhysicalResource` de primeira classe no Módulo 2 fica registrado
+como dívida em `docs/1-overview/open-questions.md` (Q-GEO-012).
+
+**Onde se aplica.** Bootstrap de catálogo (`BOOTSTRAP_SPECIFICATIONS`, `src/modules/geo/service.ts`),
+CRUD de spec (`TypeManagementModal`), resolução de ícone/rótulo de site no mapa
+(`siteKindFromSpec`, `web/src/utils/placeLabel.ts`) e o grupo "Locais" do seletor de camadas do
+mapa (`web/src/utils/mapLayers.ts`), reorganizado por papel em vez de categoria estrutural.
+
+Status: ✅ **Implementado** — coluna `site_role` em `tmf_geographic_site_specification`
+(Postgres e Oracle), backfill idempotente, validação em `createSpec`/`updateSpec`
+(`GEO_SPEC_INVALID_SITE_ROLE`), script de migração `INSTALLATION_POINT → CUSTOMER_SITE`
+(`scripts/migrate-installation-point-to-customer-site.mjs`, dry-run/`--apply`).
 
 ---
 

@@ -128,6 +128,7 @@ Estas decisões estão firmadas. Respeite-as; não as reabra sem pedido explíci
 | **C8**  | **Multi-tenant / wholesale**        | `relatedParty` com Tenant desde a criação. No Service, o subscriber do CFS é tipicamente um Tenant ISP (`modelo_comercial = wholesale \| direto`).                                                                     |
 | **C9**  | **Catálogos extensíveis via API**   | RelationshipTypes e Specifications têm bootstrap canônico + CRUD via API com governança (Audit + TMF688). Sem listas fechadas hardcoded.                                                                               |
 | **C10** | **Oracle-native + Property Graph**  | Alvo arquitetural: Oracle 21c/23ai, com path computation (porta OLT→ONT) via Property Graph. **A implementação atual roda em Neon Postgres** — trate C10 como destino, não como estado presente.                       |
+| **C11** | **Papel do site (`siteRole`)**      | Todo `GeographicSiteSpecification` tem um eixo funcional ortogonal a `category`: `grouping \| network \| property \| service` — o que o site É, não onde ele cabe na hierarquia. Vive na spec (catálogo), nunca hardcoded. |
 
 ---
 

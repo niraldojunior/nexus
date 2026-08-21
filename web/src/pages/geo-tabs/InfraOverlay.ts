@@ -20,16 +20,9 @@ import {
   resourceIconFor,
   CABLE_STROKE_WEIGHT,
   MARKER_ICON_SIZE,
-  MARKER_ICON_SMALL_SIZE,
 } from '../../utils/resourceIcon';
-import {
-  siteIconDataUrl,
-  siteIconFor,
-  SITE_ICON_SIZE,
-  SITE_ICON_SMALL_SIZE,
-} from '../../utils/siteIcon';
+import { siteIconDataUrl, siteIconFor, SITE_ICON_SIZE } from '../../utils/siteIcon';
 import { siteKindFromSpec } from '../../utils/placeLabel';
-import type { StationTier } from '../../utils/mapScale';
 import type { MapTileFeature } from '../../services/geoMapTileApi';
 
 type Maps = GoogleMapsApi['maps'];
@@ -37,14 +30,22 @@ type Project = (lng: number, lat: number) => [number, number] | null;
 type Viewport = { minLng: number; minLat: number; maxLng: number; maxLat: number };
 
 // Raio de captura do hit-test, em px de tela — folgado o bastante pra tocar num ícone pequeno
-// (tier reduzido, 16px) sem precisar acertar o pixel exato.
+// sem precisar acertar o pixel exato.
 const POINT_HIT_RADIUS_PX = 16;
 const LINE_HIT_RADIUS_PX = 7;
 
 export type InfraOverlayHandle = {
   setData: (
     features: MapTileFeature[],
-    options: { resourceTier: StationTier; excludeNodeId: string | null },
+    options: {
+      // Tamanho em px do pin de Recurso na escala atual (ver resourceIconSizeForScale em
+      // mapScale.ts), ou `null` quando o Recurso não é desenhado nessa escala.
+      resourceMarkerSize: number | null;
+      // Tamanho em px do pin de Site na escala atual (ver siteIconSizeForScale em mapScale.ts)
+      // — Site nunca é oculto por escala.
+      siteMarkerSize: number;
+      excludeNodeId: string | null;
+    },
   ) => void;
   // Feature sob a coordenada (clique/hover) — ponto vence linha em empate (equipamento é o
   // alvo mais provável de clique que o cabo por baixo dele). null fora do raio de qualquer uma.
@@ -64,7 +65,8 @@ export function resourcePointHitCenter(x: number, y: number, size: number): [num
 
 export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOverlayHandle {
   let data: MapTileFeature[] = [];
-  let resourceTier: StationTier = 'full';
+  let resourceMarkerSize: number | null = MARKER_ICON_SIZE;
+  let siteMarkerSize: number = SITE_ICON_SIZE;
   let excludeNodeId: string | null = null;
 
   // Projeção e resultado do último `draw()` — hitTest reusa os dois: reprojeta a coordenada
@@ -243,11 +245,12 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const local = project(feature.lng, feature.lat);
       if (!local) return;
       const [x, y] = local;
+      if (resourceMarkerSize === null) return;
+      const size = resourceMarkerSize;
       const icon = resourceIconFor({
         resourceType: feature.typeCode ?? '',
         status: feature.status,
       });
-      const size = resourceTier === 'small' ? MARKER_ICON_SMALL_SIZE : MARKER_ICON_SIZE;
       const img = loadImage(resourceIconDataUrl(icon, { size }));
       // Âncora no canto inferior-esquerdo — mesma regra de buildPointMarkerVisual em GeoPage
       // (a coordenada real fica acima e à direita do próprio ícone).
@@ -266,7 +269,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const [x, y] = local;
       const kind = siteKindFromSpec({ category: feature.siteCategory, name: feature.sublabel });
       const icon = siteIconFor(kind, feature.status);
-      const size = resourceTier === 'small' ? SITE_ICON_SMALL_SIZE : SITE_ICON_SIZE;
+      const size = siteMarkerSize;
       const img = loadImage(siteIconDataUrl(icon, { size }));
       // Âncora central — mesma regra de buildPointMarkerVisual em GeoPage (squircle).
       if (img) context.drawImage(img, x - size / 2, y - size / 2, size, size);
@@ -279,7 +282,8 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
 
   return {
     setData: (features, options) => {
-      resourceTier = options.resourceTier;
+      resourceMarkerSize = options.resourceMarkerSize;
+      siteMarkerSize = options.siteMarkerSize;
       excludeNodeId = options.excludeNodeId;
       data = features;
       overlay.draw();

@@ -115,7 +115,7 @@ describe('MapLayerControl', () => {
       />,
     );
     await user.click(screen.getByRole('button', { name: 'Camadas do mapa' }));
-    await user.click(screen.getByRole('switch', { name: 'Alternar grupo Recursos' }));
+    await user.click(screen.getByRole('switch', { name: 'Alternar grupo Recursos de Rede' }));
     expect(onToggleGroup).toHaveBeenCalledWith('resources');
   });
 

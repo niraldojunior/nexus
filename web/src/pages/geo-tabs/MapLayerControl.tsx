@@ -157,24 +157,14 @@ export function MapLayerControl({
                       />
                     ) : null}
                   </div>
-                  {group.hint ? (
-                    <p className="mt-0.5 pl-6 text-[0.7rem] leading-snug text-app-muted">
-                      {group.hint}
-                    </p>
-                  ) : null}
 
                   {group.children.length > 1 ? (
                     <div className="mt-1.5 flex flex-col gap-1.5 border-t border-app-border/60 pt-1.5">
                       {group.children.map((child) => (
                         <div key={child.id} className="flex items-center gap-2 pl-1">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-[0.78rem] text-app-text">{child.label}</p>
-                            {child.hint ? (
-                              <p className="truncate text-[0.68rem] leading-snug text-app-muted">
-                                {child.hint}
-                              </p>
-                            ) : null}
-                          </div>
+                          <p className="min-w-0 flex-1 truncate text-[0.78rem] text-app-text">
+                            {child.label}
+                          </p>
                           <LayerSwitch
                             checked={layers[child.id]}
                             label={child.label}

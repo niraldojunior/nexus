@@ -161,8 +161,8 @@ function installGoogleMapsMock() {
 
 // Nó de seleção mínimo, com geometria — o suficiente para o painel considerar que há algo
 // aberto (selectionActive) e para o alfinete ter um ponto. `sublabel` identifica CO/Estação
-// para siteKindFromSpec (Fase 3, REQ-MOD01-016) — só CO segue a régua de stationTier no
-// mapa; qualquer outro tipo de Site seguiria resourceTier.
+// para siteKindFromSpec (Fase 3, REQ-MOD01-016) — todo tipo de Site (CO ou não) usa o mesmo
+// `siteMarkerSize` no mapa.
 const selectionNode = (id = 'site:1'): GeoTreeNode => ({
   id,
   kind: 'site',
@@ -209,8 +209,8 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -249,8 +249,8 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
         coverage={coverage}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -262,7 +262,7 @@ describe('GoogleMapPanel', () => {
     expect(screen.queryByText('Cobertura GPON')).not.toBeInTheDocument();
   });
 
-  it('desenha a Estação em tamanho reduzido no tier "small" (5–50 km)', async () => {
+  it('desenha o Site no tamanho vindo de `siteMarkerSize` (10 km para cima)', async () => {
     render(
       <GoogleMapPanel
         nodes={[selectionNode()]}
@@ -276,8 +276,8 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="small"
-        resourceTier="full"
+        siteMarkerSize={20}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -286,10 +286,10 @@ describe('GoogleMapPanel', () => {
     const siteOptions = googleMocks.markerCtor.mock.calls
       .map(([options]) => options as { icon?: { scaledSize?: { width?: number } } })
       .find((options) => options.icon?.scaledSize?.width !== undefined);
-    expect(siteOptions?.icon?.scaledSize?.width).toBe(14);
+    expect(siteOptions?.icon?.scaledSize?.width).toBe(20);
   });
 
-  it('site não-CO (ex.: Ponto de Instalação) segue resourceTier, não stationTier', async () => {
+  it('site não-CO (ex.: Ponto de Instalação) segue `siteMarkerSize`, não `resourceMarkerSize`', async () => {
     const installationPoint: GeoTreeNode = {
       ...selectionNode('site:2'),
       label: 'PI Rua Miguel de Frias',
@@ -308,10 +308,11 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
         coverage={null}
-        // stationTier "full" provaria o bug se o código usasse a régua errada — só CO usa
-        // stationTier; qualquer outro tipo de Site (Fase 3, REQ-MOD01-016) usa resourceTier.
-        stationTier="full"
-        resourceTier="small"
+        // `resourceMarkerSize` bem diferente de `siteMarkerSize` provaria o bug se o código
+        // usasse a régua errada para um Site não-CO — todo Site (CO ou não) usa
+        // `siteMarkerSize` (Fase 3, REQ-MOD01-016).
+        siteMarkerSize={20}
+        resourceMarkerSize={7}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -320,7 +321,7 @@ describe('GoogleMapPanel', () => {
     const siteOptions = googleMocks.markerCtor.mock.calls
       .map(([options]) => options as { icon?: { scaledSize?: { width?: number } } })
       .find((options) => options.icon?.scaledSize?.width !== undefined);
-    expect(siteOptions?.icon?.scaledSize?.width).toBe(14);
+    expect(siteOptions?.icon?.scaledSize?.width).toBe(20);
   });
 
   it('mantém a seleção ao arrastar o mapa: cancela o voo e avisa navegação manual, sem desselecionar', async () => {
@@ -341,8 +342,8 @@ describe('GoogleMapPanel', () => {
         onManualNavigation={onManualNavigation}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -371,8 +372,8 @@ describe('GoogleMapPanel', () => {
         onManualNavigation={onManualNavigation}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -406,8 +407,8 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={onDraftAddress}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -443,8 +444,8 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={onDraftAddress}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -474,8 +475,8 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={onDraftAddress}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -503,8 +504,8 @@ describe('GoogleMapPanel', () => {
       onDraftAddress,
       onViewportChange: vi.fn(),
       coverage: null,
-      stationTier: 'full' as const,
-      resourceTier: 'full' as const,
+      siteMarkerSize: 25,
+      resourceMarkerSize: 30,
       onCoverageHover: vi.fn(),
     };
     const { rerender } = render(
@@ -550,8 +551,8 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={onDraftAddress}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -568,7 +569,7 @@ describe('GoogleMapPanel', () => {
     expect(onDraftAddress).not.toHaveBeenCalled();
   });
 
-  it('repassa infraFeatures/resourceTier/seleção pro InfraOverlay a cada mudança', async () => {
+  it('repassa infraFeatures/resourceMarkerSize/seleção pro InfraOverlay a cada mudança', async () => {
     const feature: MapTileFeature = {
       entityId: 'r9',
       kind: 'resource',
@@ -593,15 +594,16 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
 
     await waitFor(() =>
       expect(infraOverlayMocks.setData).toHaveBeenCalledWith([feature], {
-        resourceTier: 'full',
+        resourceMarkerSize: 30,
+        siteMarkerSize: 25,
         excludeNodeId: null,
       }),
     );
@@ -624,15 +626,16 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
 
     await waitFor(() =>
       expect(infraOverlayMocks.setData).toHaveBeenLastCalledWith([feature], {
-        resourceTier: 'full',
+        resourceMarkerSize: 30,
+        siteMarkerSize: 25,
         excludeNodeId: 'resource:r9',
       }),
     );
@@ -665,8 +668,8 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -706,8 +709,8 @@ describe('GoogleMapPanel', () => {
         onManualNavigation={onManualNavigation}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -754,8 +757,8 @@ describe('GoogleMapPanel', () => {
         onManualNavigation={onManualNavigation}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -784,8 +787,8 @@ describe('GoogleMapPanel', () => {
       onDraftAddress: vi.fn(),
       onViewportChange: vi.fn(),
       coverage: null,
-      stationTier: 'full' as const,
-      resourceTier: 'full' as const,
+      siteMarkerSize: 25,
+      resourceMarkerSize: 30,
       onCoverageHover: vi.fn(),
     };
     const { rerender } = render(
@@ -843,8 +846,8 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />
     );
@@ -913,8 +916,8 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -965,8 +968,8 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -1002,8 +1005,8 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -1043,8 +1046,8 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );
@@ -1084,8 +1087,8 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
         coverage={null}
-        stationTier="full"
-        resourceTier="full"
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
         onCoverageHover={vi.fn()}
       />,
     );

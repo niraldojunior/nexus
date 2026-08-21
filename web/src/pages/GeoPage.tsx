@@ -61,9 +61,8 @@ import {
   ADDRESS_FOCUS_SCALE_METERS,
   PASSIVE_INFRA_MAX_SCALE_METERS,
   coverageVisibleAtScale,
-  stationTierForScale,
-  resourceTierForScale,
-  type StationTier,
+  siteIconSizeForScale,
+  resourceIconSizeForScale,
   type CoverageLevel,
 } from '../utils/mapScale';
 import { useGponCoverage } from '../hooks/useGponCoverage';
@@ -92,7 +91,6 @@ import {
   resourceIconFor,
   resourceIconDataUrl,
   MARKER_ICON_SIZE,
-  MARKER_ICON_SMALL_SIZE,
   CABLE_STROKE_WEIGHT,
 } from '../utils/resourceIcon';
 import { ResourceIcon } from '../components/ResourceIcon';
@@ -103,7 +101,6 @@ import {
   siteIconFor,
   SELECTION_PIN_ASPECT,
   SITE_ICON_SIZE,
-  SITE_ICON_SMALL_SIZE,
 } from '../utils/siteIcon';
 import { useNavigation } from '../hooks/useNavigation';
 import {
@@ -318,19 +315,15 @@ function buildPointMarkerVisual(
   maps: GoogleMapsApi['maps'],
   node: GeoTreeNode,
   selected: boolean,
-  stationTier: StationTier,
-  resourceTier: StationTier,
+  siteMarkerSize: number,
+  resourceMarkerSize: number | null,
 ): { iconOptions: Record<string, unknown>; zIndex: number; title: string } {
   if (node.kind === 'site') {
     const kind = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
     const icon = siteIconFor(kind, node.status);
-    // CO/Estação segue a régua de Estação (cheio perto, pequeno em 5–50 km, nunca some);
-    // qualquer outro tipo de Site (POP, CDO, Ponto de Instalação…) segue a régua de
-    // Recurso — mesmo tier de on/off de um Recurso, já que só existe no mapa na mesma
-    // escala de detalhe (ver GeoTreeService.sitesInViewport).
-    const siteTier = kind === 'CO' ? stationTier : resourceTier;
-    const baseSize = siteTier === 'small' ? SITE_ICON_SMALL_SIZE : SITE_ICON_SIZE;
-    const size = selected ? SITE_ICON_SIZE + 8 : baseSize;
+    // Todo tipo de Site (CO ou não) segue a mesma régua de tamanho — ver siteIconSizeForScale
+    // em mapScale.ts.
+    const size = selected ? SITE_ICON_SIZE + 8 : siteMarkerSize;
     return {
       iconOptions: {
         url: siteIconDataUrl(icon, { size }),
@@ -343,8 +336,10 @@ function buildPointMarkerVisual(
   }
 
   const icon = resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
-  const resourceBaseSize = resourceTier === 'small' ? MARKER_ICON_SMALL_SIZE : MARKER_ICON_SIZE;
-  const size = selected ? MARKER_ICON_SIZE + 6 : resourceBaseSize;
+  // Um Recurso só chega aqui via Marker nativo quando é o nó selecionado (ver `mapNodes` em
+  // GeoPage) — nesse caso `selected` é sempre true, então o fallback do `??` nunca é exercitado
+  // de fato; existe só pra função ser total mesmo se isso mudar.
+  const size = selected ? MARKER_ICON_SIZE + 6 : (resourceMarkerSize ?? MARKER_ICON_SIZE);
   return {
     iconOptions: {
       url: resourceIconDataUrl(icon, { size }),
@@ -526,9 +521,9 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     [mapLayers.layers.sites, mapLayers.layers.resourcePoints, mapLayers.layers.resourceLines],
   );
 
-  // Infra passiva (recursos + Sites não-CO + cabos) só entra quando a escala está em ≤ 50 m;
-  // Estações (tree.mapNodes) continuam visíveis, mas encolhem (5–50 km) e somem acima de 50 km
-  // — ver stationTier. Desenhada por InfraOverlay (canvas, Fase 3 da issue #69), não por
+  // Infra passiva (recursos + Sites não-CO + cabos) só entra quando a escala está em ≤ 100 m;
+  // Estações (tree.mapNodes) continuam visíveis em qualquer escala — ver siteMarkerSize.
+  // Desenhada por InfraOverlay (canvas, Fase 3 da issue #69), não por
   // Marker/Polyline — por isso fica FORA de `mapNodes` (que só alimenta os efeitos de
   // Marker/Polyline, ver GoogleMapPanel): as duas fontes nunca se misturam.
   const passiveInfraVisible = scaleMeters !== null && scaleMeters <= PASSIVE_INFRA_MAX_SCALE_METERS;
@@ -550,17 +545,17 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // outra `>` sobre o mesmo degrau), então não há risco de desenhar planta individual e
   // agregado ao mesmo tempo.
   const { data: mapDensity, loading: densityLoading } = useMapDensity(viewportBounds, scaleMeters);
-  const stationTier: StationTier = stationTierForScale(scaleMeters);
-  const resourceTier: StationTier = resourceTierForScale(scaleMeters);
+  const siteMarkerSize = siteIconSizeForScale(scaleMeters);
+  const resourceMarkerSize = resourceIconSizeForScale(scaleMeters);
   const mapNodes = useMemo(() => {
-    // CO/Estação permanece visível em qualquer escala (só muda de tamanho por stationTier);
+    // CO/Estação permanece visível em qualquer escala (só muda de tamanho por siteMarkerSize);
     // a camada "Estações" do controle desliga só o desenho — a árvore precisa do fetch de
     // qualquer forma (ver MAP_LAYER_GROUPS em utils/mapLayers.ts).
     const stations = mapLayers.layers.stations ? tree.mapNodes : [];
     // Locais do Projeto de trabalho aberto (REQ-MOD01-015) entram só enquanto a doca mostra
     // aquele projeto — nunca somados aos nós da árvore, que já os excluem por completo. Com
     // manchas geradas (REQ-MOD01-017), o pin individual só entra na mesma régua de escala da
-    // infra passiva (≤ 50 m) — em escala mais aberta, a mancha do overlay já representa o
+    // infra passiva (≤ 100 m) — em escala mais aberta, a mancha do overlay já representa o
     // conjunto — e vem de `projectViewportSites` (buscado por bbox), não da página do painel.
     const projectSitesVisible =
       dockView.kind !== 'hierarchy' && (!hasProjectAreas || passiveInfraVisible);
@@ -740,7 +735,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   }, [activeProjectId, projectSitesReloadToken]);
 
   // Locais do projeto VISÍVEIS NO MAPA, quando ele tem manchas geradas: busca por bbox (mesmo
-  // padrão de handleViewportChange/viewportInfra), só ativa em ≤ 50 m — em escala mais aberta,
+  // padrão de handleViewportChange/viewportInfra), só ativa em ≤ 100 m — em escala mais aberta,
   // a mancha do overlay já representa o conjunto. Sem manchas, o mapa usa `projectSites`
   // (lista completa) diretamente, como sempre.
   const projectViewportFetchTokenRef = useRef(0);
@@ -1468,8 +1463,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               }
               onViewportChange={handleViewportChange}
               coverage={coverageVisible ? coverage : null}
-              stationTier={stationTier}
-              resourceTier={resourceTier}
+              siteMarkerSize={siteMarkerSize}
+              resourceMarkerSize={resourceMarkerSize}
               onCoverageHover={setCoverageHover}
               projectAreas={projectAreas}
               onProjectAreaHover={setProjectAreaHover}
@@ -1575,8 +1570,8 @@ export function GoogleMapPanel({
   selectionActive,
   onViewportChange,
   coverage,
-  stationTier,
-  resourceTier,
+  siteMarkerSize,
+  resourceMarkerSize,
   onCoverageHover,
   projectAreas = [],
   onProjectAreaHover = noopProjectAreaHover,
@@ -1636,10 +1631,11 @@ export function GoogleMapPanel({
   // Cobertura GPON da viewport (mapa de calor por bairro), ou null quando fora de escala. O
   // painel só a desenha na camada de canvas (ver CoverageOverlay); a busca é do chamador.
   coverage: CoverageResponse | null;
-  // Como desenhar as Estações na escala atual: cheia (perto) ou pequena (longe).
-  stationTier: StationTier;
-  // Como desenhar os Recursos (caixas/splitters): cheio (≤ 20 m) ou reduzido (50 m).
-  resourceTier: StationTier;
+  // Tamanho em px do pin de Site na escala atual (ver siteIconSizeForScale em mapScale.ts).
+  siteMarkerSize: number;
+  // Tamanho em px do pin de Recurso na escala atual (ver resourceIconSizeForScale em
+  // mapScale.ts), ou `null` quando o Recurso não é desenhado nessa escala.
+  resourceMarkerSize: number | null;
   // Bairro sob o cursor sobre a mancha (ou null) — vira o balão de hover no GeoPage.
   onCoverageHover: (
     hover: { point: [number, number]; neighborhood: CoverageNeighborhood } | null,
@@ -2101,10 +2097,11 @@ export function GoogleMapPanel({
   // sem `infraFeatures` ter mudado.
   useEffect(() => {
     infraOverlayRef.current?.setData(infraFeatures, {
-      resourceTier,
+      resourceMarkerSize,
+      siteMarkerSize,
       excludeNodeId: selectedNodeId,
     });
-  }, [infraFeatures, resourceTier, selectedNodeId, mapsReady]);
+  }, [infraFeatures, resourceMarkerSize, siteMarkerSize, selectedNodeId, mapsReady]);
 
   // Descarta a camada de infra passiva no desmonte, junto do mapa.
   useEffect(
@@ -2166,7 +2163,13 @@ export function GoogleMapPanel({
       const [lng, lat] = node.geometry.coordinates;
       const selected = node.id === selectedNodeIdAtRun;
       const existing = markersRef.current.get(node.id);
-      const visual = buildPointMarkerVisual(maps, node, selected, stationTier, resourceTier);
+      const visual = buildPointMarkerVisual(
+        maps,
+        node,
+        selected,
+        siteMarkerSize,
+        resourceMarkerSize,
+      );
 
       if (existing) {
         existing.setPosition({ lng, lat });
@@ -2204,7 +2207,7 @@ export function GoogleMapPanel({
     // Cada ponto é um ícone individual no mapa — sem agrupamento. De 50 m para cima a leitura
     // da rede fica por conta da camada de cobertura GPON (ver CoverageOverlay), não de clusters.
     for (const marker of activeMarkers) marker.setMap(mapRef.current);
-  }, [mapsReady, nodes, stationTier, resourceTier]);
+  }, [mapsReady, nodes, siteMarkerSize, resourceMarkerSize]);
 
   // Troca de seleção: toca só os 1-2 marcadores cujo `selected` de fato mudou (o que estava
   // selecionado antes e o que passou a estar agora), em vez de reprocessar todos os N do efeito
@@ -2226,13 +2229,13 @@ export function GoogleMapPanel({
         maps,
         node,
         id === selectedNodeId,
-        stationTier,
-        resourceTier,
+        siteMarkerSize,
+        resourceMarkerSize,
       );
       marker.setIcon(visual.iconOptions);
       marker.setZIndex(visual.zIndex);
     }
-  }, [mapsReady, selectedNodeId, stationTier, resourceTier]);
+  }, [mapsReady, selectedNodeId, siteMarkerSize, resourceMarkerSize]);
 
   useEffect(() => {
     const maps = window.google?.maps;

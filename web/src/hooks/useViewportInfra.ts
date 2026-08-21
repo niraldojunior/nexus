@@ -1,5 +1,5 @@
 // Infra passiva (recursos + Sites não-CO) da região visível do mapa, buscada por bbox — some
-// acima de PASSIVE_INFRA_MAX_SCALE_METERS (50 m), mesma régua da cobertura GPON (ver
+// acima de PASSIVE_INFRA_MAX_SCALE_METERS (100 m), mesma régua da cobertura GPON (ver
 // useGponCoverage, mesmo padrão de debounce/dedupe/token).
 //
 // Extraído de GeoPage (antes vivia dentro de handleViewportChange) para o controle de camadas

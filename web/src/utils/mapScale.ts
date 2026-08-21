@@ -13,15 +13,19 @@ const EARTH_METERS_PER_PIXEL_AT_ZOOM_0 = 156543.03392;
 // melhor estimativa da barra real do Google (100 px arredondava um passo acima).
 const SCALE_BAR_MAX_PX = 64;
 
-// Acima deste valor, a infra passiva (recursos + cabos) some do mapa. No lugar dela entra
-// a camada de cobertura GPON (ver COVERAGE_MIN_SCALE_METERS); Estações continuam visíveis.
-export const PASSIVE_INFRA_MAX_SCALE_METERS = 50;
+// Acima deste valor, a infra passiva (recursos + cabos + Sites não-CO) some do mapa. No lugar
+// dela entra a camada de cobertura GPON (ver COVERAGE_MIN_SCALE_METERS); Estações continuam
+// visíveis. Casa com o degrau "> 200 m: não exibe" de resourceIconSizeForScale: como a barra de
+// escala só lê valores redondos (1/2/5 × 10^n — 100, 200, 500…), nunca há leitura entre 200 e
+// 500 m, então manter o corte em `<=` 200 já garante que só some a partir de 500 m.
+export const PASSIVE_INFRA_MAX_SCALE_METERS = 200;
 
 // Cobertura GPON (mapa de calor por bairro/município/estado) entra a partir desta escala
 // (inclusive) — "visível para qualquer escala de 50 m para cima". Em ≤ 20 m só a planta
-// individual aparece; não há mais cluster (bolas azuis numeradas foram removidas). Em 50 m a
-// mancha e os ícones reduzidos de caixa coexistem — é o degrau de transição entre as duas
-// camadas.
+// individual aparece; não há mais cluster (bolas azuis numeradas foram removidas). Entre 50 e
+// 200 m a mancha e os ícones reduzidos de Recurso coexistem (ver resourceIconSizeForScale) — é
+// a faixa de transição entre as duas camadas; acima de 200 m só a cobertura resta (ver
+// PASSIVE_INFRA_MAX_SCALE_METERS).
 export const COVERAGE_MIN_SCALE_METERS = 50;
 
 // LOD da cobertura por escala (REQ-MOD01-014): polígono de bairro até aqui, de município até
@@ -32,17 +36,7 @@ export const COVERAGE_MIN_SCALE_METERS = 50;
 export const COVERAGE_NEIGHBORHOOD_MAX_SCALE_METERS = 500;
 export const COVERAGE_CITY_MAX_SCALE_METERS = 10_000;
 
-// Estações: tamanho cheio até aqui; a partir de 1 km viram pontos pequenos (sem agrupamento) —
-// já nas escalas de 1 e 2 km. Permanecem visíveis em qualquer escala, inclusive acima de 50 km.
-export const STATION_SMALL_MIN_SCALE_METERS = 1_000;
-
-// Recursos (caixas/splitters): tamanho cheio bem de perto (≤ 20 m) e reduzidos a partir de
-// 50 m — no degrau de 50 m, onde ainda aparecem junto da cobertura, ícones menores poluem
-// menos (mesmo espírito da redução das estações em escala grande).
-export const RESOURCE_SMALL_MIN_SCALE_METERS = 50;
-
 export type CoverageLevel = 'neighborhood' | 'city' | 'uf';
-export type StationTier = 'full' | 'small';
 
 // Cobertura visível? De 50 m para cima, em qualquer escala.
 export const coverageVisibleAtScale = (scaleMeters: number | null): boolean =>
@@ -72,24 +66,35 @@ export function densityZoomForScale(scaleMeters: number): MapDensityZoom {
 
 // A densidade só existe acima da escala em que o pin individual some — abaixo disso quem
 // responde é o índice por tile (ver useMapTiles). O `>` é estrito de propósito: em exatamente
-// 50 m ainda é a planta individual que manda, mesmo degrau usado por useMapTiles.
+// 200 m ainda é a planta individual que manda, mesmo degrau usado por useMapTiles.
 export const densityVisibleAtScale = (scaleMeters: number | null): boolean =>
   scaleMeters !== null && scaleMeters > PASSIVE_INFRA_MAX_SCALE_METERS;
 
-// Como desenhar a Estação na escala atual: cheia (perto) ou pequena (longe). Nunca oculta —
-// as estações permanecem visíveis em qualquer escala.
-export function stationTierForScale(scaleMeters: number | null): StationTier {
-  if (scaleMeters === null) return 'full';
-  if (scaleMeters >= STATION_SMALL_MIN_SCALE_METERS) return 'small';
-  return 'full';
+// Tamanho do pin de Site no mapa, em px, pela escala atual — mesmo valor pra qualquer tipo de
+// Site (CO ou não). Nunca oculta: Sites permanecem visíveis em qualquer escala (um Site não-CO
+// some do mapa, mas por PASSIVE_INFRA_MAX_SCALE_METERS, não por tamanho). Um Site não-CO nunca
+// chega às réguas de 10/50 km — já some do mapa bem antes disso —, então na prática só a
+// Estação varia de tamanho nessas escalas.
+export function siteIconSizeForScale(scaleMeters: number | null): number {
+  if (scaleMeters === null) return 25;
+  if (scaleMeters >= 50_000) return 15;
+  if (scaleMeters >= 10_000) return 20;
+  return 25;
 }
 
-// Como desenhar o Recurso (caixa/splitter) na escala atual: cheio em zoom bem fechado (≤ 20 m),
-// reduzido a partir de 50 m.
-export function resourceTierForScale(scaleMeters: number | null): StationTier {
-  if (scaleMeters === null) return 'full';
-  if (scaleMeters >= RESOURCE_SMALL_MIN_SCALE_METERS) return 'small';
-  return 'full';
+// Tamanho do pin de Recurso (caixa/splitter) no mapa, em px, pela escala atual — ou `null`
+// acima de 200 m, quando ele não é mais desenhado (mesmo corte de PASSIVE_INFRA_MAX_SCALE_METERS,
+// que já governa se o dado é buscado). Note que o `null` de retorno é redundante com esse corte
+// externo — existe só pra função ser correta mesmo se chamada fora dele.
+export function resourceIconSizeForScale(scaleMeters: number | null): number | null {
+  if (scaleMeters === null) return 30;
+  if (scaleMeters > 200) return null;
+  if (scaleMeters >= 200) return 7;
+  if (scaleMeters >= 100) return 10;
+  if (scaleMeters >= 50) return 15;
+  if (scaleMeters >= 20) return 20;
+  if (scaleMeters >= 10) return 25;
+  return 30;
 }
 
 // Metros por pixel na tela para um dado zoom e latitude (projeção Web Mercator do

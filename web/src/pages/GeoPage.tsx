@@ -254,7 +254,7 @@ function projectAreaBalloonOf(
 // guarda só o id: `SitePanel` resolve todo o detalhe por id via `useSiteDetail`, e o catálogo
 // `sites` só contém specs "container" (ver loadGeo) — um Site de spec folha (Ponto de
 // Instalação, Cabinet) nunca estaria lá, então derivar o alvo dali deixava o painel sem abrir
-// para esses casos (e para local de Projeto, sempre INSTALLATION_POINT).
+// para esses casos (e para local de Projeto, sempre CUSTOMER_SITE).
 type DetailTarget = { kind: 'site'; siteId: string } | { kind: 'resource'; node: GeoTreeNode };
 
 // O que a doca mostra quando nem endereço (`addressLookup`) nem detalhe de Site/Recurso

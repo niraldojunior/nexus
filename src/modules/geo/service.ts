@@ -187,6 +187,10 @@ type BootstrapDefinition = {
   description: string;
   allowedParentCodes: string[];
   allowedChildCodes: string[];
+  // Default 'Active'. INSTALLATION_POINT usa 'Retired' (C6 — nunca DELETE físico): o
+  // cadastro migrou para CUSTOMER_SITE (Fase 2), mas o tipo legado permanece no catálogo,
+  // apenas inativo, para não quebrar sites históricos que ainda apontam para ele.
+  lifecycleStatus?: GeographicSiteSpecificationLifecycleStatus;
 };
 
 const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
@@ -197,7 +201,15 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     siteRole: 'grouping',
     description: 'Agrupador territorial hierárquico para estados, regiões e macroáreas.',
     allowedParentCodes: ['REGION'],
-    allowedChildCodes: ['REGION', 'CO', 'POP', 'CABINET', 'INSTALLATION_POINT', 'CONDOMINIUM'],
+    allowedChildCodes: [
+      'REGION',
+      'CO',
+      'POP',
+      'CABINET',
+      'INSTALLATION_POINT',
+      'CUSTOMER_SITE',
+      'CONDOMINIUM',
+    ],
   },
   {
     name: 'Functional Group',
@@ -242,6 +254,16 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     siteRole: 'service',
     description: 'Ponto de instalação associado ao atendimento.',
     allowedParentCodes: ['REGION'],
+    allowedChildCodes: [],
+    lifecycleStatus: 'Retired',
+  },
+  {
+    name: 'Customer Site',
+    code: 'CUSTOMER_SITE',
+    category: 'Site',
+    siteRole: 'service',
+    description: 'Unidade atendida (casa, apartamento) — destino do atendimento ao cliente final.',
+    allowedParentCodes: ['REGION', 'CONDOMINIUM', 'BLOCK', 'BUILDING'],
     allowedChildCodes: [],
   },
   {
@@ -342,7 +364,7 @@ const matchesBootstrapSpecification = (
   existing.description === definition.description &&
   existing.category === definition.category &&
   existing.siteRole === definition.siteRole &&
-  existing.lifecycleStatus === 'Active' &&
+  existing.lifecycleStatus === (definition.lifecycleStatus ?? 'Active') &&
   existing._bootstrapProtected === true;
 
 const matchesBootstrapRelationshipType = (
@@ -421,7 +443,7 @@ export class GeoService {
               description: definition.description,
               category: definition.category,
               siteRole: definition.siteRole,
-              lifecycleStatus: 'Active',
+              lifecycleStatus: definition.lifecycleStatus ?? 'Active',
               validFor: {},
               specCharacteristic: [],
               allowedParentSpecIds: [],
@@ -443,7 +465,7 @@ export class GeoService {
               description: definition.description,
               category: definition.category,
               siteRole: definition.siteRole,
-              lifecycleStatus: 'Active',
+              lifecycleStatus: definition.lifecycleStatus ?? 'Active',
               ...(existing.validFor ? { validFor: existing.validFor } : {}),
               specCharacteristic: existing.specCharacteristic,
               allowedParentSpecIds: existing.allowedParentSpecIds,

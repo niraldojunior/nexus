@@ -23,6 +23,7 @@ import {
 } from '../../utils/resourceIcon';
 import { siteIconDataUrl, siteIconFor, SITE_ICON_SIZE } from '../../utils/siteIcon';
 import { siteKindFromSpec } from '../../utils/placeLabel';
+import type { MapSiteRole } from '../../utils/mapLayers';
 import type { MapTileFeature } from '../../services/geoMapTileApi';
 
 type Maps = GoogleMapsApi['maps'];
@@ -45,6 +46,10 @@ export type InfraOverlayHandle = {
       // — Site nunca é oculto por escala.
       siteMarkerSize: number;
       excludeNodeId: string | null;
+      // Papel funcional (siteRole, C11) por code de spec — refina o ícone de Site (CO/POP/CTO)
+      // além da heurística por substring de siteKindFromSpec. Opcional: sem catálogo em mãos,
+      // cai no fallback por nome.
+      roleByCode?: ReadonlyMap<string, MapSiteRole>;
     },
   ) => void;
   // Feature sob a coordenada (clique/hover) — ponto vence linha em empate (equipamento é o
@@ -68,6 +73,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
   let resourceMarkerSize: number | null = MARKER_ICON_SIZE;
   let siteMarkerSize: number = SITE_ICON_SIZE;
   let excludeNodeId: string | null = null;
+  let roleByCode: ReadonlyMap<string, MapSiteRole> | undefined;
 
   // Projeção e resultado do último `draw()` — hitTest reusa os dois: reprojeta a coordenada
   // consultada no MESMO espaço de pixel local em que os pontos/linhas já foram desenhados, em
@@ -267,7 +273,11 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const local = project(feature.lng, feature.lat);
       if (!local) return;
       const [x, y] = local;
-      const kind = siteKindFromSpec({ category: feature.siteCategory, name: feature.sublabel });
+      const kind = siteKindFromSpec({
+        category: feature.siteCategory,
+        name: feature.sublabel,
+        siteRole: feature.sublabel ? roleByCode?.get(feature.sublabel) : undefined,
+      });
       const icon = siteIconFor(kind, feature.status);
       const size = siteMarkerSize;
       const img = loadImage(siteIconDataUrl(icon, { size }));
@@ -285,6 +295,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       resourceMarkerSize = options.resourceMarkerSize;
       siteMarkerSize = options.siteMarkerSize;
       excludeNodeId = options.excludeNodeId;
+      roleByCode = options.roleByCode;
       data = features;
       overlay.draw();
     },

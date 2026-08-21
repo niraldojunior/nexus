@@ -80,6 +80,7 @@ import {
   type MapLayerGroupId,
   type MapLayerId,
   type MapLayerVisibility,
+  type MapSiteRole,
 } from '../utils/mapLayers';
 import { createCoverageOverlay, type CoverageOverlayHandle } from './geo-tabs/CoverageOverlay';
 import { coverageSwatch, coverageSwatchDataUrl } from '../utils/coverageColor';
@@ -520,7 +521,21 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const mapLayers = useMapLayers();
   const viewportShapesInclude = useMemo(
     () => viewportInclude(mapLayers.layers),
-    [mapLayers.layers.sites, mapLayers.layers.resourcePoints, mapLayers.layers.resourceLines],
+    [
+      mapLayers.layers.siteNetwork,
+      mapLayers.layers.siteProperty,
+      mapLayers.layers.siteService,
+      mapLayers.layers.siteSublocal,
+      mapLayers.layers.resourcePoints,
+      mapLayers.layers.resourceLines,
+    ],
+  );
+  // Papel funcional (siteRole, C11) por code de spec, para o seletor de camadas roteirar cada
+  // feature de site para o grupo certo (Sites de Rede / Imóveis / Sites de Serviço /
+  // Sub-locais) sem depender de coluna nova em geo_map_feature (ver isMapFeatureVisible).
+  const siteRoleByCode = useMemo(
+    () => new Map(specs.map((spec) => [spec.code, spec.siteRole] as const)),
+    [specs],
   );
 
   // Infra passiva (recursos + Sites não-CO + cabos) só entra quando a escala está em ≤ 100 m;
@@ -534,6 +549,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     scaleMeters,
     viewportShapesInclude,
     mapLayers.layers,
+    siteRoleByCode,
   );
   // Um CO dentro do tile também vira feature 'site'. Filtra pelos
   // ids da árvore INTEIRA (não só as Estações visíveis, que podem estar com a camada desligada)
@@ -1479,6 +1495,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               onToggleMapLayerGroup={mapLayers.toggleGroup}
               onResetMapLayers={mapLayers.resetLayers}
               mapLayersAllVisible={mapLayers.allVisible}
+              siteRoleByCode={siteRoleByCode}
             />
           </div>
 
@@ -1584,6 +1601,7 @@ export function GoogleMapPanel({
   onToggleMapLayerGroup = noopToggleMapLayerGroup,
   onResetMapLayers = noopResetMapLayers,
   mapLayersAllVisible = true,
+  siteRoleByCode,
 }: {
   nodes: GeoTreeNode[];
   // Infra passiva (recursos + Sites não-CO + cabos) da região visível, desenhada por
@@ -1665,6 +1683,10 @@ export function GoogleMapPanel({
   onToggleMapLayerGroup?: (groupId: MapLayerGroupId) => void;
   onResetMapLayers?: () => void;
   mapLayersAllVisible?: boolean;
+  // Papel funcional (siteRole, C11) por code de spec — refina o ícone de Site desenhado pelo
+  // InfraOverlay (CO/POP/CTO) além da heurística por substring. Opcional: sem catálogo em mãos
+  // (testes, ou carregamento inicial), o InfraOverlay cai no fallback por nome.
+  siteRoleByCode?: ReadonlyMap<string, MapSiteRole>;
 }) {
   const selectedNodeId = selectedNode?.id ?? null;
   const mapEl = useRef<HTMLDivElement>(null);
@@ -2102,8 +2124,16 @@ export function GoogleMapPanel({
       resourceMarkerSize,
       siteMarkerSize,
       excludeNodeId: selectedNodeId,
+      roleByCode: siteRoleByCode,
     });
-  }, [infraFeatures, resourceMarkerSize, siteMarkerSize, selectedNodeId, mapsReady]);
+  }, [
+    infraFeatures,
+    resourceMarkerSize,
+    siteMarkerSize,
+    selectedNodeId,
+    mapsReady,
+    siteRoleByCode,
+  ]);
 
   // Descarta a camada de infra passiva no desmonte, junto do mapa.
   useEffect(

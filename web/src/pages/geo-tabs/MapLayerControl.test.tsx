@@ -99,7 +99,7 @@ describe('MapLayerControl', () => {
     await user.click(screen.getByRole('button', { name: 'Camadas do mapa' }));
     await user.click(screen.getByRole('switch', { name: 'Tubos de subida' }));
     expect(onToggleLayer).toHaveBeenCalledWith('netwinRisingTube');
-    expect(screen.getByRole('switch', { name: 'Salas técnicas' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Caixas subterrâneas' })).toBeInTheDocument();
   });
 
   it('emite o id do grupo ao clicar no switch de um grupo com sub-camadas', async () => {

@@ -5,7 +5,10 @@
 
 export type MapLayerId =
   | 'stations'
-  | 'sites'
+  | 'siteNetwork'
+  | 'siteProperty'
+  | 'siteService'
+  | 'siteSublocal'
   | 'coverage'
   | 'resourcePoints'
   | 'resourceLines'
@@ -19,22 +22,16 @@ export type MapLayerId =
   | 'netwinPedestal'
   | 'netwinSupportBracket'
   | 'netwinCableTunnel'
-  | 'netwinIronPipe'
-  | 'netwinBuilding'
-  | 'netwinCentral'
-  | 'netwinRoom'
-  | 'netwinTechnicalRoom'
-  | 'netwinCabinet'
-  | 'netwinCustomerSite'
-  | 'netwinRemoteUnit'
-  | 'netwinAdvancedRemoteUnit'
-  | 'netwinTechnicalContainer';
+  | 'netwinIronPipe';
 
 export type MapLayerVisibility = Record<MapLayerId, boolean>;
 
 export const ALL_MAP_LAYERS_VISIBLE: MapLayerVisibility = {
   stations: true,
-  sites: true,
+  siteNetwork: true,
+  siteProperty: true,
+  siteService: true,
+  siteSublocal: true,
   coverage: true,
   resourcePoints: true,
   resourceLines: true,
@@ -49,15 +46,6 @@ export const ALL_MAP_LAYERS_VISIBLE: MapLayerVisibility = {
   netwinSupportBracket: true,
   netwinCableTunnel: true,
   netwinIronPipe: true,
-  netwinBuilding: true,
-  netwinCentral: true,
-  netwinRoom: true,
-  netwinTechnicalRoom: true,
-  netwinCabinet: true,
-  netwinCustomerSite: true,
-  netwinRemoteUnit: true,
-  netwinAdvancedRemoteUnit: true,
-  netwinTechnicalContainer: true,
 };
 
 export type MapLayerGroupId = 'locations' | 'coverage' | 'resources' | 'netwinInfrastructure';
@@ -74,14 +62,21 @@ export type MapLayerGroup = {
 
 // Catálogo exibido pelo MapLayerControl, na mesma ordem em que aparece na UI. Estações
 // nunca deixam de SER BUSCADAS (vêm de useGeoTree, que a Hierarquia já precisa) — desligar
-// só tira do desenho; as outras quatro cortam a requisição no cliente (ver viewportInclude).
+// só tira do desenho; as outras cortam a requisição no cliente (ver viewportInclude).
+//
+// "Locais" é organizado por papel funcional (siteRole, C11) — o que o site É — e não por
+// categoria estrutural: Site é conceito agnóstico a telecom, então os rótulos são todos
+// em português, sem código cru de spec.
 export const MAP_LAYER_GROUPS: readonly MapLayerGroup[] = [
   {
     id: 'locations',
     label: 'Locais',
     children: [
       { id: 'stations', label: 'Estações', hint: 'CO — sempre buscadas, só o desenho é afetado' },
-      { id: 'sites', label: 'Pontos e sub-locais', hint: 'POP, CDO, Ponto de Instalação…' },
+      { id: 'siteNetwork', label: 'Sites de Rede', hint: 'CO, POP, Armário, Sala técnica, Contêiner…' },
+      { id: 'siteProperty', label: 'Imóveis', hint: 'Condomínio, Edificação, Bloco' },
+      { id: 'siteService', label: 'Sites de Serviço', hint: 'Unidade atendida (casa, apartamento)' },
+      { id: 'siteSublocal', label: 'Sub-locais', hint: 'Pavimento, Sala, Área segmentada' },
     ],
   },
   {
@@ -103,26 +98,17 @@ export const MAP_LAYER_GROUPS: readonly MapLayerGroup[] = [
     label: 'Infraestrutura Civil',
     hint: 'Filtros por tipo para validação da carga',
     children: [
-      { id: 'netwinPole', label: 'Postes', hint: 'Pole' },
-      { id: 'netwinManhole', label: 'Caixas subterrâneas', hint: 'Manhole' },
-      { id: 'netwinTower', label: 'Torres', hint: 'Tower' },
-      { id: 'netwinCto', label: 'CTOs e CDOIs', hint: 'CTO' },
-      { id: 'netwinDio', label: 'DIOs', hint: 'DIO' },
-      { id: 'netwinRisingTube', label: 'Tubos de subida', hint: 'RisingTube' },
-      { id: 'netwinSpliceClosure', label: 'Caixas de emenda', hint: 'SpliceClosure' },
-      { id: 'netwinPedestal', label: 'Pedestais', hint: 'Pedestal' },
-      { id: 'netwinSupportBracket', label: 'Suportes', hint: 'SupportBracket' },
-      { id: 'netwinCableTunnel', label: 'Túneis de cabos', hint: 'CableTunnel' },
-      { id: 'netwinIronPipe', label: 'Tubos de ferro', hint: 'IronPipe' },
-      { id: 'netwinBuilding', label: 'Edificações', hint: 'BUILDING' },
-      { id: 'netwinCentral', label: 'Centrais / POPs', hint: 'CENTRAL_POP_LEGACY' },
-      { id: 'netwinRoom', label: 'Salas', hint: 'ROOM' },
-      { id: 'netwinTechnicalRoom', label: 'Salas técnicas', hint: 'TECHNICAL_ROOM' },
-      { id: 'netwinCabinet', label: 'Armários', hint: 'CABINET' },
-      { id: 'netwinCustomerSite', label: 'Sites de cliente', hint: 'CUSTOMER_SITE' },
-      { id: 'netwinRemoteUnit', label: 'Unidades remotas', hint: 'REMOTE_UNIT' },
-      { id: 'netwinAdvancedRemoteUnit', label: 'Unidades remotas avançadas', hint: 'ADVANCED_REMOTE_UNIT' },
-      { id: 'netwinTechnicalContainer', label: 'Contêineres técnicos', hint: 'TECHNICAL_CONTAINER' },
+      { id: 'netwinPole', label: 'Postes', hint: 'Poste de rede aérea' },
+      { id: 'netwinManhole', label: 'Caixas subterrâneas', hint: 'Poço de visita / caixa enterrada' },
+      { id: 'netwinTower', label: 'Torres', hint: 'Estrutura de sustentação elevada' },
+      { id: 'netwinCto', label: 'CTOs e CDOIs', hint: 'Caixa de terminação óptica' },
+      { id: 'netwinDio', label: 'DIOs', hint: 'Distribuidor interno óptico' },
+      { id: 'netwinRisingTube', label: 'Tubos de subida', hint: 'Subida de fachada/poste' },
+      { id: 'netwinSpliceClosure', label: 'Caixas de emenda', hint: 'Emenda de cabo óptico' },
+      { id: 'netwinPedestal', label: 'Pedestais', hint: 'Base de fixação no solo' },
+      { id: 'netwinSupportBracket', label: 'Suportes', hint: 'Fixação auxiliar de cabo' },
+      { id: 'netwinCableTunnel', label: 'Túneis de cabos', hint: 'Passagem subterrânea de cabos' },
+      { id: 'netwinIronPipe', label: 'Tubos de ferro', hint: 'Duto rígido de proteção' },
     ],
   },
 ];
@@ -157,11 +143,17 @@ export function setGroupVisibility(
 
 export type ViewportShape = 'sites' | 'resource-points' | 'resource-lines';
 
+// Eixo funcional (C11) de uma GeographicSiteSpecification — o mesmo vocabulário de
+// web/src/services/geoApi.ts GeoSiteRole, repetido aqui para o núcleo de camadas não
+// depender do módulo de serviço HTTP.
+export type MapSiteRole = 'grouping' | 'network' | 'property' | 'service';
+
 type MapFeatureLayerLike = {
   kind: 'resource' | 'site';
   shape: 'point' | 'line';
   typeCode?: string;
   sublabel?: string;
+  siteCategory?: string;
 };
 
 const NETWIN_RESOURCE_LAYER_BY_TYPE: Partial<Record<string, MapLayerId>> = {
@@ -178,28 +170,35 @@ const NETWIN_RESOURCE_LAYER_BY_TYPE: Partial<Record<string, MapLayerId>> = {
   IronPipe: 'netwinIronPipe',
 };
 
-const NETWIN_SITE_LAYER_BY_SPEC: Partial<Record<string, MapLayerId>> = {
-  BUILDING: 'netwinBuilding',
-  CENTRAL_POP_LEGACY: 'netwinCentral',
-  ROOM: 'netwinRoom',
-  TECHNICAL_ROOM: 'netwinTechnicalRoom',
-  CABINET: 'netwinCabinet',
-  CUSTOMER_SITE: 'netwinCustomerSite',
-  REMOTE_UNIT: 'netwinRemoteUnit',
-  ADVANCED_REMOTE_UNIT: 'netwinAdvancedRemoteUnit',
-  TECHNICAL_CONTAINER: 'netwinTechnicalContainer',
-};
+// Camada de site por papel funcional. `sublabel` da feature guarda o code da spec (ver
+// map-feature-synchronizer.ts) — o catálogo de specs já está em memória no front
+// (GeoPage carrega `specs`), então o roteamento é resolvido aqui sem coluna nova em
+// `geo_map_feature` nem rebuild do índice de 1.5M+ linhas (dívida server-side registrada em
+// Q-GEO-013, docs/1-overview/open-questions.md).
+function siteLayerFor(
+  feature: MapFeatureLayerLike,
+  roleByCode: ReadonlyMap<string, MapSiteRole> | undefined,
+): MapLayerId {
+  const role = feature.sublabel ? roleByCode?.get(feature.sublabel) : undefined;
+  if (role === 'service') return 'siteService';
+  if (role === 'property') return 'siteProperty';
+  if (role === 'grouping') return 'siteNetwork';
+  if (role === 'network') return 'siteNetwork';
+  // Code desconhecido (spec ad-hoc sem papel resolvido, ou catálogo ainda não carregado):
+  // cai por categoria estrutural — SubSite é sub-local, o resto permanece visível como rede.
+  if (feature.siteCategory === 'SubSite') return 'siteSublocal';
+  return 'siteNetwork';
+}
 
-// O tile Ã© compartilhado por todos os filtros. As camadas gerais evitam fetch
-// desnecessÃ¡rio; as camadas Netwin filtram cada classe sem multiplicar chamadas.
+// O tile é compartilhado por todos os filtros. As camadas gerais evitam fetch
+// desnecessário; as camadas Netwin filtram cada classe sem multiplicar chamadas.
 export function isMapFeatureVisible(
   feature: MapFeatureLayerLike,
   visibility: MapLayerVisibility,
+  roleByCode?: ReadonlyMap<string, MapSiteRole>,
 ): boolean {
   if (feature.kind === 'site') {
-    if (!visibility.sites) return false;
-    const layer = feature.sublabel ? NETWIN_SITE_LAYER_BY_SPEC[feature.sublabel] : undefined;
-    return layer === undefined || visibility[layer];
+    return visibility[siteLayerFor(feature, roleByCode)];
   }
   if (feature.shape === 'line') return visibility.resourceLines;
   if (!visibility.resourcePoints) return false;
@@ -211,7 +210,12 @@ export function isMapFeatureVisible(
 // tudo está ligado, para o caminho quente não carregar um parâmetro extra à toa.
 export function viewportInclude(visibility: MapLayerVisibility): ViewportShape[] | undefined {
   const shapes: ViewportShape[] = [];
-  if (visibility.sites) shapes.push('sites');
+  const anySiteLayer =
+    visibility.siteNetwork ||
+    visibility.siteProperty ||
+    visibility.siteService ||
+    visibility.siteSublocal;
+  if (anySiteLayer) shapes.push('sites');
   if (visibility.resourcePoints) shapes.push('resource-points');
   if (visibility.resourceLines) shapes.push('resource-lines');
   if (shapes.length === 3) return undefined;
@@ -225,7 +229,9 @@ const isLayerId = (value: string): value is MapLayerId =>
 
 // Lê a preferência salva; qualquer coisa fora do formato esperado (JSON inválido, chave
 // desconhecida, valor não-booleano, storage indisponível) cai no default "tudo visível" — a
-// origem de dados nunca deve deixar o mapa em um estado que o usuário não escolheu.
+// origem de dados nunca deve deixar o mapa em um estado que o usuário não escolheu. Chaves
+// antigas do localStorage (`sites`, `netwinBuilding`…) somem sozinhas: `isLayerId` só aceita o
+// vocabulário atual, então não precisa versionar a chave de storage.
 export function readStoredLayers(): MapLayerVisibility {
   if (typeof window === 'undefined') return ALL_MAP_LAYERS_VISIBLE;
   try {

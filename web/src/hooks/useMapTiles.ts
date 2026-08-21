@@ -15,7 +15,12 @@ import { useEffect, useRef, useState } from 'react';
 import { fetchMapTile, type MapTileFeature } from '../services/geoMapTileApi';
 import { tilesForBounds, tileKey, MAP_TILE_ZOOM } from '../utils/mapTile';
 import { PASSIVE_INFRA_MAX_SCALE_METERS } from '../utils/mapScale';
-import { isMapFeatureVisible, type MapLayerVisibility, type ViewportShape } from '../utils/mapLayers';
+import {
+  isMapFeatureVisible,
+  type MapLayerVisibility,
+  type MapSiteRole,
+  type ViewportShape,
+} from '../utils/mapLayers';
 import { MAP_TILES_INVALIDATED_EVENT } from '../utils/mapTileCache';
 import type { MapBounds } from '../services/geoTreeApi';
 
@@ -56,6 +61,7 @@ export function useMapTiles(
   scaleMeters: number | null,
   include: ViewportShape[] | undefined,
   visibility?: MapLayerVisibility,
+  roleByCode?: ReadonlyMap<string, MapSiteRole>,
 ): { data: MapTileFeature[]; loading: boolean } {
   const [data, setData] = useState<MapTileFeature[]>([]);
   const [loading, setLoading] = useState(false);
@@ -128,7 +134,7 @@ export function useMapTiles(
             .filter(
               (feature) =>
                 isIncluded(feature, include) &&
-                (visibility ? isMapFeatureVisible(feature, visibility) : true),
+                (visibility ? isMapFeatureVisible(feature, visibility, roleByCode) : true),
             );
           setData(merged);
         })
@@ -143,7 +149,7 @@ export function useMapTiles(
     return () => {
       if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
     };
-  }, [bounds, scaleMeters, include, visibility, cacheRevision]);
+  }, [bounds, scaleMeters, include, visibility, roleByCode, cacheRevision]);
 
   return { data, loading };
 }

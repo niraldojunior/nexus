@@ -16,7 +16,14 @@ describe('groupVisibility / setGroupVisibility', () => {
   });
 
   it('reporta "none" quando todos os filhos do grupo estão desligados', () => {
-    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, stations: false, sites: false };
+    const visibility = {
+      ...ALL_MAP_LAYERS_VISIBLE,
+      stations: false,
+      siteNetwork: false,
+      siteProperty: false,
+      siteService: false,
+      siteSublocal: false,
+    };
     expect(groupVisibility(visibility, 'locations')).toBe('none');
   });
 
@@ -46,7 +53,7 @@ describe('groupVisibility / setGroupVisibility', () => {
   it('não muda outros grupos', () => {
     const next = setGroupVisibility(ALL_MAP_LAYERS_VISIBLE, 'resources');
     expect(next.stations).toBe(true);
-    expect(next.sites).toBe(true);
+    expect(next.siteNetwork).toBe(true);
     expect(next.coverage).toBe(true);
   });
 });
@@ -64,11 +71,27 @@ describe('viewportInclude', () => {
   it('devolve lista vazia quando tudo de viewport está desligado', () => {
     const visibility = {
       ...ALL_MAP_LAYERS_VISIBLE,
-      sites: false,
+      siteNetwork: false,
+      siteProperty: false,
+      siteService: false,
+      siteSublocal: false,
       resourcePoints: false,
       resourceLines: false,
     };
     expect(viewportInclude(visibility)).toEqual([]);
+  });
+
+  it('pede "sites" se QUALQUER um dos quatro papéis de site estiver ligado', () => {
+    const visibility = {
+      ...ALL_MAP_LAYERS_VISIBLE,
+      siteNetwork: false,
+      siteProperty: false,
+      siteService: true,
+      siteSublocal: false,
+      resourcePoints: false,
+      resourceLines: false,
+    };
+    expect(viewportInclude(visibility)).toEqual(['sites']);
   });
 
   it('estações e cobertura não entram no include (não vêm do viewport)', () => {
@@ -88,20 +111,56 @@ describe('isMapFeatureVisible', () => {
     ).toBe(true);
   });
 
-  it('filtra sites Netwin pelo código da specification armazenado no tile', () => {
-    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, netwinTechnicalRoom: false };
-    expect(
-      isMapFeatureVisible(
-        { kind: 'site', shape: 'point', sublabel: 'TECHNICAL_ROOM' },
-        visibility,
-      ),
-    ).toBe(false);
-  });
-
   it('mantém as camadas gerais como interruptores principais', () => {
     const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourcePoints: false };
     expect(
       isMapFeatureVisible({ kind: 'resource', shape: 'point', typeCode: 'Pole' }, visibility),
+    ).toBe(false);
+  });
+
+  it('roteia site pelo siteRole resolvido via roleByCode (siteService)', () => {
+    const roleByCode = new Map([['CUSTOMER_SITE', 'service' as const]]);
+    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, siteService: false };
+    expect(
+      isMapFeatureVisible(
+        { kind: 'site', shape: 'point', sublabel: 'CUSTOMER_SITE' },
+        visibility,
+        roleByCode,
+      ),
+    ).toBe(false);
+    expect(
+      isMapFeatureVisible(
+        { kind: 'site', shape: 'point', sublabel: 'CUSTOMER_SITE' },
+        { ...visibility, siteService: true },
+        roleByCode,
+      ),
+    ).toBe(true);
+  });
+
+  it('roteia site pelo siteRole property (Imóveis)', () => {
+    const roleByCode = new Map([['CONDOMINIUM', 'property' as const]]);
+    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, siteProperty: false };
+    expect(
+      isMapFeatureVisible(
+        { kind: 'site', shape: 'point', sublabel: 'CONDOMINIUM' },
+        visibility,
+        roleByCode,
+      ),
+    ).toBe(false);
+  });
+
+  it('sem roleByCode ou code desconhecido, cai em siteNetwork (ou siteSublocal se SubSite)', () => {
+    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, siteNetwork: false };
+    expect(
+      isMapFeatureVisible({ kind: 'site', shape: 'point', sublabel: 'CO' }, visibility),
+    ).toBe(false);
+
+    const subVisibility = { ...ALL_MAP_LAYERS_VISIBLE, siteSublocal: false };
+    expect(
+      isMapFeatureVisible(
+        { kind: 'site', shape: 'point', sublabel: 'ROOM', siteCategory: 'SubSite' },
+        subVisibility,
+      ),
     ).toBe(false);
   });
 });
@@ -136,14 +195,15 @@ describe('readStoredLayers / writeStoredLayers', () => {
     expect(result.coverage).toBe(false);
   });
 
-  it('chave desconhecida é ignorada', () => {
+  it('chave desconhecida (inclusive a antiga "sites") é ignorada', () => {
     window.localStorage.setItem(
       'nexus.geo.mapLayers',
-      JSON.stringify({ unknownLayer: false, stations: false }),
+      JSON.stringify({ sites: false, unknownLayer: false, stations: false }),
     );
     const result = readStoredLayers();
     expect(result.stations).toBe(false);
     expect((result as Record<string, unknown>).unknownLayer).toBeUndefined();
+    expect((result as Record<string, unknown>).sites).toBeUndefined();
   });
 
   it('array (não-objeto de chave/valor) cai no default', () => {

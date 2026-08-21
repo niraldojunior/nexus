@@ -29,7 +29,7 @@ export type GoogleMapInstance = {
   setMapTypeId: (mapTypeId: GoogleMapTypeId) => void;
   // Troca `styles` (e outras MapOptions) depois do mapa já construído — é o que permite o
   // MUB alternar o estilo sem recriar o mapa (ver o efeito de troca de MUB em GeoPage).
-  setOptions: (options: { styles?: GoogleMapStyle[] }) => void;
+  setOptions: (options: { styles?: GoogleMapStyle[]; draggableCursor?: string | null }) => void;
 };
 export type GoogleStreetViewPanoramaInstance = {
   setVisible: (visible: boolean) => void;

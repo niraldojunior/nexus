@@ -38,6 +38,27 @@ export const familyColor: Record<ResourceFamily, string> = {
   unknown: '#94a3b8', // --text-tertiary
 };
 
+// Tamanho do pin de equipamento no mapa, em px — compartilhado entre o google.maps.Marker de
+// GeoPage.tsx (Estação, Local de Projeto, nó selecionado) e o sprite do <canvas> de
+// InfraOverlay.ts (infra passiva, Fase 3 da issue #69): os dois precisam desenhar exatamente o
+// mesmo tamanho pra não haver salto visual entre um pin selecionado (Marker) e o resto da
+// planta ao redor dele (canvas). Um pouco menor que o pin de site pra não competir com o local
+// que o contém.
+export const MARKER_ICON_SIZE = 26;
+// Recurso reduzido (escala 50 m): ponto menor para não poluir junto da cobertura.
+export const MARKER_ICON_SMALL_SIZE = 16;
+
+// Espessura do traço de cabo no mapa, por code do catálogo — mesmo motivo de MARKER_ICON_SIZE
+// acima (Polyline em GeoPage.tsx e canvas em InfraOverlay.ts desenham o mesmo traço).
+export const CABLE_STROKE_WEIGHT: Record<string, number> = {
+  BackboneCable: 5,
+  DistributionCable: 3.5,
+  DropCable: 2,
+  Fiber: 3,
+  Jumper: 2,
+  PatchCord: 2,
+};
+
 export const familyLabel: Record<ResourceFamily, string> = {
   access: 'Equipamento de acesso',
   cpe: 'Equipamento de cliente',
@@ -100,6 +121,13 @@ const TYPE_LABEL: Record<string, string> = {
   Pole: 'Poste',
   Manhole: 'Caixa subterrânea',
   Duct: 'Duto',
+  Tower: 'Torre',
+  RisingTube: 'Tubo de subida',
+  SpliceClosure: 'Caixa de emenda',
+  Pedestal: 'Pedestal',
+  SupportBracket: 'Suporte',
+  CableTunnel: 'Túnel de cabos',
+  IronPipe: 'Tubo de ferro',
   BackboneCable: 'Cabo backbone',
   DistributionCable: 'Cabo de distribuição',
   DropCable: 'Cabo drop',
@@ -292,6 +320,84 @@ const ICONS: Record<string, { family: ResourceFamily; glyph: string; node: IconN
       ['circle', { cx: '12', cy: '19.5', r: '2.5' }],
     ],
   },
+  Tower: {
+    family: 'passive',
+    glyph: 'radio-tower',
+    node: [
+      ['path', { d: 'M4.9 16.1C1 12.2 1 5.8 4.9 1.9' }],
+      ['path', { d: 'M7.8 4.7a6.14 6.14 0 0 0-.8 7.5' }],
+      ['circle', { cx: '12', cy: '9', r: '2' }],
+      ['path', { d: 'M16.2 4.8c2 2 2.26 5.11.8 7.47' }],
+      ['path', { d: 'M19.1 1.9a9.96 9.96 0 0 1 0 14.1' }],
+      ['path', { d: 'M9.5 18h5' }],
+      ['path', { d: 'm8 22 4-11 4 11' }],
+    ],
+  },
+  RisingTube: {
+    family: 'passive',
+    glyph: 'arrow-up-from-line',
+    node: [
+      ['path', { d: 'M12 2v14' }],
+      ['path', { d: 'm7 7 5-5 5 5' }],
+      ['path', { d: 'M5 22h14' }],
+      ['path', { d: 'M8 16v4' }],
+      ['path', { d: 'M16 16v4' }],
+    ],
+  },
+  SpliceClosure: {
+    family: 'passive',
+    glyph: 'cable',
+    node: [
+      ['path', { d: 'M7 8h10v8H7z' }],
+      ['path', { d: 'M3 10h4' }],
+      ['path', { d: 'M3 14h4' }],
+      ['path', { d: 'M17 10h4' }],
+      ['path', { d: 'M17 14h4' }],
+      ['path', { d: 'M10 8v8' }],
+      ['path', { d: 'M14 8v8' }],
+    ],
+  },
+  Pedestal: {
+    family: 'passive',
+    glyph: 'landmark',
+    node: [
+      ['path', { d: 'M7 22h10' }],
+      ['path', { d: 'M8 22V7a4 4 0 0 1 8 0v15' }],
+      ['path', { d: 'M6 7h12' }],
+      ['path', { d: 'M10 11h4' }],
+      ['path', { d: 'M10 15h4' }],
+    ],
+  },
+  SupportBracket: {
+    family: 'passive',
+    glyph: 'between-horizontal-start',
+    node: [
+      ['path', { d: 'M5 3v18' }],
+      ['path', { d: 'M5 6h13a2 2 0 0 1 2 2v4' }],
+      ['path', { d: 'M5 18h8a2 2 0 0 0 2-2V8' }],
+      ['path', { d: 'M18 12h4' }],
+      ['path', { d: 'm19 9 3 3-3 3' }],
+    ],
+  },
+  CableTunnel: {
+    family: 'passive',
+    glyph: 'archway',
+    node: [
+      ['path', { d: 'M4 22V11a8 8 0 0 1 16 0v11' }],
+      ['path', { d: 'M8 22v-9a4 4 0 0 1 8 0v9' }],
+      ['path', { d: 'M2 22h20' }],
+    ],
+  },
+  IronPipe: {
+    family: 'passive',
+    glyph: 'pipe',
+    node: [
+      ['path', { d: 'M5 3v12a4 4 0 0 0 4 4h10' }],
+      ['path', { d: 'M3 3h4' }],
+      ['path', { d: 'M17 17h4v4h-4z' }],
+      ['path', { d: 'M9 7h6' }],
+    ],
+  },
   BackboneCable: {
     family: 'cableOsp',
     glyph: 'cable',
@@ -470,6 +576,25 @@ const CODE_ALIAS: Record<string, string> = {
   port: 'Port',
   poste: 'Pole',
   pole: 'Pole',
+  torre: 'Tower',
+  tower: 'Tower',
+  risingtube: 'RisingTube',
+  'rising tube': 'RisingTube',
+  'tubo de subida': 'RisingTube',
+  spliceclosure: 'SpliceClosure',
+  'splice closure': 'SpliceClosure',
+  splicebox: 'SpliceClosure',
+  'caixa de emenda': 'SpliceClosure',
+  pedestal: 'Pedestal',
+  supportbracket: 'SupportBracket',
+  'support bracket': 'SupportBracket',
+  suporte: 'SupportBracket',
+  cabletunnel: 'CableTunnel',
+  'cable tunnel': 'CableTunnel',
+  'túnel de cabos': 'CableTunnel',
+  ironpipe: 'IronPipe',
+  'iron pipe': 'IronPipe',
+  'tubo de ferro': 'IronPipe',
   splitter: 'Splitter',
   card: 'Card',
   placa: 'Card',

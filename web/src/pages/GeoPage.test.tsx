@@ -3,6 +3,25 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GoogleMapPanel } from './GeoPage';
 import type { GeoTreeNode } from '../services/geoTreeApi';
+import type { MapTileFeature } from '../services/geoMapTileApi';
+
+// InfraOverlay (canvas, Fase 3 da issue #69) precisa de projeção real (getProjection não-null)
+// pra `draw`/`hitTest` funcionarem de verdade — o mock de OverlayView abaixo devolve null de
+// propósito (comentário original). Mockado à parte para exercitar o fio de seleção via canvas
+// (clique → hitTest → onSelectInfraFeature) sem depender de projeção geométrica real.
+const infraOverlayMocks = vi.hoisted(() => ({
+  setData: vi.fn(),
+  hitTest: vi.fn((_lng: number, _lat: number): MapTileFeature | null => null),
+  destroy: vi.fn(),
+}));
+
+vi.mock('./geo-tabs/InfraOverlay', () => ({
+  createInfraOverlay: vi.fn(() => ({
+    setData: infraOverlayMocks.setData,
+    hitTest: infraOverlayMocks.hitTest,
+    destroy: infraOverlayMocks.destroy,
+  })),
+}));
 
 const googleMocks = vi.hoisted(() => ({
   cancelFlight: vi.fn(),
@@ -500,6 +519,175 @@ describe('GoogleMapPanel', () => {
 
     expect(googleMocks.reverseGeocode).not.toHaveBeenCalled();
     expect(onDraftAddress).not.toHaveBeenCalled();
+  });
+
+  it('clique sobre uma feature do InfraOverlay seleciona a feature, sem cair no clique-no-vazio', async () => {
+    const onDraftAddress = vi.fn();
+    const onSelectInfraFeature = vi.fn();
+    const feature: MapTileFeature = {
+      entityId: 'r9',
+      kind: 'resource',
+      entityType: 'PhysicalResource',
+      shape: 'point',
+      typeCode: 'CTO',
+      label: 'CDOE-1108',
+      lng: -43.108,
+      lat: -22.907,
+    };
+    infraOverlayMocks.hitTest.mockReturnValueOnce(feature);
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        infraFeatures={[feature]}
+        onSelectInfraFeature={onSelectInfraFeature}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={onDraftAddress}
+        onViewportChange={vi.fn()}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(mapListener('click')).toBeTypeOf('function'));
+    vi.useFakeTimers();
+    mapListener('click')?.({ latLng: { lat: () => -22.907, lng: () => -43.108 } });
+    await vi.runAllTimersAsync();
+
+    expect(onSelectInfraFeature).toHaveBeenCalledWith(feature);
+    // Achou a feature no hit-test: não é clique no vazio — o fluxo de reverse geocode
+    // (endereço/draftAddress) nem chega a rodar.
+    expect(googleMocks.reverseGeocode).not.toHaveBeenCalled();
+    expect(onDraftAddress).not.toHaveBeenCalled();
+  });
+
+  it('repassa infraFeatures/resourceTier/seleção pro InfraOverlay a cada mudança', async () => {
+    const feature: MapTileFeature = {
+      entityId: 'r9',
+      kind: 'resource',
+      entityType: 'PhysicalResource',
+      shape: 'point',
+      label: 'CDOE-1108',
+      lng: -43.108,
+      lat: -22.907,
+    };
+    const { rerender } = render(
+      <GoogleMapPanel
+        nodes={[]}
+        infraFeatures={[feature]}
+        onSelectInfraFeature={vi.fn()}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(infraOverlayMocks.setData).toHaveBeenCalledWith([feature], {
+        resourceTier: 'full',
+        excludeNodeId: null,
+      }),
+    );
+
+    // O nó selecionado nunca é desenhado pelo overlay (fica só como Marker real) — trocar a
+    // seleção precisa reenviar `setData` com o excludeNodeId novo, mesmo sem `infraFeatures`
+    // ter mudado.
+    rerender(
+      <GoogleMapPanel
+        nodes={[]}
+        infraFeatures={[feature]}
+        onSelectInfraFeature={vi.fn()}
+        selectedNode={selectionNode('resource:r9')}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(infraOverlayMocks.setData).toHaveBeenLastCalledWith([feature], {
+        resourceTier: 'full',
+        excludeNodeId: 'resource:r9',
+      }),
+    );
+  });
+
+  it('mostra cursor de mão apenas ao passar sobre infraestrutura clicável do canvas', async () => {
+    const feature: MapTileFeature = {
+      entityId: 'r9',
+      kind: 'resource',
+      entityType: 'PhysicalResource',
+      shape: 'point',
+      label: 'CDOE-1108',
+      lng: -43.108,
+      lat: -22.907,
+    };
+    infraOverlayMocks.hitTest
+      .mockReturnValueOnce(feature)
+      .mockReturnValueOnce(feature)
+      .mockReturnValueOnce(null);
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        coverage={null}
+        stationTier="full"
+        resourceTier="full"
+        onCoverageHover={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(mapListener('mousemove')).toBeTypeOf('function'));
+    googleMocks.mapSetOptions.mockClear();
+    const mousemoveListeners = googleMocks.mapAddListener.mock.calls.filter(
+      ([eventName]) => eventName === 'mousemove',
+    );
+    const mousemove = mousemoveListeners[mousemoveListeners.length - 1]?.[1] as (event: {
+      latLng: { lat: () => number; lng: () => number };
+    }) => void;
+    const event = { latLng: { lat: () => -22.907, lng: () => -43.108 } };
+
+    mousemove(event);
+    mousemove(event);
+    mousemove(event);
+
+    expect(googleMocks.mapSetOptions).toHaveBeenCalledTimes(2);
+    expect(googleMocks.mapSetOptions).toHaveBeenNthCalledWith(1, { draggableCursor: 'pointer' });
+    expect(googleMocks.mapSetOptions).toHaveBeenNthCalledWith(2, { draggableCursor: null });
   });
 
   it('avisa navegação manual só após movimento real de dois toques e limpa ponteiros fora do canvas', () => {

@@ -114,6 +114,14 @@ export const fetchTreeSearch = (
   return getJson<GeoTreeNode[]>(`/v1/geo/tree/search?${params.toString()}`);
 };
 
+// Nó por id, já hidratado (geometria inteira + `detail`) — completa a seleção feita a partir
+// de uma feature do InfraOverlay (canvas do mapa, ver useMapTiles): o índice de tile só carrega
+// o essencial pra desenhar, sem `detail` nem, para cabo, a rota inteira (só o trecho recortado
+// no tile clicado). Lança em 404 (recurso/site terminado entre o build do índice e o clique,
+// por exemplo) — quem chama decide se mantém o stub parcial (ver selectNodeFromInfraOverlay).
+export const fetchTreeNode = (nodeId: string): Promise<GeoTreeNode> =>
+  getJson<GeoTreeNode>(`/v1/geo/tree/node?id=${encodeURIComponent(nodeId)}`);
+
 // Caminho da raiz até um nó (`['uf:RJ', 'city:RJ|Niterói', 'group:…', 'site:…', 'resource:…']`).
 // Estação já vem inteira em `roots`, mas Recurso não: selecionado pelo mapa ou pela busca,
 // ele não tem ancestral nenhum carregado no cliente — é isto que diz onde ele mora para a

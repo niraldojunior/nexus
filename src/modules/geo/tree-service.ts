@@ -372,6 +372,29 @@ export class GeoTreeService {
   }
 
   /**
+   * Recursos por id, na mesma forma de nó (geometria inteira, `detail`) que árvore e busca já
+   * devolvem — hidrata a seleção feita a partir de uma feature do `InfraOverlay` (canvas do
+   * mapa, ver GeoMapTileService), que só carrega o essencial para desenhar: sem `detail`
+   * (manufacturer/model/serial/substatus/sourceSystem, lidos direto do nó pelo painel, sem
+   * re-fetch — ver ResourceDetailBody) e, para cabo, só o trecho recortado no tile clicado, não
+   * a rota inteira. Reusa `viewportBlock` só pela forma das colunas (mesma exclusão implícita
+   * de `status = 'terminated'`, coerente com C6: um recurso baixado não deveria ter pin no mapa
+   * pra selecionar). Ordem de entrada preservada, mesmo padrão de `sitesByIds`.
+   */
+  public async resourcesByIds(ids: string[]): Promise<GeoTreeNode[]> {
+    if (ids.length === 0) return [];
+    const where = `r.id IN (${placeholders(ids)})`;
+    const source = [
+      viewportBlock('PhysicalResource', where),
+      viewportBlock('LogicalResource', where),
+    ].join('\n  UNION ALL\n');
+    const rows = await this.db.all<ResourceRow>(source, [...ids, ...ids]);
+    const nodes = await this.toResourceNodes(rows, 'tree');
+    const byId = new Map(nodes.map((node) => [node.refId, node]));
+    return ids.map((id) => byId.get(id)).filter((node): node is GeoTreeNode => Boolean(node));
+  }
+
+  /**
    * Caminho da raiz até um nó (`uf → city → group → site → resource → …`), na forma que
    * o cliente devolve em `expandedRows` para revelar o nó na árvore.
    *

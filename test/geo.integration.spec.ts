@@ -548,6 +548,48 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
 
   const missingPathNode = await requestJson(port, 'GET', '/v1/geo/tree/path');
   assert.equal(missingPathNode.statusCode, 400);
+
+  // Nó por id, hidratado — completa a seleção feita a partir de uma feature do InfraOverlay
+  // (canvas do mapa), que só carrega o essencial pra desenhar. A Estação vem completa (Site).
+  const stationNodeById = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/tree/node?id=site:${idOf(station)}`,
+  );
+  assert.equal(stationNodeById.statusCode, 200);
+  assert.equal((stationNodeById.body as GeoTreeResponseNode).label, 'Icaraí (ICI)');
+
+  // A caixa vem com a geometria de ponto e `hasChildren` real (o splitter tem 1 filho direto,
+  // mesma régua de pass-through que `children` já valida acima).
+  const boxNodeById = await requestJson(port, 'GET', `/v1/geo/tree/node?id=resource:${idOf(box)}`);
+  assert.equal(boxNodeById.statusCode, 200);
+  const boxHydrated = boxNodeById.body as GeoTreeResponseNode;
+  assert.equal(boxHydrated.label, 'CDOE-1108');
+  assert.equal(boxHydrated.hasChildren, true);
+  assert.deepEqual(boxHydrated.geometry?.coordinates, [-43.108, -22.907]);
+
+  // O cabo secundário vem com a rota INTEIRA (2 vértices) — não um trecho recortado por tile,
+  // ao contrário do que uma feature do índice `geo_map_feature` traria.
+  const cableNodeById = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/tree/node?id=resource:${idOf(secondaryCable)}`,
+  );
+  assert.equal(cableNodeById.statusCode, 200);
+  assert.deepEqual((cableNodeById.body as GeoTreeResponseNode).geometry?.coordinates, [
+    [-43.108, -22.907],
+    [-43.109, -22.908],
+  ]);
+
+  const missingIdParam = await requestJson(port, 'GET', '/v1/geo/tree/node');
+  assert.equal(missingIdParam.statusCode, 400);
+
+  const unknownNode = await requestJson(
+    port,
+    'GET',
+    '/v1/geo/tree/node?id=resource:00000000-0000-0000-0000-000000000000',
+  );
+  assert.equal(unknownNode.statusCode, 404);
 });
 
 test('Geo tree pass-through skips a chain of hidden splitters to the first visible descendant', async (t) => {

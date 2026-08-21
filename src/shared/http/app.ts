@@ -24,7 +24,7 @@ import { SearchService } from '../../modules/search/service.js';
 import { createNexusMcpModule } from '../../modules/mcp/index.js';
 import type { GeoService } from '../../modules/geo/service.js';
 import type { CoverageLevel } from '../../modules/geo/coverage-service.js';
-import type { GeoTreeService } from '../../modules/geo/tree-service.js';
+import { parseNodeId, type GeoTreeService } from '../../modules/geo/tree-service.js';
 import type { OrderService } from '../../modules/order/service.js';
 import {
   createNexusRuntime,
@@ -1160,6 +1160,30 @@ const routeGeoRequest = async ({
     }
     const path = await geoTreeService.pathTo(nodeId);
     return sendJson(response, 200, { nodeId, path });
+  }
+
+  // Um nó por id, já hidratado (geometria inteira + `detail`) — completa a seleção feita a
+  // partir de uma feature do InfraOverlay (canvas do mapa): o índice de tile
+  // (GeoMapTileService) só carrega o essencial para desenhar, sem `detail` nem, para cabo, a
+  // rota inteira (só o trecho recortado no tile clicado). Despacha por prefixo do id
+  // (`resource:<uuid>` | `site:<uuid>`) para o mesmo read-model que árvore e busca já usam.
+  if (request.method === 'GET' && url.pathname === '/v1/geo/tree/node') {
+    const nodeId = url.searchParams.get('id');
+    if (!nodeId) {
+      throw new AppError('id required', { code: 'GEO_TREE_NODE_REQUIRED', statusCode: 400 });
+    }
+    const { kind, rest } = parseNodeId(nodeId);
+    const nodes =
+      kind === 'resource'
+        ? await geoTreeService.resourcesByIds([rest])
+        : kind === 'site'
+          ? await geoTreeService.sitesByIds([rest])
+          : [];
+    const node = nodes[0];
+    if (!node) {
+      throw new AppError('node not found', { code: 'GEO_TREE_NODE_NOT_FOUND', statusCode: 404 });
+    }
+    return sendJson(response, 200, node);
   }
 
   // Infra passiva por região visível do mapa — fonte usada em escala de detalhe (≤ 200 m),

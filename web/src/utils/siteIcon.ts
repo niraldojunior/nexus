@@ -18,6 +18,15 @@ export type SiteIcon = {
   label: string;
 };
 
+// Tamanho do pin de local no mapa, em px — compartilhado entre o google.maps.Marker de
+// GeoPage.tsx e o sprite do <canvas> de InfraOverlay.ts (Fase 3, issue #69), mesmo motivo de
+// MARKER_ICON_SIZE em resourceIcon.ts. Um pouco maior que o de equipamento: o local é o
+// contexto, o equipamento é o detalhe dentro dele.
+export const SITE_ICON_SIZE = 30;
+// Estação encolhida (≥ 1 km): ponto pequeno, sem agrupamento — só o suficiente para situar a
+// Central sem poluir a visão de cidade/estado (ver stationTierForScale).
+export const SITE_ICON_SMALL_SIZE = 14;
+
 // Espelha os tokens do design system (docs/4-design-system/tokens/colors.css).
 // Precisa existir em JS porque o Google Maps só aceita hex literal.
 export const siteKindColor: Record<SiteKind, string> = {

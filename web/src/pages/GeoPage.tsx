@@ -67,7 +67,9 @@ import {
   type CoverageLevel,
 } from '../utils/mapScale';
 import { useGponCoverage } from '../hooks/useGponCoverage';
-import { useViewportInfra } from '../hooks/useViewportInfra';
+import { useMapTiles } from '../hooks/useMapTiles';
+import { mapTileFeatureNodeId, type MapTileFeature } from '../services/geoMapTileApi';
+import { fetchTreeNode } from '../services/geoTreeApi';
 import { useMapLayers } from '../hooks/useMapLayers';
 import {
   viewportInclude,
@@ -84,7 +86,13 @@ import { bottomInsetForOverlay, flyTo, cancelFlight, type FlyTarget } from '../u
 import { acquireDeviceLocation, DEVICE_LOCATION_POOR_ACCURACY_M } from '../utils/deviceLocation';
 import { useGeoTree } from '../hooks/useGeoTree';
 import { useIsMobile } from '../hooks/useIsMobile';
-import { resourceIconFor, resourceIconDataUrl } from '../utils/resourceIcon';
+import {
+  resourceIconFor,
+  resourceIconDataUrl,
+  MARKER_ICON_SIZE,
+  MARKER_ICON_SMALL_SIZE,
+  CABLE_STROKE_WEIGHT,
+} from '../utils/resourceIcon';
 import { ResourceIcon } from '../components/ResourceIcon';
 import {
   selectionPinDataUrl,
@@ -92,6 +100,8 @@ import {
   siteIconDataUrl,
   siteIconFor,
   SELECTION_PIN_ASPECT,
+  SITE_ICON_SIZE,
+  SITE_ICON_SMALL_SIZE,
 } from '../utils/siteIcon';
 import { useNavigation } from '../hooks/useNavigation';
 import {
@@ -133,6 +143,7 @@ import {
   createProjectAreaOverlay,
   type ProjectAreaOverlayHandle,
 } from './geo-tabs/ProjectAreaOverlay';
+import { createInfraOverlay, type InfraOverlayHandle } from './geo-tabs/InfraOverlay';
 import {
   DROP_ACCENT,
   DROP_INK,
@@ -184,7 +195,11 @@ function coverageBalloonOf(
   const { neighborhood, point } = hover;
   const pct = Math.round(neighborhood.availabilityRatio * 100);
   const title =
-    level === 'uf' ? neighborhood.uf : level === 'city' ? neighborhood.city : neighborhood.neighborhood;
+    level === 'uf'
+      ? neighborhood.uf
+      : level === 'city'
+        ? neighborhood.city
+        : neighborhood.neighborhood;
   const rows: Array<[string, string]> = [];
   if (level === 'city') rows.push(['Estado', neighborhood.uf]);
   else if (level !== 'uf') rows.push(['Município', `${neighborhood.city}/${neighborhood.uf}`]);
@@ -249,23 +264,46 @@ type ProjectSiteView = { mode: 'create' } | { mode: 'view'; siteId: string };
 type DockView =
   { kind: 'hierarchy' } | { kind: 'project'; projectId: string; site: ProjectSiteView | null };
 
-// Lado do ícone de equipamento no mapa, em px. Um pouco menor que o pin de site
-// para o equipamento não competir com o local que o contém.
-const MARKER_ICON_SIZE = 26;
-// Recurso reduzido (escala 50 m): ponto menor para não poluir junto da cobertura.
-const MARKER_ICON_SMALL_SIZE = 16;
-
 const EQUIPMENT_MARKER_Z = 1000;
 
-// Lado do ícone de local, um pouco maior que o de equipamento: o local é o
-// contexto, o equipamento é o detalhe dentro dele.
-const SITE_ICON_SIZE = 30;
-// Estação encolhida (≥ 1 km): ponto pequeno, sem agrupamento — só o suficiente para
-// situar a Central sem poluir a visão de cidade/estado (ver stationTierForScale).
-const SITE_ICON_SMALL_SIZE = 14;
 // A Estação desenha ACIMA dos equipamentos (z maior): ela é a referência mais importante,
 // então nunca fica escondida atrás de uma caixa/splitter que compartilha a coordenada.
 const SITE_MARKER_Z = 1500;
+
+// Stub de GeoTreeNode a partir de uma feature do InfraOverlay (canvas do mapa, Fase 3 da
+// issue #69) — clique/hover sobre o canvas não tem um GeoTreeNode pronto, só o essencial que o
+// índice de tile carrega. Suficiente para abrir o painel e desenhar o Marker/Polyline de
+// seleção na hora; `selectNodeFromInfraOverlay` hidrata em seguida (`detail` completo e, pra
+// cabo, a rota inteira — não só o trecho recortado neste tile).
+function mapTileFeatureToNode(feature: MapTileFeature): GeoTreeNode {
+  const node: GeoTreeNode = {
+    id: mapTileFeatureNodeId(feature),
+    kind: feature.kind,
+    label: feature.label,
+    refId: feature.entityId,
+    // Site do canvas nunca é CO (ver o filtro de stationIds em GeoPage) — mesma régua
+    // otimista de hasChildren:true da Fase 1 pro recurso; site segue sitesInViewport (false).
+    hasChildren: feature.kind === 'resource',
+    geometry:
+      feature.shape === 'line' && feature.geometry
+        ? feature.geometry
+        : { type: 'Point', coordinates: [feature.lng, feature.lat] },
+  };
+  if (feature.sublabel) node.sublabel = feature.sublabel;
+  if (feature.typeCode) node.resourceType = feature.typeCode;
+  if (feature.siteCategory) node.siteCategory = feature.siteCategory;
+  if (feature.status) node.status = feature.status;
+  // `selectedSiteId` (GeoPage) só abre o SitePanel quando `referredType === 'GeographicSite'`
+  // — sem isto, clicar um Site do canvas selecionava o nó mas nunca abria painel nenhum.
+  if (
+    feature.entityType === 'GeographicSite' ||
+    feature.entityType === 'PhysicalResource' ||
+    feature.entityType === 'LogicalResource'
+  ) {
+    node.referredType = feature.entityType;
+  }
+  return node;
+}
 
 // Ícone/z-index de um pin de nó (Site ou Recurso), na mesma lógica que o efeito de
 // marcadores usava inline — extraído para ser reusado tanto na criação/reposicionamento em
@@ -338,14 +376,6 @@ const DROP_SIMULATION_Z = 1500;
 const DROP_DASH_INTERVAL_MS = 60;
 
 // Espessura por hierarquia da planta: o feeder é o tronco, o drop é o capilar.
-const CABLE_STROKE_WEIGHT: Record<string, number> = {
-  BackboneCable: 5,
-  DistributionCable: 3.5,
-  DropCable: 2,
-  Fiber: 3,
-  Jumper: 2,
-  PatchCord: 2,
-};
 const DEFAULT_CENTER = { lat: -22.9068, lng: -43.1075 };
 // Aguarda a janela nativa de duplo clique antes de tratar clique simples no mapa.
 const MAP_SINGLE_CLICK_DELAY_MS = 500;
@@ -364,6 +394,10 @@ const noopProjectAreaHover = (): void => {};
 const noopToggleMapLayer = (): void => {};
 const noopToggleMapLayerGroup = (): void => {};
 const noopResetMapLayers = (): void => {};
+
+// Default de `onSelectInfraFeature` — só usado pelos testes que montam GoogleMapPanel sem o
+// InfraOverlay em jogo (GeoPage sempre passa selectNodeFromInfraOverlay).
+const noopSelectInfraFeature = (): void => {};
 
 // Só para o balão de Recurso (linha ~980) — status de Resource é um vocabulário à parte
 // do de GeographicSite (ver siteStatusLabel/SITE_STATUS_OPTIONS em utils/geoLabels.ts),
@@ -456,7 +490,12 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // do balão de preview). São dois estados independentes: o hover é passageiro
   // e não mexe na seleção nem no painel de detalhe já aberto.
   const [selectedNode, setSelectedNode] = useState<GeoTreeNode | null>(null);
-  const [hoverKey, setHoverKey] = useState<string | null>(null);
+  // Nó inteiro (não só o id): igual ao alfinete de seleção, o balão precisa ler
+  // label/sublabel/status/detail do nó sob o mouse — e um nó do InfraOverlay (canvas, Fase 3
+  // da issue #69) nunca está em `mapNodes` (só Estação/Local de Projeto/selecionado ficam lá),
+  // então re-derivar por id via `mapNodes.find()` nunca acharia o nó e o balão de hover de um
+  // recurso/site do canvas sumiria silenciosamente.
+  const [hoverNode, setHoverNode] = useState<GeoTreeNode | null>(null);
 
   const [scaleMeters, setScaleMeters] = useState<number | null>(null);
   // Região visível atual (identidade só muda no `idle`) — alimenta a busca de cobertura GPON,
@@ -465,7 +504,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
 
   // Chamado pelo mapa a cada `idle` (fim de pan/zoom) com os limites e a escala atuais — só
   // registra estado; a busca de infra passiva/cobertura vive nos hooks abaixo
-  // (useViewportInfra/useGponCoverage), que já debouncam e deduplicam por conta própria.
+  // (useMapTiles/useGponCoverage), que já debouncam e deduplicam por conta própria.
   const handleViewportChange = useCallback((bounds: MapBounds, meters: number) => {
     setScaleMeters(meters);
     setViewportBounds(bounds);
@@ -477,23 +516,32 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Controle de camadas do mapa (RF-011, REQ-MOD01-011): liga/desliga fetch + render por
   // grupo, persistido em localStorage. `include` fica memoizado pelas flags que realmente
   // importam para o viewport — sem isso, `viewportInclude` devolveria uma referência de array
-  // nova a cada render e o useEffect de useViewportInfra reentraria em loop.
+  // nova a cada render e o useEffect de useMapTiles reentraria em loop.
   const mapLayers = useMapLayers();
   const viewportShapesInclude = useMemo(
     () => viewportInclude(mapLayers.layers),
     [mapLayers.layers.sites, mapLayers.layers.resourcePoints, mapLayers.layers.resourceLines],
   );
 
-  // Infra passiva (recursos + Sites não-CO) só entra quando a escala está em ≤ 50 m; Estações
-  // (tree.mapNodes) continuam visíveis, mas encolhem (5–50 km) e somem acima de 50 km — ver
-  // stationTier. `viewportShapesInclude` restringe o que o servidor busca conforme as camadas
-  // ligadas (ver useViewportInfra/geoTreeApi.fetchViewportResources).
+  // Infra passiva (recursos + Sites não-CO + cabos) só entra quando a escala está em ≤ 50 m;
+  // Estações (tree.mapNodes) continuam visíveis, mas encolhem (5–50 km) e somem acima de 50 km
+  // — ver stationTier. Desenhada por InfraOverlay (canvas, Fase 3 da issue #69), não por
+  // Marker/Polyline — por isso fica FORA de `mapNodes` (que só alimenta os efeitos de
+  // Marker/Polyline, ver GoogleMapPanel): as duas fontes nunca se misturam.
   const passiveInfraVisible = scaleMeters !== null && scaleMeters <= PASSIVE_INFRA_MAX_SCALE_METERS;
-  const { data: viewportInfra, loading: viewportLoading } = useViewportInfra(
+  const { data: infraFeaturesRaw, loading: viewportLoading } = useMapTiles(
     viewportBounds,
     scaleMeters,
     viewportShapesInclude,
+    mapLayers.layers,
   );
+  // Um CO dentro do tile também vira feature 'site'. Filtra pelos
+  // ids da árvore INTEIRA (não só as Estações visíveis, que podem estar com a camada desligada)
+  // para não desenhar um CO duas vezes: Marker real (tree.mapNodes) + sprite do canvas.
+  const infraFeatures = useMemo(() => {
+    const stationIds = new Set(tree.mapNodes.map((node) => node.id));
+    return infraFeaturesRaw.filter((feature) => !stationIds.has(mapTileFeatureNodeId(feature)));
+  }, [infraFeaturesRaw, tree.mapNodes]);
   const stationTier: StationTier = stationTierForScale(scaleMeters);
   const resourceTier: StationTier = resourceTierForScale(scaleMeters);
   const mapNodes = useMemo(() => {
@@ -501,14 +549,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     // a camada "Estações" do controle desliga só o desenho — a árvore precisa do fetch de
     // qualquer forma (ver MAP_LAYER_GROUPS em utils/mapLayers.ts).
     const stations = mapLayers.layers.stations ? tree.mapNodes : [];
-    // `viewportInfra` já soma Recursos e Sites não-CO da região visível, filtrados pelo
-    // servidor conforme `viewportShapesInclude` (ver GeoTreeService.sitesInViewport) — um CO
-    // dentro do bbox também vem nessa resposta (a consulta não distingue tipo de Site), então
-    // filtra pelos ids da árvore INTEIRA (não só `stations`, que pode estar vazio com a
-    // camada desligada) para não desenhar um CO duplicado como "Ponto" com Estações off.
-    const stationIds = new Set(tree.mapNodes.map((node) => node.id));
-    const passiveInfra = viewportInfra.filter((node) => !stationIds.has(node.id));
-    const base = passiveInfraVisible ? [...stations, ...passiveInfra] : stations;
     // Locais do Projeto de trabalho aberto (REQ-MOD01-015) entram só enquanto a doca mostra
     // aquele projeto — nunca somados aos nós da árvore, que já os excluem por completo. Com
     // manchas geradas (REQ-MOD01-017), o pin individual só entra na mesma régua de escala da
@@ -517,20 +557,19 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     const projectSitesVisible =
       dockView.kind !== 'hierarchy' && (!hasProjectAreas || passiveInfraVisible);
     const projectSitesForMap = hasProjectAreas ? projectViewportSites : projectSites;
-    const withProjectSites = projectSitesVisible ? [...base, ...projectSitesForMap] : base;
-    // O item selecionado é imune à escala e ao viewport: recurso e cabo só existem em
-    // `viewportInfra`, e sem isto afastar o mapa (ou arrastá-lo até a borda) apagaria o
-    // ícone e o alfinete de quem está aberto no painel. CO já vem sempre em
-    // `tree.mapNodes`, então isto só adiciona quando o nó realmente sumiu da lista.
+    const withProjectSites = projectSitesVisible ? [...stations, ...projectSitesForMap] : stations;
+    // O item selecionado é imune à escala e ao viewport: recurso e cabo do canvas só existem em
+    // `infraFeatures`, e sem isto afastar o mapa (ou arrastá-lo até a borda) apagaria o
+    // Marker/Polyline real dele (InfraOverlay nunca desenha o selecionado — ver
+    // excludeNodeId). CO já vem sempre em `tree.mapNodes`, então isto só adiciona quando o nó
+    // realmente sumiu da lista.
     if (selectedNode?.geometry && !withProjectSites.some((node) => node.id === selectedNode.id)) {
       return [...withProjectSites, selectedNode];
     }
     return withProjectSites;
   }, [
     tree.mapNodes,
-    viewportInfra,
     passiveInfraVisible,
-    stationTier,
     mapLayers.layers.stations,
     selectedNode,
     dockView,
@@ -876,6 +915,38 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     [activeProjectId, openProjectSite, selectNode],
   );
 
+  // Descarta uma hidratação em voo se o usuário selecionar outra coisa no meio do caminho
+  // (clique rápido em duas features do canvas em sequência).
+  const hydrateTokenRef = useRef(0);
+
+  // Clique/hover resolvido pelo InfraOverlay (canvas do mapa, Fase 3 da issue #69): a feature
+  // do índice de tile não tem `detail` nem (pra cabo) a rota inteira — ver mapTileFeatureToNode.
+  // Seleciona o stub na hora (painel abre, Marker/Polyline de seleção aparece de imediato) e
+  // troca pelo nó hidratado assim que a resposta chega, sem bloquear a interação por causa de
+  // uma volta ao servidor. Nunca é um Local de Projeto (esses continuam vindo de
+  // `projectViewportSites`/`projectSites`, um Marker real de sempre — `geo_map_feature` não os
+  // indexa). Site não precisa de hidratação própria aqui (SitePanel já busca o detalhe completo
+  // por id de qualquer jeito, e a geometria de Site no índice já é o ponto inteiro, nunca um
+  // trecho recortado).
+  const selectNodeFromInfraOverlay = useCallback(
+    (feature: MapTileFeature) => {
+      const stub = mapTileFeatureToNode(feature);
+      selectNode(stub, 'map');
+      if (stub.kind !== 'resource') return;
+      const token = ++hydrateTokenRef.current;
+      void fetchTreeNode(stub.id)
+        .then((hydrated) => {
+          if (hydrateTokenRef.current !== token) return;
+          setSelectedNode((current) => (current?.id === stub.id ? hydrated : current));
+        })
+        .catch(() => {
+          // Hidratação falhou (recurso terminado entre o build do índice e o clique, rede
+          // instável): o stub já aberto continua funcional, só sem `detail`/rota completa.
+        });
+    },
+    [selectNode],
+  );
+
   // Desfaz a seleção por completo: tira o alfinete, fecha o detalhe e limpa a busca. É o
   // X da barra de pesquisa (onClear), o fechar do painel de Endereço e, no mobile, o
   // arrastar a folha para baixo. O clique no vazio do mapa não passa mais por aqui — ele
@@ -1010,9 +1081,9 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       hoverTimeoutRef.current = undefined;
     }
     if (node) {
-      setHoverKey(node.geometry ? node.id : null);
+      setHoverNode(node.geometry ? node : null);
     } else {
-      hoverTimeoutRef.current = window.setTimeout(() => setHoverKey(null), 60);
+      hoverTimeoutRef.current = window.setTimeout(() => setHoverNode(null), 60);
     }
   }, []);
 
@@ -1130,9 +1201,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // tipo de item. Puro cartão de visita — tipo, endereço, status e modelo — sem
   // ação: quem abre o detalhe é o clique, não o hover.
   const balloon = useMemo<MapBalloon | null>(() => {
-    const node = mapNodes.find((item) => item.id === hoverKey) ?? null;
-    if (!node || !hoverKey) {
-      return projectAreaBalloonOf(projectAreaHover) ?? coverageBalloonOf(coverageHover, coverage?.level);
+    const node = hoverNode;
+    if (!node) {
+      return (
+        projectAreaBalloonOf(projectAreaHover) ?? coverageBalloonOf(coverageHover, coverage?.level)
+      );
     }
     // O painel de detalhe já mostra tipo/endereço/status do mesmo item — o
     // balão por cima seria redundante enquanto ele está aberto.
@@ -1152,7 +1225,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       if (node.detail?.substatus) rows.push(['Substatus', node.detail.substatus]);
       if (node.detail?.model) rows.push(['Modelo', node.detail.model]);
       return {
-        key: hoverKey,
+        key: node.id,
         point,
         offset: [0, -(pinSize / 2 + 6)],
         iconUrl: siteIconDataUrl(icon, { size: 40 }),
@@ -1173,17 +1246,17 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     if (node.detail?.substatus) rows.push(['Substatus', node.detail.substatus]);
     if (node.detail?.model) rows.push(['Modelo', node.detail.model]);
     return {
-      key: hoverKey,
+      key: node.id,
       point,
       // O ícone de equipamento é ancorado no canto inferior-esquerdo, então ele
       // fica acima e à direita da coordenada — o balão segue o ícone.
       offset: isCable ? [0, -8] : [MARKER_ICON_SIZE / 2, -(MARKER_ICON_SIZE + 4)],
       iconUrl: resourceIconDataUrl(icon, { size: 40 }),
-      eyebrow: node.sublabel ?? icon.label,
+      eyebrow: icon.label,
       title: node.label,
       rows,
     };
-  }, [detailOpen, hoverKey, selectedNode?.id, mapNodes, coverageHover, coverage?.level, projectAreaHover]);
+  }, [detailOpen, hoverNode, selectedNode?.id, coverageHover, coverage?.level, projectAreaHover]);
 
   // Esc fecha o painel de detalhe — mas só quando nenhum outro modal está
   // aberto, senão a tecla fecharia os dois de uma vez.
@@ -1348,6 +1421,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
           <div className="relative min-h-0 flex-1">
             <GoogleMapPanel
               nodes={mapNodes}
+              infraFeatures={infraFeatures}
+              onSelectInfraFeature={selectNodeFromInfraOverlay}
               selectedNode={selectedNode}
               draftAddress={draftAddress}
               addressPoint={
@@ -1467,6 +1542,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
 // quando a região visível ou a escala mudam, para o chamador decidir o que buscar.
 export function GoogleMapPanel({
   nodes,
+  infraFeatures = [],
+  onSelectInfraFeature = noopSelectInfraFeature,
   selectedNode,
   draftAddress,
   addressPoint,
@@ -1497,6 +1574,14 @@ export function GoogleMapPanel({
   mapLayersAllVisible = true,
 }: {
   nodes: GeoTreeNode[];
+  // Infra passiva (recursos + Sites não-CO + cabos) da região visível, desenhada por
+  // InfraOverlay (canvas, Fase 3 da issue #69) — nunca vira Marker/Polyline. Já vem filtrada
+  // por camada/escala pelo chamador (ver useMapTiles em GeoPage). Opcional com default vazio,
+  // para os testes existentes que montam GoogleMapPanel sem o InfraOverlay em jogo.
+  infraFeatures?: MapTileFeature[];
+  // Clique/hover resolvido pelo hit-test do InfraOverlay — o chamador decide seleção e
+  // hidratação (ver selectNodeFromInfraOverlay em GeoPage).
+  onSelectInfraFeature?: (feature: MapTileFeature) => void;
   // Nó selecionado inteiro (não só o id): o alfinete precisa da geometria mesmo quando o
   // nó já saiu da lista visível do mapa — recurso/cabo afastado, ou deep-link de Site que
   // ainda não virou marcador. O id é derivado abaixo, para os efeitos que só precisam dele.
@@ -1556,7 +1641,7 @@ export function GoogleMapPanel({
   busy?: boolean;
   // Controle de camadas do mapa (RF-011, REQ-MOD01-011) — o painel só renderiza o botão/lista
   // (MapLayerControl); fetch e render condicionais são decididos pelo chamador (mapNodes,
-  // coverage, useViewportInfra em GeoPage). Opcional com default "tudo visível", para os
+  // coverage, useMapTiles em GeoPage). Opcional com default "tudo visível", para os
   // testes existentes que montam GoogleMapPanel sem o controle em jogo continuarem passando.
   mapLayers?: MapLayerVisibility;
   onToggleMapLayer?: (id: MapLayerId) => void;
@@ -1587,6 +1672,11 @@ export function GoogleMapPanel({
   const projectAreaHitTestRef = useRef<((lng: number, lat: number) => ProjectArea | null) | null>(
     null,
   );
+  // Infra passiva (recursos + Sites não-CO + cabos) num <canvas> — substitui um
+  // Marker/Polyline por feature (Fase 3, issue #69). Acima da cobertura, abaixo do
+  // Marker/Polyline real do nó selecionado (que continua existindo — ver excludeNodeId).
+  const infraOverlayRef = useRef<InfraOverlayHandle | null>(null);
+  const onSelectInfraFeatureRef = useRef(onSelectInfraFeature);
   const draftMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const selectionMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const addressSourceMarkersRef = useRef<Map<'google' | 'geonet', GoogleMarkerInstance>>(new Map());
@@ -1740,6 +1830,10 @@ export function GoogleMapPanel({
   }, [onProjectAreaHover]);
 
   useEffect(() => {
+    onSelectInfraFeatureRef.current = onSelectInfraFeature;
+  }, [onSelectInfraFeature]);
+
+  useEffect(() => {
     if (!GOOGLE_MAPS_KEY || !mapEl.current) return;
     void loadGoogleMaps(GOOGLE_MAPS_KEY)
       .then(() => {
@@ -1767,6 +1861,16 @@ export function GoogleMapPanel({
         mapRef.current.addListener('click', (event: GoogleMapMouseEvent) => {
           const lat = event.latLng.lat();
           const lng = event.latLng.lng();
+          // Infra passiva desenhada em canvas (InfraOverlay, Fase 3 da issue #69) não tem
+          // Marker próprio pra capturar o clique nativamente — hit-test primeiro; um acerto
+          // seleciona a feature e sai cedo, igual a um clique em Marker/Polyline de verdade
+          // (que também nunca chega até aqui).
+          const infraHit = infraOverlayRef.current?.hitTest(lng, lat);
+          if (infraHit) {
+            closeBalloonRef.current();
+            onSelectInfraFeatureRef.current(infraHit);
+            return;
+          }
           // Clique adiado pela janela nativa de duplo clique: um `dblclick` (zoom) cancela
           // esta consulta via handleManualNavigation → clearPendingMapClick, então dar zoom
           // no vazio não troca o ponto consultado. O `generation` invalida a consulta caso a
@@ -1870,6 +1974,40 @@ export function GoogleMapPanel({
           onProjectAreaHoverRef.current(area ? { point: [lng, lat], area } : null);
         });
 
+        // Infra passiva (recursos + Sites não-CO + cabos) em canvas — substitui um
+        // Marker/Polyline por feature (Fase 3, issue #69). Hover segue o mesmo padrão de
+        // throttle das duas camadas acima, mas precisa emular o mouseout que um Marker real
+        // teria (`lastInfraHoverId`): sem isso, sair do ícone sem passar por outro deixaria o
+        // balão de hover grudado.
+        infraOverlayRef.current = createInfraOverlay(maps, mapRef.current);
+        let lastInfraHoverAt = 0;
+        let lastInfraHoverId: string | null = null;
+        let infraCursorIsInteractive = false;
+        mapRef.current.addListener('mousemove', (event: GoogleMapMouseEvent) => {
+          const overlay = infraOverlayRef.current;
+          if (!overlay) return;
+          const lng = event.latLng.lng();
+          const lat = event.latLng.lat();
+          const hit = overlay.hitTest(lng, lat);
+          const cursorShouldBeInteractive = Boolean(hit);
+          // O canvas não recebe ponteiros (para o mapa continuar navegável), então o Maps não
+          // sabe sozinho que há uma feature clicável abaixo do mouse. Só toca na opção quando
+          // cruza a fronteira de hover, evitando trabalho a cada mousemove.
+          if (cursorShouldBeInteractive !== infraCursorIsInteractive) {
+            infraCursorIsInteractive = cursorShouldBeInteractive;
+            mapRef.current?.setOptions({
+              draggableCursor: cursorShouldBeInteractive ? 'pointer' : null,
+            });
+          }
+          const now = Date.now();
+          if (now - lastInfraHoverAt < 50) return;
+          lastInfraHoverAt = now;
+          const hitId = hit ? mapTileFeatureNodeId(hit) : null;
+          if (hitId === lastInfraHoverId) return;
+          lastInfraHoverId = hitId;
+          onHoverNodeRef.current(hit ? mapTileFeatureToNode(hit) : null);
+        });
+
         setMapsReady(true);
       })
       .catch(() => setMapsReady(false))
@@ -1928,6 +2066,26 @@ export function GoogleMapPanel({
       projectAreaOverlayRef.current?.destroy();
       projectAreaOverlayRef.current = null;
       projectAreaHitTestRef.current = null;
+    },
+    [],
+  );
+
+  // Repassa a infra passiva pra camada de canvas quando muda (pan/zoom, camada ligada/
+  // desligada) ou quando a seleção troca — o nó selecionado nunca é desenhado pelo overlay
+  // (ver excludeNodeId em InfraOverlay), então trocar a seleção precisa de um redraw mesmo
+  // sem `infraFeatures` ter mudado.
+  useEffect(() => {
+    infraOverlayRef.current?.setData(infraFeatures, {
+      resourceTier,
+      excludeNodeId: selectedNodeId,
+    });
+  }, [infraFeatures, resourceTier, selectedNodeId, mapsReady]);
+
+  // Descarta a camada de infra passiva no desmonte, junto do mapa.
+  useEffect(
+    () => () => {
+      infraOverlayRef.current?.destroy();
+      infraOverlayRef.current = null;
     },
     [],
   );
@@ -2025,7 +2183,13 @@ export function GoogleMapPanel({
       const marker = markersRef.current.get(id);
       const node = nodeByIdRef.current.get(id);
       if (!marker || !node || node.geometry?.type !== 'Point') continue;
-      const visual = buildPointMarkerVisual(maps, node, id === selectedNodeId, stationTier, resourceTier);
+      const visual = buildPointMarkerVisual(
+        maps,
+        node,
+        id === selectedNodeId,
+        stationTier,
+        resourceTier,
+      );
       marker.setIcon(visual.iconOptions);
       marker.setZIndex(visual.zIndex);
     }
@@ -2762,7 +2926,7 @@ function GeoDetailPanel({
   // Detalhe de Recurso não tem pedido próprio de encaixe — só repassa o
   // `minimizeSignal` (peek na navegação manual do mapa) como comando para a folha.
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
-  const eyebrow = target.node.sublabel ?? resourceIconFor(target.node.resourceType ?? '').label;
+  const eyebrow = resourceIconFor(target.node.resourceType ?? '').label;
   const title = target.node.label;
 
   const resourcePoint = streetViewTargetsForGeometry(target.node.geometry)[0]?.point;
@@ -2869,6 +3033,14 @@ function ResourceDetailBody({
 
       {tab === 'overview' ? (
         <div className="grid gap-1">
+          <IconInfoRow
+            icon={Boxes}
+            hint="Tipo do recurso"
+            value={resourceIconFor(node.resourceType ?? '').label}
+          />
+          {node.sublabel ? (
+            <IconInfoRow icon={Database} hint="Especificação de origem" value={node.sublabel} />
+          ) : null}
           <IconInfoRow
             icon={Activity}
             hint="Status"

@@ -55,6 +55,33 @@ describe('resourceIconFor', () => {
     expect(resourceIconFor({ resourceType: 'DropCable' }).label).toBe('Cabo drop');
   });
 
+  it('representa os novos elementos físicos do Netwin com glifos próprios', () => {
+    const importedTypes = [
+      ['Tower', 'Torre'],
+      ['RisingTube', 'Tubo de subida'],
+      ['SpliceClosure', 'Caixa de emenda'],
+      ['Pedestal', 'Pedestal'],
+      ['SupportBracket', 'Suporte'],
+      ['CableTunnel', 'Túnel de cabos'],
+      ['IronPipe', 'Tubo de ferro'],
+    ] as const;
+
+    for (const [code, label] of importedTypes) {
+      const icon = resourceIconFor({ resourceType: code });
+      expect(icon.code).toBe(code);
+      expect(icon.label).toBe(label);
+      expect(icon.family).toBe('passive');
+      expect(icon.glyph).not.toBe('box');
+      expect(resourcePlant({ resourceType: code })).toBe('outdoor');
+    }
+  });
+
+  it('reconhece aliases Netwin quando o código de catálogo ainda não está disponível', () => {
+    expect(resourceTypeCode({ name: 'SPLICEBOX 42' })).toBe('SpliceClosure');
+    expect(resourceTypeCode({ name: 'Iron Pipe rede externa' })).toBe('IronPipe');
+    expect(resourceTypeCode({ name: 'Túnel de cabos troncal' })).toBe('CableTunnel');
+  });
+
   it('legenda a CTO por status: vermelho suspenso, verde escuro ativo, laranja no resto', () => {
     expect(resourceIconFor({ resourceType: 'CTO', status: 'suspended' }).color).toBe('#ef4444');
     expect(resourceIconFor({ resourceType: 'CTO', status: 'active' }).color).toBe('#047857');

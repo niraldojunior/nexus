@@ -28,7 +28,7 @@ import { coverageFill } from '../../utils/coverageColor';
 const EARTH_RADIUS_M = 6378137;
 const MAX_LAT = 85.05112878;
 
-function lngLatToMercator(lng: number, lat: number): [number, number] {
+export function lngLatToMercator(lng: number, lat: number): [number, number] {
   const clamped = Math.max(-MAX_LAT, Math.min(MAX_LAT, lat));
   const x = ((lng * Math.PI) / 180) * EARTH_RADIUS_M;
   const y = Math.log(Math.tan(Math.PI / 4 + (clamped * Math.PI) / 180 / 2)) * EARTH_RADIUS_M;
@@ -51,7 +51,10 @@ function boundsOverlap(area: [number, number, number, number], viewport: Viewpor
 // escala por zoom e de origem por pan — então essa transformação vale para QUALQUER ponto
 // dentro (ou perto) da mesma viewport, sem precisar de `fromLatLngToDivPixel` (LatLng + trig)
 // de novo. `null` se a base for degenerada (viewport de largura/altura ~0 em Mercator).
-function buildFastProjection(
+// Exportada para InfraOverlay.ts (Fase 3, issue #69) reusar a mesma projeção rápida — o mapa
+// de pins/cabos individuais paga o mesmo custo de `fromLatLngToDivPixel` por vértice que
+// motivou esta função aqui, só que com muito mais pontos por frame.
+export function buildFastProjection(
   a: { lng: number; lat: number; x: number; y: number },
   b: { lng: number; lat: number; x: number; y: number },
 ): ((lng: number, lat: number) => [number, number] | null) | null {

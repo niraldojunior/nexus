@@ -4,6 +4,7 @@ import { OracleGeoRepository } from '../../modules/geo/oracle-repository.js';
 import { GeoService } from '../../modules/geo/service.js';
 import { GeoTreeService } from '../../modules/geo/tree-service.js';
 import { GeoMapTileService } from '../../modules/geo/map-tile-service.js';
+import { GeoMapDensityService } from '../../modules/geo/map-density-service.js';
 import { GeoMapFeatureSynchronizer } from '../../modules/geo/map-feature-synchronizer.js';
 import { GeoCoverageService } from '../../modules/geo/coverage-service.js';
 import { OrderService } from '../../modules/order/service.js';
@@ -91,6 +92,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   await geoService.ensureBootstrapRelationshipTypes();
   const geoTreeService = new GeoTreeService(db);
   const geoMapTileService = new GeoMapTileService(db);
+  const geoMapDensityService = new GeoMapDensityService(db);
   const geoCoverageService = new GeoCoverageService(db);
   const geonetAddressGateway = options.geonet ? new GeonetAddressGateway(options.geonet) : null;
   const eventRepository = oracle ? new OracleEventRepository(db) : new PostgresEventRepository(db);
@@ -225,6 +227,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     geoService,
     geoTreeService,
     geoMapTileService,
+    geoMapDensityService,
     geoCoverageService,
     geonetAddressGateway,
     eventRepository,

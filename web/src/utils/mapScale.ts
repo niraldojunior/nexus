@@ -57,6 +57,25 @@ export function coverageLevelForScale(scaleMeters: number): CoverageLevel {
   return 'uf';
 }
 
+// Zoom da densidade agregada da planta (Fase 4, issue #69) — a camada que entra quando a
+// feature individual sai, acima de PASSIVE_INFRA_MAX_SCALE_METERS. Espelha `densityZoomForScale`
+// do backend (src/modules/geo/map-density.ts) e reusa os MESMOS degraus da cobertura GPON, para
+// a troca de nível coincidir com um degrau que o usuário já percebe. Precisa bater com os níveis
+// que scripts/build-map-density.mjs gerou — pedir um zoom não gerado devolve 400.
+export type MapDensityZoom = 13 | 10 | 7;
+
+export function densityZoomForScale(scaleMeters: number): MapDensityZoom {
+  if (scaleMeters <= COVERAGE_NEIGHBORHOOD_MAX_SCALE_METERS) return 13;
+  if (scaleMeters <= COVERAGE_CITY_MAX_SCALE_METERS) return 10;
+  return 7;
+}
+
+// A densidade só existe acima da escala em que o pin individual some — abaixo disso quem
+// responde é o índice por tile (ver useMapTiles). O `>` é estrito de propósito: em exatamente
+// 50 m ainda é a planta individual que manda, mesmo degrau usado por useMapTiles.
+export const densityVisibleAtScale = (scaleMeters: number | null): boolean =>
+  scaleMeters !== null && scaleMeters > PASSIVE_INFRA_MAX_SCALE_METERS;
+
 // Como desenhar a Estação na escala atual: cheia (perto) ou pequena (longe). Nunca oculta —
 // as estações permanecem visíveis em qualquer escala.
 export function stationTierForScale(scaleMeters: number | null): StationTier {

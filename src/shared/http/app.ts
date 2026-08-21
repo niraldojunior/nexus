@@ -25,6 +25,7 @@ import { createNexusMcpModule } from '../../modules/mcp/index.js';
 import type { GeoService } from '../../modules/geo/service.js';
 import type { CoverageLevel } from '../../modules/geo/coverage-service.js';
 import { parseNodeId, type GeoTreeService } from '../../modules/geo/tree-service.js';
+import { isMapDensityZoom, MAP_DENSITY_ZOOMS } from '../../modules/geo/map-density.js';
 import type { OrderService } from '../../modules/order/service.js';
 import {
   createNexusRuntime,
@@ -1267,6 +1268,43 @@ const routeGeoRequest = async ({
     }
     const features = await runtime.geoMapTileService.tile({ z, x, y });
     return sendJson(response, 200, features);
+  }
+
+  // Densidade agregada da planta (geo_map_density — Fase 4, issue #69): o que o mapa desenha
+  // ACIMA da escala em que a feature individual some. Por bbox, não por tile único como
+  // /v1/geo/map/tile — em zoom aberto a viewport cobre poucas células grossas, e pedir uma a uma
+  // custaria mais em ida-e-volta do que a consulta inteira. `z` tem de ser um dos níveis
+  // gerados (MAP_DENSITY_ZOOMS); qualquer outro devolveria vazio silenciosamente, então é 400.
+  if (request.method === 'GET' && url.pathname === '/v1/geo/map/density') {
+    const z = parseOptionalNumber(url.searchParams.get('z'));
+    if (z === undefined || !Number.isInteger(z) || !isMapDensityZoom(z)) {
+      throw new AppError(`z must be one of ${MAP_DENSITY_ZOOMS.join(', ')}`, {
+        code: 'GEO_MAP_DENSITY_ZOOM_INVALID',
+        statusCode: 400,
+      });
+    }
+    const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
+    const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
+    const maxLng = parseOptionalNumber(url.searchParams.get('maxLng'));
+    const maxLat = parseOptionalNumber(url.searchParams.get('maxLat'));
+    if (
+      minLng === undefined ||
+      minLat === undefined ||
+      maxLng === undefined ||
+      maxLat === undefined
+    ) {
+      throw new AppError('minLng, minLat, maxLng and maxLat are required', {
+        code: 'GEO_MAP_DENSITY_BOUNDS_REQUIRED',
+        statusCode: 400,
+      });
+    }
+    const density = await runtime.geoMapDensityService.density(z, {
+      minLng,
+      minLat,
+      maxLng,
+      maxLat,
+    });
+    return sendJson(response, 200, density);
   }
 
   // Mapa de calor de cobertura GPON — fonte do mapa acima de 100 m, no lugar dos recursos

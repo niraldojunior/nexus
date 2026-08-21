@@ -53,6 +53,7 @@ export const TABLE_NAMES = [
   'geo_gpon_coverage_cell',
   'geo_gpon_coverage_area',
   'geo_map_feature',
+  'geo_map_density',
 ] as const;
 
 // Column migrations added after the base schema so databases created before these columns get
@@ -449,6 +450,35 @@ export const MIGRATIONS_SQL = `
   );
   CREATE INDEX IF NOT EXISTS idx_geo_map_feature_tile
     ON geo_map_feature(tenant_id, tile_z, tile_x, tile_y, rank);
+
+  -- Densidade agregada da planta para zoom aberto (Fase 4 da issue #69). Abaixo de
+  -- PASSIVE_INFRA_MAX_SCALE_METERS o mapa desenha feature por feature (geo_map_feature); acima
+  -- disso desenhar 780 mil pontos individuais não é só caro, é ilegível — vira borrão. Esta
+  -- tabela responde a outra pergunta: "onde HÁ planta", em vez de "qual é cada item".
+  --
+  -- A agregação é o próprio tile de geo_map_feature dividido por potência de 2 (z16 → z13/z10/
+  -- z7), não uma grade métrica nova: reusa a matemática de slippy map que o índice já usa, a
+  -- redução vira divisão inteira em SQL, e cliente e servidor continuam falando o mesmo
+  -- endereçamento. lng/lat são o CENTROIDE das features da célula, não o centro do tile — assim
+  -- o ponto desenhado cai onde a planta realmente está, e não no meio de um quadrado que pode
+  -- estar vazio de um lado. Artefato derivado e regenerável, como geo_map_feature.
+  CREATE TABLE IF NOT EXISTS geo_map_density (
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    tile_z INTEGER NOT NULL,
+    tile_x INTEGER NOT NULL,
+    tile_y INTEGER NOT NULL,
+    feature_count INTEGER NOT NULL DEFAULT 0,
+    resource_count INTEGER NOT NULL DEFAULT 0,
+    site_count INTEGER NOT NULL DEFAULT 0,
+    lng DOUBLE PRECISION NOT NULL,
+    lat DOUBLE PRECISION NOT NULL,
+    generated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y)
+  );
+  -- Leitura é por bbox dentro de um nível (não por tile único como geo_map_feature): o cliente
+  -- pede a viewport inteira de uma vez, então o índice cobre (nível, faixa de x, faixa de y).
+  CREATE INDEX IF NOT EXISTS idx_geo_map_density_bbox
+    ON geo_map_density(tenant_id, tile_z, tile_x, tile_y, feature_count);
 `;
 
 export const SCHEMA_SQL = `

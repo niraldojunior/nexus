@@ -68,7 +68,9 @@ import {
 } from '../utils/mapScale';
 import { useGponCoverage } from '../hooks/useGponCoverage';
 import { useMapTiles } from '../hooks/useMapTiles';
+import { useMapDensity } from '../hooks/useMapDensity';
 import { mapTileFeatureNodeId, type MapTileFeature } from '../services/geoMapTileApi';
+import type { MapDensityResponse } from '../services/geoMapDensityApi';
 import { fetchTreeNode } from '../services/geoTreeApi';
 import { useMapLayers } from '../hooks/useMapLayers';
 import {
@@ -144,6 +146,7 @@ import {
   type ProjectAreaOverlayHandle,
 } from './geo-tabs/ProjectAreaOverlay';
 import { createInfraOverlay, type InfraOverlayHandle } from './geo-tabs/InfraOverlay';
+import { createDensityOverlay, type DensityOverlayHandle } from './geo-tabs/DensityOverlay';
 import {
   DROP_ACCENT,
   DROP_INK,
@@ -542,6 +545,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     const stationIds = new Set(tree.mapNodes.map((node) => node.id));
     return infraFeaturesRaw.filter((feature) => !stationIds.has(mapTileFeatureNodeId(feature)));
   }, [infraFeaturesRaw, tree.mapNodes]);
+  // Densidade agregada da planta (Fase 4, issue #69) — entra exatamente onde `infraFeatures`
+  // sai: acima de PASSIVE_INFRA_MAX_SCALE_METERS. As duas nunca coexistem (uma usa `<=`, a
+  // outra `>` sobre o mesmo degrau), então não há risco de desenhar planta individual e
+  // agregado ao mesmo tempo.
+  const { data: mapDensity, loading: densityLoading } = useMapDensity(viewportBounds, scaleMeters);
   const stationTier: StationTier = stationTierForScale(scaleMeters);
   const resourceTier: StationTier = resourceTierForScale(scaleMeters);
   const mapNodes = useMemo(() => {
@@ -610,7 +618,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // MapLoadingBar). Cargas internas dos painéis (Viabilidade, GEONET, eventos) têm spinner
   // próprio dentro da doca e não entram aqui. O script do Google Maps é rastreado dentro do
   // GoogleMapPanel (mapsReady) e somado à barra por lá.
-  const mapDataLoading = loading || tree.busy || viewportLoading || coverageLoading;
+  const mapDataLoading =
+    loading || tree.busy || viewportLoading || coverageLoading || densityLoading;
 
   const selectedSiteId =
     selectedNode?.referredType === 'GeographicSite' ? (selectedNode.refId ?? null) : null;
@@ -1423,6 +1432,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               nodes={mapNodes}
               infraFeatures={infraFeatures}
               onSelectInfraFeature={selectNodeFromInfraOverlay}
+              density={mapDensity}
               selectedNode={selectedNode}
               draftAddress={draftAddress}
               addressPoint={
@@ -1544,6 +1554,7 @@ export function GoogleMapPanel({
   nodes,
   infraFeatures = [],
   onSelectInfraFeature = noopSelectInfraFeature,
+  density = null,
   selectedNode,
   draftAddress,
   addressPoint,
@@ -1582,6 +1593,10 @@ export function GoogleMapPanel({
   // Clique/hover resolvido pelo hit-test do InfraOverlay — o chamador decide seleção e
   // hidratação (ver selectNodeFromInfraOverlay em GeoPage).
   onSelectInfraFeature?: (feature: MapTileFeature) => void;
+  // Densidade agregada da planta para zoom aberto (Fase 4, issue #69), ou null abaixo do degrau
+  // de escala em que ela entra. O painel só desenha na camada de canvas (ver DensityOverlay); a
+  // busca é do chamador, como cobertura e manchas de projeto.
+  density?: MapDensityResponse | null;
   // Nó selecionado inteiro (não só o id): o alfinete precisa da geometria mesmo quando o
   // nó já saiu da lista visível do mapa — recurso/cabo afastado, ou deep-link de Site que
   // ainda não virou marcador. O id é derivado abaixo, para os efeitos que só precisam dele.
@@ -1677,6 +1692,8 @@ export function GoogleMapPanel({
   // Marker/Polyline real do nó selecionado (que continua existindo — ver excludeNodeId).
   const infraOverlayRef = useRef<InfraOverlayHandle | null>(null);
   const onSelectInfraFeatureRef = useRef(onSelectInfraFeature);
+  // Contraparte da infra passiva para zoom aberto (Fase 4, issue #69), mesma técnica de canvas.
+  const densityOverlayRef = useRef<DensityOverlayHandle | null>(null);
   const draftMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const selectionMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const addressSourceMarkersRef = useRef<Map<'google' | 'geonet', GoogleMarkerInstance>>(new Map());
@@ -2008,6 +2025,10 @@ export function GoogleMapPanel({
           onHoverNodeRef.current(hit ? mapTileFeatureToNode(hit) : null);
         });
 
+        // Densidade agregada — desenha só acima do degrau em que a planta individual some, e o
+        // chamador já entrega `density: null` abaixo dele, então não há troca de camada aqui.
+        densityOverlayRef.current = createDensityOverlay(maps, mapRef.current);
+
         setMapsReady(true);
       })
       .catch(() => setMapsReady(false))
@@ -2086,6 +2107,20 @@ export function GoogleMapPanel({
     () => () => {
       infraOverlayRef.current?.destroy();
       infraOverlayRef.current = null;
+    },
+    [],
+  );
+
+  // Repassa a densidade agregada para a camada de canvas — `null` (fora de escala) limpa o
+  // desenho, mesmo contrato de `coverage`.
+  useEffect(() => {
+    densityOverlayRef.current?.setData(density);
+  }, [density, mapsReady]);
+
+  useEffect(
+    () => () => {
+      densityOverlayRef.current?.destroy();
+      densityOverlayRef.current = null;
     },
     [],
   );

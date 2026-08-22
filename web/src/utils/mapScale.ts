@@ -13,18 +13,15 @@ const EARTH_METERS_PER_PIXEL_AT_ZOOM_0 = 156543.03392;
 // melhor estimativa da barra real do Google (100 px arredondava um passo acima).
 const SCALE_BAR_MAX_PX = 64;
 
-// Acima deste valor, a infra passiva (recursos + cabos + Sites não-CO) some do mapa. No lugar
-// dela entra a camada de cobertura GPON (ver COVERAGE_MIN_SCALE_METERS); Estações continuam
-// visíveis. Casa com o degrau "> 200 m: não exibe" de resourceIconSizeForScale: como a barra de
-// escala só lê valores redondos (1/2/5 × 10^n — 100, 200, 500…), nunca há leitura entre 200 e
-// 500 m, então manter o corte em `<=` 200 já garante que só some a partir de 500 m.
+// A partir deste valor, a infra passiva (recursos + cabos + Sites não-CO) some do mapa. Ficam
+// apenas a camada de cobertura GPON (ver COVERAGE_MIN_SCALE_METERS) e as Estações.
 export const PASSIVE_INFRA_MAX_SCALE_METERS = 200;
 
 // Cobertura GPON (mapa de calor por bairro/município/estado) entra a partir desta escala
 // (inclusive) — "visível para qualquer escala de 50 m para cima". Em ≤ 20 m só a planta
 // individual aparece; não há mais cluster (bolas azuis numeradas foram removidas). Entre 50 e
 // 200 m a mancha e os ícones reduzidos de Recurso coexistem (ver resourceIconSizeForScale) — é
-// a faixa de transição entre as duas camadas; acima de 200 m só a cobertura resta (ver
+// a faixa de transição entre as duas camadas; a partir de 200 m só a cobertura resta (ver
 // PASSIVE_INFRA_MAX_SCALE_METERS).
 export const COVERAGE_MIN_SCALE_METERS = 50;
 
@@ -64,17 +61,12 @@ export function densityZoomForScale(scaleMeters: number): MapDensityZoom {
   return 7;
 }
 
-// A densidade só existe acima da escala em que o pin individual some — abaixo disso quem
-// responde é o índice por tile (ver useMapTiles). O `>` é estrito de propósito: em exatamente
-// 200 m ainda é a planta individual que manda, mesmo degrau usado por useMapTiles.
-export const densityVisibleAtScale = (scaleMeters: number | null): boolean =>
-  scaleMeters !== null && scaleMeters > PASSIVE_INFRA_MAX_SCALE_METERS;
+// A leitura agregada de densidade não é exibida no mapa. Em escalas abertas, a Cobertura GPON é
+// a única representação agregada permitida.
+export const densityVisibleAtScale = (_scaleMeters: number | null): boolean => false;
 
-// Tamanho do pin de Site no mapa, em px, pela escala atual — mesmo valor pra qualquer tipo de
-// Site (CO ou não). Nunca oculta: Sites permanecem visíveis em qualquer escala (um Site não-CO
-// some do mapa, mas por PASSIVE_INFRA_MAX_SCALE_METERS, não por tamanho). Um Site não-CO nunca
-// chega às réguas de 10/50 km — já some do mapa bem antes disso —, então na prática só a
-// Estação varia de tamanho nessas escalas.
+// Tamanho do pin de Central/Estação no mapa. Só este tipo de Site permanece visível em
+// qualquer escala e recebe uma régua própria; os demais Sites usam resourceIconSizeForScale.
 export function siteIconSizeForScale(scaleMeters: number | null): number {
   if (scaleMeters === null) return 25;
   if (scaleMeters >= 50_000) return 15;
@@ -83,13 +75,12 @@ export function siteIconSizeForScale(scaleMeters: number | null): number {
 }
 
 // Tamanho do pin de Recurso (caixa/splitter) no mapa, em px, pela escala atual — ou `null`
-// acima de 200 m, quando ele não é mais desenhado (mesmo corte de PASSIVE_INFRA_MAX_SCALE_METERS,
+// a partir de 200 m, quando ele não é mais desenhado (mesmo corte de PASSIVE_INFRA_MAX_SCALE_METERS,
 // que já governa se o dado é buscado). Note que o `null` de retorno é redundante com esse corte
 // externo — existe só pra função ser correta mesmo se chamada fora dele.
 export function resourceIconSizeForScale(scaleMeters: number | null): number | null {
   if (scaleMeters === null) return 30;
-  if (scaleMeters > 200) return null;
-  if (scaleMeters >= 200) return 7;
+  if (scaleMeters >= PASSIVE_INFRA_MAX_SCALE_METERS) return null;
   if (scaleMeters >= 100) return 10;
   if (scaleMeters >= 50) return 15;
   if (scaleMeters >= 20) return 20;

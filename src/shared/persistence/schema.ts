@@ -17,6 +17,7 @@ export const TABLE_NAMES = [
   'tmf_geographic_site_status_history',
   'tmf_geographic_site_relationship',
   'geo_project',
+  'geo_project_status_catalog',
   'geo_project_site',
   'geo_project_resource',
   'geo_project_area',
@@ -327,6 +328,28 @@ export const MIGRATIONS_SQL = `
   -- Projetos de trabalho (REQ-MOD01-015): status do projeto (herdado em cascata pelos Sites
   -- vinculados) e, por local, observação de trabalho + id do endereço no GEONET.
   ALTER TABLE geo_project ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'planned';
+  ALTER TABLE geo_project ADD COLUMN IF NOT EXISTS status_code TEXT;
+  CREATE TABLE IF NOT EXISTS geo_project_status_catalog (
+    tenant_id TEXT NOT NULL,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    behavior TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, code)
+  );
+  CREATE INDEX IF NOT EXISTS idx_geo_project_status_catalog_tenant_order
+    ON geo_project_status_catalog(tenant_id, sort_order, code);
+  UPDATE geo_project
+     SET status_code = CASE status
+       WHEN 'planned' THEN '11'
+       WHEN 'active' THEN '22'
+       WHEN 'suspended' THEN '23'
+       WHEN 'terminated' THEN '17'
+       WHEN 'cancelled' THEN 'legacy-cancelled'
+       ELSE '11'
+     END
+   WHERE status_code IS NULL;
   ALTER TABLE geo_project ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
   ALTER TABLE geo_project ADD COLUMN IF NOT EXISTS archived_by TEXT;
   CREATE TABLE IF NOT EXISTS geo_project_resource (

@@ -74,6 +74,7 @@ const renderPanel = (overrides: Partial<Parameters<typeof ProjectDetailPanel>[0]
 };
 
 describe('ProjectDetailPanel', () => {
+  const openSites = () => fireEvent.click(screen.getByRole('button', { name: 'Locais' }));
   it('perder o foco do título grava via onUpdate, sem botão de salvar', () => {
     const props = renderPanel();
     const titleInput = screen.getByLabelText('Nome do projeto');
@@ -147,6 +148,7 @@ describe('ProjectDetailPanel', () => {
 
   it('Adicionar Local chama onAddSite', () => {
     const props = renderPanel();
+    openSites();
     fireEvent.click(screen.getByRole('button', { name: /adicionar local/i }));
     expect(props.onAddSite).toHaveBeenCalledTimes(1);
   });
@@ -154,12 +156,14 @@ describe('ProjectDetailPanel', () => {
   it('clicar num local da lista chama onOpenSite com o nó', () => {
     const target = site();
     const props = renderPanel({ sites: [target] });
+    openSites();
     fireEvent.click(screen.getByText(target.label));
     expect(props.onOpenSite).toHaveBeenCalledWith(target);
   });
 
   it('mostra o estado vazio quando o projeto não tem locais', () => {
     renderPanel({ sites: [] });
+    openSites();
     expect(screen.getByText(/nenhum local neste projeto ainda/i)).toBeInTheDocument();
   });
 
@@ -193,6 +197,7 @@ describe('ProjectDetailPanel', () => {
   it('excluir um local da lista pede confirmação antes de chamar onRemoveSite', () => {
     const target = site();
     const props = renderPanel({ sites: [target] });
+    openSites();
 
     fireEvent.click(screen.getByRole('button', { name: /excluir local/i }));
     expect(props.onRemoveSite).not.toHaveBeenCalled();
@@ -204,6 +209,7 @@ describe('ProjectDetailPanel', () => {
 
   it('sem manchas, a contagem usa sites.length (comportamento de sempre)', () => {
     renderPanel({ sites: [site(), site({ id: 'site:s2', refId: 's2' })] });
+    openSites();
     expect(screen.getByText('2 locais')).toBeInTheDocument();
   });
 
@@ -213,7 +219,8 @@ describe('ProjectDetailPanel', () => {
       sites: [site()],
       areas: [area({ kind: 'concentration' }), area({ id: 'loc-2', kind: 'dispersion' })],
     });
+    openSites();
     expect(screen.getByText('3514 locais (mostrando 1)')).toBeInTheDocument();
-    expect(screen.getByText('1 concentração · 1 dispersão')).toBeInTheDocument();
+    expect(screen.queryByText('1 concentração · 1 dispersão')).not.toBeInTheDocument();
   });
 });

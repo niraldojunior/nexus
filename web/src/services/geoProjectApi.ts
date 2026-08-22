@@ -12,6 +12,7 @@ import {
   type GeoSite,
 } from './geoApi';
 import type { GeoTreeNode, MapBounds } from './geoTreeApi';
+import type { LogicalResourcePayload, PhysicalResourcePayload, ResourceEntity } from './resourceApi';
 
 // Mesmo vocabulário de GeoStatus — o projeto é a unidade de estado (REQ-MOD01-015): mudar
 // o status do projeto cascateia (best-effort) para cada Site vinculado. Enquanto o projeto
@@ -19,6 +20,14 @@ import type { GeoTreeNode, MapBounds } from './geoTreeApi';
 // o projeto termina (status 'terminated'), o local passa a ter vida própria (Active) e ganha
 // controle de status independente no painel unificado de Local (SiteOverviewTab).
 export type GeoProjectStatus = 'planned' | 'active' | 'suspended' | 'terminated' | 'cancelled';
+export type GeoProjectStatusBehavior = 'planning' | 'execution' | 'suspended' | 'close-release';
+export type GeoProjectStatusCatalogItem = {
+  code: string;
+  name: string;
+  sortOrder: number;
+  active: boolean;
+  behavior: GeoProjectStatusBehavior;
+};
 
 export type GeoProject = {
   id: string;
@@ -27,6 +36,9 @@ export type GeoProject = {
   description: string | null;
   iconDataUrl: string | null;
   status: GeoProjectStatus;
+  statusCode?: string;
+  statusName?: string;
+  statusBehavior?: GeoProjectStatusBehavior;
   createdBy: string | null;
   siteCount: number;
   resourceCount?: number;
@@ -129,7 +141,7 @@ export const createProject = (name?: string): Promise<GeoProject> =>
 
 export const updateProject = (
   id: string,
-  patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status'>>,
+  patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>>,
 ): Promise<GeoProject & { siteCascade?: GeoProjectSiteCascade }> =>
   patchJson<GeoProject & { siteCascade?: GeoProjectSiteCascade }>(`${BASE_URL}/${id}`, patch);
 
@@ -177,8 +189,30 @@ export const fetchProjectResources = (
   return getJson<ProjectPagedResult>(`${BASE_URL}/${projectId}/resources?${params}`);
 };
 
-export const searchProject = (projectId: string, q: string, offset = 0): Promise<ProjectPagedResult> =>
-  getJson<ProjectPagedResult>(`${BASE_URL}/${projectId}/search?q=${encodeURIComponent(q)}&limit=50&offset=${offset}`);
+export const searchProject = (
+  projectId: string,
+  q: string,
+  offset = 0,
+  signal?: AbortSignal,
+  scope?: 'sites' | 'infrastructure' | 'resources',
+): Promise<ProjectPagedResult> =>
+  getJson<ProjectPagedResult>(`${BASE_URL}/${projectId}/search?q=${encodeURIComponent(q)}&limit=20&offset=${offset}${scope ? `&scope=${scope}` : ''}`, { signal });
+
+export const createProjectResource = (
+  projectId: string,
+  payload: PhysicalResourcePayload | LogicalResourcePayload,
+): Promise<ResourceEntity> => postJson<ResourceEntity>(`${BASE_URL}/${projectId}/resources`, payload);
+
+export const listProjectStatusCatalog = (): Promise<GeoProjectStatusCatalogItem[]> =>
+  getJson('/v1/geo/project-statuses');
+export const createProjectStatusCatalogItem = (item: GeoProjectStatusCatalogItem) =>
+  postJson<GeoProjectStatusCatalogItem>('/v1/geo/project-statuses', item);
+export const updateProjectStatusCatalogItem = (
+  code: string,
+  patch: Partial<Omit<GeoProjectStatusCatalogItem, 'code'>>,
+) => patchJson<GeoProjectStatusCatalogItem>(`/v1/geo/project-statuses/${encodeURIComponent(code)}`, patch);
+export const deactivateProjectStatusCatalogItem = (code: string) =>
+  deleteJson<GeoProjectStatusCatalogItem>(`/v1/geo/project-statuses/${encodeURIComponent(code)}`);
 
 export const linkProjectResource = (projectId: string, resourceId: string): Promise<unknown> =>
   postJson(`${BASE_URL}/${projectId}/resources/${resourceId}`, {});

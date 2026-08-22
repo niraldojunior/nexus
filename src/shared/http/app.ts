@@ -828,6 +828,61 @@ const routeGeoRequest = async ({
   // GeographicSite (TMF674) real, sempre criado/soft-terminado através do GeoService — nunca
   // um DELETE físico (C6). A exclusão da Hierarquia é feita no próprio GeoTreeService
   // (PROJECT_SITE_EXCLUSION_SQL).
+  if (url.pathname === '/v1/geo/project-statuses') {
+    requireRoles(geoContext, USER_ADMIN_ROLES);
+    if (request.method === 'GET') {
+      return sendJson(response, 200, await runtime.geoProjectRepository.listStatusCatalog(geoContext.tenantId));
+    }
+    if (request.method === 'POST') {
+      const body = await readBody(request);
+      const code = String(body.code ?? '').trim();
+      const name = String(body.name ?? '').trim();
+      const behavior = parseGeoProjectStatusBehavior(body.behavior);
+      if (!code || !name || !behavior) {
+        throw new AppError('project status code, name and behavior are required', { code: 'GEO_PROJECT_STATUS_CATALOG_INVALID', statusCode: 400 });
+      }
+      if (behavior === 'close-release') {
+        throw new AppError('only status code 17 can close a project', { code: 'GEO_PROJECT_STATUS_TERMINAL_RESERVED', statusCode: 409 });
+      }
+      return sendJson(response, 201, await runtime.geoProjectRepository.createStatusCatalogItem(geoContext.tenantId, {
+        code,
+        name,
+        sortOrder: Number(body.sortOrder ?? 1000),
+        active: body.active !== false,
+        behavior,
+      }));
+    }
+  }
+
+  const projectStatusCatalogMatch = url.pathname.match(/^\/v1\/geo\/project-statuses\/([^/]+)$/);
+  if (projectStatusCatalogMatch?.[1]) {
+    requireRoles(geoContext, USER_ADMIN_ROLES);
+    const code = decodeURIComponent(projectStatusCatalogMatch[1]);
+    if (request.method === 'PATCH' || request.method === 'DELETE') {
+      const body = request.method === 'PATCH' ? await readBody(request) : {};
+      const behavior = body.behavior === undefined ? undefined : parseGeoProjectStatusBehavior(body.behavior);
+      if (code === '1' && body.active === false) {
+        throw new AppError('default project status cannot be deactivated', { code: 'GEO_PROJECT_STATUS_DEFAULT_PROTECTED', statusCode: 409 });
+      }
+      if (code === '17' && ((behavior !== undefined && behavior !== 'close-release') || body.active === false)) {
+        throw new AppError('project closing status is protected', { code: 'GEO_PROJECT_STATUS_TERMINAL_PROTECTED', statusCode: 409 });
+      }
+      if (code !== '17' && behavior === 'close-release') {
+        throw new AppError('only status code 17 can close a project', { code: 'GEO_PROJECT_STATUS_TERMINAL_RESERVED', statusCode: 409 });
+      }
+      const updated = await runtime.geoProjectRepository.updateStatusCatalogItem(geoContext.tenantId, code, request.method === 'DELETE'
+        ? { active: false }
+        : {
+            ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
+            ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}),
+            ...(body.active !== undefined ? { active: Boolean(body.active) } : {}),
+            ...(behavior !== undefined ? { behavior } : {}),
+          });
+      if (!updated) throw new AppError('project status not found', { code: 'GEO_PROJECT_STATUS_NOT_FOUND', statusCode: 404 });
+      return sendJson(response, 200, updated);
+    }
+  }
+
   if (url.pathname === '/v1/geo/projects') {
     if (request.method === 'GET') {
       requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
@@ -837,6 +892,12 @@ const routeGeoRequest = async ({
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
       const body = await readBody(request);
       assertProjectIconSize(body.iconDataUrl);
+      const requestedStatusCode = body.statusCode === undefined ? undefined : String(body.statusCode);
+      const requestedCatalogStatus = await resolveProjectStatus(
+        runtime.geoProjectRepository,
+        geoContext.tenantId,
+        requestedStatusCode,
+      );
       const project = await runtime.geoProjectRepository.create(
         geoContext.tenantId,
         geoContext.actorSub,
@@ -844,7 +905,8 @@ const routeGeoRequest = async ({
           name: String(body.name ?? '').trim() || 'Projeto sem título',
           description: body.description ? String(body.description) : null,
           iconDataUrl: body.iconDataUrl ? String(body.iconDataUrl) : null,
-          status: parseGeoProjectStatus(body.status) ?? 'planned',
+          status: projectStatusOperationalStatus(requestedCatalogStatus) ?? parseGeoProjectStatus(body.status) ?? 'planned',
+          statusCode: requestedStatusCode ?? '1',
         },
       );
       return sendJson(response, 201, project);
@@ -862,7 +924,15 @@ const routeGeoRequest = async ({
       if (!current) {
         throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
       }
-      const nextStatus = parseGeoProjectStatus(body.status);
+      const requestedStatusCode = body.statusCode === undefined ? undefined : String(body.statusCode);
+      const requestedCatalogStatus = await resolveProjectStatus(
+        runtime.geoProjectRepository,
+        geoContext.tenantId,
+        requestedStatusCode,
+      );
+      const nextStatus = requestedCatalogStatus
+        ? projectStatusOperationalStatus(requestedCatalogStatus)
+        : parseGeoProjectStatus(body.status);
       // Projeto terminado não volta: terminar é o fim do ciclo de vida do projeto, não um
       // estado como os demais — os locais já ganharam vida própria (ver cascata abaixo) e o
       // projeto passa a ser só um registro histórico (Origem no painel de Local).
@@ -885,6 +955,7 @@ const routeGeoRequest = async ({
           ? { iconDataUrl: body.iconDataUrl ? String(body.iconDataUrl) : null }
           : {}),
         ...(nextStatus !== undefined ? { status: nextStatus } : {}),
+        ...(requestedCatalogStatus ? { statusCode: requestedCatalogStatus.code } : {}),
       });
       if (!updated) {
         throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
@@ -1041,13 +1112,25 @@ const routeGeoRequest = async ({
     requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
     const projectId = decodeURIComponent(projectSearchMatch[1]);
     const query = (url.searchParams.get('q') ?? '').trim().toLocaleLowerCase();
-    const limit = Math.min(Math.max(parseOptionalNumber(url.searchParams.get('limit')) ?? 50, 1), 100);
+    const scopeParam = url.searchParams.get('scope');
+    const scope =
+      scopeParam === 'sites' || scopeParam === 'infrastructure' || scopeParam === 'resources'
+        ? scopeParam
+        : 'all';
+    const limit = Math.min(Math.max(parseOptionalNumber(url.searchParams.get('limit')) ?? 20, 1), 20);
     const offset = Math.max(parseOptionalNumber(url.searchParams.get('offset')) ?? 0, 0);
     if (query.length < 2) return sendJson(response, 200, { items: [], offset, limit, hasMore: false });
-    const [siteIds, links] = await Promise.all([runtime.geoProjectRepository.listSiteIds(geoContext.tenantId, projectId), runtime.geoProjectRepository.listResourceLinks(geoContext.tenantId, projectId, { limit: 10000 })]);
-    const [sites, resources] = await Promise.all([geoTreeService.sitesByIds(siteIds), geoTreeService.resourcesByIds(links.map((link) => link.resourceId))]);
-    const all = [...sites, ...resources].filter((item) => `${item.label} ${item.sublabel ?? ''} ${item.resourceType ?? ''}`.toLocaleLowerCase().includes(query));
-    return sendJson(response, 200, { items: all.slice(offset, offset + limit), offset, limit, hasMore: all.length > offset + limit });
+    const matches = await runtime.geoProjectRepository.searchItems(geoContext.tenantId, projectId, query, limit + 1, scope);
+    const page = matches.slice(offset, offset + limit);
+    const [sites, resources] = await Promise.all([
+      geoTreeService.sitesByIds(page.filter((item) => item.kind === 'site').map((item) => item.id)),
+      geoTreeService.resourcesByIds(page.filter((item) => item.kind === 'resource').map((item) => item.id)),
+    ]);
+    const byKey = new Map([...sites, ...resources].map((item) => [`${item.kind}:${item.refId ?? item.id}`, item]));
+    const items = page
+      .map((item) => byKey.get(`${item.kind}:${item.id}`))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+    return sendJson(response, 200, { items, offset, limit, hasMore: matches.length > offset + limit });
   }
 
   const projectCandidatesMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/resource-candidates$/);
@@ -2853,6 +2936,7 @@ const assertProjectIconSize = (value: unknown): void => {
 };
 
 const GEO_PROJECT_STATUSES = ['planned', 'active', 'suspended', 'terminated', 'cancelled'] as const;
+const GEO_PROJECT_STATUS_BEHAVIORS = ['planning', 'execution', 'suspended', 'close-release'] as const;
 
 // `undefined` quando o corpo não trouxe `status` (patch parcial); lança quando trouxe um
 // valor fora do vocabulário de GeoProjectStatus.
@@ -2867,6 +2951,54 @@ const parseGeoProjectStatus = (
     code: 'GEO_PROJECT_STATUS_INVALID',
     statusCode: 400,
   });
+};
+
+const parseGeoProjectStatusBehavior = (
+  value: unknown,
+): (typeof GEO_PROJECT_STATUS_BEHAVIORS)[number] | undefined => {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string' && (GEO_PROJECT_STATUS_BEHAVIORS as readonly string[]).includes(value)) {
+    return value as (typeof GEO_PROJECT_STATUS_BEHAVIORS)[number];
+  }
+  throw new AppError('invalid project status behavior', {
+    code: 'GEO_PROJECT_STATUS_BEHAVIOR_INVALID',
+    statusCode: 400,
+  });
+};
+
+const projectStatusOperationalStatus = (
+  item: { behavior: (typeof GEO_PROJECT_STATUS_BEHAVIORS)[number] } | null | undefined,
+): (typeof GEO_PROJECT_STATUSES)[number] | undefined => {
+  if (!item) return undefined;
+  if (item.behavior === 'execution') return 'active';
+  if (item.behavior === 'suspended') return 'suspended';
+  if (item.behavior === 'close-release') return 'terminated';
+  return 'planned';
+};
+
+const resolveProjectStatus = async (
+  repository: {
+    getStatusCatalogItem: (
+      tenantId: string,
+      code: string,
+    ) => Promise<{
+      code: string;
+      active: boolean;
+      behavior: 'planning' | 'execution' | 'suspended' | 'close-release';
+    } | null>;
+  },
+  tenantId: string,
+  code: string | undefined,
+) => {
+  if (code === undefined) return null;
+  const item = await repository.getStatusCatalogItem(tenantId, code);
+  if (!item || !item.active) {
+    throw new AppError('project status is not available', {
+      code: 'GEO_PROJECT_STATUS_UNAVAILABLE',
+      statusCode: 409,
+    });
+  }
+  return item;
 };
 
 // Sem limit/offset explícitos, mantém o comportamento histórico (lista completa) para não quebrar

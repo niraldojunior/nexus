@@ -10,6 +10,7 @@ import {
   PanelLeftOpen,
   Plus,
   Settings,
+  SlidersHorizontal,
   Users,
 } from 'lucide-react';
 import { PageId, RecentGroup, RecentItem } from '../types';
@@ -332,6 +333,18 @@ export default function Sidebar({
                   collapsed={contentCollapsed}
                 />
               ) : null}
+              {isAdmin ? (
+                <NavItem
+                  active={currentPage === 'configuracoes'}
+                  icon={SlidersHorizontal}
+                  label="Configurações"
+                  onClick={() => {
+                    onSelectPage('configuracoes');
+                    closeMobileDrawer();
+                  }}
+                  collapsed={contentCollapsed}
+                />
+              ) : null}
             </nav>
 
             {!contentCollapsed ? (
@@ -386,7 +399,8 @@ export default function Sidebar({
                     ? 'border-app-border bg-white text-app-text shadow-soft'
                     : 'border-transparent text-app-muted hover:bg-app-accent-soft hover:text-app-text'
                 }`}
-                aria-label="Configurações"
+                aria-label="Preferências"
+                title="Preferências"
               >
                 <Settings className="h-[1rem] w-[1rem]" strokeWidth={1.8} />
               </button>

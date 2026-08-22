@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { LucideIcon } from 'lucide-react';
 
 // Primitivo de edição inline do painel unificado de Local (REQ-MOD01-016): o campo
 // aparece como texto estático, e só vira um editor (o `children` de quem chama) quando o
@@ -7,6 +8,7 @@ import type { ReactNode } from 'react';
 // mostra o motivo (ex.: "herdado do projeto X" enquanto o projeto está em curso, RN-007).
 export function InlineEditRow({
   label,
+  icon: Icon,
   value,
   editing,
   onActivate,
@@ -14,6 +16,7 @@ export function InlineEditRow({
   readOnlyNote,
 }: {
   label: string;
+  icon?: LucideIcon;
   value: ReactNode;
   editing: boolean;
   onActivate: () => void;
@@ -21,10 +24,17 @@ export function InlineEditRow({
   readOnlyNote?: string;
 }) {
   return (
-    <div className="grid min-w-0 grid-cols-[82px_minmax(0,1fr)] gap-x-3 py-2">
-      <div className="min-w-0 break-words pt-1.5 text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.06em] text-app-muted [overflow-wrap:anywhere]">
-        {label}
-      </div>
+    <div className="flex min-w-0 items-start gap-2.5 py-1" title={Icon ? label : undefined}>
+      {Icon ? (
+        <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true">
+          <Icon className="h-[18px] w-[18px]" />
+        </span>
+      ) : (
+        <div className="min-w-0 basis-[82px] break-words pt-1.5 text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.06em] text-app-muted [overflow-wrap:anywhere]">
+          {label}
+        </div>
+      )}
+      {Icon ? <span className="sr-only">{label}</span> : null}
       <div className="min-w-0">
         {editing ? (
           children

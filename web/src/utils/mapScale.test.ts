@@ -11,7 +11,7 @@ import {
 } from './mapScale';
 
 describe('régua de escala do mapa Geo', () => {
-  it('infra passiva some acima de 200 m — a leitura de escala nunca cai entre 200 e 500 m', () => {
+  it('infra passiva some a partir de 200 m', () => {
     expect(PASSIVE_INFRA_MAX_SCALE_METERS).toBe(200);
   });
 
@@ -23,13 +23,13 @@ describe('régua de escala do mapa Geo', () => {
     expect(coverageVisibleAtScale(null)).toBe(false);
   });
 
-  it('recurso: 30/25/20/15/10/7 px, de < 10 m até 200 m, e oculto acima de 200 m', () => {
+  it('recurso: 30/25/20/15/10 px abaixo de 200 m, e oculto a partir de 200 m', () => {
     expect(resourceIconSizeForScale(5)).toBe(30);
     expect(resourceIconSizeForScale(10)).toBe(25);
     expect(resourceIconSizeForScale(20)).toBe(20);
     expect(resourceIconSizeForScale(50)).toBe(15);
     expect(resourceIconSizeForScale(100)).toBe(10);
-    expect(resourceIconSizeForScale(200)).toBe(7);
+    expect(resourceIconSizeForScale(200)).toBeNull();
     expect(resourceIconSizeForScale(500)).toBeNull();
     expect(resourceIconSizeForScale(null)).toBe(30);
   });

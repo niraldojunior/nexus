@@ -162,7 +162,7 @@ function installGoogleMapsMock() {
 // Nó de seleção mínimo, com geometria — o suficiente para o painel considerar que há algo
 // aberto (selectionActive) e para o alfinete ter um ponto. `sublabel` identifica CO/Estação
 // para siteKindFromSpec (Fase 3, REQ-MOD01-016) — todo tipo de Site (CO ou não) usa o mesmo
-// `siteMarkerSize` no mapa.
+// `siteMarkerSize` no mapa; os demais Sites seguem a régua de Resource.
 const selectionNode = (id = 'site:1'): GeoTreeNode => ({
   id,
   kind: 'site',
@@ -262,7 +262,7 @@ describe('GoogleMapPanel', () => {
     expect(screen.queryByText('Cobertura GPON')).not.toBeInTheDocument();
   });
 
-  it('desenha o Site no tamanho vindo de `siteMarkerSize` (10 km para cima)', async () => {
+  it('desenha a Central/Estação no tamanho vindo de `siteMarkerSize` (10 km para cima)', async () => {
     render(
       <GoogleMapPanel
         nodes={[selectionNode()]}
@@ -289,7 +289,7 @@ describe('GoogleMapPanel', () => {
     expect(siteOptions?.icon?.scaledSize?.width).toBe(20);
   });
 
-  it('site não-CO (ex.: Ponto de Instalação) segue `siteMarkerSize`, não `resourceMarkerSize`', async () => {
+  it('site não-CO (ex.: Ponto de Instalação) segue `resourceMarkerSize`', async () => {
     const installationPoint: GeoTreeNode = {
       ...selectionNode('site:2'),
       label: 'PI Rua Miguel de Frias',
@@ -308,9 +308,7 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
         coverage={null}
-        // `resourceMarkerSize` bem diferente de `siteMarkerSize` provaria o bug se o código
-        // usasse a régua errada para um Site não-CO — todo Site (CO ou não) usa
-        // `siteMarkerSize` (Fase 3, REQ-MOD01-016).
+        // Site não-CO é visualmente equivalente a Resource no mapa.
         siteMarkerSize={20}
         resourceMarkerSize={7}
         onCoverageHover={vi.fn()}
@@ -321,7 +319,7 @@ describe('GoogleMapPanel', () => {
     const siteOptions = googleMocks.markerCtor.mock.calls
       .map(([options]) => options as { icon?: { scaledSize?: { width?: number } } })
       .find((options) => options.icon?.scaledSize?.width !== undefined);
-    expect(siteOptions?.icon?.scaledSize?.width).toBe(20);
+    expect(siteOptions?.icon?.scaledSize?.width).toBe(7);
   });
 
   it('mantém a seleção ao arrastar o mapa: cancela o voo e avisa navegação manual, sem desselecionar', async () => {

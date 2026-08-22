@@ -156,8 +156,8 @@ const authHeaders = (): HeadersInit => ({
   Authorization: `Bearer ${localStorage.getItem('authToken') || 'change-me'}`,
 });
 
-export async function getJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { headers: authHeaders() });
+export async function getJson<T>(url: string, options: { signal?: AbortSignal } = {}): Promise<T> {
+  const response = await fetch(url, { headers: authHeaders(), signal: options.signal });
   if (!response.ok) throw new Error(`GET ${url} falhou (${response.status})`);
   return (await response.json()) as T;
 }

@@ -26,6 +26,7 @@ import NewResearchPage from './pages/NewResearchPage';
 import ResourcePage from './pages/ResourcePage';
 import ServicePage from './pages/ServicePage';
 import UsersPage from './pages/UsersPage';
+import { ConfigurationPage } from './pages/ConfigurationPage';
 import { ResearchPage } from './pages/ResearchPage';
 import { ConversasPage } from './pages/PesquisasPage';
 import { useSession } from './hooks/useSession';
@@ -63,7 +64,7 @@ const assistantChips = [
 ];
 
 const domainMeta: Record<
-  Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'usuarios'>,
+  Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'usuarios' | 'configuracoes'>,
   { title: string; subtitle: string; icon: typeof MapPin }
 > = {
   geo: { title: 'Geo', subtitle: 'Onde? Geographic Site, Address & Location', icon: MapPinned },
@@ -140,7 +141,7 @@ function DomainPage({
   page,
   onOpenMainMenu,
 }: {
-  page: Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'usuarios'>;
+  page: Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'usuarios' | 'configuracoes'>;
   onOpenMainMenu?: () => void;
 }) {
   const meta = domainMeta[page];
@@ -803,6 +804,9 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
               {currentPage === 'service' ? <ServicePage category={activeServiceCategory} /> : null}
               {currentPage === 'order' ? <DomainPage page="order" /> : null}
               {currentPage === 'usuarios' ? <UsersPage /> : null}
+              {currentPage === 'configuracoes' ? (
+                session.admin ? <ConfigurationPage /> : <div className="p-8 text-app-muted">Você não tem permissão para acessar Configurações.</div>
+              ) : null}
               {currentPage === 'research' ? (
                 activeResearchSessionId === null ? (
                   <NewResearchPage

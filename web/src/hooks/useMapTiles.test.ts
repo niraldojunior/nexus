@@ -115,7 +115,7 @@ describe('useMapTiles', () => {
     expect(mocks.fetchMapTile).toHaveBeenCalledTimes(1);
   });
 
-  it('fora de escala (> PASSIVE_INFRA_MAX_SCALE_METERS) não busca nada e zera os dados', async () => {
+  it('na escala limite (≥ PASSIVE_INFRA_MAX_SCALE_METERS) não busca nada e zera os dados', async () => {
     mocks.fetchMapTile.mockResolvedValue([feature()]);
     const bounds = freshBounds();
     const { result, rerender } = renderHook(
@@ -128,7 +128,7 @@ describe('useMapTiles', () => {
     });
     expect(result.current.data).toHaveLength(1);
 
-    rerender({ scaleMeters: 5000 });
+    rerender({ scaleMeters: 200 });
     expect(result.current.data).toEqual([]);
   });
 

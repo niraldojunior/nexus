@@ -55,6 +55,7 @@ export type SitePanelProps = {
   onSnapChange?: (state: BottomSheetSnapState) => void;
   minimizeSignal?: number;
   onClose: () => void;
+  onRequestClose?: (dirty: boolean) => void;
   // Chamado quando o usuário aperta voltar (‹) sem mais nada na pilha de drill-down de
   // sub-locais — some quando o painel não tem "voltar" (ex.: dentro de um Projeto).
   onBack?: () => void;
@@ -92,6 +93,7 @@ export function SitePanel({
   onSnapChange,
   minimizeSignal,
   onClose,
+  onRequestClose,
   onBack,
   onCreated,
   onChanged,
@@ -106,6 +108,7 @@ export function SitePanel({
   const [addressModalOpen, setAddressModalOpen] = useState(false);
   const [confirmingRemoveFromProject, setConfirmingRemoveFromProject] = useState(false);
   const [removingFromProject, setRemovingFromProject] = useState(false);
+  const [createDirty, setCreateDirty] = useState(false);
 
   const specById = new Map(specs.map((spec) => [spec.id, spec]));
   const currentSpec = detail.site ? specById.get(detail.site.siteSpecificationId) : undefined;
@@ -187,7 +190,7 @@ export function SitePanel({
       : null;
 
   const header = isCreating ? (
-    <CreateHeader />
+    <CreateHeader onClose={() => (onRequestClose ? onRequestClose(createDirty) : onClose())} />
   ) : detail.site ? (
     <ViewHeader
       site={detail.site}
@@ -212,6 +215,7 @@ export function SitePanel({
         setStack([result.site.id]);
         onCreated(result);
       }}
+      onDirtyChange={setCreateDirty}
     />
   ) : detail.loading && !detail.site ? (
     <div className="px-2 py-6 text-center text-[0.86rem] text-app-muted">Carregando local…</div>
@@ -341,7 +345,7 @@ export function SitePanel({
   );
 }
 
-function CreateHeader() {
+function CreateHeader({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex items-start gap-2 border-y border-app-border px-3 py-3">
       <div className="min-w-0 flex-1">
@@ -352,6 +356,14 @@ function CreateHeader() {
           Cadastro de local
         </h3>
       </div>
+      <button
+        type="button"
+        onClick={onClose}
+        className="shrink-0 rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
+        aria-label="Fechar novo local"
+      >
+        <X className="h-5 w-5" />
+      </button>
     </div>
   );
 }
@@ -448,6 +460,7 @@ function CreateBody({
   pickingOnMap,
   onTogglePickOnMap,
   onCreated,
+  onDirtyChange,
 }: {
   specs: GeoSpec[];
   project: GeoProject | null;
@@ -456,6 +469,7 @@ function CreateBody({
   pickingOnMap: boolean;
   onTogglePickOnMap: () => void;
   onCreated: (result: { site: GeoSite }) => void;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const defaultSiteSpecId =
     specs.find((spec) => spec.code === 'CUSTOMER_SITE')?.id ?? specs[0]?.id ?? '';
@@ -474,6 +488,19 @@ function CreateBody({
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<number | undefined>(undefined);
   const requestTokenRef = useRef(0);
+
+  useEffect(() => {
+    onDirtyChange(
+      Boolean(
+        nameDraft.trim() ||
+          noteDraft.trim() ||
+          addressQuery.trim() ||
+          geonetAddressId ||
+          pickedAddress ||
+          siteSpecificationId !== defaultSiteSpecId,
+      ),
+    );
+  }, [addressQuery, defaultSiteSpecId, geonetAddressId, nameDraft, noteDraft, onDirtyChange, pickedAddress, siteSpecificationId]);
 
   useEffect(() => {
     if (!pickedAddress) return;

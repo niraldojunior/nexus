@@ -4,7 +4,7 @@
 // deduplicava o que estava *em voo* por bbox arredondado (nunca repete num pan contínuo); este
 // cacheia o RESULTADO por tile (z:x:y fixo em MAP_TILE_ZOOM), então panning dentro do mesmo
 // conjunto de tiles fica com ZERO ida ao servidor. Some acima de
-// PASSIVE_INFRA_MAX_SCALE_METERS (100 m), mesma régua de sempre.
+// PASSIVE_INFRA_MAX_SCALE_METERS (200 m), mesma régua de sempre.
 //
 // O endpoint de tile (GET /v1/geo/map/tile) não tem `include` — é leitura pura por PK, sem
 // filtro. O que o controle de camadas do mapa (RF-011) liga/desliga (Sites, Caixas, Cabos)
@@ -82,7 +82,7 @@ export function useMapTiles(
 
   useEffect(() => {
     const outOfScale =
-      scaleMeters === null || scaleMeters > PASSIVE_INFRA_MAX_SCALE_METERS || !bounds;
+      scaleMeters === null || scaleMeters >= PASSIVE_INFRA_MAX_SCALE_METERS || !bounds;
     // `include` array vazio = todas as camadas de infra desligadas: nada a buscar.
     const nothingRequested = Array.isArray(include) && include.length === 0;
     if (outOfScale || nothingRequested) {

@@ -42,8 +42,8 @@ export type InfraOverlayHandle = {
       // Tamanho em px do pin de Recurso na escala atual (ver resourceIconSizeForScale em
       // mapScale.ts), ou `null` quando o Recurso não é desenhado nessa escala.
       resourceMarkerSize: number | null;
-      // Tamanho em px do pin de Site na escala atual (ver siteIconSizeForScale em mapScale.ts)
-      // — Site nunca é oculto por escala.
+      // Tamanho em px do pin de Central/Estação na escala atual. Os demais Sites seguem a
+      // régua de Resource e não são desenhados acima do corte de infra passiva.
       siteMarkerSize: number;
       excludeNodeId: string | null;
       // Papel funcional (siteRole, C11) por code de spec — refina o ícone de Site (CO/POP/CTO)
@@ -279,7 +279,8 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
         siteRole: feature.sublabel ? roleByCode?.get(feature.sublabel) : undefined,
       });
       const icon = siteIconFor(kind, feature.status);
-      const size = siteMarkerSize;
+      const size = kind === 'CO' ? siteMarkerSize : resourceMarkerSize;
+      if (size === null) return;
       const img = loadImage(siteIconDataUrl(icon, { size }));
       // Âncora central — mesma regra de buildPointMarkerVisual em GeoPage (squircle).
       if (img) context.drawImage(img, x - size / 2, y - size / 2, size, size);

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MapPin } from 'lucide-react';
+import { Building2, Crosshair, Database, FileText, MapPin, Activity } from 'lucide-react';
 import type { GeoAddress, GeoLocation, GeoSite, GeoSiteStatus, GeoSpec, SiteOrigin } from '../../services/geoApi';
 import { SITE_STATUS_OPTIONS, siteSpecLabel } from '../../utils/geoLabels';
 import { formatAddressWithSource } from '../../utils/placeLabel';
@@ -99,6 +99,7 @@ export function SiteOverviewTab({
     <div className="grid gap-1">
       <InlineEditRow
         label="Status"
+        icon={Activity}
         editing={editingStatus}
         onActivate={() => setEditingStatus(true)}
         readOnlyNote={lockedByProjectName ? `herdado do projeto ${lockedByProjectName}` : undefined}
@@ -122,6 +123,7 @@ export function SiteOverviewTab({
 
       <InlineEditRow
         label="Local Pai"
+        icon={Building2}
         editing={editingParent}
         onActivate={startEditParent}
         value={parentSite?.name ?? 'Nenhum'}
@@ -170,16 +172,16 @@ export function SiteOverviewTab({
         </div>
       </InlineEditRow>
 
-      <div className="grid min-w-0 grid-cols-[82px_minmax(0,1fr)] gap-x-3 py-2">
-        <div className="min-w-0 break-words pt-1.5 text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.06em] text-app-muted [overflow-wrap:anywhere]">
-          Endereço
-        </div>
+      <div className="flex min-w-0 items-start gap-2.5 py-1" title="Endereço">
+        <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true">
+          <MapPin className="h-[18px] w-[18px]" />
+        </span>
+        <span className="sr-only">Endereço</span>
         <button
           type="button"
           onClick={onEditAddress}
           className="-mx-1.5 -my-1 flex w-full min-w-0 items-start gap-2 rounded-[8px] px-1.5 py-1 text-left text-[0.84rem] leading-snug text-app-text outline-none transition hover:bg-app-accent-soft"
         >
-          <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-app-muted" aria-hidden />
           <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
             {address ? formatAddressWithSource(address) : 'Sem endereço — clique para adicionar'}
           </span>
@@ -187,29 +189,26 @@ export function SiteOverviewTab({
       </div>
 
       {!address && location?.geometry.type === 'Point' ? (
-        <div className="grid min-w-0 grid-cols-[82px_minmax(0,1fr)] gap-x-3 py-2">
-          <div className="min-w-0 break-words pt-1.5 text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.06em] text-app-muted [overflow-wrap:anywhere]">
-            Coordenadas
-          </div>
+        <div className="flex min-w-0 items-start gap-2.5 py-1" title="Coordenadas">
+          <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true"><Crosshair className="h-[18px] w-[18px]" /></span>
+          <span className="sr-only">Coordenadas</span>
           <div className="min-w-0 break-words px-1.5 py-1 text-[0.84rem] leading-snug text-app-text [overflow-wrap:anywhere]">
             {location.geometry.coordinates[1].toFixed(6)}, {location.geometry.coordinates[0].toFixed(6)}
           </div>
         </div>
       ) : null}
 
-      <div className="grid min-w-0 grid-cols-[82px_minmax(0,1fr)] gap-x-3 py-2">
-        <div className="min-w-0 break-words pt-1.5 text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.06em] text-app-muted [overflow-wrap:anywhere]">
-          Origem
-        </div>
+      <div className="flex min-w-0 items-start gap-2.5 py-1" title="Origem">
+        <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true"><Database className="h-[18px] w-[18px]" /></span>
+        <span className="sr-only">Origem</span>
         <div className="min-w-0 break-words px-1.5 py-1 text-[0.84rem] leading-snug text-app-text [overflow-wrap:anywhere]">
           {originLabel(origin)}
         </div>
       </div>
 
-      <div className="grid min-w-0 grid-cols-[82px_minmax(0,1fr)] gap-x-3 py-2">
-        <div className="min-w-0 break-words pt-1.5 text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.06em] text-app-muted [overflow-wrap:anywhere]">
-          Observação
-        </div>
+      <div className="flex min-w-0 items-start gap-2.5 py-1" title="Observação">
+        <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true"><FileText className="h-[18px] w-[18px]" /></span>
+        <span className="sr-only">Observação</span>
         <textarea
           ref={noteRef}
           value={noteDraft}

@@ -12,6 +12,15 @@ import type { DatabaseClient } from '../../shared/persistence/database-client.js
 // vinculado via GeoService.transitionSite (ver /v1/geo/projects/:id em app.ts). Um local de
 // projeto não tem status próprio editável, só herda este valor.
 export type GeoProjectStatus = 'planned' | 'active' | 'suspended' | 'terminated' | 'cancelled';
+export type GeoProjectStatusBehavior = 'planning' | 'execution' | 'suspended' | 'close-release';
+
+export type GeoProjectStatusCatalogItem = {
+  code: string;
+  name: string;
+  sortOrder: number;
+  active: boolean;
+  behavior: GeoProjectStatusBehavior;
+};
 
 export type GeoProject = {
   id: string;
@@ -20,6 +29,9 @@ export type GeoProject = {
   description: string | null;
   iconDataUrl: string | null;
   status: GeoProjectStatus;
+  statusCode: string;
+  statusName: string;
+  statusBehavior: GeoProjectStatusBehavior;
   createdBy: string | null;
   // Total de locais vinculados ao projeto, ativos ou não — com o status herdado do projeto,
   // um projeto Terminado tem todos os Sites Retired; filtrar por status faria a lista mostrar
@@ -39,6 +51,7 @@ export type CreateGeoProjectInput = {
   description?: string | null;
   iconDataUrl?: string | null;
   status?: GeoProjectStatus;
+  statusCode?: string;
 };
 
 export type UpdateGeoProjectInput = {
@@ -46,6 +59,7 @@ export type UpdateGeoProjectInput = {
   description?: string | null;
   iconDataUrl?: string | null;
   status?: GeoProjectStatus;
+  statusCode?: string;
 };
 
 // Observação de trabalho e endereço GEONET de um local, por dentro do vínculo com o
@@ -66,6 +80,15 @@ export type GeoProjectResourceLink = {
   detachedAt: string | null;
   detachedReason: string | null;
 };
+
+/** Referência leve usada pelo autocomplete do Projeto antes da hidratação pelo GeoTreeService. */
+export type GeoProjectSearchItem = {
+  id: string;
+  kind: 'site' | 'resource';
+  label: string;
+  rank: number;
+};
+export type GeoProjectSearchScope = 'all' | 'sites' | 'infrastructure' | 'resources';
 
 export type UpdateGeoProjectSiteLinkInput = {
   note?: string | null;
@@ -113,6 +136,9 @@ type ProjectRow = {
   description: string | null;
   iconDataUrl: string | null;
   status: GeoProjectStatus;
+  statusCode: string;
+  statusName: string;
+  statusBehavior: GeoProjectStatusBehavior;
   createdBy: string | null;
   siteCount: number | string;
   resourceCount: number | string;
@@ -130,9 +156,30 @@ type ProjectSiteLinkRow = {
   geonetAddressId: string | null;
 };
 
+const PROJECT_STATUS_DEFAULTS: ReadonlyArray<GeoProjectStatusCatalogItem> = [
+  { code: '1', name: 'Projeto criado', sortOrder: 1, active: true, behavior: 'planning' },
+  { code: '11', name: 'Projeto em planejamento', sortOrder: 11, active: true, behavior: 'planning' },
+  { code: '12', name: 'Obra em execução', sortOrder: 12, active: true, behavior: 'execution' },
+  { code: '13', name: 'Obra concluída', sortOrder: 13, active: true, behavior: 'execution' },
+  { code: '14', name: 'Enviado ao SAP', sortOrder: 14, active: true, behavior: 'execution' },
+  { code: '15', name: 'Erro de conciliação', sortOrder: 15, active: true, behavior: 'suspended' },
+  { code: '16', name: 'Conciliado com o SAP', sortOrder: 16, active: true, behavior: 'execution' },
+  { code: '17', name: 'Projeto encerrado', sortOrder: 17, active: true, behavior: 'close-release' },
+  { code: '18', name: 'Projeto em quantificação', sortOrder: 18, active: true, behavior: 'planning' },
+  { code: '19', name: 'Projeto enviado para orçamento CRE', sortOrder: 19, active: true, behavior: 'planning' },
+  { code: '20', name: 'Projeto aguardando verba', sortOrder: 20, active: true, behavior: 'planning' },
+  { code: '21', name: 'Projeto em contratação', sortOrder: 21, active: true, behavior: 'planning' },
+  { code: '22', name: 'Projeto em execução', sortOrder: 22, active: true, behavior: 'execution' },
+  { code: '23', name: 'Projeto paralisado', sortOrder: 23, active: true, behavior: 'suspended' },
+  { code: '25', name: 'Projeto conciliado físico-contábil', sortOrder: 25, active: true, behavior: 'execution' },
+  { code: 'legacy-cancelled', name: 'Cancelado (legado)', sortOrder: 99_999, active: false, behavior: 'close-release' },
+];
+
 const PROJECT_SELECT = `
   SELECT p.id, p.tenant_id AS tenantId, p.name, p.description,
-         p.icon_data_url AS iconDataUrl, p.status, p.created_by AS createdBy,
+         p.icon_data_url AS iconDataUrl, p.status, p.status_code AS statusCode,
+         COALESCE(sc.name, p.status) AS statusName,
+         COALESCE(sc.behavior, 'planning') AS statusBehavior, p.created_by AS createdBy,
          p.created_at AS createdAt, p.updated_at AS updatedAt,
          p.archived_at AS archivedAt, p.archived_by AS archivedBy,
          (SELECT COUNT(*) FROM geo_project_site ps WHERE ps.project_id = p.id) AS siteCount,
@@ -143,6 +190,8 @@ const PROJECT_SELECT = `
            WHERE pr.project_id = p.id AND pr.detached_at IS NULL AND rs.category = 'Infrastructure.Passive') AS infrastructureCount,
          (SELECT COUNT(*) FROM geo_project_area pa WHERE pa.project_id = p.id) AS areaCount
     FROM geo_project p
+    LEFT JOIN geo_project_status_catalog sc
+      ON sc.tenant_id = p.tenant_id AND sc.code = p.status_code
 `;
 
 const toProject = (row: ProjectRow): GeoProject => ({
@@ -152,6 +201,9 @@ const toProject = (row: ProjectRow): GeoProject => ({
   description: row.description,
   iconDataUrl: row.iconDataUrl,
   status: row.status,
+  statusCode: row.statusCode ?? (row.status === 'active' ? '22' : row.status === 'suspended' ? '23' : row.status === 'terminated' ? '17' : row.status === 'cancelled' ? 'legacy-cancelled' : '11'),
+  statusName: row.statusName,
+  statusBehavior: row.statusBehavior,
   createdBy: row.createdBy,
   siteCount: Number(row.siteCount) || 0,
   resourceCount: Number(row.resourceCount) || 0,
@@ -166,7 +218,80 @@ const toProject = (row: ProjectRow): GeoProject => ({
 export class GeoProjectRepository {
   constructor(private db: DatabaseClient) {}
 
+  private async ensureStatusCatalog(tenantId: string): Promise<void> {
+    for (const item of PROJECT_STATUS_DEFAULTS) {
+      // ON CONFLICT é específico de Postgres/SQLite. O runtime corporativo usa Oracle,
+      // portanto o bootstrap precisa ser simples e portável.
+      const existing = await this.db.get<{ code: string }>(
+        `SELECT code FROM geo_project_status_catalog WHERE tenant_id = ? AND code = ?`,
+        [tenantId, item.code],
+      );
+      if (!existing) {
+        await this.db.run(
+          `INSERT INTO geo_project_status_catalog (tenant_id, code, name, sort_order, active, behavior)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [tenantId, item.code, item.name, item.sortOrder, item.active ? 1 : 0, item.behavior],
+        );
+      }
+    }
+  }
+
+  async listStatusCatalog(tenantId: string): Promise<GeoProjectStatusCatalogItem[]> {
+    await this.ensureStatusCatalog(tenantId);
+    const rows = await this.db.all<GeoProjectStatusCatalogItem & { active: unknown }>(
+      `SELECT code, name, sort_order AS sortOrder,
+              CASE WHEN active = 1 THEN 1 ELSE 0 END AS active, behavior
+         FROM geo_project_status_catalog WHERE tenant_id = ? ORDER BY sort_order, code`,
+      [tenantId],
+    );
+    return rows.map((row) => ({ ...row, active: Number(row.active) === 1 }));
+  }
+
+  async getStatusCatalogItem(tenantId: string, code: string): Promise<GeoProjectStatusCatalogItem | null> {
+    await this.ensureStatusCatalog(tenantId);
+    const row = await this.db.get<GeoProjectStatusCatalogItem & { active: unknown }>(
+      `SELECT code, name, sort_order AS sortOrder,
+              CASE WHEN active = 1 THEN 1 ELSE 0 END AS active, behavior
+         FROM geo_project_status_catalog WHERE tenant_id = ? AND code = ?`,
+      [tenantId, code],
+    );
+    return row ? { ...row, active: Number(row.active) === 1 } : null;
+  }
+
+  async createStatusCatalogItem(tenantId: string, item: GeoProjectStatusCatalogItem): Promise<GeoProjectStatusCatalogItem> {
+    await this.ensureStatusCatalog(tenantId);
+    await this.db.run(
+      `INSERT INTO geo_project_status_catalog (tenant_id, code, name, sort_order, active, behavior)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [tenantId, item.code, item.name, item.sortOrder, item.active ? 1 : 0, item.behavior],
+    );
+    return (await this.getStatusCatalogItem(tenantId, item.code))!;
+  }
+
+  async updateStatusCatalogItem(
+    tenantId: string,
+    code: string,
+    patch: Partial<Omit<GeoProjectStatusCatalogItem, 'code'>>,
+  ): Promise<GeoProjectStatusCatalogItem | null> {
+    const current = await this.getStatusCatalogItem(tenantId, code);
+    if (!current) return null;
+    await this.db.run(
+      `UPDATE geo_project_status_catalog SET name = ?, sort_order = ?, active = ?, behavior = ?
+        WHERE tenant_id = ? AND code = ?`,
+      [
+        patch.name ?? current.name,
+        patch.sortOrder ?? current.sortOrder,
+        (patch.active ?? current.active) ? 1 : 0,
+        patch.behavior ?? current.behavior,
+        tenantId,
+        code,
+      ],
+    );
+    return await this.getStatusCatalogItem(tenantId, code);
+  }
+
   async list(tenantId: string): Promise<GeoProject[]> {
+    await this.ensureStatusCatalog(tenantId);
     const rows = await this.db.all<ProjectRow>(
       `${PROJECT_SELECT} WHERE p.tenant_id = ? AND p.archived_at IS NULL ORDER BY p.updated_at DESC`,
       [tenantId],
@@ -175,6 +300,7 @@ export class GeoProjectRepository {
   }
 
   async get(tenantId: string, id: string): Promise<GeoProject | null> {
+    await this.ensureStatusCatalog(tenantId);
     const row = await this.db.get<ProjectRow>(
       `${PROJECT_SELECT} WHERE p.tenant_id = ? AND p.id = ?`,
       [tenantId, id],
@@ -200,8 +326,8 @@ export class GeoProjectRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO geo_project
-          (id, tenant_id, name, description, icon_data_url, status, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, tenant_id, name, description, icon_data_url, status, status_code, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         tenantId,
@@ -209,6 +335,7 @@ export class GeoProjectRepository {
         input.description ?? null,
         input.iconDataUrl ?? null,
         input.status ?? 'planned',
+        input.statusCode ?? '1',
         actorSub,
         now,
         now,
@@ -226,13 +353,14 @@ export class GeoProjectRepository {
     if (!existing) return null;
     await this.db.run(
       `UPDATE geo_project
-          SET name = ?, description = ?, icon_data_url = ?, status = ?, updated_at = ?
+          SET name = ?, description = ?, icon_data_url = ?, status = ?, status_code = ?, updated_at = ?
         WHERE tenant_id = ? AND id = ?`,
       [
         patch.name !== undefined ? patch.name : existing.name,
         patch.description !== undefined ? patch.description : existing.description,
         patch.iconDataUrl !== undefined ? patch.iconDataUrl : existing.iconDataUrl,
         patch.status !== undefined ? patch.status : existing.status,
+        patch.statusCode !== undefined ? patch.statusCode : existing.statusCode,
         new Date().toISOString(),
         tenantId,
         id,
@@ -294,6 +422,79 @@ export class GeoProjectRepository {
       [tenantId, projectId, options.limit ?? 50, options.offset ?? 0],
     );
     return rows;
+  }
+
+  /**
+   * Busca restrita aos vínculos do Projeto. A consulta deliberadamente devolve apenas IDs e
+   * rótulos: o endpoint hidrata só as poucas sugestões finais, em vez de carregar todos os
+   * Sites/Resources do projeto e filtrar em memória.
+   */
+  async searchItems(
+    tenantId: string,
+    projectId: string,
+    term: string,
+    limit = 20,
+    scope: GeoProjectSearchScope = 'all',
+  ): Promise<GeoProjectSearchItem[]> {
+    const trimmed = term.trim();
+    if (!trimmed) return [];
+    // A API pede uma linha extra para informar `hasMore`, sem jamais entregar mais de 20
+    // sugestões ao autocomplete.
+    const cappedLimit = Math.min(Math.max(limit, 1), 21);
+    const prefix = `${trimmed}%`;
+    const contains = `%${trimmed}%`;
+
+    const sites = scope === 'infrastructure' || scope === 'resources' ? [] : await this.db.all<GeoProjectSearchItem>(
+      `SELECT s.id, 'site' AS kind, s.name AS label,
+              CASE WHEN LOWER(s.name) LIKE LOWER(?) THEN 0 ELSE 1 END AS rank
+         FROM geo_project_site ps
+         JOIN geo_project p ON p.id = ps.project_id
+         JOIN tmf_geographic_site s ON s.id = ps.site_id
+        WHERE p.tenant_id = ? AND ps.project_id = ? AND LOWER(s.name) LIKE LOWER(?)
+        ORDER BY rank, s.name
+        LIMIT ?`,
+      [prefix, tenantId, projectId, contains, cappedLimit],
+    );
+
+    const resources = scope === 'sites' ? [] : await this.db.all<GeoProjectSearchItem>(
+      `SELECT * FROM (
+         SELECT r.id, 'resource' AS kind, r.name AS label,
+                CASE WHEN LOWER(r.name) LIKE LOWER(?) THEN 0
+                     WHEN LOWER(COALESCE(r.resource_type, '')) LIKE LOWER(?) THEN 1
+                     WHEN LOWER(COALESCE(rs.name, '')) LIKE LOWER(?) THEN 1 ELSE 2 END AS rank
+           FROM geo_project_resource pr
+           JOIN geo_project p ON p.id = pr.project_id
+           JOIN tmf_physical_resource r ON r.id = pr.resource_id
+           LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+          WHERE p.tenant_id = ? AND pr.project_id = ? AND pr.detached_at IS NULL
+            AND pr.resource_kind = 'PhysicalResource'
+            ${scope === 'infrastructure' ? "AND rs.category = 'Infrastructure.Passive'" : ''}
+            AND (LOWER(r.name) LIKE LOWER(?) OR LOWER(COALESCE(r.resource_type, '')) LIKE LOWER(?) OR LOWER(COALESCE(rs.name, '')) LIKE LOWER(?))
+         ${scope === 'infrastructure' ? '' : `UNION ALL
+         SELECT r.id, 'resource' AS kind, r.name AS label,
+                CASE WHEN LOWER(r.name) LIKE LOWER(?) THEN 0
+                     WHEN LOWER(COALESCE(r.resource_type, '')) LIKE LOWER(?) THEN 1
+                     WHEN LOWER(COALESCE(rs.name, '')) LIKE LOWER(?) THEN 1 ELSE 2 END AS rank
+           FROM geo_project_resource pr
+           JOIN geo_project p ON p.id = pr.project_id
+           JOIN tmf_logical_resource r ON r.id = pr.resource_id
+           LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+          WHERE p.tenant_id = ? AND pr.project_id = ? AND pr.detached_at IS NULL
+            AND pr.resource_kind = 'LogicalResource'
+            AND (LOWER(r.name) LIKE LOWER(?) OR LOWER(COALESCE(r.resource_type, '')) LIKE LOWER(?) OR LOWER(COALESCE(rs.name, '')) LIKE LOWER(?))`}
+       ) AS matches
+       ORDER BY rank, label
+       LIMIT ?`,
+      [
+        prefix, prefix, prefix, tenantId, projectId, contains, contains, contains,
+        ...(scope === 'infrastructure' ? [] : [prefix, prefix, prefix, tenantId, projectId, contains, contains, contains]),
+        cappedLimit,
+      ],
+    );
+
+    return [...sites, ...resources]
+      .sort((left, right) => left.rank - right.rank || left.label.localeCompare(right.label))
+      .slice(0, cappedLimit);
   }
 
   async findOpenProjectByResourceId(

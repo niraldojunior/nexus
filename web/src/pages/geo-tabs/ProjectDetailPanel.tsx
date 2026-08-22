@@ -1,13 +1,17 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { ChevronLeft, MoreVertical, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { Boxes, ChevronLeft, Layers3, MapPinned, MoreVertical, Plus, Search, Trash2, X } from 'lucide-react';
 import {
   GeoProject,
   GeoProjectDeleteSummary,
   GeoProjectSiteCascade,
   ProjectArea,
   fetchProjectResources,
+  listProjectStatusCatalog,
   searchProject,
+  type GeoProjectStatusCatalogItem,
+  createProjectResource,
 } from '../../services/geoProjectApi';
+import { loadResourceWorkspaceSnapshot, type PhysicalResourcePayload, type LogicalResourcePayload, type ResourceWorkspaceSnapshot } from '../../services/resourceApi';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import { ProjectIcon } from './ProjectIcon';
 import { Modal } from './Modal';
@@ -23,6 +27,9 @@ import { DOCK_WIDTH_CLASS, DOCK_ELEVATION_CLASS, DOCK_SEARCH_CLEARANCE_PT_CLASS 
 import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
 import { readProjectIcon, ProjectIconError } from '../../utils/projectIconImage';
 import { PROJECT_STATUS_OPTIONS } from '../../utils/geoLabels';
+import { PanelBarButton } from './PanelBarButton';
+
+const projectSearchCache = new Map<string, GeoTreeNode[]>();
 
 export type ProjectDetailPanelProps = {
   isMobile: boolean;
@@ -37,7 +44,7 @@ export type ProjectDetailPanelProps = {
   onSnapChange?: (state: BottomSheetSnapState) => void;
   minimizeSignal?: number;
   onUpdate: (
-    patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status'>>,
+    patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>>,
   ) => Promise<{ siteCascade?: GeoProjectSiteCascade } | void>;
   onDelete: () => Promise<GeoProjectDeleteSummary>;
   onBack: () => void;
@@ -46,6 +53,7 @@ export type ProjectDetailPanelProps = {
   onOpenResource?: (resource: GeoTreeNode) => void;
   onFocusArea?: (area: ProjectArea) => void;
   onRemoveSite: (site: GeoTreeNode) => void;
+  onResourceCreated?: () => void;
 };
 
 /**
@@ -71,6 +79,7 @@ export function ProjectDetailPanel({
   onOpenResource,
   onFocusArea,
   onRemoveSite,
+  onResourceCreated,
 }: ProjectDetailPanelProps) {
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
   const [titleDraft, setTitleDraft] = useState(project.name);
@@ -82,12 +91,19 @@ export function ProjectDetailPanel({
   // Aviso de cascata parcial (PATCH de status que mudou o projeto, mas alguns Sites não
   // seguiram por causa de SITE_STATUS_TRANSITIONS) — some ao trocar de status de novo.
   const [cascadeSkipped, setCascadeSkipped] = useState<number | null>(null);
+  const [statusCatalog, setStatusCatalog] = useState<GeoProjectStatusCatalogItem[]>([]);
   const [deleting, setDeleting] = useState(false);
-  const [tab, setTab] = useState<'sites' | 'infrastructure' | 'resources' | 'coverage' | 'search'>('sites');
+  const [tab, setTab] = useState<'sites' | 'infrastructure' | 'resources' | 'coverage'>('sites');
   const [resources, setResources] = useState<GeoTreeNode[]>([]);
   const [resourcesLoading, setResourcesLoading] = useState(false);
+  const [resourceReloadToken, setResourceReloadToken] = useState(0);
+  const [createResourceMode, setCreateResourceMode] = useState<'infrastructure' | 'resources' | null>(null);
+  const [pendingTab, setPendingTab] = useState<'sites' | 'infrastructure' | 'resources' | 'coverage' | null>(null);
+  const [searchMode, setSearchMode] = useState<'sites' | 'infrastructure' | 'resources' | null>(null);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<GeoTreeNode[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   // Local bloqueado (dependência ativa) mantém o projeto vivo em vez de sumir (issue #58) —
   // o painel precisa dizer por que ele continua aberto, em vez de fechar silenciosamente.
   const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
@@ -104,6 +120,14 @@ export function ProjectDetailPanel({
     setDeleteNotice(null);
   }, [project.id]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void listProjectStatusCatalog()
+      .then((items) => { if (!cancelled) setStatusCatalog(items); })
+      .catch(() => { if (!cancelled) setStatusCatalog([]); });
+    return () => { cancelled = true; };
+  }, []);
+
   const commitTitle = () => {
     const next = titleDraft.trim() || 'Projeto sem título';
     setTitleDraft(next);
@@ -115,9 +139,9 @@ export function ProjectDetailPanel({
     if (next !== (project.description ?? '')) onUpdate({ description: next || null });
   };
 
-  const handleStatusChange = async (status: GeoProject['status']) => {
+  const handleStatusChange = async (statusCode: string) => {
     setCascadeSkipped(null);
-    const result = await onUpdate({ status });
+    const result = await onUpdate({ statusCode });
     setCascadeSkipped(
       result?.siteCascade && result.siteCascade.skipped > 0 ? result.siteCascade.skipped : null,
     );
@@ -131,16 +155,46 @@ export function ProjectDetailPanel({
       .then((page) => { if (!stale) setResources(page.items); })
       .finally(() => { if (!stale) setResourcesLoading(false); });
     return () => { stale = true; };
-  }, [project.id, tab]);
+  }, [project.id, tab, resourceReloadToken]);
 
   useEffect(() => {
-    if (tab !== 'search' || query.trim().length < 2) { setResults([]); return; }
-    let stale = false;
+    const term = query.trim();
+    if (!searchMode || term.length < 2) {
+      setResults([]);
+      setSearchLoading(false);
+      setSearchError(null);
+      return;
+    }
+    const cacheKey = `${project.id}:${searchMode}:${term.toLocaleLowerCase()}`;
+    const cached = projectSearchCache.get(cacheKey);
+    if (cached) setResults(cached);
+    else {
+      // Reaproveita imediatamente as sugestões do prefixo anterior enquanto a busca precisa
+      // chega: o cache contém apenas itens deste projeto.
+      const prefixRows = [...projectSearchCache.entries()]
+        .filter(([key]) => key.startsWith(`${project.id}:${searchMode}:`) && term.toLocaleLowerCase().startsWith(key.split(':').slice(2).join(':')))
+        .sort((left, right) => right[0].length - left[0].length)[0]?.[1];
+      if (prefixRows) setResults(prefixRows.filter((item) => `${item.label} ${item.sublabel ?? ''} ${item.resourceType ?? ''}`.toLocaleLowerCase().includes(term.toLocaleLowerCase())));
+    }
+    const controller = new AbortController();
+    setSearchLoading(!cached);
+    setSearchError(null);
     const timer = window.setTimeout(() => {
-      void searchProject(project.id, query.trim()).then((page) => { if (!stale) setResults(page.items); });
-    }, 250);
-    return () => { stale = true; window.clearTimeout(timer); };
-  }, [project.id, query, tab]);
+      void searchProject(project.id, term, 0, controller.signal, searchMode)
+        .then((page) => {
+          projectSearchCache.set(cacheKey, page.items);
+          setResults(page.items);
+        })
+        .catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === 'AbortError') return;
+          setSearchError('Não foi possível pesquisar os itens do projeto.');
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSearchLoading(false);
+        });
+    }, 80);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [project.id, query, searchMode]);
 
   const handleConfirmDelete = async () => {
     setDeleting(true);
@@ -184,7 +238,7 @@ export function ProjectDetailPanel({
   };
 
   const headerBlock = (
-    <div className="flex items-start gap-2 border-t border-app-border px-3 py-3">
+    <div className="grid grid-cols-[36px_minmax(0,1fr)_36px] items-center border-t border-app-border px-3 py-3">
       <button
         type="button"
         onClick={onBack}
@@ -193,13 +247,14 @@ export function ProjectDetailPanel({
       >
         <ChevronLeft className="h-5 w-5" />
       </button>
+      <div className="flex min-w-0 items-center justify-center gap-2">
       <ProjectIcon
         iconDataUrl={project.iconDataUrl}
         size={44}
         onChangeFile={handleIconFile}
         label="Alterar ícone do projeto"
       />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 max-w-[220px] flex-1">
         <input
           ref={titleInputRef}
           value={titleDraft}
@@ -210,6 +265,7 @@ export function ProjectDetailPanel({
           className="-mx-1 w-full rounded-[8px] border border-transparent bg-transparent px-1 py-1 font-display text-[1.02rem] font-semibold leading-tight text-app-text outline-none transition hover:border-app-border focus:border-app-accent-border focus:bg-white"
         />
         {iconError ? <p className="mt-1 text-[0.72rem] text-status-red">{iconError}</p> : null}
+      </div>
       </div>
       <div className="relative shrink-0">
         <button
@@ -269,14 +325,21 @@ export function ProjectDetailPanel({
         </div>
       ) : (
         <select
-          value={project.status}
-          onChange={(event) => void handleStatusChange(event.target.value as GeoProject['status'])}
+          value={project.statusCode ?? (project.status === 'planned' ? '11' : project.status === 'active' ? '22' : project.status === 'suspended' ? '23' : project.status === 'cancelled' ? 'legacy-cancelled' : '17')}
+          onChange={(event) => void handleStatusChange(event.target.value)}
           aria-label="Status do projeto"
           className="h-8 shrink-0 rounded-[10px] border border-app-border bg-white px-2 text-[0.76rem] font-semibold text-app-text outline-none transition hover:border-app-accent-border focus:border-app-accent-border"
         >
-          {PROJECT_STATUS_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
+          {(statusCatalog.length > 0
+            ? statusCatalog.filter((option) => option.active || option.code === project.statusCode)
+            : PROJECT_STATUS_OPTIONS.map((option) => ({
+                code: option.value === 'planned' ? '11' : option.value === 'active' ? '22' : option.value === 'suspended' ? '23' : option.value === 'cancelled' ? 'legacy-cancelled' : '17',
+                name: option.label,
+                active: true,
+              })))
+            .map((option) => (
+            <option key={option.code} value={option.code}>
+              {option.name}
             </option>
           ))}
         </select>
@@ -313,15 +376,6 @@ export function ProjectDetailPanel({
     </span>
   );
 
-  const concentrationCount = areas.filter((area) => area.kind === 'concentration').length;
-  const dispersionCount = areas.filter((area) => area.kind === 'dispersion').length;
-  const areasSummary = hasAreas ? (
-    <div className="px-3 pb-1 text-[0.76rem] text-app-muted">
-      {concentrationCount === 1 ? '1 concentração' : `${concentrationCount} concentrações`}
-      {' · '}
-      {dispersionCount === 1 ? '1 dispersão' : `${dispersionCount} dispersões`}
-    </div>
-  ) : null;
 
   const addSiteButton = (
     <button type="button" onClick={onAddSite} className="geo-btn primary w-full justify-center">
@@ -369,16 +423,19 @@ export function ProjectDetailPanel({
     );
 
   const tabBar = (
-    <div className="flex gap-1 overflow-x-auto border-b border-app-border px-3 py-2" role="tablist" aria-label="Conteúdo do projeto">
+    <div className="flex flex-wrap gap-1 border-b border-app-border px-3 py-2" role="tablist" aria-label="Conteúdo do projeto">
       {([
-        ['sites', 'Locais'], ['infrastructure', 'Infraestrutura'], ['resources', 'Recursos'], ['coverage', 'Cobertura'], ['search', 'Pesquisar'],
-      ] as const).map(([value, label]) => (
-        <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}
-          className={`shrink-0 rounded-[8px] px-2.5 py-1.5 text-[0.76rem] font-semibold ${tab === value ? 'bg-app-accent-soft text-app-accent' : 'text-app-muted hover:bg-app-accent-soft'}`}>
-          {label}
-        </button>
+        ['sites', 'Locais', MapPinned], ['infrastructure', 'Infraestrutura', Layers3], ['resources', 'Recursos', Boxes], ['coverage', 'Cobertura', MapPinned],
+      ] as const).map(([value, label, icon]) => (
+        <PanelBarButton key={value} icon={icon} label={label} active={tab === value} onClick={() => { if (value === tab) return; if (createResourceMode) setPendingTab(value); else setTab(value); }} ariaLabel={label} />
       ))}
     </div>
+  );
+  const addResourceButton = (mode: 'infrastructure' | 'resources') => (
+    <button type="button" onClick={() => setCreateResourceMode(mode)} disabled={Boolean(createResourceMode) || project.status === 'terminated' || project.status === 'cancelled'} className="geo-btn primary mb-2 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60">
+      <Plus className="h-4 w-4" />
+      {mode === 'infrastructure' ? 'Criar infraestrutura' : 'Criar recurso'}
+    </button>
   );
 
   const resourceRows = resourcesLoading ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Carregando recursos…</p>
@@ -388,20 +445,32 @@ export function ProjectDetailPanel({
     </button>);
 
   const coverageRows = areas.length === 0 ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Nenhuma mancha de cobertura gerada.</p>
-    : areas.map((area) => <button key={area.id} type="button" onClick={() => onFocusArea?.(area)} className="grid w-full grid-cols-[1fr_auto] gap-x-2 rounded-[10px] px-2 py-2 text-left hover:bg-app-accent-soft">
+    : areas.slice().sort((left, right) => (right.siteCount + (right.resourceCount ?? 0)) - (left.siteCount + (left.resourceCount ?? 0))).map((area) => <button key={area.id} type="button" onClick={() => onFocusArea?.(area)} className="grid w-full grid-cols-[1fr_auto] gap-x-2 rounded-[10px] px-2 py-2 text-left hover:bg-app-accent-soft">
       <span className="text-[0.84rem] font-medium text-app-text">{area.kind === 'concentration' ? 'Concentração' : 'Dispersão'}</span>
       <span className="text-[0.72rem] text-app-muted">{area.areaKm2?.toFixed(2) ?? '—'} km²</span>
       <span className="text-[0.72rem] text-app-muted">{area.siteCount} locais · {area.resourceCount} recursos</span>
     </button>);
 
-  const searchRows = query.trim().length < 2 ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Digite ao menos 2 caracteres.</p>
-    : results.length === 0 ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Nenhum resultado.</p>
+  const searchRows = query.trim().length < 2 ? null
+    : searchLoading && results.length === 0 ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Pesquisando…</p>
+    : searchError ? <p className="px-2 py-3 text-[0.82rem] text-status-red">{searchError}</p>
+    : results.length === 0 ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Nenhum resultado neste projeto.</p>
     : results.map((item) => <button key={item.id} type="button" onClick={() => item.kind === 'site' ? onOpenSite(item) : onOpenResource?.(item)} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-2 text-left hover:bg-app-accent-soft"><NodeIcon node={item} /><span className="min-w-0 flex-1 truncate text-[0.84rem] font-medium text-app-text">{item.label}</span><span className="text-[0.68rem] text-app-muted">{item.kind === 'site' ? 'Local' : 'Recurso'}</span></button>);
 
-  const tabContent = tab === 'sites' ? <><div className="mb-1 flex items-center justify-between">{countLabel}</div>{areasSummary}<div className="grid gap-0.5">{addSiteButton}{siteRows}</div></>
+  const searchActions = (scope: 'sites' | 'infrastructure' | 'resources', add: ReactNode) => (
+    <div className="mb-2 flex gap-2">
+      {searchMode === scope ? (
+        <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar neste projeto" className="h-10 min-w-0 flex-1 rounded-[10px] border border-app-border bg-white px-3 text-[0.82rem] outline-none focus:border-app-accent-border" />
+      ) : add}
+      <button type="button" onClick={() => { if (searchMode === scope) { setSearchMode(null); setQuery(''); } else { setSearchMode(scope); setQuery(''); } }} aria-pressed={searchMode === scope} className="geo-btn secondary h-10 justify-center px-3">
+        <Search className="h-4 w-4" />
+        Pesquisar
+      </button>
+    </div>
+  );
+  const tabContent = tab === 'sites' ? <><div className="mb-1 flex items-center justify-between">{countLabel}</div>{searchActions('sites', addSiteButton)}<div className="grid gap-0.5">{searchMode === 'sites' && query.trim().length >= 2 ? searchRows : siteRows}</div></>
     : tab === 'coverage' ? <div className="grid gap-0.5">{coverageRows}</div>
-    : tab === 'search' ? <div className="grid gap-2"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar local ou recurso" className="h-9 rounded-[9px] border border-app-border bg-white px-2 text-[0.82rem] outline-none focus:border-app-accent-border" />{searchRows}</div>
-    : <div className="grid gap-0.5"><p className="px-2 pb-2 text-[0.72rem] font-semibold uppercase tracking-[.08em] text-app-muted">{tab === 'infrastructure' ? `${project.infrastructureCount ?? 0} itens de infraestrutura` : `${project.resourceCount ?? 0} recursos`}</p>{resourceRows}</div>;
+    : <div className="grid gap-0.5">{searchActions(tab, addResourceButton(tab))}<p className="px-2 pb-2 text-[0.72rem] font-semibold uppercase tracking-[.08em] text-app-muted">{tab === 'infrastructure' ? `${project.infrastructureCount ?? 0} itens de infraestrutura` : `${project.resourceCount ?? 0} recursos`}</p>{searchMode === tab && query.trim().length >= 2 ? searchRows : resourceRows}</div>;
 
   const deleteConfirm = confirmDelete ? (
     <Modal
@@ -467,6 +536,15 @@ export function ProjectDetailPanel({
     </Modal>
   ) : null;
 
+  const tabChangeConfirm = pendingTab ? (
+    <Modal onClose={() => setPendingTab(null)} title="Descartar novo recurso" eyebrow="Projeto">
+      <div className="grid gap-4">
+        <p className="text-[0.9rem] text-app-text">Ao trocar de aba, o novo {createResourceMode === 'infrastructure' ? 'item de infraestrutura' : 'recurso'} será descartado.</p>
+        <div className="flex justify-end gap-2"><button type="button" className="geo-btn secondary" onClick={() => setPendingTab(null)}>Cancelar</button><button type="button" className="geo-btn border-status-red/30 bg-status-red-soft text-status-red" onClick={() => { setCreateResourceMode(null); setTab(pendingTab); setPendingTab(null); }}>Descartar</button></div>
+      </div>
+    </Modal>
+  ) : null;
+
   if (isMobile) {
     return (
       <BottomSheet onClose={onBack} onSnapChange={onSnapChange} snapCommand={snapCommand}>
@@ -481,6 +559,8 @@ export function ProjectDetailPanel({
         </div>
         {deleteConfirm}
         {removeSiteConfirm}
+        {tabChangeConfirm}
+        {createResourceMode ? <ProjectResourceModal projectId={project.id} mode={createResourceMode} onClose={() => setCreateResourceMode(null)} onCreated={() => { projectSearchCache.clear(); setResourceReloadToken((value) => value + 1); onResourceCreated?.(); }} /> : null}
       </BottomSheet>
     );
   }
@@ -503,6 +583,52 @@ export function ProjectDetailPanel({
       </div>
       {deleteConfirm}
       {removeSiteConfirm}
+      {tabChangeConfirm}
+      {createResourceMode ? <ProjectResourceModal projectId={project.id} mode={createResourceMode} onClose={() => setCreateResourceMode(null)} onCreated={() => { projectSearchCache.clear(); setResourceReloadToken((value) => value + 1); onResourceCreated?.(); }} /> : null}
     </div>
   );
+}
+
+function ProjectResourceModal({ projectId, mode, onClose, onCreated }: { projectId: string; mode: 'infrastructure' | 'resources'; onClose: () => void; onCreated: () => void }) {
+  const [snapshot, setSnapshot] = useState<ResourceWorkspaceSnapshot | null>(null);
+  const [kind, setKind] = useState<'PhysicalResource' | 'LogicalResource'>('PhysicalResource');
+  const [category, setCategory] = useState(mode === 'infrastructure' ? 'Infrastructure.Passive' : '');
+  const [name, setName] = useState('');
+  const [resourceType, setResourceType] = useState('');
+  const [specificationId, setSpecificationId] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const dirty = Boolean(name.trim() || resourceType || specificationId || (mode === 'resources' && (category || kind !== 'PhysicalResource')));
+  const requestClose = () => { if (dirty) setConfirmDiscard(true); else onClose(); };
+
+  useEffect(() => { void loadResourceWorkspaceSnapshot({ tab: 'PhysicalResource', limit: 100, offset: 0 }).then(setSnapshot).catch(() => setError('Não foi possível carregar o catálogo.')); }, []);
+  const types = snapshot?.resourceTypes.filter((item) => item.categoryCode === category && item.status === 'active') ?? [];
+  const specs = snapshot?.resourceSpecificationOptions.filter((item) => item.category === category && (!resourceType || item.resourceType === resourceType)) ?? [];
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!name.trim() || !specificationId) return;
+    setSaving(true); setError(null);
+    try {
+      const payload: PhysicalResourcePayload | LogicalResourcePayload = kind === 'PhysicalResource'
+        ? { '@type': 'PhysicalResource', name: name.trim(), resourceSpecificationId: specificationId }
+        : { '@type': 'LogicalResource', name: name.trim(), resourceSpecificationId: specificationId };
+      await createProjectResource(projectId, payload);
+      onCreated(); onClose();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível criar o recurso.'); }
+    finally { setSaving(false); }
+  };
+  return <aside className="fixed inset-y-0 right-0 z-[70] flex w-[396px] max-w-full flex-col border-l border-app-border bg-app-panel shadow-dock" aria-label={mode === 'infrastructure' ? 'Novo item de infraestrutura' : 'Novo recurso'}>
+    <div className="flex items-center justify-between border-b border-app-border px-4 py-3"><div><p className="text-[0.7rem] font-semibold uppercase tracking-[.1em] text-app-muted">Projeto</p><h2 className="font-display text-[1.05rem] font-semibold text-app-text">{mode === 'infrastructure' ? 'Criar infraestrutura' : 'Criar recurso'}</h2></div><button type="button" onClick={requestClose} className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft" aria-label="Fechar novo recurso"><X className="h-4 w-4"/></button></div>
+    <form onSubmit={submit} className="grid flex-1 content-start gap-3 overflow-y-auto p-4">
+      {mode === 'resources' ? <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">Classe<select value={kind} onChange={(event) => { setKind(event.target.value as typeof kind); setSpecificationId(''); }} className="geo-input"><option value="PhysicalResource">Recurso físico</option><option value="LogicalResource">Recurso lógico</option></select></label> : null}
+      <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">Categoria<select value={category} onChange={(event) => { setCategory(event.target.value); setResourceType(''); setSpecificationId(''); }} disabled={mode === 'infrastructure'} className="geo-input"><option value="">Selecione uma categoria</option>{snapshot?.resourceCategories.map((item) => <option key={item.id} value={item.code}>{item.name}</option>)}</select></label>
+      <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">Nome<input required value={name} onChange={(event) => setName(event.target.value)} className="geo-input" /></label>
+      <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">Tipo<select required value={resourceType} onChange={(event) => { setResourceType(event.target.value); setSpecificationId(''); }} className="geo-input"><option value="">Selecione um tipo</option>{types.map((item) => <option key={item.id} value={item.code}>{item.name}</option>)}</select></label>
+      <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">Modelo<select required value={specificationId} onChange={(event) => setSpecificationId(event.target.value)} className="geo-input"><option value="">Selecione um modelo</option>{specs.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      {error ? <p className="text-[0.8rem] text-status-red">{error}</p> : null}
+      <div className="flex justify-end gap-2"><button type="button" onClick={requestClose} className="geo-btn secondary">Cancelar</button><button type="submit" disabled={saving || !snapshot} className="geo-btn primary disabled:cursor-not-allowed disabled:opacity-60">{saving ? 'Criando…' : 'Criar'}</button></div>
+    </form>
+    {confirmDiscard ? <Modal onClose={() => setConfirmDiscard(false)} title="Descartar novo recurso" eyebrow="Projeto"><div className="grid gap-4"><p className="text-[0.9rem] text-app-text">Há campos preenchidos. Deseja descartar o novo recurso?</p><div className="flex justify-end gap-2"><button type="button" className="geo-btn secondary" onClick={() => setConfirmDiscard(false)}>Cancelar</button><button type="button" className="geo-btn border-status-red/30 bg-status-red-soft text-status-red" onClick={onClose}>Descartar</button></div></div></Modal> : null}
+  </aside>;
 }

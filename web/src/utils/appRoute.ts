@@ -95,6 +95,8 @@ export function parseAppRoute(pathname: string, options: { isMobile: boolean }):
       return { page: 'assistant' };
     case 'usuarios':
       return { page: 'usuarios' };
+    case 'configuracoes':
+      return { page: 'configuracoes' };
     default:
       return deviceDefaultRoute(options.isMobile);
   }
@@ -113,6 +115,8 @@ export function appRoutePath(route: AppRoute): string {
       return '/orders';
     case 'usuarios':
       return '/usuarios';
+    case 'configuracoes':
+      return '/configuracoes';
     case 'conversas':
       return '/conversations';
     case 'assistant':

@@ -22,9 +22,11 @@ import {
   Info as InfoIcon,
   Loader2,
   MapPin,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import type { GeoStatus, GeoSpec, GeoSite } from '../services/geoApi';
-import { getJson, postJson, listGeoSites } from '../services/geoApi';
+import { deleteJson, getJson, patchJson, postJson, listGeoSites } from '../services/geoApi';
 import { siteKindFromSpec, siteKindLabel } from '../utils/placeLabel';
 import {
   siteStatusLabel,
@@ -69,9 +71,7 @@ import {
 } from '../utils/mapScale';
 import { useGponCoverage } from '../hooks/useGponCoverage';
 import { useMapTiles } from '../hooks/useMapTiles';
-import { useMapDensity } from '../hooks/useMapDensity';
 import { mapTileFeatureNodeId, type MapTileFeature } from '../services/geoMapTileApi';
-import type { MapDensityResponse } from '../services/geoMapDensityApi';
 import { fetchTreeNode } from '../services/geoTreeApi';
 import { useMapLayers } from '../hooks/useMapLayers';
 import {
@@ -146,7 +146,6 @@ import {
   type ProjectAreaOverlayHandle,
 } from './geo-tabs/ProjectAreaOverlay';
 import { createInfraOverlay, type InfraOverlayHandle } from './geo-tabs/InfraOverlay';
-import { createDensityOverlay, type DensityOverlayHandle } from './geo-tabs/DensityOverlay';
 import {
   DROP_ACCENT,
   DROP_INK,
@@ -324,16 +323,19 @@ function buildPointMarkerVisual(
   if (node.kind === 'site') {
     const kind = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
     const icon = siteIconFor(kind, node.status);
-    // Todo tipo de Site (CO ou não) segue a mesma régua de tamanho — ver siteIconSizeForScale
-    // em mapScale.ts.
-    const size = selected ? SITE_ICON_SIZE + 8 : siteMarkerSize;
+    // Só a Central/Estação é referência permanente do mapa. Qualquer outro Site
+    // (cliente, condomínio, edificação, POP...) usa a mesma régua de Resource.
+    const isStation = kind === 'CO';
+    const size = isStation
+      ? (selected ? SITE_ICON_SIZE + 8 : siteMarkerSize)
+      : (selected ? MARKER_ICON_SIZE + 6 : (resourceMarkerSize ?? MARKER_ICON_SIZE));
     return {
       iconOptions: {
         url: siteIconDataUrl(icon, { size }),
         scaledSize: new maps.Size(size, size),
         anchor: new maps.Point(size / 2, size / 2),
       },
-      zIndex: selected ? SITE_MARKER_Z + 1 : SITE_MARKER_Z,
+      zIndex: isStation ? (selected ? SITE_MARKER_Z + 1 : SITE_MARKER_Z) : (selected ? EQUIPMENT_MARKER_Z + 1 : EQUIPMENT_MARKER_Z),
       title: `${node.label} · ${icon.label}`,
     };
   }
@@ -435,6 +437,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // o produz e o apaga ao se desmontar (ver ViabilityTab).
   const [dropSimulation, setDropSimulation] = useState<DropSimulation | null>(null);
   const [typeOpen, setTypeOpen] = useState(false);
+  const [confirmDiscardProjectSite, setConfirmDiscardProjectSite] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   // Colapso da hierarquia, hoisted de HierarchySidebar: precisa viver aqui para a
   // barra de pesquisa decidir se flutua sobre o mapa ou fica dentro da doca (ver
@@ -538,12 +541,12 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     [specs],
   );
 
-  // Infra passiva (recursos + Sites não-CO + cabos) só entra quando a escala está em ≤ 100 m;
+  // Infra passiva (recursos + Sites não-CO + cabos) só entra abaixo de 200 m;
   // Estações (tree.mapNodes) continuam visíveis em qualquer escala — ver siteMarkerSize.
   // Desenhada por InfraOverlay (canvas, Fase 3 da issue #69), não por
   // Marker/Polyline — por isso fica FORA de `mapNodes` (que só alimenta os efeitos de
   // Marker/Polyline, ver GoogleMapPanel): as duas fontes nunca se misturam.
-  const passiveInfraVisible = scaleMeters !== null && scaleMeters <= PASSIVE_INFRA_MAX_SCALE_METERS;
+  const passiveInfraVisible = scaleMeters !== null && scaleMeters < PASSIVE_INFRA_MAX_SCALE_METERS;
   const { data: infraFeaturesRaw, loading: viewportLoading } = useMapTiles(
     viewportBounds,
     scaleMeters,
@@ -558,11 +561,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     const stationIds = new Set(tree.mapNodes.map((node) => node.id));
     return infraFeaturesRaw.filter((feature) => !stationIds.has(mapTileFeatureNodeId(feature)));
   }, [infraFeaturesRaw, tree.mapNodes]);
-  // Densidade agregada da planta (Fase 4, issue #69) — entra exatamente onde `infraFeatures`
-  // sai: acima de PASSIVE_INFRA_MAX_SCALE_METERS. As duas nunca coexistem (uma usa `<=`, a
-  // outra `>` sobre o mesmo degrau), então não há risco de desenhar planta individual e
-  // agregado ao mesmo tempo.
-  const { data: mapDensity, loading: densityLoading } = useMapDensity(viewportBounds, scaleMeters);
   const siteMarkerSize = siteIconSizeForScale(scaleMeters);
   const resourceMarkerSize = resourceIconSizeForScale(scaleMeters);
   const mapNodes = useMemo(() => {
@@ -573,10 +571,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     // Locais do Projeto de trabalho aberto (REQ-MOD01-015) entram só enquanto a doca mostra
     // aquele projeto — nunca somados aos nós da árvore, que já os excluem por completo. Com
     // manchas geradas (REQ-MOD01-017), o pin individual só entra na mesma régua de escala da
-    // infra passiva (≤ 100 m) — em escala mais aberta, a mancha do overlay já representa o
-    // conjunto — e vem de `projectViewportSites` (buscado por bbox), não da página do painel.
-    const projectSitesVisible =
-      dockView.kind !== 'hierarchy' && (!hasProjectAreas || passiveInfraVisible);
+    // infra passiva (< 200 m) — em escala mais aberta, a cobertura ou a mancha do overlay
+    // representa o conjunto — e vem de `projectViewportSites` (buscado por bbox), não da
+    // página do painel.
+    const projectSitesVisible = dockView.kind !== 'hierarchy' && passiveInfraVisible;
     const projectSitesForMap = hasProjectAreas ? projectViewportSites : projectSites;
     const withProjectSites = projectSitesVisible ? [...stations, ...projectSitesForMap] : stations;
     // O item selecionado é imune à escala e ao viewport: recurso e cabo do canvas só existem em
@@ -584,7 +582,14 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     // Marker/Polyline real dele (InfraOverlay nunca desenha o selecionado — ver
     // excludeNodeId). CO já vem sempre em `tree.mapNodes`, então isto só adiciona quando o nó
     // realmente sumiu da lista.
-    if (selectedNode?.geometry && !withProjectSites.some((node) => node.id === selectedNode.id)) {
+    const selectedIsStation = selectedNode?.kind === 'site' && siteKindFromSpec({ category: selectedNode.siteCategory, name: selectedNode.sublabel }) === 'CO';
+    const selectedVisible =
+      selectedNode?.kind === 'site' ? selectedIsStation || passiveInfraVisible : passiveInfraVisible;
+    if (
+      selectedNode?.geometry &&
+      selectedVisible &&
+      !withProjectSites.some((node) => node.id === selectedNode.id)
+    ) {
       return [...withProjectSites, selectedNode];
     }
     return withProjectSites;
@@ -632,7 +637,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // próprio dentro da doca e não entram aqui. O script do Google Maps é rastreado dentro do
   // GoogleMapPanel (mapsReady) e somado à barra por lá.
   const mapDataLoading =
-    loading || tree.busy || viewportLoading || coverageLoading || densityLoading;
+    loading || tree.busy || viewportLoading || coverageLoading;
 
   const selectedSiteId =
     selectedNode?.referredType === 'GeographicSite' ? (selectedNode.refId ?? null) : null;
@@ -1391,6 +1396,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                     if (area.centroid) setFocusRequest({ point: area.centroid, scaleMeters: 1500 });
                   }}
                   onRemoveSite={(site) => void handleQuickRemoveSite(dockView.projectId, site)}
+                  onResourceCreated={() => void projects.reload()}
                 />
               ) : null}
               {activeProjectSiteView ? (
@@ -1411,6 +1417,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                   onSnapChange={onMobileSheetSnapChange}
                   minimizeSignal={sheetMinimizeSignal}
                   onClose={() => closeProjectSite(dockView.projectId)}
+                  onRequestClose={(dirty) => {
+                    if (dirty) setConfirmDiscardProjectSite(true);
+                    else closeProjectSite(dockView.projectId);
+                  }}
                   onCreated={(created) => handleProjectSiteCreated(dockView.projectId, created)}
                   onChanged={handleProjectSiteChanged}
                   onOpenResource={goToResource}
@@ -1449,7 +1459,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               nodes={mapNodes}
               infraFeatures={infraFeatures}
               onSelectInfraFeature={selectNodeFromInfraOverlay}
-              density={mapDensity}
               selectedNode={selectedNode}
               draftAddress={draftAddress}
               addressPoint={
@@ -1545,6 +1554,22 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         />
       ) : null}
 
+      {confirmDiscardProjectSite && dockView.kind === 'project' ? (
+        <Modal
+          onClose={() => setConfirmDiscardProjectSite(false)}
+          title="Descartar novo local"
+          eyebrow="Projeto"
+        >
+          <div className="grid gap-4">
+            <p className="text-[0.9rem] text-app-text">Há campos preenchidos. Deseja descartar o novo local?</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="geo-btn secondary" onClick={() => setConfirmDiscardProjectSite(false)}>Cancelar</button>
+              <button type="button" className="geo-btn border-status-red/30 bg-status-red-soft text-status-red" onClick={() => { closeProjectSite(dockView.projectId); setConfirmDiscardProjectSite(false); }}>Descartar</button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+
       {addressError ? (
         <Modal
           onClose={() => setAddressError(null)}
@@ -1572,7 +1597,6 @@ export function GoogleMapPanel({
   nodes,
   infraFeatures = [],
   onSelectInfraFeature = noopSelectInfraFeature,
-  density = null,
   selectedNode,
   draftAddress,
   addressPoint,
@@ -1612,10 +1636,6 @@ export function GoogleMapPanel({
   // Clique/hover resolvido pelo hit-test do InfraOverlay — o chamador decide seleção e
   // hidratação (ver selectNodeFromInfraOverlay em GeoPage).
   onSelectInfraFeature?: (feature: MapTileFeature) => void;
-  // Densidade agregada da planta para zoom aberto (Fase 4, issue #69), ou null abaixo do degrau
-  // de escala em que ela entra. O painel só desenha na camada de canvas (ver DensityOverlay); a
-  // busca é do chamador, como cobertura e manchas de projeto.
-  density?: MapDensityResponse | null;
   // Nó selecionado inteiro (não só o id): o alfinete precisa da geometria mesmo quando o
   // nó já saiu da lista visível do mapa — recurso/cabo afastado, ou deep-link de Site que
   // ainda não virou marcador. O id é derivado abaixo, para os efeitos que só precisam dele.
@@ -1716,8 +1736,6 @@ export function GoogleMapPanel({
   // Marker/Polyline real do nó selecionado (que continua existindo — ver excludeNodeId).
   const infraOverlayRef = useRef<InfraOverlayHandle | null>(null);
   const onSelectInfraFeatureRef = useRef(onSelectInfraFeature);
-  // Contraparte da infra passiva para zoom aberto (Fase 4, issue #69), mesma técnica de canvas.
-  const densityOverlayRef = useRef<DensityOverlayHandle | null>(null);
   const draftMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const selectionMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const addressSourceMarkersRef = useRef<Map<'google' | 'geonet', GoogleMarkerInstance>>(new Map());
@@ -2049,10 +2067,6 @@ export function GoogleMapPanel({
           onHoverNodeRef.current(hit ? mapTileFeatureToNode(hit) : null);
         });
 
-        // Densidade agregada — desenha só acima do degrau em que a planta individual some, e o
-        // chamador já entrega `density: null` abaixo dele, então não há troca de camada aqui.
-        densityOverlayRef.current = createDensityOverlay(maps, mapRef.current);
-
         setMapsReady(true);
       })
       .catch(() => setMapsReady(false))
@@ -2140,20 +2154,6 @@ export function GoogleMapPanel({
     () => () => {
       infraOverlayRef.current?.destroy();
       infraOverlayRef.current = null;
-    },
-    [],
-  );
-
-  // Repassa a densidade agregada para a camada de canvas — `null` (fora de escala) limpa o
-  // desenho, mesmo contrato de `coverage`.
-  useEffect(() => {
-    densityOverlayRef.current?.setData(density);
-  }, [density, mapsReady]);
-
-  useEffect(
-    () => () => {
-      densityOverlayRef.current?.destroy();
-      densityOverlayRef.current = null;
     },
     [],
   );
@@ -3247,15 +3247,60 @@ function TypeManagementModal({
   const [category, setCategory] = useState<GeoSpec['category']>('Site');
   const [siteRole, setSiteRole] = useState<GeoSpec['siteRole']>('network');
   const [saving, setSaving] = useState(false);
+  const [editingSpec, setEditingSpec] = useState<GeoSpec | null>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<GeoSpec | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const activeSpecs = specs.filter((spec) => spec.lifecycleStatus === 'Active');
+
+  const resetForm = () => {
+    setName('');
+    setCategory('Site');
+    setSiteRole('network');
+    setEditingSpec(null);
+  };
+
+  const startEdit = (spec: GeoSpec) => {
+    setEditingSpec(spec);
+    setName(spec.name);
+    setCategory(spec.category);
+    setSiteRole(spec.siteRole);
+    setError(null);
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!name.trim()) return;
     setSaving(true);
+    setError(null);
     try {
-      await postJson('/v1/geo/site-specifications', { name, category, siteRole });
-      setName('');
+      if (editingSpec) {
+        await patchJson(`/v1/geo/site-specifications/${encodeURIComponent(editingSpec.id)}`, {
+          name,
+          siteRole,
+        });
+      } else {
+        await postJson('/v1/geo/site-specifications', { name, category, siteRole });
+      }
+      resetForm();
       await onChanged();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o tipo de Site.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!pendingRemoval) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await deleteJson(`/v1/geo/site-specifications/${encodeURIComponent(pendingRemoval.id)}`);
+      if (editingSpec?.id === pendingRemoval.id) resetForm();
+      setPendingRemoval(null);
+      await onChanged();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível remover o tipo de Site.');
     } finally {
       setSaving(false);
     }
@@ -3271,10 +3316,11 @@ function TypeManagementModal({
               <Th>Categoria</Th>
               <Th>Papel</Th>
               <Th>Filhos permitidos</Th>
+              <Th>Ações</Th>
             </tr>
           </thead>
           <tbody>
-            {specs.map((spec) => (
+            {activeSpecs.map((spec) => (
               <tr key={spec.id} className="border-t border-app-border">
                 <td className="px-4 py-3 text-[0.88rem] font-semibold text-app-text">
                   {siteSpecLabel(spec)}
@@ -3288,12 +3334,51 @@ function TypeManagementModal({
                 <td className="px-4 py-3 text-[0.84rem] text-app-muted">
                   {spec.allowedChildSpecIds.length || '-'}
                 </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      className="geo-btn secondary h-8 w-8 justify-center p-0"
+                      onClick={() => startEdit(spec)}
+                      aria-label={`Editar ${siteSpecLabel(spec)}`}
+                      title="Editar tipo"
+                      disabled={saving}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    {pendingRemoval?.id === spec.id ? (
+                      <button
+                        type="button"
+                        className="geo-btn primary h-8 px-2 text-[0.75rem]"
+                        onClick={() => void remove()}
+                        disabled={saving}
+                      >
+                        Confirmar
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="geo-btn secondary h-8 w-8 justify-center p-0 text-app-danger"
+                        onClick={() => {
+                          setPendingRemoval(spec);
+                          setError(null);
+                        }}
+                        aria-label={`Remover ${siteSpecLabel(spec)}`}
+                        title="Remover tipo"
+                        disabled={saving}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_180px_180px_auto]">
+      {error ? <p role="alert" className="mb-3 text-[0.84rem] text-app-danger">{error}</p> : null}
+      <form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_180px_180px_auto_auto]">
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -3304,6 +3389,8 @@ function TypeManagementModal({
           value={category}
           onChange={(event) => setCategory(event.target.value as GeoSpec['category'])}
           className="geo-input"
+          disabled={editingSpec !== null}
+          title={editingSpec ? 'A categoria não pode ser alterada após o cadastro.' : undefined}
         >
           {['Region', 'FunctionalGroup', 'Site', 'SubSite'].map((item) => (
             <option key={item} value={item}>
@@ -3327,8 +3414,13 @@ function TypeManagementModal({
           className="geo-btn primary justify-center"
           disabled={saving || !name.trim()}
         >
-          Criar
+          {editingSpec ? 'Salvar' : 'Criar'}
         </button>
+        {editingSpec ? (
+          <button type="button" className="geo-btn secondary justify-center" onClick={resetForm} disabled={saving}>
+            Cancelar
+          </button>
+        ) : null}
       </form>
     </Modal>
   );

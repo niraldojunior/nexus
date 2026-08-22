@@ -1,24 +1,23 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { listPlaceOptions, type GeoDirectory } from '../utils/placeLabel';
+import { usePlaceLabel } from '../hooks/usePlaceLabel';
+import { usePlaceSearch } from '../hooks/usePlaceSearch';
 
 export type PlacePickerProps = {
   value: { id: string; '@referredType': string } | null;
   onChange: (place: { id: string; '@referredType': string } | null) => void;
-  directory: GeoDirectory | null;
   placeholder?: string;
   disabled?: boolean;
 };
 
 /**
  * Combobox buscável de locais (sites + endereços).
- * Nunca permite entrada de texto livre — apenas seleção de opções do diretório.
+ * Nunca permite entrada de texto livre — apenas seleção de opções encontradas na busca.
  * Mostra "Tipo · Endereço" como sublabel, não o UUID.
  */
 export function PlacePicker({
   value,
   onChange,
-  directory,
   placeholder = 'Selecione um local…',
   disabled = false,
 }: PlacePickerProps) {
@@ -27,17 +26,11 @@ export function PlacePicker({
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // O diretório (~dezenas de milhares de sites/endereços) só muda quando o cache do
-  // useGeoDirectory recarrega — sem memo isso reconstruía e reordenava a lista inteira a cada
-  // tecla digitada na busca.
-  const options = useMemo(() => (directory ? listPlaceOptions(directory) : []), [directory]);
-  const selectedOption = options.find((opt) => opt.id === value?.id);
-
-  const searchLower = search.toLowerCase();
-  const filtered = useMemo(
-    () => options.filter((opt) => opt.search.includes(searchLower)),
-    [options, searchLower],
-  );
+  // A opção selecionada não necessariamente aparece nos resultados da busca atual (ex.:
+  // acabou de abrir o picker sem digitar nada) — resolve o rótulo dela separadamente, sob
+  // demanda, em vez de depender do catálogo inteiro (issue #56).
+  const { resolved: selectedLabel } = usePlaceLabel(value);
+  const { options: filtered } = usePlaceSearch(search);
 
   // Fechar ao clicar fora
   useEffect(() => {
@@ -61,13 +54,13 @@ export function PlacePicker({
         className={`w-full geo-input flex items-center justify-between text-left ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
       >
         <span className="min-w-0 flex-1 truncate">
-          {selectedOption ? (
+          {value && selectedLabel ? (
             <div>
               <div className="truncate text-[0.88rem] font-semibold text-app-text">
-                {selectedOption.label}
+                {selectedLabel.name}
               </div>
               <div className="truncate text-[0.75rem] text-app-muted">
-                {selectedOption.sublabel}
+                {[selectedLabel.typeLabel, selectedLabel.address].filter(Boolean).join(' · ')}
               </div>
             </div>
           ) : (
@@ -108,7 +101,7 @@ export function PlacePicker({
                     setSearch('');
                   }}
                   className={`w-full px-4 py-3 text-left transition flex items-start gap-3 hover:bg-app-accent-soft ${
-                    selectedOption?.id === option.id ? 'bg-app-accent-soft' : ''
+                    value?.id === option.id ? 'bg-app-accent-soft' : ''
                   }`}
                 >
                   {option.kind && (
@@ -148,7 +141,7 @@ export function PlacePicker({
               ))
             ) : (
               <div className="px-4 py-4 text-[0.84rem] text-app-muted">
-                Nenhum local encontrado.
+                {search.trim() ? 'Nenhum local encontrado.' : 'Digite para buscar um local…'}
               </div>
             )}
           </div>

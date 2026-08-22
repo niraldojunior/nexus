@@ -374,6 +374,28 @@ export class PostgresGeoRepository implements IGeoRepository {
       conditions.push('geographic_location_id = ?');
       params.push(query.geographicLocationId);
     }
+    const freeText = normalizeAddressText(query?.q);
+    if (freeText) {
+      const foldedColumn = (column: string, coalesce = false): string =>
+        this.db.provider === 'oracle'
+          ? `LOWER(TRANSLATE(${coalesce ? `COALESCE(${column}, '')` : column},
+              'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
+              'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc'))`
+          : column === 'street_name'
+            ? 'street_search'
+            : 'city_search';
+      const likePattern = `%${freeText.split(' ').filter(Boolean).join('%')}%`;
+      const postcodeDigits = normalizePostcodeSearch(query!.q);
+      if (postcodeDigits) {
+        conditions.push(
+          `(${foldedColumn('street_name')} LIKE ? OR ${foldedColumn('city', true)} LIKE ? OR postcode LIKE ?)`,
+        );
+        params.push(likePattern, likePattern, `%${postcodeDigits}%`);
+      } else {
+        conditions.push(`(${foldedColumn('street_name')} LIKE ? OR ${foldedColumn('city', true)} LIKE ?)`);
+        params.push(likePattern, likePattern);
+      }
+    }
 
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;

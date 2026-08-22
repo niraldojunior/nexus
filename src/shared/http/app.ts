@@ -3092,6 +3092,7 @@ const parseGeoAddressListQuery = (
     ['postcode', 'postcode'],
     ['country', 'country'],
     ['geographicLocationId', 'geographicLocationId'],
+    ['q', 'q'],
   ] as const;
   for (const [parameter, property] of stringFilters) {
     const value = params.get(parameter);

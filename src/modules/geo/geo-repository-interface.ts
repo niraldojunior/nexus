@@ -32,6 +32,8 @@ export type GeographicAddressQuery = GeoTenantScope & {
   country?: string;
   geographicLocationId?: string;
   includeCharacteristics?: boolean;
+  /** Busca livre (rua OU cidade OU CEP), para autocomplete — não confundir com `street`/`city` (match exato/prefixo por campo). */
+  q?: string;
   limit?: number;
   offset?: number;
 };

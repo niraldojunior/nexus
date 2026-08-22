@@ -34,7 +34,6 @@ import {
 import { listResources, type ResourceEntity } from '../services/resourceApi';
 import ColumnFilterMenu from '../components/ColumnFilterMenu';
 import Field from '../components/Field';
-import { useGeoDirectory } from '../hooks/useGeoDirectory';
 import { useNavigation } from '../hooks/useNavigation';
 import { PlaceLabelCompact } from '../components/PlaceLabel';
 import { PlacePicker } from '../components/PlacePicker';
@@ -179,8 +178,6 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
   const [formState, setFormState] = useState<ServiceFormState>(emptyFormState());
   const selectAllRef = useRef<HTMLInputElement>(null);
 
-  // Carregar diretório Geo para resolução de rótulos de locais
-  const { directory: geoDirectory } = useGeoDirectory();
   const { goToGeo } = useNavigation();
 
   const activeTabConfig = tabConfig[effectiveTab];
@@ -584,7 +581,7 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
             </td>
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">
               <div className="flex items-center gap-2">
-                <PlaceLabelCompact place={service.place?.[0]} directory={geoDirectory} />
+                <PlaceLabelCompact place={service.place?.[0]} />
                 {service.place?.[0]?.id && (
                   <button
                     type="button"
@@ -832,7 +829,6 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
           supportingServiceOptions={supportingServiceOptions}
           resourceOptions={supportingResourceChoices}
           servicesById={servicesById}
-          geoDirectory={geoDirectory}
           saving={saving}
           onClose={closeModal}
           onChange={setFormState}
@@ -936,7 +932,6 @@ function ServiceModal({
   supportingServiceOptions,
   resourceOptions,
   servicesById,
-  geoDirectory,
   saving,
   onClose,
   onChange,
@@ -950,7 +945,6 @@ function ServiceModal({
   supportingServiceOptions: ResourceFacingService[];
   resourceOptions: ResourceEntity[];
   servicesById: Map<string, ServiceEntity>;
-  geoDirectory: ReturnType<typeof useGeoDirectory>['directory'] | null;
   saving: boolean;
   onClose: () => void;
   onChange: (next: ServiceFormState) => void;
@@ -1139,7 +1133,6 @@ function ServiceModal({
                       placeType: place?.['@referredType'] ?? 'GeographicAddress',
                     });
                   }}
-                  directory={geoDirectory}
                   placeholder="Selecione um local…"
                 />
               </Field>

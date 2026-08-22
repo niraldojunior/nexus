@@ -42,7 +42,6 @@ import {
   type ResourceTab,
 } from '../services/resourceApi';
 import type { Party } from '../services/partyApi';
-import { useGeoDirectory } from '../hooks/useGeoDirectory';
 import { useNavigation } from '../hooks/useNavigation';
 import { PlaceLabelCompact } from '../components/PlaceLabel';
 import { PlacePicker } from '../components/PlacePicker';
@@ -243,8 +242,6 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   const selectAllRef = useRef<HTMLInputElement>(null);
   const refreshCatalogRef = useRef<null | (() => void)>(null);
 
-  // Carregar diretório Geo para resolução de rótulos de locais
-  const { directory: geoDirectory } = useGeoDirectory();
   const { goToGeo } = useNavigation();
 
   const activeTabConfig = tabConfig[effectiveTab];
@@ -864,7 +861,7 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
             ) : null}
             <td className="px-4 py-3 text-[0.88rem] text-app-muted">
               <div className="flex items-center gap-2">
-                <PlaceLabelCompact place={resourceItem.place} directory={geoDirectory} />
+                <PlaceLabelCompact place={resourceItem.place} />
                 {resourceItem.place?.id && (
                   <button
                     type="button"
@@ -1105,7 +1102,6 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
           resourceSpecificationOptions={resourceSpecificationOptions}
           manufacturerOptions={manufacturerOptions}
           physicalResourceOptions={supportingPhysicalResourceChoices}
-          geoDirectory={geoDirectory}
           lookupLoading={lookupLoading}
           saving={saving}
           catalogSelectionValid={catalogSelectionValid}
@@ -1211,7 +1207,6 @@ function ResourceModal({
   resourceSpecificationOptions,
   manufacturerOptions,
   physicalResourceOptions,
-  geoDirectory,
   lookupLoading,
   saving,
   catalogSelectionValid,
@@ -1228,7 +1223,6 @@ function ResourceModal({
   resourceSpecificationOptions: ResourceSpecification[];
   manufacturerOptions: Party[];
   physicalResourceOptions: PhysicalResource[];
-  geoDirectory: ReturnType<typeof useGeoDirectory>['directory'] | null;
   lookupLoading: boolean;
   saving: boolean;
   catalogSelectionValid: boolean;
@@ -1696,7 +1690,6 @@ function ResourceModal({
                       placeType: place?.['@referredType'] ?? '',
                     });
                   }}
-                  directory={geoDirectory}
                   placeholder="Selecione um local…"
                 />
               </Field>
@@ -1803,7 +1796,6 @@ function ResourceModal({
                       placeType: place?.['@referredType'] ?? '',
                     });
                   }}
-                  directory={geoDirectory}
                   placeholder="Selecione um local…"
                 />
               </Field>

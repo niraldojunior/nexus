@@ -1,9 +1,9 @@
 import { MapPin, Network, Layers, Building2 } from 'lucide-react';
-import { resolvePlaceLabel, type GeoDirectory, type PlaceReference } from '../utils/placeLabel';
+import { usePlaceLabel } from '../hooks/usePlaceLabel';
+import type { PlaceReference } from '../utils/placeLabel';
 
 export type PlaceLabelProps = {
   place: PlaceReference;
-  directory: GeoDirectory | null;
 };
 
 /**
@@ -11,12 +11,11 @@ export type PlaceLabelProps = {
  * Nunca expõe o UUID: mostra Ícone + Nome + Tipo · Endereço.
  * O ID técnico fica apenas no title/tooltip.
  */
-export function PlaceLabel({ place, directory }: PlaceLabelProps) {
-  if (!directory) {
+export function PlaceLabel({ place }: PlaceLabelProps) {
+  const { resolved, loading } = usePlaceLabel(place);
+  if (loading) {
     return <span className="text-app-muted">Carregando…</span>;
   }
-
-  const resolved = resolvePlaceLabel(place, directory);
   if (!resolved) {
     return <span className="text-app-muted">—</span>;
   }
@@ -68,12 +67,11 @@ export function PlaceLabel({ place, directory }: PlaceLabelProps) {
  * Renderiza apenas um rótulo de tipo + endereço (sem ícone, sem nome).
  * Útil para colunas de tabela.
  */
-export function PlaceLabelCompact({ place, directory }: PlaceLabelProps) {
-  if (!directory) {
-    return <span className="text-app-muted">—</span>;
+export function PlaceLabelCompact({ place }: PlaceLabelProps) {
+  const { resolved, loading } = usePlaceLabel(place);
+  if (loading) {
+    return <span className="text-app-muted">…</span>;
   }
-
-  const resolved = resolvePlaceLabel(place, directory);
   if (!resolved) {
     return <span className="text-app-muted">—</span>;
   }

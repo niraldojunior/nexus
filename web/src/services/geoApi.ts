@@ -162,6 +162,14 @@ export async function getJson<T>(url: string, options: { signal?: AbortSignal } 
   return (await response.json()) as T;
 }
 
+/** Como `getJson`, mas devolve `undefined` em 404 em vez de lançar — útil para resolução por id sob demanda, onde o id pode legitimamente ser de outro tipo de recurso. */
+export async function getJsonOrUndefined<T>(url: string): Promise<T | undefined> {
+  const response = await fetch(url, { headers: authHeaders() });
+  if (response.status === 404) return undefined;
+  if (!response.ok) throw new Error(`GET ${url} falhou (${response.status})`);
+  return (await response.json()) as T;
+}
+
 export async function postJson<T = unknown>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
     method: 'POST',
@@ -189,16 +197,35 @@ export async function deleteJson<T = void>(url: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export const listGeoSites = (options?: { siteSpecificationIds?: string[] }) => {
-  const query =
-    options?.siteSpecificationIds && options.siteSpecificationIds.length > 0
-      ? `?siteSpecificationIds=${options.siteSpecificationIds.map(encodeURIComponent).join(',')}`
-      : '';
-  return getJson<GeoSite[]>(`/v1/geo/sites${query}`);
+export const listGeoSites = (options?: {
+  siteSpecificationIds?: string[];
+  name?: string;
+  limit?: number;
+}) => {
+  const params = new URLSearchParams();
+  if (options?.siteSpecificationIds && options.siteSpecificationIds.length > 0) {
+    params.set('siteSpecificationIds', options.siteSpecificationIds.join(','));
+  }
+  if (options?.name) params.set('name', options.name);
+  if (options?.limit !== undefined) params.set('limit', String(options.limit));
+  const query = params.toString();
+  return getJson<GeoSite[]>(`/v1/geo/sites${query ? `?${query}` : ''}`);
 };
-export const listGeoAddresses = () => getJson<GeoAddress[]>('/v1/geo/addresses');
+export const listGeoAddresses = (options?: { q?: string; limit?: number }) => {
+  const params = new URLSearchParams();
+  if (options?.q) params.set('q', options.q);
+  if (options?.limit !== undefined) params.set('limit', String(options.limit));
+  const query = params.toString();
+  return getJson<GeoAddress[]>(`/v1/geo/addresses${query ? `?${query}` : ''}`);
+};
 export const listGeoLocations = () => getJson<GeoLocation[]>('/v1/geo/locations');
 export const listGeoSiteSpecifications = () => getJson<GeoSpec[]>('/v1/geo/site-specifications');
+export const getGeoSite = (id: string) =>
+  getJsonOrUndefined<GeoSite>(`/v1/geo/sites/${encodeURIComponent(id)}`);
+export const getGeoAddress = (id: string) =>
+  getJsonOrUndefined<GeoAddress>(`/v1/geo/addresses/${encodeURIComponent(id)}`);
+export const getGeoLocation = (id: string) =>
+  getJsonOrUndefined<GeoLocation>(`/v1/geo/locations/${encodeURIComponent(id)}`);
 export const listGeoSiteEvents = (siteId: string) =>
   getJson<GeoEvent[]>(`/v1/geo/sites/${siteId}/events`);
 export const fetchSiteAudit = (siteId: string) =>

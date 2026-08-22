@@ -277,6 +277,34 @@ export async function deleteResourceSpecification(id: string): Promise<ResourceS
   );
 }
 
+export type ResourceSpecificationBulkItem = {
+  line: number;
+  input: ResourceSpecificationPayload;
+};
+
+export type ResourceSpecificationBulkItemResult =
+  | { line: number; status: 'created'; id: string; name: string }
+  | { line: number; status: 'error'; name: string; code: string; message: string };
+
+export type ResourceSpecificationBulkResult = {
+  total: number;
+  created: number;
+  failed: number;
+  results: ResourceSpecificationBulkItemResult[];
+};
+
+export async function bulkCreateResourceSpecifications(
+  items: ResourceSpecificationBulkItem[],
+): Promise<ResourceSpecificationBulkResult> {
+  return await requestJson<ResourceSpecificationBulkResult>(
+    '/v1/resource/specifications/bulk-import',
+    {
+      method: 'POST',
+      body: { items },
+    },
+  );
+}
+
 export async function listResources({
   kind,
   limit,
@@ -301,10 +329,13 @@ export async function listResources({
 export async function createResource(
   payload: PhysicalResourcePayload | LogicalResourcePayload,
 ): Promise<ResourceEntity> {
-  const resource = await requestJson<ResourceEntity>('/tmf-api/resourceInventoryManagement/v4/resource', {
-    method: 'POST',
-    body: cleanObject(payload as Record<string, unknown>),
-  });
+  const resource = await requestJson<ResourceEntity>(
+    '/tmf-api/resourceInventoryManagement/v4/resource',
+    {
+      method: 'POST',
+      body: cleanObject(payload as Record<string, unknown>),
+    },
+  );
   if (payload['@type'] === 'PhysicalResource') invalidateMapTiles();
   return resource;
 }

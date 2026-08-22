@@ -107,6 +107,36 @@ describe('resourceIconFor', () => {
     // A forma string não carrega status — cai sempre na cor padrão da família.
     expect(resourceIconFor('CTO').color).toBe(familyColor.passive);
   });
+
+  it('dá um glifo próprio à CDOI, mas mantém code/família/cor de CTO', () => {
+    const cdoe = resourceIconFor({ resourceType: 'CTO', name: 'CDOE-042', status: 'active' });
+    const cdoi = resourceIconFor({ resourceType: 'CTO', name: 'CDOI-3917PS (ICI)', status: 'active' });
+
+    expect(cdoi.code).toBe('CTO');
+    expect(cdoi.family).toBe('passive');
+    expect(cdoi.color).toBe(cdoe.color);
+    expect(cdoi.glyph).not.toBe(cdoe.glyph);
+    expect(cdoi.label).toBe('CDOI');
+    // A legenda de status por CTO (vermelho/verde) continua valendo para a CDOI.
+    expect(resourceIconFor({ resourceType: 'CTO', name: 'CDOI-1', status: 'suspended' }).color).toBe(
+      '#ef4444',
+    );
+  });
+
+  it('reconhece CDOI também pelo nome da ResourceSpecification (dado migrado do Netwin)', () => {
+    const cdoi = resourceIconFor({
+      resourceType: 'CTO',
+      resourceSpecification: { name: 'Netwin CDOI' },
+    });
+    expect(cdoi.label).toBe('CDOI');
+    expect(cdoi.glyph).toBe('building-2');
+  });
+
+  it('não confunde CDOE (ou qualquer outra CTO) com CDOI', () => {
+    const cto = resourceIconFor({ resourceType: 'CTO', name: 'CDOE-3917PS (ICI)' });
+    expect(cto.label).toBe('CTO');
+    expect(cto.glyph).not.toBe('building-2');
+  });
 });
 
 describe('resourceIconSvg', () => {
@@ -146,6 +176,16 @@ describe('resourceIconSvg', () => {
     expect(decodeURIComponent(other)).toContain(familyColor.passive);
     expect(active).not.toBe(suspended);
     expect(active).not.toBe(other);
+  });
+
+  it('não deixa o cache por code+cor misturar o glifo de CTO e CDOI no mesmo status', () => {
+    // Mesma classe de regressão do teste acima: CDOI usa code:'CTO' e a mesma cor de
+    // status — sem o glifo na chave, a primeira das duas desenhada "venceria" o cache.
+    const cto = resourceIconDataUrl(resourceIconFor({ resourceType: 'CTO', status: 'active' }));
+    const cdoi = resourceIconDataUrl(
+      resourceIconFor({ resourceType: 'CTO', name: 'CDOI-1', status: 'active' }),
+    );
+    expect(cto).not.toBe(cdoi);
   });
 });
 

@@ -17,6 +17,9 @@ import type {
   ResourceCategory,
   ResourceType,
   ResourceSpecification,
+  ResourceSpecificationBulkItem,
+  ResourceSpecificationBulkItemResult,
+  ResourceSpecificationBulkResult,
   ResourceSpecificationQuery,
   ResourceStatus,
   UpdateLogicalResourceInput,
@@ -114,6 +117,32 @@ export class ResourceService {
       updated,
     );
     return updated;
+  }
+
+  // Carga em massa do catálogo (Configurações → Recursos de Rede → Carga em massa). Reusa
+  // createResourceSpecification linha a linha para herdar validação canônica e evento TMF688 por
+  // item, mas segue o lote inteiro em vez de abortar na primeira falha (importação parcial) — o
+  // resultado por linha volta para o relatório exibido no modal.
+  public async bulkCreateResourceSpecifications(
+    items: ResourceSpecificationBulkItem[],
+  ): Promise<ResourceSpecificationBulkResult> {
+    const results: ResourceSpecificationBulkItemResult[] = [];
+    for (const item of items) {
+      try {
+        const created = await this.createResourceSpecification(item.input);
+        results.push({ line: item.line, status: 'created', id: created.id, name: created.name });
+      } catch (error) {
+        results.push({
+          line: item.line,
+          status: 'error',
+          name: item.input.name,
+          code: error instanceof AppError ? error.code : 'RESOURCE_SPEC_BULK_FAILED',
+          message: error instanceof Error ? error.message : 'Falha ao criar especificação.',
+        });
+      }
+    }
+    const created = results.filter((result) => result.status === 'created').length;
+    return { total: items.length, created, failed: items.length - created, results };
   }
 
   public async deleteResourceSpecification(id: string): Promise<ResourceSpecification> {

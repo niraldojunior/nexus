@@ -468,11 +468,11 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSection>('skills');
 
-  // Menu Locais (Geo) abre com o mapa em foco: recolhe a barra lateral com
+  // Locais (Geo) e Configurações abrem com o conteúdo em foco: recolhe a barra lateral com
   // animação ao entrar e a reabre com animação ao navegar para qualquer outro menu.
   // No mobile a barra é um drawer sobreposto e começa sempre fechada.
   useEffect(() => {
-    setSidebarCollapsed(isMobile ? true : currentPage === 'geo');
+    setSidebarCollapsed(isMobile ? true : currentPage === 'geo' || currentPage === 'configuracoes');
   }, [currentPage, isMobile]);
 
   // Reaplica o estado de navegação a partir de uma rota — usado tanto pelo `popstate` (voltar/avançar
@@ -776,6 +776,20 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
           <div className="h-full min-h-0 overflow-hidden">
             <DomainPage page="geo" onOpenMainMenu={() => setSidebarCollapsed(false)} />
           </div>
+        ) : currentPage === 'configuracoes' ? (
+          // Fora do wrapper escalado abaixo (scale-[0.93] só compensa largura, não altura —
+          // deixava cinza do fundo (bg-app-bg) aparecendo quando a aba tinha pouco conteúdo,
+          // ex. Serviços vazio). Mesmo tratamento full-bleed de 'geo', sem a barra lateral
+          // principal expandida (ver useEffect de sidebarCollapsed).
+          <div className="h-full min-h-0 overflow-hidden">
+            {session.admin ? (
+              <ConfigurationPage />
+            ) : (
+              <div className="p-8 text-app-muted">
+                Você não tem permissão para acessar Configurações.
+              </div>
+            )}
+          </div>
         ) : (
           <div
             className={
@@ -804,9 +818,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
               {currentPage === 'service' ? <ServicePage category={activeServiceCategory} /> : null}
               {currentPage === 'order' ? <DomainPage page="order" /> : null}
               {currentPage === 'usuarios' ? <UsersPage /> : null}
-              {currentPage === 'configuracoes' ? (
-                session.admin ? <ConfigurationPage /> : <div className="p-8 text-app-muted">Você não tem permissão para acessar Configurações.</div>
-              ) : null}
               {currentPage === 'research' ? (
                 activeResearchSessionId === null ? (
                   <NewResearchPage

@@ -1043,9 +1043,20 @@ export class GeoService {
     let impactedParentAssignments = 0;
     let impactedChildAssignments = 0;
 
+    // Sites of the same spec (or the same removed-child specs, below) routinely share a handful
+    // of parents — cache each parent lookup instead of re-fetching it once per child.
+    const parentSiteCache = new Map<string, GeographicSite>();
+    const getCachedParentSite = async (id: string): Promise<GeographicSite> => {
+      const cached = parentSiteCache.get(id);
+      if (cached) return cached;
+      const site = await this.getSiteOrThrow(id);
+      parentSiteCache.set(id, site);
+      return site;
+    };
+
     for (const site of sitesOfSpec) {
       const parentSpecId = site.parentSite
-        ? (await this.getSiteOrThrow(site.parentSite.id)).siteSpecificationId
+        ? (await getCachedParentSite(site.parentSite.id)).siteSpecificationId
         : undefined;
       if (parentSpecId && removedAllowedParentSpecIds.includes(parentSpecId)) {
         impactedParentAssignments += 1;
@@ -1054,13 +1065,14 @@ export class GeoService {
     }
 
     if (removedAllowedChildSpecIds.length > 0) {
-      const children = await this.repository.listSites();
+      // Scope to sites of the removed child specs only — this used to load every site in the
+      // database unfiltered, a full-table scan that timed out once the inventory grew large.
+      const children = await this.repository.listSites({
+        siteSpecificationIds: removedAllowedChildSpecIds,
+      });
       for (const childSite of children) {
-        if (
-          childSite.parentSite?.id &&
-          removedAllowedChildSpecIds.includes(childSite.siteSpecificationId)
-        ) {
-          const parentSite = await this.getSiteOrThrow(childSite.parentSite.id);
+        if (childSite.parentSite?.id) {
+          const parentSite = await getCachedParentSite(childSite.parentSite.id);
           if (parentSite.siteSpecificationId === specId) {
             impactedChildAssignments += 1;
             impactedSiteIds.add(parentSite.id);

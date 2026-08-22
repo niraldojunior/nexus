@@ -1,20 +1,15 @@
 import type { ResourceCategory } from '../services/resourceApi';
+import { isCivilInfrastructureCategory } from '../utils/resourceSpecificationForm';
 import { RESOURCE_CATEGORY_DEFAULTS } from './resourceCatalogDefaults';
 
 /**
  * Navegação do Módulo de Recursos organizada por categoria.
  *
- * As páginas deixaram de ser por entidade TMF (Físico / Lógico / Catálogo) e passaram a ser
- * por categoria de recurso. Cada categoria vira um item de menu; a distinção Inventário × Catálogo
- * é uma sub-aba dentro da própria página (ver `RESOURCE_VIEWS`).
+ * As páginas deixaram de ser por entidade TMF (Físico / Lógico / Catálogo) e passaram a ser por
+ * categoria de recurso. Cada categoria vira um item de menu. O Catálogo (ResourceSpecification) foi
+ * centralizado em Configurações (acesso restrito a admin, ver ResourceCatalogTab.tsx) — esta página
+ * só cobre o Inventário.
  */
-
-export type ResourceView = 'inventory' | 'catalog';
-
-export const RESOURCE_VIEWS: Array<{ id: ResourceView; label: string }> = [
-  { id: 'inventory', label: 'Inventário' },
-  { id: 'catalog', label: 'Catálogo' },
-];
 
 /** Rótulos PT-BR das famílias de categoria, na ordem em que aparecem no menu. */
 export const RESOURCE_CATEGORY_GROUPS: Array<{ key: string; label: string }> = [
@@ -46,6 +41,22 @@ export function sidebarCategoryLabel(category: ResourceCategory): string {
 }
 
 /**
+ * Seção de mais alto nível do submenu de Recursos — separa obra civil (dutos, postes, caixas)
+ * do restante (equipamento, passivo óptico, cabos, lógicos), espelhando as abas do catálogo em
+ * Configurações (ver ResourceCatalogTab). Toda categoria cai numa das duas.
+ */
+export const RESOURCE_INFRA_SECTION_LABELS = {
+  network: 'Infraestrutura de Rede',
+  civil: 'Infraestrutura Civil',
+} as const;
+
+export function resourceInfraSectionLabel(categoryCode: string): string {
+  return isCivilInfrastructureCategory(categoryCode)
+    ? RESOURCE_INFRA_SECTION_LABELS.civil
+    : RESOURCE_INFRA_SECTION_LABELS.network;
+}
+
+/**
  * Descrição de cabeçalho por categoria — resume o que a categoria representa e cita exemplos de
  * tipos. Exibida na aba Inventário da página de recurso (o Catálogo mantém texto próprio, ver
  * `tabConfig` em ResourcePage). Categoria sem texto específico cai no genérico.
@@ -58,7 +69,9 @@ const RESOURCE_CATEGORY_DESCRIPTIONS: Record<string, string> = {
   'Equipment.CustomerPremises':
     'Equipamentos no endereço do assinante — ONTs e CPEs —, com número de série e vínculo ao serviço.',
   'Infrastructure.Passive':
-    'Elementos passivos — splitters, CTOs, DIOs, dutos, postes e caixas —, com ocupação e contenção.',
+    'Elementos passivos ópticos — splitters, CTOs e DIOs —, com ocupação e contenção.',
+  'Infrastructure.CivilWorks':
+    'Obra civil — dutos, postes e caixas de passagem — que sustenta a rede, sem tipo de rede próprio.',
   'Cable.OutsidePlant':
     'Cabos ópticos da planta externa — backbone, distribuição e drop —, com rota, fibras e ocupação.',
   'Cable.InsidePlant':

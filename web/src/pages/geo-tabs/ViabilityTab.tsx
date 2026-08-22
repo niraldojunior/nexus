@@ -196,7 +196,12 @@ export function ViabilityTab({ origin, onSimulate }: ViabilityTabProps) {
                 }`}
               >
                 <ResourceIcon
-                  resource={{ resourceType: 'CTO', status: candidate.node.status }}
+                  resource={{
+                    resourceType: 'CTO',
+                    status: candidate.node.status,
+                    name: candidate.node.label,
+                    sublabel: candidate.node.sublabel,
+                  }}
                   variant="badge"
                   size={22}
                 />

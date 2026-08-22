@@ -142,6 +142,22 @@ export type CreateResourceSpecificationInput = {
 
 export type UpdateResourceSpecificationInput = Partial<CreateResourceSpecificationInput>;
 
+export type ResourceSpecificationBulkItem = {
+  line: number;
+  input: CreateResourceSpecificationInput;
+};
+
+export type ResourceSpecificationBulkItemResult =
+  | { line: number; status: 'created'; id: string; name: string }
+  | { line: number; status: 'error'; name: string; code: string; message: string };
+
+export type ResourceSpecificationBulkResult = {
+  total: number;
+  created: number;
+  failed: number;
+  results: ResourceSpecificationBulkItemResult[];
+};
+
 export type CreateResourceFunctionSpecificationInput = {
   name: string;
   description?: string;

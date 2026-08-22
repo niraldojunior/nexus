@@ -1,4 +1,4 @@
-import { RefreshCw, Settings } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import type { GeoProject, GeoProjectDeleteSummary } from '../../services/geoProjectApi';
 import type { GeoTree } from '../../hooks/useGeoTree';
@@ -13,7 +13,6 @@ export type HierarchySidebarProps = {
   tree: GeoTree;
   selectedNodeId: string | null;
   onSelect: (node: GeoTreeNode) => void;
-  onOpenTypes: () => void;
   onHover?: (node: GeoTreeNode | null) => void;
   // Colapso controlado pelo pai: quando o painel de detalhe abre, GeoPage recolhe
   // a hierarquia para dar lugar a ele (uma doca, um painel por vez) sem perder o
@@ -44,7 +43,6 @@ export function HierarchySidebar({
   tree,
   selectedNodeId,
   onSelect,
-  onOpenTypes,
   onHover,
   collapsed,
   onCollapsedChange,
@@ -107,7 +105,6 @@ export function HierarchySidebar({
             onClick={tree.reload}
             spinning={tree.loading}
           />
-          <SidebarIconButton icon={Settings} label="Tipos de local" onClick={onOpenTypes} />
         </div>
       ) : null}
 

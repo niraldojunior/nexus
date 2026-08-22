@@ -10,7 +10,7 @@ import type {
 } from '../services/resourceApi';
 import ResourcePage from './ResourcePage';
 
-// 20 physical specs so the Equipment.Access catalog paginates client-side (>20 items with spec-ipam-2).
+// 20 physical specs so the Equipment.Access "Nome do Modelo" picklist has a real domain to filter.
 const physicalSpecs: ResourceSpecification[] = Array.from({ length: 20 }, (_, index) => ({
   '@type': 'ResourceSpecification' as const,
   id: `spec-${index + 1}`,
@@ -194,9 +194,6 @@ const logicalResources: LogicalResource[] = Array.from({ length: 20 }, (_, index
 
 const loadResourceWorkspaceSnapshotMock = vi.spyOn(resourceApi, 'loadResourceWorkspaceSnapshot');
 const listResourcesMock = vi.spyOn(resourceApi, 'listResources');
-const createResourceSpecificationMock = vi.spyOn(resourceApi, 'createResourceSpecification');
-const updateResourceSpecificationMock = vi.spyOn(resourceApi, 'updateResourceSpecification');
-const deleteResourceSpecificationMock = vi.spyOn(resourceApi, 'deleteResourceSpecification');
 const createResourceMock = vi.spyOn(resourceApi, 'createResource');
 const updateResourceMock = vi.spyOn(resourceApi, 'updateResource');
 const deleteResourceMock = vi.spyOn(resourceApi, 'deleteResource');
@@ -268,14 +265,6 @@ beforeEach(() => {
   }
   loadResourceWorkspaceSnapshotMock.mockImplementation(async (request) => buildSnapshot(request));
   listResourcesMock.mockResolvedValue([]);
-  createResourceSpecificationMock.mockResolvedValue(resourceSpecifications[0]);
-  updateResourceSpecificationMock.mockResolvedValue(resourceSpecifications[0]);
-  deleteResourceSpecificationMock.mockImplementation(async (id) => {
-    const spec = resourceSpecifications.find((item) => item.id === id);
-    if (!spec) return resourceSpecifications[0];
-    spec.validFor = { endDateTime: '2026-07-09T10:00:00.000Z' };
-    return spec;
-  });
   createResourceMock.mockResolvedValue(physicalResources[0]);
   updateResourceMock.mockResolvedValue(physicalResources[0]);
   deleteResourceMock.mockResolvedValue(physicalResources[0]);
@@ -293,7 +282,6 @@ test('defaults to the first category and lists its physical inventory', async ()
   ).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Criar recurso' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Excluir selecionados' })).toBeInTheDocument();
-  expect(screen.getByRole('tab', { name: 'Inventário' })).toHaveAttribute('aria-selected', 'true');
 
   await waitFor(() =>
     expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({
@@ -380,26 +368,6 @@ test('does not add filter controls to free-text columns', async () => {
   expect(screen.getByRole('columnheader', { name: 'Detalhes' })).toBeInTheDocument();
 });
 
-test('switching to Catálogo lists specs scoped to the category with no Categoria column', async () => {
-  const user = userEvent.setup();
-  render(<ResourcePage category="Equipment.Access" />);
-
-  await screen.findAllByText('Physical 1');
-  await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
-
-  await waitFor(() =>
-    expect(loadResourceWorkspaceSnapshotMock).toHaveBeenCalledWith({
-      tab: 'ResourceSpecification',
-      limit: 20,
-      offset: 0,
-    }),
-  );
-  expect((await screen.findAllByText('Model 1'))[0]).toBeInTheDocument();
-  expect((await screen.findAllByText('OLT'))[0]).toBeInTheDocument();
-  expect(screen.queryByRole('columnheader', { name: 'Categoria' })).not.toBeInTheDocument();
-  expect(screen.getByRole('columnheader', { name: 'Tipo do Recurso' })).toBeInTheDocument();
-});
-
 test('physical create modal assumes the page category and hides the Categoria field', async () => {
   const user = userEvent.setup();
   render(<ResourcePage category="Equipment.Access" />);
@@ -473,97 +441,6 @@ test('logical category lists logical inventory and its modal scopes specs by cat
   );
 });
 
-test('resource specification editor omits Categoria but keeps the Tipo combobox', async () => {
-  const user = userEvent.setup();
-  render(<ResourcePage category="Equipment.Access" />);
-
-  await screen.findAllByText('Physical 1');
-  await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
-
-  await user.click((await screen.findAllByText('Model 1'))[0]);
-  expect(await screen.findByRole('dialog')).toHaveTextContent('Editar Modelo de Recurso');
-  expect(screen.queryByRole('combobox', { name: 'Categoria' })).not.toBeInTheDocument();
-  expect(screen.getByRole('combobox', { name: 'Tipo do Recurso' })).toBeInTheDocument();
-  expect(screen.getByLabelText(/Cod\. Equipamento/i)).toHaveValue('EQ-1');
-  expect(screen.getByLabelText(/Fabricante/i)).toHaveValue('party-datacom');
-  expect(screen.getByLabelText(/^Modelo$/i)).toHaveValue('Model 1');
-});
-
-test('resource specification create fixes the category from the page and serializes characteristics', async () => {
-  const user = userEvent.setup();
-  render(<ResourcePage category="Equipment.Access" />);
-
-  await screen.findAllByText('Physical 1');
-  await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
-  await user.click(screen.getByRole('button', { name: 'Criar recurso' }));
-
-  expect(await screen.findByRole('dialog')).toHaveTextContent('Criar Modelo de Recurso');
-  await user.selectOptions(screen.getByLabelText(/Fabricante/i), 'party-huawei');
-  await user.type(screen.getByLabelText(/Cod\. Equipamento/i), 'EQ-OLT-001');
-  await user.click(screen.getByRole('combobox', { name: 'Tipo do Recurso' }));
-  await user.click(screen.getByRole('option', { name: /Optical Line Terminal/ }));
-  await user.type(screen.getByLabelText(/^Modelo$/i), 'MA5800');
-  await user.selectOptions(screen.getByLabelText(/Estocável\?/i), 'true');
-  await user.selectOptions(screen.getByLabelText(/Status/i), 'active');
-
-  await user.click(screen.getByRole('button', { name: 'Criar' }));
-
-  await waitFor(() => expect(createResourceSpecificationMock).toHaveBeenCalledTimes(1));
-  const payload = createResourceSpecificationMock.mock.calls[0]?.[0] as {
-    name: string;
-    category: string;
-    resourceType: string;
-    relatedParty?: Array<{ id: string; '@referredType': string; role?: string; name?: string }>;
-    resourceSpecificationCharacteristic?: Array<{ name: string; value: unknown }>;
-  };
-  expect(payload).toEqual(
-    expect.objectContaining({
-      name: 'MA5800',
-      category: 'Equipment.Access',
-      resourceType: 'OLT',
-      relatedParty: [
-        expect.objectContaining({
-          id: 'party-huawei',
-          '@referredType': 'Organization',
-          role: 'manufacturer',
-          name: 'HUAWEI',
-        }),
-      ],
-    }),
-  );
-  expect(payload.resourceSpecificationCharacteristic).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ name: 'equipmentCode', value: 'EQ-OLT-001' }),
-      expect.objectContaining({ name: 'model', value: 'MA5800' }),
-      expect.objectContaining({ name: 'stockable', value: true }),
-      expect.objectContaining({ name: 'lifecycleStatus', value: 'active' }),
-    ]),
-  );
-});
-
-test('resource specification create requires type and model before submitting', async () => {
-  const user = userEvent.setup();
-  render(<ResourcePage category="Equipment.Access" />);
-
-  await screen.findAllByText('Physical 1');
-  await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
-  await user.click(screen.getByRole('button', { name: 'Criar recurso' }));
-
-  const createButton = await screen.findByRole('button', { name: 'Criar' });
-  expect(createButton).toBeDisabled();
-
-  await user.type(screen.getByLabelText(/^Modelo$/i), 'MA5800');
-  expect(createButton).toBeDisabled();
-
-  await user.click(screen.getByRole('combobox', { name: 'Tipo do Recurso' }));
-  await user.click(screen.getByRole('option', { name: /Optical Line Terminal/ }));
-
-  await waitFor(() => expect(createButton).toBeEnabled());
-  await user.click(createButton);
-
-  await waitFor(() => expect(createResourceSpecificationMock).toHaveBeenCalledTimes(1));
-});
-
 test('bulk selection enables delete and reloads the inventory after deletion', async () => {
   const user = userEvent.setup();
   const inventory: PhysicalResource[] = physicalResources.map((resource) => ({ ...resource }));
@@ -595,52 +472,17 @@ test('bulk selection enables delete and reloads the inventory after deletion', a
   await waitFor(() => expect(screen.queryByText('Physical 1')).not.toBeInTheDocument());
 });
 
-test('deleting a resource specification requires confirmation and removes it from the catalog', async () => {
-  const user = userEvent.setup();
-  const catalog: ResourceSpecification[] = resourceSpecifications.map((spec) => ({ ...spec }));
-  loadResourceWorkspaceSnapshotMock.mockImplementation(async (request) =>
-    // The backend excludes soft-terminated specs; mirror that so deletions leave the catalog.
-    buildSnapshot(request, { specs: catalog.filter((spec) => !spec.validFor?.endDateTime) }),
-  );
-  deleteResourceSpecificationMock.mockImplementation(async (id) => {
-    const spec = catalog.find((item) => item.id === id);
-    if (!spec) return resourceSpecifications[0];
-    spec.validFor = { endDateTime: '2026-07-09T10:00:00.000Z' };
-    return spec;
-  });
-  render(<ResourcePage category="Equipment.Access" />);
-
-  await screen.findAllByText('Physical 1');
-  await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
-
-  await screen.findByRole('checkbox', { name: 'Selecionar Spec 1' });
-  await user.click(screen.getAllByRole('checkbox', { name: 'Selecionar Spec 1' })[0]);
-  await user.click(screen.getByRole('button', { name: 'Excluir selecionados' }));
-
-  const dialog = await screen.findByRole('dialog');
-  expect(dialog).toHaveTextContent('Excluir 1 selecionado?');
-  expect(dialog).toHaveTextContent('Spec 1');
-
-  await user.click(screen.getByRole('button', { name: 'Confirmar exclusão' }));
-
-  await waitFor(() => expect(deleteResourceSpecificationMock).toHaveBeenCalledWith('spec-1'));
-  await waitFor(() => expect(screen.queryByText('Model 1')).not.toBeInTheDocument());
-});
-
 test('canceling the delete confirmation does not call delete', async () => {
   const user = userEvent.setup();
   render(<ResourcePage category="Equipment.Access" />);
 
   await screen.findAllByText('Physical 1');
-  await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
-
-  await screen.findByRole('checkbox', { name: 'Selecionar Spec 1' });
-  await user.click(screen.getAllByRole('checkbox', { name: 'Selecionar Spec 1' })[0]);
+  await user.click(screen.getAllByRole('checkbox', { name: 'Selecionar Physical 1' })[0]);
   await user.click(screen.getByRole('button', { name: 'Excluir selecionados' }));
 
   expect(await screen.findByRole('dialog')).toHaveTextContent('Excluir 1 selecionado?');
   await user.click(screen.getByRole('button', { name: 'Cancelar' }));
 
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-  expect(deleteResourceSpecificationMock).not.toHaveBeenCalled();
+  expect(deleteResourceMock).not.toHaveBeenCalled();
 });

@@ -368,10 +368,24 @@ export const replaceQuestionBinds = (sql: string, replacement: () => string): st
   return result;
 };
 
-const splitSqlStatements = (sql: string): string[] =>
+// Remove comentários de linha (`-- ...`) antes de dividir por `;` — sem isso, um comentário em
+// prosa (pt-BR) que contenha um `;` (pontuação normal) parte a instrução SQL no meio do
+// comentário, e o texto que sobra depois do `;` (sem o prefixo `--`) vaza como SQL literal na
+// próxima instrução, quebrando a migração com "syntax error at or near ...". Não distingue `--`
+// dentro de string literal — inofensivo aqui porque o schema não guarda `--` como dado.
+const stripSqlLineComments = (sql: string): string =>
   sql
+    .split('\n')
+    .map((line) => {
+      const commentIndex = line.indexOf('--');
+      return commentIndex === -1 ? line : line.slice(0, commentIndex);
+    })
+    .join('\n');
+
+const splitSqlStatements = (sql: string): string[] =>
+  stripSqlLineComments(sql)
     .split(';')
-    .map((statement) => statement.replace(/^\s*(?:--.*\r?\n\s*)+/g, '').trim())
+    .map((statement) => statement.trim())
     .filter(Boolean);
 
 const parseConnectionString = (raw: string): { connectionString: string; schemaName?: string } => {

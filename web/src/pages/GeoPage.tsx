@@ -1,13 +1,4 @@
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Activity,
@@ -22,20 +13,11 @@ import {
   Info as InfoIcon,
   Loader2,
   MapPin,
-  Pencil,
-  Trash2,
 } from 'lucide-react';
 import type { GeoStatus, GeoSpec, GeoSite } from '../services/geoApi';
-import { deleteJson, getJson, patchJson, postJson, listGeoSites } from '../services/geoApi';
+import { getJson, listGeoSites } from '../services/geoApi';
 import { siteKindFromSpec, siteKindLabel } from '../utils/placeLabel';
-import {
-  siteStatusLabel,
-  siteSpecLabel,
-  siteSpecCategoryLabel,
-  siteSpecNameLabel,
-  siteRoleLabel,
-  SITE_ROLE_OPTIONS,
-} from '../utils/geoLabels';
+import { siteStatusLabel, siteSpecNameLabel } from '../utils/geoLabels';
 import {
   fetchTreeChildren,
   treeNodePoint,
@@ -340,7 +322,12 @@ function buildPointMarkerVisual(
     };
   }
 
-  const icon = resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
+  const icon = resourceIconFor({
+    resourceType: node.resourceType ?? '',
+    status: node.status,
+    name: node.label,
+    sublabel: node.sublabel,
+  });
   // Um Recurso só chega aqui via Marker nativo quando é o nó selecionado (ver `mapNodes` em
   // GeoPage) — nesse caso `selected` é sempre true, então o fallback do `??` nunca é exercitado
   // de fato; existe só pra função ser total mesmo se isso mudar.
@@ -436,7 +423,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Viabilidade. Mora aqui, e não no painel, porque quem desenha é o mapa; o painel só
   // o produz e o apaga ao se desmontar (ver ViabilityTab).
   const [dropSimulation, setDropSimulation] = useState<DropSimulation | null>(null);
-  const [typeOpen, setTypeOpen] = useState(false);
   const [confirmDiscardProjectSite, setConfirmDiscardProjectSite] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   // Colapso da hierarquia, hoisted de HierarchySidebar: precisa viver aqui para a
@@ -1263,7 +1249,12 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     }
 
     const status = resourceStatusLabel[(node.status as GeoStatus) ?? 'active'];
-    const icon = resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
+    const icon = resourceIconFor({
+      resourceType: node.resourceType ?? '',
+      status: node.status,
+      name: node.label,
+      sublabel: node.sublabel,
+    });
     // Cabo não tem pin: o balão nasce sobre o traçado, sem folga de ícone.
     const isCable = Boolean(treeNodeRoute(node));
     const rows: Array<[string, string]> = [
@@ -1288,13 +1279,13 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Esc fecha o painel de detalhe — mas só quando nenhum outro modal está
   // aberto, senão a tecla fecharia os dois de uma vez.
   useEffect(() => {
-    if (!detailOpen || typeOpen || addressError) return;
+    if (!detailOpen || addressError) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setDetailOpen(false);
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [addressError, detailOpen, typeOpen]);
+  }, [addressError, detailOpen]);
 
   // Projeto do dockView atual, se houver — `undefined` enquanto a lista ainda carrega ou se
   // o projeto foi excluído em outra aba; nesse caso o render cai de volta para a Hierarquia.
@@ -1443,7 +1434,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               selectedNodeId={selectedNode?.id ?? null}
               onSelect={selectNodeFromTree}
               onHover={handleHover}
-              onOpenTypes={() => setTypeOpen(true)}
               collapsed={hierarchyCollapsed}
               onCollapsedChange={setHierarchyCollapsed}
               tab={hierarchyTab}
@@ -1479,6 +1469,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               onHoverNode={handleHover}
               onCloseBalloon={() => handleHover(null)}
               onDraftAddress={onMapAddressFound}
+              pickingAddress={pickingProjectSite}
               // Navegação manual do mapa (arrastar, pinça, roda, duplo clique) NÃO
               // desseleciona (issue #19); no mobile, encolhe a folha para peek (ver
               // handleManualMapNavigation). `selectionActive` diz ao mapa se há algo aberto,
@@ -1546,16 +1537,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         </div>
       </main>
 
-      {typeOpen ? (
-        <TypeManagementModal
-          specs={specs}
-          onClose={() => setTypeOpen(false)}
-          onChanged={async () => {
-            await loadGeo();
-          }}
-        />
-      ) : null}
-
       {confirmDiscardProjectSite && dockView.kind === 'project' ? (
         <Modal
           onClose={() => setConfirmDiscardProjectSite(false)}
@@ -1611,6 +1592,7 @@ export function GoogleMapPanel({
   onHoverNode,
   onCloseBalloon,
   onDraftAddress,
+  pickingAddress = false,
   onManualNavigation,
   selectionActive,
   onViewportChange,
@@ -1663,6 +1645,10 @@ export function GoogleMapPanel({
   onHoverNode: (node: GeoTreeNode | null) => void;
   onCloseBalloon: () => void;
   onDraftAddress: (address: DraftAddress) => void;
+  // "Escolher no mapa" do painel unificado de Local (SitePanel/onTogglePickOnMap): o
+  // cursor vira mira para sinalizar que o próximo clique define o ponto, em vez do
+  // padrão de navegação. Some assim que o clique resolve o endereço (ver GeoPage).
+  pickingAddress?: boolean;
   // Navegação manual do mapa com algo selecionado: mantém a seleção (issue #19) e serve
   // para o mobile encolher a folha para peek. Só é chamado quando `selectionActive`.
   onManualNavigation?: () => void;
@@ -1776,6 +1762,13 @@ export function GoogleMapPanel({
   const onSelectNodeRef = useRef(onSelectNode);
   const onHoverNodeRef = useRef(onHoverNode);
   const onViewportChangeRef = useRef(onViewportChange);
+  // O listener de `click` do mapa é atado uma única vez (ver o guard `mapRef.current` no
+  // efeito de criação abaixo) — sem ref, ele ficaria preso para sempre à função (e ao
+  // `pickingProjectSite` capturado nela) da primeira montagem, mesmo depois do usuário
+  // apertar "Escolher no mapa". Era exatamente esse o bug: o clique sempre abria o painel
+  // de Endereço e derrubava o projeto em vez de devolver o ponto ao formulário.
+  const onDraftAddressRef = useRef(onDraftAddress);
+  const pickingAddressRef = useRef(pickingAddress);
   // O clique no vazio do mapa sempre consulta aquele ponto (ver listener de click);
   // o auto-locate ainda lê a seleção corrente daqui para não roubar o enquadramento.
   const selectedNodeIdRef = useRef(selectedNodeId);
@@ -1811,6 +1804,17 @@ export function GoogleMapPanel({
   useEffect(() => {
     onHoverNodeRef.current = onHoverNode;
   }, [onHoverNode]);
+
+  useEffect(() => {
+    onDraftAddressRef.current = onDraftAddress;
+  }, [onDraftAddress]);
+
+  useEffect(() => {
+    pickingAddressRef.current = pickingAddress;
+    if (mapRef.current) {
+      mapRef.current.setOptions({ draggableCursor: pickingAddress ? 'crosshair' : null });
+    }
+  }, [pickingAddress]);
 
   useEffect(() => {
     selectedNodeIdRef.current = selectedNodeId;
@@ -1925,8 +1929,9 @@ export function GoogleMapPanel({
           // Infra passiva desenhada em canvas (InfraOverlay, Fase 3 da issue #69) não tem
           // Marker próprio pra capturar o clique nativamente — hit-test primeiro; um acerto
           // seleciona a feature e sai cedo, igual a um clique em Marker/Polyline de verdade
-          // (que também nunca chega até aqui).
-          const infraHit = infraOverlayRef.current?.hitTest(lng, lat);
+          // (que também nunca chega até aqui). Em modo "Escolher no mapa" (pickingAddress),
+          // qualquer clique é o ponto do novo local — nunca seleciona a feature por baixo.
+          const infraHit = pickingAddressRef.current ? null : infraOverlayRef.current?.hitTest(lng, lat);
           if (infraHit) {
             closeBalloonRef.current();
             onSelectInfraFeatureRef.current(infraHit);
@@ -1944,13 +1949,17 @@ export function GoogleMapPanel({
             // polyline não chegam aqui, então o balão só fecha no vazio do mapa.
             closeBalloonRef.current();
             // Issue #19: o clique no vazio consulta o ponto e abre o painel de Endereço,
-            // substituindo qualquer seleção anterior (ver onMapAddressFound em GeoPage). É a
-            // terceira porta de troca de seleção; pan e zoom não passam por aqui.
+            // substituindo qualquer seleção anterior (ver onMapAddressFound em GeoPage) — a
+            // menos que o painel de Local esteja em modo "Escolher no mapa", caso em que
+            // onMapAddressFound devolve o ponto para o formulário em vez de trocar de doca.
+            // É a terceira porta de troca de seleção; pan e zoom não passam por aqui. Sempre
+            // via ref (onDraftAddressRef): este listener é atado uma única vez na criação do
+            // mapa, então precisa ler a versão mais recente do callback a cada clique.
             void reverseGeocode(lat, lng)
               .catch(() => null)
               .then((address) => {
                 if (mapClickGenerationRef.current !== clickGeneration) return;
-                onDraftAddress(
+                onDraftAddressRef.current(
                   address ?? {
                     street: 'Ponto selecionado no mapa',
                     city: 'Niteroi',
@@ -2053,8 +2062,10 @@ export function GoogleMapPanel({
           const cursorShouldBeInteractive = Boolean(hit);
           // O canvas não recebe ponteiros (para o mapa continuar navegável), então o Maps não
           // sabe sozinho que há uma feature clicável abaixo do mouse. Só toca na opção quando
-          // cruza a fronteira de hover, evitando trabalho a cada mousemove.
-          if (cursorShouldBeInteractive !== infraCursorIsInteractive) {
+          // cruza a fronteira de hover, evitando trabalho a cada mousemove. Em modo "Escolher
+          // no mapa" a mira (crosshair) prevalece — não troca para "pointer" sobre uma
+          // feature, porque o clique aqui nunca a seleciona (ver o listener de `click`).
+          if (!pickingAddressRef.current && cursorShouldBeInteractive !== infraCursorIsInteractive) {
             infraCursorIsInteractive = cursorShouldBeInteractive;
             mapRef.current?.setOptions({
               draggableCursor: cursorShouldBeInteractive ? 'pointer' : null,
@@ -2075,7 +2086,6 @@ export function GoogleMapPanel({
       .finally(() => setMapsLoading(false));
   }, [
     handleManualNavigation,
-    onDraftAddress,
     selectedBaseLayer.googleMapTypeId,
     selectedBaseLayer.mapStyles,
   ]);
@@ -2948,7 +2958,12 @@ function FallbackMap({
               siteKindFromSpec({ category: node.siteCategory, name: node.sublabel }),
               node.status,
             )
-          : resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
+          : resourceIconFor({
+              resourceType: node.resourceType ?? '',
+              status: node.status,
+              name: node.label,
+              sublabel: node.sublabel,
+            });
         const url = isSite
           ? siteIconDataUrl(icon as ReturnType<typeof siteIconFor>, { size: 40 })
           : resourceIconDataUrl(icon as ReturnType<typeof resourceIconFor>, { size: 40 });
@@ -3002,7 +3017,11 @@ function GeoDetailPanel({
   // Detalhe de Recurso não tem pedido próprio de encaixe — só repassa o
   // `minimizeSignal` (peek na navegação manual do mapa) como comando para a folha.
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
-  const eyebrow = resourceIconFor(target.node.resourceType ?? '').label;
+  const eyebrow = resourceIconFor({
+    resourceType: target.node.resourceType ?? '',
+    name: target.node.label,
+    sublabel: target.node.sublabel,
+  }).label;
   const title = target.node.label;
 
   const resourcePoint = streetViewTargetsForGeometry(target.node.geometry)[0]?.point;
@@ -3112,7 +3131,13 @@ function ResourceDetailBody({
           <IconInfoRow
             icon={Boxes}
             hint="Tipo do recurso"
-            value={resourceIconFor(node.resourceType ?? '').label}
+            value={
+              resourceIconFor({
+                resourceType: node.resourceType ?? '',
+                name: node.label,
+                sublabel: node.sublabel,
+              }).label
+            }
           />
           {node.sublabel ? (
             <IconInfoRow icon={Database} hint="Especificação de origem" value={node.sublabel} />
@@ -3171,7 +3196,12 @@ function ResourceDetailBody({
                   className="flex w-full min-w-0 items-start gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
                 >
                   <ResourceIcon
-                    resource={{ resourceType: child.resourceType ?? '', status: child.status }}
+                    resource={{
+                      resourceType: child.resourceType ?? '',
+                      status: child.status,
+                      name: child.label,
+                      sublabel: child.sublabel,
+                    }}
                     variant="badge"
                     size={26}
                   />
@@ -3184,6 +3214,8 @@ function ResourceDetailBody({
                         resourceIconFor({
                           resourceType: child.resourceType ?? '',
                           status: child.status,
+                          name: child.label,
+                          sublabel: child.sublabel,
                         }).label,
                         child.detail?.model,
                         child.detail?.serialNumber,
@@ -3236,198 +3268,6 @@ function useResourceChildren(node: GeoTreeNode): { children: GeoTreeNode[]; load
   return { children: nodes, loading };
 }
 
-function TypeManagementModal({
-  specs,
-  onClose,
-  onChanged,
-}: {
-  specs: GeoSpec[];
-  onClose: () => void;
-  onChanged: () => Promise<void>;
-}) {
-  const [name, setName] = useState('');
-  const [category, setCategory] = useState<GeoSpec['category']>('Site');
-  const [siteRole, setSiteRole] = useState<GeoSpec['siteRole']>('network');
-  const [saving, setSaving] = useState(false);
-  const [editingSpec, setEditingSpec] = useState<GeoSpec | null>(null);
-  const [pendingRemoval, setPendingRemoval] = useState<GeoSpec | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const activeSpecs = specs.filter((spec) => spec.lifecycleStatus === 'Active');
-
-  const resetForm = () => {
-    setName('');
-    setCategory('Site');
-    setSiteRole('network');
-    setEditingSpec(null);
-  };
-
-  const startEdit = (spec: GeoSpec) => {
-    setEditingSpec(spec);
-    setName(spec.name);
-    setCategory(spec.category);
-    setSiteRole(spec.siteRole);
-    setError(null);
-  };
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!name.trim()) return;
-    setSaving(true);
-    setError(null);
-    try {
-      if (editingSpec) {
-        await patchJson(`/v1/geo/site-specifications/${encodeURIComponent(editingSpec.id)}`, {
-          name,
-          siteRole,
-        });
-      } else {
-        await postJson('/v1/geo/site-specifications', { name, category, siteRole });
-      }
-      resetForm();
-      await onChanged();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o tipo de Site.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const remove = async () => {
-    if (!pendingRemoval) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await deleteJson(`/v1/geo/site-specifications/${encodeURIComponent(pendingRemoval.id)}`);
-      if (editingSpec?.id === pendingRemoval.id) resetForm();
-      setPendingRemoval(null);
-      await onChanged();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível remover o tipo de Site.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Modal onClose={onClose} title="Tipos de Site" eyebrow="Catalogo">
-      <div className="mb-4 max-h-[260px] overflow-auto rounded-[18px] border border-app-border">
-        <table className="w-full border-collapse text-left">
-          <thead>
-            <tr>
-              <Th>Nome</Th>
-              <Th>Categoria</Th>
-              <Th>Papel</Th>
-              <Th>Filhos permitidos</Th>
-              <Th>Ações</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {activeSpecs.map((spec) => (
-              <tr key={spec.id} className="border-t border-app-border">
-                <td className="px-4 py-3 text-[0.88rem] font-semibold text-app-text">
-                  {siteSpecLabel(spec)}
-                </td>
-                <td className="px-4 py-3 text-[0.84rem] text-app-muted">
-                  {siteSpecCategoryLabel(spec.category)}
-                </td>
-                <td className="px-4 py-3 text-[0.84rem] text-app-muted">
-                  {siteRoleLabel(spec.siteRole)}
-                </td>
-                <td className="px-4 py-3 text-[0.84rem] text-app-muted">
-                  {spec.allowedChildSpecIds.length || '-'}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center justify-end gap-1">
-                    <button
-                      type="button"
-                      className="geo-btn secondary h-8 w-8 justify-center p-0"
-                      onClick={() => startEdit(spec)}
-                      aria-label={`Editar ${siteSpecLabel(spec)}`}
-                      title="Editar tipo"
-                      disabled={saving}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    {pendingRemoval?.id === spec.id ? (
-                      <button
-                        type="button"
-                        className="geo-btn primary h-8 px-2 text-[0.75rem]"
-                        onClick={() => void remove()}
-                        disabled={saving}
-                      >
-                        Confirmar
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="geo-btn secondary h-8 w-8 justify-center p-0 text-app-danger"
-                        onClick={() => {
-                          setPendingRemoval(spec);
-                          setError(null);
-                        }}
-                        aria-label={`Remover ${siteSpecLabel(spec)}`}
-                        title="Remover tipo"
-                        disabled={saving}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {error ? <p role="alert" className="mb-3 text-[0.84rem] text-app-danger">{error}</p> : null}
-      <form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_180px_180px_auto_auto]">
-        <input
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          className="geo-input"
-          placeholder="ex: Central Office"
-        />
-        <select
-          value={category}
-          onChange={(event) => setCategory(event.target.value as GeoSpec['category'])}
-          className="geo-input"
-          disabled={editingSpec !== null}
-          title={editingSpec ? 'A categoria não pode ser alterada após o cadastro.' : undefined}
-        >
-          {['Region', 'FunctionalGroup', 'Site', 'SubSite'].map((item) => (
-            <option key={item} value={item}>
-              {siteSpecCategoryLabel(item)}
-            </option>
-          ))}
-        </select>
-        <select
-          value={siteRole}
-          onChange={(event) => setSiteRole(event.target.value as GeoSpec['siteRole'])}
-          className="geo-input"
-        >
-          {SITE_ROLE_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <button
-          type="submit"
-          className="geo-btn primary justify-center"
-          disabled={saving || !name.trim()}
-        >
-          {editingSpec ? 'Salvar' : 'Criar'}
-        </button>
-        {editingSpec ? (
-          <button type="button" className="geo-btn secondary justify-center" onClick={resetForm} disabled={saving}>
-            Cancelar
-          </button>
-        ) : null}
-      </form>
-    </Modal>
-  );
-}
-
 // Estado de carregamento sob demanda (sub-locais, recursos do site, recursos
 // internos de um recurso): sem isto a lista vazia por um instante era
 // indistinguível de "não tem nada aqui", e a UI parecia travada.
@@ -3437,14 +3277,6 @@ function LoadingRow({ label }: { label: string }) {
       <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
       {label}
     </div>
-  );
-}
-
-function Th({ children }: { children: ReactNode }) {
-  return (
-    <th className="border-b border-app-border px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-      {children}
-    </th>
   );
 }
 

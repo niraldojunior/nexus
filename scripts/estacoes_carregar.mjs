@@ -579,7 +579,10 @@ async function main() {
   await bootstrap();
 
   const specCO = await ensureSpec('Central Office', 'Site');
-  const specSala = await ensureSpec('Sala', 'SubSite');
+  // 'Room' (não 'Sala') — a spec ad-hoc "Sala" foi unificada na canônica do bootstrap
+  // "Room" (code ROOM, ver scripts/merge-sala-into-room-sql.mjs); criar de novo por
+  // 'Sala' recriaria o duplicado que acabou de ser aposentado.
+  const specSala = await ensureSpec('Room', 'SubSite');
   await ensureContainment(specCO, specSala);
 
   for (const row of rows) {
@@ -745,7 +748,7 @@ async function main() {
 //   · grava `tmf_geographic_site_status_history` (histórico de status fica
 //     íntegro mesmo sem os outros efeitos colaterais do backend);
 //   · é idempotente por sigla/nome, igual `main()` — seguro rodar de novo.
-// Exige que as specs "Central Office"/"Sala" (com containment declarado) já
+// Exige que as specs "Central Office"/"Room" (com containment declarado) já
 // existam — rode `main()` (sem `--fast`) uma vez antes se a base for nova.
 //
 // Uso:
@@ -826,21 +829,24 @@ async function resetStations(client) {
 async function loadSpecsFast(client) {
   const { rows } = await client.query(
     `SELECT id, name, allowed_parent_spec_ids, allowed_child_spec_ids
-     FROM tmf_geographic_site_specification WHERE name IN ('Central Office', 'Sala')`,
+     FROM tmf_geographic_site_specification WHERE name IN ('Central Office', 'Room')`,
   );
   const byName = new Map(rows.map((r) => [r.name, r]));
   const co = byName.get('Central Office');
-  const sala = byName.get('Sala');
+  // 'Room' — a spec ad-hoc "Sala" foi unificada na canônica do bootstrap "Room" (code
+  // ROOM, ver scripts/merge-sala-into-room-sql.mjs); ler por 'Sala' aqui não acharia
+  // nada (spec aposentada) e mascararia o erro abaixo.
+  const sala = byName.get('Room');
   if (!co || !sala) {
     throw new Error(
-      'Specs "Central Office"/"Sala" não encontradas. Rode `node scripts/estacoes_carregar.mjs` (modo padrão, sem --fast) uma vez antes — ele cria as specs e o containment.',
+      'Specs "Central Office"/"Room" não encontradas. Rode `node scripts/estacoes_carregar.mjs` (modo padrão, sem --fast) uma vez antes — ele cria as specs e o containment.',
     );
   }
   const childOk = (co.allowed_child_spec_ids ?? []).includes(sala.id);
   const parentOk = (sala.allowed_parent_spec_ids ?? []).includes(co.id);
   if (!childOk || !parentOk) {
     throw new Error(
-      'Specs "Central Office"/"Sala" existem mas o containment Central Office→Sala não está declarado. Rode o modo padrão (sem --fast) uma vez — ele chama `ensureContainment`.',
+      'Specs "Central Office"/"Room" existem mas o containment Central Office→Room não está declarado. Rode o modo padrão (sem --fast) uma vez — ele chama `ensureContainment`.',
     );
   }
   return { specCOId: co.id, specSalaId: sala.id };

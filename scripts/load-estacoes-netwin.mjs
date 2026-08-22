@@ -293,7 +293,10 @@ async function main() {
 
   const specRegion = await ensureSpec('Localidade', 'Region');
   const specCO = await ensureSpec('Central Office', 'Site');
-  const specSala = await ensureSpec('Sala', 'SubSite');
+  // 'Room' (não 'Sala') — a spec ad-hoc "Sala" foi unificada na canônica do bootstrap
+  // "Room" (code ROOM, ver scripts/merge-sala-into-room-sql.mjs); criar de novo por
+  // 'Sala' recriaria o duplicado que acabou de ser aposentado.
+  const specSala = await ensureSpec('Room', 'SubSite');
 
   for (const row of rows) {
     const uf = row['UF'] || 'RJ';

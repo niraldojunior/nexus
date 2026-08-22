@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   Briefcase,
-  FileText,
   Filter,
   Loader2,
   Network,
@@ -14,11 +13,9 @@ import {
 } from 'lucide-react';
 import {
   createService,
-  createServiceSpecification,
   loadServiceWorkspaceSnapshot,
   terminateService,
   updateService,
-  updateServiceSpecification,
   type CustomerFacingService,
   type CustomerFacingServicePayload,
   type ResourceFacingService,
@@ -26,10 +23,7 @@ import {
   type ServiceCategory,
   type ServiceEntity,
   type ServiceSpecification,
-  type ServiceSpecificationPayload,
-  type ServiceSpecificationType,
   type ServiceState,
-  type ServiceTab,
 } from '../services/serviceApi';
 import { listResources, type ResourceEntity } from '../services/resourceApi';
 import ColumnFilterMenu from '../components/ColumnFilterMenu';
@@ -42,29 +36,28 @@ import {
   DEFAULT_SERVICE_CATEGORY_CODE,
   SERVICE_STATE_LABELS,
   SERVICE_STATE_ORDER,
-  SERVICE_VIEWS,
   serviceCategoryCode,
-  type ServiceView,
 } from '../data/serviceCategoryViews';
+import {
+  emptyServiceSpecFormState,
+  type ServiceSpecFormState,
+} from '../utils/serviceSpecificationForm';
 
 const PAGE_SIZE = 20;
 
-type ServiceTabId = ServiceTab;
+// Inventário apenas — o Catálogo (ServiceSpecification) foi centralizado em Configurações
+// (acesso restrito a admin), ver ServiceCatalogTab.tsx.
+type ServiceTabId = 'CustomerFacingService' | 'ResourceFacingService';
 type ServiceMode = 'create' | 'edit';
 
 type ModalState = {
   tab: ServiceTabId;
   mode: ServiceMode;
-  entity: ServiceEntity | ServiceSpecification | null;
+  entity: ServiceEntity | null;
 };
 
-type ServiceFormState = {
-  name: string;
-  description: string;
-  category: string;
+type ServiceFormState = ServiceSpecFormState & {
   serviceSpecificationId: string;
-  /** Só no Catálogo: tipa a spec como CFS ou RFS. */
-  serviceType: ServiceSpecificationType | '';
   state: ServiceState;
   subscriberId: string;
   subscriberPartyId: string;
@@ -75,11 +68,8 @@ type ServiceFormState = {
 };
 
 const emptyFormState = (): ServiceFormState => ({
-  name: '',
-  description: '',
-  category: '',
+  ...emptyServiceSpecFormState(),
   serviceSpecificationId: '',
-  serviceType: '',
   state: 'designed',
   subscriberId: '',
   subscriberPartyId: '',
@@ -123,24 +113,12 @@ const tabConfig: Record<
       { key: 'place', label: 'Local' },
     ],
   },
-  ServiceSpecification: {
-    description:
-      'Catálogo de especificações que tipam os serviços de cliente (CFS) e de rede (RFS).',
-    icon: FileText,
-    buildColumns: () => [
-      { key: 'name', label: 'Especificação' },
-      { key: 'serviceType', label: 'Camada' },
-      { key: 'description', label: 'Descrição' },
-      { key: 'characteristics', label: 'Características' },
-    ],
-  },
 };
 
 // Colunas cujo domínio é um conjunto fechado de valores de sistema — ganham picklist no cabeçalho.
 const FILTERABLE_COLUMNS: Record<ServiceTabId, string[]> = {
   CustomerFacingService: ['kind', 'spec', 'state'],
   ResourceFacingService: ['kind', 'spec', 'state'],
-  ServiceSpecification: ['serviceType'],
 };
 
 type OpenFilterState = { key: string; rect: DOMRect };
@@ -151,11 +129,10 @@ interface ServicePageProps {
 
 export default function ServicePage({ category: categoryProp }: ServicePageProps = {}) {
   const category = categoryProp ?? DEFAULT_SERVICE_CATEGORY_CODE;
-  const [view, setView] = useState<ServiceView>('inventory');
-  // O Inventário mostra CFS e RFS juntos; a tab só distingue catálogo de inventário — o servidor
-  // sempre devolve CFS+RFS da categoria ativa juntos (ver buildServiceWorkspaceSnapshot).
-  const effectiveTab: ServiceTabId =
-    view === 'catalog' ? 'ServiceSpecification' : 'CustomerFacingService';
+  // A tabela mostra CFS e RFS juntos — a tab só serve para o modal de criação (RFS × CFS) e para
+  // as colunas filtráveis; o servidor devolve CFS+RFS da categoria ativa juntos (ver
+  // buildServiceWorkspaceSnapshot).
+  const effectiveTab: ServiceTabId = 'CustomerFacingService';
 
   const [page, setPage] = useState(1);
   const [columnFilters, setColumnFilters] = useState<Record<string, Set<string>>>({});
@@ -213,36 +190,16 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
   // O servidor já escopa CFS/RFS pela categoria ativa (buildServiceWorkspaceSnapshot); este filtro
   // client-side é só uma segunda passada barata (cobre o fallback categoria-via-spec) sobre um
   // conjunto que já chegou pequeno — a paginação em si continua no cliente.
-  const categoryItems = useMemo<Array<ServiceEntity | ServiceSpecification>>(() => {
-    if (view === 'catalog') {
-      return specificationOptions.filter((spec) => spec.category === category);
-    }
+  const categoryItems = useMemo<ServiceEntity[]>(() => {
     return [...customerFacingServices, ...resourceFacingServices].filter(
       (service) => serviceCategoryCode(service, specificationsById) === category,
     );
-  }, [
-    view,
-    category,
-    specificationOptions,
-    customerFacingServices,
-    resourceFacingServices,
-    specificationsById,
-  ]);
+  }, [category, customerFacingServices, resourceFacingServices, specificationsById]);
 
   // Valor exibido de uma coluna — usado para montar o domínio do filtro e para aplicá-lo, garantindo
   // que o filtro casa exatamente com o texto renderizado na célula.
   const filterableColumns = FILTERABLE_COLUMNS[effectiveTab];
-  const columnValueFor = (item: ServiceEntity | ServiceSpecification, key: string): string => {
-    if (view === 'catalog') {
-      const spec = item as ServiceSpecification;
-      switch (key) {
-        case 'serviceType':
-          return spec.serviceType;
-        default:
-          return '-';
-      }
-    }
-    const service = item as ServiceEntity;
+  const columnValueFor = (service: ServiceEntity, key: string): string => {
     switch (key) {
       case 'kind':
         return serviceKindLabel(service);
@@ -267,8 +224,8 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
     return categoryItems.filter((item) =>
       entries.every(([key, values]) => values.has(columnValueFor(item, key))),
     );
-    // columnValueFor deriva de view + catálogos, cobertos abaixo.
-  }, [categoryItems, columnFilters, view, specificationsById]);
+    // columnValueFor deriva de specificationsById, coberto abaixo.
+  }, [categoryItems, columnFilters, specificationsById]);
 
   const setColumnFilter = (key: string, values: Set<string>) => {
     setColumnFilters((current) => {
@@ -319,10 +276,7 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
     try {
       // A categoria é escopada no servidor (evita o full-scan global do inventário); a
       // paginação/filtro de coluna continua no cliente sobre esse conjunto já bem menor.
-      const snapshot = await loadServiceWorkspaceSnapshot({
-        tab,
-        ...(tab !== 'ServiceSpecification' ? { category } : {}),
-      });
+      const snapshot = await loadServiceWorkspaceSnapshot({ tab, category });
       setSpecificationOptions(snapshot.serviceSpecificationOptions);
       // O backend não modela `code` em ServiceCategory; a árvore canônica do frontend é a referência
       // de navegação. Só usamos as categorias do servidor se elas trouxerem o código.
@@ -349,14 +303,14 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
       pageSelectionCount > 0 && pageSelectionCount < pageItems.length;
   }, [pageItems.length, pageSelectionCount]);
 
-  // Trocar de categoria ou de sub-visão reinicia paginação, seleção e filtros.
+  // Trocar de categoria reinicia paginação, seleção e filtros.
   useEffect(() => {
     setPage(1);
     setSelectedIds(new Set());
     setTerminateConfirmOpen(false);
     setColumnFilters({});
     setOpenFilter(null);
-  }, [category, view]);
+  }, [category]);
 
   useEffect(() => {
     setPage(1);
@@ -365,19 +319,6 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
   useEffect(() => {
     if (!modalState) {
       setFormState(emptyFormState());
-      return;
-    }
-
-    if (modalState.tab === 'ServiceSpecification') {
-      const entity = modalState.entity as ServiceSpecification | null;
-      setFormState({
-        ...emptyFormState(),
-        name: entity?.name ?? '',
-        // A categoria é fixada pela página ativa; specs novas a herdam, edições mantêm a sua.
-        category: entity?.category ?? category,
-        serviceType: entity?.serviceType ?? 'CFS',
-        description: entity?.description ?? '',
-      });
       return;
     }
 
@@ -451,12 +392,8 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
     setModalState({ tab, mode: 'create', entity: null });
   };
 
-  const openEditModal = (entity: ServiceEntity | ServiceSpecification) => {
-    const tab: ServiceTabId =
-      view === 'catalog'
-        ? 'ServiceSpecification'
-        : ((entity as ServiceEntity)['@type'] as ServiceTabId);
-    setModalState({ tab, mode: 'edit', entity });
+  const openEditModal = (entity: ServiceEntity) => {
+    setModalState({ tab: entity['@type'] as ServiceTabId, mode: 'edit', entity });
   };
 
   const closeModal = () => {
@@ -483,11 +420,7 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
     setSaving(true);
     setError(null);
     try {
-      if (modalState?.tab === 'ServiceSpecification') {
-        const payload = buildSpecificationPayload(formState);
-        if (modalState.mode === 'create') await createServiceSpecification(payload);
-        else if (modalState.entity) await updateServiceSpecification(modalState.entity.id, payload);
-      } else if (modalState?.tab === 'CustomerFacingService') {
+      if (modalState?.tab === 'CustomerFacingService') {
         const payload = buildCfsPayload(formState);
         if (modalState.mode === 'create') await createService(payload);
         else if (modalState.entity) await updateService(modalState.entity.id, payload);
@@ -524,78 +457,49 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
     }
   };
 
-  const rows =
-    view === 'catalog'
-      ? (pageItems as ServiceSpecification[]).map((spec) => (
-          <tr
-            key={spec.id}
-            className="cursor-pointer border-b border-app-border last:border-b-0 hover:bg-app-accent-soft"
-            onClick={() => openEditModal(spec)}
-          >
-            <td className="px-4 py-3">
-              <input
-                type="checkbox"
-                aria-label={`Selecionar ${spec.name}`}
-                checked={selectedIds.has(spec.id)}
-                onClick={(event) => event.stopPropagation()}
-                onChange={() => toggleSelected(spec.id)}
-              />
-            </td>
-            <td className="px-4 py-3 text-[0.92rem] font-semibold text-app-text">{spec.name}</td>
-            <td className="px-4 py-3">
-              <LayerBadge label={spec.serviceType} />
-            </td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">{spec.description || '-'}</td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
-              {spec.serviceSpecificationCharacteristic?.length ?? 0}
-            </td>
-          </tr>
-        ))
-      : (pageItems as ServiceEntity[]).map((service) => (
-          <tr
-            key={service.id}
-            className="cursor-pointer border-b border-app-border last:border-b-0 hover:bg-app-accent-soft"
-            onClick={() => openEditModal(service)}
-          >
-            <td className="px-4 py-3">
-              <input
-                type="checkbox"
-                aria-label={`Selecionar ${service.name}`}
-                checked={selectedIds.has(service.id)}
-                onClick={(event) => event.stopPropagation()}
-                onChange={() => toggleSelected(service.id)}
-              />
-            </td>
-            <td className="px-4 py-3 text-[0.92rem] font-semibold text-app-text">{service.name}</td>
-            <td className="px-4 py-3">
-              <LayerBadge label={serviceKindLabel(service)} />
-            </td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
-              {specificationsById.get(service.serviceSpecificationId)?.name ?? '-'}
-            </td>
-            <td className="px-4 py-3">
-              <StateBadge state={service.state} />
-            </td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
-              {serviceBindingSummary(service)}
-            </td>
-            <td className="px-4 py-3 text-[0.88rem] text-app-muted">
-              <div className="flex items-center gap-2">
-                <PlaceLabelCompact place={service.place?.[0]} />
-                {service.place?.[0]?.id && (
-                  <button
-                    type="button"
-                    onClick={() => goToGeo(service.place![0].id)}
-                    className="text-[0.75rem] font-semibold text-app-accent hover:text-app-accent-border transition"
-                    title="Ver no mapa de locais"
-                  >
-                    📍
-                  </button>
-                )}
-              </div>
-            </td>
-          </tr>
-        ));
+  const rows = pageItems.map((service) => (
+    <tr
+      key={service.id}
+      className="cursor-pointer border-b border-app-border last:border-b-0 hover:bg-app-accent-soft"
+      onClick={() => openEditModal(service)}
+    >
+      <td className="px-4 py-3">
+        <input
+          type="checkbox"
+          aria-label={`Selecionar ${service.name}`}
+          checked={selectedIds.has(service.id)}
+          onClick={(event) => event.stopPropagation()}
+          onChange={() => toggleSelected(service.id)}
+        />
+      </td>
+      <td className="px-4 py-3 text-[0.92rem] font-semibold text-app-text">{service.name}</td>
+      <td className="px-4 py-3">
+        <LayerBadge label={serviceKindLabel(service)} />
+      </td>
+      <td className="px-4 py-3 text-[0.88rem] text-app-muted">
+        {specificationsById.get(service.serviceSpecificationId)?.name ?? '-'}
+      </td>
+      <td className="px-4 py-3">
+        <StateBadge state={service.state} />
+      </td>
+      <td className="px-4 py-3 text-[0.88rem] text-app-muted">{serviceBindingSummary(service)}</td>
+      <td className="px-4 py-3 text-[0.88rem] text-app-muted">
+        <div className="flex items-center gap-2">
+          <PlaceLabelCompact place={service.place?.[0]} />
+          {service.place?.[0]?.id && (
+            <button
+              type="button"
+              onClick={() => goToGeo(service.place![0].id)}
+              className="text-[0.75rem] font-semibold text-app-accent hover:text-app-accent-border transition"
+              title="Ver no mapa de locais"
+            >
+              📍
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
+  ));
 
   return (
     <div className="h-full min-h-0 overflow-hidden px-8 py-8">
@@ -611,69 +515,30 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
             </p>
           </div>
           <div className="mt-1 flex shrink-0 items-center gap-2">
-            <div
-              role="tablist"
-              aria-label="Visão do serviço"
-              className="mr-1 inline-flex items-center gap-1 rounded-[16px] border border-app-border bg-white p-1 shadow-soft"
+            <button
+              type="button"
+              onClick={() => openCreateModal('ResourceFacingService')}
+              aria-label="Criar serviço de rede (RFS)"
+              title="Criar serviço de rede (RFS)"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-[16px] border border-app-border bg-white px-4 text-[0.88rem] font-semibold text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text"
             >
-              {SERVICE_VIEWS.map((viewOption) => {
-                const selected = view === viewOption.id;
-                return (
-                  <button
-                    key={viewOption.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={selected}
-                    onClick={() => setView(viewOption.id)}
-                    className={`rounded-[12px] px-4 py-2 text-[0.88rem] font-semibold transition ${
-                      selected
-                        ? 'bg-app-accent-soft text-app-text'
-                        : 'text-app-muted hover:bg-app-accent-soft hover:text-app-text'
-                    }`}
-                  >
-                    {viewOption.label}
-                  </button>
-                );
-              })}
-            </div>
-            {view === 'catalog' ? (
-              <button
-                type="button"
-                onClick={() => openCreateModal('ServiceSpecification')}
-                aria-label="Criar especificação"
-                title="Criar especificação"
-                className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-app-border bg-white text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text focus-visible:border-app-accent-border disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => openCreateModal('ResourceFacingService')}
-                  aria-label="Criar serviço de rede (RFS)"
-                  title="Criar serviço de rede (RFS)"
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-[16px] border border-app-border bg-white px-4 text-[0.88rem] font-semibold text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text"
-                >
-                  <Plus className="h-4 w-4" />
-                  RFS
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openCreateModal('CustomerFacingService')}
-                  aria-label="Criar serviço de cliente (CFS)"
-                  title="Criar serviço de cliente (CFS)"
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-[16px] border border-app-border bg-white px-4 text-[0.88rem] font-semibold text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text"
-                >
-                  <Plus className="h-4 w-4" />
-                  CFS
-                </button>
-              </>
-            )}
+              <Plus className="h-4 w-4" />
+              RFS
+            </button>
+            <button
+              type="button"
+              onClick={() => openCreateModal('CustomerFacingService')}
+              aria-label="Criar serviço de cliente (CFS)"
+              title="Criar serviço de cliente (CFS)"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-[16px] border border-app-border bg-white px-4 text-[0.88rem] font-semibold text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text"
+            >
+              <Plus className="h-4 w-4" />
+              CFS
+            </button>
             <button
               type="button"
               onClick={openTerminateConfirmation}
-              disabled={!selectedCount || saving || terminating || view === 'catalog'}
+              disabled={!selectedCount || saving || terminating}
               aria-label="Encerrar selecionados"
               title="Encerrar selecionados"
               className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-app-border bg-white text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text focus-visible:border-app-accent-border disabled:cursor-not-allowed disabled:opacity-50"
@@ -950,7 +815,6 @@ function ServiceModal({
   onChange: (next: ServiceFormState) => void;
   onSubmit: (event: FormEvent) => void;
 }) {
-  const isCatalog = tab === 'ServiceSpecification';
   const isCfs = tab === 'CustomerFacingService';
 
   // O seletor de spec só oferece specs da categoria ativa e da camada correta — o backend recusa
@@ -962,25 +826,20 @@ function ServiceModal({
   const cfsBlockedByMissingRfs = isCfs && supportingServiceOptions.length === 0;
 
   const nameValid = formState.name.trim().length > 0;
-  const submitValid = isCatalog
-    ? nameValid && formState.category.trim().length > 0 && formState.serviceType !== ''
-    : nameValid &&
-      formState.serviceSpecificationId.trim().length > 0 &&
-      (isCfs
-        ? formState.subscriberId.trim().length > 0 && formState.supportingServiceIds.length > 0
-        : formState.supportingResourceIds.length > 0);
+  const submitValid =
+    nameValid &&
+    formState.serviceSpecificationId.trim().length > 0 &&
+    (isCfs
+      ? formState.subscriberId.trim().length > 0 && formState.supportingServiceIds.length > 0
+      : formState.supportingResourceIds.length > 0);
 
-  const title = isCatalog
+  const title = isCfs
     ? mode === 'create'
-      ? 'Nova especificação'
-      : 'Editar especificação'
-    : isCfs
-      ? mode === 'create'
-        ? 'Novo serviço de cliente (CFS)'
-        : 'Editar serviço de cliente (CFS)'
-      : mode === 'create'
-        ? 'Novo serviço de rede (RFS)'
-        : 'Editar serviço de rede (RFS)';
+      ? 'Novo serviço de cliente (CFS)'
+      : 'Editar serviço de cliente (CFS)'
+    : mode === 'create'
+      ? 'Novo serviço de rede (RFS)'
+      : 'Editar serviço de rede (RFS)';
 
   const toggleId = (field: 'supportingServiceIds' | 'supportingResourceIds', id: string) => {
     const current = formState[field];
@@ -1000,7 +859,7 @@ function ServiceModal({
         <div className="mb-5 flex items-start justify-between gap-4 border-b border-app-border pb-4">
           <div>
             <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-              {isCatalog ? 'Catálogo de serviços' : 'Inventário de serviços'}
+              Inventário de serviços
             </div>
             <h2
               id="service-modal-title"
@@ -1038,148 +897,115 @@ function ServiceModal({
             />
           </Field>
 
-          {isCatalog ? (
-            <>
-              <Field label="Camada">
-                <select
+          <>
+            <Field label="Especificação">
+              <select
+                className="geo-input"
+                value={formState.serviceSpecificationId}
+                onChange={(event) =>
+                  onChange({ ...formState, serviceSpecificationId: event.target.value })
+                }
+              >
+                <option value="">Selecione...</option>
+                {eligibleSpecs.map((spec) => (
+                  <option key={spec.id} value={spec.id}>
+                    {spec.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Estado">
+              <select
+                className="geo-input"
+                value={formState.state}
+                onChange={(event) =>
+                  onChange({ ...formState, state: event.target.value as ServiceState })
+                }
+              >
+                {SERVICE_STATE_ORDER.filter((state) => state !== 'terminated').map((state) => (
+                  <option key={state} value={state}>
+                    {SERVICE_STATE_LABELS[state]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            {/* SubscriberID só existe no CFS: o inventário recusa (422) um RFS com assinante. */}
+            {isCfs ? (
+              <Field label="SubscriberID">
+                <input
                   className="geo-input"
-                  value={formState.serviceType}
-                  onChange={(event) =>
-                    onChange({
-                      ...formState,
-                      serviceType: event.target.value as ServiceSpecificationType,
-                    })
-                  }
-                >
-                  <option value="CFS">CFS — serviço de cliente</option>
-                  <option value="RFS">RFS — serviço de rede</option>
-                </select>
-              </Field>
-              <Field label="Categoria">
-                <input className="geo-input" value={formState.category} readOnly />
-              </Field>
-              <Field label="Descrição" fullWidth>
-                <textarea
-                  className="geo-input"
-                  rows={3}
-                  value={formState.description}
-                  onChange={(event) => onChange({ ...formState, description: event.target.value })}
+                  value={formState.subscriberId}
+                  onChange={(event) => onChange({ ...formState, subscriberId: event.target.value })}
+                  placeholder="SUB778899"
                 />
               </Field>
-            </>
-          ) : (
-            <>
-              <Field label="Especificação">
-                <select
-                  className="geo-input"
-                  value={formState.serviceSpecificationId}
-                  onChange={(event) =>
-                    onChange({ ...formState, serviceSpecificationId: event.target.value })
-                  }
-                >
-                  <option value="">Selecione...</option>
-                  {eligibleSpecs.map((spec) => (
-                    <option key={spec.id} value={spec.id}>
-                      {spec.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+            ) : null}
 
-              <Field label="Estado">
-                <select
-                  className="geo-input"
-                  value={formState.state}
-                  onChange={(event) =>
-                    onChange({ ...formState, state: event.target.value as ServiceState })
-                  }
-                >
-                  {SERVICE_STATE_ORDER.filter((state) => state !== 'terminated').map((state) => (
-                    <option key={state} value={state}>
-                      {SERVICE_STATE_LABELS[state]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+            <Field label="Local">
+              <PlacePicker
+                value={
+                  formState.placeId
+                    ? {
+                        id: formState.placeId,
+                        '@referredType': formState.placeType || 'GeographicAddress',
+                      }
+                    : null
+                }
+                onChange={(place) => {
+                  onChange({
+                    ...formState,
+                    placeId: place?.id ?? '',
+                    placeType: place?.['@referredType'] ?? 'GeographicAddress',
+                  });
+                }}
+                placeholder="Selecione um local…"
+              />
+            </Field>
 
-              {/* SubscriberID só existe no CFS: o inventário recusa (422) um RFS com assinante. */}
-              {isCfs ? (
-                <Field label="SubscriberID">
-                  <input
-                    className="geo-input"
-                    value={formState.subscriberId}
-                    onChange={(event) =>
-                      onChange({ ...formState, subscriberId: event.target.value })
-                    }
-                    placeholder="SUB778899"
-                  />
-                </Field>
-              ) : null}
-
-              <Field label="Local">
-                <PlacePicker
-                  value={
-                    formState.placeId
-                      ? {
-                          id: formState.placeId,
-                          '@referredType': formState.placeType || 'GeographicAddress',
-                        }
-                      : null
-                  }
-                  onChange={(place) => {
-                    onChange({
-                      ...formState,
-                      placeId: place?.id ?? '',
-                      placeType: place?.['@referredType'] ?? 'GeographicAddress',
-                    });
-                  }}
-                  placeholder="Selecione um local…"
-                />
-              </Field>
-
-              {/*
+            {/*
                 A fronteira C3 em forma de UI: o CFS escolhe RFS (supportingService) e nunca recursos;
                 o RFS escolhe recursos (supportingResource).
               */}
-              {isCfs ? (
-                <Field label="Serviços de rede que sustentam este CFS" fullWidth>
-                  <CheckboxList
-                    emptyMessage="Nenhum RFS disponível."
-                    options={supportingServiceOptions.map((service) => ({
-                      id: service.id,
-                      label: service.name,
-                      hint: SERVICE_STATE_LABELS[service.state],
-                    }))}
-                    selected={formState.supportingServiceIds}
-                    onToggle={(id) => toggleId('supportingServiceIds', id)}
-                  />
-                </Field>
-              ) : (
-                <Field label="Recursos que sustentam este RFS" fullWidth>
-                  <CheckboxList
-                    emptyMessage="Nenhum recurso disponível."
-                    options={resourceOptions.map((resource) => ({
-                      id: resource.id,
-                      label: resource.name,
-                      hint: resource['@type'] === 'LogicalResource' ? 'Lógico' : 'Físico',
-                    }))}
-                    selected={formState.supportingResourceIds}
-                    onToggle={(id) => toggleId('supportingResourceIds', id)}
-                  />
-                </Field>
-              )}
+            {isCfs ? (
+              <Field label="Serviços de rede que sustentam este CFS" fullWidth>
+                <CheckboxList
+                  emptyMessage="Nenhum RFS disponível."
+                  options={supportingServiceOptions.map((service) => ({
+                    id: service.id,
+                    label: service.name,
+                    hint: SERVICE_STATE_LABELS[service.state],
+                  }))}
+                  selected={formState.supportingServiceIds}
+                  onToggle={(id) => toggleId('supportingServiceIds', id)}
+                />
+              </Field>
+            ) : (
+              <Field label="Recursos que sustentam este RFS" fullWidth>
+                <CheckboxList
+                  emptyMessage="Nenhum recurso disponível."
+                  options={resourceOptions.map((resource) => ({
+                    id: resource.id,
+                    label: resource.name,
+                    hint: resource['@type'] === 'LogicalResource' ? 'Lógico' : 'Físico',
+                  }))}
+                  selected={formState.supportingResourceIds}
+                  onToggle={(id) => toggleId('supportingResourceIds', id)}
+                />
+              </Field>
+            )}
 
-              {isCfs && formState.supportingServiceIds.length ? (
-                <div className="md:col-span-2 rounded-[18px] border border-app-border bg-app-accent-soft px-4 py-3 text-[0.82rem] text-app-text">
-                  <span className="font-semibold">Cadeia: </span>
-                  {formState.name || 'CFS'} →{' '}
-                  {formState.supportingServiceIds
-                    .map((id) => servicesById.get(id)?.name ?? id)
-                    .join(' · ')}
-                </div>
-              ) : null}
-            </>
-          )}
+            {isCfs && formState.supportingServiceIds.length ? (
+              <div className="md:col-span-2 rounded-[18px] border border-app-border bg-app-accent-soft px-4 py-3 text-[0.82rem] text-app-text">
+                <span className="font-semibold">Cadeia: </span>
+                {formState.name || 'CFS'} →{' '}
+                {formState.supportingServiceIds
+                  .map((id) => servicesById.get(id)?.name ?? id)
+                  .join(' · ')}
+              </div>
+            ) : null}
+          </>
         </div>
 
         <div className="mt-6 flex items-center justify-end gap-3 border-t border-app-border pt-4">
@@ -1289,15 +1115,6 @@ function serviceBindingSummary(service: ServiceEntity): string {
   }
   const count = service.supportingResource?.length ?? 0;
   return count ? `${count} recurso(s)` : '-';
-}
-
-function buildSpecificationPayload(state: ServiceFormState): ServiceSpecificationPayload {
-  return {
-    name: state.name.trim(),
-    category: state.category.trim(),
-    serviceType: (state.serviceType || 'CFS') as ServiceSpecificationType,
-    description: state.description.trim(),
-  };
 }
 
 function buildPlace(state: ServiceFormState) {

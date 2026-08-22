@@ -133,7 +133,13 @@ export function SiteResourcesTab({ siteId, onOpenResource }: SiteResourcesTabPro
               <div className="fixed inset-0 z-40" onClick={() => setPredictionsOpen(false)} />
               <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-[12px] border border-app-border bg-white py-1 shadow-soft">
                 {predictions.map((node) => {
-                  const icon = resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
+                  const resourceLike = {
+                    resourceType: node.resourceType ?? '',
+                    status: node.status,
+                    name: node.label,
+                    sublabel: node.sublabel,
+                  };
+                  const icon = resourceIconFor(resourceLike);
                   return (
                     <button
                       key={node.id}
@@ -141,7 +147,7 @@ export function SiteResourcesTab({ siteId, onOpenResource }: SiteResourcesTabPro
                       onClick={() => void linkResource(node)}
                       className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-[0.82rem] text-app-text transition hover:bg-app-accent-soft"
                     >
-                      <ResourceIcon resource={{ resourceType: node.resourceType ?? '', status: node.status }} variant="badge" size={20} />
+                      <ResourceIcon resource={resourceLike} variant="badge" size={20} />
                       <span className="min-w-0 flex-1 truncate">{node.label}</span>
                       <span className="shrink-0 text-[0.7rem] text-app-muted">{icon.label}</span>
                     </button>
@@ -168,10 +174,13 @@ export function SiteResourcesTab({ siteId, onOpenResource }: SiteResourcesTabPro
               </h4>
               <div className="grid gap-2">
                 {items.map((resource) => {
-                  const icon = resourceIconFor({
+                  const resourceLike = {
                     resourceType: resource.resourceType ?? '',
                     status: resource.status,
-                  });
+                    name: resource.label,
+                    sublabel: resource.sublabel,
+                  };
+                  const icon = resourceIconFor(resourceLike);
                   return (
                     <div
                       key={resource.id}
@@ -182,11 +191,7 @@ export function SiteResourcesTab({ siteId, onOpenResource }: SiteResourcesTabPro
                         onClick={() => (resource.refId ? onOpenResource(resource.refId) : undefined)}
                         className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
                       >
-                        <ResourceIcon
-                          resource={{ resourceType: resource.resourceType ?? '', status: resource.status }}
-                          variant="badge"
-                          size={26}
-                        />
+                        <ResourceIcon resource={resourceLike} variant="badge" size={26} />
                         <span className="min-w-0 flex-1">
                           <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">
                             {resource.label}

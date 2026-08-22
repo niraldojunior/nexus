@@ -16,16 +16,26 @@ import {
 import { PageId, RecentGroup, RecentItem } from '../types';
 import { ResearchHistoryPage } from '../pages/ResearchHistoryPage';
 import { RESOURCE_CATEGORY_DEFAULTS } from '../data/resourceCatalogDefaults';
-import { groupResourceCategories, sidebarCategoryLabel } from '../data/resourceCategoryViews';
+import {
+  groupResourceCategories,
+  resourceInfraSectionLabel,
+  sidebarCategoryLabel,
+} from '../data/resourceCategoryViews';
 import { SERVICE_CATEGORY_DEFAULTS } from '../data/serviceCatalogDefaults';
 import { listServiceCategories } from '../data/serviceCategoryViews';
+import { isCivilInfrastructureCategory } from '../utils/resourceSpecificationForm';
 import Diamond from './Diamond';
 import NexusMark from './NexusMark';
 
 type PrimaryItemId = 'conversations' | 'research' | 'geo' | 'resource' | 'service' | 'order';
 
-/** Item de submenu de categoria — a forma comum entre Resource e Service. */
-type CategoryMenuItem = { code: string; label: string };
+/**
+ * Item de submenu de categoria — a forma comum entre Resource e Service. `sectionLabel` é opcional
+ * (só Resource usa, para separar Infraestrutura Civil de Infraestrutura de Rede — ver
+ * resourceCategoryItems abaixo); quando presente e diferente do item anterior, o Sidebar insere
+ * um cabeçalho de seção antes do item.
+ */
+type CategoryMenuItem = { code: string; label: string; sectionLabel?: string };
 
 interface SidebarProps {
   collapsed: boolean;
@@ -81,11 +91,20 @@ const primaryRoleLabel = (roles?: string[]): string => {
   return roles[0] ?? 'Sem papéis';
 };
 
-const resourceCategoryItems: CategoryMenuItem[] = groupResourceCategories(
-  RESOURCE_CATEGORY_DEFAULTS,
-)
-  .flatMap((group) => group.categories)
-  .map((category) => ({ code: category.code, label: sidebarCategoryLabel(category) }));
+// Rede antes de Civil, espelhando a ordem das abas do catálogo em Configurações (ver
+// ResourceCatalogTab) — cada categoria ganha um `sectionLabel` para o Sidebar desenhar o
+// cabeçalho de seção só na primeira ocorrência de cada grupo.
+const allResourceCategories = groupResourceCategories(RESOURCE_CATEGORY_DEFAULTS).flatMap(
+  (group) => group.categories,
+);
+const resourceCategoryItems: CategoryMenuItem[] = [
+  ...allResourceCategories.filter((category) => !isCivilInfrastructureCategory(category.code)),
+  ...allResourceCategories.filter((category) => isCivilInfrastructureCategory(category.code)),
+].map((category) => ({
+  code: category.code,
+  label: sidebarCategoryLabel(category),
+  sectionLabel: resourceInfraSectionLabel(category.code),
+}));
 
 const serviceCategoryItems: CategoryMenuItem[] = listServiceCategories(
   SERVICE_CATEGORY_DEFAULTS,
@@ -176,12 +195,16 @@ export default function Sidebar({
       <aside
         className={
           isMobile
-            ? `fixed inset-y-0 left-0 z-50 flex w-[256px] max-w-[85vw] flex-col overflow-hidden border-r border-app-border bg-app-sidebar shadow-soft transition-transform duration-300 ease-in-out ${
-                collapsed ? '-translate-x-full' : 'translate-x-0'
-              }`
-            : `flex flex-col overflow-hidden border-r border-app-border bg-app-sidebar shadow-soft transition-[width,min-width] duration-300 ease-in-out ${
-                collapsed ? 'w-[58px] min-w-[58px]' : 'w-[256px] min-w-[256px]'
-              }`
+            ? `fixed inset-y-0 left-0 z-50 flex w-[256px] max-w-[85vw] flex-col overflow-hidden border-r border-app-border bg-app-sidebar transition-transform duration-300 ease-in-out ${
+                currentPage === 'configuracoes' ? 'relative z-10 shadow-dock' : 'shadow-soft'
+              } ${collapsed ? '-translate-x-full' : 'translate-x-0'}`
+            : `flex flex-col overflow-hidden border-r border-app-border bg-app-sidebar transition-[width,min-width] duration-300 ease-in-out ${
+                // A doca do módulo Geo usa este mesmo par (relative z-10 + shadow-dock, ver
+                // DOCK_ELEVATION_CLASS) para a sombra pintar por cima do painel de abas de
+                // Configurações — sem a camada de empilhamento, o painel branco ao lado (que
+                // desenha depois no DOM) cobre a sombra em vez de recebê-la.
+                currentPage === 'configuracoes' ? 'relative z-10 shadow-dock' : 'shadow-soft'
+              } ${collapsed ? 'w-[58px] min-w-[58px]' : 'w-[256px] min-w-[256px]'}`
         }
       >
         <div
@@ -295,25 +318,38 @@ export default function Sidebar({
                       />
                       {categoryMenu && categoryMenu.open && !contentCollapsed ? (
                         <div className="ml-[35px] mt-1 space-y-1 border-l border-app-border pl-3">
-                          {categoryMenu.items.map((item) => {
+                          {categoryMenu.items.map((item, index) => {
                             const subItemActive =
                               currentPage === id && categoryMenu.activeCode === item.code;
+                            const previousSectionLabel = categoryMenu.items[index - 1]?.sectionLabel;
+                            const showSectionHeader =
+                              Boolean(item.sectionLabel) && item.sectionLabel !== previousSectionLabel;
                             return (
-                              <button
-                                key={item.code}
-                                type="button"
-                                onClick={() => {
-                                  categoryMenu.onSelect(item.code);
-                                  closeMobileDrawer();
-                                }}
-                                className={`flex h-[28px] w-full items-center rounded-[10px] px-3 text-left text-[0.84rem] transition ${
-                                  subItemActive
-                                    ? 'bg-app-accent-soft font-semibold text-app-text'
-                                    : 'font-medium text-app-muted hover:bg-app-accent-soft hover:text-app-text'
-                                }`}
-                              >
-                                {item.label}
-                              </button>
+                              <div key={item.code}>
+                                {showSectionHeader ? (
+                                  <p
+                                    className={`px-3 text-[0.7rem] font-semibold uppercase tracking-[0.06em] text-app-muted ${
+                                      index === 0 ? 'mb-1' : 'mb-1 mt-3'
+                                    }`}
+                                  >
+                                    {item.sectionLabel}
+                                  </p>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    categoryMenu.onSelect(item.code);
+                                    closeMobileDrawer();
+                                  }}
+                                  className={`flex h-[28px] w-full items-center rounded-[10px] px-3 text-left text-[0.84rem] transition ${
+                                    subItemActive
+                                      ? 'bg-app-accent-soft font-semibold text-app-text'
+                                      : 'font-medium text-app-muted hover:bg-app-accent-soft hover:text-app-text'
+                                  }`}
+                                >
+                                  {item.label}
+                                </button>
+                              </div>
                             );
                           })}
                         </div>

@@ -613,12 +613,18 @@ export type IconResourceLike = {
   resourceType?: string;
   status?: string;
   resourceSpecification?: { id?: string; name?: string; '@referredType'?: string };
+  // GeoTreeNode traz o nome da ResourceSpecification em `sublabel`, não em
+  // `resourceSpecification.name` (a árvore só carrega refs leves) — aceito aqui para a
+  // detecção de CDOI (ver isCdoiResource) funcionar tanto vindo da árvore/detalhe quanto
+  // do inventário cru.
+  sublabel?: string;
 };
 
 // Legenda de cor por status — hoje só para CTO (o resto da família Infraestrutura
 // passiva continua na cor da família). Suspenso grita vermelho, ativo é o verde
 // escuro que diferencia "atendendo" de qualquer outro estado; os demais (planned,
-// terminated…) caem no laranja padrão da família.
+// terminated…) caem no laranja padrão da família. CDOI (ver isCdoiResource) segue a
+// mesma legenda — é uma CTO como qualquer outra para efeito de cor, só o glifo muda.
 const CTO_STATUS_COLOR: Partial<Record<string, string>> = {
   suspended: '#ef4444', // --status-red
   active: '#047857', // --status-green-dark
@@ -633,8 +639,48 @@ const resolveIconColor = (
   return override ?? familyColor[family];
 };
 
+// CDOI (Caixa de Distribuição Óptica Interna) é uma CTO exclusiva de uma edificação
+// específica — ao contrário da CDOE, que fica na via pública. No catálogo canônico as duas
+// são o mesmo ResourceType `CTO` (decisão já tomada para CDOE — ver
+// scripts/migrate-netwin-infranode.ts); a única distinção disponível hoje é o nome do
+// recurso ou da sua ResourceSpecification ("CDOI" / "Netwin CDOI"). `code`/família/cor
+// permanecem os de CTO de propósito — outras regras (ex.: useAddressViability, que busca
+// candidatas a CDO por `resourceTypeCode(...) === 'CTO'`) dependem de CDOI continuar
+// contando como CTO; só o glifo do pin muda.
+const isCdoiResource = (resource: IconResourceLike | string | undefined): boolean => {
+  if (typeof resource === 'string' || !resource) return false;
+  const haystack = [resource.name, resource.resourceSpecification?.name, resource.sublabel]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return /\bcdoi\b/.test(haystack);
+};
+
+// Mesmo prédio do CO em siteIcon.ts (Building2 do lucide) — sinaliza "isto pertence a uma
+// edificação" com o mesmo desenho que já significa isso no mapa, só que como recurso
+// (círculo) em vez de local (quadrado arredondado).
+const CDOI_ICON: { glyph: string; node: IconNode } = {
+  glyph: 'building-2',
+  node: [
+    ['path', { d: 'M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z' }],
+    ['path', { d: 'M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2' }],
+    ['path', { d: 'M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2' }],
+    ['path', { d: 'M10 6h4' }],
+    ['path', { d: 'M10 10h4' }],
+    ['path', { d: 'M10 14h4' }],
+    ['path', { d: 'M10 18h4' }],
+  ],
+};
+
 // Resolve o código de tipo do catálogo. `resourceType` já vem com o code em dados
 // criados pelo Nexus; nome e spec são a rede de segurança para o que veio de fora.
+// Rótulo em português de um código de ResourceType já conhecido do catálogo — usado onde o
+// combo de Tipo precisa mostrar português mesmo com o `ResourceType.name` do catálogo em inglês
+// (ex.: catálogo de Infraestrutura Civil, ver CivilResourceSpecificationFields).
+export function resourceTypeLabel(code: string): string {
+  return TYPE_LABEL[code] ?? code;
+}
+
 export function resourceTypeCode(resource: IconResourceLike | string | undefined): string {
   const direct = typeof resource === 'string' ? resource : resource?.resourceType;
   if (direct && ICONS[direct]) return direct;
@@ -659,13 +705,15 @@ export function resourceIconFor(resource: IconResourceLike | string | undefined)
   const code = resourceTypeCode(resource);
   const entry = ICONS[code] ?? ICONS.__fallback;
   const status = typeof resource === 'object' ? resource?.status : undefined;
+  const cdoi = code === 'CTO' && isCdoiResource(resource);
+  const glyphEntry = cdoi ? CDOI_ICON : entry;
   return {
     code,
     family: entry.family,
-    glyph: entry.glyph,
-    node: entry.node,
+    glyph: glyphEntry.glyph,
+    node: glyphEntry.node,
     color: resolveIconColor(code, entry.family, status),
-    label: TYPE_LABEL[code] ?? (code === '__fallback' ? 'Outro' : code),
+    label: cdoi ? 'CDOI' : (TYPE_LABEL[code] ?? (code === '__fallback' ? 'Outro' : code)),
   };
 }
 
@@ -738,14 +786,17 @@ export function resourceIconSvg(
 // recalcula isto para cada marcador em todo re-render — cachear evita regerar/escapar
 // o mesmo SVG milhares de vezes. A cor entra na chave porque não é mais 1:1 com o
 // `code`: CTO varia de cor por status (ver resolveIconColor) — sem a cor aqui, o
-// primeiro CTO desenhado "vencia" o cache e todos os outros saíam com a cor dele.
+// primeiro CTO desenhado "vencia" o cache e todos os outros saíam com a cor dele. O
+// glifo entra pelo mesmo motivo: CDOI usa `code: 'CTO'` (mesma cor, mesma família) com um
+// desenho diferente (ver isCdoiResource) — sem o glifo na chave, a primeira CTO/CDOI
+// desenhada "venceria" o cache para as duas.
 const resourceIconDataUrlCache = new Map<string, string>();
 
 export function resourceIconDataUrl(
   icon: ResourceIcon,
   options?: { size?: number; ring?: boolean },
 ): string {
-  const key = `${icon.code}:${icon.color}:${options?.size ?? ''}:${options?.ring ?? ''}`;
+  const key = `${icon.code}:${icon.glyph}:${icon.color}:${options?.size ?? ''}:${options?.ring ?? ''}`;
   const cached = resourceIconDataUrlCache.get(key);
   if (cached) return cached;
   const value = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(resourceIconSvg(icon, options))}`;

@@ -43,6 +43,9 @@ export const RESOURCE_CATEGORIES: ResourceCategory[] = [
   category('cat-equipment-transport', 'Equipment.Transport', 'Equipamentos de Transporte'),
   category('cat-equipment-cpe', 'Equipment.CustomerPremises', 'Equipamentos de Cliente'),
   category('cat-infrastructure-passive', 'Infrastructure.Passive', 'Infraestrutura Passiva'),
+  // Obra civil (dutos, postes, caixas de passagem) — distinta da infraestrutura passiva óptica
+  // (splitter/CTO/DIO, acima), que é equipamento de rede mesmo sendo "passivo".
+  category('cat-infrastructure-civil-works', 'Infrastructure.CivilWorks', 'Infraestrutura Civil'),
   category('cat-cable-outside-plant', 'Cable.OutsidePlant', 'Cabos OSP'),
   category('cat-cable-inside-plant', 'Cable.InsidePlant', 'Cabos ISP'),
   category('cat-logical-ipam', 'Logical.IPAM', 'Endereçamento e IPAM'),
@@ -63,9 +66,9 @@ export const RESOURCE_TYPES: ResourceType[] = [
   resourceType('rt-splitter', 'Splitter', 'Splitter', 'Infrastructure.Passive'),
   resourceType('rt-cto', 'CTO', 'Caixa de Terminação Óptica', 'Infrastructure.Passive'),
   resourceType('rt-dio', 'DIO', 'Distribuidor Interno Óptico', 'Infrastructure.Passive'),
-  resourceType('rt-duct', 'Duct', 'Duct', 'Infrastructure.Passive'),
-  resourceType('rt-pole', 'Pole', 'Pole', 'Infrastructure.Passive'),
-  resourceType('rt-manhole', 'Manhole', 'Manhole', 'Infrastructure.Passive'),
+  resourceType('rt-duct', 'Duct', 'Duct', 'Infrastructure.CivilWorks'),
+  resourceType('rt-pole', 'Pole', 'Pole', 'Infrastructure.CivilWorks'),
+  resourceType('rt-manhole', 'Manhole', 'Manhole', 'Infrastructure.CivilWorks'),
   resourceType('rt-fiber', 'Fiber', 'Fiber', 'Cable.OutsidePlant'),
   resourceType('rt-drop-cable', 'DropCable', 'Drop Cable', 'Cable.OutsidePlant'),
   resourceType(

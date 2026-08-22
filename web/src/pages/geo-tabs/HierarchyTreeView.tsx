@@ -142,7 +142,11 @@ function TreeRow({
           title={`${node.label} · ${
             node.kind === 'site'
               ? (siteSpecNameLabel(node.sublabel) ?? node.sublabel ?? 'Local')
-              : resourceIconFor(node.resourceType ?? '').label
+              : resourceIconFor({
+                  resourceType: node.resourceType ?? '',
+                  name: node.label,
+                  sublabel: node.sublabel,
+                }).label
           }`}
           className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left leading-tight"
         >
@@ -178,7 +182,12 @@ export function NodeIcon({ node }: { node: GeoTreeNode }) {
   if (node.kind === 'resource') {
     return (
       <ResourceIcon
-        resource={{ resourceType: node.resourceType ?? '', status: node.status }}
+        resource={{
+          resourceType: node.resourceType ?? '',
+          status: node.status,
+          name: node.label,
+          sublabel: node.sublabel,
+        }}
         variant="badge"
         size={20}
       />

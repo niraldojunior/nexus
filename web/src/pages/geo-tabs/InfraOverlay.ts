@@ -256,6 +256,11 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const icon = resourceIconFor({
         resourceType: feature.typeCode ?? '',
         status: feature.status,
+        // O índice pré-computado (geo_map_feature) não traz resourceSpecification para
+        // recurso — só `label` (nome). Suficiente para distinguir CDOI de CDOE (ver
+        // isCdoiResource em resourceIcon.ts), já que a convenção de nome já é o sinal
+        // usado pelo resto do código (ex.: condominium-workflow.ts).
+        name: feature.label,
       });
       const img = loadImage(resourceIconDataUrl(icon, { size }));
       // Âncora no canto inferior-esquerdo — mesma regra de buildPointMarkerVisual em GeoPage

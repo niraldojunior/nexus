@@ -4,17 +4,10 @@ import { SERVICE_CATEGORY_DEFAULTS } from './serviceCatalogDefaults';
 /**
  * Navegação do Módulo de Serviços organizada por categoria — espelha `resourceCategoryViews.ts`.
  *
- * Cada ServiceCategory vira um item de submenu; a distinção Inventário × Catálogo é uma sub-aba
- * dentro da própria página (ver `SERVICE_VIEWS`). A camada CFS × RFS não é navegação: é filtro de
- * coluna dentro do Inventário.
+ * Cada ServiceCategory vira um item de submenu. O Catálogo (ServiceSpecification) foi centralizado
+ * em Configurações (acesso restrito a admin, ver ServiceCatalogTab.tsx) — esta página só cobre o
+ * Inventário. A camada CFS × RFS não é navegação: é filtro de coluna dentro do Inventário.
  */
-
-export type ServiceView = 'inventory' | 'catalog';
-
-export const SERVICE_VIEWS: Array<{ id: ServiceView; label: string }> = [
-  { id: 'inventory', label: 'Inventário' },
-  { id: 'catalog', label: 'Catálogo' },
-];
 
 /** Categorias ativas, na ordem canônica da spec. */
 export function listServiceCategories(categories: ServiceCategory[]): ServiceCategory[] {

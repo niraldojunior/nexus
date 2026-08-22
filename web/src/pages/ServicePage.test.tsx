@@ -77,7 +77,6 @@ const loadSnapshotMock = vi.spyOn(serviceApi, 'loadServiceWorkspaceSnapshot');
 const listResourcesMock = vi.spyOn(resourceApi, 'listResources');
 const createServiceMock = vi.spyOn(serviceApi, 'createService');
 const terminateServiceMock = vi.spyOn(serviceApi, 'terminateService');
-const createSpecMock = vi.spyOn(serviceApi, 'createServiceSpecification');
 
 function snapshotFor(overrides: Partial<serviceApi.ServiceWorkspaceSnapshot> = {}) {
   return {
@@ -108,7 +107,6 @@ beforeEach(() => {
   );
   createServiceMock.mockResolvedValue(cfs);
   terminateServiceMock.mockResolvedValue(cfs);
-  createSpecMock.mockResolvedValue(cfsSpec);
 });
 
 afterEach(() => {
@@ -129,21 +127,6 @@ test('defaults to the Access category and lists both CFS and RFS of that categor
   expect(screen.getByText('Bitstream-GPON-700-ProvedorX-SUB778899')).toBeInTheDocument();
   expect(screen.getByText('Acesso-GPON-778899')).toBeInTheDocument();
   // The Voice-category CFS must not leak into the Access page.
-  expect(screen.queryByText('CloudVoIP')).not.toBeInTheDocument();
-});
-
-test('switching to the catalog view lists only specifications of the active category', async () => {
-  const user = userEvent.setup();
-  render(<ServicePage category="Access" />);
-
-  await screen.findByText('Bitstream-GPON-700-ProvedorX-SUB778899');
-  await user.click(screen.getByRole('tab', { name: 'Catálogo' }));
-
-  await waitFor(() =>
-    expect(loadSnapshotMock).toHaveBeenCalledWith({ tab: 'ServiceSpecification' }),
-  );
-  expect(await screen.findByText('Bitstream GPON 700')).toBeInTheDocument();
-  expect(screen.getByText('Acesso GPON')).toBeInTheDocument();
   expect(screen.queryByText('CloudVoIP')).not.toBeInTheDocument();
 });
 

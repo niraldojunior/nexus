@@ -18,7 +18,8 @@ export type ResourceSpecificationCharacteristicName =
   | 'homologationDate'
   | 'endOfLifeDate'
   | 'endOfSupportLifeDate'
-  | 'lifecycleStatus';
+  | 'lifecycleStatus'
+  | 'networkType';
 
 export const RESOURCE_SPEC_LIFECYCLE_STATUS_OPTIONS = [
   { value: 'active', label: 'Ativo' },
@@ -27,6 +28,24 @@ export const RESOURCE_SPEC_LIFECYCLE_STATUS_OPTIONS = [
   { value: 'eosl', label: 'EOSL' },
   { value: 'discontinued', label: 'Descontinuado' },
 ] as const;
+
+// Tecnologia de rede da especificação — só se aplica ao lado "Infraestrutura de Rede" do
+// catálogo (equipamentos, passivos ópticos, cabos e lógicos); obra civil não tem tipo de rede.
+export const RESOURCE_SPEC_NETWORK_TYPE_OPTIONS = [
+  { value: 'GPON', label: 'GPON' },
+  { value: 'P2P', label: 'P2P (Ponto-a-Ponto)' },
+  { value: 'MetroEthernet', label: 'Metro Ethernet' },
+  { value: 'DWDM', label: 'DWDM' },
+  { value: 'Radio', label: 'Rádio / Wireless' },
+] as const;
+
+export function readResourceSpecificationNetworkTypeLabel(value: string | undefined): string {
+  return (
+    RESOURCE_SPEC_NETWORK_TYPE_OPTIONS.find((option) => option.value === value)?.label ??
+    value ??
+    '-'
+  );
+}
 
 export function findResourceSpecificationCharacteristic(
   characteristics: ResourceSpecificationCharacteristic[] | undefined,

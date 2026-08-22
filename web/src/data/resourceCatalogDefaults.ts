@@ -35,6 +35,14 @@ export const RESOURCE_CATEGORY_DEFAULTS: ResourceCategory[] = [
   },
   {
     '@type': 'ResourceCategory',
+    id: 'cat-infrastructure-civil-works',
+    href: '/tmf-api/resourceCatalogManagement/v4/resourceCategory/cat-infrastructure-civil-works',
+    code: 'Infrastructure.CivilWorks',
+    name: 'Infraestrutura Civil',
+    status: 'active',
+  },
+  {
+    '@type': 'ResourceCategory',
     id: 'cat-cable-outside-plant',
     href: '/tmf-api/resourceCatalogManagement/v4/resourceCategory/cat-cable-outside-plant',
     code: 'Cable.OutsidePlant',
@@ -190,7 +198,7 @@ export const RESOURCE_TYPE_DEFAULTS: ResourceType[] = [
     href: '/tmf-api/resourceCatalogManagement/v4/resourceType/rt-duct',
     code: 'Duct',
     name: 'Duct',
-    categoryCode: 'Infrastructure.Passive',
+    categoryCode: 'Infrastructure.CivilWorks',
     status: 'active',
   },
   {
@@ -199,7 +207,7 @@ export const RESOURCE_TYPE_DEFAULTS: ResourceType[] = [
     href: '/tmf-api/resourceCatalogManagement/v4/resourceType/rt-pole',
     code: 'Pole',
     name: 'Pole',
-    categoryCode: 'Infrastructure.Passive',
+    categoryCode: 'Infrastructure.CivilWorks',
     status: 'active',
   },
   {
@@ -208,7 +216,7 @@ export const RESOURCE_TYPE_DEFAULTS: ResourceType[] = [
     href: '/tmf-api/resourceCatalogManagement/v4/resourceType/rt-manhole',
     code: 'Manhole',
     name: 'Manhole',
-    categoryCode: 'Infrastructure.Passive',
+    categoryCode: 'Infrastructure.CivilWorks',
     status: 'active',
   },
   {

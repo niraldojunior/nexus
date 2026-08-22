@@ -268,6 +268,68 @@ test('TMF634, TMF639 and TMF664 resource endpoints create and activate resources
   );
 });
 
+test('POST /v1/resource/specifications/bulk-import creates valid rows and reports failures per line', async (t) => {
+  const database = createTestDatabase();
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
+  const port = await server.start();
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
+
+  const invalid = await requestJson(port, 'POST', '/v1/resource/specifications/bulk-import', {
+    items: [
+      {
+        line: 2,
+        input: { name: 'OLT Boa', category: 'Equipment.Access', resourceType: 'OLT' },
+      },
+      {
+        line: 3,
+        input: { name: 'Roteador Errado', category: 'Equipment.Access', resourceType: 'Router' },
+      },
+    ],
+  });
+  assert.equal(invalid.statusCode, 200);
+  const invalidBody = invalid.body as {
+    total: number;
+    created: number;
+    failed: number;
+    results: Array<{ line: number; status: string; id?: string; code?: string; name: string }>;
+  };
+  assert.equal(invalidBody.total, 2);
+  assert.equal(invalidBody.created, 1);
+  assert.equal(invalidBody.failed, 1);
+
+  const createdResult = invalidBody.results.find((result) => result.line === 2);
+  assert.equal(createdResult?.status, 'created');
+  assert.ok(createdResult?.id);
+
+  const failedResult = invalidBody.results.find((result) => result.line === 3);
+  assert.equal(failedResult?.status, 'error');
+  assert.equal(failedResult?.code, 'RESOURCE_TYPE_CATEGORY_MISMATCH');
+
+  const persisted = await requestJson(
+    port,
+    'GET',
+    `/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${createdResult?.id}`,
+  );
+  assert.equal(persisted.statusCode, 200);
+  assert.equal((persisted.body as { name: string }).name, 'OLT Boa');
+
+  const emptyPayload = await requestJson(port, 'POST', '/v1/resource/specifications/bulk-import', {
+    items: [],
+  });
+  assert.equal(emptyPayload.statusCode, 400);
+
+  const notArray = await requestJson(port, 'POST', '/v1/resource/specifications/bulk-import', {
+    items: 'not-an-array',
+  });
+  assert.equal(notArray.statusCode, 400);
+});
+
 const createTestDatabase = (): { databaseUrl: string; cleanup: () => void } => {
   return createPostgresTestDatabase('nexus-resource-');
 };

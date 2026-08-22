@@ -18,6 +18,8 @@ export type PartyQuery = {
   offset: number;
 };
 
+export type Characteristic = { name: string; value: unknown };
+
 export type Party = {
   '@type': PartyType;
   id: string;
@@ -25,6 +27,19 @@ export type Party = {
   name: string;
   status: PartyStatus;
   partyType: PartyType;
+  partyCharacteristic?: Characteristic[];
+};
+
+export type CreatePartyInput = {
+  name: string;
+  partyType?: PartyType;
+  partyCharacteristic?: Characteristic[];
+};
+
+export type UpdatePartyInput = {
+  name?: string;
+  status?: PartyStatus;
+  partyCharacteristic?: Characteristic[];
 };
 
 export type PartyRoleQuery = {
@@ -48,6 +63,18 @@ export type PartyRole = {
     href?: string;
     name?: string;
   };
+  partyRoleCharacteristic?: Characteristic[];
+};
+
+export type CreatePartyRoleInput = {
+  partyId: string;
+  name: string;
+  partyRoleCharacteristic?: Characteristic[];
+};
+
+export type UpdatePartyRoleInput = {
+  status?: PartyRoleStatus;
+  partyRoleCharacteristic?: Characteristic[];
 };
 
 const authHeaders = (): HeadersInit => ({
@@ -98,6 +125,20 @@ export async function listParties(query: PartyQuery): Promise<Party[]> {
   return await requestJson<Party[]>(buildListUrl('/partyManagement/v4/party', query));
 }
 
+export async function createParty(input: CreatePartyInput): Promise<Party> {
+  return await requestJson<Party>(`${API_BASE_URL}/partyManagement/v4/party`, {
+    method: 'POST',
+    body: input,
+  });
+}
+
+export async function updateParty(id: string, input: UpdatePartyInput): Promise<Party> {
+  return await requestJson<Party>(`${API_BASE_URL}/partyManagement/v4/party/${id}`, {
+    method: 'PATCH',
+    body: input,
+  });
+}
+
 function buildRoleListUrl(path: string, params: PartyRoleQuery): string {
   const searchParams = new URLSearchParams({
     limit: String(params.limit),
@@ -113,4 +154,24 @@ export async function listPartyRoles(query: PartyRoleQuery): Promise<PartyRole[]
   return await requestJson<PartyRole[]>(
     buildRoleListUrl('/partyRoleManagement/v4/partyRole', query),
   );
+}
+
+export async function createPartyRole(input: CreatePartyRoleInput): Promise<PartyRole> {
+  return await requestJson<PartyRole>(`${API_BASE_URL}/partyRoleManagement/v4/partyRole`, {
+    method: 'POST',
+    body: input,
+  });
+}
+
+export async function updatePartyRole(id: string, input: UpdatePartyRoleInput): Promise<PartyRole> {
+  return await requestJson<PartyRole>(`${API_BASE_URL}/partyRoleManagement/v4/partyRole/${id}`, {
+    method: 'PATCH',
+    body: input,
+  });
+}
+
+export async function deletePartyRole(id: string): Promise<PartyRole> {
+  return await requestJson<PartyRole>(`${API_BASE_URL}/partyRoleManagement/v4/partyRole/${id}`, {
+    method: 'DELETE',
+  });
 }

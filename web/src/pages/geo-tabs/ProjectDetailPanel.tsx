@@ -50,6 +50,9 @@ export type ProjectDetailPanelProps = {
   onBack: () => void;
   onAddSite: () => void;
   addSiteDisabled?: boolean;
+  // Descarta o painel de novo Local aberto ao lado — usado quando o usuário confirma a
+  // troca de aba do painel de projeto com a criação de local em andamento.
+  onDiscardNewSite?: () => void;
   onOpenSite: (site: GeoTreeNode) => void;
   onOpenResource?: (resource: GeoTreeNode) => void;
   onFocusArea?: (area: ProjectArea) => void;
@@ -77,6 +80,7 @@ export function ProjectDetailPanel({
   onBack,
   onAddSite,
   addSiteDisabled = false,
+  onDiscardNewSite,
   onOpenSite,
   onOpenResource,
   onFocusArea,
@@ -434,7 +438,7 @@ export function ProjectDetailPanel({
       {([
         ['sites', 'Locais', MapPinned], ['infrastructure', 'Infraestrutura', Layers3], ['resources', 'Recursos', Boxes], ['coverage', 'Cobertura', MapPinned],
       ] as const).map(([value, label, icon]) => (
-        <PanelBarButton key={value} icon={icon} label={label} active={tab === value} onClick={() => { if (value === tab) return; if (createResourceMode) setPendingTab(value); else setTab(value); }} ariaLabel={label} />
+        <PanelBarButton key={value} icon={icon} label={label} active={tab === value} onClick={() => { if (value === tab) return; if (createResourceMode || addSiteDisabled) setPendingTab(value); else setTab(value); }} ariaLabel={label} />
       ))}
     </div>
   );
@@ -544,10 +548,14 @@ export function ProjectDetailPanel({
   ) : null;
 
   const tabChangeConfirm = pendingTab ? (
-    <Modal onClose={() => setPendingTab(null)} title="Descartar novo recurso" eyebrow="Projeto">
+    <Modal onClose={() => setPendingTab(null)} title={addSiteDisabled ? 'Descartar novo local' : 'Descartar novo recurso'} eyebrow="Projeto">
       <div className="grid gap-4">
-        <p className="text-[0.9rem] text-app-text">Ao trocar de aba, o novo {createResourceMode === 'infrastructure' ? 'item de infraestrutura' : 'recurso'} será descartado.</p>
-        <div className="flex justify-end gap-2"><button type="button" className="geo-btn secondary" onClick={() => setPendingTab(null)}>Cancelar</button><button type="button" className="geo-btn border-status-red/30 bg-status-red-soft text-status-red" onClick={() => { setCreateResourceMode(null); setTab(pendingTab); setPendingTab(null); }}>Descartar</button></div>
+        <p className="text-[0.9rem] text-app-text">
+          {addSiteDisabled
+            ? 'Ao trocar de aba, o novo local será perdido. Tem certeza?'
+            : `Ao trocar de aba, o novo ${createResourceMode === 'infrastructure' ? 'item de infraestrutura' : 'recurso'} será descartado.`}
+        </p>
+        <div className="flex justify-end gap-2"><button type="button" className="geo-btn secondary" onClick={() => setPendingTab(null)}>Cancelar</button><button type="button" className="geo-btn border-status-red/30 bg-status-red-soft text-status-red" onClick={() => { if (addSiteDisabled) onDiscardNewSite?.(); else setCreateResourceMode(null); setTab(pendingTab); setPendingTab(null); }}>Descartar</button></div>
       </div>
     </Modal>
   ) : null;

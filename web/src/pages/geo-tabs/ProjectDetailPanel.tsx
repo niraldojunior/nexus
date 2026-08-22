@@ -49,6 +49,7 @@ export type ProjectDetailPanelProps = {
   onDelete: () => Promise<GeoProjectDeleteSummary>;
   onBack: () => void;
   onAddSite: () => void;
+  addSiteDisabled?: boolean;
   onOpenSite: (site: GeoTreeNode) => void;
   onOpenResource?: (resource: GeoTreeNode) => void;
   onFocusArea?: (area: ProjectArea) => void;
@@ -75,6 +76,7 @@ export function ProjectDetailPanel({
   onDelete,
   onBack,
   onAddSite,
+  addSiteDisabled = false,
   onOpenSite,
   onOpenResource,
   onFocusArea,
@@ -378,7 +380,12 @@ export function ProjectDetailPanel({
 
 
   const addSiteButton = (
-    <button type="button" onClick={onAddSite} className="geo-btn primary w-full justify-center">
+    <button
+      type="button"
+      onClick={onAddSite}
+      disabled={addSiteDisabled}
+      className="geo-btn primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+    >
       <Plus className="h-4 w-4" />
       Adicionar Local
     </button>
@@ -470,7 +477,7 @@ export function ProjectDetailPanel({
   );
   const tabContent = tab === 'sites' ? <><div className="mb-1 flex items-center justify-between">{countLabel}</div>{searchActions('sites', addSiteButton)}<div className="grid gap-0.5">{searchMode === 'sites' && query.trim().length >= 2 ? searchRows : siteRows}</div></>
     : tab === 'coverage' ? <div className="grid gap-0.5">{coverageRows}</div>
-    : <div className="grid gap-0.5">{searchActions(tab, addResourceButton(tab))}<p className="px-2 pb-2 text-[0.72rem] font-semibold uppercase tracking-[.08em] text-app-muted">{tab === 'infrastructure' ? `${project.infrastructureCount ?? 0} itens de infraestrutura` : `${project.resourceCount ?? 0} recursos`}</p>{searchMode === tab && query.trim().length >= 2 ? searchRows : resourceRows}</div>;
+    : <div className="grid gap-0.5"><div className="mb-1 flex items-center justify-between"><span className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-app-muted">{tab === 'infrastructure' ? `${project.infrastructureCount ?? 0} itens de infraestrutura` : `${project.resourceCount ?? 0} recursos`}</span></div>{searchActions(tab, addResourceButton(tab))}{searchMode === tab && query.trim().length >= 2 ? searchRows : resourceRows}</div>;
 
   const deleteConfirm = confirmDelete ? (
     <Modal
@@ -560,36 +567,40 @@ export function ProjectDetailPanel({
         {deleteConfirm}
         {removeSiteConfirm}
         {tabChangeConfirm}
-        {createResourceMode ? <ProjectResourceModal projectId={project.id} mode={createResourceMode} onClose={() => setCreateResourceMode(null)} onCreated={() => { projectSearchCache.clear(); setResourceReloadToken((value) => value + 1); onResourceCreated?.(); }} /> : null}
+        {createResourceMode ? <ProjectResourceModal projectId={project.id} mode={createResourceMode} isMobile onClose={() => setCreateResourceMode(null)} onCreated={() => { projectSearchCache.clear(); setResourceReloadToken((value) => value + 1); onResourceCreated?.(); }} /> : null}
       </BottomSheet>
     );
   }
 
   return (
-    <div
-      className={`${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock ${DOCK_SEARCH_CLEARANCE_PT_CLASS}`}
-    >
-      {headerBlock}
-      <div className="grid gap-2 border-b border-app-border px-3 py-2">
-        {descriptionBlock}
-        {cascadeNotice}
-        {deleteNoticeBlock}
+    <>
+      <div
+        className={`${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock ${DOCK_SEARCH_CLEARANCE_PT_CLASS}`}
+      >
+        {headerBlock}
+        <div className="grid gap-2 border-b border-app-border px-3 py-2">
+          {descriptionBlock}
+          {cascadeNotice}
+          {deleteNoticeBlock}
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col">
+          {tabBar}
+          <OverlayScrollArea className="px-3 pb-3" hostClassName="min-h-0">
+            <div className="grid gap-0.5 pt-3">{tabContent}</div>
+          </OverlayScrollArea>
+        </div>
+        {deleteConfirm}
+        {removeSiteConfirm}
+        {tabChangeConfirm}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col">
-        {tabBar}
-        <OverlayScrollArea className="px-3 pb-3" hostClassName="min-h-0">
-          <div className="grid gap-0.5 pt-3">{tabContent}</div>
-        </OverlayScrollArea>
-      </div>
-      {deleteConfirm}
-      {removeSiteConfirm}
-      {tabChangeConfirm}
-      {createResourceMode ? <ProjectResourceModal projectId={project.id} mode={createResourceMode} onClose={() => setCreateResourceMode(null)} onCreated={() => { projectSearchCache.clear(); setResourceReloadToken((value) => value + 1); onResourceCreated?.(); }} /> : null}
-    </div>
+      {/* Sibling flex item (não `fixed`) — fica ao lado do painel de projeto, como o
+          SitePanel de "novo local", em vez de colado na borda direita do mapa. */}
+      {createResourceMode ? <ProjectResourceModal projectId={project.id} mode={createResourceMode} isMobile={false} onClose={() => setCreateResourceMode(null)} onCreated={() => { projectSearchCache.clear(); setResourceReloadToken((value) => value + 1); onResourceCreated?.(); }} /> : null}
+    </>
   );
 }
 
-function ProjectResourceModal({ projectId, mode, onClose, onCreated }: { projectId: string; mode: 'infrastructure' | 'resources'; onClose: () => void; onCreated: () => void }) {
+function ProjectResourceModal({ projectId, mode, isMobile, onClose, onCreated }: { projectId: string; mode: 'infrastructure' | 'resources'; isMobile: boolean; onClose: () => void; onCreated: () => void }) {
   const [snapshot, setSnapshot] = useState<ResourceWorkspaceSnapshot | null>(null);
   const [kind, setKind] = useState<'PhysicalResource' | 'LogicalResource'>('PhysicalResource');
   const [category, setCategory] = useState(mode === 'infrastructure' ? 'Infrastructure.Passive' : '');
@@ -618,7 +629,10 @@ function ProjectResourceModal({ projectId, mode, onClose, onCreated }: { project
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível criar o recurso.'); }
     finally { setSaving(false); }
   };
-  return <aside className="fixed inset-y-0 right-0 z-[70] flex w-[396px] max-w-full flex-col border-l border-app-border bg-app-panel shadow-dock" aria-label={mode === 'infrastructure' ? 'Novo item de infraestrutura' : 'Novo recurso'}>
+  const wrapperClassName = isMobile
+    ? 'fixed inset-y-0 right-0 z-[70] flex w-[396px] max-w-full flex-col border-l border-app-border bg-app-panel shadow-dock'
+    : `${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`;
+  return <aside className={wrapperClassName} aria-label={mode === 'infrastructure' ? 'Novo item de infraestrutura' : 'Novo recurso'}>
     <div className="flex items-center justify-between border-b border-app-border px-4 py-3"><div><p className="text-[0.7rem] font-semibold uppercase tracking-[.1em] text-app-muted">Projeto</p><h2 className="font-display text-[1.05rem] font-semibold text-app-text">{mode === 'infrastructure' ? 'Criar infraestrutura' : 'Criar recurso'}</h2></div><button type="button" onClick={requestClose} className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft" aria-label="Fechar novo recurso"><X className="h-4 w-4"/></button></div>
     <form onSubmit={submit} className="grid flex-1 content-start gap-3 overflow-y-auto p-4">
       {mode === 'resources' ? <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">Classe<select value={kind} onChange={(event) => { setKind(event.target.value as typeof kind); setSpecificationId(''); }} className="geo-input"><option value="PhysicalResource">Recurso físico</option><option value="LogicalResource">Recurso lógico</option></select></label> : null}

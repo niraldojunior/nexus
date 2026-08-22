@@ -1390,6 +1390,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                       site: { mode: 'create' },
                     })
                   }
+                  addSiteDisabled={activeProjectSiteView?.mode === 'create'}
                   onOpenSite={(site) => openProjectSite(dockView.projectId, site)}
                   onOpenResource={(resource) => selectNode(resource, 'search')}
                   onFocusArea={(area) => {

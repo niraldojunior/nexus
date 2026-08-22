@@ -126,7 +126,7 @@ export function SiteOverviewTab({
         icon={Building2}
         editing={editingParent}
         onActivate={startEditParent}
-        value={parentSite?.name ?? 'Nenhum'}
+        value={parentSite?.name ?? <span className="whitespace-nowrap">Nenhum</span>}
       >
         <div className="relative">
           <input

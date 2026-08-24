@@ -13,6 +13,7 @@ import {
   Info as InfoIcon,
   Loader2,
   MapPin,
+  Waypoints,
 } from 'lucide-react';
 import type { GeoStatus, GeoSpec, GeoSite } from '../services/geoApi';
 import { getJson, listGeoSites } from '../services/geoApi';
@@ -105,6 +106,7 @@ import {
   Modal,
   PanelBarButton,
   ProjectDetailPanel,
+  SchematicTab,
   SitePanel,
   StatusBadge,
   DOCK_WIDTH_CLASS,
@@ -1427,6 +1429,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               onOpenResource={goToResource}
               onBack={() => setDetailOpen(false)}
               onClose={onDeselect}
+              onDropSimulation={onDropSimulation}
+              onPreview={handleHover}
             />
           ) : dockView.kind === 'project' && activeProject ? (
             <>
@@ -3091,6 +3095,8 @@ function GeoDetailPanel({
   onClose,
   onSnapChange,
   minimizeSignal,
+  onDropSimulation,
+  onPreview,
 }: {
   isMobile: boolean;
   target: Extract<DetailTarget, { kind: 'resource' }>;
@@ -3100,6 +3106,12 @@ function GeoDetailPanel({
   onSnapChange?: (state: BottomSheetSnapState) => void;
   // Contador que, ao incrementar, encolhe a folha para peek (ver BottomSheet).
   minimizeSignal?: number;
+  // Traçado da aba Esquemático (ver SchematicTab) — mesmo canal visual/estado da
+  // simulação de drop do painel de Endereço (ver onDropSimulation em GeoPage).
+  onDropSimulation: (simulation: DropSimulation | null) => void;
+  // Clique num salto do Esquemático — mesmo canal do hover na árvore de Hierarquia
+  // (ver handleHover em GeoPage), mostra o balão de preview em cima do item no mapa.
+  onPreview: (node: GeoTreeNode | null) => void;
 }) {
   // Detalhe de Recurso não tem pedido próprio de encaixe — só repassa o
   // `minimizeSignal` (peek na navegação manual do mapa) como comando para a folha.
@@ -3116,7 +3128,14 @@ function GeoDetailPanel({
     ? resourceStreetViewMarker(target.node, resourcePoint)
     : null;
 
-  const body = <ResourceDetailBody node={target.node} onOpenResource={onOpenResource} />;
+  const body = (
+    <ResourceDetailBody
+      node={target.node}
+      onOpenResource={onOpenResource}
+      onDropSimulation={onDropSimulation}
+      onPreview={onPreview}
+    />
+  );
 
   const header = (
     <div className="flex items-start gap-2 border-y border-app-border px-3 py-3">
@@ -3181,14 +3200,18 @@ function GeoDetailPanel({
 function ResourceDetailBody({
   node,
   onOpenResource,
+  onDropSimulation,
+  onPreview,
 }: {
   node: GeoTreeNode;
   onOpenResource: (resourceId: string) => void;
+  onDropSimulation: (simulation: DropSimulation | null) => void;
+  onPreview: (node: GeoTreeNode | null) => void;
 }) {
   const resourceStatus = (node.status as GeoStatus) ?? 'active';
   const streetViewTargets = streetViewTargetsForGeometry(node.geometry);
   const { children, loading } = useResourceChildren(node);
-  const [tab, setTab] = useState<'overview' | 'subresources'>('overview');
+  const [tab, setTab] = useState<'overview' | 'subresources' | 'schematic'>('overview');
 
   return (
     <div className="grid gap-4">
@@ -3196,7 +3219,11 @@ function ResourceDetailBody({
           internos leva contador — mesma lógica de Sub-locais/Recursos no
           Site, é a porta de entrada para o que mora dentro deste recurso
           (ex.: portas de uma placa). Street View fica ao lado de cada
-          coordenada, não solto na barra. */}
+          coordenada, não solto na barra. Esquemático (traceroute da fibra até
+          a Estação) fica ao lado — só faz sentido em recurso conectado à
+          planta OSP, mas renderiza sempre: o próprio conteúdo da aba avisa
+          quando não há caminho a montante, sem pagar uma chamada de sondagem
+          extra por recurso aberto. */}
       <div className="flex flex-wrap gap-1 border-b border-app-border pb-3">
         <PanelBarButton
           icon={InfoIcon}
@@ -3210,6 +3237,12 @@ function ResourceDetailBody({
           badge={children.length}
           active={tab === 'subresources'}
           onClick={() => setTab('subresources')}
+        />
+        <PanelBarButton
+          icon={Waypoints}
+          label="Esquemático"
+          active={tab === 'schematic'}
+          onClick={() => setTab('schematic')}
         />
       </div>
 
@@ -3323,6 +3356,10 @@ function ResourceDetailBody({
             </div>
           )}
         </div>
+      ) : null}
+
+      {tab === 'schematic' ? (
+        <SchematicTab nodeId={node.id} onSimulate={onDropSimulation} onPreview={onPreview} />
       ) : null}
     </div>
   );

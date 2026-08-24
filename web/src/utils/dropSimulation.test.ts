@@ -5,6 +5,7 @@ import {
   pathMidpoint,
   pathSpanMeters,
   stitchDropPath,
+  stitchSchematicPath,
 } from './dropSimulation';
 import { haversineMeters, type LngLat } from './googleRoutes';
 
@@ -95,6 +96,69 @@ describe('stitchDropPath', () => {
 
   it('devolve o segmento direto quando a rota vem vazia', () => {
     expect(stitchDropPath(origin, [], destination)).toEqual([origin, destination]);
+  });
+});
+
+describe('stitchSchematicPath', () => {
+  it('concatena segmentos já orientados na mesma direção sem duplicar a junção', () => {
+    const segmentA: LngLat[] = [
+      [-43.1, -22.9],
+      [-43.101, -22.901],
+    ];
+    const segmentB: LngLat[] = [
+      [-43.101, -22.901],
+      [-43.102, -22.902],
+    ];
+    const path = stitchSchematicPath([segmentA, segmentB]);
+    expect(path).toEqual([
+      [-43.1, -22.9],
+      [-43.101, -22.901],
+      [-43.102, -22.902],
+    ]);
+  });
+
+  it('inverte um segmento gravado no sentido oposto (A→Z) ao do traçado', () => {
+    // O primeiro cabo termina em -43.101,-22.901; o segundo, gravado na direção A→Z da
+    // carga, começa no ponto mais distante — precisa ser invertido para emendar.
+    const segmentA: LngLat[] = [
+      [-43.1, -22.9],
+      [-43.101, -22.901],
+    ];
+    const segmentBReversed: LngLat[] = [
+      [-43.102, -22.902],
+      [-43.101, -22.901],
+    ];
+    const path = stitchSchematicPath([segmentA, segmentBReversed]);
+    expect(path).toEqual([
+      [-43.1, -22.9],
+      [-43.101, -22.901],
+      [-43.102, -22.902],
+    ]);
+  });
+
+  it('devolve um segmento único intacto e vazio para lista vazia', () => {
+    const single: LngLat[] = [
+      [-43.1, -22.9],
+      [-43.101, -22.901],
+    ];
+    expect(stitchSchematicPath([single])).toEqual(single);
+    expect(stitchSchematicPath([])).toEqual([]);
+  });
+
+  it('ignora segmentos vazios no meio da lista', () => {
+    const segmentA: LngLat[] = [
+      [-43.1, -22.9],
+      [-43.101, -22.901],
+    ];
+    const segmentB: LngLat[] = [
+      [-43.101, -22.901],
+      [-43.102, -22.902],
+    ];
+    expect(stitchSchematicPath([segmentA, [], segmentB])).toEqual([
+      [-43.1, -22.9],
+      [-43.101, -22.901],
+      [-43.102, -22.902],
+    ]);
   });
 });
 

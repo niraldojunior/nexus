@@ -25,6 +25,7 @@ export {
   type AddressLocationResolution,
 } from './AddressDetailPanel';
 export { ViabilityTab, type ViabilityTabProps, type DropSimulation } from './ViabilityTab';
+export { SchematicTab, type SchematicTabProps } from './SchematicTab';
 export { Info } from './InfoRow';
 export { IconInfoRow } from './IconInfoRow';
 export { CoordinateStreetView } from './CoordinateStreetView';

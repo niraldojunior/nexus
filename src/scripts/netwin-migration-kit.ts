@@ -63,6 +63,57 @@ export function configureOracleClient(): void {
   }
 }
 
+// ---- ciclo de vida (NI_CAT_STATE.DESIGNATION -> status canônico) ----
+//
+// Único ponto de resolução de designation → status para as cargas Netwin que consultam
+// NI_CAT_STATE (hoje só migrate-netwin-osp.ts; migrate-netwin-infranode.ts não tem essa
+// tabela na origem e assume 'active' com `_migration.statusAssumed`). A regra anterior
+// vivia só em migrate-netwin-osp.ts, sem normalização de acento e com o ramo "ativo"
+// ancorado em `^SERVI` — "Em Serviço" (o valor real mais comum na origem) e "Disponível"
+// nunca batiam, e caíam no default 'suspended'. Foi assim que uma CDOE ativa e disponível
+// (e toda a cadeia até a estação) veio Suspensa numa carga real (ver AGENTS.md/issue de
+// origem: CDOE-7539 / INFRANODE 472107).
+export type LifecycleStatus = 'active' | 'suspended' | 'terminated';
+
+export type LifecycleResolution = {
+  status: LifecycleStatus;
+  substatus: string;
+  // true quando a designation está vazia ou o estado não foi encontrado no lookup — o
+  // chamador trata como o irmão infranode trata ausência de dado: assume 'active' e marca
+  // `_migration.statusAssumed`, em vez de gravar 'suspended' silencioso (o default anterior
+  // suspendia por falta de informação, não por evidência).
+  assumed: boolean;
+};
+
+function normalizeDesignation(designation: string | undefined): string {
+  return (designation ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .trim();
+}
+
+const TERMINATED_PATTERN = /TERMINAD|ABORT|RETIRA|CANCELAD/;
+const SUSPENDED_PATTERN = /FORA DE SERVI|DISABLED|BLOQUEAD|SUSPENS/;
+const ACTIVE_PATTERN =
+  /^(EM )?SERVICO$|^ATIVO$|^ACTIVE$|^OPERACIONAL$|^EM USO$|INSTALADO|DISPONIVEL/;
+
+export function resolveLifecycleStatus(designation: string | undefined): LifecycleResolution {
+  const normalized = normalizeDesignation(designation);
+  if (!normalized) return { status: 'active', substatus: '', assumed: true };
+  if (TERMINATED_PATTERN.test(normalized)) {
+    return { status: 'terminated', substatus: designation ?? '', assumed: false };
+  }
+  if (SUSPENDED_PATTERN.test(normalized)) {
+    return { status: 'suspended', substatus: designation ?? '', assumed: false };
+  }
+  if (ACTIVE_PATTERN.test(normalized)) return { status: 'active', substatus: '', assumed: false };
+  // Designation reconhecida (não vazia) mas fora do vocabulário mapeado: suspende com o
+  // valor cru como substatus, para o painel do Geo mostrar o motivo e a operação decidir se
+  // é caso de estender o vocabulário acima.
+  return { status: 'suspended', substatus: designation ?? '', assumed: false };
+}
+
 export type TablePrefixer = (name: string) => string;
 
 export function makeTablePrefixer(targetPrefix?: string): TablePrefixer {

@@ -62,6 +62,50 @@ export function stitchDropPath(origin: LngLat, routePath: LngLat[], destination:
 }
 
 /**
+ * Costura as geometrias de cabo dos saltos do Esquemático (ver
+ * GeoTreeService.schematicPath) num único traçado contínuo, do equipamento selecionado
+ * até a Estação. A ordem dos saltos é conhecida, mas não a direção de cada geometria: o
+ * `GEOM` do Netwin segue a direção A→Z da carga (equipamento a montante → a jusante),
+ * exatamente o inverso do sentido em que o esquemático anda (do recurso selecionado para
+ * a montante) — então cada trecho pode entrar invertido. Em vez de assumir uma direção
+ * fixa, cada segmento é orientado pela ponta mais próxima do fim do traçado acumulado
+ * (robusto a qualquer ordem de gravação); vértices que já coincidem com a junção anterior
+ * são descartados para não duplicar o ponto de emenda.
+ */
+export function stitchSchematicPath(cableSegments: LngLat[][]): LngLat[] {
+  const segments = cableSegments.filter((segment) => segment.length > 0);
+  if (segments.length === 0) return [];
+
+  const first = segments[0];
+  const path: LngLat[] = [...first];
+
+  for (const segment of segments.slice(1)) {
+    const tail = path[path.length - 1];
+    const distToStart = haversineMeters(tail, segment[0]);
+    const distToEnd = haversineMeters(tail, segment[segment.length - 1]);
+    const oriented = distToEnd < distToStart ? [...segment].reverse() : segment;
+    const startsAtTail = haversineMeters(tail, oriented[0]) <= STITCH_TOLERANCE_METERS;
+    path.push(...oriented.slice(startsAtTail ? 1 : 0));
+  }
+
+  return path;
+}
+
+/**
+ * Comprimento do traçado (soma dos segmentos), em metros — a métrica que o rótulo do
+ * Esquemático mostra (extensão total do caminho até a Estação), diferente de
+ * `pathSpanMeters` (que mede o bbox, não o percurso real).
+ */
+export function pathLengthMeters(path: LngLat[]): number {
+  if (path.length < 2) return 0;
+  let total = 0;
+  for (let index = 1; index < path.length; index += 1) {
+    total += haversineMeters(path[index - 1], path[index]);
+  }
+  return total;
+}
+
+/**
  * Extensão do traçado na tela: o maior lado do bbox que o circunscreve, em metros. É o
  * que a câmera precisa enquadrar para o drop nascer inteiro — o `pathMidpoint` só diz
  * onde centrar, não quanto cabe. Traçado vazio ou degenerado devolve 0 (nada a enquadrar).

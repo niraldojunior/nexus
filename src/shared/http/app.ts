@@ -1574,6 +1574,21 @@ const routeGeoRequest = async ({
     return sendJson(response, 200, node);
   }
 
+  // "Traceroute" da fibra: do equipamento selecionado até a Estação, alternando
+  // equipamento e cabo (ver GeoTreeService.schematicPath) — aba Esquemático do painel de
+  // Recurso, no módulo Geo.
+  if (request.method === 'GET' && url.pathname === '/v1/geo/tree/schematic') {
+    const nodeId = url.searchParams.get('nodeId');
+    if (!nodeId) {
+      throw new AppError('nodeId required', { code: 'GEO_TREE_NODE_REQUIRED', statusCode: 400 });
+    }
+    const { kind, rest } = parseNodeId(nodeId);
+    if (kind !== 'resource') {
+      throw new AppError('nodeId must be a resource', { code: 'GEO_TREE_NODE_REQUIRED', statusCode: 400 });
+    }
+    return sendJson(response, 200, await geoTreeService.schematicPath(rest));
+  }
+
   // Infra passiva por região visível do mapa — fonte usada em escala de detalhe (≤ 200 m),
   // no lugar da expansão da árvore (ver GeoTreeService.resourcesInViewport). Soma os Sites
   // não-CO da mesma região (GeoTreeService.sitesInViewport, Fase 3 do painel unificado de

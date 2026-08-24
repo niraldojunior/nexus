@@ -410,6 +410,15 @@ export const transformOracleQuery = (sql: string, objectPrefix: string): string 
   // could be mis-hit (the only CAST is `CAST(:n AS text)`, handled next).
   output = output.replace(/\)\s+AS\s+([a-z_][a-z0-9_]*)/g, ') $1');
   output = output.replace(/\bCAST\((:[0-9]+)\s+AS\s+text\)/gi, 'CAST($1 AS VARCHAR2(36 CHAR))');
+  // The recursive-CTE anchor in tree-service.ts (`SELECT CAST(? AS text), 0`) has no FROM —
+  // legal Postgres (implicit one-row source), but Oracle's parser rejects it (ORA-00923). Tried
+  // giving it a derived-table FROM instead of DUAL and Oracle's recursive-CTE parser rejected that
+  // too (only FROM DUAL parses), so target the literal anchor shape rather than a generic
+  // "SELECT with no FROM" detector.
+  output = output.replace(
+    /(CAST\(:[0-9]+ AS VARCHAR2\(36 CHAR\)\),\s*0)(\s*\n\s*UNION ALL)/i,
+    '$1 FROM DUAL$2',
+  );
   // Prefix managed table names last, once all structural transforms have run against the bare names.
   output = rewriteTableReferences(output, objectPrefix);
   // Quote Oracle reserved-word columns (e.g. `mode`) so queries agree with the quoted DDL.

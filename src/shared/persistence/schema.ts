@@ -546,6 +546,20 @@ export const MIGRATIONS_SQL = `
   -- pede a viewport inteira de uma vez, então o índice cobre (nível, faixa de x, faixa de y).
   CREATE INDEX IF NOT EXISTS idx_geo_map_density_bbox
     ON geo_map_density(tenant_id, tile_z, tile_x, tile_y, feature_count);
+
+  -- Caminho rápido da busca da barra de pesquisa (GeoTreeService.search /
+  -- searchResourceCandidates): tenta primeiro LOWER(name) LIKE 'termo%' (prefixo), que só
+  -- fica indexável com um índice sobre a EXPRESSÃO LOWER(name) e a classe de operador
+  -- text_pattern_ops — sem ela, uma collation não-C (a maioria) não usa o índice para LIKE
+  -- nenhum. Sem isto, cada tecla digitada varria as tabelas inteiras (recurso: ~1,5M linhas)
+  -- só para achar 20 resultados. text_pattern_ops é sintaxe Postgres; transformOracleSchemaSql
+  -- remove o sufixo para o Oracle, onde o mesmo DDL já é um índice funcional sobre LOWER(name).
+  CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_name_lower
+    ON tmf_physical_resource (LOWER(name) text_pattern_ops);
+  CREATE INDEX IF NOT EXISTS idx_tmf_logical_resource_name_lower
+    ON tmf_logical_resource (LOWER(name) text_pattern_ops);
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_name_lower
+    ON tmf_geographic_site (LOWER(name) text_pattern_ops);
 `;
 
 export const SCHEMA_SQL = `

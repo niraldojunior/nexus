@@ -205,7 +205,9 @@ test('Geo HTTP integration exposes bootstrap, allowedChildren and containment im
 
   const bootstrap = await requestJson(port, 'POST', '/v1/geo/site-specifications/bootstrap');
   assert.equal(bootstrap.statusCode, 200);
-  assert.equal((bootstrap.body as { specs: unknown[] }).specs.length, 11);
+  // BOOTSTRAP_SPECIFICATIONS em service.ts — Region, Functional Group, CO, POP, Cabinet,
+  // Installation Point, Customer Site, Condominium, Block, Floor, Room, Cage.
+  assert.equal((bootstrap.body as { specs: unknown[] }).specs.length, 12);
 
   const regionSpecs = await requestJson(port, 'GET', '/v1/geo/site-specifications?code=REGION');
   const centralSpecs = await requestJson(port, 'GET', '/v1/geo/site-specifications?code=CO');
@@ -1243,8 +1245,8 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
   });
   assert.equal(box.statusCode, 201);
 
-  // Splitter dentro da caixa: some do mapa e da árvore, mas continua encontrável
-  // pelo nome — diferente da sala, ele não é filtrado da busca.
+  // Splitter dentro da caixa: some do mapa, da árvore E da busca (não tem ponto próprio
+  // no mapa para a seleção pousar — mesma regra dos dois primeiros).
   const splitterSpec = await requestJson(
     port,
     'POST',
@@ -1270,13 +1272,24 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
   const results = search.body as GeoTreeResponseNode[];
   assert.deepEqual(results.map((item) => item.label).sort(), [
     'CDOE Icaraí 08',
-    'CDOE Icaraí 08 · Splitter',
     'Estação Icaraí Central',
   ]);
   assert.equal(
     results.some((item) => item.label === 'Sala Icaraí Técnica'),
     false,
   );
+  assert.equal(
+    results.some((item) => item.label === 'CDOE Icaraí 08 · Splitter'),
+    false,
+  );
+
+  // Caminho de prefixo (searchResourceCandidates): "CDOE" casa direto no início do nome,
+  // sem precisar da varredura por substring.
+  const prefixSearch = await requestJson(port, 'GET', '/v1/geo/tree/search?q=CDOE');
+  assert.equal(prefixSearch.statusCode, 200);
+  assert.deepEqual((prefixSearch.body as GeoTreeResponseNode[]).map((item) => item.label), [
+    'CDOE Icaraí 08',
+  ]);
 
   const noMatch = await requestJson(port, 'GET', '/v1/geo/tree/search?q=zzz-nao-existe');
   assert.deepEqual(noMatch.body, []);
@@ -1391,12 +1404,13 @@ test('Projetos de trabalho: local exige GEONET, herda status do projeto, e a cas
   const siteId = (created.body as { site: { id: string; status: string } }).site.id;
   assert.equal((created.body as { site: { status: string } }).site.status, 'Planned');
 
-  // GET /sites devolve a observação e o id do Geonet junto do nó de árvore.
+  // GET /sites devolve a observação e o id do Geonet junto do nó de árvore — sem bbox, a
+  // resposta é paginada (issue #72, PROJECT_PANEL_SITE_LIMIT): { items, offset, limit, hasMore }.
   const sites = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
   assert.equal(sites.statusCode, 200);
   const siteNode = (
-    sites.body as Array<{ refId: string; note: string; geonetAddressId: string }>
-  ).find((node) => node.refId === siteId);
+    sites.body as { items: Array<{ refId: string; note: string; geonetAddressId: string }> }
+  ).items.find((node) => node.refId === siteId);
   assert.equal(siteNode?.note, 'observação de campo');
   assert.equal(siteNode?.geonetAddressId, 'geonet-123');
 
@@ -1434,7 +1448,7 @@ test('Projetos de trabalho: local exige GEONET, herda status do projeto, e a cas
   );
   assert.equal(removed.statusCode, 204);
   const sitesAfterRemove = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
-  assert.deepEqual(sitesAfterRemove.body, []);
+  assert.deepEqual((sitesAfterRemove.body as { items: unknown[] }).items, []);
 });
 
 test('Projetos de trabalho: terminar o projeto libera os locais (viram Active, não Retired) e não volta', async (t) => {
@@ -1503,10 +1517,12 @@ test('Projetos de trabalho: terminar o projeto libera os locais (viram Active, n
   assert.equal((reopen.body as { error: string }).error, 'GEO_PROJECT_TERMINATED_IMMUTABLE');
 });
 
-// issue #58: DELETE /v1/geo/projects/:id passou a operar em massa (GeoService.transitionProjectSites)
-// em vez de um laço um-a-um por local, e a responder 200 com um resumo em vez de 204 silencioso —
-// um projeto com local bloqueado agora é MANTIDO íntegro, em vez de ficar pela metade para sempre.
-test('DELETE /v1/geo/projects/:id: encerra os locais e devolve um resumo; 404 para id inexistente', async (t) => {
+// issue #58: DELETE /v1/geo/projects/:id operava em massa (GeoService.transitionProjectSites),
+// devolvendo 200 com um resumo em vez de 204 silencioso. A REQ-MOD01-017 v1.17 (commit
+// c41a0e5) substituiu esse comportamento por arquivamento administrativo: DELETE só é aceito
+// depois que o projeto já chegou a um estado terminal via PATCH (terminated/cancelled) — a
+// cascata de Site (ver "cascata de status do PATCH funciona") já roda ali, não mais no DELETE.
+test('DELETE /v1/geo/projects/:id: arquiva projeto terminado e devolve o resumo; 404 para id inexistente', async (t) => {
   const database = createTestDatabase();
   const server = createApp({
     config: createConfig(0, database.databaseUrl),
@@ -1539,18 +1555,34 @@ test('DELETE /v1/geo/projects/:id: encerra os locais e devolve um resumo; 404 pa
   });
   const siteId = (created.body as { site: { id: string } }).site.id;
 
+  // Arquivar um projeto ainda em curso é recusado — só terminal (terminated/cancelled) arquiva.
+  const premature = await requestJson(port, 'DELETE', `/v1/geo/projects/${projectId}`);
+  assert.equal(premature.statusCode, 409);
+  assert.equal(
+    (premature.body as { error: string }).error,
+    'GEO_PROJECT_ARCHIVE_REQUIRES_TERMINAL_STATUS',
+  );
+
+  // Terminar libera o local (vira Active — RF-010) antes do projeto poder ser arquivado.
+  const terminated = await requestJson(port, 'PATCH', `/v1/geo/projects/${projectId}`, {
+    status: 'terminated',
+  });
+  assert.equal(terminated.statusCode, 200);
+
   const deleted = await requestJson(port, 'DELETE', `/v1/geo/projects/${projectId}`);
   assert.equal(deleted.statusCode, 200);
-  assert.deepEqual(deleted.body, { deleted: true, retired: 1, skipped: 0, blocked: 0 });
+  const summary = deleted.body as { archived: boolean; project: { id: string } };
+  assert.equal(summary.archived, true);
+  assert.equal(summary.project.id, projectId);
 
-  // Não há GET /v1/geo/projects/:id — confirma pela lista que o projeto sumiu.
+  // Não há GET /v1/geo/projects/:id — confirma pela lista que o projeto sumiu (archived_at).
   const projectsAfter = await requestJson(port, 'GET', '/v1/geo/projects');
   assert.ok(!(projectsAfter.body as Array<{ id: string }>).some((p) => p.id === projectId));
   const siteAfter = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}`);
-  assert.equal((siteAfter.body as { status: string }).status, 'Retired');
+  assert.equal((siteAfter.body as { status: string }).status, 'Active');
 });
 
-test('DELETE /v1/geo/projects/:id: local bloqueado mantém o projeto e os vínculos íntegros', async (t) => {
+test('DELETE /v1/geo/projects/:id: projeto não-terminado é recusado e mantém vínculos íntegros', async (t) => {
   const database = createTestDatabase();
   const server = createApp({
     config: createConfig(0, database.databaseUrl),
@@ -1603,29 +1635,24 @@ test('DELETE /v1/geo/projects/:id: local bloqueado mantém o projeto e os víncu
   );
   assert.equal(relationship.statusCode, 201);
 
+  // Projeto ainda 'planned' (não terminal): arquivar é recusado, nada muda.
   const deleted = await requestJson(port, 'DELETE', `/v1/geo/projects/${projectId}`);
-  assert.equal(deleted.statusCode, 200);
-  const summary = deleted.body as {
-    deleted: boolean;
-    retired: number;
-    blocked: number;
-    blockedSiteIds?: string[];
-  };
-  assert.equal(summary.deleted, false);
-  assert.equal(summary.retired, 1);
-  assert.equal(summary.blocked, 1);
-  assert.deepEqual(summary.blockedSiteIds, [blockedSiteId]);
+  assert.equal(deleted.statusCode, 409);
+  assert.equal(
+    (deleted.body as { error: string }).error,
+    'GEO_PROJECT_ARCHIVE_REQUIRES_TERMINAL_STATUS',
+  );
 
-  // Projeto continua existindo, com os dois vínculos intactos.
+  // Projeto continua existindo, com os dois vínculos intactos e nenhum local tocado.
   const projectsAfter = await requestJson(port, 'GET', '/v1/geo/projects');
   assert.ok((projectsAfter.body as Array<{ id: string }>).some((p) => p.id === projectId));
   const sitesAfter = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
-  assert.equal((sitesAfter.body as unknown[]).length, 2);
+  assert.equal((sitesAfter.body as { items: unknown[] }).items.length, 2);
 
   assert.equal(
     ((await requestJson(port, 'GET', `/v1/geo/sites/${freeSiteId}`)).body as { status: string })
       .status,
-    'Retired',
+    'Planned',
   );
   assert.equal(
     ((await requestJson(port, 'GET', `/v1/geo/sites/${blockedSiteId}`)).body as { status: string })
@@ -1851,11 +1878,14 @@ test('Manchas de Projeto (REQ-MOD01-017): GET /areas lê o que o script grava, e
   );
   assert.deepEqual(emptyBbox.body, []);
 
-  // Sem bbox, `limit` pagina a lista completa (2 locais) — mantém o comportamento de sempre.
+  // Sem bbox, a resposta é paginada (issue #72, PROJECT_PANEL_SITE_LIMIT): { items, offset,
+  // limit, hasMore } — `limit` pagina a lista completa (2 locais).
   const limited = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites?limit=1`);
-  assert.equal((limited.body as unknown[]).length, 1);
+  assert.equal((limited.body as { items: unknown[] }).items.length, 1);
   const full = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
-  const fullRefIds = (full.body as Array<{ refId: string }>).map((node) => node.refId);
+  const fullRefIds = (full.body as { items: Array<{ refId: string }> }).items.map(
+    (node) => node.refId,
+  );
   assert.deepEqual(new Set(fullRefIds), new Set([nearSiteId, farSiteId]));
 
   // Projeto sem manchas geradas: GET /areas devolve lista vazia.

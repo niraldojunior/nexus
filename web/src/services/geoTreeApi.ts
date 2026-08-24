@@ -105,13 +105,15 @@ export const fetchViewportResources = (
 // exatamente como qualquer outro nó (ver selectNode em GeoPage).
 export const fetchTreeSearch = (
   q: string,
-  options: { limit?: number } = {},
+  options: { limit?: number; signal?: AbortSignal } = {},
 ): Promise<GeoTreeNode[]> => {
   const term = q.trim();
   if (!term) return Promise.resolve([]);
   const params = new URLSearchParams({ q: term });
   if (options.limit !== undefined) params.set('limit', String(options.limit));
-  return getJson<GeoTreeNode[]>(`/v1/geo/tree/search?${params.toString()}`);
+  return getJson<GeoTreeNode[]>(`/v1/geo/tree/search?${params.toString()}`, {
+    signal: options.signal,
+  });
 };
 
 // Nó por id, já hidratado (geometria inteira + `detail`) — completa a seleção feita a partir

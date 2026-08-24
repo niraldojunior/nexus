@@ -316,39 +316,102 @@ export class GeoTreeService {
 
   /**
    * Busca por nome para a barra de pesquisa: Estações (Site, nunca SubSite — sala/andar
-   * não é alvo de busca) e Recursos (physical/logical, Splitter incluso — diferente do
-   * mapa e da árvore, buscar pelo nome do splitter continua encontrando-o), por substring
-   * case-insensitive. Devolve `GeoTreeNode[]` para reaproveitar o mesmo desenho de
-   * mapa/detalhe/seleção que a árvore já usa — quem chama trata o resultado como um nó
-   * qualquer.
+   * não é alvo de busca) e Recursos (physical/logical) com presença própria no mapa —
+   * item interno (Splitter) fica de fora, igual à árvore e ao viewport (ver
+   * `hideInternalResourceSql`): ele não tem ponto próprio para desenhar/selecionar no
+   * mapa, então achá-lo pela busca só levava a uma seleção sem onde pousar. Devolve
+   * `GeoTreeNode[]` para reaproveitar o mesmo desenho de mapa/detalhe/seleção que a
+   * árvore já usa — quem chama trata o resultado como um nó qualquer.
+   *
+   * Recurso é resolvido em duas fases: `searchResourceCandidates` traz só `id`/`name`
+   * (sem JOIN em location/spec, sem tocar `characteristics`) e `resourcesByIds` hidrata
+   * só os poucos ids escolhidos. Antes disso a projeção cara (geometria, spec,
+   * substatus, origem) era calculada para TODA linha que casava com o `LIKE`, não para
+   * as ~20 devolvidas — o maior custo isolado desta busca.
    */
   public async search(term: string, options: { limit?: number } = {}): Promise<GeoTreeNode[]> {
     const trimmed = term.trim();
     if (!trimmed) return [];
     const limit = clamp(options.limit ?? SEARCH_MAX_RESULTS, 1, SEARCH_MAX_RESULTS);
-    const like = `%${trimmed}%`;
 
-    const siteRows = await this.db.all<SiteRow>(
-      `${SITE_SELECT}
-       WHERE sp.category = 'Site' AND s.status NOT IN ('Retired', 'terminated') AND LOWER(s.name) LIKE LOWER(?)
-       ${PROJECT_SITE_EXCLUSION_SQL}
-       ORDER BY s.name
-       LIMIT ?`,
-      [like, limit],
-    );
-
-    const resourceRows = await this.db.all<ResourceRow>(
-      `SELECT * FROM (${SEARCH_RESOURCE_SOURCE}) AS t ORDER BY name LIMIT ?`,
-      [like, like, limit],
-    );
+    const [siteRows, resourceIds] = await Promise.all([
+      this.db.all<SiteRow>(
+        `${SITE_SELECT}
+         WHERE sp.category = 'Site' AND s.status NOT IN ('Retired', 'terminated') AND LOWER(s.name) LIKE LOWER(?)
+         ${PROJECT_SITE_EXCLUSION_SQL}
+         ORDER BY s.name
+         LIMIT ?`,
+        [`%${trimmed}%`, limit],
+      ),
+      this.searchResourceCandidates(trimmed, limit),
+    ]);
 
     const nodes: GeoTreeNode[] = [
       ...siteRows.map((row) => this.toSiteNode(row, { hasChildren: true })),
-      ...(await this.toResourceNodes(resourceRows, 'tree')),
+      ...(await this.resourcesByIds(resourceIds)),
     ];
     nodes.sort((left, right) => collator.compare(left.label, right.label));
 
     return nodes.slice(0, limit);
+  }
+
+  /**
+   * Ids de recurso (physical/logical) por nome, sem hidratar nada — a metade barata da
+   * busca (ver `search`). Duas passadas: primeiro por prefixo (`termo%`), que o índice
+   * `idx_*_name_lower` cobre e resolve em milissegundos mesmo com milhões de linhas;
+   * só completa com a varredura por substring (`%termo%`, sem índice) se o prefixo não
+   * encheu o `limit` — o caso comum (código/nome de estação digitado do início) nunca
+   * paga o full scan.
+   *
+   * Cada tabela (Physical, Logical) é consultada em SEPARADO — nunca num UNION ALL antes
+   * do `ORDER BY`/`LIMIT` — e o merge dos top-N de cada uma é feito aqui, em JS. Testado e
+   * medido: com o filtro dentro de um UNION ALL, nem Oracle nem Postgres conseguem parar
+   * cedo — o otimizador precisa rankear o resultado combinado inteiro antes de aplicar o
+   * `LIMIT` (Oracle: `WINDOW SORT PUSHED RANK` sobre a `UNION-ALL`), porque duas correntes
+   * só ordenadas *dentro de si* não bastam para saber os N menores do total sem examinar as
+   * duas por completo. Com prefixo comum no acervo (ex.: "CDOE", ~1,7M de ~1,5M linhas de
+   * `tmf_physical_resource` em dev) isso mediu **58s** mesmo já com o índice em jogo. Cada
+   * tabela sozinha, com `ORDER BY LOWER(name) LIMIT` batendo com o índice, para assim que
+   * acha os primeiros N (Oracle: `WINDOW NOSORT STOPKEY` sobre `INDEX RANGE SCAN`) — 20ms no
+   * mesmo teste. O merge final é só ordenar ≤ 2×limit linhas já em memória.
+   */
+  private async searchResourceCandidates(term: string, limit: number): Promise<string[]> {
+    const prefix = await this.searchResourceCandidatesPass(`${term}%`, limit);
+    if (prefix.length >= limit) return prefix.slice(0, limit).map((row) => row.id);
+
+    const seen = new Set(prefix.map((row) => row.id));
+    const substring = await this.searchResourceCandidatesPass(`%${term}%`, limit);
+    const merged = [...prefix];
+    for (const row of substring) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      merged.push(row);
+    }
+    merged.sort((left, right) => (left.name.toLowerCase() < right.name.toLowerCase() ? -1 : 1));
+    return merged.slice(0, limit).map((row) => row.id);
+  }
+
+  // Physical e Logical, cada um com seu próprio `ORDER BY LOWER(name) LIMIT` — ver o porquê
+  // no JSDoc de `searchResourceCandidates`. `pattern` já vem pronto para o LIKE (`termo%` ou
+  // `%termo%`); merge simples por nome, sem depender de collator (é só para decidir os N
+  // candidatos — a ordenação final "de verdade" acontece em `search`, sobre o nó hidratado).
+  private async searchResourceCandidatesPass(
+    pattern: string,
+    limit: number,
+  ): Promise<Array<{ id: string; name: string }>> {
+    const [physical, logical] = await Promise.all([
+      this.db.all<{ id: string; name: string }>(
+        `SELECT id, name FROM (${searchResourceIdBlock('PhysicalResource')}) AS t ORDER BY LOWER(name) LIMIT ?`,
+        [pattern, limit],
+      ),
+      this.db.all<{ id: string; name: string }>(
+        `SELECT id, name FROM (${searchResourceIdBlock('LogicalResource')}) AS t ORDER BY LOWER(name) LIMIT ?`,
+        [pattern, limit],
+      ),
+    ]);
+    const merged = [...physical, ...logical];
+    merged.sort((left, right) => (left.name.toLowerCase() < right.name.toLowerCase() ? -1 : 1));
+    return merged.slice(0, limit);
   }
 
   /**
@@ -1043,7 +1106,8 @@ const siteResourceSource = (scope: GeoTreeScope): string => {
 // é GeoJSON em texto; o worker Postgres deixa os operadores `::jsonb` passarem intactos (só
 // reescreve `json_extract`). Cada bloco leva 4 parâmetros: minLng, maxLng, minLat, maxLat.
 // Splitter fica de fora dos dois blocos: não tem ponto próprio no mapa (mora na Location
-// da caixa que o contém) e usado só aqui — a busca (`SEARCH_NAME_WHERE`) não herda o filtro.
+// da caixa que o contém). A busca (`SEARCH_RESOURCE_ID_WHERE`) aplica o mesmo filtro por
+// fora, direto no tipo — ela não filtra por bbox, então não pode herdar daqui.
 const VIEWPORT_POINT_WHERE = `
   l.geometry_type = 'Point'
   AND r.resource_type IS DISTINCT FROM 'Splitter'
@@ -1092,15 +1156,25 @@ function viewportResourceSource(shapes: { point: boolean; line: boolean }): stri
   return blocks.join('\n  UNION ALL\n');
 }
 
-// Recursos (physical/logical) por substring de nome — a busca da barra de pesquisa não
-// se restringe a um site nem a um bbox, então reusa `viewportBlock` só pela forma das
-// colunas, com um WHERE de nome no lugar do de geometria. Um parâmetro por bloco. Sem
-// filtro de item interno: Splitter continua encontrável pelo nome (ver `search`).
-const SEARCH_NAME_WHERE = `LOWER(r.name) LIKE LOWER(?)`;
-const SEARCH_RESOURCE_SOURCE = [
-  viewportBlock('PhysicalResource', SEARCH_NAME_WHERE),
-  viewportBlock('LogicalResource', SEARCH_NAME_WHERE),
-].join('\n  UNION ALL\n');
+// Candidatos de recurso (physical/logical) por nome — fase barata de `search` (ver
+// GeoTreeService.searchResourceCandidates(Pass)). Só `id`/`name`: sem JOIN em spec, sem
+// tocar `characteristics` (substatus/origem), sem trazer geometria — os poucos ids
+// escolhidos são hidratados depois por `resourcesByIds`, que já faz esse JOIN completo.
+// `place_id IS NOT NULL` espelha o JOIN de `viewportBlock`/`resourcesByIds` (recurso sem
+// geometria própria não aparece na busca, mesma regra do mapa) sem pagar o custo do JOIN
+// aqui. Splitter fica de fora, igual à árvore e ao mapa (não tem ponto próprio no mapa para
+// a seleção pousar). Cada entidade fica em seu PRÓPRIO bloco — nunca um UNION ALL dos
+// dois antes do `ORDER BY`/`LIMIT` do chamador, ver o porquê no JSDoc de
+// `searchResourceCandidates`.
+const SEARCH_RESOURCE_ID_WHERE = `
+  r.place_id IS NOT NULL
+  AND r.status <> 'terminated'
+  AND r.resource_type IS DISTINCT FROM '${INTERNAL_RESOURCE_TYPE}'
+  AND LOWER(r.name) LIKE LOWER(?)`;
+const searchResourceIdBlock = (entity: 'PhysicalResource' | 'LogicalResource'): string => {
+  const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
+  return `SELECT r.id, r.name FROM ${table} r WHERE (${SEARCH_RESOURCE_ID_WHERE})`;
+};
 
 // Colunas (na ordem) que RESOURCE_CHILD_SOURCE / RESOURCE_CHILD_TREE_SOURCE projetam. Listadas
 // explicitamente para o dedup por ROW_NUMBER em childrenOfResource poder descartar a coluna `rn`

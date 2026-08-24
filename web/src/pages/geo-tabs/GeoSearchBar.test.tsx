@@ -304,6 +304,58 @@ describe('GeoSearchBar', () => {
     );
   });
 
+  it('mostra o resultado de inventário assim que chega, sem esperar endereços pendentes', async () => {
+    let resolveAddresses!: (predictions: { placeId: string; description: string }[]) => void;
+    mocks.fetchTreeSearch.mockResolvedValue([node]);
+    mocks.fetchAddressPredictions.mockReturnValue(
+      new Promise((resolve) => {
+        resolveAddresses = resolve;
+      }),
+    );
+
+    render(
+      <GeoSearchBar
+        query="Estação"
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise no Nexus'));
+    // Antes, um único Promise.allSettled só publicava resultado depois que as duas fontes
+    // resolviam — o resultado de inventário (mais rápido, com cache/índice de prefixo)
+    // ficava represado pelo de endereço (Places, rede externa).
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Estação Icaraí/i })).toBeInTheDocument(),
+    );
+
+    await act(async () => resolveAddresses([]));
+  });
+
+  it('não consulta o inventário com menos de 3 caracteres', async () => {
+    mocks.fetchTreeSearch.mockResolvedValue([node]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+
+    render(
+      <GeoSearchBar
+        query="Es"
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise no Nexus'));
+    await act(async () => new Promise((resolve) => window.setTimeout(resolve, 300)));
+
+    expect(mocks.fetchTreeSearch).not.toHaveBeenCalled();
+  });
+
   it('descarta endereço resolvido depois que o usuário limpa a busca', async () => {
     let resolveAddress!: (outcome: {
       ok: true;

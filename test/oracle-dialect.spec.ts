@@ -7,6 +7,7 @@ import {
 } from '../src/shared/persistence/oracle-dialect-lint.js';
 import {
   ORACLE_JSON_CONSTRAINTS_SQL,
+  ORACLE_MIGRATIONS_SQL,
   ORACLE_SCHEMA_SQL,
   splitOracleStatements,
 } from '../src/shared/persistence/oracle-schema.js';
@@ -31,6 +32,9 @@ const REPRESENTATIVE_SQL: Record<string, string> = {
   recursiveFrontier: `WITH RECURSIVE frontier(root_id, node_id, depth) AS ( SELECT v.id, v.id, 0 FROM (SELECT ? AS id FROM DUAL UNION ALL SELECT ? AS id FROM DUAL) v UNION ALL SELECT f.root_id, e.resource_to_id, f.depth+1 FROM frontier f JOIN tmf_resource_relationship e ON e.resource_from_id = f.node_id ) SELECT root_id, count(DISTINCT node_id) AS n FROM frontier GROUP BY root_id`,
   upsert: `INSERT INTO tmf_party(id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name`,
   viewportLine: `SELECT r.id FROM tmf_logical_resource r JOIN tmf_geographic_location l ON l.id=r.place_id WHERE l.geometry_type='LineString' AND EXISTS (SELECT 1 FROM jsonb_array_elements(l.geometry::jsonb->'coordinates') AS v WHERE (v->>0)::float8 BETWEEN ? AND ? AND (v->>1)::float8 BETWEEN ? AND ?)`,
+  // GeoTreeService.searchResourceCandidatesPass (barra de pesquisa) — só id/name, sem JOIN,
+  // uma tabela por vez (nunca UNION ALL antes do ORDER BY/LIMIT — mata o NOSORT STOPKEY).
+  searchResourceCandidate: `SELECT id, name FROM (SELECT r.id, r.name FROM tmf_physical_resource r WHERE (r.place_id IS NOT NULL AND r.status <> 'terminated' AND r.resource_type IS DISTINCT FROM 'Splitter' AND LOWER(r.name) LIKE LOWER(?))) AS t ORDER BY LOWER(name) LIMIT ?`,
 };
 
 test('every representative query translates to Oracle without a Postgres-ism', () => {
@@ -181,6 +185,16 @@ test('geo_project_area (REQ-MOD01-017) survives the Oracle schema transform', ()
   assert.ok(
     statements.some((s) => /\bgeo_project_area\b[\s\S]*\(\s*site_ids\s+IS JSON\s*\)/i.test(s)),
     'geo_project_area.site_ids should carry an IS JSON constraint',
+  );
+});
+
+test('text_pattern_ops index (search prefix path) survives the Oracle schema transform', () => {
+  // Postgres-only operator class for LIKE-optimized btree over an expression; Oracle has no
+  // equivalent syntax, so it must be stripped, leaving a plain functional index on LOWER(name).
+  assert.doesNotMatch(ORACLE_MIGRATIONS_SQL, /text_pattern_ops/i);
+  assert.match(
+    ORACLE_MIGRATIONS_SQL,
+    /CREATE INDEX idx_tmf_physical_resource_name_lower\s+ON tmf_physical_resource \(LOWER\(name\)\)/,
   );
 });
 

@@ -413,9 +413,6 @@ const resourceStatusLabel: Record<GeoStatus, string> = {
 };
 
 export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => void } = {}) {
-  // Hoisted para o topo: o valor inicial de `hierarchyCollapsed` depende dele — no
-  // mobile a página abre com o mapa em foco (hierarquia fechada), no desktop a doca
-  // já vem aberta.
   const isMobile = useIsMobile();
   const [sites, setSites] = useState<GeoSite[]>([]);
   const [specs, setSpecs] = useState<GeoSpec[]>([]);
@@ -442,7 +439,9 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // barra de pesquisa decidir se flutua sobre o mapa ou fica dentro da doca (ver
   // dockPanelOpen), e para não mudar quando o detalhe abre/fecha por cima dela —
   // é isso que faz a hierarquia "lembrar" o estado de antes ao fechar o detalhe.
-  const [hierarchyCollapsed, setHierarchyCollapsed] = useState(isMobile);
+  // Fechada por padrão em qualquer viewport: a página abre com o mapa limpo, e quem
+  // reabre é o ícone da barra de pesquisa (ver onToggleHierarchy mais abaixo).
+  const [hierarchyCollapsed, setHierarchyCollapsed] = useState(true);
   // Aba ativa da hierarquia (Hierarquia | Projetos, REQ-MOD01-015) — hoisted para
   // sobreviver a um painel de projeto se fechar e reabrir na mesma aba.
   const [hierarchyTab, setHierarchyTab] = useState<HierarchySidebarTab>('hierarchy');

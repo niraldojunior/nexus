@@ -61,6 +61,17 @@ type HistoryOption =
 
 const DEBOUNCE_MS = 250;
 
+// Abaixo disto, o inventário não é consultado: 1-2 caracteres casam com quase tudo e cada
+// tecla varria as tabelas de recurso inteiras (~1,5M linhas no Oracle) só para descartar o
+// resultado na tecla seguinte. Endereço (Google) não tem esse custo e segue sem mínimo.
+const MIN_INVENTORY_QUERY_LENGTH = 3;
+
+// Cache de termo → resultado, por instância da barra (não em nível de módulo — o resultado
+// de um termo pode depender do momento em que ele é buscado, então nada deveria sobreviver a
+// uma remontagem). Cobre o caso comum de edição: apagar um caractere e redigitar o mesmo
+// termo não deveria custar nova ida ao servidor.
+const SEARCH_CACHE_MAX = 50;
+
 /**
  * Barra de pesquisa unificada da página Geo: autocomplete de locais/recursos do
  * inventário (via `fetchTreeSearch`) lado a lado com endereços (Google Places),
@@ -90,6 +101,8 @@ export function GeoSearchBar({
   // Histórico por usuário — alimenta a picklist quando o campo está vazio (estilo Google Maps).
   const { history, recordNode, recordAddress, remove, clear } = useGeoSearchHistory();
   const debounceRef = useRef<number | undefined>(undefined);
+  const nodeSearchAbortRef = useRef<AbortController | null>(null);
+  const nodeSearchCacheRef = useRef<Map<string, GeoTreeNode[]>>(new Map());
   const requestTokenRef = useRef(0);
   const resolutionTokenRef = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -132,24 +145,56 @@ export function GeoSearchBar({
     }
     debounceRef.current = window.setTimeout(() => {
       const token = ++requestTokenRef.current;
-      // As duas fontes são independentes: `allSettled` (não `all`) garante que a falha
-      // de uma — inventário indisponível ou Places sem cota/rede — não zere a outra.
-      // Com `all`, qualquer rejeição derrubava o dropdown inteiro (some com locais E
-      // endereços), e a picklist "parava de funcionar".
-      void Promise.allSettled([fetchTreeSearch(term), fetchAddressPredictions(term)]).then(
-        ([nodesResult, addressesResult]) => {
-          if (requestTokenRef.current !== token) return;
-          setNodeResults(nodesResult.status === 'fulfilled' ? nodesResult.value : []);
-          setAddressResults(addressesResult.status === 'fulfilled' ? addressesResult.value : []);
+
+      // As duas fontes são independentes e cada uma atualiza seu próprio estado assim que
+      // chega — não esperam uma pela outra. Antes, um único `Promise.allSettled` só
+      // publicava resultado depois que as duas resolviam, então a fonte mais rápida
+      // (tipicamente o inventário, com o cache/índice de prefixo) ficava represada pela
+      // mais lenta (Places, rede externa).
+      nodeSearchAbortRef.current?.abort();
+      if (term.length >= MIN_INVENTORY_QUERY_LENGTH) {
+        const cache = nodeSearchCacheRef.current;
+        const cached = cache.get(term);
+        if (cached) {
+          nodeSearchAbortRef.current = null;
+          setNodeResults(cached);
           setHighlighted(0);
-        },
-      );
+        } else {
+          const abortController = new AbortController();
+          nodeSearchAbortRef.current = abortController;
+          void fetchTreeSearch(term, { signal: abortController.signal })
+            .then((results) => {
+              if (requestTokenRef.current !== token) return;
+              cache.delete(term);
+              cache.set(term, results);
+              if (cache.size > SEARCH_CACHE_MAX) {
+                const oldest = cache.keys().next().value;
+                if (oldest !== undefined) cache.delete(oldest);
+              }
+              setNodeResults(results);
+              setHighlighted(0);
+            })
+            .catch(() => undefined);
+        }
+      } else {
+        nodeSearchAbortRef.current = null;
+        setNodeResults([]);
+      }
+
+      void fetchAddressPredictions(term)
+        .then((results) => {
+          if (requestTokenRef.current !== token) return;
+          setAddressResults(results);
+          setHighlighted(0);
+        })
+        .catch(() => undefined);
     }, DEBOUNCE_MS);
     return () => {
       if (debounceRef.current !== undefined) {
         window.clearTimeout(debounceRef.current);
         debounceRef.current = undefined;
       }
+      nodeSearchAbortRef.current?.abort();
       requestTokenRef.current += 1;
     };
   }, [query, selection]);
@@ -202,6 +247,7 @@ export function GeoSearchBar({
       window.clearTimeout(debounceRef.current);
       debounceRef.current = undefined;
     }
+    nodeSearchAbortRef.current?.abort();
     requestTokenRef.current += 1;
     setOpen(false);
     setNodeResults([]);

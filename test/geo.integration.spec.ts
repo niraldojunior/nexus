@@ -1245,8 +1245,8 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
   });
   assert.equal(box.statusCode, 201);
 
-  // Splitter dentro da caixa: some do mapa e da árvore, mas continua encontrável
-  // pelo nome — diferente da sala, ele não é filtrado da busca.
+  // Splitter dentro da caixa: some do mapa, da árvore E da busca (não tem ponto próprio
+  // no mapa para a seleção pousar — mesma regra dos dois primeiros).
   const splitterSpec = await requestJson(
     port,
     'POST',
@@ -1272,13 +1272,24 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
   const results = search.body as GeoTreeResponseNode[];
   assert.deepEqual(results.map((item) => item.label).sort(), [
     'CDOE Icaraí 08',
-    'CDOE Icaraí 08 · Splitter',
     'Estação Icaraí Central',
   ]);
   assert.equal(
     results.some((item) => item.label === 'Sala Icaraí Técnica'),
     false,
   );
+  assert.equal(
+    results.some((item) => item.label === 'CDOE Icaraí 08 · Splitter'),
+    false,
+  );
+
+  // Caminho de prefixo (searchResourceCandidates): "CDOE" casa direto no início do nome,
+  // sem precisar da varredura por substring.
+  const prefixSearch = await requestJson(port, 'GET', '/v1/geo/tree/search?q=CDOE');
+  assert.equal(prefixSearch.statusCode, 200);
+  assert.deepEqual((prefixSearch.body as GeoTreeResponseNode[]).map((item) => item.label), [
+    'CDOE Icaraí 08',
+  ]);
 
   const noMatch = await requestJson(port, 'GET', '/v1/geo/tree/search?q=zzz-nao-existe');
   assert.deepEqual(noMatch.body, []);

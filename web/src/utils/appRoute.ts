@@ -93,8 +93,6 @@ export function parseAppRoute(pathname: string, options: { isMobile: boolean }):
       return { page: 'research' };
     case 'assistant':
       return { page: 'assistant' };
-    case 'usuarios':
-      return { page: 'usuarios' };
     case 'settings':
       return { page: 'configuracoes' };
     default:
@@ -113,8 +111,6 @@ export function appRoutePath(route: AppRoute): string {
       return `/services/${categorySlug(route.serviceCategory ?? DEFAULT_SERVICE_CATEGORY_CODE)}`;
     case 'order':
       return '/orders';
-    case 'usuarios':
-      return '/usuarios';
     case 'configuracoes':
       return '/settings';
     case 'conversas':

@@ -30,12 +30,18 @@ export function usePlaceSearch(query: string): { options: PlaceOption[]; searchi
       void Promise.all([
         listGeoSites({ name: term, limit: RESULT_LIMIT }),
         listGeoAddresses({ q: term, limit: RESULT_LIMIT }),
-      ]).then(([sites, addresses]) => {
-        if (requestTokenRef.current !== token) return;
-        const directory = buildGeoDirectory(sites, addresses, [], specs);
-        setOptions(listPlaceOptions(directory));
-        setSearching(false);
-      });
+      ])
+        .then(([sites, addresses]) => {
+          if (requestTokenRef.current !== token) return;
+          const directory = buildGeoDirectory(sites, addresses, [], specs);
+          setOptions(listPlaceOptions(directory));
+          setSearching(false);
+        })
+        .catch(() => {
+          // Falha na busca (rede) não pode virar unhandled rejection — o autocomplete só
+          // fica sem resultados, o usuário pode tentar de novo.
+          if (requestTokenRef.current === token) setSearching(false);
+        });
     }, DEBOUNCE_MS);
     return () => {
       if (debounceRef.current !== undefined) {

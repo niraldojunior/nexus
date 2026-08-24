@@ -205,7 +205,7 @@ export const createProjectResource = (
 
 export const listProjectStatusCatalog = (): Promise<GeoProjectStatusCatalogItem[]> =>
   getJson('/v1/geo/project-statuses');
-export const createProjectStatusCatalogItem = (item: GeoProjectStatusCatalogItem) =>
+export const createProjectStatusCatalogItem = (item: Omit<GeoProjectStatusCatalogItem, 'code'>) =>
   postJson<GeoProjectStatusCatalogItem>('/v1/geo/project-statuses', item);
 export const updateProjectStatusCatalogItem = (
   code: string,

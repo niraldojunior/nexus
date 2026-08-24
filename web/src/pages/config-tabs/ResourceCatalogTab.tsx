@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Loader2, Pencil, Plus, Trash2, Upload, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Pencil, Plus, Trash2, Upload, X } from 'lucide-react';
 import {
   createResourceSpecification,
   deleteResourceSpecification,
@@ -25,10 +25,14 @@ import {
   resourceSpecFormStateFrom,
   resourceSpecRequiredFieldsValid,
   resourceSpecSelectionValid,
+  resourceTypeOptionLabel,
   buildResourceSpecificationPayload,
   type ResourceSpecFormState,
 } from '../../utils/resourceSpecificationForm';
-import { readResourceSpecificationNetworkTypeLabel } from '../../utils/resourceSpecificationCharacteristics';
+import {
+  readResourceSpecificationNetworkTypeLabel,
+  RESOURCE_SPEC_NETWORK_TYPE_OPTIONS,
+} from '../../utils/resourceSpecificationCharacteristics';
 import { SortableHeader, sortedBy, useSort } from './sortable';
 
 export type ResourceInfraTab = 'network' | 'civil';
@@ -63,6 +67,9 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [networkTypeFilter, setNetworkTypeFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [resourceTypeFilter, setResourceTypeFilter] = useState('');
   const [pendingRemoval, setPendingRemoval] = useState<ResourceSpecification | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -102,11 +109,20 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
     [specs, infraTab],
   );
 
+  const specNetworkType = (spec: ResourceSpecification): string =>
+    (spec.resourceSpecificationCharacteristic?.find((item) => item.name === 'networkType')
+      ?.value as string | undefined) ?? '';
+
   const filteredSpecs = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return specsOfTab;
-    return specsOfTab.filter((spec) => readSpecificationModel(spec).toLowerCase().includes(term));
-  }, [specsOfTab, search]);
+    return specsOfTab.filter((spec) => {
+      if (term && !readSpecificationModel(spec).toLowerCase().includes(term)) return false;
+      if (networkTypeFilter && specNetworkType(spec) !== networkTypeFilter) return false;
+      if (categoryFilter && spec.category !== categoryFilter) return false;
+      if (resourceTypeFilter && spec.resourceType !== resourceTypeFilter) return false;
+      return true;
+    });
+  }, [specsOfTab, search, networkTypeFilter, categoryFilter, resourceTypeFilter]);
 
   const [sort, onSort] = useSort<
     'name' | 'category' | 'resourceType' | 'networkType' | 'manufacturer' | 'lifecycleStatus'
@@ -137,6 +153,18 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
     [filteredSpecs, sort, resourceTypes, resourceCategories],
   );
 
+  const PAGE_SIZE = 20;
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    setPage(0);
+  }, [search, networkTypeFilter, categoryFilter, resourceTypeFilter, infraTab, sort]);
+  const pageCount = Math.max(1, Math.ceil(sortedSpecs.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pagedSpecs = useMemo(
+    () => sortedSpecs.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE),
+    [sortedSpecs, currentPage],
+  );
+
   const categoryOptionsForTab = useMemo(
     () =>
       resourceCategories.filter((category) =>
@@ -145,6 +173,21 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
           : !isCivilInfrastructureCategory(category.code),
       ),
     [resourceCategories, infraTab],
+  );
+
+  const categoryCodesForTab = useMemo(
+    () => new Set(categoryOptionsForTab.map((category) => category.code)),
+    [categoryOptionsForTab],
+  );
+  // Restrita à Categoria selecionada no filtro (nunca a infraestrutura civil, já fora de
+  // categoryCodesForTab nesta aba); sem categoria escolhida, mostra os tipos de todas as
+  // categorias da aba.
+  const resourceTypeOptionsForTab = useMemo(
+    () =>
+      resourceTypes.filter((type) =>
+        categoryFilter ? type.categoryCode === categoryFilter : categoryCodesForTab.has(type.categoryCode),
+      ),
+    [resourceTypes, categoryCodesForTab, categoryFilter],
   );
 
   const notifyUpdated = () => {
@@ -271,22 +314,64 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
         </p>
       ) : null}
 
-      <input
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        placeholder="Buscar por nome…"
-        className="geo-input mb-3 max-w-sm"
-      />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        {isNetworkTab ? (
+          <>
+            <select
+              value={networkTypeFilter}
+              onChange={(event) => setNetworkTypeFilter(event.target.value)}
+              className="geo-input w-auto"
+            >
+              <option value="">Tipo de Rede: todos</option>
+              {RESOURCE_SPEC_NETWORK_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={categoryFilter}
+              onChange={(event) => {
+                setCategoryFilter(event.target.value);
+                setResourceTypeFilter('');
+              }}
+              className="geo-input w-auto"
+            >
+              <option value="">Categoria: todas</option>
+              {categoryOptionsForTab.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {option.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={resourceTypeFilter}
+              onChange={(event) => setResourceTypeFilter(event.target.value)}
+              className="geo-input w-auto"
+            >
+              <option value="">Tipo: todos</option>
+              {resourceTypeOptionsForTab.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {resourceTypeOptionLabel(option)}
+                </option>
+              ))}
+            </select>
+          </>
+        ) : (
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar por nome…"
+            className="geo-input max-w-sm"
+          />
+        )}
+      </div>
 
       <div className="overflow-hidden rounded-[20px] border border-app-border bg-white shadow-soft">
         <table className="w-full min-w-[750px] text-left">
           <thead>
             <tr className="border-b border-app-border bg-slate-50 text-[0.82rem] font-semibold text-app-muted">
               <SortableHeader label="Especificação" sortKey="name" sort={sort} onSort={onSort} />
-              {isNetworkTab ? (
-                <SortableHeader label="Categoria" sortKey="category" sort={sort} onSort={onSort} />
-              ) : null}
-              <SortableHeader label="Tipo" sortKey="resourceType" sort={sort} onSort={onSort} />
               {isNetworkTab ? (
                 <SortableHeader
                   label="Tipo de Rede"
@@ -295,6 +380,10 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
                   onSort={onSort}
                 />
               ) : null}
+              {isNetworkTab ? (
+                <SortableHeader label="Categoria" sortKey="category" sort={sort} onSort={onSort} />
+              ) : null}
+              <SortableHeader label="Tipo" sortKey="resourceType" sort={sort} onSort={onSort} />
               <SortableHeader
                 label="Fabricante"
                 sortKey="manufacturer"
@@ -324,18 +413,12 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
                 </td>
               </tr>
             ) : (
-              sortedSpecs.map((spec) => (
+              pagedSpecs.map((spec) => (
                 <tr
                   key={spec.id}
                   className="border-b border-app-border text-[0.88rem] text-app-text last:border-0"
                 >
                   <td className="px-5 py-3 font-medium">{readSpecificationModel(spec)}</td>
-                  {isNetworkTab ? (
-                    <td className="px-5 py-3 text-app-muted">{categoryLabel(spec.category)}</td>
-                  ) : null}
-                  <td className="px-5 py-3 text-app-muted">
-                    {readResourceTypeCode(resourceTypes, spec.resourceType)}
-                  </td>
                   {isNetworkTab ? (
                     <td className="px-5 py-3 text-app-muted">
                       {readResourceSpecificationNetworkTypeLabel(
@@ -345,6 +428,12 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
                       )}
                     </td>
                   ) : null}
+                  {isNetworkTab ? (
+                    <td className="px-5 py-3 text-app-muted">{categoryLabel(spec.category)}</td>
+                  ) : null}
+                  <td className="px-5 py-3 text-app-muted">
+                    {readResourceTypeCode(resourceTypes, spec.resourceType)}
+                  </td>
                   <td className="px-5 py-3 text-app-muted">
                     {readSpecificationManufacturer(spec)}
                   </td>
@@ -391,6 +480,38 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
           </tbody>
         </table>
       </div>
+
+      {!loading && sortedSpecs.length > 0 ? (
+        <div className="mt-3 flex items-center justify-between text-[0.82rem] text-app-muted">
+          <span>
+            {currentPage * PAGE_SIZE + 1}–{Math.min((currentPage + 1) * PAGE_SIZE, sortedSpecs.length)}{' '}
+            de {sortedSpecs.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.max(0, current - 1))}
+              disabled={currentPage === 0}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-app-border text-app-text transition hover:bg-app-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Página anterior"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span>
+              Página {currentPage + 1} de {pageCount}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
+              disabled={currentPage >= pageCount - 1}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-app-border text-app-text transition hover:bg-app-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Próxima página"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {modalState
         ? createPortal(

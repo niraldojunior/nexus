@@ -169,20 +169,24 @@ describe('ProjectDetailPanel', () => {
 
   it('trocar o status do projeto grava via onUpdate', () => {
     const props = renderPanel();
+    // Sem catálogo carregado (fetch não mockado neste teste), a combo cai no fallback de
+    // PROJECT_STATUS_OPTIONS — cujo <option value> é o code numérico, não o enum de status
+    // (ver o mapeamento hardcoded em ProjectDetailPanel.tsx, linha do <select>). '22' = Ativo.
     fireEvent.change(screen.getByLabelText('Status do projeto'), {
-      target: { value: 'active' },
+      target: { value: '22' },
     });
-    expect(props.onUpdate).toHaveBeenCalledWith({ status: 'active' });
+    expect(props.onUpdate).toHaveBeenCalledWith({ statusCode: '22' });
   });
 
   it('mostra aviso quando a cascata de status deixa locais para trás', async () => {
     const props = renderPanel({
       onUpdate: vi.fn().mockResolvedValue({ siteCascade: { updated: 1, skipped: 2 } }),
     });
+    // '11' = Planejado no fallback de código (ver comentário acima).
     fireEvent.change(screen.getByLabelText('Status do projeto'), {
-      target: { value: 'planned' },
+      target: { value: '11' },
     });
-    expect(props.onUpdate).toHaveBeenCalledWith({ status: 'planned' });
+    expect(props.onUpdate).toHaveBeenCalledWith({ statusCode: '11' });
     expect(
       await screen.findByText('2 locais não puderam seguir para o novo status.'),
     ).toBeInTheDocument();

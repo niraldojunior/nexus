@@ -9,6 +9,7 @@ export type ServiceSpecificationRow = {
   category: string;
   service_type: 'CFS' | 'RFS' | 'Other';
   description: string | null;
+  observation: string | null;
   valid_for_start: string | null;
   valid_for_end: string | null;
   characteristics: string | null;

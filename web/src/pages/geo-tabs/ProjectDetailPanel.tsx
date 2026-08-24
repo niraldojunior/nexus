@@ -31,6 +31,19 @@ import { PanelBarButton } from './PanelBarButton';
 
 const projectSearchCache = new Map<string, GeoTreeNode[]>();
 
+// Dedupe do catálogo de status: o backend serializa requisições (AGENTS.md §3) e o painel
+// refaz este GET a cada montagem — StrictMode monta duas vezes, e reabrir o mesmo projeto
+// (fechar/abrir a doca) remonta o componente de novo. Mesmo padrão de useGeoProjects.ts.
+let statusCatalogInFlight: Promise<GeoProjectStatusCatalogItem[]> | null = null;
+const fetchStatusCatalogDeduped = (): Promise<GeoProjectStatusCatalogItem[]> => {
+  if (!statusCatalogInFlight) {
+    statusCatalogInFlight = listProjectStatusCatalog().finally(() => {
+      statusCatalogInFlight = null;
+    });
+  }
+  return statusCatalogInFlight;
+};
+
 export type ProjectDetailPanelProps = {
   isMobile: boolean;
   project: GeoProject;
@@ -128,7 +141,7 @@ export function ProjectDetailPanel({
 
   useEffect(() => {
     let cancelled = false;
-    void listProjectStatusCatalog()
+    void fetchStatusCatalogDeduped()
       .then((items) => { if (!cancelled) setStatusCatalog(items); })
       .catch(() => { if (!cancelled) setStatusCatalog([]); });
     return () => { cancelled = true; };

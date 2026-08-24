@@ -258,14 +258,33 @@ export class GeoProjectRepository {
     return row ? { ...row, active: Number(row.active) === 1 } : null;
   }
 
-  async createStatusCatalogItem(tenantId: string, item: GeoProjectStatusCatalogItem): Promise<GeoProjectStatusCatalogItem> {
+  // Código é gerado pelo backend, nunca pelo usuário: numérico incremental, um acima do maior
+  // código numérico já cadastrado (o catálogo tem entradas legadas não-numéricas, ex.
+  // "legacy-cancelled", que ficam de fora do cálculo).
+  private async nextStatusCode(tenantId: string): Promise<string> {
+    const rows = await this.db.all<{ code: string }>(
+      `SELECT code FROM geo_project_status_catalog WHERE tenant_id = ?`,
+      [tenantId],
+    );
+    const highest = rows.reduce((max, row) => {
+      const value = Number(row.code);
+      return Number.isInteger(value) && value > max ? value : max;
+    }, 0);
+    return String(highest + 1);
+  }
+
+  async createStatusCatalogItem(
+    tenantId: string,
+    item: Omit<GeoProjectStatusCatalogItem, 'code'>,
+  ): Promise<GeoProjectStatusCatalogItem> {
     await this.ensureStatusCatalog(tenantId);
+    const code = await this.nextStatusCode(tenantId);
     await this.db.run(
       `INSERT INTO geo_project_status_catalog (tenant_id, code, name, sort_order, active, behavior)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [tenantId, item.code, item.name, item.sortOrder, item.active ? 1 : 0, item.behavior],
+      [tenantId, code, item.name, item.sortOrder, item.active ? 1 : 0, item.behavior],
     );
-    return (await this.getStatusCatalogItem(tenantId, item.code))!;
+    return (await this.getStatusCatalogItem(tenantId, code))!;
   }
 
   async updateStatusCatalogItem(

@@ -36,14 +36,15 @@ export class PostgresServiceRepository implements IServiceRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_service_specification
-       (id, href, name, category, service_type, description, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, href, name, category, service_type, description, observation, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
        category = excluded.category,
        service_type = excluded.service_type,
        description = excluded.description,
+       observation = excluded.observation,
        valid_for_start = excluded.valid_for_start,
        valid_for_end = excluded.valid_for_end,
        characteristics = excluded.characteristics,
@@ -55,6 +56,7 @@ export class PostgresServiceRepository implements IServiceRepository {
         spec.category,
         spec.serviceType,
         spec.description ?? null,
+        spec.observation ?? null,
         spec.validFor?.startDateTime ?? null,
         spec.validFor?.endDateTime ?? null,
         JSON.stringify(spec.serviceSpecificationCharacteristic),
@@ -68,7 +70,7 @@ export class PostgresServiceRepository implements IServiceRepository {
 
   public async getServiceSpecification(id: string): Promise<ServiceSpecification | undefined> {
     const row = await this.db.get<ServiceSpecificationRow>(
-      `SELECT id, href, name, category, service_type, description, valid_for_start, valid_for_end, characteristics
+      `SELECT id, href, name, category, service_type, description, observation, valid_for_start, valid_for_end, characteristics
        FROM tmf_service_specification
        WHERE id = ?`,
       [id],
@@ -95,11 +97,14 @@ export class PostgresServiceRepository implements IServiceRepository {
       conditions.push('service_type = ?');
       params.push(query.serviceType);
     }
+    if (!query?.includeEnded) {
+      conditions.push('valid_for_end IS NULL');
+    }
 
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, href, name, category, service_type, description, valid_for_start, valid_for_end, characteristics FROM tmf_service_specification',
+      'SELECT id, href, name, category, service_type, description, observation, valid_for_start, valid_for_end, characteristics FROM tmf_service_specification',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY category, name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -604,6 +609,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     };
 
     if (row.description) spec.description = row.description;
+    if (row.observation) spec.observation = row.observation;
     if (row.valid_for_start || row.valid_for_end) {
       spec.validFor = {
         ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),

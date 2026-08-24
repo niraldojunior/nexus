@@ -52,6 +52,13 @@ export const CABLE_STROKE_WEIGHT: Record<string, number> = {
   Fiber: 3,
   Jumper: 2,
   PatchCord: 2,
+  // Lances (infraestrutura civil) desenham mais finos que o cabo que carregam — servem de
+  // contexto por baixo do traçado do cabo, não de protagonista.
+  AerialSpan: 1.5,
+  Duct: 1.5,
+  BuriedSpan: 1.5,
+  InnerSpan: 1,
+  OtherSpan: 1.5,
 };
 
 export const familyLabel: Record<ResourceFamily, string> = {
@@ -119,10 +126,15 @@ const TYPE_LABEL: Record<string, string> = {
   Tower: 'Torre',
   RisingTube: 'Tubo de subida',
   SpliceClosure: 'Caixa de emenda',
+  OpticalNode: 'Nó óptico',
   Pedestal: 'Pedestal',
   SupportBracket: 'Suporte',
   CableTunnel: 'Túnel de cabos',
   IronPipe: 'Tubo de ferro',
+  AerialSpan: 'Lance aéreo',
+  BuriedSpan: 'Lance enterrado',
+  InnerSpan: 'Lance interno',
+  OtherSpan: 'Lance',
   BackboneCable: 'Cabo backbone',
   DistributionCable: 'Cabo de distribuição',
   DropCable: 'Cabo drop',
@@ -352,6 +364,22 @@ const ICONS: Record<string, { family: ResourceFamily; glyph: string; node: IconN
       ['path', { d: 'M14 8v8' }],
     ],
   },
+  OpticalNode: {
+    family: 'passive',
+    glyph: 'cpu',
+    node: [
+      ['rect', { x: '4', y: '4', width: '16', height: '16', rx: '2' }],
+      ['rect', { x: '9', y: '9', width: '6', height: '6' }],
+      ['path', { d: 'M15 2v2' }],
+      ['path', { d: 'M15 20v2' }],
+      ['path', { d: 'M2 15h2' }],
+      ['path', { d: 'M2 9h2' }],
+      ['path', { d: 'M20 15h2' }],
+      ['path', { d: 'M20 9h2' }],
+      ['path', { d: 'M9 2v2' }],
+      ['path', { d: 'M9 20v2' }],
+    ],
+  },
   Pedestal: {
     family: 'passive',
     glyph: 'landmark',
@@ -392,6 +420,40 @@ const ICONS: Record<string, { family: ResourceFamily; glyph: string; node: IconN
       ['path', { d: 'M17 17h4v4h-4z' }],
       ['path', { d: 'M9 7h6' }],
     ],
+  },
+  // Lance (OSP_ROUTE do Netwin) — trecho de infraestrutura civil que um cabo atravessa. Glifos
+  // distintos por tipo de instalação, mesma família (passive/amber) que o resto da infra civil.
+  AerialSpan: {
+    family: 'passive',
+    glyph: 'cable-car',
+    node: [
+      ['path', { d: 'M4 3h16' }],
+      ['path', { d: 'M4 3v16' }],
+      ['path', { d: 'M20 3v16' }],
+      ['path', { d: 'm4 19 16-16' }],
+    ],
+  },
+  BuriedSpan: {
+    family: 'passive',
+    glyph: 'move-down',
+    node: [
+      ['path', { d: 'M8 18L12 22L16 18' }],
+      ['path', { d: 'M12 2V22' }],
+    ],
+  },
+  InnerSpan: {
+    family: 'passive',
+    glyph: 'move-horizontal',
+    node: [
+      ['polyline', { points: '18 8 22 12 18 16' }],
+      ['polyline', { points: '6 8 2 12 6 16' }],
+      ['line', { x1: '2', x2: '22', y1: '12', y2: '12' }],
+    ],
+  },
+  OtherSpan: {
+    family: 'passive',
+    glyph: 'minus',
+    node: [['line', { x1: '5', x2: '19', y1: '12', y2: '12' }]],
   },
   BackboneCable: {
     family: 'cableOsp',
@@ -647,7 +709,7 @@ const resolveIconColor = (
 // permanecem os de CTO de propósito — outras regras (ex.: useAddressViability, que busca
 // candidatas a CDO por `resourceTypeCode(...) === 'CTO'`) dependem de CDOI continuar
 // contando como CTO; só o glifo do pin muda.
-const isCdoiResource = (resource: IconResourceLike | string | undefined): boolean => {
+export const isCdoiResource = (resource: IconResourceLike | string | undefined): boolean => {
   if (typeof resource === 'string' || !resource) return false;
   const haystack = [resource.name, resource.resourceSpecification?.name, resource.sublabel]
     .filter(Boolean)

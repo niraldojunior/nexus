@@ -9,7 +9,7 @@ import {
 
 // Campo de senha com checklist ao vivo dos critérios de qualidade, barra de força e gerador de
 // senha segura. Componente controlado, reusado no modal de redefinição e no formulário de novo
-// usuário (UsersPage) para não haver dois padrões de senha na mesma tela.
+// usuário (aba Usuários de Configurações) para não haver dois padrões de senha na mesma tela.
 
 const STRENGTH_META: Record<
   PasswordStrength,

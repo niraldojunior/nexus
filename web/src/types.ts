@@ -7,7 +7,6 @@ export type PageId =
   | 'conversation'
   | 'research'
   | 'conversas'
-  | 'usuarios'
   | 'configuracoes';
 
 export type RecentGroup = 'none' | 'date' | 'project';

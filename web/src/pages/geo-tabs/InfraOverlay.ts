@@ -35,6 +35,12 @@ type Viewport = { minLng: number; minLat: number; maxLng: number; maxLat: number
 const POINT_HIT_RADIUS_PX = 16;
 const LINE_HIT_RADIUS_PX = 7;
 
+// Tamanho da célula do grid espacial de hit-test, em px de tela. `hitTest` roda a cada
+// `mousemove` (60+ Hz) — varrer linearmente milhares de pontos/segmentos por evento é o que
+// travava o mapa em bairro denso (issue #72). Maior que o raio de captura para garantir que uma
+// feature próxima da borda de uma célula ainda apareça ao consultar as 8 vizinhas.
+const HIT_GRID_CELL_PX = 64;
+
 export type InfraOverlayHandle = {
   setData: (
     features: MapTileFeature[],
@@ -81,6 +87,63 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
   let lastProject: Project | null = null;
   let drawnPoints: DrawnPoint[] = [];
   let drawnLines: DrawnLine[] = [];
+
+  // Índice espacial dos pontos/linhas do último `draw()`, em células de HIT_GRID_CELL_PX —
+  // `hitTest` consulta só a célula da coordenada + as 8 vizinhas, em vez da lista inteira.
+  let pointGrid = new Map<string, DrawnPoint[]>();
+  let lineGrid = new Map<string, DrawnLine[]>();
+
+  const cellKey = (cx: number, cy: number): string => `${cx}:${cy}`;
+  const cellOf = (x: number, y: number): [number, number] => [
+    Math.floor(x / HIT_GRID_CELL_PX),
+    Math.floor(y / HIT_GRID_CELL_PX),
+  ];
+
+  function insertPoint(grid: Map<string, DrawnPoint[]>, point: DrawnPoint): void {
+    const [cx, cy] = cellOf(point.x, point.y);
+    const key = cellKey(cx, cy);
+    const bucket = grid.get(key);
+    if (bucket) bucket.push(point);
+    else grid.set(key, [point]);
+  }
+
+  function insertLine(grid: Map<string, DrawnLine[]>, line: DrawnLine): void {
+    // Uma linha entra em toda célula tocada pelo bbox de cada um de seus segmentos — barato
+    // (poucos segmentos por cabo no recorte de tile) e evita falso-negativo em segmentos longos.
+    const seen = new Set<string>();
+    for (let i = 0; i < line.points.length - 1; i += 1) {
+      const a = line.points[i]!;
+      const b = line.points[i + 1]!;
+      const [minCx, maxCx] = [Math.min(a[0], b[0]), Math.max(a[0], b[0])].map(
+        (v) => Math.floor(v / HIT_GRID_CELL_PX),
+      );
+      const [minCy, maxCy] = [Math.min(a[1], b[1]), Math.max(a[1], b[1])].map(
+        (v) => Math.floor(v / HIT_GRID_CELL_PX),
+      );
+      for (let cx = minCx; cx <= maxCx; cx += 1) {
+        for (let cy = minCy; cy <= maxCy; cy += 1) {
+          const key = cellKey(cx, cy);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const bucket = grid.get(key);
+          if (bucket) bucket.push(line);
+          else grid.set(key, [line]);
+        }
+      }
+    }
+  }
+
+  function queryGrid<T>(grid: Map<string, T[]>, x: number, y: number): T[] {
+    const [cx, cy] = cellOf(x, y);
+    const results: T[] = [];
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        const bucket = grid.get(cellKey(cx + dx, cy + dy));
+        if (bucket) results.push(...bucket);
+      }
+    }
+    return results;
+  }
 
   // Sprite atlas: cada (code/kind, cor, tamanho) vira um HTMLImageElement decodificado uma vez
   // a partir do data-URL já cacheado em resourceIconDataUrl/siteIconDataUrl. Decodificar uma
@@ -158,6 +221,8 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
 
       drawnPoints = [];
       drawnLines = [];
+      pointGrid = new Map();
+      lineGrid = new Map();
       lastProject = null;
       if (data.length === 0) return;
 
@@ -211,6 +276,9 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
           this.drawSitePoint(context, feature, project);
         }
       }
+
+      for (const point of drawnPoints) insertPoint(pointGrid, point);
+      for (const line of drawnLines) insertLine(lineGrid, line);
     }
 
     private drawLine(
@@ -313,7 +381,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
 
       let nearestPoint: DrawnPoint | null = null;
       let nearestPointDistance = POINT_HIT_RADIUS_PX;
-      for (const point of drawnPoints) {
+      for (const point of queryGrid(pointGrid, qx, qy)) {
         const distance = Math.hypot(point.x - qx, point.y - qy);
         if (distance <= nearestPointDistance) {
           nearestPoint = point;
@@ -324,7 +392,8 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
 
       let nearestLine: DrawnLine | null = null;
       let nearestLineDistance = LINE_HIT_RADIUS_PX;
-      for (const line of drawnLines) {
+      const candidateLines = new Set(queryGrid(lineGrid, qx, qy));
+      for (const line of candidateLines) {
         for (let i = 0; i < line.points.length - 1; i += 1) {
           const distance = distanceToSegment(qx, qy, line.points[i]!, line.points[i + 1]!);
           if (distance <= nearestLineDistance) {

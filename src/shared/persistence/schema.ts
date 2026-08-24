@@ -66,6 +66,7 @@ export const TABLE_NAMES = [
 // UPDATE that rewrites the values, otherwise the rewrite is rejected by the constraint it is meant
 // to replace (see tmf_geographic_site_status_check below).
 export const MIGRATIONS_SQL = `
+  ALTER TABLE tmf_service_specification ADD COLUMN IF NOT EXISTS observation TEXT;
   ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS place_id TEXT;
   ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS place_type TEXT;
   ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS administrative_state TEXT;
@@ -1009,6 +1010,7 @@ export const SCHEMA_SQL = `
         category TEXT NOT NULL,
         service_type TEXT NOT NULL CHECK(service_type IN ('CFS', 'RFS', 'Other')),
         description TEXT,
+        observation TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
         characteristics TEXT,

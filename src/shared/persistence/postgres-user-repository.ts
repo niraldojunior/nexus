@@ -236,7 +236,13 @@ export class PostgresUserRepository {
     return await this.getById(id);
   }
 
+  // `searches` e `geo_search_history` referenciam users(id) sem ON DELETE CASCADE — excluir a
+  // conta sem limpar essas linhas primeiro derruba a FK e a API responde 500 (era o caso de
+  // qualquer usuário que já tivesse feito uma busca). Conta é a única entidade com exclusão
+  // física de verdade no produto (C6 cobre inventário, não credenciais de acesso).
   async delete(id: string): Promise<boolean> {
+    await this.db.run(`DELETE FROM geo_search_history WHERE user_id = ?`, [id]);
+    await this.db.run(`DELETE FROM searches WHERE user_id = ?`, [id]);
     const result = await this.db.run(`DELETE FROM users WHERE id = ?`, [id]);
     return result.changes > 0;
   }

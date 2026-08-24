@@ -17,13 +17,12 @@ const SCALE_BAR_MAX_PX = 64;
 // apenas a camada de cobertura GPON (ver COVERAGE_MIN_SCALE_METERS) e as Estações.
 export const PASSIVE_INFRA_MAX_SCALE_METERS = 200;
 
-// Cobertura GPON (mapa de calor por bairro/município/estado) entra a partir desta escala
-// (inclusive) — "visível para qualquer escala de 50 m para cima". Em ≤ 20 m só a planta
-// individual aparece; não há mais cluster (bolas azuis numeradas foram removidas). Entre 50 e
-// 200 m a mancha e os ícones reduzidos de Recurso coexistem (ver resourceIconSizeForScale) — é
-// a faixa de transição entre as duas camadas; a partir de 200 m só a cobertura resta (ver
-// PASSIVE_INFRA_MAX_SCALE_METERS).
-export const COVERAGE_MIN_SCALE_METERS = 50;
+// Cobertura GPON (mapa de calor por bairro/município/estado) só entra ACIMA desta escala
+// (exclusive) — nada de mancha em ≤ 100 m, onde a planta individual (postes, caixas, cabos)
+// já é legível e a mancha só atrapalharia a leitura. Entre 100 e 200 m a mancha e os ícones
+// reduzidos de Recurso coexistem (ver resourceIconSizeForScale) — é a faixa de transição entre
+// as duas camadas; a partir de 200 m só a cobertura resta (ver PASSIVE_INFRA_MAX_SCALE_METERS).
+export const COVERAGE_MIN_SCALE_METERS = 100;
 
 // LOD da cobertura por escala (REQ-MOD01-014): polígono de bairro até aqui, de município até
 // COVERAGE_CITY_MAX_SCALE_METERS e de estado acima disso. Em zoom aberto um bairro é sub-pixel
@@ -35,9 +34,17 @@ export const COVERAGE_CITY_MAX_SCALE_METERS = 10_000;
 
 export type CoverageLevel = 'neighborhood' | 'city' | 'uf';
 
-// Cobertura visível? De 50 m para cima, em qualquer escala.
+// Cobertura visível? Só ACIMA de 100 m — em 100 m ou abaixo, some.
 export const coverageVisibleAtScale = (scaleMeters: number | null): boolean =>
-  scaleMeters !== null && scaleMeters >= COVERAGE_MIN_SCALE_METERS;
+  scaleMeters !== null && scaleMeters > COVERAGE_MIN_SCALE_METERS;
+
+// Poste (netwinPole) só aparece na escala de detalhe de campo — acima disso, o ícone de rede
+// aérea polui o desenho sem agregar leitura (ver isMapFeatureVisible em mapLayers.ts e o switch
+// "Postes" em MapLayerControl, que fica inibido fora dessa faixa).
+export const NETWIN_POLE_MAX_SCALE_METERS = 20;
+
+export const poleVisibleAtScale = (scaleMeters: number | null): boolean =>
+  scaleMeters !== null && scaleMeters <= NETWIN_POLE_MAX_SCALE_METERS;
 
 // Nível de cobertura a pedir ao servidor para a escala atual (ver
 // GeoCoverageService.areaIndexLevel): bairro em zoom de detalhe, município em escala

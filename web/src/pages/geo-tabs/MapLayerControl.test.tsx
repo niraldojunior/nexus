@@ -135,7 +135,7 @@ describe('MapLayerControl', () => {
     expect(
       screen.queryByRole('switch', { name: 'Alternar grupo Cobertura' }),
     ).not.toBeInTheDocument();
-    await user.click(screen.getByRole('switch', { name: 'Rede GPON' }));
+    await user.click(screen.getByRole('switch', { name: 'Cobertura GPON' }));
     expect(onToggleLayer).toHaveBeenCalledWith('coverage');
   });
 
@@ -157,7 +157,7 @@ describe('MapLayerControl', () => {
     expect(poleSwitch).toBeDisabled();
     await user.click(poleSwitch);
     expect(onToggleLayer).not.toHaveBeenCalledWith('netwinPole');
-    expect(screen.getByRole('switch', { name: 'Caixas subterrâneas' })).toBeEnabled();
+    expect(screen.getByRole('switch', { name: 'Caixas Subterrâneas' })).toBeEnabled();
   });
 
   it('libera o switch de Postes dentro da escala de detalhe (≤ 20 m)', async () => {

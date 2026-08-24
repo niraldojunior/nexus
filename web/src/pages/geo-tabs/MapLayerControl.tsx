@@ -7,6 +7,7 @@ import {
   type MapLayerId,
   type MapLayerVisibility,
 } from '../../utils/mapLayers';
+import { NETWIN_POLE_MAX_SCALE_METERS, poleVisibleAtScale } from '../../utils/mapScale';
 
 // Ícone por grupo/camada — só para varredura visual rápida na lista; o rótulo é quem carrega
 // o significado (ver AGENTS.md §10, tokens do design system, nenhuma cor hardcoded aqui).
@@ -23,6 +24,10 @@ export type MapLayerControlProps = {
   onToggleGroup: (groupId: MapLayerGroupId) => void;
   onReset: () => void;
   allVisible: boolean;
+  // Escala atual do mapa (ver mapScale.ts) — só usada para inibir camadas com régua própria
+  // mais restrita que o toggle manual (hoje só o Poste, ver POLE_SCALE_HINT). `undefined`/`null`
+  // = sem informação de escala ainda (primeiro render antes do `idle` do mapa): nada é inibido.
+  scaleMeters?: number | null;
 };
 
 // Switch pequeno (role="switch") no mesmo padrão de trilha do design system: acento ligado,
@@ -31,20 +36,28 @@ function LayerSwitch({
   checked,
   label,
   onChange,
+  disabled = false,
 }: {
   checked: boolean;
   label: string;
   onChange: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-disabled={disabled}
       aria-label={label}
+      disabled={disabled}
       onClick={onChange}
       className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent ${
-        checked ? 'border-app-accent-border bg-app-accent' : 'border-app-border bg-app-sidebar'
+        disabled
+          ? 'cursor-not-allowed border-app-border bg-app-sidebar opacity-50'
+          : checked
+            ? 'border-app-accent-border bg-app-accent'
+            : 'border-app-border bg-app-sidebar'
       }`}
     >
       <span
@@ -54,6 +67,17 @@ function LayerSwitch({
       />
     </button>
   );
+}
+
+// Camada com régua de escala própria, mais restrita que o toggle manual: fora da faixa, o
+// switch fica visível mas inibido (RN "só exiba postes em escala de detalhe") — desligar sem
+// mexer na preferência salva do usuário evitaria a régua reaparecer sozinha ao dar zoom, então
+// em vez de forçar `visibility` para `false`, só bloqueamos a interação e explicamos o motivo.
+function disabledHint(layerId: MapLayerId, scaleMeters: number | null | undefined): string | null {
+  if (layerId !== 'netwinPole') return null;
+  if (scaleMeters === undefined || scaleMeters === null) return null;
+  if (poleVisibleAtScale(scaleMeters)) return null;
+  return `Só aparece em escala de detalhe (≤ ${NETWIN_POLE_MAX_SCALE_METERS} m) — aproxime o zoom`;
 }
 
 // Controle de camadas do mapa (RF-011, REQ-MOD01-011): liga/desliga o que o mapa busca e
@@ -67,6 +91,7 @@ export function MapLayerControl({
   onToggleGroup,
   onReset,
   allVisible,
+  scaleMeters,
 }: MapLayerControlProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -160,18 +185,28 @@ export function MapLayerControl({
 
                   {group.children.length > 1 ? (
                     <div className="mt-1.5 flex flex-col gap-1.5 border-t border-app-border/60 pt-1.5">
-                      {group.children.map((child) => (
-                        <div key={child.id} className="flex items-center gap-2 pl-1">
-                          <p className="min-w-0 flex-1 truncate text-[0.78rem] text-app-text">
-                            {child.label}
-                          </p>
-                          <LayerSwitch
-                            checked={layers[child.id]}
-                            label={child.label}
-                            onChange={() => onToggleLayer(child.id)}
-                          />
-                        </div>
-                      ))}
+                      {group.children.map((child) => {
+                        const hint = disabledHint(child.id, scaleMeters);
+                        return (
+                          <div
+                            key={child.id}
+                            className="flex items-center gap-2 pl-1"
+                            title={hint ?? undefined}
+                          >
+                            <p
+                              className={`min-w-0 flex-1 truncate text-[0.78rem] ${hint ? 'text-app-muted' : 'text-app-text'}`}
+                            >
+                              {child.label}
+                            </p>
+                            <LayerSwitch
+                              checked={layers[child.id]}
+                              label={child.label}
+                              onChange={() => onToggleLayer(child.id)}
+                              disabled={hint !== null}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : (
                     <div className="mt-1.5 flex items-center justify-end border-t border-app-border/60 pt-1.5">

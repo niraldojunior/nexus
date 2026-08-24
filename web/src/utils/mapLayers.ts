@@ -3,6 +3,8 @@
 // controle flutuante (MapLayerControl) e o serviço HTTP (geoTreeApi.fetchViewportResources),
 // para os três lerem o mesmo catálogo e a mesma regra de tri-state de grupo.
 
+import { poleVisibleAtScale } from './mapScale';
+
 export type MapLayerId =
   | 'stations'
   | 'siteNetwork'
@@ -81,8 +83,8 @@ export const MAP_LAYER_GROUPS: readonly MapLayerGroup[] = [
   },
   {
     id: 'coverage',
-    label: 'Cobertura GPON',
-    hint: 'Mancha de disponibilidade por bairro',
+    label: 'Cobertura',
+    hint: 'Manchas agregadas por tema — hoje só GPON, outras entram como novos itens do grupo',
     children: [{ id: 'coverage', label: 'Cobertura GPON', hint: 'Mancha por bairro' }],
   },
   {
@@ -192,10 +194,16 @@ function siteLayerFor(
 
 // O tile é compartilhado por todos os filtros. As camadas gerais evitam fetch
 // desnecessário; as camadas Netwin filtram cada classe sem multiplicar chamadas.
+//
+// `scaleMeters` é opcional (omitido = sem corte de escala, usado pelos testes que não simulam
+// o mapa): hoje só o Poste tem régua própria, mais restrita que o corte geral de infra passiva
+// (PASSIVE_INFRA_MAX_SCALE_METERS) — poluiria o desenho em qualquer escala mais aberta que a de
+// campo (ver poleVisibleAtScale em mapScale.ts).
 export function isMapFeatureVisible(
   feature: MapFeatureLayerLike,
   visibility: MapLayerVisibility,
   roleByCode?: ReadonlyMap<string, MapSiteRole>,
+  scaleMeters?: number | null,
 ): boolean {
   if (feature.kind === 'site') {
     return visibility[siteLayerFor(feature, roleByCode)];
@@ -203,6 +211,9 @@ export function isMapFeatureVisible(
   if (feature.shape === 'line') return visibility.resourceLines;
   if (!visibility.resourcePoints) return false;
   const layer = feature.typeCode ? NETWIN_RESOURCE_LAYER_BY_TYPE[feature.typeCode] : undefined;
+  if (layer === 'netwinPole' && scaleMeters !== undefined && !poleVisibleAtScale(scaleMeters)) {
+    return false;
+  }
   return layer === undefined || visibility[layer];
 }
 

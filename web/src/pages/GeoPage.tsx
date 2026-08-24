@@ -489,7 +489,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
 
   const [scaleMeters, setScaleMeters] = useState<number | null>(null);
   // Região visível atual (identidade só muda no `idle`) — alimenta a busca de cobertura GPON,
-  // que roda em toda escala de 50 m para cima, não só na de detalhe.
+  // que roda acima de 100 m, não na de detalhe.
   const [viewportBounds, setViewportBounds] = useState<MapBounds | null>(null);
 
   // Chamado pelo mapa a cada `idle` (fim de pan/zoom) com os limites e a escala atuais — só
@@ -590,7 +590,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     hasProjectAreas,
   ]);
 
-  // Cobertura GPON da viewport (mapa de calor por bairro), de 50 m para cima em qualquer escala.
+  // Cobertura GPON da viewport (mapa de calor por bairro), só acima de 100 m.
   // Camada "Cobertura GPON" desligada corta a busca inteira: bounds nulo já limpa `coverage` e
   // zera o dedupe interno do hook, então religar refaz o fetch sem precisar mexer no mapa.
   const { data: coverage, loading: coverageLoading } = useGponCoverage(
@@ -1497,6 +1497,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               onToggleMapLayerGroup={mapLayers.toggleGroup}
               onResetMapLayers={mapLayers.resetLayers}
               mapLayersAllVisible={mapLayers.allVisible}
+              mapLayersScaleMeters={scaleMeters}
               siteRoleByCode={siteRoleByCode}
             />
           </div>
@@ -1609,6 +1610,7 @@ export function GoogleMapPanel({
   onToggleMapLayerGroup = noopToggleMapLayerGroup,
   onResetMapLayers = noopResetMapLayers,
   mapLayersAllVisible = true,
+  mapLayersScaleMeters = null,
   siteRoleByCode,
 }: {
   nodes: GeoTreeNode[];
@@ -1691,6 +1693,9 @@ export function GoogleMapPanel({
   onToggleMapLayerGroup?: (groupId: MapLayerGroupId) => void;
   onResetMapLayers?: () => void;
   mapLayersAllVisible?: boolean;
+  // Escala atual do mapa (ver mapScale.ts) — repassada ao MapLayerControl só para inibir
+  // camadas com régua própria mais restrita que o toggle manual (hoje só o Poste).
+  mapLayersScaleMeters?: number | null;
   // Papel funcional (siteRole, C11) por code de spec — refina o ícone de Site desenhado pelo
   // InfraOverlay (CO/POP/CTO) além da heurística por substring. Opcional: sem catálogo em mãos
   // (testes, ou carregamento inicial), o InfraOverlay cai no fallback por nome.
@@ -2870,6 +2875,7 @@ export function GoogleMapPanel({
         onToggleGroup={onToggleMapLayerGroup}
         onReset={onResetMapLayers}
         allVisible={mapLayersAllVisible}
+        scaleMeters={mapLayersScaleMeters}
       />
       {coverage ? <CoverageLegend /> : null}
       {balloon ? createPortal(<MapBalloonCard balloon={balloon} />, balloonNode) : null}

@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchMapTile, type MapTileFeature } from '../services/geoMapTileApi';
 import { tilesForBounds, tileKey, MAP_TILE_ZOOM } from '../utils/mapTile';
-import { PASSIVE_INFRA_MAX_SCALE_METERS } from '../utils/mapScale';
+import { PASSIVE_INFRA_MAX_SCALE_METERS, poleVisibleAtScale } from '../utils/mapScale';
 import {
   isMapFeatureVisible,
   type MapLayerVisibility,
@@ -101,7 +101,11 @@ export function useMapTiles(
           .map(([layer, visible]) => `${layer}:${visible ? '1' : '0'}`)
           .join(',')
       : include?.join(',') ?? 'all';
-    const key = `${tiles.map(tileKey).join(',')}|${visibilityKey}`;
+    // Régua de escala do Poste (poleVisibleAtScale) é mais fina que o corte geral acima — sem
+    // isto na chave, cruzar 20 m sem trocar de tile (mesmo z de tile, ver MAP_TILE_ZOOM) não
+    // reaplicaria o filtro sobre o cache já servido.
+    const poleScaleKey = poleVisibleAtScale(scaleMeters ?? null) ? 'poleOn' : 'poleOff';
+    const key = `${tiles.map(tileKey).join(',')}|${visibilityKey}|${poleScaleKey}`;
     if (key === lastKeyRef.current) return;
 
     if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
@@ -134,7 +138,9 @@ export function useMapTiles(
             .filter(
               (feature) =>
                 isIncluded(feature, include) &&
-                (visibility ? isMapFeatureVisible(feature, visibility, roleByCode) : true),
+                (visibility
+                  ? isMapFeatureVisible(feature, visibility, roleByCode, scaleMeters)
+                  : true),
             );
           setData(merged);
         })

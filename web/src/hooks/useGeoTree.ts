@@ -240,21 +240,42 @@ export function useGeoTree(): GeoTree {
     [loadChildren],
   );
 
-  return {
-    rows,
-    mapNodes,
-    loading,
-    busy: loading || loadingNodes.size > 0,
-    error,
-    isExpanded: (rowKey: string) => expandedRows.has(rowKey),
-    toggle,
-    loadMore,
-    reload: () => {
-      setState(EMPTY_STATE);
-      setExpandedRows(new Set());
-      setReloadToken((token) => token + 1);
-    },
-    nodeById: (nodeId: string) => state.nodesById[nodeId],
-    revealNode,
-  };
+  const isExpanded = useCallback(
+    (rowKey: string) => expandedRows.has(rowKey),
+    [expandedRows],
+  );
+
+  const reload = useCallback(() => {
+    setState(EMPTY_STATE);
+    setExpandedRows(new Set());
+    setReloadToken((token) => token + 1);
+  }, []);
+
+  const nodeById = useCallback(
+    (nodeId: string) => state.nodesById[nodeId],
+    [state.nodesById],
+  );
+
+  const busy = loading || loadingNodes.size > 0;
+
+  // Memoizado: sem isto, o objeto de retorno muda de identidade a todo render (mesmo sem
+  // nada relevante ter mudado), o que torna instável qualquer `useCallback` do chamador que
+  // dependa de `tree` inteiro (ver GeoPage.selectNode) e pode reexecutar efeitos que
+  // dependem dessas funções em loop.
+  return useMemo(
+    () => ({
+      rows,
+      mapNodes,
+      loading,
+      busy,
+      error,
+      isExpanded,
+      toggle,
+      loadMore,
+      reload,
+      nodeById,
+      revealNode,
+    }),
+    [rows, mapNodes, loading, busy, error, isExpanded, toggle, loadMore, reload, nodeById, revealNode],
+  );
 }

@@ -2,8 +2,8 @@
 //
 // Segue o padrão dos demais hooks de mapa (useGeoTree/useAddressViability): debounce de 250 ms,
 // dedupe da requisição em voo por chave (o backend de dev atende em série e o StrictMode monta
-// duas vezes) e um token para descartar respostas fora de ordem. Só busca de 50 m para cima — em
-// escala de detalhe (≤ 20 m) a mancha não aparece e a planta individual toma conta.
+// duas vezes) e um token para descartar respostas fora de ordem. Só busca acima de 100 m — em
+// escala de detalhe a mancha não aparece e a planta individual toma conta.
 //
 // O nível (bairro/município/estado) segue a escala — coverageLevelForScale — em vez de sempre
 // pedir polígono de bairro: pedir os ~12 mil polígonos de bairro numa visão de país inteiro é o

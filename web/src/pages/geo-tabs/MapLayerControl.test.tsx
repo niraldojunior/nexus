@@ -139,6 +139,43 @@ describe('MapLayerControl', () => {
     expect(onToggleLayer).toHaveBeenCalledWith('coverage');
   });
 
+  it('inibe o switch de Postes fora da escala de detalhe (> 20 m), sem mexer nos outros', async () => {
+    const user = userEvent.setup();
+    const onToggleLayer = vi.fn();
+    render(
+      <MapLayerControl
+        layers={ALL_MAP_LAYERS_VISIBLE}
+        onToggleLayer={onToggleLayer}
+        onToggleGroup={vi.fn()}
+        onReset={vi.fn()}
+        allVisible
+        scaleMeters={50}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Camadas do mapa' }));
+    const poleSwitch = screen.getByRole('switch', { name: 'Postes' });
+    expect(poleSwitch).toBeDisabled();
+    await user.click(poleSwitch);
+    expect(onToggleLayer).not.toHaveBeenCalledWith('netwinPole');
+    expect(screen.getByRole('switch', { name: 'Caixas subterrâneas' })).toBeEnabled();
+  });
+
+  it('libera o switch de Postes dentro da escala de detalhe (≤ 20 m)', async () => {
+    const user = userEvent.setup();
+    render(
+      <MapLayerControl
+        layers={ALL_MAP_LAYERS_VISIBLE}
+        onToggleLayer={vi.fn()}
+        onToggleGroup={vi.fn()}
+        onReset={vi.fn()}
+        allVisible
+        scaleMeters={20}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Camadas do mapa' }));
+    expect(screen.getByRole('switch', { name: 'Postes' })).toBeEnabled();
+  });
+
   it('mostra o indicador de "filtrado" e o botão Restaurar padrão quando allVisible é falso', async () => {
     const user = userEvent.setup();
     const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourceDropCable: false };

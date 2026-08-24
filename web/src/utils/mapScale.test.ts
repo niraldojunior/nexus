@@ -3,9 +3,11 @@ import {
   COVERAGE_CITY_MAX_SCALE_METERS,
   COVERAGE_MIN_SCALE_METERS,
   COVERAGE_NEIGHBORHOOD_MAX_SCALE_METERS,
+  NETWIN_POLE_MAX_SCALE_METERS,
   PASSIVE_INFRA_MAX_SCALE_METERS,
   coverageLevelForScale,
   coverageVisibleAtScale,
+  poleVisibleAtScale,
   resourceIconSizeForScale,
   siteIconSizeForScale,
 } from './mapScale';
@@ -15,12 +17,21 @@ describe('régua de escala do mapa Geo', () => {
     expect(PASSIVE_INFRA_MAX_SCALE_METERS).toBe(200);
   });
 
-  it('cobertura fica visível de 50 m para cima e some em escala de detalhe (≤ 20 m)', () => {
-    expect(COVERAGE_MIN_SCALE_METERS).toBe(50);
-    expect(coverageVisibleAtScale(50)).toBe(true);
-    expect(coverageVisibleAtScale(100)).toBe(true);
-    expect(coverageVisibleAtScale(20)).toBe(false);
+  it('cobertura só aparece acima de 100 m (nada de mancha em ≤ 100 m)', () => {
+    expect(COVERAGE_MIN_SCALE_METERS).toBe(100);
+    expect(coverageVisibleAtScale(200)).toBe(true);
+    expect(coverageVisibleAtScale(101)).toBe(true);
+    expect(coverageVisibleAtScale(100)).toBe(false);
+    expect(coverageVisibleAtScale(50)).toBe(false);
     expect(coverageVisibleAtScale(null)).toBe(false);
+  });
+
+  it('poste (netwinPole) só é visível em escala de detalhe (≤ 20 m)', () => {
+    expect(NETWIN_POLE_MAX_SCALE_METERS).toBe(20);
+    expect(poleVisibleAtScale(20)).toBe(true);
+    expect(poleVisibleAtScale(10)).toBe(true);
+    expect(poleVisibleAtScale(21)).toBe(false);
+    expect(poleVisibleAtScale(null)).toBe(false);
   });
 
   it('recurso: 30/25/20/15/10 px abaixo de 200 m, e oculto a partir de 200 m', () => {

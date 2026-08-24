@@ -880,7 +880,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         setSearchSelection(null);
       }
     },
-    [tree],
+    // Só usa `tree.revealNode` (que já é estável) — depender do objeto `tree` inteiro
+    // tornaria `selectNode` (e tudo que a referencia: openProjectSite,
+    // selectNodeFromMap/Search/Tree) instável a cada render, já que `useGeoTree` devolvia
+    // um objeto novo por render antes de ser memoizado.
+    [tree.revealNode],
   );
 
   // Mesma seleção, três origens — a origem só decide o zoom de chegada (ver selectNode):
@@ -940,8 +944,26 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // cobertura; (3) primeiro recurso do projeto, quando não há sequer um local. Espera o
   // carregamento inicial de áreas/locais assentar (`projectSitesLoading`) para não focar
   // prematuramente com listas ainda vazias.
+  //
+  // Dispara UMA VEZ por projeto aberto (`autoFocusedProjectRef`): sem esse guard, qualquer
+  // render com o projeto já carregado reexecuta o efeito e chama `setFocusRequest` com um
+  // objeto novo (mesmo alvo, identidade diferente), o que o `flyTo` em GoogleMapPanel lê como
+  // um pedido de voo novo (`previousFocus !== focusRequest`) e cancela qualquer pan/zoom manual
+  // do usuário — a câmera fica "grudada" no centróide do projeto. `openProjectSite`/`selectNode`
+  // são lidos por ref (não entram nas deps) porque não são estáveis entre renders.
+  const openProjectSiteRef = useRef(openProjectSite);
+  openProjectSiteRef.current = openProjectSite;
+  const selectNodeRef = useRef(selectNode);
+  selectNodeRef.current = selectNode;
+  const autoFocusedProjectRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!activeProjectId || projectSitesLoading) return;
+    if (!activeProjectId) {
+      autoFocusedProjectRef.current = null;
+      return;
+    }
+    if (projectSitesLoading) return;
+    if (autoFocusedProjectRef.current === activeProjectId) return;
+    autoFocusedProjectRef.current = activeProjectId;
     let cancelled = false;
 
     if (hasProjectAreas) {
@@ -966,28 +988,20 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
 
     const firstSite = projectSites[0];
     if (firstSite) {
-      openProjectSite(activeProjectId, firstSite);
+      openProjectSiteRef.current(activeProjectId, firstSite);
       return;
     }
 
     void fetchProjectResources(activeProjectId, { limit: 1 }).then((page) => {
       if (cancelled) return;
       const firstResource = page.items[0];
-      if (firstResource) selectNode(firstResource, 'search');
+      if (firstResource) selectNodeRef.current(firstResource, 'search');
     });
 
     return () => {
       cancelled = true;
     };
-  }, [
-    activeProjectId,
-    projectSitesLoading,
-    hasProjectAreas,
-    projectAreas,
-    projectSites,
-    openProjectSite,
-    selectNode,
-  ]);
+  }, [activeProjectId, projectSitesLoading, hasProjectAreas, projectAreas, projectSites]);
 
   // Descarta uma hidratação em voo se o usuário selecionar outra coisa no meio do caminho
   // (clique rápido em duas features do canvas em sequência).

@@ -23,6 +23,12 @@ export function useGeoSpecs(): { specs: GeoSpec[] | null; loading: boolean } {
       const result = await inFlight;
       sharedSpecs = result;
       setSpecs(result);
+    } catch {
+      // Catálogo de site-specifications é um refinamento de rótulo/ícone (siteRoleByCode em
+      // mapLayers.ts, placeLabel) — uma falha aqui não pode virar unhandled rejection nem
+      // travar a tela. Quem consome o hook já trata `specs` vazio como "sem refinamento
+      // disponível" e cai no fallback por nome/categoria.
+      setSpecs([]);
     } finally {
       inFlight = null;
       setLoading(false);

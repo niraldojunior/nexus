@@ -71,21 +71,30 @@ export function usePlaceLabel(place: PlaceReference): {
     setLoading(true);
     const key = place.id;
     if (!inFlight.has(key)) inFlight.set(key, fetchPlaceEntities(place));
-    inFlight.get(key)!.then((entities) => {
-      inFlight.delete(key);
-      const directory = buildGeoDirectory(
-        entities.site ? [entities.site] : [],
-        entities.address ? [entities.address] : [],
-        entities.location ? [entities.location] : [],
-        specs,
-      );
-      const result = resolvePlaceLabel(place, directory)!;
-      cache.set(key, result);
-      if (!cancelled) {
-        setResolved(result);
-        setLoading(false);
-      }
-    });
+    inFlight
+      .get(key)!
+      .then((entities) => {
+        const directory = buildGeoDirectory(
+          entities.site ? [entities.site] : [],
+          entities.address ? [entities.address] : [],
+          entities.location ? [entities.location] : [],
+          specs,
+        );
+        const result = resolvePlaceLabel(place, directory)!;
+        cache.set(key, result);
+        if (!cancelled) {
+          setResolved(result);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        // Falha ao resolver as entidades do local (rede, 404 em cascata) não pode virar
+        // unhandled rejection — o painel só fica sem rótulo amigável, não trava.
+        if (!cancelled) setLoading(false);
+      })
+      .finally(() => {
+        inFlight.delete(key);
+      });
     return () => {
       cancelled = true;
     };

@@ -8,6 +8,8 @@ import Field from './Field';
  * editor de catálogo em Configurações (onde `categoryOptions` habilita a escolha). O campo Nome é
  * renderizado por quem usa este componente, pois em ServicePage ele já é compartilhado com o
  * formulário de instância (CFS/RFS) — aqui evitamos duplicar esse input.
+ * Observação (anotação livre, ex.: nota de origem do catálogo Netwin) fica fora deste componente —
+ * é renderizada por quem usa (ver ServiceCatalogTab.tsx), no final do formulário.
  */
 export default function ServiceSpecificationFields({
   formState,
@@ -53,8 +55,9 @@ export default function ServiceSpecificationFields({
       </Field>
       <Field label="Descrição" fullWidth>
         <textarea
-          className="geo-input"
+          className="w-full rounded-[16px] border border-app-border bg-white px-3 py-2 text-[0.9rem] font-medium text-app-text shadow-sm transition focus:border-app-accent-border"
           rows={3}
+          placeholder="Descrição funcional do serviço"
           value={formState.description}
           onChange={(event) => onChange({ ...formState, description: event.target.value })}
         />

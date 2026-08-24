@@ -10,9 +10,32 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { config as loadEnv } from 'dotenv';
 import oracledb, { type Connection } from 'oracledb';
-import { createCanonicalId } from '../shared/utils/canonical-id.js';
-import { prefixed } from '../shared/persistence/oracle-object-names.js';
 import { lngLatToTile, MAP_TILE_ZOOM } from '../modules/geo/map-tile.js';
+import {
+  configureOracleClient,
+  cut,
+  ensureControlTables,
+  ensureMapEntityIndex,
+  ensureResourceType as ensureResourceTypeShared,
+  ensureCategory as ensureCategoryShared,
+  ensureSiteSpec as ensureSiteSpecShared,
+  identity as identityShared,
+  identityState as identityStateShared,
+  makeTablePrefixer,
+  merge as mergeShared,
+  numberOf,
+  oracleConnectDescriptor,
+  recordParent as recordParentShared,
+  recordTouches as recordTouchesShared,
+  reject as rejectShared,
+  defer as deferShared,
+  required,
+  requiredAny,
+  resourceSpecId as resourceSpecIdShared,
+  siteSpecId as siteSpecIdShared,
+  updateIdentityHash as updateIdentityHashShared,
+  type TablePrefixer,
+} from './netwin-migration-kit.js';
 
 // A carga é operada por arquivo .env do projeto; esse arquivo deve prevalecer sobre
 // valores antigos deixados no processo/shell por tentativas anteriores.
@@ -44,8 +67,7 @@ const TABLE = '"NETWINOI"."DL_INFRANODE"';
 
 const args = parseArgs(process.argv.slice(2));
 const targetPrefix = process.env.TARGET_ORACLE_OBJECT_PREFIX ?? process.env.ORACLE_OBJECT_PREFIX;
-const t = (name: string) =>
-  quote(prefixed(name, targetPrefix ?? required('TARGET_ORACLE_OBJECT_PREFIX')));
+const t: TablePrefixer = makeTablePrefixer(targetPrefix);
 const netwinTnsAdmin = process.env.NETWIN_DR_TNS_ADMIN ?? process.env.TNS_ADMIN;
 
 const sourcePool = await oracledb.createPool({
@@ -82,7 +104,7 @@ try {
       console.log(JSON.stringify({ state: 'validated', scn: scn ?? 'current' }));
     } else {
       if (!target) throw new Error('Conexão Oracle de destino indisponível.');
-      await ensureControlTables(target);
+      await ensureControlTablesAndMapIndex(target);
       const job = await openJob(source, target, args);
       await ensureCatalog(target);
       if (!args.finalizeOnly) {
@@ -268,49 +290,13 @@ async function identity(
   entityType: string,
   item?: ReturnType<typeof prepare>,
 ): Promise<string> {
-  const existing = await target.execute<{ NEXUS_ID: string }>(
-    `SELECT nexus_id AS "NEXUS_ID" FROM ${t('netwin_mig_identity')}
-      WHERE source_entity=:1 AND source_id=:2 AND target_role=:3`,
-    [SOURCE_ENTITY, sourceId, role],
-    { outFormat: oracledb.OUT_FORMAT_OBJECT },
+  return identityShared(target, t, SOURCE_ENTITY, sourceId, role, entityType, item?.sourceHash, () =>
+    item ? findExistingNexusEntity(target, entityType, item) : Promise.resolve(null),
   );
-  const found = existing.rows?.[0]?.NEXUS_ID;
-  if (found) return found;
-  const sourceItem = item;
-  const adopted = sourceItem ? await findExistingNexusEntity(target, entityType, sourceItem) : null;
-  if (adopted) {
-    await target.execute(
-      `INSERT INTO ${t('netwin_mig_identity')}
-       (source_entity, source_id, target_role, nexus_entity_type, nexus_id, source_hash, created_at)
-       VALUES (:1,:2,:3,:4,:5,:6,SYSTIMESTAMP)`,
-      [SOURCE_ENTITY, sourceId, role, entityType, adopted, sourceItem!.sourceHash],
-    );
-    return adopted;
-  }
-  const id = createCanonicalId();
-  try {
-    await target.execute(
-      `INSERT INTO ${t('netwin_mig_identity')}
-       (source_entity, source_id, target_role, nexus_entity_type, nexus_id, created_at)
-       VALUES (:1,:2,:3,:4,:5,SYSTIMESTAMP)`,
-      [SOURCE_ENTITY, sourceId, role, entityType, id],
-    );
-    return id;
-  } catch (error) {
-    if (!/ORA-00001/.test(String(error))) throw error;
-    return await identity(target, sourceId, role, entityType);
-  }
 }
 
 async function identityState(target: Connection, sourceId: string, role: string) {
-  const result = await target.execute<{ SOURCE_HASH: string | null }>(
-    `SELECT source_hash AS "SOURCE_HASH" FROM ${t('netwin_mig_identity')}
-      WHERE source_entity=:1 AND source_id=:2 AND target_role=:3`,
-    [SOURCE_ENTITY, sourceId, role],
-    { outFormat: oracledb.OUT_FORMAT_OBJECT },
-  );
-  const sourceHash = result.rows?.[0]?.SOURCE_HASH;
-  return sourceHash === undefined ? null : { sourceHash };
+  return identityStateShared(target, t, SOURCE_ENTITY, sourceId, role);
 }
 
 async function updateIdentityHash(
@@ -319,11 +305,7 @@ async function updateIdentityHash(
   role: string,
   sourceHash: string,
 ) {
-  await target.execute(
-    `UPDATE ${t('netwin_mig_identity')} SET source_hash=:1
-      WHERE source_entity=:2 AND source_id=:3 AND target_role=:4`,
-    [sourceHash, SOURCE_ENTITY, sourceId, role],
-  );
+  return updateIdentityHashShared(target, t, SOURCE_ENTITY, sourceId, role, sourceHash);
 }
 
 // A carga prévia de estações/salas não conhece PI_ID. Para não duplicá-la,
@@ -414,18 +396,11 @@ async function merge(
   keys: string[],
   record: Record<string, unknown>,
 ) {
-  const columns = Object.keys(record);
-  const source = columns.map((column, i) => `:${i + 1} ${quote(column)}`).join(', ');
-  const on = keys.map((key) => `target.${quote(key)}=source.${quote(key)}`).join(' AND ');
-  const mutable = columns.filter((column) => !keys.includes(column));
-  const sql = `MERGE INTO ${t(table)} target USING (SELECT ${source} FROM DUAL) source ON (${on})
-    WHEN MATCHED THEN UPDATE SET ${mutable.map((column) => `target.${quote(column)}=source.${quote(column)}`).join(', ')}
-    WHEN NOT MATCHED THEN INSERT (${columns.map(quote).join(',')}) VALUES (${columns.map((column) => `source.${quote(column)}`).join(',')})`;
-  await target.execute(sql, Object.values(record));
+  return mergeShared(target, t, table, keys, record);
 }
 
 async function ensureCatalog(target: Connection) {
-  await ensureCategory(target, 'Infrastructure.Passive', 'Infraestrutura Passiva');
+  await ensureCategoryShared(target, t, 'Infrastructure.Passive', 'Infraestrutura Passiva');
   for (const [code, name] of [
     ['Tower', 'Torre'],
     ['RisingTube', 'Tubo de subida'],
@@ -435,14 +410,14 @@ async function ensureCatalog(target: Connection) {
     ['CableTunnel', 'Túnel de cabos'],
     ['IronPipe', 'Tubo de ferro'],
   ] as const)
-    await ensureResourceType(target, code, name);
+    await ensureResourceTypeShared(target, t, code, name);
   for (const [code, name] of [
     ['Pole', 'Poste'],
     ['Manhole', 'Caixa subterrânea'],
     ['CTO', 'Caixa de terminação óptica'],
     ['DIO', 'Distribuidor interno óptico'],
   ] as const)
-    await ensureResourceType(target, code, name);
+    await ensureResourceTypeShared(target, t, code, name);
   for (const [code, category, siteRole] of [
     ['BUILDING', 'Site', 'property'],
     ['CENTRAL_POP_LEGACY', 'Site', 'network'],
@@ -454,73 +429,14 @@ async function ensureCatalog(target: Connection) {
     ['ADVANCED_REMOTE_UNIT', 'Site', 'network'],
     ['TECHNICAL_CONTAINER', 'Site', 'network'],
   ] as const)
-    await ensureSiteSpec(target, code, category, siteRole);
+    await ensureSiteSpecShared(target, t, code, category, siteRole);
 }
 
-async function ensureCategory(target: Connection, code: string, name: string) {
-  const id = `cat-${code.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-  await merge(target, 'tmf_resource_category', ['code'], {
-    id,
-    href: `/tmf-api/resourceCatalogManagement/v4/resourceCategory/${id}`,
-    code,
-    name,
-    status: 'active',
-  });
-}
-async function ensureResourceType(target: Connection, code: string, name: string) {
-  const id = `rt-${code.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-  await merge(target, 'tmf_resource_type', ['code'], {
-    id,
-    href: `/tmf-api/resourceCatalogManagement/v4/resourceType/${id}`,
-    code,
-    name,
-    category_code: 'Infrastructure.Passive',
-    status: 'active',
-  });
-}
-async function ensureSiteSpec(target: Connection, code: string, category: string, siteRole: string) {
-  const exists = await target.execute<{ ID: string }>(
-    `SELECT id AS "ID" FROM ${t('tmf_geographic_site_specification')} WHERE code=:1`,
-    [code],
-    { outFormat: oracledb.OUT_FORMAT_OBJECT },
-  );
-  if (exists.rows?.[0]) return;
-  const id = createCanonicalId();
-  await target.execute(
-    `INSERT INTO ${t('tmf_geographic_site_specification')} (id,href,name,code,category,site_role,lifecycle_status,characteristics,is_bootstrap) VALUES (:1,:2,:3,:4,:5,:6,'Active','[]',0)`,
-    [
-      id,
-      `/tmf-api/geographicSiteManagement/v4/geographicSiteSpecification/${id}`,
-      code,
-      code,
-      category,
-      siteRole,
-    ],
-  );
-}
 async function siteSpecId(target: Connection, code: string) {
-  const row = await target.execute<{ ID: string }>(
-    `SELECT id AS "ID" FROM ${t('tmf_geographic_site_specification')} WHERE code=:1 FETCH FIRST 1 ROWS ONLY`,
-    [code],
-    { outFormat: oracledb.OUT_FORMAT_OBJECT },
-  );
-  const id = row.rows?.[0]?.ID;
-  if (!id) throw new Error(`SiteSpecification ausente: ${code}`);
-  return id;
+  return siteSpecIdShared(target, t, code);
 }
 async function resourceSpecId(target: Connection, name: string, resourceType: string) {
-  const row = await target.execute<{ ID: string }>(
-    `SELECT id AS "ID" FROM ${t('tmf_resource_specification')} WHERE name=:1 AND resource_type=:2 FETCH FIRST 1 ROWS ONLY`,
-    [name, resourceType],
-    { outFormat: oracledb.OUT_FORMAT_OBJECT },
-  );
-  if (row.rows?.[0]?.ID) return row.rows[0].ID;
-  const id = createCanonicalId();
-  await target.execute(
-    `INSERT INTO ${t('tmf_resource_specification')} (id,href,name,category,resource_type,characteristics) VALUES (:1,:2,:3,'Infrastructure.Passive',:4,'[]')`,
-    [id, `/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${id}`, name, resourceType],
-  );
-  return id;
+  return resourceSpecIdShared(target, t, name, resourceType);
 }
 
 async function reject(
@@ -529,10 +445,7 @@ async function reject(
   item: ReturnType<typeof prepare>,
   code: string,
 ) {
-  await target.execute(
-    `INSERT INTO ${t('netwin_mig_reject')} (id,job_id,source_id,reason,payload,created_at) VALUES (:1,:2,:3,:4,:5,SYSTIMESTAMP)`,
-    [randomUUID(), jobId, item.piId, code, item.raw],
-  );
+  return rejectShared(target, t, jobId, item.piId, code, item.raw);
 }
 async function defer(
   target: Connection,
@@ -540,10 +453,7 @@ async function defer(
   item: ReturnType<typeof prepare>,
   reason: string,
 ) {
-  await target.execute(
-    `INSERT INTO ${t('netwin_mig_deferred')} (id,job_id,source_id,reason,payload,created_at) VALUES (:1,:2,:3,:4,:5,SYSTIMESTAMP)`,
-    [randomUUID(), jobId, item.piId, reason, item.raw],
-  );
+  return deferShared(target, t, jobId, item.piId, reason, item.raw);
 }
 async function recordParent(
   target: Connection,
@@ -551,28 +461,11 @@ async function recordParent(
   sourceId: string,
   parentSourceId: string,
 ) {
-  try {
-    await target.execute(
-      `INSERT INTO ${t('netwin_mig_parent')} (job_id,source_id,parent_source_id,created_at) VALUES (:1,:2,:3,SYSTIMESTAMP)`,
-      [jobId, sourceId, parentSourceId],
-    );
-  } catch (error) {
-    if (!/ORA-00001/.test(String(error))) throw error;
-  }
+  return recordParentShared(target, t, jobId, sourceId, parentSourceId);
 }
 
 async function recordTouches(target: Connection, jobId: string, sourceIds: string[]) {
-  if (sourceIds.length === 0) return;
-  // Uma chamada por lote em vez de um round-trip por nó. Em jobs novos não há
-  // duplicatas; o MERGE também preserva a segurança caso um lote seja reexecutado.
-  await target.executeMany(
-    `MERGE INTO ${t('netwin_mig_touch')} target
-     USING (SELECT :1 job_id,:2 source_id FROM DUAL) source
-     ON (target.job_id=source.job_id AND target.source_id=source.source_id)
-     WHEN NOT MATCHED THEN INSERT (job_id,source_id,created_at)
-     VALUES (source.job_id,source.source_id,SYSTIMESTAMP)`,
-    sourceIds.map((sourceId) => [jobId, sourceId]),
-  );
+  return recordTouchesShared(target, t, jobId, sourceIds);
 }
 
 // Resolve depois da carga principal: assim uma onda pode conter filhos cujo pai aparece somente
@@ -801,43 +694,9 @@ async function currentScn(source: Connection) {
   return undefined;
 }
 
-async function ensureControlTables(target: Connection) {
-  const ddls = [
-    `CREATE TABLE ${t('netwin_mig_job')} (id VARCHAR2(36 CHAR) PRIMARY KEY,source_scn VARCHAR2(32 CHAR) NOT NULL,uf_id NUMBER,municipio_id NUMBER,mapping_version VARCHAR2(64 CHAR) NOT NULL,last_pi_id NUMBER DEFAULT 0 NOT NULL,state VARCHAR2(32 CHAR) NOT NULL,loaded_count NUMBER DEFAULT 0 NOT NULL,rejected_count NUMBER DEFAULT 0 NOT NULL,deferred_count NUMBER DEFAULT 0 NOT NULL,created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,updated_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,completed_at TIMESTAMP(6) WITH TIME ZONE)`,
-    `CREATE TABLE ${t('netwin_mig_identity')} (source_entity VARCHAR2(64 CHAR) NOT NULL,source_id VARCHAR2(64 CHAR) NOT NULL,target_role VARCHAR2(32 CHAR) NOT NULL,nexus_entity_type VARCHAR2(64 CHAR) NOT NULL,nexus_id VARCHAR2(36 CHAR) NOT NULL,source_hash VARCHAR2(64 CHAR),created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,PRIMARY KEY(source_entity,source_id,target_role))`,
-    `CREATE TABLE ${t('netwin_mig_parent')} (job_id VARCHAR2(36 CHAR) NOT NULL,source_id VARCHAR2(64 CHAR) NOT NULL,parent_source_id VARCHAR2(64 CHAR) NOT NULL,created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,PRIMARY KEY(job_id,source_id))`,
-    `CREATE TABLE ${t('netwin_mig_touch')} (job_id VARCHAR2(36 CHAR) NOT NULL,source_id VARCHAR2(64 CHAR) NOT NULL,created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,PRIMARY KEY(job_id,source_id))`,
-    `CREATE TABLE ${t('netwin_mig_reject')} (id VARCHAR2(36 CHAR) PRIMARY KEY,job_id VARCHAR2(36 CHAR) NOT NULL,source_id VARCHAR2(64 CHAR) NOT NULL,reason VARCHAR2(128 CHAR) NOT NULL,payload CLOB NOT NULL,created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL)`,
-    `CREATE TABLE ${t('netwin_mig_deferred')} (id VARCHAR2(36 CHAR) PRIMARY KEY,job_id VARCHAR2(36 CHAR) NOT NULL,source_id VARCHAR2(64 CHAR) NOT NULL,reason VARCHAR2(128 CHAR) NOT NULL,payload CLOB NOT NULL,created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL)`,
-  ];
-  for (const ddl of ddls)
-    try {
-      await target.execute(ddl);
-    } catch (error) {
-      if (!/ORA-00955/.test(String(error))) throw error;
-    }
-  try {
-    await target.execute(
-      `ALTER TABLE ${t('netwin_mig_identity')} ADD (source_hash VARCHAR2(64 CHAR))`,
-    );
-  } catch (error) {
-    // ORA-01430: a coluna já existe (nova execução ou base criada pelo script anterior).
-    if (!/ORA-01430/.test(String(error))) throw error;
-  }
-  try {
-    await target.execute(
-      `CREATE INDEX ${quote(prefixed('i_nw_map_entity', targetPrefix ?? required('TARGET_ORACLE_OBJECT_PREFIX')))}
-         ON ${t('geo_map_feature')} (tenant_id,entity_id)`,
-    );
-  } catch (error) {
-    // ORA-00955 = já criado; ORA-01031 não inviabiliza ondas pequenas, mas deixa
-    // explícito que o DBA precisa criar o índice antes da carga nacional.
-    if (/ORA-01031/.test(String(error))) {
-      console.warn('Índice de mapa (tenant_id, entity_id) não criado: privilégios insuficientes.');
-    } else if (!/ORA-00955/.test(String(error))) {
-      throw error;
-    }
-  }
+async function ensureControlTablesAndMapIndex(target: Connection) {
+  await ensureControlTables(target, t);
+  await ensureMapEntityIndex(target, t, targetPrefix);
 }
 
 function classify(type: string): Mapping {
@@ -894,61 +753,12 @@ function displayName(row: SourceRow, id: string) {
     255,
   );
 }
-function cut(value: string, length: number) {
-  return value.length <= length ? value : `${value.slice(0, length - 1)}…`;
-}
-function numberOf(value: unknown): number | null {
-  const n = typeof value === 'number' ? value : Number(value);
-  return Number.isFinite(n) ? n : null;
-}
 function summarize(items: ReturnType<typeof prepare>[]) {
   return {
     loaded: items.filter((x) => x.state === 'loaded').length,
     rejected: items.filter((x) => x.state === 'rejected').length,
     deferred: items.filter((x) => x.state === 'deferred').length,
   };
-}
-function quote(value: string) {
-  return `"${value.toUpperCase()}"`;
-}
-function required(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} obrigatorio.`);
-  return value;
-}
-
-function requiredAny(...names: string[]) {
-  for (const name of names) {
-    const value = process.env[name];
-    if (value) return value;
-  }
-  throw new Error(`${names.join(' ou ')} obrigatorio.`);
-}
-
-function oracleConnectDescriptor(value: string) {
-  if (value.startsWith('(')) return value;
-  const easyConnect = /^([A-Za-z0-9._-]+):(\d+)\/([A-Za-z0-9._-]+)$/u.exec(value);
-  if (!easyConnect) return value;
-  const [, host, port, serviceName] = easyConnect;
-  return (
-    `(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=${host})(PORT=${port}))` +
-    `(CONNECT_DATA=(SERVICE_NAME=${serviceName})))`
-  );
-}
-
-// O DR do Netwin pode estar em versão Oracle anterior ao mínimo aceito pelo driver
-// em Thin mode. Quando o Instant Client estiver instalado, o modo Thick atende essa
-// versão sem mudar nenhuma operação da origem (continua em transação READ ONLY).
-function configureOracleClient() {
-  const libDir = process.env.NETWIN_ORACLE_CLIENT_LIB_DIR ?? process.env.ORACLE_CLIENT_LIB_DIR;
-  if (!libDir) return;
-  try {
-    oracledb.initOracleClient({ libDir });
-  } catch (error) {
-    throw new Error(
-      `Não foi possível inicializar o Oracle Instant Client em ${libDir}: ${String(error)}`,
-    );
-  }
 }
 function parseArgs(argv: string[]): Args {
   const get = (flag: string) => {

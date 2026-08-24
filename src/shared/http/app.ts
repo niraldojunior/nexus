@@ -59,12 +59,14 @@ import type {
   ResourceType,
 } from '../../modules/resource/index.js';
 import type {
+  CreateServiceSpecificationInput,
   CustomerFacingService,
   ResourceFacingService,
   ServiceCandidate,
   ServiceCategory,
   ServiceQuery,
   ServiceSpecification,
+  ServiceSpecificationBulkItem,
   ServiceSpecificationQuery,
   ServiceCategoryQuery,
   ServiceCandidateQuery,
@@ -323,6 +325,15 @@ const routeRequest = async ({
     const body = await readBody(request);
     const items = parseResourceSpecificationBulkImportItems(body);
     const result = await runtime.resourceService.bulkCreateResourceSpecifications(items);
+    sendJson(response, 200, result);
+    return;
+  }
+
+  if (request.method === 'POST' && url.pathname === '/v1/service/specifications/bulk-import') {
+    await ensureAuthorized(request, config);
+    const body = await readBody(request);
+    const items = parseServiceSpecificationBulkImportItems(body);
+    const result = await runtime.serviceService.bulkCreateServiceSpecifications(items);
     sendJson(response, 200, result);
     return;
   }
@@ -850,11 +861,10 @@ const routeGeoRequest = async ({
     }
     if (request.method === 'POST') {
       const body = await readBody(request);
-      const code = String(body.code ?? '').trim();
       const name = String(body.name ?? '').trim();
       const behavior = parseGeoProjectStatusBehavior(body.behavior);
-      if (!code || !name || !behavior) {
-        throw new AppError('project status code, name and behavior are required', {
+      if (!name || !behavior) {
+        throw new AppError('project status name and behavior are required', {
           code: 'GEO_PROJECT_STATUS_CATALOG_INVALID',
           statusCode: 400,
         });
@@ -869,7 +879,6 @@ const routeGeoRequest = async ({
         response,
         201,
         await runtime.geoProjectRepository.createStatusCatalogItem(geoContext.tenantId, {
-          code,
           name,
           sortOrder: Number(body.sortOrder ?? 1000),
           active: body.active !== false,
@@ -3700,6 +3709,53 @@ const parseResourceSpecificationBulkImportItems = (
       });
     }
     return { line, input: input as CreateResourceSpecificationInput };
+  });
+};
+
+// Mesmo limite do Resource (RESOURCE_SPEC_BULK_IMPORT_MAX_ITEMS) — Configurações → Catálogo de
+// Serviços → Carga em massa.
+const SERVICE_SPEC_BULK_IMPORT_MAX_ITEMS = 2000;
+
+const parseServiceSpecificationBulkImportItems = (
+  body: Record<string, unknown>,
+): ServiceSpecificationBulkItem[] => {
+  const rawItems = body.items;
+  if (!Array.isArray(rawItems)) {
+    throw new AppError('items must be an array', {
+      code: 'INVALID_BULK_IMPORT_PAYLOAD',
+      statusCode: 400,
+    });
+  }
+  if (rawItems.length === 0) {
+    throw new AppError('items must not be empty', {
+      code: 'INVALID_BULK_IMPORT_PAYLOAD',
+      statusCode: 400,
+    });
+  }
+  if (rawItems.length > SERVICE_SPEC_BULK_IMPORT_MAX_ITEMS) {
+    throw new AppError(`items must not exceed ${SERVICE_SPEC_BULK_IMPORT_MAX_ITEMS}`, {
+      code: 'BULK_IMPORT_TOO_LARGE',
+      statusCode: 400,
+    });
+  }
+
+  return rawItems.map((rawItem, index) => {
+    if (!rawItem || typeof rawItem !== 'object') {
+      throw new AppError(`items[${index}] must be an object`, {
+        code: 'INVALID_BULK_IMPORT_PAYLOAD',
+        statusCode: 400,
+      });
+    }
+    const record = rawItem as Record<string, unknown>;
+    const line = typeof record.line === 'number' ? record.line : index + 1;
+    const input = record.input;
+    if (!input || typeof input !== 'object') {
+      throw new AppError(`items[${index}].input must be an object`, {
+        code: 'INVALID_BULK_IMPORT_PAYLOAD',
+        statusCode: 400,
+      });
+    }
+    return { line, input: input as CreateServiceSpecificationInput };
   });
 };
 

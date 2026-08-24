@@ -117,6 +117,7 @@ import {
 import { useGeoProjects } from '../hooks/useGeoProjects';
 import {
   fetchProjectAreas,
+  fetchProjectResources,
   fetchProjectSites,
   projectIdOfNode,
   removeProjectSite,
@@ -375,6 +376,18 @@ const MAP_SINGLE_CLICK_DELAY_MS = 500;
 // tamanho desta página (um projeto como "Onitel - Brasília" tem 25 mil locais).
 const PROJECT_PANEL_SITE_LIMIT = 200;
 
+// Teto de locais de projeto buscados por bbox para o MAPA (distinto de PROJECT_PANEL_SITE_LIMIT,
+// que é a página da lista do painel). Sem limite, um projeto com dezenas de milhares de locais
+// (ex.: "Onitel - Brasília", 25.507) enchia o viewport com até VIEWPORT_MAX_RESULTS (10.000)
+// google.maps.Marker reais — o gargalo que travava a interação com o mapa (issue #72).
+const PROJECT_VIEWPORT_SITE_LIMIT = 1500;
+
+// A partir daqui o pin individual de um local de Projeto sai do mapa: a mancha de concentração/
+// dispersão do ProjectAreaOverlay já representa o conjunto (REQ-MOD01-017). Mais restrito que
+// PASSIVE_INFRA_MAX_SCALE_METERS (200 m, usado pela infra passiva comum) — coerente com o
+// comentário original de projectSitesInViewport em tree-service.ts.
+const PROJECT_PIN_MAX_SCALE_METERS = 50;
+
 // Default de `onProjectAreaHover` — só usado pelos testes que montam GoogleMapPanel sem um
 // Projeto em jogo (GeoPage sempre passa o setter de estado real).
 const noopProjectAreaHover = (): void => {};
@@ -512,16 +525,22 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     () => viewportInclude(mapLayers.layers),
     [
       mapLayers.layers.siteNetwork,
-      mapLayers.layers.siteProperty,
       mapLayers.layers.siteService,
-      mapLayers.layers.siteSublocal,
-      mapLayers.layers.resourcePoints,
-      mapLayers.layers.resourceLines,
+      mapLayers.layers.netwinPole,
+      mapLayers.layers.netwinDuct,
+      mapLayers.layers.netwinManhole,
+      mapLayers.layers.netwinTower,
+      mapLayers.layers.resourceCdoe,
+      mapLayers.layers.resourceCdoi,
+      mapLayers.layers.resourceCeo,
+      mapLayers.layers.resourceDio,
+      mapLayers.layers.resourceFiberCable,
+      mapLayers.layers.resourceDropCable,
     ],
   );
   // Papel funcional (siteRole, C11) por code de spec, para o seletor de camadas roteirar cada
-  // feature de site para o grupo certo (Sites de Rede / Imóveis / Sites de Serviço /
-  // Sub-locais) sem depender de coluna nova em geo_map_feature (ver isMapFeatureVisible).
+  // feature de site para o grupo certo (Sites de Rede / Sites de Serviço) sem depender de
+  // coluna nova em geo_map_feature (ver isMapFeatureVisible).
   const siteRoleByCode = useMemo(
     () => new Map(specs.map((spec) => [spec.code, spec.siteRole] as const)),
     [specs],
@@ -533,6 +552,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Marker/Polyline — por isso fica FORA de `mapNodes` (que só alimenta os efeitos de
   // Marker/Polyline, ver GoogleMapPanel): as duas fontes nunca se misturam.
   const passiveInfraVisible = scaleMeters !== null && scaleMeters < PASSIVE_INFRA_MAX_SCALE_METERS;
+  // Régua de escala própria dos pins de local de Projeto com manchas geradas (REQ-MOD01-017) —
+  // mais restrita que a infra passiva comum (ver PROJECT_PIN_MAX_SCALE_METERS).
+  const projectPinScaleVisible =
+    scaleMeters !== null && scaleMeters < PROJECT_PIN_MAX_SCALE_METERS;
   const { data: infraFeaturesRaw, loading: viewportLoading } = useMapTiles(
     viewportBounds,
     scaleMeters,
@@ -556,11 +579,14 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     const stations = mapLayers.layers.stations ? tree.mapNodes : [];
     // Locais do Projeto de trabalho aberto (REQ-MOD01-015) entram só enquanto a doca mostra
     // aquele projeto — nunca somados aos nós da árvore, que já os excluem por completo. Com
-    // manchas geradas (REQ-MOD01-017), o pin individual só entra na mesma régua de escala da
-    // infra passiva (< 200 m) — em escala mais aberta, a cobertura ou a mancha do overlay
-    // representa o conjunto — e vem de `projectViewportSites` (buscado por bbox), não da
-    // página do painel.
-    const projectSitesVisible = dockView.kind !== 'hierarchy' && passiveInfraVisible;
+    // manchas geradas (REQ-MOD01-017), o pin individual só entra até PROJECT_PIN_MAX_SCALE_METERS
+    // (50 m) — em escala mais aberta, a mancha do overlay representa o conjunto — e vem de
+    // `projectViewportSites` (buscado por bbox, já limitado a PROJECT_VIEWPORT_SITE_LIMIT), não
+    // da página do painel. Sem manchas (projeto pequeno, `projectSites` é a lista inteira e já
+    // cabe na página do painel), mantém a régua de sempre da infra passiva (< 200 m).
+    const projectSitesVisible =
+      activeProjectId !== null &&
+      (hasProjectAreas ? projectPinScaleVisible : passiveInfraVisible);
     const projectSitesForMap = hasProjectAreas ? projectViewportSites : projectSites;
     const withProjectSites = projectSitesVisible ? [...stations, ...projectSitesForMap] : stations;
     // O item selecionado é imune à escala e ao viewport: recurso e cabo do canvas só existem em
@@ -582,9 +608,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   }, [
     tree.mapNodes,
     passiveInfraVisible,
+    projectPinScaleVisible,
     mapLayers.layers.stations,
     selectedNode,
-    dockView,
+    activeProjectId,
     projectSites,
     projectViewportSites,
     hasProjectAreas,
@@ -714,20 +741,19 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     }
     let cancelled = false;
     setProjectSitesLoading(true);
-    void fetchProjectAreas(activeProjectId)
-      .then((areas) => {
-        if (cancelled) return areas;
+    // Disparadas em paralelo: `areas` só decidia o `limit` da lista do painel (ver comentário
+    // acima do efeito), mas o servidor já pagina a lista a no máximo 100 linhas de qualquer
+    // forma (ver GET /v1/geo/projects/:id/sites em app.ts) — pedir sempre PROJECT_PANEL_SITE_LIMIT
+    // (200) remove a dependência serial sem mudar o que o painel mostra, e corta pela metade a
+    // fila de requisições da abertura (backend local atende em série — AGENTS.md §3).
+    void Promise.all([
+      fetchProjectAreas(activeProjectId),
+      fetchProjectSites(activeProjectId, { limit: PROJECT_PANEL_SITE_LIMIT }),
+    ])
+      .then(([areas, nodes]) => {
+        if (cancelled) return;
         setProjectAreas(areas);
-        return areas;
-      })
-      .then((areas) =>
-        fetchProjectSites(
-          activeProjectId,
-          areas.length > 0 ? { limit: PROJECT_PANEL_SITE_LIMIT } : {},
-        ),
-      )
-      .then((nodes) => {
-        if (!cancelled) setProjectSites(nodes);
+        setProjectSites(nodes);
       })
       .catch(() => {
         if (!cancelled) {
@@ -744,14 +770,16 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   }, [activeProjectId, projectSitesReloadToken]);
 
   // Locais do projeto VISÍVEIS NO MAPA, quando ele tem manchas geradas: busca por bbox (mesmo
-  // padrão de handleViewportChange/viewportInfra), só ativa em ≤ 100 m — em escala mais aberta,
-  // a mancha do overlay já representa o conjunto. Sem manchas, o mapa usa `projectSites`
-  // (lista completa) diretamente, como sempre.
+  // padrão de handleViewportChange/viewportInfra), só ativa em ≤ PROJECT_PIN_MAX_SCALE_METERS —
+  // em escala mais aberta, a mancha do overlay já representa o conjunto. Sem manchas, o mapa usa
+  // `projectSites` (lista completa) diretamente, como sempre. `limit` é obrigatório: sem ele, um
+  // projeto com dezenas de milhares de locais devolvia até VIEWPORT_MAX_RESULTS (10.000) —
+  // outros tantos google.maps.Marker reais, o gargalo que travava o mapa (issue #72).
   const projectViewportFetchTokenRef = useRef(0);
   const projectViewportDebounceRef = useRef<number | undefined>(undefined);
   const lastProjectViewportKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!activeProjectId || !hasProjectAreas || !viewportBounds || !passiveInfraVisible) {
+    if (!activeProjectId || !hasProjectAreas || !viewportBounds || !projectPinScaleVisible) {
       if (projectViewportDebounceRef.current !== undefined) {
         window.clearTimeout(projectViewportDebounceRef.current);
         projectViewportDebounceRef.current = undefined;
@@ -776,7 +804,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     projectViewportDebounceRef.current = window.setTimeout(() => {
       lastProjectViewportKeyRef.current = key;
       const token = ++projectViewportFetchTokenRef.current;
-      void fetchProjectSites(activeProjectId, { bounds: viewportBounds })
+      void fetchProjectSites(activeProjectId, {
+        bounds: viewportBounds,
+        limit: PROJECT_VIEWPORT_SITE_LIMIT,
+      })
         .then((nodes) => {
           if (projectViewportFetchTokenRef.current === token) setProjectViewportSites(nodes);
         })
@@ -789,33 +820,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         window.clearTimeout(projectViewportDebounceRef.current);
       }
     };
-  }, [activeProjectId, hasProjectAreas, viewportBounds, passiveInfraVisible]);
-
-  // Enquadra o projeto ao abrir. Com manchas geradas, usa o bbox dos POLÍGONOS (representa o
-  // projeto inteiro, não só a página carregada no painel); sem manchas, usa os pontos dos
-  // locais já carregados (comportamento de sempre) — um único ponto voa direto, dois ou mais
-  // enquadram o retângulo que os contém.
-  useEffect(() => {
-    if (!activeProjectId) return;
-    const points = hasProjectAreas
-      ? projectAreas.flatMap((area) => area.geometry.coordinates[0] ?? [])
-      : projectSites
-          .map(treeNodePoint)
-          .filter((point): point is [number, number] => point !== null);
-    if (points.length === 0) return;
-    const lngs = points.map((point) => point[0]);
-    const lats = points.map((point) => point[1]);
-    const center: [number, number] = [
-      (Math.min(...lngs) + Math.max(...lngs)) / 2,
-      (Math.min(...lats) + Math.max(...lats)) / 2,
-    ];
-    const span = pathSpanMeters(points);
-    setFocusRequest(
-      span > 0
-        ? { point: center, scaleMeters: null, fitSpanMeters: span }
-        : { point: center, scaleMeters: SITE_FOCUS_SCALE_METERS },
-    );
-  }, [activeProjectId, hasProjectAreas, projectAreas, projectSites]);
+  }, [activeProjectId, hasProjectAreas, viewportBounds, projectPinScaleVisible]);
 
   // Responder a parâmetros de navegação (ex: vindo de Recursos/Serviços)
   useEffect(() => {
@@ -927,6 +932,62 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     },
     [activeProjectId, openProjectSite, selectNode],
   );
+
+  // Foco automático ao abrir um Projeto de trabalho: entra direto num ponto útil em vez de
+  // enquadrar o bbox inteiro (que, num projeto grande — ex. um estado — não diz nada de
+  // acionável). Ordem de preferência: (1) mancha de maior concentração, quando o projeto tem
+  // cobertura gerada (REQ-MOD01-017); (2) primeiro local da lista do painel, quando não há
+  // cobertura; (3) primeiro recurso do projeto, quando não há sequer um local. Espera o
+  // carregamento inicial de áreas/locais assentar (`projectSitesLoading`) para não focar
+  // prematuramente com listas ainda vazias.
+  useEffect(() => {
+    if (!activeProjectId || projectSitesLoading) return;
+    let cancelled = false;
+
+    if (hasProjectAreas) {
+      const concentrations = projectAreas.filter((area) => area.kind === 'concentration');
+      const candidates = concentrations.length > 0 ? concentrations : projectAreas;
+      const largest = candidates.reduce((best, area) =>
+        area.siteCount + (area.resourceCount ?? 0) > best.siteCount + (best.resourceCount ?? 0)
+          ? area
+          : best,
+      );
+      if (largest.centroid) {
+        const outerRing = largest.geometry.coordinates[0] ?? [];
+        const span = pathSpanMeters(outerRing);
+        setFocusRequest(
+          span > 0
+            ? { point: largest.centroid, scaleMeters: null, fitSpanMeters: span }
+            : { point: largest.centroid, scaleMeters: SITE_FOCUS_SCALE_METERS },
+        );
+        return;
+      }
+    }
+
+    const firstSite = projectSites[0];
+    if (firstSite) {
+      openProjectSite(activeProjectId, firstSite);
+      return;
+    }
+
+    void fetchProjectResources(activeProjectId, { limit: 1 }).then((page) => {
+      if (cancelled) return;
+      const firstResource = page.items[0];
+      if (firstResource) selectNode(firstResource, 'search');
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeProjectId,
+    projectSitesLoading,
+    hasProjectAreas,
+    projectAreas,
+    projectSites,
+    openProjectSite,
+    selectNode,
+  ]);
 
   // Descarta uma hidratação em voo se o usuário selecionar outra coisa no meio do caminho
   // (clique rápido em duas features do canvas em sequência).
@@ -2011,73 +2072,80 @@ export function GoogleMapPanel({
         });
 
         // Camada de calor da cobertura GPON (canvas), abaixo dos marcadores. O hover sobre a
-        // mancha vira o balão do bairro; throttle leve porque `mousemove` dispara muito.
+        // mancha vira o balão do bairro.
         coverageOverlayRef.current = createCoverageOverlay(maps, mapRef.current);
         coverageHitTestRef.current = coverageOverlayRef.current.hitTest;
-        let lastCoverageHoverAt = 0;
-        mapRef.current.addListener('mousemove', (event: GoogleMapMouseEvent) => {
-          const hitTest = coverageHitTestRef.current;
-          if (!hitTest) return;
-          const now = Date.now();
-          if (now - lastCoverageHoverAt < 50) return;
-          lastCoverageHoverAt = now;
-          const lng = event.latLng.lng();
-          const lat = event.latLng.lat();
-          const neighborhood = hitTest(lng, lat);
-          onCoverageHoverRef.current(neighborhood ? { point: [lng, lat], neighborhood } : null);
-        });
 
         // Camada das manchas de concentração/dispersão do Projeto (REQ-MOD01-017), mesma
         // técnica de canvas — o hover sobre a mancha vira o balão de classe/contagem.
         projectAreaOverlayRef.current = createProjectAreaOverlay(maps, mapRef.current);
         projectAreaHitTestRef.current = projectAreaOverlayRef.current.hitTest;
-        let lastProjectAreaHoverAt = 0;
-        mapRef.current.addListener('mousemove', (event: GoogleMapMouseEvent) => {
-          const hitTest = projectAreaHitTestRef.current;
-          if (!hitTest) return;
-          const now = Date.now();
-          if (now - lastProjectAreaHoverAt < 50) return;
-          lastProjectAreaHoverAt = now;
-          const lng = event.latLng.lng();
-          const lat = event.latLng.lat();
-          const area = hitTest(lng, lat);
-          onProjectAreaHoverRef.current(area ? { point: [lng, lat], area } : null);
-        });
 
         // Infra passiva (recursos + Sites não-CO + cabos) em canvas — substitui um
-        // Marker/Polyline por feature (Fase 3, issue #69). Hover segue o mesmo padrão de
-        // throttle das duas camadas acima, mas precisa emular o mouseout que um Marker real
-        // teria (`lastInfraHoverId`): sem isso, sair do ícone sem passar por outro deixaria o
-        // balão de hover grudado.
+        // Marker/Polyline por feature (Fase 3, issue #69). Precisa emular o mouseout que um
+        // Marker real teria (`lastInfraHoverId`): sem isso, sair do ícone sem passar por outro
+        // deixaria o balão de hover grudado.
         infraOverlayRef.current = createInfraOverlay(maps, mapRef.current);
-        let lastInfraHoverAt = 0;
         let lastInfraHoverId: string | null = null;
         let infraCursorIsInteractive = false;
-        mapRef.current.addListener('mousemove', (event: GoogleMapMouseEvent) => {
-          const overlay = infraOverlayRef.current;
-          if (!overlay) return;
+
+        // As três camadas escutavam `mousemove` cada uma com seu próprio throttle de 50ms —
+        // três hit-tests por movimento do mouse, o gargalo que travava a interação com um
+        // projeto aberto (issue #72). Um único listener, coalescido por
+        // requestAnimationFrame, roda no máximo um hit-test de cada camada por frame — o mapa
+        // sempre desenha a 60fps de qualquer forma, então não há ganho em checar mais rápido
+        // que isso.
+        let pendingMouseMoveEvent: GoogleMapMouseEvent | null = null;
+        let mouseMoveScheduled = false;
+        const processMouseMove = () => {
+          mouseMoveScheduled = false;
+          const event = pendingMouseMoveEvent;
+          if (!event) return;
           const lng = event.latLng.lng();
           const lat = event.latLng.lat();
-          const hit = overlay.hitTest(lng, lat);
-          const cursorShouldBeInteractive = Boolean(hit);
-          // O canvas não recebe ponteiros (para o mapa continuar navegável), então o Maps não
-          // sabe sozinho que há uma feature clicável abaixo do mouse. Só toca na opção quando
-          // cruza a fronteira de hover, evitando trabalho a cada mousemove. Em modo "Escolher
-          // no mapa" a mira (crosshair) prevalece — não troca para "pointer" sobre uma
-          // feature, porque o clique aqui nunca a seleciona (ver o listener de `click`).
-          if (!pickingAddressRef.current && cursorShouldBeInteractive !== infraCursorIsInteractive) {
-            infraCursorIsInteractive = cursorShouldBeInteractive;
-            mapRef.current?.setOptions({
-              draggableCursor: cursorShouldBeInteractive ? 'pointer' : null,
-            });
+
+          const coverageHitTest = coverageHitTestRef.current;
+          if (coverageHitTest) {
+            const neighborhood = coverageHitTest(lng, lat);
+            onCoverageHoverRef.current(neighborhood ? { point: [lng, lat], neighborhood } : null);
           }
-          const now = Date.now();
-          if (now - lastInfraHoverAt < 50) return;
-          lastInfraHoverAt = now;
-          const hitId = hit ? mapTileFeatureNodeId(hit) : null;
-          if (hitId === lastInfraHoverId) return;
-          lastInfraHoverId = hitId;
-          onHoverNodeRef.current(hit ? mapTileFeatureToNode(hit) : null);
+
+          const projectAreaHitTest = projectAreaHitTestRef.current;
+          if (projectAreaHitTest) {
+            const area = projectAreaHitTest(lng, lat);
+            onProjectAreaHoverRef.current(area ? { point: [lng, lat], area } : null);
+          }
+
+          const overlay = infraOverlayRef.current;
+          if (overlay) {
+            const hit = overlay.hitTest(lng, lat);
+            const cursorShouldBeInteractive = Boolean(hit);
+            // O canvas não recebe ponteiros (para o mapa continuar navegável), então o Maps
+            // não sabe sozinho que há uma feature clicável abaixo do mouse. Só toca na opção
+            // quando cruza a fronteira de hover, evitando trabalho a cada mousemove. Em modo
+            // "Escolher no mapa" a mira (crosshair) prevalece — não troca para "pointer" sobre
+            // uma feature, porque o clique aqui nunca a seleciona (ver o listener de `click`).
+            if (
+              !pickingAddressRef.current &&
+              cursorShouldBeInteractive !== infraCursorIsInteractive
+            ) {
+              infraCursorIsInteractive = cursorShouldBeInteractive;
+              mapRef.current?.setOptions({
+                draggableCursor: cursorShouldBeInteractive ? 'pointer' : null,
+              });
+            }
+            const hitId = hit ? mapTileFeatureNodeId(hit) : null;
+            if (hitId !== lastInfraHoverId) {
+              lastInfraHoverId = hitId;
+              onHoverNodeRef.current(hit ? mapTileFeatureToNode(hit) : null);
+            }
+          }
+        };
+        mapRef.current.addListener('mousemove', (event: GoogleMapMouseEvent) => {
+          pendingMouseMoveEvent = event;
+          if (mouseMoveScheduled) return;
+          mouseMoveScheduled = true;
+          requestAnimationFrame(processMouseMove);
         });
 
         setMapsReady(true);

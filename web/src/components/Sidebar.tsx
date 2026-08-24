@@ -11,7 +11,6 @@ import {
   Plus,
   Settings,
   SlidersHorizontal,
-  Users,
 } from 'lucide-react';
 import { PageId, RecentGroup, RecentItem } from '../types';
 import { ResearchHistoryPage } from '../pages/ResearchHistoryPage';
@@ -357,18 +356,6 @@ export default function Sidebar({
                     </div>
                   );
                 })}
-              {isAdmin ? (
-                <NavItem
-                  active={currentPage === 'usuarios'}
-                  icon={Users}
-                  label="Usuários"
-                  onClick={() => {
-                    onSelectPage('usuarios');
-                    closeMobileDrawer();
-                  }}
-                  collapsed={contentCollapsed}
-                />
-              ) : null}
               {isAdmin ? (
                 <NavItem
                   active={currentPage === 'configuracoes'}

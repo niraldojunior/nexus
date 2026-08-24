@@ -25,7 +25,6 @@ import LoginPage from './pages/LoginPage';
 import NewResearchPage from './pages/NewResearchPage';
 import ResourcePage from './pages/ResourcePage';
 import ServicePage from './pages/ServicePage';
-import UsersPage from './pages/UsersPage';
 import { ConfigurationPage } from './pages/ConfigurationPage';
 import { ResearchPage } from './pages/ResearchPage';
 import { ConversasPage } from './pages/PesquisasPage';
@@ -64,7 +63,7 @@ const assistantChips = [
 ];
 
 const domainMeta: Record<
-  Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'usuarios' | 'configuracoes'>,
+  Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'configuracoes'>,
   { title: string; subtitle: string; icon: typeof MapPin }
 > = {
   geo: { title: 'Geo', subtitle: 'Onde? Geographic Site, Address & Location', icon: MapPinned },
@@ -141,7 +140,7 @@ function DomainPage({
   page,
   onOpenMainMenu,
 }: {
-  page: Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'usuarios' | 'configuracoes'>;
+  page: Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'configuracoes'>;
   onOpenMainMenu?: () => void;
 }) {
   const meta = domainMeta[page];
@@ -817,7 +816,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
               ) : null}
               {currentPage === 'service' ? <ServicePage category={activeServiceCategory} /> : null}
               {currentPage === 'order' ? <DomainPage page="order" /> : null}
-              {currentPage === 'usuarios' ? <UsersPage /> : null}
               {currentPage === 'research' ? (
                 activeResearchSessionId === null ? (
                   <NewResearchPage

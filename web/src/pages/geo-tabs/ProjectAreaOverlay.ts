@@ -10,7 +10,7 @@
 import type { ProjectArea } from '../../services/geoProjectApi';
 import type { GoogleMapInstance, GoogleMapsApi } from '../../utils/googleMaps';
 import { projectAreaFill, projectAreaStroke } from '../../utils/projectAreaColor';
-import { traceSmoothRing } from './CoverageOverlay';
+import { buildFastProjection, traceSmoothRing } from './CoverageOverlay';
 
 export type ProjectAreaOverlayHandle = {
   setData: (areas: ProjectArea[]) => void;
@@ -21,11 +21,18 @@ export type ProjectAreaOverlayHandle = {
 
 type Maps = GoogleMapsApi['maps'];
 
+// bbox [minLng, minLat, maxLng, maxLat] por mancha, computado uma vez em `setData` — `hitTest`
+// só cai no ray-casting completo (percorre todo anel, com buracos) quando o ponto está dentro
+// do retângulo da mancha, em vez de testar todo polígono a cada `mousemove`.
+type AreaBounds = [number, number, number, number];
+
 export function createProjectAreaOverlay(
   maps: Maps,
   map: GoogleMapInstance,
 ): ProjectAreaOverlayHandle {
   let areas: ProjectArea[] = [];
+  let boundsByArea = new Map<ProjectArea, AreaBounds>();
+  let redrawScheduled = false;
 
   class ProjectAreaOverlayView extends maps.OverlayView {
     private canvas: HTMLCanvasElement | null = null;
@@ -78,6 +85,28 @@ export function createProjectAreaOverlay(
         return pixel ? [pixel.x - left, pixel.y - top] : null;
       };
 
+      const swLatLng = bounds.getSouthWest();
+      const neLatLng = bounds.getNorthEast();
+      const viewport = {
+        minLng: swLatLng.lng(),
+        minLat: swLatLng.lat(),
+        maxLng: neLatLng.lng(),
+        maxLat: neLatLng.lat(),
+      };
+      // Projeção AFIM própria (mesma técnica de CoverageOverlay/InfraOverlay) em vez de
+      // `fromLatLngToDivPixel` (LatLng + trig do Google) por vértice — a cada frame de pan/zoom
+      // o Maps chama `draw()` de novo, e reprojetar vértice a vértice era o que travava a
+      // interação com um projeto de manchas grandes aberto (issue #72). Cai no `toLocal` exato
+      // só se a viewport cruzar o antimeridiano (fora do Brasil).
+      const fast =
+        viewport.minLng <= viewport.maxLng
+          ? buildFastProjection(
+              { lng: viewport.minLng, lat: viewport.minLat, x: sw.x - left, y: sw.y - top },
+              { lng: viewport.maxLng, lat: viewport.maxLat, x: ne.x - left, y: ne.y - top },
+            )
+          : null;
+      const project = fast ?? toLocal;
+
       for (const area of areas) {
         context.fillStyle = projectAreaFill(area.kind);
         context.strokeStyle = projectAreaStroke(area.kind);
@@ -89,7 +118,7 @@ export function createProjectAreaOverlay(
           // em CoverageOverlay.ts).
           const open = ring.length > 1 ? ring.slice(0, -1) : ring;
           const points = open
-            .map((vertex) => toLocal(vertex[0], vertex[1]))
+            .map((vertex) => project(vertex[0], vertex[1]))
             .filter((point): point is [number, number] => point !== null);
           traceSmoothRing(context, points);
           context.closePath();
@@ -106,16 +135,43 @@ export function createProjectAreaOverlay(
   return {
     setData: (next) => {
       areas = next;
-      overlay.draw();
+      boundsByArea = new Map(next.map((area) => [area, boundsOf(area)]));
+      // Coalesce por rAF: setData pode disparar em rajada (ex.: reabrir o mesmo painel sob
+      // StrictMode) — no máximo um redraw por frame, mesmo padrão de InfraOverlay.
+      if (redrawScheduled) return;
+      redrawScheduled = true;
+      requestAnimationFrame(() => {
+        redrawScheduled = false;
+        overlay.draw();
+      });
     },
     hitTest: (lng, lat) => {
       for (const area of areas) {
+        const bounds = boundsByArea.get(area);
+        if (bounds && (lng < bounds[0] || lng > bounds[2] || lat < bounds[1] || lat > bounds[3])) {
+          continue;
+        }
         if (pointInArea(area, lng, lat)) return area;
       }
       return null;
     },
     destroy: () => overlay.setMap(null),
   };
+}
+
+function boundsOf(area: ProjectArea): AreaBounds {
+  const outer = area.geometry.coordinates[0] ?? [];
+  let minLng = Infinity;
+  let minLat = Infinity;
+  let maxLng = -Infinity;
+  let maxLat = -Infinity;
+  for (const [lng, lat] of outer) {
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+  return [minLng, minLat, maxLng, maxLat];
 }
 
 function pointInArea(area: ProjectArea, lng: number, lat: number): boolean {

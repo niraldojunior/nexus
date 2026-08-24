@@ -1,6 +1,6 @@
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import { AppError } from '../../shared/errors/app-error.js';
-import type { EventService, RelatedParty } from '../../shared/tmf/index.js';
+import type { CharacteristicValue, EventService, RelatedParty } from '../../shared/tmf/index.js';
 import type {
   CreateServiceCandidateInput,
   CreateServiceCategoryInput,
@@ -17,7 +17,11 @@ import type {
   ServiceQuery,
   ServiceReference,
   ServiceRelationship,
+  ServiceSpecCharacteristic,
   ServiceSpecification,
+  ServiceSpecificationBulkItem,
+  ServiceSpecificationBulkItemResult,
+  ServiceSpecificationBulkResult,
   ServiceSpecificationQuery,
   ServiceState,
   UpdateServiceCandidateInput,
@@ -69,18 +73,47 @@ export class ServiceService {
       name: input.name.trim(),
       category: input.category.trim(),
       serviceType: input.serviceType,
-      serviceSpecificationCharacteristic: input.serviceSpecificationCharacteristic ?? [],
+      serviceSpecificationCharacteristic: normalizeSpecCharacteristics(
+        input.serviceSpecificationCharacteristic,
+      ),
       relatedParty: await normalizeRelatedParties(
         input.relatedParty,
         this.dependencies.lookupParty,
       ),
       ...(input.description ? { description: input.description } : {}),
+      ...(input.observation ? { observation: input.observation } : {}),
       ...(input.validFor ? { validFor: input.validFor } : {}),
     };
 
     const stored = await this.repository.upsertServiceSpecification(spec);
     await this.emit('ServiceSpecificationCreateEvent', stored.id, 'ServiceSpecification', stored);
     return stored;
+  }
+
+  // Carga em massa do catálogo (Configurações → Catálogo de Serviços → Carga em massa). Mesmo
+  // padrão do Resource (ver ResourceService.bulkCreateResourceSpecifications): reusa
+  // createServiceSpecification linha a linha para herdar validação canônica e evento TMF688 por
+  // item, mas segue o lote inteiro em vez de abortar na primeira falha.
+  public async bulkCreateServiceSpecifications(
+    items: ServiceSpecificationBulkItem[],
+  ): Promise<ServiceSpecificationBulkResult> {
+    const results: ServiceSpecificationBulkItemResult[] = [];
+    for (const item of items) {
+      try {
+        const created = await this.createServiceSpecification(item.input);
+        results.push({ line: item.line, status: 'created', id: created.id, name: created.name });
+      } catch (error) {
+        results.push({
+          line: item.line,
+          status: 'error',
+          name: item.input.name,
+          code: error instanceof AppError ? error.code : 'SERVICE_SPEC_BULK_FAILED',
+          message: error instanceof Error ? error.message : 'Falha ao criar especificação.',
+        });
+      }
+    }
+    const created = results.filter((result) => result.status === 'created').length;
+    return { total: items.length, created, failed: items.length - created, results };
   }
 
   public async updateServiceSpecification(
@@ -97,11 +130,14 @@ export class ServiceService {
       category: input.category !== undefined ? input.category.trim() : current.category,
       serviceType: input.serviceType ?? current.serviceType,
       serviceSpecificationCharacteristic:
-        input.serviceSpecificationCharacteristic ?? current.serviceSpecificationCharacteristic,
+        input.serviceSpecificationCharacteristic !== undefined
+          ? normalizeSpecCharacteristics(input.serviceSpecificationCharacteristic)
+          : current.serviceSpecificationCharacteristic,
       relatedParty: input.relatedParty
         ? await normalizeRelatedParties(input.relatedParty, this.dependencies.lookupParty)
         : current.relatedParty,
       ...(input.description !== undefined ? { description: input.description } : {}),
+      ...(input.observation !== undefined ? { observation: input.observation } : {}),
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
     });
 
@@ -851,6 +887,32 @@ const assertName = (value: unknown, field = 'name'): void => {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new Error(`${field} is required`);
   }
+};
+
+// Descarta entradas sem nome e tolera o formato legado `{name, value, valueType}` (Characteristic),
+// convertendo `value` em `characteristicValueSpecification` — specs gravadas antes da migração para
+// ServiceSpecCharacteristic continuam legíveis sem precisar de backfill.
+const normalizeSpecCharacteristics = (
+  characteristics: ServiceSpecCharacteristic[] | undefined,
+): ServiceSpecCharacteristic[] => {
+  if (!characteristics) return [];
+  return characteristics
+    .filter((characteristic) => typeof characteristic.name === 'string' && characteristic.name.trim())
+    .map((characteristic) => {
+      const legacyValue = (characteristic as unknown as { value?: unknown }).value;
+      if (
+        characteristic.characteristicValueSpecification === undefined &&
+        legacyValue !== undefined &&
+        legacyValue !== null
+      ) {
+        return {
+          ...characteristic,
+          name: characteristic.name.trim(),
+          characteristicValueSpecification: [{ value: legacyValue as CharacteristicValue }],
+        };
+      }
+      return { ...characteristic, name: characteristic.name.trim() };
+    });
 };
 
 const assertSubscriberId = (value: unknown): void => {

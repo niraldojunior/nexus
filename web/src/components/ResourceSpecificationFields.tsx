@@ -63,6 +63,24 @@ export default function ResourceSpecificationFields({
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
+      {!isCivilInfrastructureCategory(formState.category) ? (
+        <div className="md:col-span-2 rounded-[18px] border border-app-accent-border bg-app-accent-soft p-4">
+          <Field label={resourceFieldLabel('networkType')}>
+            <select
+              value={formState.networkType}
+              onChange={(event) => onChange({ ...formState, networkType: event.target.value })}
+              className="geo-input"
+            >
+              <option value="">Selecione</option>
+              {RESOURCE_SPEC_NETWORK_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      ) : null}
       <div className="md:col-span-2 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
         Identificação
       </div>
@@ -206,22 +224,6 @@ export default function ResourceSpecificationFields({
           placeholder="Ex.: EQ-OLT-001"
         />
       </Field>
-      {!isCivilInfrastructureCategory(formState.category) ? (
-        <Field label={resourceFieldLabel('networkType')}>
-          <select
-            value={formState.networkType}
-            onChange={(event) => onChange({ ...formState, networkType: event.target.value })}
-            className="geo-input"
-          >
-            <option value="">Selecione</option>
-            {RESOURCE_SPEC_NETWORK_TYPE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-      ) : null}
       <div className="md:col-span-2 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
         Comercial e homologação
       </div>

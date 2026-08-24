@@ -3,52 +3,44 @@
 // controle flutuante (MapLayerControl) e o serviço HTTP (geoTreeApi.fetchViewportResources),
 // para os três lerem o mesmo catálogo e a mesma regra de tri-state de grupo.
 
+import { isCdoiResource } from './resourceIcon';
+
 export type MapLayerId =
   | 'stations'
   | 'siteNetwork'
-  | 'siteProperty'
   | 'siteService'
-  | 'siteSublocal'
-  | 'coverage'
-  | 'resourcePoints'
-  | 'resourceLines'
-  | 'netwinPole'
-  | 'netwinManhole'
   | 'netwinTower'
-  | 'netwinCto'
-  | 'netwinDio'
-  | 'netwinRisingTube'
-  | 'netwinSpliceClosure'
-  | 'netwinPedestal'
-  | 'netwinSupportBracket'
-  | 'netwinCableTunnel'
-  | 'netwinIronPipe';
+  | 'coverage'
+  | 'netwinPole'
+  | 'netwinDuct'
+  | 'netwinManhole'
+  | 'resourceCdoe'
+  | 'resourceCdoi'
+  | 'resourceCeo'
+  | 'resourceDio'
+  | 'resourceFiberCable'
+  | 'resourceDropCable';
 
 export type MapLayerVisibility = Record<MapLayerId, boolean>;
 
 export const ALL_MAP_LAYERS_VISIBLE: MapLayerVisibility = {
   stations: true,
   siteNetwork: true,
-  siteProperty: true,
   siteService: true,
-  siteSublocal: true,
-  coverage: true,
-  resourcePoints: true,
-  resourceLines: true,
-  netwinPole: true,
-  netwinManhole: true,
   netwinTower: true,
-  netwinCto: true,
-  netwinDio: true,
-  netwinRisingTube: true,
-  netwinSpliceClosure: true,
-  netwinPedestal: true,
-  netwinSupportBracket: true,
-  netwinCableTunnel: true,
-  netwinIronPipe: true,
+  coverage: true,
+  netwinPole: true,
+  netwinDuct: true,
+  netwinManhole: true,
+  resourceCdoe: true,
+  resourceCdoi: true,
+  resourceCeo: true,
+  resourceDio: true,
+  resourceFiberCable: true,
+  resourceDropCable: true,
 };
 
-export type MapLayerGroupId = 'locations' | 'coverage' | 'resources' | 'netwinInfrastructure';
+export type MapLayerGroupId = 'locations' | 'coverage' | 'netwinInfrastructure' | 'resources';
 
 type MapLayerEntry = { id: MapLayerId; label: string; hint: string };
 
@@ -66,49 +58,69 @@ export type MapLayerGroup = {
 //
 // "Locais" é organizado por papel funcional (siteRole, C11) — o que o site É — e não por
 // categoria estrutural: Site é conceito agnóstico a telecom, então os rótulos são todos
-// em português, sem código cru de spec.
+// em português, sem código cru de spec. Torre entra em Locais por pedido do usuário mesmo
+// sendo tecnicamente um PhysicalResource (mesma camada `netwinTower` de sempre — só muda o
+// grupo em que aparece na UI).
 export const MAP_LAYER_GROUPS: readonly MapLayerGroup[] = [
   {
     id: 'locations',
     label: 'Locais',
     children: [
       { id: 'stations', label: 'Estações', hint: 'CO — sempre buscadas, só o desenho é afetado' },
-      { id: 'siteNetwork', label: 'Sites de Rede', hint: 'CO, POP, Armário, Sala técnica, Contêiner…' },
-      { id: 'siteProperty', label: 'Imóveis', hint: 'Condomínio, Edificação, Bloco' },
-      { id: 'siteService', label: 'Sites de Serviço', hint: 'Unidade atendida (casa, apartamento)' },
-      { id: 'siteSublocal', label: 'Sub-locais', hint: 'Pavimento, Sala, Área segmentada' },
+      {
+        id: 'siteNetwork',
+        label: 'Sites de Rede',
+        hint: 'CO, POP, Armário, Sala técnica, Contêiner…',
+      },
+      {
+        id: 'siteService',
+        label: 'Sites de Serviço',
+        hint: 'Unidade atendida (casa, apartamento)',
+      },
+      { id: 'netwinTower', label: 'Torres', hint: 'Estrutura de sustentação elevada' },
     ],
   },
   {
     id: 'coverage',
-    label: 'Cobertura GPON',
+    label: 'Cobertura',
     hint: 'Mancha de disponibilidade por bairro',
-    children: [{ id: 'coverage', label: 'Cobertura GPON', hint: 'Mancha por bairro' }],
+    children: [{ id: 'coverage', label: 'Rede GPON', hint: 'Mancha por bairro' }],
+  },
+  {
+    id: 'netwinInfrastructure',
+    label: 'Infraestrutura Civil',
+    children: [
+      { id: 'netwinPole', label: 'Postes', hint: 'Poste de rede aérea' },
+      {
+        id: 'netwinDuct',
+        label: 'Dutos',
+        hint: 'Duto, tubo de subida, túnel de cabos, pedestal, suporte',
+      },
+      {
+        id: 'netwinManhole',
+        label: 'Caixas Subterrâneas',
+        hint: 'Poço de visita / caixa enterrada',
+      },
+    ],
   },
   {
     id: 'resources',
     label: 'Recursos de Rede',
     children: [
-      { id: 'resourcePoints', label: 'Caixas e equipamentos', hint: 'CTOs, splitters, ONTs…' },
-      { id: 'resourceLines', label: 'Cabos e dutos', hint: 'Traçado na rua' },
-    ],
-  },
-  {
-    id: 'netwinInfrastructure',
-    label: 'Infraestrutura Civil',
-    hint: 'Filtros por tipo para validação da carga',
-    children: [
-      { id: 'netwinPole', label: 'Postes', hint: 'Poste de rede aérea' },
-      { id: 'netwinManhole', label: 'Caixas subterrâneas', hint: 'Poço de visita / caixa enterrada' },
-      { id: 'netwinTower', label: 'Torres', hint: 'Estrutura de sustentação elevada' },
-      { id: 'netwinCto', label: 'CTOs e CDOIs', hint: 'Caixa de terminação óptica' },
-      { id: 'netwinDio', label: 'DIOs', hint: 'Distribuidor interno óptico' },
-      { id: 'netwinRisingTube', label: 'Tubos de subida', hint: 'Subida de fachada/poste' },
-      { id: 'netwinSpliceClosure', label: 'Caixas de emenda', hint: 'Emenda de cabo óptico' },
-      { id: 'netwinPedestal', label: 'Pedestais', hint: 'Base de fixação no solo' },
-      { id: 'netwinSupportBracket', label: 'Suportes', hint: 'Fixação auxiliar de cabo' },
-      { id: 'netwinCableTunnel', label: 'Túneis de cabos', hint: 'Passagem subterrânea de cabos' },
-      { id: 'netwinIronPipe', label: 'Tubos de ferro', hint: 'Duto rígido de proteção' },
+      {
+        id: 'resourceCdoe',
+        label: 'CDOEs',
+        hint: 'Caixa de terminação óptica externa (via pública)',
+      },
+      {
+        id: 'resourceCdoi',
+        label: 'CDOIs',
+        hint: 'Caixa de terminação óptica interna (edificação)',
+      },
+      { id: 'resourceCeo', label: 'CEOs', hint: 'Caixa de emenda óptica' },
+      { id: 'resourceDio', label: 'DIOs', hint: 'Distribuidor interno óptico' },
+      { id: 'resourceFiberCable', label: 'Cabos de Fibra', hint: 'Backbone, distribuição e fibra' },
+      { id: 'resourceDropCable', label: 'Cabo Drop', hint: 'Cabo de acesso até o cliente' },
     ],
   },
 ];
@@ -152,22 +164,29 @@ type MapFeatureLayerLike = {
   kind: 'resource' | 'site';
   shape: 'point' | 'line';
   typeCode?: string;
+  label?: string;
   sublabel?: string;
   siteCategory?: string;
 };
 
-const NETWIN_RESOURCE_LAYER_BY_TYPE: Partial<Record<string, MapLayerId>> = {
+// Tipos de recurso que caem numa camada fixa por typeCode. CTO fica de fora — CDOE/CDOI
+// são o mesmo ResourceType e só se distinguem pelo nome (ver isCdoiResource).
+const RESOURCE_LAYER_BY_TYPE: Partial<Record<string, MapLayerId>> = {
   Pole: 'netwinPole',
   Manhole: 'netwinManhole',
   Tower: 'netwinTower',
-  CTO: 'netwinCto',
-  DIO: 'netwinDio',
-  RisingTube: 'netwinRisingTube',
-  SpliceClosure: 'netwinSpliceClosure',
-  Pedestal: 'netwinPedestal',
-  SupportBracket: 'netwinSupportBracket',
-  CableTunnel: 'netwinCableTunnel',
-  IronPipe: 'netwinIronPipe',
+  DIO: 'resourceDio',
+  SpliceClosure: 'resourceCeo',
+  Duct: 'netwinDuct',
+  RisingTube: 'netwinDuct',
+  Pedestal: 'netwinDuct',
+  SupportBracket: 'netwinDuct',
+  CableTunnel: 'netwinDuct',
+  IronPipe: 'netwinDuct',
+  Fiber: 'resourceFiberCable',
+  DistributionCable: 'resourceFiberCable',
+  BackboneCable: 'resourceFiberCable',
+  DropCable: 'resourceDropCable',
 };
 
 // Camada de site por papel funcional. `sublabel` da feature guarda o code da spec (ver
@@ -175,23 +194,19 @@ const NETWIN_RESOURCE_LAYER_BY_TYPE: Partial<Record<string, MapLayerId>> = {
 // (GeoPage carrega `specs`), então o roteamento é resolvido aqui sem coluna nova em
 // `geo_map_feature` nem rebuild do índice de 1.5M+ linhas (dívida server-side registrada em
 // Q-GEO-013, docs/1-overview/open-questions.md).
+//
+// Só existem duas camadas de site hoje (Sites de Rede / Sites de Serviço): qualquer papel
+// diferente de "service" (grouping, network, property) ou desconhecido cai em Sites de Rede.
 function siteLayerFor(
   feature: MapFeatureLayerLike,
   roleByCode: ReadonlyMap<string, MapSiteRole> | undefined,
 ): MapLayerId {
   const role = feature.sublabel ? roleByCode?.get(feature.sublabel) : undefined;
-  if (role === 'service') return 'siteService';
-  if (role === 'property') return 'siteProperty';
-  if (role === 'grouping') return 'siteNetwork';
-  if (role === 'network') return 'siteNetwork';
-  // Code desconhecido (spec ad-hoc sem papel resolvido, ou catálogo ainda não carregado):
-  // cai por categoria estrutural — SubSite é sub-local, o resto permanece visível como rede.
-  if (feature.siteCategory === 'SubSite') return 'siteSublocal';
-  return 'siteNetwork';
+  return role === 'service' ? 'siteService' : 'siteNetwork';
 }
 
 // O tile é compartilhado por todos os filtros. As camadas gerais evitam fetch
-// desnecessário; as camadas Netwin filtram cada classe sem multiplicar chamadas.
+// desnecessário; as camadas por tipo filtram cada classe sem multiplicar chamadas.
 export function isMapFeatureVisible(
   feature: MapFeatureLayerLike,
   visibility: MapLayerVisibility,
@@ -200,9 +215,12 @@ export function isMapFeatureVisible(
   if (feature.kind === 'site') {
     return visibility[siteLayerFor(feature, roleByCode)];
   }
-  if (feature.shape === 'line') return visibility.resourceLines;
-  if (!visibility.resourcePoints) return false;
-  const layer = feature.typeCode ? NETWIN_RESOURCE_LAYER_BY_TYPE[feature.typeCode] : undefined;
+  if (feature.typeCode === 'CTO') {
+    return isCdoiResource({ name: feature.label })
+      ? visibility.resourceCdoi
+      : visibility.resourceCdoe;
+  }
+  const layer = feature.typeCode ? RESOURCE_LAYER_BY_TYPE[feature.typeCode] : undefined;
   return layer === undefined || visibility[layer];
 }
 
@@ -210,14 +228,18 @@ export function isMapFeatureVisible(
 // tudo está ligado, para o caminho quente não carregar um parâmetro extra à toa.
 export function viewportInclude(visibility: MapLayerVisibility): ViewportShape[] | undefined {
   const shapes: ViewportShape[] = [];
-  const anySiteLayer =
-    visibility.siteNetwork ||
-    visibility.siteProperty ||
-    visibility.siteService ||
-    visibility.siteSublocal;
-  if (anySiteLayer) shapes.push('sites');
-  if (visibility.resourcePoints) shapes.push('resource-points');
-  if (visibility.resourceLines) shapes.push('resource-lines');
+  if (visibility.siteNetwork || visibility.siteService) shapes.push('sites');
+  const anyResourcePoint =
+    visibility.netwinPole ||
+    visibility.netwinDuct ||
+    visibility.netwinManhole ||
+    visibility.netwinTower ||
+    visibility.resourceCdoe ||
+    visibility.resourceCdoi ||
+    visibility.resourceCeo ||
+    visibility.resourceDio;
+  if (anyResourcePoint) shapes.push('resource-points');
+  if (visibility.resourceFiberCable || visibility.resourceDropCable) shapes.push('resource-lines');
   if (shapes.length === 3) return undefined;
   return shapes;
 }
@@ -230,8 +252,8 @@ const isLayerId = (value: string): value is MapLayerId =>
 // Lê a preferência salva; qualquer coisa fora do formato esperado (JSON inválido, chave
 // desconhecida, valor não-booleano, storage indisponível) cai no default "tudo visível" — a
 // origem de dados nunca deve deixar o mapa em um estado que o usuário não escolheu. Chaves
-// antigas do localStorage (`sites`, `netwinBuilding`…) somem sozinhas: `isLayerId` só aceita o
-// vocabulário atual, então não precisa versionar a chave de storage.
+// antigas do localStorage (`sites`, `netwinBuilding`, `resourcePoints`…) somem sozinhas:
+// `isLayerId` só aceita o vocabulário atual, então não precisa versionar a chave de storage.
 export function readStoredLayers(): MapLayerVisibility {
   if (typeof window === 'undefined') return ALL_MAP_LAYERS_VISIBLE;
   try {

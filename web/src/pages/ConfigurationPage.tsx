@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Briefcase,
+  Check,
   FolderTree,
   HardHat,
   MapPinned,
@@ -10,6 +11,7 @@ import {
   Plus,
   Trash2,
   Truck,
+  Users,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -46,6 +48,7 @@ import {
 import Field from '../components/Field';
 import { ResourceCatalogTab } from './config-tabs/ResourceCatalogTab';
 import { ServiceCatalogTab } from './config-tabs/ServiceCatalogTab';
+import { UsersTab } from './config-tabs/UsersTab';
 import { SortableHeader, sortedBy, useSort } from './config-tabs/sortable';
 
 const behaviors: Array<{ value: GeoProjectStatusBehavior; label: string }> = [
@@ -71,6 +74,7 @@ const supplierCnpj = (role: PartyRole): string => {
 };
 
 type ConfigTab =
+  | 'users'
   | 'projects'
   | 'suppliers'
   | 'sites'
@@ -86,7 +90,12 @@ type SiteTypeDraft = {
 };
 
 type ProjectStatusDraft = {
-  code: string;
+  name: string;
+  behavior: GeoProjectStatusBehavior;
+  sortOrder: number;
+};
+
+type ProjectStatusEditDraft = {
   name: string;
   behavior: GeoProjectStatusBehavior;
   sortOrder: number;
@@ -96,6 +105,7 @@ type ProjectStatusDraft = {
 type SupplierDraft = { name: string; cnpj: string };
 
 const tabs: Array<{ id: ConfigTab; label: string; icon: LucideIcon }> = [
+  { id: 'users', label: 'Usuários', icon: Users },
   { id: 'projects', label: 'Projetos', icon: FolderTree },
   { id: 'sites', label: 'Locais', icon: MapPinned },
   { id: 'resourcesCivil', label: 'Infraestrutura Civil', icon: HardHat },
@@ -105,33 +115,32 @@ const tabs: Array<{ id: ConfigTab; label: string; icon: LucideIcon }> = [
 ];
 
 export function ConfigurationPage() {
-  const [tab, setTab] = useState<ConfigTab>('projects');
+  const [tab, setTab] = useState<ConfigTab>('users');
 
   const emptyProjectStatusDraft = (): ProjectStatusDraft => ({
-    code: '',
     name: '',
     behavior: 'planning',
     sortOrder: 100,
-    active: true,
   });
 
   const [items, setItems] = useState<GeoProjectStatusCatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [projectSaving, setProjectSaving] = useState(false);
-  const [projectModal, setProjectModal] = useState<{
-    mode: 'create' | 'edit';
-    item: GeoProjectStatusCatalogItem | null;
-  } | null>(null);
+  const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectDraft, setProjectDraft] = useState<ProjectStatusDraft>(emptyProjectStatusDraft());
 
-  const [projectSort, onProjectSort] = useSort<'code' | 'name' | 'behavior' | 'sortOrder' | 'active'>();
+  // Edição inline: clicar no lápis torna a linha editável (nome/comportamento/ordem/ativo);
+  // salvar ou cancelar volta a linha ao estado de leitura. Excluir continua disponível a
+  // qualquer momento, mesmo com outra linha em edição.
+  const [editingCode, setEditingCode] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<ProjectStatusEditDraft | null>(null);
+
+  const [projectSort, onProjectSort] = useSort<'name' | 'behavior' | 'sortOrder' | 'active'>();
   const sortedItems = useMemo(
     () =>
       sortedBy(items, projectSort, (item, key) => {
         switch (key) {
-          case 'code':
-            return item.code;
           case 'name':
             return item.name;
           case 'behavior':
@@ -158,57 +167,68 @@ export function ConfigurationPage() {
 
   const openCreateProjectStatus = () => {
     setProjectDraft(emptyProjectStatusDraft());
-    setProjectModal({ mode: 'create', item: null });
-    setError(null);
-  };
-
-  const openEditProjectStatus = (item: GeoProjectStatusCatalogItem) => {
-    setProjectDraft({
-      code: item.code,
-      name: item.name,
-      behavior: item.behavior,
-      sortOrder: item.sortOrder,
-      active: item.active,
-    });
-    setProjectModal({ mode: 'edit', item });
+    setProjectModalOpen(true);
     setError(null);
   };
 
   const closeProjectModal = () => {
     if (projectSaving) return;
-    setProjectModal(null);
+    setProjectModalOpen(false);
   };
 
   const submitProjectModal = async (event: FormEvent) => {
     event.preventDefault();
-    if (!projectModal || !projectDraft.code.trim() || !projectDraft.name.trim()) return;
+    if (!projectDraft.name.trim()) return;
     setProjectSaving(true);
     setError(null);
     try {
-      if (projectModal.mode === 'create') {
-        await createProjectStatusCatalogItem({
-          code: projectDraft.code.trim(),
-          name: projectDraft.name.trim(),
-          sortOrder: projectDraft.sortOrder,
-          behavior: projectDraft.behavior,
-          active: true,
-        });
-      } else if (projectModal.item) {
-        await updateProjectStatusCatalogItem(projectModal.item.code, {
-          name: projectDraft.name.trim(),
-          sortOrder: projectDraft.sortOrder,
-          behavior: projectDraft.behavior,
-          active: projectDraft.active,
-        });
-      }
-      setProjectModal(null);
+      await createProjectStatusCatalogItem({
+        name: projectDraft.name.trim(),
+        sortOrder: projectDraft.sortOrder,
+        behavior: projectDraft.behavior,
+        active: true,
+      });
+      setProjectModalOpen(false);
       reload();
     } catch {
-      setError(
-        projectModal.mode === 'create'
-          ? 'Não foi possível criar o status. O código deve ser único.'
-          : 'Não foi possível salvar o status.',
-      );
+      setError('Não foi possível criar o status.');
+    } finally {
+      setProjectSaving(false);
+    }
+  };
+
+  const startEditProjectStatus = (item: GeoProjectStatusCatalogItem) => {
+    setEditingCode(item.code);
+    setEditDraft({
+      name: item.name,
+      behavior: item.behavior,
+      sortOrder: item.sortOrder,
+      active: item.active,
+    });
+    setError(null);
+  };
+
+  const cancelEditProjectStatus = () => {
+    setEditingCode(null);
+    setEditDraft(null);
+  };
+
+  const saveEditProjectStatus = async () => {
+    if (!editingCode || !editDraft || !editDraft.name.trim()) return;
+    setProjectSaving(true);
+    setError(null);
+    try {
+      await updateProjectStatusCatalogItem(editingCode, {
+        name: editDraft.name.trim(),
+        sortOrder: editDraft.sortOrder,
+        behavior: editDraft.behavior,
+        active: editDraft.active,
+      });
+      setEditingCode(null);
+      setEditDraft(null);
+      reload();
+    } catch {
+      setError('Não foi possível salvar o status.');
     } finally {
       setProjectSaving(false);
     }
@@ -517,7 +537,9 @@ export function ConfigurationPage() {
       </aside>
 
       <section className="min-w-0 flex-1 overflow-y-auto bg-white px-8 py-8 max-md:px-5 max-md:py-6">
-        {tab === 'projects' ? (
+        {tab === 'users' ? (
+          <UsersTab />
+        ) : tab === 'projects' ? (
           <>
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
@@ -525,8 +547,7 @@ export function ConfigurationPage() {
                   Status de Projetos
                 </h1>
                 <p className="mt-1 text-[0.88rem] text-app-muted">
-                  Códigos são imutáveis; desativar preserva o histórico e remove a opção de novas
-                  escolhas.
+                  Desativar preserva o histórico e remove a opção de novas escolhas.
                 </p>
               </div>
               <button
@@ -539,7 +560,7 @@ export function ConfigurationPage() {
               </button>
             </div>
 
-            {error && !projectModal ? (
+            {error && !projectModalOpen ? (
               <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
                 {error}
               </p>
@@ -549,7 +570,6 @@ export function ConfigurationPage() {
               <table className="w-full min-w-[650px] text-left">
                 <thead>
                   <tr className="border-b border-app-border bg-slate-50 text-[0.82rem] font-semibold text-app-muted">
-                    <SortableHeader label="Código" sortKey="code" sort={projectSort} onSort={onProjectSort} />
                     <SortableHeader label="Nome" sortKey="name" sort={projectSort} onSort={onProjectSort} />
                     <SortableHeader
                       label="Comportamento"
@@ -565,61 +585,157 @@ export function ConfigurationPage() {
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan={6} className="px-5 py-4 text-[0.88rem] text-app-muted">
+                      <td colSpan={5} className="px-5 py-4 text-[0.88rem] text-app-muted">
                         Carregando…
                       </td>
                     </tr>
                   ) : (
-                    sortedItems.map((item) => (
-                      <tr
-                        key={item.code}
-                        className="border-b border-app-border text-[0.88rem] text-app-text last:border-0"
-                      >
-                        <td className="px-5 py-3 font-mono text-app-muted">{item.code}</td>
-                        <td className="px-5 py-3 font-medium">{item.name}</td>
-                        <td className="px-5 py-3 text-app-muted">
-                          {behaviors.find((behavior) => behavior.value === item.behavior)?.label ??
-                            item.behavior}
-                        </td>
-                        <td className="px-5 py-3 text-app-muted">{item.sortOrder}</td>
-                        <td className="px-5 py-3 text-app-muted">{item.active ? 'Sim' : 'Não'}</td>
-                        <td className="flex justify-end gap-1 px-5 py-3">
-                          <button
-                            type="button"
-                            onClick={() => openEditProjectStatus(item)}
-                            className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft"
-                            aria-label={`Editar ${item.name}`}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          {item.active && item.code !== '1' && item.code !== '17' ? (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  await deactivateProjectStatusCatalogItem(item.code);
-                                  reload();
-                                } catch {
-                                  setError('Não foi possível desativar o status.');
-                                }
-                              }}
-                              className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft"
-                              aria-label={`Desativar ${item.name}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          ) : null}
-                        </td>
-                      </tr>
-                    ))
+                    sortedItems.map((item) => {
+                      const isEditing = editingCode === item.code;
+                      const behaviorLocked = isEditing && item.code === '17';
+                      const activeLocked = isEditing && (item.code === '1' || item.code === '17');
+                      // Exclusão é soft (C6): o backend só marca active=false. Fica disponível
+                      // mesmo com o status já inativo — só os dois protegidos (1, 17) ficam de fora.
+                      const canDeactivate = item.code !== '1' && item.code !== '17';
+                      return (
+                        <tr
+                          key={item.code}
+                          className="border-b border-app-border text-[0.88rem] text-app-text last:border-0"
+                        >
+                          {isEditing && editDraft ? (
+                            <>
+                              <td className="px-5 py-2.5">
+                                <input
+                                  value={editDraft.name}
+                                  onChange={(event) =>
+                                    setEditDraft({ ...editDraft, name: event.target.value })
+                                  }
+                                  className="geo-input h-9 text-[0.86rem]"
+                                  autoFocus
+                                />
+                              </td>
+                              <td className="px-5 py-2.5">
+                                <select
+                                  value={editDraft.behavior}
+                                  disabled={behaviorLocked}
+                                  onChange={(event) =>
+                                    setEditDraft({
+                                      ...editDraft,
+                                      behavior: event.target.value as GeoProjectStatusBehavior,
+                                    })
+                                  }
+                                  className="geo-input h-9 text-[0.86rem]"
+                                >
+                                  {behaviors.map((behavior) => (
+                                    <option key={behavior.value} value={behavior.value}>
+                                      {behavior.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-5 py-2.5">
+                                <input
+                                  type="number"
+                                  value={editDraft.sortOrder}
+                                  onChange={(event) =>
+                                    setEditDraft({
+                                      ...editDraft,
+                                      sortOrder: Number(event.target.value),
+                                    })
+                                  }
+                                  className="geo-input h-9 w-24 text-[0.86rem]"
+                                />
+                              </td>
+                              <td className="px-5 py-2.5">
+                                <label className="flex items-center gap-2 text-[0.86rem] text-app-text">
+                                  <input
+                                    type="checkbox"
+                                    checked={editDraft.active}
+                                    disabled={activeLocked}
+                                    onChange={(event) =>
+                                      setEditDraft({ ...editDraft, active: event.target.checked })
+                                    }
+                                  />
+                                  {editDraft.active ? 'Sim' : 'Não'}
+                                </label>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-5 py-3 font-medium">{item.name}</td>
+                              <td className="px-5 py-3 text-app-muted">
+                                {behaviors.find((behavior) => behavior.value === item.behavior)
+                                  ?.label ?? item.behavior}
+                              </td>
+                              <td className="px-5 py-3 text-app-muted">{item.sortOrder}</td>
+                              <td className="px-5 py-3 text-app-muted">
+                                {item.active ? 'Sim' : 'Não'}
+                              </td>
+                            </>
+                          )}
+                          <td className="flex justify-end gap-1 px-5 py-3">
+                            {isEditing ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => void saveEditProjectStatus()}
+                                  className="rounded-xl border border-transparent p-1.5 text-status-green transition hover:border-status-green hover:bg-status-green-soft"
+                                  aria-label={`Salvar ${item.name}`}
+                                  disabled={projectSaving || !editDraft?.name.trim()}
+                                >
+                                  <Check className="h-4 w-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelEditProjectStatus}
+                                  className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft"
+                                  aria-label={`Cancelar edição de ${item.name}`}
+                                  disabled={projectSaving}
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => startEditProjectStatus(item)}
+                                className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft"
+                                aria-label={`Editar ${item.name}`}
+                                disabled={projectSaving}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                            )}
+                            {canDeactivate ? (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await deactivateProjectStatusCatalogItem(item.code);
+                                    if (isEditing) cancelEditProjectStatus();
+                                    reload();
+                                  } catch {
+                                    setError('Não foi possível desativar o status.');
+                                  }
+                                }}
+                                className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft"
+                                aria-label={`Desativar ${item.name}`}
+                                disabled={projectSaving}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            ) : null}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
             </div>
 
-            {projectModal ? (
+            {projectModalOpen ? (
               <ProjectStatusModal
-                mode={projectModal.mode}
                 draft={projectDraft}
                 saving={projectSaving}
                 error={error}
@@ -862,7 +978,6 @@ export function ConfigurationPage() {
 }
 
 function ProjectStatusModal({
-  mode,
   draft,
   saving,
   error,
@@ -870,7 +985,6 @@ function ProjectStatusModal({
   onSubmit,
   onClose,
 }: {
-  mode: 'create' | 'edit';
   draft: ProjectStatusDraft;
   saving: boolean;
   error: string | null;
@@ -886,10 +1000,7 @@ function ProjectStatusModal({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const behaviorLocked = mode === 'edit' && draft.code === '17';
-  const activeLocked = mode === 'edit' && (draft.code === '1' || draft.code === '17');
-  const submitDisabled =
-    saving || !draft.name.trim() || (mode === 'create' && !draft.code.trim());
+  const submitDisabled = saving || !draft.name.trim();
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
@@ -904,7 +1015,7 @@ function ProjectStatusModal({
             id="project-status-modal-title"
             className="font-display text-[1.3rem] font-semibold text-app-text"
           >
-            {mode === 'create' ? 'Criar status de Projeto' : 'Editar status de Projeto'}
+            Criar status de Projeto
           </h2>
           <button
             type="button"
@@ -922,39 +1033,24 @@ function ProjectStatusModal({
         ) : null}
 
         <form onSubmit={onSubmit} className="grid gap-4">
-          <Field label="Código">
-            <input
-              value={draft.code}
-              onChange={(event) => onChange({ ...draft, code: event.target.value })}
-              className="geo-input"
-              disabled={mode === 'edit'}
-              autoFocus={mode === 'create'}
-            />
-            {mode === 'edit' ? (
-              <span className="text-[0.72rem] font-medium normal-case tracking-normal text-app-muted">
-                O código não pode ser alterado após o cadastro.
-              </span>
-            ) : null}
-          </Field>
           <Field label="Nome">
             <input
               value={draft.name}
               onChange={(event) => onChange({ ...draft, name: event.target.value })}
               className="geo-input"
-              autoFocus={mode === 'edit'}
+              autoFocus
             />
           </Field>
           <Field label="Comportamento">
             <select
               value={draft.behavior}
-              disabled={behaviorLocked}
               onChange={(event) =>
                 onChange({ ...draft, behavior: event.target.value as GeoProjectStatusBehavior })
               }
               className="geo-input"
             >
               {behaviors
-                .filter((item) => mode === 'edit' || item.value !== 'close-release')
+                .filter((item) => item.value !== 'close-release')
                 .map((item) => (
                   <option key={item.value} value={item.value}>
                     {item.label}
@@ -972,24 +1068,13 @@ function ProjectStatusModal({
               className="geo-input"
             />
           </Field>
-          {mode === 'edit' ? (
-            <label className="flex items-center gap-2 text-[0.88rem] font-normal normal-case tracking-normal text-app-text">
-              <input
-                type="checkbox"
-                checked={draft.active}
-                disabled={activeLocked}
-                onChange={(event) => onChange({ ...draft, active: event.target.checked })}
-              />
-              Ativo
-            </label>
-          ) : null}
 
           <div className="mt-2 flex items-center justify-end gap-3 border-t border-app-border pt-4">
             <button type="button" onClick={onClose} className="geo-btn secondary" disabled={saving}>
               Cancelar
             </button>
             <button type="submit" className="geo-btn primary" disabled={submitDisabled}>
-              {saving ? 'Salvando...' : mode === 'create' ? 'Criar' : 'Salvar'}
+              {saving ? 'Salvando...' : 'Criar'}
             </button>
           </div>
         </form>

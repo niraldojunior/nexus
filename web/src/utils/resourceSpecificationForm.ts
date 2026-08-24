@@ -408,6 +408,13 @@ function resourceTypeIconForCode(typeCode: string): LucideIcon {
   }
 }
 
+// Rótulo pt-BR do tipo de recurso para combos de filtro: "SIGLA - Nome" quando o código é uma
+// sigla conhecida (diferente do nome), ex. "OLT - Optical Line Terminal"; só o nome quando
+// código e nome coincidem (ex. "Router"), pra não duplicar.
+export function resourceTypeOptionLabel(type: Pick<ResourceType, 'code' | 'name'>): string {
+  return type.code && type.code !== type.name ? `${type.code} - ${type.name}` : type.name;
+}
+
 export function buildTypeOptions(types: ResourceType[], categoryCode: string): CatalogOption[] {
   return types
     .filter((type) => type.categoryCode === categoryCode)

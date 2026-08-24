@@ -49,6 +49,32 @@ export type ServiceRelationship = {
   validFor?: TimePeriod;
 };
 
+/**
+ * Definição de atributo de ServiceSpecification (TMF633 ServiceSpecCharacteristic) — descreve o
+ * atributo em si (nome, tipo, domínio de valores), não um valor instanciado. Espelha
+ * `src/modules/service/domain.ts`.
+ */
+export type ServiceSpecCharacteristicValue = {
+  value: string | number | boolean | Record<string, unknown> | null;
+  isDefault?: boolean;
+};
+
+export type ServiceSpecCharacteristic = {
+  '@type'?: 'ServiceSpecCharacteristic';
+  name: string;
+  description?: string;
+  valueType?: 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'json';
+  required?: boolean;
+  /** Eixo V.tal: separa os dois blocos do catálogo Netwin (Especificações Negócio/Técnicas). */
+  group?: 'business' | 'technical';
+  /** Texto cru do "Domínio:" do catálogo de origem — fonte de verdade editável na UI. */
+  valueDomain?: string;
+  /** Derivado de valueDomain quando ele descreve um enum `{a, b, c}`. */
+  characteristicValueSpecification?: ServiceSpecCharacteristicValue[];
+  /** Tipo cru do catálogo de origem (`FK`, `string(32)`, `list<int>`…), preservado por fidelidade. */
+  sourceType?: string;
+};
+
 export type ServiceSpecification = {
   '@type'?: 'ServiceSpecification';
   id: string;
@@ -58,8 +84,10 @@ export type ServiceSpecification = {
   category: string;
   serviceType: ServiceSpecificationType;
   description?: string;
+  /** Anotação livre (ex.: nota de origem do catálogo Netwin) — `description` é a funcional. */
+  observation?: string;
   validFor?: TimePeriod;
-  serviceSpecificationCharacteristic: ResourceCharacteristic[];
+  serviceSpecificationCharacteristic: ServiceSpecCharacteristic[];
   relatedParty: RelatedParty[];
 };
 
@@ -137,8 +165,9 @@ export type ServiceSpecificationPayload = {
   category?: string;
   serviceType?: ServiceSpecificationType;
   description?: string;
+  observation?: string;
   validFor?: TimePeriod;
-  serviceSpecificationCharacteristic?: ResourceCharacteristic[];
+  serviceSpecificationCharacteristic?: ServiceSpecCharacteristic[];
   relatedParty?: RelatedParty[];
 };
 
@@ -251,6 +280,31 @@ export async function deleteServiceSpecification(id: string): Promise<ServiceSpe
     `${CATALOG_BASE}/serviceSpecification/${encodeURIComponent(id)}`,
     { method: 'DELETE' },
   );
+}
+
+export type ServiceSpecificationBulkItem = {
+  line: number;
+  input: ServiceSpecificationPayload;
+};
+
+export type ServiceSpecificationBulkItemResult =
+  | { line: number; status: 'created'; id: string; name: string }
+  | { line: number; status: 'error'; name: string; code: string; message: string };
+
+export type ServiceSpecificationBulkResult = {
+  total: number;
+  created: number;
+  failed: number;
+  results: ServiceSpecificationBulkItemResult[];
+};
+
+export async function bulkCreateServiceSpecifications(
+  items: ServiceSpecificationBulkItem[],
+): Promise<ServiceSpecificationBulkResult> {
+  return await requestJson<ServiceSpecificationBulkResult>('/v1/service/specifications/bulk-import', {
+    method: 'POST',
+    body: { items },
+  });
 }
 
 export async function createService(payload: ServicePayload): Promise<ServiceEntity> {

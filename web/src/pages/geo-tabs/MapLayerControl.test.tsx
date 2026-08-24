@@ -80,11 +80,11 @@ describe('MapLayerControl', () => {
       />,
     );
     await user.click(screen.getByRole('button', { name: 'Camadas do mapa' }));
-    await user.click(screen.getByRole('switch', { name: 'Cabos e dutos' }));
-    expect(onToggleLayer).toHaveBeenCalledWith('resourceLines');
+    await user.click(screen.getByRole('switch', { name: 'Cabo Drop' }));
+    expect(onToggleLayer).toHaveBeenCalledWith('resourceDropCable');
   });
 
-  it('expõe e alterna os tipos importados do Netwin individualmente', async () => {
+  it('expõe e alterna os tipos de infraestrutura civil individualmente', async () => {
     const user = userEvent.setup();
     const onToggleLayer = vi.fn();
     render(
@@ -97,9 +97,9 @@ describe('MapLayerControl', () => {
       />,
     );
     await user.click(screen.getByRole('button', { name: 'Camadas do mapa' }));
-    await user.click(screen.getByRole('switch', { name: 'Tubos de subida' }));
-    expect(onToggleLayer).toHaveBeenCalledWith('netwinRisingTube');
-    expect(screen.getByRole('switch', { name: 'Caixas subterrâneas' })).toBeInTheDocument();
+    await user.click(screen.getByRole('switch', { name: 'Dutos' }));
+    expect(onToggleLayer).toHaveBeenCalledWith('netwinDuct');
+    expect(screen.getByRole('switch', { name: 'Caixas Subterrâneas' })).toBeInTheDocument();
   });
 
   it('emite o id do grupo ao clicar no switch de um grupo com sub-camadas', async () => {
@@ -133,15 +133,15 @@ describe('MapLayerControl', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Camadas do mapa' }));
     expect(
-      screen.queryByRole('switch', { name: 'Alternar grupo Cobertura GPON' }),
+      screen.queryByRole('switch', { name: 'Alternar grupo Cobertura' }),
     ).not.toBeInTheDocument();
-    await user.click(screen.getByRole('switch', { name: 'Cobertura GPON' }));
+    await user.click(screen.getByRole('switch', { name: 'Rede GPON' }));
     expect(onToggleLayer).toHaveBeenCalledWith('coverage');
   });
 
   it('mostra o indicador de "filtrado" e o botão Restaurar padrão quando allVisible é falso', async () => {
     const user = userEvent.setup();
-    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourceLines: false };
+    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourceDropCable: false };
     const onReset = vi.fn();
     render(
       <MapLayerControl

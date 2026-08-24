@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Pencil, Plus, Trash2, Upload, X } from 'lucide-react';
 import {
   createServiceSpecification,
   deleteServiceSpecification,
@@ -8,8 +8,11 @@ import {
   updateServiceSpecification,
   type ServiceCategory,
   type ServiceSpecification,
+  type ServiceSpecificationType,
 } from '../../services/serviceApi';
 import ServiceSpecificationFields from '../../components/ServiceSpecificationFields';
+import ServiceSpecificationCharacteristicsEditor from '../../components/ServiceSpecificationCharacteristicsEditor';
+import ServiceSpecificationBulkImportModal from '../../components/ServiceSpecificationBulkImportModal';
 import Field from '../../components/Field';
 import { SERVICE_CATEGORY_DEFAULTS } from '../../data/serviceCatalogDefaults';
 import {
@@ -31,9 +34,11 @@ export function ServiceCatalogTab() {
   const [serviceCategories, setServiceCategories] = useState<ServiceCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
+  const [layerFilter, setLayerFilter] = useState<ServiceSpecificationType | ''>('');
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [pendingRemoval, setPendingRemoval] = useState<ServiceSpecification | null>(null);
   const [saving, setSaving] = useState(false);
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
 
   type ModalState = { mode: 'create' | 'edit'; entity: ServiceSpecification | null };
   const [modalState, setModalState] = useState<ModalState | null>(null);
@@ -55,13 +60,18 @@ export function ServiceCatalogTab() {
   };
   useEffect(reload, []);
 
-  const filteredSpecs = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return specs;
-    return specs.filter((spec) => spec.name.toLowerCase().includes(term));
-  }, [specs, search]);
+  const filteredSpecs = useMemo(
+    () =>
+      specs.filter((spec) => {
+        if (layerFilter && spec.serviceType !== layerFilter) return false;
+        if (categoryFilter && spec.category !== categoryFilter) return false;
+        return true;
+      }),
+    [specs, layerFilter, categoryFilter],
+  );
 
-  const [sort, onSort] = useSort<'name' | 'serviceType' | 'category' | 'description'>();
+  const [sort, onSort] =
+    useSort<'name' | 'serviceType' | 'category' | 'description' | 'characteristicCount'>();
   const sortedSpecs = useMemo(
     () =>
       sortedBy(filteredSpecs, sort, (spec, key) => {
@@ -74,11 +84,25 @@ export function ServiceCatalogTab() {
             return spec.category;
           case 'description':
             return spec.description ?? '';
+          case 'characteristicCount':
+            return spec.serviceSpecificationCharacteristic.length;
           default:
             return '';
         }
       }),
     [filteredSpecs, sort],
+  );
+
+  const PAGE_SIZE = 20;
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    setPage(0);
+  }, [layerFilter, categoryFilter, sort]);
+  const pageCount = Math.max(1, Math.ceil(sortedSpecs.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pagedSpecs = useMemo(
+    () => sortedSpecs.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE),
+    [sortedSpecs, currentPage],
   );
 
   const openCreateModal = () => {
@@ -159,10 +183,20 @@ export function ServiceCatalogTab() {
             (RFS) do inventário.
           </p>
         </div>
-        <button type="button" onClick={openCreateModal} className="geo-btn primary shrink-0">
-          <Plus className="h-4 w-4" />
-          Adicionar
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setBulkImportOpen(true)}
+            className="geo-btn secondary"
+          >
+            <Upload className="h-4 w-4" />
+            Carga em massa
+          </button>
+          <button type="button" onClick={openCreateModal} className="geo-btn primary">
+            <Plus className="h-4 w-4" />
+            Adicionar
+          </button>
+        </div>
       </div>
 
       {error ? (
@@ -171,15 +205,40 @@ export function ServiceCatalogTab() {
         </p>
       ) : null}
 
-      <input
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        placeholder="Buscar por nome…"
-        className="geo-input mb-3 max-w-sm"
-      />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <select
+          value={layerFilter}
+          onChange={(event) => setLayerFilter(event.target.value as ServiceSpecificationType | '')}
+          className="geo-input w-auto"
+        >
+          <option value="">Camada: todas</option>
+          <option value="CFS">CFS — serviço de cliente</option>
+          <option value="RFS">RFS — serviço de rede</option>
+        </select>
+        <select
+          value={categoryFilter}
+          onChange={(event) => setCategoryFilter(event.target.value)}
+          className="geo-input w-auto"
+        >
+          <option value="">Categoria: todas</option>
+          {serviceCategories.map((option) => (
+            <option key={option.code} value={option.code}>
+              {option.name}
+            </option>
+          ))}
+        </select>
+      </div>
 
-      <div className="overflow-hidden rounded-[20px] border border-app-border bg-white shadow-soft">
-        <table className="w-full min-w-[750px] text-left">
+      <div className="overflow-x-auto rounded-[20px] border border-app-border bg-white shadow-soft">
+        <table className="w-full min-w-[820px] table-fixed text-left">
+          <colgroup>
+            <col className="w-[26%]" />
+            <col className="w-[10%]" />
+            <col className="w-[16%]" />
+            <col className="w-[26%]" />
+            <col className="w-[10%]" />
+            <col className="w-[130px]" />
+          </colgroup>
           <thead>
             <tr className="border-b border-app-border bg-slate-50 text-[0.82rem] font-semibold text-app-muted">
               <SortableHeader label="Especificação" sortKey="name" sort={sort} onSort={onSort} />
@@ -191,65 +250,86 @@ export function ServiceCatalogTab() {
                 sort={sort}
                 onSort={onSort}
               />
+              <SortableHeader
+                label="Atributos"
+                sortKey="characteristicCount"
+                sort={sort}
+                onSort={onSort}
+                align="center"
+              />
               <th />
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-5 py-4 text-[0.88rem] text-app-muted">
+                <td colSpan={6} className="px-5 py-4 text-[0.88rem] text-app-muted">
                   Carregando…
                 </td>
               </tr>
             ) : sortedSpecs.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-5 py-4 text-[0.88rem] text-app-muted">
+                <td colSpan={6} className="px-5 py-4 text-[0.88rem] text-app-muted">
                   Nenhuma especificação cadastrada.
                 </td>
               </tr>
             ) : (
-              sortedSpecs.map((spec) => (
+              pagedSpecs.map((spec) => (
                 <tr
                   key={spec.id}
                   className="border-b border-app-border text-[0.88rem] text-app-text last:border-0"
                 >
-                  <td className="px-5 py-3 font-medium">{spec.name}</td>
+                  <td className="truncate px-5 py-3 font-medium" title={spec.name}>
+                    {spec.name}
+                  </td>
                   <td className="px-5 py-3 text-app-muted">{spec.serviceType}</td>
-                  <td className="px-5 py-3 text-app-muted">{spec.category}</td>
-                  <td className="px-5 py-3 text-app-muted">{spec.description || '-'}</td>
-                  <td className="flex justify-end gap-1 px-5 py-3">
-                    <button
-                      type="button"
-                      onClick={() => openEditModal(spec)}
-                      className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft"
-                      aria-label={`Editar ${spec.name}`}
-                      disabled={saving}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    {pendingRemoval?.id === spec.id ? (
+                  <td className="truncate px-5 py-3 text-app-muted" title={spec.category}>
+                    {spec.category}
+                  </td>
+                  <td
+                    className="truncate px-5 py-3 text-app-muted"
+                    title={spec.description || undefined}
+                  >
+                    {spec.description || '-'}
+                  </td>
+                  <td className="px-5 py-3 text-center text-app-muted">
+                    {spec.serviceSpecificationCharacteristic.length}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3">
+                    <div className="flex items-center justify-end gap-1">
                       <button
                         type="button"
-                        onClick={() => void removeSpec()}
-                        className="rounded-xl border border-status-red/30 bg-status-red-soft px-2 py-1 text-[0.75rem] font-semibold text-status-red"
+                        onClick={() => openEditModal(spec)}
+                        className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft"
+                        aria-label={`Editar ${spec.name}`}
                         disabled={saving}
                       >
-                        Confirmar
+                        <Pencil className="h-4 w-4" />
                       </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPendingRemoval(spec);
-                          setError(null);
-                        }}
-                        className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft"
-                        aria-label={`Remover ${spec.name}`}
-                        disabled={saving}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
+                      {pendingRemoval?.id === spec.id ? (
+                        <button
+                          type="button"
+                          onClick={() => void removeSpec()}
+                          className="rounded-xl border border-status-red/30 bg-status-red-soft px-2 py-1 text-[0.75rem] font-semibold text-status-red"
+                          disabled={saving}
+                        >
+                          Confirmar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPendingRemoval(spec);
+                            setError(null);
+                          }}
+                          className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft"
+                          aria-label={`Remover ${spec.name}`}
+                          disabled={saving}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -257,6 +337,49 @@ export function ServiceCatalogTab() {
           </tbody>
         </table>
       </div>
+
+      {!loading && sortedSpecs.length > 0 ? (
+        <div className="mt-3 flex items-center justify-between text-[0.82rem] text-app-muted">
+          <span>
+            {currentPage * PAGE_SIZE + 1}–{Math.min((currentPage + 1) * PAGE_SIZE, sortedSpecs.length)}{' '}
+            de {sortedSpecs.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.max(0, current - 1))}
+              disabled={currentPage === 0}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-app-border text-app-text transition hover:bg-app-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Página anterior"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span>
+              Página {currentPage + 1} de {pageCount}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
+              disabled={currentPage >= pageCount - 1}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-app-border text-app-text transition hover:bg-app-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Próxima página"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {bulkImportOpen ? (
+        <ServiceSpecificationBulkImportModal
+          categories={serviceCategories}
+          existingSpecs={specs}
+          onClose={() => setBulkImportOpen(false)}
+          onImported={() => {
+            reload();
+          }}
+        />
+      ) : null}
 
       {modalState
         ? createPortal(
@@ -266,7 +389,7 @@ export function ServiceCatalogTab() {
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="service-catalog-modal-title"
-                className="max-h-full w-full max-w-[760px] overflow-auto rounded-[28px] border border-app-border bg-white p-6 shadow-modal"
+                className="max-h-full w-full max-w-[980px] overflow-auto rounded-[28px] border border-app-border bg-white p-6 shadow-modal"
               >
                 <div className="mb-5 flex items-start justify-between gap-4 border-b border-app-border pb-4">
                   <div>
@@ -304,6 +427,21 @@ export function ServiceCatalogTab() {
                     onChange={setFormState}
                     categoryOptions={serviceCategories}
                   />
+                  <ServiceSpecificationCharacteristicsEditor
+                    characteristics={formState.characteristics}
+                    onChange={(characteristics) => setFormState({ ...formState, characteristics })}
+                  />
+                  <Field label="Observação" fullWidth>
+                    <textarea
+                      className="w-full rounded-[16px] border border-app-border bg-white px-3 py-2 text-[0.9rem] font-medium text-app-text shadow-sm transition focus:border-app-accent-border"
+                      rows={4}
+                      placeholder="Anotação livre sobre a especificação"
+                      value={formState.observation}
+                      onChange={(event) =>
+                        setFormState({ ...formState, observation: event.target.value })
+                      }
+                    />
+                  </Field>
                 </div>
 
                 <div className="mt-6 flex items-center justify-end gap-3 border-t border-app-border pt-4">

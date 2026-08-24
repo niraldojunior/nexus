@@ -681,10 +681,16 @@ describe('GoogleMapPanel', () => {
       latLng: { lat: () => number; lng: () => number };
     }) => void;
     const event = { latLng: { lat: () => -22.907, lng: () => -43.108 } };
+    // O listener único (issue #72) coalesce vários `mousemove` num só hit-test por frame — só
+    // o último evento pendente é processado quando o rAF dispara.
+    const flushFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
     mousemove(event);
+    await flushFrame();
     mousemove(event);
+    await flushFrame();
     mousemove(event);
+    await flushFrame();
 
     expect(googleMocks.mapSetOptions).toHaveBeenCalledTimes(2);
     expect(googleMocks.mapSetOptions).toHaveBeenNthCalledWith(1, { draggableCursor: 'pointer' });

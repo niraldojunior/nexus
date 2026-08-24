@@ -1,5 +1,6 @@
 import type {
   Characteristic,
+  CharacteristicValue,
   EntityRef,
   RelatedParty,
   TimePeriod,
@@ -7,6 +8,31 @@ import type {
 
 export type ServiceKind = 'CustomerFacingService' | 'ResourceFacingService';
 export type ServiceSpecificationType = 'CFS' | 'RFS' | 'Other';
+
+// Definição de atributo de ServiceSpecification (TMF633 ServiceSpecCharacteristic) — descreve o
+// atributo em si (nome, tipo, domínio de valores), não um valor instanciado. Diferente de
+// `Characteristic`, usado em Service/ServiceCandidate para valores já atribuídos.
+export type ServiceSpecCharacteristicValue = {
+  value: CharacteristicValue;
+  isDefault?: boolean;
+};
+
+export type ServiceSpecCharacteristic = {
+  '@type'?: 'ServiceSpecCharacteristic';
+  name: string;
+  description?: string;
+  valueType?: 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'json';
+  required?: boolean;
+  // Eixo V.tal: separa os dois blocos do catálogo Netwin (Especificações Negócio/Técnicas).
+  group?: 'business' | 'technical';
+  // Texto cru do "Domínio:" do catálogo de origem — fonte de verdade editável na UI.
+  valueDomain?: string;
+  // Derivado de valueDomain quando ele descreve um enum `{a, b, c}`.
+  characteristicValueSpecification?: ServiceSpecCharacteristicValue[];
+  // Tipo cru do catálogo de origem (`FK`, `string(32)`, `list<int>`…), preservado por fidelidade.
+  sourceType?: string;
+};
+
 export type ServiceState =
   'feasibilityChecked' | 'designed' | 'reserved' | 'inactive' | 'active' | 'terminated';
 export type ServiceStatus = 'active' | 'inactive' | 'suspended' | 'terminated';
@@ -33,6 +59,7 @@ export type ServiceSpecificationQuery = {
   name?: string;
   category?: string;
   serviceType?: ServiceSpecificationType;
+  includeEnded?: boolean;
   limit?: number;
   offset?: number;
 };
@@ -72,8 +99,12 @@ export type ServiceSpecification = {
   category: string;
   serviceType: ServiceSpecificationType;
   description?: string | undefined;
+  // Anotação livre sobre a especificação (ex.: nota de origem/migração do catálogo Netwin) —
+  // campo comum, não characteristic (C1 não se aplica: mesma exceção de geo/domain.ts `note`).
+  // `description` fica reservado para a descrição funcional do serviço.
+  observation?: string | undefined;
   validFor?: TimePeriod | undefined;
-  serviceSpecificationCharacteristic: Characteristic[];
+  serviceSpecificationCharacteristic: ServiceSpecCharacteristic[];
   relatedParty: RelatedParty[];
 };
 
@@ -141,12 +172,29 @@ export type CreateServiceSpecificationInput = {
   category: string;
   serviceType: ServiceSpecificationType;
   description?: string;
+  observation?: string;
   validFor?: TimePeriod;
-  serviceSpecificationCharacteristic?: Characteristic[];
+  serviceSpecificationCharacteristic?: ServiceSpecCharacteristic[];
   relatedParty?: RelatedParty[];
 };
 
 export type UpdateServiceSpecificationInput = Partial<CreateServiceSpecificationInput>;
+
+export type ServiceSpecificationBulkItem = {
+  line: number;
+  input: CreateServiceSpecificationInput;
+};
+
+export type ServiceSpecificationBulkItemResult =
+  | { line: number; status: 'created'; id: string; name: string }
+  | { line: number; status: 'error'; name: string; code: string; message: string };
+
+export type ServiceSpecificationBulkResult = {
+  total: number;
+  created: number;
+  failed: number;
+  results: ServiceSpecificationBulkItemResult[];
+};
 
 export type CreateServiceCategoryInput = {
   name: string;

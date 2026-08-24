@@ -66,9 +66,22 @@ export const RESOURCE_TYPES: ResourceType[] = [
   resourceType('rt-splitter', 'Splitter', 'Splitter', 'Infrastructure.Passive'),
   resourceType('rt-cto', 'CTO', 'Caixa de Terminação Óptica', 'Infrastructure.Passive'),
   resourceType('rt-dio', 'DIO', 'Distribuidor Interno Óptico', 'Infrastructure.Passive'),
+  // Caixa de emenda óptica (CEO/CEOS do Netwin) — junta trechos de cabo sem terminar fibra
+  // (ao contrário da CTO, que termina em splitter/porta de cliente).
+  resourceType('rt-splice-closure', 'SpliceClosure', 'Caixa de Emenda Óptica', 'Infrastructure.Passive'),
+  // Nó óptico ativo intermediário (OSP_CAT_ENTITY.OPT do Netwin) — equipamento eletrônico na
+  // planta externa, distinto das caixas passivas acima.
+  resourceType('rt-optical-node', 'OpticalNode', 'Nó Óptico', 'Infrastructure.Passive'),
   resourceType('rt-duct', 'Duct', 'Duct', 'Infrastructure.CivilWorks'),
   resourceType('rt-pole', 'Pole', 'Pole', 'Infrastructure.CivilWorks'),
   resourceType('rt-manhole', 'Manhole', 'Manhole', 'Infrastructure.CivilWorks'),
+  // Lance (OSP_ROUTE do Netwin): o trecho de infraestrutura civil entre dois pontos que um
+  // cabo atravessa — aéreo, subterrâneo (duto já coberto acima), enterrado direto ou interno a
+  // uma edificação.
+  resourceType('rt-aerial-span', 'AerialSpan', 'Lance Aéreo', 'Infrastructure.CivilWorks'),
+  resourceType('rt-buried-span', 'BuriedSpan', 'Lance Enterrado', 'Infrastructure.CivilWorks'),
+  resourceType('rt-inner-span', 'InnerSpan', 'Lance Interno', 'Infrastructure.CivilWorks'),
+  resourceType('rt-other-span', 'OtherSpan', 'Lance (Outro)', 'Infrastructure.CivilWorks'),
   resourceType('rt-fiber', 'Fiber', 'Fiber', 'Cable.OutsidePlant'),
   resourceType('rt-drop-cable', 'DropCable', 'Drop Cable', 'Cable.OutsidePlant'),
   resourceType(

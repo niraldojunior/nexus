@@ -20,15 +20,14 @@ describe('groupVisibility / setGroupVisibility', () => {
       ...ALL_MAP_LAYERS_VISIBLE,
       stations: false,
       siteNetwork: false,
-      siteProperty: false,
       siteService: false,
-      siteSublocal: false,
+      netwinTower: false,
     };
     expect(groupVisibility(visibility, 'locations')).toBe('none');
   });
 
   it('reporta "some" quando só parte dos filhos está ligada', () => {
-    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourceLines: false };
+    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourceDropCable: false };
     expect(groupVisibility(visibility, 'resources')).toBe('some');
   });
 
@@ -37,17 +36,25 @@ describe('groupVisibility / setGroupVisibility', () => {
   });
 
   it('clique no grupo com algum filho ligado desliga todos os filhos', () => {
-    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourceLines: false };
+    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourceDropCable: false };
     const next = setGroupVisibility(visibility, 'resources');
-    expect(next.resourcePoints).toBe(false);
-    expect(next.resourceLines).toBe(false);
+    expect(next.resourceCdoe).toBe(false);
+    expect(next.resourceDropCable).toBe(false);
   });
 
   it('clique no grupo com todos os filhos desligados liga todos', () => {
-    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourcePoints: false, resourceLines: false };
+    const visibility = {
+      ...ALL_MAP_LAYERS_VISIBLE,
+      resourceCdoe: false,
+      resourceCdoi: false,
+      resourceCeo: false,
+      resourceDio: false,
+      resourceFiberCable: false,
+      resourceDropCable: false,
+    };
     const next = setGroupVisibility(visibility, 'resources');
-    expect(next.resourcePoints).toBe(true);
-    expect(next.resourceLines).toBe(true);
+    expect(next.resourceCdoe).toBe(true);
+    expect(next.resourceDropCable).toBe(true);
   });
 
   it('não muda outros grupos', () => {
@@ -64,7 +71,11 @@ describe('viewportInclude', () => {
   });
 
   it('lista só as camadas ligadas', () => {
-    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourceLines: false };
+    const visibility = {
+      ...ALL_MAP_LAYERS_VISIBLE,
+      resourceFiberCable: false,
+      resourceDropCable: false,
+    };
     expect(viewportInclude(visibility)).toEqual(['sites', 'resource-points']);
   });
 
@@ -72,24 +83,36 @@ describe('viewportInclude', () => {
     const visibility = {
       ...ALL_MAP_LAYERS_VISIBLE,
       siteNetwork: false,
-      siteProperty: false,
       siteService: false,
-      siteSublocal: false,
-      resourcePoints: false,
-      resourceLines: false,
+      netwinTower: false,
+      netwinPole: false,
+      netwinDuct: false,
+      netwinManhole: false,
+      resourceCdoe: false,
+      resourceCdoi: false,
+      resourceCeo: false,
+      resourceDio: false,
+      resourceFiberCable: false,
+      resourceDropCable: false,
     };
     expect(viewportInclude(visibility)).toEqual([]);
   });
 
-  it('pede "sites" se QUALQUER um dos quatro papéis de site estiver ligado', () => {
+  it('pede "sites" se QUALQUER um dos papéis de site estiver ligado', () => {
     const visibility = {
       ...ALL_MAP_LAYERS_VISIBLE,
       siteNetwork: false,
-      siteProperty: false,
       siteService: true,
-      siteSublocal: false,
-      resourcePoints: false,
-      resourceLines: false,
+      netwinTower: false,
+      netwinPole: false,
+      netwinDuct: false,
+      netwinManhole: false,
+      resourceCdoe: false,
+      resourceCdoi: false,
+      resourceCeo: false,
+      resourceDio: false,
+      resourceFiberCable: false,
+      resourceDropCable: false,
     };
     expect(viewportInclude(visibility)).toEqual(['sites']);
   });
@@ -111,11 +134,55 @@ describe('isMapFeatureVisible', () => {
     ).toBe(true);
   });
 
-  it('mantém as camadas gerais como interruptores principais', () => {
-    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourcePoints: false };
+  it('recurso sem camada correspondente permanece visível', () => {
+    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, netwinPole: false };
     expect(
-      isMapFeatureVisible({ kind: 'resource', shape: 'point', typeCode: 'Pole' }, visibility),
+      isMapFeatureVisible({ kind: 'resource', shape: 'point', typeCode: 'Splitter' }, visibility),
+    ).toBe(true);
+  });
+
+  it('agrupa Duto/tubo de subida/túnel/pedestal/suporte na camada única "Dutos"', () => {
+    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, netwinDuct: false };
+    for (const typeCode of [
+      'Duct',
+      'RisingTube',
+      'CableTunnel',
+      'Pedestal',
+      'SupportBracket',
+      'IronPipe',
+    ]) {
+      expect(isMapFeatureVisible({ kind: 'resource', shape: 'point', typeCode }, visibility)).toBe(
+        false,
+      );
+    }
+  });
+
+  it('CTO roteia para CDOI quando o nome contém "CDOI", senão para CDOE', () => {
+    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourceCdoi: false };
+    expect(
+      isMapFeatureVisible(
+        { kind: 'resource', shape: 'point', typeCode: 'CTO', label: 'CDOI Bloco A' },
+        visibility,
+      ),
     ).toBe(false);
+    expect(
+      isMapFeatureVisible(
+        { kind: 'resource', shape: 'point', typeCode: 'CTO', label: 'CTO 001' },
+        visibility,
+      ),
+    ).toBe(true);
+  });
+
+  it('cabos de fibra (Fiber/DistributionCable/BackboneCable) e Drop Cable ficam em camadas separadas', () => {
+    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourceFiberCable: false };
+    for (const typeCode of ['Fiber', 'DistributionCable', 'BackboneCable']) {
+      expect(isMapFeatureVisible({ kind: 'resource', shape: 'line', typeCode }, visibility)).toBe(
+        false,
+      );
+    }
+    expect(
+      isMapFeatureVisible({ kind: 'resource', shape: 'line', typeCode: 'DropCable' }, visibility),
+    ).toBe(true);
   });
 
   it('roteia site pelo siteRole resolvido via roleByCode (siteService)', () => {
@@ -137,9 +204,9 @@ describe('isMapFeatureVisible', () => {
     ).toBe(true);
   });
 
-  it('roteia site pelo siteRole property (Imóveis)', () => {
+  it('papel property e código desconhecido caem em siteNetwork', () => {
     const roleByCode = new Map([['CONDOMINIUM', 'property' as const]]);
-    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, siteProperty: false };
+    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, siteNetwork: false };
     expect(
       isMapFeatureVisible(
         { kind: 'site', shape: 'point', sublabel: 'CONDOMINIUM' },
@@ -147,21 +214,9 @@ describe('isMapFeatureVisible', () => {
         roleByCode,
       ),
     ).toBe(false);
-  });
-
-  it('sem roleByCode ou code desconhecido, cai em siteNetwork (ou siteSublocal se SubSite)', () => {
-    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, siteNetwork: false };
-    expect(
-      isMapFeatureVisible({ kind: 'site', shape: 'point', sublabel: 'CO' }, visibility),
-    ).toBe(false);
-
-    const subVisibility = { ...ALL_MAP_LAYERS_VISIBLE, siteSublocal: false };
-    expect(
-      isMapFeatureVisible(
-        { kind: 'site', shape: 'point', sublabel: 'ROOM', siteCategory: 'SubSite' },
-        subVisibility,
-      ),
-    ).toBe(false);
+    expect(isMapFeatureVisible({ kind: 'site', shape: 'point', sublabel: 'CO' }, visibility)).toBe(
+      false,
+    );
   });
 });
 
@@ -175,7 +230,7 @@ describe('readStoredLayers / writeStoredLayers', () => {
   });
 
   it('round-trip: grava e lê de volta', () => {
-    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourceLines: false, coverage: false };
+    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourceDropCable: false, coverage: false };
     writeStoredLayers(visibility);
     expect(readStoredLayers()).toEqual(visibility);
   });
@@ -188,10 +243,10 @@ describe('readStoredLayers / writeStoredLayers', () => {
   it('valor não-booleano numa chave conhecida é ignorado (mantém o default daquela chave)', () => {
     window.localStorage.setItem(
       'nexus.geo.mapLayers',
-      JSON.stringify({ resourceLines: 'nope', coverage: false }),
+      JSON.stringify({ resourceDropCable: 'nope', coverage: false }),
     );
     const result = readStoredLayers();
-    expect(result.resourceLines).toBe(true);
+    expect(result.resourceDropCable).toBe(true);
     expect(result.coverage).toBe(false);
   });
 

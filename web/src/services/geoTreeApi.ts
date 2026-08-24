@@ -133,6 +133,28 @@ export const fetchTreePath = (nodeId: string): Promise<string[] | null> =>
     `/v1/geo/tree/path?nodeId=${encodeURIComponent(nodeId)}`,
   ).then((result) => result.path);
 
+// "Traceroute" da fibra: do equipamento (aba Esquemático do painel de Recurso) até a
+// Estação, alternando equipamento e cabo — o mesmo grafo que a carga OSP do Netwin grava
+// (ver GeoTreeService.schematicPath).
+export type GeoSchematicHopRole = 'equipment' | 'cable' | 'site';
+
+export type GeoSchematicHop = {
+  index: number;
+  role: GeoSchematicHopRole;
+  node: GeoTreeNode;
+  spans?: { types: string[]; count: number };
+};
+
+export type GeoSchematicPath = {
+  nodeId: string;
+  hops: GeoSchematicHop[];
+  reachedSite: boolean;
+  truncated: boolean;
+};
+
+export const fetchResourceSchematic = (nodeId: string): Promise<GeoSchematicPath> =>
+  getJson<GeoSchematicPath>(`/v1/geo/tree/schematic?nodeId=${encodeURIComponent(nodeId)}`);
+
 // Ponto que representa o nó no mapa. Um cabo não é um ponto: sua geometria é a
 // rota inteira, e o ponto usado para centralizar e ancorar o balão é o vértice
 // do meio dela.

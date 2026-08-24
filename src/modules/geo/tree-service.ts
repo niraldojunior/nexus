@@ -77,6 +77,33 @@ export type GeoTreeChildrenPage = {
   limit: number;
 };
 
+// Salto do "traceroute" da fibra (aba Esquemático do painel de Recurso): do equipamento
+// selecionado até a Estação, alternando equipamento e cabo — o mesmo grafo que
+// migrate-netwin-osp.ts grava (`equipA --connectedTo--> cabo --connectedTo--> equipZ`).
+export type GeoSchematicHopRole = 'equipment' | 'cable' | 'site';
+
+export type GeoSchematicHop = {
+  // 1..n, ordem do recurso selecionado até a Estação.
+  index: number;
+  role: GeoSchematicHopRole;
+  node: GeoTreeNode;
+  // Só em cabo: resumo dos lances (`supportedBy`) que o sustentam — detalhe do salto, não
+  // um salto próprio (decisão do produto: lances não são numerados na lista).
+  spans?: { types: string[]; count: number };
+};
+
+export type GeoSchematicPath = {
+  nodeId: string;
+  hops: GeoSchematicHop[];
+  // false quando a caminhada terminou sem achar uma Estação — cadeia incompleta na
+  // origem (ver `_migration.pathIncomplete` gravado por migrate-netwin-osp.ts) ou o
+  // recurso não tem planta a montante nenhuma.
+  reachedSite: boolean;
+  // true quando a caminhada bateu em SCHEMATIC_MAX_HOPS sem terminar — o caminho
+  // devolvido é um prefixo, não a cadeia inteira.
+  truncated: boolean;
+};
+
 // Arestas que compõem a hierarquia de planta. `containsAsChild` é contenção
 // (caixa → splitter, placa → porta) e `connectedTo` é o encadeamento da rede
 // (porta → cabo primário → splitter → cabo secundário → CTO → drop → ONT).
@@ -89,6 +116,16 @@ const TREE_EDGE_TYPES = ['containsAsChild', 'connectedTo'] as const;
 // entrar um segundo tipo interno, os predicados abaixo (marcados "— Splitter")
 // precisam virar um IN (...) em vez do `= 'Splitter'` literal.
 const INTERNAL_RESOURCE_TYPE = 'Splitter';
+
+// Teto de saltos do "traceroute" da fibra (`schematicPath`) — mesmo espírito de
+// `PATH_MAX_DEPTH`: protege contra grafo mal formado (ciclo não detectado, cadeia
+// absurdamente longa) sem impor CTE recursiva num dialeto que já deu problema com elas
+// neste módulo (ver comentário de topo do arquivo e migrate-netwin-osp.ts --max-hops).
+const SCHEMATIC_MAX_HOPS = 60;
+
+// ResourceType de cabo (ver classifyCable em migrate-netwin-osp.ts) — o que distingue um
+// salto "cabo" de um salto "equipamento" na cadeia alternada connectedTo.
+const SCHEMATIC_CABLE_RESOURCE_TYPES = new Set(['BackboneCable', 'DistributionCable', 'DropCable']);
 
 // Profundidade máxima da cadeia de itens internos ao fazer pass-through (splitter →
 // splitter → …). Splitter encadeado direto em outro splitter é exceção de dado, não
@@ -505,6 +542,107 @@ export class GeoTreeService {
     }
 
     return null;
+  }
+
+  /**
+   * "Traceroute" da fibra: do equipamento óptico selecionado (`resourceId`, sem prefixo
+   * `resource:`) até a Estação, andando pela cadeia `equipA --connectedTo--> cabo
+   * --connectedTo--> equipZ` que `migrate-netwin-osp.ts` grava — sempre subindo (aresta de
+   * entrada do nó atual), o inverso do sentido A→Z da carga. Iterativo, não CTE recursiva
+   * (mesma cautela de `pathTo`/`countResourceChildren`: dialeto Oracle já deu problema com
+   * recursão neste read-model).
+   *
+   * Só segue `connectedTo` — `containsAsChild` é contenção (ex.: splitter dentro de CTO),
+   * uma hierarquia diferente da cadeia equipamento/cabo que o esquemático desenha.
+   */
+  public async schematicPath(resourceId: string): Promise<GeoSchematicPath> {
+    const chain: string[] = [resourceId];
+    const visited = new Set<string>([resourceId]);
+    let current = resourceId;
+    let truncated = false;
+
+    for (let hop = 0; hop < SCHEMATIC_MAX_HOPS; hop++) {
+      const edge = await this.db.get<{ resource_from_id: string }>(
+        `SELECT resource_from_id FROM tmf_resource_relationship
+          WHERE resource_to_id = ? AND relationship_type = 'connectedTo'
+          LIMIT 1`,
+        [current],
+      );
+      if (!edge) break;
+      if (visited.has(edge.resource_from_id)) break; // ciclo — não deveria acontecer (DAG), mas não trava a UI
+      visited.add(edge.resource_from_id);
+      chain.push(edge.resource_from_id);
+      current = edge.resource_from_id;
+      if (hop === SCHEMATIC_MAX_HOPS - 1) truncated = true;
+    }
+
+    const nodes = await this.resourcesByIds(chain);
+    const byId = new Map(nodes.map((node) => [node.refId, node]));
+
+    const hops: GeoSchematicHop[] = [];
+    let index = 1;
+    let lastEquipmentId: string | null = null;
+    for (const id of chain) {
+      const node = byId.get(id);
+      if (!node) continue; // recurso terminado/inexistente — não interrompe o traçado
+      const role: GeoSchematicHopRole =
+        node.resourceType && SCHEMATIC_CABLE_RESOURCE_TYPES.has(node.resourceType)
+          ? 'cable'
+          : 'equipment';
+      const hop: GeoSchematicHop = { index: index++, role, node };
+      if (role === 'cable') {
+        const spans = await this.cableSpanSummary(id);
+        if (spans) hop.spans = spans;
+      } else {
+        lastEquipmentId = id;
+      }
+      hops.push(hop);
+    }
+
+    let reachedSite = false;
+    if (lastEquipmentId) {
+      const siteId = await this.resourceServingSiteId(lastEquipmentId);
+      if (siteId) {
+        const [siteNode] = await this.sitesByIds([siteId]);
+        if (siteNode) {
+          hops.push({ index: index++, role: 'site', node: siteNode });
+          reachedSite = true;
+        }
+      }
+    }
+
+    return { nodeId: resourceId, hops, reachedSite, truncated };
+  }
+
+  // Site que o equipamento serve, lido direto (sem exigir ausência de aresta de entrada,
+  // ao contrário de `findDirectOwningSite` — aqui o chamador já sabe que este é o
+  // equipamento mais a montante do traçado, não precisa da checagem de "raiz").
+  private async resourceServingSiteId(resourceId: string): Promise<string | null> {
+    const row = await this.db.get<{ serving_site_id: string | null }>(
+      'SELECT serving_site_id FROM tmf_physical_resource WHERE id = ?',
+      [resourceId],
+    );
+    return row?.serving_site_id ?? null;
+  }
+
+  // Lances (`supportedBy`) que sustentam um cabo — resumo (tipos distintos + contagem),
+  // não a lista completa: é detalhe do salto "cabo", não um salto próprio (ver
+  // GeoSchematicHop.spans).
+  private async cableSpanSummary(
+    cableId: string,
+  ): Promise<{ types: string[]; count: number } | undefined> {
+    const rows = await this.db.all<{ resource_type: string | null }>(
+      `SELECT r.resource_type AS resource_type
+         FROM tmf_resource_relationship e
+         JOIN tmf_physical_resource r ON r.id = e.resource_to_id
+        WHERE e.resource_from_id = ? AND e.relationship_type = 'supportedBy'`,
+      [cableId],
+    );
+    if (rows.length === 0) return undefined;
+    return {
+      types: [...new Set(rows.map((row) => row.resource_type).filter((type): type is string => Boolean(type)))],
+      count: rows.length,
+    };
   }
 
   public async children(

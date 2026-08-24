@@ -52,6 +52,7 @@ import {
   recordTouches,
   required,
   requiredAny,
+  resolveLifecycleStatus,
   resourceSpecId,
   updateIdentityHash,
   type TablePrefixer,
@@ -151,6 +152,12 @@ async function run(): Promise<void> {
         ),
       ];
       const lifecycleStates = await fetchLifecycleStates(source, lifecycleIds);
+      warnUnresolvedLifecycleIds(lifecycleIds, lifecycleStates);
+      logLifecycleHistogram(
+        [...equipmentRows, ...cableRows, ...routeRows].map((n) =>
+          n.lifeCycleStateId !== null ? lifecycleStates.get(n.lifeCycleStateId) : undefined,
+        ),
+      );
 
       console.log(
         JSON.stringify({
@@ -209,8 +216,21 @@ async function run(): Promise<void> {
 
         const touched: string[] = [];
 
+        // Cadeia incompleta (G9): a caminhada não chegou numa Central, então o próprio
+        // equipamento semente carrega o sinal — a aba Esquemático usa isto para avisar em
+        // vez de desenhar um caminho que parece completo mas não é.
+        const pathIncompleteIds = reachedCentral ? new Set<number>() : new Set([seedEquipmentId]);
+
         for (const node of equipmentRows) {
-          const changed = await persistEquipment(target, t, args, node, servingSiteId, lifecycleStates);
+          const changed = await persistEquipment(
+            target,
+            t,
+            args,
+            node,
+            servingSiteId,
+            lifecycleStates,
+            pathIncompleteIds.has(node.id),
+          );
           if (changed) touched.push(String(node.id));
         }
         for (const node of cableRows) {
@@ -392,20 +412,38 @@ async function traceUpstream(
       throw new Error(`Caminhada excedeu --max-hops (${maxHops}) sem chegar a uma Central.`);
     }
 
-    const upstream = await source.execute<{ ID: number; EQUIPMENT_ID_A: number }>(
-      `SELECT ID, EQUIPMENT_ID_A FROM NETWIN.OSP_CABLE WHERE EQUIPMENT_ID_Z = :1 ORDER BY ID`,
+    // Traz o estado junto para o desempate (ver G7): um cabo descartado/projetado não deve
+    // sequestrar o caminho só por ter ID menor quando existe candidato ativo no mesmo nó.
+    const upstream = await source.execute<{
+      ID: number;
+      EQUIPMENT_ID_A: number;
+      DESIGNATION: string | null;
+    }>(
+      `SELECT c.ID, c.EQUIPMENT_ID_A, s.DESIGNATION
+         FROM NETWIN.OSP_CABLE c
+         LEFT JOIN NETWIN.NI_CAT_STATE s ON s.ID_STATE = c.CAT_LIFE_CYCLE_STATE_ID
+        WHERE c.EQUIPMENT_ID_Z = :1 ORDER BY c.ID`,
       [current],
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
     );
     const candidates = upstream.rows ?? [];
     if (candidates.length === 0) break; // beco sem saída — equipamento sem cabo a montante
 
-    const chosen = candidates[0];
+    // Menor ID continua o critério final (desempate determinístico), mas um candidato
+    // 'active' vem antes de todos — o cabo suspenso/terminado com ID menor não deve
+    // sequestrar o caminho quando existe um cabo em serviço no mesmo nó.
+    const ranked = [...candidates].sort((left, right) => {
+      const leftActive = resolveLifecycleStatus(left.DESIGNATION ?? undefined).status === 'active';
+      const rightActive = resolveLifecycleStatus(right.DESIGNATION ?? undefined).status === 'active';
+      if (leftActive !== rightActive) return leftActive ? -1 : 1;
+      return left.ID - right.ID;
+    });
+    const chosen = ranked[0];
     if (!chosen) break;
     if (candidates.length > 1) {
       console.warn(
-        `Equipamento ${current} tem ${candidates.length} cabos a montante — usando o de menor ID` +
-          ` (${chosen.ID}); descartados: ${candidates
+        `Equipamento ${current} tem ${candidates.length} cabos a montante — usando ${chosen.ID}` +
+          ` (critério: ativo, depois menor ID); descartados: ${ranked
             .slice(1)
             .map((c) => c.ID)
             .join(', ')}`,
@@ -556,16 +594,40 @@ async function fetchLifecycleStates(source: Connection, ids: number[]): Promise<
   return map;
 }
 
-function resolveLifecycleStatus(designation: string | undefined): {
-  status: 'active' | 'suspended' | 'terminated';
-  substatus: string;
-} {
-  const d = (designation ?? '').toUpperCase();
-  if (!d) return { status: 'suspended', substatus: '' };
-  if (/TERMINAD|ABORT|RETIRAR/.test(d)) return { status: 'terminated', substatus: designation ?? '' };
-  if (/FORA DE SERVI|DISABLED/.test(d)) return { status: 'suspended', substatus: designation ?? '' };
-  if (/^SERVI|^ACTIVE$|INSTALADO|DISPONIVEL/.test(d)) return { status: 'active', substatus: '' };
-  return { status: 'suspended', substatus: designation ?? '' };
+// resolveLifecycleStatus vive em netwin-migration-kit.ts (compartilhado — ver comentário lá
+// sobre o gap que suspendia a CDOE-7539 e a cadeia inteira até a estação).
+
+// Avisa (uma vez por carga) quando um CAT_LIFE_CYCLE_STATE_ID referenciado por
+// equipamento/cabo/lance não veio no lookup de NI_CAT_STATE — sem isto, um lookup que
+// falhasse silenciosamente (escopo errado, ID fora da tabela) suspendia tudo sem deixar
+// rastro (ver EQ-MOD gap G3 do plano de correção).
+function warnUnresolvedLifecycleIds(requestedIds: number[], resolved: Map<number, string>): void {
+  const missing = requestedIds.filter((id) => !resolved.has(id));
+  if (missing.length > 0) {
+    console.warn(
+      `${missing.length} CAT_LIFE_CYCLE_STATE_ID não encontrados em NETWIN.NI_CAT_STATE — ` +
+        `os itens que os referenciam cairão em designation vazia (ativo assumido): ${missing.join(', ')}`,
+    );
+  }
+}
+
+// Histograma designation → status resolvido, uma vez por carga: torna visível qualquer
+// designation nova que caia no ramo default 'suspended' sem estar no vocabulário mapeado.
+function logLifecycleHistogram(designations: Array<string | undefined>): void {
+  const counts = new Map<string, { status: string; assumed: boolean; count: number }>();
+  for (const designation of designations) {
+    const key = designation ?? '(vazio)';
+    const resolution = resolveLifecycleStatus(designation);
+    const entry = counts.get(key);
+    if (entry) entry.count += 1;
+    else counts.set(key, { status: resolution.status, assumed: resolution.assumed, count: 1 });
+  }
+  console.log(
+    JSON.stringify({
+      stage: 'lifecycle-histogram',
+      designations: [...counts.entries()].map(([designation, v]) => ({ designation, ...v })),
+    }),
+  );
 }
 
 // ------------------------------------------------------------- classificação -----
@@ -714,6 +776,15 @@ function originCharacteristics(
   sourceId: string,
   extra: unknown,
   substatus?: string,
+  options?: {
+    // Estado de ciclo de vida bruto, para o "Suspenso" ficar auditável (G5): sem isto, um
+    // substatus vazio (designation ausente/assumida) deixava o motivo do status inexplicável.
+    catLifeCycleStateId?: number | null;
+    lifeCycleDesignation?: string | null;
+    statusAssumed?: boolean;
+    // Cadeia que não chegou numa Central (G9) — só marcado no equipamento semente.
+    pathIncomplete?: boolean;
+  },
 ): string {
   return JSON.stringify([
     { name: 'seed', value: SEED_TAG, valueType: 'string' },
@@ -724,6 +795,32 @@ function originCharacteristics(
     { group: '_origin', name: 'migratedAt', value: MIGRATED_AT, valueType: 'date' },
     { group: '_origin', name: 'migratedBy', value: MIGRATED_BY, valueType: 'string' },
     { group: '_origin', name: 'extra', value: extra, valueType: 'json' },
+    ...(options?.catLifeCycleStateId != null
+      ? [
+          {
+            group: '_origin',
+            name: 'catLifeCycleStateId',
+            value: options.catLifeCycleStateId,
+            valueType: 'number',
+          },
+        ]
+      : []),
+    ...(options?.lifeCycleDesignation
+      ? [
+          {
+            group: '_origin',
+            name: 'lifeCycleDesignation',
+            value: options.lifeCycleDesignation,
+            valueType: 'string',
+          },
+        ]
+      : []),
+    ...(options?.statusAssumed
+      ? [{ group: '_migration', name: 'statusAssumed', value: true, valueType: 'boolean' }]
+      : []),
+    ...(options?.pathIncomplete
+      ? [{ group: '_migration', name: 'pathIncomplete', value: true, valueType: 'boolean' }]
+      : []),
   ]);
 }
 
@@ -736,6 +833,7 @@ async function persistEquipment(
   node: EquipmentNode,
   servingSiteId: string | null,
   lifecycleStates: Map<number, string>,
+  pathIncomplete: boolean,
 ): Promise<boolean> {
   const sourceId = String(node.id);
   const sourceHash = createHash('sha256').update(JSON.stringify(node)).digest('hex');
@@ -746,7 +844,7 @@ async function persistEquipment(
   const classified = classifyEquipment(node.catSubtypeId);
   const specId = await resourceSpecId(target, t, classified.specName, classified.resourceType, 'Infrastructure.Passive');
   const designation = node.lifeCycleStateId !== null ? lifecycleStates.get(node.lifeCycleStateId) : undefined;
-  const { status, substatus } = resolveLifecycleStatus(designation);
+  const { status, substatus, assumed } = resolveLifecycleStatus(designation);
 
   await upsertPointLocation(target, t, nexusId, node.wkt, input.tenantId, node.name || `Equipamento ${node.id}`);
   await merge(target, t, 'tmf_physical_resource', ['id'], {
@@ -760,7 +858,7 @@ async function persistEquipment(
     place_id: nexusId,
     place_type: 'GeographicLocation',
     administrative_state: status === 'terminated' ? 'locked' : 'unlocked',
-    operational_state: 'enabled',
+    operational_state: status === 'active' ? 'enabled' : 'disabled',
     usage_state: 'idle',
     serving_site_id: servingSiteId,
     related_party: JSON.stringify([{ id: input.ownerPartyId, '@referredType': 'Organization' }]),
@@ -777,6 +875,12 @@ async function persistEquipment(
         externalCode: node.externalCode,
       },
       substatus,
+      {
+        catLifeCycleStateId: node.lifeCycleStateId,
+        lifeCycleDesignation: designation ?? null,
+        statusAssumed: assumed,
+        pathIncomplete,
+      },
     ),
   });
   await updateIdentityHash(target, t, 'OSP_EQUIPMENT', sourceId, 'primary', sourceHash);
@@ -802,7 +906,7 @@ async function persistCable(
   const specName = model?.nome ? `Netwin ${model.nome}` : `Netwin ${resourceType}`;
   const specId = await resourceSpecId(target, t, specName, resourceType, 'Cable.OutsidePlant');
   const designation = node.lifeCycleStateId !== null ? lifecycleStates.get(node.lifeCycleStateId) : undefined;
-  const { status, substatus } = resolveLifecycleStatus(designation);
+  const { status, substatus, assumed } = resolveLifecycleStatus(designation);
 
   await upsertLineLocation(target, t, nexusId, node.wkt, input.tenantId, node.name || `Cabo ${node.id}`);
   await merge(target, t, 'tmf_physical_resource', ['id'], {
@@ -816,7 +920,7 @@ async function persistCable(
     place_id: nexusId,
     place_type: 'GeographicLocation',
     administrative_state: status === 'terminated' ? 'locked' : 'unlocked',
-    operational_state: 'enabled',
+    operational_state: status === 'active' ? 'enabled' : 'disabled',
     usage_state: 'active',
     serving_site_id: null,
     related_party: JSON.stringify([{ id: input.ownerPartyId, '@referredType': 'Organization' }]),
@@ -835,6 +939,11 @@ async function persistCable(
         externalCode: node.externalCode,
       },
       substatus,
+      {
+        catLifeCycleStateId: node.lifeCycleStateId,
+        lifeCycleDesignation: designation ?? null,
+        statusAssumed: assumed,
+      },
     ),
   });
   await updateIdentityHash(target, t, 'OSP_CABLE', sourceId, 'primary', sourceHash);
@@ -857,7 +966,7 @@ async function persistRoute(
   const resourceType = classifyRoute(node.catSubtypeId);
   const specId = await resourceSpecId(target, t, `Netwin ${resourceType}`, resourceType, 'Infrastructure.CivilWorks');
   const designation = node.lifeCycleStateId !== null ? lifecycleStates.get(node.lifeCycleStateId) : undefined;
-  const { status, substatus } = resolveLifecycleStatus(designation);
+  const { status, substatus, assumed } = resolveLifecycleStatus(designation);
 
   await upsertLineLocation(target, t, nexusId, node.wkt, input.tenantId, node.name || `Lance ${node.id}`);
   await merge(target, t, 'tmf_physical_resource', ['id'], {
@@ -871,7 +980,7 @@ async function persistRoute(
     place_id: nexusId,
     place_type: 'GeographicLocation',
     administrative_state: status === 'terminated' ? 'locked' : 'unlocked',
-    operational_state: 'enabled',
+    operational_state: status === 'active' ? 'enabled' : 'disabled',
     usage_state: 'active',
     serving_site_id: null,
     related_party: JSON.stringify([{ id: input.ownerPartyId, '@referredType': 'Organization' }]),
@@ -887,6 +996,11 @@ async function persistRoute(
         largura: node.width,
       },
       substatus,
+      {
+        catLifeCycleStateId: node.lifeCycleStateId,
+        lifeCycleDesignation: designation ?? null,
+        statusAssumed: assumed,
+      },
     ),
   });
   await updateIdentityHash(target, t, 'OSP_ROUTE', sourceId, 'primary', sourceHash);

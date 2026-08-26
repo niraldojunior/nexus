@@ -1750,13 +1750,34 @@ const routeGeoRequest = async ({
 
   // Busca por nome para a barra de pesquisa unificada — Estações e Recursos (nunca
   // sub-locais/salas), devolvida como nó de árvore para reusar seleção/mapa/detalhe.
+  // `kinds`/`types` (RF-013, filtro de escopo da barra) são opcionais e nunca geram 400
+  // em valor desconhecido — o cliente é a única origem, e o pior caso é cair no
+  // comportamento geral (sem filtro).
   if (request.method === 'GET' && url.pathname === '/v1/geo/tree/search') {
     const term = url.searchParams.get('q') ?? '';
     const limit = parseOptionalNumber(url.searchParams.get('limit'));
+    const kindsParam = url.searchParams.get('kinds');
+    const kinds = kindsParam
+      ? kindsParam
+          .split(',')
+          .map((value) => value.trim())
+          .filter((value): value is 'site' | 'resource' => value === 'site' || value === 'resource')
+      : undefined;
+    const typesParam = url.searchParams.get('types');
+    const resourceTypes = typesParam
+      ? typesParam
+          .split(',')
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+      : undefined;
     return sendJson(
       response,
       200,
-      geoTreeService.search(term, limit !== undefined ? { limit } : {}),
+      geoTreeService.search(term, {
+        ...(limit !== undefined ? { limit } : {}),
+        ...(kinds && kinds.length > 0 ? { kinds } : {}),
+        ...(resourceTypes && resourceTypes.length > 0 ? { resourceTypes } : {}),
+      }),
     );
   }
 

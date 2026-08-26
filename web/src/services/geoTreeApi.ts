@@ -10,6 +10,11 @@
 
 import { getJson, type GeoGeometry } from './geoApi';
 import type { ViewportShape } from '../utils/mapLayers';
+import {
+  resourceTypesForScope,
+  scopeKinds,
+  type GeoSearchScopeId,
+} from '../utils/geoSearchScope';
 
 export type GeoTreeNodeKind = 'uf' | 'city' | 'group' | 'site' | 'resource';
 
@@ -102,15 +107,22 @@ export const fetchViewportResources = (
 
 // Busca por nome para a barra de pesquisa — Estações e Recursos do inventário (nunca
 // sub-locais/salas). Devolve nós de árvore, então o resultado se seleciona e desenha
-// exatamente como qualquer outro nó (ver selectNode em GeoPage).
+// exatamente como qualquer outro nó (ver selectNode em GeoPage). `scope` (RF-013) restringe
+// a busca a um tipo (ver utils/geoSearchScope); omitido ou `'all'`, não serializa nada — o
+// caminho quente segue com a URL limpa.
 export const fetchTreeSearch = (
   q: string,
-  options: { limit?: number; signal?: AbortSignal } = {},
+  options: { limit?: number; signal?: AbortSignal; scope?: GeoSearchScopeId } = {},
 ): Promise<GeoTreeNode[]> => {
   const term = q.trim();
   if (!term) return Promise.resolve([]);
   const params = new URLSearchParams({ q: term });
   if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.scope && options.scope !== 'all') {
+    params.set('kinds', scopeKinds(options.scope).join(','));
+    const resourceTypes = resourceTypesForScope(options.scope);
+    if (resourceTypes) params.set('types', resourceTypes.join(','));
+  }
   return getJson<GeoTreeNode[]>(`/v1/geo/tree/search?${params.toString()}`, {
     signal: options.signal,
   });

@@ -30,6 +30,11 @@ export type GeoTreeNodeKind = 'uf' | 'city' | 'group' | 'site' | 'resource';
 // 'all' — painel de detalhe: devolve tudo, sem filtro.
 export type GeoTreeScope = 'tree' | 'all';
 
+// Filtro de escopo da barra de pesquisa (RF-013) — que ENTIDADE buscar. 'site' busca
+// Estações; 'resource' busca Physical/LogicalResource, opcionalmente restrito por
+// `resourceTypes` (ver GeoTreeService.search).
+export type GeoSearchKind = 'site' | 'resource';
+
 export type GeoTreeNode = {
   // Chave estável e auto-descritiva — é ela que a UI devolve em `nodeId` para
   // expandir. Formatos: `uf:RJ`, `city:RJ|Niterói`, `group:RJ|Niterói|stations`,
@@ -365,22 +370,38 @@ export class GeoTreeService {
    * só os poucos ids escolhidos. Antes disso a projeção cara (geometria, spec,
    * substatus, origem) era calculada para TODA linha que casava com o `LIKE`, não para
    * as ~20 devolvidas — o maior custo isolado desta busca.
+   *
+   * `kinds`/`resourceTypes` implementam o filtro de escopo da barra de pesquisa
+   * (RF-013): precisam ser aplicados aqui, no SQL, e não depois em cima do resultado —
+   * o `LIMIT` já corta em ~20 linhas antes de devolver, então filtrar client-side
+   * devolveria lista vazia na maioria das buscas restritas (ex.: 20 Sites quando o
+   * usuário só quer Cabo).
    */
-  public async search(term: string, options: { limit?: number } = {}): Promise<GeoTreeNode[]> {
+  public async search(
+    term: string,
+    options: { limit?: number; kinds?: GeoSearchKind[]; resourceTypes?: string[] } = {},
+  ): Promise<GeoTreeNode[]> {
     const trimmed = term.trim();
     if (!trimmed) return [];
     const limit = clamp(options.limit ?? SEARCH_MAX_RESULTS, 1, SEARCH_MAX_RESULTS);
+    const kinds = options.kinds ?? ['site', 'resource'];
+    const searchSites = kinds.includes('site');
+    const searchResources = kinds.includes('resource');
 
     const [siteRows, resourceIds] = await Promise.all([
-      this.db.all<SiteRow>(
-        `${SITE_SELECT}
-         WHERE sp.category = 'Site' AND s.status NOT IN ('Retired', 'terminated') AND LOWER(s.name) LIKE LOWER(?)
-         ${PROJECT_SITE_EXCLUSION_SQL}
-         ORDER BY s.name
-         LIMIT ?`,
-        [`%${trimmed}%`, limit],
-      ),
-      this.searchResourceCandidates(trimmed, limit),
+      searchSites
+        ? this.db.all<SiteRow>(
+            `${SITE_SELECT}
+             WHERE sp.category = 'Site' AND s.status NOT IN ('Retired', 'terminated') AND LOWER(s.name) LIKE LOWER(?)
+             ${PROJECT_SITE_EXCLUSION_SQL}
+             ORDER BY s.name
+             LIMIT ?`,
+            [`%${trimmed}%`, limit],
+          )
+        : Promise.resolve([]),
+      searchResources
+        ? this.searchResourceCandidates(trimmed, limit, options.resourceTypes)
+        : Promise.resolve([]),
     ]);
 
     const nodes: GeoTreeNode[] = [
@@ -412,12 +433,16 @@ export class GeoTreeService {
    * acha os primeiros N (Oracle: `WINDOW NOSORT STOPKEY` sobre `INDEX RANGE SCAN`) — 20ms no
    * mesmo teste. O merge final é só ordenar ≤ 2×limit linhas já em memória.
    */
-  private async searchResourceCandidates(term: string, limit: number): Promise<string[]> {
-    const prefix = await this.searchResourceCandidatesPass(`${term}%`, limit);
+  private async searchResourceCandidates(
+    term: string,
+    limit: number,
+    resourceTypes?: string[],
+  ): Promise<string[]> {
+    const prefix = await this.searchResourceCandidatesPass(`${term}%`, limit, resourceTypes);
     if (prefix.length >= limit) return prefix.slice(0, limit).map((row) => row.id);
 
     const seen = new Set(prefix.map((row) => row.id));
-    const substring = await this.searchResourceCandidatesPass(`%${term}%`, limit);
+    const substring = await this.searchResourceCandidatesPass(`%${term}%`, limit, resourceTypes);
     const merged = [...prefix];
     for (const row of substring) {
       if (seen.has(row.id)) continue;
@@ -432,18 +457,23 @@ export class GeoTreeService {
   // no JSDoc de `searchResourceCandidates`. `pattern` já vem pronto para o LIKE (`termo%` ou
   // `%termo%`); merge simples por nome, sem depender de collator (é só para decidir os N
   // candidatos — a ordenação final "de verdade" acontece em `search`, sobre o nó hidratado).
+  // `resourceTypes` implementa o filtro de escopo (RF-013: Infraestrutura/CTO/Cabo) — os
+  // binds do `IN (...)` vêm DEPOIS do `pattern` do LIKE, mesma ordem posicional que
+  // `searchResourceIdBlock` monta o `WHERE` (Oracle liga bind por ordem de aparição, não
+  // por nome — ver transformOracleQuery).
   private async searchResourceCandidatesPass(
     pattern: string,
     limit: number,
+    resourceTypes?: string[],
   ): Promise<Array<{ id: string; name: string }>> {
     const [physical, logical] = await Promise.all([
       this.db.all<{ id: string; name: string }>(
-        `SELECT id, name FROM (${searchResourceIdBlock('PhysicalResource')}) AS t ORDER BY LOWER(name) LIMIT ?`,
-        [pattern, limit],
+        `SELECT id, name FROM (${searchResourceIdBlock('PhysicalResource', resourceTypes)}) AS t ORDER BY LOWER(name) LIMIT ?`,
+        [pattern, ...(resourceTypes ?? []), limit],
       ),
       this.db.all<{ id: string; name: string }>(
-        `SELECT id, name FROM (${searchResourceIdBlock('LogicalResource')}) AS t ORDER BY LOWER(name) LIMIT ?`,
-        [pattern, limit],
+        `SELECT id, name FROM (${searchResourceIdBlock('LogicalResource', resourceTypes)}) AS t ORDER BY LOWER(name) LIMIT ?`,
+        [pattern, ...(resourceTypes ?? []), limit],
       ),
     ]);
     const merged = [...physical, ...logical];
@@ -1309,9 +1339,19 @@ const SEARCH_RESOURCE_ID_WHERE = `
   AND r.status <> 'terminated'
   AND r.resource_type IS DISTINCT FROM '${INTERNAL_RESOURCE_TYPE}'
   AND LOWER(r.name) LIKE LOWER(?)`;
-const searchResourceIdBlock = (entity: 'PhysicalResource' | 'LogicalResource'): string => {
+// `resourceTypes` (RF-013) vira `AND r.resource_type IN (?, …)` — os `?` extras entram
+// DEPOIS do `?` do LIKE acima, e o chamador (searchResourceCandidatesPass) precisa
+// passar os binds na mesma ordem.
+const searchResourceIdBlock = (
+  entity: 'PhysicalResource' | 'LogicalResource',
+  resourceTypes?: string[],
+): string => {
   const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
-  return `SELECT r.id, r.name FROM ${table} r WHERE (${SEARCH_RESOURCE_ID_WHERE})`;
+  const typeFilter =
+    resourceTypes && resourceTypes.length > 0
+      ? ` AND r.resource_type IN (${placeholders(resourceTypes)})`
+      : '';
+  return `SELECT r.id, r.name FROM ${table} r WHERE (${SEARCH_RESOURCE_ID_WHERE}${typeFilter})`;
 };
 
 // Colunas (na ordem) que RESOURCE_CHILD_SOURCE / RESOURCE_CHILD_TREE_SOURCE projetam. Listadas

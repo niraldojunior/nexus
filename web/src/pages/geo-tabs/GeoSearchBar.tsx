@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clock, MapPin, RefreshCw, Search, X } from 'lucide-react';
+import {
+  Box,
+  Cable,
+  Clock,
+  ListFilter,
+  MapPin,
+  MapPinned,
+  Network,
+  RefreshCw,
+  Search,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { fetchTreeSearch, type GeoTreeNode } from '../../services/geoTreeApi';
 import {
   fetchAddressPredictions,
@@ -14,6 +26,15 @@ import { DOCK_SEARCH_WIDTH_CLASS } from './dock';
 import { HierarchyIcon } from './HierarchyIcon';
 import { NodeIcon } from './HierarchyTreeView';
 import { siteSpecNameLabel } from '../../utils/geoLabels';
+import {
+  GEO_SEARCH_SCOPES,
+  nodeMatchesScope,
+  readStoredSearchScope,
+  scopeSearchesAddresses,
+  scopeSearchesInventory,
+  writeStoredSearchScope,
+  type GeoSearchScopeId,
+} from '../../utils/geoSearchScope';
 
 export type AddressSearchError = { term: string; status: string; message: string };
 
@@ -66,6 +87,27 @@ const DEBOUNCE_MS = 250;
 // resultado na tecla seguinte. Endereço (Google) não tem esse custo e segue sem mínimo.
 const MIN_INVENTORY_QUERY_LENGTH = 3;
 
+// Ícone do botão de filtro por modo (RF-013) — mesmo vocabulário de MapLayerControl
+// (GROUP_ICONS): Network para infraestrutura civil, MapPinned para Local (mesmo desenho
+// do grupo "Locais" do controle de camadas).
+const SCOPE_ICONS: Record<GeoSearchScopeId, LucideIcon> = {
+  all: ListFilter,
+  address: MapPin,
+  infrastructure: Network,
+  sites: MapPinned,
+  cto: Box,
+  cable: Cable,
+};
+
+const SCOPE_PLACEHOLDER: Record<GeoSearchScopeId, string> = {
+  all: 'Pesquise no Nexus',
+  address: 'Pesquise um endereço',
+  infrastructure: 'Pesquise infraestrutura civil',
+  sites: 'Pesquise um Local',
+  cto: 'Pesquise uma CTO',
+  cable: 'Pesquise um cabo',
+};
+
 // Cache de termo → resultado, por instância da barra (não em nível de módulo — o resultado
 // de um termo pode depender do momento em que ele é buscado, então nada deveria sobreviver a
 // uma remontagem). Cobre o caso comum de edição: apagar um caractere e redigitar o mesmo
@@ -98,6 +140,11 @@ export function GeoSearchBar({
   const [addressResults, setAddressResults] = useState<AddressPrediction[]>([]);
   const [highlighted, setHighlighted] = useState(0);
   const [resolving, setResolving] = useState(false);
+  // Escopo da busca (RF-013): default "geral", persistido em localStorage (mesmo padrão
+  // de useMapLayers) — cada sessão retoma o último modo escolhido pelo usuário.
+  const [scope, setScope] = useState<GeoSearchScopeId>(() => readStoredSearchScope());
+  const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
+  const scopeMenuRef = useRef<HTMLDivElement>(null);
   // Histórico por usuário — alimenta a picklist quando o campo está vazio (estilo Google Maps).
   const { history, recordNode, recordAddress, remove, clear } = useGeoSearchHistory();
   const debounceRef = useRef<number | undefined>(undefined);
@@ -107,6 +154,7 @@ export function GeoSearchBar({
   const resolutionTokenRef = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const focusAfterSelectionRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // `query` e `selection` são controladas pela página. Qualquer mudança nelas pode
   // vir da árvore, do mapa, de deep-link ou de uma limpeza externa; nesse caso,
@@ -150,11 +198,15 @@ export function GeoSearchBar({
       // chega — não esperam uma pela outra. Antes, um único `Promise.allSettled` só
       // publicava resultado depois que as duas resolviam, então a fonte mais rápida
       // (tipicamente o inventário, com o cache/índice de prefixo) ficava represada pela
-      // mais lenta (Places, rede externa).
+      // mais lenta (Places, rede externa). `scope` (RF-013) pode desligar uma das duas
+      // fontes inteiramente — ver scopeSearchesInventory/scopeSearchesAddresses.
       nodeSearchAbortRef.current?.abort();
-      if (term.length >= MIN_INVENTORY_QUERY_LENGTH) {
+      if (scopeSearchesInventory(scope) && term.length >= MIN_INVENTORY_QUERY_LENGTH) {
         const cache = nodeSearchCacheRef.current;
-        const cached = cache.get(term);
+        // Cache chaveado por escopo — o mesmo termo tem resultado diferente em cada
+        // modo, então o cache de um não pode vazar para o outro.
+        const cacheKey = `${scope}|${term}`;
+        const cached = cache.get(cacheKey);
         if (cached) {
           nodeSearchAbortRef.current = null;
           setNodeResults(cached);
@@ -162,11 +214,11 @@ export function GeoSearchBar({
         } else {
           const abortController = new AbortController();
           nodeSearchAbortRef.current = abortController;
-          void fetchTreeSearch(term, { signal: abortController.signal })
+          void fetchTreeSearch(term, { scope, signal: abortController.signal })
             .then((results) => {
               if (requestTokenRef.current !== token) return;
-              cache.delete(term);
-              cache.set(term, results);
+              cache.delete(cacheKey);
+              cache.set(cacheKey, results);
               if (cache.size > SEARCH_CACHE_MAX) {
                 const oldest = cache.keys().next().value;
                 if (oldest !== undefined) cache.delete(oldest);
@@ -181,13 +233,17 @@ export function GeoSearchBar({
         setNodeResults([]);
       }
 
-      void fetchAddressPredictions(term)
-        .then((results) => {
-          if (requestTokenRef.current !== token) return;
-          setAddressResults(results);
-          setHighlighted(0);
-        })
-        .catch(() => undefined);
+      if (scopeSearchesAddresses(scope)) {
+        void fetchAddressPredictions(term)
+          .then((results) => {
+            if (requestTokenRef.current !== token) return;
+            setAddressResults(results);
+            setHighlighted(0);
+          })
+          .catch(() => undefined);
+      } else {
+        setAddressResults([]);
+      }
     }, DEBOUNCE_MS);
     return () => {
       if (debounceRef.current !== undefined) {
@@ -197,7 +253,7 @@ export function GeoSearchBar({
       nodeSearchAbortRef.current?.abort();
       requestTokenRef.current += 1;
     };
-  }, [query, selection]);
+  }, [query, selection, scope]);
 
   useEffect(
     () => () => {
@@ -205,6 +261,26 @@ export function GeoSearchBar({
     },
     [],
   );
+
+  // Fecha a lista flutuante do filtro em clique fora ou Escape — mesmo padrão de
+  // MapBaseLayerSelector.
+  useEffect(() => {
+    if (!scopeMenuOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (scopeMenuRef.current && !scopeMenuRef.current.contains(event.target as Node)) {
+        setScopeMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setScopeMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [scopeMenuOpen]);
 
   const hasText = query.trim().length > 0;
 
@@ -219,18 +295,22 @@ export function GeoSearchBar({
     [nodeResults, addressResults],
   );
 
+  // Filtrados pelo mesmo escopo da busca por texto (RF-013) — com "Apenas Cabos" ativo, os
+  // recentes mostram só cabos.
   const historyOptions = useMemo<HistoryOption[]>(
     () =>
       history.flatMap((entry): HistoryOption[] => {
         if (entry.kind === 'node' && entry.node) {
+          if (!nodeMatchesScope(entry.node, scope)) return [];
           return [{ type: 'history-node', node: entry.node, entryKey: entry.entryKey }];
         }
         if (entry.kind === 'address' && entry.address) {
+          if (!scopeSearchesAddresses(scope)) return [];
           return [{ type: 'history-address', address: entry.address, entryKey: entry.entryKey }];
         }
         return [];
       }),
-    [history],
+    [history, scope],
   );
 
   const options = hasText ? resultOptions : historyOptions;
@@ -253,6 +333,28 @@ export function GeoSearchBar({
     setNodeResults([]);
     setAddressResults([]);
   };
+
+  // Fecha a picklist de resultados/histórico em clique fora da barra ou Escape — mesmo
+  // padrão do menu de filtro (scopeMenuRef) e de MapBaseLayerSelector. Antes, só o Escape
+  // com o input focado fechava (handleKeyDown); clicar em qualquer outro ponto da tela
+  // (o mapa, a hierarquia) deixava o dropdown aberto por cima do resto da página.
+  useEffect(() => {
+    if (!showDropdown) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        closeDropdown();
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeDropdown();
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showDropdown]);
 
   const cancelAddressResolution = () => {
     resolutionTokenRef.current += 1;
@@ -313,9 +415,20 @@ export function GeoSearchBar({
     else await selectAddress(option.prediction);
   };
 
+  // Escolher um modo (RF-013): grava a preferência, fecha o menu e devolve o foco ao
+  // campo — o efeito de busca (dependente de `scope`) refaz a consulta do termo em tela.
+  const selectScope = (next: GeoSearchScopeId) => {
+    setScope(next);
+    writeStoredSearchScope(next);
+    setScopeMenuOpen(false);
+    inputRef.current?.focus();
+  };
+
   // Enter sem sugestão destacada cai no geocoder direto — mesmo comportamento de
-  // antes de existir autocomplete, para o usuário poder só digitar e teclar Enter.
+  // antes de existir autocomplete, para o usuário poder só digitar e teclar Enter. Nos
+  // modos que não buscam endereço (RF-013), geocodificar seria contraditório — no-op.
   const runFallbackAddressSearch = async () => {
+    if (!scopeSearchesAddresses(scope)) return;
     const term = query.trim();
     if (!term) return;
     const token = ++resolutionTokenRef.current;
@@ -356,11 +469,16 @@ export function GeoSearchBar({
   // Instância única, sobreposta à doca e ao mapa (ver GeoPage): um estilo só, com o
   // mesmo retângulo em todos os estados. Com a lista aberta, arredonda só o topo e some
   // a borda de baixo, para caixa e sugestões virarem um componente só (estilo Google
-  // Maps).
+  // Maps). O fundo da barra continua branco fora do modo "geral" (RF-013) — só o círculo
+  // do botão de filtro fica amarelo-claro (ver `scopeButtonClass`), para o realce marcar
+  // o filtro sem tirar o contraste do texto digitado.
+  const scopeRestricted = scope !== 'all';
   const shellBase =
     'flex h-12 items-center border border-app-border bg-white shadow-map-control transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15';
   const dropdownRadiusClass = 'rounded-b-2xl';
   const shellClass = `${shellBase} ${showDropdown ? 'rounded-t-2xl border-b-0' : 'rounded-2xl'}`;
+  const ScopeIcon = SCOPE_ICONS[scope];
+  const activeScope = GEO_SEARCH_SCOPES.find((candidate) => candidate.id === scope);
 
   // Quando há texto ou seleção, o X limpa a busca (comportamento antigo). Sem nada
   // digitado nem selecionado, o slot direito vira o controle da hierarquia: um X
@@ -379,7 +497,7 @@ export function GeoSearchBar({
     <div className={wrapperClass}>
       {/* Contexto de posicionamento próprio para a lista de sugestões se alinhar
           exatamente às bordas da caixa de busca. */}
-      <div className="relative">
+      <div className="relative" ref={containerRef}>
         <div className={shellClass}>
           {showMenuMark ? (
             <button
@@ -391,6 +509,64 @@ export function GeoSearchBar({
               <NexusMark className="h-8 w-8" />
             </button>
           ) : null}
+          <div ref={scopeMenuRef} className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setScopeMenuOpen((current) => !current)}
+              className={`${showMenuMark ? 'ml-0.5' : 'ml-1.5'} flex h-9 w-9 items-center justify-center rounded-full transition ${
+                scopeRestricted
+                  ? 'bg-app-accent-soft hover:brightness-[0.98]'
+                  : 'hover:bg-black/5'
+              }`}
+              aria-label={`Modo de busca: ${activeScope?.label ?? 'Pesquisa geral'}`}
+              title={activeScope?.label ?? 'Pesquisa geral'}
+              aria-haspopup="listbox"
+              aria-expanded={scopeMenuOpen}
+            >
+              <ScopeIcon
+                className={`h-5 w-5 ${scopeRestricted ? 'text-app-strong' : 'text-app-muted'}`}
+                aria-hidden="true"
+              />
+            </button>
+            {scopeMenuOpen ? (
+              <div
+                role="listbox"
+                aria-label="Modo de busca"
+                onMouseDown={(event) => event.preventDefault()}
+                className="absolute left-0 top-full z-50 mt-1.5 w-64 overflow-hidden rounded-2xl border border-app-border bg-white py-1.5 shadow-map-control-lg"
+              >
+                {GEO_SEARCH_SCOPES.map((candidate) => {
+                  const Icon = SCOPE_ICONS[candidate.id];
+                  const active = candidate.id === scope;
+                  return (
+                    <button
+                      key={candidate.id}
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      onClick={() => selectScope(candidate.id)}
+                      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition ${
+                        active ? 'bg-app-accent-soft' : 'hover:bg-black/5'
+                      }`}
+                    >
+                      <Icon
+                        className={`h-4 w-4 shrink-0 ${active ? 'text-app-strong' : 'text-app-muted'}`}
+                        aria-hidden="true"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[0.86rem] text-app-text">
+                          {candidate.label}
+                        </span>
+                        <span className="block truncate text-[0.7rem] text-app-muted">
+                          {candidate.hint}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
           {selection ? (
             <button
               type="button"
@@ -437,8 +613,8 @@ export function GeoSearchBar({
                 setOpen(true);
               }}
               onKeyDown={handleKeyDown}
-              className={`h-full min-w-0 flex-1 rounded-l-2xl bg-transparent ${showMenuMark ? 'pl-2' : 'pl-4'} pr-2 text-[16px] text-app-text placeholder:text-app-muted focus:outline-none`}
-              placeholder="Pesquise no Nexus"
+              className="h-full min-w-0 flex-1 rounded-l-2xl bg-transparent pl-1.5 pr-2 text-[16px] text-app-text placeholder:text-app-muted focus:outline-none"
+              placeholder={SCOPE_PLACEHOLDER[scope]}
               id="geo-search-input"
               autoComplete="off"
             />

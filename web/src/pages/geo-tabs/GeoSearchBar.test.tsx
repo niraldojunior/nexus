@@ -58,6 +58,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  window.localStorage.clear();
 });
 
 const node: GeoTreeNode = {
@@ -1098,5 +1099,282 @@ describe('GeoSearchBar histórico', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(onSelectNode).toHaveBeenCalledWith(node);
+  });
+});
+
+describe('GeoSearchBar filtro de escopo (RF-013)', () => {
+  it('abre a lista de modos pelo ícone de filtro e mostra as 6 opções', () => {
+    render(
+      <GeoSearchBar
+        query=""
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Modo de busca: Pesquisa geral'));
+    expect(screen.getByRole('listbox', { name: 'Modo de busca' })).toBeInTheDocument();
+    for (const label of [
+      'Pesquisa geral',
+      'Apenas Endereço',
+      'Apenas Infraestrutura',
+      'Apenas Locais',
+      'Apenas CTOs',
+      'Apenas Cabos',
+    ]) {
+      expect(screen.getByRole('option', { name: new RegExp(label) })).toBeInTheDocument();
+    }
+  });
+
+  it('escolher "Apenas CTOs" restringe a busca ao inventário com o tipo CTO e não consulta Places', async () => {
+    mocks.fetchTreeSearch.mockResolvedValue([]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+
+    render(
+      <GeoSearchBar
+        query="CDO"
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(mocks.fetchTreeSearch).toHaveBeenCalledTimes(1));
+    mocks.fetchTreeSearch.mockClear();
+    mocks.fetchAddressPredictions.mockClear();
+
+    fireEvent.click(screen.getByLabelText('Modo de busca: Pesquisa geral'));
+    fireEvent.click(screen.getByRole('option', { name: /Apenas CTOs/ }));
+
+    await waitFor(() => expect(mocks.fetchTreeSearch).toHaveBeenCalledTimes(1));
+    expect(mocks.fetchTreeSearch).toHaveBeenCalledWith(
+      'CDO',
+      expect.objectContaining({ scope: 'cto' }),
+    );
+    expect(mocks.fetchAddressPredictions).not.toHaveBeenCalled();
+  });
+
+  it('escolher "Apenas Endereço" não consulta o inventário', async () => {
+    mocks.fetchTreeSearch.mockResolvedValue([]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+
+    render(
+      <GeoSearchBar
+        query="Rua Gavião"
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(mocks.fetchTreeSearch).toHaveBeenCalledTimes(1));
+    mocks.fetchTreeSearch.mockClear();
+    mocks.fetchAddressPredictions.mockClear();
+
+    fireEvent.click(screen.getByLabelText('Modo de busca: Pesquisa geral'));
+    fireEvent.click(screen.getByRole('option', { name: /Apenas Endereço/ }));
+
+    await waitFor(() => expect(mocks.fetchAddressPredictions).toHaveBeenCalledTimes(1));
+    expect(mocks.fetchTreeSearch).not.toHaveBeenCalled();
+  });
+
+  it('fora do modo geral, só o botão de filtro sinaliza escopo restrito — a área de texto permanece branca', () => {
+    mocks.fetchTreeSearch.mockResolvedValue([]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+
+    render(
+      <GeoSearchBar
+        query=""
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+      />,
+    );
+
+    const shell = screen.getByPlaceholderText('Pesquise no Nexus').parentElement!;
+    const scopeButton = screen.getByLabelText('Modo de busca: Pesquisa geral');
+    expect(shell.className).toContain('bg-white');
+    expect(scopeButton.className).not.toContain('bg-app-accent-soft');
+
+    fireEvent.click(scopeButton);
+    fireEvent.click(screen.getByRole('option', { name: /Apenas Locais/ }));
+
+    expect(shell.className).toContain('bg-white');
+    expect(screen.getByLabelText('Modo de busca: Apenas Locais').className).toContain(
+      'bg-app-accent-soft',
+    );
+  });
+
+  it('persiste o modo escolhido e retoma na próxima montagem', () => {
+    mocks.fetchTreeSearch.mockResolvedValue([]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+
+    const { unmount } = render(
+      <GeoSearchBar
+        query=""
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText('Modo de busca: Pesquisa geral'));
+    fireEvent.click(screen.getByRole('option', { name: /Apenas Cabos/ }));
+    unmount();
+
+    render(
+      <GeoSearchBar
+        query=""
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Modo de busca: Apenas Cabos')).toBeInTheDocument();
+  });
+
+  it('filtra os recentes pelo escopo ativo', async () => {
+    const cableNode: GeoTreeNode = {
+      id: 'resource:cable-1',
+      kind: 'resource',
+      label: 'Cabo Backbone 1',
+      resourceType: 'BackboneCable',
+      hasChildren: false,
+    };
+    mocks.fetchSearchHistory.mockResolvedValue([
+      {
+        entryKey: 'node:site:1',
+        kind: 'node',
+        label: 'Estação Icaraí',
+        node,
+        visitCount: 2,
+        lastVisitedAt: '2026-08-09T00:00:00Z',
+      },
+      {
+        entryKey: 'node:resource:cable-1',
+        kind: 'node',
+        label: 'Cabo Backbone 1',
+        node: cableNode,
+        visitCount: 1,
+        lastVisitedAt: '2026-08-08T00:00:00Z',
+      },
+    ]);
+
+    render(
+      <GeoSearchBar
+        query=""
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Modo de busca: Pesquisa geral'));
+    fireEvent.click(screen.getByRole('option', { name: /Apenas Cabos/ }));
+
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise um cabo'));
+    await waitFor(() => expect(screen.getByText('Cabo Backbone 1')).toBeInTheDocument());
+    expect(screen.queryByText('Estação Icaraí')).not.toBeInTheDocument();
+  });
+});
+
+describe('GeoSearchBar fecha o dropdown de resultados', () => {
+  it('Escape fecha a picklist mesmo sem o input focado', async () => {
+    mocks.fetchTreeSearch.mockResolvedValue([node]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+
+    render(
+      <>
+        <button type="button">Fora da barra</button>
+        <GeoSearchBar
+          query="Estação"
+          onQueryChange={vi.fn()}
+          onSelectNode={vi.fn()}
+          onAddressFound={vi.fn()}
+          onAddressError={vi.fn()}
+        />
+      </>,
+    );
+
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise no Nexus'));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Estação Icaraí/i })).toBeInTheDocument(),
+    );
+
+    screen.getByRole('button', { name: 'Fora da barra' }).focus();
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Estação Icaraí/i })).not.toBeInTheDocument(),
+    );
+  });
+
+  it('clique fora da barra fecha a picklist de resultados', async () => {
+    mocks.fetchTreeSearch.mockResolvedValue([node]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+
+    render(
+      <>
+        <button type="button">Fora da barra</button>
+        <GeoSearchBar
+          query="Estação"
+          onQueryChange={vi.fn()}
+          onSelectNode={vi.fn()}
+          onAddressFound={vi.fn()}
+          onAddressError={vi.fn()}
+        />
+      </>,
+    );
+
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise no Nexus'));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Estação Icaraí/i })).toBeInTheDocument(),
+    );
+
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Fora da barra' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Estação Icaraí/i })).not.toBeInTheDocument(),
+    );
+  });
+
+  it('clique fora da barra com o campo vazio fecha a picklist de histórico', async () => {
+    mocks.fetchSearchHistory.mockResolvedValue([
+      {
+        entryKey: 'node:site:1',
+        kind: 'node',
+        label: 'Estação Icaraí',
+        node,
+        visitCount: 2,
+        lastVisitedAt: '2026-08-09T00:00:00Z',
+      },
+    ]);
+
+    render(
+      <>
+        <button type="button">Fora da barra</button>
+        <GeoSearchBar
+          query=""
+          onQueryChange={vi.fn()}
+          onSelectNode={vi.fn()}
+          onAddressFound={vi.fn()}
+          onAddressError={vi.fn()}
+        />
+      </>,
+    );
+
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise no Nexus'));
+    await waitFor(() => expect(screen.getByText('Recentes')).toBeInTheDocument());
+
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Fora da barra' }));
+
+    await waitFor(() => expect(screen.queryByText('Recentes')).not.toBeInTheDocument());
   });
 });

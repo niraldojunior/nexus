@@ -1296,6 +1296,44 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
 
   const emptyTerm = await requestJson(port, 'GET', '/v1/geo/tree/search?q=');
   assert.deepEqual(emptyTerm.body, []);
+
+  // Filtro de escopo da barra de pesquisa (RF-013): `kinds=site` restringe a busca só a
+  // Estações — o mesmo termo "icara" que antes trazia Estação + CDOE agora só traz a
+  // Estação.
+  const onlySites = await requestJson(port, 'GET', '/v1/geo/tree/search?q=icara&kinds=site');
+  assert.deepEqual((onlySites.body as GeoTreeResponseNode[]).map((item) => item.label), [
+    'Estação Icaraí Central',
+  ]);
+
+  // `kinds=resource` restringe a Recursos — a Estação some, o CDOE (CTO) permanece.
+  const onlyResources = await requestJson(
+    port,
+    'GET',
+    '/v1/geo/tree/search?q=icara&kinds=resource',
+  );
+  assert.deepEqual((onlyResources.body as GeoTreeResponseNode[]).map((item) => item.label), [
+    'CDOE Icaraí 08',
+  ]);
+
+  // `types=CTO` restringe ainda mais, dentro de Recurso — o mesmo resultado aqui porque só
+  // há um recurso no acervo de teste, mas comprova que o parâmetro chega ao SQL.
+  const onlyCto = await requestJson(
+    port,
+    'GET',
+    '/v1/geo/tree/search?q=icara&kinds=resource&types=CTO',
+  );
+  assert.deepEqual((onlyCto.body as GeoTreeResponseNode[]).map((item) => item.label), [
+    'CDOE Icaraí 08',
+  ]);
+
+  // `types=Pole` (tipo que não existe no acervo de teste) não casa com o CDOE — o filtro de
+  // tipo é aplicado de verdade, não só o de kind.
+  const wrongType = await requestJson(
+    port,
+    'GET',
+    '/v1/geo/tree/search?q=icara&kinds=resource&types=Pole',
+  );
+  assert.deepEqual(wrongType.body, []);
 });
 
 test('App exposes health without auth and protected routes reject missing token', async (t) => {

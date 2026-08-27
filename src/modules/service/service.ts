@@ -29,7 +29,14 @@ import type {
   UpdateServiceInput,
   UpdateServiceSpecificationInput,
 } from './domain.js';
-import type { IServiceRepository } from './service-repository-interface.js';
+import type { IServiceRepository, ServiceTenantScope } from './service-repository-interface.js';
+import type { RequestContext } from '../../shared/http/request-context.js';
+
+const DEFAULT_TENANT_ID = 'default';
+const tenantOf = (context?: RequestContext): string => context?.tenantId ?? DEFAULT_TENANT_ID;
+const scopeOf = (context?: RequestContext): ServiceTenantScope => ({
+  tenantId: tenantOf(context),
+});
 
 type ServiceDependencies = {
   lookupParty?: (
@@ -62,6 +69,7 @@ export class ServiceService {
 
   public async createServiceSpecification(
     input: CreateServiceSpecificationInput,
+    context?: RequestContext,
   ): Promise<ServiceSpecification> {
     assertName(input.name);
     assertName(input.category, 'category');
@@ -80,6 +88,7 @@ export class ServiceService {
         input.relatedParty,
         this.dependencies.lookupParty,
       ),
+      tenantId: tenantOf(context),
       ...(input.description ? { description: input.description } : {}),
       ...(input.observation ? { observation: input.observation } : {}),
       ...(input.validFor ? { validFor: input.validFor } : {}),
@@ -96,11 +105,12 @@ export class ServiceService {
   // item, mas segue o lote inteiro em vez de abortar na primeira falha.
   public async bulkCreateServiceSpecifications(
     items: ServiceSpecificationBulkItem[],
+    context?: RequestContext,
   ): Promise<ServiceSpecificationBulkResult> {
     const results: ServiceSpecificationBulkItemResult[] = [];
     for (const item of items) {
       try {
-        const created = await this.createServiceSpecification(item.input);
+        const created = await this.createServiceSpecification(item.input, context);
         results.push({ line: item.line, status: 'created', id: created.id, name: created.name });
       } catch (error) {
         results.push({
@@ -119,8 +129,9 @@ export class ServiceService {
   public async updateServiceSpecification(
     id: string,
     input: UpdateServiceSpecificationInput,
+    context?: RequestContext,
   ): Promise<ServiceSpecification> {
-    const current = await this.getServiceSpecificationOrThrow(id);
+    const current = await this.getServiceSpecificationOrThrow(id, context);
     if (input.name !== undefined) assertName(input.name);
     if (input.category !== undefined) assertName(input.category, 'category');
 
@@ -150,8 +161,11 @@ export class ServiceService {
     return updated;
   }
 
-  public async deleteServiceSpecification(id: string): Promise<ServiceSpecification> {
-    const current = await this.getServiceSpecificationOrThrow(id);
+  public async deleteServiceSpecification(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ServiceSpecification> {
+    const current = await this.getServiceSpecificationOrThrow(id, context);
     const terminated = await this.repository.upsertServiceSpecification({
       ...current,
       validFor: buildTimePeriod(current.validFor?.startDateTime, new Date().toISOString()),
@@ -167,15 +181,25 @@ export class ServiceService {
 
   public async listServiceSpecifications(
     query?: ServiceSpecificationQuery,
+    context?: RequestContext,
   ): Promise<ServiceSpecification[]> {
-    return await this.repository.listServiceSpecifications(query);
+    return await this.repository.listServiceSpecifications({
+      ...query,
+      tenantId: tenantOf(context),
+    });
   }
 
-  public async getServiceSpecification(id: string): Promise<ServiceSpecification | undefined> {
-    return await this.repository.getServiceSpecification(id);
+  public async getServiceSpecification(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ServiceSpecification | undefined> {
+    return await this.repository.getServiceSpecification(id, scopeOf(context));
   }
 
-  public async createServiceCategory(input: CreateServiceCategoryInput): Promise<ServiceCategory> {
+  public async createServiceCategory(
+    input: CreateServiceCategoryInput,
+    context?: RequestContext,
+  ): Promise<ServiceCategory> {
     assertName(input.name);
     const id = createCanonicalId();
     const category: ServiceCategory = {
@@ -184,6 +208,7 @@ export class ServiceService {
       href: `/tmf-api/serviceCatalogManagement/v4/serviceCategory/${id}`,
       name: input.name.trim(),
       serviceCategoryCharacteristic: input.serviceCategoryCharacteristic ?? [],
+      tenantId: tenantOf(context),
       ...(input.description ? { description: input.description } : {}),
       ...(input.parentCategoryId
         ? {
@@ -204,8 +229,9 @@ export class ServiceService {
   public async updateServiceCategory(
     id: string,
     input: UpdateServiceCategoryInput,
+    context?: RequestContext,
   ): Promise<ServiceCategory> {
-    const current = await this.getServiceCategoryOrThrow(id);
+    const current = await this.getServiceCategoryOrThrow(id, context);
     if (input.name !== undefined) assertName(input.name);
     const updated = await this.repository.upsertServiceCategory({
       ...current,
@@ -232,8 +258,11 @@ export class ServiceService {
     return updated;
   }
 
-  public async deleteServiceCategory(id: string): Promise<ServiceCategory> {
-    const current = await this.getServiceCategoryOrThrow(id);
+  public async deleteServiceCategory(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ServiceCategory> {
+    const current = await this.getServiceCategoryOrThrow(id, context);
     const terminated = await this.repository.upsertServiceCategory({
       ...current,
       validFor: buildTimePeriod(current.validFor?.startDateTime, new Date().toISOString()),
@@ -247,21 +276,28 @@ export class ServiceService {
     return terminated;
   }
 
-  public async listServiceCategories(query?: ServiceCategoryQuery): Promise<ServiceCategory[]> {
-    return await this.repository.listServiceCategories(query);
+  public async listServiceCategories(
+    query?: ServiceCategoryQuery,
+    context?: RequestContext,
+  ): Promise<ServiceCategory[]> {
+    return await this.repository.listServiceCategories({ ...query, tenantId: tenantOf(context) });
   }
 
-  public async getServiceCategory(id: string): Promise<ServiceCategory | undefined> {
-    return await this.repository.getServiceCategory(id);
+  public async getServiceCategory(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ServiceCategory | undefined> {
+    return await this.repository.getServiceCategory(id, scopeOf(context));
   }
 
   public async createServiceCandidate(
     input: CreateServiceCandidateInput,
+    context?: RequestContext,
   ): Promise<ServiceCandidate> {
     assertName(input.name);
-    const spec = await this.getServiceSpecificationOrThrow(input.serviceSpecificationId);
+    const spec = await this.getServiceSpecificationOrThrow(input.serviceSpecificationId, context);
     const category = input.serviceCategoryId
-      ? await this.getServiceCategoryOrThrow(input.serviceCategoryId)
+      ? await this.getServiceCategoryOrThrow(input.serviceCategoryId, context)
       : undefined;
     const id = createCanonicalId();
     const candidate: ServiceCandidate = {
@@ -272,6 +308,7 @@ export class ServiceService {
       status: input.status ?? 'active',
       serviceSpecification: { id: spec.id, '@referredType': 'ServiceSpecification' },
       serviceCandidateCharacteristic: input.serviceCandidateCharacteristic ?? [],
+      tenantId: tenantOf(context),
       ...(input.description ? { description: input.description } : {}),
       ...(category
         ? { serviceCategory: { id: category.id, '@referredType': 'ServiceCategory' } }
@@ -287,13 +324,14 @@ export class ServiceService {
   public async updateServiceCandidate(
     id: string,
     input: UpdateServiceCandidateInput,
+    context?: RequestContext,
   ): Promise<ServiceCandidate> {
-    const current = await this.getServiceCandidateOrThrow(id);
+    const current = await this.getServiceCandidateOrThrow(id, context);
     if (input.name !== undefined) assertName(input.name);
     if (input.serviceSpecificationId !== undefined)
-      await this.getServiceSpecificationOrThrow(input.serviceSpecificationId);
+      await this.getServiceSpecificationOrThrow(input.serviceSpecificationId, context);
     if (input.serviceCategoryId !== undefined)
-      await this.getServiceCategoryOrThrow(input.serviceCategoryId);
+      await this.getServiceCategoryOrThrow(input.serviceCategoryId, context);
 
     const updated = await this.repository.upsertServiceCandidate({
       ...current,
@@ -321,8 +359,11 @@ export class ServiceService {
     return updated;
   }
 
-  public async deleteServiceCandidate(id: string): Promise<ServiceCandidate> {
-    const current = await this.getServiceCandidateOrThrow(id);
+  public async deleteServiceCandidate(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ServiceCandidate> {
+    const current = await this.getServiceCandidateOrThrow(id, context);
     const terminated = await this.repository.upsertServiceCandidate({
       ...current,
       status: 'terminated',
@@ -337,30 +378,41 @@ export class ServiceService {
     return terminated;
   }
 
-  public async listServiceCandidates(query?: ServiceCandidateQuery): Promise<ServiceCandidate[]> {
-    return await this.repository.listServiceCandidates(query);
+  public async listServiceCandidates(
+    query?: ServiceCandidateQuery,
+    context?: RequestContext,
+  ): Promise<ServiceCandidate[]> {
+    return await this.repository.listServiceCandidates({ ...query, tenantId: tenantOf(context) });
   }
 
-  public async getServiceCandidate(id: string): Promise<ServiceCandidate | undefined> {
-    return await this.repository.getServiceCandidate(id);
+  public async getServiceCandidate(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ServiceCandidate | undefined> {
+    return await this.repository.getServiceCandidate(id, scopeOf(context));
   }
 
-  public async createService(input: CreateServiceInput): Promise<Service> {
+  public async createService(input: CreateServiceInput, context?: RequestContext): Promise<Service> {
     return input['@type'] === 'ResourceFacingService' || 'supportingResource' in input
-      ? await this.createResourceFacingService(input)
-      : await this.createCustomerFacingService(input);
+      ? await this.createResourceFacingService(input, context)
+      : await this.createCustomerFacingService(input, context);
   }
 
-  public async updateService(id: string, input: UpdateServiceInput): Promise<Service> {
-    const current = await this.getServiceOrThrow(id);
+  public async updateService(
+    id: string,
+    input: UpdateServiceInput,
+    context?: RequestContext,
+  ): Promise<Service> {
+    const current = await this.getServiceOrThrow(id, context);
     if (current['@type'] === 'CustomerFacingService') {
-      return await this.updateCustomerFacingService(id, input as UpdateServiceInput);
+      return await this.updateCustomerFacingService(id, input as UpdateServiceInput, context);
     }
-    return await this.updateResourceFacingService(id, input as UpdateServiceInput);
+    return await this.updateResourceFacingService(id, input as UpdateServiceInput, context);
   }
 
   public async createCustomerFacingService(
     input: CreateServiceInput,
+    context?: RequestContext,
   ): Promise<CustomerFacingService> {
     if (input['@type'] && input['@type'] !== 'CustomerFacingService') {
       throw new AppError('service type mismatch', {
@@ -369,7 +421,10 @@ export class ServiceService {
       });
     }
     const normalized = this.normalizeCustomerFacingInput(input as CreateServiceInput);
-    const spec = await this.getServiceSpecificationOrThrow(normalized.serviceSpecificationId);
+    const spec = await this.getServiceSpecificationOrThrow(
+      normalized.serviceSpecificationId,
+      context,
+    );
     assertServiceType(spec.serviceType, 'CFS');
     assertName(normalized.name);
     assertSubscriberId(normalized.subscriberId);
@@ -425,6 +480,7 @@ export class ServiceService {
       ),
       subscriberId: normalized.subscriberId.trim(),
       supportingService,
+      tenantId: tenantOf(context),
       ...(normalized.validFor ? { validFor: normalized.validFor } : {}),
     };
 
@@ -435,6 +491,7 @@ export class ServiceService {
 
   public async createResourceFacingService(
     input: CreateServiceInput,
+    context?: RequestContext,
   ): Promise<ResourceFacingService> {
     if (input['@type'] && input['@type'] !== 'ResourceFacingService') {
       throw new AppError('service type mismatch', {
@@ -443,7 +500,10 @@ export class ServiceService {
       });
     }
     const normalized = this.normalizeResourceFacingInput(input as CreateServiceInput);
-    const spec = await this.getServiceSpecificationOrThrow(normalized.serviceSpecificationId);
+    const spec = await this.getServiceSpecificationOrThrow(
+      normalized.serviceSpecificationId,
+      context,
+    );
     assertServiceType(spec.serviceType, 'RFS');
     assertName(normalized.name);
     assertServiceState(normalized.state);
@@ -490,6 +550,7 @@ export class ServiceService {
       ),
       supportingResource,
       supportingService,
+      tenantId: tenantOf(context),
       ...(normalized.validFor ? { validFor: normalized.validFor } : {}),
     };
 
@@ -501,14 +562,15 @@ export class ServiceService {
   public async updateCustomerFacingService(
     id: string,
     input: UpdateServiceInput,
+    context?: RequestContext,
   ): Promise<CustomerFacingService> {
-    const current = await this.getCustomerFacingServiceOrThrow(id);
+    const current = await this.getCustomerFacingServiceOrThrow(id, context);
     const normalized = this.normalizeCustomerFacingInput(input as UpdateServiceInput);
     if (
       normalized.serviceSpecificationId !== undefined &&
       normalized.serviceSpecificationId !== current.serviceSpecificationId
     ) {
-      await this.getServiceSpecificationOrThrow(normalized.serviceSpecificationId);
+      await this.getServiceSpecificationOrThrow(normalized.serviceSpecificationId, context);
     }
 
     const updated = await this.repository.upsertCustomerFacingService({
@@ -567,14 +629,15 @@ export class ServiceService {
   public async updateResourceFacingService(
     id: string,
     input: UpdateServiceInput,
+    context?: RequestContext,
   ): Promise<ResourceFacingService> {
-    const current = await this.getResourceFacingServiceOrThrow(id);
+    const current = await this.getResourceFacingServiceOrThrow(id, context);
     const normalized = this.normalizeResourceFacingInput(input as UpdateServiceInput);
     if (
       normalized.serviceSpecificationId !== undefined &&
       normalized.serviceSpecificationId !== current.serviceSpecificationId
     ) {
-      await this.getServiceSpecificationOrThrow(normalized.serviceSpecificationId);
+      await this.getServiceSpecificationOrThrow(normalized.serviceSpecificationId, context);
     }
 
     const updated = await this.repository.upsertResourceFacingService({
@@ -629,8 +692,8 @@ export class ServiceService {
     return updated;
   }
 
-  public async deleteService(id: string): Promise<Service> {
-    const current = await this.getServiceOrThrow(id);
+  public async deleteService(id: string, context?: RequestContext): Promise<Service> {
+    const current = await this.getServiceOrThrow(id, context);
     const terminated =
       current['@type'] === 'CustomerFacingService'
         ? await this.repository.upsertCustomerFacingService({
@@ -648,39 +711,45 @@ export class ServiceService {
     return terminated;
   }
 
-  public async listServices(query?: ServiceQuery): Promise<Service[]> {
-    return await this.repository.listServices(query);
+  public async listServices(query?: ServiceQuery, context?: RequestContext): Promise<Service[]> {
+    return await this.repository.listServices({ ...query, tenantId: tenantOf(context) });
   }
 
-  public async countServices(query?: ServiceQuery): Promise<number> {
-    return await this.repository.countServices(query);
+  public async countServices(query?: ServiceQuery, context?: RequestContext): Promise<number> {
+    return await this.repository.countServices({ ...query, tenantId: tenantOf(context) });
   }
 
-  public async getService(id: string): Promise<Service | undefined> {
+  public async getService(id: string, context?: RequestContext): Promise<Service | undefined> {
     return (
-      (await this.repository.getCustomerFacingService(id)) ??
-      (await this.repository.getResourceFacingService(id))
+      (await this.repository.getCustomerFacingService(id, scopeOf(context))) ??
+      (await this.repository.getResourceFacingService(id, scopeOf(context)))
     );
   }
 
   public async addServiceRelationship(
     serviceId: string,
     relationship: ServiceRelationship,
+    context?: RequestContext,
   ): Promise<ServiceRelationship> {
     assertName(relationship.relationshipType, 'relationshipType');
-    const current = await this.getServiceOrThrow(serviceId);
-    await this.getServiceOrThrow(relationship.id);
-    await this.updateService(serviceId, {
-      serviceRelationship: [
-        ...current.serviceRelationship.filter(
-          (item) =>
-            !(
-              item.id === relationship.id && item.relationshipType === relationship.relationshipType
-            ),
-        ),
-        relationship,
-      ],
-    } as UpdateServiceInput);
+    const current = await this.getServiceOrThrow(serviceId, context);
+    await this.getServiceOrThrow(relationship.id, context);
+    await this.updateService(
+      serviceId,
+      {
+        serviceRelationship: [
+          ...current.serviceRelationship.filter(
+            (item) =>
+              !(
+                item.id === relationship.id &&
+                item.relationshipType === relationship.relationshipType
+              ),
+          ),
+          relationship,
+        ],
+      } as UpdateServiceInput,
+      context,
+    );
     await this.emit('ServiceRelationshipCreateEvent', serviceId, current['@type'], {
       serviceId,
       relationship,
@@ -692,13 +761,18 @@ export class ServiceService {
     serviceId: string,
     relatedServiceId: string,
     relationshipType: string,
+    context?: RequestContext,
   ): Promise<boolean> {
-    const current = await this.getServiceOrThrow(serviceId);
+    const current = await this.getServiceOrThrow(serviceId, context);
     const next = current.serviceRelationship.filter(
       (item) => !(item.id === relatedServiceId && item.relationshipType === relationshipType),
     );
     if (next.length === current.serviceRelationship.length) return false;
-    await this.updateService(serviceId, { serviceRelationship: next } as UpdateServiceInput);
+    await this.updateService(
+      serviceId,
+      { serviceRelationship: next } as UpdateServiceInput,
+      context,
+    );
     await this.emit('ServiceRelationshipDeleteEvent', serviceId, current['@type'], {
       serviceId,
       relatedServiceId,
@@ -707,8 +781,11 @@ export class ServiceService {
     return true;
   }
 
-  public async listServiceRelationships(serviceId: string): Promise<ServiceRelationship[]> {
-    const current = await this.getServiceOrThrow(serviceId);
+  public async listServiceRelationships(
+    serviceId: string,
+    context?: RequestContext,
+  ): Promise<ServiceRelationship[]> {
+    const current = await this.getServiceOrThrow(serviceId, context);
     return current.serviceRelationship;
   }
 
@@ -730,8 +807,11 @@ export class ServiceService {
     });
   }
 
-  private async getServiceSpecificationOrThrow(id: string): Promise<ServiceSpecification> {
-    const spec = await this.repository.getServiceSpecification(id);
+  private async getServiceSpecificationOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ServiceSpecification> {
+    const spec = await this.repository.getServiceSpecification(id, scopeOf(context));
     if (!spec)
       throw new AppError('service specification not found', {
         code: 'SERVICE_SPEC_NOT_FOUND',
@@ -740,8 +820,11 @@ export class ServiceService {
     return spec;
   }
 
-  private async getServiceCategoryOrThrow(id: string): Promise<ServiceCategory> {
-    const category = await this.repository.getServiceCategory(id);
+  private async getServiceCategoryOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ServiceCategory> {
+    const category = await this.repository.getServiceCategory(id, scopeOf(context));
     if (!category)
       throw new AppError('service category not found', {
         code: 'SERVICE_CATEGORY_NOT_FOUND',
@@ -750,8 +833,11 @@ export class ServiceService {
     return category;
   }
 
-  private async getServiceCandidateOrThrow(id: string): Promise<ServiceCandidate> {
-    const candidate = await this.repository.getServiceCandidate(id);
+  private async getServiceCandidateOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ServiceCandidate> {
+    const candidate = await this.repository.getServiceCandidate(id, scopeOf(context));
     if (!candidate)
       throw new AppError('service candidate not found', {
         code: 'SERVICE_CANDIDATE_NOT_FOUND',
@@ -760,22 +846,28 @@ export class ServiceService {
     return candidate;
   }
 
-  private async getCustomerFacingServiceOrThrow(id: string): Promise<CustomerFacingService> {
-    const service = await this.repository.getCustomerFacingService(id);
+  private async getCustomerFacingServiceOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<CustomerFacingService> {
+    const service = await this.repository.getCustomerFacingService(id, scopeOf(context));
     if (!service)
       throw new AppError('service not found', { code: 'SERVICE_NOT_FOUND', statusCode: 404 });
     return service;
   }
 
-  private async getResourceFacingServiceOrThrow(id: string): Promise<ResourceFacingService> {
-    const service = await this.repository.getResourceFacingService(id);
+  private async getResourceFacingServiceOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ResourceFacingService> {
+    const service = await this.repository.getResourceFacingService(id, scopeOf(context));
     if (!service)
       throw new AppError('service not found', { code: 'SERVICE_NOT_FOUND', statusCode: 404 });
     return service;
   }
 
-  private async getServiceOrThrow(id: string): Promise<Service> {
-    const service = await this.getService(id);
+  private async getServiceOrThrow(id: string, context?: RequestContext): Promise<Service> {
+    const service = await this.getService(id, context);
     if (!service)
       throw new AppError('service not found', { code: 'SERVICE_NOT_FOUND', statusCode: 404 });
     return service;

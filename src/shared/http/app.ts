@@ -349,22 +349,28 @@ const routeRequest = async ({
   }
 
   if (request.method === 'POST' && url.pathname === '/v1/service/specifications/bulk-import') {
-    await ensureAuthorized(request, config);
+    const serviceBulkImportContext = await buildRequestContext(request, config);
+    requireRoles(serviceBulkImportContext, CATALOG_ADMIN_ROLES);
     const body = await readBody(request);
     const items = parseServiceSpecificationBulkImportItems(body);
-    const result = await runtime.serviceService.bulkCreateServiceSpecifications(items);
+    const result = await runtime.serviceService.bulkCreateServiceSpecifications(
+      items,
+      serviceBulkImportContext,
+    );
     sendJson(response, 200, result);
     return;
   }
 
   if (request.method === 'GET' && url.pathname === '/v1/service/workspace') {
-    await ensureAuthorized(request, config);
+    const serviceWorkspaceContext = await buildRequestContext(request, config);
+    requireRoles(serviceWorkspaceContext, INVENTORY_READ_ROLES);
     const tab = parseServiceWorkspaceTab(url.searchParams.get('tab'));
     const category = url.searchParams.get('category');
     const snapshot = await buildServiceWorkspaceSnapshot({
       tab,
       ...(category ? { category } : {}),
       serviceService: runtime.serviceService,
+      context: serviceWorkspaceContext,
     });
     sendJson(response, 200, snapshot);
     return;
@@ -2852,7 +2858,11 @@ const routeServiceRequest = async ({
     (url.pathname.endsWith('/relationships') || url.pathname.includes('/relationships/'))
   ) {
     if (request.method === 'GET' && url.pathname.endsWith('/relationships')) {
-      return sendJson(response, 200, serviceService.listServiceRelationships(route.id));
+      return sendJson(
+        response,
+        200,
+        serviceService.listServiceRelationships(route.id, context),
+      );
     }
 
     if (request.method === 'POST' && url.pathname.endsWith('/relationships')) {
@@ -2862,6 +2872,7 @@ const routeServiceRequest = async ({
         serviceService.addServiceRelationship(
           route.id,
           (await readBody(request)) as Parameters<typeof serviceService.addServiceRelationship>[1],
+          context,
         ),
       );
     }
@@ -2874,6 +2885,7 @@ const routeServiceRequest = async ({
           route.id,
           route.relationshipId,
           route.relationshipType ?? 'dependsOn',
+          context,
         ),
       );
     }
@@ -2884,7 +2896,10 @@ const routeServiceRequest = async ({
       return sendJson(
         response,
         200,
-        serviceService.listServiceSpecifications(parseServiceSpecificationQuery(url.searchParams)),
+        serviceService.listServiceSpecifications(
+          parseServiceSpecificationQuery(url.searchParams),
+          context,
+        ),
       );
     }
     if (!route.id && request.method === 'POST') {
@@ -2895,13 +2910,14 @@ const routeServiceRequest = async ({
           (await readBody(request)) as Parameters<
             typeof serviceService.createServiceSpecification
           >[0],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(
         response,
-        serviceService.getServiceSpecification(route.id),
+        serviceService.getServiceSpecification(route.id, context),
         'SERVICE_SPEC_NOT_FOUND',
       );
     }
@@ -2914,11 +2930,16 @@ const routeServiceRequest = async ({
           (await readBody(request)) as Parameters<
             typeof serviceService.updateServiceSpecification
           >[1],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'DELETE') {
-      return sendJson(response, 200, serviceService.deleteServiceSpecification(route.id));
+      return sendJson(
+        response,
+        200,
+        serviceService.deleteServiceSpecification(route.id, context),
+      );
     }
   }
 
@@ -2927,7 +2948,7 @@ const routeServiceRequest = async ({
       return sendJson(
         response,
         200,
-        serviceService.listServiceCategories(parseServiceCategoryQuery(url.searchParams)),
+        serviceService.listServiceCategories(parseServiceCategoryQuery(url.searchParams), context),
       );
     }
     if (!route.id && request.method === 'POST') {
@@ -2936,13 +2957,14 @@ const routeServiceRequest = async ({
         201,
         serviceService.createServiceCategory(
           (await readBody(request)) as Parameters<typeof serviceService.createServiceCategory>[0],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(
         response,
-        serviceService.getServiceCategory(route.id),
+        serviceService.getServiceCategory(route.id, context),
         'SERVICE_CATEGORY_NOT_FOUND',
       );
     }
@@ -2953,11 +2975,12 @@ const routeServiceRequest = async ({
         serviceService.updateServiceCategory(
           route.id,
           (await readBody(request)) as Parameters<typeof serviceService.updateServiceCategory>[1],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'DELETE') {
-      return sendJson(response, 200, serviceService.deleteServiceCategory(route.id));
+      return sendJson(response, 200, serviceService.deleteServiceCategory(route.id, context));
     }
   }
 
@@ -2966,7 +2989,10 @@ const routeServiceRequest = async ({
       return sendJson(
         response,
         200,
-        serviceService.listServiceCandidates(parseServiceCandidateQuery(url.searchParams)),
+        serviceService.listServiceCandidates(
+          parseServiceCandidateQuery(url.searchParams),
+          context,
+        ),
       );
     }
     if (!route.id && request.method === 'POST') {
@@ -2975,13 +3001,14 @@ const routeServiceRequest = async ({
         201,
         serviceService.createServiceCandidate(
           (await readBody(request)) as Parameters<typeof serviceService.createServiceCandidate>[0],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(
         response,
-        serviceService.getServiceCandidate(route.id),
+        serviceService.getServiceCandidate(route.id, context),
         'SERVICE_CANDIDATE_NOT_FOUND',
       );
     }
@@ -2992,11 +3019,12 @@ const routeServiceRequest = async ({
         serviceService.updateServiceCandidate(
           route.id,
           (await readBody(request)) as Parameters<typeof serviceService.updateServiceCandidate>[1],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'DELETE') {
-      return sendJson(response, 200, serviceService.deleteServiceCandidate(route.id));
+      return sendJson(response, 200, serviceService.deleteServiceCandidate(route.id, context));
     }
   }
 
@@ -3005,7 +3033,7 @@ const routeServiceRequest = async ({
       return sendJson(
         response,
         200,
-        serviceService.listServices(parseServiceQuery(url.searchParams)),
+        serviceService.listServices(parseServiceQuery(url.searchParams), context),
       );
     }
     if (!route.id && request.method === 'POST') {
@@ -3014,11 +3042,16 @@ const routeServiceRequest = async ({
         201,
         serviceService.createService(
           (await readBody(request)) as Parameters<typeof serviceService.createService>[0],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'GET') {
-      return sendJsonOrNotFound(response, serviceService.getService(route.id), 'SERVICE_NOT_FOUND');
+      return sendJsonOrNotFound(
+        response,
+        serviceService.getService(route.id, context),
+        'SERVICE_NOT_FOUND',
+      );
     }
     if (route.id && request.method === 'PATCH') {
       return sendJson(
@@ -3027,11 +3060,12 @@ const routeServiceRequest = async ({
         serviceService.updateService(
           route.id,
           (await readBody(request)) as Parameters<typeof serviceService.updateService>[1],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'DELETE') {
-      return sendJson(response, 200, serviceService.deleteService(route.id));
+      return sendJson(response, 200, serviceService.deleteService(route.id, context));
     }
   }
 
@@ -3932,31 +3966,39 @@ const buildServiceWorkspaceSnapshot = async ({
   tab,
   category,
   serviceService,
+  context,
 }: {
   tab: ServiceWorkspaceTab;
   category?: string;
   serviceService: ServiceService;
+  context?: RequestContext;
 }): Promise<ServiceWorkspaceSnapshot> => {
-  const serviceSpecificationOptions = await loadAllServiceSpecifications(serviceService);
-  const serviceCategories = await serviceService.listServiceCategories();
-  const serviceCandidates = await serviceService.listServiceCandidates();
+  const serviceSpecificationOptions = await loadAllServiceSpecifications(serviceService, context);
+  const serviceCategories = await serviceService.listServiceCategories(undefined, context);
+  const serviceCandidates = await serviceService.listServiceCandidates(undefined, context);
 
   const isCatalogTab = tab === 'ServiceSpecification';
   const categoryFilter = category ? { category } : {};
   const customerFacingServices = isCatalogTab
     ? []
-    : ((await serviceService.listServices({
-        type: 'CustomerFacingService',
-        limit: SERVICE_CATEGORY_FETCH_CAP,
-        ...categoryFilter,
-      })) as CustomerFacingService[]);
+    : ((await serviceService.listServices(
+        {
+          type: 'CustomerFacingService',
+          limit: SERVICE_CATEGORY_FETCH_CAP,
+          ...categoryFilter,
+        },
+        context,
+      )) as CustomerFacingService[]);
   const resourceFacingServices = isCatalogTab
     ? []
-    : ((await serviceService.listServices({
-        type: 'ResourceFacingService',
-        limit: SERVICE_CATEGORY_FETCH_CAP,
-        ...categoryFilter,
-      })) as ResourceFacingService[]);
+    : ((await serviceService.listServices(
+        {
+          type: 'ResourceFacingService',
+          limit: SERVICE_CATEGORY_FETCH_CAP,
+          ...categoryFilter,
+        },
+        context,
+      )) as ResourceFacingService[]);
 
   return {
     serviceSpecificationOptions,
@@ -3969,13 +4011,17 @@ const buildServiceWorkspaceSnapshot = async ({
 
 const loadAllServiceSpecifications = async (
   serviceService: ServiceService,
+  context?: RequestContext,
 ): Promise<ServiceSpecification[]> => {
   const collected: ServiceSpecification[] = [];
   for (let offset = 0; ; offset += RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) {
-    const items = await serviceService.listServiceSpecifications({
-      limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE,
-      offset,
-    });
+    const items = await serviceService.listServiceSpecifications(
+      {
+        limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE,
+        offset,
+      },
+      context,
+    );
     collected.push(...items);
     if (items.length < RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) break;
   }

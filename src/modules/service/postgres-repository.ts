@@ -14,7 +14,10 @@ import type {
   ServiceSpecificationQuery,
   ServiceState,
 } from './domain.js';
-import type { IServiceRepository } from './service-repository-interface.js';
+import type {
+  IServiceRepository,
+  ServiceTenantScope,
+} from './service-repository-interface.js';
 import type {
   CustomerFacingServiceRow,
   ResourceFacingServiceRow,
@@ -36,8 +39,8 @@ export class PostgresServiceRepository implements IServiceRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_service_specification
-       (id, href, name, category, service_type, description, observation, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, href, name, category, service_type, description, observation, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
@@ -60,6 +63,7 @@ export class PostgresServiceRepository implements IServiceRepository {
         spec.validFor?.startDateTime ?? null,
         spec.validFor?.endDateTime ?? null,
         JSON.stringify(spec.serviceSpecificationCharacteristic),
+        spec.tenantId ?? 'default',
         now,
         now,
       ],
@@ -68,12 +72,21 @@ export class PostgresServiceRepository implements IServiceRepository {
     return (await this.getServiceSpecification(spec.id)) ?? spec;
   }
 
-  public async getServiceSpecification(id: string): Promise<ServiceSpecification | undefined> {
+  public async getServiceSpecification(
+    id: string,
+    scope?: ServiceTenantScope,
+  ): Promise<ServiceSpecification | undefined> {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
     const row = await this.db.get<ServiceSpecificationRow>(
-      `SELECT id, href, name, category, service_type, description, observation, valid_for_start, valid_for_end, characteristics
+      `SELECT id, href, name, category, service_type, description, observation, valid_for_start, valid_for_end, characteristics, tenant_id
        FROM tmf_service_specification
-       WHERE id = ?`,
-      [id],
+       WHERE ${conditions.join(' AND ')}`,
+      params,
     );
 
     return row ? this.mapServiceSpecification(row) : undefined;
@@ -100,11 +113,15 @@ export class PostgresServiceRepository implements IServiceRepository {
     if (!query?.includeEnded) {
       conditions.push('valid_for_end IS NULL');
     }
+    if (query?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(query.tenantId);
+    }
 
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, href, name, category, service_type, description, observation, valid_for_start, valid_for_end, characteristics FROM tmf_service_specification',
+      'SELECT id, href, name, category, service_type, description, observation, valid_for_start, valid_for_end, characteristics, tenant_id FROM tmf_service_specification',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY category, name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -124,8 +141,8 @@ export class PostgresServiceRepository implements IServiceRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_service_category
-       (id, href, name, description, parent_category_id, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, href, name, description, parent_category_id, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
@@ -144,6 +161,7 @@ export class PostgresServiceRepository implements IServiceRepository {
         category.validFor?.startDateTime ?? null,
         category.validFor?.endDateTime ?? null,
         JSON.stringify(category.serviceCategoryCharacteristic),
+        category.tenantId ?? 'default',
         now,
         now,
       ],
@@ -152,12 +170,21 @@ export class PostgresServiceRepository implements IServiceRepository {
     return (await this.getServiceCategory(category.id)) ?? category;
   }
 
-  public async getServiceCategory(id: string): Promise<ServiceCategory | undefined> {
+  public async getServiceCategory(
+    id: string,
+    scope?: ServiceTenantScope,
+  ): Promise<ServiceCategory | undefined> {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
     const row = await this.db.get<ServiceCategoryRow>(
-      `SELECT id, href, name, description, parent_category_id, valid_for_start, valid_for_end, characteristics
+      `SELECT id, href, name, description, parent_category_id, valid_for_start, valid_for_end, characteristics, tenant_id
        FROM tmf_service_category
-       WHERE id = ?`,
-      [id],
+       WHERE ${conditions.join(' AND ')}`,
+      params,
     );
 
     return row ? this.mapServiceCategory(row) : undefined;
@@ -175,11 +202,15 @@ export class PostgresServiceRepository implements IServiceRepository {
       conditions.push('parent_category_id = ?');
       params.push(query.parentCategoryId);
     }
+    if (query?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(query.tenantId);
+    }
 
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, href, name, description, parent_category_id, valid_for_start, valid_for_end, characteristics FROM tmf_service_category',
+      'SELECT id, href, name, description, parent_category_id, valid_for_start, valid_for_end, characteristics, tenant_id FROM tmf_service_category',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -199,8 +230,8 @@ export class PostgresServiceRepository implements IServiceRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_service_candidate
-       (id, href, name, description, service_specification_id, service_category_id, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, href, name, description, service_specification_id, service_category_id, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
@@ -223,6 +254,7 @@ export class PostgresServiceRepository implements IServiceRepository {
         candidate.validFor?.startDateTime ?? null,
         candidate.validFor?.endDateTime ?? null,
         JSON.stringify(candidate.serviceCandidateCharacteristic),
+        candidate.tenantId ?? 'default',
         now,
         now,
       ],
@@ -231,12 +263,21 @@ export class PostgresServiceRepository implements IServiceRepository {
     return (await this.getServiceCandidate(candidate.id)) ?? candidate;
   }
 
-  public async getServiceCandidate(id: string): Promise<ServiceCandidate | undefined> {
+  public async getServiceCandidate(
+    id: string,
+    scope?: ServiceTenantScope,
+  ): Promise<ServiceCandidate | undefined> {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
     const row = await this.db.get<ServiceCandidateRow>(
-      `SELECT id, href, name, description, service_specification_id, service_category_id, status, valid_for_start, valid_for_end, characteristics
+      `SELECT id, href, name, description, service_specification_id, service_category_id, status, valid_for_start, valid_for_end, characteristics, tenant_id
        FROM tmf_service_candidate
-       WHERE id = ?`,
-      [id],
+       WHERE ${conditions.join(' AND ')}`,
+      params,
     );
 
     return row ? this.mapServiceCandidate(row) : undefined;
@@ -262,11 +303,15 @@ export class PostgresServiceRepository implements IServiceRepository {
       conditions.push('status = ?');
       params.push(query.status);
     }
+    if (query?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(query.tenantId);
+    }
 
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, href, name, description, service_specification_id, service_category_id, status, valid_for_start, valid_for_end, characteristics FROM tmf_service_candidate',
+      'SELECT id, href, name, description, service_specification_id, service_category_id, status, valid_for_start, valid_for_end, characteristics, tenant_id FROM tmf_service_candidate',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -290,8 +335,8 @@ export class PostgresServiceRepository implements IServiceRepository {
       `INSERT INTO tmf_customer_facing_service
        (id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
         is_service_enabled, has_started, subscriber_id, supporting_resource_facing_service_id, place, related_party,
-        supporting_services, service_relationships, characteristics, valid_for_start, valid_for_end, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        supporting_services, service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
@@ -340,6 +385,7 @@ export class PostgresServiceRepository implements IServiceRepository {
         JSON.stringify(service.supportingService),
         JSON.stringify(service.serviceRelationship),
         JSON.stringify(service.serviceCharacteristic),
+        service.tenantId ?? 'default',
         service.validFor?.startDateTime ?? null,
         service.validFor?.endDateTime ?? null,
         now,
@@ -350,14 +396,23 @@ export class PostgresServiceRepository implements IServiceRepository {
     return (await this.getCustomerFacingService(service.id)) ?? service;
   }
 
-  public async getCustomerFacingService(id: string): Promise<CustomerFacingService | undefined> {
+  public async getCustomerFacingService(
+    id: string,
+    scope?: ServiceTenantScope,
+  ): Promise<CustomerFacingService | undefined> {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
     const row = await this.db.get<CustomerFacingServiceRow>(
       `SELECT id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
               is_service_enabled, has_started, subscriber_id, supporting_resource_facing_service_id, place, related_party,
-              supporting_services, service_relationships, characteristics, valid_for_start, valid_for_end
+              supporting_services, service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end
        FROM tmf_customer_facing_service
-       WHERE id = ?`,
-      [id],
+       WHERE ${conditions.join(' AND ')}`,
+      params,
     );
 
     return row ? this.mapCustomerFacingService(row) : undefined;
@@ -377,8 +432,8 @@ export class PostgresServiceRepository implements IServiceRepository {
       `INSERT INTO tmf_resource_facing_service
        (id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
         is_service_enabled, has_started, supporting_resource_id, place, related_party, supporting_resources, supporting_services,
-        service_relationships, characteristics, valid_for_start, valid_for_end, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
@@ -427,6 +482,7 @@ export class PostgresServiceRepository implements IServiceRepository {
         JSON.stringify(service.supportingService),
         JSON.stringify(service.serviceRelationship),
         JSON.stringify(service.serviceCharacteristic),
+        service.tenantId ?? 'default',
         service.validFor?.startDateTime ?? null,
         service.validFor?.endDateTime ?? null,
         now,
@@ -437,14 +493,23 @@ export class PostgresServiceRepository implements IServiceRepository {
     return (await this.getResourceFacingService(service.id)) ?? service;
   }
 
-  public async getResourceFacingService(id: string): Promise<ResourceFacingService | undefined> {
+  public async getResourceFacingService(
+    id: string,
+    scope?: ServiceTenantScope,
+  ): Promise<ResourceFacingService | undefined> {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
     const row = await this.db.get<ResourceFacingServiceRow>(
       `SELECT id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
               is_service_enabled, has_started, supporting_resource_id, place, related_party, supporting_resources, supporting_services,
-              service_relationships, characteristics, valid_for_start, valid_for_end
+              service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end
        FROM tmf_resource_facing_service
-       WHERE id = ?`,
-      [id],
+       WHERE ${conditions.join(' AND ')}`,
+      params,
     );
 
     return row ? this.mapResourceFacingService(row) : undefined;
@@ -482,7 +547,7 @@ export class PostgresServiceRepository implements IServiceRepository {
       const rows = await this.db.all<CustomerFacingServiceRow>(
         `SELECT id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
                 is_service_enabled, has_started, subscriber_id, supporting_resource_facing_service_id, place, related_party,
-                supporting_services, service_relationships, characteristics, valid_for_start, valid_for_end
+                supporting_services, service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end
          FROM tmf_customer_facing_service
          ORDER BY name, id`,
       );
@@ -499,7 +564,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     const sql = [
       `SELECT id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
               is_service_enabled, has_started, subscriber_id, supporting_resource_facing_service_id, place, related_party,
-              supporting_services, service_relationships, characteristics, valid_for_start, valid_for_end
+              supporting_services, service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end
        FROM tmf_customer_facing_service`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
@@ -522,7 +587,7 @@ export class PostgresServiceRepository implements IServiceRepository {
       const rows = await this.db.all<ResourceFacingServiceRow>(
         `SELECT id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
                 is_service_enabled, has_started, supporting_resource_id, place, related_party, supporting_resources, supporting_services,
-                service_relationships, characteristics, valid_for_start, valid_for_end
+                service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end
          FROM tmf_resource_facing_service
          ORDER BY name, id`,
       );
@@ -537,7 +602,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     const sql = [
       `SELECT id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
               is_service_enabled, has_started, supporting_resource_id, place, related_party, supporting_resources, supporting_services,
-              service_relationships, characteristics, valid_for_start, valid_for_end
+              service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end
        FROM tmf_resource_facing_service`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
@@ -606,6 +671,7 @@ export class PostgresServiceRepository implements IServiceRepository {
         row.characteristics || '[]',
       ) as ServiceSpecification['serviceSpecificationCharacteristic'],
       relatedParty: [],
+      tenantId: row.tenant_id ?? 'default',
     };
 
     if (row.description) spec.description = row.description;
@@ -628,6 +694,7 @@ export class PostgresServiceRepository implements IServiceRepository {
       serviceCategoryCharacteristic: JSON.parse(
         row.characteristics || '[]',
       ) as ServiceCategory['serviceCategoryCharacteristic'],
+      tenantId: row.tenant_id ?? 'default',
     };
 
     if (row.description) category.description = row.description;
@@ -659,6 +726,7 @@ export class PostgresServiceRepository implements IServiceRepository {
       serviceCandidateCharacteristic: JSON.parse(
         row.characteristics || '[]',
       ) as ServiceCandidate['serviceCandidateCharacteristic'],
+      tenantId: row.tenant_id ?? 'default',
     };
 
     if (row.description) candidate.description = row.description;
@@ -704,6 +772,7 @@ export class PostgresServiceRepository implements IServiceRepository {
       place: JSON.parse(row.place || '[]'),
       serviceRelationship: parseServiceRelationships(row.service_relationships),
       serviceCharacteristic: JSON.parse(row.characteristics || '[]'),
+      tenantId: row.tenant_id ?? 'default',
       ...(row.valid_for_start || row.valid_for_end
         ? {
             validFor: {
@@ -742,6 +811,7 @@ export class PostgresServiceRepository implements IServiceRepository {
       place: JSON.parse(row.place || '[]'),
       serviceRelationship: parseServiceRelationships(row.service_relationships),
       serviceCharacteristic: JSON.parse(row.characteristics || '[]'),
+      tenantId: row.tenant_id ?? 'default',
       ...(row.valid_for_start || row.valid_for_end
         ? {
             validFor: {
@@ -819,12 +889,17 @@ const buildServiceConditions = (
     conditions.push(`${options.subscriberIdColumn} = ?`);
     params.push(query.subscriberId);
   }
+  if (query?.tenantId) {
+    conditions.push('tenant_id = ?');
+    params.push(query.tenantId);
+  }
 
   return { conditions, params };
 };
 
 const filterService = (service: Service, query?: ServiceQuery): boolean => {
   if (!query) return true;
+  if (query.tenantId && (service.tenantId ?? 'default') !== query.tenantId) return false;
   if (query.name && !service.name.toLowerCase().includes(query.name.toLowerCase())) return false;
   if (query.state && service.state !== query.state) return false;
   if (query.serviceSpecificationIdIn && query.serviceSpecificationIdIn.length > 0) {

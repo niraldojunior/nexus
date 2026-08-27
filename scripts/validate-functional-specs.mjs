@@ -14,7 +14,7 @@ const specs = [
     questionPrefix: 'Q-GEO-',
     decisionPrefix: 'D-GEO-',
     count: 18,
-    version: '1.19',
+    version: '1.20',
     illustrative: new Set(),
   },
   {

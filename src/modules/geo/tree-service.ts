@@ -173,6 +173,16 @@ type SiteRow = {
   street: string | null;
 };
 
+// Linha de findStationAncestor — só o necessário para decidir se `id` é a Estação (código
+// CO/POP) ou para subir mais um nível (`parent_site_id`).
+type StationAncestorRow = {
+  id: string;
+  parent_site_id: string | null;
+  code: string | null;
+  city: string | null;
+  uf: string | null;
+};
+
 type ResourceRow = {
   id: string;
   name: string;
@@ -502,6 +512,73 @@ export class GeoTreeService {
   }
 
   /**
+   * Locais de um Projeto de trabalho, paginados, com a nota e o endereço GEONET de origem
+   * (REQ-MOD01-015) já na mesma linha — substitui o par `listSiteLinksPage` (project-
+   * repository) + `sitesByIds` por um único JOIN direto em `geo_project_site`, e
+   * COUNT(*) OVER() evita a segunda ida ao banco só para o total. Mesma projeção de
+   * SITE_SELECT, mantida em sincronia à mão: o JOIN extra em `geo_project_site`/
+   * `geo_project`, o `ORDER BY ps.position` e as colunas `note`/`geonet_address_id` não
+   * cabem na string fixa reaproveitada pelos outros seis chamadores de SITE_SELECT.
+   */
+  public async projectSitePage(
+    tenantId: string,
+    projectId: string,
+    limit: number,
+    offset: number,
+  ): Promise<{
+    items: Array<GeoTreeNode & { note: string | null; geonetAddressId: string | null }>;
+    total: number;
+  }> {
+    const rows = await this.db.all<
+      SiteRow & {
+        note: string | null;
+        geonet_address_id: string | null;
+        total_count: number | string;
+      }
+    >(
+      `SELECT s.id, s.name, s.status, s.geographic_location_id, s.site_specification_id,
+              sp.name AS spec_name, sp.category AS spec_category,
+              l.geometry_type, l.geometry,
+              a.city, a.state_or_province AS uf, a.street_name AS street,
+              ps.note, ps.geonet_address_id,
+              count(*) OVER () AS total_count
+         FROM tmf_geographic_site s
+         JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
+         LEFT JOIN tmf_geographic_location l ON l.id = s.geographic_location_id
+         LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id
+         JOIN geo_project_site ps ON ps.site_id = s.id
+         JOIN geo_project p ON p.id = ps.project_id
+        WHERE p.tenant_id = ? AND ps.project_id = ?
+        ORDER BY ps.position
+        LIMIT ? OFFSET ?`,
+      [tenantId, projectId, limit, offset],
+    );
+
+    const items = rows.map((row) => ({
+      ...this.toSiteNode(row, { hasChildren: false }),
+      note: row.note,
+      geonetAddressId: row.geonet_address_id,
+    }));
+
+    // Página vazia (offset além do total) não carrega o COUNT(*) OVER() — cai para uma
+    // contagem explícita em vez de assumir total 0 (mesmo cuidado de childrenOfSite).
+    const total =
+      rows.length > 0
+        ? Number(rows[0]?.total_count)
+        : ((
+            await this.db.get<{ n: number }>(
+              `SELECT count(*) AS n
+                 FROM geo_project_site ps
+                 JOIN geo_project p ON p.id = ps.project_id
+                WHERE p.tenant_id = ? AND ps.project_id = ?`,
+              [tenantId, projectId],
+            )
+          )?.n ?? 0);
+
+    return { items, total };
+  }
+
+  /**
    * Recursos por id, na mesma forma de nó (geometria inteira, `detail`) que árvore e busca já
    * devolvem — hidrata a seleção feita a partir de uma feature do `InfraOverlay` (canvas do
    * mapa, ver GeoMapTileService), que só carrega o essencial para desenhar: sem `detail`
@@ -707,16 +784,8 @@ export class GeoTreeService {
   // ------------------------------------------------------------- níveis geo ---
 
   private async citiesOfUf(uf: string): Promise<{ nodes: GeoTreeNode[]; total: number }> {
-    const stations = (await this.listStationRows()).filter(
-      (row) => (row.uf?.trim() || SEM_UF) === uf,
-    );
-    const cities = new Map<string, number>();
-    for (const station of stations) {
-      const city = station.city?.trim() || SEM_MUNICIPIO;
-      cities.set(city, (cities.get(city) ?? 0) + 1);
-    }
-
-    const nodes = sortKeys([...cities.keys()]).map((city) => ({
+    const groups = await this.listStationGroupCounts({ uf });
+    const nodes = sortKeys(groups.map((group) => group.city)).map((city) => ({
       id: `city:${uf}|${city}`,
       kind: 'city' as const,
       label: city,
@@ -729,9 +798,8 @@ export class GeoTreeService {
 
   private async groupsOfCity(rest: string): Promise<{ nodes: GeoTreeNode[]; total: number }> {
     const [uf, city] = splitPair(rest);
-    const stations = (await this.listStationRows()).filter(
-      (row) => (row.uf?.trim() || SEM_UF) === uf && (row.city?.trim() || SEM_MUNICIPIO) === city,
-    );
+    const groups = await this.listStationGroupCounts({ uf, city });
+    const stationCount = groups.reduce((sum, group) => sum + group.n, 0);
 
     return {
       nodes: [
@@ -739,8 +807,8 @@ export class GeoTreeService {
           id: `group:${uf}|${city}|${GROUP_STATIONS}`,
           kind: 'group',
           label: 'Estações',
-          hasChildren: stations.length > 0,
-          childCount: stations.length,
+          hasChildren: stationCount > 0,
+          childCount: stationCount,
         },
       ],
       total: 1,
@@ -753,16 +821,22 @@ export class GeoTreeService {
     offset: number,
   ): Promise<{ nodes: GeoTreeNode[]; total: number }> {
     const [uf, city] = splitPair(rest);
-    const all = sortRows(
-      (await this.listStationRows()).filter(
-        (row) => (row.uf?.trim() || SEM_UF) === uf && (row.city?.trim() || SEM_MUNICIPIO) === city,
-      ),
+    const rows = await this.db.all<SiteRow & { total_count: number | string }>(
+      `SELECT t.*, count(*) OVER () AS total_count FROM (
+         ${SITE_SELECT}
+          WHERE ${STATION_WHERE}
+          ${PROJECT_SITE_EXCLUSION_SQL}
+            AND ${STATION_UF_SQL} = ?
+            AND ${STATION_CITY_SQL} = ?
+       ) t
+       ORDER BY t.name
+       LIMIT ? OFFSET ?`,
+      [uf, city, limit, offset],
     );
-    const page = all.slice(offset, offset + limit);
 
     return {
-      nodes: page.map((row) => this.toSiteNode(row, { hasChildren: true })),
-      total: all.length,
+      nodes: rows.map((row) => this.toSiteNode(row, { hasChildren: true })),
+      total: Number(rows[0]?.total_count ?? 0),
     };
   }
 
@@ -801,17 +875,6 @@ export class GeoTreeService {
             [siteId],
           );
 
-    const resourceSource = siteResourceSource(scope);
-    const resourceParams = [siteId, site.geographic_location_id ?? '', siteId];
-    const total =
-      subSites.length +
-      ((
-        await this.db.get<{ n: number }>(`SELECT count(*) AS n FROM (${resourceSource}) AS t`, [
-          ...resourceParams,
-          ...resourceParams,
-        ])
-      )?.n ?? 0);
-
     // Sub-locais primeiro (o interior do local), depois a planta. A janela de
     // paginação atravessa os dois grupos, por isso o offset desconta os sites.
     const siteSlice = subSites.slice(offset, offset + limit);
@@ -826,15 +889,89 @@ export class GeoTreeService {
       }
     }
 
+    // Fonte magra (só id/entity_type, sem geometry nem os subselects de characteristics) —
+    // a página de ids sai numa única consulta com COUNT(*) OVER(), sem materializar a
+    // projeção pesada duas vezes (uma para contar, outra para as linhas). Hidratação dos
+    // ≤ `limit` ids da página fica em hydrateSiteResourceRows.
+    const idSource = siteResourceIdSource(scope);
+    const resourceParams = [siteId, site.geographic_location_id ?? '', siteId];
+    let resourceTotal = 0;
+
     if (resourceLimit > 0) {
-      const rows = await this.db.all<ResourceRow>(
-        `SELECT * FROM (${resourceSource}) AS t ORDER BY name, id LIMIT ? OFFSET ?`,
+      const idRows = await this.db.all<{
+        id: string;
+        entity_type: 'PhysicalResource' | 'LogicalResource';
+        total_count: number | string;
+      }>(
+        `SELECT t.*, count(*) OVER () AS total_count FROM (${idSource}) t
+          ORDER BY name, id LIMIT ? OFFSET ?`,
         [...resourceParams, ...resourceParams, resourceLimit, resourceOffset],
       );
-      nodes.push(...(await this.toResourceNodes(rows, scope)));
+      if (idRows.length > 0) {
+        resourceTotal = Number(idRows[0]?.total_count);
+        nodes.push(...(await this.hydrateSiteResourceRows(idRows, scope)));
+      } else {
+        // Página vazia (offset além do total) não carrega o COUNT(*) OVER() — cai para uma
+        // contagem explícita, ainda sobre a fonte magra, em vez de assumir total 0.
+        resourceTotal =
+          (
+            await this.db.get<{ n: number }>(`SELECT count(*) AS n FROM (${idSource}) AS t`, [
+              ...resourceParams,
+              ...resourceParams,
+            ])
+          )?.n ?? 0;
+      }
+    } else {
+      resourceTotal =
+        (
+          await this.db.get<{ n: number }>(`SELECT count(*) AS n FROM (${idSource}) AS t`, [
+            ...resourceParams,
+            ...resourceParams,
+          ])
+        )?.n ?? 0;
     }
 
-    return { nodes, total };
+    return { nodes, total: subSites.length + resourceTotal };
+  }
+
+  // Hidrata a página de ids que childrenOfSite pagina em siteResourceIdSource: agrupa por
+  // entidade e busca de volta a projeção completa (geometry, spec, substatus, origem) via
+  // siteResourceEntityBlock com `where: r.id IN (...)` — só para os ids da página, nunca
+  // para o conjunto inteiro. `extra` fica vazio: os ids que chegam aqui já passaram pelo
+  // hideInternalResourceSql da fonte magra, não precisa reaplicar.
+  private async hydrateSiteResourceRows(
+    idRows: Array<{ id: string; entity_type: 'PhysicalResource' | 'LogicalResource' }>,
+    scope: GeoTreeScope,
+  ): Promise<GeoTreeNode[]> {
+    if (idRows.length === 0) return [];
+    const physicalIds = idRows
+      .filter((row) => row.entity_type === 'PhysicalResource')
+      .map((row) => row.id);
+    const logicalIds = idRows
+      .filter((row) => row.entity_type === 'LogicalResource')
+      .map((row) => row.id);
+
+    const blocks: string[] = [];
+    const params: unknown[] = [];
+    if (physicalIds.length > 0) {
+      blocks.push(
+        siteResourceEntityBlock('PhysicalResource', `r.id IN (${placeholders(physicalIds)})`, ''),
+      );
+      params.push(...physicalIds);
+    }
+    if (logicalIds.length > 0) {
+      blocks.push(
+        siteResourceEntityBlock('LogicalResource', `r.id IN (${placeholders(logicalIds)})`, ''),
+      );
+      params.push(...logicalIds);
+    }
+
+    const rows = await this.db.all<ResourceRow>(blocks.join('\n  UNION ALL\n'), params);
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const ordered = idRows
+      .map((idRow) => byId.get(idRow.id))
+      .filter((row): row is ResourceRow => Boolean(row));
+    return await this.toResourceNodes(ordered, scope);
   }
 
   // -------------------------------------------------- filhos de um Recurso ---
@@ -863,17 +1000,21 @@ export class GeoTreeService {
                FROM (${RESOURCE_CHILD_TREE_SOURCE}) dedup
            ) d WHERE d.rn = 1`
         : RESOURCE_CHILD_SOURCE;
-    const countParams = scope === 'tree' ? [resourceId] : [resourceId, resourceId];
-    const rowParams = scope === 'tree' ? [resourceId] : [resourceId, resourceId];
+    const params = scope === 'tree' ? [resourceId] : [resourceId, resourceId];
+
+    // COUNT(*) OVER() evita materializar `source` duas vezes (uma para contar, outra para
+    // as linhas) — mesma técnica de childrenOfSite/hydrateSiteResourceRows.
+    const rows = await this.db.all<ResourceRow & { total_count: number | string }>(
+      `SELECT t.*, count(*) OVER () AS total_count FROM (${source}) t
+        ORDER BY name, id LIMIT ? OFFSET ?`,
+      [...params, limit, offset],
+    );
 
     const total =
-      (await this.db.get<{ n: number }>(`SELECT count(*) AS n FROM (${source}) AS t`, countParams))
-        ?.n ?? 0;
-
-    const rows = await this.db.all<ResourceRow>(
-      `SELECT * FROM (${source}) AS t ORDER BY name, id LIMIT ? OFFSET ?`,
-      [...rowParams, limit, offset],
-    );
+      rows.length > 0
+        ? Number(rows[0]?.total_count)
+        : ((await this.db.get<{ n: number }>(`SELECT count(*) AS n FROM (${source}) AS t`, params))
+            ?.n ?? 0);
 
     return { nodes: await this.toResourceNodes(rows, scope), total };
   }
@@ -948,42 +1089,102 @@ export class GeoTreeService {
 
   // ------------------------------------------------------------ consultas ---
 
-  // Estação = GeographicSite de categoria 'Site' (Região é caminho, Sub-local é
-  // interior). UF/Município saem do endereço da própria estação; sem endereço,
-  // ela cai nos baldes "Sem …" em vez de sumir da navegação.
+  // Estação = GeographicSite de código CO ou POP (ver STATION_WHERE). UF/Município saem
+  // do endereço da própria estação; sem endereço, ela cai nos baldes "Sem …" em vez de
+  // sumir da navegação. Só usada por roots() — o conjunto nacional CO/POP é pequeno o
+  // bastante para trazer com geometria de uma vez; os demais níveis (citiesOfUf/
+  // groupsOfCity/stationsOfGroup) agregam e paginam no banco via listStationGroupCounts,
+  // sem trazer geometry.
   private async listStationRows(): Promise<SiteRow[]> {
     return await this.db.all<SiteRow>(
       `${SITE_SELECT}
-       WHERE sp.category = 'Site' AND s.status NOT IN ('Retired', 'terminated')
+       WHERE ${STATION_WHERE}
        ${PROJECT_SITE_EXCLUSION_SQL}
        ORDER BY s.name`,
     );
   }
 
-  // Trecho fixo do caminho — igual ao que roots()/citiesOfUf constroem — para o Site
-  // (Estação) dono da UF/Município dele. Usado por pathTo tanto para o próprio Site
-  // quanto como base de qualquer recurso que pertença a ele.
-  private async sitePathPrefix(siteId: string): Promise<string[] | null> {
-    const row = await this.db.get<{ id: string; city: string | null; uf: string | null }>(
-      `SELECT s.id, a.city, a.state_or_province AS uf
+  // Contagem de estações agrupadas por UF/Município, direto no banco (sem geometry, sem
+  // trazer linha por estação) — fonte de citiesOfUf (filtro só por uf) e groupsOfCity
+  // (filtro por uf+city). `filter` vazio devolveria a contagem nacional inteira; os dois
+  // chamadores sempre passam ao menos `uf`.
+  private async listStationGroupCounts(
+    filter: { uf?: string; city?: string } = {},
+  ): Promise<Array<{ uf: string; city: string; n: number }>> {
+    const params: string[] = [];
+    let extra = '';
+    if (filter.uf !== undefined) {
+      extra += ` AND ${STATION_UF_SQL} = ?`;
+      params.push(filter.uf);
+    }
+    if (filter.city !== undefined) {
+      extra += ` AND ${STATION_CITY_SQL} = ?`;
+      params.push(filter.city);
+    }
+    const rows = await this.db.all<{ uf: string; city: string; n: number | string }>(
+      `SELECT ${STATION_UF_SQL} AS uf, ${STATION_CITY_SQL} AS city, count(*) AS n
          FROM tmf_geographic_site s
+         JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
          LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id
-        WHERE s.id = ?`,
-      [siteId],
+        WHERE ${STATION_WHERE}
+        ${PROJECT_SITE_EXCLUSION_SQL}
+        ${extra}
+        GROUP BY ${STATION_UF_SQL}, ${STATION_CITY_SQL}`,
+      params,
     );
-    if (!row) return null;
-    const uf = row.uf?.trim() || SEM_UF;
-    const city = row.city?.trim() || SEM_MUNICIPIO;
+    return rows.map((row) => ({ uf: row.uf, city: row.city, n: Number(row.n) }));
+  }
+
+  // Trecho fixo do caminho — igual ao que roots()/citiesOfUf constroem — para a Estação
+  // (CO/POP) dona da UF/Município. Usado por pathTo tanto para o próprio Site quanto
+  // como base de qualquer recurso que pertença a ele — nesse segundo caso, `siteId` pode
+  // ser um sub-local (sala/andar) ou um Site fora da Hierarquia (Cabinet, Installation
+  // Point…); por isso sobe a cadeia `parent_site_id` até achar o ancestral CO/POP em vez
+  // de assumir que `siteId` já é a Estação.
+  private async sitePathPrefix(siteId: string): Promise<string[] | null> {
+    const station = await this.findStationAncestor(siteId);
+    if (!station) return null;
+    const uf = station.uf?.trim() || SEM_UF;
+    const city = station.city?.trim() || SEM_MUNICIPIO;
     return [
       `uf:${uf}`,
       `city:${uf}|${city}`,
       `group:${uf}|${city}|${GROUP_STATIONS}`,
-      `site:${row.id}`,
+      `site:${station.id}`,
     ];
   }
 
+  // Sobe de `siteId` por `parent_site_id` até achar um Site de código CO ou POP — a árvore
+  // (scope: 'tree') só revela até esse nível; um sub-local sem ancestral CO/POP (site
+  // órfão fora da Hierarquia, ex.: Cabinet raiz) devolve `null`, mesmo tratamento do
+  // recurso sem Site nem recurso pai em `pathTo`. Iterativo, não CTE recursiva — mesma
+  // cautela de `pathTo`/`countResourceChildren` com o dialeto Oracle, e a cadeia real
+  // (Estação → Andar → Sala) tem no máximo poucos níveis.
+  private async findStationAncestor(
+    siteId: string,
+  ): Promise<{ id: string; uf: string | null; city: string | null } | null> {
+    let currentId: string | null = siteId;
+    for (let depth = 0; currentId !== null && depth <= PATH_MAX_DEPTH; depth++) {
+      const row: StationAncestorRow | undefined = await this.db.get<StationAncestorRow>(
+        `SELECT s.id, s.parent_site_id, sp.code,
+                a.city, a.state_or_province AS uf
+           FROM tmf_geographic_site s
+           JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
+           LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id
+          WHERE s.id = ?`,
+        [currentId],
+      );
+      if (!row) return null;
+      if (row.code === 'CO' || row.code === 'POP') {
+        return { id: row.id, uf: row.uf, city: row.city };
+      }
+      currentId = row.parent_site_id;
+    }
+    return null;
+  }
+
   // Site dono do recurso, se a filiação for direta (mesmas três formas de
-  // siteResourceSource, na direção inversa: dado o recurso, qual é o Site).
+  // siteResourceIdSource, na direção inversa: dado o recurso, qual é o Site).
   // `null` quando o recurso pende de outro recurso — pathTo então sobe pela aresta.
   private async findDirectOwningSite(resourceId: string): Promise<string | null> {
     const resource =
@@ -1170,6 +1371,23 @@ const PROJECT_SITE_EXCLUSION_SQL = `AND NOT EXISTS (
    WHERE ps.site_id = s.id AND p.status <> 'terminated'
 )`;
 
+// Estação = GeographicSite de código CO ou POP (C11: siteRole 'network') — os únicos tipos
+// de Site com presença permanente na Hierarquia (decisão da Fase 2 do issue #53). Antes o
+// filtro era `sp.category = 'Site'`, que também trazia Cabinet, Installation Point,
+// Customer Site e Condominium — no alvo declarado de 4MM sites, a maioria HP/HC de
+// atendimento, listar/agregar isso na árvore de navegação nunca escalaria. Os demais tipos
+// seguem visíveis no mapa (sitesInViewport, que continua com `sp.category = 'Site'` de
+// propósito) e na busca (search, idem) — só saem da Hierarquia.
+const STATION_WHERE = `sp.code IN ('CO', 'POP') AND s.status NOT IN ('Retired', 'terminated')`;
+
+// UF/Município normalizados no SQL (mesmos baldes "Sem UF"/"Sem município" de SEM_UF/
+// SEM_MUNICIPIO), para listStationGroupCounts/stationsOfGroup poderem filtrar e agregar
+// sem trazer a linha inteira. `TRIM(x) IS NULL OR TRIM(x) = ''` cobre os dois dialetos:
+// Postgres distingue NULL de string vazia (TRIM('') = ''), Oracle colapsa string vazia em
+// NULL (TRIM('') vira NULL) — a dupla checagem pega os dois casos em ambos.
+const STATION_UF_SQL = `CASE WHEN TRIM(a.state_or_province) IS NULL OR TRIM(a.state_or_province) = '' THEN '${SEM_UF}' ELSE TRIM(a.state_or_province) END`;
+const STATION_CITY_SQL = `CASE WHEN TRIM(a.city) IS NULL OR TRIM(a.city) = '' THEN '${SEM_MUNICIPIO}' ELSE TRIM(a.city) END`;
+
 // Site (categoria 'Site', nunca Region/FunctionalGroup/SubSite) dentro de um bbox do mapa —
 // fonte de `sitesInViewport`, o par de `resourcesInViewport` para o Site: CO/Estação é o
 // único tipo com visibilidade em qualquer escala (sempre vem de `roots()`); qualquer outro
@@ -1191,7 +1409,7 @@ const SITE_VIEWPORT_POINT_WHERE = `
 // desmembrá-lo num HASH JOIN ANTI — cai num FILTER correlacionado que varre
 // tmf_resource_relationship inteira (1,3M linhas) a cada linha candidata de recurso, travando
 // a expansão de uma Estação com planta externa densa (minutos, não segundos). Separadas em
-// blocos UNION ALL próprios (ver siteResourceSource), cada forma fica livre para usar seu
+// blocos UNION ALL próprios (ver siteResourceIdSource), cada forma fica livre para usar seu
 // próprio índice — a terceira usa idx_tmf_resource_relationship_reverse como anti-join.
 const RESOURCE_BY_PLACE_WHERE = 'r.place_id = ?';
 const RESOURCE_BY_SERVING_SITE_WHERE = `
@@ -1223,10 +1441,11 @@ const RESOURCE_SOURCE_SYSTEM_SQL =
   `(SELECT ce->>'value' FROM jsonb_array_elements(NULLIF(r.characteristics, '')::jsonb) AS ce ` +
   `WHERE ce->>'name' = 'system' AND ce->>'group' = '_origin' LIMIT 1)`;
 
-// Um bloco da fonte de siteResourceSource: uma entidade (Physical/Logical), uma forma de
-// filiação. LEFT JOIN em location (não JOIN) e sem filtro de status, ao contrário de
-// viewportBlock — um recurso sem geometria própria (ex.: porta dentro de um rack) ou já
-// terminated continua listado como filho do Site (scope: 'all' é o painel de detalhe).
+// Um bloco da fonte hidratada de recursos de um Site (ver hydrateSiteResourceRows): uma
+// entidade (Physical/Logical), uma forma de filiação. LEFT JOIN em location (não JOIN) e
+// sem filtro de status, ao contrário de viewportBlock — um recurso sem geometria própria
+// (ex.: porta dentro de um rack) ou já terminated continua listado como filho do Site
+// (scope: 'all' é o painel de detalhe).
 const siteResourceEntityBlock = (
   entity: 'PhysicalResource' | 'LogicalResource',
   where: string,
@@ -1249,17 +1468,24 @@ const siteResourceEntityBlock = (
    WHERE (${where}) ${extra}`;
 };
 
-// Recursos pendendo direto de um Site, por escopo. Três blocos por entidade (place_id no
-// site, place_id na Location, servingSite sem aresta de entrada) — nunca um OR combinando as
-// três, ver RESOURCE_BY_SERVING_SITE_WHERE. Parâmetros na ordem: site.id, location.id,
-// site.id, repetidos para PhysicalResource e depois LogicalResource (6 no total) — mesma
-// ordem que childrenOfSite já monta em `resourceParams`.
-const siteResourceSource = (scope: GeoTreeScope): string => {
+// Fonte magra de recursos pendendo direto de um Site — só id/name/entity_type, sem
+// geometry nem os subselects escalares de characteristics (substatus, origem). Usada por
+// childrenOfSite para achar o total (COUNT(*) OVER()) e a página de ids num único SELECT;
+// hydrateSiteResourceRows resolve a projeção completa depois, só para os ids da página.
+// Mesmos três blocos por entidade e mesma ordem de binds (site.id, location.id, site.id,
+// repetidos para PhysicalResource e LogicalResource) que a versão hidratada
+// (siteResourceEntityBlock) — os dois têm que continuar em sincronia com `resourceParams`
+// em childrenOfSite.
+const siteResourceIdSource = (scope: GeoTreeScope): string => {
   const extra = hideInternalResourceSql(scope);
+  const idBlock = (entity: 'PhysicalResource' | 'LogicalResource', where: string): string => {
+    const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
+    return `SELECT r.id, r.name, '${entity}' AS entity_type FROM ${table} r WHERE (${where}) ${extra}`;
+  };
   const blocksFor = (entity: 'PhysicalResource' | 'LogicalResource'): string[] => [
-    siteResourceEntityBlock(entity, RESOURCE_BY_PLACE_WHERE, extra),
-    siteResourceEntityBlock(entity, RESOURCE_BY_PLACE_WHERE, extra),
-    siteResourceEntityBlock(entity, RESOURCE_BY_SERVING_SITE_WHERE, extra),
+    idBlock(entity, RESOURCE_BY_PLACE_WHERE),
+    idBlock(entity, RESOURCE_BY_PLACE_WHERE),
+    idBlock(entity, RESOURCE_BY_SERVING_SITE_WHERE),
   ];
   return [...blocksFor('PhysicalResource'), ...blocksFor('LogicalResource')].join(
     '\n  UNION ALL\n',

@@ -410,20 +410,20 @@ export class GeoProjectRepository {
     return rows.map((row) => row.siteId);
   }
 
-  async listSiteLinksPage(
-    tenantId: string,
-    projectId: string,
-    limit: number,
-    offset: number,
-  ): Promise<GeoProjectSiteLink[]> {
-    const rows = await this.db.all<ProjectSiteLinkRow>(
-      `SELECT ps.site_id AS siteId, ps.note, ps.geonet_address_id AS geonetAddressId
-         FROM geo_project_site ps JOIN geo_project p ON p.id = ps.project_id
-        WHERE p.tenant_id = ? AND ps.project_id = ?
-        ORDER BY ps.position LIMIT ? OFFSET ?`,
-      [tenantId, projectId, limit, offset],
+  // Checagem de pertinência de UM site — usada pelo PATCH/DELETE de
+  // /v1/geo/projects/:id/sites/:siteId, que antes chamava listSiteIds (lista inteira, sem
+  // LIMIT) só para fazer `.includes(siteId)`. Um SELECT 1 LIMIT 1 substitui o fetch de até
+  // dezenas de milhares de ids por uma checagem O(1) via índice.
+  async hasSiteLink(tenantId: string, projectId: string, siteId: string): Promise<boolean> {
+    const row = await this.db.get<{ one: number }>(
+      `SELECT 1 AS one
+         FROM geo_project_site ps
+         JOIN geo_project p ON p.id = ps.project_id
+        WHERE p.tenant_id = ? AND ps.project_id = ? AND ps.site_id = ?
+        LIMIT 1`,
+      [tenantId, projectId, siteId],
     );
-    return rows;
+    return Boolean(row);
   }
 
   async listResourceLinks(

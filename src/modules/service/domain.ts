@@ -53,6 +53,7 @@ export type ServiceQuery = {
   characteristicValue?: string;
   limit?: number;
   offset?: number;
+  tenantId?: string;
 };
 
 export type ServiceSpecificationQuery = {
@@ -62,6 +63,7 @@ export type ServiceSpecificationQuery = {
   includeEnded?: boolean;
   limit?: number;
   offset?: number;
+  tenantId?: string;
 };
 
 export type ServiceCategoryQuery = {
@@ -69,6 +71,7 @@ export type ServiceCategoryQuery = {
   parentCategoryId?: string;
   limit?: number;
   offset?: number;
+  tenantId?: string;
 };
 
 export type ServiceCandidateQuery = {
@@ -78,6 +81,7 @@ export type ServiceCandidateQuery = {
   status?: ServiceStatus;
   limit?: number;
   offset?: number;
+  tenantId?: string;
 };
 
 export type ServiceReference = EntityRef & {
@@ -106,6 +110,7 @@ export type ServiceSpecification = {
   validFor?: TimePeriod | undefined;
   serviceSpecificationCharacteristic: ServiceSpecCharacteristic[];
   relatedParty: RelatedParty[];
+  tenantId?: string;
 };
 
 export type ServiceCategory = {
@@ -117,6 +122,7 @@ export type ServiceCategory = {
   parentServiceCategory?: EntityRef | undefined;
   validFor?: TimePeriod | undefined;
   serviceCategoryCharacteristic: Characteristic[];
+  tenantId?: string;
 };
 
 export type ServiceCandidate = {
@@ -130,6 +136,7 @@ export type ServiceCandidate = {
   serviceCategory?: EntityRef | undefined;
   validFor?: TimePeriod | undefined;
   serviceCandidateCharacteristic: Characteristic[];
+  tenantId?: string;
 };
 
 export type ServiceBase = {
@@ -151,6 +158,7 @@ export type ServiceBase = {
   place: ServiceReference[];
   serviceRelationship: ServiceRelationship[];
   validFor?: TimePeriod | undefined;
+  tenantId?: string;
 };
 
 export type CustomerFacingService = ServiceBase & {

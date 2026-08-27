@@ -1,4 +1,5 @@
 import { AppError } from '../../shared/errors/app-error.js';
+import { RateLimiter } from '../../shared/http/rate-limiter.js';
 import type {
   NewUserInput,
   UserCredentials,
@@ -35,44 +36,6 @@ const GENERIC_LOGIN_ERROR = new AppError('credenciais inválidas', {
   statusCode: 401,
 });
 
-// Rate limit em memória, por instância — evita força-bruta num único processo. Em ambiente
-// serverless (múltiplas instâncias) o limite não é global; é uma barreira, não uma garantia.
-const MAX_ATTEMPTS = 5;
-const WINDOW_MS = 15 * 60 * 1000;
-
-class LoginRateLimiter {
-  private attempts = new Map<string, { count: number; firstAt: number }>();
-
-  check(key: string): void {
-    const entry = this.attempts.get(key);
-    if (!entry) return;
-    if (Date.now() - entry.firstAt > WINDOW_MS) {
-      this.attempts.delete(key);
-      return;
-    }
-    if (entry.count >= MAX_ATTEMPTS) {
-      throw new AppError('muitas tentativas de login; tente novamente em instantes', {
-        code: 'AUTH_RATE_LIMITED',
-        statusCode: 429,
-      });
-    }
-  }
-
-  record(key: string): void {
-    const now = Date.now();
-    const entry = this.attempts.get(key);
-    if (!entry || now - entry.firstAt > WINDOW_MS) {
-      this.attempts.set(key, { count: 1, firstAt: now });
-      return;
-    }
-    entry.count += 1;
-  }
-
-  clear(key: string): void {
-    this.attempts.delete(key);
-  }
-}
-
 const normalizeEmail = (email: string): string => email.trim().toLowerCase();
 
 const publicUser = (record: UserRecord): UserRecord => {
@@ -84,7 +47,13 @@ const publicUser = (record: UserRecord): UserRecord => {
 };
 
 export class AuthService {
-  private rateLimiter = new LoginRateLimiter();
+  // 5 tentativas por 15 min, por e-mail+IP — evita força-bruta num único processo.
+  private rateLimiter = new RateLimiter(
+    5,
+    15 * 60 * 1000,
+    'muitas tentativas de login; tente novamente em instantes',
+    'AUTH_RATE_LIMITED',
+  );
   // Hash descartável usado quando o e-mail não existe, para o custo de verificação (e,
   // portanto, o tempo de resposta) não denunciar se a conta existe ou não.
   private dummyHashPromise: Promise<string> | null = null;

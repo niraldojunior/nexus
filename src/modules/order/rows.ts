@@ -14,6 +14,7 @@ export type ServiceQualificationRow = {
   service_qualification_item: string | null;
   valid_for_start: string | null;
   valid_for_end: string | null;
+  tenant_id: string;
 };
 
 export type ServiceOrderRow = {
@@ -26,6 +27,7 @@ export type ServiceOrderRow = {
   note: string | null;
   valid_for_start: string | null;
   valid_for_end: string | null;
+  tenant_id: string;
 };
 
 export type ResourceOrderRow = {
@@ -38,4 +40,5 @@ export type ResourceOrderRow = {
   note: string | null;
   valid_for_start: string | null;
   valid_for_end: string | null;
+  tenant_id: string;
 };

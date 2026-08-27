@@ -9,7 +9,7 @@ import {
 } from './test-utils.js';
 
 // End-to-end Oracle verification against a real instance. Skips unless ORACLE_* is configured, so
-// the default Postgres suite never tries to connect. Run it with `npm run test:oracle` after setting
+// the default database-free suite never tries to connect. Run it with `npm run test:oracle` after setting
 // DATABASE_PROVIDER=oracle and the ORACLE_* connection in .env.
 //
 // It exercises the whole Oracle path at once: DDL generation with the NEXUS_TEST_ prefix

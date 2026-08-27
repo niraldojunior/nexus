@@ -99,13 +99,14 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   const eventService = new EventService(eventRepository);
   const partyRepository = oracle ? new OraclePartyRepository(db) : new PostgresPartyRepository(db);
   await partyRepository.initialize();
-  const partyService = new PartyService(partyRepository, eventService);
+  const partyService = new PartyService(partyRepository, eventService, db);
   const resourceRepository = oracle
     ? new OracleResourceRepository(db)
     : new PostgresResourceRepository(db);
   await resourceRepository.initialize();
   const resourceService = new ResourceService(resourceRepository, eventService, {
     mapFeatureSynchronizer,
+    db,
     lookupPlace: async (id) => {
       const site = await geoService.getSite(id);
       if (site) {
@@ -136,6 +137,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     ? new OracleServiceRepository(db)
     : new PostgresServiceRepository(db);
   const serviceService: ServiceService = new ServiceService(serviceRepository, eventService, {
+    db,
     lookupParty: async (id) => {
       const party = await partyService.getParty(id);
       if (!party) return undefined;
@@ -171,6 +173,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   });
   const orderRepository = oracle ? new OracleOrderRepository(db) : new PostgresOrderRepository(db);
   const orderService = new OrderService(orderRepository, eventService, {
+    db,
     lookupParty: async (id) => {
       const party = await partyService.getParty(id);
       if (!party) return undefined;

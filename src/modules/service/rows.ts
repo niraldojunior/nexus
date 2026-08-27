@@ -13,6 +13,7 @@ export type ServiceSpecificationRow = {
   valid_for_start: string | null;
   valid_for_end: string | null;
   characteristics: string | null;
+  tenant_id: string;
 };
 
 export type ServiceCategoryRow = {
@@ -24,6 +25,7 @@ export type ServiceCategoryRow = {
   valid_for_start: string | null;
   valid_for_end: string | null;
   characteristics: string | null;
+  tenant_id: string;
 };
 
 export type ServiceCandidateRow = {
@@ -37,6 +39,7 @@ export type ServiceCandidateRow = {
   valid_for_start: string | null;
   valid_for_end: string | null;
   characteristics: string | null;
+  tenant_id: string;
 };
 
 // Colunas comuns a CFS e RFS.
@@ -61,6 +64,7 @@ type ServiceRowBase = {
   characteristics: string | null;
   valid_for_start: string | null;
   valid_for_end: string | null;
+  tenant_id: string;
 };
 
 export type CustomerFacingServiceRow = ServiceRowBase & {

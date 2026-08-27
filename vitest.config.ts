@@ -1,36 +1,39 @@
 export default {
   test: {
     environment: 'jsdom',
-    // Each Vitest worker now owns its own Neon schema (see test/test-utils.ts) and no longer drops
-    // schemas mid-run, so parallel files no longer deadlock. Run files in parallel, but cap the
-    // worker count to stay within the direct endpoint's connection budget.
+    // The default suite is database-free. Oracle integration runs through `test:oracle` with a
+    // single worker and a dedicated NEXUS_TEST_ object prefix.
     fileParallelism: true,
-    // Cap worker threads so parallel files stay within Neon's connection budget (each worker owns
-    // its own schema + pool). Top-level in Vitest 4 (the old `poolOptions.threads` was removed).
+    // Top-level in Vitest 4 (the old `poolOptions.threads` was removed).
     minWorkers: 1,
     maxWorkers: 4,
-    // Drops leftover `nexus_test_%` schemas before the run and after it.
-    globalSetup: ['test/global-setup.ts'],
-    // DB-backed tests still cross the corporate proxy to Neon; keep generous ceilings so slow
-    // round-trips never trip the default 5s per-test / 10s per-hook budget.
+    // Oracle round-trips can take longer than pure unit tests.
     testTimeout: 120000,
     hookTimeout: 120000,
-    // TLS note: behind a corporate TLS-inspection proxy Node rejects Neon's self-signed chain.
+    // `--use-system-ca` lets the Oracle driver trust the corporate TLS-inspection chain.
     // --use-system-ca (trust the OS certificate store) must be set on the main node process — it is
     // process-global, so the `test:unit` script launches node with it (see package.json).
     include: ['test/**/*.spec.ts', 'web/src/**/*.test.ts', 'web/src/**/*.test.tsx'],
     exclude: [
       'test/system/**',
-      'test/*.integration.spec.ts',
-      'test/*.e2e.spec.ts',
+      'test/**/*.integration.spec.ts',
+      'test/**/*.e2e.spec.ts',
       'test/*-management.spec.ts',
       'test/*.postgres.spec.ts',
       'test/postgres-*.spec.ts',
       'test/mcp.module.spec.ts',
       'test/mcp-http.spec.ts',
+      'test/mcp-geo-workflow.spec.ts',
+      'test/geo-project.unit.spec.ts',
       'test/order.unit.spec.ts',
       'test/service.unit.spec.ts',
       'test/shared-persistence.spec.ts',
+      'test/db-connect-retry.spec.ts',
+      'test/dev-neon.spec.ts',
+      'test/docker-deploy.spec.ts',
+      'test/env.spec.ts',
+      'test/pg-ssl.spec.ts',
+      'test/test-utils-guards.spec.ts',
       'dist/**',
       'node_modules/**',
     ],

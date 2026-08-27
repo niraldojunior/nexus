@@ -51,6 +51,10 @@ export type AppConfig = {
   adminPassword?: string;
   /** TTL do access token emitido pelo IdP local, em horas (default 12). */
   authAccessTokenTtlHours?: number;
+  /** Limite de requisições ao proxy do LLM por ator (default 20 por minuto). Configurável só
+   *  para permitir um teste de integração exercitar o 429 sem depender de 20 round-trips reais. */
+  llmRateLimitMax?: number;
+  llmRateLimitWindowMs?: number;
   geonet?: GeonetConfig;
   databaseUrl: string;
   /** Resolved by loadConfig; optional only for legacy programmatic test fixtures. */

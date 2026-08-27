@@ -9,6 +9,11 @@ import {
 } from './request-context.js';
 import type { Logger } from '../logging/logger.js';
 import { RateLimiter } from './rate-limiter.js';
+import {
+  startOutboxRelay,
+  createLoggingPublisher,
+  type OutboxRelayHandle,
+} from '../runtime/outbox-relay.js';
 import { InMemoryEntityRepository } from '../persistence/in-memory-entity-repository.js';
 import type { DatabaseClient } from '../persistence/database-client.js';
 import { createDatabaseClient } from '../persistence/database-factory.js';
@@ -150,6 +155,7 @@ export const createApp = ({ config, logger }: AppDependencies) => {
   // Uma instância por app (não módulo): o LLM custa dinheiro por chamada, então limita por ator
   // — 20 requisições/minuto por default. Estado por instância, igual ao rate limit de login
   // (não é garantia sob múltiplas réplicas; o Apigee assume isso quando entrar).
+  let outboxRelayHandle: OutboxRelayHandle | null = null;
   const llmRateLimiter = new RateLimiter(
     config.llmRateLimitMax ?? 20,
     config.llmRateLimitWindowMs ?? 60_000,
@@ -224,9 +230,16 @@ export const createApp = ({ config, logger }: AppDependencies) => {
           resolve(resolvedPort);
         });
       });
+
+      // C7: publica o que os módulos gravam em tmf_outbox (ver shared/persistence/audit-outbox.ts).
+      // Sink de log no laboratório — troca só o publisher quando o Kafka entrar.
+      outboxRelayHandle = startOutboxRelay(db, createLoggingPublisher(logger), { logger });
+
       return port;
     },
     stop: async (): Promise<void> => {
+      outboxRelayHandle?.stop();
+      outboxRelayHandle = null;
       runtimePromise = null;
       // db.close() already removes just this instance from the static map. Calling
       // PostgresDatabase.resetForTesting() here would additionally tear down every other
@@ -2479,12 +2492,13 @@ const routePartyRequest = async ({
         partyService.updateParty(
           partyRoute.id,
           (await readBody(request)) as Parameters<typeof partyService.updateParty>[1],
+          context,
         ),
       );
     }
 
     if (partyRoute.id && request.method === 'DELETE') {
-      return sendJson(response, 200, partyService.deleteParty(partyRoute.id));
+      return sendJson(response, 200, partyService.deleteParty(partyRoute.id, context));
     }
   }
 
@@ -2524,12 +2538,13 @@ const routePartyRequest = async ({
         partyService.updatePartyRole(
           roleRoute.id,
           (await readBody(request)) as Parameters<typeof partyService.updatePartyRole>[1],
+          context,
         ),
       );
     }
 
     if (roleRoute.id && request.method === 'DELETE') {
-      return sendJson(response, 200, partyService.deletePartyRole(roleRoute.id));
+      return sendJson(response, 200, partyService.deletePartyRole(roleRoute.id, context));
     }
   }
 

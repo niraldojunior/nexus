@@ -6,35 +6,43 @@
 
 ---
 
-## 1. Estado atual — e por que é bloqueador
+## 1. Estado atual — o que já fechou e o que ainda depende do Apigee/Oracle
 
-O backend hoje valida um **único token estático global**:
+> **Histórico:** este documento nasceu descrevendo um backend que validava um único token estático
+> global, sem identidade, sem tenant, sem papéis e sem auditoria — bloqueador de go-live declarado.
+> As Fases 1–4 de uma auditoria de gaps (issue #80, ago/2026) fecharam a maior parte disso sem
+> depender do Apigee nem da migração Oracle. O que resta está listado no fim desta seção e em
+> [`../1-overview/open-questions.md`](../1-overview/open-questions.md) (`Q-ARQ-008` a `Q-ARQ-015`).
 
-```ts
-// src/shared/http/app.ts
-if (header !== `Bearer ${config.authToken}`) throw forbiddenError();
-```
+**Identidade e token estático.** Já existe um **IdP local** — login por e-mail/senha (scrypt) que
+emite JWT HS256 com os mesmos claims que o Apigee injetaria (`sub`, `tenant_id`, `roles`, `exp`,
+`tv`). O verificador de JWT em `request-context.ts` **rejeita assinatura inválida** e **exige `exp`**
+(um JWT sem essa claim nunca expirava antes). O token estático de máquina (`AUTH_TOKEN`) usa
+comparação em tempo constante, o boot recusa subir em produção com o valor default `change-me`, e
+os headers `x-actor-sub`/`x-tenant-id`/`x-roles` (spoof de identidade) só têm efeito fora de
+produção — em produção o papel do token estático vem só de `AUTH_TOKEN_ROLES` (default
+`migration.job`, não mais admin completo). Quando o Apigee entrar, troca-se o emissor local e o
+lado resource-server permanece intacto.
 
-| Consequência                                                   | Gravidade |
-| -------------------------------------------------------------- | --------- |
-| **Não há identidade de usuário** — toda requisição é anônima   | 🔴        |
-| **Não há tenant na requisição** — nenhum isolamento entre ISPs | 🔴        |
-| **Não há papéis** — quem lê pode escrever e apagar             | 🔴        |
-| **Auditoria impossível** — não há a quem atribuir uma ação     | 🔴        |
-| Rotação de credencial derruba todos os consumidores de uma vez | 🟠        |
+**RBAC (§3).** Imposto na borda HTTP para **todos** os módulos TMF — Party, Resource, Service,
+Order e Event — seguindo a matriz de papéis abaixo, além das rotas de usuários e histórico de
+pesquisa Geo que já tinham RBAC antes. Exceção conhecida: o caminho MCP/Copilot
+(`mcpModule.registry.executeTool`) usa um esquema de permissões próprio e não passa por este RBAC
+nem pelo isolamento de tenant (`Q-ARQ-014`).
 
-> ❗ Numa plataforma **wholesale**, onde ISPs concorrentes consultam o mesmo inventário, ausência de
-> isolamento de tenant é **bloqueador de go-live** — não dívida técnica. Um ISP consegue ler a base
-> instalada do concorrente.
->
-> **Atualização (laboratório):** já existe um **IdP local** — login por e-mail/senha (scrypt) que
-> emite JWT HS256 com os mesmos claims que o Apigee injetaria (`sub`, `tenant_id`, `roles`, `exp`,
-> `tv`). O verificador de JWT em `request-context.ts` passou a **rejeitar assinatura inválida**
-> (antes aceitava qualquer token com formato de JWT quando havia verificador configurado). RBAC é
-> imposto nas rotas de **usuários** e no **histórico de pesquisa Geo**; o restante dos módulos ainda
-> exige apenas autenticação (ver §9 e `../1-overview/open-questions.md`). Isolamento multi-tenant
-> (§4) continua pendente. Quando o Apigee entrar, troca-se o emissor local e o lado resource-server
-> permanece intacto.
+**Isolamento multi-tenant (§4).** `tenant_id` existe e é filtrado em Resource (instâncias e
+catálogo), Service (catálogo), Order (Service/Resource Order e Service Qualification) e,
+parcialmente, Party — listagens de Party filtram por tenant, mas a leitura por id continua
+cross-tenant de propósito (Party é o diretório de "quem", incluindo fabricantes de catálogo
+referenciados por qualquer tenant). Suíte de isolamento em
+`test/tenant-isolation.integration.spec.ts`. VPD no Oracle (defesa em profundidade adicional) segue
+pendente da migração (`Q-ARQ-008`).
+
+**Auditoria (§5).** `tmf_audit_log` e `tmf_outbox` (C7) agora são escritos por Resource, Service,
+Order e Party, não só pelo Geo — via helper compartilhado
+(`src/shared/persistence/audit-outbox.ts`). O outbox ganhou um relay que efetivamente publica as
+linhas pendentes (antes só acumulavam); o sink é um log estruturado no laboratório e vira Kafka sem
+tocar quem grava.
 
 ---
 
@@ -82,8 +90,13 @@ spoofing.
 | `tenant.admin`     | Gerir usuários do próprio tenant                                       |
 | `platform.admin`   | **Cross-tenant**; exclusivo da operação V.tal, com auditoria reforçada |
 
-**Regra:** autorização é verificada na **camada de serviço**, não no handler HTTP. O handler traduz
-protocolo; quem conhece a regra é o domínio.
+**Regra (alvo):** autorização verificada na **camada de serviço**, não no handler HTTP — é o que o
+Geo já faz (`GeoService.assertRole`), reforçado mesmo se algum caminho não-HTTP (MCP, script)
+chamar o serviço direto. Party/Resource/Service/Order impõem RBAC na **borda HTTP**
+(`requireRoles` em `app.ts`, antes de despachar) — mais rápido de implementar em quatro módulos de
+uma vez, mas não protege uma chamada de serviço que não passe pela rota (é exatamente o gap do
+caminho MCP/Copilot, `Q-ARQ-014`). Migrar esses quatro módulos para o padrão do Geo é trabalho
+futuro, não urgente enquanto o único outro chamador (MCP) ainda não passa por RBAC nenhum.
 
 ---
 
@@ -200,17 +213,19 @@ deve ser removido na migração.
 
 ## 9. Ordem de correção
 
-| #   | Ação                                                    | Depende de          |
-| --- | ------------------------------------------------------- | ------------------- |
-| 1   | Aceitar e validar JWT com claims (`tenant_id`, `roles`) | Apigee provisionado |
-| 2   | Propagar contexto de tenant até o adaptador             | 1                   |
-| 3   | RBAC na camada de serviço                               | 1                   |
-| 4   | VPD no Oracle + limpeza de contexto no pool             | Migração Oracle     |
-| 5   | Trilha de auditoria no outbox                           | Outbox (C7)         |
-| 6   | Suíte de teste de isolamento entre tenants              | 2                   |
-| 7   | TDE, Data Redaction e mascaramento de não-produtivos    | Migração Oracle     |
+| #   | Ação                                                    | Depende de          | Estado                                                                                           |
+| --- | ------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------ |
+| 1   | Aceitar e validar JWT com claims (`tenant_id`, `roles`) | Apigee provisionado | ✅ IdP local emite o mesmo formato; verificador valida assinatura e `exp`                        |
+| 2   | Propagar contexto de tenant até o adaptador             | 1                   | ✅ Resource/Service/Order; Party parcial (§4) — VPD segue em `Q-ARQ-008`                         |
+| 3   | RBAC na camada de serviço                               | 1                   | ✅ Imposto na borda HTTP para Party/Resource/Service/Order/Event; MCP fica de fora (`Q-ARQ-014`) |
+| 4   | VPD no Oracle + limpeza de contexto no pool             | Migração Oracle     | 🟠 Pendente — `Q-ARQ-008`                                                                        |
+| 5   | Trilha de auditoria no outbox                           | Outbox (C7)         | ✅ `tmf_audit_log`/`tmf_outbox` escritos por todos os módulos TMF; relay publica o outbox        |
+| 6   | Suíte de teste de isolamento entre tenants              | 2                   | ✅ `test/tenant-isolation.integration.spec.ts`                                                   |
+| 7   | TDE, Data Redaction e mascaramento de não-produtivos    | Migração Oracle     | 🟠 Pendente — `Q-ARQ-009`                                                                        |
 
-Os itens 1–3 **não dependem da migração Oracle** e podem começar imediatamente.
+Pendências que não dependem da migração Oracle, registradas em `open-questions.md`: sessão do IdP
+local em `localStorage` (`Q-ARQ-013`), `Idempotency-Key` geral nas escritas TMF (`Q-ARQ-015`) e o
+gap de RBAC/tenant no caminho MCP/Copilot (`Q-ARQ-014`).
 
 ---
 

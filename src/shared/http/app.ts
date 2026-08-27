@@ -8,6 +8,7 @@ import {
   type RequestContext,
 } from './request-context.js';
 import type { Logger } from '../logging/logger.js';
+import { RateLimiter } from './rate-limiter.js';
 import { InMemoryEntityRepository } from '../persistence/in-memory-entity-repository.js';
 import type { DatabaseClient } from '../persistence/database-client.js';
 import { createDatabaseClient } from '../persistence/database-factory.js';
@@ -146,6 +147,15 @@ export const createApp = ({ config, logger }: AppDependencies) => {
   // backend means dozens of network round-trips. Build it ONCE at startup and reuse it for
   // every request instead of rebuilding per request (which made each request take seconds).
   let runtimePromise: Promise<NexusRuntime> | null = null;
+  // Uma instância por app (não módulo): o LLM custa dinheiro por chamada, então limita por ator
+  // — 20 requisições/minuto por default. Estado por instância, igual ao rate limit de login
+  // (não é garantia sob múltiplas réplicas; o Apigee assume isso quando entrar).
+  const llmRateLimiter = new RateLimiter(
+    config.llmRateLimitMax ?? 20,
+    config.llmRateLimitWindowMs ?? 60_000,
+    'muitas requisições ao assistente; aguarde um instante',
+    'LLM_RATE_LIMITED',
+  );
 
   const server = createServer((request, response) => {
     const activeRuntime =
@@ -161,6 +171,7 @@ export const createApp = ({ config, logger }: AppDependencies) => {
           repository,
           db,
           runtime,
+          llmRateLimiter,
         }),
       )
       .catch((error: unknown) => handleHttpError({ error, logger, response }))
@@ -235,6 +246,7 @@ type RouteDependencies = AppDependencies & {
   repository: InMemoryEntityRepository;
   db: DatabaseClient;
   runtime: NexusRuntime;
+  llmRateLimiter: RateLimiter;
 };
 
 const routeRequest = async ({
@@ -244,6 +256,7 @@ const routeRequest = async ({
   logger,
   repository,
   runtime,
+  llmRateLimiter,
 }: RouteDependencies): Promise<void> => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
   const searchService = runtime.searchService;
@@ -363,7 +376,9 @@ const routeRequest = async ({
 
   // POST /v1/chat/completions - Main assistant chat proxy
   if (request.method === 'POST' && url.pathname === '/v1/chat/completions') {
-    await ensureAuthorized(request, config);
+    const chatContext = await buildRequestContext(request, config);
+    llmRateLimiter.check(`${chatContext.actorSub}|${chatContext.sourceIp ?? 'unknown'}`);
+    llmRateLimiter.record(`${chatContext.actorSub}|${chatContext.sourceIp ?? 'unknown'}`);
 
     const body = (await readBody(request)) as OpenAIChatRequestBody;
     const parsed = parseOpenAIChatRequest(body);
@@ -738,6 +753,7 @@ const routeRequest = async ({
       localKnowledgeProvider,
       mcpModule,
       llmToolCatalog,
+      llmRateLimiter,
       url,
     });
     return;
@@ -2358,7 +2374,10 @@ const routeEventRequest = async ({
   eventService: EventService;
   url: URL;
 }): Promise<void> => {
-  await ensureAuthorized(request, config);
+  // TMF688 é transversal e só de leitura (nenhuma escrita nesta rota) — o mesmo papel de
+  // leitura de inventário basta.
+  const context = await buildRequestContext(request, config);
+  requireRoles(context, INVENTORY_READ_ROLES);
 
   const route = resolveEventRoute(url.pathname);
   if (!route) {
@@ -2389,7 +2408,8 @@ const routePartyRequest = async ({
   partyService: PartyService;
   url: URL;
 }): Promise<void> => {
-  await ensureAuthorized(request, config);
+  const context = await buildRequestContext(request, config);
+  requireRoles(context, request.method === 'GET' ? INVENTORY_READ_ROLES : INVENTORY_WRITE_ROLES);
 
   const partyRoute = resolvePartyRoute(url.pathname);
   if (partyRoute) {
@@ -2491,12 +2511,26 @@ const routeResourceRequest = async ({
   resourceService: ResourceService;
   url: URL;
 }): Promise<void> => {
-  await ensureAuthorized(request, config);
+  const context = await buildRequestContext(request, config);
 
   const route = resolveResourceRoute(url.pathname);
   if (!route) {
     throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
   }
+
+  // Specifications/functionSpecifications são catálogo (C9): escrita exige catalog.admin.
+  // Category/type são somente leitura nesta rota. Instâncias (resource/activation/
+  // relationships) seguem inventory.reader/inventory.editor, como Geo e Service.
+  const isResourceCatalogKind =
+    route.kind === 'resourceSpecification' || route.kind === 'resourceFunctionSpecification';
+  requireRoles(
+    context,
+    request.method === 'GET'
+      ? INVENTORY_READ_ROLES
+      : isResourceCatalogKind
+        ? CATALOG_ADMIN_ROLES
+        : INVENTORY_WRITE_ROLES,
+  );
 
   if (
     route.id &&
@@ -2740,12 +2774,27 @@ const routeServiceRequest = async ({
   serviceService: ServiceService;
   url: URL;
 }): Promise<void> => {
-  await ensureAuthorized(request, config);
+  const context = await buildRequestContext(request, config);
 
   const route = resolveServiceRoute(url.pathname);
   if (!route) {
     throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
   }
+
+  // Specification/category/candidate são catálogo (C9): escrita exige catalog.admin. A
+  // instância (service) e suas relações seguem inventory.reader/inventory.editor.
+  const isServiceCatalogKind =
+    route.kind === 'serviceSpecification' ||
+    route.kind === 'serviceCategory' ||
+    route.kind === 'serviceCandidate';
+  requireRoles(
+    context,
+    request.method === 'GET'
+      ? INVENTORY_READ_ROLES
+      : isServiceCatalogKind
+        ? CATALOG_ADMIN_ROLES
+        : INVENTORY_WRITE_ROLES,
+  );
 
   if (
     route.id &&
@@ -2951,12 +3000,23 @@ const routeOrderRequest = async ({
   orderService: OrderService;
   url: URL;
 }): Promise<void> => {
-  await ensureAuthorized(request, config);
+  const context = await buildRequestContext(request, config);
 
   const route = resolveOrderRoute(url.pathname);
   if (!route) {
     throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
   }
+
+  // order.requester abre ordens e consulta viabilidade (leitura + POST); order.operator
+  // executa designação e avança o estado de uma ordem existente (PATCH/DELETE).
+  requireRoles(
+    context,
+    request.method === 'GET'
+      ? ORDER_READ_ROLES
+      : request.method === 'POST'
+        ? ORDER_REQUEST_ROLES
+        : ORDER_OPERATE_ROLES,
+  );
 
   if (route.kind === 'serviceQualification') {
     if (!route.id && request.method === 'GET') {
@@ -4255,6 +4315,7 @@ const routeResearchRequest = async ({
   localKnowledgeProvider,
   mcpModule,
   llmToolCatalog,
+  llmRateLimiter,
   url,
 }: {
   request: IncomingMessage;
@@ -4268,6 +4329,7 @@ const routeResearchRequest = async ({
   localKnowledgeProvider: LocalKnowledgeProvider;
   mcpModule: ReturnType<typeof createNexusMcpModule>;
   llmToolCatalog: ReturnType<typeof buildLlmToolCatalog>;
+  llmRateLimiter: RateLimiter;
   url: URL;
 }): Promise<void> => {
   // Sessões de pesquisa/Copilot são por usuário: antes, toda sessão era gravada e lida sob o
@@ -4418,6 +4480,8 @@ const routeResearchRequest = async ({
     const session = await searchService.getSession(sessionId);
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
     assertSessionOwnership(session, user);
+    llmRateLimiter.check(user.id);
+    llmRateLimiter.record(user.id);
 
     const abortController = new AbortController();
     request.on('close', () => abortController.abort());
@@ -4491,6 +4555,8 @@ const routeResearchRequest = async ({
     const session = await searchService.getSession(sessionId);
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
     assertSessionOwnership(session, user);
+    llmRateLimiter.check(user.id);
+    llmRateLimiter.record(user.id);
 
     const activeProvider = resolveResearchProvider(session.model, {
       chatGptProvider,
@@ -4582,6 +4648,20 @@ const USER_ADMIN_ROLES = ['tenant.admin', 'platform.admin'] as const;
 // não passam pelo GeoService, então a rota HTTP replica a checagem aqui.
 const GEO_PROJECT_READ_ROLES = ['inventory.reader', 'platform.admin'] as const;
 const GEO_PROJECT_WRITE_ROLES = ['inventory.editor', 'platform.admin'] as const;
+
+// RBAC de Party/Resource/Service/Event/Order (ver docs/3-system-design/security.md §3). Segue o
+// mesmo critério estrito do GeoService.assertRole: papel exato ou platform.admin — não há
+// hierarquia implícita entre papéis (um editor sem `inventory.reader` não lê por herança).
+const INVENTORY_READ_ROLES = ['inventory.reader', 'platform.admin'] as const;
+const INVENTORY_WRITE_ROLES = ['inventory.editor', 'platform.admin'] as const;
+// Specifications/RelationshipTypes (catálogo) só mudam com catalog.admin; a leitura do catálogo
+// segue o papel de leitura comum, mesmo critério do GeoService para RelationshipType (§3, C9).
+const CATALOG_ADMIN_ROLES = ['catalog.admin', 'platform.admin'] as const;
+// order.requester abre ordens e consulta viabilidade (leitura + criação); order.operator executa
+// designação e avança o estado de uma ordem existente (PATCH/DELETE).
+const ORDER_READ_ROLES = ['order.requester', 'order.operator', 'platform.admin'] as const;
+const ORDER_REQUEST_ROLES = ['order.requester', 'platform.admin'] as const;
+const ORDER_OPERATE_ROLES = ['order.operator', 'platform.admin'] as const;
 
 // Teto do ícone de projeto (data URL): o cliente reduz para ~128×128 antes de enviar
 // (ver web/src/utils/projectIconImage.ts), então qualquer coisa acima disto é sinal de

@@ -233,6 +233,7 @@ export const requestJson = async (
   method: string,
   path: string,
   body?: unknown,
+  headers: Record<string, string> = {},
 ): Promise<{ statusCode: number; body: unknown }> => {
   const payload = body === undefined ? undefined : JSON.stringify(body);
   return await new Promise((resolve, reject) => {
@@ -244,6 +245,12 @@ export const requestJson = async (
         method,
         headers: {
           authorization: 'Bearer secret',
+          // Fora de produção o token estático aceita `x-actor-sub` para testabilidade (ver
+          // request-context.ts). Rotas com `requireUser` (ex.: sessões de pesquisa) exigem uma
+          // conta real — sem isso todo teste que as toca voltaria 401. VT158145 é o usuário
+          // semente (DEFAULT_RUNTIME_USER) criado no bootstrap do runtime.
+          'x-actor-sub': 'VT158145',
+          ...headers,
           ...(payload
             ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
             : {}),
@@ -277,8 +284,12 @@ export const startHttpTestApp = async (prefix: string) => {
 
   return {
     port,
-    requestJson: (method: string, path: string, body?: unknown) =>
-      requestJson(port, method, path, body),
+    requestJson: (
+      method: string,
+      path: string,
+      body?: unknown,
+      headers?: Record<string, string>,
+    ) => requestJson(port, method, path, body, headers),
     cleanup: async () => {
       await server.stop();
       database.cleanup();

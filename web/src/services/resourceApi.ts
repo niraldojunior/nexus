@@ -1,5 +1,6 @@
 import type { Party } from './partyApi';
 import { invalidateMapTiles } from '../utils/mapTileCache';
+import { bearerToken } from './session';
 
 const API_BASE_URL = '/tmf-api';
 
@@ -146,7 +147,7 @@ export type LogicalResourcePayload = {
 
 const authHeaders = (): HeadersInit => ({
   'Content-Type': 'application/json',
-  Authorization: `Bearer ${localStorage.getItem('authToken') || 'change-me'}`,
+  Authorization: `Bearer ${bearerToken()}`,
 });
 
 const cleanObject = <T extends Record<string, unknown>>(value: T): Partial<T> => {

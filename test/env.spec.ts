@@ -206,3 +206,53 @@ test('loadConfig prohibits automatic schema changes in production', () => {
     /not allowed in production/,
   );
 });
+
+test('loadConfig recusa o AUTH_TOKEN default (change-me) em produção', () => {
+  assert.throws(
+    () =>
+      loadConfig({
+        NODE_ENV: 'production',
+        DATABASE_URL_PROD: 'postgresql://prod.example',
+        // AUTH_TOKEN ausente → cai no default 'change-me'.
+      }),
+    /AUTH_TOKEN must be set to a real secret in production/,
+  );
+
+  // Explícito 'change-me' também é recusado.
+  assert.throws(
+    () =>
+      loadConfig({
+        NODE_ENV: 'production',
+        DATABASE_URL_PROD: 'postgresql://prod.example',
+        AUTH_TOKEN: 'change-me',
+      }),
+    /AUTH_TOKEN must be set to a real secret in production/,
+  );
+
+  // Um token real passa.
+  const config = loadConfig({
+    NODE_ENV: 'production',
+    DATABASE_URL_PROD: 'postgresql://prod.example',
+    AUTH_TOKEN: 'a-real-production-secret',
+  });
+  assert.equal(config.authToken, 'a-real-production-secret');
+
+  // Com AUTH_ENABLED=false o guarda não se aplica — auth está desligada de propósito.
+  const authDisabled = loadConfig({
+    NODE_ENV: 'production',
+    DATABASE_URL_PROD: 'postgresql://prod.example',
+    AUTH_ENABLED: 'false',
+  });
+  assert.equal(authDisabled.authToken, 'change-me');
+});
+
+test('loadConfig aplica AUTH_TOKEN_ROLES ao papel do token estático', () => {
+  const withDefault = loadConfig({ DATABASE_URL_DEV: 'postgresql://dev.example' });
+  assert.deepEqual(withDefault.authTokenRoles, ['migration.job']);
+
+  const withRoles = loadConfig({
+    DATABASE_URL_DEV: 'postgresql://dev.example',
+    AUTH_TOKEN_ROLES: 'migration.job, catalog.admin',
+  });
+  assert.deepEqual(withRoles.authTokenRoles, ['migration.job', 'catalog.admin']);
+});

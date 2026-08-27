@@ -1,4 +1,5 @@
 import type { ResourceCharacteristic, TimePeriod } from './resourceApi';
+import { bearerToken } from './session';
 
 /**
  * Cliente do Módulo de Serviços (TMF633 Service Catalog + TMF638 Service Inventory).
@@ -202,7 +203,7 @@ export type ServicePayload = CustomerFacingServicePayload | ResourceFacingServic
 
 const authHeaders = (): HeadersInit => ({
   'Content-Type': 'application/json',
-  Authorization: `Bearer ${localStorage.getItem('authToken') || 'change-me'}`,
+  Authorization: `Bearer ${bearerToken()}`,
 });
 
 const cleanObject = <T extends Record<string, unknown>>(value: T): Partial<T> => {

@@ -17,6 +17,7 @@ export type ResourceCategory = {
   parentCategoryCode?: string;
   description?: string;
   status: ResourceCatalogStatus;
+  tenantId?: string;
 };
 
 export type ResourceType = {
@@ -28,6 +29,7 @@ export type ResourceType = {
   categoryCode: string;
   description?: string;
   status: ResourceCatalogStatus;
+  tenantId?: string;
 };
 
 export type ResourceQuery = {
@@ -44,6 +46,7 @@ export type ResourceQuery = {
   kind?: ResourceKind;
   limit?: number;
   offset?: number;
+  tenantId?: string;
 };
 
 export type ResourceSpecificationQuery = {
@@ -53,12 +56,14 @@ export type ResourceSpecificationQuery = {
   includeEnded?: boolean;
   limit?: number;
   offset?: number;
+  tenantId?: string;
 };
 
 export type ResourceFunctionSpecificationQuery = {
   name?: string;
   limit?: number;
   offset?: number;
+  tenantId?: string;
 };
 
 export type ResourceCatalogQuery = {
@@ -84,6 +89,7 @@ export type ResourceSpecification = {
   validFor?: TimePeriod;
   resourceSpecificationCharacteristic: Characteristic[];
   relatedParty: RelatedParty[];
+  tenantId?: string;
 };
 
 export type ResourceFunctionSpecification = {
@@ -94,6 +100,7 @@ export type ResourceFunctionSpecification = {
   description?: string;
   validFor?: TimePeriod;
   resourceFunctionSpecificationCharacteristic: Characteristic[];
+  tenantId?: string;
 };
 
 export type ResourceBase = {
@@ -111,6 +118,7 @@ export type ResourceBase = {
   resourceRelationship: ResourceRelationship[];
   validFor?: TimePeriod;
   characteristic: Characteristic[];
+  tenantId?: string;
 };
 
 export type PhysicalResource = ResourceBase & {

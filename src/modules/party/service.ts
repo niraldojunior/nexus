@@ -12,14 +12,26 @@ import type {
   UpdatePartyRoleInput,
 } from './domain.js';
 import type { IPartyRepository } from './party-repository-interface.js';
+import type { RequestContext } from '../../shared/http/request-context.js';
+import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import { recordMutation } from '../../shared/persistence/audit-outbox.js';
+
+const DEFAULT_TENANT_ID = 'default';
+const tenantOf = (context?: RequestContext): string => context?.tenantId ?? DEFAULT_TENANT_ID;
 
 export class PartyService {
   public constructor(
     private readonly repository: IPartyRepository,
     private readonly eventService: EventService,
+    /** Trilha de auditoria + outbox (C7) — best-effort, ver nota em resource/service.ts. */
+    private readonly db?: DatabaseClient,
   ) {}
 
-  public async createParty(input: CreatePartyInput): Promise<Party> {
+  // Party é o diretório de "quem" (inclui os próprios Tenants e registros globais como
+  // fabricantes de catálogo) — getParty/getPartyRole/delete* continuam cross-tenant de
+  // propósito para não quebrar relatedParty entre módulos; só a criação estampa o tenant do
+  // criador e as listagens filtram por ele. Ver party-repository-interface.ts.
+  public async createParty(input: CreatePartyInput, context?: RequestContext): Promise<Party> {
     assertName(input.name);
     const partyType = input.partyType ?? 'Organization';
     const id = createCanonicalId();
@@ -31,16 +43,21 @@ export class PartyService {
       partyType,
       status: input.status ?? 'active',
       partyCharacteristic: input.partyCharacteristic ?? [],
+      tenantId: tenantOf(context),
       ...(input.validFor ? { validFor: input.validFor } : {}),
     };
 
     const stored = await this.repository.upsertParty(party);
 
-    await this.emit('PartyCreateEvent', stored.id, stored);
+    await this.emit('PartyCreateEvent', stored.id, stored, context);
     return stored;
   }
 
-  public async updateParty(id: string, input: UpdatePartyInput): Promise<Party> {
+  public async updateParty(
+    id: string,
+    input: UpdatePartyInput,
+    context?: RequestContext,
+  ): Promise<Party> {
     const current = await this.getPartyOrThrow(id);
     if (input.name !== undefined) assertName(input.name);
 
@@ -53,11 +70,11 @@ export class PartyService {
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
     });
 
-    await this.emit('PartyAttributeValueChangeEvent', updated.id, updated);
+    await this.emit('PartyAttributeValueChangeEvent', updated.id, updated, context);
     return updated;
   }
 
-  public async deleteParty(id: string): Promise<Party> {
+  public async deleteParty(id: string, context?: RequestContext): Promise<Party> {
     const current = await this.getPartyOrThrow(id);
     const endedAt = new Date().toISOString();
     const terminated = await this.repository.upsertParty({
@@ -65,7 +82,7 @@ export class PartyService {
       status: 'terminated',
       validFor: buildTimePeriod(current.validFor?.startDateTime, endedAt),
     });
-    await this.emit('PartyAttributeValueChangeEvent', terminated.id, terminated);
+    await this.emit('PartyAttributeValueChangeEvent', terminated.id, terminated, context);
     return terminated;
   }
 
@@ -73,11 +90,14 @@ export class PartyService {
     return await this.repository.getParty(id);
   }
 
-  public async listParties(query?: PartyQuery): Promise<Party[]> {
-    return await this.repository.listParties(query);
+  public async listParties(query?: PartyQuery, context?: RequestContext): Promise<Party[]> {
+    return await this.repository.listParties({ ...query, tenantId: tenantOf(context) });
   }
 
-  public async createPartyRole(input: CreatePartyRoleInput): Promise<PartyRole> {
+  public async createPartyRole(
+    input: CreatePartyRoleInput,
+    context?: RequestContext,
+  ): Promise<PartyRole> {
     assertName(input.name);
     const party = await this.getPartyOrThrow(input.partyId);
     const id = createCanonicalId();
@@ -95,15 +115,20 @@ export class PartyService {
         name: party.name,
       },
       partyRoleCharacteristic: input.partyRoleCharacteristic ?? [],
+      tenantId: tenantOf(context),
       ...(input.validFor ? { validFor: input.validFor } : {}),
     };
 
     const stored = await this.repository.upsertPartyRole(role);
-    await this.emit('PartyRoleCreateEvent', stored.id, stored);
+    await this.emit('PartyRoleCreateEvent', stored.id, stored, context);
     return stored;
   }
 
-  public async updatePartyRole(id: string, input: UpdatePartyRoleInput): Promise<PartyRole> {
+  public async updatePartyRole(
+    id: string,
+    input: UpdatePartyRoleInput,
+    context?: RequestContext,
+  ): Promise<PartyRole> {
     const current = await this.getPartyRoleOrThrow(id);
     if (input.name !== undefined) assertName(input.name);
 
@@ -115,18 +140,18 @@ export class PartyService {
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
     });
 
-    await this.emit('PartyRoleAttributeValueChangeEvent', updated.id, updated);
+    await this.emit('PartyRoleAttributeValueChangeEvent', updated.id, updated, context);
     return updated;
   }
 
-  public async deletePartyRole(id: string): Promise<PartyRole> {
+  public async deletePartyRole(id: string, context?: RequestContext): Promise<PartyRole> {
     const current = await this.getPartyRoleOrThrow(id);
     const terminated = await this.repository.upsertPartyRole({
       ...current,
       status: 'terminated',
       validFor: buildTimePeriod(current.validFor?.startDateTime, new Date().toISOString()),
     });
-    await this.emit('PartyRoleAttributeValueChangeEvent', terminated.id, terminated);
+    await this.emit('PartyRoleAttributeValueChangeEvent', terminated.id, terminated, context);
     return terminated;
   }
 
@@ -134,16 +159,20 @@ export class PartyService {
     return await this.repository.getPartyRole(id);
   }
 
-  public async listPartyRoles(query?: PartyRoleQuery): Promise<PartyRole[]> {
-    return await this.repository.listPartyRoles(query);
+  public async listPartyRoles(
+    query?: PartyRoleQuery,
+    context?: RequestContext,
+  ): Promise<PartyRole[]> {
+    return await this.repository.listPartyRoles({ ...query, tenantId: tenantOf(context) });
   }
 
   private async emit(
     eventType: string,
     entityId: string,
     payload: Party | PartyRole,
+    context?: RequestContext,
   ): Promise<void> {
-    await this.eventService.appendEvent({
+    const event = await this.eventService.appendEvent({
       eventType,
       source: `party.${payload['@type']}`,
       correlationId: entityId,
@@ -153,6 +182,17 @@ export class PartyService {
         payload,
       },
     });
+
+    if (this.db && context) {
+      await recordMutation(this.db, context, {
+        action: eventType.includes('Create') ? 'create' : 'update',
+        entityType: payload['@type'],
+        entityId,
+        after: payload,
+        event,
+        topic: 'tmf688.party',
+      });
+    }
   }
 
   private async getPartyOrThrow(id: string): Promise<Party> {

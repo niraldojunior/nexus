@@ -14,11 +14,19 @@ import type {
   ResourceSpecificationQuery,
 } from './domain.js';
 
+// Escopo de tenant para leitura por id — as mesmas entidades cujo `list*` já aceita `tenantId`
+// na query. Category/Type ficam de fora (ver nota em postgres-repository.ts): são vocabulário
+// fixo com `code` globalmente único, semeado por catálogo estático, não por usuário/tenant.
+export type ResourceTenantScope = { tenantId?: string };
+
 export interface IResourceRepository {
   transaction<T>(fn: () => Awaitable<T>): Awaitable<T>;
 
   upsertResourceSpecification(spec: ResourceSpecification): Awaitable<ResourceSpecification>;
-  getResourceSpecification(id: string): Awaitable<ResourceSpecification | undefined>;
+  getResourceSpecification(
+    id: string,
+    scope?: ResourceTenantScope,
+  ): Awaitable<ResourceSpecification | undefined>;
   listResourceSpecifications(
     query?: ResourceSpecificationQuery,
   ): Awaitable<ResourceSpecification[]>;
@@ -28,6 +36,7 @@ export interface IResourceRepository {
   ): Awaitable<ResourceFunctionSpecification>;
   getResourceFunctionSpecification(
     id: string,
+    scope?: ResourceTenantScope,
   ): Awaitable<ResourceFunctionSpecification | undefined>;
   listResourceFunctionSpecifications(
     query?: ResourceFunctionSpecificationQuery,
@@ -39,12 +48,18 @@ export interface IResourceRepository {
   listResourceTypes(): Awaitable<ResourceType[]>;
 
   upsertPhysicalResource(resource: PhysicalResource): Awaitable<PhysicalResource>;
-  getPhysicalResource(id: string): Awaitable<PhysicalResource | undefined>;
+  getPhysicalResource(
+    id: string,
+    scope?: ResourceTenantScope,
+  ): Awaitable<PhysicalResource | undefined>;
   listPhysicalResources(query?: ResourceQuery): Awaitable<PhysicalResource[]>;
   countPhysicalResources(query?: ResourceQuery): Awaitable<number>;
 
   upsertLogicalResource(resource: LogicalResource): Awaitable<LogicalResource>;
-  getLogicalResource(id: string): Awaitable<LogicalResource | undefined>;
+  getLogicalResource(
+    id: string,
+    scope?: ResourceTenantScope,
+  ): Awaitable<LogicalResource | undefined>;
   listLogicalResources(query?: ResourceQuery): Awaitable<LogicalResource[]>;
   countLogicalResources(query?: ResourceQuery): Awaitable<number>;
 

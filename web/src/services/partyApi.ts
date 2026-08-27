@@ -1,3 +1,5 @@
+import { bearerToken } from './session';
+
 const API_BASE_URL = '/tmf-api';
 
 type FetchJsonOptions = {
@@ -79,7 +81,7 @@ export type UpdatePartyRoleInput = {
 
 const authHeaders = (): HeadersInit => ({
   'Content-Type': 'application/json',
-  Authorization: `Bearer ${localStorage.getItem('authToken') || 'change-me'}`,
+  Authorization: `Bearer ${bearerToken()}`,
 });
 
 async function requestJson<T>(url: string, options: FetchJsonOptions = {}): Promise<T> {

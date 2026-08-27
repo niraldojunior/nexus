@@ -4,6 +4,7 @@ import { handleHttpError, handleHttpRequest, runtimeOptionsFromConfig } from './
 import { createLogger } from '../logging/logger.js';
 import { InMemoryEntityRepository } from '../persistence/in-memory-entity-repository.js';
 import { createDatabaseClient } from '../persistence/database-factory.js';
+import { RateLimiter } from './rate-limiter.js';
 import { createNexusRuntime, type NexusRuntime } from '../runtime/nexus-runtime.js';
 
 export const config = {
@@ -19,6 +20,13 @@ const initialized = db.initialize();
 // Build the runtime once per cold start and reuse it; building it per request runs the
 // repository seeds (many DB round-trips) on every invocation.
 let runtimePromise: Promise<NexusRuntime> | null = null;
+// Uma instância por cold start (não por requisição) — mesmo raciocínio do createApp standalone.
+const llmRateLimiter = new RateLimiter(
+  appConfig.llmRateLimitMax ?? 20,
+  appConfig.llmRateLimitWindowMs ?? 60_000,
+  'muitas requisições ao assistente; aguarde um instante',
+  'LLM_RATE_LIMITED',
+);
 
 export const handler = async (
   request: IncomingMessage,
@@ -40,6 +48,7 @@ export const handler = async (
       repository,
       db,
       runtime,
+      llmRateLimiter,
     });
   } catch (error) {
     handleHttpError({ error, logger, response });

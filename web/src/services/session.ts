@@ -38,6 +38,12 @@ export const subscribeSession = (listener: () => void): (() => void) => {
 
 export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY);
 
+// Valor pronto para o header `Authorization`. Sem sessão, devolve string vazia — nunca um
+// token de fallback: enviar "Bearer " faz o backend responder 401, que o fetch-compat já
+// trata (limpa a sessão e a UI volta ao login), em vez de a requisição sair autenticada como
+// a conta de máquina (AUTH_TOKEN) enquanto o usuário acha que está deslogado.
+export const bearerToken = (): string => getToken() ?? '';
+
 export const setSession = (session: { token: string; user: SessionUser }): void => {
   localStorage.setItem(TOKEN_KEY, session.token);
   localStorage.setItem(USER_KEY, JSON.stringify(session.user));

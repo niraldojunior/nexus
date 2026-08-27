@@ -49,9 +49,17 @@ export type ProjectDetailPanelProps = {
   project: GeoProject;
   sites: GeoTreeNode[];
   sitesLoading: boolean;
+  // Total real de locais do projeto, vindo do servidor (COUNT(*) OVER() em
+  // GeoTreeService.projectSitePage) — o teto de 100 por página faz `sites.length` nunca
+  // refletir o total de um projeto grande, com ou sem manchas geradas. Sem este prop, cai
+  // para `sites.length` (compat).
+  sitesTotal?: number;
+  // Há mais locais além da página já carregada — mostra o botão "Carregar mais".
+  hasMoreSites?: boolean;
+  sitesLoadingMore?: boolean;
+  onLoadMoreSites?: () => void;
   // Manchas de concentração/dispersão do projeto (REQ-MOD01-017), geradas por
-  // scripts/build-project-areas.mjs — vazio quando o projeto não tem manchas ainda. Quando
-  // presentes, `sites` é só uma PÁGINA (o total real é `project.siteCount`).
+  // scripts/build-project-areas.mjs — vazio quando o projeto não tem manchas ainda.
   areas?: ProjectArea[];
   selectedSiteId?: string | null;
   onSnapChange?: (state: BottomSheetSnapState) => void;
@@ -84,6 +92,10 @@ export function ProjectDetailPanel({
   project,
   sites,
   sitesLoading,
+  sitesTotal,
+  hasMoreSites = false,
+  sitesLoadingMore = false,
+  onLoadMoreSites,
   areas = [],
   selectedSiteId,
   onSnapChange,
@@ -384,14 +396,13 @@ export function ProjectDetailPanel({
     </div>
   ) : null;
 
-  // Com manchas geradas (REQ-MOD01-017), `sites` é só uma página — o total real é
-  // `project.siteCount`; sem manchas, os dois coincidem (lista completa, como sempre).
-  const hasAreas = areas.length > 0;
-  const totalCount = hasAreas ? project.siteCount : sites.length;
+  // `sites` é sempre uma PÁGINA (teto de 100 por vez, ver GET /v1/geo/projects/:id/sites em
+  // app.ts) — o total real vem do servidor via `sitesTotal`, nunca de `sites.length`.
+  const totalCount = sitesTotal ?? sites.length;
   const countLabel = (
     <span className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
       {totalCount === 1 ? '1 local' : `${totalCount} locais`}
-      {hasAreas && sites.length < totalCount ? ` (mostrando ${sites.length})` : ''}
+      {sites.length < totalCount ? ` (mostrando ${sites.length})` : ''}
     </span>
   );
 
@@ -446,6 +457,21 @@ export function ProjectDetailPanel({
       ))
     );
 
+  // Mesmo padrão de "Carregar mais" da Hierarquia (HierarchyTreeView/useGeoTree.loadMore):
+  // reabre a próxima página a partir do offset já carregado — nunca refaz a lista inteira.
+  const loadMoreSitesButton =
+    hasMoreSites && sites.length > 0 ? (
+      <button
+        type="button"
+        onClick={onLoadMoreSites}
+        disabled={sitesLoadingMore}
+        className="flex items-center gap-1.5 rounded-[10px] px-2 py-2 text-left text-[0.78rem] font-semibold text-app-muted transition hover:bg-app-accent-soft disabled:opacity-60"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Carregar mais ({Math.max(0, totalCount - sites.length).toLocaleString('pt-BR')})
+      </button>
+    ) : null;
+
   const tabBar = (
     <div className="flex flex-wrap gap-1 border-b border-app-border px-3 py-2" role="tablist" aria-label="Conteúdo do projeto">
       {([
@@ -492,7 +518,7 @@ export function ProjectDetailPanel({
       </button>
     </div>
   );
-  const tabContent = tab === 'sites' ? <><div className="mb-1 flex items-center justify-between">{countLabel}</div>{searchActions('sites', addSiteButton)}<div className="grid gap-0.5">{searchMode === 'sites' && query.trim().length >= 2 ? searchRows : siteRows}</div></>
+  const tabContent = tab === 'sites' ? <><div className="mb-1 flex items-center justify-between">{countLabel}</div>{searchActions('sites', addSiteButton)}<div className="grid gap-0.5">{searchMode === 'sites' && query.trim().length >= 2 ? searchRows : <>{siteRows}{loadMoreSitesButton}</>}</div></>
     : tab === 'coverage' ? <div className="grid gap-0.5">{coverageRows}</div>
     : <div className="grid gap-0.5"><div className="mb-1 flex items-center justify-between"><span className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-app-muted">{tab === 'infrastructure' ? `${project.infrastructureCount ?? 0} itens de infraestrutura` : `${project.resourceCount ?? 0} recursos`}</span></div>{searchActions(tab, addResourceButton(tab))}{searchMode === tab && query.trim().length >= 2 ? searchRows : resourceRows}</div>;
 

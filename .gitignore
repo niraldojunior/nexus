@@ -9,6 +9,9 @@ coverage
 .tmp*.err
 backups
 
+# Output do Playwright (test:regression) — temporário, regenerado a cada run.
+/test-results/
+
 # Oracle Instant Client é instalação local (binários e DLLs); nunca versionar.
 /.tools/oracle-instantclient*/
 /.tools/instantclient*/

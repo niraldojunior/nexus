@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GoogleMapPanel } from './GeoPage';
 import type { GeoTreeNode } from '../services/geoTreeApi';
 import type { MapTileFeature } from '../services/geoMapTileApi';
+import type { ProjectSite } from '../services/geoProjectApi';
 
 // InfraOverlay (canvas, Fase 3 da issue #69) precisa de projeção real (getProjection não-null)
 // pra `draw`/`hitTest` funcionarem de verdade — o mock de OverlayView abaixo devolve null de
@@ -20,6 +21,23 @@ vi.mock('./geo-tabs/InfraOverlay', () => ({
     setData: infraOverlayMocks.setData,
     hitTest: infraOverlayMocks.hitTest,
     destroy: infraOverlayMocks.destroy,
+  })),
+}));
+
+// Locais do Projeto de trabalho aberto (ProjectSiteOverlay, canvas — issue #72), mesmo motivo
+// de mock que o InfraOverlay acima: exercitar o fio de seleção via canvas sem depender de
+// projeção geométrica real.
+const projectSiteOverlayMocks = vi.hoisted(() => ({
+  setData: vi.fn(),
+  hitTest: vi.fn((_lng: number, _lat: number): ProjectSite | null => null),
+  destroy: vi.fn(),
+}));
+
+vi.mock('./geo-tabs/ProjectSiteOverlay', () => ({
+  createProjectSiteOverlay: vi.fn(() => ({
+    setData: projectSiteOverlayMocks.setData,
+    hitTest: projectSiteOverlayMocks.hitTest,
+    destroy: projectSiteOverlayMocks.destroy,
   })),
 }));
 
@@ -636,6 +654,159 @@ describe('GoogleMapPanel', () => {
         siteMarkerSize: 25,
         excludeNodeId: 'resource:r9',
       }),
+    );
+  });
+
+  it('repassa projectSiteFeatures/seleção pro ProjectSiteOverlay a cada mudança', async () => {
+    const site: ProjectSite = {
+      id: 'site:p1',
+      kind: 'site',
+      label: 'Local do Projeto',
+      hasChildren: false,
+      geometry: { type: 'Point', coordinates: [-43.1, -22.9] },
+      note: null,
+      geonetAddressId: null,
+      projectId: 'project:1',
+    };
+    const { rerender } = render(
+      <GoogleMapPanel
+        nodes={[]}
+        projectSiteFeatures={[site]}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        coverage={null}
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
+        onCoverageHover={vi.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(projectSiteOverlayMocks.setData).toHaveBeenCalledWith([site], {
+        siteMarkerSize: 25,
+        resourceMarkerSize: 30,
+        excludeNodeId: null,
+      }),
+    );
+
+    // Mesma razão do InfraOverlay: o selecionado nunca é desenhado pelo overlay (fica só como
+    // Marker isolado — ver `pinnedNode`), então trocar a seleção reenvia `setData` mesmo sem
+    // `projectSiteFeatures` ter mudado.
+    rerender(
+      <GoogleMapPanel
+        nodes={[]}
+        projectSiteFeatures={[site]}
+        selectedNode={selectionNode('site:p1')}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        coverage={null}
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
+        onCoverageHover={vi.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(projectSiteOverlayMocks.setData).toHaveBeenLastCalledWith([site], {
+        siteMarkerSize: 25,
+        resourceMarkerSize: 30,
+        excludeNodeId: 'site:p1',
+      }),
+    );
+  });
+
+  it('clique sobre um local de Projeto no canvas chama onSelectNode com o site inteiro, sem cair no clique-no-vazio', async () => {
+    const onSelectNode = vi.fn();
+    const onDraftAddress = vi.fn();
+    const site: ProjectSite = {
+      id: 'site:p1',
+      kind: 'site',
+      label: 'Local do Projeto',
+      hasChildren: false,
+      geometry: { type: 'Point', coordinates: [-43.1, -22.9] },
+      note: null,
+      geonetAddressId: null,
+      projectId: 'project:1',
+    };
+    projectSiteOverlayMocks.hitTest.mockReturnValueOnce(site);
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        projectSiteFeatures={[site]}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={onSelectNode}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={onDraftAddress}
+        onViewportChange={vi.fn()}
+        coverage={null}
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
+        onCoverageHover={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(mapListener('click')).toBeTypeOf('function'));
+    vi.useFakeTimers();
+    mapListener('click')?.({ latLng: { lat: () => -22.9, lng: () => -43.1 } });
+    await vi.runAllTimersAsync();
+
+    expect(onSelectNode).toHaveBeenCalledWith(site);
+    expect(googleMocks.reverseGeocode).not.toHaveBeenCalled();
+    expect(onDraftAddress).not.toHaveBeenCalled();
+  });
+
+  it('cria um Marker isolado para pinnedNode quando ele não está em nodes', async () => {
+    const pinnedNode: GeoTreeNode = {
+      id: 'site:pinned',
+      kind: 'site',
+      label: 'Local Selecionado',
+      sublabel: 'Central Office',
+      siteCategory: 'Site',
+      hasChildren: false,
+      geometry: { type: 'Point', coordinates: [-43.3, -22.8] },
+    };
+
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        pinnedNode={pinnedNode}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        coverage={null}
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
+        onCoverageHover={vi.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(googleMocks.markerCtor).toHaveBeenCalledWith(
+        expect.objectContaining({ position: { lng: -43.3, lat: -22.8 } }),
+      ),
     );
   });
 

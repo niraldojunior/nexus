@@ -462,6 +462,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const [pickedProjectAddress, setPickedProjectAddress] = useState<DraftAddress | null>(null);
   const [projectSites, setProjectSites] = useState<ProjectSite[]>([]);
   const [projectSitesLoading, setProjectSitesLoading] = useState(false);
+  // Total real de locais do projeto (servidor, COUNT(*) OVER() em projectSitePage) e se há
+  // mais páginas além da já carregada — alimentam o "Carregar mais" do painel.
+  const [projectSitesTotal, setProjectSitesTotal] = useState(0);
+  const [projectSitesHasMore, setProjectSitesHasMore] = useState(false);
+  const [projectSitesLoadingMore, setProjectSitesLoadingMore] = useState(false);
   // Incrementado após criar/remover um local do projeto para forçar um novo GET — os
   // demais estados (nome, descrição, ícone) já atualizam otimista via useGeoProjects.
   const [projectSitesReloadToken, setProjectSitesReloadToken] = useState(0);
@@ -741,36 +746,41 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     void loadGeo();
   }, [loadGeo]);
 
-  // Manchas do projeto aberto (REQ-MOD01-017) e a lista de locais do painel. Com manchas
-  // geradas, a lista do painel é só uma PÁGINA (PROJECT_PANEL_SITE_LIMIT) — o total real vem
-  // de `project.siteCount`; sem manchas, mantém o comportamento de sempre (todos os locais,
-  // já com geometria resolvida — ver GeoTreeService.sitesByIds). `projectSitesReloadToken`
-  // força um novo GET após criar/remover um local.
+  // Manchas do projeto aberto (REQ-MOD01-017) e a primeira página de locais do painel — o
+  // teto do servidor é 100 por página (ver GET /v1/geo/projects/:id/sites em app.ts);
+  // `loadMoreProjectSites` abaixo busca as páginas seguintes. `projectSitesReloadToken`
+  // força um novo GET (da primeira página) após criar/remover um local.
   useEffect(() => {
     if (!activeProjectId) {
       setProjectAreas([]);
       setProjectSites([]);
+      setProjectSitesTotal(0);
+      setProjectSitesHasMore(false);
       return;
     }
     let cancelled = false;
     setProjectSitesLoading(true);
-    // Disparadas em paralelo: `areas` só decidia o `limit` da lista do painel (ver comentário
-    // acima do efeito), mas o servidor já pagina a lista a no máximo 100 linhas de qualquer
-    // forma (ver GET /v1/geo/projects/:id/sites em app.ts) — pedir sempre PROJECT_PANEL_SITE_LIMIT
-    // (200) remove a dependência serial sem mudar o que o painel mostra, e corta pela metade a
-    // fila de requisições da abertura (backend local atende em série — AGENTS.md §3).
-    // `fetchProjectAreasAndSites` dedupe por projectId (StrictMode monta este efeito duas vezes,
-    // e reabrir o mesmo projeto rápido remonta de novo) — issue #72.
+    // Disparadas em paralelo: `areas` não decide mais o `limit` da lista do painel (o
+    // servidor já pagina a no máximo 100 linhas de qualquer forma) — pedir sempre
+    // PROJECT_PANEL_SITE_LIMIT (200, clampado a 100 no servidor) remove a dependência serial
+    // sem mudar o que o painel mostra, e corta pela metade a fila de requisições da abertura
+    // (backend local atende em série — AGENTS.md §3). `fetchProjectAreasAndSites` dedupe por
+    // projectId (StrictMode monta este efeito duas vezes, e reabrir o mesmo projeto rápido
+    // remonta de novo) — issue #72.
     void fetchProjectAreasAndSites(activeProjectId, { limit: PROJECT_PANEL_SITE_LIMIT })
-      .then(([areas, nodes]) => {
+      .then(([areas, page]) => {
         if (cancelled) return;
         setProjectAreas(areas);
-        setProjectSites(nodes);
+        setProjectSites(page.items);
+        setProjectSitesTotal(page.total);
+        setProjectSitesHasMore(page.hasMore);
       })
       .catch(() => {
         if (!cancelled) {
           setProjectAreas([]);
           setProjectSites([]);
+          setProjectSitesTotal(0);
+          setProjectSitesHasMore(false);
         }
       })
       .finally(() => {
@@ -780,6 +790,26 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       cancelled = true;
     };
   }, [activeProjectId, projectSitesReloadToken]);
+
+  // "Carregar mais" do painel (ProjectDetailPanel) — busca a próxima página a partir do
+  // offset já carregado e acrescenta, nunca refaz a lista inteira. Mesmo espírito de
+  // useGeoTree.loadMore, mas sem o dedupe por chave: só um "Carregar mais" fica visível por
+  // vez (o botão já desativa via `sitesLoadingMore`), não há como disparar duas requisições
+  // concorrentes pelo mesmo clique.
+  const loadMoreProjectSites = useCallback(() => {
+    if (!activeProjectId || projectSitesLoadingMore) return;
+    setProjectSitesLoadingMore(true);
+    void fetchProjectSites(activeProjectId, {
+      limit: PROJECT_PANEL_SITE_LIMIT,
+      offset: projectSites.length,
+    })
+      .then((page) => {
+        setProjectSites((current) => [...current, ...page.items]);
+        setProjectSitesTotal(page.total);
+        setProjectSitesHasMore(page.hasMore);
+      })
+      .finally(() => setProjectSitesLoadingMore(false));
+  }, [activeProjectId, projectSitesLoadingMore, projectSites.length]);
 
   // Locais do projeto VISÍVEIS NO MAPA, quando ele tem manchas geradas: busca por bbox (mesmo
   // padrão de handleViewportChange/viewportInfra), só ativa em ≤ PROJECT_PIN_MAX_SCALE_METERS —
@@ -820,8 +850,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         bounds: viewportBounds,
         limit: PROJECT_VIEWPORT_SITE_LIMIT,
       })
-        .then((nodes) => {
-          if (projectViewportFetchTokenRef.current === token) setProjectViewportSites(nodes);
+        .then((page) => {
+          if (projectViewportFetchTokenRef.current === token) setProjectViewportSites(page.items);
         })
         .catch(() => {
           if (projectViewportFetchTokenRef.current === token) setProjectViewportSites([]);
@@ -1454,6 +1484,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                   project={activeProject}
                   sites={projectSites}
                   sitesLoading={projectSitesLoading}
+                  sitesTotal={projectSitesTotal}
+                  hasMoreSites={projectSitesHasMore}
+                  sitesLoadingMore={projectSitesLoadingMore}
+                  onLoadMoreSites={loadMoreProjectSites}
                   areas={projectAreas}
                   selectedSiteId={
                     activeProjectSiteView?.mode === 'view' ? activeProjectSiteView.siteId : null

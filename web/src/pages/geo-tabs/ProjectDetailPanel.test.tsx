@@ -211,16 +211,38 @@ describe('ProjectDetailPanel', () => {
     expect(props.onRemoveSite).toHaveBeenCalledWith(target);
   });
 
+  it('hasMoreSites mostra "Carregar mais" e dispara onLoadMoreSites (mesmo padrão da Hierarquia)', () => {
+    const props = renderPanel({
+      sites: [site()],
+      sitesTotal: 5,
+      hasMoreSites: true,
+      onLoadMoreSites: vi.fn(),
+    });
+    openSites();
+
+    const loadMoreButton = screen.getByRole('button', { name: /carregar mais/i });
+    expect(loadMoreButton).toHaveTextContent('Carregar mais (4)');
+    fireEvent.click(loadMoreButton);
+    expect(props.onLoadMoreSites).toHaveBeenCalledTimes(1);
+  });
+
+  it('sem hasMoreSites, "Carregar mais" não aparece', () => {
+    renderPanel({ sites: [site()], sitesTotal: 1, hasMoreSites: false });
+    openSites();
+    expect(screen.queryByRole('button', { name: /carregar mais/i })).not.toBeInTheDocument();
+  });
+
   it('sem manchas, a contagem usa sites.length (comportamento de sempre)', () => {
     renderPanel({ sites: [site(), site({ id: 'site:s2', refId: 's2' })] });
     openSites();
     expect(screen.getByText('2 locais')).toBeInTheDocument();
   });
 
-  it('com manchas geradas (REQ-MOD01-017), a contagem usa project.siteCount e avisa a página parcial', () => {
+  it('com sitesTotal do servidor (paginação, ver GeoTreeService.projectSitePage), a contagem usa o total real e avisa a página parcial', () => {
     renderPanel({
       project: project({ siteCount: 3514 }),
       sites: [site()],
+      sitesTotal: 3514,
       areas: [area({ kind: 'concentration' }), area({ id: 'loc-2', kind: 'dispersion' })],
     });
     openSites();

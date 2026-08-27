@@ -1449,25 +1449,18 @@ const routeGeoRequest = async ({
       }
 
       const pageLimit = Math.min(Math.max(limit ?? 50, 1), 100);
-      const links = await runtime.geoProjectRepository.listSiteLinksPage(
+      const page = await geoTreeService.projectSitePage(
         geoContext.tenantId,
         projectId,
         pageLimit,
         offset,
       );
-      const scopedIds = links.map((link) => link.siteId);
-      const linkBySiteId = new Map(links.map((link) => [link.siteId, link]));
-      const nodes = await geoTreeService.sitesByIds(scopedIds);
-      const sites = nodes.map((node) => ({
-        ...node,
-        note: linkBySiteId.get(node.refId ?? '')?.note ?? null,
-        geonetAddressId: linkBySiteId.get(node.refId ?? '')?.geonetAddressId ?? null,
-      }));
       return sendJson(response, 200, {
-        items: sites,
+        items: page.items,
         offset,
         limit: pageLimit,
-        hasMore: links.length === pageLimit,
+        total: page.total,
+        hasMore: offset + page.items.length < page.total,
       });
     }
     if (request.method === 'POST') {
@@ -1516,11 +1509,12 @@ const routeGeoRequest = async ({
     const siteId = decodeURIComponent(projectSiteMatch[2]);
     if (request.method === 'PATCH') {
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
-      const siteIds = await runtime.geoProjectRepository.listSiteIds(
+      const linked = await runtime.geoProjectRepository.hasSiteLink(
         geoContext.tenantId,
         projectId,
+        siteId,
       );
-      if (!siteIds.includes(siteId)) {
+      if (!linked) {
         throw new AppError('project site not found', {
           code: 'GEO_PROJECT_SITE_NOT_FOUND',
           statusCode: 404,
@@ -1552,11 +1546,12 @@ const routeGeoRequest = async ({
     }
     if (request.method === 'DELETE') {
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
-      const siteIds = await runtime.geoProjectRepository.listSiteIds(
+      const linked = await runtime.geoProjectRepository.hasSiteLink(
         geoContext.tenantId,
         projectId,
+        siteId,
       );
-      if (!siteIds.includes(siteId)) {
+      if (!linked) {
         throw new AppError('project site not found', {
           code: 'GEO_PROJECT_SITE_NOT_FOUND',
           statusCode: 404,

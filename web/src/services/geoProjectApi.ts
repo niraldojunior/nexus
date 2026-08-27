@@ -148,17 +148,26 @@ export const updateProject = (
 export const deleteProject = (id: string): Promise<GeoProjectDeleteSummary> =>
   deleteJson<GeoProjectDeleteSummary>(`${BASE_URL}/${id}`);
 
+// Página de locais do projeto — `total` vem do servidor (COUNT(*) OVER() em
+// GeoTreeService.projectSitePage), não do tamanho de `items`: com o teto de 100 por página,
+// `items.length` nunca reflete o total real de um projeto grande. `hasMore` decide se o
+// botão "Carregar mais" aparece (ver ProjectDetailPanel).
+export type ProjectSitePage = { items: ProjectSite[]; total: number; hasMore: boolean };
+
 // Locais do projeto já vêm na forma de GeoTreeNode (mesma que a árvore usa), com geometria
-// resolvida — é o que dá pin/balão/voo de câmera de graça no mapa (ver GeoTreeService.sitesByIds).
+// resolvida — é o que dá pin/balão/voo de câmera de graça no mapa (ver
+// GeoTreeService.projectSitePage/projectSitesInViewport).
 //
 // `bounds` restringe a busca à região visível do mapa (REQ-MOD01-017) — usado quando o projeto
 // já tem manchas geradas, para não baixar dezenas de milhares de locais de uma vez; sem
-// `bounds`, mantém o comportamento de sempre (todos os locais, na ordem salva). `limit` também
-// vale para a lista do painel (sem `bounds`), para um projeto grande não travar a UI.
+// `bounds`, mantém o comportamento de sempre (locais paginados, na ordem salva). `limit`
+// também vale para a lista do painel (sem `bounds`), para um projeto grande não travar a UI.
+// O caminho por bbox não é paginado (é um recorte do viewport, refeito a cada pan/zoom) —
+// `total`/`hasMore` vêm normalizados (`items.length`/`false`) para a mesma forma.
 export const fetchProjectSites = (
   projectId: string,
   options: { bounds?: MapBounds; limit?: number; offset?: number } = {},
-): Promise<ProjectSite[]> => {
+): Promise<ProjectSitePage> => {
   const params = new URLSearchParams();
   if (options.bounds) {
     params.set('minLng', String(options.bounds.minLng));
@@ -171,9 +180,17 @@ export const fetchProjectSites = (
   const query = params.toString();
   // O servidor não devolve `projectId` na linha (é implícito na rota) — carimbado aqui, nos
   // dois caminhos (com e sem `bounds`), para o nó levar o vínculo consigo até o clique no mapa.
-  return getJson<Omit<ProjectSite, 'projectId'>[] | { items: Omit<ProjectSite, 'projectId'>[] }>(
-    `${BASE_URL}/${projectId}/sites${query ? `?${query}` : ''}`,
-  ).then((result) => (Array.isArray(result) ? result : result.items).map((node) => ({ ...node, projectId })));
+  return getJson<
+    | Omit<ProjectSite, 'projectId'>[]
+    | { items: Omit<ProjectSite, 'projectId'>[]; total: number; hasMore: boolean }
+  >(`${BASE_URL}/${projectId}/sites${query ? `?${query}` : ''}`).then((result) => {
+    if (Array.isArray(result)) {
+      const items = result.map((node) => ({ ...node, projectId }));
+      return { items, total: items.length, hasMore: false };
+    }
+    const items = result.items.map((node) => ({ ...node, projectId }));
+    return { items, total: result.total, hasMore: result.hasMore };
+  });
 };
 
 // Dedupe de `fetchProjectAreas`+`fetchProjectSites` na abertura de um projeto, chaveado por
@@ -181,12 +198,12 @@ export const fetchProjectSites = (
 // o efeito duas vezes e reabrir o mesmo projeto rapidamente remonta de novo; sem isto, cada
 // montagem disparava um novo par de requisições ao backend, que atende em série (AGENTS.md §3).
 // Mesmo padrão de useGeoProjects.ts e do dedupe do catálogo de status em ProjectDetailPanel.tsx.
-const areasAndSitesInFlight = new Map<string, Promise<[ProjectArea[], ProjectSite[]]>>();
+const areasAndSitesInFlight = new Map<string, Promise<[ProjectArea[], ProjectSitePage]>>();
 
 export const fetchProjectAreasAndSites = (
   projectId: string,
   siteOptions: { limit?: number } = {},
-): Promise<[ProjectArea[], ProjectSite[]]> => {
+): Promise<[ProjectArea[], ProjectSitePage]> => {
   const existing = areasAndSitesInFlight.get(projectId);
   if (existing) return existing;
   const request = Promise.all([

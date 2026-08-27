@@ -15,5 +15,6 @@ import '../dist/test/service-management.spec.js';
 import '../dist/test/order-management.spec.js';
 import '../dist/test/tmf-functional-routes.integration.spec.js';
 import '../dist/test/rbac.integration.spec.js';
+import '../dist/test/tenant-isolation.integration.spec.js';
 
 console.log('tests passed');

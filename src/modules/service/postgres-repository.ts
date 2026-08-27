@@ -336,7 +336,7 @@ export class PostgresServiceRepository implements IServiceRepository {
        (id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
         is_service_enabled, has_started, subscriber_id, supporting_resource_facing_service_id, place, related_party,
         supporting_services, service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
@@ -433,7 +433,7 @@ export class PostgresServiceRepository implements IServiceRepository {
        (id, href, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
         is_service_enabled, has_started, supporting_resource_id, place, related_party, supporting_resources, supporting_services,
         service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,

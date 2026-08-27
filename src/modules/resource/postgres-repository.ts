@@ -12,7 +12,10 @@ import type {
   ResourceSpecification,
   ResourceSpecificationQuery,
 } from './domain.js';
-import type { IResourceRepository } from './resource-repository-interface.js';
+import type {
+  IResourceRepository,
+  ResourceTenantScope,
+} from './resource-repository-interface.js';
 import { RESOURCE_CATEGORIES, RESOURCE_TYPES } from './catalog.js';
 
 // Nome da characteristic que diz qual GeographicSite atende o recurso — a estação
@@ -70,6 +73,10 @@ const buildResourceConditions = (
   if (query?.placeId) {
     conditions.push('place_id = ?');
     params.push(query.placeId);
+  }
+  if (query?.tenantId) {
+    conditions.push('tenant_id = ?');
+    params.push(query.tenantId);
   }
 
   return { conditions, params };
@@ -220,8 +227,8 @@ export class PostgresResourceRepository implements IResourceRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_resource_specification
-       (id, href, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, href, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
@@ -244,6 +251,7 @@ export class PostgresResourceRepository implements IResourceRepository {
         spec.validFor?.endDateTime ?? null,
         JSON.stringify(spec.relatedParty),
         JSON.stringify(spec.resourceSpecificationCharacteristic),
+        spec.tenantId ?? 'default',
         now,
         now,
       ],
@@ -252,7 +260,16 @@ export class PostgresResourceRepository implements IResourceRepository {
     return (await this.getResourceSpecification(spec.id)) ?? spec;
   }
 
-  public async getResourceSpecification(id: string): Promise<ResourceSpecification | undefined> {
+  public async getResourceSpecification(
+    id: string,
+    scope?: ResourceTenantScope,
+  ): Promise<ResourceSpecification | undefined> {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
     const row = await this.db.get<{
       id: string;
       href: string;
@@ -264,11 +281,12 @@ export class PostgresResourceRepository implements IResourceRepository {
       valid_for_end?: string | null;
       related_party?: string | null;
       characteristics?: string | null;
+      tenant_id: string;
     }>(
-      `SELECT id, href, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics
+      `SELECT id, href, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics, tenant_id
        FROM tmf_resource_specification
-       WHERE id = ?`,
-      [id],
+       WHERE ${conditions.join(' AND ')}`,
+      params,
     );
 
     return row ? this.mapSpec(row) : undefined;
@@ -295,11 +313,15 @@ export class PostgresResourceRepository implements IResourceRepository {
     if (!query?.includeEnded) {
       conditions.push('valid_for_end IS NULL');
     }
+    if (query?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(query.tenantId);
+    }
 
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, href, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics FROM tmf_resource_specification',
+      'SELECT id, href, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics, tenant_id FROM tmf_resource_specification',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY category, name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -322,6 +344,7 @@ export class PostgresResourceRepository implements IResourceRepository {
       valid_for_end?: string | null;
       related_party?: string | null;
       characteristics?: string | null;
+      tenant_id: string;
     }>(sql, params);
 
     return rows.map((row) => this.mapSpec(row));
@@ -333,8 +356,8 @@ export class PostgresResourceRepository implements IResourceRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_resource_function_specification
-       (id, href, name, description, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+       (id, href, name, description, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
@@ -347,6 +370,7 @@ export class PostgresResourceRepository implements IResourceRepository {
         spec.name,
         spec.description ?? null,
         JSON.stringify(spec.resourceFunctionSpecificationCharacteristic),
+        spec.tenantId ?? 'default',
         now,
         now,
       ],
@@ -357,18 +381,26 @@ export class PostgresResourceRepository implements IResourceRepository {
 
   public async getResourceFunctionSpecification(
     id: string,
+    scope?: ResourceTenantScope,
   ): Promise<ResourceFunctionSpecification | undefined> {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
     const row = await this.db.get<{
       id: string;
       href: string;
       name: string;
       description?: string | null;
       characteristics?: string | null;
+      tenant_id: string;
     }>(
-      `SELECT id, href, name, description, characteristics
+      `SELECT id, href, name, description, characteristics, tenant_id
        FROM tmf_resource_function_specification
-       WHERE id = ?`,
-      [id],
+       WHERE ${conditions.join(' AND ')}`,
+      params,
     );
 
     return row ? this.mapFunctionSpec(row) : undefined;
@@ -384,11 +416,15 @@ export class PostgresResourceRepository implements IResourceRepository {
       conditions.push('LOWER(name) LIKE LOWER(?)');
       params.push(`%${query.name}%`);
     }
+    if (query?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(query.tenantId);
+    }
 
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, href, name, description, characteristics FROM tmf_resource_function_specification',
+      'SELECT id, href, name, description, characteristics, tenant_id FROM tmf_resource_function_specification',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -406,6 +442,7 @@ export class PostgresResourceRepository implements IResourceRepository {
       name: string;
       description?: string | null;
       characteristics?: string | null;
+      tenant_id: string;
     }>(sql, params);
 
     return rows.map((row) => this.mapFunctionSpec(row));
@@ -418,8 +455,8 @@ export class PostgresResourceRepository implements IResourceRepository {
        (id, href, name, resource_specification_id, resource_type, status,
         place_id, place_type, serving_site_id, administrative_state, operational_state, usage_state,
         manufacturer, model, serial_number, part_number, valid_for_start, valid_for_end,
-        related_party, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        related_party, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
@@ -462,6 +499,7 @@ export class PostgresResourceRepository implements IResourceRepository {
         resource.validFor?.endDateTime ?? null,
         JSON.stringify(resource.relatedParty),
         JSON.stringify(resource.characteristic),
+        resource.tenantId ?? 'default',
         now,
         now,
       ],
@@ -470,15 +508,24 @@ export class PostgresResourceRepository implements IResourceRepository {
     return (await this.getPhysicalResource(resource.id)) ?? resource;
   }
 
-  public async getPhysicalResource(id: string): Promise<PhysicalResource | undefined> {
+  public async getPhysicalResource(
+    id: string,
+    scope?: ResourceTenantScope,
+  ): Promise<PhysicalResource | undefined> {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
     const row = await this.db.get<PhysicalResourceRow>(
       `SELECT id, href, name, resource_specification_id, resource_type, status,
               place_id, place_type, administrative_state, operational_state, usage_state,
               manufacturer, model, serial_number, part_number, valid_for_start, valid_for_end,
-              related_party, characteristics
+              related_party, characteristics, tenant_id
        FROM tmf_physical_resource
-       WHERE id = ?`,
-      [id],
+       WHERE ${conditions.join(' AND ')}`,
+      params,
     );
 
     return row
@@ -492,7 +539,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, href, name, resource_specification_id, resource_type, status, place_id, place_type, administrative_state, operational_state, usage_state, manufacturer, model, serial_number, part_number, valid_for_start, valid_for_end, related_party, characteristics FROM tmf_physical_resource',
+      'SELECT id, href, name, resource_specification_id, resource_type, status, place_id, place_type, administrative_state, operational_state, usage_state, manufacturer, model, serial_number, part_number, valid_for_start, valid_for_end, related_party, characteristics, tenant_id FROM tmf_physical_resource',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -532,8 +579,8 @@ export class PostgresResourceRepository implements IResourceRepository {
        (id, href, name, resource_specification_id, resource_type, status,
         place_id, place_type, serving_site_id, supporting_physical_resource_id,
         administrative_state, operational_state, usage_state,
-        related_party, characteristics, valid_for_start, valid_for_end, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        related_party, characteristics, valid_for_start, valid_for_end, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
@@ -570,6 +617,7 @@ export class PostgresResourceRepository implements IResourceRepository {
         JSON.stringify(resource.characteristic),
         resource.validFor?.startDateTime ?? null,
         resource.validFor?.endDateTime ?? null,
+        resource.tenantId ?? 'default',
         now,
         now,
       ],
@@ -578,14 +626,23 @@ export class PostgresResourceRepository implements IResourceRepository {
     return (await this.getLogicalResource(resource.id)) ?? resource;
   }
 
-  public async getLogicalResource(id: string): Promise<LogicalResource | undefined> {
+  public async getLogicalResource(
+    id: string,
+    scope?: ResourceTenantScope,
+  ): Promise<LogicalResource | undefined> {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
     const row = await this.db.get<LogicalResourceRow>(
       `SELECT id, href, name, resource_specification_id, resource_type, status, place_id, place_type,
               supporting_physical_resource_id, administrative_state, operational_state, usage_state,
-              related_party, characteristics, valid_for_start, valid_for_end
+              related_party, characteristics, valid_for_start, valid_for_end, tenant_id
        FROM tmf_logical_resource
-       WHERE id = ?`,
-      [id],
+       WHERE ${conditions.join(' AND ')}`,
+      params,
     );
 
     return row
@@ -599,7 +656,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, href, name, resource_specification_id, resource_type, status, place_id, place_type, supporting_physical_resource_id, administrative_state, operational_state, usage_state, related_party, characteristics, valid_for_start, valid_for_end FROM tmf_logical_resource',
+      'SELECT id, href, name, resource_specification_id, resource_type, status, place_id, place_type, supporting_physical_resource_id, administrative_state, operational_state, usage_state, related_party, characteristics, valid_for_start, valid_for_end, tenant_id FROM tmf_logical_resource',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -773,6 +830,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     valid_for_end?: string | null;
     related_party?: string | null;
     characteristics?: string | null;
+    tenant_id?: string;
   }): ResourceSpecification {
     const spec: ResourceSpecification = {
       '@type': 'ResourceSpecification',
@@ -785,6 +843,7 @@ export class PostgresResourceRepository implements IResourceRepository {
         row.characteristics || '[]',
       ) as ResourceSpecification['resourceSpecificationCharacteristic'],
       relatedParty: JSON.parse(row.related_party || '[]') as ResourceSpecification['relatedParty'],
+      tenantId: row.tenant_id ?? 'default',
     };
 
     if (row.description) spec.description = row.description;
@@ -845,6 +904,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     name: string;
     description?: string | null;
     characteristics?: string | null;
+    tenant_id?: string;
   }): ResourceFunctionSpecification {
     const spec: ResourceFunctionSpecification = {
       '@type': 'ResourceFunctionSpecification',
@@ -854,6 +914,7 @@ export class PostgresResourceRepository implements IResourceRepository {
       resourceFunctionSpecificationCharacteristic: JSON.parse(
         row.characteristics || '[]',
       ) as ResourceFunctionSpecification['resourceFunctionSpecificationCharacteristic'],
+      tenantId: row.tenant_id ?? 'default',
     };
 
     if (row.description) spec.description = row.description;
@@ -882,6 +943,7 @@ export class PostgresResourceRepository implements IResourceRepository {
       relatedParty: JSON.parse(row.related_party || '[]'),
       resourceRelationship: resourceRelationships,
       characteristic: JSON.parse(row.characteristics || '[]'),
+      tenantId: row.tenant_id ?? 'default',
     };
 
     if (row.place_id) {
@@ -926,6 +988,7 @@ export class PostgresResourceRepository implements IResourceRepository {
       relatedParty: JSON.parse(row.related_party || '[]'),
       resourceRelationship: resourceRelationships,
       characteristic: JSON.parse(row.characteristics || '[]'),
+      tenantId: row.tenant_id ?? 'default',
     };
 
     if (row.place_id) {

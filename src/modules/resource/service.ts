@@ -27,8 +27,18 @@ import type {
   UpdateResourceFunctionSpecificationInput,
   UpdateResourceSpecificationInput,
 } from './domain.js';
-import type { IResourceRepository } from './resource-repository-interface.js';
+import type {
+  IResourceRepository,
+  ResourceTenantScope,
+} from './resource-repository-interface.js';
 import type { MapFeatureSynchronizer } from '../geo/map-feature-synchronizer.js';
+import type { RequestContext } from '../../shared/http/request-context.js';
+
+const DEFAULT_TENANT_ID = 'default';
+const tenantOf = (context?: RequestContext): string => context?.tenantId ?? DEFAULT_TENANT_ID;
+const scopeOf = (context?: RequestContext): ResourceTenantScope => ({
+  tenantId: tenantOf(context),
+});
 
 type ResourceServiceDependencies = {
   lookupPlace?: (
@@ -55,6 +65,7 @@ export class ResourceService {
 
   public async createResourceSpecification(
     input: CreateResourceSpecificationInput,
+    context?: RequestContext,
   ): Promise<ResourceSpecification> {
     assertName(input.name);
     const category = await this.getResourceCategoryOrThrow(input.category);
@@ -73,6 +84,7 @@ export class ResourceService {
         input.relatedParty,
         this.dependencies.lookupParty,
       ),
+      tenantId: tenantOf(context),
       ...(input.description ? { description: input.description } : {}),
       ...(input.validFor ? { validFor: input.validFor } : {}),
     };
@@ -85,8 +97,9 @@ export class ResourceService {
   public async updateResourceSpecification(
     id: string,
     input: UpdateResourceSpecificationInput,
+    context?: RequestContext,
   ): Promise<ResourceSpecification> {
-    const current = await this.getResourceSpecificationOrThrow(id);
+    const current = await this.getResourceSpecificationOrThrow(id, context);
     if (input.name !== undefined) assertName(input.name);
     const nextCategoryCode =
       input.category !== undefined ? input.category.trim() : current.category;
@@ -125,11 +138,12 @@ export class ResourceService {
   // resultado por linha volta para o relatório exibido no modal.
   public async bulkCreateResourceSpecifications(
     items: ResourceSpecificationBulkItem[],
+    context?: RequestContext,
   ): Promise<ResourceSpecificationBulkResult> {
     const results: ResourceSpecificationBulkItemResult[] = [];
     for (const item of items) {
       try {
-        const created = await this.createResourceSpecification(item.input);
+        const created = await this.createResourceSpecification(item.input, context);
         results.push({ line: item.line, status: 'created', id: created.id, name: created.name });
       } catch (error) {
         results.push({
@@ -145,8 +159,11 @@ export class ResourceService {
     return { total: items.length, created, failed: items.length - created, results };
   }
 
-  public async deleteResourceSpecification(id: string): Promise<ResourceSpecification> {
-    const current = await this.getResourceSpecificationOrThrow(id);
+  public async deleteResourceSpecification(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ResourceSpecification> {
+    const current = await this.getResourceSpecificationOrThrow(id, context);
     const terminated = await this.repository.upsertResourceSpecification({
       ...current,
       validFor: buildTimePeriod(current.validFor?.startDateTime, new Date().toISOString()),
@@ -162,12 +179,19 @@ export class ResourceService {
 
   public async listResourceSpecifications(
     query?: ResourceSpecificationQuery,
+    context?: RequestContext,
   ): Promise<ResourceSpecification[]> {
-    return await this.repository.listResourceSpecifications(query);
+    return await this.repository.listResourceSpecifications({
+      ...query,
+      tenantId: tenantOf(context),
+    });
   }
 
-  public async getResourceSpecification(id: string): Promise<ResourceSpecification | undefined> {
-    return await this.repository.getResourceSpecification(id);
+  public async getResourceSpecification(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ResourceSpecification | undefined> {
+    return await this.repository.getResourceSpecification(id, scopeOf(context));
   }
 
   public async listResourceCategories(): Promise<ResourceCategory[]> {
@@ -180,6 +204,7 @@ export class ResourceService {
 
   public async createResourceFunctionSpecification(
     input: CreateResourceFunctionSpecificationInput,
+    context?: RequestContext,
   ): Promise<ResourceFunctionSpecification> {
     assertName(input.name);
     const id = createCanonicalId();
@@ -190,6 +215,7 @@ export class ResourceService {
       name: input.name.trim(),
       resourceFunctionSpecificationCharacteristic:
         input.resourceFunctionSpecificationCharacteristic ?? [],
+      tenantId: tenantOf(context),
       ...(input.description ? { description: input.description } : {}),
       ...(input.validFor ? { validFor: input.validFor } : {}),
     };
@@ -207,8 +233,9 @@ export class ResourceService {
   public async updateResourceFunctionSpecification(
     id: string,
     input: UpdateResourceFunctionSpecificationInput,
+    context?: RequestContext,
   ): Promise<ResourceFunctionSpecification> {
-    const current = await this.getResourceFunctionSpecificationOrThrow(id);
+    const current = await this.getResourceFunctionSpecificationOrThrow(id, context);
     if (input.name !== undefined) assertName(input.name);
 
     const updated = await this.repository.upsertResourceFunctionSpecification({
@@ -232,8 +259,9 @@ export class ResourceService {
 
   public async deleteResourceFunctionSpecification(
     id: string,
+    context?: RequestContext,
   ): Promise<ResourceFunctionSpecification> {
-    const current = await this.getResourceFunctionSpecificationOrThrow(id);
+    const current = await this.getResourceFunctionSpecificationOrThrow(id, context);
     const terminated = await this.repository.upsertResourceFunctionSpecification({
       ...current,
       validFor: buildTimePeriod(current.validFor?.startDateTime, new Date().toISOString()),
@@ -249,21 +277,30 @@ export class ResourceService {
 
   public async listResourceFunctionSpecifications(
     query?: ResourceFunctionSpecificationQuery,
+    context?: RequestContext,
   ): Promise<ResourceFunctionSpecification[]> {
-    return await this.repository.listResourceFunctionSpecifications(query);
+    return await this.repository.listResourceFunctionSpecifications({
+      ...query,
+      tenantId: tenantOf(context),
+    });
   }
 
   public async getResourceFunctionSpecification(
     id: string,
+    context?: RequestContext,
   ): Promise<ResourceFunctionSpecification | undefined> {
-    return await this.repository.getResourceFunctionSpecification(id);
+    return await this.repository.getResourceFunctionSpecification(id, scopeOf(context));
   }
 
   public async createPhysicalResource(
     input: CreatePhysicalResourceInput,
+    context?: RequestContext,
   ): Promise<PhysicalResource> {
     assertName(input.name);
-    const spec = await this.getResourceSpecificationOrThrow(input.resourceSpecificationId);
+    const spec = await this.getResourceSpecificationOrThrow(
+      input.resourceSpecificationId,
+      context,
+    );
     const id = createCanonicalId();
     const place = await this.resolvePlace(input.placeId, input.placeType);
     const resource: PhysicalResource = {
@@ -284,6 +321,7 @@ export class ResourceService {
       ),
       resourceRelationship: [],
       characteristic: input.characteristic ?? [],
+      tenantId: tenantOf(context),
       ...(place ? { place } : {}),
       ...(input.manufacturer ? { manufacturer: input.manufacturer } : {}),
       ...(input.model ? { model: input.model } : {}),
@@ -294,10 +332,10 @@ export class ResourceService {
 
     const stored = await this.repository.upsertPhysicalResource(resource);
     for (const relationship of input.resourceRelationship ?? []) {
-      await this.addResourceRelationship(stored.id, relationship);
+      await this.addResourceRelationship(stored.id, relationship, context);
     }
-    const finalResource = await this.getPhysicalResourceOrThrow(stored.id);
-    await this.syncMapFeature(finalResource);
+    const finalResource = await this.getPhysicalResourceOrThrow(stored.id, context);
+    await this.syncMapFeature(finalResource, context);
     await this.emit('ResourceCreateEvent', finalResource.id, 'PhysicalResource', finalResource);
     return finalResource;
   }
@@ -305,11 +343,12 @@ export class ResourceService {
   public async updatePhysicalResource(
     id: string,
     input: UpdatePhysicalResourceInput,
+    context?: RequestContext,
   ): Promise<PhysicalResource> {
-    const current = await this.getPhysicalResourceOrThrow(id);
+    const current = await this.getPhysicalResourceOrThrow(id, context);
     if (input.name !== undefined) assertName(input.name);
     if (input.resourceSpecificationId !== undefined)
-      await this.getResourceSpecificationOrThrow(input.resourceSpecificationId);
+      await this.getResourceSpecificationOrThrow(input.resourceSpecificationId, context);
 
     // `place` some do objeto base (não só do spread condicional de baixo) porque
     // `placeId: null` (desvincular do local, aba Recursos do painel unificado, C2) precisa
@@ -346,7 +385,7 @@ export class ResourceService {
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
     });
 
-    await this.syncMapFeature(updated);
+    await this.syncMapFeature(updated, context);
 
     await this.emit(
       current.status !== updated.status
@@ -359,8 +398,11 @@ export class ResourceService {
     return updated;
   }
 
-  public async deletePhysicalResource(id: string): Promise<PhysicalResource> {
-    const current = await this.getPhysicalResourceOrThrow(id);
+  public async deletePhysicalResource(
+    id: string,
+    context?: RequestContext,
+  ): Promise<PhysicalResource> {
+    const current = await this.getPhysicalResourceOrThrow(id, context);
     const terminated = await this.repository.upsertPhysicalResource({
       ...current,
       status: 'terminated',
@@ -369,25 +411,41 @@ export class ResourceService {
       usageState: 'idle',
       validFor: buildTimePeriod(current.validFor?.startDateTime, new Date().toISOString()),
     });
-    await this.syncMapFeature(terminated);
+    await this.syncMapFeature(terminated, context);
     await this.emit('ResourceStateChangeEvent', terminated.id, 'PhysicalResource', terminated);
     return terminated;
   }
 
-  public async getPhysicalResource(id: string): Promise<PhysicalResource | undefined> {
-    return await this.repository.getPhysicalResource(id);
+  public async getPhysicalResource(
+    id: string,
+    context?: RequestContext,
+  ): Promise<PhysicalResource | undefined> {
+    return await this.repository.getPhysicalResource(id, scopeOf(context));
   }
 
-  public async listPhysicalResources(query?: ResourceQuery): Promise<PhysicalResource[]> {
-    return await this.repository.listPhysicalResources({ ...query, kind: 'PhysicalResource' });
+  public async listPhysicalResources(
+    query?: ResourceQuery,
+    context?: RequestContext,
+  ): Promise<PhysicalResource[]> {
+    return await this.repository.listPhysicalResources({
+      ...query,
+      kind: 'PhysicalResource',
+      tenantId: tenantOf(context),
+    });
   }
 
-  public async createLogicalResource(input: CreateLogicalResourceInput): Promise<LogicalResource> {
+  public async createLogicalResource(
+    input: CreateLogicalResourceInput,
+    context?: RequestContext,
+  ): Promise<LogicalResource> {
     assertName(input.name);
-    const spec = await this.getResourceSpecificationOrThrow(input.resourceSpecificationId);
+    const spec = await this.getResourceSpecificationOrThrow(
+      input.resourceSpecificationId,
+      context,
+    );
     const place = await this.resolvePlace(input.placeId, input.placeType);
     const supporting = input.supportingPhysicalResourceId
-      ? await this.getPhysicalResourceOrThrow(input.supportingPhysicalResourceId)
+      ? await this.getPhysicalResourceOrThrow(input.supportingPhysicalResourceId, context)
       : undefined;
     const id = createCanonicalId();
     const resource: LogicalResource = {
@@ -408,6 +466,7 @@ export class ResourceService {
       ),
       resourceRelationship: [],
       characteristic: input.characteristic ?? [],
+      tenantId: tenantOf(context),
       ...(place ? { place } : {}),
       ...(supporting ? { supportingPhysicalResourceId: supporting.id } : {}),
       ...(input.validFor ? { validFor: input.validFor } : {}),
@@ -415,9 +474,9 @@ export class ResourceService {
 
     const stored = await this.repository.upsertLogicalResource(resource);
     for (const relationship of input.resourceRelationship ?? []) {
-      await this.addResourceRelationship(stored.id, relationship);
+      await this.addResourceRelationship(stored.id, relationship, context);
     }
-    const finalResource = await this.getLogicalResourceOrThrow(stored.id);
+    const finalResource = await this.getLogicalResourceOrThrow(stored.id, context);
     await this.emit('ResourceCreateEvent', finalResource.id, 'LogicalResource', finalResource);
     return finalResource;
   }
@@ -425,11 +484,12 @@ export class ResourceService {
   public async updateLogicalResource(
     id: string,
     input: UpdateLogicalResourceInput,
+    context?: RequestContext,
   ): Promise<LogicalResource> {
-    const current = await this.getLogicalResourceOrThrow(id);
+    const current = await this.getLogicalResourceOrThrow(id, context);
     if (input.name !== undefined) assertName(input.name);
     if (input.resourceSpecificationId !== undefined)
-      await this.getResourceSpecificationOrThrow(input.resourceSpecificationId);
+      await this.getResourceSpecificationOrThrow(input.resourceSpecificationId, context);
     // `place` some do objeto base (mesmo motivo do updatePhysicalResource): só assim
     // `placeId: null` (desvincular do local) consegue apagar um `current.place` existente
     // sob `exactOptionalPropertyTypes`.
@@ -440,9 +500,9 @@ export class ResourceService {
         : current.place;
     const supporting =
       input.supportingPhysicalResourceId !== undefined
-        ? await this.getPhysicalResourceOrThrow(input.supportingPhysicalResourceId)
+        ? await this.getPhysicalResourceOrThrow(input.supportingPhysicalResourceId, context)
         : current.supportingPhysicalResourceId
-          ? await this.getPhysicalResourceOrThrow(current.supportingPhysicalResourceId)
+          ? await this.getPhysicalResourceOrThrow(current.supportingPhysicalResourceId, context)
           : undefined;
 
     const updated = await this.repository.upsertLogicalResource({
@@ -479,8 +539,11 @@ export class ResourceService {
     return updated;
   }
 
-  public async deleteLogicalResource(id: string): Promise<LogicalResource> {
-    const current = await this.getLogicalResourceOrThrow(id);
+  public async deleteLogicalResource(
+    id: string,
+    context?: RequestContext,
+  ): Promise<LogicalResource> {
+    const current = await this.getLogicalResourceOrThrow(id, context);
     const terminated = await this.repository.upsertLogicalResource({
       ...current,
       status: 'terminated',
@@ -493,46 +556,61 @@ export class ResourceService {
     return terminated;
   }
 
-  public async getLogicalResource(id: string): Promise<LogicalResource | undefined> {
-    return await this.repository.getLogicalResource(id);
+  public async getLogicalResource(
+    id: string,
+    context?: RequestContext,
+  ): Promise<LogicalResource | undefined> {
+    return await this.repository.getLogicalResource(id, scopeOf(context));
   }
 
-  public async listLogicalResources(query?: ResourceQuery): Promise<LogicalResource[]> {
-    return await this.repository.listLogicalResources({ ...query, kind: 'LogicalResource' });
+  public async listLogicalResources(
+    query?: ResourceQuery,
+    context?: RequestContext,
+  ): Promise<LogicalResource[]> {
+    return await this.repository.listLogicalResources({
+      ...query,
+      kind: 'LogicalResource',
+      tenantId: tenantOf(context),
+    });
   }
 
-  public async getResource(id: string): Promise<Resource | undefined> {
+  public async getResource(id: string, context?: RequestContext): Promise<Resource | undefined> {
     return (
-      (await this.repository.getPhysicalResource(id)) ??
-      (await this.repository.getLogicalResource(id))
+      (await this.repository.getPhysicalResource(id, scopeOf(context))) ??
+      (await this.repository.getLogicalResource(id, scopeOf(context)))
     );
   }
 
-  public async listResources(query?: ResourceQuery): Promise<Resource[]> {
-    if (query?.kind === 'PhysicalResource') {
-      return await this.repository.listPhysicalResources(query);
+  public async listResources(
+    query?: ResourceQuery,
+    context?: RequestContext,
+  ): Promise<Resource[]> {
+    const scopedQuery = { ...query, tenantId: tenantOf(context) };
+    if (scopedQuery.kind === 'PhysicalResource') {
+      return await this.repository.listPhysicalResources(scopedQuery);
     }
 
-    if (query?.kind === 'LogicalResource') {
-      return await this.repository.listLogicalResources(query);
+    if (scopedQuery.kind === 'LogicalResource') {
+      return await this.repository.listLogicalResources(scopedQuery);
     }
 
-    return await this.repository.listResources(query);
+    return await this.repository.listResources(scopedQuery);
   }
 
-  public async countResources(query?: ResourceQuery): Promise<number> {
-    return await this.repository.countResources(query);
+  public async countResources(query?: ResourceQuery, context?: RequestContext): Promise<number> {
+    return await this.repository.countResources({ ...query, tenantId: tenantOf(context) });
   }
 
   public async addResourceRelationship(
     resourceId: string,
     input: ResourceRelationship,
+    context?: RequestContext,
   ): Promise<ResourceRelationship> {
     assertName(input.relationshipType, 'relationshipType');
-    await this.getResourceOrThrow(resourceId);
-    await this.getResourceOrThrow(input.id);
+    await this.getResourceOrThrow(resourceId, context);
+    await this.getResourceOrThrow(input.id, context);
     const relationship = await this.repository.upsertResourceRelationship(resourceId, input);
-    const current = await this.getResourceOrThrow(resourceId);
+    const current = await this.getResourceOrThrow(resourceId, context);
     await this.emit('ResourceRelationshipCreateEvent', resourceId, current['@type'], {
       resourceId,
       relationship,
@@ -544,16 +622,17 @@ export class ResourceService {
     resourceId: string,
     relatedResourceId: string,
     relationshipType: string,
+    context?: RequestContext,
   ): Promise<boolean> {
-    await this.getResourceOrThrow(resourceId);
-    await this.getResourceOrThrow(relatedResourceId);
+    await this.getResourceOrThrow(resourceId, context);
+    await this.getResourceOrThrow(relatedResourceId, context);
     const removed = await this.repository.deleteResourceRelationship(
       resourceId,
       relatedResourceId,
       relationshipType,
     );
     if (removed) {
-      const current = await this.getResourceOrThrow(resourceId);
+      const current = await this.getResourceOrThrow(resourceId, context);
       await this.emit('ResourceRelationshipDeleteEvent', resourceId, current['@type'], {
         resourceId,
         relatedResourceId,
@@ -563,13 +642,19 @@ export class ResourceService {
     return removed;
   }
 
-  public async listResourceRelationships(resourceId: string): Promise<ResourceRelationship[]> {
-    await this.getResourceOrThrow(resourceId);
+  public async listResourceRelationships(
+    resourceId: string,
+    context?: RequestContext,
+  ): Promise<ResourceRelationship[]> {
+    await this.getResourceOrThrow(resourceId, context);
     return await this.repository.listResourceRelationships(resourceId);
   }
 
-  public async activateResource(input: ResourceFunctionActivationInput): Promise<Resource> {
-    const current = await this.getResourceOrThrow(input.resourceId);
+  public async activateResource(
+    input: ResourceFunctionActivationInput,
+    context?: RequestContext,
+  ): Promise<Resource> {
+    const current = await this.getResourceOrThrow(input.resourceId, context);
     const status = activationToStatus(input.action);
     const resource =
       current['@type'] === 'PhysicalResource'
@@ -630,14 +715,18 @@ export class ResourceService {
     };
   }
 
-  private async syncMapFeature(resource: PhysicalResource): Promise<void> {
-    // Resource ainda não possui tenant próprio no modelo de persistência; o inventário
-    // atual é servido pelo tenant default, mesma regra do endpoint de tiles.
-    await this.dependencies.mapFeatureSynchronizer?.syncEntity(resource.id, 'default');
+  private async syncMapFeature(
+    resource: PhysicalResource,
+    context?: RequestContext,
+  ): Promise<void> {
+    await this.dependencies.mapFeatureSynchronizer?.syncEntity(resource.id, tenantOf(context));
   }
 
-  private async getResourceSpecificationOrThrow(id: string): Promise<ResourceSpecification> {
-    const spec = await this.repository.getResourceSpecification(id);
+  private async getResourceSpecificationOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ResourceSpecification> {
+    const spec = await this.repository.getResourceSpecification(id, scopeOf(context));
     if (!spec)
       throw new AppError('resource specification not found', {
         code: 'RESOURCE_SPEC_NOT_FOUND',
@@ -694,8 +783,9 @@ export class ResourceService {
 
   private async getResourceFunctionSpecificationOrThrow(
     id: string,
+    context?: RequestContext,
   ): Promise<ResourceFunctionSpecification> {
-    const spec = await this.repository.getResourceFunctionSpecification(id);
+    const spec = await this.repository.getResourceFunctionSpecification(id, scopeOf(context));
     if (!spec) {
       throw new AppError('resource function specification not found', {
         code: 'RESOURCE_FUNCTION_SPEC_NOT_FOUND',
@@ -705,22 +795,28 @@ export class ResourceService {
     return spec;
   }
 
-  private async getPhysicalResourceOrThrow(id: string): Promise<PhysicalResource> {
-    const resource = await this.repository.getPhysicalResource(id);
+  private async getPhysicalResourceOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<PhysicalResource> {
+    const resource = await this.repository.getPhysicalResource(id, scopeOf(context));
     if (!resource)
       throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
     return resource;
   }
 
-  private async getLogicalResourceOrThrow(id: string): Promise<LogicalResource> {
-    const resource = await this.repository.getLogicalResource(id);
+  private async getLogicalResourceOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<LogicalResource> {
+    const resource = await this.repository.getLogicalResource(id, scopeOf(context));
     if (!resource)
       throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
     return resource;
   }
 
-  private async getResourceOrThrow(id: string): Promise<Resource> {
-    const resource = await this.getResource(id);
+  private async getResourceOrThrow(id: string, context?: RequestContext): Promise<Resource> {
+    const resource = await this.getResource(id, context);
     if (!resource)
       throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
     return resource;

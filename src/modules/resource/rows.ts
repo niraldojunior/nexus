@@ -25,6 +25,7 @@ type ResourceRowBase = {
   characteristics: string | null;
   valid_for_start: string | null;
   valid_for_end: string | null;
+  tenant_id: string;
 };
 
 export type PhysicalResourceRow = ResourceRowBase & {

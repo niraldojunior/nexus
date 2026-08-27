@@ -308,7 +308,8 @@ const routeRequest = async ({
   }
 
   if (request.method === 'GET' && url.pathname === '/v1/resource/workspace') {
-    await ensureAuthorized(request, config);
+    const workspaceContext = await buildRequestContext(request, config);
+    requireRoles(workspaceContext, INVENTORY_READ_ROLES);
     const tab = parseResourceWorkspaceTab(url.searchParams.get('tab'));
     const limit = parseOptionalNumber(url.searchParams.get('limit')) ?? 20;
     const offset = parseOptionalNumber(url.searchParams.get('offset')) ?? 0;
@@ -328,16 +329,21 @@ const routeRequest = async ({
       },
       resourceService: runtime.resourceService,
       partyService: runtime.partyService,
+      context: workspaceContext,
     });
     sendJson(response, 200, snapshot);
     return;
   }
 
   if (request.method === 'POST' && url.pathname === '/v1/resource/specifications/bulk-import') {
-    await ensureAuthorized(request, config);
+    const bulkImportContext = await buildRequestContext(request, config);
+    requireRoles(bulkImportContext, CATALOG_ADMIN_ROLES);
     const body = await readBody(request);
     const items = parseResourceSpecificationBulkImportItems(body);
-    const result = await runtime.resourceService.bulkCreateResourceSpecifications(items);
+    const result = await runtime.resourceService.bulkCreateResourceSpecifications(
+      items,
+      bulkImportContext,
+    );
     sendJson(response, 200, result);
     return;
   }
@@ -1087,7 +1093,7 @@ const routeGeoRequest = async ({
         );
         let resourcesUpdated = 0;
         for (const link of resourceLinks) {
-          const resource = await runtime.resourceService.getResource(link.resourceId);
+          const resource = await runtime.resourceService.getResource(link.resourceId, geoContext);
           if (!resource) continue;
           const resourcePatch =
             nextStatus === 'terminated'
@@ -1119,11 +1125,13 @@ const routeGeoRequest = async ({
             await runtime.resourceService.updateLogicalResource(
               link.resourceId,
               resourcePatch as Parameters<typeof runtime.resourceService.updateLogicalResource>[1],
+              geoContext,
             );
           } else {
             await runtime.resourceService.updatePhysicalResource(
               link.resourceId,
               resourcePatch as Parameters<typeof runtime.resourceService.updatePhysicalResource>[1],
+              geoContext,
             );
           }
           resourcesUpdated += 1;
@@ -1216,13 +1224,18 @@ const routeGeoRequest = async ({
             : { status: 'inactive', administrativeState: 'locked', operationalState: 'disabled' };
       const created =
         kind === 'LogicalResource'
-          ? await runtime.resourceService.createLogicalResource({ ...body, ...state } as Parameters<
-              typeof runtime.resourceService.createLogicalResource
-            >[0])
-          : await runtime.resourceService.createPhysicalResource({
-              ...body,
-              ...state,
-            } as Parameters<typeof runtime.resourceService.createPhysicalResource>[0]);
+          ? await runtime.resourceService.createLogicalResource(
+              { ...body, ...state } as Parameters<
+                typeof runtime.resourceService.createLogicalResource
+              >[0],
+              geoContext,
+            )
+          : await runtime.resourceService.createPhysicalResource(
+              { ...body, ...state } as Parameters<
+                typeof runtime.resourceService.createPhysicalResource
+              >[0],
+              geoContext,
+            );
       await runtime.geoProjectRepository.linkResource(
         projectId,
         created.id,
@@ -1259,7 +1272,7 @@ const routeGeoRequest = async ({
           code: 'GEO_PROJECT_RESOURCE_CONFLICT',
           statusCode: 409,
         });
-      const resource = await runtime.resourceService.getResource(resourceId);
+      const resource = await runtime.resourceService.getResource(resourceId, geoContext);
       if (!resource)
         throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
       await runtime.geoProjectRepository.linkResource(
@@ -1284,11 +1297,11 @@ const routeGeoRequest = async ({
           code: 'GEO_PROJECT_RESOURCE_NOT_FOUND',
           statusCode: 404,
         });
-      const resource = await runtime.resourceService.getResource(resourceId);
+      const resource = await runtime.resourceService.getResource(resourceId, geoContext);
       if (resource?.['@type'] === 'LogicalResource')
-        await runtime.resourceService.deleteLogicalResource(resourceId);
+        await runtime.resourceService.deleteLogicalResource(resourceId, geoContext);
       if (resource?.['@type'] === 'PhysicalResource')
-        await runtime.resourceService.deletePhysicalResource(resourceId);
+        await runtime.resourceService.deletePhysicalResource(resourceId, geoContext);
       return sendJson(response, 200, { detached: true });
     }
   }
@@ -1345,10 +1358,13 @@ const routeGeoRequest = async ({
     requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
     const projectId = decodeURIComponent(projectCandidatesMatch[1]);
     const query = (url.searchParams.get('q') ?? '').trim();
-    const resources = await runtime.resourceService.listResources({
-      ...(query ? { name: query } : {}),
-      limit: 50,
-    });
+    const resources = await runtime.resourceService.listResources(
+      {
+        ...(query ? { name: query } : {}),
+        limit: 50,
+      },
+      geoContext,
+    );
     const available = [] as Resource[];
     for (const resource of resources) {
       const linked = await runtime.geoProjectRepository.findOpenProjectByResourceId(
@@ -1901,20 +1917,22 @@ const routeGeoRequest = async ({
         statusCode: 400,
       });
     }
-    const resource = await runtime.resourceService.getResource(resourceId);
+    const resource = await runtime.resourceService.getResource(resourceId, geoContext);
     if (!resource) {
       throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
     }
     const linked =
       resource['@type'] === 'PhysicalResource'
-        ? await runtime.resourceService.updatePhysicalResource(resourceId, {
-            placeId: siteId,
-            placeType: 'GeographicSite',
-          })
-        : await runtime.resourceService.updateLogicalResource(resourceId, {
-            placeId: siteId,
-            placeType: 'GeographicSite',
-          });
+        ? await runtime.resourceService.updatePhysicalResource(
+            resourceId,
+            { placeId: siteId, placeType: 'GeographicSite' },
+            geoContext,
+          )
+        : await runtime.resourceService.updateLogicalResource(
+            resourceId,
+            { placeId: siteId, placeType: 'GeographicSite' },
+            geoContext,
+          );
     return sendJson(response, 200, linked);
   }
 
@@ -1922,7 +1940,7 @@ const routeGeoRequest = async ({
   if (siteResourceMatch?.[1] && siteResourceMatch[2] && request.method === 'DELETE') {
     requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
     const resourceId = decodeURIComponent(siteResourceMatch[2]);
-    const resource = await runtime.resourceService.getResource(resourceId);
+    const resource = await runtime.resourceService.getResource(resourceId, geoContext);
     if (!resource) {
       throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
     }
@@ -1931,14 +1949,22 @@ const routeGeoRequest = async ({
     const mode = url.searchParams.get('mode') === 'terminate' ? 'terminate' : 'unlink';
     if (mode === 'terminate') {
       if (resource['@type'] === 'PhysicalResource') {
-        await runtime.resourceService.deletePhysicalResource(resourceId);
+        await runtime.resourceService.deletePhysicalResource(resourceId, geoContext);
       } else {
-        await runtime.resourceService.deleteLogicalResource(resourceId);
+        await runtime.resourceService.deleteLogicalResource(resourceId, geoContext);
       }
     } else if (resource['@type'] === 'PhysicalResource') {
-      await runtime.resourceService.updatePhysicalResource(resourceId, { placeId: null });
+      await runtime.resourceService.updatePhysicalResource(
+        resourceId,
+        { placeId: null },
+        geoContext,
+      );
     } else {
-      await runtime.resourceService.updateLogicalResource(resourceId, { placeId: null });
+      await runtime.resourceService.updateLogicalResource(
+        resourceId,
+        { placeId: null },
+        geoContext,
+      );
     }
     return sendJson(response, 204, null);
   }
@@ -2537,7 +2563,11 @@ const routeResourceRequest = async ({
     (url.pathname.endsWith('/relationships') || url.pathname.includes('/relationships/'))
   ) {
     if (request.method === 'GET' && url.pathname.endsWith('/relationships')) {
-      return sendJson(response, 200, resourceService.listResourceRelationships(route.id));
+      return sendJson(
+        response,
+        200,
+        resourceService.listResourceRelationships(route.id, context),
+      );
     }
 
     if (request.method === 'POST' && url.pathname.endsWith('/relationships')) {
@@ -2549,6 +2579,7 @@ const routeResourceRequest = async ({
           (await readBody(request)) as Parameters<
             typeof resourceService.addResourceRelationship
           >[1],
+          context,
         ),
       );
     }
@@ -2561,6 +2592,7 @@ const routeResourceRequest = async ({
           route.id,
           route.relationshipId,
           route.relationshipType ?? 'containsAsChild',
+          context,
         ),
       );
     }
@@ -2573,6 +2605,7 @@ const routeResourceRequest = async ({
         200,
         resourceService.listResourceSpecifications(
           parseResourceSpecificationQuery(url.searchParams),
+          context,
         ),
       );
     }
@@ -2584,13 +2617,14 @@ const routeResourceRequest = async ({
           (await readBody(request)) as Parameters<
             typeof resourceService.createResourceSpecification
           >[0],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(
         response,
-        resourceService.getResourceSpecification(route.id),
+        resourceService.getResourceSpecification(route.id, context),
         'RESOURCE_SPEC_NOT_FOUND',
       );
     }
@@ -2603,11 +2637,16 @@ const routeResourceRequest = async ({
           (await readBody(request)) as Parameters<
             typeof resourceService.updateResourceSpecification
           >[1],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'DELETE') {
-      return sendJson(response, 200, resourceService.deleteResourceSpecification(route.id));
+      return sendJson(
+        response,
+        200,
+        resourceService.deleteResourceSpecification(route.id, context),
+      );
     }
   }
 
@@ -2618,6 +2657,7 @@ const routeResourceRequest = async ({
         200,
         resourceService.listResourceFunctionSpecifications(
           parseResourceFunctionSpecificationQuery(url.searchParams),
+          context,
         ),
       );
     }
@@ -2629,13 +2669,14 @@ const routeResourceRequest = async ({
           (await readBody(request)) as Parameters<
             typeof resourceService.createResourceFunctionSpecification
           >[0],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(
         response,
-        resourceService.getResourceFunctionSpecification(route.id),
+        resourceService.getResourceFunctionSpecification(route.id, context),
         'RESOURCE_FUNCTION_SPEC_NOT_FOUND',
       );
     }
@@ -2648,11 +2689,16 @@ const routeResourceRequest = async ({
           (await readBody(request)) as Parameters<
             typeof resourceService.updateResourceFunctionSpecification
           >[1],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'DELETE') {
-      return sendJson(response, 200, resourceService.deleteResourceFunctionSpecification(route.id));
+      return sendJson(
+        response,
+        200,
+        resourceService.deleteResourceFunctionSpecification(route.id, context),
+      );
     }
   }
 
@@ -2685,7 +2731,7 @@ const routeResourceRequest = async ({
       return sendJson(
         response,
         200,
-        resourceService.listResources(parseResourceQuery(url.searchParams)),
+        resourceService.listResources(parseResourceQuery(url.searchParams), context),
       );
     }
     if (!route.id && request.method === 'POST') {
@@ -2700,22 +2746,24 @@ const routeResourceRequest = async ({
         resourceType === 'LogicalResource'
           ? resourceService.createLogicalResource(
               body as Parameters<typeof resourceService.createLogicalResource>[0],
+              context,
             )
           : resourceService.createPhysicalResource(
               body as Parameters<typeof resourceService.createPhysicalResource>[0],
+              context,
             ),
       );
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(
         response,
-        resourceService.getResource(route.id),
+        resourceService.getResource(route.id, context),
         'RESOURCE_NOT_FOUND',
       );
     }
     if (route.id && request.method === 'PATCH') {
       const body = await readBody(request);
-      const current = await resourceService.getResource(route.id);
+      const current = await resourceService.getResource(route.id, context);
       if (!current)
         throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
       return sendJson(
@@ -2725,23 +2773,25 @@ const routeResourceRequest = async ({
           ? resourceService.updateLogicalResource(
               route.id,
               body as Parameters<typeof resourceService.updateLogicalResource>[1],
+              context,
             )
           : resourceService.updatePhysicalResource(
               route.id,
               body as Parameters<typeof resourceService.updatePhysicalResource>[1],
+              context,
             ),
       );
     }
     if (route.id && request.method === 'DELETE') {
-      const current = await resourceService.getResource(route.id);
+      const current = await resourceService.getResource(route.id, context);
       if (!current)
         throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
       return sendJson(
         response,
         200,
         current['@type'] === 'LogicalResource'
-          ? resourceService.deleteLogicalResource(route.id)
-          : resourceService.deletePhysicalResource(route.id),
+          ? resourceService.deleteLogicalResource(route.id, context)
+          : resourceService.deletePhysicalResource(route.id, context),
       );
     }
   }
@@ -2753,6 +2803,7 @@ const routeResourceRequest = async ({
         200,
         resourceService.activateResource(
           (await readBody(request)) as Parameters<typeof resourceService.activateResource>[0],
+          context,
         ),
       );
     }
@@ -3941,6 +3992,7 @@ const buildResourceWorkspaceSnapshot = async ({
   filter,
   resourceService,
   partyService,
+  context,
 }: {
   tab: ResourceWorkspaceTab;
   limit: number;
@@ -3948,17 +4000,28 @@ const buildResourceWorkspaceSnapshot = async ({
   filter: Pick<ResourceQuery, 'resourceSpecificationIdIn' | 'resourceTypeIn' | 'category' | 'name'>;
   resourceService: ResourceService;
   partyService: PartyService;
+  context?: RequestContext;
 }): Promise<ResourceWorkspaceSnapshot> => {
-  const resourceSpecificationOptions = await loadAllResourceSpecifications(resourceService);
+  const resourceSpecificationOptions = await loadAllResourceSpecifications(
+    resourceService,
+    context,
+  );
   const resourceCategories = await resourceService.listResourceCategories();
   const resourceTypes = await resourceService.listResourceTypes();
   const manufacturerOptions = await loadAllManufacturerOptions(partyService);
 
-  const items = await getResourceWorkspaceItems(tab, limit, offset, filter, resourceService);
+  const items = await getResourceWorkspaceItems(
+    tab,
+    limit,
+    offset,
+    filter,
+    resourceService,
+    context,
+  );
   const totalCount =
     tab === 'ResourceSpecification'
       ? resourceSpecificationOptions.length
-      : await resourceService.countResources({ ...filter, kind: tab, status: 'active' });
+      : await resourceService.countResources({ ...filter, kind: tab, status: 'active' }, context);
 
   return {
     items,
@@ -3976,23 +4039,31 @@ const getResourceWorkspaceItems = async (
   offset: number,
   filter: Pick<ResourceQuery, 'resourceSpecificationIdIn' | 'resourceTypeIn' | 'category' | 'name'>,
   resourceService: ResourceService,
+  context?: RequestContext,
 ): Promise<Resource[] | ResourceSpecification[]> => {
   if (tab === 'ResourceSpecification') {
-    return resourceService.listResourceSpecifications({ limit, offset });
+    return resourceService.listResourceSpecifications({ limit, offset }, context);
   }
 
-  return resourceService.listResources({ kind: tab, limit, offset, status: 'active', ...filter });
+  return resourceService.listResources(
+    { kind: tab, limit, offset, status: 'active', ...filter },
+    context,
+  );
 };
 
 const loadAllResourceSpecifications = async (
   resourceService: ResourceService,
+  context?: RequestContext,
 ): Promise<ResourceSpecification[]> => {
   const collected: ResourceSpecification[] = [];
   for (let offset = 0; ; offset += RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) {
-    const items = await resourceService.listResourceSpecifications({
-      limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE,
-      offset,
-    });
+    const items = await resourceService.listResourceSpecifications(
+      {
+        limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE,
+        offset,
+      },
+      context,
+    );
     collected.push(...items);
     if (items.length < RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) break;
   }

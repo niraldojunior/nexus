@@ -176,6 +176,27 @@ export const fetchProjectSites = (
   ).then((result) => (Array.isArray(result) ? result : result.items).map((node) => ({ ...node, projectId })));
 };
 
+// Dedupe de `fetchProjectAreas`+`fetchProjectSites` na abertura de um projeto, chaveado por
+// `projectId` (pode haver mais de um projeto sendo aberto/fechado na sessão) — StrictMode monta
+// o efeito duas vezes e reabrir o mesmo projeto rapidamente remonta de novo; sem isto, cada
+// montagem disparava um novo par de requisições ao backend, que atende em série (AGENTS.md §3).
+// Mesmo padrão de useGeoProjects.ts e do dedupe do catálogo de status em ProjectDetailPanel.tsx.
+const areasAndSitesInFlight = new Map<string, Promise<[ProjectArea[], ProjectSite[]]>>();
+
+export const fetchProjectAreasAndSites = (
+  projectId: string,
+  siteOptions: { limit?: number } = {},
+): Promise<[ProjectArea[], ProjectSite[]]> => {
+  const existing = areasAndSitesInFlight.get(projectId);
+  if (existing) return existing;
+  const request = Promise.all([
+    fetchProjectAreas(projectId),
+    fetchProjectSites(projectId, siteOptions),
+  ]).finally(() => areasAndSitesInFlight.delete(projectId));
+  areasAndSitesInFlight.set(projectId, request);
+  return request;
+};
+
 export type ProjectPagedResult = { items: GeoTreeNode[]; offset: number; limit: number; hasMore: boolean };
 
 export const fetchProjectResources = (

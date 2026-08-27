@@ -36,6 +36,11 @@ export type AppConfig = {
   appName: string;
   authEnabled: boolean;
   authToken: string;
+  /** Papéis do token estático de máquina (AUTH_TOKEN). Default (quando ausente): só
+   *  `migration.job` — não `platform.admin`. Configurável via AUTH_TOKEN_ROLES para scripts/MCP
+   *  que precisem de mais. Opcional só para não quebrar fixtures de teste que montam AppConfig
+   *  na mão; `staticTokenRoles` em request-context.ts aplica o default. */
+  authTokenRoles?: string[];
   authJwtAudience?: string;
   authJwtIssuer?: string;
   authJwtSecret?: string;
@@ -81,10 +86,17 @@ export const loadConfig = (env: NodeJS.ProcessEnv): AppConfig => {
     throw new Error('DATABASE_AUTO_SCHEMA=true is not allowed in production.');
   }
 
+  const authEnabled = normalizeBoolean(env.AUTH_ENABLED, true);
+  const authToken = env.AUTH_TOKEN ?? 'change-me';
+  if (nodeEnv === 'production' && authEnabled && authToken === 'change-me') {
+    throw new Error('AUTH_TOKEN must be set to a real secret in production.');
+  }
+
   return {
     appName: env.APP_NAME ?? 'v-tal-nexus',
-    authEnabled: normalizeBoolean(env.AUTH_ENABLED, true),
-    authToken: env.AUTH_TOKEN ?? 'change-me',
+    authEnabled,
+    authToken,
+    authTokenRoles: parseRoleList(env.AUTH_TOKEN_ROLES) ?? ['migration.job'],
     ...(env.AUTH_JWT_AUDIENCE ? { authJwtAudience: env.AUTH_JWT_AUDIENCE } : {}),
     ...(env.AUTH_JWT_ISSUER ? { authJwtIssuer: env.AUTH_JWT_ISSUER } : {}),
     ...(env.AUTH_JWT_SECRET ? { authJwtSecret: env.AUTH_JWT_SECRET } : {}),
@@ -268,6 +280,15 @@ const assertPostgresUrl = (value: string, name: string): string => {
     throw new Error(`${name} must be a postgres:// or postgresql:// Neon connection string.`);
   }
   return value;
+};
+
+const parseRoleList = (value: string | undefined): string[] | undefined => {
+  if (!value) return undefined;
+  const roles = value
+    .split(/[,\s]+/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return roles.length > 0 ? [...new Set(roles)] : undefined;
 };
 
 const normalizeBoolean = (value: string | undefined, fallback: boolean): boolean => {

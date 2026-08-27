@@ -26,6 +26,7 @@ const requestJson = async (
   method: string,
   path: string,
   body?: unknown,
+  headers: Record<string, string> = {},
 ): Promise<{ statusCode: number; body: unknown }> => {
   const payload = body === undefined ? undefined : JSON.stringify(body);
   return await new Promise((resolve, reject) => {
@@ -37,6 +38,7 @@ const requestJson = async (
         method,
         headers: {
           authorization: 'Bearer secret',
+          ...headers,
           ...(payload
             ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
             : {}),
@@ -1086,9 +1088,16 @@ test('Research sessions default to Nexus Copilot context', async (t) => {
     database.cleanup();
   });
 
-  const session = await requestJson(port, 'POST', '/v1/research/sessions', {
-    title: 'Nova conversa',
-  });
+  // Sessões de pesquisa exigem um usuário real (requireUser) — o token estático de máquina
+  // não corresponde a nenhuma conta, então o teste se autentica como o usuário semente via
+  // `x-actor-sub` (aceito fora de produção, ver request-context.ts).
+  const session = await requestJson(
+    port,
+    'POST',
+    '/v1/research/sessions',
+    { title: 'Nova conversa' },
+    { 'x-actor-sub': 'VT158145' },
+  );
 
   assert.equal(session.statusCode, 201);
   assert.match((session.body as { context: string }).context, /Nexus Copilot/);

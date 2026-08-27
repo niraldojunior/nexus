@@ -1,3 +1,5 @@
+import { bearerToken } from './session';
+
 type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -16,14 +18,12 @@ type ChatCompletionResponse = {
   error?: string;
 };
 
-const getAuthToken = (): string => localStorage.getItem('authToken') || 'change-me';
-
 export const sendMessage = async (messages: ChatMessage[]) => {
   const response = await fetch(`${API_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${getAuthToken()}`,
+      Authorization: `Bearer ${bearerToken()}`,
     },
     body: JSON.stringify({
       model: DEFAULT_OPENAI_MODEL,

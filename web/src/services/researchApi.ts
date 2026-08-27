@@ -1,3 +1,5 @@
+import { bearerToken } from './session';
+
 const API_BASE_URL = '/v1';
 
 export type ResearchAssistantMessage = {
@@ -45,7 +47,7 @@ export async function sendResearchMessageStream(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('authToken') || 'change-me'}`,
+        Authorization: `Bearer ${bearerToken()}`,
       },
       body: JSON.stringify({ message }),
       signal,
@@ -116,7 +118,7 @@ export async function confirmResearchSessionAction(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('authToken') || 'change-me'}`,
+        Authorization: `Bearer ${bearerToken()}`,
       },
       body: JSON.stringify({ confirmationToken }),
     },

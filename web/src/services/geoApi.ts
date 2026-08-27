@@ -2,6 +2,7 @@
 // Fonte única dos tipos Geo e das chamadas /v1/geo/* usadas por GeoPage,
 // ResourcePage e ServicePage. Não muda o modelo canônico TMF — apenas expõe
 // os dados já existentes para que outras telas resolvam rótulos amigáveis.
+import { bearerToken } from './session';
 
 // Vocabulário de GeoProject.status (REQ-MOD01-015) — NÃO é o status de GeographicSite,
 // que usa o vocabulário canônico de 5 estados abaixo (GeoSiteStatus). Os dois nunca
@@ -153,7 +154,7 @@ export type SiteOrigin =
 
 const authHeaders = (): HeadersInit => ({
   'Content-Type': 'application/json',
-  Authorization: `Bearer ${localStorage.getItem('authToken') || 'change-me'}`,
+  Authorization: `Bearer ${bearerToken()}`,
 });
 
 export async function getJson<T>(url: string, options: { signal?: AbortSignal } = {}): Promise<T> {

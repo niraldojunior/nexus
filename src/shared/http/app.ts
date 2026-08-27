@@ -731,7 +731,6 @@ const routeRequest = async ({
       response,
       config,
       runtime,
-      defaultUser,
       searchService,
       researchRepository,
       chatGptProvider,
@@ -4249,7 +4248,6 @@ const routeResearchRequest = async ({
   response,
   config,
   runtime,
-  defaultUser,
   searchService,
   researchRepository,
   chatGptProvider,
@@ -4263,7 +4261,6 @@ const routeResearchRequest = async ({
   response: ServerResponse;
   config: AppConfig;
   runtime: NexusRuntime;
-  defaultUser: NexusRuntime['defaultUser'];
   searchService: SearchService;
   researchRepository: ResearchMessageRepository;
   chatGptProvider: ChatGPTProvider | null;
@@ -4273,11 +4270,16 @@ const routeResearchRequest = async ({
   llmToolCatalog: ReturnType<typeof buildLlmToolCatalog>;
   url: URL;
 }): Promise<void> => {
-  await ensureAuthorized(request, config);
+  // Sessões de pesquisa/Copilot são por usuário: antes, toda sessão era gravada e lida sob o
+  // `defaultUser` compartilhado, então qualquer conta autenticada via token estático via
+  // `x-actor-sub` (ou, sem isso, todas as contas) enxergava o mesmo histórico. `requireUser`
+  // resolve a identidade real; `assertSessionOwnership` barra o acesso cruzado por id adivinhado.
+  const context = await buildRequestContext(request, config);
+  const user = await requireUser(runtime, context);
 
   // GET /v1/research/sessions - List user's sessions
   if (request.method === 'GET' && url.pathname === '/v1/research/sessions') {
-    const sessions = await searchService.listUserSessions(defaultUser.id);
+    const sessions = await searchService.listUserSessions(user.id);
     return sendJson(response, 200, sessions);
   }
 
@@ -4302,7 +4304,7 @@ const routeResearchRequest = async ({
       sessionInput.maxTokens = Number(body.maxTokens);
     }
 
-    const session = await searchService.createSession(defaultUser.id, sessionInput);
+    const session = await searchService.createSession(user.id, sessionInput);
     return sendJson(response, 201, session);
   }
 
@@ -4323,6 +4325,7 @@ const routeResearchRequest = async ({
 
     const session = await searchService.getSession(sessionId);
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
+    assertSessionOwnership(session, user);
 
     const pendingConfirmation = await mcpModule.confirmations.get(confirmationToken);
     if (!pendingConfirmation) {
@@ -4397,6 +4400,7 @@ const routeResearchRequest = async ({
       throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
     const session = await searchService.getSession(sessionId);
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
+    assertSessionOwnership(session, user);
     return sendJson(response, 200, session);
   }
 
@@ -4413,6 +4417,7 @@ const routeResearchRequest = async ({
 
     const session = await searchService.getSession(sessionId);
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
+    assertSessionOwnership(session, user);
 
     const abortController = new AbortController();
     request.on('close', () => abortController.abort());
@@ -4485,6 +4490,7 @@ const routeResearchRequest = async ({
 
     const session = await searchService.getSession(sessionId);
     if (!session) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
+    assertSessionOwnership(session, user);
 
     const activeProvider = resolveResearchProvider(session.model, {
       chatGptProvider,
@@ -4534,6 +4540,10 @@ const routeResearchRequest = async ({
     if (!sessionId)
       throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
 
+    const existing = await searchService.getSession(sessionId);
+    if (!existing) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
+    assertSessionOwnership(existing, user);
+
     const body = await readBody(request);
     const updated = await searchService.updateSessionTitle(
       sessionId,
@@ -4548,6 +4558,10 @@ const routeResearchRequest = async ({
     const sessionId = url.pathname.split('/').pop();
     if (!sessionId)
       throw new AppError('invalid session id', { code: 'INVALID_ID', statusCode: 400 });
+
+    const existing = await searchService.getSession(sessionId);
+    if (!existing) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
+    assertSessionOwnership(existing, user);
 
     const archived = await searchService.archiveSession(sessionId);
     if (!archived) throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
@@ -4612,6 +4626,18 @@ const requireUser = async (
     throw new AppError('session revoked', { code: 'AUTH_SESSION_REVOKED', statusCode: 401 });
   }
   return user;
+};
+
+// Sessões de pesquisa/Copilot pertencem a um usuário (`session.userId`). 404, não 403 — a
+// existência da sessão já é informação (mesmo critério do isolamento de tenant em
+// docs/3-system-design/security.md §4).
+const assertSessionOwnership = (
+  session: { userId: string },
+  user: { id: string },
+): void => {
+  if (session.userId !== user.id) {
+    throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
+  }
 };
 
 const readBody = async (request: IncomingMessage): Promise<Record<string, unknown>> => {

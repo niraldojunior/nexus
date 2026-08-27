@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import http from 'node:http';
 import test from 'node:test';
 import { createApp } from '../src/shared/http/app.js';
@@ -35,11 +36,16 @@ const request = (
   port: number,
   method: string,
   path: string,
-  options: { token?: string; rawAuth?: string; body?: unknown } = {},
+  options: {
+    token?: string;
+    rawAuth?: string;
+    body?: unknown;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<TestResponse> =>
   new Promise((resolve, reject) => {
     const payload = options.body === undefined ? undefined : JSON.stringify(options.body);
-    const headers: Record<string, string | number> = {};
+    const headers: Record<string, string | number> = { ...options.headers };
     if (options.token) headers.authorization = `Bearer ${options.token}`;
     else if (options.rawAuth) headers.authorization = options.rawAuth;
     if (payload) {
@@ -58,6 +64,27 @@ const request = (
     if (payload) req.write(payload);
     req.end();
   });
+
+// createApp recebe o AppConfig já montado (não passa por loadConfig), então este helper simula
+// o comportamento de produção sem precisar de um AUTH_TOKEN "real" — o que interessa aqui é
+// `nodeEnv: 'production'`, que é o que request-context.ts confere para ignorar os headers de
+// spoof (`x-actor-sub`/`x-tenant-id`/`x-roles`) do token estático.
+const startProdLikeAuthApp = async (prefix: string) => {
+  const database = createTestDatabase(prefix);
+  const config = {
+    ...createTestConfig(0, database.databaseUrl),
+    nodeEnv: 'production' as const,
+  };
+  const server = createApp({ config, logger: createTestLogger() });
+  const port = await server.start();
+  return {
+    port,
+    cleanup: async () => {
+      await server.stop();
+      database.cleanup();
+    },
+  };
+};
 
 const loginToken = async (port: number, email: string, password: string): Promise<string> => {
   const response = await request(port, 'POST', '/v1/auth/login', { body: { email, password } });
@@ -213,4 +240,107 @@ test('histórico Geo: ranking por visitas, isolamento por usuário e limpeza', a
     rawAuth: 'Bearer secret',
   });
   assert.equal(anon.statusCode, 401);
+});
+
+test('produção: headers x-actor-sub/x-tenant-id/x-roles do token estático são ignorados', async (t) => {
+  const prod = await startProdLikeAuthApp('nexus-auth-prod-spoof-');
+  t.after(prod.cleanup);
+  const dev = await startAuthApp('nexus-auth-dev-spoof-');
+  t.after(dev.cleanup);
+
+  // Fora de produção, o header eleva o token estático a platform.admin — é o comportamento
+  // histórico que scripts/MCP/testes esperam.
+  const devResponse = await request(dev.port, 'GET', '/v1/users', {
+    rawAuth: 'Bearer secret',
+    headers: { 'x-roles': 'platform.admin' },
+  });
+  assert.equal(devResponse.statusCode, 200);
+
+  // Em produção, o mesmo header não tem efeito: o papel do token estático vem só da
+  // configuração (AUTH_TOKEN_ROLES, default migration.job) — spoofar platform.admin por
+  // header não deve funcionar.
+  const prodResponse = await request(prod.port, 'GET', '/v1/users', {
+    rawAuth: 'Bearer secret',
+    headers: { 'x-roles': 'platform.admin' },
+  });
+  assert.equal(prodResponse.statusCode, 403);
+});
+
+test('JWT sem claim exp é rejeitado', async (t) => {
+  const app = await startAuthApp('nexus-auth-no-exp-');
+  t.after(app.cleanup);
+
+  const base64UrlEncode = (input: Buffer | string): string =>
+    Buffer.from(input)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/g, '');
+
+  const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  // Sem `exp`: antes da correção, esse token nunca expirava.
+  const payload = base64UrlEncode(
+    JSON.stringify({ sub: 'someone', tenant_id: 'default', roles: ['inventory.reader'] }),
+  );
+  const signingInput = `${header}.${payload}`;
+  const signature = base64UrlEncode(createHmac('sha256', JWT_SECRET).update(signingInput).digest());
+  const tokenWithoutExp = `${signingInput}.${signature}`;
+
+  const response = await request(app.port, 'GET', '/v1/searches', { token: tokenWithoutExp });
+  assert.equal(response.statusCode, 403);
+  assert.equal((response.body as { error: string }).error, 'AUTH_JWT_EXP_REQUIRED');
+});
+
+test('sessões de pesquisa são isoladas por usuário (V-05)', async (t) => {
+  const app = await startAuthApp('nexus-auth-research-isolation-');
+  t.after(app.cleanup);
+
+  const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
+  await request(app.port, 'POST', '/v1/users', {
+    token: adminToken,
+    body: {
+      email: 'pesquisador@vtal.com.br',
+      name: 'Pesquisador',
+      password: 'pesquisador-password-1',
+      roles: ['inventory.reader'],
+    },
+  });
+  const userToken = await loginToken(app.port, 'pesquisador@vtal.com.br', 'pesquisador-password-1');
+
+  const created = await request(app.port, 'POST', '/v1/research/sessions', {
+    token: userToken,
+    body: { title: 'Conversa privada' },
+  });
+  assert.equal(created.statusCode, 201);
+  const sessionId = (created.body as { id: string }).id;
+
+  // O dono enxerga a própria sessão.
+  const ownRead = await request(app.port, 'GET', `/v1/research/sessions/${sessionId}`, {
+    token: userToken,
+  });
+  assert.equal(ownRead.statusCode, 200);
+
+  // Outro usuário autenticado não enxerga — 404, não 403 (a existência já é informação).
+  const otherRead = await request(app.port, 'GET', `/v1/research/sessions/${sessionId}`, {
+    token: adminToken,
+  });
+  assert.equal(otherRead.statusCode, 404);
+
+  // Nem consegue renomear ou arquivar a sessão alheia.
+  const otherRename = await request(app.port, 'PUT', `/v1/research/sessions/${sessionId}`, {
+    token: adminToken,
+    body: { title: 'sequestrado' },
+  });
+  assert.equal(otherRename.statusCode, 404);
+
+  const otherArchive = await request(app.port, 'DELETE', `/v1/research/sessions/${sessionId}`, {
+    token: adminToken,
+  });
+  assert.equal(otherArchive.statusCode, 404);
+
+  // A lista de sessões do admin não inclui a sessão do outro usuário.
+  const adminList = await request(app.port, 'GET', '/v1/research/sessions', { token: adminToken });
+  assert.equal(adminList.statusCode, 200);
+  const adminSessionIds = (adminList.body as Array<{ id: string }>).map((s) => s.id);
+  assert.ok(!adminSessionIds.includes(sessionId));
 });

@@ -86,18 +86,39 @@ export const buildRequestContext = async (
     throw new AppError('invalid authorization scheme', { code: 'AUTH_INVALID', statusCode: 401 });
   }
 
-  if (token === config.authToken) {
+  // Ambientes não-produtivos aceitam `x-actor-sub`/`x-tenant-id`/`x-roles` para testabilidade
+  // (scripts, MCP, testes de integração). Em produção isso seria spoof de identidade por
+  // header — a conta de máquina fica com a identidade e os papéis fixos de configuração.
+  const isProduction = config.nodeEnv === 'production';
+  // Fora de produção, o default histórico (GEO_ADMIN_ROLES) segue valendo — é o que scripts,
+  // MCP e a suíte de teste esperam do token estático sem configurar nada a mais. Em produção,
+  // o default vira o mínimo explícito (`migration.job`, não `platform.admin`); AUTH_TOKEN_ROLES
+  // eleva isso quando um script de produção precisar de mais.
+  const staticTokenRoles = isProduction
+    ? (config.authTokenRoles ?? ['migration.job'])
+    : (config.authTokenRoles ?? [...GEO_ADMIN_ROLES]);
+
+  if (isStaticTokenValid(token, config.authToken)) {
     return {
       ...base,
-      actorSub: headerString(request, 'x-actor-sub') ?? LEGACY_ACTOR_SUB,
-      tenantId: headerString(request, 'x-tenant-id') ?? DEFAULT_TENANT_ID,
-      roles: parseRoles(headerString(request, 'x-roles')) ?? [...GEO_ADMIN_ROLES],
+      actorSub: isProduction
+        ? LEGACY_ACTOR_SUB
+        : (headerString(request, 'x-actor-sub') ?? LEGACY_ACTOR_SUB),
+      tenantId: isProduction
+        ? DEFAULT_TENANT_ID
+        : (headerString(request, 'x-tenant-id') ?? DEFAULT_TENANT_ID),
+      roles: isProduction
+        ? [...staticTokenRoles]
+        : (parseRoles(headerString(request, 'x-roles')) ?? [...staticTokenRoles]),
     };
   }
 
   const payload = await verifyJwt(token, config);
   const tenantId =
-    payload.tenantId ?? payload.tenant_id ?? payload.tid ?? headerString(request, 'x-tenant-id');
+    payload.tenantId ??
+    payload.tenant_id ??
+    payload.tid ??
+    (isProduction ? undefined : headerString(request, 'x-tenant-id'));
   if (!payload.sub) {
     throw new AppError('JWT sub claim required', {
       code: 'AUTH_JWT_SUB_REQUIRED',
@@ -134,7 +155,7 @@ export const ensureAuthorized = async (
   if (!token) {
     throw new AppError('invalid authorization scheme', { code: 'AUTH_INVALID', statusCode: 401 });
   }
-  if (token === config.authToken) return;
+  if (isStaticTokenValid(token, config.authToken)) return;
   // Não é o token estático: só passa se for um JWT com assinatura e claims válidos.
   await verifyJwt(token, config);
 };
@@ -160,6 +181,11 @@ const buildBaseContext = (
     ...(sourceIp ? { sourceIp } : {}),
   };
 };
+
+// Comparação do token estático em tempo constante — evita que a diferença de tempo de
+// resposta denuncie, byte a byte, o valor de AUTH_TOKEN a um atacante que meça latência.
+const isStaticTokenValid = (token: string, expected: string): boolean =>
+  timingSafeEqualBuffer(Buffer.from(token, 'utf8'), Buffer.from(expected, 'utf8'));
 
 const extractBearerToken = (header: string): string | undefined => {
   const match = header.match(/^Bearer\s+(.+)$/i);
@@ -210,7 +236,16 @@ const verifyJwt = async (token: string, config: AppConfig): Promise<JwtPayload> 
 
 const validateJwtClaims = (payload: JwtPayload, config: AppConfig): void => {
   const now = Math.floor(Date.now() / 1000);
-  if (payload.exp !== undefined && payload.exp <= now) {
+  // `exp` é obrigatório: sem ele, um JWT válido nunca expira. O IdP local sempre o emite
+  // (jwt.ts); um verificador externo que não o inclua está mal configurado, não é um caso
+  // legítimo a suportar.
+  if (payload.exp === undefined) {
+    throw new AppError('JWT exp claim required', {
+      code: 'AUTH_JWT_EXP_REQUIRED',
+      statusCode: 403,
+    });
+  }
+  if (payload.exp <= now) {
     throw new AppError('JWT expired', { code: 'AUTH_JWT_EXPIRED', statusCode: 403 });
   }
   if (payload.nbf !== undefined && payload.nbf > now) {

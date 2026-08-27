@@ -146,6 +146,7 @@ test('DATABASE_URL sobrepõe a resolução por ambiente da Vercel', () => {
     DATABASE_URL_PROD: 'postgresql://neon-prod.example/db',
     VERCEL_ENV: 'production',
     NODE_ENV: 'production',
+    AUTH_TOKEN: 'production-test-token',
   });
   assert.equal(config.databaseUrl, 'postgresql://nexus:pass@nexus-pg:5432/nexus');
 });

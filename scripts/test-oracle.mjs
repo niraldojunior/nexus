@@ -22,6 +22,7 @@ const result = spawnSync(
     '--no-file-parallelism',
     '--config',
     'vitest.config.ts',
+    ...(process.argv.includes('--coverage') ? ['--coverage'] : []),
     'test/oracle-dialect.spec.ts',
     'test/database-client.contract.spec.ts',
     'test/oracle-roundtrip.spec.ts',

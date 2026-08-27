@@ -11,6 +11,7 @@ export type PartyQuery = {
   status?: PartyStatus;
   limit?: number;
   offset?: number;
+  tenantId?: string;
 };
 
 export type PartyRoleQuery = {
@@ -19,6 +20,7 @@ export type PartyRoleQuery = {
   status?: PartyRoleStatus;
   limit?: number;
   offset?: number;
+  tenantId?: string;
 };
 
 export type Party = {
@@ -30,6 +32,7 @@ export type Party = {
   partyType: PartyType;
   partyCharacteristic: Characteristic[];
   validFor?: TimePeriod;
+  tenantId?: string;
 };
 
 export type PartyRole = {
@@ -42,6 +45,7 @@ export type PartyRole = {
   partyId: string;
   partyRoleCharacteristic: Characteristic[];
   validFor?: TimePeriod;
+  tenantId?: string;
 };
 
 export type PartyRelationship = {

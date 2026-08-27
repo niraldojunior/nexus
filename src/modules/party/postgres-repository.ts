@@ -92,8 +92,8 @@ export class PostgresPartyRepository implements IPartyRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_party
-       (id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
@@ -112,6 +112,7 @@ export class PostgresPartyRepository implements IPartyRepository {
         party.validFor?.startDateTime ?? null,
         party.validFor?.endDateTime ?? null,
         JSON.stringify(party.partyCharacteristic),
+        party.tenantId ?? 'default',
         now,
         now,
       ],
@@ -120,6 +121,7 @@ export class PostgresPartyRepository implements IPartyRepository {
     return (await this.getParty(party.id)) ?? party;
   }
 
+  // Cross-tenant de propósito — ver nota em party-repository-interface.ts.
   public async getParty(id: string): Promise<Party | undefined> {
     const row = await this.db.get<{
       id: string;
@@ -130,8 +132,9 @@ export class PostgresPartyRepository implements IPartyRepository {
       valid_for_start?: string | null;
       valid_for_end?: string | null;
       characteristics?: string | null;
+      tenant_id: string;
     }>(
-      `SELECT id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics
+      `SELECT id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics, tenant_id
        FROM tmf_party
        WHERE id = ?`,
       [id],
@@ -156,6 +159,10 @@ export class PostgresPartyRepository implements IPartyRepository {
       conditions.push('status = ?');
       params.push(query.status);
     }
+    if (query?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(query.tenantId);
+    }
 
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
@@ -163,7 +170,7 @@ export class PostgresPartyRepository implements IPartyRepository {
     const offsetClause = hasOffset ? 'OFFSET ?' : '';
 
     const sql = [
-      'SELECT id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics FROM tmf_party',
+      'SELECT id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics, tenant_id FROM tmf_party',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name ASC, id ASC',
       limitClause,
@@ -184,6 +191,7 @@ export class PostgresPartyRepository implements IPartyRepository {
       valid_for_start?: string | null;
       valid_for_end?: string | null;
       characteristics?: string | null;
+      tenant_id: string;
     }>(sql, params);
 
     return rows
@@ -195,8 +203,8 @@ export class PostgresPartyRepository implements IPartyRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_party_role
-       (id, href, name, party_id, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, href, name, party_id, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        href = excluded.href,
        name = excluded.name,
@@ -215,6 +223,7 @@ export class PostgresPartyRepository implements IPartyRepository {
         role.validFor?.startDateTime ?? null,
         role.validFor?.endDateTime ?? null,
         JSON.stringify(role.partyRoleCharacteristic),
+        role.tenantId ?? 'default',
         now,
         now,
       ],
@@ -223,6 +232,7 @@ export class PostgresPartyRepository implements IPartyRepository {
     return (await this.getPartyRole(role.id)) ?? role;
   }
 
+  // Cross-tenant de propósito — ver nota em party-repository-interface.ts.
   public async getPartyRole(id: string): Promise<PartyRole | undefined> {
     const row = await this.db.get<{
       id: string;
@@ -233,11 +243,12 @@ export class PostgresPartyRepository implements IPartyRepository {
       valid_for_start?: string | null;
       valid_for_end?: string | null;
       characteristics?: string | null;
+      tenant_id: string;
       party_href: string;
       party_name: string;
       party_type: 'Organization' | 'Individual';
     }>(
-      `SELECT role.id, role.href, role.name, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics,
+      `SELECT role.id, role.href, role.name, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics, role.tenant_id,
               party.href AS party_href, party.name AS party_name, party.party_type AS party_type
        FROM tmf_party_role role
        INNER JOIN tmf_party party ON party.id = role.party_id
@@ -264,6 +275,10 @@ export class PostgresPartyRepository implements IPartyRepository {
       conditions.push('role.status = ?');
       params.push(query.status);
     }
+    if (query?.tenantId) {
+      conditions.push('role.tenant_id = ?');
+      params.push(query.tenantId);
+    }
 
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
@@ -271,7 +286,7 @@ export class PostgresPartyRepository implements IPartyRepository {
     const offsetClause = hasOffset ? 'OFFSET ?' : '';
 
     const sql = [
-      'SELECT role.id, role.href, role.name, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics,',
+      'SELECT role.id, role.href, role.name, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics, role.tenant_id,',
       '       party.href AS party_href, party.name AS party_name, party.party_type AS party_type',
       'FROM tmf_party_role role',
       'INNER JOIN tmf_party party ON party.id = role.party_id',
@@ -295,6 +310,7 @@ export class PostgresPartyRepository implements IPartyRepository {
       valid_for_start?: string | null;
       valid_for_end?: string | null;
       characteristics?: string | null;
+      tenant_id: string;
       party_href: string;
       party_name: string;
       party_type: 'Organization' | 'Individual';
@@ -377,6 +393,7 @@ export class PostgresPartyRepository implements IPartyRepository {
     valid_for_start?: string | null;
     valid_for_end?: string | null;
     characteristics?: string | null;
+    tenant_id?: string;
   }): Party {
     const party: Party = {
       '@type': row.party_type,
@@ -386,6 +403,7 @@ export class PostgresPartyRepository implements IPartyRepository {
       partyType: row.party_type,
       status: row.status,
       partyCharacteristic: JSON.parse(row.characteristics || '[]') as Party['partyCharacteristic'],
+      tenantId: row.tenant_id ?? 'default',
     };
 
     if (row.valid_for_start || row.valid_for_end) {
@@ -407,6 +425,7 @@ export class PostgresPartyRepository implements IPartyRepository {
     valid_for_start?: string | null;
     valid_for_end?: string | null;
     characteristics?: string | null;
+    tenant_id?: string;
     party_href: string;
     party_name: string;
     party_type: 'Organization' | 'Individual';
@@ -427,6 +446,7 @@ export class PostgresPartyRepository implements IPartyRepository {
       partyRoleCharacteristic: JSON.parse(
         row.characteristics || '[]',
       ) as PartyRole['partyRoleCharacteristic'],
+      tenantId: row.tenant_id ?? 'default',
     };
 
     if (row.valid_for_start || row.valid_for_end) {

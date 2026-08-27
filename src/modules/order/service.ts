@@ -22,7 +22,14 @@ import type {
   UpdateServiceQualificationInput,
   UpdateResourceOrderInput,
 } from './domain.js';
-import type { IOrderRepository } from './order-repository-interface.js';
+import type { IOrderRepository, OrderTenantScope } from './order-repository-interface.js';
+import type { RequestContext } from '../../shared/http/request-context.js';
+import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import { recordMutation } from '../../shared/persistence/audit-outbox.js';
+
+const DEFAULT_TENANT_ID = 'default';
+const tenantOf = (context?: RequestContext): string => context?.tenantId ?? DEFAULT_TENANT_ID;
+const scopeOf = (context?: RequestContext): OrderTenantScope => ({ tenantId: tenantOf(context) });
 import type { CreateServiceInput, UpdateServiceInput } from '../service/index.js';
 import type {
   CreateLogicalResourceInput,
@@ -49,6 +56,8 @@ type OrderDependencies = {
   geoService: GeoService;
   resourceService: ResourceService;
   partyService: PartyService;
+  /** Trilha de auditoria + outbox (C7) — best-effort, ver nota em resource/service.ts. */
+  db?: DatabaseClient;
 };
 
 export class OrderService {
@@ -60,10 +69,15 @@ export class OrderService {
 
   public async createServiceQualification(
     input: CreateServiceQualificationInput,
+    context?: RequestContext,
   ): Promise<ServiceQualification> {
-    const place = await this.resolvePlace(input.placeId);
+    const place = await this.resolvePlace(input.placeId, context);
     const id = createCanonicalId();
-    const result = await this.evaluateQualification(place?.id, input.serviceSpecificationId);
+    const result = await this.evaluateQualification(
+      place?.id,
+      input.serviceSpecificationId,
+      context,
+    );
     const qualification: ServiceQualification = {
       '@type': 'ServiceQualification',
       id,
@@ -91,25 +105,32 @@ export class OrderService {
           reason: result.reason,
         },
       ],
+      tenantId: tenantOf(context),
       ...(input.validFor ? { validFor: input.validFor } : {}),
     };
 
     const stored = await this.repository.upsertServiceQualification(qualification);
-    await this.emit('ServiceQualificationCreateEvent', stored, 'order.ServiceQualification');
+    await this.emit(
+      'ServiceQualificationCreateEvent',
+      stored,
+      'order.ServiceQualification',
+      context,
+    );
     return stored;
   }
 
   public async updateServiceQualification(
     id: string,
     input: UpdateServiceQualificationInput,
+    context?: RequestContext,
   ): Promise<ServiceQualification> {
-    const current = await this.getServiceQualificationOrThrow(id);
+    const current = await this.getServiceQualificationOrThrow(id, context);
     const updated = await this.repository.upsertServiceQualification({
       ...current,
       state: input.state ?? current.state,
       place: input.placeId
         ? [
-            (await this.resolvePlace(input.placeId)) ?? {
+            (await this.resolvePlace(input.placeId, context)) ?? {
               id: input.placeId,
               '@referredType': input.placeType ?? 'GeographicSite',
             },
@@ -125,22 +146,33 @@ export class OrderService {
       'ServiceQualificationAttributeValueChangeEvent',
       updated,
       'order.ServiceQualification',
+      context,
     );
     return updated;
   }
 
   public async listServiceQualifications(
     query?: ServiceQualificationQuery,
+    context?: RequestContext,
   ): Promise<ServiceQualification[]> {
-    return await this.repository.listServiceQualifications(query);
+    return await this.repository.listServiceQualifications({
+      ...query,
+      tenantId: tenantOf(context),
+    });
   }
 
-  public async getServiceQualification(id: string): Promise<ServiceQualification | undefined> {
-    return await this.repository.getServiceQualification(id);
+  public async getServiceQualification(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ServiceQualification | undefined> {
+    return await this.repository.getServiceQualification(id, scopeOf(context));
   }
 
-  public async deleteServiceQualification(id: string): Promise<ServiceQualification> {
-    const current = await this.getServiceQualificationOrThrow(id);
+  public async deleteServiceQualification(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ServiceQualification> {
+    const current = await this.getServiceQualificationOrThrow(id, context);
     const terminated = await this.repository.upsertServiceQualification({
       ...current,
       state: 'terminated',
@@ -149,11 +181,15 @@ export class OrderService {
       'ServiceQualificationStateChangeEvent',
       terminated,
       'order.ServiceQualification',
+      context,
     );
     return terminated;
   }
 
-  public async createServiceOrder(input: CreateServiceOrderInput): Promise<ServiceOrder> {
+  public async createServiceOrder(
+    input: CreateServiceOrderInput,
+    context?: RequestContext,
+  ): Promise<ServiceOrder> {
     if (!input.serviceOrderItem || input.serviceOrderItem.length === 0) {
       throw new AppError('serviceOrderItem required', {
         code: 'SERVICE_ORDER_ITEM_REQUIRED',
@@ -173,6 +209,7 @@ export class OrderService {
       ),
       serviceOrderItem: [],
       note: [],
+      tenantId: tenantOf(context),
       ...(input.description ? { description: input.description } : {}),
       ...(input.validFor ? { validFor: input.validFor } : {}),
     };
@@ -180,18 +217,18 @@ export class OrderService {
     const stored = await this.repository.upsertServiceOrder(baseOrder);
     try {
       const processedItems = await Promise.all(
-        input.serviceOrderItem.map(async (item) => await this.executeOrderItem(item)),
+        input.serviceOrderItem.map(async (item) => await this.executeOrderItem(item, context)),
       );
       const completed = await this.repository.upsertServiceOrder({
         ...stored,
         state: 'completed',
         serviceOrderItem: processedItems,
       });
-      await this.emit('ServiceOrderCreateEvent', completed, 'order.ServiceOrder');
+      await this.emit('ServiceOrderCreateEvent', completed, 'order.ServiceOrder', context);
       return completed;
     } catch (error) {
       const failed = await this.repository.upsertServiceOrder({ ...stored, state: 'failed' });
-      await this.emit('ServiceOrderStateChangeEvent', failed, 'order.ServiceOrder');
+      await this.emit('ServiceOrderStateChangeEvent', failed, 'order.ServiceOrder', context);
       throw error;
     }
   }
@@ -199,8 +236,9 @@ export class OrderService {
   public async updateServiceOrder(
     id: string,
     input: UpdateServiceOrderInput,
+    context?: RequestContext,
   ): Promise<ServiceOrder> {
-    const current = await this.getServiceOrderOrThrow(id);
+    const current = await this.getServiceOrderOrThrow(id, context);
     const updated = await this.repository.upsertServiceOrder({
       ...current,
       state: input.state ?? current.state,
@@ -210,29 +248,38 @@ export class OrderService {
       ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
     });
-    await this.emit('ServiceOrderStateChangeEvent', updated, 'order.ServiceOrder');
+    await this.emit('ServiceOrderStateChangeEvent', updated, 'order.ServiceOrder', context);
     return updated;
   }
 
-  public async listServiceOrders(query?: ServiceOrderQuery): Promise<ServiceOrder[]> {
-    return await this.repository.listServiceOrders(query);
+  public async listServiceOrders(
+    query?: ServiceOrderQuery,
+    context?: RequestContext,
+  ): Promise<ServiceOrder[]> {
+    return await this.repository.listServiceOrders({ ...query, tenantId: tenantOf(context) });
   }
 
-  public async getServiceOrder(id: string): Promise<ServiceOrder | undefined> {
-    return await this.repository.getServiceOrder(id);
+  public async getServiceOrder(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ServiceOrder | undefined> {
+    return await this.repository.getServiceOrder(id, scopeOf(context));
   }
 
-  public async cancelServiceOrder(id: string): Promise<ServiceOrder> {
-    const current = await this.getServiceOrderOrThrow(id);
+  public async cancelServiceOrder(id: string, context?: RequestContext): Promise<ServiceOrder> {
+    const current = await this.getServiceOrderOrThrow(id, context);
     const cancelled = await this.repository.upsertServiceOrder({
       ...current,
       state: 'cancelled',
     });
-    await this.emit('ServiceOrderStateChangeEvent', cancelled, 'order.ServiceOrder');
+    await this.emit('ServiceOrderStateChangeEvent', cancelled, 'order.ServiceOrder', context);
     return cancelled;
   }
 
-  public async createResourceOrder(input: CreateResourceOrderInput): Promise<ResourceOrder> {
+  public async createResourceOrder(
+    input: CreateResourceOrderInput,
+    context?: RequestContext,
+  ): Promise<ResourceOrder> {
     if (!input.resourceOrderItem || input.resourceOrderItem.length === 0) {
       throw new AppError('resourceOrderItem required', {
         code: 'RESOURCE_ORDER_ITEM_REQUIRED',
@@ -252,6 +299,7 @@ export class OrderService {
       ),
       resourceOrderItem: [],
       note: [],
+      tenantId: tenantOf(context),
       ...(input.description ? { description: input.description } : {}),
       ...(input.validFor ? { validFor: input.validFor } : {}),
     };
@@ -259,18 +307,20 @@ export class OrderService {
     const stored = await this.repository.upsertResourceOrder(baseOrder);
     try {
       const processedItems = await Promise.all(
-        input.resourceOrderItem.map(async (item) => await this.executeResourceOrderItem(item)),
+        input.resourceOrderItem.map(
+          async (item) => await this.executeResourceOrderItem(item, context),
+        ),
       );
       const completed = await this.repository.upsertResourceOrder({
         ...stored,
         state: 'completed',
         resourceOrderItem: processedItems,
       });
-      await this.emit('ResourceOrderCreateEvent', completed, 'order.ResourceOrder');
+      await this.emit('ResourceOrderCreateEvent', completed, 'order.ResourceOrder', context);
       return completed;
     } catch (error) {
       const failed = await this.repository.upsertResourceOrder({ ...stored, state: 'failed' });
-      await this.emit('ResourceOrderStateChangeEvent', failed, 'order.ResourceOrder');
+      await this.emit('ResourceOrderStateChangeEvent', failed, 'order.ResourceOrder', context);
       throw error;
     }
   }
@@ -278,8 +328,9 @@ export class OrderService {
   public async updateResourceOrder(
     id: string,
     input: UpdateResourceOrderInput,
+    context?: RequestContext,
   ): Promise<ResourceOrder> {
-    const current = await this.getResourceOrderOrThrow(id);
+    const current = await this.getResourceOrderOrThrow(id, context);
     const updated = await this.repository.upsertResourceOrder({
       ...current,
       state: input.state ?? current.state,
@@ -289,30 +340,37 @@ export class OrderService {
       ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
     });
-    await this.emit('ResourceOrderStateChangeEvent', updated, 'order.ResourceOrder');
+    await this.emit('ResourceOrderStateChangeEvent', updated, 'order.ResourceOrder', context);
     return updated;
   }
 
-  public async listResourceOrders(query?: ResourceOrderQuery): Promise<ResourceOrder[]> {
-    return await this.repository.listResourceOrders(query);
+  public async listResourceOrders(
+    query?: ResourceOrderQuery,
+    context?: RequestContext,
+  ): Promise<ResourceOrder[]> {
+    return await this.repository.listResourceOrders({ ...query, tenantId: tenantOf(context) });
   }
 
-  public async getResourceOrder(id: string): Promise<ResourceOrder | undefined> {
-    return await this.repository.getResourceOrder(id);
+  public async getResourceOrder(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ResourceOrder | undefined> {
+    return await this.repository.getResourceOrder(id, scopeOf(context));
   }
 
-  public async cancelResourceOrder(id: string): Promise<ResourceOrder> {
-    const current = await this.getResourceOrderOrThrow(id);
+  public async cancelResourceOrder(id: string, context?: RequestContext): Promise<ResourceOrder> {
+    const current = await this.getResourceOrderOrThrow(id, context);
     const cancelled = await this.repository.upsertResourceOrder({
       ...current,
       state: 'cancelled',
     });
-    await this.emit('ResourceOrderStateChangeEvent', cancelled, 'order.ResourceOrder');
+    await this.emit('ResourceOrderStateChangeEvent', cancelled, 'order.ResourceOrder', context);
     return cancelled;
   }
 
   private async executeOrderItem(
     item: CreateServiceOrderInput['serviceOrderItem'][number],
+    context?: RequestContext,
   ): Promise<ServiceOrderItem> {
     const itemId = createCanonicalId();
     if (item.action === 'add') {
@@ -324,6 +382,7 @@ export class OrderService {
       }
       const serviceResult = await this.dependencies.serviceService.createService(
         item.service as CreateServiceInput,
+        context,
       );
       return {
         id: itemId,
@@ -344,6 +403,7 @@ export class OrderService {
       const serviceResult = await this.dependencies.serviceService.updateService(
         item.serviceId,
         item.service as UpdateServiceInput,
+        context,
       );
       return {
         id: itemId,
@@ -361,7 +421,10 @@ export class OrderService {
         statusCode: 422,
       });
     }
-    const serviceResult = await this.dependencies.serviceService.deleteService(item.serviceId);
+    const serviceResult = await this.dependencies.serviceService.deleteService(
+      item.serviceId,
+      context,
+    );
     return {
       id: itemId,
       action: item.action,
@@ -373,6 +436,7 @@ export class OrderService {
 
   private async executeResourceOrderItem(
     item: CreateResourceOrderInput['resourceOrderItem'][number],
+    context?: RequestContext,
   ): Promise<ResourceOrderItem> {
     const itemId = createCanonicalId();
     if (item.action === 'add') {
@@ -382,7 +446,7 @@ export class OrderService {
           statusCode: 422,
         });
       }
-      const resourceResult = await this.createResourceFromInput(item.resource);
+      const resourceResult = await this.createResourceFromInput(item.resource, context);
       return {
         id: itemId,
         action: item.action,
@@ -398,7 +462,7 @@ export class OrderService {
         statusCode: 422,
       });
     }
-    const current = await this.dependencies.resourceService.getResource(item.resourceId);
+    const current = await this.dependencies.resourceService.getResource(item.resourceId, context);
     if (!current) {
       throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
     }
@@ -414,6 +478,7 @@ export class OrderService {
         item.resourceId,
         item.resource,
         current,
+        context,
       );
       return {
         id: itemId,
@@ -425,7 +490,7 @@ export class OrderService {
       };
     }
 
-    const resourceResult = await this.deleteResourceByType(item.resourceId, current);
+    const resourceResult = await this.deleteResourceByType(item.resourceId, current, context);
     return {
       id: itemId,
       action: item.action,
@@ -441,19 +506,28 @@ export class OrderService {
   private async evaluateQualification(
     placeId: string | undefined,
     _serviceSpecificationId: string | undefined,
+    context?: RequestContext,
   ): Promise<{ qualified: boolean; reason?: string }> {
     if (!placeId) {
       return { qualified: false, reason: 'placeId required' };
     }
 
-    const site = await this.dependencies.geoService.getSite(placeId);
-    const address = await this.dependencies.geoService.getAddress(placeId);
-    const location = await this.dependencies.geoService.getLocation(placeId);
+    const site = await this.dependencies.geoService.getSite(placeId, context);
+    const address = await this.dependencies.geoService.getAddress(placeId, context);
+    const location = await this.dependencies.geoService.getLocation(placeId, context);
     const resourceHit =
-      (await this.dependencies.resourceService.listPhysicalResources({ placeId, status: 'active' }))
-        .length > 0 ||
-      (await this.dependencies.resourceService.listLogicalResources({ placeId, status: 'active' }))
-        .length > 0;
+      (
+        await this.dependencies.resourceService.listPhysicalResources(
+          { placeId, status: 'active' },
+          context,
+        )
+      ).length > 0 ||
+      (
+        await this.dependencies.resourceService.listLogicalResources(
+          { placeId, status: 'active' },
+          context,
+        )
+      ).length > 0;
 
     if (!site && !address && !location) {
       return { qualified: false, reason: 'place not found' };
@@ -464,15 +538,18 @@ export class OrderService {
       : { qualified: false, reason: 'no active supporting resource' };
   }
 
-  private async resolvePlace(id: string | undefined): Promise<EntityRef | undefined> {
+  private async resolvePlace(
+    id: string | undefined,
+    context?: RequestContext,
+  ): Promise<EntityRef | undefined> {
     if (!id) return undefined;
-    const site = await this.dependencies.geoService.getSite(id);
+    const site = await this.dependencies.geoService.getSite(id, context);
     if (site)
       return { id: site.id, '@referredType': 'GeographicSite', href: site.href, name: site.name };
-    const address = await this.dependencies.geoService.getAddress(id);
+    const address = await this.dependencies.geoService.getAddress(id, context);
     if (address)
       return { id: address.id, '@referredType': 'GeographicAddress', href: address.href };
-    const location = await this.dependencies.geoService.getLocation(id);
+    const location = await this.dependencies.geoService.getLocation(id, context);
     if (location)
       return { id: location.id, '@referredType': 'GeographicLocation', href: location.href };
     return undefined;
@@ -482,18 +559,36 @@ export class OrderService {
     eventType: string,
     payload: unknown,
     source = 'order.ServiceOrder',
+    context?: RequestContext,
   ): Promise<void> {
     const correlationId = (payload as { id?: string }).id;
-    await this.eventService.appendEvent({
+    const event = await this.eventService.appendEvent({
       eventType,
       source,
       eventData: payload as Record<string, unknown>,
       ...(correlationId ? { correlationId } : {}),
     });
+
+    if (this.dependencies.db && context && correlationId) {
+      // source é "order.ServiceQualification"/"order.ServiceOrder"/"order.ResourceOrder" —
+      // o entityType da auditoria é a parte depois do ponto.
+      const entityType = source.split('.').slice(1).join('.') || source;
+      await recordMutation(this.dependencies.db, context, {
+        action: eventType.includes('Create') ? 'create' : 'update',
+        entityType,
+        entityId: correlationId,
+        after: payload,
+        event,
+        topic: 'tmf688.order',
+      });
+    }
   }
 
-  private async getServiceQualificationOrThrow(id: string): Promise<ServiceQualification> {
-    const qualification = await this.repository.getServiceQualification(id);
+  private async getServiceQualificationOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ServiceQualification> {
+    const qualification = await this.repository.getServiceQualification(id, scopeOf(context));
     if (!qualification)
       throw new AppError('service qualification not found', {
         code: 'SERVICE_QUALIFICATION_NOT_FOUND',
@@ -502,8 +597,11 @@ export class OrderService {
     return qualification;
   }
 
-  private async getServiceOrderOrThrow(id: string): Promise<ServiceOrder> {
-    const order = await this.repository.getServiceOrder(id);
+  private async getServiceOrderOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ServiceOrder> {
+    const order = await this.repository.getServiceOrder(id, scopeOf(context));
     if (!order)
       throw new AppError('service order not found', {
         code: 'SERVICE_ORDER_NOT_FOUND',
@@ -512,8 +610,11 @@ export class OrderService {
     return order;
   }
 
-  private async getResourceOrderOrThrow(id: string): Promise<ResourceOrder> {
-    const order = await this.repository.getResourceOrder(id);
+  private async getResourceOrderOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ResourceOrder> {
+    const order = await this.repository.getResourceOrder(id, scopeOf(context));
     if (!order)
       throw new AppError('resource order not found', {
         code: 'RESOURCE_ORDER_NOT_FOUND',
@@ -522,14 +623,19 @@ export class OrderService {
     return order;
   }
 
-  private async createResourceFromInput(input: ResourceOrderPayload): Promise<Resource> {
+  private async createResourceFromInput(
+    input: ResourceOrderPayload,
+    context?: RequestContext,
+  ): Promise<Resource> {
     if (input['@type'] === 'LogicalResource') {
       return await this.dependencies.resourceService.createLogicalResource(
         input as unknown as CreateLogicalResourceInput,
+        context,
       );
     }
     return await this.dependencies.resourceService.createPhysicalResource(
       input as unknown as CreatePhysicalResourceInput,
+      context,
     );
   }
 
@@ -537,24 +643,31 @@ export class OrderService {
     resourceId: string,
     input: ResourceOrderPayload,
     current: Resource,
+    context?: RequestContext,
   ): Promise<Resource> {
     if (current['@type'] === 'LogicalResource') {
       return await this.dependencies.resourceService.updateLogicalResource(
         resourceId,
         input as UpdateLogicalResourceInput,
+        context,
       );
     }
     return await this.dependencies.resourceService.updatePhysicalResource(
       resourceId,
       input as UpdatePhysicalResourceInput,
+      context,
     );
   }
 
-  private async deleteResourceByType(resourceId: string, current: Resource): Promise<Resource> {
+  private async deleteResourceByType(
+    resourceId: string,
+    current: Resource,
+    context?: RequestContext,
+  ): Promise<Resource> {
     if (current['@type'] === 'LogicalResource') {
-      return await this.dependencies.resourceService.deleteLogicalResource(resourceId);
+      return await this.dependencies.resourceService.deleteLogicalResource(resourceId, context);
     }
-    return await this.dependencies.resourceService.deletePhysicalResource(resourceId);
+    return await this.dependencies.resourceService.deletePhysicalResource(resourceId, context);
   }
 }
 

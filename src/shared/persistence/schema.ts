@@ -560,6 +560,45 @@ export const MIGRATIONS_SQL = `
     ON tmf_logical_resource (LOWER(name) text_pattern_ops);
   CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_name_lower
     ON tmf_geographic_site (LOWER(name) text_pattern_ops);
+
+  -- Isolamento multi-tenant (C8) para Resource/Service/Order/Party — o Geo já tinha (ver
+  -- tmf_geographic_location/address/site acima); estes módulos só exigiam autenticação, sem
+  -- escopo de tenant algum. Tabelas de relacionamento (tmf_*_relationship*) ficam de fora: são
+  -- pares de ids de entidades já escopadas, herdam o isolamento por essa referência — mesmo
+  -- critério de tmf_geographic_site_relationship, que também nunca ganhou tenant_id próprio.
+  ALTER TABLE tmf_resource_specification ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_resource_category ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_resource_type ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_resource_function_specification ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_service_specification ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_service_category ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_service_candidate ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_resource_facing_service ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_customer_facing_service ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_service_qualification ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_service_order ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_resource_order ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_party ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+  ALTER TABLE tmf_party_role ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_specification_tenant ON tmf_resource_specification(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_category_tenant ON tmf_resource_category(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_type_tenant ON tmf_resource_type(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_function_specification_tenant ON tmf_resource_function_specification(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_tenant ON tmf_physical_resource(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_logical_resource_tenant ON tmf_logical_resource(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_service_specification_tenant ON tmf_service_specification(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_service_category_tenant ON tmf_service_category(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_service_candidate_tenant ON tmf_service_candidate(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_facing_service_tenant ON tmf_resource_facing_service(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_customer_facing_service_tenant ON tmf_customer_facing_service(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_service_qualification_tenant ON tmf_service_qualification(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_service_order_tenant ON tmf_service_order(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_order_tenant ON tmf_resource_order(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_party_tenant ON tmf_party(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_party_role_tenant ON tmf_party_role(tenant_id);
 `;
 
 export const SCHEMA_SQL = `

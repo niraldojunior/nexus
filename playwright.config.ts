@@ -21,9 +21,10 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'npm run dev:neon',
+      command: 'node --use-system-ca scripts/test-oracle-server.mjs',
       url: 'http://127.0.0.1:4001/health',
-      reuseExistingServer: !process.env.CI,
+      // Never attach browser tests to a locally running Neon backend by accident.
+      reuseExistingServer: false,
       timeout: 120_000,
     },
     {

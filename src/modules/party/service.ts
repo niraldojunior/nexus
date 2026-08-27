@@ -12,6 +12,10 @@ import type {
   UpdatePartyRoleInput,
 } from './domain.js';
 import type { IPartyRepository } from './party-repository-interface.js';
+import type { RequestContext } from '../../shared/http/request-context.js';
+
+const DEFAULT_TENANT_ID = 'default';
+const tenantOf = (context?: RequestContext): string => context?.tenantId ?? DEFAULT_TENANT_ID;
 
 export class PartyService {
   public constructor(
@@ -19,7 +23,11 @@ export class PartyService {
     private readonly eventService: EventService,
   ) {}
 
-  public async createParty(input: CreatePartyInput): Promise<Party> {
+  // Party é o diretório de "quem" (inclui os próprios Tenants e registros globais como
+  // fabricantes de catálogo) — getParty/getPartyRole/delete* continuam cross-tenant de
+  // propósito para não quebrar relatedParty entre módulos; só a criação estampa o tenant do
+  // criador e as listagens filtram por ele. Ver party-repository-interface.ts.
+  public async createParty(input: CreatePartyInput, context?: RequestContext): Promise<Party> {
     assertName(input.name);
     const partyType = input.partyType ?? 'Organization';
     const id = createCanonicalId();
@@ -31,6 +39,7 @@ export class PartyService {
       partyType,
       status: input.status ?? 'active',
       partyCharacteristic: input.partyCharacteristic ?? [],
+      tenantId: tenantOf(context),
       ...(input.validFor ? { validFor: input.validFor } : {}),
     };
 
@@ -73,11 +82,14 @@ export class PartyService {
     return await this.repository.getParty(id);
   }
 
-  public async listParties(query?: PartyQuery): Promise<Party[]> {
-    return await this.repository.listParties(query);
+  public async listParties(query?: PartyQuery, context?: RequestContext): Promise<Party[]> {
+    return await this.repository.listParties({ ...query, tenantId: tenantOf(context) });
   }
 
-  public async createPartyRole(input: CreatePartyRoleInput): Promise<PartyRole> {
+  public async createPartyRole(
+    input: CreatePartyRoleInput,
+    context?: RequestContext,
+  ): Promise<PartyRole> {
     assertName(input.name);
     const party = await this.getPartyOrThrow(input.partyId);
     const id = createCanonicalId();
@@ -95,6 +107,7 @@ export class PartyService {
         name: party.name,
       },
       partyRoleCharacteristic: input.partyRoleCharacteristic ?? [],
+      tenantId: tenantOf(context),
       ...(input.validFor ? { validFor: input.validFor } : {}),
     };
 
@@ -134,8 +147,11 @@ export class PartyService {
     return await this.repository.getPartyRole(id);
   }
 
-  public async listPartyRoles(query?: PartyRoleQuery): Promise<PartyRole[]> {
-    return await this.repository.listPartyRoles(query);
+  public async listPartyRoles(
+    query?: PartyRoleQuery,
+    context?: RequestContext,
+  ): Promise<PartyRole[]> {
+    return await this.repository.listPartyRoles({ ...query, tenantId: tenantOf(context) });
   }
 
   private async emit(

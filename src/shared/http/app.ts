@@ -2446,7 +2446,11 @@ const routePartyRequest = async ({
   const partyRoute = resolvePartyRoute(url.pathname);
   if (partyRoute) {
     if (!partyRoute.id && request.method === 'GET') {
-      return sendJson(response, 200, partyService.listParties(parsePartyQuery(url.searchParams)));
+      return sendJson(
+        response,
+        200,
+        partyService.listParties(parsePartyQuery(url.searchParams), context),
+      );
     }
 
     if (!partyRoute.id && request.method === 'POST') {
@@ -2455,6 +2459,7 @@ const routePartyRequest = async ({
         201,
         partyService.createParty(
           (await readBody(request)) as Parameters<typeof partyService.createParty>[0],
+          context,
         ),
       );
     }
@@ -2489,7 +2494,7 @@ const routePartyRequest = async ({
       return sendJson(
         response,
         200,
-        partyService.listPartyRoles(parsePartyRoleQuery(url.searchParams)),
+        partyService.listPartyRoles(parsePartyRoleQuery(url.searchParams), context),
       );
     }
 
@@ -2499,6 +2504,7 @@ const routePartyRequest = async ({
         201,
         partyService.createPartyRole(
           (await readBody(request)) as Parameters<typeof partyService.createPartyRole>[0],
+          context,
         ),
       );
     }

@@ -14,6 +14,7 @@ import {
   createLoggingPublisher,
   type OutboxRelayHandle,
 } from '../runtime/outbox-relay.js';
+import { recordRequestMetric, renderPrometheusMetrics } from './metrics.js';
 import { InMemoryEntityRepository } from '../persistence/in-memory-entity-repository.js';
 import type { DatabaseClient } from '../persistence/database-client.js';
 import { createDatabaseClient } from '../persistence/database-factory.js';
@@ -183,13 +184,20 @@ export const createApp = ({ config, logger }: AppDependencies) => {
       .catch((error: unknown) => handleHttpError({ error, logger, response }))
       .finally(() => {
         const durationMs = Date.now() - startedAt;
+        const pathname = (request.url ?? '/').split('?')[0] ?? '/';
+        recordRequestMetric(request.method, pathname, response.statusCode, durationMs);
         if (durationMs >= 250) {
+          // traceId correlaciona com o do chamador (Apigee) quando ele manda x-trace-id/
+          // x-request-id — sem esses headers, cada camada geraria um id próprio e o log
+          // ficaria com uma correlação falsa, então preferimos omitir a não sintetizar aqui.
+          const traceId = firstHeaderValue(request, 'x-trace-id') ?? firstHeaderValue(request, 'x-request-id');
           logger.info(
             {
               method: request.method,
               path: request.url,
               durationMs,
               statusCode: response.statusCode,
+              ...(traceId ? { traceId } : {}),
             },
             'request completed',
           );
@@ -305,6 +313,12 @@ const routeRequest = async ({
         adminSeedConfigured: Boolean(config.adminEmail && config.adminPassword),
       },
     });
+    return;
+  }
+
+  // Público como /health (readiness do OpenShift/Prometheus não deve exigir bearer token).
+  if (request.method === 'GET' && url.pathname === '/metrics') {
+    sendText(response, renderPrometheusMetrics());
     return;
   }
 
@@ -5138,6 +5152,18 @@ const sendHtml = (response: ServerResponse, html: string): void => {
   response.statusCode = 200;
   response.setHeader('content-type', 'text/html; charset=utf-8');
   response.end(html);
+};
+
+const sendText = (response: ServerResponse, text: string): void => {
+  response.statusCode = 200;
+  response.setHeader('content-type', 'text/plain; version=0.0.4; charset=utf-8');
+  response.end(text);
+};
+
+const firstHeaderValue = (request: IncomingMessage, name: string): string | undefined => {
+  const value = request.headers[name];
+  if (Array.isArray(value)) return value[0];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 };
 
 const buildLegacyUiNoticeHtml = (appName: string): string => `<!doctype html>

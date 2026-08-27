@@ -26,6 +26,7 @@ export type ServiceQualificationQuery = {
   serviceSpecificationId?: string;
   limit?: number;
   offset?: number;
+  tenantId?: string;
 };
 
 export type ServiceOrderQuery = {
@@ -33,6 +34,7 @@ export type ServiceOrderQuery = {
   relatedPartyId?: string;
   limit?: number;
   offset?: number;
+  tenantId?: string;
 };
 
 export type ResourceOrderQuery = {
@@ -41,6 +43,7 @@ export type ResourceOrderQuery = {
   resourceId?: string;
   limit?: number;
   offset?: number;
+  tenantId?: string;
 };
 
 export type ServiceQualificationItem = {
@@ -61,6 +64,7 @@ export type ServiceQualification = {
   relatedParty: RelatedParty[];
   serviceCharacteristic: Characteristic[];
   validFor?: TimePeriod | undefined;
+  tenantId?: string;
 };
 
 export type CreateServiceQualificationInput = {
@@ -96,6 +100,7 @@ export type ServiceOrder = {
   serviceOrderItem: ServiceOrderItem[];
   note: string[];
   validFor?: TimePeriod | undefined;
+  tenantId?: string;
 };
 
 export type ResourceOrderItem = {
@@ -117,6 +122,7 @@ export type ResourceOrder = {
   resourceOrderItem: ResourceOrderItem[];
   note: string[];
   validFor?: TimePeriod | undefined;
+  tenantId?: string;
 };
 
 export type CreateServiceOrderInput = {

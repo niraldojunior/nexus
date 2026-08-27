@@ -3108,7 +3108,10 @@ const routeOrderRequest = async ({
       return sendJson(
         response,
         200,
-        orderService.listServiceQualifications(parseServiceQualificationQuery(url.searchParams)),
+        orderService.listServiceQualifications(
+          parseServiceQualificationQuery(url.searchParams),
+          context,
+        ),
       );
     }
     if (!route.id && request.method === 'POST') {
@@ -3119,13 +3122,14 @@ const routeOrderRequest = async ({
           (await readBody(request)) as Parameters<
             typeof orderService.createServiceQualification
           >[0],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(
         response,
-        orderService.getServiceQualification(route.id),
+        orderService.getServiceQualification(route.id, context),
         'SERVICE_QUALIFICATION_NOT_FOUND',
       );
     }
@@ -3138,11 +3142,16 @@ const routeOrderRequest = async ({
           (await readBody(request)) as Parameters<
             typeof orderService.updateServiceQualification
           >[1],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'DELETE') {
-      return sendJson(response, 200, orderService.deleteServiceQualification(route.id));
+      return sendJson(
+        response,
+        200,
+        orderService.deleteServiceQualification(route.id, context),
+      );
     }
   }
 
@@ -3151,7 +3160,7 @@ const routeOrderRequest = async ({
       return sendJson(
         response,
         200,
-        orderService.listServiceOrders(parseServiceOrderQuery(url.searchParams)),
+        orderService.listServiceOrders(parseServiceOrderQuery(url.searchParams), context),
       );
     }
     if (!route.id && request.method === 'POST') {
@@ -3160,13 +3169,14 @@ const routeOrderRequest = async ({
         201,
         orderService.createServiceOrder(
           (await readBody(request)) as Parameters<typeof orderService.createServiceOrder>[0],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(
         response,
-        orderService.getServiceOrder(route.id),
+        orderService.getServiceOrder(route.id, context),
         'SERVICE_ORDER_NOT_FOUND',
       );
     }
@@ -3177,11 +3187,12 @@ const routeOrderRequest = async ({
         orderService.updateServiceOrder(
           route.id,
           (await readBody(request)) as Parameters<typeof orderService.updateServiceOrder>[1],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'DELETE') {
-      return sendJson(response, 200, orderService.cancelServiceOrder(route.id));
+      return sendJson(response, 200, orderService.cancelServiceOrder(route.id, context));
     }
   }
 
@@ -3190,7 +3201,7 @@ const routeOrderRequest = async ({
       return sendJson(
         response,
         200,
-        orderService.listResourceOrders(parseResourceOrderQuery(url.searchParams)),
+        orderService.listResourceOrders(parseResourceOrderQuery(url.searchParams), context),
       );
     }
     if (!route.id && request.method === 'POST') {
@@ -3199,13 +3210,14 @@ const routeOrderRequest = async ({
         201,
         orderService.createResourceOrder(
           (await readBody(request)) as Parameters<typeof orderService.createResourceOrder>[0],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'GET') {
       return sendJsonOrNotFound(
         response,
-        orderService.getResourceOrder(route.id),
+        orderService.getResourceOrder(route.id, context),
         'RESOURCE_ORDER_NOT_FOUND',
       );
     }
@@ -3216,11 +3228,12 @@ const routeOrderRequest = async ({
         orderService.updateResourceOrder(
           route.id,
           (await readBody(request)) as Parameters<typeof orderService.updateResourceOrder>[1],
+          context,
         ),
       );
     }
     if (route.id && request.method === 'DELETE') {
-      return sendJson(response, 200, orderService.cancelResourceOrder(route.id));
+      return sendJson(response, 200, orderService.cancelResourceOrder(route.id, context));
     }
   }
 

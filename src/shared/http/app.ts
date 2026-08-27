@@ -9,6 +9,12 @@ import {
 } from './request-context.js';
 import type { Logger } from '../logging/logger.js';
 import { RateLimiter } from './rate-limiter.js';
+import {
+  startOutboxRelay,
+  createLoggingPublisher,
+  type OutboxRelayHandle,
+} from '../runtime/outbox-relay.js';
+import { recordRequestMetric, renderPrometheusMetrics } from './metrics.js';
 import { InMemoryEntityRepository } from '../persistence/in-memory-entity-repository.js';
 import type { DatabaseClient } from '../persistence/database-client.js';
 import { createDatabaseClient } from '../persistence/database-factory.js';
@@ -150,6 +156,7 @@ export const createApp = ({ config, logger }: AppDependencies) => {
   // Uma instância por app (não módulo): o LLM custa dinheiro por chamada, então limita por ator
   // — 20 requisições/minuto por default. Estado por instância, igual ao rate limit de login
   // (não é garantia sob múltiplas réplicas; o Apigee assume isso quando entrar).
+  let outboxRelayHandle: OutboxRelayHandle | null = null;
   const llmRateLimiter = new RateLimiter(
     config.llmRateLimitMax ?? 20,
     config.llmRateLimitWindowMs ?? 60_000,
@@ -177,13 +184,20 @@ export const createApp = ({ config, logger }: AppDependencies) => {
       .catch((error: unknown) => handleHttpError({ error, logger, response }))
       .finally(() => {
         const durationMs = Date.now() - startedAt;
+        const pathname = (request.url ?? '/').split('?')[0] ?? '/';
+        recordRequestMetric(request.method, pathname, response.statusCode, durationMs);
         if (durationMs >= 250) {
+          // traceId correlaciona com o do chamador (Apigee) quando ele manda x-trace-id/
+          // x-request-id — sem esses headers, cada camada geraria um id próprio e o log
+          // ficaria com uma correlação falsa, então preferimos omitir a não sintetizar aqui.
+          const traceId = firstHeaderValue(request, 'x-trace-id') ?? firstHeaderValue(request, 'x-request-id');
           logger.info(
             {
               method: request.method,
               path: request.url,
               durationMs,
               statusCode: response.statusCode,
+              ...(traceId ? { traceId } : {}),
             },
             'request completed',
           );
@@ -224,9 +238,16 @@ export const createApp = ({ config, logger }: AppDependencies) => {
           resolve(resolvedPort);
         });
       });
+
+      // C7: publica o que os módulos gravam em tmf_outbox (ver shared/persistence/audit-outbox.ts).
+      // Sink de log no laboratório — troca só o publisher quando o Kafka entrar.
+      outboxRelayHandle = startOutboxRelay(db, createLoggingPublisher(logger), { logger });
+
       return port;
     },
     stop: async (): Promise<void> => {
+      outboxRelayHandle?.stop();
+      outboxRelayHandle = null;
       runtimePromise = null;
       // db.close() already removes just this instance from the static map. Calling
       // PostgresDatabase.resetForTesting() here would additionally tear down every other
@@ -292,6 +313,12 @@ const routeRequest = async ({
         adminSeedConfigured: Boolean(config.adminEmail && config.adminPassword),
       },
     });
+    return;
+  }
+
+  // Público como /health (readiness do OpenShift/Prometheus não deve exigir bearer token).
+  if (request.method === 'GET' && url.pathname === '/metrics') {
+    sendText(response, renderPrometheusMetrics());
     return;
   }
 
@@ -2479,12 +2506,13 @@ const routePartyRequest = async ({
         partyService.updateParty(
           partyRoute.id,
           (await readBody(request)) as Parameters<typeof partyService.updateParty>[1],
+          context,
         ),
       );
     }
 
     if (partyRoute.id && request.method === 'DELETE') {
-      return sendJson(response, 200, partyService.deleteParty(partyRoute.id));
+      return sendJson(response, 200, partyService.deleteParty(partyRoute.id, context));
     }
   }
 
@@ -2524,12 +2552,13 @@ const routePartyRequest = async ({
         partyService.updatePartyRole(
           roleRoute.id,
           (await readBody(request)) as Parameters<typeof partyService.updatePartyRole>[1],
+          context,
         ),
       );
     }
 
     if (roleRoute.id && request.method === 'DELETE') {
-      return sendJson(response, 200, partyService.deletePartyRole(roleRoute.id));
+      return sendJson(response, 200, partyService.deletePartyRole(roleRoute.id, context));
     }
   }
 
@@ -5123,6 +5152,18 @@ const sendHtml = (response: ServerResponse, html: string): void => {
   response.statusCode = 200;
   response.setHeader('content-type', 'text/html; charset=utf-8');
   response.end(html);
+};
+
+const sendText = (response: ServerResponse, text: string): void => {
+  response.statusCode = 200;
+  response.setHeader('content-type', 'text/plain; version=0.0.4; charset=utf-8');
+  response.end(text);
+};
+
+const firstHeaderValue = (request: IncomingMessage, name: string): string | undefined => {
+  const value = request.headers[name];
+  if (Array.isArray(value)) return value[0];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 };
 
 const buildLegacyUiNoticeHtml = (appName: string): string => `<!doctype html>

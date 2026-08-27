@@ -24,6 +24,8 @@ import type {
 } from './domain.js';
 import type { IOrderRepository, OrderTenantScope } from './order-repository-interface.js';
 import type { RequestContext } from '../../shared/http/request-context.js';
+import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import { recordMutation } from '../../shared/persistence/audit-outbox.js';
 
 const DEFAULT_TENANT_ID = 'default';
 const tenantOf = (context?: RequestContext): string => context?.tenantId ?? DEFAULT_TENANT_ID;
@@ -54,6 +56,8 @@ type OrderDependencies = {
   geoService: GeoService;
   resourceService: ResourceService;
   partyService: PartyService;
+  /** Trilha de auditoria + outbox (C7) — best-effort, ver nota em resource/service.ts. */
+  db?: DatabaseClient;
 };
 
 export class OrderService {
@@ -106,7 +110,12 @@ export class OrderService {
     };
 
     const stored = await this.repository.upsertServiceQualification(qualification);
-    await this.emit('ServiceQualificationCreateEvent', stored, 'order.ServiceQualification');
+    await this.emit(
+      'ServiceQualificationCreateEvent',
+      stored,
+      'order.ServiceQualification',
+      context,
+    );
     return stored;
   }
 
@@ -137,6 +146,7 @@ export class OrderService {
       'ServiceQualificationAttributeValueChangeEvent',
       updated,
       'order.ServiceQualification',
+      context,
     );
     return updated;
   }
@@ -171,6 +181,7 @@ export class OrderService {
       'ServiceQualificationStateChangeEvent',
       terminated,
       'order.ServiceQualification',
+      context,
     );
     return terminated;
   }
@@ -213,11 +224,11 @@ export class OrderService {
         state: 'completed',
         serviceOrderItem: processedItems,
       });
-      await this.emit('ServiceOrderCreateEvent', completed, 'order.ServiceOrder');
+      await this.emit('ServiceOrderCreateEvent', completed, 'order.ServiceOrder', context);
       return completed;
     } catch (error) {
       const failed = await this.repository.upsertServiceOrder({ ...stored, state: 'failed' });
-      await this.emit('ServiceOrderStateChangeEvent', failed, 'order.ServiceOrder');
+      await this.emit('ServiceOrderStateChangeEvent', failed, 'order.ServiceOrder', context);
       throw error;
     }
   }
@@ -237,7 +248,7 @@ export class OrderService {
       ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
     });
-    await this.emit('ServiceOrderStateChangeEvent', updated, 'order.ServiceOrder');
+    await this.emit('ServiceOrderStateChangeEvent', updated, 'order.ServiceOrder', context);
     return updated;
   }
 
@@ -261,7 +272,7 @@ export class OrderService {
       ...current,
       state: 'cancelled',
     });
-    await this.emit('ServiceOrderStateChangeEvent', cancelled, 'order.ServiceOrder');
+    await this.emit('ServiceOrderStateChangeEvent', cancelled, 'order.ServiceOrder', context);
     return cancelled;
   }
 
@@ -305,11 +316,11 @@ export class OrderService {
         state: 'completed',
         resourceOrderItem: processedItems,
       });
-      await this.emit('ResourceOrderCreateEvent', completed, 'order.ResourceOrder');
+      await this.emit('ResourceOrderCreateEvent', completed, 'order.ResourceOrder', context);
       return completed;
     } catch (error) {
       const failed = await this.repository.upsertResourceOrder({ ...stored, state: 'failed' });
-      await this.emit('ResourceOrderStateChangeEvent', failed, 'order.ResourceOrder');
+      await this.emit('ResourceOrderStateChangeEvent', failed, 'order.ResourceOrder', context);
       throw error;
     }
   }
@@ -329,7 +340,7 @@ export class OrderService {
       ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
     });
-    await this.emit('ResourceOrderStateChangeEvent', updated, 'order.ResourceOrder');
+    await this.emit('ResourceOrderStateChangeEvent', updated, 'order.ResourceOrder', context);
     return updated;
   }
 
@@ -353,7 +364,7 @@ export class OrderService {
       ...current,
       state: 'cancelled',
     });
-    await this.emit('ResourceOrderStateChangeEvent', cancelled, 'order.ResourceOrder');
+    await this.emit('ResourceOrderStateChangeEvent', cancelled, 'order.ResourceOrder', context);
     return cancelled;
   }
 
@@ -548,14 +559,29 @@ export class OrderService {
     eventType: string,
     payload: unknown,
     source = 'order.ServiceOrder',
+    context?: RequestContext,
   ): Promise<void> {
     const correlationId = (payload as { id?: string }).id;
-    await this.eventService.appendEvent({
+    const event = await this.eventService.appendEvent({
       eventType,
       source,
       eventData: payload as Record<string, unknown>,
       ...(correlationId ? { correlationId } : {}),
     });
+
+    if (this.dependencies.db && context && correlationId) {
+      // source é "order.ServiceQualification"/"order.ServiceOrder"/"order.ResourceOrder" —
+      // o entityType da auditoria é a parte depois do ponto.
+      const entityType = source.split('.').slice(1).join('.') || source;
+      await recordMutation(this.dependencies.db, context, {
+        action: eventType.includes('Create') ? 'create' : 'update',
+        entityType,
+        entityId: correlationId,
+        after: payload,
+        event,
+        topic: 'tmf688.order',
+      });
+    }
   }
 
   private async getServiceQualificationOrThrow(

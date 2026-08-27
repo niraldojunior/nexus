@@ -43,9 +43,9 @@ Setup de ambiente, variáveis do Vercel e layout Neon dev/prod: veja o [README.m
 
 | Camada      | Comando                    | Runner                                  | Escopo                                          |
 | ----------- | -------------------------- | --------------------------------------- | ----------------------------------------------- |
-| Unit        | `npm run test:unit`        | Vitest (`vitest.config.ts`)             | `test/**/*.spec.ts` + `web/src/**/*.test.tsx`   |
-| Integration | `npm run test:integration` | `scripts/run-tests.mjs` sobre o `dist/` | `*.integration.spec.ts`, `*-management.spec.ts` |
-| Regression  | `npm run test:regression`  | Playwright                              | E2E de browser                                  |
+| Unit        | `npm run test:unit`        | Vitest (`vitest.config.ts`)             | Testes sem banco e sem acesso ao Neon            |
+| Integration | `npm run test:integration` | Vitest                                  | Path Oracle contra instância real                 |
+| Regression  | `npm run test:regression`  | Playwright                              | E2E de browser contra Oracle                     |
 
 Arquivo único no Vitest:
 
@@ -55,10 +55,9 @@ node --use-system-ca node_modules/vitest/vitest.mjs run --config vitest.config.t
 
 **Armadilhas conhecidas — leia antes de debugar:**
 
-- **`--use-system-ca` é obrigatório.** Atrás do proxy TLS corporativo, o Node rejeita a cadeia do Neon sem ele. Já está nos scripts npm; se invocar o Vitest na mão, inclua.
-- **Use sempre o endpoint `-pooler` do Neon nos testes.** O endpoint direto **trava** dentro do worker aninhado do Vitest (o mesmo código roda em ~2s num processo Node standalone). Não é bug de configuração — já foi investigado e descartado.
-- **Cada worker do Vitest tem seu próprio schema** (`nexus_test_w<VITEST_POOL_ID>`), reusado entre testes com `TRUNCATE`. Não escreva teste que dependa de schema limpo por arquivo.
-- **Logs do worker aninhado não aparecem no stdout.** Para depurar persistência, faça um repro standalone contra o `dist/` compilado.
+- **Os testes de banco usam exclusivamente Oracle.** Configure `ORACLE_CONNECTION_STRING`, `ORACLE_USER`, `ORACLE_PASSWORD` e `ORACLE_TEST_OBJECT_PREFIX=NEXUS_TEST_` no `.env`.
+- **O prefixo Oracle de teste é obrigatório.** A suíte recusa qualquer prefixo que não termine em `_TEST_`, pois os ambientes compartilham schema.
+- **Oracle roda em worker único.** O prefixo é um namespace compartilhado; não execute os testes Oracle em paralelo.
 - **O backend de dev atende requisições em série.** Duas chamadas concorrentes iguais custam o dobro, não o mesmo. Com `React.StrictMode` (double-invoke), hooks que buscam listas caras devem deduplicar a requisição em voo com uma promise compartilhada em nível de módulo — padrão já aplicado em `web/src/hooks/useGeoDirectory.ts` e `useGeoTree.ts`.
 
 ---

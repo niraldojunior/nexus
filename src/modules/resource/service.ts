@@ -33,6 +33,8 @@ import type {
 } from './resource-repository-interface.js';
 import type { MapFeatureSynchronizer } from '../geo/map-feature-synchronizer.js';
 import type { RequestContext } from '../../shared/http/request-context.js';
+import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import { recordMutation } from '../../shared/persistence/audit-outbox.js';
 
 const DEFAULT_TENANT_ID = 'default';
 const tenantOf = (context?: RequestContext): string => context?.tenantId ?? DEFAULT_TENANT_ID;
@@ -54,6 +56,9 @@ type ResourceServiceDependencies = {
     | { id: string; '@referredType': string; href?: string; name?: string }
     | undefined;
   mapFeatureSynchronizer?: MapFeatureSynchronizer;
+  /** Trilha de auditoria + outbox (C7) — best-effort: sem `db` (ex.: testes que montam o
+   *  serviço com um repositório em memória), a auditoria só não roda. */
+  db?: DatabaseClient;
 };
 
 export class ResourceService {
@@ -90,7 +95,13 @@ export class ResourceService {
     };
 
     const stored = await this.repository.upsertResourceSpecification(spec);
-    await this.emit('ResourceSpecificationCreateEvent', stored.id, 'ResourceSpecification', stored);
+    await this.emit(
+      'ResourceSpecificationCreateEvent',
+      stored.id,
+      'ResourceSpecification',
+      stored,
+      context,
+    );
     return stored;
   }
 
@@ -128,6 +139,7 @@ export class ResourceService {
       updated.id,
       'ResourceSpecification',
       updated,
+      context,
     );
     return updated;
   }
@@ -173,6 +185,7 @@ export class ResourceService {
       terminated.id,
       'ResourceSpecification',
       terminated,
+      context,
     );
     return terminated;
   }
@@ -226,6 +239,7 @@ export class ResourceService {
       stored.id,
       'ResourceFunctionSpecification',
       stored,
+      context,
     );
     return stored;
   }
@@ -253,6 +267,7 @@ export class ResourceService {
       updated.id,
       'ResourceFunctionSpecification',
       updated,
+      context,
     );
     return updated;
   }
@@ -271,6 +286,7 @@ export class ResourceService {
       terminated.id,
       'ResourceFunctionSpecification',
       terminated,
+      context,
     );
     return terminated;
   }
@@ -336,7 +352,13 @@ export class ResourceService {
     }
     const finalResource = await this.getPhysicalResourceOrThrow(stored.id, context);
     await this.syncMapFeature(finalResource, context);
-    await this.emit('ResourceCreateEvent', finalResource.id, 'PhysicalResource', finalResource);
+    await this.emit(
+      'ResourceCreateEvent',
+      finalResource.id,
+      'PhysicalResource',
+      finalResource,
+      context,
+    );
     return finalResource;
   }
 
@@ -394,6 +416,7 @@ export class ResourceService {
       updated.id,
       'PhysicalResource',
       updated,
+      context,
     );
     return updated;
   }
@@ -412,7 +435,13 @@ export class ResourceService {
       validFor: buildTimePeriod(current.validFor?.startDateTime, new Date().toISOString()),
     });
     await this.syncMapFeature(terminated, context);
-    await this.emit('ResourceStateChangeEvent', terminated.id, 'PhysicalResource', terminated);
+    await this.emit(
+      'ResourceStateChangeEvent',
+      terminated.id,
+      'PhysicalResource',
+      terminated,
+      context,
+    );
     return terminated;
   }
 
@@ -477,7 +506,13 @@ export class ResourceService {
       await this.addResourceRelationship(stored.id, relationship, context);
     }
     const finalResource = await this.getLogicalResourceOrThrow(stored.id, context);
-    await this.emit('ResourceCreateEvent', finalResource.id, 'LogicalResource', finalResource);
+    await this.emit(
+      'ResourceCreateEvent',
+      finalResource.id,
+      'LogicalResource',
+      finalResource,
+      context,
+    );
     return finalResource;
   }
 
@@ -535,6 +570,7 @@ export class ResourceService {
       updated.id,
       'LogicalResource',
       updated,
+      context,
     );
     return updated;
   }
@@ -552,7 +588,13 @@ export class ResourceService {
       usageState: 'idle',
       validFor: buildTimePeriod(current.validFor?.startDateTime, new Date().toISOString()),
     });
-    await this.emit('ResourceStateChangeEvent', terminated.id, 'LogicalResource', terminated);
+    await this.emit(
+      'ResourceStateChangeEvent',
+      terminated.id,
+      'LogicalResource',
+      terminated,
+      context,
+    );
     return terminated;
   }
 
@@ -611,10 +653,13 @@ export class ResourceService {
     await this.getResourceOrThrow(input.id, context);
     const relationship = await this.repository.upsertResourceRelationship(resourceId, input);
     const current = await this.getResourceOrThrow(resourceId, context);
-    await this.emit('ResourceRelationshipCreateEvent', resourceId, current['@type'], {
+    await this.emit(
+      'ResourceRelationshipCreateEvent',
       resourceId,
-      relationship,
-    });
+      current['@type'],
+      { resourceId, relationship },
+      context,
+    );
     return relationship;
   }
 
@@ -633,11 +678,13 @@ export class ResourceService {
     );
     if (removed) {
       const current = await this.getResourceOrThrow(resourceId, context);
-      await this.emit('ResourceRelationshipDeleteEvent', resourceId, current['@type'], {
+      await this.emit(
+        'ResourceRelationshipDeleteEvent',
         resourceId,
-        relatedResourceId,
-        relationshipType,
-      });
+        current['@type'],
+        { resourceId, relatedResourceId, relationshipType },
+        context,
+      );
     }
     return removed;
   }
@@ -673,12 +720,13 @@ export class ResourceService {
             usageState: status === 'active' ? 'busy' : 'idle',
           });
 
-    await this.emit('ResourceFunctionActivationEvent', resource.id, resource['@type'], {
-      resourceId: resource.id,
-      action: input.action ?? 'activate',
-      reason: input.reason,
-      resource,
-    });
+    await this.emit(
+      'ResourceFunctionActivationEvent',
+      resource.id,
+      resource['@type'],
+      { resourceId: resource.id, action: input.action ?? 'activate', reason: input.reason, resource },
+      context,
+    );
     return resource;
   }
 
@@ -687,8 +735,9 @@ export class ResourceService {
     entityId: string,
     entityType: string,
     payload: unknown,
+    context?: RequestContext,
   ): Promise<void> {
-    await this.eventService.appendEvent({
+    const event = await this.eventService.appendEvent({
       eventType,
       source: `resource.${entityType}`,
       correlationId: entityId,
@@ -698,6 +747,17 @@ export class ResourceService {
         payload,
       },
     });
+
+    if (this.dependencies.db && context) {
+      await recordMutation(this.dependencies.db, context, {
+        action: eventType.includes('Create') ? 'create' : 'update',
+        entityType,
+        entityId,
+        after: payload,
+        event,
+        topic: 'tmf688.resource',
+      });
+    }
   }
 
   private async resolvePlace(

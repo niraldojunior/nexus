@@ -129,8 +129,8 @@ precisam começar com `postgres://` ou `postgresql://`.
 A ordem de resolução está em [`src/shared/config/env.ts`](src/shared/config/env.ts). Cada variável
 aceita o alias `NEON_DATABASE_URL_*` (ex.: `NEON_DATABASE_URL_PROD`).
 
-> Use sempre o endpoint **`-pooler`** do Neon. O endpoint direto trava dentro dos workers do Vitest —
-> ver [AGENTS.md](AGENTS.md) §3.
+> Os testes não usam o Neon. Use o endpoint **`-pooler`** apenas para o runtime e as operações
+> manuais que ainda dependem de Postgres.
 
 ### Integrações opcionais
 
@@ -179,11 +179,11 @@ Raramente precisam ser ajustadas — têm padrões seguros definidos em `scripts
 
 | Comando                    | Runner     | Escopo                                             |
 | -------------------------- | ---------- | -------------------------------------------------- |
-| `npm test`                 | —          | Suíte completa: unit → integration → regression    |
-| `npm run test:unit`        | Vitest     | `test/**/*.spec.ts` e `web/src/**/*.test.tsx`      |
-| `npm run test:integration` | Node       | Suíte de integração sobre o `dist/` compilado      |
+| `npm test`                 | —          | Suíte completa: unit → Oracle → regression         |
+| `npm run test:unit`        | Vitest     | Testes sem banco e sem acesso ao Neon              |
+| `npm run test:integration` | Vitest     | Alias para a suíte Oracle                           |
 | `npm run test:oracle`      | Vitest     | Path Oracle contra uma instância real (ver abaixo) |
-| `npm run test:regression`  | Playwright | E2E de browser (requer `npm run browsers:install`) |
+| `npm run test:regression`  | Playwright | E2E de browser contra Oracle                        |
 | `npm run test:watch`       | Vitest     | Modo watch                                         |
 | `npm run test:coverage`    | Vitest     | Cobertura v8                                       |
 
@@ -195,8 +195,8 @@ instância real — exige `DATABASE_PROVIDER=oracle` (setado pelo script), a con
 `_TEST_`). Roda em worker único (o prefixo é um namespace compartilhado) e recusa rodar sob um
 prefixo que não seja de teste, para não apagar DEV/HML/PRD no mesmo schema.
 
-> Armadilhas de teste (obrigatoriedade do `--use-system-ca`, endpoint `-pooler`, schema por worker)
-> estão documentadas em [AGENTS.md](AGENTS.md) §3.
+> Os testes não acessam o Neon. A configuração segura do Oracle e do prefixo de teste está em
+> [AGENTS.md](AGENTS.md) §3.
 
 ### Utilitários
 

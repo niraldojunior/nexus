@@ -31,6 +31,8 @@ import type {
 } from './domain.js';
 import type { IServiceRepository, ServiceTenantScope } from './service-repository-interface.js';
 import type { RequestContext } from '../../shared/http/request-context.js';
+import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import { recordMutation } from '../../shared/persistence/audit-outbox.js';
 
 const DEFAULT_TENANT_ID = 'default';
 const tenantOf = (context?: RequestContext): string => context?.tenantId ?? DEFAULT_TENANT_ID;
@@ -58,6 +60,8 @@ type ServiceDependencies = {
     | { id: string; '@referredType': string; href?: string; name?: string }
     | undefined;
   lookupService?: (id: string) => Promise<Service | undefined> | Service | undefined;
+  /** Trilha de auditoria + outbox (C7) — best-effort, ver nota em resource/service.ts. */
+  db?: DatabaseClient;
 };
 
 export class ServiceService {
@@ -95,7 +99,13 @@ export class ServiceService {
     };
 
     const stored = await this.repository.upsertServiceSpecification(spec);
-    await this.emit('ServiceSpecificationCreateEvent', stored.id, 'ServiceSpecification', stored);
+    await this.emit(
+      'ServiceSpecificationCreateEvent',
+      stored.id,
+      'ServiceSpecification',
+      stored,
+      context,
+    );
     return stored;
   }
 
@@ -157,6 +167,7 @@ export class ServiceService {
       updated.id,
       'ServiceSpecification',
       updated,
+      context,
     );
     return updated;
   }
@@ -175,6 +186,7 @@ export class ServiceService {
       terminated.id,
       'ServiceSpecification',
       terminated,
+      context,
     );
     return terminated;
   }
@@ -222,7 +234,7 @@ export class ServiceService {
     };
 
     const stored = await this.repository.upsertServiceCategory(category);
-    await this.emit('ServiceCategoryCreateEvent', stored.id, 'ServiceCategory', stored);
+    await this.emit('ServiceCategoryCreateEvent', stored.id, 'ServiceCategory', stored, context);
     return stored;
   }
 
@@ -254,6 +266,7 @@ export class ServiceService {
       updated.id,
       'ServiceCategory',
       updated,
+      context,
     );
     return updated;
   }
@@ -272,6 +285,7 @@ export class ServiceService {
       terminated.id,
       'ServiceCategory',
       terminated,
+      context,
     );
     return terminated;
   }
@@ -317,7 +331,7 @@ export class ServiceService {
     };
 
     const stored = await this.repository.upsertServiceCandidate(candidate);
-    await this.emit('ServiceCandidateCreateEvent', stored.id, 'ServiceCandidate', stored);
+    await this.emit('ServiceCandidateCreateEvent', stored.id, 'ServiceCandidate', stored, context);
     return stored;
   }
 
@@ -355,6 +369,7 @@ export class ServiceService {
       updated.id,
       'ServiceCandidate',
       updated,
+      context,
     );
     return updated;
   }
@@ -374,6 +389,7 @@ export class ServiceService {
       terminated.id,
       'ServiceCandidate',
       terminated,
+      context,
     );
     return terminated;
   }
@@ -485,7 +501,7 @@ export class ServiceService {
     };
 
     const stored = await this.repository.upsertCustomerFacingService(service);
-    await this.emit('ServiceCreateEvent', stored.id, stored['@type'], stored);
+    await this.emit('ServiceCreateEvent', stored.id, stored['@type'], stored, context);
     return stored;
   }
 
@@ -555,7 +571,7 @@ export class ServiceService {
     };
 
     const stored = await this.repository.upsertResourceFacingService(service);
-    await this.emit('ServiceCreateEvent', stored.id, stored['@type'], stored);
+    await this.emit('ServiceCreateEvent', stored.id, stored['@type'], stored, context);
     return stored;
   }
 
@@ -622,6 +638,7 @@ export class ServiceService {
       updated.id,
       updated['@type'],
       updated,
+      context,
     );
     return updated;
   }
@@ -688,6 +705,7 @@ export class ServiceService {
       updated.id,
       updated['@type'],
       updated,
+      context,
     );
     return updated;
   }
@@ -707,7 +725,13 @@ export class ServiceService {
             validFor: buildTimePeriod(current.validFor?.startDateTime, new Date().toISOString()),
           });
 
-    await this.emit('ServiceStateChangeEvent', terminated.id, terminated['@type'], terminated);
+    await this.emit(
+      'ServiceStateChangeEvent',
+      terminated.id,
+      terminated['@type'],
+      terminated,
+      context,
+    );
     return terminated;
   }
 
@@ -750,10 +774,13 @@ export class ServiceService {
       } as UpdateServiceInput,
       context,
     );
-    await this.emit('ServiceRelationshipCreateEvent', serviceId, current['@type'], {
+    await this.emit(
+      'ServiceRelationshipCreateEvent',
       serviceId,
-      relationship,
-    });
+      current['@type'],
+      { serviceId, relationship },
+      context,
+    );
     return relationship;
   }
 
@@ -773,11 +800,13 @@ export class ServiceService {
       { serviceRelationship: next } as UpdateServiceInput,
       context,
     );
-    await this.emit('ServiceRelationshipDeleteEvent', serviceId, current['@type'], {
+    await this.emit(
+      'ServiceRelationshipDeleteEvent',
       serviceId,
-      relatedServiceId,
-      relationshipType,
-    });
+      current['@type'],
+      { serviceId, relatedServiceId, relationshipType },
+      context,
+    );
     return true;
   }
 
@@ -794,8 +823,9 @@ export class ServiceService {
     entityId: string,
     entityType: string,
     payload: unknown,
+    context?: RequestContext,
   ): Promise<void> {
-    await this.eventService.appendEvent({
+    const event = await this.eventService.appendEvent({
       eventType,
       source: `service.${entityType}`,
       correlationId: entityId,
@@ -805,6 +835,17 @@ export class ServiceService {
         payload,
       },
     });
+
+    if (this.dependencies.db && context) {
+      await recordMutation(this.dependencies.db, context, {
+        action: eventType.includes('Create') ? 'create' : 'update',
+        entityType,
+        entityId,
+        after: payload,
+        event,
+        topic: 'tmf688.service',
+      });
+    }
   }
 
   private async getServiceSpecificationOrThrow(

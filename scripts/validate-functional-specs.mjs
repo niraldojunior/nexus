@@ -3,36 +3,31 @@ import { dirname, join, relative, resolve } from 'node:path';
 
 const root = process.cwd();
 const specsDir = join(root, 'docs', '2-functional-specs');
-const backlogPath = join(root, 'docs', '5-delivery-plan', 'technical-backlog.md');
-const questionsPath = join(root, 'docs', '1-overview', 'open-questions.md');
 const decisionsPath = join(root, 'docs', '5-delivery-plan', 'architecture-decisions.md');
 const overviewPath = join(root, 'docs', '1-overview', 'product-overview.md');
 const specs = [
   {
     file: '01-module-geo.md',
     prefix: 'REQ-MOD01-',
-    questionPrefix: 'Q-GEO-',
     decisionPrefix: 'D-GEO-',
     count: 18,
-    version: '1.20',
+    version: '1.21',
     illustrative: new Set(),
   },
   {
     file: '02-module-resource.md',
     prefix: 'REQ-MOD02-',
-    questionPrefix: 'Q-RES-',
     decisionPrefix: 'D-RES-',
     count: 28,
-    version: '1.4',
+    version: '1.5',
     illustrative: new Set(),
   },
   {
     file: '03-module-service.md',
     prefix: 'REQ-MOD03-',
-    questionPrefix: 'Q-SVC-',
     decisionPrefix: 'D-SVC-',
     count: 16,
-    version: '1.2',
+    version: '1.3',
     illustrative: new Set(['REQ-MOD03-012', 'REQ-MOD03-013', 'REQ-MOD03-014']),
   },
 ];
@@ -80,8 +75,8 @@ for (const definition of specs) {
         if (!/\b(Implementado|Parcial|Não implementado|Divergente)\b/u.test(row)) {
           fail(`${definition.file}: ${id} sem estado de implementação válido`);
         }
-        if (!/DEV-(?:GEO|RES|SVC|X)-\d{3}/u.test(row)) {
-          fail(`${definition.file}: ${id} sem item DEV-* rastreável`);
+        if (!/\[#\d+\]\(https:\/\/github\.com\/[^)]+\/issues\/\d+\)/u.test(row)) {
+          fail(`${definition.file}: ${id} sem issue de backlog rastreável na coluna Backlog`);
         }
         if (/\| Implementado \|/u.test(row) && !/(?:test|spec)/iu.test(row)) {
           fail(`${definition.file}: ${id} marcado Implementado sem evidência explícita de teste`);
@@ -108,12 +103,10 @@ for (const definition of specs) {
       );
     }
 
-    if (
-      !/Status funcional:\*{0,2}\s*(?:Especificado|Bloqueado por Q-(?:GEO|RES|SVC|ARQ|INT)-\d{3})/u.test(
-        block,
-      )
-    ) {
-      fail(`${definition.file}: ${id} sem maturidade funcional Especificado/Bloqueado por Q-*`);
+    if (!/Status funcional:\*{0,2}\s*(?:Especificado|Bloqueado por #\d+)/u.test(block)) {
+      fail(
+        `${definition.file}: ${id} sem maturidade funcional Especificado/Bloqueado por #<issue>`,
+      );
     }
 
     const benchmarkHeading = definition.illustrative.has(id) ? expected.at(-1) : 9;
@@ -189,81 +182,16 @@ for (const definition of specs) {
   if (/\bQ-\d{3}\b|\bD-\d+\b/u.test(text)) {
     fail(`${definition.file}: contém ID de questão/decisão sem namespace de domínio`);
   }
-  for (const line of text.split(/\r?\n/u)) {
-    if (/^\| \*\*Q-(?:GEO|RES|SVC)-\d{3}\*\*/u.test(line) && /Decidid/iu.test(line)) {
-      fail(
-        `${definition.file}: questão resolvida deve usar ID D-* (${line.split('|')[1]?.trim()})`,
-      );
-    }
-  }
 }
 
-const backlog = readFileSync(backlogPath, 'utf8');
-const referencedBacklogIds = new Set();
-for (const definition of specs) {
-  const text = readFileSync(join(specsDir, definition.file), 'utf8');
-  for (const match of text.matchAll(/DEV-(?:GEO|RES|SVC|X)-\d{3}/gu))
-    referencedBacklogIds.add(match[0]);
-}
-for (const id of referencedBacklogIds) {
-  if (!backlog.includes(`| ${id} |`) && !backlog.includes(`| **${id}** |`))
-    fail(`technical-backlog.md: item ${id} referenciado mas não definido`);
-}
-
-const definedBacklogIds = new Set();
-for (const line of backlog.split(/\r?\n/u)) {
-  if (!/^\| DEV-(?:GEO|RES|SVC|X)-\d{3} \|/u.test(line)) continue;
-  const cells = line
-    .split('|')
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  const [id, priority, status, origin, behavior, contract, dependency, evidence, acceptance] =
-    cells;
-  if (definedBacklogIds.has(id)) fail(`technical-backlog.md: item ${id} definido mais de uma vez`);
-  definedBacklogIds.add(id);
-  if (!/^P[0-2]$/u.test(priority)) fail(`technical-backlog.md: ${id} com prioridade inválida`);
-  if (!/^(?:Concluído|Parcial|Pendente|Superado)$/u.test(status))
-    fail(`technical-backlog.md: ${id} com estado inválido`);
-  if (!/(?:REQ-MOD\d{2}-\d{3}|C\d+)/u.test(origin))
-    fail(`technical-backlog.md: ${id} sem origem REQ/C rastreável`);
-  for (const [field, value] of Object.entries({
-    behavior,
-    contract,
-    dependency,
-    evidence,
-    acceptance,
-  })) {
-    if (!value || value === '—') fail(`technical-backlog.md: ${id} sem campo ${field}`);
-  }
-}
-for (const id of definedBacklogIds) {
-  if (!referencedBacklogIds.has(id))
-    fail(`technical-backlog.md: item ${id} não referenciado por nenhum HLD`);
-}
-
-const canonicalQuestions = readFileSync(questionsPath, 'utf8');
+// O backlog único de questões e lacunas vive no GitHub Issues (labels `tipo:decisão`/`tipo:lacuna`).
+// Só as decisões já resolvidas continuam num registro documental, para preservar o racional.
 const canonicalDecisions = readFileSync(decisionsPath, 'utf8');
 for (const definition of specs) {
   const text = readFileSync(join(specsDir, definition.file), 'utf8');
-  for (const match of text.matchAll(/\bQ-(?:GEO|RES|SVC|ARQ|INT)-\d{3}\b/gu)) {
-    if (!canonicalQuestions.includes(match[0]))
-      fail(`${definition.file}: questão ${match[0]} ausente no registro central`);
-  }
   for (const match of text.matchAll(/\bD-(?:GEO|RES|SVC)-\d{3}\b/gu)) {
     if (!canonicalDecisions.includes(match[0]))
       fail(`${definition.file}: decisão ${match[0]} ausente no registro central`);
-  }
-
-  const hldQuestionIds = new Set(
-    [...text.matchAll(/^\| \*\*(Q-(?:GEO|RES|SVC)-\d{3})\*\* \|/gmu)].map((match) => match[1]),
-  );
-  const centralQuestionIds = new Set(
-    [...canonicalQuestions.matchAll(/^\| (Q-(?:GEO|RES|SVC)-\d{3}) \|/gmu)]
-      .map((match) => match[1])
-      .filter((id) => id.startsWith(definition.questionPrefix)),
-  );
-  if ([...hldQuestionIds].sort().join('|') !== [...centralQuestionIds].sort().join('|')) {
-    fail(`${definition.file}: conjunto de questões abertas difere do registro central`);
   }
 
   const hldDecisionIds = new Set(
@@ -305,17 +233,31 @@ const collectMarkdown = (directory) => {
 collectMarkdown(join(root, 'docs'));
 markdownFiles.push(join(root, 'AGENTS.md'));
 
+// Guarda contra o renascimento do backlog documental paralelo: `DEV-*`, `ADR-PEND-*` e `DEP-*`
+// não têm mais nenhum uso legítimo em prosa (o backlog vive só no GitHub Issues). `Q-*` também
+// não, exceto como referência histórica dentro de `architecture-decisions.md` §2 (ex.: "Antiga
+// Q-GEO-009"), que documenta de onde uma decisão já resolvida veio.
+const decisionsRelPath = relative(root, decisionsPath).split('\\').join('/');
 for (const path of markdownFiles) {
   const text = readFileSync(path, 'utf8');
+  const relPath = relative(root, path).split('\\').join('/');
   if (text.includes('reference-systems/'))
-    fail(`${relative(root, path)}: referência obsoleta a reference-systems/`);
+    fail(`${relPath}: referência obsoleta a reference-systems/`);
+  if (/\bDEV-(?:GEO|RES|SVC|X)-\d{3}\b/u.test(text))
+    fail(`${relPath}: referência a DEV-* — o backlog de lacunas vive só no GitHub Issues`);
+  if (/\bADR-PEND-\d+B?\b/u.test(text))
+    fail(`${relPath}: referência a ADR-PEND-* — decisões pendentes vivem só no GitHub Issues`);
+  if (/\bDEP-\d{3}\b/u.test(text))
+    fail(`${relPath}: referência a DEP-* — dependências bloqueantes vivem só no GitHub Issues`);
+  if (relPath !== decisionsRelPath && /\bQ-(?:GEO|RES|SVC|ARQ|INT)-\d{3}\b/u.test(text))
+    fail(`${relPath}: referência a Q-* — questões pendentes vivem só no GitHub Issues`);
   for (const match of text.matchAll(/\[[^\]]*\]\(([^)]+)\)/gu)) {
     const target = match[1].trim().replace(/^<|>$/gu, '');
     if (/^(?:https?:\/\/|mailto:|#)/u.test(target)) continue;
     const filePart = decodeURIComponent(target.split('#', 1)[0]);
     if (!filePart) continue;
     const candidate = resolve(dirname(path), filePart);
-    if (!existsSync(candidate)) fail(`${relative(root, path)}: link local inexistente ${target}`);
+    if (!existsSync(candidate)) fail(`${relPath}: link local inexistente ${target}`);
   }
 }
 
@@ -325,6 +267,6 @@ if (errors.length > 0) {
   process.exitCode = 1;
 } else {
   console.log(
-    'Functional specs válidas: 57 requisitos, matrizes, JSON, links, benchmarks e backlog conferidos.',
+    'Functional specs válidas: 62 requisitos, matrizes, JSON, links, benchmarks e decisões conferidos.',
   );
 }

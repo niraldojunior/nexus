@@ -47,7 +47,7 @@ A carga inicial **não vem de uma fonte só**. São três sistemas legados disti
 | **Network Core**   | Inventário de rede core                                                         |
 
 > 📌 O modelo de dados dos três será compartilhado para desenhar a migração. Até lá, o mapeamento
-> para TMF permanece em aberto (`Q-INT-005`).
+> para TMF permanece em aberto ([#90](https://github.com/niraldojunior/nexus/issues/90)).
 
 Cada um exige seu próprio **anti-corruption layer** (I1) e sua tradução para o modelo canônico. O
 `_origin` (C5) identifica a procedência de cada registro — `_origin.system` distingue `netwin`,
@@ -304,8 +304,8 @@ referenciada por `place`).
 
 ## 10. Questões em aberto
 
-O registro único de governança, incluindo Q-INT-002 e Q-INT-005, vive em
-[`../1-overview/open-questions.md`](../1-overview/open-questions.md). Esta seção não replica estados.
+O backlog único de questões vive no GitHub Issues, com a label `mod:plataforma` — incluindo
+[#89](https://github.com/niraldojunior/nexus/issues/89) e [#90](https://github.com/niraldojunior/nexus/issues/90). Esta seção não replica estados.
 
 ---
 

@@ -142,7 +142,7 @@ Não existe contrato bulk no backend. Faltam:
 - Eventos somente para commits efetivos.
 - Suporte a CSV e ou payload bulk TMF.
 
-Este é o único backlog Geo marcado diretamente como pendente, não apenas parcial. Referência: `docs/5-delivery-plan/technical-backlog.md`.
+Este é o único backlog Geo marcado diretamente como pendente, não apenas parcial. Referência: [issue #135](https://github.com/niraldojunior/nexus/issues/135).
 
 ### 8. Mapa
 
@@ -160,7 +160,7 @@ A base do mapa está pronta, mas ainda faltam:
 
 ### Dependências ainda abertas
 
-Há decisões Geo pendentes sobre regra de CN, obrigatoriedade de CLLI, tipos de relacionamento, interface do Geosite, estratégia de sincronização, SLA de eventos e profundidade máxima da hierarquia. Referência: `docs/1-overview/open-questions.md`.
+Há decisões Geo pendentes sobre regra de CN, obrigatoriedade de CLLI, tipos de relacionamento, interface do Geosite, estratégia de sincronização, SLA de eventos e profundidade máxima da hierarquia. Referência: [GitHub Issues — `mod:geo`](https://github.com/niraldojunior/nexus/issues?q=is%3Aopen+label%3Amod%3Ageo).
 
 Minha sequência recomendada seria:
 

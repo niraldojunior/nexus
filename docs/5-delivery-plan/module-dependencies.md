@@ -95,17 +95,12 @@ MOD01/MOD02 estáveis
   -> validação operacional Região 2
 ```
 
-## 5. Dependências Bloqueantes A Resolver
+## 5. Dependências bloqueantes
 
-| ID      | Dependência                                                                | Bloqueia                            | Fonte                                            |
-| ------- | -------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------ |
-| DEP-001 | Stack Oracle 21c/23ai + Property Graph dimensionada.                       | Path computation e escala 22M+ HPs. | C10, Q-RES-004.                                  |
-| DEP-002 | Kafka/outbox/Schema Registry definidos no design técnico.                  | Eventos TMF688 em produção.         | C7, REQ-MOD01-012, REQ-MOD02-025, REQ-MOD03-016. |
-| DEP-003 | Catálogo inicial de SiteSpecification e ResourceSpecification.             | Bootstrap MOD01/MOD02.              | Q-GEO-001, Q-RES-001.                            |
-| DEP-004 | Interface do Geosite Logradouros; o provedor já foi decidido em D-GEO-002. | Address e mapa.                     | Q-GEO-005, D-GEO-002.                            |
-| DEP-005 | Estratégia IPAM legado.                                                    | LogicalResource IP/VRF/VLAN.        | Q-RES-008.                                       |
-| DEP-006 | Definição de ServiceSpecification e SubscriberID.                          | MOD03/MOD04/MOD06.                  | Q-SVC-001, Q-SVC-002.                            |
-| DEP-007 | RBAC/audit mínimo.                                                         | Produção de qualquer módulo.        | C8, MOD08, security.md.                          |
+As dependências bloqueantes que este documento rastreava (stack Oracle/Property Graph, outbox/Kafka,
+catálogos iniciais, interface do Geosite, IPAM legado, ServiceSpecification/SubscriberID e RBAC/audit
+mínimo) vivem agora como issues no GitHub, com a label `mod:plataforma` ou a label do módulo
+correspondente: [github.com/niraldojunior/nexus/issues?q=is:open](https://github.com/niraldojunior/nexus/issues?q=is%3Aopen).
 
 ---
 

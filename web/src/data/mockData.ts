@@ -177,9 +177,9 @@ export const domainCards: Record<string, DomainCardData[]> = {
       tag: 'TMF634',
     },
     {
-      title: 'Property Graph',
-      description: 'Cálculo de caminho óptico e impacto sobre Oracle Property Graph.',
-      tag: 'Oracle',
+      title: 'Path Computation',
+      description: 'Cálculo de caminho óptico e impacto via SQL recursivo, portável entre Oracle e PostgreSQL.',
+      tag: 'TMF639',
     },
   ],
   service: [

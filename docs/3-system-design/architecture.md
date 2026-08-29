@@ -6,8 +6,10 @@
 **Stack corporativa alvo:** Oracle (banco) · OpenShift (aplicação) · Redis (cache) · Kafka
 (mensageria) · Apigee (API Gateway).
 
-> ⚠️ O Vercel + Neon Postgres usado hoje é **infraestrutura temporária de laboratório**. Todo desenho
-> aqui assume a stack corporativa. Onde há divergência com o código atual, ela está sinalizada.
+> ⚠️ O Vercel usado hoje é **infraestrutura temporária de laboratório** — OpenShift é o alvo. O
+> PostgreSQL do laboratório (hospedado em Neon) não é temporário: é um dos dois bancos suportados
+> nativamente por C10, ao lado de Oracle. Todo desenho aqui assume a stack corporativa. Onde há
+> divergência com o código atual, ela está sinalizada.
 > A cobertura funcional atual não é inferida deste desenho-alvo: use as matrizes 2.3 dos HLDs e o
 > [backlog de lacunas no GitHub Issues](https://github.com/niraldojunior/nexus/issues?q=is%3Aopen+label%3Atipo%3Alacuna).
 
@@ -50,8 +52,7 @@
 │ cache  │ │ 21c/23ai RAC │      │ eventos TMF  │          └──────────────┘ │
 │ lock   │ │ + Data Guard │      │ 688 · ordens │                           │
 │ quota  │ │ + Spatial    │      └──────────────┘                           │
-└────────┘ │ + Prop.Graph │                                                 │
-           └──────────────┘                                                 │
+└────────┘ └──────────────┘                                                 │
 ```
 
 **Três deployments, não um.** Separar API, worker e relay é o que permite escalar leitura interativa
@@ -120,14 +121,16 @@ DEPOIS  handler → await service → await repository.get()  ──▶ pool ora
 
 O runtime seleciona exatamente um banco no boot por `DATABASE_PROVIDER=postgres|oracle`. A fábrica
 entrega um `DatabaseClient`/`DatabaseSession` assíncrono comum, e HTTP, TMF APIs, MCP e frontend
-mantêm os mesmos contratos. PostgreSQL usa o pool Neon direto; Oracle usa `node-oracledb` 7 em Thin
-mode. Configuração inválida, schema incompatível ou conexão indisponível falham o boot, sem fallback.
+mantêm os mesmos contratos. PostgreSQL usa `pg` com pool próprio (qualquer instância PostgreSQL
+comum — contêiner, RDS, on-prem — serve, sem depender de driver proprietário); Oracle usa
+`node-oracledb` 7 em Thin mode. Configuração inválida, schema incompatível ou conexão indisponível
+falham o boot, sem fallback.
 
 As migrations são versionadas por provider em `schema_migrations`. Em produção o runtime somente
 valida a versão; DDL usa credencial separada. UUID permanece `VARCHAR2(36 CHAR)`, JSON/GeoJSON usa
 `CLOB IS JSON`, booleanos usam `NUMBER(1)` e datas `TIMESTAMP(6) WITH TIME ZONE` nesta fase.
 
-`RAW(16)`, Oracle Spatial, VPD, Wallet/mTLS e Property Graph são evoluções posteriores de C10.
+`RAW(16)`, Oracle Spatial, VPD e Wallet/mTLS são evoluções posteriores de C10.
 
 Detalhe de particionamento, índices e paginação em [`data-model.md`](data-model.md). Decisões
 arquiteturais:
@@ -137,7 +140,7 @@ arquiteturais:
 | Alta disponibilidade | **RAC** para falha de nó + **Data Guard** para desastre                                                                                                                     |
 | Leitura analítica    | **Active Data Guard** como réplica de leitura para relatórios e cargas                                                                                                      |
 | Geoespacial          | **Oracle Spatial (`SDO_GEOMETRY`) com SRID geodésico** — SIRGAS 2000 (4674). Cobertura continental exige cálculo sobre o elipsoide; ver [`data-model.md`](data-model.md) §4 |
-| Path computation     | **Oracle Property Graph** para a travessia porta OLT → ONT (C10)                                                                                                            |
+| Path computation     | **SQL recursivo portável** para a travessia porta OLT → ONT — CTE recursiva no PostgreSQL, `CONNECT BY` no Oracle (C10)                                                     |
 | Identidade           | **UUID v7 em `RAW(16)`** — ordenável no tempo, evita fragmentação de índice (C5; hoje o código usa v4)                                                                      |
 
 > ⚠️ Guardar geometria como texto JSON é o maior gargalo latente do módulo Geo. Os 22M de HPs cobrem

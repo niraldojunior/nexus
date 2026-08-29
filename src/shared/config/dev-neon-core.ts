@@ -22,13 +22,13 @@ export const ensureDevDataDir = (cwd: string): string => {
 
 const missingDevDatabaseUrl = (): never => {
   throw new Error(
-    'DATABASE_URL_DEV or NEON_DATABASE_URL_DEV must point to a Neon/Postgres database.',
+    'DATABASE_URL_DEV or NEON_DATABASE_URL_DEV must point to a PostgreSQL database.',
   );
 };
 
 const requirePostgresDatabaseUrl = (value: string): string => {
   if (!value.startsWith('postgres://') && !value.startsWith('postgresql://')) {
-    throw new Error('DATABASE_URL must be a postgres:// or postgresql:// Neon connection string.');
+    throw new Error('DATABASE_URL must be a postgres:// or postgresql:// connection string.');
   }
   return value;
 };

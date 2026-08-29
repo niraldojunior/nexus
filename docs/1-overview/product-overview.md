@@ -104,11 +104,11 @@ Location, não os embute.
 | -------- | ----------------------------------------- |
 | Backend  | Node 22+ · TypeScript (ESM) · HTTP nativo |
 | Frontend | React 18 · Vite · Tailwind                |
-| Banco    | **Neon Postgres**                         |
+| Banco    | **PostgreSQL** (laboratório hospedado em Neon) e **Oracle** — dual, via `DATABASE_PROVIDER` |
 | Deploy   | Vercel (Functions + estático)             |
 
-> ⚠️ O cânone **C10** define Oracle 21c/23ai + Property Graph como alvo arquitetural. A implementação
-> atual roda em Neon Postgres. Trate C10 como destino, não como estado presente.
+> ⚠️ O cânone **C10** define Oracle como alvo corporativo homologado, com suporte nativo permanente a
+> PostgreSQL — não um modo transitório. Só a hospedagem em Vercel/Neon é laboratório.
 
 ---
 
@@ -177,7 +177,7 @@ O cenário que atravessa as três camadas e demonstra por que **Home Passed não
 | **Order & Party**               | Viabilidade, ordens e multi-tenant                 | ✅ Concluída                    |
 | **Carga de dados**              | Estações e recursos reais do Netwin                | ⚠️ Em andamento                 |
 | **Convergência ao cânone**      | UUID v7, `_origin`, outbox TMF688                  | 📐 Pendente                     |
-| **Escala**                      | Migração Oracle + Property Graph, 22M HPs          | 📐 Pendente                     |
+| **Escala**                      | Otimizações Oracle-native (`RAW(16)`, Spatial), benchmark de path computation em 22M HPs | 📐 Pendente |
 
 O descompasso entre cânone e implementação está consolidado em
 [`business-rules.md`](business-rules.md#resumo-do-descompasso-cânone--código).

@@ -1,19 +1,20 @@
 # Modelo de Dados
 
-> Modelo canônico do V.tal Nexus sobre **Oracle 21c/23ai**. Volumetria e alvos em
-> [`non-functional-requirements.md`](non-functional-requirements.md); decisões de arquitetura em
-> [`architecture.md`](architecture.md).
+> Modelo canônico do V.tal Nexus, suportado nativamente em **Oracle e PostgreSQL** (C10). O alvo
+> corporativo homologado é Oracle 21c/23ai; a instância disponível hoje é Oracle 19c EE. Volumetria e
+> alvos em [`non-functional-requirements.md`](non-functional-requirements.md); decisões de
+> arquitetura em [`architecture.md`](architecture.md).
 
 O modelo segue **TMF-first** (C1): entidade, atributo e relacionamento espelham o SID. Extensão V.tal
 entra como `characteristic` tipada via catálogo — nunca coluna nova.
 
-> Este é o modelo **alvo**. `_origin`, outbox, multi-tenancy completo e Property Graph permanecem
-> rastreados em [#157](https://github.com/niraldojunior/nexus/issues/157)–[#161](https://github.com/niraldojunior/nexus/issues/161).
+> Este é o modelo **alvo**. `_origin`, outbox e multi-tenancy completo permanecem rastreados em
+> [#157](https://github.com/niraldojunior/nexus/issues/157)–[#159](https://github.com/niraldojunior/nexus/issues/159).
 
 > **Baseline portável implementado:** PostgreSQL e Oracle compartilham constraints e relacionamentos
-> funcionais. No Oracle 21c/23ai desta fase, UUID usa `VARCHAR2(36 CHAR)`, datas usam
+> funcionais. No Oracle 19c desta fase, UUID usa `VARCHAR2(36 CHAR)`, datas usam
 > `TIMESTAMP(6) WITH TIME ZONE`, booleanos `NUMBER(1)` e JSON/GeoJSON `CLOB IS JSON`.
-> `RAW(16)` e `SDO_GEOMETRY` permanecem otimizações posteriores.
+> `RAW(16)` e `SDO_GEOMETRY` permanecem otimizações posteriores, no alvo Oracle 21c/23ai.
 
 ---
 
@@ -251,7 +252,7 @@ outro hemisfério. Cargas anteriores já sofreram com coordenada corrompida.
 > internamente o fallback para o Google — ver [`integrations.md`](integrations.md) §7. O que
 > permanece em aberto é a **capacidade de lote** para a carga inicial dos 22M endereços ([#90](https://github.com/niraldojunior/nexus/issues/90)).
 >
-> **Implementação atual (Neon Postgres, pré-migração Oracle — C10):** `sourceSystem`/`sourceRef` em
+> **Implementação atual (PostgreSQL, laboratório em Neon — Oracle Spatial pendente):** `sourceSystem`/`sourceRef` em
 > `tmf_geographic_location`/`tmf_geographic_address` e `accuracyLevel` em `tmf_geographic_location`
 > já existem no schema runtime, gravados pelo painel unificado de Local (REQ-MOD01-016,
 > `docs/2-functional-specs/01-module-geo.md` §21) — a coluna `DIMINFO`/`SDO_GEOM` acima permanece
@@ -371,7 +372,7 @@ domínio, e o compilador valida o mapeamento.
 
 | Onde                                                                 | O quê                                       |
 | -------------------------------------------------------------------- | ------------------------------------------- |
-| [`architecture.md`](architecture.md)                                 | Concorrência, pool, Spatial, Property Graph |
+| [`architecture.md`](architecture.md)                                 | Concorrência, pool, Spatial, path computation |
 | [`non-functional-requirements.md`](non-functional-requirements.md)   | Volumetria e alvos                          |
 | [`security.md`](security.md)                                         | Isolamento de tenant e auditoria            |
 | [`../1-overview/business-rules.md`](../1-overview/business-rules.md) | C1, C4, C5, C6, C8                          |

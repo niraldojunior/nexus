@@ -225,23 +225,37 @@ RelationshipType e parte dos lifecycles/versionamentos ainda estão pendentes ([
 
 ---
 
-## C10 — Oracle-native + Property Graph
+## C10 — Oracle-native + portabilidade PostgreSQL
 
-**Regra (alvo).** Stack Oracle 21c/23ai, com _path computation_ (porta OLT → ONT) via Oracle Property
-Graph sobre o inventário de Resources.
+**Regra.** O Nexus suporta nativamente **dois bancos** — Oracle e PostgreSQL —, selecionados por
+`DATABASE_PROVIDER` no boot. Ambos são de primeira classe: mesma suíte de testes, mesmo contrato de
+domínio, sem fallback silencioso e sem degradação de funcionalidade entre eles. Oracle é o alvo
+corporativo homologado da V.tal; PostgreSQL é suportado nativamente — não é um modo de compatibilidade
+nem uma etapa transitória a ser descontinuada.
 
-**Racional.** Rastrear o caminho óptico de ponta a ponta é uma consulta de grafo, não relacional:
-travessia de profundidade variável por portas, cabos, splitters e conexões. Fazer isso em SQL puro
-exige CTE recursiva cara; um property graph resolve nativamente.
+**Racional.** Portabilidade entre bancos preserva a independência de plataforma e mantém o domínio
+isolado de infraestrutura (P4 em [`architecture.md`](../3-system-design/architecture.md)). SQL é
+autorado em dialeto portável e traduzido em runtime por provider — path computation (porta OLT → ONT)
+é resolvido por travessia em SQL recursivo (CTE recursiva no PostgreSQL, `CONNECT BY` no Oracle), que
+funciona nos dois bancos sem depender de um recurso proprietário.
 
 **Confirmado como padrão corporativo.** Oracle é o banco padrão da V.tal, ao lado de OpenShift
 (aplicação), Redis (cache), Kafka (mensageria) e Apigee (API Gateway). C10 não é hipótese: é o alvo
 homologado.
 
-Status: 📐 **Previsto no design.** ⚠️ **A implementação atual roda em Neon Postgres**
-(`@neondatabase/serverless` + `pg`) sobre Vercel — **infraestrutura temporária de laboratório**.
-Trate C10 como destino arquitetural: **não** escreva SQL específico de Oracle no código atual, mas
-também não crie dependência de Postgres que dificulte a migração.
+**Property Graph foi descartado, não adiado.** Verificação direta contra a instância Oracle do
+projeto (Oracle Database 19c Enterprise Edition 19.10.0.0.0) mostrou que `CREATE PROPERTY GRAPH`
+(sintaxe SQL:2023) não é suportado (`ORA-00901: invalid CREATE command`) — esse recurso só chega em
+Oracle 23ai. Os únicos pacotes de grafo presentes na instância são os legados `OPG_APIS`/`OPG_PATH`,
+que exigem o produto separado Oracle Graph Server/PGX (com licenciamento próprio, nunca dimensionado
+— ver [#114](https://github.com/niraldojunior/nexus/issues/114)). Diante disso, a decisão é não
+implementar Property Graph: o path computation usa SQL recursivo portável, que já roda na versão de
+Oracle disponível e não amarra o Nexus a uma licença adicional.
+
+Status: ✅ **Implementado.** A seleção dual de provider já existe no runtime
+(`src/shared/persistence/database-factory.ts`) e roda contra Oracle e PostgreSQL. O laboratório atual
+hospeda o PostgreSQL em Neon — um detalhe de hospedagem, não uma dependência de plataforma: o runtime
+usa `pg` puro e qualquer PostgreSQL comum (contêiner, RDS, on-prem) serve sem mudar código.
 
 O desenho alvo completo sobre essa stack está em
 [`../3-system-design/architecture.md`](../3-system-design/architecture.md).
@@ -338,7 +352,6 @@ Consolidado das divergências apontadas acima, para quem for planejar a evoluç�
 | ------- | -------------------------------------------- | ----------------------------------------------------------- |
 | C5      | UUID v7 + grupo `_origin`                    | `randomUUID()` (v4); `_origin` inexistente                  |
 | C7      | Outbox transacional + Schema Registry        | Rotas TMF688 sem outbox                                     |
-| C10     | Oracle 21c/23ai + Property Graph             | Neon Postgres                                               |
 | C4      | 22M HPs como GeographicAddress               | Regra respeitada, carga não feita                           |
 | C8      | `relatedParty`, RBAC e isolamento por tenant | Party existe; cobertura transversal é parcial               |
 | C9      | Catálogos e RelationshipTypes governados     | Specifications parciais; tipos de relação sem CRUD completo |

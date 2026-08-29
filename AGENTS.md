@@ -10,7 +10,7 @@ Playbooks detalhados ficam em arquivos separados, lidos **sob demanda** (§9 e �
 
 **V.tal Nexus** — inventário de rede proprietário da V.tal, alinhado a **TM Forum ODA**. O repositório contém as duas metades do produto:
 
-- **Aplicação** — backend TypeScript/Node (`src/`, `api/`) + frontend React/Vite (`web/`), persistindo em Neon Postgres.
+- **Aplicação** — backend TypeScript/Node (`src/`, `api/`) + frontend React/Vite (`web/`), com persistência dual nativa em Oracle e PostgreSQL (`DATABASE_PROVIDER`).
 - **Especificação** — HLDs por módulo, design técnico, design system e plano de entrega (`docs/`).
 
 A V.tal é uma **infraestrutura de fibra neutra (wholesale)** — o cliente primário do serviço é, em regra, um **ISP (Tenant)**, não o usuário final. Esta premissa molda todo o domínio de serviço.
@@ -23,8 +23,8 @@ Node **22+**. Instale com `npm install`, copie `.env.example` para `.env` e ajus
 
 | Comando                         | O que faz                                                                                                                                                      |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run dev`                   | Stack local completa — backend em `127.0.0.1:4001`, Vite em `127.0.0.1:5200`. **Usa PowerShell** (`start-dev.ps1`); em shell POSIX use `dev:neon` + `web:dev`. |
-| `npm run dev:neon`              | Só o backend, contra o Neon de dev                                                                                                                             |
+| `npm run dev`                   | Stack local completa — backend em `127.0.0.1:4001`, Vite em `127.0.0.1:5200`. **Usa PowerShell** (`start-dev.ps1`); em shell POSIX use `dev:db` + `web:dev`. |
+| `npm run dev:db`                | Só o backend, contra o PostgreSQL de dev (respeita `DATABASE_PROVIDER`)                                                                                       |
 | `npm run web:dev`               | Só o frontend Vite                                                                                                                                             |
 | `npm run build`                 | Compila TypeScript para `dist/`                                                                                                                                |
 | `npm run typecheck`             | `tsc --noEmit` na raiz **e** em `web/`                                                                                                                         |
@@ -35,7 +35,7 @@ Node **22+**. Instale com `npm install`, copie `.env.example` para `.env` e ajus
 
 O **CI** (`.github/workflows/ci.yml`) roda, nesta ordem: `docs:check` → `lint` → `typecheck` → `build` → `test`. Rode ao menos `docs:check`, `lint` e `typecheck` antes de considerar uma mudança pronta.
 
-Setup de ambiente, variáveis do Vercel e layout Neon dev/prod: veja o [README.md](README.md).
+Setup de ambiente, variáveis do Vercel e layout PostgreSQL dev/prod: veja o [README.md](README.md).
 
 ---
 
@@ -43,7 +43,7 @@ Setup de ambiente, variáveis do Vercel e layout Neon dev/prod: veja o [README.m
 
 | Camada      | Comando                    | Runner                      | Escopo                                |
 | ----------- | -------------------------- | --------------------------- | ------------------------------------- |
-| Unit        | `npm run test:unit`        | Vitest (`vitest.config.ts`) | Testes sem banco e sem acesso ao Neon |
+| Unit        | `npm run test:unit`        | Vitest (`vitest.config.ts`) | Testes sem banco e sem acesso ao Postgres de dev |
 | Integration | `npm run test:integration` | Vitest                      | Path Oracle contra instância real     |
 | Regression  | `npm run test:regression`  | Playwright                  | E2E de browser contra Oracle          |
 
@@ -126,7 +126,7 @@ Estas decisões estão firmadas. Respeite-as; não as reabra sem pedido explíci
 | **C7**  | **Event-driven (TMF688)**           | Toda mudança relevante publica evento via outbox pattern, idempotente (UUID v7), schema versionado em Schema Registry.                                                                                                     |
 | **C8**  | **Multi-tenant / wholesale**        | `relatedParty` com Tenant desde a criação. No Service, o subscriber do CFS é tipicamente um Tenant ISP (`modelo_comercial = wholesale \| direto`).                                                                         |
 | **C9**  | **Catálogos extensíveis via API**   | RelationshipTypes e Specifications têm bootstrap canônico + CRUD via API com governança (Audit + TMF688). Sem listas fechadas hardcoded.                                                                                   |
-| **C10** | **Oracle-native + Property Graph**  | Alvo arquitetural: Oracle 21c/23ai, com path computation (porta OLT→ONT) via Property Graph. **A implementação atual roda em Neon Postgres** — trate C10 como destino, não como estado presente.                           |
+| **C10** | **Oracle-native + portabilidade PostgreSQL** | Nexus suporta nativamente Oracle e PostgreSQL via `DATABASE_PROVIDER`, ambos de primeira classe. Oracle é o alvo corporativo homologado da V.tal; PostgreSQL não é modo de compatibilidade. Path computation usa SQL recursivo portável (CTE recursiva / `CONNECT BY`), não Property Graph — descartado após verificação (instância real é Oracle 19c, sem `CREATE PROPERTY GRAPH`). |
 | **C11** | **Papel do site (`siteRole`)**      | Todo `GeographicSiteSpecification` tem um eixo funcional ortogonal a `category`: `grouping \| network \| property \| service` — o que o site É, não onde ele cabe na hierarquia. Vive na spec (catálogo), nunca hardcoded. |
 
 ---

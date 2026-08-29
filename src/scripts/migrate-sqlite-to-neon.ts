@@ -31,7 +31,7 @@ async function main(): Promise<void> {
 
   if (!targetUrl) {
     throw new Error(
-      'TARGET_DATABASE_URL or DATABASE_URL must be set to the Neon connection string before running this migration.',
+      'TARGET_DATABASE_URL or DATABASE_URL must be set to the target PostgreSQL connection string before running this migration.',
     );
   }
 

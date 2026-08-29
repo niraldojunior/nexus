@@ -272,16 +272,14 @@ export const resolveDatabaseUrl = (
 
 const requirePostgresUrl = (value: string | undefined, name: string): string => {
   if (!value) {
-    throw new Error(
-      `${name} must be set to a postgres:// or postgresql:// Neon connection string.`,
-    );
+    throw new Error(`${name} must be set to a postgres:// or postgresql:// connection string.`);
   }
   return assertPostgresUrl(value, name);
 };
 
 const assertPostgresUrl = (value: string, name: string): string => {
   if (!isPostgresDatabaseUrl(value)) {
-    throw new Error(`${name} must be a postgres:// or postgresql:// Neon connection string.`);
+    throw new Error(`${name} must be a postgres:// or postgresql:// connection string.`);
   }
   return value;
 };

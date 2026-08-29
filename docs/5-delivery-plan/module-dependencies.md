@@ -90,14 +90,14 @@ MOD01 + MOD02 em produção
 ```text
 MOD01/MOD02 estáveis
   -> modelo OSP completo
-  -> Property Graph dimensionado
+  -> path computation via SQL recursivo dimensionado
   -> pipeline NetworkCore + Octave EAM
   -> validação operacional Região 2
 ```
 
 ## 5. Dependências bloqueantes
 
-As dependências bloqueantes que este documento rastreava (stack Oracle/Property Graph, outbox/Kafka,
+As dependências bloqueantes que este documento rastreava (otimizações Oracle-native, outbox/Kafka,
 catálogos iniciais, interface do Geosite, IPAM legado, ServiceSpecification/SubscriberID e RBAC/audit
 mínimo) vivem agora como issues no GitHub, com a label `mod:plataforma` ou a label do módulo
 correspondente: [github.com/niraldojunior/nexus/issues?q=is:open](https://github.com/niraldojunior/nexus/issues?q=is%3Aopen).

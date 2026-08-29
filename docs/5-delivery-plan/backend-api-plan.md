@@ -4,14 +4,14 @@
 
 ## 1. Base publicada
 
-| Domínio       | Contrato atual                                                      | Evidência principal                                                        | Estado frente aos HLDs                                   |
-| ------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Geographic    | TMF673, TMF674, TMF675; `/v1/geo/tree/*`; criação `site-at-address` | `src/shared/http/app.ts`, `src/modules/geo/`, `web/src/services/geoApi.ts` | Base ativa; gaps DEV-GEO-001–006                         |
-| Resource      | TMF634, TMF639, TMF664; `/v1/resource/workspace`                    | `src/modules/resource/`, `web/src/services/resourceApi.ts`                 | Base ativa; gaps DEV-RES-001–006                         |
-| Service       | TMF633, TMF638; `/v1/service/workspace`                             | `src/modules/service/`, `web/src/services/serviceApi.ts`                   | Base ativa; gaps DEV-SVC-001–006                         |
-| Party / Order | TMF632, TMF669, TMF645, TMF641, TMF652                              | `src/modules/party/`, `src/modules/order/`                                 | Base ativa; governança transversal parcial               |
-| Event         | TMF688 sobre `tmf_event`                                            | `src/shared/http/app.ts`, repositórios Postgres                            | API ativa; outbox/registry pendentes em DEV-X-002        |
-| Copilot / MCP | Chat, catálogo de tools, confirmação antes de writes                | `src/modules/search/`, `src/modules/mcp/`, `/v1/chat/completions`          | Integração ativa; mantém as mesmas validações de domínio |
+| Domínio       | Contrato atual                                                      | Evidência principal                                                        | Estado frente aos HLDs                                                                                                               |
+| ------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Geographic    | TMF673, TMF674, TMF675; `/v1/geo/tree/*`; criação `site-at-address` | `src/shared/http/app.ts`, `src/modules/geo/`, `web/src/services/geoApi.ts` | Base ativa; gaps [#130](https://github.com/niraldojunior/nexus/issues/130)–[#135](https://github.com/niraldojunior/nexus/issues/135) |
+| Resource      | TMF634, TMF639, TMF664; `/v1/resource/workspace`                    | `src/modules/resource/`, `web/src/services/resourceApi.ts`                 | Base ativa; gaps [#142](https://github.com/niraldojunior/nexus/issues/142)–[#147](https://github.com/niraldojunior/nexus/issues/147) |
+| Service       | TMF633, TMF638; `/v1/service/workspace`                             | `src/modules/service/`, `web/src/services/serviceApi.ts`                   | Base ativa; gaps [#151](https://github.com/niraldojunior/nexus/issues/151)–[#156](https://github.com/niraldojunior/nexus/issues/156) |
+| Party / Order | TMF632, TMF669, TMF645, TMF641, TMF652                              | `src/modules/party/`, `src/modules/order/`                                 | Base ativa; governança transversal parcial                                                                                           |
+| Event         | TMF688 sobre `tmf_event`                                            | `src/shared/http/app.ts`, repositórios Postgres                            | API ativa; outbox/registry pendentes em [#158](https://github.com/niraldojunior/nexus/issues/158)                                    |
+| Copilot / MCP | Chat, catálogo de tools, confirmação antes de writes                | `src/modules/search/`, `src/modules/mcp/`, `/v1/chat/completions`          | Integração ativa; mantém as mesmas validações de domínio                                                                             |
 
 ## 2. Rotas existentes relevantes
 
@@ -33,20 +33,20 @@ CRUD, filtros e paginação variam por recurso; o contrato exato continua defini
 
 Os contratos abaixo são alvo funcional e **não devem ser tratados como endpoints existentes**.
 
-| Capacidade proposta                            | Contrato afetado                | Backlog                |
-| ---------------------------------------------- | ------------------------------- | ---------------------- |
-| Consultas espaciais completas e export GeoJSON | extensão TMF675 / Geo workspace | DEV-GEO-001            |
-| Bulk de Address/Site                           | extensão TMF673/674             | DEV-GEO-006            |
-| CRUD governado de GeographicRelationshipType   | catálogo transversal            | DEV-X-003              |
-| CRUD governado de ResourceRelationshipType     | TMF639 / catálogo               | DEV-RES-006            |
-| Path computation OLT→ONT                       | endpoint de graph a definir     | DEV-RES-003, DEV-X-005 |
-| Bulk e histórico semântico de Resource         | TMF639                          | DEV-RES-002            |
-| Operações IPAM/pools                           | TMF639 LogicalResource          | DEV-RES-005            |
-| Bulk, `fields` e histórico de Service          | TMF638                          | DEV-SVC-002            |
-| Emissão/reconciliação de SubscriberID          | TMF638 + Party/Tenant           | DEV-SVC-003            |
-| Impacto e propagação Resource→RFS→CFS          | TMF638/TMF688                   | DEV-SVC-004            |
-| CRUD governado de ServiceRelationshipType      | TMF638 / catálogo               | DEV-SVC-006            |
-| Outbox, relay, Schema Registry, DLQ e replay   | TMF688                          | DEV-X-002              |
+| Capacidade proposta                            | Contrato afetado                | Backlog                                                                                                              |
+| ---------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Consultas espaciais completas e export GeoJSON | extensão TMF675 / Geo workspace | [#130](https://github.com/niraldojunior/nexus/issues/130)                                                            |
+| Bulk de Address/Site                           | extensão TMF673/674             | [#135](https://github.com/niraldojunior/nexus/issues/135)                                                            |
+| CRUD governado de GeographicRelationshipType   | catálogo transversal            | [#159](https://github.com/niraldojunior/nexus/issues/159)                                                            |
+| CRUD governado de ResourceRelationshipType     | TMF639 / catálogo               | [#147](https://github.com/niraldojunior/nexus/issues/147)                                                            |
+| Path computation OLT→ONT                       | endpoint de graph a definir     | [#144](https://github.com/niraldojunior/nexus/issues/144), [#161](https://github.com/niraldojunior/nexus/issues/161) |
+| Bulk e histórico semântico de Resource         | TMF639                          | [#143](https://github.com/niraldojunior/nexus/issues/143)                                                            |
+| Operações IPAM/pools                           | TMF639 LogicalResource          | [#146](https://github.com/niraldojunior/nexus/issues/146)                                                            |
+| Bulk, `fields` e histórico de Service          | TMF638                          | [#152](https://github.com/niraldojunior/nexus/issues/152)                                                            |
+| Emissão/reconciliação de SubscriberID          | TMF638 + Party/Tenant           | [#153](https://github.com/niraldojunior/nexus/issues/153)                                                            |
+| Impacto e propagação Resource→RFS→CFS          | TMF638/TMF688                   | [#154](https://github.com/niraldojunior/nexus/issues/154)                                                            |
+| CRUD governado de ServiceRelationshipType      | TMF638 / catálogo               | [#156](https://github.com/niraldojunior/nexus/issues/156)                                                            |
+| Outbox, relay, Schema Registry, DLQ e replay   | TMF688                          | [#158](https://github.com/niraldojunior/nexus/issues/158)                                                            |
 
 ## 4. Regras de evolução
 
@@ -56,19 +56,19 @@ Os contratos abaixo são alvo funcional e **não devem ser tratados como endpoin
 - Writes de Copilot/MCP exigem confirmação e passam pelo mesmo service de domínio das APIs.
 - Nenhum `DELETE` físico é introduzido; usar soft-delete/terminate.
 - Todo novo endpoint entra com contrato, erro, paginação aplicável, evento, autorização e teste.
-- Neon Postgres é a persistência atual; adapter Oracle/Property Graph pertence a DEV-X-005.
+- Neon Postgres é a persistência atual; adapter Oracle/Property Graph pertence a [#161](https://github.com/niraldojunior/nexus/issues/161).
 
 ## 5. Critério de pronto por API
 
-| Dimensão     | Critério                                                                      |
-| ------------ | ----------------------------------------------------------------------------- |
-| Contrato     | Payload TMF válido, `@type`/`@referredType`, filtros e resposta documentados. |
-| Domínio      | RF/RN/CA do requisito e fronteiras C1–C10 validados.                          |
-| Persistência | Operação transacional, concorrência e soft-delete/terminate cobertos.         |
-| Eventos      | Evento TMF688 idempotente e, após DEV-X-002, outbox/registry comprovados.     |
-| Segurança    | Tenant, role e audit comprovados para leitura/write.                          |
-| Qualidade    | Unitário + integração; E2E quando houver fluxo de UI/MCP.                     |
-| Documentação | Matriz 2.3 e item `DEV-*` atualizados na mesma entrega.                       |
+| Dimensão     | Critério                                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| Contrato     | Payload TMF válido, `@type`/`@referredType`, filtros e resposta documentados.                                             |
+| Domínio      | RF/RN/CA do requisito e fronteiras C1–C10 validados.                                                                      |
+| Persistência | Operação transacional, concorrência e soft-delete/terminate cobertos.                                                     |
+| Eventos      | Evento TMF688 idempotente e, após [#158](https://github.com/niraldojunior/nexus/issues/158), outbox/registry comprovados. |
+| Segurança    | Tenant, role e audit comprovados para leitura/write.                                                                      |
+| Qualidade    | Unitário + integração; E2E quando houver fluxo de UI/MCP.                                                                 |
+| Documentação | Matriz 2.3 e item `DEV-*` atualizados na mesma entrega.                                                                   |
 
 ---
 

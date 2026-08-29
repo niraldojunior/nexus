@@ -14,11 +14,11 @@ Consequências para o uso desta fonte:
 
 Três coisas diferentes carregam a palavra "Geosite" no material do Nexus. Só a primeira é o objeto deste arquivo:
 
-| Nome                    | O que é                                                                                                              | Onde aparece                                             |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| **Geosite-Legado**      | Inventário georreferenciado de planta externa a ser substituído. Objeto deste arquivo, tratado como anti-referência. | Aqui; `../../3-system-design/integrations.md`; Q-INT-005 |
-| **Geosite Logradouros** | Provedor de endereço e geocodificação, premissa canônica (D-GEO-002). Permanece.                                     | `01-module-geo.md` REQ-MOD01-002                         |
-| **Geosite OSP**         | Base cartográfica e camadas pré-configuradas reaproveitadas pelo mapa. Permanece.                                    | `01-module-geo.md` REQ-MOD01-011                         |
+| Nome                    | O que é                                                                                                              | Onde aparece                                                                                           |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Geosite-Legado**      | Inventário georreferenciado de planta externa a ser substituído. Objeto deste arquivo, tratado como anti-referência. | Aqui; `../../3-system-design/integrations.md`; [#90](https://github.com/niraldojunior/nexus/issues/90) |
+| **Geosite Logradouros** | Provedor de endereço e geocodificação, premissa canônica (D-GEO-002). Permanece.                                     | `01-module-geo.md` REQ-MOD01-002                                                                       |
+| **Geosite OSP**         | Base cartográfica e camadas pré-configuradas reaproveitadas pelo mapa. Permanece.                                    | `01-module-geo.md` REQ-MOD01-011                                                                       |
 
 ---
 
@@ -122,7 +122,7 @@ Registradas como enunciadas pelo entrevistado, sem tradução para o vocabulári
 | Caixa e arco sem linha de duto                | Motor de integridade e completude com varredura periódica, catálogo de regras administrável e findings rastreáveis.                               | REQ-MOD02-027                                                             |
 | Cadastro complexo e sequencial                | Materialização de filhos a partir da Specification, em uma transação.                                                                             | REQ-MOD02-028                                                             |
 | Rastreabilidade até o ativo físico            | Trajeto óptico **e** civil; impacto reverso de ativo de OSP até o CFS.                                                                            | REQ-MOD02-012, REQ-MOD03-008                                              |
-| Ativo corporativo (SAP)                       | Grupo de characteristics `_asset`, distinto de `_origin` (C5); o ERP permanece dono do estoque e da contabilização.                               | REQ-MOD02-005, `Q-RES-013`                                                |
+| Ativo corporativo (SAP)                       | Grupo de characteristics `_asset`, distinto de `_origin` (C5); o ERP permanece dono do estoque e da contabilização.                               | REQ-MOD02-005, [#120](https://github.com/niraldojunior/nexus/issues/120)  |
 
 ---
 

@@ -21,7 +21,7 @@ Replique **exatamente** esta espinha:
 8. **Cenários ilustrativos** — 2–3 cenários ASCII end-to-end atravessando os 3 módulos + padrões reaproveitáveis.
 9. **Síntese arquitetural.**
 10. **Contratos com outros módulos** — tabela Módulo × tipo de consumo × detalhe.
-11. **Questões e decisões** — apenas perguntas pendentes usam `Q-GEO-*`, `Q-RES-*` ou `Q-SVC-*` e devem existir no registro central. Decisões resolvidas usam `D-*`; um ID Q resolvido não é reutilizado.
+11. **Questões e decisões** — perguntas pendentes viram GitHub Issue (`tipo:decisão`, `mod:geo`/`mod:resource`/`mod:service`); a seção aponta para o filtro de issues do módulo, sem tabela local. Decisões resolvidas usam `D-*` e vivem em `../5-delivery-plan/architecture-decisions.md` §2; um ID `D-*` resolvido não é reutilizado.
 12. **Controle de revisões.**
 13. Rodapé: `*V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA*`
 
@@ -50,10 +50,10 @@ Requisitos **ilustrativos** (serviços ou cenários concretos como GPON, CloudVo
 
 ### 2.1 Estado da especificação e da implementação
 
-- Metadado do requisito: `Status funcional: Especificado` ou `Bloqueado por Q-*`.
+- Metadado do requisito: `Status funcional: Especificado` ou `Bloqueado por #<issue>`.
 - Matriz 2.3: `Implementado`, `Parcial`, `Não implementado` ou `Divergente`.
 - `Implementado` exige evidência de código **e teste** para todos os comportamentos obrigatórios.
-- Todo gap tem ao menos um item `DEV-*` em `../5-delivery-plan/technical-backlog.md`.
+- Todo gap tem ao menos uma GitHub Issue com label `tipo:lacuna` referenciada nas colunas Bloqueador/Backlog da matriz 2.3.
 - Evidências usam arquivo ou símbolo, sem número de linha; UI de produção é verificada em `web/src`.
 
 ---
@@ -81,7 +81,7 @@ Cenários já validados e documentados:
 
 - Atualize o **Controle de revisões** do documento editado.
 - Reflita o impacto no `../1-overview/product-overview.md` (status do módulo, questões consolidadas).
-- Atualize a matriz 2.3, o item `DEV-*` correspondente e o registro central de questões/decisões.
+- Atualize a matriz 2.3 e a issue correspondente no GitHub (`tipo:decisão`/`tipo:lacuna`).
 - Execute `npm run docs:check`; o CI aplica a mesma validação.
 
 ---

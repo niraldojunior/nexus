@@ -51,21 +51,21 @@ _referencia_ geografia via `place`. Nenhum contém o outro.
 
 ## 4. Módulos e estado real
 
-| #   | Módulo                    | Responde                                | Open APIs              | Estado                                                                                                                                     |
-| --- | ------------------------- | --------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| #   | Módulo                    | Responde                                | Open APIs              | Estado                                                                                                                                                   |
+| --- | ------------------------- | --------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | **Geographic**            | Onde                                    | TMF673, TMF674, TMF675 | ⚠️ Base implementada; aderência parcial ao HLD 1.17 (inclui Cobertura GPON por bairro, Projetos de Trabalho com Resources e o Painel Unificado de Local) |
-| 2   | **Resource**              | O que existe                            | TMF634, TMF639, TMF664 | ⚠️ Base implementada; aderência parcial ao HLD 1.4                                                                                         |
-| 3   | **Service**               | Para quê / quem                         | TMF633, TMF638         | ⚠️ Base implementada; aderência parcial ao HLD 1.2                                                                                         |
-| 4   | **Order & Fulfillment**   | Viabilidade e provisionamento           | TMF641, TMF645, TMF652 | ✅ Implementado                                                                                                                            |
-| 5   | **Process Orchestration** | Fluxo de processo                       | TMF701                 | 📐 Previsto                                                                                                                                |
-| 6   | **Party & Tenant**        | Quem é quem                             | TMF632, TMF669         | ✅ Implementado                                                                                                                            |
-| 7   | **Analytics & Events**    | Eventos e documentos                    | TMF688, TMF724         | ⚠️ TMF688 ativo; TMF724 previsto                                                                                                           |
-| —   | **Search / Copilot**      | Consulta em linguagem natural           | —                      | ✅ Implementado                                                                                                                            |
-| —   | **MCP**                   | Exposição das APIs TMF a clientes de IA | —                      | ✅ Implementado                                                                                                                            |
+| 2   | **Resource**              | O que existe                            | TMF634, TMF639, TMF664 | ⚠️ Base implementada; aderência parcial ao HLD 1.4                                                                                                       |
+| 3   | **Service**               | Para quê / quem                         | TMF633, TMF638         | ⚠️ Base implementada; aderência parcial ao HLD 1.2                                                                                                       |
+| 4   | **Order & Fulfillment**   | Viabilidade e provisionamento           | TMF641, TMF645, TMF652 | ✅ Implementado                                                                                                                                          |
+| 5   | **Process Orchestration** | Fluxo de processo                       | TMF701                 | 📐 Previsto                                                                                                                                              |
+| 6   | **Party & Tenant**        | Quem é quem                             | TMF632, TMF669         | ✅ Implementado                                                                                                                                          |
+| 7   | **Analytics & Events**    | Eventos e documentos                    | TMF688, TMF724         | ⚠️ TMF688 ativo; TMF724 previsto                                                                                                                         |
+| —   | **Search / Copilot**      | Consulta em linguagem natural           | —                      | ✅ Implementado                                                                                                                                          |
+| —   | **MCP**                   | Exposição das APIs TMF a clientes de IA | —                      | ✅ Implementado                                                                                                                                          |
 
 Legenda: ✅ contrato entregue · ⚠️ base executável com gaps rastreados · 📐 previsto no design.
 
-As matrizes `2.3 Aderência ao codebase atual` dos três HLDs são a fonte detalhada por requisito. Elas distinguem maturidade da especificação, cobertura real em código/teste e backlog `DEV-*`.
+As matrizes `2.3 Aderência ao codebase atual` dos três HLDs são a fonte detalhada por requisito. Elas distinguem maturidade da especificação, cobertura real em código/teste e o backlog de lacunas, rastreado como issues no GitHub (label `tipo:lacuna`).
 
 ---
 
@@ -169,15 +169,15 @@ O cenário que atravessa as três camadas e demonstra por que **Home Passed não
 
 ## 9. Roadmap
 
-| Fase                            | Objetivo                                           | Estado                    |
-| ------------------------------- | -------------------------------------------------- | ------------------------- |
-| **Fundação**                    | Bootstrap, config, persistência, auth, logging, CI | ✅ Concluída              |
-| **Tríade — base**               | Geographic, Resource e Service com Open APIs TMF   | ✅ Concluída              |
-| **Tríade — aderência aos HLDs** | Fechar gaps dos 57 requisitos e decisões pendentes | ⚠️ Em andamento (`DEV-*`) |
-| **Order & Party**               | Viabilidade, ordens e multi-tenant                 | ✅ Concluída              |
-| **Carga de dados**              | Estações e recursos reais do Netwin                | ⚠️ Em andamento           |
-| **Convergência ao cânone**      | UUID v7, `_origin`, outbox TMF688                  | 📐 Pendente               |
-| **Escala**                      | Migração Oracle + Property Graph, 22M HPs          | 📐 Pendente               |
+| Fase                            | Objetivo                                           | Estado                          |
+| ------------------------------- | -------------------------------------------------- | ------------------------------- |
+| **Fundação**                    | Bootstrap, config, persistência, auth, logging, CI | ✅ Concluída                    |
+| **Tríade — base**               | Geographic, Resource e Service com Open APIs TMF   | ✅ Concluída                    |
+| **Tríade — aderência aos HLDs** | Fechar gaps dos 57 requisitos e decisões pendentes | ⚠️ Em andamento (GitHub Issues) |
+| **Order & Party**               | Viabilidade, ordens e multi-tenant                 | ✅ Concluída                    |
+| **Carga de dados**              | Estações e recursos reais do Netwin                | ⚠️ Em andamento                 |
+| **Convergência ao cânone**      | UUID v7, `_origin`, outbox TMF688                  | 📐 Pendente                     |
+| **Escala**                      | Migração Oracle + Property Graph, 22M HPs          | 📐 Pendente                     |
 
 O descompasso entre cânone e implementação está consolidado em
 [`business-rules.md`](business-rules.md#resumo-do-descompasso-cânone--código).

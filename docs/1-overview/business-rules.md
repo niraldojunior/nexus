@@ -206,7 +206,7 @@ cliente final.
 > explícito.
 
 Status: ⚠️ **Parcial** — o módulo `party` e TMF632/TMF669 existem, mas RBAC, segregação por tenant e
-`relatedParty` obrigatório ainda não cobrem todos os writes (DEV-X-004).
+`relatedParty` obrigatório ainda não cobrem todos os writes ([#160](https://github.com/niraldojunior/nexus/issues/160)).
 
 ---
 
@@ -220,8 +220,8 @@ exige deploy, o inventário fica permanentemente atrasado em relação à realid
 operação passa a usar planilha paralela, que é o problema que o Nexus existe para resolver.
 
 Status: ⚠️ **Parcial** — Specifications possuem bootstrap e APIs, mas os catálogos governados de
-RelationshipType e parte dos lifecycles/versionamentos ainda estão pendentes (DEV-X-003,
-DEV-RES-006 e DEV-SVC-006).
+RelationshipType e parte dos lifecycles/versionamentos ainda estão pendentes ([#159](https://github.com/niraldojunior/nexus/issues/159),
+[#147](https://github.com/niraldojunior/nexus/issues/147) e [#156](https://github.com/niraldojunior/nexus/issues/156)).
 
 ---
 
@@ -277,10 +277,10 @@ objetos reais, e o que é aresta vira consulta computada. Materializações conc
 | `01-module-geo.md` §4.7 e `02-module-resource.md` §4.8 | Princípio declarado nos dois módulos                                                          |
 
 Status: 📐 **Previsto no design** — declarado nos HLDs 1 e 2; a implementação está nos itens
-`DEV-RES-007` e `DEV-RES-008`.
+[#148](https://github.com/niraldojunior/nexus/issues/148) e [#149](https://github.com/niraldojunior/nexus/issues/149).
 
 > A promoção deste princípio a decisão canônica numerada — e a consequente atualização da tabela
-> do `AGENTS.md` — depende de Q-ARQ-003, que decide se decisões novas expandem a lista C1–C11 ou
+> do `AGENTS.md` — depende de [#92](https://github.com/niraldojunior/nexus/issues/92), que decide se decisões novas expandem a lista C1–C11 ou
 > passam a viver em `docs/3-system-design/adr/`. Até lá, ele vale como princípio transversal
 > registrado aqui. (O slot C11 já foi ocupado pela decisão do papel do site — ver abaixo.)
 
@@ -293,12 +293,12 @@ Status: 📐 **Previsto no design** — declarado nos HLDs 1 e 2; a implementaç
 `siteRole` (funcional: `grouping | network | property | service`, **o que** o nó é). O papel vive
 na spec, não no site — herda de C1 (extensão via catálogo, nunca campo hardcoded).
 
-| `siteRole` | Rótulo pt-BR    | Exemplos de spec                                                                       |
-| ---------- | --------------- | --------------------------------------------------------------------------------------- |
-| `grouping` | Agrupamento     | `REGION`, `FUNCTIONAL_GROUP`                                                            |
-| `network`  | Site de Rede    | `CO`, `POP`, `CABINET`, `FLOOR`, `ROOM`, `CAGE`, unidades remotas, salas técnicas        |
-| `property` | Imóvel          | `CONDOMINIUM`, `BLOCK`, `BUILDING`                                                      |
-| `service`  | Site de Serviço | `CUSTOMER_SITE` (unidade atendida: casa, apartamento)                                   |
+| `siteRole` | Rótulo pt-BR    | Exemplos de spec                                                                  |
+| ---------- | --------------- | --------------------------------------------------------------------------------- |
+| `grouping` | Agrupamento     | `REGION`, `FUNCTIONAL_GROUP`                                                      |
+| `network`  | Site de Rede    | `CO`, `POP`, `CABINET`, `FLOOR`, `ROOM`, `CAGE`, unidades remotas, salas técnicas |
+| `property` | Imóvel          | `CONDOMINIUM`, `BLOCK`, `BUILDING`                                                |
+| `service`  | Site de Serviço | `CUSTOMER_SITE` (unidade atendida: casa, apartamento)                             |
 
 **Racional — os dois casos que motivaram a decisão.**
 
@@ -316,7 +316,7 @@ como `GeographicSiteSpecification`, mas conceitualmente é recurso de rede (capa
 `projected → built → available → reserved → in_use → decommissioned`), não lugar. A spec foi
 aposentada (`lifecycleStatus: Retired`, C6 — nunca DELETE físico); o cadastro existente migrou
 para `CUSTOMER_SITE`. O PI como `PhysicalResource` de primeira classe no Módulo 2 fica registrado
-como dívida em `docs/1-overview/open-questions.md` (Q-GEO-012).
+como dívida na issue [#110](https://github.com/niraldojunior/nexus/issues/110).
 
 **Onde se aplica.** Bootstrap de catálogo (`BOOTSTRAP_SPECIFICATIONS`, `src/modules/geo/service.ts`),
 CRUD de spec (`TypeManagementModal`), resolução de ícone/rótulo de site no mapa

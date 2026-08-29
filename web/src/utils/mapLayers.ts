@@ -193,8 +193,8 @@ const RESOURCE_LAYER_BY_TYPE: Partial<Record<string, MapLayerId>> = {
 // Camada de site por papel funcional. `sublabel` da feature guarda o code da spec (ver
 // map-feature-synchronizer.ts) — o catálogo de specs já está em memória no front
 // (GeoPage carrega `specs`), então o roteamento é resolvido aqui sem coluna nova em
-// `geo_map_feature` nem rebuild do índice de 1.5M+ linhas (dívida server-side registrada em
-// Q-GEO-013, docs/1-overview/open-questions.md).
+// `geo_map_feature` nem rebuild do índice de 1.5M+ linhas (dívida server-side registrada na
+// issue https://github.com/niraldojunior/nexus/issues/111).
 //
 // Só existem duas camadas de site hoje (Sites de Rede / Sites de Serviço): qualquer papel
 // diferente de "service" (grouping, network, property) ou desconhecido cai em Sites de Rede.

@@ -8,7 +8,7 @@ O modelo segue **TMF-first** (C1): entidade, atributo e relacionamento espelham 
 entra como `characteristic` tipada via catálogo — nunca coluna nova.
 
 > Este é o modelo **alvo**. `_origin`, outbox, multi-tenancy completo e Property Graph permanecem
-> rastreados em DEV-X-001–005.
+> rastreados em [#157](https://github.com/niraldojunior/nexus/issues/157)–[#161](https://github.com/niraldojunior/nexus/issues/161).
 
 > **Baseline portável implementado:** PostgreSQL e Oracle compartilham constraints e relacionamentos
 > funcionais. No Oracle 21c/23ai desta fase, UUID usa `VARCHAR2(36 CHAR)`, datas usam
@@ -238,18 +238,18 @@ A agregação usa o **código** do município/UF como chave — não o polígono
 Em escala continental, latitude e longitude trocadas não geram erro — geram um ponto no oceano ou em
 outro hemisfério. Cargas anteriores já sofreram com coordenada corrompida.
 
-| Validação                | Como                                                                  |
-| ------------------------ | --------------------------------------------------------------------- |
-| Dentro do território     | `DIMINFO` (§4.3) + caixa por UF                                       |
-| Geometria válida         | `SDO_GEOM.VALIDATE_GEOMETRY_WITH_CONTEXT`                             |
-| Coerência com o endereço | Ponto deve cair no polígono do município declarado                    |
-| Sem coordenada           | Marcado para curadoria; **fica fora da viabilidade** até geocodificar |
-| Procedência               | `sourceSystem`/`sourceRef` — de qual fonte externa veio a coordenada/endereço (GEONET, Google Maps, um sistema legado migrado, ou cadastro manual) |
-| Precisão                  | `accuracyLevel` (`high\|medium\|low\|unknown`) — normalização do texto cru de precisão da fonte, para comparar candidatos de bases divergentes sem repetir o vocabulário de cada uma |
+| Validação                | Como                                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Dentro do território     | `DIMINFO` (§4.3) + caixa por UF                                                                                                                                                      |
+| Geometria válida         | `SDO_GEOM.VALIDATE_GEOMETRY_WITH_CONTEXT`                                                                                                                                            |
+| Coerência com o endereço | Ponto deve cair no polígono do município declarado                                                                                                                                   |
+| Sem coordenada           | Marcado para curadoria; **fica fora da viabilidade** até geocodificar                                                                                                                |
+| Procedência              | `sourceSystem`/`sourceRef` — de qual fonte externa veio a coordenada/endereço (GEONET, Google Maps, um sistema legado migrado, ou cadastro manual)                                   |
+| Precisão                 | `accuracyLevel` (`high\|medium\|low\|unknown`) — normalização do texto cru de precisão da fonte, para comparar candidatos de bases divergentes sem repetir o vocabulário de cada uma |
 
 > A geocodificação é provida pelo **Geosite Logradouros** (base DNE + módulo Geonet), que abstrai
 > internamente o fallback para o Google — ver [`integrations.md`](integrations.md) §7. O que
-> permanece em aberto é a **capacidade de lote** para a carga inicial dos 22M endereços (`Q-INT-005`).
+> permanece em aberto é a **capacidade de lote** para a carga inicial dos 22M endereços ([#90](https://github.com/niraldojunior/nexus/issues/90)).
 >
 > **Implementação atual (Neon Postgres, pré-migração Oracle — C10):** `sourceSystem`/`sourceRef` em
 > `tmf_geographic_location`/`tmf_geographic_address` e `accuracyLevel` em `tmf_geographic_location`

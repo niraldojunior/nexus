@@ -9,7 +9,7 @@
 > ⚠️ O Vercel + Neon Postgres usado hoje é **infraestrutura temporária de laboratório**. Todo desenho
 > aqui assume a stack corporativa. Onde há divergência com o código atual, ela está sinalizada.
 > A cobertura funcional atual não é inferida deste desenho-alvo: use as matrizes 2.3 dos HLDs e o
-> [`technical-backlog.md`](../5-delivery-plan/technical-backlog.md).
+> [backlog de lacunas no GitHub Issues](https://github.com/niraldojunior/nexus/issues?q=is%3Aopen+label%3Atipo%3Alacuna).
 
 ---
 

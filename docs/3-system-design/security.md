@@ -11,8 +11,8 @@
 > **Histórico:** este documento nasceu descrevendo um backend que validava um único token estático
 > global, sem identidade, sem tenant, sem papéis e sem auditoria — bloqueador de go-live declarado.
 > As Fases 1–4 de uma auditoria de gaps (issue #80, ago/2026) fecharam a maior parte disso sem
-> depender do Apigee nem da migração Oracle. O que resta está listado no fim desta seção e em
-> [`../1-overview/open-questions.md`](../1-overview/open-questions.md) (`Q-ARQ-008` a `Q-ARQ-015`).
+> depender do Apigee nem da migração Oracle. O que resta está listado no fim desta seção e no
+> GitHub Issues, label `mod:plataforma` ([#94](https://github.com/niraldojunior/nexus/issues/94) a [#101](https://github.com/niraldojunior/nexus/issues/101)).
 
 **Identidade e token estático.** Já existe um **IdP local** — login por e-mail/senha (scrypt) que
 emite JWT HS256 com os mesmos claims que o Apigee injetaria (`sub`, `tenant_id`, `roles`, `exp`,
@@ -28,7 +28,7 @@ lado resource-server permanece intacto.
 Order e Event — seguindo a matriz de papéis abaixo, além das rotas de usuários e histórico de
 pesquisa Geo que já tinham RBAC antes. Exceção conhecida: o caminho MCP/Copilot
 (`mcpModule.registry.executeTool`) usa um esquema de permissões próprio e não passa por este RBAC
-nem pelo isolamento de tenant (`Q-ARQ-014`).
+nem pelo isolamento de tenant ([#100](https://github.com/niraldojunior/nexus/issues/100)).
 
 **Isolamento multi-tenant (§4).** `tenant_id` existe e é filtrado em Resource (instâncias e
 catálogo), Service (catálogo), Order (Service/Resource Order e Service Qualification) e,
@@ -36,7 +36,7 @@ parcialmente, Party — listagens de Party filtram por tenant, mas a leitura por
 cross-tenant de propósito (Party é o diretório de "quem", incluindo fabricantes de catálogo
 referenciados por qualquer tenant). Suíte de isolamento em
 `test/tenant-isolation.integration.spec.ts`. VPD no Oracle (defesa em profundidade adicional) segue
-pendente da migração (`Q-ARQ-008`).
+pendente da migração ([#94](https://github.com/niraldojunior/nexus/issues/94)).
 
 **Auditoria (§5).** `tmf_audit_log` e `tmf_outbox` (C7) agora são escritos por Resource, Service,
 Order e Party, não só pelo Geo — via helper compartilhado
@@ -95,7 +95,7 @@ Geo já faz (`GeoService.assertRole`), reforçado mesmo se algum caminho não-HT
 chamar o serviço direto. Party/Resource/Service/Order impõem RBAC na **borda HTTP**
 (`requireRoles` em `app.ts`, antes de despachar) — mais rápido de implementar em quatro módulos de
 uma vez, mas não protege uma chamada de serviço que não passe pela rota (é exatamente o gap do
-caminho MCP/Copilot, `Q-ARQ-014`). Migrar esses quatro módulos para o padrão do Geo é trabalho
+caminho MCP/Copilot, [#100](https://github.com/niraldojunior/nexus/issues/100)). Migrar esses quatro módulos para o padrão do Geo é trabalho
 futuro, não urgente enquanto o único outro chamador (MCP) ainda não passa por RBAC nenhum.
 
 ---
@@ -213,19 +213,19 @@ deve ser removido na migração.
 
 ## 9. Ordem de correção
 
-| #   | Ação                                                    | Depende de          | Estado                                                                                           |
-| --- | ------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------ |
-| 1   | Aceitar e validar JWT com claims (`tenant_id`, `roles`) | Apigee provisionado | ✅ IdP local emite o mesmo formato; verificador valida assinatura e `exp`                        |
-| 2   | Propagar contexto de tenant até o adaptador             | 1                   | ✅ Resource/Service/Order; Party parcial (§4) — VPD segue em `Q-ARQ-008`                         |
-| 3   | RBAC na camada de serviço                               | 1                   | ✅ Imposto na borda HTTP para Party/Resource/Service/Order/Event; MCP fica de fora (`Q-ARQ-014`) |
-| 4   | VPD no Oracle + limpeza de contexto no pool             | Migração Oracle     | 🟠 Pendente — `Q-ARQ-008`                                                                        |
-| 5   | Trilha de auditoria no outbox                           | Outbox (C7)         | ✅ `tmf_audit_log`/`tmf_outbox` escritos por todos os módulos TMF; relay publica o outbox        |
-| 6   | Suíte de teste de isolamento entre tenants              | 2                   | ✅ `test/tenant-isolation.integration.spec.ts`                                                   |
-| 7   | TDE, Data Redaction e mascaramento de não-produtivos    | Migração Oracle     | 🟠 Pendente — `Q-ARQ-009`                                                                        |
+| #   | Ação                                                    | Depende de          | Estado                                                                                                                                         |
+| --- | ------------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Aceitar e validar JWT com claims (`tenant_id`, `roles`) | Apigee provisionado | ✅ IdP local emite o mesmo formato; verificador valida assinatura e `exp`                                                                      |
+| 2   | Propagar contexto de tenant até o adaptador             | 1                   | ✅ Resource/Service/Order; Party parcial (§4) — VPD segue em [#94](https://github.com/niraldojunior/nexus/issues/94)                           |
+| 3   | RBAC na camada de serviço                               | 1                   | ✅ Imposto na borda HTTP para Party/Resource/Service/Order/Event; MCP fica de fora ([#100](https://github.com/niraldojunior/nexus/issues/100)) |
+| 4   | VPD no Oracle + limpeza de contexto no pool             | Migração Oracle     | 🟠 Pendente — [#94](https://github.com/niraldojunior/nexus/issues/94)                                                                          |
+| 5   | Trilha de auditoria no outbox                           | Outbox (C7)         | ✅ `tmf_audit_log`/`tmf_outbox` escritos por todos os módulos TMF; relay publica o outbox                                                      |
+| 6   | Suíte de teste de isolamento entre tenants              | 2                   | ✅ `test/tenant-isolation.integration.spec.ts`                                                                                                 |
+| 7   | TDE, Data Redaction e mascaramento de não-produtivos    | Migração Oracle     | 🟠 Pendente — [#95](https://github.com/niraldojunior/nexus/issues/95)                                                                          |
 
-Pendências que não dependem da migração Oracle, registradas em `open-questions.md`: sessão do IdP
-local em `localStorage` (`Q-ARQ-013`), `Idempotency-Key` geral nas escritas TMF (`Q-ARQ-015`) e o
-gap de RBAC/tenant no caminho MCP/Copilot (`Q-ARQ-014`).
+Pendências que não dependem da migração Oracle, registradas no GitHub Issues: sessão do IdP
+local em `localStorage` ([#99](https://github.com/niraldojunior/nexus/issues/99)), `Idempotency-Key` geral nas escritas TMF ([#101](https://github.com/niraldojunior/nexus/issues/101)) e o
+gap de RBAC/tenant no caminho MCP/Copilot ([#100](https://github.com/niraldojunior/nexus/issues/100)).
 
 ---
 

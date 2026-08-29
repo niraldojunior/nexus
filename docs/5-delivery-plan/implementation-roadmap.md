@@ -5,7 +5,7 @@
 
 ## 1. Baseline real
 
-O runtime atual é TypeScript/Node, React/Vite e Neon Postgres. Geo, Resource e Service possuem implementação-base executável, APIs TMF, frontend e testes; isso não equivale à aderência integral aos 53 requisitos. O alvo corporativo de C10 continua Oracle 21c/23ai + Property Graph.
+O runtime atual é TypeScript/Node, React/Vite e persistência dual PostgreSQL/Oracle (`DATABASE_PROVIDER`). Geo, Resource e Service possuem implementação-base executável, APIs TMF, frontend e testes; isso não equivale à aderência integral aos 53 requisitos. O alvo corporativo de C10 é Oracle 21c/23ai como banco homologado — path computation usa SQL recursivo portável, não Property Graph (descartado; ver `business-rules.md` C10).
 
 | Módulo             | HLD | Base existente                                                       | Aderência atual                                    |
 | ------------------ | --- | -------------------------------------------------------------------- | -------------------------------------------------- |
@@ -25,7 +25,7 @@ As contagens são um retrato de julho de 2026. A fonte de detalhe é cada matriz
 | F3 — Geographic completo       | Fechar consultas espaciais, hierarquia, lifecycle, integração e bulk. | [#130](https://github.com/niraldojunior/nexus/issues/130)–[#135](https://github.com/niraldojunior/nexus/issues/135)                                                                                                                                                                                                                                            | HLD MOD01 sem gaps funcionais obrigatórios.                                    |
 | F4 — Resource completo         | Fechar OSP/ISP, IPAM, path e invariantes físicas/lógicas.             | [#143](https://github.com/niraldojunior/nexus/issues/143)–[#146](https://github.com/niraldojunior/nexus/issues/146)                                                                                                                                                                                                                                            | HLD MOD02 com cenários OSP/ISP e path aprovados.                               |
 | F5 — Service completo          | Fechar SubscriberID, ciclo/impacto e cenários comerciais.             | [#152](https://github.com/niraldojunior/nexus/issues/152)–[#155](https://github.com/niraldojunior/nexus/issues/155)                                                                                                                                                                                                                                            | HLD MOD03 com CFS/RFS e três cenários end-to-end aprovados.                    |
-| F6 — Alvo corporativo e escala | Migrar adapters e path computation ao alvo C10.                       | [#161](https://github.com/niraldojunior/nexus/issues/161), [#144](https://github.com/niraldojunior/nexus/issues/144)                                                                                                                                                                                                                                           | Testes de contrato e benchmark aprovados em Oracle/Property Graph.             |
+| F6 — Alvo corporativo e escala | Otimizações Oracle-native e benchmark de path computation em SQL recursivo. | [#161](https://github.com/niraldojunior/nexus/issues/161), [#144](https://github.com/niraldojunior/nexus/issues/144)                                                                                                                                                                                                                                           | Testes de contrato e benchmark aprovados nos dois providers.             |
 
 ## 3. Sequência e dependências
 
@@ -36,7 +36,7 @@ F0 docs/CI
        │   ├── F3 Geographic
        │   ├── F4 Resource ───────┐
        │   └── F5 Service ◀───────┘
-       └── F6 Oracle/Graph ◀── path Resource
+       └── F6 escala Oracle ◀── path Resource
 ```
 
 - Geographic precede Resource nos contratos `place`; Resource precede a conclusão de Service em `supportingResource`.
@@ -70,7 +70,7 @@ Datas de produto e sunset devem ser replanejadas pelos donos após o dimensionam
 | Eventos      | Outbox transacional, idempotência, schema versionado, DLQ e reprocessamento.                               |
 | Multi-tenant | `relatedParty`, autorização, segregação e audit desde o write.                                             |
 | Evidência    | `Implementado` exige código e teste aprovado; endpoints propostos permanecem marcados como backlog.        |
-| Alvo         | Neon Postgres é estado atual; Oracle/Property Graph é destino C10, sem alegação de paridade até benchmark. |
+| Alvo         | PostgreSQL e Oracle são ambos de primeira classe (C10); Oracle é o alvo corporativo homologado, sem alegação de paridade de escala até benchmark. |
 
 ## 6. Riscos ligados
 

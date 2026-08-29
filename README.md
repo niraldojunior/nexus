@@ -2,7 +2,8 @@
 
 Inventário de rede da V.tal, alinhado ao modelo **TM Forum ODA**. O repositório contém as duas
 metades do produto: a **aplicação** em execução (backend TypeScript/Node + frontend React/Vite,
-persistindo em Neon Postgres) e a **especificação** que a governa (`docs/`).
+com persistência dual nativa em PostgreSQL e Oracle via `DATABASE_PROVIDER`) e a **especificação**
+que a governa (`docs/`).
 
 A V.tal é uma infraestrutura de fibra neutra (_wholesale_) — o cliente do serviço é, em regra, um
 ISP (Tenant), não o usuário final.
@@ -20,7 +21,7 @@ ISP (Tenant), não o usuário final.
 | --------- | ------------------------------------------------------------- |
 | Backend   | Node 22+ · TypeScript 5.9 (ESM) · HTTP nativo                 |
 | Frontend  | React 18 · Vite (rolldown) · Tailwind 3 · Lucide              |
-| Banco     | PostgreSQL/Neon ou Oracle 21c/23ai Thin (`DATABASE_PROVIDER`) |
+| Banco     | PostgreSQL (laboratório hospedado em Neon) ou Oracle Thin, ambos nativos (`DATABASE_PROVIDER`) |
 | Testes    | Vitest 4 · Playwright · Testing Library · MSW                 |
 | Qualidade | ESLint 9 · Prettier 3 · TypeScript strict                     |
 | Deploy    | Vercel (paralelo) · Docker Compose no VPS                     |
@@ -30,7 +31,8 @@ ISP (Tenant), não o usuário final.
 ## Pré-requisitos
 
 - **Node.js 22+** (definido em `engines`)
-- Uma instância **Neon Postgres** para desenvolvimento — o projeto não sobe banco local
+- Uma instância **PostgreSQL** para desenvolvimento (o laboratório atual usa Neon; qualquer Postgres
+  comum serve, ver "Deploy (Docker / VPS)") ou **Oracle** — o projeto não sobe banco local
 
 ---
 
@@ -116,8 +118,10 @@ runtime de destino) e `MIGRATION_BATCH_SIZE` (padrão `1000`). Fluxo recomendado
 carga → `--verify-only`. O relatório contém somente contagens e hashes normalizados, nunca
 credenciais ou conteúdo dos registros.
 
-Ao menos uma connection string do Neon é obrigatória — a aplicação **falha no boot** sem ela. Todas
-precisam começar com `postgres://` ou `postgresql://`.
+Com `DATABASE_PROVIDER=postgres`, ao menos uma connection string PostgreSQL é obrigatória — a
+aplicação **falha no boot** sem ela. Todas precisam começar com `postgres://` ou `postgresql://`.
+O laboratório atual hospeda esse Postgres no Neon, mas o runtime usa `pg` puro (ver "Deploy (Docker
+/ VPS)") — qualquer instância PostgreSQL comum serve.
 
 | Variável            | Quando é usada                                                          |
 | ------------------- | ----------------------------------------------------------------------- |
@@ -130,7 +134,7 @@ A ordem de resolução está em [`src/shared/config/env.ts`](src/shared/config/e
 aceita o alias `NEON_DATABASE_URL_*` (ex.: `NEON_DATABASE_URL_PROD`).
 
 > Os testes não usam o Neon. Use o endpoint **`-pooler`** apenas para o runtime e as operações
-> manuais que ainda dependem de Postgres.
+> manuais que ainda dependem do Postgres do laboratório.
 
 ### Integrações opcionais
 
@@ -158,7 +162,8 @@ Raramente precisam ser ajustadas — têm padrões seguros definidos em `scripts
 | Comando              | O que faz                                                                                   |
 | -------------------- | ------------------------------------------------------------------------------------------- |
 | `npm run dev`        | Stack completa (backend + Vite). Alias de `dev:local`                                       |
-| `npm run dev:neon`   | Backend em watch mode. Alias: `dev:backend`                                                 |
+| `npm run dev:neon`   | Backend em watch mode, contra o Neon de dev                                                 |
+| `npm run dev:backend` | Alias de `dev:db` — backend em watch mode, contra o provider selecionado em `DATABASE_PROVIDER` |
 | `npm run start:neon` | Backend, execução única                                                                     |
 | `npm run web:dev`    | Frontend Vite                                                                               |
 | `npm start`          | Servidor estático simples na porta 5200, servindo `web/` com fallback SPA. **Não** é o Vite |
@@ -180,7 +185,7 @@ Raramente precisam ser ajustadas — têm padrões seguros definidos em `scripts
 | Comando                    | Runner     | Escopo                                             |
 | -------------------------- | ---------- | -------------------------------------------------- |
 | `npm test`                 | —          | Suíte completa: unit → Oracle → regression         |
-| `npm run test:unit`        | Vitest     | Testes sem banco e sem acesso ao Neon              |
+| `npm run test:unit`        | Vitest     | Testes sem banco e sem acesso ao Postgres de dev   |
 | `npm run test:integration` | Vitest     | Alias para a suíte Oracle                           |
 | `npm run test:oracle`      | Vitest     | Path Oracle contra uma instância real (ver abaixo) |
 | `npm run test:regression`  | Playwright | E2E de browser contra Oracle                        |
@@ -272,7 +277,7 @@ Deploy automático, configurado em [`vercel.json`](vercel.json):
 
 Defina `DATABASE_URL` apenas se quiser sobrescrever a seleção por ambiente.
 
-### Layout Neon recomendado
+### Layout do Postgres de laboratório (Neon)
 
 | Ambiente  | Escopo Vercel     | Variável usada      | Banco    |
 | --------- | ----------------- | ------------------- | -------- |
@@ -349,10 +354,10 @@ valores corretos.
 
 ## Carga inicial
 
-Para popular um banco Neon vazio a partir de um snapshot SQLite:
+Para popular um banco PostgreSQL vazio (Neon ou qualquer outro) a partir de um snapshot SQLite:
 
 ```powershell
-$env:TARGET_DATABASE_URL='<neon-connection-string>'
+$env:TARGET_DATABASE_URL='<postgres-connection-string>'
 npm run migrate:neon
 ```
 

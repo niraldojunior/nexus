@@ -1,6 +1,6 @@
 # Plano de APIs do backend
 
-> **Estado verificado:** 31/07/2026. O runtime atual usa TypeScript/Node, HTTP nativo e Neon Postgres. Este documento distingue contratos publicados de contratos apenas propostos.
+> **Estado verificado:** 31/07/2026. O runtime atual usa TypeScript/Node, HTTP nativo e persistência dual PostgreSQL/Oracle (`DATABASE_PROVIDER`), com laboratório PostgreSQL hospedado em Neon. Este documento distingue contratos publicados de contratos apenas propostos.
 
 ## 1. Base publicada
 
@@ -56,7 +56,7 @@ Os contratos abaixo são alvo funcional e **não devem ser tratados como endpoin
 - Writes de Copilot/MCP exigem confirmação e passam pelo mesmo service de domínio das APIs.
 - Nenhum `DELETE` físico é introduzido; usar soft-delete/terminate.
 - Todo novo endpoint entra com contrato, erro, paginação aplicável, evento, autorização e teste.
-- Neon Postgres é a persistência atual; adapter Oracle/Property Graph pertence a [#161](https://github.com/niraldojunior/nexus/issues/161).
+- PostgreSQL e Oracle são suportados nativamente (C10); otimizações Oracle-native e benchmark de escala pertencem a [#161](https://github.com/niraldojunior/nexus/issues/161).
 
 ## 5. Critério de pronto por API
 

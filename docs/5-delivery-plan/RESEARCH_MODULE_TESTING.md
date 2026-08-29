@@ -170,7 +170,7 @@ curl -X DELETE http://localhost:3001/v1/research/sessions/{sessionId}
 
 ### Data Flow
 
-User Input → React Component → HTTP POST → SearchService → ChatGPTProvider → OpenAI API → LLMResponse → Neon Postgres → React State Update → UI Render
+User Input → React Component → HTTP POST → SearchService → ChatGPTProvider → OpenAI API → LLMResponse → PostgreSQL → React State Update → UI Render
 
 ### Component Hierarchy
 

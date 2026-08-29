@@ -215,7 +215,7 @@ Este plano define a implementação técnica do **MOD01 - Nexus Geographic** com
 | MOD03 Service                         | Consome address/site para instalação e inventário de serviço.             |
 | MOD04 Order & Fulfillment             | Consome address e site em viabilidade e ordens.                           |
 | Kafka / outbox / Schema Registry      | Necessários para TMF688 e consistência transacional.                      |
-| Oracle / Property Graph               | Alvo arquitetural para persistência e consultas espaciais em escala.      |
+| Oracle Spatial                        | Alvo arquitetural para consultas espaciais em escala continental.        |
 | Catálogo inicial de SiteSpecification | Bloqueador para bootstrap funcional do módulo.                            |
 | Geocodificação                        | Bloqueador para address, mapa e enriquecimento operacional.               |
 

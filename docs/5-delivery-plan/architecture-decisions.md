@@ -15,13 +15,13 @@
 | C7  | Event-driven TMF688              | Firmada | Outbox transacional, idempotência UUID v7 e Schema Registry.                     |
 | C8  | Multi-tenant / wholesale         | Firmada | `relatedParty` desde a criação; subscriber do CFS tipicamente Tenant ISP.        |
 | C9  | Catálogos extensíveis via API    | Firmada | Bootstrap canônico + CRUD governado; sem listas fechadas hardcoded.              |
-| C10 | Oracle-native + Property Graph   | Firmada | Oracle 21c/23ai e Property Graph são o alvo; o estado atual é Neon Postgres.     |
+| C10 | Oracle-native + portabilidade PostgreSQL | Firmada | Oracle é o alvo corporativo homologado; PostgreSQL é suportado nativamente, ambos de primeira classe. Path computation usa SQL recursivo portável, não Property Graph. |
 
 ## 1.1 Diretriz de Implementação Local
 
 | ID          | Decisão                                                         | Status                 | Implicação de implementação                                                                                              |
 | ----------- | --------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| D-LOCAL-001 | SQLite pode ser usado no estágio local isolado.                 | Superada               | O codebase convergiu para Neon Postgres; SQLite subsiste apenas como fonte opcional de migração, não como runtime atual. |
+| D-LOCAL-001 | SQLite pode ser usado no estágio local isolado.                 | Superada               | O codebase convergiu para PostgreSQL (hospedado em Neon no laboratório); SQLite subsiste apenas como fonte opcional de migração, não como runtime atual. |
 | D-LOCAL-002 | Persistência deve ser isolada por portas e adapters.            | Firmada                | Domínio, casos de uso, contratos TMF e validações não dependem do dialeto do banco atual.                                |
 | D-LOCAL-003 | Banco corporativo e OpenShift são gates antes de MVP produtivo. | Aprovada para delivery | Produção exige banco corporativo, configuração corporativa, secrets, observabilidade, probes e deploy OpenShift.         |
 
@@ -49,7 +49,7 @@
 | D-INT-006 | CAD do Geonet cobre apenas cartografia base.                              | Antiga Q-INT-008             | Decidida | Cobertura de planta/território vem do Netwin, não do Geonet.                                                                                                                          |
 | D-ARQ-001 | Interfaces de repositório assíncronas; seleção Postgres/Oracle no boot.   | Antiga Q-ARQ-001             | Decidida | `DATABASE_PROVIDER` decide o adapter, sem fallback silencioso.                                                                                                                        |
 | D-ARQ-002 | Banco, aplicação, cache, mensageria e gateway alvo definidos.             | Antiga Q-ARQ-004             | Decidida | Oracle · OpenShift · Redis · Kafka · Apigee.                                                                                                                                          |
-| D-ARQ-003 | Vercel + Neon é laboratório, não destino.                                 | Antiga Q-ARQ-005             | Decidida | Laboratório temporário até a migração corporativa.                                                                                                                                    |
+| D-ARQ-003 | Vercel é hospedagem de laboratório, não destino.                          | Antiga Q-ARQ-005             | Decidida | OpenShift é o alvo corporativo de aplicação. O suporte nativo a PostgreSQL (C10) é permanente — só a hospedagem em Vercel/Neon é temporária.                                          |
 | D-ARQ-004 | RBAC e isolamento multi-tenant estendidos além de `/v1/users`.            | Antiga Q-ARQ-007             | Decidida | RBAC e `tenant_id` (Resource/Service/Order/Party) entraram nas Fases 2–3 da issue #80; VPD Oracle segue como gap em aberto ([#94](https://github.com/niraldojunior/nexus/issues/94)). |
 | D-GEO-003 | `SiteSpecifications` do bootstrap fechadas em 31/07/2026.                 | Antiga Q-GEO-001             | Decidida | `Region`, `FunctionalGroup`, `Central Office`, `POP`, `Cabinet`, `InstallationPoint`, `Floor`, `Room` e `Cage`.                                                                       |
 
@@ -63,7 +63,7 @@
 - Catálogos e RelationshipTypes são extensíveis via API.
 - Service Assurance fica externa no MVP.
 - Swap de equipamento é workflow BPMN.
-- Neon Postgres é o runtime atual de laboratório e não substitui o alvo Oracle de C10.
+- Oracle é o alvo corporativo homologado; PostgreSQL é suportado nativamente e não é um modo transitório (C10).
 - MVP produtivo só ocorre depois de validação em banco corporativo e OpenShift.
 
 ---

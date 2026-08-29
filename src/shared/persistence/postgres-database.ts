@@ -9,7 +9,7 @@ import type {
   DatabaseRunResult,
   DatabaseSession,
 } from './database-client.js';
-import { MIGRATIONS_SQL, SCHEMA_SQL, transformSchemaSql } from './schema.js';
+import { findColumnDrift, MIGRATIONS_SQL, SCHEMA_SQL, transformSchemaSql } from './schema.js';
 
 types.setTypeParser(20, (value) => Number.parseInt(value, 10));
 types.setTypeParser(1700, (value) => Number.parseFloat(value));
@@ -299,6 +299,29 @@ export class PostgresDatabase implements DatabaseClient {
     if (!result || result.rows[0]?.version !== 1) {
       throw new Error(
         'Database schema is missing or outdated. Run npm run db:migrate before starting Nexus.',
+      );
+    }
+    await this.assertNoColumnDrift(client);
+  }
+
+  // The baseline version alone (checked above) does not prove every ADD COLUMN migration landed —
+  // see the identical rationale on OracleDatabase.assertNoColumnDrift (issue #166). Kept as a
+  // Postgres-side check too so a migration is never assumed complete just because one provider ran
+  // it (C10: Oracle and Postgres are both first-class).
+  private async assertNoColumnDrift(client: PoolClient): Promise<void> {
+    const result = await client.query<{ table_name: string; column_name: string }>(
+      `SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = current_schema()`,
+    );
+    const actual = new Map<string, Set<string>>();
+    for (const row of result.rows) {
+      const columns = actual.get(row.table_name) ?? new Set<string>();
+      columns.add(row.column_name);
+      actual.set(row.table_name, columns);
+    }
+    const missing = findColumnDrift(actual);
+    if (missing.length > 0) {
+      throw new Error(
+        `Postgres schema desatualizado; colunas declaradas ausentes: ${missing.join(', ')}. Rode npm run db:migrate.`,
       );
     }
   }

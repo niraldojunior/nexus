@@ -243,19 +243,8 @@ funciona nos dois bancos sem depender de um recurso proprietário.
 (aplicação), Redis (cache), Kafka (mensageria) e Apigee (API Gateway). C10 não é hipótese: é o alvo
 homologado.
 
-**Property Graph foi descartado, não adiado.** Verificação direta contra a instância Oracle do
-projeto (Oracle Database 19c Enterprise Edition 19.10.0.0.0) mostrou que `CREATE PROPERTY GRAPH`
-(sintaxe SQL:2023) não é suportado (`ORA-00901: invalid CREATE command`) — esse recurso só chega em
-Oracle 23ai. Os únicos pacotes de grafo presentes na instância são os legados `OPG_APIS`/`OPG_PATH`,
-que exigem o produto separado Oracle Graph Server/PGX (com licenciamento próprio, nunca dimensionado
-— ver [#114](https://github.com/niraldojunior/nexus/issues/114)). Diante disso, a decisão é não
-implementar Property Graph: o path computation usa SQL recursivo portável, que já roda na versão de
-Oracle disponível e não amarra o Nexus a uma licença adicional.
-
 Status: ✅ **Implementado.** A seleção dual de provider já existe no runtime
-(`src/shared/persistence/database-factory.ts`) e roda contra Oracle e PostgreSQL. O laboratório atual
-hospeda o PostgreSQL em Neon — um detalhe de hospedagem, não uma dependência de plataforma: o runtime
-usa `pg` puro e qualquer PostgreSQL comum (contêiner, RDS, on-prem) serve sem mudar código.
+(`src/shared/persistence/database-factory.ts`) e roda contra Oracle e PostgreSQL. 
 
 O desenho alvo completo sobre essa stack está em
 [`../3-system-design/architecture.md`](../3-system-design/architecture.md).

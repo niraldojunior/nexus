@@ -1523,3 +1523,102 @@ export const transformSchemaSql = (sql: string): string =>
         `CREATE INDEX IF NOT EXISTS idx_tmf_event_entity ON tmf_event (((event_data)::jsonb->>'${path}'));`,
     )
     .replace(/--.*$/gm, '');
+
+// Splits a `CREATE TABLE (...)` body on its top-level commas — i.e. ignoring commas nested inside a
+// column's own parens (`CHECK(status IN ('a', 'b'))`, `VARCHAR(36)`). A naive split(',') would cut
+// those definitions in half.
+const splitTopLevel = (body: string): string[] => {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index];
+    if (char === '(') depth += 1;
+    else if (char === ')') depth -= 1;
+    else if (char === ',' && depth === 0) {
+      parts.push(body.slice(start, index));
+      start = index + 1;
+    }
+  }
+  parts.push(body.slice(start));
+  return parts;
+};
+
+// Table-level clauses (not column definitions) that can appear as a top-level item inside a
+// `CREATE TABLE (...)` body — must not be mistaken for a column named e.g. "foreign".
+const TABLE_LEVEL_CLAUSE = /^(FOREIGN KEY|PRIMARY KEY|CHECK|UNIQUE|CONSTRAINT)\b/i;
+
+/**
+ * Parses the canonical (SQLite-authored) schema SQL and returns every column declared per table —
+ * both in its `CREATE TABLE IF NOT EXISTS` block and in every later `ALTER TABLE ... ADD COLUMN IF
+ * NOT EXISTS`. This is the single source of truth `assertNoSchemaDrift` (Oracle/Postgres) diffs
+ * against the live database, so a column added here without a corresponding `ADD COLUMN` migration
+ * — or a migration applied to Postgres but not Oracle — fails the boot with a clear message instead
+ * of surfacing as a 500 the first time a repository queries it.
+ */
+export const parseDeclaredColumns = (sql: string): Map<string, Set<string>> => {
+  const declared = new Map<string, Set<string>>();
+  const addColumn = (table: string, column: string): void => {
+    const columns = declared.get(table) ?? new Set<string>();
+    columns.add(column);
+    declared.set(table, columns);
+  };
+
+  const createTableRe = /CREATE TABLE IF NOT EXISTS\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
+  let match: RegExpExecArray | null;
+  while ((match = createTableRe.exec(sql))) {
+    const table = match[1]!;
+    const bodyStart = match.index + match[0].length;
+    let depth = 1;
+    let cursor = bodyStart;
+    while (cursor < sql.length && depth > 0) {
+      if (sql[cursor] === '(') depth += 1;
+      else if (sql[cursor] === ')') depth -= 1;
+      cursor += 1;
+    }
+    const body = sql.slice(bodyStart, cursor - 1);
+    for (const rawItem of splitTopLevel(body)) {
+      const item = rawItem.trim();
+      if (item.length === 0 || TABLE_LEVEL_CLAUSE.test(item)) continue;
+      const columnMatch = /^([a-zA-Z_][a-zA-Z0-9_]*)\s+\S/.exec(item);
+      if (columnMatch) addColumn(table, columnMatch[1]!);
+    }
+  }
+
+  const addColumnRe =
+    /ALTER TABLE\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+ADD COLUMN IF NOT EXISTS\s+([a-zA-Z_][a-zA-Z0-9_]*)/gi;
+  while ((match = addColumnRe.exec(sql))) {
+    addColumn(match[1]!, match[2]!);
+  }
+
+  return declared;
+};
+
+// Parsed once at import time — SCHEMA_SQL/MIGRATIONS_SQL are static template literals, so this is
+// the same declared-column map every caller would otherwise recompute.
+export const DECLARED_COLUMNS: ReadonlyMap<string, ReadonlySet<string>> = parseDeclaredColumns(
+  `${SCHEMA_SQL}\n${MIGRATIONS_SQL}`,
+);
+
+/**
+ * Diffs `DECLARED_COLUMNS` against a live database's actual columns, returning `"table.column"` for
+ * every declared column absent from `actual`. `actual` is keyed by bare (unprefixed) table name,
+ * matching `DECLARED_COLUMNS`; both column-name sets are compared case-insensitively so Oracle's
+ * uppercase-folded `user_tab_columns` and Postgres's lowercase `information_schema.columns` both
+ * work unmodified. Used by OracleDatabase/PostgresDatabase at boot (see `validateSchemaVersion`) so
+ * a migration applied to one provider but not the other fails the boot with the exact gap instead of
+ * surfacing as a 500 the first time a repository queries the missing column (see AGENTS.md C10 and
+ * issue #166).
+ */
+export const findColumnDrift = (actual: ReadonlyMap<string, ReadonlySet<string>>): string[] => {
+  const missing: string[] = [];
+  for (const [table, columns] of DECLARED_COLUMNS) {
+    const actualColumns = actual.get(table);
+    if (!actualColumns) continue; // a whole missing table is a different failure mode (ORA-00942 / 42P01) surfaced elsewhere
+    const actualUpper = new Set([...actualColumns].map((column) => column.toUpperCase()));
+    for (const column of columns) {
+      if (!actualUpper.has(column.toUpperCase())) missing.push(`${table}.${column}`);
+    }
+  }
+  return missing;
+};

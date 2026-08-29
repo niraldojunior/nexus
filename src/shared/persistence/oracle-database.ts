@@ -25,6 +25,7 @@ import {
   rewriteTableReferences,
 } from './oracle-object-names.js';
 import { replaceQuestionBinds } from './postgres-database.js';
+import { findColumnDrift } from './schema.js';
 
 export type OracleConnectionConfig = {
   connectString: string;
@@ -241,6 +242,41 @@ export class OracleDatabase implements DatabaseClient {
     } catch {
       throw new Error(
         'Database schema is missing or outdated. Run npm run db:migrate before starting Nexus.',
+      );
+    }
+    await this.assertNoColumnDrift(connection);
+  }
+
+  // The baseline version alone (checked above) does not prove every ADD COLUMN migration landed —
+  // DEV/HML/PRD/TEST share one Oracle schema under separate prefixes, and a migration can be applied
+  // to Postgres/Neon (or one prefix) without ever reaching another. Diffing `DECLARED_COLUMNS`
+  // (schema.ts) against `user_tab_columns` catches that drift at boot instead of a repository query
+  // failing with ORA-00904 the first time a caller reaches the missing column (issue #166).
+  private async assertNoColumnDrift(connection: Connection): Promise<void> {
+    // Unquoted identifiers are uppercase-folded by Oracle, so both the LIKE bind and the
+    // startsWith/slice below compare against the uppercased prefix, not `this.config.objectPrefix`
+    // verbatim (which may be mixed case, e.g. `NEXUS_DEV_`).
+    const prefix = this.config.objectPrefix.toUpperCase();
+    const result = await connection.execute<{ table_name: string; column_name: string }>(
+      `SELECT table_name AS "table_name", column_name AS "column_name" FROM user_tab_columns
+       WHERE table_name LIKE :1`,
+      [`${prefix}%`],
+      QUERY_OPTIONS,
+    );
+    const actual = new Map<string, Set<string>>();
+    for (const row of result.rows ?? []) {
+      const tableName = String(row.table_name);
+      if (!tableName.startsWith(prefix)) continue;
+      const bareTable = tableName.slice(prefix.length).toLowerCase();
+      const columns = actual.get(bareTable) ?? new Set<string>();
+      columns.add(String(row.column_name));
+      actual.set(bareTable, columns);
+    }
+    const missing = findColumnDrift(actual);
+    if (missing.length > 0) {
+      throw new Error(
+        `Oracle schema desatualizado sob o prefixo ${prefix}; colunas declaradas ausentes: ` +
+          `${missing.join(', ')}. Rode npm run db:migrate.`,
       );
     }
   }

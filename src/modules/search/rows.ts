@@ -6,7 +6,6 @@ import type { MessageRole, ResearchSession } from './domain.js';
 
 export type ResearchSessionRow = {
   id: string;
-  href: string;
   user_id: string;
   title: string;
   description: string | null;

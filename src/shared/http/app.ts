@@ -53,7 +53,7 @@ import type {
 } from '../../modules/search/domain.js';
 import type { TmfEventQuery } from '../tmf/index.js';
 import type { EventService } from '../tmf/index.js';
-import { configureHrefBaseUrl } from '../tmf/index.js';
+import { buildHref, configureHrefBaseUrl } from '../tmf/index.js';
 import type { Party, PartyQuery, PartyRoleQuery } from '../../modules/party/index.js';
 import type {
   CreateResourceSpecificationInput,
@@ -4175,7 +4175,7 @@ const loadAllManufacturerOptions = async (partyService: PartyService): Promise<P
       collected.push({
         '@type': 'Organization',
         id: role.party.id,
-        href: role.party.href ?? `/tmf-api/partyManagement/v4/party/${role.party.id}`,
+        href: role.party.href ?? buildHref('party', role.party.id),
         name: role.party.name ?? role.party.id,
         status: 'active',
         partyType: 'Organization',

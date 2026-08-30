@@ -6,7 +6,6 @@ import type { ResourceOrderState, ServiceOrderState, ServiceQualificationState }
 
 export type ServiceQualificationRow = {
   id: string;
-  href: string;
   state: ServiceQualificationState;
   place: string | null;
   related_party: string | null;
@@ -19,7 +18,6 @@ export type ServiceQualificationRow = {
 
 export type ServiceOrderRow = {
   id: string;
-  href: string;
   state: ServiceOrderState;
   description: string | null;
   related_party: string | null;
@@ -32,7 +30,6 @@ export type ServiceOrderRow = {
 
 export type ResourceOrderRow = {
   id: string;
-  href: string;
   state: ResourceOrderState;
   description: string | null;
   related_party: string | null;

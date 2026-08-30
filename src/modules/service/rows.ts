@@ -4,7 +4,6 @@
 
 export type ServiceSpecificationRow = {
   id: string;
-  href: string;
   name: string;
   category: string;
   service_type: 'CFS' | 'RFS' | 'Other';
@@ -18,7 +17,6 @@ export type ServiceSpecificationRow = {
 
 export type ServiceCategoryRow = {
   id: string;
-  href: string;
   name: string;
   description: string | null;
   parent_category_id: string | null;
@@ -30,7 +28,6 @@ export type ServiceCategoryRow = {
 
 export type ServiceCandidateRow = {
   id: string;
-  href: string;
   name: string;
   description: string | null;
   service_specification_id: string;
@@ -45,7 +42,6 @@ export type ServiceCandidateRow = {
 // Colunas comuns a CFS e RFS.
 type ServiceRowBase = {
   id: string;
-  href: string;
   name: string;
   service_specification_id: string;
   status: string | null;

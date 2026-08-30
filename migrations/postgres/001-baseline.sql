@@ -25,7 +25,6 @@
       
       CREATE TABLE IF NOT EXISTS tmf_geographic_location (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         tenant_id TEXT NOT NULL DEFAULT 'default',
         geometry_type TEXT NOT NULL CHECK(geometry_type IN ('Point', 'LineString', 'Polygon')),
         geometry TEXT NOT NULL,
@@ -44,7 +43,6 @@
       
       CREATE TABLE IF NOT EXISTS tmf_geographic_address (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         tenant_id TEXT NOT NULL DEFAULT 'default',
         street_type TEXT,
         street_name TEXT NOT NULL,
@@ -70,7 +68,6 @@
       
       CREATE TABLE IF NOT EXISTS tmf_geographic_site_specification (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         name TEXT NOT NULL,
         code TEXT NOT NULL,
         category TEXT NOT NULL,
@@ -105,7 +102,6 @@
       
       CREATE TABLE IF NOT EXISTS tmf_geographic_site (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         tenant_id TEXT NOT NULL DEFAULT 'default',
         name TEXT NOT NULL,
         site_specification_id TEXT NOT NULL,
@@ -168,7 +164,6 @@
 
       CREATE TABLE IF NOT EXISTS tmf_geographic_relationship_type (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         code TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
         inverse_code TEXT NOT NULL,
@@ -189,7 +184,6 @@
       
       CREATE TABLE IF NOT EXISTS tmf_resource_specification (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         name TEXT NOT NULL,
         category TEXT NOT NULL,
         resource_type TEXT NOT NULL,
@@ -206,7 +200,6 @@
       
       CREATE TABLE IF NOT EXISTS tmf_resource_category (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         code TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
         parent_category_code TEXT,
@@ -220,7 +213,6 @@
 
       CREATE TABLE IF NOT EXISTS tmf_resource_type (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         code TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
         category_code TEXT NOT NULL,
@@ -235,7 +227,6 @@
 
       CREATE TABLE IF NOT EXISTS tmf_resource_function_specification (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         name TEXT NOT NULL,
         description TEXT,
         valid_for_start TIMESTAMPTZ,
@@ -248,7 +239,6 @@
       
       CREATE TABLE IF NOT EXISTS tmf_physical_resource (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         name TEXT NOT NULL,
         resource_specification_id TEXT NOT NULL,
         resource_type TEXT NOT NULL,
@@ -275,7 +265,6 @@
       
       CREATE TABLE IF NOT EXISTS tmf_logical_resource (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         name TEXT NOT NULL,
         resource_specification_id TEXT NOT NULL,
         resource_type TEXT NOT NULL,
@@ -321,7 +310,6 @@
       
       CREATE TABLE IF NOT EXISTS tmf_service_specification (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         name TEXT NOT NULL,
         category TEXT NOT NULL,
         service_type TEXT NOT NULL CHECK(service_type IN ('CFS', 'RFS', 'Other')),
@@ -336,7 +324,6 @@
 
       CREATE TABLE IF NOT EXISTS tmf_service_category (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         name TEXT NOT NULL,
         description TEXT,
         parent_category_id TEXT,
@@ -352,7 +339,6 @@
 
       CREATE TABLE IF NOT EXISTS tmf_service_candidate (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         name TEXT NOT NULL,
         description TEXT,
         service_specification_id TEXT NOT NULL,
@@ -376,7 +362,6 @@
       
       CREATE TABLE IF NOT EXISTS tmf_resource_facing_service (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         name TEXT,
         service_specification_id TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
@@ -408,7 +393,6 @@
       
       CREATE TABLE IF NOT EXISTS tmf_customer_facing_service (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         name TEXT NOT NULL,
         service_specification_id TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
@@ -453,7 +437,6 @@
       
       CREATE TABLE IF NOT EXISTS tmf_service_qualification (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         state TEXT NOT NULL DEFAULT 'done' CHECK(state IN ('done', 'terminated')),
         place TEXT,
         related_party TEXT,
@@ -469,7 +452,6 @@
       
       CREATE TABLE IF NOT EXISTS tmf_service_order (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         state TEXT NOT NULL DEFAULT 'acknowledged' CHECK(state IN ('acknowledged', 'inProgress', 'completed', 'failed', 'cancelled')),
         description TEXT,
         related_party TEXT,
@@ -485,7 +467,6 @@
       
       CREATE TABLE IF NOT EXISTS tmf_resource_order (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         state TEXT NOT NULL DEFAULT 'acknowledged' CHECK(state IN ('acknowledged', 'inProgress', 'completed', 'failed', 'cancelled')),
         description TEXT,
         related_party TEXT,
@@ -502,7 +483,6 @@
 
       CREATE TABLE IF NOT EXISTS tmf_party (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         name TEXT NOT NULL,
         party_type TEXT NOT NULL CHECK(party_type IN ('Organization', 'Individual')),
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'terminated')),
@@ -517,7 +497,6 @@
 
       CREATE TABLE IF NOT EXISTS tmf_party_role (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         name TEXT NOT NULL,
         party_id TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'terminated')),
@@ -637,7 +616,6 @@
       
       CREATE TABLE IF NOT EXISTS research_session (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
         user_id TEXT NOT NULL,
         title TEXT NOT NULL,
         description TEXT,
@@ -819,7 +797,6 @@
 
   CREATE TABLE IF NOT EXISTS tmf_geographic_relationship_type (
     id TEXT PRIMARY KEY,
-    href TEXT NOT NULL,
     code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     inverse_code TEXT NOT NULL,

@@ -100,10 +100,9 @@ export class PostgresResourceRepository implements IResourceRepository {
     await this.db.transaction(async () => {
       for (const category of RESOURCE_CATEGORIES) {
         await this.db.run(
-          `INSERT INTO tmf_resource_category (id, href, code, name, parent_category_code, description, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO tmf_resource_category (id, code, name, parent_category_code, description, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(code) DO UPDATE SET
-           href = excluded.href,
            name = excluded.name,
            parent_category_code = excluded.parent_category_code,
            description = excluded.description,
@@ -111,7 +110,6 @@ export class PostgresResourceRepository implements IResourceRepository {
            updated_at = excluded.updated_at`,
           [
             category.id,
-            category.href,
             category.code,
             category.name,
             category.parentCategoryCode ?? null,
@@ -125,10 +123,9 @@ export class PostgresResourceRepository implements IResourceRepository {
 
       for (const type of RESOURCE_TYPES) {
         await this.db.run(
-          `INSERT INTO tmf_resource_type (id, href, code, name, category_code, description, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO tmf_resource_type (id, code, name, category_code, description, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(code) DO UPDATE SET
-           href = excluded.href,
            name = excluded.name,
            category_code = excluded.category_code,
            description = excluded.description,
@@ -136,7 +133,6 @@ export class PostgresResourceRepository implements IResourceRepository {
            updated_at = excluded.updated_at`,
           [
             type.id,
-            type.href,
             type.code,
             type.name,
             type.categoryCode,
@@ -224,10 +220,9 @@ export class PostgresResourceRepository implements IResourceRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_resource_specification
-       (id, href, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics, tenant_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        name = excluded.name,
        category = excluded.category,
        resource_type = excluded.resource_type,
@@ -239,7 +234,6 @@ export class PostgresResourceRepository implements IResourceRepository {
        updated_at = excluded.updated_at`,
       [
         spec.id,
-        spec.href,
         spec.name,
         spec.category,
         spec.resourceType,
@@ -351,17 +345,15 @@ export class PostgresResourceRepository implements IResourceRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_resource_function_specification
-       (id, href, name, description, characteristics, tenant_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       (id, name, description, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        name = excluded.name,
        description = excluded.description,
        characteristics = excluded.characteristics,
        updated_at = excluded.updated_at`,
       [
         spec.id,
-        spec.href,
         spec.name,
         spec.description ?? null,
         JSON.stringify(spec.resourceFunctionSpecificationCharacteristic),
@@ -445,13 +437,12 @@ export class PostgresResourceRepository implements IResourceRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_physical_resource
-       (id, href, name, resource_specification_id, resource_type, status,
+       (id, name, resource_specification_id, resource_type, status,
         place_id, place_type, serving_site_id, administrative_state, operational_state, usage_state,
         manufacturer, model, serial_number, part_number, valid_for_start, valid_for_end,
         related_party, characteristics, tenant_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        name = excluded.name,
        resource_specification_id = excluded.resource_specification_id,
        resource_type = excluded.resource_type,
@@ -473,7 +464,6 @@ export class PostgresResourceRepository implements IResourceRepository {
        updated_at = excluded.updated_at`,
       [
         resource.id,
-        resource.href,
         resource.name,
         resource.resourceSpecificationId,
         resource.resourceType,
@@ -512,7 +502,7 @@ export class PostgresResourceRepository implements IResourceRepository {
       params.push(scope.tenantId);
     }
     const row = await this.db.get<PhysicalResourceRow>(
-      `SELECT id, href, name, resource_specification_id, resource_type, status,
+      `SELECT id, name, resource_specification_id, resource_type, status,
               place_id, place_type, administrative_state, operational_state, usage_state,
               manufacturer, model, serial_number, part_number, valid_for_start, valid_for_end,
               related_party, characteristics, tenant_id
@@ -532,7 +522,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, href, name, resource_specification_id, resource_type, status, place_id, place_type, administrative_state, operational_state, usage_state, manufacturer, model, serial_number, part_number, valid_for_start, valid_for_end, related_party, characteristics, tenant_id FROM tmf_physical_resource',
+      'SELECT id, name, resource_specification_id, resource_type, status, place_id, place_type, administrative_state, operational_state, usage_state, manufacturer, model, serial_number, part_number, valid_for_start, valid_for_end, related_party, characteristics, tenant_id FROM tmf_physical_resource',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -569,13 +559,12 @@ export class PostgresResourceRepository implements IResourceRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_logical_resource
-       (id, href, name, resource_specification_id, resource_type, status,
+       (id, name, resource_specification_id, resource_type, status,
         place_id, place_type, serving_site_id, supporting_physical_resource_id,
         administrative_state, operational_state, usage_state,
         related_party, characteristics, valid_for_start, valid_for_end, tenant_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        name = excluded.name,
        resource_specification_id = excluded.resource_specification_id,
        resource_type = excluded.resource_type,
@@ -594,7 +583,6 @@ export class PostgresResourceRepository implements IResourceRepository {
        updated_at = excluded.updated_at`,
       [
         resource.id,
-        resource.href,
         resource.name,
         resource.resourceSpecificationId,
         resource.resourceType,
@@ -630,7 +618,7 @@ export class PostgresResourceRepository implements IResourceRepository {
       params.push(scope.tenantId);
     }
     const row = await this.db.get<LogicalResourceRow>(
-      `SELECT id, href, name, resource_specification_id, resource_type, status, place_id, place_type,
+      `SELECT id, name, resource_specification_id, resource_type, status, place_id, place_type,
               supporting_physical_resource_id, administrative_state, operational_state, usage_state,
               related_party, characteristics, valid_for_start, valid_for_end, tenant_id
        FROM tmf_logical_resource
@@ -649,7 +637,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, href, name, resource_specification_id, resource_type, status, place_id, place_type, supporting_physical_resource_id, administrative_state, operational_state, usage_state, related_party, characteristics, valid_for_start, valid_for_end, tenant_id FROM tmf_logical_resource',
+      'SELECT id, name, resource_specification_id, resource_type, status, place_id, place_type, supporting_physical_resource_id, administrative_state, operational_state, usage_state, related_party, characteristics, valid_for_start, valid_for_end, tenant_id FROM tmf_logical_resource',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',

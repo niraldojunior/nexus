@@ -81,6 +81,9 @@ npm run web:dev     # só o frontend Vite
 | `AUTH_JWT_SECRET`                | para login          | —             | Segredo HS256 do IdP local; sem ele `/v1/auth/login` responde 503 |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | para o 1º login     | —             | Admin semente criado no bootstrap (idempotente)                   |
 | `AUTH_ACCESS_TOKEN_TTL_HOURS`    | não                 | `12`          | Validade do JWT de sessão, em horas                               |
+| `TMF_PUBLIC_BASE_URL`            | não                 | —             | Host público prefixado nos `href` TMF; vazio preserva paths relativos |
+
+> `TMF_PUBLIC_BASE_URL` deve conter a origem pública sem barra final (por exemplo, `https://api.exemplo.com`). Use-a quando o Nexus estiver atrás de um gateway como Apigee; sem ela, os `href` seguem relativos (`/tmf-api/...`), preservando o contrato histórico.
 
 > **Login de usuário.** Usuários reais entram por e-mail/senha (`POST /v1/auth/login` → JWT), gravado
 > no `localStorage` da SPA. O `AUTH_TOKEN` estático continua para máquina-a-máquina. Defina

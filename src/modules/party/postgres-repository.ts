@@ -35,10 +35,9 @@ export class PostgresPartyRepository implements IPartyRepository {
         const roleId = `party-role-${slug}-manufacturer`;
         await this.db.run(
           `INSERT INTO tmf_party
-           (id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (id, name, party_type, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
-           href = excluded.href,
            name = excluded.name,
            party_type = excluded.party_type,
            status = excluded.status,
@@ -48,7 +47,6 @@ export class PostgresPartyRepository implements IPartyRepository {
            updated_at = excluded.updated_at`,
           [
             partyId,
-            `/tmf-api/partyManagement/v4/party/${partyId}`,
             name,
             'Organization',
             'active',
@@ -61,10 +59,9 @@ export class PostgresPartyRepository implements IPartyRepository {
         );
         await this.db.run(
           `INSERT INTO tmf_party_role
-           (id, href, name, party_id, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (id, name, party_id, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
-           href = excluded.href,
            name = excluded.name,
            party_id = excluded.party_id,
            status = excluded.status,
@@ -74,7 +71,6 @@ export class PostgresPartyRepository implements IPartyRepository {
            updated_at = excluded.updated_at`,
           [
             roleId,
-            `/tmf-api/partyRoleManagement/v4/partyRole/${roleId}`,
             'manufacturer',
             partyId,
             'active',
@@ -93,10 +89,9 @@ export class PostgresPartyRepository implements IPartyRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_party
-       (id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, name, party_type, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        name = excluded.name,
        party_type = excluded.party_type,
        status = excluded.status,
@@ -106,7 +101,6 @@ export class PostgresPartyRepository implements IPartyRepository {
        updated_at = excluded.updated_at`,
       [
         party.id,
-        party.href,
         party.name,
         party.partyType,
         party.status,
@@ -202,10 +196,9 @@ export class PostgresPartyRepository implements IPartyRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_party_role
-       (id, href, name, party_id, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, name, party_id, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        name = excluded.name,
        party_id = excluded.party_id,
        status = excluded.status,
@@ -215,7 +208,6 @@ export class PostgresPartyRepository implements IPartyRepository {
        updated_at = excluded.updated_at`,
       [
         role.id,
-        role.href,
         role.name,
         role.partyId,
         role.status,

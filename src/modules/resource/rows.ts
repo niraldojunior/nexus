@@ -11,7 +11,6 @@ import type {
 
 type ResourceRowBase = {
   id: string;
-  href: string;
   name: string;
   resource_specification_id: string;
   resource_type: string;

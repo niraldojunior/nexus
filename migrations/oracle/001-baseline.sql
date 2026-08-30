@@ -25,7 +25,6 @@
       
       CREATE TABLE tmf_geographic_location (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         tenant_id VARCHAR2(36 CHAR) NOT NULL DEFAULT 'default',
         geometry_type VARCHAR2(255 CHAR) NOT NULL CHECK(geometry_type IN ('Point', 'LineString', 'Polygon')),
         geometry CLOB NOT NULL,
@@ -44,7 +43,6 @@
       
       CREATE TABLE tmf_geographic_address (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         tenant_id VARCHAR2(36 CHAR) NOT NULL DEFAULT 'default',
         street_type VARCHAR2(255 CHAR),
         street_name VARCHAR2(255 CHAR) NOT NULL,
@@ -70,7 +68,6 @@
       
       CREATE TABLE tmf_geographic_site_specification (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         name VARCHAR2(255 CHAR) NOT NULL,
         code VARCHAR2(255 CHAR) NOT NULL,
         category VARCHAR2(255 CHAR) NOT NULL,
@@ -105,7 +102,6 @@
       
       CREATE TABLE tmf_geographic_site (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         tenant_id VARCHAR2(36 CHAR) NOT NULL DEFAULT 'default',
         name VARCHAR2(255 CHAR) NOT NULL,
         site_specification_id VARCHAR2(36 CHAR) NOT NULL,
@@ -168,7 +164,6 @@
 
       CREATE TABLE tmf_geographic_relationship_type (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         code VARCHAR2(255 CHAR) NOT NULL UNIQUE,
         name VARCHAR2(255 CHAR) NOT NULL,
         inverse_code VARCHAR2(255 CHAR) NOT NULL,
@@ -189,7 +184,6 @@
       
       CREATE TABLE tmf_resource_specification (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         name VARCHAR2(255 CHAR) NOT NULL,
         category VARCHAR2(255 CHAR) NOT NULL,
         resource_type VARCHAR2(255 CHAR) NOT NULL,
@@ -206,7 +200,6 @@
       
       CREATE TABLE tmf_resource_category (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         code VARCHAR2(255 CHAR) NOT NULL UNIQUE,
         name VARCHAR2(255 CHAR) NOT NULL,
         parent_category_code VARCHAR2(255 CHAR),
@@ -220,7 +213,6 @@
 
       CREATE TABLE tmf_resource_type (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         code VARCHAR2(255 CHAR) NOT NULL UNIQUE,
         name VARCHAR2(255 CHAR) NOT NULL,
         category_code VARCHAR2(255 CHAR) NOT NULL,
@@ -235,7 +227,6 @@
 
       CREATE TABLE tmf_resource_function_specification (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         name VARCHAR2(255 CHAR) NOT NULL,
         description VARCHAR2(4000 CHAR),
         valid_for_start TIMESTAMP(6) WITH TIME ZONE,
@@ -248,7 +239,6 @@
       
       CREATE TABLE tmf_physical_resource (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         name VARCHAR2(255 CHAR) NOT NULL,
         resource_specification_id VARCHAR2(36 CHAR) NOT NULL,
         resource_type VARCHAR2(255 CHAR) NOT NULL,
@@ -275,7 +265,6 @@
       
       CREATE TABLE tmf_logical_resource (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         name VARCHAR2(255 CHAR) NOT NULL,
         resource_specification_id VARCHAR2(36 CHAR) NOT NULL,
         resource_type VARCHAR2(255 CHAR) NOT NULL,
@@ -321,7 +310,6 @@
       
       CREATE TABLE tmf_service_specification (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         name VARCHAR2(255 CHAR) NOT NULL,
         category VARCHAR2(255 CHAR) NOT NULL,
         service_type VARCHAR2(255 CHAR) NOT NULL CHECK(service_type IN ('CFS', 'RFS', 'Other')),
@@ -336,7 +324,6 @@
 
       CREATE TABLE tmf_service_category (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         name VARCHAR2(255 CHAR) NOT NULL,
         description VARCHAR2(4000 CHAR),
         parent_category_id VARCHAR2(36 CHAR),
@@ -352,7 +339,6 @@
 
       CREATE TABLE tmf_service_candidate (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         name VARCHAR2(255 CHAR) NOT NULL,
         description VARCHAR2(4000 CHAR),
         service_specification_id VARCHAR2(36 CHAR) NOT NULL,
@@ -376,7 +362,6 @@
       
       CREATE TABLE tmf_resource_facing_service (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         name VARCHAR2(255 CHAR),
         service_specification_id VARCHAR2(36 CHAR) NOT NULL,
         status VARCHAR2(255 CHAR) NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
@@ -408,7 +393,6 @@
       
       CREATE TABLE tmf_customer_facing_service (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         name VARCHAR2(255 CHAR) NOT NULL,
         service_specification_id VARCHAR2(36 CHAR) NOT NULL,
         status VARCHAR2(255 CHAR) NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
@@ -453,7 +437,6 @@
       
       CREATE TABLE tmf_service_qualification (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         state VARCHAR2(255 CHAR) NOT NULL DEFAULT 'done' CHECK(state IN ('done', 'terminated')),
         place CLOB,
         related_party CLOB,
@@ -469,7 +452,6 @@
       
       CREATE TABLE tmf_service_order (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         state VARCHAR2(255 CHAR) NOT NULL DEFAULT 'acknowledged' CHECK(state IN ('acknowledged', 'inProgress', 'completed', 'failed', 'cancelled')),
         description VARCHAR2(4000 CHAR),
         related_party CLOB,
@@ -485,7 +467,6 @@
       
       CREATE TABLE tmf_resource_order (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         state VARCHAR2(255 CHAR) NOT NULL DEFAULT 'acknowledged' CHECK(state IN ('acknowledged', 'inProgress', 'completed', 'failed', 'cancelled')),
         description VARCHAR2(4000 CHAR),
         related_party CLOB,
@@ -502,7 +483,6 @@
 
       CREATE TABLE tmf_party (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         name VARCHAR2(255 CHAR) NOT NULL,
         party_type VARCHAR2(255 CHAR) NOT NULL CHECK(party_type IN ('Organization', 'Individual')),
         status VARCHAR2(255 CHAR) NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'terminated')),
@@ -517,7 +497,6 @@
 
       CREATE TABLE tmf_party_role (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         name VARCHAR2(255 CHAR) NOT NULL,
         party_id VARCHAR2(36 CHAR) NOT NULL,
         status VARCHAR2(255 CHAR) NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'terminated')),
@@ -637,7 +616,6 @@
       
       CREATE TABLE research_session (
         id VARCHAR2(36 CHAR) PRIMARY KEY,
-        href VARCHAR2(4000 CHAR) NOT NULL,
         user_id VARCHAR2(36 CHAR) NOT NULL,
         title VARCHAR2(4000 CHAR) NOT NULL,
         description VARCHAR2(4000 CHAR),
@@ -819,7 +797,6 @@
 
   CREATE TABLE tmf_geographic_relationship_type (
     id VARCHAR2(36 CHAR) PRIMARY KEY,
-    href VARCHAR2(4000 CHAR) NOT NULL,
     code VARCHAR2(255 CHAR) NOT NULL UNIQUE,
     name VARCHAR2(255 CHAR) NOT NULL,
     inverse_code VARCHAR2(255 CHAR) NOT NULL,

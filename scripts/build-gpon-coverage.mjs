@@ -518,7 +518,6 @@ async function main() {
         const locId = randomUUID();
         locations.push({
           id: locId,
-          href: `/tmf-api/geographicLocationManagement/v4/geographicLocation/${locId}`,
           geometry_type: 'Polygon',
           geometry: JSON.stringify(component.geometry),
           spatial_ref: 'EPSG:4326',
@@ -617,8 +616,7 @@ async function main() {
           'tmf_geographic_location',
           [
             'id',
-            'href',
-            'geometry_type',
+                'geometry_type',
             'geometry',
             'spatial_ref',
             'reference_point',

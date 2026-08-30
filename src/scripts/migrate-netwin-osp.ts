@@ -737,7 +737,6 @@ async function upsertPointLocation(
   assertBrazilBounds(point.coordinates);
   await merge(target, t, 'tmf_geographic_location', ['id'], {
     id,
-    href: `/tmf-api/geographicLocationManagement/v4/geographicLocation/${id}`,
     tenant_id: tenantId,
     geometry_type: 'Point',
     geometry: JSON.stringify(point),
@@ -759,7 +758,6 @@ async function upsertLineLocation(
   for (const coordinate of line.coordinates) assertBrazilBounds(coordinate);
   await merge(target, t, 'tmf_geographic_location', ['id'], {
     id,
-    href: `/tmf-api/geographicLocationManagement/v4/geographicLocation/${id}`,
     tenant_id: tenantId,
     geometry_type: 'LineString',
     geometry: JSON.stringify(line),
@@ -849,7 +847,6 @@ async function persistEquipment(
   await upsertPointLocation(target, t, nexusId, node.wkt, input.tenantId, node.name || `Equipamento ${node.id}`);
   await merge(target, t, 'tmf_physical_resource', ['id'], {
     id: nexusId,
-    href: `/tmf-api/resourceInventoryManagement/v4/resource/${nexusId}`,
     name: cut(node.name || `Equipamento ${node.id}`, 255),
     resource_specification_id: specId,
     resource_type: classified.resourceType,
@@ -911,7 +908,6 @@ async function persistCable(
   await upsertLineLocation(target, t, nexusId, node.wkt, input.tenantId, node.name || `Cabo ${node.id}`);
   await merge(target, t, 'tmf_physical_resource', ['id'], {
     id: nexusId,
-    href: `/tmf-api/resourceInventoryManagement/v4/resource/${nexusId}`,
     name: cut(node.name || `Cabo ${node.id}`, 255),
     resource_specification_id: specId,
     resource_type: resourceType,
@@ -971,7 +967,6 @@ async function persistRoute(
   await upsertLineLocation(target, t, nexusId, node.wkt, input.tenantId, node.name || `Lance ${node.id}`);
   await merge(target, t, 'tmf_physical_resource', ['id'], {
     id: nexusId,
-    href: `/tmf-api/resourceInventoryManagement/v4/resource/${nexusId}`,
     name: cut(node.name || `Lance ${node.id}`, 255),
     resource_specification_id: specId,
     resource_type: resourceType,

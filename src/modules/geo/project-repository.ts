@@ -124,7 +124,6 @@ export type CreateProjectAreaInput = {
 // gravação — mesma forma que build-gpon-coverage.mjs monta para tmf_geographic_location.
 export type CreateProjectAreaLocationInput = {
   id: string;
-  href: string;
   geometry: string;
   characteristics: string;
 };
@@ -714,11 +713,10 @@ export class GeoProjectRepository {
     for (const location of locations) {
       await this.db.run(
         `INSERT INTO tmf_geographic_location
-            (id, href, geometry_type, geometry, spatial_ref, reference_point, characteristics)
-         VALUES (?, ?, 'Polygon', ?, 'EPSG:4326', ?, ?)`,
+            (id, geometry_type, geometry, spatial_ref, reference_point, characteristics)
+         VALUES (?, 'Polygon', ?, 'EPSG:4326', ?, ?)`,
         [
           location.id,
-          location.href,
           location.geometry,
           `PROJECT:${projectId}`,
           location.characteristics,

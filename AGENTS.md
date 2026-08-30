@@ -138,6 +138,7 @@ Estas decisões estão firmadas. Respeite-as; não as reabra sem pedido explíci
 - **Nomes de arquivo em kebab-case** no backend; **PascalCase** para componentes React.
 - **Entidades e atributos seguem o vocabulário TMF** (C1), inclusive no banco e nas rotas.
 - **Nunca hardcode tokens visuais** (cor, espaçamento, fonte) — use as variáveis CSS do design system.
+- **`href` TMF é derivado, nunca persistido.** Use `buildHref` de `src/shared/tmf/href.ts`; não monte self-links em template literal nem adicione coluna `href` a SQL, schema ou loaders.
 - **Segredos nunca entram no repositório.** `.env` está no `.gitignore` e contém `DATABASE_URL*`, `AUTH_TOKEN` e `OPENAI_API_KEY`. Não os imprima em log, output ou commit.
 
 ---

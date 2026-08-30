@@ -1,6 +1,6 @@
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import { AppError } from '../../shared/errors/app-error.js';
-import type { EventService } from '../../shared/tmf/index.js';
+import { buildHref, type EventService } from '../../shared/tmf/index.js';
 import type {
   CreatePartyInput,
   CreatePartyRoleInput,
@@ -38,7 +38,7 @@ export class PartyService {
     const party: Party = {
       '@type': partyType,
       id,
-      href: `/tmf-api/partyManagement/v4/party/${id}`,
+      href: buildHref('party', id),
       name: input.name.trim(),
       partyType,
       status: input.status ?? 'active',
@@ -104,7 +104,7 @@ export class PartyService {
     const role: PartyRole = {
       '@type': 'PartyRole',
       id,
-      href: `/tmf-api/partyRoleManagement/v4/partyRole/${id}`,
+      href: buildHref('partyRole', id),
       name: input.name.trim(),
       status: input.status ?? 'active',
       partyId: party.id,

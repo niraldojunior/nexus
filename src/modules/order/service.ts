@@ -1,6 +1,6 @@
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import { AppError } from '../../shared/errors/app-error.js';
-import type { EventService, RelatedParty, EntityRef } from '../../shared/tmf/index.js';
+import { buildHref, type EventService, type RelatedParty, type EntityRef } from '../../shared/tmf/index.js';
 import type { GeoService } from '../geo/service.js';
 import type { ResourceService } from '../resource/service.js';
 import type { PartyService } from '../party/service.js';
@@ -81,7 +81,7 @@ export class OrderService {
     const qualification: ServiceQualification = {
       '@type': 'ServiceQualification',
       id,
-      href: `/tmf-api/serviceQualificationManagement/v4/serviceQualification/${id}`,
+      href: buildHref('serviceQualification', id),
       state: 'done',
       place: place ? [place] : [],
       relatedParty: await normalizeRelatedParties(
@@ -201,7 +201,7 @@ export class OrderService {
     const baseOrder: ServiceOrder = {
       '@type': 'ServiceOrder',
       id,
-      href: `/tmf-api/serviceOrderingManagement/v4/serviceOrder/${id}`,
+      href: buildHref('serviceOrder', id),
       state: input.state ?? 'acknowledged',
       relatedParty: await normalizeRelatedParties(
         input.relatedParty,
@@ -291,7 +291,7 @@ export class OrderService {
     const baseOrder: ResourceOrder = {
       '@type': 'ResourceOrder',
       id,
-      href: `/tmf-api/resourceOrderingManagement/v4/resourceOrder/${id}`,
+      href: buildHref('resourceOrder', id),
       state: input.state ?? 'acknowledged',
       relatedParty: await normalizeRelatedParties(
         input.relatedParty,

@@ -366,6 +366,12 @@ A imposição do filtro não pode depender de disciplina de quem escreve query. 
 Os tipos de linha crus estão tipados em `src/modules/*/rows.ts` — eles são o contrato entre o SQL e o
 domínio, e o compilador valida o mapeamento.
 
+### `href` TMF derivado
+
+O `href` (self-link) continua obrigatório nos contratos TMF expostos pelo Nexus, mas **não é uma coluna persistida**. Repositórios o derivam em tempo de leitura com `buildHref` (`src/shared/tmf/href.ts`), a partir do tipo da entidade e do seu `id`; `GeographicRelationshipType` usa o `code` como chave natural. Isso evita links congelados em uma versão de rota ou host interno e elimina armazenamento redundante.
+
+Por padrão o valor é relativo (`/tmf-api/...`). Quando o gateway público difere do host interno, `TMF_PUBLIC_BASE_URL` prefixa o link absoluto no boot. Código novo não deve montar `href` por template literal nem aceitar o valor como fonte de verdade persistível; deve usar `buildHref`.
+
 ---
 
 ## 10. Referências

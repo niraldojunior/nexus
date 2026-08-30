@@ -25,7 +25,6 @@ import type {
 
 export type GeographicLocationRow = {
   id: string;
-  href: string;
   tenant_id: string | null;
   geometry_type: GeoGeometryType;
   geometry: string;
@@ -42,7 +41,6 @@ export type GeographicLocationRow = {
 
 export type GeographicAddressRow = {
   id: string;
-  href: string;
   tenant_id: string | null;
   street_type: string | null;
   street_name: string;
@@ -62,7 +60,6 @@ export type GeographicAddressRow = {
 
 export type GeographicSiteSpecificationRow = {
   id: string;
-  href: string;
   name: string;
   code: string;
   category: GeographicSiteSpecificationCategory;
@@ -87,7 +84,6 @@ export type GeographicSiteSpecificationContainmentRuleRow = {
 
 export type GeographicSiteRow = {
   id: string;
-  href: string;
   tenant_id: string | null;
   name: string;
   status: GeoSiteStatus;
@@ -113,7 +109,6 @@ export type GeographicSiteRelationshipRow = {
 
 export type GeographicRelationshipTypeRow = {
   id: string;
-  href: string;
   code: string;
   name: string;
   inverse_code: string;

@@ -56,7 +56,7 @@ const JSON_COLUMNS = new Set(
 const oracleTextType = (column: string): string => {
   if (CLOB_COLUMNS.has(column)) return 'CLOB';
   if (column === 'id' || column === 'token' || column.endsWith('_id')) return 'VARCHAR2(36 CHAR)';
-  if (['description', 'href', 'message', 'note', 'query', 'summary', 'title'].includes(column)) {
+  if (['description', 'message', 'note', 'query', 'summary', 'title'].includes(column)) {
     return 'VARCHAR2(4000 CHAR)';
   }
   return 'VARCHAR2(255 CHAR)';

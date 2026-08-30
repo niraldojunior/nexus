@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { test, vi } from 'vitest';
+import { afterEach, test, vi } from 'vitest';
 import type { LLMRequest, ResearchMessage, ResearchSession } from '../src/modules/search/domain.js';
 import { SearchService } from '../src/modules/search/index.js';
+import { configureHrefBaseUrl } from '../src/shared/tmf/index.js';
 import type { PostgresSearchRepository } from '../src/modules/search/postgres-repository.js';
 
 const createRepositoryMock = () =>
@@ -20,6 +21,10 @@ const createRepositoryMock = () =>
     updateSessionTitle: ReturnType<typeof vi.fn>;
     archiveSession: ReturnType<typeof vi.fn>;
   };
+
+afterEach(() => {
+  configureHrefBaseUrl(undefined);
+});
 
 test('SearchService cria sessoes com defaults canonicos e campos opcionais', async () => {
   const repository = createRepositoryMock();
@@ -48,6 +53,23 @@ test('SearchService cria sessoes com defaults canonicos e campos opcionais', asy
   assert.match(session.id, /^[0-9a-f-]{36}$/);
   assert.equal(repository.createSession.mock.calls.length, 1);
   assert.match(repository.createSession.mock.calls[0]?.[0].href, /^\/v1\/search\/sessions\//);
+});
+
+test('SearchService aplica a base pública configurada ao href de uma nova sessão', async () => {
+  const repository = createRepositoryMock();
+  repository.createSession.mockImplementation((session: ResearchSession) => ({
+    ...session,
+    messages: [],
+  }));
+  configureHrefBaseUrl('https://api.vtal.example.com/');
+  const service = new SearchService(repository);
+
+  await service.createSession('tenant-1', { title: 'Sessão pública' });
+
+  assert.match(
+    repository.createSession.mock.calls[0]?.[0].href,
+    /^https:\/\/api\.vtal\.example\.com\/v1\/search\/sessions\//,
+  );
 });
 
 test('SearchService preenche defaults quando criacao nao traz opcionais', async () => {

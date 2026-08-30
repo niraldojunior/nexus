@@ -564,13 +564,9 @@ async function main() {
       }
       await client.query(
         `INSERT INTO tmf_geographic_site
-           (id, href, tenant_id, name, site_specification_id, status, characteristics)
-         VALUES ($1, $2, 'default', $3, $4, 'Active', $5)`,
-        [
-          orphanSiteId,
-          `/tmf-api/geographicSiteManagement/v4/geographicSite/${orphanSiteId}`,
-          ORPHAN_SITE_NAME,
-          siteSpecId,
+           (id, tenant_id, name, site_specification_id, status, characteristics)
+         VALUES ($1, 'default', $2, $3, 'Active', $4)`,
+        [orphanSiteId, ORPHAN_SITE_NAME, siteSpecId,
           JSON.stringify([
             { name: 'seed', value: SEED_TAG, valueType: 'string' },
             { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
@@ -597,7 +593,6 @@ async function main() {
       specIdFor.set(name, id);
       novasSpecs.push({
         id,
-        href: `/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${id}`,
         name,
         category: 'Infrastructure.Passive',
         resource_type: resourceType,
@@ -608,7 +603,7 @@ async function main() {
     await bulkInsert(
       client,
       'tmf_resource_specification',
-      ['id', 'href', 'name', 'category', 'resource_type', 'description', 'characteristics'],
+      ['id', 'name', 'category', 'resource_type', 'description', 'characteristics'],
       novasSpecs,
     );
 
@@ -622,7 +617,6 @@ async function main() {
       b.resourceId = randomUUID();
       locations.push({
         id: locId,
-        href: `/tmf-api/geographicLocationManagement/v4/geographicLocation/${locId}`,
         geometry_type: 'Point',
         geometry: JSON.stringify({ type: 'Point', coordinates: [b.lng, b.lat] }),
         spatial_ref: 'EPSG:4326',
@@ -633,7 +627,6 @@ async function main() {
         const addrId = randomUUID();
         addresses.push({
           id: addrId,
-          href: `/tmf-api/geographicAddressManagement/v4/geographicAddress/${addrId}`,
           street_name: b.endereco.street,
           street_nr: b.endereco.streetNr,
           locality: b.endereco.locality,
@@ -648,7 +641,6 @@ async function main() {
       const { status, substatus } = resolveStatus(b.row.STATUS, b.row.ds_estado_controle);
       boxResources.push({
         id: b.resourceId,
-        href: `/tmf-api/resourceInventoryManagement/v4/resource/${b.resourceId}`,
         name: b.displayName,
         resource_specification_id: specIdFor.get(b.tipo),
         resource_type: 'CTO',
@@ -697,7 +689,6 @@ async function main() {
       const display = `${parent ? `${parent} · ` : ''}${s.nome} (${s.sigla})`;
       locations.push({
         id: locId,
-        href: `/tmf-api/geographicLocationManagement/v4/geographicLocation/${locId}`,
         geometry_type: 'Point',
         geometry: JSON.stringify({ type: 'Point', coordinates: [s.lng, s.lat] }),
         spatial_ref: 'EPSG:4326',
@@ -709,7 +700,6 @@ async function main() {
       const { status, substatus } = resolveStatus(s.row.STATUS, s.row.ds_estado_controle);
       orphanResources.push({
         id,
-        href: `/tmf-api/resourceInventoryManagement/v4/resource/${id}`,
         name: display,
         resource_specification_id: specIdFor.get('Splitter'),
         resource_type: 'Splitter',
@@ -748,7 +738,6 @@ async function main() {
       'tmf_geographic_location',
       [
         'id',
-        'href',
         'geometry_type',
         'geometry',
         'spatial_ref',
@@ -762,7 +751,6 @@ async function main() {
       'tmf_geographic_address',
       [
         'id',
-        'href',
         'street_name',
         'street_nr',
         'locality',
@@ -777,7 +765,6 @@ async function main() {
     );
     const boxCols = [
       'id',
-      'href',
       'name',
       'resource_specification_id',
       'resource_type',
@@ -805,7 +792,6 @@ async function main() {
       const { status, substatus } = resolveStatus(s.row.STATUS, s.row.ds_estado_controle);
       splitterResources.push({
         id,
-        href: `/tmf-api/resourceInventoryManagement/v4/resource/${id}`,
         name: `${caixa?.displayName ?? s.box.displayName} · ${s.nome}`,
         resource_specification_id: specIdFor.get('Splitter'),
         resource_type: 'Splitter',

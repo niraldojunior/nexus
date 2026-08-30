@@ -149,7 +149,6 @@ export async function ensureCategory(
   const id = `cat-${code.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
   await merge(target, t, 'tmf_resource_category', ['code'], {
     id,
-    href: `/tmf-api/resourceCatalogManagement/v4/resourceCategory/${id}`,
     code,
     name,
     status: 'active',
@@ -166,7 +165,6 @@ export async function ensureResourceType(
   const id = `rt-${code.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
   await merge(target, t, 'tmf_resource_type', ['code'], {
     id,
-    href: `/tmf-api/resourceCatalogManagement/v4/resourceType/${id}`,
     code,
     name,
     category_code: categoryCode,
@@ -189,15 +187,8 @@ export async function ensureSiteSpec(
   if (exists.rows?.[0]) return;
   const id = createCanonicalId();
   await target.execute(
-    `INSERT INTO ${t('tmf_geographic_site_specification')} (id,href,name,code,category,site_role,lifecycle_status,characteristics,is_bootstrap) VALUES (:1,:2,:3,:4,:5,:6,'Active','[]',0)`,
-    [
-      id,
-      `/tmf-api/geographicSiteManagement/v4/geographicSiteSpecification/${id}`,
-      code,
-      code,
-      category,
-      siteRole,
-    ],
+    `INSERT INTO ${t('tmf_geographic_site_specification')} (id,name,code,category,site_role,lifecycle_status,characteristics,is_bootstrap) VALUES (:1,:2,:3,:4,:5,'Active','[]',0)`,
+    [id, code, code, category, siteRole],
   );
 }
 
@@ -231,14 +222,8 @@ export async function resourceSpecId(
   if (row.rows?.[0]?.ID) return row.rows[0].ID;
   const id = createCanonicalId();
   await target.execute(
-    `INSERT INTO ${t('tmf_resource_specification')} (id,href,name,category,resource_type,characteristics) VALUES (:1,:2,:3,:4,:5,'[]')`,
-    [
-      id,
-      `/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${id}`,
-      name,
-      categoryCode,
-      resourceType,
-    ],
+    `INSERT INTO ${t('tmf_resource_specification')} (id,name,category,resource_type,characteristics) VALUES (:1,:2,:3,:4,'[]')`,
+    [id, name, categoryCode, resourceType],
   );
   return id;
 }

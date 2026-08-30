@@ -970,11 +970,10 @@ test('Geo coverage serves the GPON heat grid and neighborhood polygons by boundi
   ) => {
     await db.run(
       `INSERT INTO tmf_geographic_location
-         (id, href, geometry_type, geometry, spatial_ref, reference_point, characteristics)
-       VALUES (?, ?, 'Polygon', ?, 'EPSG:4326', ?, ?)`,
+         (id, geometry_type, geometry, spatial_ref, reference_point, characteristics)
+       VALUES (?, 'Polygon', ?, 'EPSG:4326', ?, ?)`,
       [
         locId,
-        `/tmf-api/geographicLocationManagement/v4/geographicLocation/${locId}`,
         JSON.stringify({
           type: 'Polygon',
           coordinates: [
@@ -1861,11 +1860,10 @@ test('Manchas de Projeto (REQ-MOD01-017): GET /areas lê o que o script grava, e
   const locationId = '33333333-3333-7333-8333-333333333333';
   await db.run(
     `INSERT INTO tmf_geographic_location
-       (id, href, geometry_type, geometry, spatial_ref, reference_point, characteristics)
-     VALUES (?, ?, 'Polygon', ?, 'EPSG:4326', ?, '[]')`,
+       (id, geometry_type, geometry, spatial_ref, reference_point, characteristics)
+     VALUES (?, 'Polygon', ?, 'EPSG:4326', ?, '[]')`,
     [
       locationId,
-      `/tmf-api/geographicLocationManagement/v4/geographicLocation/${locationId}`,
       JSON.stringify({
         type: 'Polygon',
         coordinates: [

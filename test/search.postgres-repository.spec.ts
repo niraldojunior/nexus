@@ -72,11 +72,10 @@ test('PostgresSearchRepository persiste, recarrega e arquiva sessões e mensagen
 
     await sqlite.run(
       `INSERT INTO research_session
-       (id, href, user_id, title, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'deleted', ?, ?)`,
+       (id, user_id, title, status, created_at, updated_at)
+       VALUES (?, ?, ?, 'deleted', ?, ?)`,
       [
         'session-deleted',
-        '/v1/search/sessions/session-deleted',
         'tenant-1',
         'Sessão removida',
         '2026-01-01T00:00:00.000Z',

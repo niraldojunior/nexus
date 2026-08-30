@@ -37,9 +37,8 @@ test.skipIf(!oracleConfigured)(
     const client = await getOracleTestClient();
 
     const id = `oracle-roundtrip-${Date.now()}`;
-    await client.execute('INSERT INTO tmf_party (id, href, name, party_type) VALUES (?, ?, ?, ?)', [
+    await client.execute('INSERT INTO tmf_party (id, name, party_type) VALUES (?, ?, ?)', [
       id,
-      `/tmf-api/party/${id}`,
       'Oracle Roundtrip Co',
       'Organization',
     ]);

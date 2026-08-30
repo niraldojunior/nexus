@@ -1,6 +1,11 @@
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import { AppError } from '../../shared/errors/app-error.js';
-import type { CharacteristicValue, EventService, RelatedParty } from '../../shared/tmf/index.js';
+import {
+  buildHref,
+  type CharacteristicValue,
+  type EventService,
+  type RelatedParty,
+} from '../../shared/tmf/index.js';
 import type {
   CreateServiceCandidateInput,
   CreateServiceCategoryInput,
@@ -81,7 +86,7 @@ export class ServiceService {
     const spec: ServiceSpecification = {
       '@type': 'ServiceSpecification',
       id,
-      href: `/tmf-api/serviceCatalogManagement/v4/serviceSpecification/${id}`,
+      href: buildHref('serviceSpecification', id),
       name: input.name.trim(),
       category: input.category.trim(),
       serviceType: input.serviceType,
@@ -217,7 +222,7 @@ export class ServiceService {
     const category: ServiceCategory = {
       '@type': 'ServiceCategory',
       id,
-      href: `/tmf-api/serviceCatalogManagement/v4/serviceCategory/${id}`,
+      href: buildHref('serviceCategory', id),
       name: input.name.trim(),
       serviceCategoryCharacteristic: input.serviceCategoryCharacteristic ?? [],
       tenantId: tenantOf(context),
@@ -317,7 +322,7 @@ export class ServiceService {
     const candidate: ServiceCandidate = {
       '@type': 'ServiceCandidate',
       id,
-      href: `/tmf-api/serviceCatalogManagement/v4/serviceCandidate/${id}`,
+      href: buildHref('serviceCandidate', id),
       name: input.name.trim(),
       status: input.status ?? 'active',
       serviceSpecification: { id: spec.id, '@referredType': 'ServiceSpecification' },
@@ -475,7 +480,7 @@ export class ServiceService {
     const service: CustomerFacingService = {
       '@type': 'CustomerFacingService',
       id,
-      href: `/tmf-api/serviceInventoryManagement/v4/service/${id}`,
+      href: buildHref('service', id),
       name: normalized.name.trim(),
       serviceSpecificationId: spec.id,
       serviceSpecification: { id: spec.id, '@referredType': 'ServiceSpecification' },
@@ -545,7 +550,7 @@ export class ServiceService {
     const service: ResourceFacingService = {
       '@type': 'ResourceFacingService',
       id,
-      href: `/tmf-api/serviceInventoryManagement/v4/service/${id}`,
+      href: buildHref('service', id),
       name: normalized.name.trim(),
       serviceSpecificationId: spec.id,
       serviceSpecification: { id: spec.id, '@referredType': 'ServiceSpecification' },

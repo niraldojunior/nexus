@@ -228,7 +228,6 @@ async function processProject(source, target, project) {
     const locId = randomUUID();
     return {
       id: locId,
-      href: `/tmf-api/geographicLocationManagement/v4/geographicLocation/${locId}`,
       area,
     };
   });
@@ -253,7 +252,6 @@ async function processProject(source, target, project) {
       'tmf_geographic_location',
       [
         'id',
-        'href',
         'geometry_type',
         'geometry',
         'spatial_ref',
@@ -262,7 +260,6 @@ async function processProject(source, target, project) {
       ],
       locations.map((entry) => ({
         id: entry.id,
-        href: entry.href,
         geometry_type: 'Polygon',
         geometry: JSON.stringify(entry.area.geometry),
         spatial_ref: 'EPSG:4326',

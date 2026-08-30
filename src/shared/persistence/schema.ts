@@ -205,7 +205,6 @@ export const MIGRATIONS_SQL = `
 
   CREATE TABLE IF NOT EXISTS tmf_geographic_relationship_type (
     id TEXT PRIMARY KEY,
-    href TEXT NOT NULL,
     code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     inverse_code TEXT NOT NULL,
@@ -648,8 +647,7 @@ export const SCHEMA_SQL = `
       -- TMF675: Geographic Location (geoespacial pura: Point, LineString, Polygon)
       CREATE TABLE IF NOT EXISTS tmf_geographic_location (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        tenant_id TEXT NOT NULL DEFAULT 'default',
+            tenant_id TEXT NOT NULL DEFAULT 'default',
         geometry_type TEXT NOT NULL CHECK(geometry_type IN ('Point', 'LineString', 'Polygon')),
         geometry TEXT NOT NULL,
         spatial_ref TEXT DEFAULT 'EPSG:4326',
@@ -667,8 +665,7 @@ export const SCHEMA_SQL = `
       -- TMF673: Geographic Address (endereço postal estruturado)
       CREATE TABLE IF NOT EXISTS tmf_geographic_address (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        tenant_id TEXT NOT NULL DEFAULT 'default',
+            tenant_id TEXT NOT NULL DEFAULT 'default',
         street_type TEXT,
         street_name TEXT NOT NULL,
         street_search TEXT,
@@ -698,8 +695,7 @@ export const SCHEMA_SQL = `
       -- TMF674: Geographic Site Specification (catálogo de tipos de site)
       CREATE TABLE IF NOT EXISTS tmf_geographic_site_specification (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        name TEXT NOT NULL,
+            name TEXT NOT NULL,
         code TEXT NOT NULL,
         category TEXT NOT NULL,
         site_role TEXT,
@@ -734,8 +730,7 @@ export const SCHEMA_SQL = `
       -- TMF674: Geographic Site (entidade central: Centro, POP, Sala, Armário, etc.)
       CREATE TABLE IF NOT EXISTS tmf_geographic_site (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        tenant_id TEXT NOT NULL DEFAULT 'default',
+            tenant_id TEXT NOT NULL DEFAULT 'default',
         name TEXT NOT NULL,
         site_specification_id TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'Planned' CHECK(status IN ('Planned', 'InConstruction', 'Active', 'InDeactivation', 'Retired')),
@@ -905,8 +900,7 @@ export const SCHEMA_SQL = `
 
       CREATE TABLE IF NOT EXISTS tmf_geographic_relationship_type (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        code TEXT NOT NULL UNIQUE,
+            code TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
         inverse_code TEXT NOT NULL,
         is_symmetric INTEGER NOT NULL DEFAULT 0,
@@ -926,8 +920,7 @@ export const SCHEMA_SQL = `
       -- TMF634: Resource Specification (catálogo de tipos de recurso)
       CREATE TABLE IF NOT EXISTS tmf_resource_specification (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        name TEXT NOT NULL,
+            name TEXT NOT NULL,
         category TEXT NOT NULL,
         resource_type TEXT NOT NULL,
         description TEXT,
@@ -943,8 +936,7 @@ export const SCHEMA_SQL = `
       -- TMF634: Resource Function Specification (template funcional reutilizável)
       CREATE TABLE IF NOT EXISTS tmf_resource_category (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        code TEXT NOT NULL UNIQUE,
+            code TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
         parent_category_code TEXT,
         description TEXT,
@@ -957,8 +949,7 @@ export const SCHEMA_SQL = `
 
       CREATE TABLE IF NOT EXISTS tmf_resource_type (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        code TEXT NOT NULL UNIQUE,
+            code TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
         category_code TEXT NOT NULL,
         description TEXT,
@@ -972,8 +963,7 @@ export const SCHEMA_SQL = `
 
       CREATE TABLE IF NOT EXISTS tmf_resource_function_specification (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        name TEXT NOT NULL,
+            name TEXT NOT NULL,
         description TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
@@ -985,8 +975,7 @@ export const SCHEMA_SQL = `
       -- TMF639: Physical Resource (instância de recurso físico: OLT, cabo, poste, ONT, etc.)
       CREATE TABLE IF NOT EXISTS tmf_physical_resource (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        name TEXT NOT NULL,
+            name TEXT NOT NULL,
         resource_specification_id TEXT NOT NULL,
         resource_type TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
@@ -1012,8 +1001,7 @@ export const SCHEMA_SQL = `
       -- TMF639: Logical Resource (instância de recurso lógico: IP, VLAN, VRF, etc.)
       CREATE TABLE IF NOT EXISTS tmf_logical_resource (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        name TEXT NOT NULL,
+            name TEXT NOT NULL,
         resource_specification_id TEXT NOT NULL,
         resource_type TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
@@ -1058,8 +1046,7 @@ export const SCHEMA_SQL = `
       -- TMF633: Service Specification (catálogo de tipos de serviço)
       CREATE TABLE IF NOT EXISTS tmf_service_specification (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        name TEXT NOT NULL,
+            name TEXT NOT NULL,
         category TEXT NOT NULL,
         service_type TEXT NOT NULL CHECK(service_type IN ('CFS', 'RFS', 'Other')),
         description TEXT,
@@ -1074,8 +1061,7 @@ export const SCHEMA_SQL = `
 
       CREATE TABLE IF NOT EXISTS tmf_service_category (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        name TEXT NOT NULL,
+            name TEXT NOT NULL,
         description TEXT,
         parent_category_id TEXT,
         valid_for_start DATETIME,
@@ -1090,8 +1076,7 @@ export const SCHEMA_SQL = `
 
       CREATE TABLE IF NOT EXISTS tmf_service_candidate (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        name TEXT NOT NULL,
+            name TEXT NOT NULL,
         description TEXT,
         service_specification_id TEXT NOT NULL,
         service_category_id TEXT,
@@ -1114,8 +1099,7 @@ export const SCHEMA_SQL = `
       -- TABLE time, so the referenced table must already exist.
       CREATE TABLE IF NOT EXISTS tmf_resource_facing_service (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        name TEXT,
+            name TEXT,
         service_specification_id TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
         state TEXT,
@@ -1146,8 +1130,7 @@ export const SCHEMA_SQL = `
       -- TMF638: Customer Facing Service (serviço comercial ao cliente/ISP)
       CREATE TABLE IF NOT EXISTS tmf_customer_facing_service (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        name TEXT NOT NULL,
+            name TEXT NOT NULL,
         service_specification_id TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
         state TEXT,
@@ -1191,8 +1174,7 @@ export const SCHEMA_SQL = `
       -- TMF645: Service Qualification
       CREATE TABLE IF NOT EXISTS tmf_service_qualification (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        state TEXT NOT NULL DEFAULT 'done' CHECK(state IN ('done', 'terminated')),
+            state TEXT NOT NULL DEFAULT 'done' CHECK(state IN ('done', 'terminated')),
         place TEXT,
         related_party TEXT,
         service_characteristic TEXT,
@@ -1207,8 +1189,7 @@ export const SCHEMA_SQL = `
       -- TMF641: Service Order
       CREATE TABLE IF NOT EXISTS tmf_service_order (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        state TEXT NOT NULL DEFAULT 'acknowledged' CHECK(state IN ('acknowledged', 'inProgress', 'completed', 'failed', 'cancelled')),
+            state TEXT NOT NULL DEFAULT 'acknowledged' CHECK(state IN ('acknowledged', 'inProgress', 'completed', 'failed', 'cancelled')),
         description TEXT,
         related_party TEXT,
         service_order_item TEXT NOT NULL,
@@ -1223,8 +1204,7 @@ export const SCHEMA_SQL = `
       -- TMF652: Resource Order
       CREATE TABLE IF NOT EXISTS tmf_resource_order (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        state TEXT NOT NULL DEFAULT 'acknowledged' CHECK(state IN ('acknowledged', 'inProgress', 'completed', 'failed', 'cancelled')),
+            state TEXT NOT NULL DEFAULT 'acknowledged' CHECK(state IN ('acknowledged', 'inProgress', 'completed', 'failed', 'cancelled')),
         description TEXT,
         related_party TEXT,
         resource_order_item TEXT NOT NULL,
@@ -1240,8 +1220,7 @@ export const SCHEMA_SQL = `
 
       CREATE TABLE IF NOT EXISTS tmf_party (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        name TEXT NOT NULL,
+            name TEXT NOT NULL,
         party_type TEXT NOT NULL CHECK(party_type IN ('Organization', 'Individual')),
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'terminated')),
         valid_for_start DATETIME,
@@ -1255,8 +1234,7 @@ export const SCHEMA_SQL = `
 
       CREATE TABLE IF NOT EXISTS tmf_party_role (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        name TEXT NOT NULL,
+            name TEXT NOT NULL,
         party_id TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'terminated')),
         valid_for_start DATETIME,
@@ -1375,8 +1353,7 @@ export const SCHEMA_SQL = `
       -- Research Session (similar to ChatGPT conversation)
       CREATE TABLE IF NOT EXISTS research_session (
         id TEXT PRIMARY KEY,
-        href TEXT NOT NULL,
-        user_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
         title TEXT NOT NULL,
         description TEXT,
         context TEXT,

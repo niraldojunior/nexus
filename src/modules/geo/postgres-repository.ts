@@ -1,5 +1,6 @@
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 import { dialectFor } from '../../shared/persistence/sql-dialect.js';
+import { buildHref } from '../../shared/tmf/index.js';
 import type {
   GeographicAddress,
   GeoAuditLog,
@@ -68,12 +69,11 @@ export class PostgresGeoRepository implements IGeoRepository {
 
     await this.db.run(
       `INSERT INTO tmf_geographic_location
-       (id, href, tenant_id, geometry_type, geometry, spatial_ref, accuracy, reference_point,
+       (id, tenant_id, geometry_type, geometry, spatial_ref, accuracy, reference_point,
         source_system, source_ref, accuracy_level,
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        tenant_id = excluded.tenant_id,
        geometry_type = excluded.geometry_type,
        geometry = excluded.geometry,
@@ -89,7 +89,6 @@ export class PostgresGeoRepository implements IGeoRepository {
        updated_at = excluded.updated_at`,
       [
         location.id,
-        location.href,
         location.tenantId ?? 'default',
         location.geometryType,
         JSON.stringify(location.geometry),
@@ -121,7 +120,7 @@ export class PostgresGeoRepository implements IGeoRepository {
       params.push(scope.tenantId);
     }
     const row = await this.db.get<GeographicLocationRow>(
-      `SELECT id, href, tenant_id, geometry_type, geometry, spatial_ref, accuracy, reference_point,
+      `SELECT id, tenant_id, geometry_type, geometry, spatial_ref, accuracy, reference_point,
               source_system, source_ref, accuracy_level,
               valid_for_start, valid_for_end, characteristics
        FROM tmf_geographic_location WHERE ${conditions.join(' AND ')}`,
@@ -145,7 +144,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      `SELECT id, href, tenant_id, geometry_type, geometry, spatial_ref, accuracy, reference_point,
+      `SELECT id, tenant_id, geometry_type, geometry, spatial_ref, accuracy, reference_point,
               source_system, source_ref, accuracy_level,
               valid_for_start, valid_for_end, characteristics
        FROM tmf_geographic_location`,
@@ -175,13 +174,12 @@ export class PostgresGeoRepository implements IGeoRepository {
 
     await this.db.run(
       `INSERT INTO tmf_geographic_address
-       (id, href, tenant_id, street_type, street_name, street_search, street_nr, street_nr_search,
+       (id, tenant_id, street_type, street_name, street_search, street_nr, street_nr_search,
         city, city_search, state_or_province, postcode, postcode_search, country,
         geographic_location_id, sub_address, source_system, source_ref,
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        tenant_id = excluded.tenant_id,
        street_type = excluded.street_type,
        street_name = excluded.street_name,
@@ -204,7 +202,6 @@ export class PostgresGeoRepository implements IGeoRepository {
        updated_at = excluded.updated_at`,
       [
         address.id,
-        address.href,
         address.tenantId ?? 'default',
         null,
         address.street,
@@ -238,12 +235,11 @@ export class PostgresGeoRepository implements IGeoRepository {
   ): Promise<void> {
     await this.db.run(
       `INSERT INTO tmf_geographic_address
-       (id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode,
+       (id, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode,
         country, geographic_location_id, sub_address, source_system, source_ref,
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        tenant_id = excluded.tenant_id,
        street_type = excluded.street_type,
        street_name = excluded.street_name,
@@ -262,7 +258,6 @@ export class PostgresGeoRepository implements IGeoRepository {
        updated_at = excluded.updated_at`,
       [
         address.id,
-        address.href,
         address.tenantId ?? 'default',
         null,
         address.street,
@@ -295,7 +290,7 @@ export class PostgresGeoRepository implements IGeoRepository {
       params.push(scope.tenantId);
     }
     const row = await this.db.get<GeographicAddressRow>(
-      `SELECT id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
+      `SELECT id, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
               geographic_location_id, sub_address, source_system, source_ref, valid_for_start, valid_for_end, characteristics
        FROM tmf_geographic_address WHERE ${conditions.join(' AND ')}`,
       params,
@@ -400,7 +395,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      `SELECT id, href, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
+      `SELECT id, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
               geographic_location_id, sub_address, source_system, source_ref, valid_for_start, valid_for_end,
               ${query?.includeCharacteristics === false ? 'NULL' : 'characteristics'} AS characteristics
        FROM tmf_geographic_address`,
@@ -425,11 +420,10 @@ export class PostgresGeoRepository implements IGeoRepository {
 
     await this.db.run(
       `INSERT INTO tmf_geographic_site_specification
-       (id, href, name, code, category, site_role, lifecycle_status, description, allowed_parent_spec_ids, allowed_child_spec_ids,
+       (id, name, code, category, site_role, lifecycle_status, description, allowed_parent_spec_ids, allowed_child_spec_ids,
         valid_for_start, valid_for_end, characteristics, is_bootstrap, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        name = excluded.name,
        code = excluded.code,
        category = excluded.category,
@@ -445,7 +439,6 @@ export class PostgresGeoRepository implements IGeoRepository {
        updated_at = excluded.updated_at`,
       [
         spec.id,
-        spec.href,
         spec.name,
         spec.code,
         spec.category,
@@ -468,7 +461,7 @@ export class PostgresGeoRepository implements IGeoRepository {
 
   public async getSpec(id: string): Promise<GeographicSiteSpecification | undefined> {
     const row = await this.db.get<GeographicSiteSpecificationRow>(
-      `SELECT id, href, name, code, category, site_role, lifecycle_status, description,
+      `SELECT id, name, code, category, site_role, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
               characteristics, is_bootstrap
        FROM tmf_geographic_site_specification
@@ -482,7 +475,7 @@ export class PostgresGeoRepository implements IGeoRepository {
 
   public async getSpecByCode(code: string): Promise<GeographicSiteSpecification | undefined> {
     const row = await this.db.get<GeographicSiteSpecificationRow>(
-      `SELECT id, href, name, code, category, site_role, lifecycle_status, description,
+      `SELECT id, name, code, category, site_role, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
               characteristics, is_bootstrap
        FROM tmf_geographic_site_specification
@@ -525,7 +518,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      `SELECT id, href, name, code, category, site_role, lifecycle_status, description,
+      `SELECT id, name, code, category, site_role, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
               characteristics, is_bootstrap
        FROM tmf_geographic_site_specification`,
@@ -606,12 +599,11 @@ export class PostgresGeoRepository implements IGeoRepository {
 
     await this.db.run(
       `INSERT INTO tmf_geographic_site
-       (id, href, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id,
+       (id, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id,
         geographic_address_id, parent_site_id, related_party, site_addresses,
         note, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        tenant_id = excluded.tenant_id,
        name = excluded.name,
        status = excluded.status,
@@ -628,7 +620,6 @@ export class PostgresGeoRepository implements IGeoRepository {
        updated_at = excluded.updated_at`,
       [
         site.id,
-        site.href,
         site.tenantId ?? 'default',
         site.name,
         site.status,
@@ -658,7 +649,7 @@ export class PostgresGeoRepository implements IGeoRepository {
       params.push(scope.tenantId);
     }
     const row = await this.db.get<GeographicSiteRow>(
-      `SELECT id, href, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id,
+      `SELECT id, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id,
               geographic_address_id, parent_site_id, related_party, site_addresses, note, characteristics
        FROM tmf_geographic_site WHERE ${conditions.join(' AND ')}`,
       params,
@@ -737,7 +728,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      `SELECT id, href, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id,
+      `SELECT id, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id,
               geographic_address_id, parent_site_id, related_party, site_addresses, note, characteristics
        FROM tmf_geographic_site`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
@@ -848,11 +839,10 @@ export class PostgresGeoRepository implements IGeoRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_geographic_relationship_type
-       (id, href, code, name, inverse_code, is_symmetric, allowed_source_categories, allowed_target_categories,
+       (id, code, name, inverse_code, is_symmetric, allowed_source_categories, allowed_target_categories,
         cardinality, lifecycle_status, is_bootstrap, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(code) DO UPDATE SET
-       href = excluded.href,
        name = excluded.name,
        inverse_code = excluded.inverse_code,
        is_symmetric = excluded.is_symmetric,
@@ -864,7 +854,6 @@ export class PostgresGeoRepository implements IGeoRepository {
        updated_at = excluded.updated_at`,
       [
         relationshipType.id,
-        relationshipType.href,
         relationshipType.code,
         relationshipType.name,
         relationshipType.inverseCode,
@@ -884,7 +873,7 @@ export class PostgresGeoRepository implements IGeoRepository {
 
   public async getRelationshipType(code: string): Promise<GeographicRelationshipType | undefined> {
     const row = await this.db.get<GeographicRelationshipTypeRow>(
-      `SELECT id, href, code, name, inverse_code, is_symmetric, allowed_source_categories, allowed_target_categories,
+      `SELECT id, code, name, inverse_code, is_symmetric, allowed_source_categories, allowed_target_categories,
               cardinality, lifecycle_status, is_bootstrap
        FROM tmf_geographic_relationship_type
        WHERE LOWER(code) = LOWER(?)`,
@@ -914,7 +903,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      `SELECT id, href, code, name, inverse_code, is_symmetric, allowed_source_categories, allowed_target_categories,
+      `SELECT id, code, name, inverse_code, is_symmetric, allowed_source_categories, allowed_target_categories,
               cardinality, lifecycle_status, is_bootstrap
        FROM tmf_geographic_relationship_type`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
@@ -1482,7 +1471,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const referencedRows =
       referencedIds.size > 0
         ? await this.db.all<GeographicSiteSpecificationRow>(
-            `SELECT id, href, name, code, category, site_role, lifecycle_status, description,
+            `SELECT id, name, code, category, site_role, lifecycle_status, description,
                     allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
                     characteristics, is_bootstrap
              FROM tmf_geographic_site_specification
@@ -1512,7 +1501,7 @@ export class PostgresGeoRepository implements IGeoRepository {
       specs.set(row.id, {
         '@type': 'GeographicSiteSpecification',
         id: row.id,
-        href: row.href,
+        href: buildHref('geographicSiteSpecification', row.id),
         name: row.name,
         code: row.code,
         category: row.category,
@@ -1571,7 +1560,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const result: GeographicLocation = {
       '@type': 'GeographicLocation',
       id: row.id,
-      href: row.href,
+      href: buildHref('geographicLocation', row.id),
       tenantId: row.tenant_id ?? 'default',
       geometryType: row.geometry_type,
       geometry: JSON.parse(row.geometry),
@@ -1596,7 +1585,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const result: GeographicAddress = {
       '@type': 'GeographicAddress',
       id: row.id,
-      href: row.href,
+      href: buildHref('geographicAddress', row.id),
       tenantId: row.tenant_id ?? 'default',
       street: row.street_name,
       characteristic: JSON.parse(row.characteristics || '[]'),
@@ -1629,7 +1618,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const result: GeographicSite = {
       '@type': 'GeographicSite',
       id: row.id,
-      href: row.href,
+      href: buildHref('geographicSite', row.id),
       tenantId: row.tenant_id ?? 'default',
       name: row.name,
       status: row.status,
@@ -1679,7 +1668,8 @@ export class PostgresGeoRepository implements IGeoRepository {
     return {
       '@type': 'GeographicRelationshipType',
       id: row.id,
-      href: row.href,
+      // Chaveado por `code`, não por `id` — fora do namespace TMF (ver src/shared/tmf/href.ts).
+      href: buildHref('geographicRelationshipType', row.code),
       code: row.code,
       name: row.name,
       inverseCode: row.inverse_code,
@@ -1723,7 +1713,7 @@ export class PostgresGeoRepository implements IGeoRepository {
   private mapSpecRefRow(row: GeographicSiteSpecificationRow): GeographicSiteSpecificationRef {
     return {
       id: row.id,
-      href: row.href,
+      href: buildHref('geographicSiteSpecification', row.id),
       name: row.name,
       code: row.code,
       category: row.category,

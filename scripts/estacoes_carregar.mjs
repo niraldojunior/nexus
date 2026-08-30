@@ -932,7 +932,6 @@ async function mainFast() {
       childByKey.set(key, salaId);
       newSites.push({
         id: salaId,
-        href: `/tmf-api/geographicSiteManagement/v4/geographicSite/${salaId}`,
         tenant_id: 'default',
         name,
         site_specification_id: specSalaId,
@@ -1071,7 +1070,6 @@ async function mainFast() {
         locationId = createCanonicalId();
         newLocations.push({
           id: locationId,
-          href: `/tmf-api/geographicLocationManagement/v4/geographicLocation/${locationId}`,
           tenant_id: 'default',
           geometry_type: 'Point',
           geometry: JSON.stringify({ type: 'Point', coordinates: coord }),
@@ -1084,7 +1082,6 @@ async function mainFast() {
       const addressId = createCanonicalId();
       newAddresses.push({
         id: addressId,
-        href: `/tmf-api/geographicAddressManagement/v4/geographicAddress/${addressId}`,
         tenant_id: 'default',
         street_name: street,
         street_nr: endereco.streetNr || null,
@@ -1100,7 +1097,6 @@ async function mainFast() {
 
       newSites.push({
         id: siteId,
-        href: `/tmf-api/geographicSiteManagement/v4/geographicSite/${siteId}`,
         tenant_id: 'default',
         name: estacaoName,
         site_specification_id: specCOId,
@@ -1152,7 +1148,6 @@ async function mainFast() {
         'tmf_geographic_location',
         [
           'id',
-          'href',
           'tenant_id',
           'geometry_type',
           'geometry',
@@ -1167,7 +1162,6 @@ async function mainFast() {
         'tmf_geographic_address',
         [
           'id',
-          'href',
           'tenant_id',
           'street_name',
           'street_nr',
@@ -1185,7 +1179,6 @@ async function mainFast() {
         'tmf_geographic_site',
         [
           'id',
-          'href',
           'tenant_id',
           'name',
           'site_specification_id',

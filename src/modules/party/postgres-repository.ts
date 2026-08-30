@@ -1,4 +1,5 @@
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import { buildHref } from '../../shared/tmf/index.js';
 import type { Party, PartyQuery, PartyRelationship, PartyRole, PartyRoleQuery } from './domain.js';
 import type { IPartyRepository } from './party-repository-interface.js';
 
@@ -34,10 +35,9 @@ export class PostgresPartyRepository implements IPartyRepository {
         const roleId = `party-role-${slug}-manufacturer`;
         await this.db.run(
           `INSERT INTO tmf_party
-           (id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (id, name, party_type, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
-           href = excluded.href,
            name = excluded.name,
            party_type = excluded.party_type,
            status = excluded.status,
@@ -47,7 +47,6 @@ export class PostgresPartyRepository implements IPartyRepository {
            updated_at = excluded.updated_at`,
           [
             partyId,
-            `/tmf-api/partyManagement/v4/party/${partyId}`,
             name,
             'Organization',
             'active',
@@ -60,10 +59,9 @@ export class PostgresPartyRepository implements IPartyRepository {
         );
         await this.db.run(
           `INSERT INTO tmf_party_role
-           (id, href, name, party_id, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (id, name, party_id, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
-           href = excluded.href,
            name = excluded.name,
            party_id = excluded.party_id,
            status = excluded.status,
@@ -73,7 +71,6 @@ export class PostgresPartyRepository implements IPartyRepository {
            updated_at = excluded.updated_at`,
           [
             roleId,
-            `/tmf-api/partyRoleManagement/v4/partyRole/${roleId}`,
             'manufacturer',
             partyId,
             'active',
@@ -92,10 +89,9 @@ export class PostgresPartyRepository implements IPartyRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_party
-       (id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, name, party_type, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        name = excluded.name,
        party_type = excluded.party_type,
        status = excluded.status,
@@ -105,7 +101,6 @@ export class PostgresPartyRepository implements IPartyRepository {
        updated_at = excluded.updated_at`,
       [
         party.id,
-        party.href,
         party.name,
         party.partyType,
         party.status,
@@ -125,7 +120,6 @@ export class PostgresPartyRepository implements IPartyRepository {
   public async getParty(id: string): Promise<Party | undefined> {
     const row = await this.db.get<{
       id: string;
-      href: string;
       name: string;
       party_type: 'Organization' | 'Individual';
       status: 'active' | 'inactive' | 'terminated';
@@ -134,7 +128,7 @@ export class PostgresPartyRepository implements IPartyRepository {
       characteristics?: string | null;
       tenant_id: string;
     }>(
-      `SELECT id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics, tenant_id
+      `SELECT id, name, party_type, status, valid_for_start, valid_for_end, characteristics, tenant_id
        FROM tmf_party
        WHERE id = ?`,
       [id],
@@ -170,7 +164,7 @@ export class PostgresPartyRepository implements IPartyRepository {
     const offsetClause = hasOffset ? 'OFFSET ?' : '';
 
     const sql = [
-      'SELECT id, href, name, party_type, status, valid_for_start, valid_for_end, characteristics, tenant_id FROM tmf_party',
+      'SELECT id, name, party_type, status, valid_for_start, valid_for_end, characteristics, tenant_id FROM tmf_party',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name ASC, id ASC',
       limitClause,
@@ -184,7 +178,6 @@ export class PostgresPartyRepository implements IPartyRepository {
 
     const rows = await this.db.all<{
       id: string;
-      href: string;
       name: string;
       party_type: 'Organization' | 'Individual';
       status: 'active' | 'inactive' | 'terminated';
@@ -203,10 +196,9 @@ export class PostgresPartyRepository implements IPartyRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_party_role
-       (id, href, name, party_id, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, name, party_id, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        name = excluded.name,
        party_id = excluded.party_id,
        status = excluded.status,
@@ -216,7 +208,6 @@ export class PostgresPartyRepository implements IPartyRepository {
        updated_at = excluded.updated_at`,
       [
         role.id,
-        role.href,
         role.name,
         role.partyId,
         role.status,
@@ -236,7 +227,6 @@ export class PostgresPartyRepository implements IPartyRepository {
   public async getPartyRole(id: string): Promise<PartyRole | undefined> {
     const row = await this.db.get<{
       id: string;
-      href: string;
       name: string;
       party_id: string;
       status: 'active' | 'inactive' | 'terminated';
@@ -244,12 +234,11 @@ export class PostgresPartyRepository implements IPartyRepository {
       valid_for_end?: string | null;
       characteristics?: string | null;
       tenant_id: string;
-      party_href: string;
       party_name: string;
       party_type: 'Organization' | 'Individual';
     }>(
-      `SELECT role.id, role.href, role.name, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics, role.tenant_id,
-              party.href AS party_href, party.name AS party_name, party.party_type AS party_type
+      `SELECT role.id, role.name, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics, role.tenant_id,
+              party.name AS party_name, party.party_type AS party_type
        FROM tmf_party_role role
        INNER JOIN tmf_party party ON party.id = role.party_id
        WHERE role.id = ?`,
@@ -286,8 +275,8 @@ export class PostgresPartyRepository implements IPartyRepository {
     const offsetClause = hasOffset ? 'OFFSET ?' : '';
 
     const sql = [
-      'SELECT role.id, role.href, role.name, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics, role.tenant_id,',
-      '       party.href AS party_href, party.name AS party_name, party.party_type AS party_type',
+      'SELECT role.id, role.name, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics, role.tenant_id,',
+      '       party.name AS party_name, party.party_type AS party_type',
       'FROM tmf_party_role role',
       'INNER JOIN tmf_party party ON party.id = role.party_id',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
@@ -303,7 +292,6 @@ export class PostgresPartyRepository implements IPartyRepository {
 
     const rows = await this.db.all<{
       id: string;
-      href: string;
       name: string;
       party_id: string;
       status: 'active' | 'inactive' | 'terminated';
@@ -311,7 +299,6 @@ export class PostgresPartyRepository implements IPartyRepository {
       valid_for_end?: string | null;
       characteristics?: string | null;
       tenant_id: string;
-      party_href: string;
       party_name: string;
       party_type: 'Organization' | 'Individual';
     }>(sql, params);
@@ -386,7 +373,6 @@ export class PostgresPartyRepository implements IPartyRepository {
 
   private mapParty(row: {
     id: string;
-    href: string;
     name: string;
     party_type: 'Organization' | 'Individual';
     status: 'active' | 'inactive' | 'terminated';
@@ -398,7 +384,7 @@ export class PostgresPartyRepository implements IPartyRepository {
     const party: Party = {
       '@type': row.party_type,
       id: row.id,
-      href: row.href,
+      href: buildHref('party', row.id),
       name: row.name,
       partyType: row.party_type,
       status: row.status,
@@ -418,7 +404,6 @@ export class PostgresPartyRepository implements IPartyRepository {
 
   private mapRole(row: {
     id: string;
-    href: string;
     name: string;
     party_id: string;
     status: 'active' | 'inactive' | 'terminated';
@@ -426,21 +411,20 @@ export class PostgresPartyRepository implements IPartyRepository {
     valid_for_end?: string | null;
     characteristics?: string | null;
     tenant_id?: string;
-    party_href: string;
     party_name: string;
     party_type: 'Organization' | 'Individual';
   }): PartyRole {
     const role: PartyRole = {
       '@type': 'PartyRole',
       id: row.id,
-      href: row.href,
+      href: buildHref('partyRole', row.id),
       name: row.name,
       status: row.status,
       partyId: row.party_id,
       party: {
         id: row.party_id,
         '@referredType': row.party_type,
-        href: row.party_href,
+        href: buildHref('party', row.party_id),
         name: row.party_name,
       },
       partyRoleCharacteristic: JSON.parse(

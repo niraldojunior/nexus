@@ -1,6 +1,6 @@
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import { AppError } from '../../shared/errors/app-error.js';
-import type { EventService, RelatedParty } from '../../shared/tmf/index.js';
+import { buildHref, type EventService, type RelatedParty } from '../../shared/tmf/index.js';
 import type {
   CreateLogicalResourceInput,
   CreatePhysicalResourceInput,
@@ -80,7 +80,7 @@ export class ResourceService {
     const spec: ResourceSpecification = {
       '@type': 'ResourceSpecification',
       id,
-      href: `/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${id}`,
+      href: buildHref('resourceSpecification', id),
       name: input.name.trim(),
       category: category.code,
       resourceType: resourceType.code,
@@ -224,7 +224,7 @@ export class ResourceService {
     const spec: ResourceFunctionSpecification = {
       '@type': 'ResourceFunctionSpecification',
       id,
-      href: `/tmf-api/resourceCatalogManagement/v4/resourceFunctionSpecification/${id}`,
+      href: buildHref('resourceFunctionSpecification', id),
       name: input.name.trim(),
       resourceFunctionSpecificationCharacteristic:
         input.resourceFunctionSpecificationCharacteristic ?? [],
@@ -322,7 +322,7 @@ export class ResourceService {
     const resource: PhysicalResource = {
       '@type': 'PhysicalResource',
       id,
-      href: `/tmf-api/resourceInventoryManagement/v4/resource/${id}`,
+      href: buildHref('resource', id),
       name: input.name.trim(),
       resourceSpecificationId: spec.id,
       resourceSpecification: { id: spec.id, '@referredType': 'ResourceSpecification' },
@@ -480,7 +480,7 @@ export class ResourceService {
     const resource: LogicalResource = {
       '@type': 'LogicalResource',
       id,
-      href: `/tmf-api/resourceInventoryManagement/v4/resource/${id}`,
+      href: buildHref('resource', id),
       name: input.name.trim(),
       resourceSpecificationId: spec.id,
       resourceSpecification: { id: spec.id, '@referredType': 'ResourceSpecification' },

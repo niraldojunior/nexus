@@ -47,7 +47,7 @@ const CELL_BATCH = Number(argOf('--cell-batch', '2000'));
 const POLY_BATCH = Number(argOf('--poly-batch', '500'));
 const PROGRESS_EVERY = Number(argOf('--progress-every', '100000'));
 
-const POLY_COLUMNS = ['id', 'href', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'];
+const POLY_COLUMNS = ['id', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'];
 const CELL_COLUMNS = [
   'tenant_id', 'grid_size_m', 'grid_x', 'grid_y', 'coverage_area_id', 'cdo_total', 'cdo_available', 'ports_total', 'ports_used',
 ];
@@ -174,7 +174,7 @@ async function main() {
 
     console.log('\nLendo polígonos e células do Oracle...');
     const { rows: polygons } = await source.query(
-      `SELECT id, href, geometry_type, geometry, spatial_ref, reference_point, characteristics
+      `SELECT id, geometry_type, geometry, spatial_ref, reference_point, characteristics
          FROM tmf_geographic_location WHERE reference_point LIKE 'GPON:%'`,
     );
     const { rows: cells } = await source.query(

@@ -1,7 +1,5 @@
 import type { ResourceCategory, ResourceType } from './domain.js';
-
-const buildHref = (kind: 'resourceCategory' | 'resourceType', id: string): string =>
-  `/tmf-api/resourceCatalogManagement/v4/${kind}/${encodeURIComponent(id)}`;
+import { buildHref } from '../../shared/tmf/index.js';
 
 const category = (
   id: string,

@@ -333,7 +333,6 @@ async function upsertLocation(target: Connection, id: string, item: ReturnType<t
   });
   await merge(target, 'tmf_geographic_location', ['id'], {
     id,
-    href: `/tmf-api/geographicLocationManagement/v4/geographicLocation/${id}`,
     tenant_id: args.tenantId,
     geometry_type: 'Point',
     geometry,
@@ -354,7 +353,6 @@ async function upsertSite(
   const specId = await siteSpecId(target, item.mapping.spec!);
   await merge(target, 'tmf_geographic_site', ['id'], {
     id,
-    href: `/tmf-api/geographicSiteManagement/v4/geographicSite/${id}`,
     tenant_id: args.tenantId,
     name: cut(item.name, 255),
     site_specification_id: specId,
@@ -374,7 +372,6 @@ async function upsertResource(
   const specId = await resourceSpecId(target, item.mapping.spec!, item.mapping.resourceType!);
   await merge(target, 'tmf_physical_resource', ['id'], {
     id,
-    href: `/tmf-api/resourceInventoryManagement/v4/resource/${id}`,
     name: cut(item.name, 255),
     resource_specification_id: specId,
     resource_type: item.mapping.resourceType!,

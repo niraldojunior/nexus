@@ -1,4 +1,5 @@
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
+import { buildHref } from '../../shared/tmf/index.js';
 import type {
   ResearchSession,
   ResearchMessage,
@@ -49,7 +50,7 @@ export class SearchService {
     } = {
       '@type': 'ResearchSession',
       id,
-      href: `/v1/search/sessions/${id}`,
+      href: buildHref('researchSession', id),
       userId,
       title: input.title,
       status: 'active',

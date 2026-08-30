@@ -1,4 +1,5 @@
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import { buildHref } from '../../shared/tmf/index.js';
 import type {
   ResourceOrder,
   ResourceOrderQuery,
@@ -23,10 +24,9 @@ export class PostgresOrderRepository implements IOrderRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_service_qualification
-       (id, href, state, place, related_party, service_characteristic, service_qualification_item, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, state, place, related_party, service_characteristic, service_qualification_item, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        state = excluded.state,
        place = excluded.place,
        related_party = excluded.related_party,
@@ -37,7 +37,6 @@ export class PostgresOrderRepository implements IOrderRepository {
        updated_at = excluded.updated_at`,
       [
         qualification.id,
-        qualification.href,
         qualification.state,
         JSON.stringify(qualification.place),
         JSON.stringify(qualification.relatedParty),
@@ -65,7 +64,7 @@ export class PostgresOrderRepository implements IOrderRepository {
       params.push(scope.tenantId);
     }
     const row = await this.db.get<ServiceQualificationRow>(
-      `SELECT id, href, state, place, related_party, service_characteristic, service_qualification_item, tenant_id, valid_for_start, valid_for_end
+      `SELECT id, state, place, related_party, service_characteristic, service_qualification_item, tenant_id, valid_for_start, valid_for_end
        FROM tmf_service_qualification
        WHERE ${conditions.join(' AND ')}`,
       params,
@@ -79,7 +78,7 @@ export class PostgresOrderRepository implements IOrderRepository {
   ): Promise<ServiceQualification[]> {
     const rows = (
       await this.db.all<ServiceQualificationRow>(
-        'SELECT id, href, state, place, related_party, service_characteristic, service_qualification_item, tenant_id, valid_for_start, valid_for_end FROM tmf_service_qualification ORDER BY id',
+        'SELECT id, state, place, related_party, service_characteristic, service_qualification_item, tenant_id, valid_for_start, valid_for_end FROM tmf_service_qualification ORDER BY id',
       )
     )
       .map((row) => this.mapQualification(row))
@@ -92,10 +91,9 @@ export class PostgresOrderRepository implements IOrderRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_service_order
-       (id, href, state, description, related_party, service_order_item, note, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, state, description, related_party, service_order_item, note, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        state = excluded.state,
        description = excluded.description,
        related_party = excluded.related_party,
@@ -106,7 +104,6 @@ export class PostgresOrderRepository implements IOrderRepository {
        updated_at = excluded.updated_at`,
       [
         order.id,
-        order.href,
         order.state,
         order.description ?? null,
         JSON.stringify(order.relatedParty),
@@ -134,7 +131,7 @@ export class PostgresOrderRepository implements IOrderRepository {
       params.push(scope.tenantId);
     }
     const row = await this.db.get<ServiceOrderRow>(
-      `SELECT id, href, state, description, related_party, service_order_item, note, tenant_id, valid_for_start, valid_for_end
+      `SELECT id, state, description, related_party, service_order_item, note, tenant_id, valid_for_start, valid_for_end
        FROM tmf_service_order
        WHERE ${conditions.join(' AND ')}`,
       params,
@@ -146,7 +143,7 @@ export class PostgresOrderRepository implements IOrderRepository {
   public async listServiceOrders(query?: ServiceOrderQuery): Promise<ServiceOrder[]> {
     const rows = (
       await this.db.all<ServiceOrderRow>(
-        'SELECT id, href, state, description, related_party, service_order_item, note, tenant_id, valid_for_start, valid_for_end FROM tmf_service_order ORDER BY id',
+        'SELECT id, state, description, related_party, service_order_item, note, tenant_id, valid_for_start, valid_for_end FROM tmf_service_order ORDER BY id',
       )
     )
       .map((row) => this.mapOrder(row))
@@ -159,10 +156,9 @@ export class PostgresOrderRepository implements IOrderRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_resource_order
-       (id, href, state, description, related_party, resource_order_item, note, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, state, description, related_party, resource_order_item, note, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       href = excluded.href,
        state = excluded.state,
        description = excluded.description,
        related_party = excluded.related_party,
@@ -173,7 +169,6 @@ export class PostgresOrderRepository implements IOrderRepository {
        updated_at = excluded.updated_at`,
       [
         order.id,
-        order.href,
         order.state,
         order.description ?? null,
         JSON.stringify(order.relatedParty),
@@ -201,7 +196,7 @@ export class PostgresOrderRepository implements IOrderRepository {
       params.push(scope.tenantId);
     }
     const row = await this.db.get<ResourceOrderRow>(
-      `SELECT id, href, state, description, related_party, resource_order_item, note, tenant_id, valid_for_start, valid_for_end
+      `SELECT id, state, description, related_party, resource_order_item, note, tenant_id, valid_for_start, valid_for_end
        FROM tmf_resource_order
        WHERE ${conditions.join(' AND ')}`,
       params,
@@ -213,7 +208,7 @@ export class PostgresOrderRepository implements IOrderRepository {
   public async listResourceOrders(query?: ResourceOrderQuery): Promise<ResourceOrder[]> {
     const rows = (
       await this.db.all<ResourceOrderRow>(
-        'SELECT id, href, state, description, related_party, resource_order_item, note, tenant_id, valid_for_start, valid_for_end FROM tmf_resource_order ORDER BY id',
+        'SELECT id, state, description, related_party, resource_order_item, note, tenant_id, valid_for_start, valid_for_end FROM tmf_resource_order ORDER BY id',
       )
     )
       .map((row) => this.mapResourceOrder(row))
@@ -226,7 +221,7 @@ export class PostgresOrderRepository implements IOrderRepository {
     return {
       '@type': 'ServiceQualification',
       id: row.id,
-      href: row.href,
+      href: buildHref('serviceQualification', row.id),
       state: row.state,
       place: JSON.parse(row.place || '[]'),
       relatedParty: JSON.parse(row.related_party || '[]'),
@@ -248,7 +243,7 @@ export class PostgresOrderRepository implements IOrderRepository {
     return {
       '@type': 'ServiceOrder',
       id: row.id,
-      href: row.href,
+      href: buildHref('serviceOrder', row.id),
       state: row.state,
       ...(row.description ? { description: row.description } : {}),
       relatedParty: JSON.parse(row.related_party || '[]'),
@@ -270,7 +265,7 @@ export class PostgresOrderRepository implements IOrderRepository {
     return {
       '@type': 'ResourceOrder',
       id: row.id,
-      href: row.href,
+      href: buildHref('resourceOrder', row.id),
       state: row.state,
       ...(row.description ? { description: row.description } : {}),
       relatedParty: JSON.parse(row.related_party || '[]'),

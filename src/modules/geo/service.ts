@@ -2,6 +2,7 @@ import { AppError } from '../../shared/errors/app-error.js';
 import type { RequestContext } from '../../shared/http/request-context.js';
 import { GEO_ADMIN_ROLES } from '../../shared/http/request-context.js';
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
+import { buildHref } from '../../shared/tmf/index.js';
 import type {
   Characteristic,
   CharacteristicValueType,
@@ -568,7 +569,7 @@ export class GeoService {
       const location = await this.repository.upsertLocation({
         '@type': 'GeographicLocation',
         id,
-        href: `/tmf-api/geographicLocationManagement/v4/geographicLocation/${id}`,
+        href: buildHref('geographicLocation', id),
         tenantId: ctx.tenantId,
         geometryType: input.geometryType,
         geometry: input.geometry,
@@ -668,7 +669,7 @@ export class GeoService {
       const address = await this.repository.upsertAddress({
         '@type': 'GeographicAddress',
         id,
-        href: `/tmf-api/geographicAddressManagement/v4/geographicAddress/${id}`,
+        href: buildHref('geographicAddress', id),
         tenantId: ctx.tenantId,
         street: input.street,
         ...(input.streetNr ? { streetNr: input.streetNr } : {}),
@@ -1131,7 +1132,7 @@ export class GeoService {
       const site = await this.repository.upsertSite({
         '@type': 'GeographicSite',
         id,
-        href: `/tmf-api/geographicSiteManagement/v4/geographicSite/${id}`,
+        href: buildHref('geographicSite', id),
         tenantId: ctx.tenantId,
         name: input.name,
         status,
@@ -2021,6 +2022,7 @@ export class GeoService {
     return {
       '@type': 'GeographicAddress',
       id: 'normalized',
+      // Endereço sintético, nunca persistido: um href apontaria para uma entidade inexistente.
       href: '',
       tenantId: ctx.tenantId,
       street: street.trim(),
@@ -2693,7 +2695,7 @@ export class GeoService {
     return {
       '@type': 'GeographicRelationshipType',
       id: input.id,
-      href: `/v1/geo/relationship-types/${input.code}`,
+      href: buildHref('geographicRelationshipType', input.code),
       code: input.code,
       name: input.name,
       inverseCode: input.inverseCode,
@@ -2879,7 +2881,7 @@ export class GeoService {
     return {
       '@type': 'GeographicSiteSpecification',
       id: input.id,
-      href: `/tmf-api/geographicSiteManagement/v4/geographicSiteSpecification/${input.id}`,
+      href: buildHref('geographicSiteSpecification', input.id),
       name: input.name,
       code: input.code,
       ...(input.description !== undefined ? { description: input.description } : {}),

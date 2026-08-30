@@ -544,7 +544,6 @@ async function main() {
 
     const buildLocationRow = (id, input, referencePoint) => ({
       id,
-      href: `/tmf-api/geographicLocationManagement/v4/geographicLocation/${id}`,
       tenant_id: TENANT_ID,
       geometry_type: input.geometryType,
       geometry: JSON.stringify(input.geometry),
@@ -675,7 +674,6 @@ async function main() {
         const siteStatus = SITE_STATUS_BY_PROJECT_STATUS[projectPlan.status] ?? 'Planned';
         chunk.newSites.push({
           id: siteId,
-          href: `/tmf-api/geographicSiteManagement/v4/geographicSite/${siteId}`,
           tenant_id: TENANT_ID,
           name: plan.name,
           site_specification_id: plan.specId,
@@ -789,7 +787,6 @@ async function main() {
             'tmf_geographic_location',
             [
               'id',
-              'href',
               'tenant_id',
               'geometry_type',
               'geometry',
@@ -823,7 +820,6 @@ async function main() {
               : [];
             return {
               id: entry.id,
-              href: `/tmf-api/geographicAddressManagement/v4/geographicAddress/${entry.id}`,
               tenant_id: TENANT_ID,
               street_type: null,
               street_name: input.street,
@@ -843,7 +839,6 @@ async function main() {
           const columns = isOracle
             ? [
                 'id',
-                'href',
                 'tenant_id',
                 'street_type',
                 'street_name',
@@ -857,7 +852,6 @@ async function main() {
               ]
             : [
                 'id',
-                'href',
                 'tenant_id',
                 'street_type',
                 'street_name',
@@ -886,7 +880,6 @@ async function main() {
             'tmf_geographic_site',
             [
               'id',
-              'href',
               'tenant_id',
               'name',
               'site_specification_id',

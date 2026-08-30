@@ -1,4 +1,5 @@
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import { buildHref } from '../../shared/tmf/index.js';
 import type { ResearchSession, ResearchMessage, AddMessageInput } from './domain.js';
 
 /**
@@ -17,11 +18,10 @@ export class PostgresSearchRepository {
 
     await this.db.run(
       `INSERT INTO research_session
-       (id, href, user_id, title, description, context, status, model, temperature, max_tokens, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, user_id, title, description, context, status, model, temperature, max_tokens, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         session.id,
-        session.href,
         session.userId,
         session.title,
         session.description || null,
@@ -40,7 +40,7 @@ export class PostgresSearchRepository {
 
   public async getSession(id: string): Promise<ResearchSession | undefined> {
     const row = await this.db.get<ResearchSessionRow>(
-      `SELECT id, href, user_id, title, description, context, status, model, temperature, max_tokens, created_at, updated_at
+      `SELECT id, user_id, title, description, context, status, model, temperature, max_tokens, created_at, updated_at
        FROM research_session WHERE id = ?`,
       [id],
     );
@@ -52,7 +52,7 @@ export class PostgresSearchRepository {
     return {
       '@type': 'ResearchSession',
       id: row.id,
-      href: row.href,
+      href: buildHref('researchSession', row.id),
       userId: row.user_id,
       title: row.title,
       ...(row.description !== null ? { description: row.description } : {}),
@@ -69,7 +69,7 @@ export class PostgresSearchRepository {
 
   public async listSessionsByUser(userId: string, limit = 50): Promise<ResearchSession[]> {
     const rows = await this.db.all<ResearchSessionRow>(
-      `SELECT id, href, user_id, title, description, context, status, model, temperature, max_tokens, created_at, updated_at
+      `SELECT id, user_id, title, description, context, status, model, temperature, max_tokens, created_at, updated_at
        FROM research_session WHERE user_id = ? AND status != 'deleted'
        ORDER BY created_at DESC
        LIMIT ?`,
@@ -82,7 +82,7 @@ export class PostgresSearchRepository {
         return {
           '@type': 'ResearchSession',
           id: row.id,
-          href: row.href,
+          href: buildHref('researchSession', row.id),
           userId: row.user_id,
           title: row.title,
           ...(row.description !== null ? { description: row.description } : {}),

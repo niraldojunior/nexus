@@ -52,6 +52,7 @@
 | D-ARQ-003 | Vercel é hospedagem de laboratório, não destino.                          | Antiga Q-ARQ-005             | Decidida | OpenShift é o alvo corporativo de aplicação. O suporte nativo a PostgreSQL (C10) é permanente — só a hospedagem em Vercel/Neon é temporária.                                          |
 | D-ARQ-004 | RBAC e isolamento multi-tenant estendidos além de `/v1/users`.            | Antiga Q-ARQ-007             | Decidida | RBAC e `tenant_id` (Resource/Service/Order/Party) entraram nas Fases 2–3 da issue #80; VPD Oracle segue como gap em aberto ([#94](https://github.com/niraldojunior/nexus/issues/94)). |
 | D-GEO-003 | `SiteSpecifications` do bootstrap fechadas em 31/07/2026.                 | Antiga Q-GEO-001             | Decidida | `Region`, `FunctionalGroup`, `Central Office`, `POP`, `Cabinet`, `InstallationPoint`, `Floor`, `Room` e `Cage`.                                                                       |
+| D-API-001 | `href` TMF é derivado em tempo de leitura, não persistido.                | Issue [#169](https://github.com/niraldojunior/nexus/issues/169) | Decidida | `buildHref` centraliza tipo + identificador e `TMF_PUBLIC_BASE_URL` opcional aplica o host público; a coluna física redundante é removida. |
 
 ## 4. Decisões que Não Devem Ser Reabertas sem Pedido Explícito
 

@@ -53,6 +53,7 @@ import type {
 } from '../../modules/search/domain.js';
 import type { TmfEventQuery } from '../tmf/index.js';
 import type { EventService } from '../tmf/index.js';
+import { configureHrefBaseUrl } from '../tmf/index.js';
 import type { Party, PartyQuery, PartyRoleQuery } from '../../modules/party/index.js';
 import type {
   CreateResourceSpecificationInput,
@@ -145,6 +146,7 @@ export const handleHttpRequest = async (
 ): Promise<void> => routeRequest(dependencies);
 
 export const createApp = ({ config, logger }: AppDependencies) => {
+  configureHrefBaseUrl(config.tmfPublicBaseUrl);
   const repository = new InMemoryEntityRepository();
   const databaseConfig = databaseConfigOf(config);
   const db = createDatabaseClient(databaseConfig);

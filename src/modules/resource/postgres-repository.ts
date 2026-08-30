@@ -17,6 +17,7 @@ import type {
   ResourceTenantScope,
 } from './resource-repository-interface.js';
 import { RESOURCE_CATEGORIES, RESOURCE_TYPES } from './catalog.js';
+import { buildHref } from '../../shared/tmf/index.js';
 
 // Nome da characteristic que diz qual GeographicSite atende o recurso — a estação
 // dona da planta externa que fica na rua (o `place` dela é a Location do ponto, não
@@ -152,14 +153,13 @@ export class PostgresResourceRepository implements IResourceRepository {
   public async getResourceCategory(code: string): Promise<ResourceCategory | undefined> {
     const row = await this.db.get<{
       id: string;
-      href: string;
       code: string;
       name: string;
       parent_category_code?: string | null;
       description?: string | null;
       status: 'active' | 'inactive';
     }>(
-      `SELECT id, href, code, name, parent_category_code, description, status
+      `SELECT id, code, name, parent_category_code, description, status
        FROM tmf_resource_category
        WHERE code = ?`,
       [code],
@@ -171,14 +171,13 @@ export class PostgresResourceRepository implements IResourceRepository {
   public async listResourceCategories(): Promise<ResourceCategory[]> {
     const rows = await this.db.all<{
       id: string;
-      href: string;
       code: string;
       name: string;
       parent_category_code?: string | null;
       description?: string | null;
       status: 'active' | 'inactive';
     }>(
-      `SELECT id, href, code, name, parent_category_code, description, status
+      `SELECT id, code, name, parent_category_code, description, status
        FROM tmf_resource_category
        ORDER BY code`,
     );
@@ -188,14 +187,13 @@ export class PostgresResourceRepository implements IResourceRepository {
   public async getResourceType(code: string): Promise<ResourceType | undefined> {
     const row = await this.db.get<{
       id: string;
-      href: string;
       code: string;
       name: string;
       category_code: string;
       description?: string | null;
       status: 'active' | 'inactive';
     }>(
-      `SELECT id, href, code, name, category_code, description, status
+      `SELECT id, code, name, category_code, description, status
        FROM tmf_resource_type
        WHERE code = ?`,
       [code],
@@ -207,14 +205,13 @@ export class PostgresResourceRepository implements IResourceRepository {
   public async listResourceTypes(): Promise<ResourceType[]> {
     const rows = await this.db.all<{
       id: string;
-      href: string;
       code: string;
       name: string;
       category_code: string;
       description?: string | null;
       status: 'active' | 'inactive';
     }>(
-      `SELECT id, href, code, name, category_code, description, status
+      `SELECT id, code, name, category_code, description, status
        FROM tmf_resource_type
        ORDER BY category_code, code`,
     );
@@ -272,7 +269,6 @@ export class PostgresResourceRepository implements IResourceRepository {
     }
     const row = await this.db.get<{
       id: string;
-      href: string;
       name: string;
       category: string;
       resource_type: string;
@@ -283,7 +279,7 @@ export class PostgresResourceRepository implements IResourceRepository {
       characteristics?: string | null;
       tenant_id: string;
     }>(
-      `SELECT id, href, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics, tenant_id
+      `SELECT id, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics, tenant_id
        FROM tmf_resource_specification
        WHERE ${conditions.join(' AND ')}`,
       params,
@@ -321,7 +317,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, href, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics, tenant_id FROM tmf_resource_specification',
+      'SELECT id, name, category, resource_type, description, valid_for_start, valid_for_end, related_party, characteristics, tenant_id FROM tmf_resource_specification',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY category, name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -335,7 +331,6 @@ export class PostgresResourceRepository implements IResourceRepository {
 
     const rows = await this.db.all<{
       id: string;
-      href: string;
       name: string;
       category: string;
       resource_type: string;
@@ -391,13 +386,12 @@ export class PostgresResourceRepository implements IResourceRepository {
     }
     const row = await this.db.get<{
       id: string;
-      href: string;
       name: string;
       description?: string | null;
       characteristics?: string | null;
       tenant_id: string;
     }>(
-      `SELECT id, href, name, description, characteristics, tenant_id
+      `SELECT id, name, description, characteristics, tenant_id
        FROM tmf_resource_function_specification
        WHERE ${conditions.join(' AND ')}`,
       params,
@@ -424,7 +418,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, href, name, description, characteristics, tenant_id FROM tmf_resource_function_specification',
+      'SELECT id, name, description, characteristics, tenant_id FROM tmf_resource_function_specification',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -438,7 +432,6 @@ export class PostgresResourceRepository implements IResourceRepository {
 
     const rows = await this.db.all<{
       id: string;
-      href: string;
       name: string;
       description?: string | null;
       characteristics?: string | null;
@@ -821,7 +814,6 @@ export class PostgresResourceRepository implements IResourceRepository {
 
   private mapSpec(row: {
     id: string;
-    href: string;
     name: string;
     category: string;
     resource_type: string;
@@ -835,7 +827,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     const spec: ResourceSpecification = {
       '@type': 'ResourceSpecification',
       id: row.id,
-      href: row.href,
+      href: buildHref('resourceSpecification', row.id),
       name: row.name,
       category: row.category,
       resourceType: row.resource_type,
@@ -858,7 +850,6 @@ export class PostgresResourceRepository implements IResourceRepository {
 
   private mapResourceCategory(row: {
     id: string;
-    href: string;
     code: string;
     name: string;
     parent_category_code?: string | null;
@@ -868,7 +859,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     return {
       '@type': 'ResourceCategory',
       id: row.id,
-      href: row.href,
+      href: buildHref('resourceCategory', row.id),
       code: row.code,
       name: row.name,
       ...(row.parent_category_code ? { parentCategoryCode: row.parent_category_code } : {}),
@@ -879,7 +870,6 @@ export class PostgresResourceRepository implements IResourceRepository {
 
   private mapResourceType(row: {
     id: string;
-    href: string;
     code: string;
     name: string;
     category_code: string;
@@ -889,7 +879,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     return {
       '@type': 'ResourceType',
       id: row.id,
-      href: row.href,
+      href: buildHref('resourceType', row.id),
       code: row.code,
       name: row.name,
       categoryCode: row.category_code,
@@ -900,7 +890,6 @@ export class PostgresResourceRepository implements IResourceRepository {
 
   private mapFunctionSpec(row: {
     id: string;
-    href: string;
     name: string;
     description?: string | null;
     characteristics?: string | null;
@@ -909,7 +898,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     const spec: ResourceFunctionSpecification = {
       '@type': 'ResourceFunctionSpecification',
       id: row.id,
-      href: row.href,
+      href: buildHref('resourceFunctionSpecification', row.id),
       name: row.name,
       resourceFunctionSpecificationCharacteristic: JSON.parse(
         row.characteristics || '[]',
@@ -928,7 +917,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     const resource: PhysicalResource = {
       '@type': 'PhysicalResource',
       id: row.id,
-      href: row.href,
+      href: buildHref('resource', row.id),
       name: row.name,
       resourceSpecificationId: row.resource_specification_id,
       resourceSpecification: {
@@ -973,7 +962,7 @@ export class PostgresResourceRepository implements IResourceRepository {
     const resource: LogicalResource = {
       '@type': 'LogicalResource',
       id: row.id,
-      href: row.href,
+      href: buildHref('resource', row.id),
       name: row.name,
       resourceSpecificationId: row.resource_specification_id,
       resourceSpecification: {

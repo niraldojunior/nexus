@@ -18,6 +18,7 @@ import type {
   IServiceRepository,
   ServiceTenantScope,
 } from './service-repository-interface.js';
+import { buildHref } from '../../shared/tmf/index.js';
 import type {
   CustomerFacingServiceRow,
   ResourceFacingServiceRow,
@@ -663,7 +664,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     const spec: ServiceSpecification = {
       '@type': 'ServiceSpecification',
       id: row.id,
-      href: row.href,
+      href: buildHref('serviceSpecification', row.id),
       name: row.name,
       category: row.category,
       serviceType: row.service_type,
@@ -689,7 +690,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     const category: ServiceCategory = {
       '@type': 'ServiceCategory',
       id: row.id,
-      href: row.href,
+      href: buildHref('serviceCategory', row.id),
       name: row.name,
       serviceCategoryCharacteristic: JSON.parse(
         row.characteristics || '[]',
@@ -716,7 +717,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     const candidate: ServiceCandidate = {
       '@type': 'ServiceCandidate',
       id: row.id,
-      href: row.href,
+      href: buildHref('serviceCandidate', row.id),
       name: row.name,
       status: row.status,
       serviceSpecification: {
@@ -748,7 +749,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     return {
       '@type': 'CustomerFacingService',
       id: row.id,
-      href: row.href,
+      href: buildHref('service', row.id),
       name: row.name,
       serviceSpecificationId: row.service_specification_id,
       serviceSpecification: {
@@ -788,7 +789,7 @@ export class PostgresServiceRepository implements IServiceRepository {
     return {
       '@type': 'ResourceFacingService',
       id: row.id,
-      href: row.href,
+      href: buildHref('service', row.id),
       name: row.name,
       serviceSpecificationId: row.service_specification_id,
       serviceSpecification: {

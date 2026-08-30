@@ -1,4 +1,5 @@
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import { buildHref } from '../../shared/tmf/index.js';
 import type { ResearchSession, ResearchMessage, AddMessageInput } from './domain.js';
 
 /**
@@ -52,7 +53,7 @@ export class PostgresSearchRepository {
     return {
       '@type': 'ResearchSession',
       id: row.id,
-      href: row.href,
+      href: buildHref('researchSession', row.id),
       userId: row.user_id,
       title: row.title,
       ...(row.description !== null ? { description: row.description } : {}),
@@ -82,7 +83,7 @@ export class PostgresSearchRepository {
         return {
           '@type': 'ResearchSession',
           id: row.id,
-          href: row.href,
+          href: buildHref('researchSession', row.id),
           userId: row.user_id,
           title: row.title,
           ...(row.description !== null ? { description: row.description } : {}),

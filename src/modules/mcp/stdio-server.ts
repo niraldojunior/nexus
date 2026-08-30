@@ -4,6 +4,7 @@ import { databaseConfigOf, loadConfig } from '../../shared/config/env.js';
 import { createLogger } from '../../shared/logging/logger.js';
 import { createDatabaseClient } from '../../shared/persistence/database-factory.js';
 import { createNexusRuntime, type NexusRuntime } from '../../shared/runtime/nexus-runtime.js';
+import { configureHrefBaseUrl } from '../../shared/tmf/index.js';
 import { createNexusMcpModule } from './module.js';
 
 type JsonRpcRequest = {
@@ -15,6 +16,7 @@ type JsonRpcRequest = {
 loadEnv();
 
 const config = loadConfig(process.env);
+configureHrefBaseUrl(config.tmfPublicBaseUrl);
 const logger = createLogger(config.logLevel);
 const db = createDatabaseClient(databaseConfigOf(config));
 

@@ -11,3 +11,5 @@ export type {
 export type { AppendEventInput, IEventRepository } from './event-repository.js';
 export { EventService } from './event-service.js';
 export { PostgresEventRepository } from './postgres-event-repository.js';
+export { buildHref, configureHrefBaseUrl, HREF_PATHS } from './href.js';
+export type { HrefEntity } from './href.js';

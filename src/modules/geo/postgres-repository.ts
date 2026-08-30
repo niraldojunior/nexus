@@ -1,5 +1,6 @@
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 import { dialectFor } from '../../shared/persistence/sql-dialect.js';
+import { buildHref } from '../../shared/tmf/index.js';
 import type {
   GeographicAddress,
   GeoAuditLog,
@@ -1512,7 +1513,7 @@ export class PostgresGeoRepository implements IGeoRepository {
       specs.set(row.id, {
         '@type': 'GeographicSiteSpecification',
         id: row.id,
-        href: row.href,
+        href: buildHref('geographicSiteSpecification', row.id),
         name: row.name,
         code: row.code,
         category: row.category,
@@ -1571,7 +1572,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const result: GeographicLocation = {
       '@type': 'GeographicLocation',
       id: row.id,
-      href: row.href,
+      href: buildHref('geographicLocation', row.id),
       tenantId: row.tenant_id ?? 'default',
       geometryType: row.geometry_type,
       geometry: JSON.parse(row.geometry),
@@ -1596,7 +1597,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const result: GeographicAddress = {
       '@type': 'GeographicAddress',
       id: row.id,
-      href: row.href,
+      href: buildHref('geographicAddress', row.id),
       tenantId: row.tenant_id ?? 'default',
       street: row.street_name,
       characteristic: JSON.parse(row.characteristics || '[]'),
@@ -1629,7 +1630,7 @@ export class PostgresGeoRepository implements IGeoRepository {
     const result: GeographicSite = {
       '@type': 'GeographicSite',
       id: row.id,
-      href: row.href,
+      href: buildHref('geographicSite', row.id),
       tenantId: row.tenant_id ?? 'default',
       name: row.name,
       status: row.status,
@@ -1679,7 +1680,8 @@ export class PostgresGeoRepository implements IGeoRepository {
     return {
       '@type': 'GeographicRelationshipType',
       id: row.id,
-      href: row.href,
+      // Chaveado por `code`, não por `id` — fora do namespace TMF (ver src/shared/tmf/href.ts).
+      href: buildHref('geographicRelationshipType', row.code),
       code: row.code,
       name: row.name,
       inverseCode: row.inverse_code,
@@ -1723,7 +1725,7 @@ export class PostgresGeoRepository implements IGeoRepository {
   private mapSpecRefRow(row: GeographicSiteSpecificationRow): GeographicSiteSpecificationRef {
     return {
       id: row.id,
-      href: row.href,
+      href: buildHref('geographicSiteSpecification', row.id),
       name: row.name,
       code: row.code,
       category: row.category,

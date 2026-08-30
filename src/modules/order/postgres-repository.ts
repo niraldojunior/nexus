@@ -1,4 +1,5 @@
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import { buildHref } from '../../shared/tmf/index.js';
 import type {
   ResourceOrder,
   ResourceOrderQuery,
@@ -226,7 +227,7 @@ export class PostgresOrderRepository implements IOrderRepository {
     return {
       '@type': 'ServiceQualification',
       id: row.id,
-      href: row.href,
+      href: buildHref('serviceQualification', row.id),
       state: row.state,
       place: JSON.parse(row.place || '[]'),
       relatedParty: JSON.parse(row.related_party || '[]'),
@@ -248,7 +249,7 @@ export class PostgresOrderRepository implements IOrderRepository {
     return {
       '@type': 'ServiceOrder',
       id: row.id,
-      href: row.href,
+      href: buildHref('serviceOrder', row.id),
       state: row.state,
       ...(row.description ? { description: row.description } : {}),
       relatedParty: JSON.parse(row.related_party || '[]'),
@@ -270,7 +271,7 @@ export class PostgresOrderRepository implements IOrderRepository {
     return {
       '@type': 'ResourceOrder',
       id: row.id,
-      href: row.href,
+      href: buildHref('resourceOrder', row.id),
       state: row.state,
       ...(row.description ? { description: row.description } : {}),
       relatedParty: JSON.parse(row.related_party || '[]'),

@@ -56,6 +56,10 @@ export type AppConfig = {
   llmRateLimitMax?: number;
   llmRateLimitWindowMs?: number;
   geonet?: GeonetConfig;
+  /** Base URL pública prefixada em `href` das entidades TMF (ver src/shared/tmf/href.ts). Vazio por
+   *  default: href fica relativo (`/tmf-api/...`), comportamento histórico. Configurar quando o
+   *  Nexus é servido atrás de um gateway (Apigee) cujo host público difere do host interno. */
+  tmfPublicBaseUrl?: string;
   databaseUrl: string;
   /** Resolved by loadConfig; optional only for legacy programmatic test fixtures. */
   database?: AppDatabaseConfig;
@@ -110,6 +114,9 @@ export const loadConfig = (env: NodeJS.ProcessEnv): AppConfig => {
     ...(env.ADMIN_PASSWORD ? { adminPassword: env.ADMIN_PASSWORD } : {}),
     authAccessTokenTtlHours: normalizePositiveInteger(env.AUTH_ACCESS_TOKEN_TTL_HOURS, 12),
     ...(geonet ? { geonet } : {}),
+    ...(env.TMF_PUBLIC_BASE_URL?.trim()
+      ? { tmfPublicBaseUrl: env.TMF_PUBLIC_BASE_URL.trim() }
+      : {}),
     databaseUrl: database.provider === 'postgres' ? database.url : database.connectString,
     database,
     logLevel,

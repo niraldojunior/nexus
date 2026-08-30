@@ -6,6 +6,7 @@ import { InMemoryEntityRepository } from '../persistence/in-memory-entity-reposi
 import { createDatabaseClient } from '../persistence/database-factory.js';
 import { RateLimiter } from './rate-limiter.js';
 import { createNexusRuntime, type NexusRuntime } from '../runtime/nexus-runtime.js';
+import { configureHrefBaseUrl } from '../tmf/index.js';
 
 export const config = {
   runtime: 'nodejs',
@@ -13,6 +14,7 @@ export const config = {
 };
 
 const appConfig = loadConfig(process.env);
+configureHrefBaseUrl(appConfig.tmfPublicBaseUrl);
 const logger = createLogger(appConfig.logLevel);
 const repository = new InMemoryEntityRepository();
 const db = createDatabaseClient(databaseConfigOf(appConfig));

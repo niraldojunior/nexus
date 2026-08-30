@@ -15,6 +15,7 @@ type ResourceRowBase = {
   resource_specification_id: string;
   resource_type: string;
   status: ResourceStatus;
+  status_code: string | null;
   place_id: string | null;
   place_type: string | null;
   administrative_state: AdministrativeState;
@@ -32,6 +33,11 @@ export type PhysicalResourceRow = ResourceRowBase & {
   model: string | null;
   serial_number: string | null;
   part_number: string | null;
+  label: string | null;
+  asset_reference: string | null;
+  project_id: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type LogicalResourceRow = ResourceRowBase & {

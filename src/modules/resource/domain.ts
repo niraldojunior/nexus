@@ -2,9 +2,13 @@ import type { Characteristic, RelatedParty, TimePeriod } from '../../shared/tmf/
 
 export type ResourceKind = 'PhysicalResource' | 'LogicalResource';
 export type ResourceStatus = 'active' | 'inactive' | 'suspended' | 'terminated';
-export type AdministrativeState = 'unlocked' | 'locked';
+// Eixos de estado do SID/X.731 (REQ-MOD02-006). `shuttingDown` é o estado de transição exigido
+// para bloquear um recurso que ainda está em uso (RN-002: não se salta de unlocked para locked
+// com usageState != idle); `active` é o uso parcial entre idle e busy. Ambos faltavam no código
+// e constam do HLD — ver docs/2-functional-specs/02-module-resource.md.
+export type AdministrativeState = 'unlocked' | 'locked' | 'shuttingDown';
 export type OperationalState = 'enabled' | 'disabled';
-export type UsageState = 'idle' | 'busy' | 'unknown';
+export type UsageState = 'idle' | 'active' | 'busy' | 'unknown';
 
 export type ResourceCatalogStatus = 'active' | 'inactive';
 
@@ -30,6 +34,50 @@ export type ResourceType = {
   description?: string;
   status: ResourceCatalogStatus;
   tenantId?: string;
+};
+
+/**
+ * Comportamento canônico de um estado de catálogo: para qual eixo SID (`ResourceStatus`) ele
+ * colapsa. Permite que a UI e as regras raciocinem sobre o estado sem conhecer cada `code`.
+ */
+export type ResourceStatusBehavior = 'active' | 'blocked' | 'planned' | 'inactive' | 'terminated';
+
+/**
+ * Estado granular de um recurso (issue #171) — o motivo por trás do `status` SID. Substitui o
+ * `substatus` de texto livre que as cargas Netwin gravavam em characteristic.
+ */
+export type ResourceStatusCatalogEntry = {
+  '@type': 'ResourceStatusCatalogEntry';
+  code: string;
+  name: string;
+  /** `undefined` = vale para qualquer tipo de recurso; preenchido = específico daquele tipo. */
+  resourceType?: string;
+  sortOrder: number;
+  active: boolean;
+  behavior: ResourceStatusBehavior;
+  tenantId?: string;
+};
+
+/**
+ * Entrada do histórico de um recurso (issue #171). Projeção de leitura de `tmf_audit_log`, que
+ * `recordMutation` já alimenta em toda mutação via `ResourceService.emit()` — não há tabela nova.
+ *
+ * ⚠️ As cargas em massa gravam por SQL direto e **não** passam pelo audit, então o histórico
+ * começa vazio para os recursos já carregados. A UI precisa degradar bem nesse caso.
+ */
+export type ResourceAuditEntry = {
+  '@type': 'ResourceAuditEntry';
+  id: string;
+  tenantId: string;
+  actorSub: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  eventTime: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  traceId: string;
+  sourceIp?: string;
 };
 
 export type ResourceQuery = {
@@ -110,6 +158,12 @@ export type ResourceBase = {
   resourceSpecificationId: string;
   resourceSpecification: { id: string; '@referredType': 'ResourceSpecification' };
   status: ResourceStatus;
+  /**
+   * Motivo granular por trás do `status` SID, resolvido em `tmf_resource_status_catalog`
+   * (ex.: `blocked_risk_area` sob `status='suspended'`). Extensível via catálogo (C9) —
+   * `status` continua sendo o eixo canônico fechado.
+   */
+  statusCode?: string;
   administrativeState: AdministrativeState;
   operationalState: OperationalState;
   usageState: UsageState;
@@ -128,6 +182,12 @@ export type PhysicalResource = ResourceBase & {
   model?: string;
   serialNumber?: string;
   partNumber?: string;
+  /** Etiqueta física da caixa — o que está escrito nela em campo, distinto de `name`. */
+  label?: string;
+  /** ID Imobilizado (SAP) — referência patrimonial do exemplar. */
+  assetReference?: string;
+  /** Projeto de implantação que originou o recurso (`geo_project.id`). */
+  projectId?: string;
 };
 
 export type LogicalResource = ResourceBase & {
@@ -137,6 +197,43 @@ export type LogicalResource = ResourceBase & {
 };
 
 export type Resource = PhysicalResource | LogicalResource;
+
+export type ResourceDetailReference = {
+  id: string;
+  name?: string;
+  '@referredType': string;
+  resourceType?: string;
+};
+
+/**
+ * Agregado de leitura do painel de recurso (issue #171). Não é entidade TMF nova: reúne a instância
+ * TMF639 com referências já existentes para evitar que o frontend faça uma cascata de chamadas.
+ */
+export type PhysicalResourceDetail = {
+  '@type': 'PhysicalResourceDetail';
+  resource: PhysicalResource & { createdAt: string; updatedAt: string };
+  specification: ResourceSpecification & {
+    resourceTypeName: string;
+    manufacturer?: string;
+    model?: string;
+    networkType?: string;
+  };
+  statusCatalogEntry?: ResourceStatusCatalogEntry;
+  parent?: ResourceDetailReference & { relationshipType: string };
+  place?: ResourceDetailReference & {
+    streetType?: string;
+    streetName?: string;
+    streetNr?: string;
+    locality?: string;
+    city?: string;
+    stateOrProvince?: string;
+    postcode?: string;
+  };
+  location?: ResourceDetailReference;
+  servingSite?: ResourceDetailReference;
+  project?: ResourceDetailReference;
+  childCount: number;
+};
 
 export type CreateResourceSpecificationInput = {
   name: string;
@@ -189,6 +286,10 @@ export type CreatePhysicalResourceInput = {
   model?: string;
   serialNumber?: string;
   partNumber?: string;
+  statusCode?: string;
+  label?: string;
+  assetReference?: string;
+  projectId?: string;
   relatedParty?: RelatedParty[];
   resourceRelationship?: ResourceRelationship[];
   characteristic?: Characteristic[];

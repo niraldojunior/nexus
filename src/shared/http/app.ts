@@ -727,6 +727,8 @@ const routeRequest = async ({
   }
 
   if (
+    url.pathname.startsWith('/v1/resources/') ||
+    url.pathname === '/v1/resource-statuses' ||
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceSpecification') ||
     url.pathname.startsWith(
       '/tmf-api/resourceCatalogManagement/v4/resourceFunctionSpecification',
@@ -2576,6 +2578,39 @@ const routeResourceRequest = async ({
   url: URL;
 }): Promise<void> => {
   const context = await buildRequestContext(request, config);
+
+  // Rotas de painel (não-TMF): agregados de leitura do Nexus sobre o inventário canônico.
+  // Mantidas no módulo Resource; a árvore Geo continua responsável só pela navegação.
+  if (request.method === 'GET' && url.pathname === '/v1/resource-statuses') {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    return sendJson(
+      response,
+      200,
+      resourceService.listResourceStatusCatalog(url.searchParams.get('resourceType') ?? undefined, context),
+    );
+  }
+  const resourceAuditMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)\/audit$/);
+  if (request.method === 'GET' && resourceAuditMatch?.[1]) {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    return sendJson(
+      response,
+      200,
+      resourceService.listPhysicalResourceAudit(
+        decodeURIComponent(resourceAuditMatch[1]),
+        context,
+        parseOptionalNumber(url.searchParams.get('limit')) ?? 200,
+      ),
+    );
+  }
+  const resourceDetailMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)\/detail$/);
+  if (request.method === 'GET' && resourceDetailMatch?.[1]) {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    return sendJson(
+      response,
+      200,
+      resourceService.getPhysicalResourceDetail(decodeURIComponent(resourceDetailMatch[1]), context),
+    );
+  }
 
   const route = resolveResourceRoute(url.pathname);
   if (!route) {

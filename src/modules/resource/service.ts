@@ -8,6 +8,7 @@ import type {
   CreateResourceSpecificationInput,
   LogicalResource,
   PhysicalResource,
+  PhysicalResourceDetail,
   Resource,
   ResourceFunctionActivationInput,
   ResourceFunctionSpecification,
@@ -21,7 +22,9 @@ import type {
   ResourceSpecificationBulkItemResult,
   ResourceSpecificationBulkResult,
   ResourceSpecificationQuery,
+  ResourceAuditEntry,
   ResourceStatus,
+  ResourceStatusCatalogEntry,
   UpdateLogicalResourceInput,
   UpdatePhysicalResourceInput,
   UpdateResourceFunctionSpecificationInput,
@@ -215,6 +218,20 @@ export class ResourceService {
     return await this.repository.listResourceTypes();
   }
 
+  /**
+   * Estados granulares disponíveis (issue #171). Com `resourceType`, devolve os específicos
+   * daquele tipo **mais** os transversais — a UI de um CTO precisa das duas famílias.
+   */
+  public async listResourceStatusCatalog(
+    resourceType?: string,
+    context?: RequestContext,
+  ): Promise<ResourceStatusCatalogEntry[]> {
+    return await this.repository.listResourceStatusCatalog({
+      ...(resourceType ? { resourceType } : {}),
+      ...scopeOf(context),
+    });
+  }
+
   public async createResourceFunctionSpecification(
     input: CreateResourceFunctionSpecificationInput,
     context?: RequestContext,
@@ -343,6 +360,10 @@ export class ResourceService {
       ...(input.model ? { model: input.model } : {}),
       ...(input.serialNumber ? { serialNumber: input.serialNumber } : {}),
       ...(input.partNumber ? { partNumber: input.partNumber } : {}),
+      ...(input.statusCode ? { statusCode: input.statusCode } : {}),
+      ...(input.label ? { label: input.label } : {}),
+      ...(input.assetReference ? { assetReference: input.assetReference } : {}),
+      ...(input.projectId ? { projectId: input.projectId } : {}),
       ...(input.validFor ? { validFor: input.validFor } : {}),
     };
 
@@ -404,6 +425,10 @@ export class ResourceService {
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...(input.serialNumber !== undefined ? { serialNumber: input.serialNumber } : {}),
       ...(input.partNumber !== undefined ? { partNumber: input.partNumber } : {}),
+      ...(input.statusCode !== undefined ? { statusCode: input.statusCode } : {}),
+      ...(input.label !== undefined ? { label: input.label } : {}),
+      ...(input.assetReference !== undefined ? { assetReference: input.assetReference } : {}),
+      ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
     });
 
@@ -417,6 +442,7 @@ export class ResourceService {
       'PhysicalResource',
       updated,
       context,
+      current,
     );
     return updated;
   }
@@ -441,6 +467,7 @@ export class ResourceService {
       'PhysicalResource',
       terminated,
       context,
+      current,
     );
     return terminated;
   }
@@ -450,6 +477,34 @@ export class ResourceService {
     context?: RequestContext,
   ): Promise<PhysicalResource | undefined> {
     return await this.repository.getPhysicalResource(id, scopeOf(context));
+  }
+
+  /** Agregado de leitura do painel; a árvore Geo segue servindo apenas navegação. */
+  public async getPhysicalResourceDetail(
+    id: string,
+    context?: RequestContext,
+  ): Promise<PhysicalResourceDetail> {
+    const detail = await this.repository.getPhysicalResourceDetail(id, scopeOf(context));
+    if (!detail) {
+      throw new AppError('physical resource not found', {
+        code: 'RESOURCE_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    return detail;
+  }
+
+  /** Histórico de mutações do recurso (issue #171), alimentado pelo audit/outbox existente. */
+  public async listPhysicalResourceAudit(
+    id: string,
+    context?: RequestContext,
+    limit = 200,
+  ): Promise<ResourceAuditEntry[]> {
+    await this.getPhysicalResourceOrThrow(id, context);
+    return await this.repository.listResourceAudit(id, {
+      ...scopeOf(context),
+      limit: Math.min(Math.max(Math.trunc(limit), 1), 500),
+    });
   }
 
   public async listPhysicalResources(
@@ -736,6 +791,7 @@ export class ResourceService {
     entityType: string,
     payload: unknown,
     context?: RequestContext,
+    before?: unknown,
   ): Promise<void> {
     const event = await this.eventService.appendEvent({
       eventType,
@@ -753,6 +809,7 @@ export class ResourceService {
         action: eventType.includes('Create') ? 'create' : 'update',
         entityType,
         entityId,
+        ...(before !== undefined ? { before } : {}),
         after: payload,
         event,
         topic: 'tmf688.resource',

@@ -73,6 +73,7 @@ import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { config as loadEnv } from 'dotenv';
 import { openLoaderDb } from './loader-db.mjs';
+import { resolveStatusCode } from '../dist/src/modules/resource/status-catalog.js';
 import { loaderRangesForUf } from './uf-geo.mjs';
 
 loadEnv();
@@ -645,6 +646,7 @@ async function main() {
         resource_specification_id: specIdFor.get(b.tipo),
         resource_type: 'CTO',
         status,
+        status_code: resolveStatusCode(substatus) ?? null,
         // `place_id`/`place_type` são as colunas que o repositório de recursos
         // realmente lê (vêm de migration); `geographic_location_id` é a coluna
         // original e continua preenchida pelo índice/FK de geo. Gravar só a
@@ -704,6 +706,7 @@ async function main() {
         resource_specification_id: specIdFor.get('Splitter'),
         resource_type: 'Splitter',
         status,
+        status_code: resolveStatusCode(substatus) ?? null,
         place_id: locId,
         place_type: 'GeographicLocation',
         geographic_location_id: locId,
@@ -769,6 +772,7 @@ async function main() {
       'resource_specification_id',
       'resource_type',
       'status',
+      'status_code',
       'place_id',
       'place_type',
       'geographic_location_id',
@@ -796,6 +800,7 @@ async function main() {
         resource_specification_id: specIdFor.get('Splitter'),
         resource_type: 'Splitter',
         status,
+        status_code: resolveStatusCode(substatus) ?? null,
         place_id: caixa?.locationId ?? null,
         place_type: caixa?.locationId ? 'GeographicLocation' : null,
         geographic_location_id: caixa?.locationId ?? null,

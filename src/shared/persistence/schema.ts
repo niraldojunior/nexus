@@ -26,6 +26,7 @@ export const TABLE_NAMES = [
   'tmf_resource_specification',
   'tmf_resource_category',
   'tmf_resource_type',
+  'tmf_resource_status_catalog',
   'tmf_resource_function_specification',
   'tmf_physical_resource',
   'tmf_logical_resource',
@@ -598,6 +599,36 @@ export const MIGRATIONS_SQL = `
   CREATE INDEX IF NOT EXISTS idx_tmf_resource_order_tenant ON tmf_resource_order(tenant_id);
   CREATE INDEX IF NOT EXISTS idx_tmf_party_tenant ON tmf_party(tenant_id);
   CREATE INDEX IF NOT EXISTS idx_tmf_party_role_tenant ON tmf_party_role(tenant_id);
+
+  -- Estado granular do recurso (issue #171). O eixo SID continua em tmf_physical_resource.status,
+  -- que tem CHECK fechado nos 4 valores canônicos; o motivo específico ("Bloqueado por área de
+  -- risco") vira código de catálogo em status_code. Não alargar o CHECK de status: são eixos
+  -- distintos, e o catálogo é extensível via API (C9) enquanto o CHECK não é.
+  --
+  -- resource_type NULL = o estado vale para qualquer tipo de recurso; preenchido = específico
+  -- daquele tipo (ex.: só CTO). Mesmo desenho de geo_project_status_catalog (acima).
+  CREATE TABLE IF NOT EXISTS tmf_resource_status_catalog (
+    tenant_id TEXT NOT NULL,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    resource_type TEXT,
+    sort_order INTEGER NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    behavior TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, code)
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_status_catalog_tenant_order
+    ON tmf_resource_status_catalog(tenant_id, sort_order, code);
+
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS status_code TEXT;
+  -- Etiqueta física da caixa (o que está escrito nela em campo), distinta do name.
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS label TEXT;
+  -- ID Imobilizado (SAP) — referência patrimonial do exemplar.
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS asset_reference TEXT;
+  -- Projeto de implantação que originou o recurso. Distinto de geo_project_resource, que é o
+  -- vínculo de curadoria (entra/sai de um projeto ao longo do tempo); aqui é atributo de origem.
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS project_id TEXT;
+  CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_project ON tmf_physical_resource(project_id);
 `;
 
 export const SCHEMA_SQL = `
@@ -961,6 +992,23 @@ export const SCHEMA_SQL = `
       CREATE INDEX IF NOT EXISTS idx_tmf_resource_type_category ON tmf_resource_type(category_code);
       CREATE INDEX IF NOT EXISTS idx_tmf_resource_type_status ON tmf_resource_type(status);
 
+      -- Catálogo de estados granulares do recurso (issue #171): o motivo por trás do status SID
+      -- ("Bloqueado por área de risco" sob status='suspended'). Extensível via API (C9), ao
+      -- contrário do CHECK fechado de tmf_physical_resource.status.
+      CREATE TABLE IF NOT EXISTS tmf_resource_status_catalog (
+        tenant_id TEXT NOT NULL,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        -- NULL = vale para qualquer tipo de recurso; preenchido = específico daquele tipo.
+        resource_type TEXT,
+        sort_order INTEGER NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        behavior TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, code)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_resource_status_catalog_tenant_order
+        ON tmf_resource_status_catalog(tenant_id, sort_order, code);
+
       CREATE TABLE IF NOT EXISTS tmf_resource_function_specification (
         id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -979,11 +1027,16 @@ export const SCHEMA_SQL = `
         resource_specification_id TEXT NOT NULL,
         resource_type TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
+        -- Motivo granular do status, resolvido em tmf_resource_status_catalog (issue #171).
+        status_code TEXT,
         geographic_location_id TEXT,
         manufacturer TEXT,
         model TEXT,
         serial_number TEXT UNIQUE,
         part_number TEXT,
+        label TEXT,
+        asset_reference TEXT,
+        project_id TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
         related_party TEXT,

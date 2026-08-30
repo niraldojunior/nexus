@@ -10,9 +10,13 @@ import type {
   ResourceType,
   ResourceSpecification,
   ResourceSpecificationQuery,
+  PhysicalResourceDetail,
+  ResourceAuditEntry,
+  ResourceStatusCatalogEntry,
 } from './domain.js';
 import type { IResourceRepository } from './resource-repository-interface.js';
 import { RESOURCE_CATEGORIES, RESOURCE_TYPES } from './catalog.js';
+import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
 
 export class ResourceRepository implements IResourceRepository {
   private readonly resourceCategories = new Map<string, ResourceCategory>();
@@ -96,6 +100,60 @@ export class ResourceRepository implements IResourceRepository {
 
   public listResourceTypes(): ResourceType[] {
     return [...this.resourceTypes.values()].map(cloneResourceType);
+  }
+
+  public listResourceStatusCatalog(
+    query: { resourceType?: string; tenantId?: string } = {},
+  ): ResourceStatusCatalogEntry[] {
+    return RESOURCE_STATUS_DEFAULTS.filter(
+      (entry) => !query.resourceType || !entry.resourceType || entry.resourceType === query.resourceType,
+    ).map((entry) => ({ '@type': 'ResourceStatusCatalogEntry' as const, ...entry }));
+  }
+
+  public getResourceStatusCatalogEntry(code: string): ResourceStatusCatalogEntry | undefined {
+    return this.listResourceStatusCatalog().find((entry) => entry.code === code);
+  }
+
+  // O repositório em memória não tem audit log — o histórico só existe na persistência real.
+  public listResourceAudit(): ResourceAuditEntry[] {
+    return [];
+  }
+
+  public getPhysicalResourceDetail(id: string): PhysicalResourceDetail | undefined {
+    const resource = this.getPhysicalResource(id);
+    if (!resource) return undefined;
+    const specification = this.getResourceSpecification(resource.resourceSpecificationId);
+    if (!specification) return undefined;
+    const resourceType = this.getResourceType(specification.resourceType);
+    const statusCatalogEntry = resource.statusCode
+      ? this.getResourceStatusCatalogEntry(resource.statusCode)
+      : undefined;
+    const characteristicValue = (name: string): string | undefined => {
+      const value = specification.resourceSpecificationCharacteristic.find(
+        (characteristic) => characteristic.name === name,
+      )?.value;
+      return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+    };
+    const manufacturer = characteristicValue('manufacturer') ?? resource.manufacturer;
+    const model = characteristicValue('model') ?? resource.model;
+    const networkType = characteristicValue('networkType');
+    return {
+      '@type': 'PhysicalResourceDetail',
+      // O repositório em memória não persiste timestamps; os testes unitários recebem um instante
+      // coerente sem criar um segundo modelo só para a implementação de teste.
+      resource: { ...resource, createdAt: '', updatedAt: '' },
+      specification: {
+        ...specification,
+        resourceTypeName: resourceType?.name ?? specification.resourceType,
+        ...(manufacturer ? { manufacturer } : {}),
+        ...(model ? { model } : {}),
+        ...(networkType ? { networkType } : {}),
+      },
+      ...(statusCatalogEntry ? { statusCatalogEntry } : {}),
+      childCount: (this.relationships.get(id) ?? []).filter(
+        (item) => item.relationshipType === 'containsAsChild',
+      ).length,
+    };
   }
 
   public upsertPhysicalResource(resource: PhysicalResource): PhysicalResource {

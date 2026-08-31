@@ -115,12 +115,14 @@ export type GeoSchematicPath = {
 // `mountedOn` fica de fora: o poste sustenta o CDOE, não é filho dele.
 const TREE_EDGE_TYPES = ['containsAsChild', 'connectedTo'] as const;
 
-// Code do catálogo TMF634 (ver `src/modules/resource/catalog.ts`) que não tem
-// existência própria na navegação: o Splitter reaproveita a Location da caixa que
-// o contém, então um pin dele no mapa cairia em cima do pin da caixa. Se algum dia
-// entrar um segundo tipo interno, os predicados abaixo (marcados "— Splitter")
-// precisam virar um IN (...) em vez do `= 'Splitter'` literal.
-const INTERNAL_RESOURCE_TYPE = 'Splitter';
+// Codes do catálogo TMF634 (ver `src/modules/resource/catalog.ts`) que não têm
+// existência própria na navegação: reaproveitam a Location de quem os contém, então
+// um pin deles no mapa cairia em cima do pin do pai. Splitter mora na caixa; Porta
+// (issue #171 Fase 3) mora no splitter — mesma regra, um nível mais fundo, coberta
+// pelo pass-through de `RESOURCE_CHILD_TREE_SOURCE`/`countResourceChildren`
+// (PASS_THROUGH_MAX_DEPTH já cobre uma cadeia caixa→splitter→porta).
+const INTERNAL_RESOURCE_TYPES = ['Splitter', 'Port'] as const;
+const INTERNAL_RESOURCE_TYPES_SQL = INTERNAL_RESOURCE_TYPES.map((t) => `'${t}'`).join(', ');
 
 // Teto de saltos do "traceroute" da fibra (`schematicPath`) — mesmo espírito de
 // `PATH_MAX_DEPTH`: protege contra grafo mal formado (ciclo não detectado, cadeia
@@ -1224,14 +1226,14 @@ export class GeoTreeService {
     return null;
   }
 
-  // Splitter é sempre PhysicalResource (categoria Infrastructure.Passive no catálogo).
+  // Splitter e Porta são sempre PhysicalResource (INTERNAL_RESOURCE_TYPES).
   private async isInternalResource(resourceId: string): Promise<boolean> {
     const row = await this.db.get<{ n: number }>(
       `SELECT count(*) AS n
          FROM tmf_physical_resource r
          JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-        WHERE r.id = ? AND rs.resource_type = ?`,
-      [resourceId, INTERNAL_RESOURCE_TYPE],
+        WHERE r.id = ? AND rs.resource_type IN (${placeholders([...INTERNAL_RESOURCE_TYPES])})`,
+      [resourceId, ...INTERNAL_RESOURCE_TYPES],
     );
     return Number(row?.n ?? 0) > 0;
   }
@@ -1332,7 +1334,7 @@ export class GeoTreeService {
               OR EXISTS (
                 SELECT 1 FROM tmf_physical_resource p
                   JOIN tmf_resource_specification rs ON rs.id = p.resource_specification_id
-                 WHERE p.id = f.node_id AND rs.resource_type = '${INTERNAL_RESOURCE_TYPE}'
+                 WHERE p.id = f.node_id AND rs.resource_type IN (${INTERNAL_RESOURCE_TYPES_SQL})
               )
             )
        )
@@ -1342,7 +1344,7 @@ export class GeoTreeService {
           AND NOT EXISTS (
             SELECT 1 FROM tmf_physical_resource p
               JOIN tmf_resource_specification rs ON rs.id = p.resource_specification_id
-             WHERE p.id = frontier.node_id AND rs.resource_type = '${INTERNAL_RESOURCE_TYPE}'
+             WHERE p.id = frontier.node_id AND rs.resource_type IN (${INTERNAL_RESOURCE_TYPES_SQL})
           )
         GROUP BY root_id`,
       [...seed.binds, ...TREE_EDGE_TYPES],
@@ -1426,10 +1428,10 @@ const RESOURCE_BY_SERVING_SITE_WHERE = `
        AND e.relationship_type IN ('containsAsChild', 'connectedTo')
   )`;
 
-// Predicado que exclui item interno (Splitter — ver INTERNAL_RESOURCE_TYPE) da
-// fonte. Só entra em `scope: 'tree'`; em `scope: 'all'` fica vazio.
+// Predicado que exclui item interno (ver INTERNAL_RESOURCE_TYPES) da fonte. Só
+// entra em `scope: 'tree'`; em `scope: 'all'` fica vazio.
 const hideInternalResourceSql = (scope: GeoTreeScope): string =>
-  scope === 'tree' ? `AND rs.resource_type IS DISTINCT FROM 'Splitter'` : '';
+  scope === 'tree' ? `AND rs.resource_type NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})` : '';
 
 // Substatus é extensão V.tal (C1): vive numa characteristic de topo (sem grupo),
 // não em coluna. Extraímos SÓ o valor como escalar — payload minúsculo — em vez
@@ -1503,18 +1505,19 @@ const siteResourceIdSource = (scope: GeoTreeScope): string => {
 // coordenada; cabo (LineString) casa se qualquer vértice da rota cair no bbox. `l.geometry`
 // é GeoJSON em texto; o worker Postgres deixa os operadores `::jsonb` passarem intactos (só
 // reescreve `json_extract`). Cada bloco leva 4 parâmetros: minLng, maxLng, minLat, maxLat.
-// Splitter fica de fora dos dois blocos: não tem ponto próprio no mapa (mora na Location
-// da caixa que o contém). A busca (`SEARCH_RESOURCE_ID_WHERE`) aplica o mesmo filtro por
-// fora, direto no tipo — ela não filtra por bbox, então não pode herdar daqui.
+// Item interno (INTERNAL_RESOURCE_TYPES) fica de fora dos dois blocos: não tem ponto
+// próprio no mapa (mora na Location de quem o contém). A busca
+// (`SEARCH_RESOURCE_ID_WHERE`) aplica o mesmo filtro por fora, direto no tipo — ela
+// não filtra por bbox, então não pode herdar daqui.
 const VIEWPORT_POINT_WHERE = `
   l.geometry_type = 'Point'
-  AND rs.resource_type IS DISTINCT FROM 'Splitter'
+  AND rs.resource_type NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})
   AND (l.geometry::jsonb->'coordinates'->>0)::float8 BETWEEN ? AND ?
   AND (l.geometry::jsonb->'coordinates'->>1)::float8 BETWEEN ? AND ?`;
 
 const VIEWPORT_LINE_WHERE = `
   l.geometry_type = 'LineString'
-  AND rs.resource_type IS DISTINCT FROM 'Splitter'
+  AND rs.resource_type NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})
   AND EXISTS (
     SELECT 1 FROM jsonb_array_elements(l.geometry::jsonb->'coordinates') AS v
      WHERE (v->>0)::float8 BETWEEN ? AND ?
@@ -1558,14 +1561,14 @@ function viewportResourceSource(shapes: { point: boolean; line: boolean }): stri
 // escolhidos são hidratados depois por `resourcesByIds`, que já faz esse JOIN completo.
 // `place_id IS NOT NULL` espelha o JOIN de `viewportBlock`/`resourcesByIds` (recurso sem
 // geometria própria não aparece na busca, mesma regra do mapa) sem pagar o custo do JOIN
-// aqui. Splitter fica de fora, igual à árvore e ao mapa (não tem ponto próprio no mapa para
-// a seleção pousar). Cada entidade fica em seu PRÓPRIO bloco — nunca um UNION ALL dos
+// aqui. Item interno fica de fora, igual à árvore e ao mapa (não tem ponto próprio no
+// mapa para a seleção pousar). Cada entidade fica em seu PRÓPRIO bloco — nunca um UNION ALL dos
 // dois antes do `ORDER BY`/`LIMIT` do chamador, ver o porquê no JSDoc de
 // `searchResourceCandidates`.
 const SEARCH_RESOURCE_ID_WHERE = `
   r.place_id IS NOT NULL
   AND r.status <> 'terminated'
-  AND rs.resource_type IS DISTINCT FROM '${INTERNAL_RESOURCE_TYPE}'
+  AND rs.resource_type NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})
   AND LOWER(r.name) LIKE LOWER(?)`;
 // `resourceTypes` (RF-013) vira `AND rs.resource_type IN (?, …)` — os `?` extras entram
 // DEPOIS do `?` do LIKE acima, e o chamador (searchResourceCandidatesPass) precisa
@@ -1634,7 +1637,7 @@ const RESOURCE_CHILD_TREE_SOURCE = `
        AND EXISTS (
          SELECT 1 FROM tmf_physical_resource p
            JOIN tmf_resource_specification rs ON rs.id = p.resource_specification_id
-          WHERE p.id = e.resource_to_id AND rs.resource_type = '${INTERNAL_RESOURCE_TYPE}'
+          WHERE p.id = e.resource_to_id AND rs.resource_type IN (${INTERNAL_RESOURCE_TYPES_SQL})
        )
   )
   SELECT r.id, r.name, 'PhysicalResource' AS entity_type, rs.resource_type, r.status,
@@ -1648,7 +1651,7 @@ const RESOURCE_CHILD_TREE_SOURCE = `
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
    WHERE e.resource_from_id IN (SELECT id FROM hidden_chain)
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')
-     AND rs.resource_type IS DISTINCT FROM '${INTERNAL_RESOURCE_TYPE}'
+     AND rs.resource_type NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})
   UNION ALL
   SELECT r.id, r.name, 'LogicalResource' AS entity_type, rs.resource_type, r.status,
          rs.name AS spec_name, NULL AS manufacturer, NULL AS model, NULL AS serial_number,
@@ -1661,7 +1664,7 @@ const RESOURCE_CHILD_TREE_SOURCE = `
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
    WHERE e.resource_from_id IN (SELECT id FROM hidden_chain)
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')
-     AND rs.resource_type IS DISTINCT FROM '${INTERNAL_RESOURCE_TYPE}'`;
+     AND rs.resource_type NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})`;
 
 // --------------------------------------------------------------- helpers ----
 

@@ -4,6 +4,7 @@ import {
   fetchPhysicalResourceAudit,
   type ResourceAuditEntry,
 } from '../../services/resourceApi';
+import { ADMIN_STATE_LABELS, OP_STATE_LABELS, USAGE_STATE_LABELS } from '../../utils/resourceStateLabels';
 
 export type ResourceHistoryTabProps = {
   resourceId: string;
@@ -14,24 +15,6 @@ const SID_STATUS_LABELS: Record<string, string> = {
   inactive: 'Inativo',
   suspended: 'Suspenso',
   terminated: 'Terminado',
-};
-
-const ADMIN_STATE_LABELS: Record<string, string> = {
-  unlocked: 'Desbloqueado',
-  locked: 'Bloqueado',
-  shuttingDown: 'Desativando',
-};
-
-const OP_STATE_LABELS: Record<string, string> = {
-  enabled: 'Habilitado',
-  disabled: 'Desabilitado',
-};
-
-const USAGE_STATE_LABELS: Record<string, string> = {
-  idle: 'Ocioso',
-  active: 'Em Uso',
-  busy: 'Ocupado',
-  unknown: 'Desconhecido',
 };
 
 const TRACKED_FIELDS: Array<{

@@ -16,28 +16,11 @@ import {
 import type { PhysicalResourceDetail } from '../../services/resourceApi';
 import { StatusBadge } from './StatusBadge';
 import { IconInfoRow } from './IconInfoRow';
+import { ADMIN_STATE_LABELS, OP_STATE_LABELS, USAGE_STATE_LABELS } from '../../utils/resourceStateLabels';
 
 export type ResourceOverviewTabProps = {
   detail: PhysicalResourceDetail;
   onOpenResource?: (resourceId: string) => void;
-};
-
-const ADMIN_STATE_LABELS: Record<string, string> = {
-  unlocked: 'Desbloqueado',
-  locked: 'Bloqueado',
-  shuttingDown: 'Em Desativação',
-};
-
-const OP_STATE_LABELS: Record<string, string> = {
-  enabled: 'Habilitado',
-  disabled: 'Desabilitado',
-};
-
-const USAGE_STATE_LABELS: Record<string, string> = {
-  idle: 'Ocioso',
-  active: 'Em Uso',
-  busy: 'Ocupado',
-  unknown: 'Desconhecido',
 };
 
 function formatPlaceAddress(place: PhysicalResourceDetail['place']): string | null {

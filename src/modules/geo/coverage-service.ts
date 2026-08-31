@@ -76,6 +76,38 @@ export type CoverageResponse = {
   truncated: boolean;
 };
 
+// Área de cobertura (bairro/cidade/UF) que contém um ponto — mesma estatística desnormalizada de
+// CoverageNeighborhood, mas achatada (1 linha por área, sem índice compartilhado) porque a
+// consulta inversa (`coverageForPoint`) nunca precisa deduplicar por bairro entre vários pontos.
+export type CoveragePointArea = {
+  level: CoverageAreaIndexLevel;
+  id: string;
+  neighborhoodKey: string;
+  neighborhood: string;
+  city: string;
+  uf: string;
+  cdoTotal: number;
+  cdoAvailable: number;
+  availabilityRatio: number;
+  coveredAreaKm2: number;
+  portsTotal: number | null;
+  portsUsed: number | null;
+};
+
+export type CoveragePointCell = {
+  gridX: number;
+  gridY: number;
+  cdoTotal: number;
+  cdoAvailable: number;
+  sizeMeters: number;
+};
+
+export type CoveragePointResult = {
+  point: { lng: number; lat: number };
+  cell: CoveragePointCell | null;
+  areas: CoveragePointArea[];
+};
+
 // Teto de linhas devolvidas por nível. A cobertura só existe onde há CDO (bairro denso), então
 // a própria área visível limita o volume; estes tetos são a válvula contra bbox anômalo.
 const MAX_FINE_CELLS = 20000;
@@ -115,6 +147,25 @@ type CoverageAreaIndexRow = {
   geometry: string | null;
 };
 
+// Linha da consulta inversa (`coverageForPoint`) — mesma estatística de CoverageAreaIndexRow, mas
+// sem bbox/geometria (não precisamos redesenhar o polígono, só sua estatística) e com `lod_level`
+// (aqui o nível não é um parâmetro da consulta, como em `areaIndexLevel` — o mesmo ponto pode
+// aparecer em vários níveis ao mesmo tempo, então a linha precisa dizer a qual pertence).
+type CoveragePointAreaRow = {
+  location_id: string;
+  area_key: string;
+  lod_level: string;
+  neighborhood: string | null;
+  city: string | null;
+  uf: string | null;
+  cdo_total: number;
+  cdo_available: number;
+  covered_area_km2: number;
+  ports_total: number | null;
+  ports_used: number | null;
+  cell_size_m: number;
+};
+
 export class GeoCoverageService {
   // Resolução REAL da grade fina gravada (usada só pelos níveis fine/coarse) — consultada uma vez
   // por processo: a grade não muda em runtime, só quando scripts/build-gpon-coverage.mjs roda de
@@ -133,6 +184,63 @@ export class GeoCoverageService {
     const range = gridRange(bounds, cellMeters);
     if (level === 'coarse') return this.coarseLevel(range, cellMeters);
     return this.fineLevel(range, cellMeters);
+  }
+
+  // Consulta inversa (REQ-MOD01-014, issue #171 Fase 4): dado o ponto de um recurso, devolve
+  // a célula fina que o contém (se existir cobertura ali) e as áreas de bairro/cidade/UF cujo
+  // bbox o contém — sem `LIMIT`/truncamento, porque um único ponto cai em poucas áreas por nível
+  // (nunca nas milhares de um bbox de viewport, ver `areaIndexLevel`). Usado por
+  // `GET /v1/geo/coverage/by-resource/:id`, que já resolveu o `id` de recurso para este ponto.
+  public async coverageForPoint(lng: number, lat: number): Promise<CoveragePointResult> {
+    const cellMeters = await this.resolveCellSize();
+    const [x, y] = lngLatToMercator(lng, lat);
+    const gridX = Math.floor(x / cellMeters);
+    const gridY = Math.floor(y / cellMeters);
+
+    const [cellRow, areaRows] = await Promise.all([
+      this.db.get<CoverageCellRow>(
+        `SELECT grid_x, grid_y, cdo_total, cdo_available, coverage_area_id
+           FROM geo_gpon_coverage_cell
+          WHERE grid_size_m = ? AND grid_x = ? AND grid_y = ?`,
+        [cellMeters, gridX, gridY],
+      ),
+      this.db.all<CoveragePointAreaRow>(
+        `SELECT a.location_id, a.area_key, a.lod_level, a.neighborhood, a.city, a.uf,
+                a.cdo_total, a.cdo_available, a.covered_area_km2,
+                a.ports_total, a.ports_used, a.cell_size_m
+           FROM geo_gpon_coverage_area a
+          WHERE a.min_lng <= ? AND a.max_lng >= ?
+            AND a.min_lat <= ? AND a.max_lat >= ?`,
+        [lng, lng, lat, lat],
+      ),
+    ]);
+
+    const cell: CoveragePointCell | null = cellRow
+      ? {
+          gridX: cellRow.grid_x,
+          gridY: cellRow.grid_y,
+          cdoTotal: cellRow.cdo_total,
+          cdoAvailable: cellRow.cdo_available,
+          sizeMeters: cellMeters,
+        }
+      : null;
+
+    const areas: CoveragePointArea[] = areaRows.map((row) => ({
+      level: row.lod_level as CoverageAreaIndexLevel,
+      id: row.location_id,
+      neighborhoodKey: row.area_key,
+      neighborhood: row.neighborhood ?? row.city ?? row.uf ?? 'Sem bairro',
+      city: row.city ?? row.uf ?? 'Sem município',
+      uf: row.uf ?? 'ZZ',
+      cdoTotal: row.cdo_total,
+      cdoAvailable: row.cdo_available,
+      availabilityRatio: row.cdo_total > 0 ? row.cdo_available / row.cdo_total : 0,
+      coveredAreaKm2: row.covered_area_km2,
+      portsTotal: row.ports_total,
+      portsUsed: row.ports_used,
+    }));
+
+    return { point: { lng, lat }, cell, areas };
   }
 
   // Resolução dominante presente em geo_gpon_coverage_cell (a mais frequente, para ignorar

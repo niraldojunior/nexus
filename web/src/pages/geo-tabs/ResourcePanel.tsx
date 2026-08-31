@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   History as HistoryIcon,
   Info as InfoIcon,
+  Layers3,
   Loader2,
   Waypoints,
   X,
@@ -30,6 +31,7 @@ import { SchematicTab } from './SchematicTab';
 import { ResourceOverviewTab } from './ResourceOverviewTab';
 import { ResourceHistoryTab } from './ResourceHistoryTab';
 import { ResourcePortsTab } from './ResourcePortsTab';
+import { ResourceCoverageTab } from './ResourceCoverageTab';
 import type { DropSimulation } from './ViabilityTab';
 
 export type ResourcePanelProps = {
@@ -63,14 +65,15 @@ export function ResourcePanel({
   const resourceId = node.refId ?? node.id.replace(/^resource:/, '');
   const { detail, loading: detailLoading, error: detailError } = useResourceDetail(resourceId);
   const { children, loading: childrenLoading } = useResourceChildren(node);
-  const [tab, setTab] = useState<'overview' | 'subresources' | 'ports' | 'schematic' | 'history'>(
-    'overview',
-  );
+  const [tab, setTab] = useState<
+    'overview' | 'subresources' | 'ports' | 'coverage' | 'schematic' | 'history'
+  >('overview');
   // CTO ganha aba "Portas" no lugar de "Recursos internos" (issue #171 Fase 3) — quem
   // materializa o splitter/porta contidos é o piloto Niterói/Icaraí; qualquer outro tipo
   // de recurso mantém o comportamento de sempre. Só entra em vigor com `onOpenPort`
   // (o caller decide se sabe empilhar a Porta; sem isso, cai no fallback de sempre).
   const isCto = Boolean(onOpenPort) && node.resourceType === 'CTO';
+  const hasPointGeometry = node.geometry?.type === 'Point';
 
   const eyebrow = resourceIconFor({
     resourceType: node.resourceType ?? detail?.specification.resourceType ?? '',
@@ -140,6 +143,14 @@ export function ResourcePanel({
             onClick={() => setTab('subresources')}
           />
         )}
+        {hasPointGeometry ? (
+          <PanelBarButton
+            icon={Layers3}
+            label="Cobertura"
+            active={tab === 'coverage'}
+            onClick={() => setTab('coverage')}
+          />
+        ) : null}
         <PanelBarButton
           icon={Waypoints}
           label="Esquemático"
@@ -161,10 +172,11 @@ export function ResourcePanel({
             {streetViewTargets.length > 0 ? (
               <div className="border-t border-app-border pt-2">
                 {streetViewTargets.map((target) => (
-                  <div key={`${target.label ?? 'ponto'}:${target.point.join(',')}`} className="py-1">
-                    <CoordinateStreetView
-                      marker={resourceStreetViewMarker(node, target.point)}
-                    />
+                  <div
+                    key={`${target.label ?? 'ponto'}:${target.point.join(',')}`}
+                    className="py-1"
+                  >
+                    <CoordinateStreetView marker={resourceStreetViewMarker(node, target.point)} />
                   </div>
                 ))}
               </div>
@@ -243,6 +255,10 @@ export function ResourcePanel({
 
       {tab === 'ports' && isCto ? (
         <ResourcePortsTab ctoNode={node} onOpenPort={onOpenPort!} />
+      ) : null}
+
+      {tab === 'coverage' && hasPointGeometry ? (
+        <ResourceCoverageTab resourceId={resourceId} />
       ) : null}
 
       {tab === 'schematic' ? (

@@ -35,6 +35,7 @@ const REPRESENTATIVE_SQL: Record<string, string> = {
   // GeoTreeService.searchResourceCandidatesPass (barra de pesquisa) — só id/name, sem JOIN,
   // uma tabela por vez (nunca UNION ALL antes do ORDER BY/LIMIT — mata o NOSORT STOPKEY).
   searchResourceCandidate: `SELECT id, name FROM (SELECT r.id, r.name FROM tmf_physical_resource r WHERE (r.place_id IS NOT NULL AND r.status <> 'terminated' AND r.resource_type IS DISTINCT FROM 'Splitter' AND LOWER(r.name) LIKE LOWER(?))) AS t ORDER BY LOWER(name) LIMIT ?`,
+  siteRelationshipHydration: `SELECT site_from_id, site_to_id, relationship_type FROM tmf_geographic_site_relationship WHERE site_from_id IN (SELECT id FROM JSON_TABLE(?, '$[*]' COLUMNS (id VARCHAR2(4000) PATH '$'))) v) ORDER BY site_from_id, relationship_type, site_to_id`,
 };
 
 test('every representative query translates to Oracle without a Postgres-ism', () => {
@@ -64,6 +65,11 @@ test('translator rewrites the hard constructs to their Oracle form', () => {
   const event = transformOracleQuery(REPRESENTATIVE_SQL.eventLookup!, PREFIX);
   assert.match(event, /JSON_VALUE\(event_data, '\$\.entityId'\)/);
   assert.match(event, /FETCH FIRST 1 ROWS ONLY/);
+
+  const relationships = transformOracleQuery(REPRESENTATIVE_SQL.siteRelationshipHydration!, PREFIX);
+  assert.match(relationships, /FROM NEXUS_TEST_tmf_geographic_site_relationship/);
+  assert.match(relationships, /JSON_TABLE\(:1, '\$\[\*\]'/);
+  assert.doesNotMatch(relationships, /IN \(:[0-9]+,\s*:[0-9]+/);
 });
 
 test('toBinds is name-keyed so :n binds by name, not by array position (issue #43)', () => {

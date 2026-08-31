@@ -6,24 +6,43 @@ import type { GeoTreeNode } from '../../services/geoTreeApi';
 const mocks = vi.hoisted(() => ({
   useResourceDetail: vi.fn(),
   useResourceChildren: vi.fn(),
+  useResourceCoverage: vi.fn(),
 }));
 
 vi.mock('../../hooks/useResourceDetail', () => ({ useResourceDetail: mocks.useResourceDetail }));
-vi.mock('../../hooks/useResourceChildren', () => ({ useResourceChildren: mocks.useResourceChildren }));
+vi.mock('../../hooks/useResourceChildren', () => ({
+  useResourceChildren: mocks.useResourceChildren,
+}));
+vi.mock('../../hooks/useResourceCoverage', () => ({
+  useResourceCoverage: mocks.useResourceCoverage,
+}));
 vi.mock('./ResourceOverviewTab', () => ({
   ResourceOverviewTab: () => <div>Detalhe da CTO</div>,
 }));
 vi.mock('./ResourceHistoryTab', () => ({
-  ResourceHistoryTab: ({ resourceId }: { resourceId: string }) => <div>Histórico de {resourceId}</div>,
+  ResourceHistoryTab: ({ resourceId }: { resourceId: string }) => (
+    <div>Histórico de {resourceId}</div>
+  ),
 }));
 vi.mock('./SchematicTab', () => ({
   SchematicTab: () => <div>Esquemático do recurso</div>,
 }));
 vi.mock('./ResourcePortsTab', () => ({
-  ResourcePortsTab: ({ ctoNode, onOpenPort }: { ctoNode: GeoTreeNode; onOpenPort: (n: GeoTreeNode) => void }) => (
+  ResourcePortsTab: ({
+    ctoNode,
+    onOpenPort,
+  }: {
+    ctoNode: GeoTreeNode;
+    onOpenPort: (n: GeoTreeNode) => void;
+  }) => (
     <button type="button" onClick={() => onOpenPort(ctoNode)}>
       Porta de {ctoNode.label}
     </button>
+  ),
+}));
+vi.mock('./ResourceCoverageTab', () => ({
+  ResourceCoverageTab: ({ resourceId }: { resourceId: string }) => (
+    <div>Cobertura de {resourceId}</div>
   ),
 }));
 
@@ -43,6 +62,7 @@ afterEach(() => {
   cleanup();
   mocks.useResourceDetail.mockReset();
   mocks.useResourceChildren.mockReset();
+  mocks.useResourceCoverage.mockReset();
 });
 
 function renderPanel() {
@@ -71,6 +91,33 @@ describe('ResourcePanel', () => {
     expect(screen.getByRole('button', { name: 'Esquemático' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Histórico' })).toBeInTheDocument();
     expect(screen.getByText('Detalhe da CTO')).toBeInTheDocument();
+  });
+
+  it('mostra Cobertura para Resource com geometria Point e a monta sob demanda', () => {
+    renderPanel();
+
+    expect(screen.getByRole('button', { name: 'Cobertura' })).toBeInTheDocument();
+    expect(screen.queryByText('Cobertura de cto-1')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cobertura' }));
+    expect(screen.getByText('Cobertura de cto-1')).toBeInTheDocument();
+  });
+
+  it('não mostra Cobertura para Resource sem geometria Point', () => {
+    mocks.useResourceDetail.mockReturnValue({ detail: {}, loading: false, error: null });
+    mocks.useResourceChildren.mockReturnValue({ children: [], loading: false });
+    render(
+      <ResourcePanel
+        isMobile={false}
+        node={{ ...node, id: 'resource:cabo-1', refId: 'cabo-1', geometry: undefined }}
+        onOpenResource={vi.fn()}
+        onBack={vi.fn()}
+        onClose={vi.fn()}
+        onDropSimulation={vi.fn()}
+        onPreview={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Cobertura' })).not.toBeInTheDocument();
   });
 
   it('abre a aba Histórico', () => {
@@ -110,7 +157,12 @@ describe('ResourcePanel', () => {
   it('com onOpenPort, recurso não-CTO mantém "Recursos internos"', () => {
     mocks.useResourceDetail.mockReturnValue({ detail: {}, loading: false, error: null });
     mocks.useResourceChildren.mockReturnValue({ children: [], loading: false });
-    const naoCto: GeoTreeNode = { ...node, id: 'resource:rack-1', refId: 'rack-1', resourceType: 'Rack' };
+    const naoCto: GeoTreeNode = {
+      ...node,
+      id: 'resource:rack-1',
+      refId: 'rack-1',
+      resourceType: 'Rack',
+    };
     render(
       <ResourcePanel
         isMobile={false}

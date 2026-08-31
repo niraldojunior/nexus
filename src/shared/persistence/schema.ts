@@ -462,15 +462,18 @@ export const MIGRATIONS_SQL = `
 
   -- Reengenharia da exibição de recursos no mapa (issue #69, Fase 2): "aparece no mapa" vira
   -- propriedade do catálogo (C9) em vez da string literal espalhada pelo SQL do viewport
-  -- (r.resource_type IS DISTINCT FROM 'Splitter', ver tree-service.ts) — só que, ao contrário
-  -- de um simples "outdoor sim/não" por categoria, o corte real também depende de existência
-  -- própria no mapa: Splitter mora na Location da caixa que o contém e nunca teve ponto
-  -- próprio, então continua excluído por fora (INTERNAL_RESOURCE_TYPE), não por esta coluna.
+  -- (ver INTERNAL_RESOURCE_TYPES em src/modules/geo/map-visibility.ts, fonte única consultada
+  -- por tree-service.ts, map-feature-synchronizer.ts e build-map-features.mjs) — só que, ao
+  -- contrário de um simples "outdoor sim/não" por categoria, o corte real também depende de
+  -- existência própria no mapa: Splitter e Porta moram na Location de quem os contém e nunca
+  -- têm ponto próprio, então continuam excluídos por fora (INTERNAL_RESOURCE_TYPES), não por
+  -- esta coluna — Porta já cai em map_presence = 0 por categoria (Equipment.Access não está na
+  -- lista abaixo), mas é INTERNAL_RESOURCE_TYPES quem faz a exclusão valer, não esta coluna.
   -- NULL (tipo desconhecido/migrado, sem linha no catálogo) é tratado como "mostra" por quem lê
   -- — omitir o que não se sabe classificar é pior do que mostrar demais, mesma régua que
   -- resourcePlant() já aplica no cliente para tipo sem ícone. O "code NOT IN (DIO, Splitter)"
   -- no backfill espelha PLANT_BY_CODE.DIO (indoor apesar da categoria) e o próprio
-  -- INTERNAL_RESOURCE_TYPE, para nenhum dos dois nascer com map_presence = 1.
+  -- INTERNAL_RESOURCE_TYPES, para nenhum dos dois nascer com map_presence = 1.
   -- INTEGER (1/0), não BOOLEAN: nenhuma outra coluna deste schema usa BOOLEAN (o transform para
   -- Oracle não tem regra para o tipo, e o Oracle desta base não é 23c+) — todo flag existente
   -- (is_bootstrap, is_protected, is_symmetric...) já é INTEGER — mesma convenção aqui.

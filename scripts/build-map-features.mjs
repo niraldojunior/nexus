@@ -45,6 +45,7 @@ import {
   tileForPoint,
   tileSegmentsForLine,
 } from '../dist/src/modules/geo/map-tile.js';
+import { excludeInternalResourceTypesSql } from '../dist/src/modules/geo/map-visibility.js';
 
 loadEnv();
 
@@ -120,21 +121,25 @@ async function ensureMapFeatureTable(client) {
 
 // Recursos outdoor (Point ou LineString), já filtrados por map_presence do catálogo — mesmo
 // espírito de viewportBlock em tree-service.ts, com o filtro de tipo movido para o catálogo
-// (C9) em vez da string literal 'Splitter' sozinha. LEFT JOIN em tmf_resource_type: um
+// (C9) e a lista de tipos internos (Splitter, Porta) compartilhada com map-visibility.ts, para
+// não divergir do write-through (map-feature-synchronizer.ts) — foi essa divergência que deixou
+// Porta de Splitter vazar no mapa. `resource_type` mora na ResourceSpecification, não no
+// exemplar (r); daí o JOIN em tmf_resource_specification. LEFT JOIN em tmf_resource_type: um
 // resource_type sem linha no catálogo (migração antiga, código nunca cadastrado) tem
 // map_presence NULL, e COALESCE(..., 1) deixa passar — mesma régua de resourcePlant() no
 // cliente para tipo sem ícone. map_presence é INTEGER (1/0, não BOOLEAN — ver schema.ts).
 function resourceSource(entity, scopeWhere) {
   const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
   return `
-    SELECT r.id, r.name, '${entity}' AS entity_type, r.resource_type, r.status,
+    SELECT r.id, r.name, '${entity}' AS entity_type, rs.resource_type, r.status,
            l.geometry_type, l.geometry
       FROM ${table} r
+      JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
       JOIN tmf_geographic_location l ON l.id = r.place_id
-      LEFT JOIN tmf_resource_type rt ON rt.code = r.resource_type
+      LEFT JOIN tmf_resource_type rt ON rt.code = rs.resource_type
       LEFT JOIN tmf_geographic_address a ON a.geographic_location_id = r.place_id
      WHERE r.status <> 'terminated'
-       AND r.resource_type IS DISTINCT FROM 'Splitter'
+       AND ${excludeInternalResourceTypesSql('rs')}
        AND COALESCE(rt.map_presence, 1) = 1
        AND l.geometry_type IN ('Point', 'LineString')${scopeWhere}`;
 }

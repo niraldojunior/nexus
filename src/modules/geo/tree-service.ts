@@ -23,6 +23,7 @@
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 import { dialectFor } from '../../shared/persistence/sql-dialect.js';
 import type { GeoJSONGeometry } from './domain.js';
+import { INTERNAL_RESOURCE_TYPES, INTERNAL_RESOURCE_TYPES_SQL } from './map-visibility.js';
 
 export type GeoTreeNodeKind = 'uf' | 'city' | 'group' | 'site' | 'resource';
 
@@ -114,15 +115,6 @@ export type GeoSchematicPath = {
 // (porta → cabo primário → splitter → cabo secundário → CTO → drop → ONT).
 // `mountedOn` fica de fora: o poste sustenta o CDOE, não é filho dele.
 const TREE_EDGE_TYPES = ['containsAsChild', 'connectedTo'] as const;
-
-// Codes do catálogo TMF634 (ver `src/modules/resource/catalog.ts`) que não têm
-// existência própria na navegação: reaproveitam a Location de quem os contém, então
-// um pin deles no mapa cairia em cima do pin do pai. Splitter mora na caixa; Porta
-// (issue #171 Fase 3) mora no splitter — mesma regra, um nível mais fundo, coberta
-// pelo pass-through de `RESOURCE_CHILD_TREE_SOURCE`/`countResourceChildren`
-// (PASS_THROUGH_MAX_DEPTH já cobre uma cadeia caixa→splitter→porta).
-const INTERNAL_RESOURCE_TYPES = ['Splitter', 'Port'] as const;
-const INTERNAL_RESOURCE_TYPES_SQL = INTERNAL_RESOURCE_TYPES.map((t) => `'${t}'`).join(', ');
 
 // Teto de saltos do "traceroute" da fibra (`schematicPath`) — mesmo espírito de
 // `PATH_MAX_DEPTH`: protege contra grafo mal formado (ciclo não detectado, cadeia

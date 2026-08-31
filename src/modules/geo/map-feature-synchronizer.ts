@@ -1,9 +1,15 @@
 // Write-through do índice de mapa. `geo_map_feature` é um read-model derivado:
 // este sincronizador o mantém alinhado aos writes unitários da API, sem tornar o
-// mapa dependente de um rebuild batch.
+// mapa dependente de um rebuild batch. A régua de visibilidade (item interno,
+// map_presence do catálogo, categoria de site, projeto em curso) espelha
+// scripts/build-map-features.mjs de propósito — as duas fontes de escrita de
+// geo_map_feature têm que concordar, ou um recurso aparece/some conforme foi
+// criado pela API ou por rebuild batch (foi assim que Porta de Splitter vazou
+// no mapa: batch excluía por map_presence do catálogo, write-through não).
 
 import type { DatabaseExecutor, DatabaseClient } from '../../shared/persistence/database-client.js';
 import { MAP_TILE_ZOOM, tileForPoint } from './map-tile.js';
+import { excludeInternalResourceTypesSql } from './map-visibility.js';
 
 type Candidate = {
   entity_id: string;
@@ -52,15 +58,29 @@ export class GeoMapFeatureSynchronizer implements MapFeatureSynchronizer {
           WHERE tenant_id = ? AND entity_id IN (${placeholders})`,
         [tenantId, ...ids],
       );
-      const candidates = await session.all<Candidate>(
-        `SELECT r.id entity_id, 'resource' feature_kind, 'PhysicalResource' entity_type,
+      const candidates = await session.all<Candidate>(candidatesSql(placeholders), [...ids, ...ids]);
+      for (const candidate of candidates) await insertFeature(session, tenantId, candidate);
+    });
+  }
+}
+
+// Query de candidatos do write-through. Espelha a régua de scripts/build-map-features.mjs de
+// propósito (ver comentário de topo do arquivo) — exportada como função pura, parametrizada só
+// pelos placeholders de `id IN (...)`, para o teste de regressão da régua não precisar de banco
+// (geo.map-feature-synchronizer.unit.spec.ts): confere a presença de 'Port' na exclusão de tipo
+// interno, do JOIN de map_presence e do filtro de projeto em curso direto no texto do SQL.
+export function candidatesSql(idPlaceholders: string): string {
+  return `SELECT r.id entity_id, 'resource' feature_kind, 'PhysicalResource' entity_type,
                 rs.resource_type type_code, NULL site_category, r.status status, r.name label,
                 NULL sublabel, l.geometry geometry
            FROM tmf_physical_resource r
            JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
            JOIN tmf_geographic_location l ON l.id = r.place_id
-          WHERE r.id IN (${placeholders}) AND r.status <> 'terminated'
-            AND rs.resource_type <> 'Splitter' AND l.geometry_type = 'Point'
+           LEFT JOIN tmf_resource_type rt ON rt.code = rs.resource_type
+          WHERE r.id IN (${idPlaceholders}) AND r.status <> 'terminated'
+            AND ${excludeInternalResourceTypesSql('rs')}
+            AND COALESCE(rt.map_presence, 1) = 1
+            AND l.geometry_type = 'Point'
          UNION ALL
          SELECT s.id entity_id, 'site' feature_kind, 'GeographicSite' entity_type,
                 NULL type_code, spec.category site_category, s.status status, s.name label,
@@ -68,13 +88,13 @@ export class GeoMapFeatureSynchronizer implements MapFeatureSynchronizer {
            FROM tmf_geographic_site s
            JOIN tmf_geographic_site_specification spec ON spec.id = s.site_specification_id
            JOIN tmf_geographic_location l ON l.id = s.geographic_location_id
-          WHERE s.id IN (${placeholders}) AND spec.category IN ('Site', 'SubSite')
-            AND s.status NOT IN ('Retired', 'terminated') AND l.geometry_type = 'Point'`,
-        [...ids, ...ids],
-      );
-      for (const candidate of candidates) await insertFeature(session, tenantId, candidate);
-    });
-  }
+          WHERE s.id IN (${idPlaceholders}) AND spec.category = 'Site'
+            AND s.status NOT IN ('Retired', 'terminated') AND l.geometry_type = 'Point'
+            AND NOT EXISTS (
+                  SELECT 1 FROM geo_project_site ps
+                    JOIN geo_project p ON p.id = ps.project_id
+                   WHERE ps.site_id = s.id AND p.status <> 'terminated'
+                )`;
 }
 
 // Feature pontual do índice. `shape` é literal ('point' — o write-through só cobre ponto; cabo

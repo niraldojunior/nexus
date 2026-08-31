@@ -14,6 +14,8 @@ import type {
   PhysicalResourceDetail,
   ResourceAuditEntry,
   ResourceStatusCatalogEntry,
+  ResourcePortDetail,
+  ResourcePortsView,
 } from './domain.js';
 import type { IResourceRepository } from './resource-repository-interface.js';
 import { RESOURCE_CATEGORIES, RESOURCE_TYPES } from './catalog.js';
@@ -218,6 +220,118 @@ export class ResourceRepository implements IResourceRepository {
     };
   }
 
+  public getResourcePortsView(ctoId: string): ResourcePortsView | undefined {
+    const cto = this.getPhysicalResource(ctoId);
+    if (!cto) return undefined;
+    const splitters = this.childrenOf(ctoId, 'Splitter');
+    return {
+      '@type': 'ResourcePortsView',
+      ctoId,
+      groups: splitters.map((splitter) => {
+        const splitRatio = characteristicString(splitter, 'razao');
+        return {
+          splitter: {
+            id: splitter.id,
+            name: splitter.name,
+            '@referredType': 'PhysicalResource' as const,
+            resourceType: splitter.resourceType,
+            ...(splitRatio ? { splitRatio } : {}),
+          },
+          ports: this.childrenOf(splitter.id, 'Port')
+            .map((port) => this.portDetail(port, splitter, cto))
+            .sort(comparePortDetails),
+        };
+      }),
+    };
+  }
+
+  public getResourcePortDetail(portId: string): ResourcePortDetail | undefined {
+    const port = this.getPhysicalResource(portId);
+    if (!port || port.resourceType !== 'Port') return undefined;
+    const splitter = this.parentsOf(portId).find((item) => item.resourceType === 'Splitter');
+    const cto = splitter
+      ? this.parentsOf(splitter.id).find((item) => item.resourceType === 'CTO')
+      : undefined;
+    return this.portDetail(port, splitter, cto);
+  }
+
+  private childrenOf(parentId: string, resourceType: string): PhysicalResource[] {
+    return this.listResourceRelationships(parentId)
+      .filter((relationship) => relationship.relationshipType === 'containsAsChild')
+      .map((relationship) => this.getPhysicalResource(relationship.id))
+      .filter((resource): resource is PhysicalResource => Boolean(resource && resource.resourceType === resourceType));
+  }
+
+  private parentsOf(childId: string): PhysicalResource[] {
+    return [...this.relationships.entries()]
+      .filter(([, relationships]) =>
+        relationships.some(
+          (relationship) => relationship.id === childId && relationship.relationshipType === 'containsAsChild',
+        ),
+      )
+      .map(([id]) => this.getPhysicalResource(id))
+      .filter((resource): resource is PhysicalResource => Boolean(resource));
+  }
+
+  private portDetail(
+    port: PhysicalResource,
+    splitter?: PhysicalResource,
+    cto?: PhysicalResource,
+  ): ResourcePortDetail {
+    const drops = this.listIncidentResourceRelationships(port.id)
+      .filter((relationship) => relationship.relationshipType === 'connectedTo')
+      .map((relationship) => ({ relationship, resource: this.getPhysicalResource(relationship.id) }))
+      .filter(
+        (item): item is { relationship: ResourceRelationship; resource: PhysicalResource } =>
+          Boolean(item.resource && item.resource.resourceType === 'DropCable'),
+      )
+      .map(({ relationship, resource }) => ({
+        resource: {
+          id: resource.id,
+          name: resource.name,
+          '@referredType': 'PhysicalResource' as const,
+          resourceType: resource.resourceType,
+        },
+        active: relationshipIsActive(relationship),
+        ...(relationship.validFor ? { validFor: { ...relationship.validFor } } : {}),
+      }));
+    const role = characteristicString(port, 'role');
+    const index = characteristicNumber(port, 'index');
+    const splitRatio = splitter ? characteristicString(splitter, 'razao') : undefined;
+    return {
+      '@type': 'ResourcePortDetail',
+      resource: {
+        ...port,
+        usageState: role === 'FO.O' && drops.some((drop) => drop.active) ? 'active' : port.usageState,
+      },
+      ...(role ? { role } : {}),
+      ...(index !== undefined ? { index } : {}),
+      ...(splitter
+        ? {
+            splitter: {
+              id: splitter.id,
+              name: splitter.name,
+              '@referredType': 'PhysicalResource',
+              resourceType: splitter.resourceType,
+            },
+          }
+        : {}),
+      ...(cto
+        ? {
+            cto: {
+              id: cto.id,
+              name: cto.name,
+              '@referredType': 'PhysicalResource',
+              resourceType: cto.resourceType,
+            },
+          }
+        : {}),
+      ...(splitRatio ? { splitRatio } : {}),
+      derivedUsageState: drops.some((drop) => drop.active) ? 'active' : 'idle',
+      drops,
+    };
+  }
+
   public upsertPhysicalResource(resource: PhysicalResource): PhysicalResource {
     const stored = clonePhysicalResource({
       ...resource,
@@ -320,6 +434,21 @@ export class ResourceRepository implements IResourceRepository {
     return (this.relationships.get(resourceId) ?? []).map(cloneRelationship);
   }
 
+  public listIncidentResourceRelationships(resourceId: string): ResourceRelationship[] {
+    const outgoing = this.listResourceRelationships(resourceId);
+    const incoming = [...this.relationships.entries()].flatMap(([fromId, relationships]) =>
+      relationships
+        .filter((relationship) => relationship.id === resourceId)
+        .map((relationship) => ({
+          id: fromId,
+          relationshipType: relationship.relationshipType,
+          '@referredType': 'Resource' as const,
+          ...(relationship.validFor ? { validFor: { ...relationship.validFor } } : {}),
+        })),
+    );
+    return [...outgoing, ...incoming];
+  }
+
   public listResources(query?: ResourceQuery): Resource[] {
     if (query?.kind === 'PhysicalResource') {
       return this.listPhysicalResources(query);
@@ -338,6 +467,28 @@ export class ResourceRepository implements IResourceRepository {
     return this.countPhysicalResources(query) + this.countLogicalResources(query);
   }
 }
+
+const characteristicString = (resource: PhysicalResource, name: string): string | undefined => {
+  const value = resource.characteristic.find((item) => item.name === name)?.value;
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+};
+
+const characteristicNumber = (resource: PhysicalResource, name: string): number | undefined => {
+  const value = characteristicString(resource, name);
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const relationshipIsActive = (relationship: ResourceRelationship): boolean => {
+  const end = relationship.validFor?.endDateTime;
+  return !end || new Date(end).getTime() > Date.now();
+};
+
+const comparePortDetails = (a: ResourcePortDetail, b: ResourcePortDetail): number => {
+  if (a.role !== b.role) return a.role === 'FO.I' ? -1 : b.role === 'FO.I' ? 1 : 0;
+  return (a.index ?? 0) - (b.index ?? 0);
+};
 
 const cloneResourceSpecification = (spec: ResourceSpecification): ResourceSpecification => ({
   ...spec,

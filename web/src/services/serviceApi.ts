@@ -308,6 +308,23 @@ export async function bulkCreateServiceSpecifications(
   });
 }
 
+export async function listServices(query: {
+  '@type'?: ServiceKind;
+  state?: ServiceState;
+  supportingResourceId?: string;
+  supportingServiceId?: string;
+  limit?: number;
+} = {}): Promise<ServiceEntity[]> {
+  const params = new URLSearchParams();
+  if (query['@type']) params.set('@type', query['@type']);
+  if (query.state) params.set('state', query.state);
+  if (query.supportingResourceId) params.set('supportingResourceId', query.supportingResourceId);
+  if (query.supportingServiceId) params.set('supportingServiceId', query.supportingServiceId);
+  if (query.limit !== undefined) params.set('limit', String(query.limit));
+  const suffix = params.toString();
+  return await requestJson<ServiceEntity[]>(`${INVENTORY_BASE}${suffix ? `?${suffix}` : ''}`);
+}
+
 export async function createService(payload: ServicePayload): Promise<ServiceEntity> {
   return await requestJson<ServiceEntity>(INVENTORY_BASE, {
     method: 'POST',

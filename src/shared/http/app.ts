@@ -2629,6 +2629,24 @@ const routeResourceRequest = async ({
       ),
     );
   }
+  const resourcePortsMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)\/ports$/);
+  if (request.method === 'GET' && resourcePortsMatch?.[1]) {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    return sendJson(
+      response,
+      200,
+      resourceService.getResourcePortsView(decodeURIComponent(resourcePortsMatch[1]), context),
+    );
+  }
+  const resourcePortDetailMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)\/port-detail$/);
+  if (request.method === 'GET' && resourcePortDetailMatch?.[1]) {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    return sendJson(
+      response,
+      200,
+      resourceService.getResourcePortDetail(decodeURIComponent(resourcePortDetailMatch[1]), context),
+    );
+  }
   const resourceDetailMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)\/detail$/);
   if (request.method === 'GET' && resourceDetailMatch?.[1]) {
     requireRoles(context, INVENTORY_READ_ROLES);
@@ -3877,12 +3895,16 @@ const resolveResourceRoute = (pathname: string): ResourceRoute | undefined => {
   if (pathname.startsWith(`${inventoryBase}/`)) {
     const tail = pathname.slice(`${inventoryBase}/`.length);
     if (tail && !tail.includes('/')) return { kind: 'resource', id: decodeURIComponent(tail) };
-    const relMatch = tail.match(/^([^/]+)\/relationships(?:\/([^/]+))?$/);
+    // Segundo grupo é o relationshipId; terceiro (opcional) é o relationshipType explícito —
+    // sem ele, o DELETE cai no default `containsAsChild` do handler, o que nunca conseguiria
+    // remover uma aresta `connectedTo` (issue #177: reparo Porta→CaboDrop precisa disso).
+    const relMatch = tail.match(/^([^/]+)\/relationships(?:\/([^/]+))?(?:\/([^/]+))?$/);
     if (relMatch && relMatch[1]) {
       return {
         kind: 'resource',
         id: decodeURIComponent(relMatch[1]),
         ...(relMatch[2] ? { relationshipId: decodeURIComponent(relMatch[2]) } : {}),
+        ...(relMatch[3] ? { relationshipType: decodeURIComponent(relMatch[3]) } : {}),
       };
     }
   }

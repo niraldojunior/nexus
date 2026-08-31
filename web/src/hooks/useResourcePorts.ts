@@ -1,67 +1,67 @@
-import { useEffect, useState } from 'react';
-import { fetchTreeChildren, type GeoTreeNode } from '../services/geoTreeApi';
+import { useCallback, useEffect, useState } from 'react';
+import type { GeoTreeNode } from '../services/geoTreeApi';
+import {
+  fetchResourcePorts,
+  type ResourcePortDetail,
+  type ResourcePortsView,
+} from '../services/resourceApi';
 
-export type ResourcePortGroup = {
-  splitter: GeoTreeNode;
-  ports: GeoTreeNode[];
+export type ResourcePortGroup = ResourcePortsView['groups'][number];
+
+const inFlight = new Map<string, Promise<ResourcePortsView>>();
+
+const loadPorts = (ctoId: string): Promise<ResourcePortsView> => {
+  const current = inFlight.get(ctoId);
+  if (current) return current;
+  const request = fetchResourcePorts(ctoId).finally(() => inFlight.delete(ctoId));
+  inFlight.set(ctoId, request);
+  return request;
 };
 
-// Ordena FO.I antes de FO.O.1..N; dentro de FO.O, por índice numérico. Sublabel/label
-// não carregam o `role`/`index` estruturado — a ordenação lê do próprio nome
-// (`<splitter> · FO.I` / `<splitter> · FO.O.<n>`), gravado assim por load-cto-ports.mjs.
-function comparePorts(a: GeoTreeNode, b: GeoTreeNode): number {
-  const aIn = a.label.endsWith('FO.I');
-  const bIn = b.label.endsWith('FO.I');
-  if (aIn !== bIn) return aIn ? -1 : 1;
-  const aIndex = Number(a.label.match(/FO\.O\.(\d+)$/)?.[1] ?? 0);
-  const bIndex = Number(b.label.match(/FO\.O\.(\d+)$/)?.[1] ?? 0);
-  return aIndex - bIndex;
-}
+export const comparePorts = (a: ResourcePortDetail, b: ResourcePortDetail): number => {
+  if (a.role !== b.role) return a.role === 'FO.I' ? -1 : b.role === 'FO.I' ? 1 : 0;
+  return (a.index ?? 0) - (b.index ?? 0);
+};
 
-/**
- * Portas de uma CTO (issue #171 Fase 3): busca os splitters contidos na CTO e, para
- * cada um, as portas contidas nele — dois níveis de `fetchTreeChildren`, sempre com
- * `scope: 'all'` (Splitter e Port são itens internos, escondidos em `scope: 'tree'`).
- * Splitter tipicamente é 1 por CTO — sem paginação.
- */
+/** Projeção única da CTO, deduplicada para o double-invoke do React StrictMode. */
 export function useResourcePorts(ctoNode: GeoTreeNode): {
   groups: ResourcePortGroup[];
   loading: boolean;
+  error: string | null;
+  reload: () => void;
 } {
+  const ctoId = ctoNode.refId ?? ctoNode.id.replace(/^resource:/, '');
   const [groups, setGroups] = useState<ResourcePortGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  const reload = useCallback(() => setRevision((current) => current + 1), []);
 
   useEffect(() => {
     let cancelled = false;
     setGroups([]);
     setLoading(true);
+    setError(null);
 
-    void (async () => {
-      try {
-        const childrenPage = await fetchTreeChildren(ctoNode.id, { scope: 'all' });
-        const splitters = childrenPage.nodes.filter((n) => n.resourceType === 'Splitter');
-        const results = await Promise.all(
-          splitters.map(async (splitter) => {
-            const portsPage = await fetchTreeChildren(splitter.id, { scope: 'all' });
-            const ports = portsPage.nodes
-              .filter((n) => n.resourceType === 'Port')
-              .sort(comparePorts);
-            return { splitter, ports };
-          }),
-        );
+    void loadPorts(ctoId)
+      .then((view) => {
         if (!cancelled) {
-          setGroups(results);
-          setLoading(false);
+          setGroups(view.groups.map((group) => ({ ...group, ports: [...group.ports].sort(comparePorts) })));
         }
-      } catch {
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) {
+          setError(reason instanceof Error ? reason.message : 'Não foi possível carregar as portas.');
+        }
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    })();
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [ctoNode.id]);
+  }, [ctoId, revision]);
 
-  return { groups, loading };
+  return { groups, loading, error, reload };
 }

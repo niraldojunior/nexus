@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Popula 6 das 8 portas de saída do splitter de CDOE-02-ICARAI com clientes reais
- * (issue #171/#173 — validação da aba Portas com consumo de verdade, não só portas vazias).
+ * (issue #171/#173/#177 — validação da aba Portas com consumo de verdade, não só portas vazias).
  *
  * `scripts/load-cto-ports.mjs` já materializou `CDOE-02-ICARAI · Splitter` com `FO.I` +
  * `FO.O.1`..`FO.O.8`, mas nenhuma porta de saída está ligada a um cliente. Este script fecha
@@ -22,7 +22,9 @@
  * coordenada real da CDOE (lida da API em runtime), não de um reticulado de esquinas.
  *
  * Idempotente: identifica tudo por nome exato (`findResourceByExactName`/
- * `findServiceByExactName`, padrão de `load-cto-ports.mjs`) e só cria o que falta.
+ * `findServiceByExactName`, padrão de `load-cto-ports.mjs`) e só cria o que falta. Para cada
+ * cliente, confirma primeiro `Porta FO.O → connectedTo → CaboDrop` e só então remove a aresta
+ * legada `CDOE → CaboDrop` (issue #177).
  *
  * Uso (backend dev no ar em http://127.0.0.1:4001):
  *   node scripts/seed-cdoe02-splitter-clients.mjs             # dry-run — só relatório
@@ -125,6 +127,7 @@ const report = {
   servicesReused: 0,
   servicesToCreate: [],
   linksCreated: 0,
+  legacyLinksRemoved: 0,
 };
 
 async function createPoint(coord, referencePoint) {
@@ -222,16 +225,53 @@ async function ensureResource({
   return { id: resource.id, '@type': resource['@type'] };
 }
 
-async function link(fromRef, toRef, relationshipType) {
-  if (!fromRef || !toRef) return;
-  if (!APPLY) return;
-  if (fromRef.id.startsWith('dry-run:') || toRef.id.startsWith('dry-run:')) return;
+async function listRelationships(resourceId) {
+  return await api('GET', `/tmf-api/resourceInventoryManagement/v4/resource/${resourceId}/relationships`);
+}
+
+async function ensureLink(fromRef, toRef, relationshipType) {
+  if (!fromRef || !toRef) return false;
+  if (!APPLY) return false;
+  if (fromRef.id.startsWith('dry-run:') || toRef.id.startsWith('dry-run:')) return false;
+  const existing = await listRelationships(fromRef.id);
+  if ((existing ?? []).some((relationship) => relationship.id === toRef.id && relationship.relationshipType === relationshipType)) {
+    return false;
+  }
   await api('POST', `/tmf-api/resourceInventoryManagement/v4/resource/${fromRef.id}/relationships`, {
     id: toRef.id,
     relationshipType,
     '@referredType': 'Resource',
   });
   report.linksCreated++;
+  return true;
+}
+
+async function removeLink(fromRef, toRef, relationshipType) {
+  if (!fromRef || !toRef || !APPLY) return false;
+  if (fromRef.id.startsWith('dry-run:') || toRef.id.startsWith('dry-run:')) return false;
+  const existing = await listRelationships(fromRef.id);
+  if (!(existing ?? []).some((relationship) => relationship.id === toRef.id && relationship.relationshipType === relationshipType)) {
+    return false;
+  }
+  await api(
+    'DELETE',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${fromRef.id}/relationships/${toRef.id}/${encodeURIComponent(relationshipType)}`,
+  );
+  report.legacyLinksRemoved++;
+  return true;
+}
+
+async function repairDropConnection({ cdoeRef, portaRef, drop }) {
+  if (!APPLY || drop.id.startsWith('dry-run:')) return;
+  await ensureLink(portaRef, drop, 'connectedTo');
+  const portLinks = await listRelationships(portaRef.id);
+  const connected = (portLinks ?? []).some(
+    (relationship) => relationship.id === drop.id && relationship.relationshipType === 'connectedTo',
+  );
+  if (!connected) {
+    throw new Error(`Não foi possível confirmar Porta → CaboDrop para ${drop.id}.`);
+  }
+  await removeLink(cdoeRef, drop, 'connectedTo');
 }
 
 async function ensureRfs({ name, specId, supportingResource, siteId, state, characteristics }) {
@@ -308,7 +348,6 @@ async function main() {
 
   const splitter = await findResourceByExactName(SPLITTER_NAME);
   if (!splitter) throw new Error(`${SPLITTER_NAME} não encontrado — rode load-cto-ports.mjs --apply primeiro.`);
-  const splitterRef = { id: splitter.id, '@type': splitter['@type'] ?? 'PhysicalResource' };
 
   const piSpec = await findSiteSpecByExactName('Ponto de instalação');
   if (!piSpec) throw new Error('Spec de site "Ponto de instalação" não encontrada no catálogo.');
@@ -370,7 +409,7 @@ async function main() {
       serialNumber: `CABO-DROP-ICARAI-${cliente.seq}`,
       administrativeState: 'unlocked', // sempre ativo, inclusive nos churns — ver cabeçalho
     });
-    await link(cdoeRef, drop, 'connectedTo');
+    await repairDropConnection({ cdoeRef, portaRef, drop });
 
     const ont = await ensureResource({
       name: `ONT-ICARAI-${cliente.seq}`,
@@ -381,7 +420,7 @@ async function main() {
       model: 'HG8245Q2',
       administrativeState: isChurn ? 'locked' : 'unlocked',
     });
-    await link(drop, ont, 'connectedTo');
+    await ensureLink(drop, ont, 'connectedTo');
 
     const rfsState = isChurn ? 'terminated' : 'active';
     const rfs = await ensureRfs({
@@ -411,9 +450,6 @@ async function main() {
     });
   }
 
-  // Ligação splitter→porta já existe (load-cto-ports.mjs); nada a religar aqui.
-  void splitterRef;
-
   console.log('== Relatório ==');
   console.log(`Sites:     ${report.sitesCreated} criados, ${report.sitesReused} reaproveitados`);
   console.log(`Locations: ${report.locationsCreated}`);
@@ -428,7 +464,7 @@ async function main() {
     console.log('\nRode de novo com --apply para gravar.');
   } else {
     console.log(`Recursos: ${report.resourcesCreated} criados, ${report.resourcesReused} reaproveitados`);
-    console.log(`Ligações: ${report.linksCreated}`);
+    console.log(`Ligações: ${report.linksCreated} criadas; ${report.legacyLinksRemoved} legadas removidas`);
     console.log(`Serviços: ${report.servicesCreated} criados, ${report.servicesReused} reaproveitados`);
     console.log('\n4 clientes ativos (FO.O.1-4), 2 churns (FO.O.5-6), FO.O.7-8 livres.');
   }

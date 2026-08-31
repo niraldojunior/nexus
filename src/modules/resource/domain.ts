@@ -230,6 +230,34 @@ export type ResourceDetailReference = {
  * Agregado de leitura do painel de recurso (issue #171). Não é entidade TMF nova: reúne a instância
  * TMF639 com referências já existentes para evitar que o frontend faça uma cascata de chamadas.
  */
+export type ResourcePortConnection = {
+  resource: { id: string; name: string; '@referredType': 'PhysicalResource'; resourceType: string };
+  active: boolean;
+  validFor?: TimePeriod;
+};
+
+export type ResourcePortDetail = {
+  '@type': 'ResourcePortDetail';
+  resource: PhysicalResource;
+  role?: string;
+  index?: number;
+  splitter?: ResourceDetailReference;
+  cto?: ResourceDetailReference;
+  splitRatio?: string;
+  /** Estado de uso calculado das conexões físicas ativas — nunca aceito como contador manual. */
+  derivedUsageState: UsageState;
+  drops: ResourcePortConnection[];
+};
+
+export type ResourcePortsView = {
+  '@type': 'ResourcePortsView';
+  ctoId: string;
+  groups: Array<{
+    splitter: ResourceDetailReference & { splitRatio?: string };
+    ports: ResourcePortDetail[];
+  }>;
+};
+
 export type PhysicalResourceDetail = {
   '@type': 'PhysicalResourceDetail';
   resource: PhysicalResource & { createdAt: string; updatedAt: string };

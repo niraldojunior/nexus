@@ -465,6 +465,41 @@ export type PhysicalResourceDetail = {
   childCount: number;
 };
 
+export type ResourcePortConnection = {
+  resource: ResourceDetailReference & { name: string; '@referredType': 'PhysicalResource'; resourceType: string };
+  active: boolean;
+  validFor?: TimePeriod;
+};
+
+export type ResourcePortDetail = {
+  '@type': 'ResourcePortDetail';
+  resource: PhysicalResource;
+  role?: string;
+  index?: number;
+  splitter?: ResourceDetailReference;
+  cto?: ResourceDetailReference;
+  splitRatio?: string;
+  derivedUsageState: NonNullable<PhysicalResource['usageState']>;
+  drops: ResourcePortConnection[];
+};
+
+export type ResourcePortsView = {
+  '@type': 'ResourcePortsView';
+  ctoId: string;
+  groups: Array<{
+    splitter: ResourceDetailReference & { name: string; splitRatio?: string };
+    ports: ResourcePortDetail[];
+  }>;
+};
+
+export async function fetchResourcePorts(ctoId: string): Promise<ResourcePortsView> {
+  return await requestJson<ResourcePortsView>(`/v1/resources/${encodeURIComponent(ctoId)}/ports`);
+}
+
+export async function fetchResourcePortDetail(portId: string): Promise<ResourcePortDetail> {
+  return await requestJson<ResourcePortDetail>(`/v1/resources/${encodeURIComponent(portId)}/port-detail`);
+}
+
 export async function fetchPhysicalResourceDetail(id: string): Promise<PhysicalResourceDetail> {
   return await requestJson<PhysicalResourceDetail>(`/v1/resources/${encodeURIComponent(id)}/detail`);
 }

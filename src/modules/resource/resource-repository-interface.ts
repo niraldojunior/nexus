@@ -16,6 +16,8 @@ import type {
   PhysicalResourceDetail,
   ResourceAuditEntry,
   ResourceStatusCatalogEntry,
+  ResourcePortDetail,
+  ResourcePortsView,
 } from './domain.js';
 
 // Escopo de tenant para leitura por id — as mesmas entidades cujo `list*` já aceita `tenantId`
@@ -74,6 +76,14 @@ export interface IResourceRepository {
     resourceId: string,
     scope?: ResourceTenantScope,
   ): Awaitable<PhysicalResourceDetail | undefined>;
+  getResourcePortsView(
+    ctoId: string,
+    scope?: ResourceTenantScope,
+  ): Awaitable<ResourcePortsView | undefined>;
+  getResourcePortDetail(
+    portId: string,
+    scope?: ResourceTenantScope,
+  ): Awaitable<ResourcePortDetail | undefined>;
 
   upsertPhysicalResource(resource: PhysicalResource): Awaitable<PhysicalResource>;
   getPhysicalResource(
@@ -101,6 +111,8 @@ export interface IResourceRepository {
     relationshipType: string,
   ): Awaitable<boolean>;
   listResourceRelationships(resourceId: string): Awaitable<ResourceRelationship[]>;
+  /** Relações incidentes nos dois sentidos, necessárias para relações físicas simétricas. */
+  listIncidentResourceRelationships(resourceId: string): Awaitable<ResourceRelationship[]>;
 
   listResources(query?: ResourceQuery): Awaitable<Resource[]>;
   countResources(query?: ResourceQuery): Awaitable<number>;

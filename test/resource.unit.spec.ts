@@ -194,6 +194,155 @@ test('ResourceRepository clones stored entities and filters across resource kind
   assert.equal(repository.deleteResourceRelationship('res-1', 'res-2', 'supports'), false);
 });
 
+test('Resource ports projection derives output occupancy from current and inverse drop connections', async () => {
+  const repository = new ResourceRepository();
+  const spec = (id: string, resourceType: string, category = 'Infrastructure.Passive') =>
+    repository.upsertResourceSpecification({
+      '@type': 'ResourceSpecification',
+      id,
+      href: `/resource-specification/${id}`,
+      name: id,
+      category,
+      resourceType,
+      resourceSpecificationCharacteristic: [],
+      relatedParty: [],
+    });
+  const resource = (
+    id: string,
+    name: string,
+    resourceType: string,
+    specificationId: string,
+    characteristic: Array<{ name: string; value: string; valueType: 'string' }> = [],
+    usageState: 'idle' | 'active' | 'busy' = 'idle',
+  ) =>
+    repository.upsertPhysicalResource({
+      '@type': 'PhysicalResource',
+      id,
+      href: `/resource/${id}`,
+      name,
+      resourceSpecificationId: specificationId,
+      resourceSpecification: { id: specificationId, '@referredType': 'ResourceSpecification' },
+      resourceType,
+      status: 'active',
+      administrativeState: 'unlocked',
+      operationalState: 'enabled',
+      usageState,
+      relatedParty: [],
+      resourceRelationship: [],
+      characteristic,
+    });
+
+  spec('spec-cto', 'CTO');
+  spec('spec-splitter', 'Splitter');
+  spec('spec-port', 'Port', 'Equipment.Access');
+  spec('spec-drop', 'DropCable', 'Cable.OutsidePlant');
+  spec('spec-distribution', 'DistributionCable', 'Cable.OutsidePlant');
+  resource('cto-1', 'CTO Icaraí', 'CTO', 'spec-cto');
+  resource('splitter-1', 'Splitter 1:8', 'Splitter', 'spec-splitter', [
+    { name: 'razao', value: '1:8', valueType: 'string' },
+  ]);
+  resource('port-input', 'FO.I', 'Port', 'spec-port', [{ name: 'role', value: 'FO.I', valueType: 'string' }], 'busy');
+  resource('port-output-free', 'FO.O.1', 'Port', 'spec-port', [
+    { name: 'role', value: 'FO.O', valueType: 'string' },
+    { name: 'index', value: '1', valueType: 'string' },
+  ]);
+  resource('port-output-used', 'FO.O.2', 'Port', 'spec-port', [
+    { name: 'role', value: 'FO.O', valueType: 'string' },
+    { name: 'index', value: '2', valueType: 'string' },
+  ]);
+  resource('port-output-history', 'FO.O.3', 'Port', 'spec-port', [
+    { name: 'role', value: 'FO.O', valueType: 'string' },
+    { name: 'index', value: '3', valueType: 'string' },
+  ]);
+  resource('drop-current', 'Cabo drop atual', 'DropCable', 'spec-drop');
+  resource('drop-history', 'Cabo drop histórico', 'DropCable', 'spec-drop');
+  resource('distribution-cable', 'Cabo distribuição', 'DistributionCable', 'spec-distribution');
+
+  repository.upsertResourceRelationship('cto-1', {
+    id: 'splitter-1', relationshipType: 'containsAsChild', '@referredType': 'Resource',
+  });
+  for (const portId of ['port-input', 'port-output-free', 'port-output-used', 'port-output-history']) {
+    repository.upsertResourceRelationship('splitter-1', {
+      id: portId, relationshipType: 'containsAsChild', '@referredType': 'Resource',
+    });
+  }
+  // A projeção deve reconhecer a relação simétrica mesmo quando escrita drop → porta.
+  repository.upsertResourceRelationship('drop-current', {
+    id: 'port-output-used', relationshipType: 'connectedTo', '@referredType': 'Resource',
+  });
+  repository.upsertResourceRelationship('port-output-history', {
+    id: 'drop-history', relationshipType: 'connectedTo', '@referredType': 'Resource',
+    validFor: { endDateTime: '2020-01-01T00:00:00.000Z' },
+  });
+  repository.upsertResourceRelationship('port-output-free', {
+    id: 'distribution-cable', relationshipType: 'connectedTo', '@referredType': 'Resource',
+  });
+
+  const view = repository.getResourcePortsView('cto-1');
+  assert.ok(view);
+  assert.equal(view.groups.length, 1);
+  const ports = view.groups[0]?.ports ?? [];
+  assert.deepEqual(ports.map((port) => port.resource.id), [
+    'port-input', 'port-output-free', 'port-output-used', 'port-output-history',
+  ]);
+  assert.equal(ports[0]?.resource.usageState, 'busy');
+  assert.equal(ports[1]?.derivedUsageState, 'idle');
+  assert.equal(ports[1]?.drops.length, 0);
+  assert.equal(ports[2]?.resource.usageState, 'active');
+  assert.equal(ports[2]?.drops[0]?.resource.id, 'drop-current');
+  assert.equal(ports[3]?.resource.usageState, 'idle');
+  assert.equal(ports[3]?.drops[0]?.active, false);
+
+  const detail = repository.getResourcePortDetail('port-output-used');
+  assert.equal(detail?.splitter?.id, 'splitter-1');
+  assert.equal(detail?.cto?.id, 'cto-1');
+  assert.equal(detail?.splitRatio, '1:8');
+});
+
+test('ResourceService allows one active drop per splitter output in either relationship direction', async () => {
+  const repository = new ResourceRepository();
+  const service = new ResourceService(repository, { appendEvent: vi.fn(() => undefined) } as never);
+  const outputSpec = await service.createResourceSpecification({
+    name: 'Porta de splitter', category: 'Equipment.Access', resourceType: 'Port',
+  });
+  const inputSpec = outputSpec;
+  const dropSpec = await service.createResourceSpecification({
+    name: 'Cabo drop', category: 'Cable.OutsidePlant', resourceType: 'DropCable',
+  });
+  const distributionSpec = await service.createResourceSpecification({
+    name: 'Cabo distribuição', category: 'Cable.OutsidePlant', resourceType: 'DistributionCable',
+  });
+  const output = await service.createPhysicalResource({
+    name: 'FO.O.1', resourceSpecificationId: outputSpec.id,
+    characteristic: [{ name: 'role', value: 'FO.O', valueType: 'string' }],
+  });
+  const input = await service.createPhysicalResource({
+    name: 'FO.I', resourceSpecificationId: inputSpec.id,
+    characteristic: [{ name: 'role', value: 'FO.I', valueType: 'string' }],
+  });
+  const dropOne = await service.createPhysicalResource({ name: 'Drop 1', resourceSpecificationId: dropSpec.id });
+  const dropTwo = await service.createPhysicalResource({ name: 'Drop 2', resourceSpecificationId: dropSpec.id });
+  const distribution = await service.createPhysicalResource({
+    name: 'Distribuição', resourceSpecificationId: distributionSpec.id,
+  });
+
+  await service.addResourceRelationship(dropOne.id, {
+    id: output.id, relationshipType: 'connectedTo', '@referredType': 'Resource',
+  });
+  await assert.rejects(
+    () => service.addResourceRelationship(output.id, {
+      id: dropTwo.id, relationshipType: 'connectedTo', '@referredType': 'Resource',
+    }),
+    (error: unknown) => error instanceof AppError && error.code === 'RESOURCE_PORT_DROP_OCCUPIED',
+  );
+  await service.addResourceRelationship(output.id, {
+    id: distribution.id, relationshipType: 'connectedTo', '@referredType': 'Resource',
+  });
+  await service.addResourceRelationship(input.id, {
+    id: dropTwo.id, relationshipType: 'connectedTo', '@referredType': 'Resource',
+  });
+});
+
 test('ResourceService creates, mutates and terminates inventory resources', async () => {
   const repository = new ResourceRepository();
   const appendEvent = vi.fn(() => undefined);

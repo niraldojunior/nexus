@@ -409,6 +409,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const [dropSimulation, setDropSimulation] = useState<DropSimulation | null>(null);
   const [confirmDiscardProjectSite, setConfirmDiscardProjectSite] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  // Painel empilhado de Porta (issue #171 Fase 3), aberto pela aba "Portas" de uma CTO —
+  // mesmo precedente de Projeto→Local (`activeProjectSiteView`): no desktop os dois
+  // painéis ficam lado a lado, no mobile um substitui o outro. Vive fora do `dockView`
+  // porque o painel de Recurso é dirigido por `detailTarget`/`selectedNode`, não por ele.
+  const [stackedPortNode, setStackedPortNode] = useState<GeoTreeNode | null>(null);
   // Colapso da hierarquia, hoisted de HierarchySidebar: precisa viver aqui para a
   // barra de pesquisa decidir se flutua sobre o mapa ou fica dentro da doca (ver
   // dockPanelOpen), e para não mudar quando o detalhe abre/fecha por cima dela —
@@ -648,6 +653,12 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     if (selectedResourceNode) return { kind: 'resource', node: selectedResourceNode };
     return null;
   }, [selectedSiteId, selectedResourceNode]);
+  // Troca de CTO (ou fechamento do painel de Recurso) desfaz o empilhamento de Porta —
+  // senão a Porta da CTO anterior ficaria pendurada ao lado da CTO nova.
+  const detailResourceNodeId = detailOpen && detailTarget?.kind === 'resource' ? detailTarget.node.id : null;
+  useEffect(() => {
+    setStackedPortNode(null);
+  }, [detailResourceNodeId]);
   const mobilePanelKey = !isMobile
     ? null
     : addressLookup
@@ -1430,18 +1441,39 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               onOpenResource={goToResource}
             />
           ) : detailOpen && detailTarget?.kind === 'resource' ? (
-            <ResourcePanel
-              key={detailTarget.node.id}
-              isMobile={isMobile}
-              node={detailTarget.node}
-              onSnapChange={onMobileSheetSnapChange}
-              minimizeSignal={sheetMinimizeSignal}
-              onOpenResource={goToResource}
-              onBack={() => setDetailOpen(false)}
-              onClose={onDeselect}
-              onDropSimulation={onDropSimulation}
-              onPreview={handleHover}
-            />
+            <>
+              {/* Mesmo precedente de Projeto→Local: no mobile as duas telas se substituem,
+                  no desktop a Porta abre ao lado da CTO sem fechá-la. */}
+              {!isMobile || !stackedPortNode ? (
+                <ResourcePanel
+                  key={detailTarget.node.id}
+                  isMobile={isMobile}
+                  node={detailTarget.node}
+                  onSnapChange={onMobileSheetSnapChange}
+                  minimizeSignal={sheetMinimizeSignal}
+                  onOpenResource={goToResource}
+                  onOpenPort={setStackedPortNode}
+                  onBack={() => setDetailOpen(false)}
+                  onClose={onDeselect}
+                  onDropSimulation={onDropSimulation}
+                  onPreview={handleHover}
+                />
+              ) : null}
+              {stackedPortNode ? (
+                <ResourcePanel
+                  key={stackedPortNode.id}
+                  isMobile={isMobile}
+                  node={stackedPortNode}
+                  onSnapChange={onMobileSheetSnapChange}
+                  minimizeSignal={sheetMinimizeSignal}
+                  onOpenResource={goToResource}
+                  onBack={() => setStackedPortNode(null)}
+                  onClose={() => setStackedPortNode(null)}
+                  onDropSimulation={onDropSimulation}
+                  onPreview={handleHover}
+                />
+              ) : null}
+            </>
           ) : dockView.kind === 'project' && activeProject ? (
             <>
               {/* No mobile as duas telas se substituem (uma folha por vez); no desktop

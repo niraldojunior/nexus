@@ -29,12 +29,16 @@ import { CoordinateStreetView } from './CoordinateStreetView';
 import { SchematicTab } from './SchematicTab';
 import { ResourceOverviewTab } from './ResourceOverviewTab';
 import { ResourceHistoryTab } from './ResourceHistoryTab';
+import { ResourcePortsTab } from './ResourcePortsTab';
 import type { DropSimulation } from './ViabilityTab';
 
 export type ResourcePanelProps = {
   isMobile: boolean;
   node: GeoTreeNode;
   onOpenResource: (resourceId: string) => void;
+  // Abre uma Porta no painel empilhado ao lado da CTO (issue #171 Fase 3) — só chamado
+  // pela aba "Portas". Sem isto, a aba não é exibida (ver `isCto` abaixo).
+  onOpenPort?: (node: GeoTreeNode) => void;
   onBack: () => void;
   onClose: () => void;
   onSnapChange?: (state: BottomSheetSnapState) => void;
@@ -47,6 +51,7 @@ export function ResourcePanel({
   isMobile,
   node,
   onOpenResource,
+  onOpenPort,
   onBack,
   onClose,
   onSnapChange,
@@ -58,7 +63,14 @@ export function ResourcePanel({
   const resourceId = node.refId ?? node.id.replace(/^resource:/, '');
   const { detail, loading: detailLoading, error: detailError } = useResourceDetail(resourceId);
   const { children, loading: childrenLoading } = useResourceChildren(node);
-  const [tab, setTab] = useState<'overview' | 'subresources' | 'schematic' | 'history'>('overview');
+  const [tab, setTab] = useState<'overview' | 'subresources' | 'ports' | 'schematic' | 'history'>(
+    'overview',
+  );
+  // CTO ganha aba "Portas" no lugar de "Recursos internos" (issue #171 Fase 3) — quem
+  // materializa o splitter/porta contidos é o piloto Niterói/Icaraí; qualquer outro tipo
+  // de recurso mantém o comportamento de sempre. Só entra em vigor com `onOpenPort`
+  // (o caller decide se sabe empilhar a Porta; sem isso, cai no fallback de sempre).
+  const isCto = Boolean(onOpenPort) && node.resourceType === 'CTO';
 
   const eyebrow = resourceIconFor({
     resourceType: node.resourceType ?? detail?.specification.resourceType ?? '',
@@ -112,13 +124,22 @@ export function ResourcePanel({
           active={tab === 'overview'}
           onClick={() => setTab('overview')}
         />
-        <PanelBarButton
-          icon={Boxes}
-          label="Recursos internos"
-          badge={children.length}
-          active={tab === 'subresources'}
-          onClick={() => setTab('subresources')}
-        />
+        {isCto ? (
+          <PanelBarButton
+            icon={Waypoints}
+            label="Portas"
+            active={tab === 'ports'}
+            onClick={() => setTab('ports')}
+          />
+        ) : (
+          <PanelBarButton
+            icon={Boxes}
+            label="Recursos internos"
+            badge={children.length}
+            active={tab === 'subresources'}
+            onClick={() => setTab('subresources')}
+          />
+        )}
         <PanelBarButton
           icon={Waypoints}
           label="Esquemático"
@@ -218,6 +239,10 @@ export function ResourcePanel({
             </div>
           )}
         </div>
+      ) : null}
+
+      {tab === 'ports' && isCto ? (
+        <ResourcePortsTab ctoNode={node} onOpenPort={onOpenPort!} />
       ) : null}
 
       {tab === 'schematic' ? (

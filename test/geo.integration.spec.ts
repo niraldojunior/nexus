@@ -722,6 +722,161 @@ test('Geo tree pass-through skips a chain of hidden splitters to the first visib
   );
 });
 
+test('Geo tree hides Port like Splitter (issue #171 Fase 3), but a drop hanging off a hidden Port still passes through', async (t) => {
+  const database = createTestDatabase();
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
+  const port = await server.start();
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
+
+  const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
+
+  const boxSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    { name: 'CDOE 1:8', category: 'Infrastructure.Passive', resourceType: 'CTO' },
+  );
+  const splitterSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    { name: 'Splitter óptico 1:8', category: 'Infrastructure.Passive', resourceType: 'Splitter' },
+  );
+  const portSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    { name: 'Porta de Splitter', category: 'Equipment.Access', resourceType: 'Port' },
+  );
+  const cableSpec = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    { name: 'Cabo drop 1FO', category: 'Cable.OutsidePlant', resourceType: 'DropCable' },
+  );
+  const place = await requestJson(port, 'POST', '/v1/geo/locations', {
+    geometryType: 'Point',
+    geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
+  });
+
+  const box = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
+    '@type': 'PhysicalResource',
+    name: 'CDOE-ICARAI-01',
+    resourceSpecificationId: idOf(boxSpec),
+    placeId: idOf(place),
+    placeType: 'GeographicLocation',
+  });
+  assert.equal(box.statusCode, 201);
+  const splitter = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceInventoryManagement/v4/resource',
+    {
+      '@type': 'PhysicalResource',
+      name: 'CDOE-ICARAI-01 · Splitter',
+      resourceSpecificationId: idOf(splitterSpec),
+      placeId: idOf(place),
+      placeType: 'GeographicLocation',
+    },
+  );
+  assert.equal(splitter.statusCode, 201);
+  const portaOut = await requestJson(
+    port,
+    'POST',
+    '/tmf-api/resourceInventoryManagement/v4/resource',
+    {
+      '@type': 'PhysicalResource',
+      name: 'CDOE-ICARAI-01 · Splitter · FO.O.1',
+      resourceSpecificationId: idOf(portSpec),
+      placeId: idOf(place),
+      placeType: 'GeographicLocation',
+    },
+  );
+  assert.equal(portaOut.statusCode, 201);
+  const drop = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
+    '@type': 'PhysicalResource',
+    name: 'Drop Cliente 01',
+    resourceSpecificationId: idOf(cableSpec),
+    placeId: idOf(place),
+    placeType: 'GeographicLocation',
+  });
+  assert.equal(drop.statusCode, 201);
+
+  const boxSplitterLink = await requestJson(
+    port,
+    'POST',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(box)}/relationships`,
+    { id: idOf(splitter), relationshipType: 'containsAsChild' },
+  );
+  assert.equal(boxSplitterLink.statusCode, 201);
+  const splitterPortLink = await requestJson(
+    port,
+    'POST',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(splitter)}/relationships`,
+    { id: idOf(portaOut), relationshipType: 'containsAsChild' },
+  );
+  assert.equal(splitterPortLink.statusCode, 201);
+  const portDropLink = await requestJson(
+    port,
+    'POST',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(portaOut)}/relationships`,
+    { id: idOf(drop), relationshipType: 'connectedTo' },
+  );
+  assert.equal(portDropLink.statusCode, 201);
+
+  // scope 'tree' (default): Splitter e Porta somem, o drop pendurado na Porta escondida
+  // passa através dos dois saltos e aparece direto sob a caixa.
+  const boxChildrenTree = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/tree/children?nodeId=resource:${idOf(box)}`,
+  );
+  const boxTreePage = boxChildrenTree.body as { total: number; nodes: GeoTreeResponseNode[] };
+  assert.equal(boxTreePage.total, 1);
+  assert.deepEqual(
+    boxTreePage.nodes.map((item) => item.label),
+    ['Drop Cliente 01'],
+  );
+
+  // scope 'all' (painel de detalhe): Splitter aparece — é aqui que a aba Portas busca.
+  const boxChildrenAll = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/tree/children?nodeId=resource:${idOf(box)}&scope=all`,
+  );
+  const boxAllPage = boxChildrenAll.body as { total: number; nodes: GeoTreeResponseNode[] };
+  assert.deepEqual(
+    boxAllPage.nodes.map((item) => item.label).sort(),
+    ['CDOE-ICARAI-01 · Splitter'],
+  );
+
+  const splitterChildrenAll = await requestJson(
+    port,
+    'GET',
+    `/v1/geo/tree/children?nodeId=resource:${idOf(splitter)}&scope=all`,
+  );
+  const splitterAllPage = splitterChildrenAll.body as { total: number; nodes: GeoTreeResponseNode[] };
+  assert.deepEqual(
+    splitterAllPage.nodes.map((item) => item.label),
+    ['CDOE-ICARAI-01 · Splitter · FO.O.1'],
+  );
+
+  // A busca continua sem devolver item interno, agora também para Porta.
+  const search = await requestJson(port, 'GET', '/v1/geo/tree/search?q=icarai-01');
+  assert.equal(search.statusCode, 200);
+  const searchResults = search.body as GeoTreeResponseNode[];
+  assert.equal(
+    searchResults.some((item) => item.label === 'CDOE-ICARAI-01 · Splitter · FO.O.1'),
+    false,
+  );
+});
+
 test('Geo tree viewport serves passive infra by bounding box, independent of hierarchy state', async (t) => {
   const database = createTestDatabase();
   const server = createApp({

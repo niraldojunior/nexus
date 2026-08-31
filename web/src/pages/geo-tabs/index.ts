@@ -15,6 +15,7 @@ export { ResourcePanel, type ResourcePanelProps } from './ResourcePanel';
 export { ResourceOverviewTab, type ResourceOverviewTabProps } from './ResourceOverviewTab';
 export { ResourceHistoryTab, type ResourceHistoryTabProps } from './ResourceHistoryTab';
 export { ResourcePortsTab, type ResourcePortsTabProps } from './ResourcePortsTab';
+export { ResourceCoverageTab, type ResourceCoverageTabProps } from './ResourceCoverageTab';
 export { SiteAddressModal, type SiteAddressModalProps } from './SiteAddressModal';
 export {
   GeoSearchBar,

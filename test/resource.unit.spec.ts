@@ -33,12 +33,16 @@ test('ResourceRepository returns status catalog and resource detail aggregate', 
     name: 'CDOE Corning',
     category: 'Infrastructure.Passive',
     resourceType: 'CTO',
-    resourceSpecificationCharacteristic: [
-      { name: 'manufacturer', value: 'CORNING', valueType: 'string' },
-      { name: 'model', value: 'CDOE 8-48FS', valueType: 'string' },
-      { name: 'networkType', value: 'GPON', valueType: 'string' },
+    resourceLayerId: 'resource-layer-gpon-network',
+    resourceSpecificationCharacteristic: [{ name: 'model', value: 'CDOE 8-48FS', valueType: 'string' }],
+    relatedParty: [
+      {
+        id: 'party-corning',
+        '@referredType': 'Organization',
+        role: 'manufacturer',
+        name: 'CORNING',
+      },
     ],
-    relatedParty: [],
   });
   repository.upsertPhysicalResource({
     '@type': 'PhysicalResource',
@@ -62,9 +66,9 @@ test('ResourceRepository returns status catalog and resource detail aggregate', 
 
   const detail = repository.getPhysicalResourceDetail('cto-detail');
   assert.ok(detail);
-  assert.equal(detail.specification.manufacturer, 'CORNING');
+  assert.equal(detail.specification.manufacturer?.name, 'CORNING');
   assert.equal(detail.specification.model, 'CDOE 8-48FS');
-  assert.equal(detail.specification.networkType, 'GPON');
+  assert.equal(detail.specification.resourceLayer?.code, 'gpon_network');
   assert.equal(detail.specification.resourceTypeName, 'Caixa de Terminação Óptica');
   assert.equal(detail.statusCatalogEntry?.name, 'Bloqueado por área de risco');
   assert.equal(detail.resource.label, 'CDOE-6746');
@@ -261,8 +265,6 @@ test('ResourceService creates, mutates and terminates inventory resources', asyn
     placeId: place.id,
     placeType: 'GeographicSite',
     relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'owner' }],
-    manufacturer: 'Huawei',
-    model: 'MA5800',
     serialNumber: 'SN-OLT-001',
     characteristic: [{ name: 'slot', value: '1', valueType: 'integer' }],
   });

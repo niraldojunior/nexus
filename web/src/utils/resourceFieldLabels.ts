@@ -20,7 +20,7 @@ export type ResourceFieldKey =
   | 'endOfLifeDate'
   | 'endOfSupportLifeDate'
   | 'lifecycleStatus'
-  | 'networkType';
+  | 'resourceLayer';
 
 export const RESOURCE_FIELD_LABELS: Record<ResourceFieldKey, string> = {
   resourceType: 'Tipo do Recurso',
@@ -44,7 +44,7 @@ export const RESOURCE_FIELD_LABELS: Record<ResourceFieldKey, string> = {
   endOfLifeDate: 'EOL',
   endOfSupportLifeDate: 'EOSL',
   lifecycleStatus: 'Status',
-  networkType: 'Tipo de Rede',
+  resourceLayer: 'Camada de recurso',
 };
 
 export function resourceFieldLabel(key: ResourceFieldKey): string {

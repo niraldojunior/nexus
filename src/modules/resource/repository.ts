@@ -8,6 +8,7 @@ import type {
   ResourceQuery,
   ResourceRelationship,
   ResourceType,
+  ResourceLayer,
   ResourceSpecification,
   ResourceSpecificationQuery,
   PhysicalResourceDetail,
@@ -17,10 +18,37 @@ import type {
 import type { IResourceRepository } from './resource-repository-interface.js';
 import { RESOURCE_CATEGORIES, RESOURCE_TYPES } from './catalog.js';
 import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
+import { buildHref } from '../../shared/tmf/index.js';
 
 export class ResourceRepository implements IResourceRepository {
   private readonly resourceCategories = new Map<string, ResourceCategory>();
   private readonly resourceTypes = new Map<string, ResourceType>();
+  private readonly resourceLayers = new Map<string, ResourceLayer>([
+    [
+      'resource-layer-infrastructure',
+      {
+        '@type': 'ResourceLayer',
+        id: 'resource-layer-infrastructure',
+        href: buildHref('resourceLayer', 'resource-layer-infrastructure'),
+        code: 'infrastructure',
+        name: 'Infraestrutura',
+        status: 'active',
+        tenantId: 'default',
+      },
+    ],
+    [
+      'resource-layer-gpon-network',
+      {
+        '@type': 'ResourceLayer',
+        id: 'resource-layer-gpon-network',
+        href: buildHref('resourceLayer', 'resource-layer-gpon-network'),
+        code: 'gpon_network',
+        name: 'Rede GPON',
+        status: 'active',
+        tenantId: 'default',
+      },
+    ],
+  ]);
   private readonly resourceSpecifications = new Map<string, ResourceSpecification>();
   private readonly resourceFunctionSpecifications = new Map<
     string,
@@ -102,6 +130,21 @@ export class ResourceRepository implements IResourceRepository {
     return [...this.resourceTypes.values()].map(cloneResourceType);
   }
 
+  public upsertResourceLayer(layer: ResourceLayer): ResourceLayer {
+    const stored = { ...layer };
+    this.resourceLayers.set(stored.id, stored);
+    return { ...stored };
+  }
+
+  public getResourceLayer(id: string): ResourceLayer | undefined {
+    const layer = this.resourceLayers.get(id);
+    return layer ? { ...layer } : undefined;
+  }
+
+  public listResourceLayers(): ResourceLayer[] {
+    return [...this.resourceLayers.values()].map((layer) => ({ ...layer }));
+  }
+
   public listResourceStatusCatalog(
     query: { resourceType?: string; tenantId?: string } = {},
   ): ResourceStatusCatalogEntry[] {
@@ -134,9 +177,11 @@ export class ResourceRepository implements IResourceRepository {
       )?.value;
       return typeof value === 'string' && value.trim() ? value.trim() : undefined;
     };
-    const manufacturer = characteristicValue('manufacturer') ?? resource.manufacturer;
-    const model = characteristicValue('model') ?? resource.model;
-    const networkType = characteristicValue('networkType');
+    const manufacturer = specification.relatedParty.find((party) => party.role === 'manufacturer');
+    const model = characteristicValue('model');
+    const resourceLayer = specification.resourceLayerId
+      ? this.getResourceLayer(specification.resourceLayerId)
+      : undefined;
     return {
       '@type': 'PhysicalResourceDetail',
       // O repositório em memória não persiste timestamps; os testes unitários recebem um instante
@@ -145,9 +190,26 @@ export class ResourceRepository implements IResourceRepository {
       specification: {
         ...specification,
         resourceTypeName: resourceType?.name ?? specification.resourceType,
-        ...(manufacturer ? { manufacturer } : {}),
+        ...(manufacturer
+          ? {
+              manufacturer: {
+                id: manufacturer.id,
+                ...(manufacturer.name ? { name: manufacturer.name } : {}),
+                '@referredType': manufacturer['@referredType'],
+              },
+            }
+          : {}),
         ...(model ? { model } : {}),
-        ...(networkType ? { networkType } : {}),
+        ...(resourceLayer
+          ? {
+              resourceLayer: {
+                id: resourceLayer.id,
+                code: resourceLayer.code,
+                name: resourceLayer.name,
+                '@referredType': 'ResourceLayer',
+              },
+            }
+          : {}),
       },
       ...(statusCatalogEntry ? { statusCatalogEntry } : {}),
       childCount: (this.relationships.get(id) ?? []).filter(

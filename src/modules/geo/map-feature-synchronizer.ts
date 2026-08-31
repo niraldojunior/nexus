@@ -54,12 +54,13 @@ export class GeoMapFeatureSynchronizer implements MapFeatureSynchronizer {
       );
       const candidates = await session.all<Candidate>(
         `SELECT r.id entity_id, 'resource' feature_kind, 'PhysicalResource' entity_type,
-                r.resource_type type_code, NULL site_category, r.status status, r.name label,
+                rs.resource_type type_code, NULL site_category, r.status status, r.name label,
                 NULL sublabel, l.geometry geometry
            FROM tmf_physical_resource r
+           JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
            JOIN tmf_geographic_location l ON l.id = r.place_id
           WHERE r.id IN (${placeholders}) AND r.status <> 'terminated'
-            AND r.resource_type <> 'Splitter' AND l.geometry_type = 'Point'
+            AND rs.resource_type <> 'Splitter' AND l.geometry_type = 'Point'
          UNION ALL
          SELECT s.id entity_id, 'site' feature_kind, 'GeographicSite' entity_type,
                 NULL type_code, spec.category site_category, s.status status, s.name label,

@@ -1,0 +1,252 @@
+import { useState } from 'react';
+import {
+  Boxes,
+  ChevronLeft,
+  History as HistoryIcon,
+  Info as InfoIcon,
+  Loader2,
+  Waypoints,
+  X,
+} from 'lucide-react';
+import { useResourceDetail } from '../../hooks/useResourceDetail';
+import { useResourceChildren } from '../../hooks/useResourceChildren';
+import type { GeoTreeNode } from '../../services/geoTreeApi';
+import { resourceIconFor } from '../../utils/resourceIcon';
+import { ResourceIcon } from '../../components/ResourceIcon';
+import { streetViewTargetsForGeometry } from '../../utils/streetViewTargets';
+import { resourceStreetViewMarker } from '../../utils/streetViewMarker';
+import type { StreetViewMarker } from '../../utils/streetViewPanorama';
+import {
+  BottomSheet,
+  useSheetSnapCommand,
+  type BottomSheetSnapState,
+} from '../../components/BottomSheet';
+import { OverlayScrollArea } from '../../components/OverlayScrollArea';
+import { StreetViewHero } from '../../components/StreetViewHero';
+import { DOCK_WIDTH_CLASS, DOCK_ELEVATION_CLASS } from './dock';
+import { PanelBarButton } from './PanelBarButton';
+import { CoordinateStreetView } from './CoordinateStreetView';
+import { SchematicTab } from './SchematicTab';
+import { ResourceOverviewTab } from './ResourceOverviewTab';
+import { ResourceHistoryTab } from './ResourceHistoryTab';
+import type { DropSimulation } from './ViabilityTab';
+
+export type ResourcePanelProps = {
+  isMobile: boolean;
+  node: GeoTreeNode;
+  onOpenResource: (resourceId: string) => void;
+  onBack: () => void;
+  onClose: () => void;
+  onSnapChange?: (state: BottomSheetSnapState) => void;
+  minimizeSignal?: number;
+  onDropSimulation: (simulation: DropSimulation | null) => void;
+  onPreview: (node: GeoTreeNode | null) => void;
+};
+
+export function ResourcePanel({
+  isMobile,
+  node,
+  onOpenResource,
+  onBack,
+  onClose,
+  onSnapChange,
+  minimizeSignal,
+  onDropSimulation,
+  onPreview,
+}: ResourcePanelProps) {
+  const { snapCommand } = useSheetSnapCommand(minimizeSignal);
+  const resourceId = node.refId ?? node.id.replace(/^resource:/, '');
+  const { detail, loading: detailLoading, error: detailError } = useResourceDetail(resourceId);
+  const { children, loading: childrenLoading } = useResourceChildren(node);
+  const [tab, setTab] = useState<'overview' | 'subresources' | 'schematic' | 'history'>('overview');
+
+  const eyebrow = resourceIconFor({
+    resourceType: node.resourceType ?? detail?.specification.resourceType ?? '',
+    name: node.label,
+    sublabel: node.sublabel,
+  }).label;
+  const title = node.label;
+
+  const resourcePoint = streetViewTargetsForGeometry(node.geometry)[0]?.point;
+  const heroMarker: StreetViewMarker | null = resourcePoint
+    ? resourceStreetViewMarker(node, resourcePoint)
+    : null;
+
+  const header = (
+    <div className="flex items-start gap-2 border-y border-app-border px-3 py-3">
+      <button
+        type="button"
+        onClick={onBack}
+        className="shrink-0 rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
+        aria-label="Voltar para a hierarquia"
+      >
+        <ChevronLeft className="h-5 w-5" />
+      </button>
+      <div className="min-w-0 flex-1">
+        <div className="break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.08em] text-app-muted [overflow-wrap:anywhere]">
+          {eyebrow}
+        </div>
+        <h3 className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text [overflow-wrap:anywhere]">
+          {title}
+        </h3>
+      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        className="shrink-0 rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
+        aria-label="Fechar painel de recurso"
+      >
+        <X className="h-5 w-5" />
+      </button>
+    </div>
+  );
+
+  const streetViewTargets = streetViewTargetsForGeometry(node.geometry);
+
+  const body = (
+    <div className="grid gap-4">
+      <div className="flex flex-wrap gap-1 border-b border-app-border pb-3">
+        <PanelBarButton
+          icon={InfoIcon}
+          label="Visão geral"
+          active={tab === 'overview'}
+          onClick={() => setTab('overview')}
+        />
+        <PanelBarButton
+          icon={Boxes}
+          label="Recursos internos"
+          badge={children.length}
+          active={tab === 'subresources'}
+          onClick={() => setTab('subresources')}
+        />
+        <PanelBarButton
+          icon={Waypoints}
+          label="Esquemático"
+          active={tab === 'schematic'}
+          onClick={() => setTab('schematic')}
+        />
+        <PanelBarButton
+          icon={HistoryIcon}
+          label="Histórico"
+          active={tab === 'history'}
+          onClick={() => setTab('history')}
+        />
+      </div>
+
+      {tab === 'overview' ? (
+        detail ? (
+          <div className="grid gap-2">
+            <ResourceOverviewTab detail={detail} onOpenResource={onOpenResource} />
+            {streetViewTargets.length > 0 ? (
+              <div className="border-t border-app-border pt-2">
+                {streetViewTargets.map((target) => (
+                  <div key={`${target.label ?? 'ponto'}:${target.point.join(',')}`} className="py-1">
+                    <CoordinateStreetView
+                      marker={resourceStreetViewMarker(node, target.point)}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : detailLoading ? (
+          <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+            Carregando detalhes do recurso…
+          </div>
+        ) : detailError ? (
+          <div className="rounded-[18px] border border-dashed border-status-red/30 bg-status-red-soft p-4 text-[0.84rem] text-status-red">
+            {detailError}
+          </div>
+        ) : null
+      ) : null}
+
+      {tab === 'subresources' ? (
+        <div>
+          {childrenLoading ? (
+            <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+              Carregando recursos internos…
+            </div>
+          ) : children.length ? (
+            <div className="grid gap-2">
+              {children.map((child) => (
+                <button
+                  key={child.id}
+                  type="button"
+                  onClick={() => (child.refId ? onOpenResource(child.refId) : undefined)}
+                  className="flex w-full min-w-0 items-start gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
+                >
+                  <ResourceIcon
+                    resource={{
+                      resourceType: child.resourceType ?? '',
+                      status: child.status,
+                      name: child.label,
+                      sublabel: child.sublabel,
+                    }}
+                    variant="badge"
+                    size={26}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">
+                      {child.label}
+                    </span>
+                    <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
+                      {[
+                        resourceIconFor({
+                          resourceType: child.resourceType ?? '',
+                          status: child.status,
+                          name: child.label,
+                          sublabel: child.sublabel,
+                        }).label,
+                        child.detail?.model,
+                        child.detail?.serialNumber,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">
+                    Abrir
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
+              Este recurso ainda não possui recursos internos.
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {tab === 'schematic' ? (
+        <SchematicTab nodeId={node.id} onSimulate={onDropSimulation} onPreview={onPreview} />
+      ) : null}
+
+      {tab === 'history' ? <ResourceHistoryTab resourceId={resourceId} /> : null}
+    </div>
+  );
+
+  if (isMobile) {
+    return (
+      <BottomSheet onClose={onClose} onSnapChange={onSnapChange} snapCommand={snapCommand}>
+        <StreetViewHero marker={heroMarker} />
+        {header}
+        <div className="min-w-0 overflow-hidden px-4 py-3">{body}</div>
+      </BottomSheet>
+    );
+  }
+
+  return (
+    <div
+      className={`${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
+    >
+      <OverlayScrollArea className="overflow-x-hidden">
+        <StreetViewHero marker={heroMarker} />
+        {header}
+        <div className="px-3 py-3">{body}</div>
+      </OverlayScrollArea>
+    </div>
+  );
+}

@@ -26,7 +26,6 @@ import {
   type ResourceSpecification,
   type ResourceType,
 } from '../services/resourceApi';
-import type { Party } from '../services/partyApi';
 import { useNavigation } from '../hooks/useNavigation';
 import { PlaceLabelCompact } from '../components/PlaceLabel';
 import { PlacePicker } from '../components/PlacePicker';
@@ -43,7 +42,6 @@ import {
   categoryIconForCode,
   emptyResourceSpecFormState,
   isPhysicalCategoryCode,
-  normalizeCatalogText,
   type ResourceSpecFormState,
 } from '../utils/resourceSpecificationForm';
 
@@ -60,7 +58,6 @@ type ModalState = {
 };
 
 type ResourceFormState = ResourceSpecFormState & {
-  manufacturer: string;
   resourceSpecificationId: string;
   placeId: string;
   placeType: string;
@@ -72,7 +69,6 @@ type ResourceFormState = ResourceSpecFormState & {
 
 const emptyFormState = (): ResourceFormState => ({
   ...emptyResourceSpecFormState(),
-  manufacturer: '',
   resourceSpecificationId: '',
   placeId: '',
   placeType: '',
@@ -142,7 +138,6 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   const [resourceSpecificationOptions, setResourceSpecificationOptions] = useState<
     ResourceSpecification[]
   >([]);
-  const [manufacturerOptions, setManufacturerOptions] = useState<Party[]>([]);
   // Página atual + total já filtrados/paginados pelo servidor (PhysicalResource/LogicalResource).
   // O catálogo (ResourceSpecification) é pequeno o bastante para continuar paginando no cliente.
   const [items, setItems] = useState<ResourceEntity[]>([]);
@@ -274,7 +269,6 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
       setResourceSpecificationOptions(snapshot.resourceSpecificationOptions);
       setResourceCategories(snapshot.resourceCategories);
       setResourceTypes(snapshot.resourceTypes);
-      setManufacturerOptions(snapshot.manufacturerOptions);
       setItems(snapshot.items as ResourceEntity[]);
       setTotalCount(snapshot.totalCount);
     } catch (err) {
@@ -340,14 +334,13 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
       placeId: entity?.place?.id ?? '',
       placeType: entity?.place?.['@referredType'] ?? '',
       status: entity?.status ?? 'active',
-      model: isPhysicalResource(entity) ? (entity.model ?? '') : '',
       serialNumber: isPhysicalResource(entity) ? (entity.serialNumber ?? '') : '',
       partNumber: isPhysicalResource(entity) ? (entity.partNumber ?? '') : '',
       supportingPhysicalResourceId: isLogicalResource(entity)
         ? (entity.supportingPhysicalResourceId ?? '')
         : '',
     });
-  }, [modalState, manufacturerOptions, category]);
+  }, [modalState, category]);
 
   // Busca sob demanda uma amostra de recursos físicos para o combobox de "recurso de suporte" do
   // modal de LogicalResource — nunca o inventário inteiro, que pode ter dezenas de milhares de itens.
@@ -383,47 +376,6 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
       return { ...current, resourceSpecificationId: nextResourceSpecificationId };
     });
   }, [modalState, resourceSpecificationOptions, category]);
-
-  // Auto-populate manufacturer and model from ResourceSpecification for PhysicalResource.
-  useEffect(() => {
-    if (!modalState || modalState.tab !== 'PhysicalResource') return;
-    if (!formState.resourceSpecificationId) return;
-
-    const selectedSpec = resourceSpecificationOptions.find(
-      (spec) => spec.id === formState.resourceSpecificationId,
-    );
-    if (!selectedSpec) return;
-
-    // Prefer the canonical characteristic. Keep relatedParty as fallback for legacy specs.
-    const manufacturerCharacteristic = selectedSpec.resourceSpecificationCharacteristic?.find(
-      (characteristic) => characteristic.name === 'manufacturer',
-    );
-    const manufacturerParty = selectedSpec.relatedParty?.find(
-      (party) => party.role === 'manufacturer',
-    );
-    const manufacturerName =
-      (typeof manufacturerCharacteristic?.value === 'string'
-        ? manufacturerCharacteristic.value
-        : String(manufacturerCharacteristic?.value ?? '')
-      ).trim() ||
-      manufacturerParty?.name ||
-      '';
-
-    // Use spec name as model
-    const specModel = selectedSpec.name || '';
-
-    setFormState((current) => {
-      // Only update if values have changed to avoid unnecessary re-renders
-      if (current.manufacturer === manufacturerName && current.model === specModel) {
-        return current;
-      }
-      return {
-        ...current,
-        manufacturer: manufacturerName,
-        model: specModel,
-      };
-    });
-  }, [modalState, formState.resourceSpecificationId, resourceSpecificationOptions]);
 
   const goToPage = (nextPage: number) => {
     setPage(Math.min(Math.max(1, nextPage), totalPages));
@@ -998,9 +950,6 @@ function ResourceModal({
                       resourceSpecificationId: event.target.value,
                       category: nextSpecification?.category ?? formState.category,
                       resourceType: nextSpecification?.resourceType ?? formState.resourceType,
-                      // Reset manufacturer and model — will be auto-populated by useEffect
-                      manufacturer: '',
-                      model: '',
                     });
                   }}
                   className="geo-input"
@@ -1062,24 +1011,6 @@ function ResourceModal({
                     </option>
                   ))}
                 </select>
-              </Field>
-              <Field label="Fabricante">
-                <input
-                  value={formState.manufacturer}
-                  readOnly
-                  disabled
-                  className="geo-input bg-app-accent-soft text-app-muted cursor-not-allowed opacity-60"
-                  title="Campo preenchido automaticamente a partir da especificação selecionada"
-                />
-              </Field>
-              <Field label="Modelo físico">
-                <input
-                  value={formState.model}
-                  readOnly
-                  disabled
-                  className="geo-input bg-app-accent-soft text-app-muted cursor-not-allowed opacity-60"
-                  title="Campo preenchido automaticamente a partir da especificação selecionada"
-                />
               </Field>
               <Field label="serialNumber">
                 <input
@@ -1224,8 +1155,6 @@ function buildPhysicalPayload(state: ResourceFormState): PhysicalResourcePayload
     placeId: state.placeId.trim(),
     placeType: state.placeType.trim(),
     status: state.status as PhysicalResource['status'],
-    manufacturer: state.manufacturer.trim(),
-    model: normalizeCatalogText(state.model),
     serialNumber: state.serialNumber.trim(),
     partNumber: state.partNumber.trim(),
   };
@@ -1272,8 +1201,7 @@ function isLogicalResource(
 
 function physicalDetails(resource: PhysicalResource): string {
   return (
-    [resource.manufacturer, resource.model, resource.serialNumber, resource.partNumber]
-      .filter(Boolean)
+    [resource.serialNumber, resource.partNumber].filter(Boolean)
       .join(' · ') || '-'
   );
 }

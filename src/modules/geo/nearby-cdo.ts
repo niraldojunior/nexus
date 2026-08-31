@@ -40,8 +40,9 @@ const CDO_NAME = /^\s*CDO/i;
 const NEARBY_CDO_SQL = `
   SELECT r.id, r.name, l.geometry
     FROM tmf_physical_resource r
+    JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
     JOIN tmf_geographic_location l ON l.id = r.place_id
-   WHERE r.resource_type = 'CTO'
+   WHERE rs.resource_type = 'CTO'
      AND r.status = 'active'
      AND UPPER(r.name) LIKE 'CDO%'
      AND l.geometry_type = 'Point'

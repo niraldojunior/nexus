@@ -18,6 +18,7 @@ export const HREF_PATHS = {
   resourceFunctionSpecification: '/tmf-api/resourceCatalogManagement/v4/resourceFunctionSpecification',
   resourceCategory: '/tmf-api/resourceCatalogManagement/v4/resourceCategory',
   resourceType: '/tmf-api/resourceCatalogManagement/v4/resourceType',
+  resourceLayer: '/v1/resource-layers',
   /** Cobre PhysicalResource e LogicalResource — ambos compartilham este path hoje. */
   resource: '/tmf-api/resourceInventoryManagement/v4/resource',
   serviceSpecification: '/tmf-api/serviceCatalogManagement/v4/serviceSpecification',

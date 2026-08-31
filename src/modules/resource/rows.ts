@@ -29,8 +29,6 @@ type ResourceRowBase = {
 };
 
 export type PhysicalResourceRow = ResourceRowBase & {
-  manufacturer: string | null;
-  model: string | null;
   serial_number: string | null;
   part_number: string | null;
   label: string | null;

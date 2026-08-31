@@ -4,6 +4,7 @@ import { buildHref, type EventService, type RelatedParty } from '../../shared/tm
 import type {
   CreateLogicalResourceInput,
   CreatePhysicalResourceInput,
+  CreateResourceLayerInput,
   CreateResourceFunctionSpecificationInput,
   CreateResourceSpecificationInput,
   LogicalResource,
@@ -16,6 +17,7 @@ import type {
   ResourceQuery,
   ResourceRelationship,
   ResourceCategory,
+  ResourceLayer,
   ResourceType,
   ResourceSpecification,
   ResourceSpecificationBulkItem,
@@ -27,6 +29,7 @@ import type {
   ResourceStatusCatalogEntry,
   UpdateLogicalResourceInput,
   UpdatePhysicalResourceInput,
+  UpdateResourceLayerInput,
   UpdateResourceFunctionSpecificationInput,
   UpdateResourceSpecificationInput,
 } from './domain.js';
@@ -58,6 +61,9 @@ type ResourceServiceDependencies = {
     | Promise<{ id: string; '@referredType': string; href?: string; name?: string } | undefined>
     | { id: string; '@referredType': string; href?: string; name?: string }
     | undefined;
+  lookupPartyRoles?: (
+    partyId: string,
+  ) => Promise<Array<{ name: string; status: 'active' | 'inactive' | 'terminated' }>>;
   mapFeatureSynchronizer?: MapFeatureSynchronizer;
   /** Trilha de auditoria + outbox (C7) — best-effort: sem `db` (ex.: testes que montam o
    *  serviço com um repositório em memória), a auditoria só não roda. */
@@ -87,12 +93,18 @@ export class ResourceService {
       name: input.name.trim(),
       category: category.code,
       resourceType: resourceType.code,
-      resourceSpecificationCharacteristic: input.resourceSpecificationCharacteristic ?? [],
-      relatedParty: await normalizeRelatedParties(
+      resourceSpecificationCharacteristic: assertCanonicalSpecificationCharacteristics(
+        input.resourceSpecificationCharacteristic ?? [],
+      ),
+      relatedParty: await normalizeSpecificationRelatedParties(
         input.relatedParty,
         this.dependencies.lookupParty,
+        this.dependencies.lookupPartyRoles,
       ),
       tenantId: tenantOf(context),
+      ...(input.resourceLayerId
+        ? { resourceLayerId: (await this.getResourceLayerOrThrow(input.resourceLayerId, context)).id }
+        : {}),
       ...(input.description ? { description: input.description } : {}),
       ...(input.validFor ? { validFor: input.validFor } : {}),
     };
@@ -128,11 +140,24 @@ export class ResourceService {
       name: input.name !== undefined ? input.name.trim() : current.name,
       category: nextCategory.code,
       resourceType: nextResourceType.code,
-      resourceSpecificationCharacteristic:
+      resourceSpecificationCharacteristic: assertCanonicalSpecificationCharacteristics(
         input.resourceSpecificationCharacteristic ?? current.resourceSpecificationCharacteristic,
-      relatedParty: input.relatedParty
-        ? await normalizeRelatedParties(input.relatedParty, this.dependencies.lookupParty)
-        : current.relatedParty,
+      ),
+      relatedParty:
+        input.relatedParty !== undefined
+          ? await normalizeSpecificationRelatedParties(
+              input.relatedParty,
+              this.dependencies.lookupParty,
+              this.dependencies.lookupPartyRoles,
+            )
+          : current.relatedParty,
+      ...(input.resourceLayerId !== undefined
+        ? input.resourceLayerId
+          ? { resourceLayerId: (await this.getResourceLayerOrThrow(input.resourceLayerId, context)).id }
+          : {}
+        : current.resourceLayerId
+          ? { resourceLayerId: current.resourceLayerId }
+          : {}),
       ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
     });
@@ -216,6 +241,107 @@ export class ResourceService {
 
   public async listResourceTypes(): Promise<ResourceType[]> {
     return await this.repository.listResourceTypes();
+  }
+
+  public async createResourceLayer(
+    input: CreateResourceLayerInput,
+    context?: RequestContext,
+  ): Promise<ResourceLayer> {
+    assertName(input.code, 'code');
+    assertName(input.name);
+    const tenantId = tenantOf(context);
+    const duplicate = (await this.repository.listResourceLayers({ tenantId })).find(
+      (layer) => layer.code === input.code.trim(),
+    );
+    if (duplicate) {
+      throw new AppError('resource layer code already exists', {
+        code: 'RESOURCE_LAYER_CODE_DUPLICATE',
+        statusCode: 409,
+      });
+    }
+    const id = createCanonicalId();
+    const layer: ResourceLayer = {
+      '@type': 'ResourceLayer',
+      id,
+      href: buildHref('resourceLayer', id),
+      code: input.code.trim(),
+      name: input.name.trim(),
+      status: 'active',
+      tenantId,
+      ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+    };
+    const stored = await this.repository.upsertResourceLayer(layer);
+    await this.emit('ResourceLayerCreateEvent', stored.id, 'ResourceLayer', stored, context);
+    return stored;
+  }
+
+  public async updateResourceLayer(
+    id: string,
+    input: UpdateResourceLayerInput,
+    context?: RequestContext,
+  ): Promise<ResourceLayer> {
+    const current = await this.getResourceLayerOrThrow(id, context, false);
+    if (input.code !== undefined) assertName(input.code, 'code');
+    if (input.name !== undefined) assertName(input.name);
+    const nextCode = input.code?.trim() ?? current.code;
+    if (nextCode !== current.code) {
+      const duplicate = (await this.repository.listResourceLayers(scopeOf(context))).find(
+        (layer) => layer.code === nextCode && layer.id !== current.id,
+      );
+      if (duplicate) {
+        throw new AppError('resource layer code already exists', {
+          code: 'RESOURCE_LAYER_CODE_DUPLICATE',
+          statusCode: 409,
+        });
+      }
+    }
+    const updated = await this.repository.upsertResourceLayer({
+      ...current,
+      code: nextCode,
+      name: input.name?.trim() ?? current.name,
+      status: input.status ?? current.status,
+      ...(input.description !== undefined
+        ? input.description.trim()
+          ? { description: input.description.trim() }
+          : {}
+        : current.description
+          ? { description: current.description }
+          : {}),
+    });
+    await this.emit(
+      'ResourceLayerAttributeValueChangeEvent',
+      updated.id,
+      'ResourceLayer',
+      updated,
+      context,
+      current,
+    );
+    return updated;
+  }
+
+  public async deleteResourceLayer(id: string, context?: RequestContext): Promise<ResourceLayer> {
+    const current = await this.getResourceLayerOrThrow(id, context, false);
+    const retired = await this.repository.upsertResourceLayer({ ...current, status: 'inactive' });
+    await this.emit(
+      'ResourceLayerAttributeValueChangeEvent',
+      retired.id,
+      'ResourceLayer',
+      retired,
+      context,
+      current,
+    );
+    return retired;
+  }
+
+  public async getResourceLayer(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ResourceLayer | undefined> {
+    return await this.repository.getResourceLayer(id, scopeOf(context));
+  }
+
+  public async listResourceLayers(context?: RequestContext): Promise<ResourceLayer[]> {
+    return await this.repository.listResourceLayers(scopeOf(context));
   }
 
   /**
@@ -356,8 +482,6 @@ export class ResourceService {
       characteristic: input.characteristic ?? [],
       tenantId: tenantOf(context),
       ...(place ? { place } : {}),
-      ...(input.manufacturer ? { manufacturer: input.manufacturer } : {}),
-      ...(input.model ? { model: input.model } : {}),
       ...(input.serialNumber ? { serialNumber: input.serialNumber } : {}),
       ...(input.partNumber ? { partNumber: input.partNumber } : {}),
       ...(input.statusCode ? { statusCode: input.statusCode } : {}),
@@ -390,8 +514,10 @@ export class ResourceService {
   ): Promise<PhysicalResource> {
     const current = await this.getPhysicalResourceOrThrow(id, context);
     if (input.name !== undefined) assertName(input.name);
-    if (input.resourceSpecificationId !== undefined)
-      await this.getResourceSpecificationOrThrow(input.resourceSpecificationId, context);
+    const specification =
+      input.resourceSpecificationId !== undefined
+        ? await this.getResourceSpecificationOrThrow(input.resourceSpecificationId, context)
+        : undefined;
 
     // `place` some do objeto base (não só do spread condicional de baixo) porque
     // `placeId: null` (desvincular do local, aba Recursos do painel unificado, C2) precisa
@@ -410,7 +536,7 @@ export class ResourceService {
         id: input.resourceSpecificationId ?? current.resourceSpecificationId,
         '@referredType': 'ResourceSpecification',
       },
-      resourceType: current.resourceType,
+      resourceType: specification?.resourceType ?? current.resourceType,
       status: input.status ?? current.status,
       administrativeState: input.administrativeState ?? current.administrativeState,
       operationalState: input.operationalState ?? current.operationalState,
@@ -421,8 +547,6 @@ export class ResourceService {
       resourceRelationship: current.resourceRelationship,
       characteristic: input.characteristic ?? current.characteristic,
       ...(place ? { place } : {}),
-      ...(input.manufacturer !== undefined ? { manufacturer: input.manufacturer } : {}),
-      ...(input.model !== undefined ? { model: input.model } : {}),
       ...(input.serialNumber !== undefined ? { serialNumber: input.serialNumber } : {}),
       ...(input.partNumber !== undefined ? { partNumber: input.partNumber } : {}),
       ...(input.statusCode !== undefined ? { statusCode: input.statusCode } : {}),
@@ -578,8 +702,10 @@ export class ResourceService {
   ): Promise<LogicalResource> {
     const current = await this.getLogicalResourceOrThrow(id, context);
     if (input.name !== undefined) assertName(input.name);
-    if (input.resourceSpecificationId !== undefined)
-      await this.getResourceSpecificationOrThrow(input.resourceSpecificationId, context);
+    const specification =
+      input.resourceSpecificationId !== undefined
+        ? await this.getResourceSpecificationOrThrow(input.resourceSpecificationId, context)
+        : undefined;
     // `place` some do objeto base (mesmo motivo do updatePhysicalResource): só assim
     // `placeId: null` (desvincular do local) consegue apagar um `current.place` existente
     // sob `exactOptionalPropertyTypes`.
@@ -603,7 +729,7 @@ export class ResourceService {
         id: input.resourceSpecificationId ?? current.resourceSpecificationId,
         '@referredType': 'ResourceSpecification',
       },
-      resourceType: current.resourceType,
+      resourceType: specification?.resourceType ?? current.resourceType,
       status: input.status ?? current.status,
       administrativeState: input.administrativeState ?? current.administrativeState,
       operationalState: input.operationalState ?? current.operationalState,
@@ -869,6 +995,27 @@ export class ResourceService {
     return category;
   }
 
+  private async getResourceLayerOrThrow(
+    id: string,
+    context?: RequestContext,
+    requireActive = true,
+  ): Promise<ResourceLayer> {
+    const layer = await this.repository.getResourceLayer(id.trim(), scopeOf(context));
+    if (!layer) {
+      throw new AppError('resource layer not found', {
+        code: 'RESOURCE_LAYER_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    if (requireActive && layer.status !== 'active') {
+      throw new AppError('resource layer is inactive', {
+        code: 'RESOURCE_LAYER_INACTIVE',
+        statusCode: 409,
+      });
+    }
+    return layer;
+  }
+
   private async getResourceTypeOrThrow(code: string): Promise<ResourceType> {
     assertName(code, 'resourceType');
     const resourceType = await this.repository.getResourceType(code.trim());
@@ -958,6 +1105,46 @@ const buildTimePeriod = (
     period.startDateTime = startDateTime;
   }
   return period;
+};
+
+const assertCanonicalSpecificationCharacteristics = (
+  characteristics: ResourceSpecification['resourceSpecificationCharacteristic'],
+): ResourceSpecification['resourceSpecificationCharacteristic'] => {
+  const forbidden = characteristics.find(
+    (characteristic) => characteristic.name === 'manufacturer' || characteristic.name === 'networkType',
+  );
+  if (forbidden) {
+    throw new AppError(`${forbidden.name} is not a ResourceSpecification characteristic`, {
+      code: 'RESOURCE_SPEC_CHARACTERISTIC_FORBIDDEN',
+      statusCode: 400,
+    });
+  }
+  return characteristics;
+};
+
+const normalizeSpecificationRelatedParties = async (
+  relatedParty: RelatedParty[] | undefined,
+  lookupParty?: ResourceServiceDependencies['lookupParty'],
+  lookupPartyRoles?: ResourceServiceDependencies['lookupPartyRoles'],
+): Promise<RelatedParty[]> => {
+  const parties = await normalizeRelatedParties(relatedParty, lookupParty);
+  const manufacturers = parties.filter((party) => party.role === 'manufacturer');
+  if (manufacturers.length > 1) {
+    throw new AppError('only one manufacturer can be related to a resource specification', {
+      code: 'RESOURCE_SPEC_MANUFACTURER_DUPLICATE',
+      statusCode: 409,
+    });
+  }
+  if (manufacturers.length === 1 && lookupPartyRoles) {
+    const roles = await lookupPartyRoles(manufacturers[0]!.id);
+    if (!roles.some((role) => role.name === 'manufacturer' && role.status === 'active')) {
+      throw new AppError('manufacturer party must have an active manufacturer role', {
+        code: 'RESOURCE_SPEC_MANUFACTURER_ROLE_INVALID',
+        statusCode: 409,
+      });
+    }
+  }
+  return parties;
 };
 
 const normalizeRelatedParties = async (

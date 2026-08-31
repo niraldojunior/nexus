@@ -10,6 +10,7 @@ import type {
   ResourceQuery,
   ResourceRelationship,
   ResourceType,
+  ResourceLayer,
   ResourceSpecification,
   ResourceSpecificationQuery,
   PhysicalResourceDetail,
@@ -49,6 +50,9 @@ export interface IResourceRepository {
   listResourceCategories(): Awaitable<ResourceCategory[]>;
   getResourceType(code: string): Awaitable<ResourceType | undefined>;
   listResourceTypes(): Awaitable<ResourceType[]>;
+  upsertResourceLayer(layer: ResourceLayer): Awaitable<ResourceLayer>;
+  getResourceLayer(id: string, scope?: ResourceTenantScope): Awaitable<ResourceLayer | undefined>;
+  listResourceLayers(scope?: ResourceTenantScope): Awaitable<ResourceLayer[]>;
 
   // Catálogo de estados granulares (issue #171). Diferente de Category/Type, é por tenant:
   // o operador pode acrescentar estado próprio via API (C9).

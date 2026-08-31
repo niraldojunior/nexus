@@ -11,6 +11,9 @@ export { ProjectIcon, type ProjectIconProps } from './ProjectIcon';
 export { ProjectListView, type ProjectListViewProps } from './ProjectListView';
 export { ProjectDetailPanel, type ProjectDetailPanelProps } from './ProjectDetailPanel';
 export { SitePanel, type SitePanelProps } from './SitePanel';
+export { ResourcePanel, type ResourcePanelProps } from './ResourcePanel';
+export { ResourceOverviewTab, type ResourceOverviewTabProps } from './ResourceOverviewTab';
+export { ResourceHistoryTab, type ResourceHistoryTabProps } from './ResourceHistoryTab';
 export { SiteAddressModal, type SiteAddressModalProps } from './SiteAddressModal';
 export {
   GeoSearchBar,

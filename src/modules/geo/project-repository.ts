@@ -478,7 +478,7 @@ export class GeoProjectRepository {
       `SELECT * FROM (
          SELECT r.id, 'resource' AS kind, r.name AS label,
                 CASE WHEN LOWER(r.name) LIKE LOWER(?) THEN 0
-                     WHEN LOWER(COALESCE(r.resource_type, '')) LIKE LOWER(?) THEN 1
+                     WHEN LOWER(COALESCE(rs.resource_type, '')) LIKE LOWER(?) THEN 1
                      WHEN LOWER(COALESCE(rs.name, '')) LIKE LOWER(?) THEN 1 ELSE 2 END AS rank
            FROM geo_project_resource pr
            JOIN geo_project p ON p.id = pr.project_id
@@ -487,11 +487,11 @@ export class GeoProjectRepository {
           WHERE p.tenant_id = ? AND pr.project_id = ? AND pr.detached_at IS NULL
             AND pr.resource_kind = 'PhysicalResource'
             ${scope === 'infrastructure' ? "AND rs.category = 'Infrastructure.Passive'" : ''}
-            AND (LOWER(r.name) LIKE LOWER(?) OR LOWER(COALESCE(r.resource_type, '')) LIKE LOWER(?) OR LOWER(COALESCE(rs.name, '')) LIKE LOWER(?))
+            AND (LOWER(r.name) LIKE LOWER(?) OR LOWER(COALESCE(rs.resource_type, '')) LIKE LOWER(?) OR LOWER(COALESCE(rs.name, '')) LIKE LOWER(?))
          ${scope === 'infrastructure' ? '' : `UNION ALL
          SELECT r.id, 'resource' AS kind, r.name AS label,
                 CASE WHEN LOWER(r.name) LIKE LOWER(?) THEN 0
-                     WHEN LOWER(COALESCE(r.resource_type, '')) LIKE LOWER(?) THEN 1
+                     WHEN LOWER(COALESCE(rs.resource_type, '')) LIKE LOWER(?) THEN 1
                      WHEN LOWER(COALESCE(rs.name, '')) LIKE LOWER(?) THEN 1 ELSE 2 END AS rank
            FROM geo_project_resource pr
            JOIN geo_project p ON p.id = pr.project_id
@@ -499,7 +499,7 @@ export class GeoProjectRepository {
            LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
           WHERE p.tenant_id = ? AND pr.project_id = ? AND pr.detached_at IS NULL
             AND pr.resource_kind = 'LogicalResource'
-            AND (LOWER(r.name) LIKE LOWER(?) OR LOWER(COALESCE(r.resource_type, '')) LIKE LOWER(?) OR LOWER(COALESCE(rs.name, '')) LIKE LOWER(?))`}
+            AND (LOWER(r.name) LIKE LOWER(?) OR LOWER(COALESCE(rs.resource_type, '')) LIKE LOWER(?) OR LOWER(COALESCE(rs.name, '')) LIKE LOWER(?))`}
        ) AS matches
        ORDER BY rank, label
        LIMIT ?`,

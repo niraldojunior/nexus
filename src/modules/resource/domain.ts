@@ -36,6 +36,18 @@ export type ResourceType = {
   tenantId?: string;
 };
 
+/** Camada funcional da planta a que a ResourceSpecification pertence (C9). */
+export type ResourceLayer = {
+  '@type': 'ResourceLayer';
+  id: string;
+  href: string;
+  code: string;
+  name: string;
+  description?: string;
+  status: ResourceCatalogStatus;
+  tenantId?: string;
+};
+
 /**
  * Comportamento canônico de um estado de catálogo: para qual eixo SID (`ResourceStatus`) ele
  * colapsa. Permite que a UI e as regras raciocinem sobre o estado sem conhecer cada `code`.
@@ -97,6 +109,16 @@ export type ResourceQuery = {
   tenantId?: string;
 };
 
+export type CreateResourceLayerInput = {
+  code: string;
+  name: string;
+  description?: string;
+};
+
+export type UpdateResourceLayerInput = Partial<CreateResourceLayerInput> & {
+  status?: ResourceCatalogStatus;
+};
+
 export type ResourceSpecificationQuery = {
   name?: string;
   category?: string;
@@ -134,6 +156,7 @@ export type ResourceSpecification = {
   category: string;
   resourceType: string;
   description?: string;
+  resourceLayerId?: string;
   validFor?: TimePeriod;
   resourceSpecificationCharacteristic: Characteristic[];
   relatedParty: RelatedParty[];
@@ -157,6 +180,8 @@ export type ResourceBase = {
   name: string;
   resourceSpecificationId: string;
   resourceSpecification: { id: string; '@referredType': 'ResourceSpecification' };
+  /** Projeção da ResourceSpecification; nunca é persistido na instância TMF639. */
+  resourceType: string;
   status: ResourceStatus;
   /**
    * Motivo granular por trás do `status` SID, resolvido em `tmf_resource_status_catalog`
@@ -177,9 +202,6 @@ export type ResourceBase = {
 
 export type PhysicalResource = ResourceBase & {
   '@type': 'PhysicalResource';
-  resourceType: string;
-  manufacturer?: string;
-  model?: string;
   serialNumber?: string;
   partNumber?: string;
   /** Etiqueta física da caixa — o que está escrito nela em campo, distinto de `name`. */
@@ -192,7 +214,6 @@ export type PhysicalResource = ResourceBase & {
 
 export type LogicalResource = ResourceBase & {
   '@type': 'LogicalResource';
-  resourceType: string;
   supportingPhysicalResourceId?: string;
 };
 
@@ -214,9 +235,9 @@ export type PhysicalResourceDetail = {
   resource: PhysicalResource & { createdAt: string; updatedAt: string };
   specification: ResourceSpecification & {
     resourceTypeName: string;
-    manufacturer?: string;
+    manufacturer?: ResourceDetailReference;
     model?: string;
-    networkType?: string;
+    resourceLayer?: ResourceDetailReference & { code: string };
   };
   statusCatalogEntry?: ResourceStatusCatalogEntry;
   parent?: ResourceDetailReference & { relationshipType: string };
@@ -240,6 +261,7 @@ export type CreateResourceSpecificationInput = {
   category: string;
   resourceType: string;
   description?: string;
+  resourceLayerId?: string;
   validFor?: TimePeriod;
   resourceSpecificationCharacteristic?: Characteristic[];
   relatedParty?: RelatedParty[];
@@ -282,8 +304,6 @@ export type CreatePhysicalResourceInput = {
   administrativeState?: AdministrativeState;
   operationalState?: OperationalState;
   usageState?: UsageState;
-  manufacturer?: string;
-  model?: string;
   serialNumber?: string;
   partNumber?: string;
   statusCode?: string;

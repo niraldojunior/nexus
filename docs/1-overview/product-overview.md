@@ -53,7 +53,7 @@ _referencia_ geografia via `place`. Nenhum contém o outro.
 
 | #   | Módulo                    | Responde                                | Open APIs              | Estado                                                                                                                                                   |
 | --- | ------------------------- | --------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **Geographic**            | Onde                                    | TMF673, TMF674, TMF675 | ⚠️ Base implementada; aderência parcial ao HLD 1.17 (inclui Cobertura GPON por bairro, Projetos de Trabalho com Resources e o Painel Unificado de Local) |
+| 1   | **Geographic**            | Onde                                    | TMF673, TMF674, TMF675 | ⚠️ Base implementada; aderência parcial ao HLD 1.22 (inclui Cobertura GPON por bairro e consulta inversa por Resource, Projetos de Trabalho com Resources e o Painel Unificado de Local) |
 | 2   | **Resource**              | O que existe                            | TMF634, TMF639, TMF664 | ⚠️ Base implementada; aderência parcial ao HLD 1.9 (inclui detalhe agregado, Audit Trail, catálogo de estados granulares de PhysicalResource, estruturação relacional de especificações e materialização de portas de splitter no piloto Niterói/Icaraí)             |
 | 3   | **Service**               | Para quê / quem                         | TMF633, TMF638         | ⚠️ Base implementada; aderência parcial ao HLD 1.2                                                                                                       |
 | 4   | **Order & Fulfillment**   | Viabilidade e provisionamento           | TMF641, TMF645, TMF652 | ✅ Implementado                                                                                                                                          |
@@ -100,12 +100,12 @@ Location, não os embute.
 
 ## 7. Stack atual
 
-| Camada   | Tecnologia                                |
-| -------- | ----------------------------------------- |
-| Backend  | Node 22+ · TypeScript (ESM) · HTTP nativo |
-| Frontend | React 18 · Vite · Tailwind                |
+| Camada   | Tecnologia                                                                                  |
+| -------- | ------------------------------------------------------------------------------------------- |
+| Backend  | Node 22+ · TypeScript (ESM) · HTTP nativo                                                   |
+| Frontend | React 18 · Vite · Tailwind                                                                  |
 | Banco    | **PostgreSQL** (laboratório hospedado em Neon) e **Oracle** — dual, via `DATABASE_PROVIDER` |
-| Deploy   | Vercel (Functions + estático)             |
+| Deploy   | Vercel (Functions + estático)                                                               |
 
 > ⚠️ O cânone **C10** define Oracle como alvo corporativo homologado, com suporte nativo permanente a
 > PostgreSQL — não um modo transitório. Só a hospedagem em Vercel/Neon é laboratório.
@@ -169,15 +169,15 @@ O cenário que atravessa as três camadas e demonstra por que **Home Passed não
 
 ## 9. Roadmap
 
-| Fase                            | Objetivo                                           | Estado                          |
-| ------------------------------- | -------------------------------------------------- | ------------------------------- |
-| **Fundação**                    | Bootstrap, config, persistência, auth, logging, CI | ✅ Concluída                    |
-| **Tríade — base**               | Geographic, Resource e Service com Open APIs TMF   | ✅ Concluída                    |
-| **Tríade — aderência aos HLDs** | Fechar gaps dos 57 requisitos e decisões pendentes | ⚠️ Em andamento (GitHub Issues) |
-| **Order & Party**               | Viabilidade, ordens e multi-tenant                 | ✅ Concluída                    |
-| **Carga de dados**              | Estações e recursos reais do Netwin                | ⚠️ Em andamento                 |
-| **Convergência ao cânone**      | UUID v7, `_origin`, outbox TMF688                  | 📐 Pendente                     |
-| **Escala**                      | Otimizações Oracle-native (`RAW(16)`, Spatial), benchmark de path computation em 22M HPs | 📐 Pendente |
+| Fase                            | Objetivo                                                                                 | Estado                          |
+| ------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------- |
+| **Fundação**                    | Bootstrap, config, persistência, auth, logging, CI                                       | ✅ Concluída                    |
+| **Tríade — base**               | Geographic, Resource e Service com Open APIs TMF                                         | ✅ Concluída                    |
+| **Tríade — aderência aos HLDs** | Fechar gaps dos 57 requisitos e decisões pendentes                                       | ⚠️ Em andamento (GitHub Issues) |
+| **Order & Party**               | Viabilidade, ordens e multi-tenant                                                       | ✅ Concluída                    |
+| **Carga de dados**              | Estações e recursos reais do Netwin                                                      | ⚠️ Em andamento                 |
+| **Convergência ao cânone**      | UUID v7, `_origin`, outbox TMF688                                                        | 📐 Pendente                     |
+| **Escala**                      | Otimizações Oracle-native (`RAW(16)`, Spatial), benchmark de path computation em 22M HPs | 📐 Pendente                     |
 
 O descompasso entre cânone e implementação está consolidado em
 [`business-rules.md`](business-rules.md#resumo-do-descompasso-cânone--código).

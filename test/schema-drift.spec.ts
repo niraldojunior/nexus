@@ -92,3 +92,15 @@ test('parseDeclaredColumns picks up both CREATE TABLE columns and ADD COLUMN IF 
   const declared = parseDeclaredColumns(sql);
   assert.deepEqual([...declared.get('widget')!].sort(), ['id', 'name', 'tenant_id']);
 });
+
+test('parseDeclaredColumns ignores SQL comments before a column definition', () => {
+  const sql = `
+    CREATE TABLE IF NOT EXISTS widget (
+      id TEXT PRIMARY KEY,
+      -- Descrição da coluna canônica abaixo, não uma definição adicional.
+      status_code TEXT
+    );
+  `;
+  const declared = parseDeclaredColumns(sql);
+  assert.deepEqual([...declared.get('widget')!].sort(), ['id', 'status_code']);
+});

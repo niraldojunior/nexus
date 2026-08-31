@@ -192,7 +192,8 @@ export const createApp = ({ config, logger }: AppDependencies) => {
           // traceId correlaciona com o do chamador (Apigee) quando ele manda x-trace-id/
           // x-request-id — sem esses headers, cada camada geraria um id próprio e o log
           // ficaria com uma correlação falsa, então preferimos omitir a não sintetizar aqui.
-          const traceId = firstHeaderValue(request, 'x-trace-id') ?? firstHeaderValue(request, 'x-request-id');
+          const traceId =
+            firstHeaderValue(request, 'x-trace-id') ?? firstHeaderValue(request, 'x-request-id');
           logger.info(
             {
               method: request.method,
@@ -1648,7 +1649,10 @@ const routeGeoRequest = async ({
     }
     const { kind, rest } = parseNodeId(nodeId);
     if (kind !== 'resource') {
-      throw new AppError('nodeId must be a resource', { code: 'GEO_TREE_NODE_REQUIRED', statusCode: 400 });
+      throw new AppError('nodeId must be a resource', {
+        code: 'GEO_TREE_NODE_REQUIRED',
+        statusCode: 400,
+      });
     }
     return sendJson(response, 200, await geoTreeService.schematicPath(rest));
   }
@@ -1771,6 +1775,25 @@ const routeGeoRequest = async ({
       maxLat,
     });
     return sendJson(response, 200, density);
+  }
+
+  // Consulta inversa de cobertura GPON (REQ-MOD01-014, issue #171 Fase 4): dado o id de um
+  // recurso, resolve seu ponto (via GeoTreeService.resourcesByIds, que já hidrata geometria para
+  // os três tipos de `place`) e devolve a célula/áreas de geo_gpon_coverage_* que o contêm — o
+  // inverso do recorte por bbox de `/v1/geo/coverage` logo abaixo. "Setor Censitário" não existe
+  // no modelo (sem geometria IBGE) — item futuro, fora deste endpoint.
+  const coverageByResourceMatch = url.pathname.match(/^\/v1\/geo\/coverage\/by-resource\/([^/]+)$/);
+  if (request.method === 'GET' && coverageByResourceMatch?.[1]) {
+    const resourceId = decodeURIComponent(coverageByResourceMatch[1]);
+    const [node] = await runtime.geoTreeService.resourcesByIds([resourceId]);
+    if (!node?.geometry || node.geometry.type !== 'Point') {
+      throw new AppError('resource has no point geometry', {
+        code: 'GEO_COVERAGE_RESOURCE_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    const [lng, lat] = node.geometry.coordinates;
+    return sendJson(response, 200, runtime.geoCoverageService.coverageForPoint(lng, lat));
   }
 
   // Mapa de calor de cobertura GPON — fonte do mapa acima de 100 m, no lugar dos recursos
@@ -2587,7 +2610,10 @@ const routeResourceRequest = async ({
     return sendJson(
       response,
       200,
-      resourceService.listResourceStatusCatalog(url.searchParams.get('resourceType') ?? undefined, context),
+      resourceService.listResourceStatusCatalog(
+        url.searchParams.get('resourceType') ?? undefined,
+        context,
+      ),
     );
   }
   const resourceAuditMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)\/audit$/);
@@ -2609,7 +2635,10 @@ const routeResourceRequest = async ({
     return sendJson(
       response,
       200,
-      resourceService.getPhysicalResourceDetail(decodeURIComponent(resourceDetailMatch[1]), context),
+      resourceService.getPhysicalResourceDetail(
+        decodeURIComponent(resourceDetailMatch[1]),
+        context,
+      ),
     );
   }
 
@@ -2677,11 +2706,7 @@ const routeResourceRequest = async ({
     (url.pathname.endsWith('/relationships') || url.pathname.includes('/relationships/'))
   ) {
     if (request.method === 'GET' && url.pathname.endsWith('/relationships')) {
-      return sendJson(
-        response,
-        200,
-        resourceService.listResourceRelationships(route.id, context),
-      );
+      return sendJson(response, 200, resourceService.listResourceRelationships(route.id, context));
     }
 
     if (request.method === 'POST' && url.pathname.endsWith('/relationships')) {
@@ -2966,11 +2991,7 @@ const routeServiceRequest = async ({
     (url.pathname.endsWith('/relationships') || url.pathname.includes('/relationships/'))
   ) {
     if (request.method === 'GET' && url.pathname.endsWith('/relationships')) {
-      return sendJson(
-        response,
-        200,
-        serviceService.listServiceRelationships(route.id, context),
-      );
+      return sendJson(response, 200, serviceService.listServiceRelationships(route.id, context));
     }
 
     if (request.method === 'POST' && url.pathname.endsWith('/relationships')) {
@@ -3043,11 +3064,7 @@ const routeServiceRequest = async ({
       );
     }
     if (route.id && request.method === 'DELETE') {
-      return sendJson(
-        response,
-        200,
-        serviceService.deleteServiceSpecification(route.id, context),
-      );
+      return sendJson(response, 200, serviceService.deleteServiceSpecification(route.id, context));
     }
   }
 
@@ -3097,10 +3114,7 @@ const routeServiceRequest = async ({
       return sendJson(
         response,
         200,
-        serviceService.listServiceCandidates(
-          parseServiceCandidateQuery(url.searchParams),
-          context,
-        ),
+        serviceService.listServiceCandidates(parseServiceCandidateQuery(url.searchParams), context),
       );
     }
     if (!route.id && request.method === 'POST') {
@@ -3255,11 +3269,7 @@ const routeOrderRequest = async ({
       );
     }
     if (route.id && request.method === 'DELETE') {
-      return sendJson(
-        response,
-        200,
-        orderService.deleteServiceQualification(route.id, context),
-      );
+      return sendJson(response, 200, orderService.deleteServiceQualification(route.id, context));
     }
   }
 
@@ -4957,10 +4967,7 @@ const requireUser = async (
 // Sessões de pesquisa/Copilot pertencem a um usuário (`session.userId`). 404, não 403 — a
 // existência da sessão já é informação (mesmo critério do isolamento de tenant em
 // docs/3-system-design/security.md §4).
-const assertSessionOwnership = (
-  session: { userId: string },
-  user: { id: string },
-): void => {
+const assertSessionOwnership = (session: { userId: string }, user: { id: string }): void => {
   if (session.userId !== user.id) {
     throw new AppError('session not found', { code: 'NOT_FOUND', statusCode: 404 });
   }

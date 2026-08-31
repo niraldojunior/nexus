@@ -1641,7 +1641,10 @@ export const parseDeclaredColumns = (sql: string): Map<string, Set<string>> => {
       cursor += 1;
     }
     const body = sql.slice(bodyStart, cursor - 1);
-    for (const rawItem of splitTopLevel(body)) {
+    // Remover comentários antes de separar por vírgulas: uma vírgula em comentário SQL não é um
+    // delimitador de coluna e, se preservada, pode transformar uma palavra do comentário em item.
+    const uncommentedBody = body.replace(/--.*$/gmu, '');
+    for (const rawItem of splitTopLevel(uncommentedBody)) {
       const item = rawItem.trim();
       if (item.length === 0 || TABLE_LEVEL_CLAUSE.test(item)) continue;
       const columnMatch = /^([a-zA-Z_][a-zA-Z0-9_]*)\s+\S/.exec(item);

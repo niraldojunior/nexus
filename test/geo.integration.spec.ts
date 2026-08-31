@@ -1319,6 +1319,117 @@ test('Geo coverage serves the GPON heat grid and neighborhood polygons by boundi
   assert.equal(missingBounds.statusCode, 400);
 });
 
+test('Geo coverage resolves by-resource id to the cell/areas that contain it (issue #171 Fase 4)', async (t) => {
+  const database = createPostgresTestDatabase('geo-coverage-by-resource');
+  const server = createApp({
+    config: createConfig(0, database.databaseUrl),
+    logger: createLogger(),
+  });
+  const port = await server.start();
+  t.after(async () => {
+    await server.stop();
+    database.cleanup();
+  });
+
+  const db = createDatabaseClient(databaseConfigOf(createConfig(0, database.databaseUrl)));
+
+  // Ponto de uma CTO fictícia em Icaraí, com sua própria célula de 50 m e um bairro que a
+  // contém — mesmo layout mínimo de `seedArea` do teste de bbox acima, sem polígono (a
+  // consulta inversa não lê geometria de área, só a estatística).
+  const [x0, y0] = lngLatToMercator(-43.106, -22.906);
+  const gx = Math.floor(x0 / COVERAGE_CELL_METERS);
+  const gy = Math.floor(y0 / COVERAGE_CELL_METERS);
+
+  const locationId = '33333333-3333-7333-8333-333333333333';
+  await db.run(
+    `INSERT INTO tmf_geographic_location (id, geometry_type, geometry, spatial_ref)
+     VALUES (?, 'Point', ?, 'EPSG:4326')`,
+    [locationId, JSON.stringify({ type: 'Point', coordinates: [-43.106, -22.906] })],
+  );
+
+  const specId = '44444444-4444-7444-8444-444444444444';
+  await db.run(
+    `INSERT INTO tmf_resource_specification (id, name, category, resource_type)
+     VALUES (?, 'CTO', 'Equipment.Access', 'CTO')`,
+    [specId],
+  );
+
+  const resourceId = '55555555-5555-7555-8555-555555555555';
+  await db.run(
+    `INSERT INTO tmf_physical_resource
+       (id, name, resource_specification_id, status, place_id, place_type)
+     VALUES (?, 'CDOE-INV-01', ?, 'active', ?, 'GeographicLocation')`,
+    [resourceId, specId, locationId],
+  );
+
+  await db.run(
+    `INSERT INTO geo_gpon_coverage_cell
+       (tenant_id, grid_size_m, grid_x, grid_y, coverage_area_id, cdo_total, cdo_available)
+     VALUES ('default', ?, ?, ?, NULL, ?, ?)`,
+    [COVERAGE_CELL_METERS, gx, gy, 3, 2],
+  );
+
+  const areaLocationId = '66666666-6666-7666-8666-666666666666';
+  await db.run(
+    `INSERT INTO tmf_geographic_location (id, geometry_type, geometry, spatial_ref, reference_point)
+     VALUES (?, 'Polygon', ?, 'EPSG:4326', 'GPON:RJ|Niterói|Icaraí')`,
+    [
+      areaLocationId,
+      JSON.stringify({
+        type: 'Polygon',
+        coordinates: [
+          [
+            [-43.108, -22.908],
+            [-43.1, -22.908],
+            [-43.1, -22.902],
+            [-43.108, -22.902],
+            [-43.108, -22.908],
+          ],
+        ],
+      }),
+    ],
+  );
+  await db.run(
+    `INSERT INTO geo_gpon_coverage_area
+       (tenant_id, location_id, lod_level, cell_size_m, min_lng, min_lat, max_lng, max_lat,
+        area_key, neighborhood, city, uf, cdo_total, cdo_available, covered_area_km2)
+     VALUES ('default', ?, 'neighborhood', ?, -43.108, -22.908, -43.1, -22.902,
+             'RJ|Niterói|Icaraí', 'Icaraí', 'Niterói', 'RJ', 5, 3, 0.25)`,
+    [areaLocationId, COVERAGE_CELL_METERS],
+  );
+
+  const found = await requestJson(port, 'GET', `/v1/geo/coverage/by-resource/${resourceId}`);
+  assert.equal(found.statusCode, 200);
+  const foundBody = found.body as {
+    point: { lng: number; lat: number };
+    cell: { gridX: number; gridY: number; cdoTotal: number; cdoAvailable: number } | null;
+    areas: Array<{ level: string; neighborhood: string; cdoTotal: number; cdoAvailable: number }>;
+  };
+  assert.ok(foundBody.cell);
+  assert.equal(foundBody.cell!.cdoTotal, 3);
+  assert.equal(foundBody.cell!.cdoAvailable, 2);
+  assert.equal(foundBody.areas.length, 1);
+  assert.equal(foundBody.areas[0]!.level, 'neighborhood');
+  assert.equal(foundBody.areas[0]!.neighborhood, 'Icaraí');
+  assert.equal(foundBody.areas[0]!.cdoTotal, 5);
+
+  // Recurso sem geometria de ponto (place_id nulo) — 404, não erro genérico.
+  const orphanResourceId = '77777777-7777-7777-8777-777777777777';
+  await db.run(
+    `INSERT INTO tmf_physical_resource (id, name, resource_specification_id, status)
+     VALUES (?, 'CDOE-SEM-LOCAL', ?, 'active')`,
+    [orphanResourceId, specId],
+  );
+  const orphan = await requestJson(port, 'GET', `/v1/geo/coverage/by-resource/${orphanResourceId}`);
+  assert.equal(orphan.statusCode, 404);
+  assert.equal((orphan.body as { code: string }).code, 'GEO_COVERAGE_RESOURCE_NOT_FOUND');
+
+  // Id inexistente — mesma resposta 404.
+  const missing = await requestJson(port, 'GET', '/v1/geo/coverage/by-resource/does-not-exist');
+  assert.equal(missing.statusCode, 404);
+  assert.equal((missing.body as { code: string }).code, 'GEO_COVERAGE_RESOURCE_NOT_FOUND');
+});
+
 test('Geo tree search finds stations and resources by name, but never sub-sites', async (t) => {
   const database = createTestDatabase();
   const server = createApp({
@@ -1441,9 +1552,10 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
   // sem precisar da varredura por substring.
   const prefixSearch = await requestJson(port, 'GET', '/v1/geo/tree/search?q=CDOE');
   assert.equal(prefixSearch.statusCode, 200);
-  assert.deepEqual((prefixSearch.body as GeoTreeResponseNode[]).map((item) => item.label), [
-    'CDOE Icaraí 08',
-  ]);
+  assert.deepEqual(
+    (prefixSearch.body as GeoTreeResponseNode[]).map((item) => item.label),
+    ['CDOE Icaraí 08'],
+  );
 
   const noMatch = await requestJson(port, 'GET', '/v1/geo/tree/search?q=zzz-nao-existe');
   assert.deepEqual(noMatch.body, []);
@@ -1455,9 +1567,10 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
   // Estações — o mesmo termo "icara" que antes trazia Estação + CDOE agora só traz a
   // Estação.
   const onlySites = await requestJson(port, 'GET', '/v1/geo/tree/search?q=icara&kinds=site');
-  assert.deepEqual((onlySites.body as GeoTreeResponseNode[]).map((item) => item.label), [
-    'Estação Icaraí Central',
-  ]);
+  assert.deepEqual(
+    (onlySites.body as GeoTreeResponseNode[]).map((item) => item.label),
+    ['Estação Icaraí Central'],
+  );
 
   // `kinds=resource` restringe a Recursos — a Estação some, o CDOE (CTO) permanece.
   const onlyResources = await requestJson(
@@ -1465,9 +1578,10 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
     'GET',
     '/v1/geo/tree/search?q=icara&kinds=resource',
   );
-  assert.deepEqual((onlyResources.body as GeoTreeResponseNode[]).map((item) => item.label), [
-    'CDOE Icaraí 08',
-  ]);
+  assert.deepEqual(
+    (onlyResources.body as GeoTreeResponseNode[]).map((item) => item.label),
+    ['CDOE Icaraí 08'],
+  );
 
   // `types=CTO` restringe ainda mais, dentro de Recurso — o mesmo resultado aqui porque só
   // há um recurso no acervo de teste, mas comprova que o parâmetro chega ao SQL.
@@ -1476,9 +1590,10 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
     'GET',
     '/v1/geo/tree/search?q=icara&kinds=resource&types=CTO',
   );
-  assert.deepEqual((onlyCto.body as GeoTreeResponseNode[]).map((item) => item.label), [
-    'CDOE Icaraí 08',
-  ]);
+  assert.deepEqual(
+    (onlyCto.body as GeoTreeResponseNode[]).map((item) => item.label),
+    ['CDOE Icaraí 08'],
+  );
 
   // `types=Pole` (tipo que não existe no acervo de teste) não casa com o CDOE — o filtro de
   // tipo é aplicado de verdade, não só o de kind.

@@ -88,6 +88,11 @@ export function ResourcePortsTab({ ctoNode, onOpenPort }: ResourcePortsTabProps)
                       administrativeState={port.resource.administrativeState}
                       operationalState={port.resource.operationalState}
                       usageState={port.resource.usageState}
+                      dormant={
+                        port.resource.usageState === 'idle' &&
+                        port.drops.length > 0 &&
+                        !port.drops.some((drop) => drop.active)
+                      }
                     />
                   </button>
                 );

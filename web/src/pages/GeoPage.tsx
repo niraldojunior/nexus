@@ -115,6 +115,8 @@ import {
 import {
   DROP_ACCENT,
   DROP_INK,
+  DROP_MUTED,
+  type PortDropPreview,
   DROP_LABEL_HEIGHT,
   dropLabelDataUrl,
   dropLabelWidth,
@@ -407,6 +409,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Viabilidade. Mora aqui, e não no painel, porque quem desenha é o mapa; o painel só
   // o produz e o apaga ao se desmontar (ver ViabilityTab).
   const [dropSimulation, setDropSimulation] = useState<DropSimulation | null>(null);
+  // Trajeto do drop físico da Porta (homologação CDOE-02-ICARAI) — canal isolado de
+  // `dropSimulation` (Viabilidade/Esquemático): este é traçado real de inventário, não
+  // hipótese, e tem dois estilos (`active`/`muted`) em vez de um só. Ver ResourcePanel.
+  const [portDropPreview, setPortDropPreview] = useState<PortDropPreview | null>(null);
   const [confirmDiscardProjectSite, setConfirmDiscardProjectSite] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   // Painel empilhado de Porta (issue #171 Fase 3), aberto pela aba "Portas" de uma CTO —
@@ -1067,6 +1073,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     setDraftAddress(null);
     setAddressLookup(null);
     setDropSimulation(null);
+    setPortDropPreview(null);
     setDockView({ kind: 'hierarchy' });
     setPickingProjectSite(false);
     setPickedProjectAddress(null);
@@ -1096,6 +1103,23 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     }
   }, []);
 
+  // Trajeto do drop físico da Porta (homologação CDOE-02-ICARAI): mesmo padrão de
+  // centralização de `onDropSimulation`, mas em canal isolado — o mapa e o painel de
+  // Recurso já ficam lado a lado (flex row), então centralizar aqui já nasce "à direita
+  // do painel" sem nenhum deslocamento horizontal novo.
+  const onPortDropPreview = useCallback((preview: PortDropPreview | null) => {
+    setPortDropPreview(preview);
+    if (!preview) return;
+    const midpoint = pathMidpoint(preview.path);
+    if (midpoint) {
+      setFocusRequest({
+        point: midpoint,
+        scaleMeters: null,
+        fitSpanMeters: pathSpanMeters(preview.path),
+      });
+    }
+  }, []);
+
   // Endereço resolvido pela busca (Enter em texto livre ou clique numa sugestão do
   // dropdown) — os dois caminhos convergem aqui. Some qualquer seleção de nó em
   // curso (mesma doca, um painel por vez) e centraliza o mapa no ponto encontrado.
@@ -1105,6 +1129,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     setDraftAddress(null);
     setAddressError(null);
     setDropSimulation(null);
+    setPortDropPreview(null);
     setDockView({ kind: 'hierarchy' });
     setAddressLookup({
       address,
@@ -1170,6 +1195,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       setAddressError(null);
       setDraftAddress(address);
       setDropSimulation(null);
+      setPortDropPreview(null);
       setDockView({ kind: 'hierarchy' });
       setAddressLookup({ address, source: 'map' });
       // O ponto veio de um clique no mapa — já está à vista, então só recentraliza, sem
@@ -1457,6 +1483,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                   onClose={onDeselect}
                   onDropSimulation={onDropSimulation}
                   onPreview={handleHover}
+                  onPortDropPreview={onPortDropPreview}
                 />
               ) : null}
               {stackedPortNode ? (
@@ -1471,6 +1498,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                   onClose={() => setStackedPortNode(null)}
                   onDropSimulation={onDropSimulation}
                   onPreview={handleHover}
+                  onPortDropPreview={onPortDropPreview}
                 />
               ) : null}
             </>
@@ -1588,6 +1616,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                 addressLookup?.source === 'search' ? addressLookup.resolution : null
               }
               dropSimulation={dropSimulation}
+              portDropPreview={portDropPreview}
               focusRequest={focusRequest}
               bottomSheetState={bottomSheetState}
               balloon={balloon}
@@ -1714,6 +1743,7 @@ export function GoogleMapPanel({
   addressPoint,
   addressResolution,
   dropSimulation,
+  portDropPreview,
   focusRequest,
   bottomSheetState,
   balloon,
@@ -1775,6 +1805,10 @@ export function GoogleMapPanel({
   // Drop simulado entre o endereço e a CDO escolhida na aba de Viabilidade — estudo,
   // não planta: desenho próprio, animado, que some junto com o painel que o criou.
   dropSimulation?: DropSimulation | null;
+  // Trajeto do drop físico da Porta (homologação CDOE-02-ICARAI) — canal isolado de
+  // `dropSimulation`: inventário real, não hipótese, com dois estilos possíveis
+  // ('active'/'muted') em vez de um só. Ver PortDropPreview em dropSimulation.ts.
+  portDropPreview?: PortDropPreview | null;
   // Pedido de foco: para onde a câmera voa e com que zoom de chegada (ver flyTo).
   focusRequest?: FlyTarget | null;
   // `undefined` = sem painel; `null` = painel mobile montando/sem medida; objeto =
@@ -1890,6 +1924,12 @@ export function GoogleMapPanel({
   const dropDashRef = useRef<GooglePolylineInstance | null>(null);
   const dropLabelRef = useRef<GoogleMarkerInstance | null>(null);
   const dropAnimationRef = useRef<number | undefined>(undefined);
+  // Trajeto do drop físico da Porta (homologação CDOE-02-ICARAI) — refs próprios, canal
+  // isolado do trio acima (dropBase/dropDash/dropLabel são da simulação de Viabilidade).
+  // Sem label: aqui é inventário, não estudo de distância.
+  const portDropBaseRef = useRef<GooglePolylineInstance | null>(null);
+  const portDropDashRef = useRef<GooglePolylineInstance | null>(null);
+  const portDropAnimationRef = useRef<number | undefined>(undefined);
   const infoWindowRef = useRef<GoogleInfoWindowInstance | null>(null);
   // Verdadeiro enquanto um voo de câmera encadeado (afasta → viaja → aproxima) está em
   // curso: o listener de `idle` ignora os `idle` intermediários do voo para não disparar
@@ -2911,6 +2951,95 @@ export function GoogleMapPanel({
 
     return stopAnimation;
   }, [dropSimulation, mapsReady]);
+
+  // Trajeto do drop físico da Porta (homologação CDOE-02-ICARAI): mesma técnica de
+  // desenho da simulação de Viabilidade acima, mas canal isolado (inventário real, não
+  // hipótese) e com dois estilos — 'active' anima igual ao pontilhado amarelo de sempre,
+  // 'muted' é um traço cinza estático (churn ou drop histórico: não passar ideia de uso).
+  // Sem rótulo de distância em nenhum dos dois: aqui o que importa é "existe trajeto", não
+  // "quanto mede".
+  useEffect(() => {
+    const maps = window.google?.maps;
+    if (!mapsReady || !mapRef.current || !maps) return;
+
+    const stopAnimation = () => {
+      if (portDropAnimationRef.current !== undefined) {
+        window.clearInterval(portDropAnimationRef.current);
+        portDropAnimationRef.current = undefined;
+      }
+    };
+
+    if (!portDropPreview || portDropPreview.path.length < 2) {
+      stopAnimation();
+      portDropBaseRef.current?.setMap(null);
+      portDropDashRef.current?.setMap(null);
+      portDropBaseRef.current = null;
+      portDropDashRef.current = null;
+      return;
+    }
+
+    const path = portDropPreview.path.map(([lng, lat]) => ({ lng, lat }));
+    const isActive = portDropPreview.style === 'active';
+    const dashColor = isActive ? DROP_ACCENT : DROP_MUTED;
+
+    const dashIcons = (offsetPercent: number) => [
+      {
+        icon: {
+          path: 'M 0,-1 0,1',
+          strokeColor: dashColor,
+          strokeOpacity: 1,
+          strokeWeight: 4,
+          scale: 3.5,
+        },
+        offset: `${offsetPercent}%`,
+        repeat: '14px',
+      },
+    ];
+
+    if (portDropBaseRef.current) {
+      portDropBaseRef.current.setPath(path);
+      portDropBaseRef.current.setMap(mapRef.current);
+    } else {
+      portDropBaseRef.current = new maps.Polyline({
+        map: mapRef.current,
+        path,
+        strokeColor: DROP_INK,
+        strokeOpacity: isActive ? 0.85 : 0.5,
+        strokeWeight: 5,
+        zIndex: DROP_SIMULATION_Z,
+        clickable: false,
+      });
+    }
+
+    if (portDropDashRef.current) {
+      portDropDashRef.current.setPath(path);
+      portDropDashRef.current.setOptions({ icons: dashIcons(0) });
+      portDropDashRef.current.setMap(mapRef.current);
+    } else {
+      portDropDashRef.current = new maps.Polyline({
+        map: mapRef.current,
+        path,
+        strokeOpacity: 0,
+        zIndex: DROP_SIMULATION_Z + 1,
+        clickable: false,
+        icons: dashIcons(0),
+      });
+    }
+
+    // Só o estilo 'active' anima — 'muted' fica parado de propósito, reforçando a
+    // ideia de "fora de uso" (o movimento é justamente o que sugere tráfego real).
+    stopAnimation();
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    if (isActive && !reduceMotion) {
+      let offset = 0;
+      portDropAnimationRef.current = window.setInterval(() => {
+        offset = (offset + 2) % 100;
+        portDropDashRef.current?.setOptions({ icons: dashIcons(offset) });
+      }, DROP_DASH_INTERVAL_MS);
+    }
+
+    return stopAnimation;
+  }, [portDropPreview, mapsReady]);
 
   // Balão de preview ancorado no item sob o mouse. Usa o InfoWindow nativo — é o
   // que dá o bico apontando pro pin e o auto-pan quando ele nasce fora da tela.

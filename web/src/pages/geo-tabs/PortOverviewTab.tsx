@@ -13,6 +13,8 @@ export function PortOverviewTab({
 }) {
   const currentDrop = detail.drops.find((drop) => drop.active);
   const portName = detail.role === 'FO.O' && detail.index !== undefined ? `FO.O.${detail.index}` : detail.role ?? detail.resource.name;
+  // Ocioso, mas já teve um drop conectado — farol de uso ganha destaque (ver ResourceStateLights).
+  const dormant = detail.resource.usageState === 'idle' && detail.drops.length > 0 && !currentDrop;
 
   return (
     <div className="grid gap-1">
@@ -37,6 +39,7 @@ export function PortOverviewTab({
           administrativeState={detail.resource.administrativeState}
           operationalState={detail.resource.operationalState}
           usageState={detail.resource.usageState}
+          dormant={dormant}
         />
         <span className="text-[0.84rem] text-app-text">
           {`${ADMIN_STATE_LABELS[detail.resource.administrativeState ?? ''] ?? detail.resource.administrativeState ?? '—'} · ${OP_STATE_LABELS[detail.resource.operationalState ?? ''] ?? detail.resource.operationalState ?? '—'} · ${USAGE_STATE_LABELS[detail.resource.usageState ?? ''] ?? detail.resource.usageState ?? '—'}`}

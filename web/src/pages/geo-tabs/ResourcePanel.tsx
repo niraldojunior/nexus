@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Boxes,
   ChevronLeft,
@@ -13,7 +13,8 @@ import { useResourceDetail } from '../../hooks/useResourceDetail';
 import { useResourceChildren } from '../../hooks/useResourceChildren';
 import { usePortDetail } from '../../hooks/usePortDetail';
 import { usePortService } from '../../hooks/usePortService';
-import type { GeoTreeNode } from '../../services/geoTreeApi';
+import { fetchTreeNode, treeNodeRoute, type GeoTreeNode } from '../../services/geoTreeApi';
+import type { PortDropPreview } from '../../utils/dropSimulation';
 import { resourceIconFor } from '../../utils/resourceIcon';
 import { ResourceIcon } from '../../components/ResourceIcon';
 import { streetViewTargetsForGeometry } from '../../utils/streetViewTargets';
@@ -51,6 +52,9 @@ export type ResourcePanelProps = {
   minimizeSignal?: number;
   onDropSimulation: (simulation: DropSimulation | null) => void;
   onPreview: (node: GeoTreeNode | null) => void;
+  // Trajeto do drop físico da Porta, desenhado a partir da CTO até o site do cliente
+  // (homologação CDOE-02-ICARAI). Canal isolado de `onDropSimulation` — ver dropSimulation.ts.
+  onPortDropPreview: (preview: PortDropPreview | null) => void;
 };
 
 export function ResourcePanel({
@@ -64,6 +68,7 @@ export function ResourcePanel({
   minimizeSignal,
   onDropSimulation,
   onPreview,
+  onPortDropPreview,
 }: ResourcePanelProps) {
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
   const resourceId = node.refId ?? node.id.replace(/^resource:/, '');
@@ -81,6 +86,53 @@ export function ResourcePanel({
   // (o caller decide se sabe empilhar a Porta; sem isso, cai no fallback de sempre).
   const isCto = Boolean(onOpenPort) && node.resourceType === 'CTO';
   const hasPointGeometry = node.geometry?.type === 'Point';
+  // ONT alimentada pelo drop ativo — só existe quando a fiação física segue conectada,
+  // mesmo em churn (sem RFS/CFS ativos). Entra na lista de "Recursos atendidos" da Porta.
+  const activeDropOnt = portDetail?.drops.find((drop) => drop.active)?.ont;
+
+  // Trajeto do drop no mapa (homologação CDOE-02-ICARAI): dispara assim que o detalhe da
+  // Porta chega, independente da aba ativa. Mesmo padrão cleanup-safe do SchematicTab
+  // (mountedRef + microtask) para sobreviver ao double-mount do StrictMode sem que a
+  // limpeza da primeira montagem apague o traçado que a segunda acabou de pedir.
+  const onPortDropPreviewRef = useRef(onPortDropPreview);
+  onPortDropPreviewRef.current = onPortDropPreview;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      onPortDropPreviewRef.current(null);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isPort || !portDetail) return;
+    const currentDrop = portDetail.drops.find((drop) => drop.active) ?? portDetail.drops[0] ?? null;
+    if (!currentDrop) {
+      onPortDropPreviewRef.current(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchTreeNode(`resource:${currentDrop.resource.id}`)
+      .then((dropNode) => {
+        if (cancelled) return;
+        const path = treeNodeRoute(dropNode);
+        void Promise.resolve().then(() => {
+          if (!mountedRef.current || cancelled) return;
+          onPortDropPreviewRef.current(
+            path && path.length >= 2
+              ? { path, style: currentDrop.active && hasActiveService ? 'active' : 'muted' }
+              : null,
+          );
+        });
+      })
+      .catch(() => {
+        if (!cancelled) onPortDropPreviewRef.current(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isPort, portDetail, hasActiveService]);
 
   const eyebrow = resourceIconFor({
     resourceType: node.resourceType ?? detail?.specification.resourceType ?? '',
@@ -144,8 +196,8 @@ export function ResourcePanel({
         ) : (
           <PanelBarButton
             icon={Boxes}
-            label="Recursos internos"
-            badge={isPort ? portDetail?.drops.length : children.length}
+            label={isPort ? 'Recursos atendidos' : 'Recursos internos'}
+            badge={isPort ? (portDetail?.drops.length ?? 0) + (activeDropOnt ? 1 : 0) : children.length}
             active={tab === 'subresources'}
             onClick={() => setTab('subresources')}
           />
@@ -228,9 +280,9 @@ export function ResourcePanel({
               <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
               Carregando drops conectados…
             </div>
-          ) : portDetail?.drops.length ? (
+          ) : portDetail?.drops.length || activeDropOnt ? (
             <div className="grid gap-2">
-              {portDetail.drops.map((drop) => (
+              {portDetail?.drops.map((drop) => (
                 <button
                   key={drop.resource.id}
                   type="button"
@@ -244,6 +296,20 @@ export function ResourcePanel({
                   </span>
                 </button>
               ))}
+              {activeDropOnt ? (
+                <button
+                  key={activeDropOnt.id}
+                  type="button"
+                  onClick={() => onOpenResource(activeDropOnt.id)}
+                  className="flex w-full min-w-0 items-center gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
+                >
+                  <ResourceIcon resource={{ resourceType: activeDropOnt.resourceType ?? '', name: activeDropOnt.name }} variant="badge" size={26} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">{activeDropOnt.name}</span>
+                    <span className="mt-0.5 block text-[0.75rem] text-app-muted">ONT alimentada</span>
+                  </span>
+                </button>
+              ) : null}
             </div>
           ) : (
             <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">

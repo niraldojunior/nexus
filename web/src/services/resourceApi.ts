@@ -469,6 +469,8 @@ export type ResourcePortConnection = {
   resource: ResourceDetailReference & { name: string; '@referredType': 'PhysicalResource'; resourceType: string };
   active: boolean;
   validFor?: TimePeriod;
+  /** ONT alimentada por este drop (via grafo físico), presente só na conexão ativa. */
+  ont?: ResourceDetailReference;
 };
 
 export type ResourcePortDetail = {

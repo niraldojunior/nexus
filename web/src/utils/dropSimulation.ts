@@ -144,6 +144,23 @@ export function formatDropDistance(meters: number): string {
 // `--accent-on`/`--accent`.
 export const DROP_INK = '#243041';
 export const DROP_ACCENT = '#ffd200';
+// Mesmo tom de `--text-tertiary` (ver resourceIcon.ts) — reuso do "cinza neutro" já usado
+// em outros lugares do app para "sem destaque"/"fora de uso".
+export const DROP_MUTED = '#94a3b8';
+
+/**
+ * Trajeto do drop físico da Porta (issue de homologação CDOE-02-ICARAI), desenhado a
+ * partir da CTO (Porta/Splitter não têm geometria própria) até o site do cliente. Canal
+ * isolado de `DropSimulation` (Viabilidade/Esquemático) — este é traçado real de
+ * inventário, não hipótese. `style` reflete o par (drop físico ativo × Service ativo):
+ * `'active'` = drop ativo e há RFS/CFS ativos (mesmo desenho pontilhado do Esquemático);
+ * `'muted'` = drop existe mas está inativo, ou está fisicamente ativo em churn (sem
+ * serviço) — traçado esmaecido e estático para não passar a ideia de "em uso".
+ */
+export type PortDropPreview = {
+  path: LngLat[];
+  style: 'active' | 'muted';
+};
 
 export const DROP_LABEL_HEIGHT = 24;
 const LABEL_FONT_SIZE = 12;

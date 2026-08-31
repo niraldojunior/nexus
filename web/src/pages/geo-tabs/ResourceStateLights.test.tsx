@@ -1,6 +1,8 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
 import { ResourceStateLights } from './ResourceStateLights';
+
+afterEach(cleanup);
 
 describe('ResourceStateLights', () => {
   it('renderiza os três faróis SID com valores traduzidos e acessíveis', () => {
@@ -24,5 +26,21 @@ describe('ResourceStateLights', () => {
     expect(screen.getByTitle('Estado administrativo: Desconhecido')).toBeInTheDocument();
     expect(screen.getByTitle('Estado operacional: Desconhecido')).toBeInTheDocument();
     expect(screen.getByTitle('Estado de uso: Desconhecido')).toBeInTheDocument();
+  });
+
+  it('farol de uso é cinza quando ocioso e verde quando em uso', () => {
+    const { rerender } = render(<ResourceStateLights usageState="idle" />);
+    expect(screen.getByTitle('Estado de uso: Ocioso').className).toContain('bg-app-muted');
+
+    rerender(<ResourceStateLights usageState="active" />);
+    expect(screen.getByTitle('Estado de uso: Em Uso').className).toContain('bg-status-green');
+  });
+
+  it('destaca ocioso com drop histórico (branco com borda verde)', () => {
+    render(<ResourceStateLights usageState="idle" dormant />);
+    const light = screen.getByTitle('Estado de uso: Ocioso (drop histórico)');
+    expect(light).toBeInTheDocument();
+    expect(light.className).toContain('bg-white');
+    expect(light.className).toContain('ring-status-green');
   });
 });

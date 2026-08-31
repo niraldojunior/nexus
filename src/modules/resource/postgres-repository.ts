@@ -16,6 +16,7 @@ import type {
   ResourceAuditEntry,
   ResourceStatusBehavior,
   ResourceStatusCatalogEntry,
+  ResourceDetailReference,
   ResourcePortConnection,
   ResourcePortDetail,
   ResourcePortsView,
@@ -1070,11 +1071,12 @@ export class PostgresResourceRepository implements IResourceRepository {
         ORDER BY d.name, d.id`,
       [port.id, port.id, port.id, tenantId],
     );
-    const currentDrops = connectionRows.map((drop) => {
+    const currentDrops = await Promise.all(connectionRows.map(async (drop) => {
       const validFor = drop.valid_for_start || drop.valid_for_end
         ? { ...(drop.valid_for_start ? { startDateTime: drop.valid_for_start } : {}), ...(drop.valid_for_end ? { endDateTime: drop.valid_for_end } : {}) }
         : undefined;
       const active = !drop.valid_for_end || new Date(drop.valid_for_end).getTime() > Date.now();
+      const ont = active ? await this.resolveDropOnt(drop.id, tenantId) : undefined;
       return {
         resource: {
           id: drop.id,
@@ -1084,8 +1086,9 @@ export class PostgresResourceRepository implements IResourceRepository {
         },
         active,
         ...(validFor ? { validFor } : {}),
+        ...(ont ? { ont } : {}),
       };
-    });
+    }));
     const historicalDrops = await this.listHistoricalPortDrops(port.id, tenantId, new Set(currentDrops.map((drop) => drop.resource.id)));
     const drops = [...currentDrops, ...historicalDrops];
     const role = characteristicStringFromCharacteristics(port.characteristic, 'role');
@@ -1102,6 +1105,28 @@ export class PostgresResourceRepository implements IResourceRepository {
       derivedUsageState,
       drops,
     };
+  }
+
+  /**
+   * ONT alimentada por um drop, via `connectedTo` no grafo físico — independente do Service.
+   * Cobre porta com drop ativo mesmo sem RFS/CFS ativos (churn), já que a fiação continua conectada.
+   */
+  private async resolveDropOnt(
+    dropId: string,
+    tenantId: string,
+  ): Promise<ResourceDetailReference | undefined> {
+    const ont = await this.db.get<{ id: string; name: string; resource_type: string }>(
+      `SELECT o.id, o.name, os.resource_type
+         FROM tmf_resource_relationship rr
+         JOIN tmf_physical_resource o ON o.id = CASE WHEN rr.resource_from_id = ? THEN rr.resource_to_id ELSE rr.resource_from_id END
+         JOIN tmf_resource_specification os ON os.id = o.resource_specification_id
+        WHERE rr.relationship_type = 'connectedTo' AND (rr.resource_from_id = ? OR rr.resource_to_id = ?)
+          AND o.tenant_id = ? AND os.resource_type = 'ONT'
+        LIMIT 1`,
+      [dropId, dropId, dropId, tenantId],
+    );
+    if (!ont) return undefined;
+    return { id: ont.id, name: ont.name, '@referredType': 'PhysicalResource', resourceType: ont.resource_type };
   }
 
   private async listHistoricalPortDrops(

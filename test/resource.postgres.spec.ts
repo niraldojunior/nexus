@@ -73,6 +73,9 @@ test('Resource repository projects splitter ports from bidirectional drop connec
     const dropSpec = await service.createResourceSpecification({
       name: 'Cabo drop de teste', category: 'Cable.OutsidePlant', resourceType: 'DropCable',
     });
+    const ontSpec = await service.createResourceSpecification({
+      name: 'ONT de teste', category: 'Equipment.CPE', resourceType: 'ONT',
+    });
     const cto = await service.createPhysicalResource({ name: 'CTO-1', resourceSpecificationId: ctoSpec.id });
     const splitter = await service.createPhysicalResource({
       name: 'Splitter-1', resourceSpecificationId: splitterSpec.id,
@@ -88,6 +91,9 @@ test('Resource repository projects splitter ports from bidirectional drop connec
     const drop = await service.createPhysicalResource({
       name: 'DROP-1', resourceSpecificationId: dropSpec.id,
     });
+    const ont = await service.createPhysicalResource({
+      name: 'ONT-1', resourceSpecificationId: ontSpec.id,
+    });
     await service.addResourceRelationship(cto.id, {
       id: splitter.id, relationshipType: 'containsAsChild', '@referredType': 'Resource',
     });
@@ -97,16 +103,21 @@ test('Resource repository projects splitter ports from bidirectional drop connec
     await service.addResourceRelationship(drop.id, {
       id: port.id, relationshipType: 'connectedTo', '@referredType': 'Resource',
     });
+    await service.addResourceRelationship(drop.id, {
+      id: ont.id, relationshipType: 'connectedTo', '@referredType': 'Resource',
+    });
 
     const view = await repository.getResourcePortsView(cto.id);
     assert.equal(view?.groups.length, 1);
     assert.equal(view?.groups[0]?.ports[0]?.resource.usageState, 'active');
     assert.equal(view?.groups[0]?.ports[0]?.drops[0]?.resource.id, drop.id);
+    assert.equal(view?.groups[0]?.ports[0]?.drops[0]?.ont?.id, ont.id);
 
     const detail = await repository.getResourcePortDetail(port.id);
     assert.equal(detail?.splitter?.id, splitter.id);
     assert.equal(detail?.cto?.id, cto.id);
     assert.equal(detail?.splitRatio, '1:8');
+    assert.equal(detail?.drops[0]?.ont?.id, ont.id);
     assert.equal((await repository.listIncidentResourceRelationships(port.id)).length, 2);
   } finally {
     PostgresDatabase.resetForTesting();

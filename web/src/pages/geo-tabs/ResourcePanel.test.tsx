@@ -106,6 +106,12 @@ const portDetail = {
         resourceType: 'DropCable',
       },
       active: true,
+      ont: {
+        id: 'ont-1',
+        name: 'ONT-CLIENTE-1',
+        '@referredType': 'PhysicalResource',
+        resourceType: 'ONT',
+      },
     },
     {
       resource: {
@@ -149,6 +155,7 @@ function renderPanel(overrides: Partial<ComponentProps<typeof ResourcePanel>> = 
     onClose: vi.fn(),
     onDropSimulation: vi.fn(),
     onPreview: vi.fn(),
+    onPortDropPreview: vi.fn(),
     ...overrides,
   };
   render(<ResourcePanel {...props} />);
@@ -215,9 +222,9 @@ describe('ResourcePanel', () => {
     expect(screen.queryByRole('button', { name: 'Portas' })).not.toBeInTheDocument();
   });
 
-  it('especializa a Porta sem chrome geográfico e mostra drops atuais e históricos', () => {
+  it('especializa a Porta sem chrome geográfico, renomeia a aba e mostra drops e a ONT', () => {
     mocks.usePortDetail.mockReturnValue({ detail: portDetail, loading: false, error: null });
-    renderPanel({ node: portNode });
+    const { onOpenResource } = renderPanel({ node: portNode });
 
     expect(mocks.usePortDetail).toHaveBeenCalledWith('porta-1', true);
     expect(screen.getByText('Detalhe da porta')).toBeInTheDocument();
@@ -225,12 +232,18 @@ describe('ResourcePanel', () => {
     expect(screen.queryByRole('button', { name: 'Cobertura' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Esquemático' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Serviço' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Recursos internos/ })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '2Recursos internos' }));
+    fireEvent.click(screen.getByRole('button', { name: '3Recursos atendidos' }));
     expect(screen.getByText('Cabo Drop atual')).toBeInTheDocument();
     expect(screen.getByText('Conexão atual')).toBeInTheDocument();
     expect(screen.getByText('Cabo Drop histórico')).toBeInTheDocument();
     expect(screen.getByText('Conexão histórica')).toBeInTheDocument();
+    expect(screen.getByText('ONT-CLIENTE-1')).toBeInTheDocument();
+    expect(screen.getByText('ONT alimentada')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('ONT-CLIENTE-1'));
+    expect(onOpenResource).toHaveBeenCalledWith('ont-1');
   });
 
   it('mostra Serviço somente quando a cadeia ativa RFS para CFS existe', () => {

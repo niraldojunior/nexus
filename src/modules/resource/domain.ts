@@ -234,6 +234,12 @@ export type ResourcePortConnection = {
   resource: { id: string; name: string; '@referredType': 'PhysicalResource'; resourceType: string };
   active: boolean;
   validFor?: TimePeriod;
+  /**
+   * ONT alimentada por este drop, resolvida pelo grafo físico (`connectedTo`), independente do
+   * estado do Service — cobre também porta com drop ativo porém sem RFS/CFS ativos (churn).
+   * Só é populado para a conexão `active: true`.
+   */
+  ont?: ResourceDetailReference;
 };
 
 export type ResourcePortDetail = {

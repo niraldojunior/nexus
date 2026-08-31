@@ -285,16 +285,21 @@ export class ResourceRepository implements IResourceRepository {
         (item): item is { relationship: ResourceRelationship; resource: PhysicalResource } =>
           Boolean(item.resource && item.resource.resourceType === 'DropCable'),
       )
-      .map(({ relationship, resource }) => ({
-        resource: {
-          id: resource.id,
-          name: resource.name,
-          '@referredType': 'PhysicalResource' as const,
-          resourceType: resource.resourceType,
-        },
-        active: relationshipIsActive(relationship),
-        ...(relationship.validFor ? { validFor: { ...relationship.validFor } } : {}),
-      }));
+      .map(({ relationship, resource }) => {
+        const active = relationshipIsActive(relationship);
+        const ont = active ? this.resolveDropOnt(resource.id) : undefined;
+        return {
+          resource: {
+            id: resource.id,
+            name: resource.name,
+            '@referredType': 'PhysicalResource' as const,
+            resourceType: resource.resourceType,
+          },
+          active,
+          ...(relationship.validFor ? { validFor: { ...relationship.validFor } } : {}),
+          ...(ont ? { ont } : {}),
+        };
+      });
     const role = characteristicString(port, 'role');
     const index = characteristicNumber(port, 'index');
     const splitRatio = splitter ? characteristicString(splitter, 'razao') : undefined;
@@ -330,6 +335,16 @@ export class ResourceRepository implements IResourceRepository {
       derivedUsageState: drops.some((drop) => drop.active) ? 'active' : 'idle',
       drops,
     };
+  }
+
+  /** ONT alimentada por um drop, via `connectedTo` — mesmo grafo físico do Postgres. */
+  private resolveDropOnt(dropId: string): { id: string; name: string; '@referredType': 'PhysicalResource'; resourceType: string } | undefined {
+    const ont = this.listIncidentResourceRelationships(dropId)
+      .filter((relationship) => relationship.relationshipType === 'connectedTo')
+      .map((relationship) => this.getPhysicalResource(relationship.id))
+      .find((resource): resource is PhysicalResource => Boolean(resource && resource.resourceType === 'ONT'));
+    if (!ont) return undefined;
+    return { id: ont.id, name: ont.name, '@referredType': 'PhysicalResource', resourceType: ont.resourceType };
   }
 
   public upsertPhysicalResource(resource: PhysicalResource): PhysicalResource {

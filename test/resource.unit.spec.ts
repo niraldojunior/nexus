@@ -237,6 +237,7 @@ test('Resource ports projection derives output occupancy from current and invers
   spec('spec-port', 'Port', 'Equipment.Access');
   spec('spec-drop', 'DropCable', 'Cable.OutsidePlant');
   spec('spec-distribution', 'DistributionCable', 'Cable.OutsidePlant');
+  spec('spec-ont', 'ONT', 'Equipment.CPE');
   resource('cto-1', 'CTO Icaraí', 'CTO', 'spec-cto');
   resource('splitter-1', 'Splitter 1:8', 'Splitter', 'spec-splitter', [
     { name: 'razao', value: '1:8', valueType: 'string' },
@@ -257,6 +258,7 @@ test('Resource ports projection derives output occupancy from current and invers
   resource('drop-current', 'Cabo drop atual', 'DropCable', 'spec-drop');
   resource('drop-history', 'Cabo drop histórico', 'DropCable', 'spec-drop');
   resource('distribution-cable', 'Cabo distribuição', 'DistributionCable', 'spec-distribution');
+  resource('ont-1', 'ONT do cliente', 'ONT', 'spec-ont');
 
   repository.upsertResourceRelationship('cto-1', {
     id: 'splitter-1', relationshipType: 'containsAsChild', '@referredType': 'Resource',
@@ -277,6 +279,9 @@ test('Resource ports projection derives output occupancy from current and invers
   repository.upsertResourceRelationship('port-output-free', {
     id: 'distribution-cable', relationshipType: 'connectedTo', '@referredType': 'Resource',
   });
+  repository.upsertResourceRelationship('drop-current', {
+    id: 'ont-1', relationshipType: 'connectedTo', '@referredType': 'Resource',
+  });
 
   const view = repository.getResourcePortsView('cto-1');
   assert.ok(view);
@@ -290,13 +295,17 @@ test('Resource ports projection derives output occupancy from current and invers
   assert.equal(ports[1]?.drops.length, 0);
   assert.equal(ports[2]?.resource.usageState, 'active');
   assert.equal(ports[2]?.drops[0]?.resource.id, 'drop-current');
+  assert.equal(ports[2]?.drops[0]?.ont?.id, 'ont-1');
   assert.equal(ports[3]?.resource.usageState, 'idle');
   assert.equal(ports[3]?.drops[0]?.active, false);
+  assert.equal(ports[3]?.drops[0]?.ont, undefined);
+  assert.equal(ports[1]?.drops[0]?.ont, undefined);
 
   const detail = repository.getResourcePortDetail('port-output-used');
   assert.equal(detail?.splitter?.id, 'splitter-1');
   assert.equal(detail?.cto?.id, 'cto-1');
   assert.equal(detail?.splitRatio, '1:8');
+  assert.equal(detail?.drops[0]?.ont?.id, 'ont-1');
 });
 
 test('ResourceService allows one active drop per splitter output in either relationship direction', async () => {

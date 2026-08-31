@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { MAP_FEATURE_POINT_INSERT_SQL } from '../src/modules/geo/map-feature-synchronizer.js';
+import {
+  MAP_FEATURE_POINT_INSERT_SQL,
+  candidatesSql,
+} from '../src/modules/geo/map-feature-synchronizer.js';
+import { INTERNAL_RESOURCE_TYPES } from '../src/modules/geo/map-visibility.js';
 
 // O write-through monta o INSERT de `geo_map_feature` à mão, com a lista de colunas e a de
 // VALUES em linhas separadas. Um `?` a mais não quebra typecheck nem lint — estoura só em
@@ -36,4 +40,32 @@ test('14 placeholders + 3 expressões constantes (shape, geometry, rank)', () =>
   const placeholders = values.filter((value) => value === '?').length;
   assert.equal(placeholders, 14, `esperava 14 placeholders, achei ${placeholders}`);
   assert.equal(values.length - placeholders, 3);
+});
+
+// Regressão da divergência que deixou Porta de Splitter vazar no mapa (issue de "portas de
+// splitter não devem ser exibidas no mapa"): o write-through só excluía 'Splitter'. A régua
+// certa vem de map-visibility.ts (fonte única, ver também build-map-features.mjs e
+// tree-service.ts); estes testes conferem o SQL de candidatos direto no texto, sem banco.
+const CANDIDATES_SQL = candidatesSql('?,?');
+
+test('candidatesSql exclui todo tipo de recurso interno (Splitter e Porta)', () => {
+  assert.deepEqual([...INTERNAL_RESOURCE_TYPES].sort(), ['Port', 'Splitter']);
+  for (const type of INTERNAL_RESOURCE_TYPES) {
+    assert.ok(
+      CANDIDATES_SQL.includes(`'${type}'`),
+      `esperava a exclusão de '${type}' no SQL de candidatos`,
+    );
+  }
+});
+
+test('candidatesSql filtra recurso por map_presence do catálogo', () => {
+  assert.match(CANDIDATES_SQL, /LEFT JOIN tmf_resource_type rt ON rt\.code = rs\.resource_type/);
+  assert.match(CANDIDATES_SQL, /COALESCE\(rt\.map_presence, 1\) = 1/);
+});
+
+test('candidatesSql restringe site a category = Site, fora de projeto em curso', () => {
+  assert.match(CANDIDATES_SQL, /spec\.category = 'Site'/);
+  assert.doesNotMatch(CANDIDATES_SQL, /'SubSite'/);
+  assert.match(CANDIDATES_SQL, /geo_project_site/);
+  assert.match(CANDIDATES_SQL, /p\.status <> 'terminated'/);
 });

@@ -22,7 +22,7 @@ const port = (id: string, role: string, index?: number) => ({
     resourceType: 'Port', status: 'active' as const, administrativeState: 'unlocked' as const,
     operationalState: 'enabled' as const, usageState: 'idle' as const, characteristic: [],
   },
-  role, ...(index !== undefined ? { index } : {}), derivedUsageState: 'idle' as const, drops: [],
+  role, ...(index !== undefined ? { index } : {}), derivedUsageState: 'idle' as const, hasActiveService: false, drops: [],
 });
 
 afterEach(() => {

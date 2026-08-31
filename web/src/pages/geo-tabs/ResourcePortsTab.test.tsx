@@ -16,7 +16,7 @@ const port = (id: string, role: string, index?: number) => ({
     resourceSpecificationId: 'spec', resourceSpecification: { id: 'spec', '@referredType': 'ResourceSpecification' as const }, resourceType: 'Port',
     status: 'active' as const, administrativeState: 'unlocked' as const, operationalState: 'enabled' as const, usageState: 'idle' as const,
     characteristic: [],
-  }, role, ...(index !== undefined ? { index } : {}), derivedUsageState: 'idle' as const, drops: [],
+  }, role, ...(index !== undefined ? { index } : {}), derivedUsageState: 'idle' as const, hasActiveService: false, drops: [],
 });
 const splitter = { id: 'splitter-1', name: 'CDOE-6746 · Splitter', '@referredType': 'PhysicalResource' as const, resourceType: 'Splitter' };
 
@@ -47,5 +47,21 @@ describe('ResourcePortsTab', () => {
     expect(screen.getAllByLabelText('Estados SID/X.731')).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: /FO\.O\.1/ }));
     expect(onOpenPort).toHaveBeenCalledWith(expect.objectContaining({ refId: 'p2', resourceType: 'Port', kind: 'resource' }));
+  });
+
+  it('destaca drop físico sem RFS ativo como desativado', () => {
+    const inactiveDropPort = {
+      ...port('p5', 'FO.O', 5),
+      drops: [{ resource: { id: 'drop-5', name: 'CABO-DROP-05', '@referredType': 'PhysicalResource' as const, resourceType: 'DropCable' }, active: true }],
+    };
+    mocks.useResourcePorts.mockReturnValue({
+      groups: [{ splitter, ports: [inactiveDropPort] }], loading: false, error: null, reload: vi.fn(),
+    });
+
+    render(<ResourcePortsTab ctoNode={ctoNode} onOpenPort={vi.fn()} />);
+    expect(screen.getByText('Drop desativado')).toBeInTheDocument();
+    const usageLight = screen.getByTitle('Estado de uso: Drop desativado');
+    expect(usageLight.className).toContain('bg-white');
+    expect(usageLight.className).toContain('ring-status-green');
   });
 });

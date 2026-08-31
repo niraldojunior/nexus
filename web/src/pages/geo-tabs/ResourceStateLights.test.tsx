@@ -36,9 +36,9 @@ describe('ResourceStateLights', () => {
     expect(screen.getByTitle('Estado de uso: Em Uso').className).toContain('bg-status-green');
   });
 
-  it('destaca ocioso com drop histórico (branco com borda verde)', () => {
-    render(<ResourceStateLights usageState="idle" dormant />);
-    const light = screen.getByTitle('Estado de uso: Ocioso (drop histórico)');
+  it('destaca drop desativado com branco e borda verde', () => {
+    render(<ResourceStateLights usageState="idle" dropDisabled />);
+    const light = screen.getByTitle('Estado de uso: Drop desativado');
     expect(light).toBeInTheDocument();
     expect(light.className).toContain('bg-white');
     expect(light.className).toContain('ring-status-green');

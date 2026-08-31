@@ -27,6 +27,7 @@ const result = spawnSync(
     'test/database-client.contract.spec.ts',
     'test/oracle-roundtrip.spec.ts',
     'test/settings-endpoints.oracle.spec.ts',
+    'test/service-repository.oracle.spec.ts',
   ],
   { stdio: 'inherit' },
 );

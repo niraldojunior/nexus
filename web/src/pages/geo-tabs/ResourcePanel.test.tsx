@@ -97,6 +97,7 @@ const portDetail = {
   role: 'FO.O',
   index: 1,
   derivedUsageState: 'active',
+  hasActiveService: true,
   drops: [
     {
       resource: {

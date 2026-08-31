@@ -8,11 +8,9 @@ type ResourceStateLightsProps = {
   administrativeState?: string;
   operationalState?: string;
   usageState?: string;
-  // Ocioso, porém com um drop histórico já conectado antes — farol de uso ganha
-  // destaque próprio (branco com borda verde) em vez do cinza padrão de ocioso, para
-  // chamar atenção de que esta porta livre já teve cliente. Só faz sentido combinado
-  // com `usageState === 'idle'`; calculado pelo chamador (drops.length > 0 sem ativo).
-  dormant?: boolean;
+  // Há drop fisicamente instalado, mas nenhum RFS ativo. O farol branco com borda verde
+  // diferencia essa planta disponível de uma porta sem drop ou de uma conexão encerrada.
+  dropDisabled?: boolean;
 };
 
 type Light = {
@@ -24,8 +22,8 @@ type Light = {
 };
 
 const DEFAULT_RING = 'ring-app-panel';
-// Branco ao centro, borda verde — farol "vazio mas já usado", só para o eixo de uso.
-const DORMANT_CLASS = 'bg-white ring-status-green';
+// Branco ao centro, borda verde — farol de drop instalado, porém desativado.
+const DROP_DISABLED_CLASS = 'bg-white ring-status-green';
 
 const administrativeTone = (value?: string) =>
   value === 'unlocked'
@@ -45,10 +43,12 @@ export function ResourceStateLights({
   administrativeState,
   operationalState,
   usageState,
-  dormant,
+  dropDisabled,
 }: ResourceStateLightsProps) {
-  const usageHighlight = dormant && usageState === 'idle';
-  const usageValue = `${USAGE_STATE_LABELS[usageState ?? ''] ?? usageState ?? 'Desconhecido'}${usageHighlight ? ' (drop histórico)' : ''}`;
+  const usageHighlight = dropDisabled === true;
+  const usageValue = usageHighlight
+    ? 'Drop desativado'
+    : USAGE_STATE_LABELS[usageState ?? ''] ?? usageState ?? 'Desconhecido';
 
   const lights: Light[] = [
     {
@@ -64,7 +64,7 @@ export function ResourceStateLights({
     {
       label: 'Estado de uso',
       value: usageValue,
-      className: usageHighlight ? DORMANT_CLASS : usageTone(usageState),
+      className: usageHighlight ? DROP_DISABLED_CLASS : usageTone(usageState),
     },
   ];
 

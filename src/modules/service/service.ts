@@ -740,6 +740,14 @@ export class ServiceService {
     return terminated;
   }
 
+  /** Recursos que sustentam ao menos um RFS ativo, resolvidos em uma única consulta por lote. */
+  public async listActiveSupportingResourceIds(
+    resourceIds: string[],
+    context?: RequestContext,
+  ): Promise<Set<string>> {
+    return await this.repository.listActiveSupportingResourceIds(resourceIds, scopeOf(context));
+  }
+
   public async listServices(query?: ServiceQuery, context?: RequestContext): Promise<Service[]> {
     return await this.repository.listServices({ ...query, tenantId: tenantOf(context) });
   }

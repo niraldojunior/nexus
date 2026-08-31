@@ -1103,6 +1103,7 @@ export class PostgresResourceRepository implements IResourceRepository {
       ...(parent?.cto_id && parent.cto_name ? { cto: { id: parent.cto_id, name: parent.cto_name, '@referredType': 'PhysicalResource', resourceType: 'CTO' } } : {}),
       ...(splitRatio ? { splitRatio } : {}),
       derivedUsageState,
+      hasActiveService: false,
       drops,
     };
   }

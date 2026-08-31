@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Boxes,
   ChevronLeft,
@@ -11,7 +11,10 @@ import {
 } from 'lucide-react';
 import { useResourceDetail } from '../../hooks/useResourceDetail';
 import { useResourceChildren } from '../../hooks/useResourceChildren';
-import type { GeoTreeNode } from '../../services/geoTreeApi';
+import { usePortDetail } from '../../hooks/usePortDetail';
+import { usePortService } from '../../hooks/usePortService';
+import { fetchTreeNode, treeNodeRoute, type GeoTreeNode } from '../../services/geoTreeApi';
+import type { PortDropPreview } from '../../utils/dropSimulation';
 import { resourceIconFor } from '../../utils/resourceIcon';
 import { ResourceIcon } from '../../components/ResourceIcon';
 import { streetViewTargetsForGeometry } from '../../utils/streetViewTargets';
@@ -32,6 +35,8 @@ import { ResourceOverviewTab } from './ResourceOverviewTab';
 import { ResourceHistoryTab } from './ResourceHistoryTab';
 import { ResourcePortsTab } from './ResourcePortsTab';
 import { ResourceCoverageTab } from './ResourceCoverageTab';
+import { PortOverviewTab } from './PortOverviewTab';
+import { PortServiceTab } from './PortServiceTab';
 import type { DropSimulation } from './ViabilityTab';
 
 export type ResourcePanelProps = {
@@ -47,6 +52,9 @@ export type ResourcePanelProps = {
   minimizeSignal?: number;
   onDropSimulation: (simulation: DropSimulation | null) => void;
   onPreview: (node: GeoTreeNode | null) => void;
+  // Trajeto do drop físico da Porta, desenhado a partir da CTO até o site do cliente
+  // (homologação CDOE-02-ICARAI). Canal isolado de `onDropSimulation` — ver dropSimulation.ts.
+  onPortDropPreview: (preview: PortDropPreview | null) => void;
 };
 
 export function ResourcePanel({
@@ -60,13 +68,17 @@ export function ResourcePanel({
   minimizeSignal,
   onDropSimulation,
   onPreview,
+  onPortDropPreview,
 }: ResourcePanelProps) {
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
   const resourceId = node.refId ?? node.id.replace(/^resource:/, '');
   const { detail, loading: detailLoading, error: detailError } = useResourceDetail(resourceId);
   const { children, loading: childrenLoading } = useResourceChildren(node);
+  const isPort = node.resourceType === 'Port';
+  const { detail: portDetail, loading: portDetailLoading, error: portDetailError } = usePortDetail(resourceId, isPort);
+  const { service: portService, hasActiveService, loading: portServiceLoading, error: portServiceError } = usePortService(resourceId, isPort);
   const [tab, setTab] = useState<
-    'overview' | 'subresources' | 'ports' | 'coverage' | 'schematic' | 'history'
+    'overview' | 'subresources' | 'ports' | 'service' | 'coverage' | 'schematic' | 'history'
   >('overview');
   // CTO ganha aba "Portas" no lugar de "Recursos internos" (issue #171 Fase 3) — quem
   // materializa o splitter/porta contidos é o piloto Niterói/Icaraí; qualquer outro tipo
@@ -74,6 +86,53 @@ export function ResourcePanel({
   // (o caller decide se sabe empilhar a Porta; sem isso, cai no fallback de sempre).
   const isCto = Boolean(onOpenPort) && node.resourceType === 'CTO';
   const hasPointGeometry = node.geometry?.type === 'Point';
+  // ONT alimentada pelo drop ativo — só existe quando a fiação física segue conectada,
+  // mesmo em churn (sem RFS/CFS ativos). Entra na lista de "Recursos atendidos" da Porta.
+  const activeDropOnt = portDetail?.drops.find((drop) => drop.active)?.ont;
+
+  // Trajeto do drop no mapa (homologação CDOE-02-ICARAI): dispara assim que o detalhe da
+  // Porta chega, independente da aba ativa. Mesmo padrão cleanup-safe do SchematicTab
+  // (mountedRef + microtask) para sobreviver ao double-mount do StrictMode sem que a
+  // limpeza da primeira montagem apague o traçado que a segunda acabou de pedir.
+  const onPortDropPreviewRef = useRef(onPortDropPreview);
+  onPortDropPreviewRef.current = onPortDropPreview;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      onPortDropPreviewRef.current(null);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isPort || !portDetail) return;
+    const currentDrop = portDetail.drops.find((drop) => drop.active) ?? portDetail.drops[0] ?? null;
+    if (!currentDrop) {
+      onPortDropPreviewRef.current(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchTreeNode(`resource:${currentDrop.resource.id}`)
+      .then((dropNode) => {
+        if (cancelled) return;
+        const path = treeNodeRoute(dropNode);
+        void Promise.resolve().then(() => {
+          if (!mountedRef.current || cancelled) return;
+          onPortDropPreviewRef.current(
+            path && path.length >= 2
+              ? { path, style: currentDrop.active && hasActiveService ? 'active' : 'muted' }
+              : null,
+          );
+        });
+      })
+      .catch(() => {
+        if (!cancelled) onPortDropPreviewRef.current(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isPort, portDetail, hasActiveService]);
 
   const eyebrow = resourceIconFor({
     resourceType: node.resourceType ?? detail?.specification.resourceType ?? '',
@@ -137,13 +196,21 @@ export function ResourcePanel({
         ) : (
           <PanelBarButton
             icon={Boxes}
-            label="Recursos internos"
-            badge={children.length}
+            label={isPort ? 'Recursos atendidos' : 'Recursos internos'}
+            badge={isPort ? (portDetail?.drops.length ?? 0) + (activeDropOnt ? 1 : 0) : children.length}
             active={tab === 'subresources'}
             onClick={() => setTab('subresources')}
           />
         )}
-        {hasPointGeometry ? (
+        {isPort && hasActiveService ? (
+          <PanelBarButton
+            icon={Layers3}
+            label="Serviço"
+            active={tab === 'service'}
+            onClick={() => setTab('service')}
+          />
+        ) : null}
+        {!isPort && hasPointGeometry ? (
           <PanelBarButton
             icon={Layers3}
             label="Cobertura"
@@ -151,12 +218,14 @@ export function ResourcePanel({
             onClick={() => setTab('coverage')}
           />
         ) : null}
-        <PanelBarButton
-          icon={Waypoints}
-          label="Esquemático"
-          active={tab === 'schematic'}
-          onClick={() => setTab('schematic')}
-        />
+        {!isPort ? (
+          <PanelBarButton
+            icon={Waypoints}
+            label="Esquemático"
+            active={tab === 'schematic'}
+            onClick={() => setTab('schematic')}
+          />
+        ) : null}
         <PanelBarButton
           icon={HistoryIcon}
           label="Histórico"
@@ -166,16 +235,26 @@ export function ResourcePanel({
       </div>
 
       {tab === 'overview' ? (
-        detail ? (
+        isPort ? (
+          portDetail ? (
+            <PortOverviewTab detail={portDetail} onOpenResource={onOpenResource} />
+          ) : portDetailLoading ? (
+            <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+              Carregando detalhes da porta…
+            </div>
+          ) : portDetailError ? (
+            <div className="rounded-[18px] border border-dashed border-status-red/30 bg-status-red-soft p-4 text-[0.84rem] text-status-red">
+              {portDetailError}
+            </div>
+          ) : null
+        ) : detail ? (
           <div className="grid gap-2">
             <ResourceOverviewTab detail={detail} onOpenResource={onOpenResource} />
             {streetViewTargets.length > 0 ? (
               <div className="border-t border-app-border pt-2">
                 {streetViewTargets.map((target) => (
-                  <div
-                    key={`${target.label ?? 'ponto'}:${target.point.join(',')}`}
-                    className="py-1"
-                  >
+                  <div key={`${target.label ?? 'ponto'}:${target.point.join(',')}`} className="py-1">
                     <CoordinateStreetView marker={resourceStreetViewMarker(node, target.point)} />
                   </div>
                 ))}
@@ -194,7 +273,53 @@ export function ResourcePanel({
         ) : null
       ) : null}
 
-      {tab === 'subresources' ? (
+      {tab === 'subresources' && isPort ? (
+        <div>
+          {portDetailLoading ? (
+            <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+              Carregando drops conectados…
+            </div>
+          ) : portDetail?.drops.length || activeDropOnt ? (
+            <div className="grid gap-2">
+              {portDetail?.drops.map((drop) => (
+                <button
+                  key={drop.resource.id}
+                  type="button"
+                  onClick={() => onOpenResource(drop.resource.id)}
+                  className="flex w-full min-w-0 items-center gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
+                >
+                  <ResourceIcon resource={{ resourceType: drop.resource.resourceType, name: drop.resource.name }} variant="badge" size={26} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">{drop.resource.name}</span>
+                    <span className="mt-0.5 block text-[0.75rem] text-app-muted">{drop.active ? 'Conexão atual' : 'Conexão histórica'}</span>
+                  </span>
+                </button>
+              ))}
+              {activeDropOnt ? (
+                <button
+                  key={activeDropOnt.id}
+                  type="button"
+                  onClick={() => onOpenResource(activeDropOnt.id)}
+                  className="flex w-full min-w-0 items-center gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
+                >
+                  <ResourceIcon resource={{ resourceType: activeDropOnt.resourceType ?? '', name: activeDropOnt.name }} variant="badge" size={26} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">{activeDropOnt.name}</span>
+                    <span className="mt-0.5 block text-[0.75rem] text-app-muted">ONT alimentada</span>
+                  </span>
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
+              Esta porta não possui drops conectados.
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {tab === 'subresources' && !isPort ? (
         <div>
           {childrenLoading ? (
             <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
@@ -257,7 +382,20 @@ export function ResourcePanel({
         <ResourcePortsTab ctoNode={node} onOpenPort={onOpenPort!} />
       ) : null}
 
-      {tab === 'coverage' && hasPointGeometry ? (
+      {tab === 'service' && isPort ? (
+        portService ? (
+          <PortServiceTab service={portService} />
+        ) : portServiceLoading ? (
+          <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+            Carregando serviço…
+          </div>
+        ) : portServiceError ? (
+          <div className="rounded-[18px] border border-dashed border-status-red/30 bg-status-red-soft p-4 text-[0.84rem] text-status-red">{portServiceError}</div>
+        ) : null
+      ) : null}
+
+      {tab === 'coverage' && !isPort && hasPointGeometry ? (
         <ResourceCoverageTab resourceId={resourceId} />
       ) : null}
 
@@ -272,7 +410,7 @@ export function ResourcePanel({
   if (isMobile) {
     return (
       <BottomSheet onClose={onClose} onSnapChange={onSnapChange} snapCommand={snapCommand}>
-        <StreetViewHero marker={heroMarker} />
+        {!isPort ? <StreetViewHero marker={heroMarker} /> : null}
         {header}
         <div className="min-w-0 overflow-hidden px-4 py-3">{body}</div>
       </BottomSheet>
@@ -284,7 +422,7 @@ export function ResourcePanel({
       className={`${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
     >
       <OverlayScrollArea className="overflow-x-hidden">
-        <StreetViewHero marker={heroMarker} />
+        {!isPort ? <StreetViewHero marker={heroMarker} /> : null}
         {header}
         <div className="px-3 py-3">{body}</div>
       </OverlayScrollArea>

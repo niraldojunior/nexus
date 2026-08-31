@@ -27,6 +27,8 @@ import type {
   ResourceAuditEntry,
   ResourceStatus,
   ResourceStatusCatalogEntry,
+  ResourcePortDetail,
+  ResourcePortsView,
   UpdateLogicalResourceInput,
   UpdatePhysicalResourceInput,
   UpdateResourceLayerInput,
@@ -618,6 +620,30 @@ export class ResourceService {
     return detail;
   }
 
+  /** Projeção em lote da CTO: estados SID e ocupação derivada das conexões físicas das portas. */
+  public async getResourcePortsView(
+    ctoId: string,
+    context?: RequestContext,
+  ): Promise<ResourcePortsView> {
+    const view = await this.repository.getResourcePortsView(ctoId, scopeOf(context));
+    if (!view) {
+      throw new AppError('CTO not found', { code: 'RESOURCE_CTO_NOT_FOUND', statusCode: 404 });
+    }
+    return view;
+  }
+
+  /** Detalhe físico especializado de uma porta, incluindo os drops conectados. */
+  public async getResourcePortDetail(
+    portId: string,
+    context?: RequestContext,
+  ): Promise<ResourcePortDetail> {
+    const detail = await this.repository.getResourcePortDetail(portId, scopeOf(context));
+    if (!detail) {
+      throw new AppError('port not found', { code: 'RESOURCE_PORT_NOT_FOUND', statusCode: 404 });
+    }
+    return detail;
+  }
+
   /** Histórico de mutações do recurso (issue #171), alimentado pelo audit/outbox existente. */
   public async listPhysicalResourceAudit(
     id: string,
@@ -830,8 +856,11 @@ export class ResourceService {
     context?: RequestContext,
   ): Promise<ResourceRelationship> {
     assertName(input.relationshipType, 'relationshipType');
-    await this.getResourceOrThrow(resourceId, context);
-    await this.getResourceOrThrow(input.id, context);
+    const resource = await this.getResourceOrThrow(resourceId, context);
+    const relatedResource = await this.getResourceOrThrow(input.id, context);
+    if (input.relationshipType === 'connectedTo') {
+      await this.assertSplitterOutputDropConnection(resource, relatedResource, input, context);
+    }
     const relationship = await this.repository.upsertResourceRelationship(resourceId, input);
     const current = await this.getResourceOrThrow(resourceId, context);
     await this.emit(
@@ -842,6 +871,42 @@ export class ResourceService {
       context,
     );
     return relationship;
+  }
+
+  private async assertSplitterOutputDropConnection(
+    resource: Resource,
+    relatedResource: Resource,
+    input: ResourceRelationship,
+    context?: RequestContext,
+  ): Promise<void> {
+    const port = resource.resourceType === 'Port' ? resource : relatedResource.resourceType === 'Port' ? relatedResource : undefined;
+    const drop =
+      resource.resourceType === 'DropCable'
+        ? resource
+        : relatedResource.resourceType === 'DropCable'
+          ? relatedResource
+          : undefined;
+    if (!port || !drop || characteristicValue(port, 'role') !== 'FO.O' || !relationshipIsActive(input)) {
+      return;
+    }
+
+    const existing = await this.repository.listIncidentResourceRelationships(port.id);
+    for (const relationship of existing) {
+      if (
+        relationship.id === drop.id ||
+        relationship.relationshipType !== 'connectedTo' ||
+        !relationshipIsActive(relationship)
+      ) {
+        continue;
+      }
+      const connected = await this.getResource(relationship.id, context);
+      if (connected?.resourceType === 'DropCable') {
+        throw new AppError('splitter output port already has an active drop', {
+          code: 'RESOURCE_PORT_DROP_OCCUPIED',
+          statusCode: 409,
+        });
+      }
+    }
   }
 
   public async removeResourceRelationship(
@@ -1173,6 +1238,16 @@ const normalizeRelatedParties = async (
       return ref;
     }),
   );
+};
+
+const characteristicValue = (resource: Resource, name: string): string | undefined => {
+  const value = resource.characteristic.find((item) => item.name === name)?.value;
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+};
+
+const relationshipIsActive = (relationship: ResourceRelationship): boolean => {
+  const end = relationship.validFor?.endDateTime;
+  return !end || new Date(end).getTime() > Date.now();
 };
 
 const activationToStatus = (action: ResourceFunctionActivationInput['action']): ResourceStatus => {

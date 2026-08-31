@@ -16,6 +16,10 @@ import type {
   ResourceAuditEntry,
   ResourceStatusBehavior,
   ResourceStatusCatalogEntry,
+  ResourceDetailReference,
+  ResourcePortConnection,
+  ResourcePortDetail,
+  ResourcePortsView,
 } from './domain.js';
 import type {
   IResourceRepository,
@@ -43,6 +47,60 @@ const parseAuditState = (raw: string | null): Record<string, unknown> | null => 
     return null;
   }
 };
+
+const characteristicStringFromCharacteristics = (
+  characteristics: Array<{ name: string; value: unknown }>,
+  name: string,
+): string | undefined => {
+  const value = characteristics.find((item) => item.name === name)?.value;
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+};
+
+const characteristicNumberFromCharacteristics = (
+  characteristics: Array<{ name: string; value: unknown }>,
+  name: string,
+): number | undefined => {
+  const value = characteristicStringFromCharacteristics(characteristics, name);
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const characteristicStringFromJson = (raw: string | null, name: string): string | undefined => {
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? characteristicStringFromCharacteristics(parsed as Array<{ name: string; value: unknown }>, name)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const comparePortDetails = (a: ResourcePortDetail, b: ResourcePortDetail): number => {
+  if (a.role !== b.role) return a.role === 'FO.I' ? -1 : b.role === 'FO.I' ? 1 : 0;
+  return (a.index ?? 0) - (b.index ?? 0);
+};
+
+const relationshipFromRow = (row: {
+  resource_to_id: string;
+  relationship_type: string;
+  valid_for_start?: string | null;
+  valid_for_end?: string | null;
+}): ResourceRelationship => ({
+  id: row.resource_to_id,
+  relationshipType: row.relationship_type,
+  '@referredType': 'Resource',
+  ...(row.valid_for_start || row.valid_for_end
+    ? {
+        validFor: {
+          ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
+          ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
+        },
+      }
+    : {}),
+});
 
 const servingSiteIdOf = (resource: {
   characteristic?: Array<{ name: string; value: unknown }>;
@@ -913,6 +971,207 @@ export class PostgresResourceRepository implements IResourceRepository {
     };
   }
 
+  public async getResourcePortsView(
+    ctoId: string,
+    scope?: ResourceTenantScope,
+  ): Promise<ResourcePortsView | undefined> {
+    const tenantId = scope?.tenantId ?? 'default';
+    const cto = await this.getPhysicalResource(ctoId, { tenantId });
+    if (!cto || cto.resourceType !== 'CTO') return undefined;
+    const splitterRows = await this.db.all<{ id: string; name: string; resource_type: string; characteristics: string | null }>(
+      `SELECT s.id, s.name, ss.resource_type, s.characteristics
+         FROM tmf_resource_relationship c
+         JOIN tmf_physical_resource s ON s.id = c.resource_to_id
+         JOIN tmf_resource_specification ss ON ss.id = s.resource_specification_id
+        WHERE c.resource_from_id = ? AND c.relationship_type = 'containsAsChild'
+          AND s.tenant_id = ? AND ss.resource_type = 'Splitter'
+        ORDER BY s.name, s.id`,
+      [ctoId, tenantId],
+    );
+    const groups = await Promise.all(
+      splitterRows.map(async (splitter) => {
+        const ports = await this.listPortDetailsForSplitter(splitter.id, cto, tenantId);
+        const splitRatio = characteristicStringFromJson(splitter.characteristics, 'razao');
+        return {
+          splitter: {
+            id: splitter.id,
+            name: splitter.name,
+            '@referredType': 'PhysicalResource' as const,
+            resourceType: splitter.resource_type,
+            ...(splitRatio ? { splitRatio } : {}),
+          },
+          ports,
+        };
+      }),
+    );
+    return { '@type': 'ResourcePortsView', ctoId, groups };
+  }
+
+  public async getResourcePortDetail(
+    portId: string,
+    scope?: ResourceTenantScope,
+  ): Promise<ResourcePortDetail | undefined> {
+    const tenantId = scope?.tenantId ?? 'default';
+    const port = await this.getPhysicalResource(portId, { tenantId });
+    if (!port || port.resourceType !== 'Port') return undefined;
+    const parent = await this.db.get<{ id: string; name: string; resource_type: string; characteristics: string | null; cto_id: string | null; cto_name: string | null }>(
+      `SELECT s.id, s.name, ss.resource_type, s.characteristics, cto.id AS cto_id, cto.name AS cto_name
+         FROM tmf_resource_relationship p
+         JOIN tmf_physical_resource s ON s.id = p.resource_from_id
+         JOIN tmf_resource_specification ss ON ss.id = s.resource_specification_id
+         LEFT JOIN tmf_resource_relationship c ON c.resource_to_id = s.id AND c.relationship_type = 'containsAsChild'
+         LEFT JOIN tmf_physical_resource cto ON cto.id = c.resource_from_id AND cto.tenant_id = ?
+         LEFT JOIN tmf_resource_specification ctos ON ctos.id = cto.resource_specification_id
+        WHERE p.resource_to_id = ? AND p.relationship_type = 'containsAsChild'
+          AND s.tenant_id = ? AND ss.resource_type = 'Splitter'
+          AND (ctos.resource_type = 'CTO' OR cto.id IS NULL)
+        ORDER BY cto.name, s.name LIMIT 1`,
+      [tenantId, portId, tenantId],
+    );
+    return await this.buildPortDetail(port, parent, tenantId);
+  }
+
+  private async listPortDetailsForSplitter(
+    splitterId: string,
+    cto: PhysicalResource,
+    tenantId: string,
+  ): Promise<ResourcePortDetail[]> {
+    const ports = await this.db.all<PhysicalResourceRow>(
+      `SELECT ${PHYSICAL_RESOURCE_COLUMNS}
+         FROM ${PHYSICAL_RESOURCE_FROM}
+         JOIN tmf_resource_relationship rr ON rr.resource_to_id = r.id
+        WHERE rr.resource_from_id = ? AND rr.relationship_type = 'containsAsChild'
+          AND r.tenant_id = ? AND rs.resource_type = 'Port'
+        ORDER BY r.name, r.id`,
+      [splitterId, tenantId],
+    );
+    const splitter = await this.getPhysicalResource(splitterId, { tenantId });
+    if (!splitter) return [];
+    const details = await Promise.all(
+      ports.map(async (port) => await this.buildPortDetail(this.mapPhysicalResource(port, await this.listResourceRelationships(port.id)), {
+        id: splitter.id, name: splitter.name, resource_type: splitter.resourceType,
+        characteristics: JSON.stringify(splitter.characteristic), cto_id: cto.id, cto_name: cto.name,
+      }, tenantId)),
+    );
+    return details.sort(comparePortDetails);
+  }
+
+  private async buildPortDetail(
+    port: PhysicalResource,
+    parent: { id: string; name: string; resource_type: string; characteristics: string | null; cto_id: string | null; cto_name: string | null } | undefined,
+    tenantId: string,
+  ): Promise<ResourcePortDetail> {
+    const connectionRows = await this.db.all<{ id: string; name: string; resource_type: string; valid_for_start: string | null; valid_for_end: string | null }>(
+      `SELECT d.id, d.name, ds.resource_type, rr.valid_for_start, rr.valid_for_end
+         FROM tmf_resource_relationship rr
+         JOIN tmf_physical_resource d ON d.id = CASE WHEN rr.resource_from_id = ? THEN rr.resource_to_id ELSE rr.resource_from_id END
+         JOIN tmf_resource_specification ds ON ds.id = d.resource_specification_id
+        WHERE rr.relationship_type = 'connectedTo' AND (rr.resource_from_id = ? OR rr.resource_to_id = ?)
+          AND d.tenant_id = ? AND ds.resource_type = 'DropCable'
+        ORDER BY d.name, d.id`,
+      [port.id, port.id, port.id, tenantId],
+    );
+    const currentDrops = await Promise.all(connectionRows.map(async (drop) => {
+      const validFor = drop.valid_for_start || drop.valid_for_end
+        ? { ...(drop.valid_for_start ? { startDateTime: drop.valid_for_start } : {}), ...(drop.valid_for_end ? { endDateTime: drop.valid_for_end } : {}) }
+        : undefined;
+      const active = !drop.valid_for_end || new Date(drop.valid_for_end).getTime() > Date.now();
+      const ont = active ? await this.resolveDropOnt(drop.id, tenantId) : undefined;
+      return {
+        resource: {
+          id: drop.id,
+          name: drop.name,
+          '@referredType': 'PhysicalResource' as const,
+          resourceType: drop.resource_type,
+        },
+        active,
+        ...(validFor ? { validFor } : {}),
+        ...(ont ? { ont } : {}),
+      };
+    }));
+    const historicalDrops = await this.listHistoricalPortDrops(port.id, tenantId, new Set(currentDrops.map((drop) => drop.resource.id)));
+    const drops = [...currentDrops, ...historicalDrops];
+    const role = characteristicStringFromCharacteristics(port.characteristic, 'role');
+    const index = characteristicNumberFromCharacteristics(port.characteristic, 'index');
+    const derivedUsageState = drops.some((drop) => drop.active) ? 'active' as const : 'idle' as const;
+    const splitRatio = parent ? characteristicStringFromJson(parent.characteristics, 'razao') : undefined;
+    return {
+      '@type': 'ResourcePortDetail',
+      resource: { ...port, usageState: role === 'FO.O' ? derivedUsageState : port.usageState },
+      ...(role ? { role } : {}), ...(index !== undefined ? { index } : {}),
+      ...(parent ? { splitter: { id: parent.id, name: parent.name, '@referredType': 'PhysicalResource', resourceType: parent.resource_type } } : {}),
+      ...(parent?.cto_id && parent.cto_name ? { cto: { id: parent.cto_id, name: parent.cto_name, '@referredType': 'PhysicalResource', resourceType: 'CTO' } } : {}),
+      ...(splitRatio ? { splitRatio } : {}),
+      derivedUsageState,
+      drops,
+    };
+  }
+
+  /**
+   * ONT alimentada por um drop, via `connectedTo` no grafo físico — independente do Service.
+   * Cobre porta com drop ativo mesmo sem RFS/CFS ativos (churn), já que a fiação continua conectada.
+   */
+  private async resolveDropOnt(
+    dropId: string,
+    tenantId: string,
+  ): Promise<ResourceDetailReference | undefined> {
+    const ont = await this.db.get<{ id: string; name: string; resource_type: string }>(
+      `SELECT o.id, o.name, os.resource_type
+         FROM tmf_resource_relationship rr
+         JOIN tmf_physical_resource o ON o.id = CASE WHEN rr.resource_from_id = ? THEN rr.resource_to_id ELSE rr.resource_from_id END
+         JOIN tmf_resource_specification os ON os.id = o.resource_specification_id
+        WHERE rr.relationship_type = 'connectedTo' AND (rr.resource_from_id = ? OR rr.resource_to_id = ?)
+          AND o.tenant_id = ? AND os.resource_type = 'ONT'
+        LIMIT 1`,
+      [dropId, dropId, dropId, tenantId],
+    );
+    if (!ont) return undefined;
+    return { id: ont.id, name: ont.name, '@referredType': 'PhysicalResource', resourceType: ont.resource_type };
+  }
+
+  private async listHistoricalPortDrops(
+    portId: string,
+    tenantId: string,
+    currentDropIds: Set<string>,
+  ): Promise<ResourcePortConnection[]> {
+    const audit = await this.listResourceAudit(portId, { tenantId, limit: 500 });
+    const removedDropIds = new Set<string>();
+    for (const entry of audit) {
+      if (entry.action !== 'update') continue;
+      const payload = entry.after;
+      const relatedResourceId = payload?.relatedResourceId;
+      const relationshipType = payload?.relationshipType;
+      if (
+        typeof relatedResourceId === 'string' &&
+        relationshipType === 'connectedTo' &&
+        !currentDropIds.has(relatedResourceId)
+      ) {
+        removedDropIds.add(relatedResourceId);
+      }
+    }
+    if (removedDropIds.size === 0) return [];
+
+    const ids = [...removedDropIds];
+    const rows = await this.db.all<{ id: string; name: string; resource_type: string }>(
+      `SELECT d.id, d.name, ds.resource_type
+         FROM tmf_physical_resource d
+         JOIN tmf_resource_specification ds ON ds.id = d.resource_specification_id
+        WHERE d.tenant_id = ? AND ds.resource_type = 'DropCable'
+          AND d.id IN (${ids.map(() => '?').join(', ')})
+        ORDER BY d.name, d.id`,
+      [tenantId, ...ids],
+    );
+    return rows.map((drop) => ({
+      resource: {
+        id: drop.id,
+        name: drop.name,
+        '@referredType': 'PhysicalResource',
+        resourceType: drop.resource_type,
+      },
+      active: false,
+    }));
+  }
+
   private async resolveDetailPlace(
     id: string,
     referredType: string | null,
@@ -1194,19 +1453,24 @@ export class PostgresResourceRepository implements IResourceRepository {
       [resourceId],
     );
 
-    return rows.map((row) => ({
-      id: row.resource_to_id,
-      relationshipType: row.relationship_type,
-      '@referredType': 'Resource',
-      ...(row.valid_for_start || row.valid_for_end
-        ? {
-            validFor: {
-              ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
-              ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
-            },
-          }
-        : {}),
-    }));
+    return rows.map((row) => relationshipFromRow(row));
+  }
+
+  public async listIncidentResourceRelationships(resourceId: string): Promise<ResourceRelationship[]> {
+    const rows = await this.db.all<{
+      related_resource_id: string;
+      relationship_type: string;
+      valid_for_start?: string | null;
+      valid_for_end?: string | null;
+    }>(
+      `SELECT CASE WHEN resource_from_id = ? THEN resource_to_id ELSE resource_from_id END AS related_resource_id,
+              relationship_type, valid_for_start, valid_for_end
+         FROM tmf_resource_relationship
+        WHERE resource_from_id = ? OR resource_to_id = ?
+        ORDER BY relationship_type, related_resource_id`,
+      [resourceId, resourceId, resourceId],
+    );
+    return rows.map((row) => relationshipFromRow({ ...row, resource_to_id: row.related_resource_id }));
   }
 
   private async loadResourceRelationshipsByResourceIds(

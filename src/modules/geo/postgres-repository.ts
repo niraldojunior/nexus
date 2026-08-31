@@ -1539,12 +1539,17 @@ export class PostgresGeoRepository implements IGeoRepository {
   ): Promise<Map<string, GeographicSiteRelationship[]>> {
     if (siteIds.length === 0) return new Map();
 
+    // A listagem sem filtro pode trazer a base nacional inteira. No Oracle, materializar um bind
+    // por Site ultrapassa o limite prático de identificadores (`:1`…`:N`) mesmo depois de dividir
+    // o IN-list; JSON_TABLE mantém o conjunto como um único bind. Postgres preserva os binds por
+    // linha, via o dialeto portável.
+    const siteSeed = dialectFor(this.db.provider).inlineRows(siteIds, 'v', 'id');
     const rows = await this.db.all<GeographicSiteRelationshipRow>(
       `SELECT site_from_id, site_to_id, relationship_type, valid_for_start, valid_for_end
        FROM tmf_geographic_site_relationship
-       WHERE site_from_id IN (${siteIds.map(() => '?').join(', ')})
+       WHERE site_from_id IN (SELECT id FROM ${siteSeed.sql})
        ORDER BY site_from_id, relationship_type, site_to_id`,
-      siteIds,
+      siteSeed.binds,
     );
 
     const relationshipsBySiteId = new Map<string, GeographicSiteRelationship[]>();

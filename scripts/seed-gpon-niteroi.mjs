@@ -166,6 +166,11 @@ const tag = () => ({ name: 'seed', value: SEED_TAG, valueType: 'string' });
 
 // Índices de idempotência.
 const siteSpecByName = new Map();
+// Specs canônicas do bootstrap (Central Office, Andar, Sala técnica) são compartilhadas
+// com dados reais e não declaram `seed` — nem devem, para não poluir o catálogo. Só
+// specs criadas por este próprio script (linha abaixo) ganham `seed`; o site só recebe
+// a tag quando a spec reaproveitada realmente a define.
+const siteSpecCharsById = new Map();
 const siteByName = new Map();
 const resSpecByName = new Map();
 const resourceByName = new Map();
@@ -194,15 +199,27 @@ async function bootstrap() {
     api('GET', '/v1/geo/site-specifications'),
     api('GET', '/v1/geo/sites'),
     api('GET', '/v1/geo/addresses'),
-    api('GET', '/v1/resource/workspace?tab=PhysicalResource&limit=1&offset=0'),
-    api('GET', '/v1/service/workspace?tab=CustomerFacingService&limit=1&offset=0'),
+    // `name=ICARAI` restringe ao subconjunto deste seed: os 1,7M recursos do NEXUS_DEV_ não
+    // caberiam num bootstrap sem filtro, e sem ele o índice de idempotência ficaria vazio,
+    // fazendo re-execuções tentarem recriar recursos já existentes (ORA-00001 em serial_number).
+    api('GET', '/v1/resource/workspace?tab=PhysicalResource&limit=500&offset=0&name=ICARAI'),
+    // Mesmo racional do resourceWs acima: sem filtro por nome, `limit=1` devolveria só 1 CFS/RFS
+    // de todo o Oracle DEV, quebrando a idempotência assim que este seed criar mais de um.
+    api('GET', '/v1/service/workspace?tab=CustomerFacingService&limit=500&offset=0&name=ICARAI'),
   ]);
 
   for (const a of addresses ?? []) {
     if (a?.geographicLocationId) addressByLocationId.set(a.geographicLocationId, a.id);
   }
 
-  for (const spec of siteSpecs ?? []) if (spec?.name) siteSpecByName.set(spec.name, spec.id);
+  for (const spec of siteSpecs ?? []) {
+    if (!spec?.name) continue;
+    siteSpecByName.set(spec.name, spec.id);
+    siteSpecCharsById.set(
+      spec.id,
+      new Set((spec.specCharacteristic ?? []).map((c) => c.name.trim().toLowerCase())),
+    );
+  }
   // Sites terminados são ignorados: prender o seed a um homônimo morto ancora a
   // massa num site invisível no mapa (era a causa da inconsistência anterior).
   for (const site of sites ?? []) {
@@ -215,7 +232,7 @@ async function bootstrap() {
     resSpecByName.set(spec.name, spec.id);
   // O `place` entra no índice para que uma re-execução reaproveite a geometria já
   // criada em vez de gerar uma Location nova e deixar a antiga órfã.
-  for (const r of resourceWs.physicalResources ?? []) {
+  for (const r of resourceWs.items ?? []) {
     resourceByName.set(r.name, { id: r.id, '@type': r['@type'], place: r.place });
   }
   for (const spec of serviceWs.serviceSpecificationOptions ?? [])
@@ -229,8 +246,13 @@ async function bootstrap() {
 async function ensureSiteSpec(name, category) {
   const found = siteSpecByName.get(name);
   if (found) return found;
-  const spec = await api('POST', '/v1/geo/site-specifications', { name, category });
+  const spec = await api('POST', '/v1/geo/site-specifications', {
+    name,
+    category,
+    specCharacteristic: [{ name: 'seed', valueType: 'string' }],
+  });
   siteSpecByName.set(name, spec.id);
+  siteSpecCharsById.set(spec.id, new Set(['seed']));
   created.specs++;
   return spec.id;
 }
@@ -331,7 +353,8 @@ async function ensureSite({ name, specName, category, coord, address, parentSite
     return siteByName.get(name);
   }
   const siteSpecificationId = await ensureSiteSpec(specName, category);
-  const payload = { name, siteSpecificationId, status: 'active', characteristic: [tag()] };
+  const characteristic = siteSpecCharsById.get(siteSpecificationId)?.has('seed') ? [tag()] : [];
+  const payload = { name, siteSpecificationId, status: 'active', characteristic };
   if (coord) {
     const locationId = await createPoint(coord, name);
     sitePlaceByName.set(name, locationId);
@@ -514,15 +537,18 @@ async function main() {
     address: CO_ADDRESS,
   });
   servingSiteId = estacaoId;
+  // `Floor`/`Room` são as specs canônicas do bootstrap com containment já configurado
+  // para `Central Office` — não "Andar"/"Sala técnica" (nomes órfãos, sem allowedParent/
+  // allowedChild, que só geram GEO_SPEC_CONTAINMENT_NOT_ALLOWED).
   const andarId = await ensureSite({
     name: 'Estação Icaraí — 3º Andar',
-    specName: 'Andar',
+    specName: 'Floor',
     category: 'SubSite',
     parentSiteId: estacaoId,
   });
   const salaId = await ensureSite({
     name: 'Estação Icaraí — Sala GPON',
-    specName: 'Sala técnica',
+    specName: 'Room',
     category: 'SubSite',
     parentSiteId: andarId,
   });
@@ -572,7 +598,7 @@ async function main() {
   // 3. Outside plant: poste + splitter + feeder.
   const poleSpec = await ensureResourceSpec(
     'Poste de concreto 9m',
-    'Infrastructure.Passive',
+    'Infrastructure.CivilWorks',
     'Pole',
   );
   const splitterSpec = await ensureResourceSpec(

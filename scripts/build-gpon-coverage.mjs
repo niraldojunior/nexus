@@ -393,13 +393,20 @@ async function main() {
     }
     const scopeWhere = filters.length ? ` AND ${filters.join(' AND ')}` : '';
 
+    // `resource_type` não é coluna de tmf_physical_resource — o schema canônico (schema.ts)
+    // nunca a declarou ali; resourceType é sempre derivado via JOIN com a especificação, igual
+    // ao resto da aplicação (ex.: resource/service.ts). Uma coluna homônima chegou a existir só
+    // no Oracle NEXUS_DEV_ como drift de schema (nunca migrada de fato) e foi removida — ler por
+    // ela aqui já estava incorreto mesmo antes disso, só não dava erro OBS-01400/coluna ausente
+    // no Postgres por a coluna nunca ter existido lá.
     const { rows } = await source.query(
       `SELECT r.id, r.name, r.status, l.geometry,
               a.locality, a.city, a.state_or_province, a.street_nr
          FROM tmf_physical_resource r
+         JOIN tmf_resource_specification s ON s.id = r.resource_specification_id
          JOIN tmf_geographic_location l ON l.id = r.place_id
          LEFT JOIN tmf_geographic_address a ON a.geographic_location_id = r.place_id
-        WHERE r.resource_type = 'CTO'
+        WHERE s.resource_type = 'CTO'
           AND r.status <> 'terminated'
           AND l.geometry_type = 'Point'
           AND UPPER(r.name) LIKE 'CDO%'${scopeWhere}`,

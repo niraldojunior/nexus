@@ -482,6 +482,8 @@ export type ResourcePortDetail = {
   cto?: ResourceDetailReference;
   splitRatio?: string;
   derivedUsageState: NonNullable<PhysicalResource['usageState']>;
+  /** RFS ativo que referencia a porta; enriquecido pelo agregado de leitura do painel. */
+  hasActiveService: boolean;
   drops: ResourcePortConnection[];
 };
 

@@ -34,6 +34,7 @@ const detail: ResourcePortDetail = {
   },
   splitRatio: '1:8',
   derivedUsageState: 'active',
+  hasActiveService: true,
   drops: [
     {
       resource: {
@@ -57,5 +58,12 @@ describe('PortOverviewTab', () => {
     expect(screen.getByText('1:8')).toBeInTheDocument();
     expect(screen.getByText('DROP-01')).toBeInTheDocument();
     expect(screen.getByText('Desbloqueado · Habilitado · Em Uso')).toBeInTheDocument();
+  });
+
+  it('identifica no detalhe o drop instalado sem serviço ativo', () => {
+    render(<PortOverviewTab detail={{ ...detail, hasActiveService: false }} onOpenResource={vi.fn()} />);
+
+    expect(screen.getByText('Drop desativado')).toBeInTheDocument();
+    expect(screen.getByTitle('Estado de uso: Drop desativado').className).toContain('ring-status-green');
   });
 });

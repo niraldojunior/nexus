@@ -252,6 +252,8 @@ export type ResourcePortDetail = {
   splitRatio?: string;
   /** Estado de uso calculado das conexões físicas ativas — nunca aceito como contador manual. */
   derivedUsageState: UsageState;
+  /** Há RFS ativo que referencia esta porta como `supportingResource`. Projeção de leitura C3. */
+  hasActiveService: boolean;
   drops: ResourcePortConnection[];
 };
 

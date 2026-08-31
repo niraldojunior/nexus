@@ -740,7 +740,7 @@ const routeRequest = async ({
     url.pathname.startsWith('/tmf-api/resourceInventoryManagement/v4/resource') ||
     url.pathname.startsWith('/tmf-api/resourceFunctionActivation/v4/resourceFunction')
   ) {
-    await routeResourceRequest({ request, response, config, resourceService, url });
+    await routeResourceRequest({ request, response, config, resourceService, serviceService, url });
     return;
   }
 
@@ -2593,12 +2593,14 @@ const routeResourceRequest = async ({
   response,
   config,
   resourceService,
+  serviceService,
   url,
 }: {
   request: IncomingMessage;
   response: ServerResponse;
   config: AppConfig;
   resourceService: ResourceService;
+  serviceService: ServiceService;
   url: URL;
 }): Promise<void> => {
   const context = await buildRequestContext(request, config);
@@ -2632,20 +2634,38 @@ const routeResourceRequest = async ({
   const resourcePortsMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)\/ports$/);
   if (request.method === 'GET' && resourcePortsMatch?.[1]) {
     requireRoles(context, INVENTORY_READ_ROLES);
-    return sendJson(
-      response,
-      200,
-      resourceService.getResourcePortsView(decodeURIComponent(resourcePortsMatch[1]), context),
+    const view = await resourceService.getResourcePortsView(
+      decodeURIComponent(resourcePortsMatch[1]),
+      context,
     );
+    const portIds = view.groups.flatMap((group) => group.ports.map((port) => port.resource.id));
+    const activeServicePortIds = await serviceService.listActiveSupportingResourceIds(portIds, context);
+    return sendJson(response, 200, {
+      ...view,
+      groups: view.groups.map((group) => ({
+        ...group,
+        ports: group.ports.map((port) => ({
+          ...port,
+          hasActiveService: activeServicePortIds.has(port.resource.id),
+        })),
+      })),
+    });
   }
   const resourcePortDetailMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)\/port-detail$/);
   if (request.method === 'GET' && resourcePortDetailMatch?.[1]) {
     requireRoles(context, INVENTORY_READ_ROLES);
-    return sendJson(
-      response,
-      200,
-      resourceService.getResourcePortDetail(decodeURIComponent(resourcePortDetailMatch[1]), context),
+    const detail = await resourceService.getResourcePortDetail(
+      decodeURIComponent(resourcePortDetailMatch[1]),
+      context,
     );
+    const activeServicePortIds = await serviceService.listActiveSupportingResourceIds(
+      [detail.resource.id],
+      context,
+    );
+    return sendJson(response, 200, {
+      ...detail,
+      hasActiveService: activeServicePortIds.has(detail.resource.id),
+    });
   }
   const resourceDetailMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)\/detail$/);
   if (request.method === 'GET' && resourceDetailMatch?.[1]) {

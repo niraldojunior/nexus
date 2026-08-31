@@ -512,6 +512,44 @@ export class PostgresServiceRepository implements IServiceRepository {
     );
   }
 
+  public async listActiveSupportingResourceIds(
+    resourceIds: string[],
+    scope?: ServiceTenantScope,
+  ): Promise<Set<string>> {
+    const requestedIds = new Set(resourceIds);
+    if (requestedIds.size === 0) return new Set();
+
+    // `supporting_resources` preserva o array TMF completo. A coluna legada indexada cobre o
+    // primeiro recurso (normalmente a ONT); o LIKE reduz o conjunto antes da confirmação JSON,
+    // inclusive quando a porta aparece depois dela — como no seed de Icaraí.
+    const ids = [...requestedIds];
+    const conditions = [
+      "state = 'active'",
+      `(supporting_resource_id IN (${ids.map(() => '?').join(', ')}) OR ${ids.map(() => 'supporting_resources LIKE ?').join(' OR ')})`,
+    ];
+    const params: string[] = [
+      ...ids,
+      ...ids.map((id) => `%"id":"${id}"%`),
+    ];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
+    const rows = await this.db.all<{ supporting_resources: string | null; supporting_resource_id: string | null }>(
+      `SELECT supporting_resources, supporting_resource_id
+         FROM tmf_resource_facing_service
+        WHERE ${conditions.join(' AND ')}`,
+      params,
+    );
+    const activeResourceIds = new Set<string>();
+    for (const row of rows) {
+      for (const reference of parseServiceRefs(row.supporting_resources, row.supporting_resource_id)) {
+        if (requestedIds.has(reference.id)) activeResourceIds.add(reference.id);
+      }
+    }
+    return activeResourceIds;
+  }
+
   public async listServices(query?: ServiceQuery): Promise<Service[]> {
     if (query?.type === 'CustomerFacingService') {
       return await this.listCustomerFacingServicesDirect(query);

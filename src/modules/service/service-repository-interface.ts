@@ -54,6 +54,8 @@ export interface IServiceRepository {
   ): Awaitable<ResourceFacingService | undefined>;
   listResourceFacingServices(query?: ServiceQuery): Awaitable<ResourceFacingService[]>;
   countResourceFacingServices(query?: ServiceQuery): Awaitable<number>;
+  /** IDs de recursos referenciados por RFS ativos, limitado ao tenant e ao lote solicitado. */
+  listActiveSupportingResourceIds(resourceIds: string[], scope?: ServiceTenantScope): Awaitable<Set<string>>;
 
   listServices(query?: ServiceQuery): Awaitable<Service[]>;
   countServices(query?: ServiceQuery): Awaitable<number>;

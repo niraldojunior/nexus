@@ -4,6 +4,7 @@ import type { GeoTreeNode } from '../../services/geoTreeApi';
 import { resourceIconFor } from '../../utils/resourceIcon';
 import { ResourceIcon } from '../../components/ResourceIcon';
 import { ResourceStateLights } from './ResourceStateLights';
+import { portDropState } from '../../utils/portDropState';
 
 export type ResourcePortsTabProps = {
   ctoNode: GeoTreeNode;
@@ -54,6 +55,7 @@ export function ResourcePortsTab({ ctoNode, onOpenPort }: ResourcePortsTabProps)
           {group.ports.length ? (
             <div className="grid gap-2">
               {group.ports.map((port) => {
+                const dropState = portDropState(port);
                 const portNode: GeoTreeNode = {
                   id: `resource:${port.resource.id}`,
                   refId: port.resource.id,
@@ -81,18 +83,14 @@ export function ResourcePortsTab({ ctoNode, onOpenPort }: ResourcePortsTabProps)
                         {port.role === 'FO.O' && port.index !== undefined ? `FO.O.${port.index}` : port.role ?? port.resource.name}
                       </span>
                       <span className="mt-0.5 block text-[0.75rem] leading-snug text-app-muted">
-                        {port.drops.some((drop) => drop.active) ? 'Drop conectado' : port.drops.length ? 'Conexão encerrada' : resourceIconFor({ resourceType: port.resource.resourceType ?? '', status: port.resource.status, name: port.resource.name }).label}
+                        {dropState.label ?? resourceIconFor({ resourceType: port.resource.resourceType ?? '', status: port.resource.status, name: port.resource.name }).label}
                       </span>
                     </span>
                     <ResourceStateLights
                       administrativeState={port.resource.administrativeState}
                       operationalState={port.resource.operationalState}
                       usageState={port.resource.usageState}
-                      dormant={
-                        port.resource.usageState === 'idle' &&
-                        port.drops.length > 0 &&
-                        !port.drops.some((drop) => drop.active)
-                      }
+                      dropDisabled={dropState.hasDisabledDrop}
                     />
                   </button>
                 );

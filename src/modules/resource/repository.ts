@@ -333,6 +333,7 @@ export class ResourceRepository implements IResourceRepository {
         : {}),
       ...(splitRatio ? { splitRatio } : {}),
       derivedUsageState: drops.some((drop) => drop.active) ? 'active' : 'idle',
+      hasActiveService: false,
       drops,
     };
   }

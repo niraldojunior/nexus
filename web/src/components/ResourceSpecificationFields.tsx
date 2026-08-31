@@ -1,15 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, FileText } from 'lucide-react';
 import type { Party } from '../services/partyApi';
-import type { ResourceCategory, ResourceType } from '../services/resourceApi';
+import type { ResourceCategory, ResourceLayer, ResourceType } from '../services/resourceApi';
 import { resourceFieldLabel } from '../utils/resourceFieldLabels';
-import {
-  RESOURCE_SPEC_LIFECYCLE_STATUS_OPTIONS,
-  RESOURCE_SPEC_NETWORK_TYPE_OPTIONS,
-} from '../utils/resourceSpecificationCharacteristics';
+import { RESOURCE_SPEC_LIFECYCLE_STATUS_OPTIONS } from '../utils/resourceSpecificationCharacteristics';
 import {
   buildTypeOptions,
-  isCivilInfrastructureCategory,
   type ResourceSpecFormState,
 } from '../utils/resourceSpecificationForm';
 import Field from './Field';
@@ -24,6 +20,7 @@ export default function ResourceSpecificationFields({
   onChange,
   resourceTypes,
   manufacturerOptions,
+  resourceLayers,
   categoryOptions,
   selectionValid,
   lookupLoading = false,
@@ -32,6 +29,7 @@ export default function ResourceSpecificationFields({
   onChange: (next: ResourceSpecFormState) => void;
   resourceTypes: ResourceType[];
   manufacturerOptions: Party[];
+  resourceLayers: ResourceLayer[];
   /** Quando presente, renderiza um select de Categoria (Configurações não tem categoria de página). */
   categoryOptions?: ResourceCategory[];
   selectionValid: boolean;
@@ -63,24 +61,23 @@ export default function ResourceSpecificationFields({
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      {!isCivilInfrastructureCategory(formState.category) ? (
-        <div className="md:col-span-2 rounded-[18px] border border-app-accent-border bg-app-accent-soft p-4">
-          <Field label={resourceFieldLabel('networkType')}>
-            <select
-              value={formState.networkType}
-              onChange={(event) => onChange({ ...formState, networkType: event.target.value })}
-              className="geo-input"
-            >
-              <option value="">Selecione</option>
-              {RESOURCE_SPEC_NETWORK_TYPE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-      ) : null}
+      <div className="md:col-span-2 rounded-[18px] border border-app-accent-border bg-app-accent-soft p-4">
+        <Field label="Camada de recurso">
+          <select
+            value={formState.resourceLayerId}
+            onChange={(event) => onChange({ ...formState, resourceLayerId: event.target.value })}
+            className="geo-input"
+          >
+            <option value="">Sem camada</option>
+            {resourceLayers.map((layer) => (
+              <option key={layer.id} value={layer.id} disabled={layer.status !== 'active'}>
+                {layer.name}
+                {layer.status !== 'active' ? ' (inativa)' : ''}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
       <div className="md:col-span-2 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
         Identificação
       </div>

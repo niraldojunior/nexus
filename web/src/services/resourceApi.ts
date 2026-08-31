@@ -33,6 +33,23 @@ export type ResourceType = {
   status: 'active' | 'inactive';
 };
 
+export type ResourceLayer = {
+  '@type': 'ResourceLayer';
+  id: string;
+  href: string;
+  code: string;
+  name: string;
+  description?: string;
+  status: 'active' | 'inactive';
+};
+
+export type ResourceLayerPayload = {
+  code?: string;
+  name?: string;
+  description?: string;
+  status?: ResourceLayer['status'];
+};
+
 export type TimePeriod = {
   startDateTime?: string;
   endDateTime?: string;
@@ -52,6 +69,7 @@ export type ResourceSpecification = {
   name: string;
   category: string;
   resourceType: string;
+  resourceLayerId?: string;
   description?: string;
   validFor?: TimePeriod;
   resourceSpecificationCharacteristic: ResourceCharacteristic[];
@@ -72,9 +90,9 @@ export type ResourceBase = {
   resourceSpecification?: ResourceReference;
   resourceType?: string;
   status?: 'active' | 'inactive' | 'suspended' | 'terminated';
-  administrativeState?: 'unlocked' | 'locked';
+  administrativeState?: 'unlocked' | 'locked' | 'shuttingDown';
   operationalState?: 'enabled' | 'disabled';
-  usageState?: 'idle' | 'busy' | 'unknown';
+  usageState?: 'idle' | 'active' | 'busy' | 'unknown';
   place?: ResourceReference;
   validFor?: TimePeriod;
   characteristic?: Array<{ name: string; value: unknown; valueType?: string; group?: string }>;
@@ -82,8 +100,6 @@ export type ResourceBase = {
 
 export type PhysicalResource = ResourceBase & {
   '@type'?: 'PhysicalResource';
-  manufacturer?: string;
-  model?: string;
   serialNumber?: string;
   partNumber?: string;
 };
@@ -114,6 +130,7 @@ export type ResourceSpecificationPayload = {
   name?: string;
   category?: string;
   resourceType?: string;
+  resourceLayerId?: string;
   description?: string;
   validFor?: TimePeriod;
   resourceSpecificationCharacteristic?: ResourceCharacteristic[];
@@ -127,8 +144,6 @@ export type PhysicalResourcePayload = {
   placeId?: string;
   placeType?: string;
   status?: PhysicalResource['status'];
-  manufacturer?: string;
-  model?: string;
   serialNumber?: string;
   partNumber?: string;
   validFor?: TimePeriod;
@@ -210,6 +225,35 @@ export async function listResourceCategories(): Promise<ResourceCategory[]> {
 
 export async function listResourceTypes(): Promise<ResourceType[]> {
   return await requestJson<ResourceType[]>('/tmf-api/resourceCatalogManagement/v4/resourceType');
+}
+
+export async function listResourceLayers(): Promise<ResourceLayer[]> {
+  return await requestJson<ResourceLayer[]>('/v1/resource-layers');
+}
+
+export async function createResourceLayer(
+  payload: Required<Pick<ResourceLayerPayload, 'code' | 'name'>> & ResourceLayerPayload,
+): Promise<ResourceLayer> {
+  return await requestJson<ResourceLayer>('/v1/resource-layers', {
+    method: 'POST',
+    body: cleanObject(payload),
+  });
+}
+
+export async function updateResourceLayer(
+  id: string,
+  payload: ResourceLayerPayload,
+): Promise<ResourceLayer> {
+  return await requestJson<ResourceLayer>(`/v1/resource-layers/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: cleanObject(payload),
+  });
+}
+
+export async function deleteResourceLayer(id: string): Promise<ResourceLayer> {
+  return await requestJson<ResourceLayer>(`/v1/resource-layers/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
 }
 
 export async function loadResourceWorkspaceSnapshot({
@@ -354,6 +398,86 @@ export async function updateResource(
   );
   if (payload['@type'] === 'PhysicalResource') invalidateMapTiles();
   return resource;
+}
+
+export type ResourceStatusCatalogEntry = {
+  '@type': 'ResourceStatusCatalogEntry';
+  code: string;
+  name: string;
+  resourceType?: string;
+  sortOrder: number;
+  active: boolean;
+  behavior: 'active' | 'blocked' | 'planned' | 'inactive' | 'terminated';
+};
+
+export type ResourceAuditEntry = {
+  '@type': 'ResourceAuditEntry';
+  id: string;
+  tenantId: string;
+  actorSub: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  eventTime: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  traceId: string;
+  sourceIp?: string;
+};
+
+export type ResourceDetailReference = {
+  id: string;
+  name?: string;
+  '@referredType': string;
+  resourceType?: string;
+};
+
+export type PhysicalResourceDetail = {
+  '@type': 'PhysicalResourceDetail';
+  resource: PhysicalResource & {
+    statusCode?: string;
+    label?: string;
+    assetReference?: string;
+    projectId?: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+  specification: ResourceSpecification & {
+    resourceTypeName: string;
+    manufacturer?: ResourceDetailReference;
+    model?: string;
+    resourceLayer?: ResourceDetailReference & { code: string };
+  };
+  statusCatalogEntry?: ResourceStatusCatalogEntry;
+  parent?: ResourceDetailReference & { relationshipType: string };
+  place?: ResourceDetailReference & {
+    streetType?: string;
+    streetName?: string;
+    streetNr?: string;
+    locality?: string;
+    city?: string;
+    stateOrProvince?: string;
+    postcode?: string;
+  };
+  location?: ResourceDetailReference;
+  servingSite?: ResourceDetailReference;
+  project?: ResourceDetailReference;
+  childCount: number;
+};
+
+export async function fetchPhysicalResourceDetail(id: string): Promise<PhysicalResourceDetail> {
+  return await requestJson<PhysicalResourceDetail>(`/v1/resources/${encodeURIComponent(id)}/detail`);
+}
+
+export async function fetchPhysicalResourceAudit(id: string): Promise<ResourceAuditEntry[]> {
+  return await requestJson<ResourceAuditEntry[]>(`/v1/resources/${encodeURIComponent(id)}/audit`);
+}
+
+export async function listResourceStatusCatalog(resourceType?: string): Promise<ResourceStatusCatalogEntry[]> {
+  const searchParams = new URLSearchParams();
+  if (resourceType) searchParams.set('resourceType', resourceType);
+  const query = searchParams.toString();
+  return await requestJson<ResourceStatusCatalogEntry[]>(`/v1/resource-statuses${query ? `?${query}` : ''}`);
 }
 
 export async function deleteResource(id: string): Promise<ResourceEntity> {

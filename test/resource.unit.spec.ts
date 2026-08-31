@@ -3,9 +3,76 @@ import { afterEach, test, vi } from 'vitest';
 import { AppError } from '../src/shared/errors/app-error.js';
 import { ResourceRepository } from '../src/modules/resource/repository.js';
 import { ResourceService } from '../src/modules/resource/service.js';
+import {
+  foldStatusText,
+  resolveStatusCode,
+} from '../src/modules/resource/status-catalog.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+test('resource status catalog maps canonical and corrupted Netwin substatuses', () => {
+  assert.equal(foldStatusText('  ÁREA de RISCO  '), 'area de risco');
+  assert.equal(resolveStatusCode('OBRA DESCARTADA - ÁREA DE RISCO'), 'blocked_risk_area');
+  assert.equal(resolveStatusCode('INSTALAÇÃO IMPEDIDA - ÁREA DE RISCO'), 'blocked_risk_area');
+  assert.equal(resolveStatusCode('AS-BUILT CONCLUÍDO'), 'as_built_completed');
+  assert.equal(
+    resolveStatusCode('INSTALA¿¿ÃO IMPEDIDA - ACESSO OBSTRUÍDO OU INVIÁVEL'),
+    'install_blocked_access_obstructed',
+  );
+  assert.equal(resolveStatusCode('estado futuro sem catálogo'), undefined);
+});
+
+test('ResourceRepository returns status catalog and resource detail aggregate', async () => {
+  const repository = new ResourceRepository();
+  const spec = repository.upsertResourceSpecification({
+    '@type': 'ResourceSpecification',
+    id: 'spec-cto-detail',
+    href: '/resource-specification/spec-cto-detail',
+    name: 'CDOE Corning',
+    category: 'Infrastructure.Passive',
+    resourceType: 'CTO',
+    resourceLayerId: 'resource-layer-gpon-network',
+    resourceSpecificationCharacteristic: [{ name: 'model', value: 'CDOE 8-48FS', valueType: 'string' }],
+    relatedParty: [
+      {
+        id: 'party-corning',
+        '@referredType': 'Organization',
+        role: 'manufacturer',
+        name: 'CORNING',
+      },
+    ],
+  });
+  repository.upsertPhysicalResource({
+    '@type': 'PhysicalResource',
+    id: 'cto-detail',
+    href: '/resource/cto-detail',
+    name: 'RJ-ITPU-CDOE-6746',
+    resourceSpecificationId: spec.id,
+    resourceSpecification: { id: spec.id, '@referredType': 'ResourceSpecification' },
+    resourceType: 'CTO',
+    status: 'suspended',
+    statusCode: 'blocked_risk_area',
+    administrativeState: 'locked',
+    operationalState: 'enabled',
+    usageState: 'active',
+    label: 'CDOE-6746',
+    assetReference: '324607',
+    relatedParty: [],
+    resourceRelationship: [],
+    characteristic: [],
+  });
+
+  const detail = repository.getPhysicalResourceDetail('cto-detail');
+  assert.ok(detail);
+  assert.equal(detail.specification.manufacturer?.name, 'CORNING');
+  assert.equal(detail.specification.model, 'CDOE 8-48FS');
+  assert.equal(detail.specification.resourceLayer?.code, 'gpon_network');
+  assert.equal(detail.specification.resourceTypeName, 'Caixa de Terminação Óptica');
+  assert.equal(detail.statusCatalogEntry?.name, 'Bloqueado por área de risco');
+  assert.equal(detail.resource.label, 'CDOE-6746');
+  assert.equal(repository.listResourceStatusCatalog({ resourceType: 'CTO' }).length > 2, true);
 });
 
 test('ResourceRepository clones stored entities and filters across resource kinds', async () => {
@@ -198,8 +265,6 @@ test('ResourceService creates, mutates and terminates inventory resources', asyn
     placeId: place.id,
     placeType: 'GeographicSite',
     relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'owner' }],
-    manufacturer: 'Huawei',
-    model: 'MA5800',
     serialNumber: 'SN-OLT-001',
     characteristic: [{ name: 'slot', value: '1', valueType: 'integer' }],
   });

@@ -8,15 +8,47 @@ import type {
   ResourceQuery,
   ResourceRelationship,
   ResourceType,
+  ResourceLayer,
   ResourceSpecification,
   ResourceSpecificationQuery,
+  PhysicalResourceDetail,
+  ResourceAuditEntry,
+  ResourceStatusCatalogEntry,
 } from './domain.js';
 import type { IResourceRepository } from './resource-repository-interface.js';
 import { RESOURCE_CATEGORIES, RESOURCE_TYPES } from './catalog.js';
+import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
+import { buildHref } from '../../shared/tmf/index.js';
 
 export class ResourceRepository implements IResourceRepository {
   private readonly resourceCategories = new Map<string, ResourceCategory>();
   private readonly resourceTypes = new Map<string, ResourceType>();
+  private readonly resourceLayers = new Map<string, ResourceLayer>([
+    [
+      'resource-layer-infrastructure',
+      {
+        '@type': 'ResourceLayer',
+        id: 'resource-layer-infrastructure',
+        href: buildHref('resourceLayer', 'resource-layer-infrastructure'),
+        code: 'infrastructure',
+        name: 'Infraestrutura',
+        status: 'active',
+        tenantId: 'default',
+      },
+    ],
+    [
+      'resource-layer-gpon-network',
+      {
+        '@type': 'ResourceLayer',
+        id: 'resource-layer-gpon-network',
+        href: buildHref('resourceLayer', 'resource-layer-gpon-network'),
+        code: 'gpon_network',
+        name: 'Rede GPON',
+        status: 'active',
+        tenantId: 'default',
+      },
+    ],
+  ]);
   private readonly resourceSpecifications = new Map<string, ResourceSpecification>();
   private readonly resourceFunctionSpecifications = new Map<
     string,
@@ -96,6 +128,94 @@ export class ResourceRepository implements IResourceRepository {
 
   public listResourceTypes(): ResourceType[] {
     return [...this.resourceTypes.values()].map(cloneResourceType);
+  }
+
+  public upsertResourceLayer(layer: ResourceLayer): ResourceLayer {
+    const stored = { ...layer };
+    this.resourceLayers.set(stored.id, stored);
+    return { ...stored };
+  }
+
+  public getResourceLayer(id: string): ResourceLayer | undefined {
+    const layer = this.resourceLayers.get(id);
+    return layer ? { ...layer } : undefined;
+  }
+
+  public listResourceLayers(): ResourceLayer[] {
+    return [...this.resourceLayers.values()].map((layer) => ({ ...layer }));
+  }
+
+  public listResourceStatusCatalog(
+    query: { resourceType?: string; tenantId?: string } = {},
+  ): ResourceStatusCatalogEntry[] {
+    return RESOURCE_STATUS_DEFAULTS.filter(
+      (entry) => !query.resourceType || !entry.resourceType || entry.resourceType === query.resourceType,
+    ).map((entry) => ({ '@type': 'ResourceStatusCatalogEntry' as const, ...entry }));
+  }
+
+  public getResourceStatusCatalogEntry(code: string): ResourceStatusCatalogEntry | undefined {
+    return this.listResourceStatusCatalog().find((entry) => entry.code === code);
+  }
+
+  // O repositório em memória não tem audit log — o histórico só existe na persistência real.
+  public listResourceAudit(): ResourceAuditEntry[] {
+    return [];
+  }
+
+  public getPhysicalResourceDetail(id: string): PhysicalResourceDetail | undefined {
+    const resource = this.getPhysicalResource(id);
+    if (!resource) return undefined;
+    const specification = this.getResourceSpecification(resource.resourceSpecificationId);
+    if (!specification) return undefined;
+    const resourceType = this.getResourceType(specification.resourceType);
+    const statusCatalogEntry = resource.statusCode
+      ? this.getResourceStatusCatalogEntry(resource.statusCode)
+      : undefined;
+    const characteristicValue = (name: string): string | undefined => {
+      const value = specification.resourceSpecificationCharacteristic.find(
+        (characteristic) => characteristic.name === name,
+      )?.value;
+      return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+    };
+    const manufacturer = specification.relatedParty.find((party) => party.role === 'manufacturer');
+    const model = characteristicValue('model');
+    const resourceLayer = specification.resourceLayerId
+      ? this.getResourceLayer(specification.resourceLayerId)
+      : undefined;
+    return {
+      '@type': 'PhysicalResourceDetail',
+      // O repositório em memória não persiste timestamps; os testes unitários recebem um instante
+      // coerente sem criar um segundo modelo só para a implementação de teste.
+      resource: { ...resource, createdAt: '', updatedAt: '' },
+      specification: {
+        ...specification,
+        resourceTypeName: resourceType?.name ?? specification.resourceType,
+        ...(manufacturer
+          ? {
+              manufacturer: {
+                id: manufacturer.id,
+                ...(manufacturer.name ? { name: manufacturer.name } : {}),
+                '@referredType': manufacturer['@referredType'],
+              },
+            }
+          : {}),
+        ...(model ? { model } : {}),
+        ...(resourceLayer
+          ? {
+              resourceLayer: {
+                id: resourceLayer.id,
+                code: resourceLayer.code,
+                name: resourceLayer.name,
+                '@referredType': 'ResourceLayer',
+              },
+            }
+          : {}),
+      },
+      ...(statusCatalogEntry ? { statusCatalogEntry } : {}),
+      childCount: (this.relationships.get(id) ?? []).filter(
+        (item) => item.relationshipType === 'containsAsChild',
+      ).length,
+    };
   }
 
   public upsertPhysicalResource(resource: PhysicalResource): PhysicalResource {

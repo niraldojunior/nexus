@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type {
   ResourceCategory,
+  ResourceLayer,
   ResourceSpecification,
   ResourceType,
 } from '../services/resourceApi';
@@ -66,6 +67,25 @@ const resourceTypes: ResourceType[] = [
   },
 ];
 
+const resourceLayers: ResourceLayer[] = [
+  {
+    '@type': 'ResourceLayer',
+    id: 'resource-layer-gpon-network',
+    href: '/v1/resource-layers/resource-layer-gpon-network',
+    code: 'gpon_network',
+    name: 'Rede GPON',
+    status: 'active',
+  },
+  {
+    '@type': 'ResourceLayer',
+    id: 'resource-layer-infrastructure',
+    href: '/v1/resource-layers/resource-layer-infrastructure',
+    code: 'infrastructure',
+    name: 'Infraestrutura',
+    status: 'active',
+  },
+];
+
 const existingSpecs: ResourceSpecification[] = [
   {
     '@type': 'ResourceSpecification',
@@ -96,6 +116,7 @@ describe('parseResourceSpecificationImport — header validation', () => {
     const result = parseResourceSpecificationImport(csvRows, {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs: [],
     });
     expect(result.headerErrors.length).toBeGreaterThan(0);
@@ -106,6 +127,7 @@ describe('parseResourceSpecificationImport — header validation', () => {
     const result = parseResourceSpecificationImport([], {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs: [],
     });
     expect(result.headerErrors).toEqual(['Arquivo vazio.']);
@@ -118,6 +140,7 @@ describe('parseResourceSpecificationImport — valid rows', () => {
     const result = parseResourceSpecificationImport(csvFrom(headers, [row]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows).toHaveLength(1);
@@ -132,6 +155,7 @@ describe('parseResourceSpecificationImport — valid rows', () => {
     const result = parseResourceSpecificationImport(csvFrom(headers, [row]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows[0].errors).toEqual([]);
@@ -149,6 +173,7 @@ describe('parseResourceSpecificationImport — valid rows', () => {
     const result = parseResourceSpecificationImport(csvFrom(headers, [row]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows[0].errors).toEqual([]);
@@ -166,28 +191,30 @@ describe('parseResourceSpecificationImport — valid rows', () => {
     const result = parseResourceSpecificationImport(csvFrom(headers, [row]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows[0].errors).toEqual([]);
     expect(result.rows[0].formState.homologationDate).toBe('2026-03-15');
   });
 
-  test('resolves status and network type by label', () => {
+  test('resolves status and resource layer by label', () => {
     const row = rowFor({
       category: 'Equipment.Access',
       resourceType: 'OLT',
       model: 'New-OLT-5',
       lifecycleStatus: 'Ativo',
-      networkType: 'GPON',
+      resourceLayerId: 'Rede GPON',
     });
     const result = parseResourceSpecificationImport(csvFrom(headers, [row]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows[0].errors).toEqual([]);
     expect(result.rows[0].formState.lifecycleStatus).toBe('active');
-    expect(result.rows[0].formState.networkType).toBe('GPON');
+    expect(result.rows[0].formState.resourceLayerId).toBe('resource-layer-gpon-network');
   });
 });
 
@@ -197,6 +224,7 @@ describe('parseResourceSpecificationImport — invalid rows', () => {
     const result = parseResourceSpecificationImport(csvFrom(headers, [row]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows[0].errors.some((message) => message.includes('não encontrada'))).toBe(true);
@@ -207,6 +235,7 @@ describe('parseResourceSpecificationImport — invalid rows', () => {
     const result = parseResourceSpecificationImport(csvFrom(headers, [row]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows[0].errors.some((message) => message.includes('inativa'))).toBe(true);
@@ -217,6 +246,7 @@ describe('parseResourceSpecificationImport — invalid rows', () => {
     const result = parseResourceSpecificationImport(csvFrom(headers, [row]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows[0].errors.some((message) => message.includes('Infraestrutura Civil'))).toBe(
@@ -229,6 +259,7 @@ describe('parseResourceSpecificationImport — invalid rows', () => {
     const result = parseResourceSpecificationImport(csvFrom(headers, [row]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows[0].errors.some((message) => message.includes('tipo'))).toBe(true);
@@ -239,6 +270,7 @@ describe('parseResourceSpecificationImport — invalid rows', () => {
     const result = parseResourceSpecificationImport(csvFrom(headers, [row]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows[0].errors.length).toBeGreaterThan(0);
@@ -254,6 +286,7 @@ describe('parseResourceSpecificationImport — invalid rows', () => {
     const result = parseResourceSpecificationImport(csvFrom(headers, [row]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows[0].errors.some((message) => message.includes('não reconhecido'))).toBe(true);
@@ -265,6 +298,7 @@ describe('parseResourceSpecificationImport — invalid rows', () => {
     const result = parseResourceSpecificationImport(csvFrom(headers, [row1, row2]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows[0].errors).toEqual([]);
@@ -287,6 +321,7 @@ describe('parseResourceSpecificationImport — invalid rows', () => {
     const result = parseResourceSpecificationImport(csvFrom(headers, [row1, row2]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows[0].errors).toEqual([]);
@@ -299,6 +334,7 @@ describe('parseResourceSpecificationImport — invalid rows', () => {
     const result = parseResourceSpecificationImport(csvFrom(headers, [row1, row2]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows[1].errors.some((message) => message.includes('duplicados'))).toBe(true);
@@ -309,6 +345,7 @@ describe('parseResourceSpecificationImport — invalid rows', () => {
     const result = parseResourceSpecificationImport(csvFrom(headers, [row]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows[0].errors.some((message) => message.includes('Já existe'))).toBe(true);
@@ -319,6 +356,7 @@ describe('parseResourceSpecificationImport — invalid rows', () => {
     const result = parseResourceSpecificationImport(csvFrom(headers, [row]), {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs,
     });
     expect(result.rows[0].line).toBe(2);
@@ -327,7 +365,7 @@ describe('parseResourceSpecificationImport — invalid rows', () => {
 
 describe('buildResourceSpecificationTemplateCsv', () => {
   test('includes the header and one example row per active resource type of each active network category', () => {
-    const csvRows = buildResourceSpecificationTemplateCsv(categories, resourceTypes);
+    const csvRows = buildResourceSpecificationTemplateCsv(categories, resourceTypes, resourceLayers);
     expect(csvRows[0]).toEqual(headers);
     // Equipment.Access → OLT, Equipment.Transport → Router (2 example rows). The inactive
     // category (Equipment.CustomerPremises) and the civil category are excluded.
@@ -341,7 +379,7 @@ describe('buildResourceSpecificationTemplateCsv', () => {
   });
 
   test('excludes the civil infrastructure category', () => {
-    const csvRows = buildResourceSpecificationTemplateCsv(categories, resourceTypes);
+    const csvRows = buildResourceSpecificationTemplateCsv(categories, resourceTypes, resourceLayers);
     const categoryIndex = fieldIndex('category');
     expect(csvRows.slice(1).some((row) => row[categoryIndex] === 'Infrastructure.CivilWorks')).toBe(
       false,
@@ -349,7 +387,7 @@ describe('buildResourceSpecificationTemplateCsv', () => {
   });
 
   test('fills every column of each example row — no blanks for the user to guess', () => {
-    const csvRows = buildResourceSpecificationTemplateCsv(categories, resourceTypes);
+    const csvRows = buildResourceSpecificationTemplateCsv(categories, resourceTypes, resourceLayers);
     for (const row of csvRows.slice(1)) {
       expect(row).toHaveLength(headers.length);
       row.forEach((cell, index) => {
@@ -359,10 +397,11 @@ describe('buildResourceSpecificationTemplateCsv', () => {
   });
 
   test('the generated template round-trips through the parser with no validation errors', () => {
-    const csvRows = buildResourceSpecificationTemplateCsv(categories, resourceTypes);
+    const csvRows = buildResourceSpecificationTemplateCsv(categories, resourceTypes, resourceLayers);
     const result = parseResourceSpecificationImport(csvRows, {
       categories,
       resourceTypes,
+      resourceLayers,
       existingSpecs: [],
     });
     expect(result.headerErrors).toEqual([]);

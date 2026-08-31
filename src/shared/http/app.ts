@@ -727,6 +727,9 @@ const routeRequest = async ({
   }
 
   if (
+    url.pathname.startsWith('/v1/resources/') ||
+    url.pathname === '/v1/resource-statuses' ||
+    url.pathname === '/v1/resource-layers' ||
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceSpecification') ||
     url.pathname.startsWith(
       '/tmf-api/resourceCatalogManagement/v4/resourceFunctionSpecification',
@@ -2577,16 +2580,52 @@ const routeResourceRequest = async ({
 }): Promise<void> => {
   const context = await buildRequestContext(request, config);
 
+  // Rotas de painel (não-TMF): agregados de leitura do Nexus sobre o inventário canônico.
+  // Mantidas no módulo Resource; a árvore Geo continua responsável só pela navegação.
+  if (request.method === 'GET' && url.pathname === '/v1/resource-statuses') {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    return sendJson(
+      response,
+      200,
+      resourceService.listResourceStatusCatalog(url.searchParams.get('resourceType') ?? undefined, context),
+    );
+  }
+  const resourceAuditMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)\/audit$/);
+  if (request.method === 'GET' && resourceAuditMatch?.[1]) {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    return sendJson(
+      response,
+      200,
+      resourceService.listPhysicalResourceAudit(
+        decodeURIComponent(resourceAuditMatch[1]),
+        context,
+        parseOptionalNumber(url.searchParams.get('limit')) ?? 200,
+      ),
+    );
+  }
+  const resourceDetailMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)\/detail$/);
+  if (request.method === 'GET' && resourceDetailMatch?.[1]) {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    return sendJson(
+      response,
+      200,
+      resourceService.getPhysicalResourceDetail(decodeURIComponent(resourceDetailMatch[1]), context),
+    );
+  }
+
   const route = resolveResourceRoute(url.pathname);
   if (!route) {
     throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
   }
 
-  // Specifications/functionSpecifications são catálogo (C9): escrita exige catalog.admin.
-  // Category/type são somente leitura nesta rota. Instâncias (resource/activation/
+  // Specifications/functionSpecifications e ResourceLayer são catálogos (C9): escrita exige
+  // catalog.admin. Category/type são somente leitura nesta rota. Instâncias (resource/activation/
   // relationships) seguem inventory.reader/inventory.editor, como Geo e Service.
   const isResourceCatalogKind =
-    route.kind === 'resourceSpecification' || route.kind === 'resourceFunctionSpecification';
+    route.kind === 'resourceSpecification' ||
+    route.kind === 'resourceFunctionSpecification' ||
+    route.kind === 'resourceLayer';
+
   requireRoles(
     context,
     request.method === 'GET'
@@ -2595,6 +2634,43 @@ const routeResourceRequest = async ({
         ? CATALOG_ADMIN_ROLES
         : INVENTORY_WRITE_ROLES,
   );
+
+  if (route.kind === 'resourceLayer') {
+    if (!route.id && request.method === 'GET') {
+      return sendJson(response, 200, resourceService.listResourceLayers(context));
+    }
+    if (!route.id && request.method === 'POST') {
+      return sendJson(
+        response,
+        201,
+        resourceService.createResourceLayer(
+          (await readBody(request)) as Parameters<typeof resourceService.createResourceLayer>[0],
+          context,
+        ),
+      );
+    }
+    if (route.id && request.method === 'GET') {
+      return sendJsonOrNotFound(
+        response,
+        resourceService.getResourceLayer(route.id, context),
+        'RESOURCE_LAYER_NOT_FOUND',
+      );
+    }
+    if (route.id && request.method === 'PATCH') {
+      return sendJson(
+        response,
+        200,
+        resourceService.updateResourceLayer(
+          route.id,
+          (await readBody(request)) as Parameters<typeof resourceService.updateResourceLayer>[1],
+          context,
+        ),
+      );
+    }
+    if (route.id && request.method === 'DELETE') {
+      return sendJson(response, 200, resourceService.deleteResourceLayer(route.id, context));
+    }
+  }
 
   if (
     route.id &&
@@ -3291,6 +3367,7 @@ type ResourceRoute = {
     | 'resourceFunctionSpecification'
     | 'resourceCategory'
     | 'resourceType'
+    | 'resourceLayer'
     | 'resource'
     | 'resourceActivation';
   id?: string;
@@ -3777,6 +3854,13 @@ const resolveResourceRoute = (pathname: string): ResourceRoute | undefined => {
   if (pathname.startsWith(`${catalogBase}/resourceType/`)) {
     const id = pathname.slice(`${catalogBase}/resourceType/`.length);
     if (id && !id.includes('/')) return { kind: 'resourceType', id: decodeURIComponent(id) };
+  }
+
+  const resourceLayerBase = '/v1/resource-layers';
+  if (pathname === resourceLayerBase) return { kind: 'resourceLayer' };
+  if (pathname.startsWith(`${resourceLayerBase}/`)) {
+    const id = pathname.slice(`${resourceLayerBase}/`.length);
+    if (id && !id.includes('/')) return { kind: 'resourceLayer', id: decodeURIComponent(id) };
   }
 
   if (pathname === inventoryBase) return { kind: 'resource' };

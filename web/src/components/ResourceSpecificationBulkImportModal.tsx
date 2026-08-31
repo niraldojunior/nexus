@@ -5,6 +5,7 @@ import { createParty, createPartyRole, type Party } from '../services/partyApi';
 import {
   bulkCreateResourceSpecifications,
   type ResourceCategory,
+  type ResourceLayer,
   type ResourceSpecification,
   type ResourceSpecificationBulkResult,
   type ResourceType,
@@ -45,6 +46,7 @@ type ImportState =
 export default function ResourceSpecificationBulkImportModal({
   categories,
   resourceTypes,
+  resourceLayers,
   manufacturerOptions,
   existingSpecs,
   onClose,
@@ -52,6 +54,7 @@ export default function ResourceSpecificationBulkImportModal({
 }: {
   categories: ResourceCategory[];
   resourceTypes: ResourceType[];
+  resourceLayers: ResourceLayer[];
   manufacturerOptions: Party[];
   existingSpecs: ResourceSpecification[];
   onClose: () => void;
@@ -62,7 +65,7 @@ export default function ResourceSpecificationBulkImportModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const downloadTemplate = () => {
-    const csvRows = buildResourceSpecificationTemplateCsv(categories, resourceTypes);
+    const csvRows = buildResourceSpecificationTemplateCsv(categories, resourceTypes, resourceLayers);
     downloadTextFile('modelo-catalogo-recursos-rede.csv', toCsv(csvRows));
   };
 
@@ -77,6 +80,7 @@ export default function ResourceSpecificationBulkImportModal({
       const { headerErrors, rows } = parseResourceSpecificationImport(csvRows, {
         categories,
         resourceTypes,
+        resourceLayers,
         existingSpecs,
       });
       setState({ phase: 'previewed', rows, headerErrors });

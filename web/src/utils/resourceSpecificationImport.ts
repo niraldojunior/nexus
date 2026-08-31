@@ -4,6 +4,7 @@
 // modais de criação individual (ver ResourceCatalogTab.tsx e ResourcePage.tsx).
 import type {
   ResourceCategory,
+  ResourceLayer,
   ResourceSpecification,
   ResourceType,
 } from '../services/resourceApi';
@@ -11,7 +12,6 @@ import { resourceFieldLabel } from './resourceFieldLabels';
 import {
   readResourceSpecificationCharacteristicString,
   RESOURCE_SPEC_LIFECYCLE_STATUS_OPTIONS,
-  RESOURCE_SPEC_NETWORK_TYPE_OPTIONS,
 } from './resourceSpecificationCharacteristics';
 import {
   buildTypeOptions,
@@ -23,7 +23,7 @@ import {
 } from './resourceSpecificationForm';
 
 type ImportColumnKind =
-  'category' | 'resourceType' | 'text' | 'boolean' | 'date' | 'status' | 'networkType';
+  'category' | 'resourceType' | 'text' | 'boolean' | 'date' | 'status' | 'resourceLayer';
 
 type ImportColumn = {
   header: string;
@@ -44,7 +44,11 @@ export const RESOURCE_SPEC_IMPORT_COLUMNS: ImportColumn[] = [
   { header: resourceFieldLabel('model'), field: 'model', kind: 'text', required: true },
   { header: resourceFieldLabel('equipmentFunction'), field: 'equipmentFunction', kind: 'text' },
   { header: resourceFieldLabel('equipmentCode'), field: 'equipmentCode', kind: 'text' },
-  { header: resourceFieldLabel('networkType'), field: 'networkType', kind: 'networkType' },
+  {
+    header: resourceFieldLabel('resourceLayer'),
+    field: 'resourceLayerId',
+    kind: 'resourceLayer',
+  },
   { header: resourceFieldLabel('skuId'), field: 'skuId', kind: 'text' },
   { header: resourceFieldLabel('homologationDate'), field: 'homologationDate', kind: 'date' },
   { header: resourceFieldLabel('endOfLifeDate'), field: 'endOfLifeDate', kind: 'date' },
@@ -67,6 +71,7 @@ export const RESOURCE_SPEC_IMPORT_COLUMNS: ImportColumn[] = [
 export function buildResourceSpecificationTemplateCsv(
   categories: ResourceCategory[],
   resourceTypes: ResourceType[],
+  resourceLayers: ResourceLayer[],
 ): string[][] {
   const header = RESOURCE_SPEC_IMPORT_COLUMNS.map((column) => column.header);
 
@@ -82,23 +87,23 @@ export function buildResourceSpecificationTemplateCsv(
     );
     return typesForCategory.map((option) => {
       const type = resourceTypes.find((candidate) => candidate.code === option.code);
-      return buildExampleRow(category, type?.code ?? option.code, type?.name ?? option.label);
+      return buildExampleRow(
+        category,
+        type?.code ?? option.code,
+        type?.name ?? option.label,
+        resourceLayers,
+      );
     });
   });
 
   return [header, ...exampleRows];
 }
 
-// Categorias de rede de fato (equipamento, passivo óptico, cabo) — só elas ganham um Tipo de Rede
-// de exemplo; Lógico (VLAN, ASN, IP…) não carrega tecnologia de rede própria.
-function isNetworkTechnologyCategory(categoryCode: string): boolean {
-  return !categoryCode.startsWith('Logical');
-}
-
 function buildExampleRow(
   category: ResourceCategory,
   resourceTypeCode: string,
   resourceTypeName: string,
+  resourceLayers: ResourceLayer[],
 ): string[] {
   return RESOURCE_SPEC_IMPORT_COLUMNS.map((column) => {
     switch (column.field) {
@@ -114,8 +119,11 @@ function buildExampleRow(
         return resourceTypeName;
       case 'equipmentCode':
         return `EQ-${resourceTypeCode.toUpperCase()}-001`;
-      case 'networkType':
-        return isNetworkTechnologyCategory(category.code) ? 'GPON' : '';
+      case 'resourceLayerId':
+        return (
+          resourceLayers.find((layer) => layer.code === 'gpon_network' && layer.status === 'active')
+            ?.name ?? ''
+        );
       case 'skuId':
         return `SKU-${resourceTypeCode.toUpperCase()}-001`;
       case 'homologationDate':
@@ -243,19 +251,23 @@ function resolveStatus(raw: string): { value: string; error?: string } {
   return { value: match.value };
 }
 
-function resolveNetworkType(raw: string): { value: string; error?: string } {
+function resolveResourceLayer(
+  raw: string,
+  resourceLayers: ResourceLayer[],
+): { id: string; error?: string } {
   const trimmed = raw.trim();
-  if (!trimmed) return { value: '' };
-  const byValue = RESOURCE_SPEC_NETWORK_TYPE_OPTIONS.find(
-    (option) => option.value.toLowerCase() === trimmed.toLowerCase(),
+  if (!trimmed) return { id: '' };
+  const match = resourceLayers.find(
+    (layer) =>
+      layer.id.toLowerCase() === trimmed.toLowerCase() ||
+      layer.code.toLowerCase() === trimmed.toLowerCase() ||
+      layer.name.toLowerCase() === trimmed.toLowerCase(),
   );
-  const match =
-    byValue ??
-    RESOURCE_SPEC_NETWORK_TYPE_OPTIONS.find(
-      (option) => option.label.toLowerCase() === trimmed.toLowerCase(),
-    );
-  if (!match) return { value: '', error: `tipo de rede "${raw}" fora do domínio aceito` };
-  return { value: match.value };
+  if (!match) return { id: '', error: `camada de recurso "${raw}" não encontrada no catálogo` };
+  if (match.status !== 'active') {
+    return { id: '', error: `camada de recurso "${raw}" está inativa` };
+  }
+  return { id: match.id };
 }
 
 function buildUniquenessKey(
@@ -272,10 +284,12 @@ export function parseResourceSpecificationImport(
   {
     categories,
     resourceTypes,
+    resourceLayers,
     existingSpecs,
   }: {
     categories: ResourceCategory[];
     resourceTypes: ResourceType[];
+    resourceLayers: ResourceLayer[];
     existingSpecs: ResourceSpecification[];
   },
 ): ResourceSpecImportParseResult {
@@ -360,10 +374,10 @@ export function parseResourceSpecificationImport(
           formState.lifecycleStatus = result.value;
           break;
         }
-        case 'networkType': {
-          const result = resolveNetworkType(raw);
+        case 'resourceLayer': {
+          const result = resolveResourceLayer(raw, resourceLayers);
           if (result.error) errors.push(result.error);
-          formState.networkType = result.value;
+          formState.resourceLayerId = result.id;
           break;
         }
         case 'text': {

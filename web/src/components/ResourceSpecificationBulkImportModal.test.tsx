@@ -6,6 +6,7 @@ import * as resourceApi from '../services/resourceApi';
 import * as partyApi from '../services/partyApi';
 import type {
   ResourceCategory,
+  ResourceLayer,
   ResourceSpecification,
   ResourceType,
 } from '../services/resourceApi';
@@ -48,6 +49,17 @@ const manufacturerOptions: Party[] = [
   },
 ];
 
+const resourceLayers: ResourceLayer[] = [
+  {
+    '@type': 'ResourceLayer',
+    id: 'resource-layer-gpon-network',
+    href: '/v1/resource-layers/resource-layer-gpon-network',
+    code: 'gpon_network',
+    name: 'Rede GPON',
+    status: 'active',
+  },
+];
+
 const existingSpecs: ResourceSpecification[] = [];
 
 const bulkCreateMock = vi.spyOn(resourceApi, 'bulkCreateResourceSpecifications');
@@ -83,6 +95,7 @@ function renderModal(onImported = vi.fn()) {
     <ResourceSpecificationBulkImportModal
       categories={categories}
       resourceTypes={resourceTypes}
+      resourceLayers={resourceLayers}
       manufacturerOptions={manufacturerOptions}
       existingSpecs={existingSpecs}
       onClose={vi.fn()}

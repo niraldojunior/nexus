@@ -23,9 +23,11 @@ export const TABLE_NAMES = [
   'geo_project_area',
   'geo_project_area_resource',
   'tmf_geographic_relationship_type',
+  'tmf_resource_layer',
   'tmf_resource_specification',
   'tmf_resource_category',
   'tmf_resource_type',
+  'tmf_resource_status_catalog',
   'tmf_resource_function_specification',
   'tmf_physical_resource',
   'tmf_logical_resource',
@@ -291,14 +293,11 @@ export const MIGRATIONS_SQL = `
   CREATE INDEX IF NOT EXISTS idx_tmf_geo_bulk_job_result_job ON tmf_geo_bulk_job_result(job_id, item_index);
   CREATE INDEX IF NOT EXISTS idx_tmf_geo_bulk_job_result_tenant ON tmf_geo_bulk_job_result(tenant_id);
 
-  -- place_id/resource_type/name are the columns the resource tree and workspace list
-  -- filters actually query (place_id superseded geographic_location_id — see
-  -- postgres-repository.ts). Added late because place_id itself is a migrated column.
+  -- place_id/name são os filtros das instâncias. O tipo pertence exclusivamente à
+  -- ResourceSpecification, portanto índices por tipo ficam no catálogo e nunca no exemplar TMF639.
   CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_place ON tmf_physical_resource(place_id);
-  CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_type ON tmf_physical_resource(resource_type);
   CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_name ON tmf_physical_resource(name);
   CREATE INDEX IF NOT EXISTS idx_tmf_logical_resource_place ON tmf_logical_resource(place_id);
-  CREATE INDEX IF NOT EXISTS idx_tmf_logical_resource_type ON tmf_logical_resource(resource_type);
   CREATE INDEX IF NOT EXISTS idx_tmf_logical_resource_name ON tmf_logical_resource(name);
 
   -- Índice de expressão para a busca de infra passiva por bbox do mapa (GeoTreeService
@@ -456,10 +455,10 @@ export const MIGRATIONS_SQL = `
   -- cair no índice solto de tenant_id sozinho.
   CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_tenant_spec_status
     ON tmf_geographic_site(tenant_id, site_specification_id, status);
-  -- Par com idx_tmf_physical_resource_serving_site: a mesma consulta filtra por
-  -- serving_site_id e descarta Splitter (INTERNAL_RESOURCE_TYPE) logo em seguida.
-  CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_serving_type
-    ON tmf_physical_resource(serving_site_id, resource_type);
+  -- A árvore filtra a estação dona da planta pela coluna derivada serving_site_id.
+  -- O tipo é resolvido por join com a ResourceSpecification (C1), sem duplicá-lo no exemplar.
+  CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_serving_site_name
+    ON tmf_physical_resource(serving_site_id, name);
 
   -- Reengenharia da exibição de recursos no mapa (issue #69, Fase 2): "aparece no mapa" vira
   -- propriedade do catálogo (C9) em vez da string literal espalhada pelo SQL do viewport
@@ -598,6 +597,58 @@ export const MIGRATIONS_SQL = `
   CREATE INDEX IF NOT EXISTS idx_tmf_resource_order_tenant ON tmf_resource_order(tenant_id);
   CREATE INDEX IF NOT EXISTS idx_tmf_party_tenant ON tmf_party(tenant_id);
   CREATE INDEX IF NOT EXISTS idx_tmf_party_role_tenant ON tmf_party_role(tenant_id);
+
+  -- Camada de recurso governada por catálogo (issue #171). A specification referencia a
+  -- camada; a instância herda a classificação por seu resource_specification_id.
+  CREATE TABLE IF NOT EXISTS tmf_resource_layer (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, code)
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_layer_tenant_order
+    ON tmf_resource_layer(tenant_id, status, code);
+  ALTER TABLE tmf_resource_specification ADD COLUMN IF NOT EXISTS resource_layer_id TEXT;
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_specification_layer
+    ON tmf_resource_specification(resource_layer_id);
+  -- A remoção das colunas legadas só é executada pelo backfill controlado, depois de validar
+  -- todos os resíduos. Não use DATABASE_AUTO_SCHEMA para DROP: Oracle não oferece
+  -- DROP COLUMN IF EXISTS idempotente e o boot jamais deve executar DDL destrutivo.
+
+  -- Estado granular do recurso (issue #171). O eixo SID continua em tmf_physical_resource.status,
+  -- que tem CHECK fechado nos 4 valores canônicos; o motivo específico ("Bloqueado por área de
+  -- risco") vira código de catálogo em status_code. Não alargar o CHECK de status: são eixos
+  -- distintos, e o catálogo é extensível via API (C9) enquanto o CHECK não é.
+  --
+  -- resource_type NULL = o estado vale para qualquer tipo de recurso; preenchido = específico
+  -- daquele tipo (ex.: só CTO). Mesmo desenho de geo_project_status_catalog (acima).
+  CREATE TABLE IF NOT EXISTS tmf_resource_status_catalog (
+    tenant_id TEXT NOT NULL,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    resource_type TEXT,
+    sort_order INTEGER NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    behavior TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, code)
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_status_catalog_tenant_order
+    ON tmf_resource_status_catalog(tenant_id, sort_order, code);
+
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS status_code TEXT;
+  -- Etiqueta física da caixa (o que está escrito nela em campo), distinta do name.
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS label TEXT;
+  -- ID Imobilizado (SAP) — referência patrimonial do exemplar.
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS asset_reference TEXT;
+  -- Projeto de implantação que originou o recurso. Distinto de geo_project_resource, que é o
+  -- vínculo de curadoria (entra/sai de um projeto ao longo do tempo); aqui é atributo de origem.
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS project_id TEXT;
+  CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_project ON tmf_physical_resource(project_id);
 `;
 
 export const SCHEMA_SQL = `
@@ -917,19 +968,37 @@ export const SCHEMA_SQL = `
 
       -- ========== MODULE 2: RESOURCE (TMF634/639) ==========
 
+      -- Catálogo de camadas funcionais da planta (C9). A camada pertence à specification,
+      -- não ao exemplar de inventário.
+      CREATE TABLE IF NOT EXISTS tmf_resource_layer (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL DEFAULT 'default',
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(tenant_id, code)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_resource_layer_tenant_order
+        ON tmf_resource_layer(tenant_id, status, code);
+
       -- TMF634: Resource Specification (catálogo de tipos de recurso)
       CREATE TABLE IF NOT EXISTS tmf_resource_specification (
         id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
         category TEXT NOT NULL,
         resource_type TEXT NOT NULL,
+        resource_layer_id TEXT,
         description TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
         related_party TEXT,
         characteristics TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (resource_layer_id) REFERENCES tmf_resource_layer(id)
       );
       CREATE INDEX IF NOT EXISTS idx_tmf_resource_specification_category_type ON tmf_resource_specification(category, resource_type);
 
@@ -961,6 +1030,23 @@ export const SCHEMA_SQL = `
       CREATE INDEX IF NOT EXISTS idx_tmf_resource_type_category ON tmf_resource_type(category_code);
       CREATE INDEX IF NOT EXISTS idx_tmf_resource_type_status ON tmf_resource_type(status);
 
+      -- Catálogo de estados granulares do recurso (issue #171): o motivo por trás do status SID
+      -- ("Bloqueado por área de risco" sob status='suspended'). Extensível via API (C9), ao
+      -- contrário do CHECK fechado de tmf_physical_resource.status.
+      CREATE TABLE IF NOT EXISTS tmf_resource_status_catalog (
+        tenant_id TEXT NOT NULL,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        -- NULL = vale para qualquer tipo de recurso; preenchido = específico daquele tipo.
+        resource_type TEXT,
+        sort_order INTEGER NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        behavior TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, code)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_resource_status_catalog_tenant_order
+        ON tmf_resource_status_catalog(tenant_id, sort_order, code);
+
       CREATE TABLE IF NOT EXISTS tmf_resource_function_specification (
         id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -977,13 +1063,15 @@ export const SCHEMA_SQL = `
         id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
         resource_specification_id TEXT NOT NULL,
-        resource_type TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
+        -- Motivo granular do status, resolvido em tmf_resource_status_catalog (issue #171).
+        status_code TEXT,
         geographic_location_id TEXT,
-        manufacturer TEXT,
-        model TEXT,
         serial_number TEXT UNIQUE,
         part_number TEXT,
+        label TEXT,
+        asset_reference TEXT,
+        project_id TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
         related_party TEXT,
@@ -1003,7 +1091,6 @@ export const SCHEMA_SQL = `
         id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
         resource_specification_id TEXT NOT NULL,
-        resource_type TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
         supporting_physical_resource_id TEXT,
         valid_for_start DATETIME,

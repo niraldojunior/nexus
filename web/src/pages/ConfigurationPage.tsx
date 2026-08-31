@@ -108,8 +108,8 @@ const tabs: Array<{ id: ConfigTab; label: string; icon: LucideIcon }> = [
   { id: 'users', label: 'Usuários', icon: Users },
   { id: 'projects', label: 'Projetos', icon: FolderTree },
   { id: 'sites', label: 'Locais', icon: MapPinned },
-  { id: 'resourcesCivil', label: 'Infraestrutura Civil', icon: HardHat },
-  { id: 'resourcesNetwork', label: 'Recursos de Rede', icon: Network },
+  { id: 'resourcesCivil', label: 'Infraestrutura', icon: HardHat },
+  { id: 'resourcesNetwork', label: 'Recursos', icon: Network },
   { id: 'services', label: 'Serviços', icon: Briefcase },
   { id: 'suppliers', label: 'Fornecedores', icon: Truck },
 ];

@@ -4,9 +4,11 @@ import { ChevronLeft, ChevronRight, Loader2, Pencil, Plus, Trash2, Upload, X } f
 import {
   createResourceSpecification,
   deleteResourceSpecification,
+  listResourceLayers,
   loadResourceWorkspaceSnapshot,
   updateResourceSpecification,
   type ResourceCategory,
+  type ResourceLayer,
   type ResourceSpecification,
   type ResourceType,
 } from '../../services/resourceApi';
@@ -29,10 +31,6 @@ import {
   buildResourceSpecificationPayload,
   type ResourceSpecFormState,
 } from '../../utils/resourceSpecificationForm';
-import {
-  readResourceSpecificationNetworkTypeLabel,
-  RESOURCE_SPEC_NETWORK_TYPE_OPTIONS,
-} from '../../utils/resourceSpecificationCharacteristics';
 import { SortableHeader, sortedBy, useSort } from './sortable';
 
 export type ResourceInfraTab = 'network' | 'civil';
@@ -63,11 +61,12 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
   const [specs, setSpecs] = useState<ResourceSpecification[]>([]);
   const [resourceCategories, setResourceCategories] = useState<ResourceCategory[]>([]);
   const [resourceTypes, setResourceTypes] = useState<ResourceType[]>([]);
+  const [resourceLayers, setResourceLayers] = useState<ResourceLayer[]>([]);
   const [manufacturerOptions, setManufacturerOptions] = useState<Party[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [networkTypeFilter, setNetworkTypeFilter] = useState('');
+  const [resourceLayerFilter, setResourceLayerFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [resourceTypeFilter, setResourceTypeFilter] = useState('');
   const [pendingRemoval, setPendingRemoval] = useState<ResourceSpecification | null>(null);
@@ -81,11 +80,15 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
   const reload = () => {
     setLoading(true);
     setError(null);
-    void loadResourceWorkspaceSnapshot({ tab: 'ResourceSpecification', limit: 500, offset: 0 })
-      .then((snapshot) => {
+    void Promise.all([
+      loadResourceWorkspaceSnapshot({ tab: 'ResourceSpecification', limit: 500, offset: 0 }),
+      listResourceLayers(),
+    ])
+      .then(([snapshot, layers]) => {
         setSpecs(snapshot.items as ResourceSpecification[]);
         setResourceCategories(snapshot.resourceCategories);
         setResourceTypes(snapshot.resourceTypes);
+        setResourceLayers(layers);
         setManufacturerOptions(snapshot.manufacturerOptions);
       })
       .catch(() => setError('Não foi possível carregar o catálogo de Recursos.'))
@@ -109,23 +112,22 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
     [specs, infraTab],
   );
 
-  const specNetworkType = (spec: ResourceSpecification): string =>
-    (spec.resourceSpecificationCharacteristic?.find((item) => item.name === 'networkType')
-      ?.value as string | undefined) ?? '';
+  const resourceLayerName = (resourceLayerId: string | undefined): string =>
+    resourceLayers.find((layer) => layer.id === resourceLayerId)?.name ?? '-';
 
   const filteredSpecs = useMemo(() => {
     const term = search.trim().toLowerCase();
     return specsOfTab.filter((spec) => {
       if (term && !readSpecificationModel(spec).toLowerCase().includes(term)) return false;
-      if (networkTypeFilter && specNetworkType(spec) !== networkTypeFilter) return false;
+      if (resourceLayerFilter && spec.resourceLayerId !== resourceLayerFilter) return false;
       if (categoryFilter && spec.category !== categoryFilter) return false;
       if (resourceTypeFilter && spec.resourceType !== resourceTypeFilter) return false;
       return true;
     });
-  }, [specsOfTab, search, networkTypeFilter, categoryFilter, resourceTypeFilter]);
+  }, [specsOfTab, search, resourceLayerFilter, categoryFilter, resourceTypeFilter]);
 
   const [sort, onSort] = useSort<
-    'name' | 'category' | 'resourceType' | 'networkType' | 'manufacturer' | 'lifecycleStatus'
+    'name' | 'category' | 'resourceType' | 'resourceLayer' | 'manufacturer' | 'lifecycleStatus'
   >();
   const sortedSpecs = useMemo(
     () =>
@@ -137,11 +139,8 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
             return categoryLabel(spec.category);
           case 'resourceType':
             return readResourceTypeCode(resourceTypes, spec.resourceType);
-          case 'networkType':
-            return readResourceSpecificationNetworkTypeLabel(
-              spec.resourceSpecificationCharacteristic?.find((item) => item.name === 'networkType')
-                ?.value as string | undefined,
-            );
+          case 'resourceLayer':
+            return resourceLayerName(spec.resourceLayerId);
           case 'manufacturer':
             return readSpecificationManufacturer(spec);
           case 'lifecycleStatus':
@@ -150,14 +149,14 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
             return '';
         }
       }),
-    [filteredSpecs, sort, resourceTypes, resourceCategories],
+    [filteredSpecs, sort, resourceTypes, resourceCategories, resourceLayers],
   );
 
   const PAGE_SIZE = 20;
   const [page, setPage] = useState(0);
   useEffect(() => {
     setPage(0);
-  }, [search, networkTypeFilter, categoryFilter, resourceTypeFilter, infraTab, sort]);
+  }, [search, resourceLayerFilter, categoryFilter, resourceTypeFilter, infraTab, sort]);
   const pageCount = Math.max(1, Math.ceil(sortedSpecs.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
   const pagedSpecs = useMemo(
@@ -318,14 +317,15 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
         {isNetworkTab ? (
           <>
             <select
-              value={networkTypeFilter}
-              onChange={(event) => setNetworkTypeFilter(event.target.value)}
+              value={resourceLayerFilter}
+              onChange={(event) => setResourceLayerFilter(event.target.value)}
               className="geo-input w-auto"
             >
-              <option value="">Tipo de Rede: todos</option>
-              {RESOURCE_SPEC_NETWORK_TYPE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
+              <option value="">Camada: todas</option>
+              {resourceLayers.map((layer) => (
+                <option key={layer.id} value={layer.id}>
+                  {layer.name}
+                  {layer.status !== 'active' ? ' (inativa)' : ''}
                 </option>
               ))}
             </select>
@@ -374,8 +374,8 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
               <SortableHeader label="Especificação" sortKey="name" sort={sort} onSort={onSort} />
               {isNetworkTab ? (
                 <SortableHeader
-                  label="Tipo de Rede"
-                  sortKey="networkType"
+                  label="Camada de recurso"
+                  sortKey="resourceLayer"
                   sort={sort}
                   onSort={onSort}
                 />
@@ -421,11 +421,7 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
                   <td className="px-5 py-3 font-medium">{readSpecificationModel(spec)}</td>
                   {isNetworkTab ? (
                     <td className="px-5 py-3 text-app-muted">
-                      {readResourceSpecificationNetworkTypeLabel(
-                        spec.resourceSpecificationCharacteristic?.find(
-                          (item) => item.name === 'networkType',
-                        )?.value as string | undefined,
-                      )}
+                      {resourceLayerName(spec.resourceLayerId)}
                     </td>
                   ) : null}
                   {isNetworkTab ? (
@@ -563,6 +559,7 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
                       onChange={setFormState}
                       resourceTypes={resourceTypes}
                       manufacturerOptions={manufacturerOptions}
+                      resourceLayers={resourceLayers}
                       categoryOptions={categoryOptionsForTab}
                       selectionValid={selectionValid}
                     />
@@ -591,6 +588,7 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
         <ResourceSpecificationBulkImportModal
           categories={categoryOptionsForTab}
           resourceTypes={resourceTypes}
+          resourceLayers={resourceLayers}
           manufacturerOptions={manufacturerOptions}
           existingSpecs={specsOfTab}
           onClose={() => setBulkImportOpen(false)}

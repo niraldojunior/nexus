@@ -56,7 +56,7 @@ export type ResourceSpecFormState = {
   endOfLifeDate: string;
   endOfSupportLifeDate: string;
   lifecycleStatus: string;
-  networkType: string;
+  resourceLayerId: string;
 };
 
 export function emptyResourceSpecFormState(defaultCategory = ''): ResourceSpecFormState {
@@ -78,7 +78,7 @@ export function emptyResourceSpecFormState(defaultCategory = ''): ResourceSpecFo
     endOfLifeDate: '',
     endOfSupportLifeDate: '',
     lifecycleStatus: '',
-    networkType: '',
+    resourceLayerId: '',
   };
 }
 
@@ -88,21 +88,10 @@ export function resourceSpecFormStateFrom(
   manufacturerOptions: Party[],
 ): ResourceSpecFormState {
   const characteristics = entity?.resourceSpecificationCharacteristic ?? [];
-  const manufacturerCharacteristic = characteristics.find(
-    (characteristic) => characteristic.name === 'manufacturer',
-  );
   const manufacturerParty = entity?.relatedParty?.find((party) => party.role === 'manufacturer');
-  const manufacturerLabel =
-    manufacturerParty?.name ??
-    (manufacturerCharacteristic?.value ? String(manufacturerCharacteristic.value).trim() : '');
-  const resolvedManufacturer =
-    manufacturerParty ??
-    manufacturerOptions.find(
-      (party) =>
-        party.name.trim().toLowerCase() === manufacturerLabel.trim().toLowerCase() ||
-        party.id.trim().toLowerCase() === manufacturerLabel.trim().toLowerCase(),
-    ) ??
-    null;
+  const resolvedManufacturer = manufacturerParty
+    ? (manufacturerOptions.find((party) => party.id === manufacturerParty.id) ?? manufacturerParty)
+    : null;
 
   return {
     ...emptyResourceSpecFormState(),
@@ -144,7 +133,7 @@ export function resourceSpecFormStateFrom(
       characteristics,
       'lifecycleStatus',
     ),
-    networkType: readResourceSpecificationCharacteristicString(characteristics, 'networkType'),
+    resourceLayerId: entity?.resourceLayerId ?? '',
   };
 }
 
@@ -178,7 +167,6 @@ export const SPECIFICATION_CHARACTERISTIC_DEFINITIONS: SpecificationCharacterist
     group: 'lifecycle',
   },
   { name: 'lifecycleStatus', field: 'lifecycleStatus', valueType: 'string', group: 'lifecycle' },
-  { name: 'networkType', field: 'networkType', valueType: 'string', group: 'identification' },
 ];
 
 export function normalizeCatalogText(value: string): string {
@@ -264,7 +252,9 @@ export function buildResourceSpecificationPayload(
   }
 
   const resourceSpecificationCharacteristic = mergeSpecificationCharacteristics(
-    existing?.resourceSpecificationCharacteristic ?? [],
+    (existing?.resourceSpecificationCharacteristic ?? []).filter(
+      (item) => item.name !== 'manufacturer' && item.name !== 'networkType',
+    ),
     state,
   );
   // No catálogo de Infraestrutura Civil, Modelo é opcional (ver CivilResourceSpecificationFields) —
@@ -284,6 +274,7 @@ export function buildResourceSpecificationPayload(
       category: state.category.trim(),
       resourceType: state.resourceType.trim(),
       description: state.description.trim(),
+      resourceLayerId: state.resourceLayerId.trim() || undefined,
       relatedParty,
       resourceSpecificationCharacteristic: filtered,
     };
@@ -294,6 +285,7 @@ export function buildResourceSpecificationPayload(
     category: state.category.trim(),
     resourceType: state.resourceType.trim(),
     description: state.description.trim(),
+    resourceLayerId: state.resourceLayerId.trim() || undefined,
     relatedParty,
     resourceSpecificationCharacteristic,
   };
@@ -463,8 +455,7 @@ export function readSpecificationManufacturer(
 ): string {
   if (!spec) return '-';
   const manufacturerParty = spec.relatedParty?.find((party) => party.role === 'manufacturer');
-  if (manufacturerParty?.name) return manufacturerParty.name;
-  return readSpecCharacteristic(spec.resourceSpecificationCharacteristic, 'manufacturer');
+  return manufacturerParty?.name ?? manufacturerParty?.id ?? '-';
 }
 
 export function readSpecificationModel(spec: ResourceSpecification | null | undefined): string {

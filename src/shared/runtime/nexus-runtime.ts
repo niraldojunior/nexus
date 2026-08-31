@@ -132,6 +132,11 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
         name: party.name,
       };
     },
+    lookupPartyRoles: async (partyId) =>
+      (await partyService.listPartyRoles({ partyId })).map((role) => ({
+        name: role.name,
+        status: role.status,
+      })),
   });
   const serviceRepository = oracle
     ? new OracleServiceRepository(db)

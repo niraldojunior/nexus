@@ -1,26 +1,10 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  Activity,
-  Ban,
-  Barcode,
-  Boxes,
-  ChevronLeft,
-  Cpu,
-  Crosshair,
-  Database,
-  Factory,
-  Info as InfoIcon,
-  Loader2,
-  MapPin,
-  Waypoints,
-} from 'lucide-react';
 import type { GeoStatus, GeoSpec, GeoSite } from '../services/geoApi';
 import { getJson, listGeoSites } from '../services/geoApi';
 import { siteKindFromSpec, siteKindLabel } from '../utils/placeLabel';
 import { siteStatusLabel, siteSpecNameLabel } from '../utils/geoLabels';
 import {
-  fetchTreeChildren,
   treeNodePoint,
   treeNodeRoute,
   type GeoTreeNode,
@@ -79,7 +63,6 @@ import {
   MARKER_ICON_SIZE,
   CABLE_STROKE_WEIGHT,
 } from '../utils/resourceIcon';
-import { ResourceIcon } from '../components/ResourceIcon';
 import {
   selectionPinDataUrl,
   addressSourcePin,
@@ -94,23 +77,17 @@ import {
   type AddressPinLocation,
   type AddressLocationResolution,
   BASE_MAP_LAYERS,
-  CoordinateStreetView,
   GeoSearchBar,
   HierarchySidebar,
   type HierarchySidebarTab,
-  IconInfoRow,
   MapBaseLayerSelector,
   MapLayerControl,
   MapLoadingBar,
   MapLocateButton,
   Modal,
-  PanelBarButton,
   ProjectDetailPanel,
-  SchematicTab,
+  ResourcePanel,
   SitePanel,
-  StatusBadge,
-  DOCK_WIDTH_CLASS,
-  DOCK_ELEVATION_CLASS,
   type AddressSearchError,
   type DeviceLocation,
   type DropSimulation,
@@ -145,16 +122,7 @@ import {
   pathMidpoint,
   pathSpanMeters,
 } from '../utils/dropSimulation';
-import {
-  BottomSheet,
-  useSheetSnapCommand,
-  type BottomSheetSnapState,
-} from '../components/BottomSheet';
-import { OverlayScrollArea } from '../components/OverlayScrollArea';
-import { StreetViewHero } from '../components/StreetViewHero';
-import { streetViewTargetsForGeometry } from '../utils/streetViewTargets';
-import { resourceStreetViewMarker } from '../utils/streetViewMarker';
-import type { StreetViewMarker } from '../utils/streetViewPanorama';
+import type { BottomSheetSnapState } from '../components/BottomSheet';
 
 // Conteúdo do balão flutuante de preview, ancorado no item sob o mouse (árvore
 // ou mapa). É montado no GeoPage e apenas desenhado pelo painel do mapa — assim
@@ -1462,9 +1430,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               onOpenResource={goToResource}
             />
           ) : detailOpen && detailTarget?.kind === 'resource' ? (
-            <GeoDetailPanel
+            <ResourcePanel
+              key={detailTarget.node.id}
               isMobile={isMobile}
-              target={detailTarget}
+              node={detailTarget.node}
               onSnapChange={onMobileSheetSnapChange}
               minimizeSignal={sheetMinimizeSignal}
               onOpenResource={goToResource}
@@ -3245,327 +3214,6 @@ function FallbackMap({
           +
         </div>
       ) : null}
-    </div>
-  );
-}
-
-// Painel de detalhe de um Recurso selecionado — dock à esquerda no desktop (mesma
-// coluna da hierarquia, um painel por vez) e bottom sheet arrastável no mobile. Nasce
-// do clique na árvore, no mapa ou na busca (ver selectNode em GeoPage), nunca de um
-// modal. O detalhe de Site tem casca própria — ver SitePanel (REQ-MOD01-016).
-function GeoDetailPanel({
-  isMobile,
-  target,
-  onOpenResource,
-  onBack,
-  onClose,
-  onSnapChange,
-  minimizeSignal,
-  onDropSimulation,
-  onPreview,
-}: {
-  isMobile: boolean;
-  target: Extract<DetailTarget, { kind: 'resource' }>;
-  onOpenResource: (resourceId: string) => void;
-  onBack: () => void;
-  onClose: () => void;
-  onSnapChange?: (state: BottomSheetSnapState) => void;
-  // Contador que, ao incrementar, encolhe a folha para peek (ver BottomSheet).
-  minimizeSignal?: number;
-  // Traçado da aba Esquemático (ver SchematicTab) — mesmo canal visual/estado da
-  // simulação de drop do painel de Endereço (ver onDropSimulation em GeoPage).
-  onDropSimulation: (simulation: DropSimulation | null) => void;
-  // Clique num salto do Esquemático — mesmo canal do hover na árvore de Hierarquia
-  // (ver handleHover em GeoPage), mostra o balão de preview em cima do item no mapa.
-  onPreview: (node: GeoTreeNode | null) => void;
-}) {
-  // Detalhe de Recurso não tem pedido próprio de encaixe — só repassa o
-  // `minimizeSignal` (peek na navegação manual do mapa) como comando para a folha.
-  const { snapCommand } = useSheetSnapCommand(minimizeSignal);
-  const eyebrow = resourceIconFor({
-    resourceType: target.node.resourceType ?? '',
-    name: target.node.label,
-    sublabel: target.node.sublabel,
-  }).label;
-  const title = target.node.label;
-
-  const resourcePoint = streetViewTargetsForGeometry(target.node.geometry)[0]?.point;
-  const heroMarker: StreetViewMarker | null = resourcePoint
-    ? resourceStreetViewMarker(target.node, resourcePoint)
-    : null;
-
-  const body = (
-    <ResourceDetailBody
-      node={target.node}
-      onOpenResource={onOpenResource}
-      onDropSimulation={onDropSimulation}
-      onPreview={onPreview}
-    />
-  );
-
-  const header = (
-    <div className="flex items-start gap-2 border-y border-app-border px-3 py-3">
-      <button
-        type="button"
-        onClick={onBack}
-        className="shrink-0 rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
-        aria-label="Voltar para a hierarquia"
-      >
-        <ChevronLeft className="h-5 w-5" />
-      </button>
-      <div className="min-w-0 flex-1">
-        <div className="break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.08em] text-app-muted [overflow-wrap:anywhere]">
-          {eyebrow}
-        </div>
-        <h3 className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text [overflow-wrap:anywhere]">
-          {title}
-        </h3>
-      </div>
-    </div>
-  );
-
-  if (isMobile) {
-    return (
-      <BottomSheet onClose={onClose} onSnapChange={onSnapChange} snapCommand={snapCommand}>
-        {/* Foto, título e corpo rolam juntos dentro da folha (ver BottomSheet). */}
-        <StreetViewHero marker={heroMarker} />
-        {header}
-        {/* `overflow-hidden` nos dois eixos evita que `overflow-x-hidden` transforme
-            implicitamente Y em `auto` e roube o gesto touch do BottomSheet. */}
-        <div className="min-w-0 overflow-hidden px-4 py-3">{body}</div>
-      </BottomSheet>
-    );
-  }
-
-  return (
-    // `overflow-hidden` (não `overflow-x-hidden`) de propósito: com só um eixo em
-    // `hidden`, o outro (`overflow-y: visible`) computa para `auto` e a casca vira um
-    // segundo contêiner de rolagem, ao lado do scroll do conteúdo abaixo — era o
-    // scroll duplo do painel. Quem rola aqui é só o filho `overflow-y-auto`.
-    <div
-      className={`${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
-    >
-      {/* A barra de pesquisa é uma instância única, sobreposta a esta doca pelo GeoPage
-          (estilo Google Maps): a foto de Street View, o título e o corpo rolam por baixo
-          dela. Aqui o painel só cede o topo — não monta a barra. */}
-      {/* Barra de rolagem sobreposta: a foto e as abas usam toda a largura do painel; o
-          polegar projeta por cima delas no hover (ver OverlayScrollArea). */}
-      <OverlayScrollArea className="overflow-x-hidden">
-        <StreetViewHero marker={heroMarker} />
-        {header}
-        <div className="px-3 py-3">{body}</div>
-      </OverlayScrollArea>
-    </div>
-  );
-}
-
-// Detalhe leve de um recurso (OLT, CTO, porta, cabo…): os campos que o
-// identificam em campo, os recursos que moram dentro dele (ex.: portas de uma
-// placa) e o atalho para o módulo Recursos, dono do cadastro completo. A
-// fronteira Geo × Resource (C3) fica preservada — aqui é referência, não edição.
-function ResourceDetailBody({
-  node,
-  onOpenResource,
-  onDropSimulation,
-  onPreview,
-}: {
-  node: GeoTreeNode;
-  onOpenResource: (resourceId: string) => void;
-  onDropSimulation: (simulation: DropSimulation | null) => void;
-  onPreview: (node: GeoTreeNode | null) => void;
-}) {
-  const resourceStatus = (node.status as GeoStatus) ?? 'active';
-  const streetViewTargets = streetViewTargetsForGeometry(node.geometry);
-  const { children, loading } = useResourceChildren(node);
-  const [tab, setTab] = useState<'overview' | 'subresources' | 'schematic'>('overview');
-
-  return (
-    <div className="grid gap-4">
-      {/* Barra de ações abaixo do título, mesmo padrão do Site: Recursos
-          internos leva contador — mesma lógica de Sub-locais/Recursos no
-          Site, é a porta de entrada para o que mora dentro deste recurso
-          (ex.: portas de uma placa). Street View fica ao lado de cada
-          coordenada, não solto na barra. Esquemático (traceroute da fibra até
-          a Estação) fica ao lado — só faz sentido em recurso conectado à
-          planta OSP, mas renderiza sempre: o próprio conteúdo da aba avisa
-          quando não há caminho a montante, sem pagar uma chamada de sondagem
-          extra por recurso aberto. */}
-      <div className="flex flex-wrap gap-1 border-b border-app-border pb-3">
-        <PanelBarButton
-          icon={InfoIcon}
-          label="Visão geral"
-          active={tab === 'overview'}
-          onClick={() => setTab('overview')}
-        />
-        <PanelBarButton
-          icon={Boxes}
-          label="Recursos internos"
-          badge={children.length}
-          active={tab === 'subresources'}
-          onClick={() => setTab('subresources')}
-        />
-        <PanelBarButton
-          icon={Waypoints}
-          label="Esquemático"
-          active={tab === 'schematic'}
-          onClick={() => setTab('schematic')}
-        />
-      </div>
-
-      {tab === 'overview' ? (
-        <div className="grid gap-1">
-          <IconInfoRow
-            icon={Boxes}
-            hint="Tipo do recurso"
-            value={
-              resourceIconFor({
-                resourceType: node.resourceType ?? '',
-                name: node.label,
-                sublabel: node.sublabel,
-              }).label
-            }
-          />
-          {node.sublabel ? (
-            <IconInfoRow icon={Database} hint="Especificação de origem" value={node.sublabel} />
-          ) : null}
-          <IconInfoRow
-            icon={Activity}
-            hint="Status"
-            value={<StatusBadge status={resourceStatus} />}
-          />
-          {node.detail?.substatus ? (
-            <IconInfoRow icon={Ban} hint="Substatus" value={node.detail.substatus} />
-          ) : null}
-          <IconInfoRow
-            icon={MapPin}
-            hint="Endereço"
-            value={node.detail?.address ?? 'Sem endereço'}
-          />
-          {streetViewTargets.map((target) => (
-            <IconInfoRow
-              key={`${target.label ?? 'ponto'}:${target.point.join(',')}`}
-              icon={Crosshair}
-              hint={target.label ? `Localização · ${target.label}` : 'Localização'}
-              value={<CoordinateStreetView marker={resourceStreetViewMarker(node, target.point)} />}
-            />
-          ))}
-          {node.detail?.model ? (
-            <IconInfoRow icon={Cpu} hint="Modelo" value={node.detail.model} />
-          ) : null}
-          {node.detail?.manufacturer ? (
-            <IconInfoRow icon={Factory} hint="Fabricante" value={node.detail.manufacturer} />
-          ) : null}
-          {node.detail?.serialNumber ? (
-            <IconInfoRow icon={Barcode} hint="Nº de série" value={node.detail.serialNumber} mono />
-          ) : null}
-          {node.detail?.sourceSystem ? (
-            <IconInfoRow
-              icon={Database}
-              hint="Sistema de origem"
-              value={node.detail.sourceSystem}
-            />
-          ) : null}
-        </div>
-      ) : null}
-
-      {tab === 'subresources' ? (
-        <div>
-          {loading ? (
-            <LoadingRow label="Carregando recursos internos…" />
-          ) : children.length ? (
-            <div className="grid gap-2">
-              {children.map((child) => (
-                <button
-                  key={child.id}
-                  type="button"
-                  onClick={() => (child.refId ? onOpenResource(child.refId) : undefined)}
-                  className="flex w-full min-w-0 items-start gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
-                >
-                  <ResourceIcon
-                    resource={{
-                      resourceType: child.resourceType ?? '',
-                      status: child.status,
-                      name: child.label,
-                      sublabel: child.sublabel,
-                    }}
-                    variant="badge"
-                    size={26}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">
-                      {child.label}
-                    </span>
-                    <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
-                      {[
-                        resourceIconFor({
-                          resourceType: child.resourceType ?? '',
-                          status: child.status,
-                          name: child.label,
-                          sublabel: child.sublabel,
-                        }).label,
-                        child.detail?.model,
-                        child.detail?.serialNumber,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">
-                    Abrir
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
-              Este recurso ainda não possui recursos internos.
-            </div>
-          )}
-        </div>
-      ) : null}
-
-      {tab === 'schematic' ? (
-        <SchematicTab nodeId={node.id} onSimulate={onDropSimulation} onPreview={onPreview} />
-      ) : null}
-    </div>
-  );
-}
-
-// Filhos diretos de um recurso (ex.: portas de uma placa, fibras de um cabo, ou o
-// splitter de uma CDOE). Sempre busca com `scope: 'all'` — `node.hasChildren` reflete
-// o escopo de árvore (com pass-through sobre item interno), então uma CDOE cujo único
-// filho é um splitter chega aqui com `hasChildren: false` mesmo tendo o quê mostrar.
-function useResourceChildren(node: GeoTreeNode): { children: GeoTreeNode[]; loading: boolean } {
-  const [nodes, setNodes] = useState<GeoTreeNode[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setNodes([]);
-    setLoading(true);
-    void fetchTreeChildren(node.id, { scope: 'all' })
-      .then((page) => {
-        if (cancelled) return;
-        setNodes(page.nodes);
-        setLoading(false);
-      })
-      .catch(() => !cancelled && setLoading(false));
-    return () => {
-      cancelled = true;
-    };
-  }, [node.id]);
-
-  return { children: nodes, loading };
-}
-
-// Estado de carregamento sob demanda (sub-locais, recursos do site, recursos
-// internos de um recurso): sem isto a lista vazia por um instante era
-// indistinguível de "não tem nada aqui", e a UI parecia travada.
-function LoadingRow({ label }: { label: string }) {
-  return (
-    <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
-      <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-      {label}
     </div>
   );
 }

@@ -73,6 +73,7 @@ import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { config as loadEnv } from 'dotenv';
 import { openLoaderDb } from './loader-db.mjs';
+import { resolveStatusCode } from '../dist/src/modules/resource/status-catalog.js';
 import { loaderRangesForUf } from './uf-geo.mjs';
 
 loadEnv();
@@ -579,6 +580,11 @@ async function main() {
     }
 
     // 1. Specs (uma por tipo de caixa + Splitter), reaproveitando as existentes.
+    const { rows: layerRows } = await client.query(
+      `SELECT id FROM tmf_resource_layer WHERE code = 'gpon_network' AND tenant_id = 'default' LIMIT 1`,
+    );
+    const gponLayerId = layerRows[0]?.id ?? null;
+
     const specIdFor = new Map();
     const novasSpecs = [];
     for (const [name, resourceType] of [
@@ -596,6 +602,7 @@ async function main() {
         name,
         category: 'Infrastructure.Passive',
         resource_type: resourceType,
+        resource_layer_id: gponLayerId,
         description: `Importado do Netwin — ${name}`,
         characteristics: JSON.stringify([{ name: 'seed', value: SEED_TAG, valueType: 'string' }]),
       });
@@ -603,7 +610,7 @@ async function main() {
     await bulkInsert(
       client,
       'tmf_resource_specification',
-      ['id', 'name', 'category', 'resource_type', 'description', 'characteristics'],
+      ['id', 'name', 'category', 'resource_type', 'resource_layer_id', 'description', 'characteristics'],
       novasSpecs,
     );
 
@@ -643,8 +650,8 @@ async function main() {
         id: b.resourceId,
         name: b.displayName,
         resource_specification_id: specIdFor.get(b.tipo),
-        resource_type: 'CTO',
         status,
+        status_code: resolveStatusCode(substatus) ?? null,
         // `place_id`/`place_type` são as colunas que o repositório de recursos
         // realmente lê (vêm de migration); `geographic_location_id` é a coluna
         // original e continua preenchida pelo índice/FK de geo. Gravar só a
@@ -653,8 +660,6 @@ async function main() {
         place_type: 'GeographicLocation',
         geographic_location_id: locId,
         serving_site_id: siteBySigla.get(b.sigla) ?? null,
-        manufacturer: b.row.FABRICANTE || null,
-        model: b.row.MODELO || null,
         characteristics: JSON.stringify(
           originChars(
             b.key,
@@ -702,14 +707,12 @@ async function main() {
         id,
         name: display,
         resource_specification_id: specIdFor.get('Splitter'),
-        resource_type: 'Splitter',
         status,
+        status_code: resolveStatusCode(substatus) ?? null,
         place_id: locId,
         place_type: 'GeographicLocation',
         geographic_location_id: locId,
         serving_site_id: siteBySigla.get(s.sigla) ?? null,
-        manufacturer: s.row.FABRICANTE || null,
-        model: s.row.MODELO || null,
         characteristics: JSON.stringify(
           originChars(
             naturalKey,
@@ -767,14 +770,12 @@ async function main() {
       'id',
       'name',
       'resource_specification_id',
-      'resource_type',
       'status',
+      'status_code',
       'place_id',
       'place_type',
       'geographic_location_id',
       'serving_site_id',
-      'manufacturer',
-      'model',
       'characteristics',
     ];
     await bulkInsert(client, 'tmf_physical_resource', boxCols, boxResources);
@@ -794,14 +795,12 @@ async function main() {
         id,
         name: `${caixa?.displayName ?? s.box.displayName} · ${s.nome}`,
         resource_specification_id: specIdFor.get('Splitter'),
-        resource_type: 'Splitter',
         status,
+        status_code: resolveStatusCode(substatus) ?? null,
         place_id: caixa?.locationId ?? null,
         place_type: caixa?.locationId ? 'GeographicLocation' : null,
         geographic_location_id: caixa?.locationId ?? null,
         serving_site_id: siteBySigla.get(s.sigla) ?? null,
-        manufacturer: s.row.FABRICANTE || null,
-        model: s.row.MODELO || null,
         characteristics: JSON.stringify(
           originChars(
             naturalKey,

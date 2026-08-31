@@ -383,31 +383,29 @@ test('physical create modal assumes the page category and hides the Categoria fi
   expect(screen.getByLabelText(/^Local$/i)).toHaveTextContent('Selecione um local…');
 });
 
-test('physical model selection auto-populates manufacturer from the selected specification', async () => {
-  const user = userEvent.setup();
-  render(<ResourcePage category="Equipment.Access" />);
+  test('physical model selection sets the specification on the form', async () => {
+    const user = userEvent.setup();
+    render(<ResourcePage category="Equipment.Access" />);
 
-  await screen.findAllByText('Physical 1');
-  await user.click(screen.getByRole('button', { name: 'Criar recurso' }));
+    await screen.findAllByText('Physical 1');
+    await user.click(screen.getByRole('button', { name: 'Criar recurso' }));
 
-  await user.selectOptions(screen.getByLabelText(/^Tipo do Recurso$/i), 'OLT');
-  await user.selectOptions(screen.getByLabelText(/^Modelo$/i), 'spec-1');
+    await user.selectOptions(screen.getByLabelText(/^Tipo do Recurso$/i), 'OLT');
+    await user.selectOptions(screen.getByLabelText(/^Modelo$/i), 'spec-1');
 
-  await waitFor(() => expect(screen.getByLabelText(/Fabricante/i)).toHaveValue('DATACOM'));
-  expect(screen.getByLabelText(/Modelo físico/i)).toHaveValue('Spec 1');
-});
+    await waitFor(() => expect(screen.getByLabelText(/^Modelo$/i)).toHaveValue('spec-1'));
+  });
 
-test('editing a physical resource also auto-populates manufacturer from the selected specification', async () => {
-  const user = userEvent.setup();
-  render(<ResourcePage category="Equipment.Access" />);
+  test('editing a physical resource preserves its selected specification', async () => {
+    const user = userEvent.setup();
+    render(<ResourcePage category="Equipment.Access" />);
 
-  await screen.findAllByText('Physical 1');
-  await user.click((await screen.findAllByText('Physical 1'))[0]);
+    await screen.findAllByText('Physical 1');
+    await user.click((await screen.findAllByText('Physical 1'))[0]);
 
-  expect(await screen.findByRole('dialog')).toHaveTextContent('Editar Recursos Físicos');
-  await waitFor(() => expect(screen.getByLabelText(/Fabricante/i)).toHaveValue('DATACOM'));
-  expect(screen.getByLabelText(/Modelo físico/i)).toHaveValue('Spec 1');
-});
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Editar Recursos Físicos');
+    await waitFor(() => expect(screen.getByLabelText(/^Modelo$/i)).toHaveValue('spec-1'));
+  });
 
 test('logical category lists logical inventory and its modal scopes specs by category', async () => {
   const user = userEvent.setup();

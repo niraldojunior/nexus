@@ -10,8 +10,12 @@ import type {
   ResourceQuery,
   ResourceRelationship,
   ResourceType,
+  ResourceLayer,
   ResourceSpecification,
   ResourceSpecificationQuery,
+  PhysicalResourceDetail,
+  ResourceAuditEntry,
+  ResourceStatusCatalogEntry,
 } from './domain.js';
 
 // Escopo de tenant para leitura por id — as mesmas entidades cujo `list*` já aceita `tenantId`
@@ -46,6 +50,30 @@ export interface IResourceRepository {
   listResourceCategories(): Awaitable<ResourceCategory[]>;
   getResourceType(code: string): Awaitable<ResourceType | undefined>;
   listResourceTypes(): Awaitable<ResourceType[]>;
+  upsertResourceLayer(layer: ResourceLayer): Awaitable<ResourceLayer>;
+  getResourceLayer(id: string, scope?: ResourceTenantScope): Awaitable<ResourceLayer | undefined>;
+  listResourceLayers(scope?: ResourceTenantScope): Awaitable<ResourceLayer[]>;
+
+  // Catálogo de estados granulares (issue #171). Diferente de Category/Type, é por tenant:
+  // o operador pode acrescentar estado próprio via API (C9).
+  listResourceStatusCatalog(query?: {
+    resourceType?: string;
+    tenantId?: string;
+  }): Awaitable<ResourceStatusCatalogEntry[]>;
+  getResourceStatusCatalogEntry(
+    code: string,
+    tenantId?: string,
+  ): Awaitable<ResourceStatusCatalogEntry | undefined>;
+
+  // Histórico do recurso — leitura de tmf_audit_log, sem tabela própria (issue #171).
+  listResourceAudit(
+    resourceId: string,
+    scope?: ResourceTenantScope & { limit?: number },
+  ): Awaitable<ResourceAuditEntry[]>;
+  getPhysicalResourceDetail(
+    resourceId: string,
+    scope?: ResourceTenantScope,
+  ): Awaitable<PhysicalResourceDetail | undefined>;
 
   upsertPhysicalResource(resource: PhysicalResource): Awaitable<PhysicalResource>;
   getPhysicalResource(

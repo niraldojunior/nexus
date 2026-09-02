@@ -91,12 +91,52 @@ describe('ResourceOverviewTab', () => {
     expect(screen.getByText('Em Uso')).toBeInTheDocument();
     expect(screen.getByText('Disponível para ativação')).toBeInTheDocument();
     expect(screen.getByText('Rua, Ator Paulo Gustavo, nº 45, Niterói, RJ')).toBeInTheDocument();
-    expect(screen.getByText('[-43.10944, -22.90278]')).toBeInTheDocument();
     expect(screen.getByText('01/08/2026')).toBeInTheDocument();
     expect(screen.getByText('02/08/2026')).toBeInTheDocument();
 
     // Campos removidos do padrão (issue #184): "Especificação do catálogo" e "Status SID".
     expect(screen.queryByText('CTO 8 portas')).not.toBeInTheDocument();
+  });
+
+  it('mostra a fonte entre parênteses quando o endereço tem sourceSystem', () => {
+    render(
+      <ResourceOverviewTab
+        detail={detail({
+          place: {
+            ...(detail().place as NonNullable<PhysicalResourceDetail['place']>),
+            sourceSystem: 'NETWIN',
+          },
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText('Rua, Ator Paulo Gustavo, nº 45, Niterói, RJ (netwin)'),
+    ).toBeInTheDocument();
+  });
+
+  it('quando há endereço, não mostra coordenadas em Localização (evita duplicidade com Endereço)', () => {
+    render(<ResourceOverviewTab detail={detail()} />);
+
+    expect(screen.queryByText('[-43.10944, -22.90278]')).not.toBeInTheDocument();
+  });
+
+  it('quando só há coordenadas (sem endereço), mostra-as em Localização', () => {
+    render(<ResourceOverviewTab detail={detail({ place: undefined })} />);
+
+    expect(screen.getByText('[-43.10944, -22.90278]')).toBeInTheDocument();
+  });
+
+  it('nunca cai no id/hash técnico do place — sem rua, Endereço fica "—"', () => {
+    render(
+      <ResourceOverviewTab
+        detail={detail({
+          place: { id: 'site-1', name: 'Icaraí', '@referredType': 'GeographicSite' },
+        })}
+      />,
+    );
+
+    expect(screen.queryByText('site-1')).not.toBeInTheDocument();
   });
 
   it('destaca o estado administrativo bloqueado com o tom vermelho', () => {

@@ -286,6 +286,10 @@ export type PhysicalResourceDetail = {
     city?: string;
     stateOrProvince?: string;
     postcode?: string;
+    // Presente também quando o place é um GeographicSite com endereço vinculado
+    // (geographic_address_id) — a UI usa o par rua+sourceSystem, não o Site em si,
+    // para o campo "Endereço" (ver resolveDetailPlace).
+    sourceSystem?: string;
   };
   location?: ResourceDetailReference & {
     geometryType?: GeoGeometryType;

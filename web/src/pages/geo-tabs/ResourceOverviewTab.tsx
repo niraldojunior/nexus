@@ -5,10 +5,15 @@ import {
   Boxes,
   Building2,
   Calendar,
+  CalendarClock,
   Cpu,
   Crosshair,
   Database,
   Factory,
+  FileText,
+  Fingerprint,
+  FolderKanban,
+  Hash,
   Layers,
   MapPin,
   Radio,
@@ -20,6 +25,7 @@ import { IconInfoRow } from './IconInfoRow';
 import { TonePill } from './TonePill';
 import { formatCoordinatePoint } from './CoordinateStreetView';
 import { formatDateBR } from '../../utils/helpers';
+import { withSourceSuffix } from '../../utils/placeLabel';
 import {
   ADMIN_STATE_LABELS,
   ADMIN_STATE_TONE,
@@ -35,6 +41,9 @@ export type ResourceOverviewTabProps = {
   onOpenResource?: (resourceId: string) => void;
 };
 
+// Nunca cai no id/hash técnico (issue #184 follow-up) — quando o place não tem rua
+// (ex.: GeographicSite sem endereço vinculado), o campo fica vazio e "Localização"
+// assume com as coordenadas, em vez de mostrar aqui um nome de site que não é endereço.
 function formatPlaceAddress(place: PhysicalResourceDetail['place']): string | null {
   if (!place) return null;
   const parts = [
@@ -46,8 +55,8 @@ function formatPlaceAddress(place: PhysicalResourceDetail['place']): string | nu
     place.stateOrProvince,
     place.postcode,
   ].filter(Boolean);
-  if (parts.length > 0) return parts.join(', ');
-  return place.name ?? place.id;
+  if (parts.length === 0) return null;
+  return withSourceSuffix(parts.join(', '), place.sourceSystem);
 }
 
 // Perfil e ordem alinhados ao padrão Netwin/CDOE usado pelo time de negócio (ver plano
@@ -189,7 +198,14 @@ export function ResourceOverviewTab({ detail, onOpenResource }: ResourceOverview
 
       <IconInfoRow icon={MapPin} hint="Endereço" value={placeFormatted ?? '—'} />
 
-      <IconInfoRow icon={Crosshair} hint="Localização" value={coordinates ?? '—'} mono={!!coordinates} />
+      {/* Mesma exclusão mútua do painel de Site (SiteOverviewTab): coordenadas só entram
+          quando não há endereço detalhado — senão duplicariam a mesma informação. */}
+      <IconInfoRow
+        icon={Crosshair}
+        hint="Localização"
+        value={!placeFormatted && coordinates ? coordinates : '—'}
+        mono={!placeFormatted && !!coordinates}
+      />
 
       <IconInfoRow
         icon={Building2}
@@ -198,25 +214,29 @@ export function ResourceOverviewTab({ detail, onOpenResource }: ResourceOverview
       />
 
       <IconInfoRow
-        icon={Building2}
+        icon={FolderKanban}
         hint="Projeto de implantação"
         value={project ? (project.name ?? project.id) : '—'}
       />
 
-      <IconInfoRow icon={Tag} hint="Imobilizado (SAP)" value={resource.assetReference ?? '—'} mono />
+      <IconInfoRow icon={Fingerprint} hint="Imobilizado (SAP)" value={resource.assetReference ?? '—'} mono />
 
       <IconInfoRow icon={Barcode} hint="Nº de série" value={resource.serialNumber ?? '—'} mono />
 
-      <IconInfoRow icon={Tag} hint="Part Number" value={resource.partNumber ?? '—'} mono />
+      <IconInfoRow icon={Hash} hint="Part Number" value={resource.partNumber ?? '—'} mono />
 
       <IconInfoRow icon={Calendar} hint="Criado em" value={formatDateBR(resource.createdAt) ?? '—'} />
 
-      <IconInfoRow icon={Calendar} hint="Atualizado em" value={formatDateBR(resource.updatedAt) ?? '—'} />
+      <IconInfoRow
+        icon={CalendarClock}
+        hint="Atualizado em"
+        value={formatDateBR(resource.updatedAt) ?? '—'}
+      />
 
       <div className="mt-1 border-t border-app-border pt-1">
         <IconInfoRow icon={Database} hint="Sistema de origem" value={originSystem ?? '—'} />
 
-        <IconInfoRow icon={AlertCircle} hint="Observações" value={notes ?? '—'} />
+        <IconInfoRow icon={FileText} hint="Observações" value={notes ?? '—'} />
       </div>
     </div>
   );

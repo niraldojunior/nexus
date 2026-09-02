@@ -12,7 +12,10 @@ import { DEFAULT_SERVICE_CATEGORY_CODE } from '../data/serviceCategoryViews';
  * servidor sempre devolve `index.html` e a aplicação resolve a rota no cliente.
  *
  * Escopo do que a URL carrega: nível de página (página + categoria ativa + sessão aberta). Estado
- * interno de tela (seleção no mapa, filtros de coluna, aba do painel) não é serializado.
+ * interno de tela (filtros de coluna, aba do painel) não é serializado — exceção: a posição e o
+ * contexto do mapa em Locais (issue #182), que usam nomes de parâmetro próprios (`ll`/`z`/`site`/
+ * `res`/`addr`/`q`/`place`) para não colidir com este `AppRoute` nem com `clearNavigationParams`;
+ * ver `utils/geoViewState.ts`.
  */
 export type AppRoute = {
   page: PageId;

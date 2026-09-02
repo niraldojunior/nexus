@@ -14,6 +14,7 @@ import {
   GOOGLE_MAPS_KEY,
   loadGoogleMaps,
   reverseGeocode,
+  resolveAddressByPlaceId,
   type DraftAddress,
   type GoogleCircleInstance,
   type GoogleInfoWindowInstance,
@@ -41,6 +42,7 @@ import { useMapTiles } from '../hooks/useMapTiles';
 import { mapTileFeatureNodeId, type MapTileFeature } from '../services/geoMapTileApi';
 import { fetchTreeNode } from '../services/geoTreeApi';
 import { useMapLayers } from '../hooks/useMapLayers';
+import { useGeoViewState } from '../hooks/useGeoViewState';
 import {
   viewportInclude,
   ALL_MAP_LAYERS_VISIBLE,
@@ -54,6 +56,7 @@ import { coverageSwatch, coverageSwatchDataUrl } from '../utils/coverageColor';
 import { projectAreaSwatchDataUrl } from '../utils/projectAreaColor';
 import type { CoverageNeighborhood, CoverageResponse } from '../services/geoCoverageApi';
 import { bottomInsetForOverlay, flyTo, cancelFlight, type FlyTarget } from '../utils/mapCamera';
+import type { GeoViewContext, MapCamera } from '../utils/geoViewState';
 import { acquireDeviceLocation, DEVICE_LOCATION_POOR_ACCURACY_M } from '../utils/deviceLocation';
 import { useGeoTree } from '../hooks/useGeoTree';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -72,6 +75,7 @@ import {
   SITE_ICON_SIZE,
 } from '../utils/siteIcon';
 import { useNavigation } from '../hooks/useNavigation';
+import { parseNavigationParams } from '../utils/navigation';
 import {
   AddressDetailPanel,
   type AddressPinLocation,
@@ -494,13 +498,25 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // que roda acima de 100 m, não na de detalhe.
   const [viewportBounds, setViewportBounds] = useState<MapBounds | null>(null);
 
-  // Chamado pelo mapa a cada `idle` (fim de pan/zoom) com os limites e a escala atuais — só
-  // registra estado; a busca de infra passiva/cobertura vive nos hooks abaixo
-  // (useMapTiles/useGponCoverage), que já debouncam e deduplicam por conta própria.
-  const handleViewportChange = useCallback((bounds: MapBounds, meters: number) => {
-    setScaleMeters(meters);
-    setViewportBounds(bounds);
-  }, []);
+  // Posição e contexto do mapa persistidos em URL + localStorage (issue #182) — ver
+  // hooks/useGeoViewState. `initialView` semeia o mapa já no lugar certo (ver GoogleMapPanel
+  // `initialView`); `reportCamera`/`setContext` são chamados abaixo, sem entrar em `useState`.
+  const viewState = useGeoViewState();
+
+  // Chamado pelo mapa a cada `idle` (fim de pan/zoom) com os limites, a escala e a câmera
+  // atuais — registra estado (bounds/scaleMeters, para infra passiva/cobertura, que já
+  // debouncam e deduplicam por conta própria) e reporta a câmera para persistência.
+  const handleViewportChange = useCallback(
+    (bounds: MapBounds, meters: number, camera: MapCamera) => {
+      setScaleMeters(meters);
+      setViewportBounds(bounds);
+      viewState.reportCamera(camera);
+    },
+    // `reportCamera` é a única peça estável de `viewState` (ver useGeoViewState) — depender do
+    // objeto inteiro recriaria este callback (e tudo que o consome, ver GoogleMapPanel) a cada
+    // render, o mesmo cuidado já documentado em `selectNode`/`tree.revealNode` acima.
+    [viewState.reportCamera],
+  );
 
   const tree = useGeoTree();
   const { navParams, clearNav, goToResource } = useNavigation();
@@ -875,7 +891,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // GeoDetailPanel). Nós de UF/Município/grupo só navegam a árvore, não têm
   // detalhe próprio.
   const selectNode = useCallback(
-    (node: GeoTreeNode, from: 'search' | 'tree' | 'map' = 'tree') => {
+    (node: GeoTreeNode, from: 'search' | 'tree' | 'map' | 'restore' = 'tree') => {
       setSelectedNode(node);
       setDraftAddress(null);
       setAddressLookup(null);
@@ -883,18 +899,23 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       // volta a doca para a Hierarquia, para não deixar um painel de projeto grudado no
       // fundo depois que o usuário já mudou de assunto (ver dockView).
       setDockView({ kind: 'hierarchy' });
-      const point = treeNodePoint(node);
-      if (point) {
-        // Clique num item já visível no mapa não pede zoom (não rouba o enquadramento
-        // do usuário); busca e árvore pedem o zoom de chegada do tipo do item —
-        // estação enquadra o prédio, recurso/cabo enquadra a caixa.
-        const scaleMeters =
-          from === 'map'
-            ? null
-            : node.kind === 'site'
-              ? SITE_FOCUS_SCALE_METERS
-              : RESOURCE_FOCUS_SCALE_METERS;
-        setFocusRequest({ point, scaleMeters });
+      // Restauração (issue #182): o mapa já nasceu na câmera salva (ver GoogleMapPanel
+      // `initialView`) — pedir um voo aqui reenquadraria por cima da posição que acabou de
+      // ser restaurada, com o zoom de chegada do tipo do item em vez do zoom salvo.
+      if (from !== 'restore') {
+        const point = treeNodePoint(node);
+        if (point) {
+          // Clique num item já visível no mapa não pede zoom (não rouba o enquadramento
+          // do usuário); busca e árvore pedem o zoom de chegada do tipo do item —
+          // estação enquadra o prédio, recurso/cabo enquadra a caixa.
+          const scaleMeters =
+            from === 'map'
+              ? null
+              : node.kind === 'site'
+                ? SITE_FOCUS_SCALE_METERS
+                : RESOURCE_FOCUS_SCALE_METERS;
+          setFocusRequest({ point, scaleMeters });
+        }
       }
       tree.revealNode(node.id, { expandSelf: node.hasChildren });
       if (node.kind === 'site' || node.kind === 'resource') {
@@ -913,6 +934,129 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     // um objeto novo por render antes de ser memoizado.
     [tree.revealNode],
   );
+
+  // Contexto persistido do mapa (issue #182): deriva do que está aberto na doca, na mesma
+  // precedência do resto do arquivo — endereço e nó nunca coexistem (ver
+  // onAddressFound/selectNode/onDeselect). Sem nada aberto cai em `{kind:'none'}`, e só o
+  // viewport (câmera) segue sendo persistido.
+  const viewContext = useMemo<GeoViewContext>(() => {
+    if (addressLookup) {
+      const [lng, lat] = addressLookup.address.coordinates;
+      return {
+        kind: 'address',
+        source: addressLookup.source,
+        lat,
+        lng,
+        placeId: addressLookup.address.placeId,
+        query: addressLookup.address.sourceQuery,
+        address: addressLookup.address,
+      };
+    }
+    if (selectedNode?.refId && (selectedNode.kind === 'site' || selectedNode.kind === 'resource')) {
+      return selectedNode.kind === 'site'
+        ? { kind: 'site', siteId: selectedNode.refId }
+        : { kind: 'resource', resourceId: selectedNode.refId };
+    }
+    return { kind: 'none' };
+  }, [addressLookup, selectedNode]);
+
+  useEffect(() => {
+    viewState.setContext(viewContext);
+    // `setContext` é a única peça estável de `viewState` (mesmo cuidado do
+    // handleViewportChange acima) — o objeto inteiro mudaria de identidade a cada render.
+  }, [viewContext, viewState.setContext]);
+
+  // Suprime a próxima chamada de `setFocusRequest` do painel de Endereço
+  // (onAddressLocationResolved) logo após uma restauração de contexto — ela voaria com
+  // ADDRESS_FOCUS_SCALE_METERS por cima do zoom que acabou de ser restaurado.
+  const suppressNextAddressFocusRef = useRef(false);
+
+  // Restaura o contexto salvo (issue #182) na montagem: reconstrói a seleção de Site/Recurso
+  // (via fetchTreeNode) ou o endereço aberto (do cache do storage ou por nova geocodificação).
+  // Roda uma única vez — dedupe por ref, no espírito do StrictMode double-invoke documentado
+  // em AGENTS.md §3, não por array de dependências (o efeito reage a `viewState.initialView`,
+  // que só existe na primeira renderização). Deep-link de `?siteId=` vence: quando presente, a
+  // restauração de contexto não mexe em nada — só o viewport (já aplicado via `initialView` do
+  // mapa) permanece, e o efeito de deep-link abaixo decide a seleção.
+  const restoredContextRef = useRef(false);
+  useEffect(() => {
+    if (restoredContextRef.current) return;
+    restoredContextRef.current = true;
+
+    const deepLinkParams = parseNavigationParams();
+    if (deepLinkParams?.page === 'geo' && deepLinkParams.siteId) return;
+
+    const context = viewState.initialView?.context;
+    if (!context || context.kind === 'none') return;
+
+    let cancelled = false;
+
+    if (context.kind === 'site' || context.kind === 'resource') {
+      const nodeId =
+        context.kind === 'site' ? `site:${context.siteId}` : `resource:${context.resourceId}`;
+      void fetchTreeNode(nodeId)
+        .then((node) => {
+          if (!cancelled) selectNode(node, 'restore');
+        })
+        .catch(() => {
+          // Site/Recurso não existe mais (terminado ou excluído entre sessões) — o
+          // viewport restaurado permanece, só sem seleção.
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    suppressNextAddressFocusRef.current = true;
+    const applyAddress = (address: DraftAddress) => {
+      if (cancelled) return;
+      setAddressLookup({
+        address,
+        source: context.source,
+        resolution: {
+          mode: 'automatic',
+          selected: {
+            coordinates: address.coordinates,
+            source: 'google',
+            precision: address.precision ?? 'Desconhecida',
+            label: address.label,
+          },
+        },
+      });
+      setQuery(address.sourceQuery?.trim() || address.label);
+      setSearchSelection({ type: 'address', address });
+    };
+
+    if (context.address) {
+      applyAddress(context.address);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    // Sem `DraftAddress` em cache (URL compartilhada, aba diferente da que gravou o
+    // storage): re-geocodifica pelo placeId (mais preciso) e cai para reverse geocode do
+    // ponto salvo; se os dois falharem, sintetiza o mínimo no mesmo formato do fallback de
+    // clique no mapa (ver o listener `click` de GoogleMapPanel).
+    void (context.placeId ? resolveAddressByPlaceId(context.placeId) : Promise.resolve(null))
+      .then((outcome) => (outcome?.ok ? outcome.address : null))
+      .catch(() => null)
+      .then((address) => address ?? reverseGeocode(context.lat, context.lng).catch(() => null))
+      .then((address) => {
+        applyAddress(
+          address ?? {
+            street: 'Ponto salvo',
+            country: 'BR',
+            coordinates: [context.lng, context.lat],
+            label:
+              context.query || `Ponto salvo [${context.lng.toFixed(5)}, ${context.lat.toFixed(5)}]`,
+          },
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewState.initialView, selectNode]);
 
   // Mesma seleção, três origens — a origem só decide o zoom de chegada (ver selectNode):
   // busca e árvore aproximam até o item; clique no mapa mantém o enquadramento atual.
@@ -1159,7 +1303,13 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       if (!current || current.source !== 'search') return current;
       return { ...current, resolution };
     });
-    setFocusRequest({ point: active.coordinates, scaleMeters: ADDRESS_FOCUS_SCALE_METERS });
+    // Uma restauração de contexto (issue #182) acabou de posicionar a câmera no zoom salvo —
+    // essa primeira resolução não deve voar por cima dele (ver o efeito de restauração acima).
+    if (suppressNextAddressFocusRef.current) {
+      suppressNextAddressFocusRef.current = false;
+    } else {
+      setFocusRequest({ point: active.coordinates, scaleMeters: ADDRESS_FOCUS_SCALE_METERS });
+    }
     setQuery(active.label);
     setSearchSelection((current) =>
       current?.type === 'address' && current.address.label !== active.label
@@ -1618,6 +1768,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               dropSimulation={dropSimulation}
               portDropPreview={portDropPreview}
               focusRequest={focusRequest}
+              initialView={viewState.initialView?.camera ?? null}
               bottomSheetState={bottomSheetState}
               balloon={balloon}
               onSelectNode={selectNodeFromMap}
@@ -1643,7 +1794,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               onCoverageHover={setCoverageHover}
               projectAreas={projectAreas}
               onProjectAreaHover={setProjectAreaHover}
-              autoLocateOnOpen={isMobile}
+              // Com uma posição restaurada (F5, link compartilhado), o auto-locate mobile não
+              // deve roubar o enquadramento que o usuário já tinha antes de sair (ele só desiste
+              // sozinho quando há uma seleção, ver `selectedNodeIdRef` — não há uma para
+              // viewport puro).
+              autoLocateOnOpen={isMobile && !viewState.initialView}
               // Qualquer camada do mapa em carga acende a barra fina no topo do mapa; o
               // script do Google Maps é somado à barra dentro do painel (ver MapLoadingBar).
               busy={mapDataLoading}
@@ -1745,6 +1900,7 @@ export function GoogleMapPanel({
   dropSimulation,
   portDropPreview,
   focusRequest,
+  initialView = null,
   bottomSheetState,
   balloon,
   onSelectNode,
@@ -1811,6 +1967,12 @@ export function GoogleMapPanel({
   portDropPreview?: PortDropPreview | null;
   // Pedido de foco: para onde a câmera voa e com que zoom de chegada (ver flyTo).
   focusRequest?: FlyTarget | null;
+  // Câmera restaurada (issue #182, ver hooks/useGeoViewState) com que o mapa já NASCE
+  // posicionado, em vez de nascer no `DEFAULT_CENTER` e voar depois — evita carregar tiles do
+  // centro padrão à toa, animação de voo encadeada e o zoom fracionário que `flyTo`
+  // produziria. Só é lida na criação do mapa (ver `initialViewRef`); mudanças depois de o
+  // mapa existir não têm efeito, por design (não pode "puxar" a câmera do usuário de volta).
+  initialView?: MapCamera | null;
   // `undefined` = sem painel; `null` = painel mobile montando/sem medida; objeto =
   // snap e altura estabilizados, necessários para aplicar a política de reenquadramento.
   bottomSheetState?: BottomSheetSnapState | null;
@@ -1829,7 +1991,10 @@ export function GoogleMapPanel({
   // Se há algo aberto (nó, endereço ou rascunho) — decide se a navegação manual encolhe
   // a folha e alimenta a invalidação do clique adiado.
   selectionActive?: boolean;
-  onViewportChange: (bounds: MapBounds, scaleMeters: number) => void;
+  // 3º argumento (`camera`) é a posição bruta (lat/lng/zoom), para persistência (ver
+  // handleViewportChange/useGeoViewState em GeoPage) — distinto de `bounds`/`scaleMeters`, que
+  // já existiam para infra passiva/cobertura e não bastam para recriar a câmera exata.
+  onViewportChange: (bounds: MapBounds, scaleMeters: number, camera: MapCamera) => void;
   // Cobertura GPON da viewport (mapa de calor por bairro), ou null quando fora de escala. O
   // painel só a desenha na camada de canvas (ver CoverageOverlay); a busca é do chamador.
   coverage: CoverageResponse | null;
@@ -1876,6 +2041,9 @@ export function GoogleMapPanel({
   const selectedNodeId = selectedNode?.id ?? null;
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<GoogleMapInstance | null>(null);
+  // Lido uma única vez, na criação do mapa (ver o efeito logo abaixo) — não é a prop
+  // diretamente para não instabilizar as deps desse efeito a cada render.
+  const initialViewRef = useRef(initialView);
   const framedFocusRequestRef = useRef<FlyTarget | null>(null);
   const framedBottomSheetStateRef = useRef<BottomSheetSnapState | undefined>(undefined);
   // Marcadores/polylines indexados por id do nó — permite reusar o mesmo objeto entre renders
@@ -2095,8 +2263,10 @@ export function GoogleMapPanel({
         const maps = window.google?.maps;
         if (!mapEl.current || mapRef.current || !maps) return;
         mapRef.current = new maps.Map(mapEl.current, {
-          center: DEFAULT_CENTER,
-          zoom: 15,
+          center: initialViewRef.current
+            ? { lat: initialViewRef.current.lat, lng: initialViewRef.current.lng }
+            : DEFAULT_CENTER,
+          zoom: initialViewRef.current?.zoom ?? 15,
           mapTypeId: selectedBaseLayer.googleMapTypeId,
           mapTypeControl: false,
           fullscreenControl: false,
@@ -2202,6 +2372,7 @@ export function GoogleMapPanel({
               maxLat: northEast.lat(),
             },
             scaleMeters,
+            { lat: center.lat(), lng: center.lng(), zoom },
           );
         };
         reportViewportRef.current = reportViewport;

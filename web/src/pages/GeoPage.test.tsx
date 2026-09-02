@@ -245,6 +245,98 @@ describe('GoogleMapPanel', () => {
     expect(options).not.toHaveProperty('tiltInteractionEnabled');
   });
 
+  it('sem initialView, o mapa nasce no centro/zoom padrão (regressão)', async () => {
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        coverage={null}
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
+        onCoverageHover={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(googleMocks.mapCtor).toHaveBeenCalledOnce());
+    const options = googleMocks.mapCtor.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(options.center).toEqual({ lat: -22.9068, lng: -43.1075 });
+    expect(options.zoom).toBe(15);
+  });
+
+  it('com initialView, o mapa nasce já na câmera restaurada (issue #182)', async () => {
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        coverage={null}
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
+        onCoverageHover={vi.fn()}
+        initialView={{ lat: -22.91, lng: -43.11, zoom: 18 }}
+      />,
+    );
+
+    await waitFor(() => expect(googleMocks.mapCtor).toHaveBeenCalledOnce());
+    const options = googleMocks.mapCtor.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(options.center).toEqual({ lat: -22.91, lng: -43.11 });
+    expect(options.zoom).toBe(18);
+  });
+
+  it('o listener "idle" repassa a câmera atual como 3º argumento de onViewportChange', async () => {
+    const onViewportChange = vi.fn();
+    googleMocks.mapGetZoom.mockReturnValue(16);
+    const boundsCenter = { lat: () => -22.92, lng: () => -43.12 };
+    googleMocks.mapGetBounds.mockReturnValue({
+      getCenter: () => boundsCenter,
+      getNorthEast: () => ({ lat: () => -22.9, lng: () => -43.1 }),
+      getSouthWest: () => ({ lat: () => -22.94, lng: () => -43.14 }),
+    });
+
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={onViewportChange}
+        coverage={null}
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
+        onCoverageHover={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(mapListener('idle')).toBeTypeOf('function'));
+    mapListener('idle')?.();
+
+    expect(onViewportChange).toHaveBeenCalledWith(
+      expect.objectContaining({ minLat: -22.94, minLng: -43.14, maxLat: -22.9, maxLng: -43.1 }),
+      expect.any(Number),
+      { lat: -22.92, lng: -43.12, zoom: 16 },
+    );
+  });
+
   it('mostra a legenda de cobertura GPON quando a camada está visível', async () => {
     const coverage = {
       level: 'neighborhood' as const,

@@ -4,7 +4,9 @@ import {
   Barcode,
   Boxes,
   Building2,
+  Calendar,
   Cpu,
+  Crosshair,
   Database,
   Factory,
   Layers,
@@ -14,9 +16,19 @@ import {
   Wrench,
 } from 'lucide-react';
 import type { PhysicalResourceDetail } from '../../services/resourceApi';
-import { StatusBadge } from './StatusBadge';
 import { IconInfoRow } from './IconInfoRow';
-import { ADMIN_STATE_LABELS, OP_STATE_LABELS, USAGE_STATE_LABELS } from '../../utils/resourceStateLabels';
+import { TonePill } from './TonePill';
+import { formatCoordinatePoint } from './CoordinateStreetView';
+import { formatDateBR } from '../../utils/helpers';
+import {
+  ADMIN_STATE_LABELS,
+  ADMIN_STATE_TONE,
+  OP_STATE_LABELS,
+  OP_STATE_TONE,
+  USAGE_STATE_LABELS,
+  USAGE_STATE_TONE,
+  STATUS_BEHAVIOR_TONE,
+} from '../../utils/resourceStateLabels';
 
 export type ResourceOverviewTabProps = {
   detail: PhysicalResourceDetail;
@@ -38,13 +50,21 @@ function formatPlaceAddress(place: PhysicalResourceDetail['place']): string | nu
   return place.name ?? place.id;
 }
 
+// Perfil e ordem alinhados ao padrão Netwin/CDOE usado pelo time de negócio (ver plano
+// da issue #184) — os 19 campos "padrão" + os 2 characteristics são sempre renderizados,
+// mesmo vazios (`—`), em vez de somem quando não há valor.
 export function ResourceOverviewTab({ detail, onOpenResource }: ResourceOverviewTabProps) {
-  const { resource, specification, statusCatalogEntry, parent, place, servingSite, project } = detail;
+  const { resource, specification, statusCatalogEntry, parent, place, location, servingSite, project } =
+    detail;
 
   const manufacturer = specification.manufacturer;
   const model = specification.model;
   const resourceLayer = specification.resourceLayer;
   const placeFormatted = formatPlaceAddress(place);
+  const coordinates =
+    location?.geometryType === 'Point' && location.geometry?.type === 'Point'
+      ? formatCoordinatePoint(location.geometry.coordinates)
+      : null;
 
   const originSystem =
     resource.characteristic?.find(
@@ -61,102 +81,82 @@ export function ResourceOverviewTab({ detail, onOpenResource }: ResourceOverview
   return (
     <div className="grid gap-1">
       <IconInfoRow
-        icon={Boxes}
-        hint="Tipo do recurso"
-        value={specification.resourceTypeName || resource.resourceType || 'Recurso Físico'}
+        icon={Wrench}
+        hint="Estado administrativo"
+        value={
+          resource.administrativeState ? (
+            <TonePill
+              label={ADMIN_STATE_LABELS[resource.administrativeState] ?? resource.administrativeState}
+              tone={ADMIN_STATE_TONE[resource.administrativeState] ?? 'neutral'}
+            />
+          ) : (
+            '—'
+          )
+        }
       />
-
-      <IconInfoRow
-        icon={Database}
-        hint="Especificação do catálogo"
-        value={specification.name}
-      />
-
-      {resource.label ? (
-        <IconInfoRow icon={Tag} hint="Etiqueta física" value={resource.label} />
-      ) : null}
 
       <IconInfoRow
         icon={Activity}
-        hint="Status SID"
-        value={<StatusBadge status={resource.status ?? 'active'} />}
+        hint="Estado operacional"
+        value={
+          resource.operationalState ? (
+            <TonePill
+              label={OP_STATE_LABELS[resource.operationalState] ?? resource.operationalState}
+              tone={OP_STATE_TONE[resource.operationalState] ?? 'neutral'}
+            />
+          ) : (
+            '—'
+          )
+        }
       />
 
-      {statusCatalogEntry ? (
-        <IconInfoRow
-          icon={AlertCircle}
-          hint="Estado granular"
-          value={statusCatalogEntry.name}
-        />
-      ) : legacySubstatus ? (
-        <IconInfoRow icon={AlertCircle} hint="Substatus" value={legacySubstatus} />
-      ) : null}
+      <IconInfoRow
+        icon={Layers}
+        hint="Estado de uso"
+        value={
+          resource.usageState ? (
+            <TonePill
+              label={USAGE_STATE_LABELS[resource.usageState] ?? resource.usageState}
+              tone={USAGE_STATE_TONE[resource.usageState] ?? 'neutral'}
+            />
+          ) : (
+            '—'
+          )
+        }
+      />
 
-      {resource.administrativeState ? (
-        <IconInfoRow
-          icon={Wrench}
-          hint="Estado administrativo"
-          value={ADMIN_STATE_LABELS[resource.administrativeState] ?? resource.administrativeState}
-        />
-      ) : null}
+      <IconInfoRow
+        icon={AlertCircle}
+        hint="Estado"
+        value={
+          statusCatalogEntry ? (
+            <TonePill
+              label={statusCatalogEntry.name}
+              tone={STATUS_BEHAVIOR_TONE[statusCatalogEntry.behavior] ?? 'neutral'}
+            />
+          ) : (
+            legacySubstatus ?? '—'
+          )
+        }
+      />
 
-      {resource.operationalState ? (
-        <IconInfoRow
-          icon={Activity}
-          hint="Estado operacional"
-          value={OP_STATE_LABELS[resource.operationalState] ?? resource.operationalState}
-        />
-      ) : null}
+      <IconInfoRow icon={Tag} hint="Etiqueta física" value={resource.label ?? '—'} />
 
-      {resource.usageState ? (
-        <IconInfoRow
-          icon={Layers}
-          hint="Estado de uso"
-          value={USAGE_STATE_LABELS[resource.usageState] ?? resource.usageState}
-        />
-      ) : null}
+      <IconInfoRow icon={Cpu} hint="Modelo" value={model ?? '—'} />
 
-      {manufacturer ? (
-        <IconInfoRow icon={Factory} hint="Fabricante" value={manufacturer.name ?? manufacturer.id} />
-      ) : null}
+      <IconInfoRow
+        icon={Factory}
+        hint="Fabricante"
+        value={manufacturer ? (manufacturer.name ?? manufacturer.id) : '—'}
+      />
 
-      {model ? <IconInfoRow icon={Cpu} hint="Modelo" value={model} /> : null}
+      <IconInfoRow
+        icon={Boxes}
+        hint="Tipo do recurso"
+        value={specification.resourceTypeName || resource.resourceType || '—'}
+      />
 
-      {resourceLayer ? (
-        <IconInfoRow icon={Radio} hint="Camada de recurso" value={resourceLayer.name} />
-      ) : null}
-
-      {resource.serialNumber ? (
-        <IconInfoRow icon={Barcode} hint="Nº de série" value={resource.serialNumber} mono />
-      ) : null}
-
-      {resource.partNumber ? (
-        <IconInfoRow icon={Tag} hint="Part Number" value={resource.partNumber} mono />
-      ) : null}
-
-      {resource.assetReference ? (
-        <IconInfoRow icon={Tag} hint="Imobilizado (SAP)" value={resource.assetReference} mono />
-      ) : null}
-
-      {placeFormatted ? (
-        <IconInfoRow icon={MapPin} hint="Local" value={placeFormatted} />
-      ) : null}
-
-      {servingSite ? (
-        <IconInfoRow
-          icon={Building2}
-          hint="Estação abastecedora"
-          value={servingSite.name ?? servingSite.id}
-        />
-      ) : null}
-
-      {project ? (
-        <IconInfoRow
-          icon={Building2}
-          hint="Projeto de implantação"
-          value={project.name ?? project.id}
-        />
-      ) : null}
+      <IconInfoRow icon={Radio} hint="Topologia" value={resourceLayer?.name ?? '—'} />
 
       {parent ? (
         <div className="flex min-w-0 items-center gap-2.5 py-1" title="Recurso Pai">
@@ -183,15 +183,41 @@ export function ResourceOverviewTab({ detail, onOpenResource }: ResourceOverview
             )}
           </div>
         </div>
-      ) : null}
+      ) : (
+        <IconInfoRow icon={Boxes} hint="Recurso Pai" value="—" />
+      )}
 
-      {originSystem ? (
-        <IconInfoRow icon={Database} hint="Sistema de origem" value={originSystem} />
-      ) : null}
+      <IconInfoRow icon={MapPin} hint="Endereço" value={placeFormatted ?? '—'} />
 
-      {notes ? (
-        <IconInfoRow icon={AlertCircle} hint="Observações" value={notes} />
-      ) : null}
+      <IconInfoRow icon={Crosshair} hint="Localização" value={coordinates ?? '—'} mono={!!coordinates} />
+
+      <IconInfoRow
+        icon={Building2}
+        hint="Estação abastecedora"
+        value={servingSite ? (servingSite.name ?? servingSite.id) : '—'}
+      />
+
+      <IconInfoRow
+        icon={Building2}
+        hint="Projeto de implantação"
+        value={project ? (project.name ?? project.id) : '—'}
+      />
+
+      <IconInfoRow icon={Tag} hint="Imobilizado (SAP)" value={resource.assetReference ?? '—'} mono />
+
+      <IconInfoRow icon={Barcode} hint="Nº de série" value={resource.serialNumber ?? '—'} mono />
+
+      <IconInfoRow icon={Tag} hint="Part Number" value={resource.partNumber ?? '—'} mono />
+
+      <IconInfoRow icon={Calendar} hint="Criado em" value={formatDateBR(resource.createdAt) ?? '—'} />
+
+      <IconInfoRow icon={Calendar} hint="Atualizado em" value={formatDateBR(resource.updatedAt) ?? '—'} />
+
+      <div className="mt-1 border-t border-app-border pt-1">
+        <IconInfoRow icon={Database} hint="Sistema de origem" value={originSystem ?? '—'} />
+
+        <IconInfoRow icon={AlertCircle} hint="Observações" value={notes ?? '—'} />
+      </div>
     </div>
   );
 }

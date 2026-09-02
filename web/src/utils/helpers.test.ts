@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test, vi } from 'vitest';
-import { formatDate, generateId, truncateString } from './helpers';
+import { formatDate, formatDateBR, generateId, truncateString } from './helpers';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -23,4 +23,15 @@ test('formatDate returns a localized pt-BR string', () => {
 
   assert.match(formatted, /2024/);
   assert.match(formatted, /\d{2}:\d{2}/);
+});
+
+test('formatDateBR returns dd/mm/yyyy for a valid ISO date', () => {
+  assert.equal(formatDateBR('2024-12-09T10:30:00.000Z'), '09/12/2024');
+});
+
+test('formatDateBR returns null for empty or invalid input', () => {
+  assert.equal(formatDateBR(''), null);
+  assert.equal(formatDateBR(undefined), null);
+  assert.equal(formatDateBR(null), null);
+  assert.equal(formatDateBR('not-a-date'), null);
 });

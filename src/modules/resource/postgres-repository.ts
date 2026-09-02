@@ -1,4 +1,5 @@
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import type { GeoGeometryType } from '../geo/domain.js';
 import type {
   LogicalResource,
   PhysicalResource,
@@ -1241,11 +1242,20 @@ export class PostgresResourceRepository implements IResourceRepository {
       );
       locationId = site?.geographic_location_id ?? null;
     }
-    return locationId
-      ? { id: locationId, '@referredType': 'GeographicLocation' }
-      : place?.['@referredType'] === 'GeographicLocation'
-        ? place
-        : undefined;
+    if (!locationId && place?.['@referredType'] === 'GeographicLocation') {
+      locationId = place.id;
+    }
+    if (!locationId) return undefined;
+
+    const geo = await this.db.get<{ geometry_type: GeoGeometryType; geometry: string }>(
+      `SELECT geometry_type, geometry FROM tmf_geographic_location WHERE id = ? AND tenant_id = ?`,
+      [locationId, tenantId],
+    );
+    return {
+      id: locationId,
+      '@referredType': 'GeographicLocation',
+      ...(geo ? { geometryType: geo.geometry_type, geometry: JSON.parse(geo.geometry) } : {}),
+    };
   }
 
   public async listPhysicalResources(query?: ResourceQuery): Promise<PhysicalResource[]> {

@@ -1,4 +1,5 @@
 import type { Characteristic, RelatedParty, TimePeriod } from '../../shared/tmf/index.js';
+import type { GeoGeometryType, GeoJSONGeometry } from '../geo/domain.js';
 
 export type ResourceKind = 'PhysicalResource' | 'LogicalResource';
 export type ResourceStatus = 'active' | 'inactive' | 'suspended' | 'terminated';
@@ -286,7 +287,10 @@ export type PhysicalResourceDetail = {
     stateOrProvince?: string;
     postcode?: string;
   };
-  location?: ResourceDetailReference;
+  location?: ResourceDetailReference & {
+    geometryType?: GeoGeometryType;
+    geometry?: GeoJSONGeometry;
+  };
   servingSite?: ResourceDetailReference;
   project?: ResourceDetailReference;
   childCount: number;

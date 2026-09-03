@@ -130,6 +130,44 @@ describe('ResourceModelCascadeFields', () => {
     expect(onCommit).toHaveBeenCalledWith('spec-b');
   });
 
+  it('spec atual ausente do catálogo carregado (paginação/ended): ainda assim pré-seleciona e permite trocar', () => {
+    // Reprodução do bug relatado para CDOE-02-ICARAI: a spec do recurso não veio na página de
+    // 500 linhas (ou está `ended`), então `specifications` não a contém — sem mesclar a spec
+    // atual, nenhum dos 4 níveis teria opção correspondente ao valor do `<select>`.
+    const orphanSpecification: ResourceSpecification = {
+      id: 'spec-legacy-orphan',
+      name: 'CDOE legado',
+      category: 'Infrastructure.Passive',
+      resourceType: 'CTO',
+      resourceLayerId: 'layer-p2p',
+      resourceSpecificationCharacteristic: [{ name: 'model', value: 'CDOE legado' }],
+      relatedParty: [{ id: 'party-3', name: 'Fabricante Legado', '@referredType': 'Organization', role: 'manufacturer' }],
+    };
+    const onCommit = vi.fn();
+    render(
+      <ResourceModelCascadeFields
+        layers={LAYERS}
+        types={TYPES}
+        specifications={SPECS}
+        currentSpecification={orphanSpecification}
+        onCommit={onCommit}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText('Topologia')).toHaveValue('layer-p2p');
+    expect(screen.getByLabelText('Tipo de equipamento')).toHaveValue('CTO');
+    expect(screen.getByLabelText('Fornecedor')).toHaveValue('party-3');
+    expect(screen.getByLabelText('Modelo')).toHaveValue('spec-legacy-orphan');
+
+    fireEvent.change(screen.getByLabelText('Topologia'), { target: { value: 'layer-gpon' } });
+    expect(screen.getByLabelText('Modelo')).toHaveValue('spec-a');
+    fireEvent.change(screen.getByLabelText('Fornecedor'), { target: { value: 'party-2' } });
+    expect(screen.getByLabelText('Modelo')).toHaveValue('spec-b');
+    fireEvent.change(screen.getByLabelText('Modelo'), { target: { value: 'spec-b' } });
+    expect(onCommit).toHaveBeenCalledWith('spec-b');
+  });
+
   it('clicar fora do editor chama onCancel', () => {
     const onCancel = vi.fn();
     const { container } = render(

@@ -45,11 +45,26 @@ export function ResourceModelCascadeFields({
   });
   const [specDraft, setSpecDraft] = useState(currentSpecification.id);
 
-  const layerOptions = buildModelLayerOptions(layers, specifications);
-  const typeOptions = buildModelTypeOptions(specifications, types, layerBucket);
-  const manufacturerOptions = buildModelManufacturerOptions(specifications, layerBucket, typeCode);
+  // O recurso pode ter sido salvo com uma spec que não vem na página carregada por
+  // `startEditModel` (catálogo grande — Netwin/legado — passa de 500 linhas) ou que já foi
+  // encerrada (`includeEnded:false` a exclui por padrão). Sem isto, os 4 níveis da cascata do
+  // recurso atual não aparecem em nenhuma lista de opções: nenhum valor é exibido, o `<select>`
+  // fica com `value` órfão (não bate com nenhum `<option>`) e escolher algo não muda nada porque
+  // não há nada de fato selecionável. Garantir que a spec atual sempre esteja no conjunto de
+  // trabalho resolve os 4 níveis de uma vez, sem tocar no fetch nem no backend.
+  const effectiveSpecifications = specifications.some((spec) => spec.id === currentSpecification.id)
+    ? specifications
+    : [...specifications, currentSpecification];
+
+  const layerOptions = buildModelLayerOptions(layers, effectiveSpecifications);
+  const typeOptions = buildModelTypeOptions(effectiveSpecifications, types, layerBucket);
+  const manufacturerOptions = buildModelManufacturerOptions(
+    effectiveSpecifications,
+    layerBucket,
+    typeCode,
+  );
   const specificationOptions = buildModelSpecificationOptions(
-    specifications,
+    effectiveSpecifications,
     layerBucket,
     typeCode,
     manufacturerBucket,
@@ -57,18 +72,18 @@ export function ResourceModelCascadeFields({
 
   const changeLayer = (nextLayerBucket: string) => {
     setLayerBucket(nextLayerBucket);
-    const nextTypeOptions = buildModelTypeOptions(specifications, types, nextLayerBucket);
+    const nextTypeOptions = buildModelTypeOptions(effectiveSpecifications, types, nextLayerBucket);
     const nextTypeCode = nextTypeOptions[0]?.id ?? '';
     setTypeCode(nextTypeCode);
     const nextManufacturerOptions = buildModelManufacturerOptions(
-      specifications,
+      effectiveSpecifications,
       nextLayerBucket,
       nextTypeCode,
     );
     const nextManufacturerBucket = nextManufacturerOptions[0]?.id ?? '';
     setManufacturerBucket(nextManufacturerBucket);
     const nextSpecOptions = buildModelSpecificationOptions(
-      specifications,
+      effectiveSpecifications,
       nextLayerBucket,
       nextTypeCode,
       nextManufacturerBucket,
@@ -79,14 +94,14 @@ export function ResourceModelCascadeFields({
   const changeType = (nextTypeCode: string) => {
     setTypeCode(nextTypeCode);
     const nextManufacturerOptions = buildModelManufacturerOptions(
-      specifications,
+      effectiveSpecifications,
       layerBucket,
       nextTypeCode,
     );
     const nextManufacturerBucket = nextManufacturerOptions[0]?.id ?? '';
     setManufacturerBucket(nextManufacturerBucket);
     const nextSpecOptions = buildModelSpecificationOptions(
-      specifications,
+      effectiveSpecifications,
       layerBucket,
       nextTypeCode,
       nextManufacturerBucket,
@@ -97,7 +112,7 @@ export function ResourceModelCascadeFields({
   const changeManufacturer = (nextManufacturerBucket: string) => {
     setManufacturerBucket(nextManufacturerBucket);
     const nextSpecOptions = buildModelSpecificationOptions(
-      specifications,
+      effectiveSpecifications,
       layerBucket,
       typeCode,
       nextManufacturerBucket,

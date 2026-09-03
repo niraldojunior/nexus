@@ -39,7 +39,6 @@ import type { GeoJSONGeometry } from '../modules/geo/domain.js';
 import {
   configureOracleClient,
   cut,
-  ensureCategory,
   ensureControlTables,
   ensureMapEntityIndex,
   ensureResourceType,
@@ -688,23 +687,19 @@ function classifyRoute(catSubtypeId: number): string {
 // ---------------------------------------------------------------- catálogo -----
 
 async function ensureCatalogForOsp(target: Connection, t: TablePrefixer): Promise<void> {
-  await ensureCategory(target, t, 'Infrastructure.Passive', 'Infraestrutura Passiva');
-  await ensureCategory(target, t, 'Cable.OutsidePlant', 'Cabos OSP');
-  await ensureCategory(target, t, 'Infrastructure.CivilWorks', 'Infraestrutura Civil');
-
   for (const [code, name] of [
     ['CTO', 'Caixa de Terminação Óptica'],
     ['SpliceClosure', 'Caixa de emenda'],
     ['OpticalNode', 'Nó óptico'],
   ] as const) {
-    await ensureResourceType(target, t, code, name, 'Infrastructure.Passive');
+    await ensureResourceType(target, t, code, name);
   }
   for (const [code, name] of [
     ['BackboneCable', 'Cabo backbone'],
     ['DistributionCable', 'Cabo de distribuição'],
     ['DropCable', 'Cabo drop'],
   ] as const) {
-    await ensureResourceType(target, t, code, name, 'Cable.OutsidePlant');
+    await ensureResourceType(target, t, code, name);
   }
   for (const [code, name] of [
     ['AerialSpan', 'Lance aéreo'],
@@ -713,7 +708,7 @@ async function ensureCatalogForOsp(target: Connection, t: TablePrefixer): Promis
     ['InnerSpan', 'Lance interno'],
     ['OtherSpan', 'Lance (outro)'],
   ] as const) {
-    await ensureResourceType(target, t, code, name, 'Infrastructure.CivilWorks');
+    await ensureResourceType(target, t, code, name);
   }
 }
 

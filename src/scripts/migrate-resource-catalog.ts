@@ -51,14 +51,20 @@ const SAMPLE_LIMIT = 20;
 
 const hasFlag = (flag: string): boolean => process.argv.includes(flag);
 const apply = hasFlag('--apply');
-const confirmed = hasFlag('--confirm-resource-catalog-backfill');
-if (apply && !confirmed) {
+const confirmedBackfill = hasFlag('--confirm-resource-catalog-backfill');
+const confirmedCutover = hasFlag('--confirm-resource-catalog-cutover');
+const isCutover = hasFlag('--cutover');
+
+if (apply && !confirmedBackfill && !confirmedCutover) {
   throw new Error(
-    'A escrita da Fase A exige --apply --confirm-resource-catalog-backfill. Sem flags, o script apenas audita (Gate A).',
+    'A escrita exige --confirm-resource-catalog-backfill (Fase A) ou --cutover --confirm-resource-catalog-cutover (Fase B).',
   );
 }
-if (confirmed && !apply) {
-  throw new Error('--confirm-resource-catalog-backfill exige --apply junto.');
+if ((confirmedBackfill || confirmedCutover) && !apply) {
+  throw new Error('--confirm-* exige --apply junto.');
+}
+if (isCutover && !confirmedCutover) {
+  throw new Error('Fase B (--cutover) exige --apply --confirm-resource-catalog-cutover.');
 }
 
 // Único sentido migrado nesta Fase A: linhas legadas (sem tenant, hoje armazenadas como
@@ -984,10 +990,143 @@ const auditGateB = async (db: DatabaseSession): Promise<AuditReport> => {
   };
 };
 
+/** Gate D (plano Fase B): preflight isolado para cutover sem consultas a tabelas legadas já ausentes de TABLE_NAMES. */
+const auditGateD = async (db: DatabaseSession): Promise<AuditReport> => {
+  const findings: AuditFinding[] = [];
+  await addFinding(
+    db,
+    findings,
+    'RESOURCE_CATALOG_CUTOVER_SPEC_TYPE_ID_MISSING',
+    'tmf_resource_specification',
+    `SELECT COUNT(*) AS count FROM tmf_resource_specification WHERE tenant_id = ? AND resource_type_id IS NULL`,
+    `SELECT id FROM tmf_resource_specification WHERE tenant_id = ? AND resource_type_id IS NULL ORDER BY id`,
+    [DESTINATION_TENANT],
+  );
+  return {
+    provider: databaseConfig.provider,
+    mode: 'audit-only',
+    allowedTenants: ALLOWED_TENANTS,
+    findings,
+    countsByTenant: [],
+    approved: findings.length === 0,
+  };
+};
+
+const columnExists = async (
+  db: DatabaseSession,
+  table: string,
+  columnName: string,
+): Promise<boolean> => {
+  const row =
+    databaseConfig.provider === 'oracle'
+      ? await db.queryOne<{ count: number | string }>(
+          `SELECT COUNT(*) AS count FROM user_tab_cols WHERE table_name = UPPER(?) AND column_name = UPPER(?)`,
+          [`${databaseConfig.objectPrefix}${table}`, columnName],
+        )
+      : await db.queryOne<{ count: number | string }>(
+          `SELECT COUNT(*) AS count FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?`,
+          [table, columnName],
+        );
+  return Number(row?.count ?? 0) > 0;
+};
+
+const tableExists = async (db: DatabaseSession, table: string): Promise<boolean> => {
+  const row =
+    databaseConfig.provider === 'oracle'
+      ? await db.queryOne<{ count: number | string }>(
+          `SELECT COUNT(*) AS count FROM user_tables WHERE table_name = UPPER(?)`,
+          [`${databaseConfig.objectPrefix}${table}`],
+        )
+      : await db.queryOne<{ count: number | string }>(
+          `SELECT COUNT(*) AS count FROM information_schema.tables
+            WHERE table_schema = current_schema() AND table_name = ?`,
+          [table],
+        );
+  return Number(row?.count ?? 0) > 0;
+};
+
+const dropColumnIfExists = async (
+  db: DatabaseSession,
+  table: string,
+  columnName: string,
+): Promise<boolean> => {
+  if (!(await columnExists(db, table, columnName))) {
+    process.stdout.write(`    DROP COLUMN ${table}.${columnName}: coluna já inexistente\n`);
+    return false;
+  }
+  // Remove FKs/constraints dependentes da coluna antes do drop
+  if (databaseConfig.provider === 'oracle') {
+    await db.execute(`ALTER TABLE ${table} DROP COLUMN ${columnName} CASCADE CONSTRAINTS`);
+  } else {
+    await db.execute(`ALTER TABLE ${table} DROP COLUMN IF EXISTS ${columnName} CASCADE`);
+  }
+  process.stdout.write(`    DROP COLUMN ${table}.${columnName}: removida\n`);
+  return true;
+};
+
+const dropTableIfExists = async (db: DatabaseSession, table: string): Promise<boolean> => {
+  if (!(await tableExists(db, table))) {
+    process.stdout.write(`    DROP TABLE ${table}: tabela já inexistente\n`);
+    return false;
+  }
+  if (databaseConfig.provider === 'oracle') {
+    const physicalName = `${databaseConfig.objectPrefix}${table}`;
+    await db.execute(`DROP TABLE ${physicalName} CASCADE CONSTRAINTS`);
+  } else {
+    await db.execute(`DROP TABLE IF EXISTS ${table} CASCADE`);
+  }
+  process.stdout.write(`    DROP TABLE ${table}: removida\n`);
+  return true;
+};
+
+/**
+ * Executa a limpeza física da Fase B (Issue #188 §7 Fase B):
+ * 1. Remove colunas legadas em tmf_resource_specification (category, resource_type, resource_layer_id)
+ * 2. Remove category_code em tmf_resource_type
+ * 3. Remove resource_type em tmf_resource_status_catalog (se existente)
+ * 4. Remove tabelas tmf_resource_layer e tmf_resource_category
+ */
+const executePhaseBCutover = async (db: DatabaseSession): Promise<void> => {
+  process.stdout.write('1/4 — removendo colunas legadas de tmf_resource_specification...\n');
+  await dropColumnIfExists(db, 'tmf_resource_specification', 'category');
+  await dropColumnIfExists(db, 'tmf_resource_specification', 'resource_type');
+  await dropColumnIfExists(db, 'tmf_resource_specification', 'resource_layer_id');
+
+  process.stdout.write('2/4 — removendo coluna legada de tmf_resource_type...\n');
+  await dropColumnIfExists(db, 'tmf_resource_type', 'category_code');
+
+  process.stdout.write('3/4 — removendo coluna legada de tmf_resource_status_catalog...\n');
+  await dropColumnIfExists(db, 'tmf_resource_status_catalog', 'resource_type');
+
+  process.stdout.write('4/4 — dropando tabelas legadas...\n');
+  await dropTableIfExists(db, 'tmf_resource_layer');
+  await dropTableIfExists(db, 'tmf_resource_category');
+};
+
 try {
   await client.initialize();
 
-  if (!apply) {
+  if (isCutover) {
+    process.stdout.write(
+      `Fase B --cutover iniciada: provider=${databaseConfig.provider}\n`,
+    );
+
+    const preflight = await auditGateD(client);
+    if (!preflight.approved) {
+      process.stdout.write(`${JSON.stringify(preflight, null, 2)}\n`);
+      throw new Error(
+        `Gate D (preflight de cutover) reprovado: ${preflight.findings.length} classe(s) de divergência. Nenhuma remoção física foi executada.`,
+      );
+    }
+    process.stdout.write('Gate D (preflight) aprovado. Iniciando remoção física (DDL destrutivo).\n');
+
+    await executePhaseBCutover(client);
+
+    process.stdout.write(
+      `Fase B --cutover concluída com sucesso em ${databaseConfig.provider}.\n`,
+    );
+  } else if (!apply) {
     const report = await audit(client);
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     if (!report.approved) {

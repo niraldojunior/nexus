@@ -31,7 +31,6 @@ const HREF_TABLES = [
   ['tmf_geographic_site', '/tmf-api/geographicSiteManagement/v4/geographicSite', 'id'],
   ['tmf_geographic_relationship_type', '/v1/geo/relationship-types', 'code'],
   ['tmf_resource_specification', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', 'id'],
-  ['tmf_resource_category', '/tmf-api/resourceCatalogManagement/v4/resourceCategory', 'id'],
   ['tmf_resource_type', '/tmf-api/resourceCatalogManagement/v4/resourceType', 'id'],
   [
     'tmf_resource_function_specification',

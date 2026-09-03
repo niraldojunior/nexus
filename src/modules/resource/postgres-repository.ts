@@ -31,7 +31,6 @@ import type {
 } from './resource-repository-interface.js';
 import {
   RESOURCE_CATALOG_BOOTSTRAP,
-  RESOURCE_CATEGORIES,
   RESOURCE_TENANTS,
   RESOURCE_TYPES,
 } from './catalog.js';
@@ -239,7 +238,6 @@ export class PostgresResourceRepository implements IResourceRepository {
 
   public async initialize(): Promise<void> {
     await this.seedResourceCatalog();
-    await this.seedResourceLayers();
     await this.seedStatusCatalog();
     await this.seedResourceCatalogContainers();
   }
@@ -272,27 +270,6 @@ export class PostgresResourceRepository implements IResourceRepository {
           now,
           now,
         ],
-      );
-    }
-  }
-
-  private async seedResourceLayers(tenantId = 'vtal'): Promise<void> {
-    const layers = [
-      ['resource-layer-infrastructure', 'infrastructure', 'Infraestrutura'],
-      ['resource-layer-gpon-network', 'gpon_network', 'Rede GPON'],
-    ] as const;
-    const now = new Date().toISOString();
-    for (const [id, code, name] of layers) {
-      const existing = await this.db.get<{ id: string }>(
-        `SELECT id FROM tmf_resource_layer WHERE (tenant_id = ? OR tenant_id = 'default' OR id = ?) AND code = ?`,
-        [tenantId, id, code],
-      );
-      if (existing) continue;
-      await this.db.run(
-        `INSERT INTO tmf_resource_layer
-         (id, tenant_id, code, name, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'active', ?, ?)`,
-        [id, tenantId, code, name, now, now],
       );
     }
   }
@@ -431,43 +408,12 @@ export class PostgresResourceRepository implements IResourceRepository {
   }
 
   /**
-   * Bootstrap governado de Category/Type (issue #188, plano §6/addendum Task #12). Insert-if-missing
-   * tenant-aware, nunca `DO UPDATE` — preserva edição do operador (C9). Roda só para `tenant_id =
-   * 'vtal'` (`tecto` fica com árvore vazia, decisão firmada); `default` deixa de receber seed novo,
-   * mas as linhas legadas não são tocadas aqui — migram para `vtal` só via
-   * `src/scripts/migrate-resource-catalog.ts --apply`. Isto é pré-requisito da migração v3.1/3.2
-   * (relaxamento de `UNIQUE(code)` global para `UNIQUE(tenant_id, code)` em
-   * `tmf_resource_category`/`tmf_resource_type`): com `DO UPDATE` a cláusula `ON CONFLICT(code)`
-   * deixaria de casar com qualquer constraint/índice assim que a coluna passasse a ser única por
-   * tenant, e o boot quebraria.
+   * Bootstrap governado de ResourceType (issue #188). Insert-if-missing tenant-aware, nunca
+   * `DO UPDATE` — preserva edição do operador (C9). Roda para `tenant_id = 'vtal'`.
    */
   private async seedResourceCatalog(tenantId: (typeof RESOURCE_TENANTS)[number] = 'vtal'): Promise<void> {
     const now = new Date().toISOString();
     await this.db.transaction(async () => {
-      for (const category of RESOURCE_CATEGORIES) {
-        const existing = await this.db.get<{ id: string }>(
-          `SELECT id FROM tmf_resource_category WHERE (tenant_id = ? OR tenant_id = 'default') AND code = ?`,
-          [tenantId, category.code],
-        );
-        if (existing) continue;
-        await this.db.run(
-          `INSERT INTO tmf_resource_category
-           (id, tenant_id, code, name, parent_category_code, description, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            createCanonicalId(),
-            tenantId,
-            category.code,
-            category.name,
-            category.parentCategoryCode ?? null,
-            category.description ?? null,
-            category.status,
-            now,
-            now,
-          ],
-        );
-      }
-
       for (const type of RESOURCE_TYPES) {
         const existing = await this.db.get<{ id: string }>(
           `SELECT id FROM tmf_resource_type WHERE (tenant_id = ? OR tenant_id = 'default') AND code = ?`,
@@ -476,14 +422,13 @@ export class PostgresResourceRepository implements IResourceRepository {
         if (existing) continue;
         await this.db.run(
           `INSERT INTO tmf_resource_type
-           (id, tenant_id, code, name, category_code, description, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, tenant_id, code, name, description, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             createCanonicalId(),
             tenantId,
             type.code,
             type.name,
-            type.categoryCode,
             type.description ?? null,
             type.status,
             now,
@@ -593,7 +538,6 @@ export class PostgresResourceRepository implements IResourceRepository {
     scope?: ResourceTenantScope,
   ): Promise<ResourceLayer | undefined> {
     const tenantId = scope?.tenantId ?? 'default';
-    await this.seedResourceLayers(tenantId);
     const row = await this.db.get<{
       id: string;
       code: string;
@@ -611,7 +555,6 @@ export class PostgresResourceRepository implements IResourceRepository {
 
   public async listResourceLayers(scope?: ResourceTenantScope): Promise<ResourceLayer[]> {
     const tenantId = scope?.tenantId ?? 'default';
-    await this.seedResourceLayers(tenantId);
     const rows = await this.db.all<{
       id: string;
       code: string;

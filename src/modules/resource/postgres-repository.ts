@@ -29,9 +29,15 @@ import type {
   IResourceRepository,
   ResourceTenantScope,
 } from './resource-repository-interface.js';
-import { RESOURCE_CATEGORIES, RESOURCE_TYPES } from './catalog.js';
+import {
+  RESOURCE_CATALOG_BOOTSTRAP,
+  RESOURCE_CATEGORIES,
+  RESOURCE_TENANTS,
+  RESOURCE_TYPES,
+} from './catalog.js';
 import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
 import { buildHref } from '../../shared/tmf/index.js';
+import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 
 // Nome da characteristic que diz qual GeographicSite atende o recurso — a estação
 // dona da planta externa que fica na rua (o `place` dela é a Location do ponto, não
@@ -237,6 +243,39 @@ export class PostgresResourceRepository implements IResourceRepository {
     await this.seedResourceCatalog();
     await this.seedResourceLayers();
     await this.seedStatusCatalog();
+    await this.seedResourceCatalogContainers();
+  }
+
+  /**
+   * Bootstrap governado do contêiner `ResourceCatalog` (issue #188, plano §6/§7 passo 5) — só o
+   * container, insert-if-missing, nunca `DO UPDATE` (C9). A árvore de nodes fica para o backfill
+   * auditado (plano §7 Fase A passo 6, tarefa #10): hoje `ResourceType` só existe com
+   * `tenant_id='default'`, e a FK composta de `tmf_resource_catalog_node` exige tenant igual ao do
+   * `ResourceCatalog` — criar nodes agora violaria essa FK ou duplicaria o backfill antes da hora.
+   */
+  private async seedResourceCatalogContainers(): Promise<void> {
+    const now = new Date().toISOString();
+    for (const tenantId of RESOURCE_TENANTS) {
+      const existing = await this.db.get<{ id: string }>(
+        `SELECT id FROM tmf_resource_catalog WHERE tenant_id = ? AND code = ?`,
+        [tenantId, RESOURCE_CATALOG_BOOTSTRAP.code],
+      );
+      if (existing) continue;
+      await this.db.run(
+        `INSERT INTO tmf_resource_catalog
+         (id, tenant_id, code, name, description, status, is_default, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'active', 1, 0, ?, ?)`,
+        [
+          createCanonicalId(),
+          tenantId,
+          RESOURCE_CATALOG_BOOTSTRAP.code,
+          RESOURCE_CATALOG_BOOTSTRAP.name,
+          RESOURCE_CATALOG_BOOTSTRAP.description,
+          now,
+          now,
+        ],
+      );
+    }
   }
 
   private async seedResourceLayers(tenantId = 'default'): Promise<void> {

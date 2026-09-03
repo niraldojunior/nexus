@@ -729,8 +729,11 @@ const routeRequest = async ({
 
   if (
     url.pathname.startsWith('/v1/resources/') ||
+    url.pathname.startsWith('/v1/resource-catalogs/') ||
+    url.pathname.startsWith('/v1/resource-types/') ||
     url.pathname === '/v1/resource-statuses' ||
     url.pathname === '/v1/resource-layers' ||
+    url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceCatalog') ||
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceSpecification') ||
     url.pathname.startsWith(
       '/tmf-api/resourceCatalogManagement/v4/resourceFunctionSpecification',
@@ -2667,6 +2670,93 @@ const routeResourceRequest = async ({
       hasActiveService: activeServicePortIds.has(detail.resource.id),
     });
   }
+  const resourceCatalogTreeMatch = url.pathname.match(/^\/v1\/resource-catalogs\/([^/]+)\/tree$/);
+  if (request.method === 'GET' && resourceCatalogTreeMatch?.[1]) {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    return sendJson(
+      response,
+      200,
+      resourceService.getResourceCatalogTree(
+        decodeURIComponent(resourceCatalogTreeMatch[1]),
+        context,
+        url.searchParams.get('includeInactive') === 'true',
+      ),
+    );
+  }
+
+  const resourceCatalogNodeMatch = url.pathname.match(
+    /^\/v1\/resource-catalogs\/([^/]+)\/nodes(?:\/([^/]+)(?:\/(move|path))?)?$/,
+  );
+  if (resourceCatalogNodeMatch?.[1]) {
+    const catalogId = decodeURIComponent(resourceCatalogNodeMatch[1]);
+    const nodeId = resourceCatalogNodeMatch[2]
+      ? decodeURIComponent(resourceCatalogNodeMatch[2])
+      : undefined;
+    const action = resourceCatalogNodeMatch[3];
+    requireRoles(context, request.method === 'GET' ? INVENTORY_READ_ROLES : CATALOG_ADMIN_ROLES);
+
+    if (!nodeId && request.method === 'GET') {
+      return sendJson(
+        response,
+        200,
+        resourceService.listResourceCatalogNodes(
+          catalogId,
+          context,
+          url.searchParams.get('includeInactive') === 'true',
+        ),
+      );
+    }
+    if (!nodeId && request.method === 'POST') {
+      return sendJson(
+        response,
+        201,
+        resourceService.createResourceCatalogNode(
+          catalogId,
+          (await readBody(request)) as Parameters<typeof resourceService.createResourceCatalogNode>[1],
+          context,
+        ),
+      );
+    }
+    if (nodeId && !action && request.method === 'GET') {
+      return sendJsonOrNotFound(
+        response,
+        resourceService.getResourceCatalogNode(catalogId, nodeId, context),
+        'RESOURCE_CATALOG_NODE_NOT_FOUND',
+      );
+    }
+    if (nodeId && !action && request.method === 'PATCH') {
+      return sendJson(
+        response,
+        200,
+        resourceService.updateResourceCatalogNode(
+          catalogId,
+          nodeId,
+          (await readBody(request)) as Parameters<typeof resourceService.updateResourceCatalogNode>[2],
+          context,
+        ),
+      );
+    }
+    if (nodeId && !action && request.method === 'DELETE') {
+      return sendJson(response, 200, resourceService.deleteResourceCatalogNode(catalogId, nodeId, context));
+    }
+    if (nodeId && action === 'move' && request.method === 'POST') {
+      return sendJson(
+        response,
+        200,
+        resourceService.moveResourceCatalogNode(
+          catalogId,
+          nodeId,
+          (await readBody(request)) as Parameters<typeof resourceService.moveResourceCatalogNode>[2],
+          context,
+        ),
+      );
+    }
+    if (nodeId && action === 'path' && request.method === 'GET') {
+      return sendJson(response, 200, resourceService.getResourceCatalogNodePath(catalogId, nodeId, context));
+    }
+    throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
+  }
+
   const resourceDetailMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)\/detail$/);
   if (request.method === 'GET' && resourceDetailMatch?.[1]) {
     requireRoles(context, INVENTORY_READ_ROLES);
@@ -2689,6 +2779,7 @@ const routeResourceRequest = async ({
   // catalog.admin. Category/type são somente leitura nesta rota. Instâncias (resource/activation/
   // relationships) seguem inventory.reader/inventory.editor, como Geo e Service.
   const isResourceCatalogKind =
+    route.kind === 'resourceCatalog' ||
     route.kind === 'resourceSpecification' ||
     route.kind === 'resourceFunctionSpecification' ||
     route.kind === 'resourceLayer';
@@ -2701,6 +2792,43 @@ const routeResourceRequest = async ({
         ? CATALOG_ADMIN_ROLES
         : INVENTORY_WRITE_ROLES,
   );
+
+  if (route.kind === 'resourceCatalog') {
+    if (!route.id && request.method === 'GET') {
+      return sendJson(response, 200, resourceService.listResourceCatalogs(parseResourceCatalogQuery(url.searchParams), context));
+    }
+    if (!route.id && request.method === 'POST') {
+      return sendJson(
+        response,
+        201,
+        resourceService.createResourceCatalog(
+          (await readBody(request)) as Parameters<typeof resourceService.createResourceCatalog>[0],
+          context,
+        ),
+      );
+    }
+    if (route.id && request.method === 'GET') {
+      return sendJsonOrNotFound(
+        response,
+        resourceService.getResourceCatalog(route.id, context),
+        'RESOURCE_CATALOG_NOT_FOUND',
+      );
+    }
+    if (route.id && request.method === 'PATCH') {
+      return sendJson(
+        response,
+        200,
+        resourceService.updateResourceCatalog(
+          route.id,
+          (await readBody(request)) as Parameters<typeof resourceService.updateResourceCatalog>[1],
+          context,
+        ),
+      );
+    }
+    if (route.id && request.method === 'DELETE') {
+      return sendJson(response, 200, resourceService.deleteResourceCatalog(route.id, context));
+    }
+  }
 
   if (route.kind === 'resourceLayer') {
     if (!route.id && request.method === 'GET') {
@@ -3413,6 +3541,7 @@ type ResourceRoute = {
   kind:
     | 'resourceSpecification'
     | 'resourceFunctionSpecification'
+    | 'resourceCatalog'
     | 'resourceCategory'
     | 'resourceType'
     | 'resourceLayer'
@@ -3877,6 +4006,12 @@ const resolveResourceRoute = (pathname: string): ResourceRoute | undefined => {
   const inventoryBase = '/tmf-api/resourceInventoryManagement/v4/resource';
   const activationBase = '/tmf-api/resourceFunctionActivation/v4/resourceFunction';
 
+  if (pathname === `${catalogBase}/resourceCatalog`) return { kind: 'resourceCatalog' };
+  if (pathname.startsWith(`${catalogBase}/resourceCatalog/`)) {
+    const id = pathname.slice(`${catalogBase}/resourceCatalog/`.length);
+    if (id && !id.includes('/')) return { kind: 'resourceCatalog', id: decodeURIComponent(id) };
+  }
+
   if (pathname === `${catalogBase}/resourceSpecification`) return { kind: 'resourceSpecification' };
   if (pathname.startsWith(`${catalogBase}/resourceSpecification/`)) {
     const id = pathname.slice(`${catalogBase}/resourceSpecification/`.length);
@@ -4004,6 +4139,17 @@ const resolveOrderRoute = (pathname: string): OrderRoute | undefined => {
   }
 
   return undefined;
+};
+
+const parseResourceCatalogQuery = (
+  params: URLSearchParams,
+): Parameters<ResourceService['listResourceCatalogs']>[0] => {
+  const query: NonNullable<Parameters<ResourceService['listResourceCatalogs']>[0]> = {};
+  const name = params.get('name');
+  if (name) query.name = name;
+  const status = params.get('status');
+  if (status === 'active' || status === 'inactive') query.status = status;
+  return query;
 };
 
 const parseResourceSpecificationQuery = (params: URLSearchParams): ResourceSpecificationQuery => {

@@ -1577,6 +1577,46 @@ export const SCHEMA_SQL = `
         ON geo_gpon_coverage_area(tenant_id, lod_level, cdo_total);
 `;
 
+/**
+ * Real migration versioning (fixes the gap tracked in issue #188 §7.0): before this, both
+ * PostgresDatabase.applyMigrations() and OracleDatabase.applyMigrations() re-executed the
+ * *entire* MIGRATIONS_SQL block on every boot and always stamped schema_migrations with a single
+ * hardcoded version=1 row — there was no real batch granularity, so a future destructive DDL
+ * phase would be silently undone by the next boot with DATABASE_AUTO_SCHEMA=true (it would just
+ * re-run the still-idempotent ADD COLUMN/CREATE INDEX statements that recreate the dropped
+ * objects). `MIGRATION_BATCHES` gives each slice of MIGRATIONS_SQL a stable version number that
+ * both providers record individually in `schema_migrations` and skip once applied.
+ *
+ * The existing MIGRATIONS_SQL content becomes batch 1 verbatim — this is a pure refactor of how
+ * it's tracked, not a schema change. New additive migrations (e.g. the Resource Catalog tree)
+ * get their own batch with the next version number; a future destructive phase gets its own
+ * batch too, but it must never run automatically (see §7 Fase B) — only via the controlled
+ * script, which is why destructive DDL does not belong in MIGRATIONS_SQL/MIGRATION_BATCHES at
+ * all.
+ */
+export type MigrationBatch = {
+  version: number;
+  name: string;
+  sql: string;
+};
+
+export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
+  { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
+];
+
+/**
+ * Deterministic, dependency-free checksum for a migration batch's SQL — not cryptographic,
+ * just stable across runs so `schema_migrations.checksum` can flag "this version's SQL changed
+ * since it was applied" without pulling in Node's `crypto` module for a bookkeeping column.
+ */
+export const checksumMigrationBatch = (sql: string): string => {
+  let hash = 0;
+  for (let i = 0; i < sql.length; i += 1) {
+    hash = (Math.imul(hash, 31) + sql.charCodeAt(i)) | 0;
+  }
+  return `batch-${(hash >>> 0).toString(16)}`;
+};
+
 // Rewrites the SQLite-dialect schema DDL to its Postgres equivalent: SQLite type names to
 // Postgres ones and the json_extract() expression index to a jsonb expression index. Comments
 // are stripped so the statements can be split on ';' safely.

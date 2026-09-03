@@ -1,4 +1,4 @@
-import { MIGRATIONS_SQL, SCHEMA_SQL } from './schema.js';
+import { MIGRATION_BATCHES, MIGRATIONS_SQL, SCHEMA_SQL, type MigrationBatch } from './schema.js';
 import { quoteOracleReservedColumns } from './oracle-object-names.js';
 
 const CLOB_COLUMNS = new Set([
@@ -126,6 +126,12 @@ export const transformOracleSchemaSql = (sql: string): string => {
 
 export const ORACLE_SCHEMA_SQL = transformOracleSchemaSql(SCHEMA_SQL);
 export const ORACLE_MIGRATIONS_SQL = transformOracleSchemaSql(MIGRATIONS_SQL);
+
+// Oracle-dialect mirror of schema.ts's MIGRATION_BATCHES — same versions/names, SQL rewritten
+// per statement so OracleDatabase.applyMigrations() can apply/skip per batch like Postgres does.
+export const ORACLE_MIGRATION_BATCHES: readonly MigrationBatch[] = MIGRATION_BATCHES.map(
+  (batch) => ({ ...batch, sql: transformOracleSchemaSql(batch.sql) }),
+);
 
 // `context` holds JSON in mcp_confirmation but free-form markdown (the Nexus Copilot system prompt)
 // in research_session, so the IS JSON check must be skipped for that column there. Keyed by

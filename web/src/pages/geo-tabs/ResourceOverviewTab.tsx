@@ -307,6 +307,62 @@ export function ResourceOverviewTab({
     <div className="grid gap-1">
       {canEdit ? (
         <InlineEditRow
+          label="Estado"
+          icon={AlertCircle}
+          editing={editingStatusCode}
+          onActivate={startEditStatusCode}
+          value={
+            statusCatalogEntry ? (
+              <TonePill
+                label={statusCatalogEntry.name}
+                tone={STATUS_BEHAVIOR_TONE[statusCatalogEntry.behavior] ?? 'neutral'}
+              />
+            ) : (
+              legacySubstatus ?? '—'
+            )
+          }
+        >
+          {statusCatalogLoading || !statusCatalog ? (
+            <div className="flex items-center gap-1.5 px-1.5 py-1 text-[0.82rem] text-app-muted">
+              Carregando catálogo…
+            </div>
+          ) : (
+            <select
+              autoFocus
+              value={resource.statusCode ?? ''}
+              onChange={(event) => void commitStatusCode(event.target.value)}
+              onBlur={() => setEditingStatusCode(false)}
+              aria-label="Estado"
+              className="geo-input"
+            >
+              <option value="">—</option>
+              {statusCatalog.map((entry) => (
+                <option key={entry.code} value={entry.code}>
+                  {entry.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </InlineEditRow>
+      ) : (
+        <IconInfoRow
+          icon={AlertCircle}
+          hint="Estado"
+          value={
+            statusCatalogEntry ? (
+              <TonePill
+                label={statusCatalogEntry.name}
+                tone={STATUS_BEHAVIOR_TONE[statusCatalogEntry.behavior] ?? 'neutral'}
+              />
+            ) : (
+              legacySubstatus ?? '—'
+            )
+          }
+        />
+      )}
+
+      {canEdit ? (
+        <InlineEditRow
           label="Estado administrativo"
           icon={Wrench}
           editing={editingAdmin}
@@ -447,62 +503,6 @@ export function ResourceOverviewTab({
               />
             ) : (
               '—'
-            )
-          }
-        />
-      )}
-
-      {canEdit ? (
-        <InlineEditRow
-          label="Estado"
-          icon={AlertCircle}
-          editing={editingStatusCode}
-          onActivate={startEditStatusCode}
-          value={
-            statusCatalogEntry ? (
-              <TonePill
-                label={statusCatalogEntry.name}
-                tone={STATUS_BEHAVIOR_TONE[statusCatalogEntry.behavior] ?? 'neutral'}
-              />
-            ) : (
-              legacySubstatus ?? '—'
-            )
-          }
-        >
-          {statusCatalogLoading || !statusCatalog ? (
-            <div className="flex items-center gap-1.5 px-1.5 py-1 text-[0.82rem] text-app-muted">
-              Carregando catálogo…
-            </div>
-          ) : (
-            <select
-              autoFocus
-              value={resource.statusCode ?? ''}
-              onChange={(event) => void commitStatusCode(event.target.value)}
-              onBlur={() => setEditingStatusCode(false)}
-              aria-label="Estado"
-              className="geo-input"
-            >
-              <option value="">—</option>
-              {statusCatalog.map((entry) => (
-                <option key={entry.code} value={entry.code}>
-                  {entry.name}
-                </option>
-              ))}
-            </select>
-          )}
-        </InlineEditRow>
-      ) : (
-        <IconInfoRow
-          icon={AlertCircle}
-          hint="Estado"
-          value={
-            statusCatalogEntry ? (
-              <TonePill
-                label={statusCatalogEntry.name}
-                tone={STATUS_BEHAVIOR_TONE[statusCatalogEntry.behavior] ?? 'neutral'}
-              />
-            ) : (
-              legacySubstatus ?? '—'
             )
           }
         />

@@ -53,6 +53,7 @@
 | D-ARQ-004 | RBAC e isolamento multi-tenant estendidos além de `/v1/users`.            | Antiga Q-ARQ-007             | Decidida | RBAC e `tenant_id` (Resource/Service/Order/Party) entraram nas Fases 2–3 da issue #80; VPD Oracle segue como gap em aberto ([#94](https://github.com/niraldojunior/nexus/issues/94)). |
 | D-GEO-003 | `SiteSpecifications` do bootstrap fechadas em 31/07/2026.                 | Antiga Q-GEO-001             | Decidida | `Region`, `FunctionalGroup`, `Central Office`, `POP`, `Cabinet`, `InstallationPoint`, `Floor`, `Room` e `Cage`.                                                                       |
 | D-API-001 | `href` TMF é derivado em tempo de leitura, não persistido.                | Issue [#169](https://github.com/niraldojunior/nexus/issues/169) | Decidida | `buildHref` centraliza tipo + identificador e `TMF_PUBLIC_BASE_URL` opcional aplica o host público; a coluna física redundante é removida. |
+| D-RES-006 | Refatoração Resource Catalog: Árvore dinâmica e desacoplamento de ResourceType | Issue [#188](https://github.com/niraldojunior/nexus/issues/188) | Decidida | `ResourceCatalog` + `ResourceCatalogNode` (árvore de nós `GROUP` ou `RESOURCE_TYPE`) substituem Category/Layer fixas; `ResourceSpecification` aponta exclusivamente via FK `resource_type_id` (`tmf_resource_type`); tipos canônicos independentes de hierarquia e escopados por tenant (`vtal`). |
 
 ## 4. Decisões que Não Devem Ser Reabertas sem Pedido Explícito
 

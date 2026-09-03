@@ -33,6 +33,7 @@ export default {
       'test/docker-deploy.spec.ts',
       'test/env.spec.ts',
       'test/pg-ssl.spec.ts',
+      'test/search.postgres-repository.spec.ts',
       'test/test-utils-guards.spec.ts',
       'dist/**',
       'node_modules/**',

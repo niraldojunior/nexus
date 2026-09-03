@@ -90,7 +90,7 @@ test('V-04: Resource — instância e catálogo isolados por tenant', async (t) 
     'POST',
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     TENANT_A,
-    { name: 'OLT tenant A', category: 'Equipment.Access', resourceType: 'OLT' },
+    { name: 'OLT tenant A', resourceTypeId: 'rt-olt' },
   );
   assert.equal(specA.statusCode, 201);
   const specAId = (specA.body as { id: string }).id;
@@ -193,7 +193,7 @@ test('V-04: Order — recurso criado dentro de uma ordem herda o tenant de quem 
     'POST',
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     TENANT_A,
-    { name: 'ONT tenant A', category: 'Equipment.CustomerPremises', resourceType: 'ONT' },
+    { name: 'ONT tenant A', resourceTypeId: 'rt-ont' },
   );
   assert.equal(specA.statusCode, 201);
   const specAId = (specA.body as { id: string }).id;

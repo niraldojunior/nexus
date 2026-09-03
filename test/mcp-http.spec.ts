@@ -244,8 +244,7 @@ test('Copilot prepara cadastro de PhysicalResource, exige confirmacao e faz comm
       '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
       {
         name: 'ONT',
-        category: 'Equipment.CustomerPremises',
-        resourceType: 'ONT',
+        resourceTypeId: 'rt-ont',
       },
     );
 
@@ -959,8 +958,7 @@ test('Copilot remove modelo de ONT usando o mesmo fluxo de confirmacao', async (
       '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
       {
         name: 'F6201BV9.3.12',
-        category: 'Equipment.CustomerPremises',
-        resourceType: 'ONT',
+        resourceTypeId: 'rt-ont',
         relatedParty: [
           {
             id: (manufacturer.body as { id: string }).id,

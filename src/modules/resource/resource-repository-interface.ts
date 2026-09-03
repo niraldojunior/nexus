@@ -102,7 +102,7 @@ export interface IResourceRepository {
   // Catálogo de estados granulares (issue #171). Diferente de Category/Type, é por tenant:
   // o operador pode acrescentar estado próprio via API (C9).
   listResourceStatusCatalog(query?: {
-    resourceType?: string;
+    resourceTypeId?: string;
     tenantId?: string;
   }): Awaitable<ResourceStatusCatalogEntry[]>;
   getResourceStatusCatalogEntry(

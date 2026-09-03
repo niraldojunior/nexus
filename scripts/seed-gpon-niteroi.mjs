@@ -371,13 +371,20 @@ async function ensureSite({ name, specName, category, coord, address, parentSite
 
 // --------------------------------------------------------------- recursos ----
 
-async function ensureResourceSpec(name, category, resourceType) {
+async function ensureResourceSpec(name, resourceTypeCode) {
   const found = resSpecByName.get(name);
   if (found) return found;
+  const resourceTypes = await api(
+    'GET',
+    `/tmf-api/resourceCatalogManagement/v4/resourceType?code=${encodeURIComponent(resourceTypeCode)}&status=active&limit=2`,
+  );
+  const resourceType = Array.isArray(resourceTypes)
+    ? resourceTypes.find((item) => item.code === resourceTypeCode)
+    : undefined;
+  if (!resourceType) throw new Error(`ResourceType ativo não encontrado: ${resourceTypeCode}`);
   const spec = await api('POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
     name,
-    category,
-    resourceType,
+    resourceTypeId: resourceType.id,
   });
   resSpecByName.set(name, spec.id);
   created.specs++;
@@ -554,9 +561,9 @@ async function main() {
   });
 
   // 2. Inside plant: OLT → placa → portas. Tudo mora na Sala GPON (C2).
-  const oltSpec = await ensureResourceSpec('OLT Huawei MA5800-X7', 'Equipment.Access', 'OLT');
-  const cardSpec = await ensureResourceSpec('Placa GPON GPBH 8p', 'Equipment.Access', 'Card');
-  const portSpec = await ensureResourceSpec('Porta GPON', 'Equipment.Access', 'Port');
+  const oltSpec = await ensureResourceSpec('OLT Huawei MA5800-X7', 'OLT');
+  const cardSpec = await ensureResourceSpec('Placa GPON GPBH 8p', 'Card');
+  const portSpec = await ensureResourceSpec('Porta GPON', 'Port');
 
   const olt = await ensureResource({
     name: 'OLT-ICARAI-01',
@@ -596,35 +603,15 @@ async function main() {
   const portaAtiva = portas[0];
 
   // 3. Outside plant: poste + splitter + feeder.
-  const poleSpec = await ensureResourceSpec(
-    'Poste de concreto 9m',
-    'Infrastructure.CivilWorks',
-    'Pole',
-  );
-  const splitterSpec = await ensureResourceSpec(
-    'Splitter óptico 1:8',
-    'Infrastructure.Passive',
-    'Splitter',
-  );
+  const poleSpec = await ensureResourceSpec('Poste de concreto 9m', 'Pole');
+  const splitterSpec = await ensureResourceSpec('Splitter óptico 1:8', 'Splitter');
   // CDOE = Caixa de Distribuição Óptica Externa. O catálogo canônico traz o tipo
   // CTO para caixa óptica de rua; as instâncias é que se chamam CDOE-xx.
-  const cdoeSpec = await ensureResourceSpec(
-    'CDOE 1:8 (caixa de distribuição)',
-    'Infrastructure.Passive',
-    'CTO',
-  );
-  const feederSpec = await ensureResourceSpec(
-    'Cabo óptico primário 24FO',
-    'Cable.OutsidePlant',
-    'BackboneCable',
-  );
-  const distSpec = await ensureResourceSpec(
-    'Cabo óptico secundário 12FO',
-    'Cable.OutsidePlant',
-    'DistributionCable',
-  );
-  const dropSpec = await ensureResourceSpec('Cabo drop 1FO', 'Cable.OutsidePlant', 'DropCable');
-  const ontSpec = await ensureResourceSpec('ONT GPON Icaraí', 'Equipment.CustomerPremises', 'ONT');
+  const cdoeSpec = await ensureResourceSpec('CDOE 1:8 (caixa de distribuição)', 'CTO');
+  const feederSpec = await ensureResourceSpec('Cabo óptico primário 24FO', 'BackboneCable');
+  const distSpec = await ensureResourceSpec('Cabo óptico secundário 12FO', 'DistributionCable');
+  const dropSpec = await ensureResourceSpec('Cabo drop 1FO', 'DropCable');
+  const ontSpec = await ensureResourceSpec('ONT GPON Icaraí', 'ONT');
 
   const posteSplitterLoc = await locationFor(
     [`POSTE-${POSTE_SPLITTER.tag}`, 'SPLITTER-1x8-ICARAI-01'],

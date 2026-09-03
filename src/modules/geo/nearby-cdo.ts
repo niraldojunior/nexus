@@ -5,7 +5,7 @@
 // filhos que toResourceNodes dispara — metade das idas ao banco por linha.
 //
 // Mesma definição canônica de CDO usada em build-gpon-coverage.mjs e useAddressViability.ts:
-// PhysicalResource com resource_type 'CTO' e nome começando em "CDO" (o tipo sozinho também
+// PhysicalResource com ResourceType 'CTO' e nome começando em "CDO" (o tipo sozinho também
 // pegaria CEO/CEOS, caixas de emenda onde não se puxa drop).
 
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
@@ -41,8 +41,9 @@ const NEARBY_CDO_SQL = `
   SELECT r.id, r.name, l.geometry
     FROM tmf_physical_resource r
     JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
     JOIN tmf_geographic_location l ON l.id = r.place_id
-   WHERE rs.resource_type = 'CTO'
+   WHERE rt.code = 'CTO'
      AND r.status = 'active'
      AND UPPER(r.name) LIKE 'CDO%'
      AND l.geometry_type = 'Point'

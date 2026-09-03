@@ -25,6 +25,7 @@ import type {
   ResourceCatalogTreeNode,
   ResourceLayer,
   ResourceType,
+  ResourceTypeCatalogContext,
   ResourceSpecification,
   ResourceSpecificationBulkItem,
   ResourceSpecificationBulkItemResult,
@@ -95,17 +96,21 @@ export class ResourceService {
     context?: RequestContext,
   ): Promise<ResourceSpecification> {
     assertName(input.name);
-    const category = await this.getResourceCategoryOrThrow(input.category);
-    const resourceType = await this.getResourceTypeOrThrow(input.resourceType);
-    this.assertResourceTypeMatchesCategory(resourceType, category);
+    const resourceType = await this.getResourceTypeByIdOrThrow(input.resourceTypeId);
     const id = createCanonicalId();
     const spec: ResourceSpecification = {
       '@type': 'ResourceSpecification',
       id,
       href: buildHref('resourceSpecification', id),
       name: input.name.trim(),
-      category: category.code,
-      resourceType: resourceType.code,
+      resourceTypeId: resourceType.id,
+      resourceType: {
+        id: resourceType.id,
+        href: resourceType.href,
+        code: resourceType.code,
+        name: resourceType.name,
+        '@referredType': 'ResourceType',
+      },
       resourceSpecificationCharacteristic: assertCanonicalSpecificationCharacteristics(
         input.resourceSpecificationCharacteristic ?? [],
       ),
@@ -115,9 +120,6 @@ export class ResourceService {
         this.dependencies.lookupPartyRoles,
       ),
       tenantId: tenantOf(context),
-      ...(input.resourceLayerId
-        ? { resourceLayerId: (await this.getResourceLayerOrThrow(input.resourceLayerId, context)).id }
-        : {}),
       ...(input.description ? { description: input.description } : {}),
       ...(input.validFor ? { validFor: input.validFor } : {}),
     };
@@ -140,19 +142,26 @@ export class ResourceService {
   ): Promise<ResourceSpecification> {
     const current = await this.getResourceSpecificationOrThrow(id, context);
     if (input.name !== undefined) assertName(input.name);
-    const nextCategoryCode =
-      input.category !== undefined ? input.category.trim() : current.category;
-    const nextResourceTypeCode =
-      input.resourceType !== undefined ? input.resourceType.trim() : current.resourceType;
-    const nextCategory = await this.getResourceCategoryOrThrow(nextCategoryCode);
-    const nextResourceType = await this.getResourceTypeOrThrow(nextResourceTypeCode);
-    this.assertResourceTypeMatchesCategory(nextResourceType, nextCategory);
+    const nextResourceType =
+      input.resourceTypeId !== undefined
+        ? await this.getResourceTypeByIdOrThrow(input.resourceTypeId)
+        : undefined;
 
     const updated = await this.repository.upsertResourceSpecification({
       ...current,
       name: input.name !== undefined ? input.name.trim() : current.name,
-      category: nextCategory.code,
-      resourceType: nextResourceType.code,
+      ...(nextResourceType
+        ? {
+            resourceTypeId: nextResourceType.id,
+            resourceType: {
+              id: nextResourceType.id,
+              href: nextResourceType.href,
+              code: nextResourceType.code,
+              name: nextResourceType.name,
+              '@referredType': 'ResourceType' as const,
+            },
+          }
+        : {}),
       resourceSpecificationCharacteristic: assertCanonicalSpecificationCharacteristics(
         input.resourceSpecificationCharacteristic ?? current.resourceSpecificationCharacteristic,
       ),
@@ -164,13 +173,6 @@ export class ResourceService {
               this.dependencies.lookupPartyRoles,
             )
           : current.relatedParty,
-      ...(input.resourceLayerId !== undefined
-        ? input.resourceLayerId
-          ? { resourceLayerId: (await this.getResourceLayerOrThrow(input.resourceLayerId, context)).id }
-          : {}
-        : current.resourceLayerId
-          ? { resourceLayerId: current.resourceLayerId }
-          : {}),
       ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
     });
@@ -760,6 +762,75 @@ export class ResourceService {
     };
   }
 
+  /**
+   * Visão consolidada de um ResourceType: onde ele aparece na(s) árvore(s) do tenant + suas
+   * specifications (plano §5.4). No máximo 3 consultas batched: tipo · specifications do tipo ·
+   * nodes/catalogs flat relevantes — nunca uma query por folha/pai/specification.
+   */
+  public async getResourceTypeCatalogContext(
+    resourceTypeId: string,
+    context?: RequestContext,
+    includeEndedSpecifications = false,
+    includeInactivePaths = false,
+  ): Promise<ResourceTypeCatalogContext> {
+    const resourceType = await this.getResourceTypeByIdOrThrow(resourceTypeId);
+
+    const [specifications, referencingNodes] = await Promise.all([
+      this.repository.listResourceSpecifications({
+        resourceTypeId: resourceType.id,
+        includeEnded: includeEndedSpecifications,
+        tenantId: tenantOf(context),
+      }),
+      this.repository.listResourceCatalogNodesByResourceType(resourceTypeId, scopeOf(context)),
+    ]);
+
+    const relevantNodes = includeInactivePaths
+      ? referencingNodes
+      : referencingNodes.filter((node) => node.status === 'active');
+
+    const catalogIds = [...new Set(relevantNodes.map((node) => node.catalogId))];
+    const catalogPaths: ResourceCatalogPath[] = [];
+    for (const catalogId of catalogIds) {
+      const catalog = await this.repository.getResourceCatalog(catalogId, scopeOf(context));
+      if (!catalog) continue;
+      const allNodes = await this.repository.listResourceCatalogNodes(catalogId, {
+        ...scopeOf(context),
+        includeInactive: true,
+      });
+      const byId = new Map(allNodes.map((node) => [node.id, node]));
+      for (const target of relevantNodes.filter((node) => node.catalogId === catalogId)) {
+        const chain: ResourceCatalogPathEntry[] = [];
+        const visited = new Set<string>();
+        let cursor: ResourceCatalogNode | undefined = target;
+        while (cursor && !visited.has(cursor.id)) {
+          visited.add(cursor.id);
+          chain.unshift({
+            id: cursor.id,
+            code: cursor.code,
+            name: cursor.name,
+            kind: cursor.kind,
+            ...(cursor.resourceTypeId ? { resourceTypeId: cursor.resourceTypeId } : {}),
+          });
+          cursor = cursor.parentNodeId ? byId.get(cursor.parentNodeId) : undefined;
+        }
+        catalogPaths.push({
+          catalog: { id: catalog.id, code: catalog.code, name: catalog.name },
+          nodes: chain,
+        });
+      }
+    }
+
+    return {
+      resourceType,
+      specifications: specifications.map((spec) => ({
+        id: spec.id,
+        href: spec.href,
+        name: spec.name,
+      })),
+      catalogPaths,
+    };
+  }
+
   private async assertValidParent(
     catalogId: string,
     parentNodeId: string | undefined,
@@ -842,15 +913,15 @@ export class ResourceService {
   }
 
   /**
-   * Estados granulares disponíveis (issue #171). Com `resourceType`, devolve os específicos
+   * Estados granulares disponíveis (issue #171). Com `resourceTypeId`, devolve os específicos
    * daquele tipo **mais** os transversais — a UI de um CTO precisa das duas famílias.
    */
   public async listResourceStatusCatalog(
-    resourceType?: string,
+    resourceTypeId?: string,
     context?: RequestContext,
   ): Promise<ResourceStatusCatalogEntry[]> {
     return await this.repository.listResourceStatusCatalog({
-      ...(resourceType ? { resourceType } : {}),
+      ...(resourceTypeId ? { resourceTypeId } : {}),
       ...scopeOf(context),
     });
   }
@@ -966,7 +1037,7 @@ export class ResourceService {
       name: input.name.trim(),
       resourceSpecificationId: spec.id,
       resourceSpecification: { id: spec.id, '@referredType': 'ResourceSpecification' },
-      resourceType: spec.resourceType,
+      resourceType: spec.resourceType.code,
       status: input.status ?? 'active',
       administrativeState: input.administrativeState ?? 'unlocked',
       operationalState: input.operationalState ?? 'enabled',
@@ -1033,7 +1104,7 @@ export class ResourceService {
         id: input.resourceSpecificationId ?? current.resourceSpecificationId,
         '@referredType': 'ResourceSpecification',
       },
-      resourceType: specification?.resourceType ?? current.resourceType,
+      resourceType: specification?.resourceType.code ?? current.resourceType,
       status: input.status ?? current.status,
       administrativeState: input.administrativeState ?? current.administrativeState,
       operationalState: input.operationalState ?? current.operationalState,
@@ -1184,7 +1255,7 @@ export class ResourceService {
       name: input.name.trim(),
       resourceSpecificationId: spec.id,
       resourceSpecification: { id: spec.id, '@referredType': 'ResourceSpecification' },
-      resourceType: spec.resourceType,
+      resourceType: spec.resourceType.code,
       status: input.status ?? 'active',
       administrativeState: input.administrativeState ?? 'unlocked',
       operationalState: input.operationalState ?? 'enabled',
@@ -1250,7 +1321,7 @@ export class ResourceService {
         id: input.resourceSpecificationId ?? current.resourceSpecificationId,
         '@referredType': 'ResourceSpecification',
       },
-      resourceType: specification?.resourceType ?? current.resourceType,
+      resourceType: specification?.resourceType.code ?? current.resourceType,
       status: input.status ?? current.status,
       administrativeState: input.administrativeState ?? current.administrativeState,
       operationalState: input.operationalState ?? current.operationalState,
@@ -1538,23 +1609,6 @@ export class ResourceService {
     return spec;
   }
 
-  private async getResourceCategoryOrThrow(code: string): Promise<ResourceCategory> {
-    assertName(code, 'category');
-    const category = await this.repository.getResourceCategory(code.trim());
-    if (!category)
-      throw new AppError('resource category not found', {
-        code: 'RESOURCE_CATEGORY_NOT_FOUND',
-        statusCode: 404,
-      });
-    if (category.status !== 'active') {
-      throw new AppError('resource category is inactive', {
-        code: 'RESOURCE_CATEGORY_INACTIVE',
-        statusCode: 409,
-      });
-    }
-    return category;
-  }
-
   private async getResourceLayerOrThrow(
     id: string,
     context?: RequestContext,
@@ -1574,35 +1628,6 @@ export class ResourceService {
       });
     }
     return layer;
-  }
-
-  private async getResourceTypeOrThrow(code: string): Promise<ResourceType> {
-    assertName(code, 'resourceType');
-    const resourceType = await this.repository.getResourceType(code.trim());
-    if (!resourceType)
-      throw new AppError('resource type not found', {
-        code: 'RESOURCE_TYPE_NOT_FOUND',
-        statusCode: 404,
-      });
-    if (resourceType.status !== 'active') {
-      throw new AppError('resource type is inactive', {
-        code: 'RESOURCE_TYPE_INACTIVE',
-        statusCode: 409,
-      });
-    }
-    return resourceType;
-  }
-
-  private assertResourceTypeMatchesCategory(
-    resourceType: ResourceType,
-    category: ResourceCategory,
-  ): void {
-    if (resourceType.categoryCode !== category.code) {
-      throw new AppError('resource type is not allowed for category', {
-        code: 'RESOURCE_TYPE_CATEGORY_MISMATCH',
-        statusCode: 409,
-      });
-    }
   }
 
   private async getResourceFunctionSpecificationOrThrow(

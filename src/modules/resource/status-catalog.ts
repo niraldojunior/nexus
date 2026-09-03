@@ -1,6 +1,17 @@
 import type { ResourceStatusCatalogEntry } from './domain.js';
 
 /**
+ * Forma de bootstrap: `resourceTypeCode` (não `resourceTypeId`) porque estes são dados estáticos,
+ * sem tenant — o `id` do ResourceType só existe depois de materializado por tenant
+ * (`createCanonicalId()` em runtime). O seed resolve `code → id` no tenant de destino antes de
+ * gravar (`PostgresResourceRepository.seedStatusCatalog`).
+ */
+export type ResourceStatusDefault = Omit<
+  ResourceStatusCatalogEntry,
+  '@type' | 'resourceTypeId' | 'tenantId'
+> & { resourceTypeCode?: string };
+
+/**
  * Catálogo canônico de estados granulares do recurso (issue #171).
  *
  * O eixo SID (`ResourceBase.status`, CHECK fechado em active/inactive/suspended/terminated) diz
@@ -15,7 +26,7 @@ import type { ResourceStatusCatalogEntry } from './domain.js';
  *
  * `behavior` é a projeção do estado no eixo SID, para a UI raciocinar sem conhecer cada code.
  */
-export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>[] = [
+export const RESOURCE_STATUS_DEFAULTS: ResourceStatusDefault[] = [
   // ---------------------------------------------------------------- transversais
   { code: 'planned', name: 'Em Projeto', sortOrder: 10, active: true, behavior: 'planned' },
   { code: 'designed', name: 'Projetado', sortOrder: 11, active: true, behavior: 'planned' },
@@ -24,7 +35,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'project_completed',
     name: 'Projeto concluído',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 100,
     active: true,
     behavior: 'planned',
@@ -32,7 +43,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'project_incomplete_auth_denied',
     name: 'Projeto incompleto — autorização negada',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 101,
     active: true,
     behavior: 'blocked',
@@ -40,7 +51,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'project_discarded_auth_denied',
     name: 'Projeto descartado — autorização negada para projeto',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 102,
     active: true,
     behavior: 'inactive',
@@ -48,7 +59,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'project_supplementary_external',
     name: 'Projeto complementar — rede externa',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 103,
     active: true,
     behavior: 'planned',
@@ -56,7 +67,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'auth_denied_project',
     name: 'Autorização negada para projeto',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 104,
     active: true,
     behavior: 'blocked',
@@ -64,7 +75,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'docs_missing_information',
     name: 'Documentos com falta de informação',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 105,
     active: true,
     behavior: 'blocked',
@@ -74,7 +85,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_not_started',
     name: 'Obra não iniciada',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 200,
     active: true,
     behavior: 'planned',
@@ -82,7 +93,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_started',
     name: 'Obra iniciada',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 201,
     active: true,
     behavior: 'planned',
@@ -90,7 +101,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_partial_riser_pending',
     name: 'Obra parcial — prumada com pendência',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 202,
     active: true,
     behavior: 'blocked',
@@ -98,7 +109,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'auth_denied_construction',
     name: 'Autorização negada para construção',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 203,
     active: true,
     behavior: 'blocked',
@@ -110,7 +121,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'blocked_risk_area',
     name: 'Bloqueado por área de risco',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 290,
     active: true,
     behavior: 'blocked',
@@ -120,7 +131,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_blocked_riser_obstruction',
     name: 'Obra impedida — obstrução na prumada',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 300,
     active: true,
     behavior: 'blocked',
@@ -128,7 +139,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_blocked_access_obstruction',
     name: 'Obra impedida — obstrução no acesso',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 301,
     active: true,
     behavior: 'blocked',
@@ -136,7 +147,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_blocked_external_obstruction',
     name: 'Obra impedida — obstrução externa',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 302,
     active: true,
     behavior: 'blocked',
@@ -144,7 +155,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_blocked_third_party_infra',
     name: 'Obra impedida — infraestrutura de terceiro inadequada',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 303,
     active: true,
     behavior: 'blocked',
@@ -152,7 +163,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_blocked_embargoed',
     name: 'Obra impedida — obra embargada',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 304,
     active: true,
     behavior: 'blocked',
@@ -160,7 +171,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_blocked_inadequate_cdo',
     name: 'Obra impedida — CDO inadequada',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 305,
     active: true,
     behavior: 'blocked',
@@ -168,7 +179,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_blocked_awaiting_civil_works',
     name: 'Obra impedida — aguarda obra civil',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 306,
     active: true,
     behavior: 'blocked',
@@ -178,7 +189,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_discarded_access_denied',
     name: 'Obra descartada — acesso negado para construção',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 401,
     active: true,
     behavior: 'inactive',
@@ -186,7 +197,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_discarded_riser_obstruction',
     name: 'Obra descartada — obstrução na prumada',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 402,
     active: true,
     behavior: 'inactive',
@@ -194,7 +205,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_discarded_access_obstruction',
     name: 'Obra descartada — obstrução no acesso',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 403,
     active: true,
     behavior: 'inactive',
@@ -202,7 +213,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_discarded_external_obstruction',
     name: 'Obra descartada — obstrução externa',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 404,
     active: true,
     behavior: 'inactive',
@@ -210,7 +221,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_discarded_auth_denied',
     name: 'Obra descartada — autorização negada para construção',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 405,
     active: true,
     behavior: 'inactive',
@@ -218,7 +229,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_discarded_no_authorization',
     name: 'Obra descartada — sem autorização',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 406,
     active: true,
     behavior: 'inactive',
@@ -226,7 +237,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_discarded_building_under_construction',
     name: 'Obra descartada — edificação em construção',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 407,
     active: true,
     behavior: 'inactive',
@@ -234,7 +245,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'work_discarded_no_room_for_cdo',
     name: 'Obra descartada — não comporta CDO',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 408,
     active: true,
     behavior: 'inactive',
@@ -244,7 +255,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'install_blocked_access_obstructed',
     name: 'Instalação impedida — acesso obstruído ou inviável',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 501,
     active: true,
     behavior: 'blocked',
@@ -252,7 +263,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'install_blocked_access_denied',
     name: 'Instalação impedida — acesso negado',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 502,
     active: true,
     behavior: 'blocked',
@@ -262,7 +273,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'no_access_denied_construction',
     name: 'Sem acesso — acesso negado para construção',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 601,
     active: true,
     behavior: 'blocked',
@@ -270,7 +281,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'no_access_denied_project',
     name: 'Sem acesso — acesso negado para projeto',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 602,
     active: true,
     behavior: 'blocked',
@@ -278,7 +289,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'no_access_building_under_construction',
     name: 'Sem acesso — edificação em construção',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 603,
     active: true,
     behavior: 'blocked',
@@ -286,7 +297,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'no_access_test_denied',
     name: 'Sem acesso para teste — acesso negado',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 604,
     active: true,
     behavior: 'blocked',
@@ -295,7 +306,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'network_built',
     name: 'Rede construída',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 700,
     active: true,
     behavior: 'active',
@@ -303,7 +314,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'network_validated',
     name: 'Rede validada',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 701,
     active: true,
     behavior: 'active',
@@ -311,7 +322,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'as_built_completed',
     name: 'As-built concluído',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 702,
     active: true,
     behavior: 'active',
@@ -319,7 +330,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'as_built_accepted',
     name: 'As-built aceito',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 703,
     active: true,
     behavior: 'active',
@@ -327,7 +338,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'optical_test_ok',
     name: 'Teste óptico OK',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 704,
     active: true,
     behavior: 'active',
@@ -335,7 +346,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'optical_test_nok',
     name: 'Teste óptico NOK',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 705,
     active: true,
     behavior: 'blocked',
@@ -343,7 +354,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'optical_test_nok_checklist',
     name: 'Teste óptico NOK / não liberado para checklist',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 706,
     active: true,
     behavior: 'blocked',
@@ -353,7 +364,7 @@ export const RESOURCE_STATUS_DEFAULTS: Omit<ResourceStatusCatalogEntry, '@type'>
   {
     code: 'equipment_vandalized',
     name: 'Equipamento vandalizado',
-    resourceType: 'CTO',
+    resourceTypeCode: 'CTO',
     sortOrder: 800,
     active: true,
     behavior: 'blocked',

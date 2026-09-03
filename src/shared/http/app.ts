@@ -58,7 +58,6 @@ import type { Party, PartyQuery, PartyRoleQuery } from '../../modules/party/inde
 import type {
   CreateResourceSpecificationInput,
   Resource,
-  ResourceCategory,
   ResourceFunctionSpecificationQuery,
   ResourceQuery,
   ResourceSpecification,
@@ -117,7 +116,6 @@ type ResourceWorkspaceSnapshot = {
   items: Resource[] | ResourceSpecification[];
   totalCount: number;
   resourceSpecificationOptions: ResourceSpecification[];
-  resourceCategories: ResourceCategory[];
   resourceTypes: ResourceType[];
   manufacturerOptions: Party[];
 };
@@ -345,7 +343,6 @@ const routeRequest = async ({
     const offset = parseOptionalNumber(url.searchParams.get('offset')) ?? 0;
     const resourceSpecificationIdIn = url.searchParams.getAll('resourceSpecificationIdIn');
     const resourceTypeIn = url.searchParams.getAll('resourceTypeIn');
-    const category = url.searchParams.get('category');
     const name = url.searchParams.get('name');
     const snapshot = await buildResourceWorkspaceSnapshot({
       tab,
@@ -354,7 +351,6 @@ const routeRequest = async ({
       filter: {
         ...(resourceSpecificationIdIn.length > 0 ? { resourceSpecificationIdIn } : {}),
         ...(resourceTypeIn.length > 0 ? { resourceTypeIn } : {}),
-        ...(category ? { category } : {}),
         ...(name ? { name } : {}),
       },
       resourceService: runtime.resourceService,
@@ -732,13 +728,11 @@ const routeRequest = async ({
     url.pathname.startsWith('/v1/resource-catalogs/') ||
     url.pathname.startsWith('/v1/resource-types/') ||
     url.pathname === '/v1/resource-statuses' ||
-    url.pathname === '/v1/resource-layers' ||
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceCatalog') ||
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceSpecification') ||
     url.pathname.startsWith(
       '/tmf-api/resourceCatalogManagement/v4/resourceFunctionSpecification',
     ) ||
-    url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceCategory') ||
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceType') ||
     url.pathname.startsWith('/tmf-api/resourceInventoryManagement/v4/resource') ||
     url.pathname.startsWith('/tmf-api/resourceFunctionActivation/v4/resourceFunction')
@@ -2616,7 +2610,7 @@ const routeResourceRequest = async ({
       response,
       200,
       resourceService.listResourceStatusCatalog(
-        url.searchParams.get('resourceType') ?? undefined,
+        url.searchParams.get('resourceTypeId') ?? undefined,
         context,
       ),
     );
@@ -2669,6 +2663,22 @@ const routeResourceRequest = async ({
       ...detail,
       hasActiveService: activeServicePortIds.has(detail.resource.id),
     });
+  }
+  const resourceTypeCatalogContextMatch = url.pathname.match(
+    /^\/v1\/resource-types\/([^/]+)\/catalog-context$/,
+  );
+  if (request.method === 'GET' && resourceTypeCatalogContextMatch?.[1]) {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    return sendJson(
+      response,
+      200,
+      resourceService.getResourceTypeCatalogContext(
+        decodeURIComponent(resourceTypeCatalogContextMatch[1]),
+        context,
+        url.searchParams.get('includeEndedSpecifications') === 'true',
+        url.searchParams.get('includeInactivePaths') === 'true',
+      ),
+    );
   }
   const resourceCatalogTreeMatch = url.pathname.match(/^\/v1\/resource-catalogs\/([^/]+)\/tree$/);
   if (request.method === 'GET' && resourceCatalogTreeMatch?.[1]) {
@@ -2775,14 +2785,13 @@ const routeResourceRequest = async ({
     throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
   }
 
-  // Specifications/functionSpecifications e ResourceLayer são catálogos (C9): escrita exige
-  // catalog.admin. Category/type são somente leitura nesta rota. Instâncias (resource/activation/
-  // relationships) seguem inventory.reader/inventory.editor, como Geo e Service.
+  // Specifications/functionSpecifications e ResourceCatalog são catálogos (C9): escrita exige
+  // catalog.admin. Instâncias (resource/activation/relationships) seguem
+  // inventory.reader/inventory.editor, como Geo e Service.
   const isResourceCatalogKind =
     route.kind === 'resourceCatalog' ||
     route.kind === 'resourceSpecification' ||
-    route.kind === 'resourceFunctionSpecification' ||
-    route.kind === 'resourceLayer';
+    route.kind === 'resourceFunctionSpecification';
 
   requireRoles(
     context,
@@ -2827,43 +2836,6 @@ const routeResourceRequest = async ({
     }
     if (route.id && request.method === 'DELETE') {
       return sendJson(response, 200, resourceService.deleteResourceCatalog(route.id, context));
-    }
-  }
-
-  if (route.kind === 'resourceLayer') {
-    if (!route.id && request.method === 'GET') {
-      return sendJson(response, 200, resourceService.listResourceLayers(context));
-    }
-    if (!route.id && request.method === 'POST') {
-      return sendJson(
-        response,
-        201,
-        resourceService.createResourceLayer(
-          (await readBody(request)) as Parameters<typeof resourceService.createResourceLayer>[0],
-          context,
-        ),
-      );
-    }
-    if (route.id && request.method === 'GET') {
-      return sendJsonOrNotFound(
-        response,
-        resourceService.getResourceLayer(route.id, context),
-        'RESOURCE_LAYER_NOT_FOUND',
-      );
-    }
-    if (route.id && request.method === 'PATCH') {
-      return sendJson(
-        response,
-        200,
-        resourceService.updateResourceLayer(
-          route.id,
-          (await readBody(request)) as Parameters<typeof resourceService.updateResourceLayer>[1],
-          context,
-        ),
-      );
-    }
-    if (route.id && request.method === 'DELETE') {
-      return sendJson(response, 200, resourceService.deleteResourceLayer(route.id, context));
     }
   }
 
@@ -2919,9 +2891,7 @@ const routeResourceRequest = async ({
         response,
         201,
         resourceService.createResourceSpecification(
-          (await readBody(request)) as Parameters<
-            typeof resourceService.createResourceSpecification
-          >[0],
+          parseCreateResourceSpecificationInput(await readBody(request)),
           context,
         ),
       );
@@ -2939,9 +2909,7 @@ const routeResourceRequest = async ({
         200,
         resourceService.updateResourceSpecification(
           route.id,
-          (await readBody(request)) as Parameters<
-            typeof resourceService.updateResourceSpecification
-          >[1],
+          parseUpdateResourceSpecificationInput(await readBody(request)),
           context,
         ),
       );
@@ -3004,18 +2972,6 @@ const routeResourceRequest = async ({
         200,
         resourceService.deleteResourceFunctionSpecification(route.id, context),
       );
-    }
-  }
-
-  if (route.kind === 'resourceCategory') {
-    if (!route.id && request.method === 'GET') {
-      return sendJson(response, 200, resourceService.listResourceCategories());
-    }
-    if (route.id && request.method === 'GET') {
-      const category = (await resourceService.listResourceCategories()).find(
-        (item) => item.id === route.id || item.code === route.id,
-      );
-      return sendJsonOrNotFound(response, category, 'RESOURCE_CATEGORY_NOT_FOUND');
     }
   }
 
@@ -3542,9 +3498,7 @@ type ResourceRoute = {
     | 'resourceSpecification'
     | 'resourceFunctionSpecification'
     | 'resourceCatalog'
-    | 'resourceCategory'
     | 'resourceType'
-    | 'resourceLayer'
     | 'resource'
     | 'resourceActivation';
   id?: string;
@@ -4027,23 +3981,10 @@ const resolveResourceRoute = (pathname: string): ResourceRoute | undefined => {
       return { kind: 'resourceFunctionSpecification', id: decodeURIComponent(id) };
   }
 
-  if (pathname === `${catalogBase}/resourceCategory`) return { kind: 'resourceCategory' };
-  if (pathname.startsWith(`${catalogBase}/resourceCategory/`)) {
-    const id = pathname.slice(`${catalogBase}/resourceCategory/`.length);
-    if (id && !id.includes('/')) return { kind: 'resourceCategory', id: decodeURIComponent(id) };
-  }
-
   if (pathname === `${catalogBase}/resourceType`) return { kind: 'resourceType' };
   if (pathname.startsWith(`${catalogBase}/resourceType/`)) {
     const id = pathname.slice(`${catalogBase}/resourceType/`.length);
     if (id && !id.includes('/')) return { kind: 'resourceType', id: decodeURIComponent(id) };
-  }
-
-  const resourceLayerBase = '/v1/resource-layers';
-  if (pathname === resourceLayerBase) return { kind: 'resourceLayer' };
-  if (pathname.startsWith(`${resourceLayerBase}/`)) {
-    const id = pathname.slice(`${resourceLayerBase}/`.length);
-    if (id && !id.includes('/')) return { kind: 'resourceLayer', id: decodeURIComponent(id) };
   }
 
   if (pathname === inventoryBase) return { kind: 'resource' };
@@ -4156,10 +4097,8 @@ const parseResourceSpecificationQuery = (params: URLSearchParams): ResourceSpeci
   const query: ResourceSpecificationQuery = {};
   const name = params.get('name');
   if (name) query.name = name;
-  const category = params.get('category');
-  if (category) query.category = category;
-  const resourceType = params.get('resourceType');
-  if (resourceType) query.resourceType = resourceType;
+  const resourceTypeId = params.get('resourceTypeId');
+  if (resourceTypeId) query.resourceTypeId = resourceTypeId;
   const includeEnded = params.get('includeEnded');
   if (includeEnded === 'true') {
     query.includeEnded = true;
@@ -4215,8 +4154,56 @@ const parseResourceSpecificationBulkImportItems = (
         statusCode: 400,
       });
     }
-    return { line, input: input as CreateResourceSpecificationInput };
+    return {
+      line,
+      input: parseCreateResourceSpecificationInput(
+        input as Record<string, unknown>,
+        `items[${index}].input`,
+      ),
+    };
   });
+};
+
+const parseCreateResourceSpecificationInput = (
+  body: Record<string, unknown>,
+  label = 'body',
+): CreateResourceSpecificationInput => {
+  assertResourceSpecificationLegacyFieldsAbsent(body);
+  if (typeof body.resourceTypeId !== 'string' || !body.resourceTypeId.trim()) {
+    throw new AppError(`${label}.resourceTypeId is required`, {
+      code: 'RESOURCE_REQUIRED_FIELD',
+      statusCode: 400,
+    });
+  }
+  return { ...body, resourceTypeId: body.resourceTypeId.trim() } as CreateResourceSpecificationInput;
+};
+
+const parseUpdateResourceSpecificationInput = (
+  body: Record<string, unknown>,
+): Parameters<ResourceService['updateResourceSpecification']>[1] => {
+  assertResourceSpecificationLegacyFieldsAbsent(body);
+  if (body.resourceTypeId !== undefined) {
+    if (typeof body.resourceTypeId !== 'string' || !body.resourceTypeId.trim()) {
+      throw new AppError('resourceTypeId must be a non-empty string', {
+        code: 'RESOURCE_REQUIRED_FIELD',
+        statusCode: 400,
+      });
+    }
+    return { ...body, resourceTypeId: body.resourceTypeId.trim() } as Parameters<
+      ResourceService['updateResourceSpecification']
+    >[1];
+  }
+  return body as Parameters<ResourceService['updateResourceSpecification']>[1];
+};
+
+const assertResourceSpecificationLegacyFieldsAbsent = (body: Record<string, unknown>): void => {
+  const removed = ['category', 'resourceType', 'resourceLayerId'].find((field) => field in body);
+  if (removed) {
+    throw new AppError(`${removed} was removed; use resourceTypeId`, {
+      code: 'RESOURCE_SPEC_FIELD_REMOVED',
+      statusCode: 400,
+    });
+  }
 };
 
 // Mesmo limite do Resource (RESOURCE_SPEC_BULK_IMPORT_MAX_ITEMS) — Configurações → Catálogo de
@@ -4355,9 +4342,9 @@ const loadAllServiceSpecifications = async (
   return collected;
 };
 
-// `filter` carrega os critérios enviados pelo cliente (categoria já resolvida em
-// resourceSpecificationIdIn, picklists de coluna em resourceTypeIn) — items e totalCount usam
-// exatamente os mesmos critérios, para nunca divergir entre "página atual" e "total".
+// `filter` carrega os critérios enviados pelo cliente (resourceSpecificationIdIn e picklists de
+// coluna em resourceTypeIn) — items e totalCount usam exatamente os mesmos critérios, para nunca
+// divergir entre "página atual" e "total".
 const buildResourceWorkspaceSnapshot = async ({
   tab,
   limit,
@@ -4370,7 +4357,7 @@ const buildResourceWorkspaceSnapshot = async ({
   tab: ResourceWorkspaceTab;
   limit: number;
   offset: number;
-  filter: Pick<ResourceQuery, 'resourceSpecificationIdIn' | 'resourceTypeIn' | 'category' | 'name'>;
+  filter: Pick<ResourceQuery, 'resourceSpecificationIdIn' | 'resourceTypeIn' | 'name'>;
   resourceService: ResourceService;
   partyService: PartyService;
   context?: RequestContext;
@@ -4379,7 +4366,6 @@ const buildResourceWorkspaceSnapshot = async ({
     resourceService,
     context,
   );
-  const resourceCategories = await resourceService.listResourceCategories();
   const resourceTypes = await resourceService.listResourceTypes();
   const manufacturerOptions = await loadAllManufacturerOptions(partyService);
 
@@ -4400,7 +4386,6 @@ const buildResourceWorkspaceSnapshot = async ({
     items,
     totalCount,
     resourceSpecificationOptions,
-    resourceCategories,
     resourceTypes,
     manufacturerOptions,
   };
@@ -4410,7 +4395,7 @@ const getResourceWorkspaceItems = async (
   tab: ResourceWorkspaceTab,
   limit: number,
   offset: number,
-  filter: Pick<ResourceQuery, 'resourceSpecificationIdIn' | 'resourceTypeIn' | 'category' | 'name'>,
+  filter: Pick<ResourceQuery, 'resourceSpecificationIdIn' | 'resourceTypeIn' | 'name'>,
   resourceService: ResourceService,
   context?: RequestContext,
 ): Promise<Resource[] | ResourceSpecification[]> => {

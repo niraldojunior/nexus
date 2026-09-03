@@ -3,10 +3,23 @@ import { afterEach, test, vi } from 'vitest';
 import { AppError } from '../src/shared/errors/app-error.js';
 import { ResourceRepository } from '../src/modules/resource/repository.js';
 import { ResourceService } from '../src/modules/resource/service.js';
+import { getResourceTypeByCode } from '../src/modules/resource/catalog.js';
 import {
   foldStatusText,
   resolveStatusCode,
 } from '../src/modules/resource/status-catalog.js';
+
+const resourceTypeByCode = (code: string) => {
+  const resourceType = getResourceTypeByCode(code);
+  assert.ok(resourceType, `ResourceType não encontrado: ${code}`);
+  return {
+    id: resourceType.id,
+    href: resourceType.href,
+    code: resourceType.code,
+    name: resourceType.name,
+    '@referredType': 'ResourceType' as const,
+  };
+};
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -31,9 +44,8 @@ test('ResourceRepository returns status catalog and resource detail aggregate', 
     id: 'spec-cto-detail',
     href: '/resource-specification/spec-cto-detail',
     name: 'CDOE Corning',
-    category: 'Infrastructure.Passive',
-    resourceType: 'CTO',
-    resourceLayerId: 'resource-layer-gpon-network',
+    resourceTypeId: 'rt-cto',
+    resourceType: resourceTypeByCode('CTO'),
     resourceSpecificationCharacteristic: [{ name: 'model', value: 'CDOE 8-48FS', valueType: 'string' }],
     relatedParty: [
       {
@@ -68,11 +80,11 @@ test('ResourceRepository returns status catalog and resource detail aggregate', 
   assert.ok(detail);
   assert.equal(detail.specification.manufacturer?.name, 'CORNING');
   assert.equal(detail.specification.model, 'CDOE 8-48FS');
-  assert.equal(detail.specification.resourceLayer?.code, 'gpon_network');
+  assert.equal(detail.specification.resourceType.code, 'CTO');
   assert.equal(detail.specification.resourceTypeName, 'Caixa de Terminação Óptica');
   assert.equal(detail.statusCatalogEntry?.name, 'Bloqueado por área de risco');
   assert.equal(detail.resource.label, 'CDOE-6746');
-  assert.equal(repository.listResourceStatusCatalog({ resourceType: 'CTO' }).length > 2, true);
+  assert.equal(repository.listResourceStatusCatalog({ resourceTypeId: 'rt-cto' }).length > 2, true);
 });
 
 test('ResourceRepository clones stored entities and filters across resource kinds', async () => {
@@ -83,8 +95,8 @@ test('ResourceRepository clones stored entities and filters across resource kind
     id: 'spec-1',
     href: '/resource-spec/spec-1',
     name: 'OLT',
-    category: 'Equipment.Access',
-    resourceType: 'OLT',
+    resourceTypeId: 'rt-olt',
+    resourceType: resourceTypeByCode('OLT'),
     resourceSpecificationCharacteristic: [{ name: 'vendor', value: 'Huawei', valueType: 'string' }],
     relatedParty: [{ id: 'party-1', '@referredType': 'Organization', name: 'V.tal' }],
   });
@@ -105,7 +117,7 @@ test('ResourceRepository clones stored entities and filters across resource kind
     name: 'OLT-01',
     resourceSpecificationId: spec.id,
     resourceSpecification: { id: spec.id, '@referredType': 'ResourceSpecification' },
-    resourceType: spec.resourceType,
+    resourceType: spec.resourceType.code,
     status: 'active',
     administrativeState: 'unlocked',
     operationalState: 'enabled',
@@ -143,17 +155,16 @@ test('ResourceRepository clones stored entities and filters across resource kind
   assert.equal(repository.getPhysicalResource('res-1')?.name, 'OLT-01');
   assert.equal(repository.getLogicalResource('res-2')?.name, 'VLAN-100');
   assert.equal(
-    repository.listResourceSpecifications({ name: 'ol', category: 'Equipment.Access' }).length,
+    repository.listResourceSpecifications({ name: 'ol', resourceTypeId: 'rt-olt' }).length,
     1,
   );
   repository.upsertResourceSpecification({
     ...spec,
     validFor: { endDateTime: '2026-07-09T10:00:00.000Z' },
   });
-  assert.equal(repository.listResourceSpecifications({ category: 'Equipment.Access' }).length, 0);
+  assert.equal(repository.listResourceSpecifications({ resourceTypeId: 'rt-olt' }).length, 0);
   assert.equal(
-    repository.listResourceSpecifications({ category: 'Equipment.Access', includeEnded: true })
-      .length,
+    repository.listResourceSpecifications({ resourceTypeId: 'rt-olt', includeEnded: true }).length,
     1,
   );
   assert.ok(repository.getResourceSpecification('spec-1')?.validFor?.endDateTime);
@@ -196,17 +207,19 @@ test('ResourceRepository clones stored entities and filters across resource kind
 
 test('Resource ports projection derives output occupancy from current and inverse drop connections', async () => {
   const repository = new ResourceRepository();
-  const spec = (id: string, resourceType: string, category = 'Infrastructure.Passive') =>
-    repository.upsertResourceSpecification({
+  const spec = (id: string, resourceTypeCode: string) => {
+    const resourceType = resourceTypeByCode(resourceTypeCode);
+    return repository.upsertResourceSpecification({
       '@type': 'ResourceSpecification',
       id,
       href: `/resource-specification/${id}`,
       name: id,
-      category,
+      resourceTypeId: resourceType.id,
       resourceType,
       resourceSpecificationCharacteristic: [],
       relatedParty: [],
     });
+  };
   const resource = (
     id: string,
     name: string,
@@ -234,10 +247,10 @@ test('Resource ports projection derives output occupancy from current and invers
 
   spec('spec-cto', 'CTO');
   spec('spec-splitter', 'Splitter');
-  spec('spec-port', 'Port', 'Equipment.Access');
-  spec('spec-drop', 'DropCable', 'Cable.OutsidePlant');
-  spec('spec-distribution', 'DistributionCable', 'Cable.OutsidePlant');
-  spec('spec-ont', 'ONT', 'Equipment.CPE');
+  spec('spec-port', 'Port');
+  spec('spec-drop', 'DropCable');
+  spec('spec-distribution', 'DistributionCable');
+  spec('spec-ont', 'ONT');
   resource('cto-1', 'CTO Icaraí', 'CTO', 'spec-cto');
   resource('splitter-1', 'Splitter 1:8', 'Splitter', 'spec-splitter', [
     { name: 'razao', value: '1:8', valueType: 'string' },
@@ -312,14 +325,14 @@ test('ResourceService allows one active drop per splitter output in either relat
   const repository = new ResourceRepository();
   const service = new ResourceService(repository, { appendEvent: vi.fn(() => undefined) } as never);
   const outputSpec = await service.createResourceSpecification({
-    name: 'Porta de splitter', category: 'Equipment.Access', resourceType: 'Port',
+    name: 'Porta de splitter', resourceTypeId: 'rt-port',
   });
   const inputSpec = outputSpec;
   const dropSpec = await service.createResourceSpecification({
-    name: 'Cabo drop', category: 'Cable.OutsidePlant', resourceType: 'DropCable',
+    name: 'Cabo drop', resourceTypeId: 'rt-drop-cable',
   });
   const distributionSpec = await service.createResourceSpecification({
-    name: 'Cabo distribuição', category: 'Cable.OutsidePlant', resourceType: 'DistributionCable',
+    name: 'Cabo distribuição', resourceTypeId: 'rt-distribution-cable',
   });
   const output = await service.createPhysicalResource({
     name: 'FO.O.1', resourceSpecificationId: outputSpec.id,
@@ -377,8 +390,7 @@ test('ResourceService creates, mutates and terminates inventory resources', asyn
     () =>
       service.createResourceSpecification({
         name: '  ',
-        category: 'Equipment.Access',
-        resourceType: 'OLT',
+        resourceTypeId: 'rt-olt',
       }),
     (error: unknown) =>
       error instanceof AppError &&
@@ -386,11 +398,11 @@ test('ResourceService creates, mutates and terminates inventory resources', asyn
       /name is required/.test(error.message),
   );
   await assert.rejects(
-    () => service.createResourceSpecification({ name: 'OLT', category: '', resourceType: 'OLT' }),
+    () => service.createResourceSpecification({ name: 'OLT', resourceTypeId: 'missing' }),
     (error: unknown) =>
       error instanceof AppError &&
-      error.statusCode === 400 &&
-      /category is required/.test(error.message),
+      error.statusCode === 404 &&
+      /resource type not found/.test(error.message),
   );
   await assert.rejects(
     () => service.createPhysicalResource({ name: 'OLT', resourceSpecificationId: 'missing' }),
@@ -399,8 +411,7 @@ test('ResourceService creates, mutates and terminates inventory resources', asyn
 
   const spec = await service.createResourceSpecification({
     name: 'OLT',
-    category: 'Equipment.Access',
-    resourceType: 'OLT',
+    resourceTypeId: 'rt-olt',
     relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'owner' }],
   });
   const functionSpec = await service.createResourceFunctionSpecification({ name: 'Activation' });
@@ -410,8 +421,7 @@ test('ResourceService creates, mutates and terminates inventory resources', asyn
     async () =>
       await service.createResourceSpecification({
         name: 'OLT',
-        category: 'Equipment.Access',
-        resourceType: 'OLT',
+        resourceTypeId: 'rt-olt',
         relatedParty: [{ id: 'missing', '@referredType': 'Organization' }],
       }),
     /related party not found/,
@@ -529,10 +539,9 @@ test('ResourceService creates, mutates and terminates inventory resources', asyn
     async () =>
       await service.createResourceSpecification({
         name: 'Bad type',
-        category: 'Equipment.Access',
-        resourceType: 'VLAN',
+        resourceTypeId: 'missing',
       }),
-    /resource type is not allowed for category/,
+    /resource type not found/,
   );
 
   await assert.rejects(
@@ -560,5 +569,164 @@ test('ResourceService creates, mutates and terminates inventory resources', asyn
         '@referredType': 'Resource',
       }),
     /resource not found/,
+  );
+});
+
+test('ResourceCatalog and ResourceCatalogNode domain operations, ordering and tree nesting', async () => {
+  const repository = new ResourceRepository();
+  const service = new ResourceService(repository, { appendEvent: vi.fn(() => undefined) } as never);
+
+  const catalog = await service.createResourceCatalog({
+    code: 'master-tree',
+    name: 'Catálogo Mestre',
+    description: 'Árvore de testes',
+    isDefault: true,
+  });
+
+  assert.equal(catalog.code, 'master-tree');
+  assert.equal(catalog.isDefault, true);
+
+  // Criar nós GROUP raiz e filho
+  const groupPassive = await service.createResourceCatalogNode(catalog.id, {
+    code: 'group-passive',
+    name: 'Infraestrutura Passiva',
+    kind: 'GROUP',
+    sortOrder: 1,
+  });
+
+  const groupBoxes = await service.createResourceCatalogNode(catalog.id, {
+    code: 'group-boxes',
+    name: 'Caixas Ópticas',
+    kind: 'GROUP',
+    parentNodeId: groupPassive.id,
+    sortOrder: 1,
+  });
+
+  // Criar nós RESOURCE_TYPE folha apontando para CTO e Splitter
+  const nodeCto = await service.createResourceCatalogNode(catalog.id, {
+    code: 'node-cto',
+    name: 'CTO (Caixa de Terminação Óptica)',
+    kind: 'RESOURCE_TYPE',
+    resourceTypeId: 'rt-cto',
+    parentNodeId: groupBoxes.id,
+    sortOrder: 2,
+  });
+
+  const nodeSplitter = await service.createResourceCatalogNode(catalog.id, {
+    code: 'node-splitter',
+    name: 'Splitter',
+    kind: 'RESOURCE_TYPE',
+    resourceTypeId: 'rt-splitter',
+    parentNodeId: groupPassive.id,
+    sortOrder: 2,
+  });
+
+  assert.equal(nodeCto.kind, 'RESOURCE_TYPE');
+  assert.equal(nodeCto.resourceTypeId, 'rt-cto');
+  assert.equal(nodeSplitter.parentNodeId, groupPassive.id);
+
+  // Consultar árvore montada
+  const tree = await service.getResourceCatalogTree(catalog.id);
+  assert.equal(tree.length, 1); // groupPassive é a única raiz
+
+  const root = tree[0]!;
+  assert.equal(root.code, 'group-passive');
+  assert.equal(root.children.length, 2); // groupBoxes e nodeSplitter
+  assert.equal(root.children[0]?.code, 'group-boxes');
+  assert.equal(root.children[0]?.children.length, 1);
+  assert.equal(root.children[0]?.children[0]?.code, 'node-cto');
+
+  // Caminho (path) até a folha node-cto
+  const path = await service.getResourceCatalogNodePath(catalog.id, nodeCto.id);
+  assert.deepEqual(
+    path.nodes.map((n) => n.code),
+    ['group-passive', 'group-boxes', 'node-cto'],
+  );
+
+  // Move / reorder: mover node-cto direto para groupPassive
+  const moved = await service.moveResourceCatalogNode(catalog.id, nodeCto.id, {
+    parentNodeId: groupPassive.id,
+    sortOrder: 0,
+  });
+  assert.equal(moved.parentNodeId, groupPassive.id);
+  assert.equal(moved.sortOrder, 0);
+
+  // Prevenção de ciclo: tentar definir groupPassive como filho de groupBoxes
+  await assert.rejects(
+    () =>
+      service.moveResourceCatalogNode(catalog.id, groupPassive.id, {
+        parentNodeId: groupBoxes.id,
+        sortOrder: 0,
+      }),
+    (error: unknown) =>
+      error instanceof AppError && error.code === 'RESOURCE_CATALOG_NODE_CYCLE',
+  );
+
+  // Prevenção de self-parent
+  await assert.rejects(
+    () =>
+      service.moveResourceCatalogNode(catalog.id, groupBoxes.id, {
+        parentNodeId: groupBoxes.id,
+        sortOrder: 0,
+      }),
+    (error: unknown) =>
+      error instanceof AppError && error.code === 'RESOURCE_CATALOG_NODE_SELF_PARENT',
+  );
+
+  // Rejeição de folha como pai
+  await assert.rejects(
+    () =>
+      service.createResourceCatalogNode(catalog.id, {
+        code: 'invalid-child-of-leaf',
+        name: 'Inválido',
+        kind: 'GROUP',
+        parentNodeId: nodeSplitter.id,
+      }),
+    (error: unknown) =>
+      error instanceof AppError && error.code === 'RESOURCE_CATALOG_NODE_PARENT_NOT_GROUP',
+  );
+
+  // Soft delete com bloqueio de GROUP que tem filhos
+  await assert.rejects(
+    () => service.deleteResourceCatalogNode(catalog.id, groupPassive.id),
+    (error: unknown) =>
+      error instanceof AppError && error.code === 'RESOURCE_CATALOG_NODE_HAS_CHILDREN',
+  );
+
+  // Soft delete de folha permitido
+  const deletedLeaf = await service.deleteResourceCatalogNode(catalog.id, nodeSplitter.id);
+  assert.equal(deletedLeaf.status, 'inactive');
+});
+
+test('ResourceTypeCatalogContext returns consolidated paths and specifications for a type', async () => {
+  const repository = new ResourceRepository();
+  const service = new ResourceService(repository, { appendEvent: vi.fn(() => undefined) } as never);
+
+  const catalog = await service.createResourceCatalog({
+    code: 'main-catalog',
+    name: 'Catálogo Principal',
+  });
+
+  const group = await service.createResourceCatalogNode(catalog.id, {
+    code: 'grp-access',
+    name: 'Acesso',
+    kind: 'GROUP',
+  });
+
+  await service.createResourceCatalogNode(catalog.id, {
+    code: 'leaf-olt',
+    name: 'OLT Node',
+    kind: 'RESOURCE_TYPE',
+    resourceTypeId: 'rt-olt',
+    parentNodeId: group.id,
+  });
+
+  const context = await service.getResourceTypeCatalogContext('rt-olt');
+  assert.equal(context.resourceType.code, 'OLT');
+  assert.equal(context.catalogPaths.length, 1);
+  assert.equal(context.catalogPaths[0]?.catalog.code, 'main-catalog');
+  assert.deepEqual(
+    context.catalogPaths[0]?.nodes.map((n) => n.code),
+    ['grp-access', 'leaf-olt'],
   );
 });

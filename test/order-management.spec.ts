@@ -96,8 +96,7 @@ test('TMF645, TMF641 and TMF652 order endpoints qualify and execute orders', asy
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     {
       name: 'ONT',
-      category: 'Equipment.CustomerPremises',
-      resourceType: 'ONT',
+      resourceTypeId: 'rt-ont',
     },
   );
   assert.equal(resourceSpec.statusCode, 201);

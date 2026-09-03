@@ -64,7 +64,7 @@ export type ResourceStatusCatalogEntry = {
   code: string;
   name: string;
   /** `undefined` = vale para qualquer tipo de recurso; preenchido = específico daquele tipo. */
-  resourceType?: string;
+  resourceTypeId?: string;
   sortOrder: number;
   active: boolean;
   behavior: ResourceStatusBehavior;
@@ -100,8 +100,6 @@ export type ResourceQuery = {
   resourceSpecificationIdIn?: string[];
   resourceType?: string;
   resourceTypeIn?: string[];
-  /** Categoria da ResourceSpecification referenciada — resolvida via join/subquery, não é coluna própria do recurso. */
-  category?: string;
   placeId?: string;
   relatedPartyId?: string;
   kind?: ResourceKind;
@@ -122,8 +120,7 @@ export type UpdateResourceLayerInput = Partial<CreateResourceLayerInput> & {
 
 export type ResourceSpecificationQuery = {
   name?: string;
-  category?: string;
-  resourceType?: string;
+  resourceTypeId?: string;
   includeEnded?: boolean;
   limit?: number;
   offset?: number;
@@ -277,10 +274,10 @@ export type ResourceSpecification = {
   id: string;
   href: string;
   name: string;
-  category: string;
-  resourceType: string;
+  resourceTypeId: string;
+  /** Referência expandida do ResourceType — projeção de leitura, nunca persistida na Specification. */
+  resourceType: ResourceTypeRef;
   description?: string;
-  resourceLayerId?: string;
   validFor?: TimePeriod;
   resourceSpecificationCharacteristic: Characteristic[];
   relatedParty: RelatedParty[];
@@ -397,7 +394,6 @@ export type PhysicalResourceDetail = {
     resourceTypeName: string;
     manufacturer?: ResourceDetailReference;
     model?: string;
-    resourceLayer?: ResourceDetailReference & { code: string };
   };
   statusCatalogEntry?: ResourceStatusCatalogEntry;
   parent?: ResourceDetailReference & { relationshipType: string };
@@ -425,10 +421,8 @@ export type PhysicalResourceDetail = {
 
 export type CreateResourceSpecificationInput = {
   name: string;
-  category: string;
-  resourceType: string;
+  resourceTypeId: string;
   description?: string;
-  resourceLayerId?: string;
   validFor?: TimePeriod;
   resourceSpecificationCharacteristic?: Characteristic[];
   relatedParty?: RelatedParty[];

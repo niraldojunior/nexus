@@ -21,8 +21,7 @@ test('Resource repository persists validFor when a resource specification is ter
 
     const created = await service.createResourceSpecification({
       name: 'OLT MA5800',
-      category: 'Equipment.Access',
-      resourceType: 'OLT',
+      resourceTypeId: 'rt-olt',
     });
 
     assert.equal(created.validFor, undefined);
@@ -34,13 +33,13 @@ test('Resource repository persists validFor when a resource specification is ter
     assert.ok(persisted?.validFor?.endDateTime);
     assert.equal(persisted?.validFor?.endDateTime, terminated.validFor?.endDateTime);
     assert.equal(
-      (await repository.listResourceSpecifications({ category: 'Equipment.Access' })).length,
+      (await repository.listResourceSpecifications({ resourceTypeId: 'rt-olt' })).length,
       0,
     );
     assert.equal(
       (
         await repository.listResourceSpecifications({
-          category: 'Equipment.Access',
+          resourceTypeId: 'rt-olt',
           includeEnded: true,
         })
       ).length,
@@ -62,19 +61,19 @@ test('Resource repository projects splitter ports from bidirectional drop connec
     await repository.initialize();
     const service = new ResourceService(repository, { appendEvent: vi.fn(() => undefined) } as never);
     const ctoSpec = await service.createResourceSpecification({
-      name: 'CTO de teste', category: 'Infrastructure.Passive', resourceType: 'CTO',
+      name: 'CTO de teste', resourceTypeId: 'rt-cto',
     });
     const splitterSpec = await service.createResourceSpecification({
-      name: 'Splitter de teste', category: 'Infrastructure.Passive', resourceType: 'Splitter',
+      name: 'Splitter de teste', resourceTypeId: 'rt-splitter',
     });
     const portSpec = await service.createResourceSpecification({
-      name: 'Porta de teste', category: 'Equipment.Access', resourceType: 'Port',
+      name: 'Porta de teste', resourceTypeId: 'rt-port',
     });
     const dropSpec = await service.createResourceSpecification({
-      name: 'Cabo drop de teste', category: 'Cable.OutsidePlant', resourceType: 'DropCable',
+      name: 'Cabo drop de teste', resourceTypeId: 'rt-drop-cable',
     });
     const ontSpec = await service.createResourceSpecification({
-      name: 'ONT de teste', category: 'Equipment.CPE', resourceType: 'ONT',
+      name: 'ONT de teste', resourceTypeId: 'rt-ont',
     });
     const cto = await service.createPhysicalResource({ name: 'CTO-1', resourceSpecificationId: ctoSpec.id });
     const splitter = await service.createPhysicalResource({
@@ -137,8 +136,7 @@ test('Resource repository persists resource specification characteristics and re
 
     const created = await service.createResourceSpecification({
       name: 'CPE',
-      category: 'Equipment.CustomerPremises',
-      resourceType: 'CPE',
+      resourceTypeId: 'rt-cpe',
       resourceSpecificationCharacteristic: [
         { name: 'manufacturer', value: 'V.tal', valueType: 'string', group: 'commercial' },
         { name: 'stockable', value: true, valueType: 'boolean', group: 'capability' },

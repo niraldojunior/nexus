@@ -78,8 +78,6 @@ export class ResourceRepository implements IResourceRepository {
     return fn();
   }
 
-  private readonly categoryOfSpec = (specId: string): string | undefined =>
-    this.resourceSpecifications.get(specId)?.category;
 
   public upsertResourceSpecification(spec: ResourceSpecification): ResourceSpecification {
     const stored = cloneResourceSpecification(spec);
@@ -279,11 +277,28 @@ export class ResourceRepository implements IResourceRepository {
   }
 
   public listResourceStatusCatalog(
-    query: { resourceType?: string; tenantId?: string } = {},
+    query: { resourceTypeId?: string; tenantId?: string } = {},
   ): ResourceStatusCatalogEntry[] {
-    return RESOURCE_STATUS_DEFAULTS.filter(
-      (entry) => !query.resourceType || !entry.resourceType || entry.resourceType === query.resourceType,
-    ).map((entry) => ({ '@type': 'ResourceStatusCatalogEntry' as const, ...entry }));
+    // Repositório em memória (só testes) não materializa ResourceType por tenant — resolve por
+    // code direto contra o resourceTypeId recebido, sem passar pela indireção de tabela real.
+    return RESOURCE_STATUS_DEFAULTS.filter((entry) => {
+      if (!query.resourceTypeId) return true;
+      if (!entry.resourceTypeCode) return true;
+      const type = [...this.resourceTypes.values()].find(
+        (candidate) => candidate.id === query.resourceTypeId,
+      );
+      return !type || type.code === entry.resourceTypeCode;
+    }).map((entry) => {
+      const { resourceTypeCode, ...rest } = entry;
+      const type = resourceTypeCode
+        ? [...this.resourceTypes.values()].find((candidate) => candidate.code === resourceTypeCode)
+        : undefined;
+      return {
+        '@type': 'ResourceStatusCatalogEntry' as const,
+        ...rest,
+        ...(type ? { resourceTypeId: type.id } : {}),
+      };
+    });
   }
 
   public getResourceStatusCatalogEntry(code: string): ResourceStatusCatalogEntry | undefined {
@@ -300,7 +315,6 @@ export class ResourceRepository implements IResourceRepository {
     if (!resource) return undefined;
     const specification = this.getResourceSpecification(resource.resourceSpecificationId);
     if (!specification) return undefined;
-    const resourceType = this.getResourceType(specification.resourceType);
     const statusCatalogEntry = resource.statusCode
       ? this.getResourceStatusCatalogEntry(resource.statusCode)
       : undefined;
@@ -312,9 +326,6 @@ export class ResourceRepository implements IResourceRepository {
     };
     const manufacturer = specification.relatedParty.find((party) => party.role === 'manufacturer');
     const model = characteristicValue('model');
-    const resourceLayer = specification.resourceLayerId
-      ? this.getResourceLayer(specification.resourceLayerId)
-      : undefined;
     return {
       '@type': 'PhysicalResourceDetail',
       // O repositório em memória não persiste timestamps; os testes unitários recebem um instante
@@ -322,7 +333,7 @@ export class ResourceRepository implements IResourceRepository {
       resource: { ...resource, createdAt: '', updatedAt: '' },
       specification: {
         ...specification,
-        resourceTypeName: resourceType?.name ?? specification.resourceType,
+        resourceTypeName: specification.resourceType.name,
         ...(manufacturer
           ? {
               manufacturer: {
@@ -333,16 +344,6 @@ export class ResourceRepository implements IResourceRepository {
             }
           : {}),
         ...(model ? { model } : {}),
-        ...(resourceLayer
-          ? {
-              resourceLayer: {
-                id: resourceLayer.id,
-                code: resourceLayer.code,
-                name: resourceLayer.name,
-                '@referredType': 'ResourceLayer',
-              },
-            }
-          : {}),
       },
       ...(statusCatalogEntry ? { statusCatalogEntry } : {}),
       childCount: (this.relationships.get(id) ?? []).filter(
@@ -497,13 +498,13 @@ export class ResourceRepository implements IResourceRepository {
 
   public listPhysicalResources(query?: ResourceQuery): PhysicalResource[] {
     return [...this.physicalResources.values()]
-      .filter((resource) => filterResource(resource, query, this.categoryOfSpec))
+      .filter((resource) => filterResource(resource, query))
       .map(clonePhysicalResource);
   }
 
   public countPhysicalResources(query?: ResourceQuery): number {
     return [...this.physicalResources.values()].filter((resource) =>
-      filterResource(resource, query, this.categoryOfSpec),
+      filterResource(resource, query),
     ).length;
   }
 
@@ -525,13 +526,13 @@ export class ResourceRepository implements IResourceRepository {
 
   public listLogicalResources(query?: ResourceQuery): LogicalResource[] {
     return [...this.logicalResources.values()]
-      .filter((resource) => filterResource(resource, query, this.categoryOfSpec))
+      .filter((resource) => filterResource(resource, query))
       .map(cloneLogicalResource);
   }
 
   public countLogicalResources(query?: ResourceQuery): number {
     return [...this.logicalResources.values()].filter((resource) =>
-      filterResource(resource, query, this.categoryOfSpec),
+      filterResource(resource, query),
     ).length;
   }
 
@@ -703,8 +704,7 @@ const cloneRelationship = (relationship: ResourceRelationship): ResourceRelation
 const filterSpec = (spec: ResourceSpecification, query?: ResourceSpecificationQuery): boolean => {
   if (!query) return true;
   if (query.name && !spec.name.toLowerCase().includes(query.name.toLowerCase())) return false;
-  if (query.category && spec.category !== query.category) return false;
-  if (query.resourceType && spec.resourceType !== query.resourceType) return false;
+  if (query.resourceTypeId && spec.resourceTypeId !== query.resourceTypeId) return false;
   if (!query.includeEnded && spec.validFor?.endDateTime) return false;
   return true;
 };
@@ -718,11 +718,7 @@ const filterFunctionSpec = (
   return true;
 };
 
-const filterResource = (
-  resource: Resource,
-  query?: ResourceQuery,
-  categoryOfSpec?: (specId: string) => string | undefined,
-): boolean => {
+const filterResource = (resource: Resource, query?: ResourceQuery): boolean => {
   if (!query) return true;
   if (query.name && !resource.name.toLowerCase().includes(query.name.toLowerCase())) return false;
   if (query.status && resource.status !== query.status) return false;
@@ -739,8 +735,6 @@ const filterResource = (
   } else if (query.resourceType && resource.resourceType !== query.resourceType) {
     return false;
   }
-  if (query.category && categoryOfSpec?.(resource.resourceSpecificationId) !== query.category)
-    return false;
   if (query.placeId && resource.place?.id !== query.placeId) return false;
   if (query.kind && resource['@type'] !== query.kind) return false;
   if (

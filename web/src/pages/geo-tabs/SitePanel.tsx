@@ -454,7 +454,7 @@ function ViewHeader({
             <p className="mb-1 break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.08em] text-app-muted">
               {siteSpecLabel(siteSpecs.find((spec) => spec.id === site.siteSpecificationId))}
             </p>
-            <p className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text [overflow-wrap:anywhere]">
+            <p className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text">
               {site.name}
             </p>
           </>

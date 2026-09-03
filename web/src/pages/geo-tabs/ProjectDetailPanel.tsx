@@ -302,7 +302,7 @@ export function ProjectDetailPanel({
             className="-mx-1 w-full rounded-[8px] border border-transparent bg-transparent px-1 py-1 font-display text-[1.02rem] font-semibold leading-tight text-app-text outline-none transition hover:border-app-border focus:border-app-accent-border focus:bg-white"
           />
         ) : (
-          <p className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text [overflow-wrap:anywhere]">
+          <p className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text">
             {project.name}
           </p>
         )}
@@ -364,7 +364,7 @@ export function ProjectDetailPanel({
           className="-mx-1 w-full flex-1 resize-none rounded-[8px] border border-transparent bg-transparent px-1 py-1 text-[0.84rem] leading-snug text-app-text outline-none transition placeholder:text-app-muted hover:border-app-border focus:border-app-accent-border focus:bg-white"
         />
       ) : (
-        <p className="-mx-1 w-full flex-1 break-words px-1 py-1 text-[0.84rem] leading-snug text-app-text [overflow-wrap:anywhere]">
+        <p className="-mx-1 w-full flex-1 break-words px-1 py-1 text-[0.84rem] leading-snug text-app-text">
           {descriptionDraft.trim() || '—'}
         </p>
       )}

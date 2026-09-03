@@ -198,10 +198,10 @@ export function SiteResourcesTab({ siteId, canEdit, onOpenResource }: SiteResour
                       >
                         <ResourceIcon resource={resourceLike} variant="badge" size={26} />
                         <span className="min-w-0 flex-1">
-                          <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">
+                          <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">
                             {resource.label}
                           </span>
-                          <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
+                          <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted">
                             {[icon.label, resource.detail?.model, resource.detail?.serialNumber]
                               .filter(Boolean)
                               .join(' · ')}

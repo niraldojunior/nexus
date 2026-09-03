@@ -201,10 +201,10 @@ export function ResourcePanel({
         <ChevronLeft className="h-5 w-5" />
       </button>
       <div className="min-w-0 flex-1">
-        <div className="break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.08em] text-app-muted [overflow-wrap:anywhere]">
+        <div className="break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.08em] text-app-muted">
           {eyebrow}
         </div>
-        <h3 className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text [overflow-wrap:anywhere]">
+        <h3 className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text">
           {title}
         </h3>
       </div>
@@ -349,7 +349,7 @@ export function ResourcePanel({
                 >
                   <ResourceIcon resource={{ resourceType: drop.resource.resourceType, name: drop.resource.name }} variant="badge" size={26} />
                   <span className="min-w-0 flex-1">
-                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">{drop.resource.name}</span>
+                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">{drop.resource.name}</span>
                     <span className="mt-0.5 block text-[0.75rem] text-app-muted">{drop.active ? 'Conexão atual' : 'Conexão histórica'}</span>
                   </span>
                 </button>
@@ -363,7 +363,7 @@ export function ResourcePanel({
                 >
                   <ResourceIcon resource={{ resourceType: activeDropOnt.resourceType ?? '', name: activeDropOnt.name }} variant="badge" size={26} />
                   <span className="min-w-0 flex-1">
-                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">{activeDropOnt.name}</span>
+                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">{activeDropOnt.name}</span>
                     <span className="mt-0.5 block text-[0.75rem] text-app-muted">ONT alimentada</span>
                   </span>
                 </button>
@@ -404,10 +404,10 @@ export function ResourcePanel({
                     size={26}
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">
+                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">
                       {child.label}
                     </span>
-                    <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
+                    <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted">
                       {[
                         resourceIconFor({
                           resourceType: child.resourceType ?? '',

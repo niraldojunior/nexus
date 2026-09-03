@@ -156,10 +156,10 @@ export function SchematicTab({ nodeId, onSimulate, onPreview }: SchematicTabProp
                   <NodeIcon node={hop.node} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block break-words text-[0.85rem] font-medium leading-snug [overflow-wrap:anywhere]">
+                  <span className="block break-words text-[0.85rem] font-medium leading-snug">
                     {hop.node.label}
                   </span>
-                  <span className="block break-words text-[0.72rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
+                  <span className="block break-words text-[0.72rem] leading-snug text-app-muted">
                     {hopTypeLabel(hop)}
                     {hop.node.status ? ` · ${statusBadgeMeta(hop.node.status).label}` : null}
                     {statusText ? ` (${statusText})` : null}

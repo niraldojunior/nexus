@@ -76,7 +76,7 @@ export function SiteSubSitesTab({
   return (
     <div>
       <div className="mb-3 flex items-start justify-between gap-3">
-        <div className="min-w-0 break-words text-[0.82rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
+        <div className="min-w-0 break-words text-[0.82rem] leading-snug text-app-muted">
           Espaços internos do site (sala, andar, gaveta, etc)
         </div>
         {canEdit ? (

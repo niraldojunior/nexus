@@ -89,7 +89,7 @@ export function ResourceCoverageTab({ resourceId }: ResourceCoverageTabProps) {
                     <p className="text-[0.84rem] font-semibold text-app-text">
                       {areaLabel[area.level]}
                     </p>
-                    <p className="break-words text-[0.8rem] text-app-text [overflow-wrap:anywhere]">
+                    <p className="break-words text-[0.8rem] text-app-text">
                       {area.level === 'neighborhood'
                         ? area.neighborhood
                         : area.level === 'city'

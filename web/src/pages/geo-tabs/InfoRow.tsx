@@ -6,11 +6,11 @@ import type { ReactNode } from 'react';
 export function Info({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div className="grid min-w-0 grid-cols-[82px_minmax(0,1fr)] gap-x-3 py-2">
-      <div className="min-w-0 break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.06em] text-app-muted [overflow-wrap:anywhere]">
+      <div className="min-w-0 break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.06em] text-app-muted">
         {label}
       </div>
       <div
-        className={`min-w-0 max-w-full break-words text-[0.84rem] leading-snug text-app-text [overflow-wrap:anywhere] ${mono ? 'font-mono text-[0.78rem]' : ''}`}
+        className={`min-w-0 max-w-full break-words text-[0.84rem] leading-snug text-app-text ${mono ? 'font-mono text-[0.78rem]' : ''}`}
       >
         {value}
       </div>

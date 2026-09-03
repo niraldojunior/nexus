@@ -114,7 +114,7 @@ export function SiteHistoryTab({ siteId }: SiteHistoryTabProps) {
                 {diffOf(entry).map((line) => (
                   <p
                     key={line}
-                    className="break-words text-[0.84rem] leading-snug text-app-text [overflow-wrap:anywhere]"
+                    className="break-words text-[0.84rem] leading-snug text-app-text"
                   >
                     {line}
                   </p>

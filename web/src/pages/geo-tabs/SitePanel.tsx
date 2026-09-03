@@ -39,6 +39,10 @@ type SiteTab = 'overview' | 'subsites' | 'resources' | 'history';
 
 export type SitePanelProps = {
   isMobile: boolean;
+  // Gate de UI (inventory.editor/platform.admin) — ver useSession().canEdit. Sem ele, o
+  // painel vira leitura pura: cabeçalho estático, sem "Remover do projeto", e as abas
+  // repassam o mesmo flag para os campos inline que elas próprias editam.
+  canEdit: boolean;
   mode: 'create' | 'view';
   // Obrigatório em modo 'view'.
   siteId: string | null;
@@ -81,6 +85,7 @@ const geonetDetailInFlight = new Map<string, ReturnType<typeof fetchGeonetDetail
  */
 export function SitePanel({
   isMobile,
+  canEdit,
   mode,
   siteId,
   project,
@@ -195,6 +200,7 @@ export function SitePanel({
     <ViewHeader
       site={detail.site}
       siteSpecs={siteSpecs}
+      canEdit={canEdit}
       onPatch={patchCurrentSite}
       onBack={handleBack}
       onClose={onClose}
@@ -236,6 +242,7 @@ export function SitePanel({
           origin={detail.origin}
           sites={sites}
           specById={specById}
+          canEdit={canEdit}
           lockedByProjectName={
             project && project.status !== 'terminated' && detail.origin?.kind === 'project'
               ? project.name
@@ -252,18 +259,19 @@ export function SitePanel({
           siteSpecificationId={detail.site.siteSpecificationId}
           specs={specs}
           specById={specById}
+          canEdit={canEdit}
           onOpenSubSite={handleOpenSubSite}
           onChanged={onChanged}
         />
       ) : null}
 
       {tab === 'resources' ? (
-        <SiteResourcesTab siteId={detail.site.id} onOpenResource={onOpenResource} />
+        <SiteResourcesTab siteId={detail.site.id} canEdit={canEdit} onOpenResource={onOpenResource} />
       ) : null}
 
       {tab === 'history' ? <SiteHistoryTab siteId={detail.site.id} /> : null}
 
-      {onRemoveFromProject && stack.length === 1 ? (
+      {canEdit && onRemoveFromProject && stack.length === 1 ? (
         <div className="border-t border-app-border pt-4">
           <button
             type="button"
@@ -371,12 +379,14 @@ function CreateHeader({ onClose }: { onClose: () => void }) {
 function ViewHeader({
   site,
   siteSpecs,
+  canEdit,
   onPatch,
   onBack,
   onClose,
 }: {
   site: GeoSite;
   siteSpecs: GeoSpec[];
+  canEdit: boolean;
   onPatch: (patch: { name?: string; siteSpecificationId?: string }) => Promise<void>;
   onBack: () => void;
   onClose: () => void;
@@ -415,27 +425,40 @@ function ViewHeader({
         <ChevronLeft className="h-5 w-5" />
       </button>
       <div className="min-w-0 flex-1">
-        <select
-          value={site.siteSpecificationId}
-          onChange={(event) => void onPatch({ siteSpecificationId: event.target.value })}
-          aria-label="Tipo de local"
-          className="-mx-1 mb-1 rounded-[6px] border border-transparent bg-transparent px-1 text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted outline-none transition hover:border-app-border focus:border-app-accent-border"
-        >
-          {siteSpecs.map((spec) => (
-            <option key={spec.id} value={spec.id}>
-              {siteSpecLabel(spec)}
-            </option>
-          ))}
-        </select>
-        <input
-          ref={titleInputRef}
-          value={nameDraft}
-          onChange={(event) => setNameDraft(event.target.value)}
-          onBlur={commitTitle}
-          onKeyDown={handleTitleKeyDown}
-          aria-label="Nome do local"
-          className="-mx-1 w-full rounded-[8px] border border-transparent bg-transparent px-1 py-1 font-display text-[1.02rem] font-semibold leading-tight text-app-text outline-none transition hover:border-app-border focus:border-app-accent-border focus:bg-white"
-        />
+        {canEdit ? (
+          <>
+            <select
+              value={site.siteSpecificationId}
+              onChange={(event) => void onPatch({ siteSpecificationId: event.target.value })}
+              aria-label="Tipo de local"
+              className="-mx-1 mb-1 rounded-[6px] border border-transparent bg-transparent px-1 text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted outline-none transition hover:border-app-border focus:border-app-accent-border"
+            >
+              {siteSpecs.map((spec) => (
+                <option key={spec.id} value={spec.id}>
+                  {siteSpecLabel(spec)}
+                </option>
+              ))}
+            </select>
+            <input
+              ref={titleInputRef}
+              value={nameDraft}
+              onChange={(event) => setNameDraft(event.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={handleTitleKeyDown}
+              aria-label="Nome do local"
+              className="-mx-1 w-full rounded-[8px] border border-transparent bg-transparent px-1 py-1 font-display text-[1.02rem] font-semibold leading-tight text-app-text outline-none transition hover:border-app-border focus:border-app-accent-border focus:bg-white"
+            />
+          </>
+        ) : (
+          <>
+            <p className="mb-1 break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.08em] text-app-muted">
+              {siteSpecLabel(siteSpecs.find((spec) => spec.id === site.siteSpecificationId))}
+            </p>
+            <p className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text">
+              {site.name}
+            </p>
+          </>
+        )}
       </div>
       <button
         type="button"

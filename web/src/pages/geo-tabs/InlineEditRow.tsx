@@ -30,12 +30,12 @@ export function InlineEditRow({
           <Icon className="h-[18px] w-[18px]" />
         </span>
       ) : (
-        <div className="min-w-0 basis-[82px] break-words pt-1.5 text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.06em] text-app-muted [overflow-wrap:anywhere]">
+        <div className="min-w-0 basis-[82px] break-words pt-1.5 text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.06em] text-app-muted">
           {label}
         </div>
       )}
       {Icon ? <span className="sr-only">{label}</span> : null}
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         {editing ? (
           children
         ) : (
@@ -44,7 +44,7 @@ export function InlineEditRow({
             onClick={readOnlyNote ? undefined : onActivate}
             disabled={Boolean(readOnlyNote)}
             aria-label={`Editar ${label}`}
-            className="-mx-1.5 -my-1 flex w-full min-w-0 items-center rounded-[8px] px-1.5 py-1 text-left text-[0.84rem] leading-snug text-app-text outline-none transition [overflow-wrap:anywhere] hover:enabled:bg-app-accent-soft focus-visible:enabled:bg-app-accent-soft disabled:cursor-default"
+            className="-mx-1.5 -my-1 flex w-full min-w-0 items-center rounded-[8px] px-1.5 py-1 text-left text-[0.84rem] leading-snug text-app-text outline-none transition hover:enabled:bg-app-accent-soft focus-visible:enabled:bg-app-accent-soft disabled:cursor-default"
           >
             <span className="min-w-0 flex-1 break-words">{value}</span>
           </button>

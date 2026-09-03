@@ -58,6 +58,7 @@ const area = (overrides: Partial<ProjectArea> = {}): ProjectArea => ({
 const renderPanel = (overrides: Partial<Parameters<typeof ProjectDetailPanel>[0]> = {}) => {
   const props = {
     isMobile: false,
+    canEdit: true,
     project: project(),
     sites: [] as GeoTreeNode[],
     sitesLoading: false,

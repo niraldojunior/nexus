@@ -29,6 +29,8 @@ export type HierarchySidebarProps = {
   // (useGeoProjects), que também alimenta o painel de detalhe do projeto.
   projects: GeoProject[];
   projectsLoading: boolean;
+  // Gate de UI (inventory.editor/platform.admin) — repassado à aba Projetos (ProjectListView).
+  canEdit: boolean;
   onCreateProject: () => void;
   onOpenProject: (projectId: string) => void;
   onDeleteProject: (projectId: string) => Promise<GeoProjectDeleteSummary>;
@@ -50,6 +52,7 @@ export function HierarchySidebar({
   onTabChange,
   projects,
   projectsLoading,
+  canEdit,
   onCreateProject,
   onOpenProject,
   onDeleteProject,
@@ -136,6 +139,7 @@ export function HierarchySidebar({
           <ProjectListView
             projects={projects}
             loading={projectsLoading}
+            canEdit={canEdit}
             onCreate={onCreateProject}
             onOpen={onOpenProject}
             onDelete={onDeleteProject}

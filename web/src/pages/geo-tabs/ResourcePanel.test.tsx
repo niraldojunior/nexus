@@ -127,7 +127,12 @@ const portDetail = {
 };
 
 function defaultMocks() {
-  mocks.useResourceDetail.mockReturnValue({ detail: {}, loading: false, error: null });
+  mocks.useResourceDetail.mockReturnValue({
+    detail: {},
+    loading: false,
+    error: null,
+    reload: vi.fn().mockResolvedValue(undefined),
+  });
   mocks.useResourceChildren.mockReturnValue({ children: [], loading: false });
   mocks.usePortDetail.mockReturnValue({ detail: null, loading: false, error: null });
   mocks.usePortService.mockReturnValue({
@@ -150,6 +155,7 @@ afterEach(() => {
 function renderPanel(overrides: Partial<ComponentProps<typeof ResourcePanel>> = {}) {
   const props = {
     isMobile: false,
+    canEdit: true,
     node,
     onOpenResource: vi.fn(),
     onBack: vi.fn(),

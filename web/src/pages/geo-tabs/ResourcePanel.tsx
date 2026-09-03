@@ -14,6 +14,12 @@ import { useResourceChildren } from '../../hooks/useResourceChildren';
 import { usePortDetail } from '../../hooks/usePortDetail';
 import { usePortService } from '../../hooks/usePortService';
 import { fetchTreeNode, treeNodeRoute, type GeoTreeNode } from '../../services/geoTreeApi';
+import {
+  addResourceRelationship,
+  removeResourceRelationship,
+  updateResource,
+  type PhysicalResourcePayload,
+} from '../../services/resourceApi';
 import type { PortDropPreview } from '../../utils/dropSimulation';
 import { resourceIconFor } from '../../utils/resourceIcon';
 import { ResourceIcon } from '../../components/ResourceIcon';
@@ -41,6 +47,9 @@ import type { DropSimulation } from './ViabilityTab';
 
 export type ResourcePanelProps = {
   isMobile: boolean;
+  // Gate de UI (inventory.editor/platform.admin) — repassado à aba Visão geral
+  // (ResourceOverviewTab); sem ele, os campos ficam estáticos.
+  canEdit: boolean;
   node: GeoTreeNode;
   onOpenResource: (resourceId: string) => void;
   // Abre uma Porta no painel empilhado ao lado da CTO (issue #171 Fase 3) — só chamado
@@ -59,6 +68,7 @@ export type ResourcePanelProps = {
 
 export function ResourcePanel({
   isMobile,
+  canEdit,
   node,
   onOpenResource,
   onOpenPort,
@@ -72,7 +82,41 @@ export function ResourcePanel({
 }: ResourcePanelProps) {
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
   const resourceId = node.refId ?? node.id.replace(/^resource:/, '');
-  const { detail, loading: detailLoading, error: detailError } = useResourceDetail(resourceId);
+  const { detail, loading: detailLoading, error: detailError, reload } = useResourceDetail(resourceId);
+  // Diferente do Site (SitePanel.tsx patchCurrentSite), o backend recusa conflitos como
+  // RESOURCE_PORT_DROP_OCCUPIED (409) — em vez de reverter em silêncio, o erro fica visível
+  // acima da aba Visão geral até a próxima tentativa.
+  const [patchError, setPatchError] = useState<string | null>(null);
+  const patchResource = async (patch: PhysicalResourcePayload) => {
+    setPatchError(null);
+    try {
+      await updateResource(resourceId, { '@type': 'PhysicalResource', ...patch });
+      await reload();
+    } catch (err) {
+      setPatchError(err instanceof Error ? err.message : 'Não foi possível salvar a alteração.');
+    }
+  };
+  // Trocar o Recurso Pai não é PATCH — é a relação `containsAsChild` dedicada (ver
+  // resourceApi.ts). As duas chamadas não são transacionais: POST antes de DELETE para nunca
+  // deixar o recurso órfão se a segunda falhar (plano da issue #186, Fase 3.2).
+  const changeParent = async (newParentId: string | null) => {
+    setPatchError(null);
+    const oldParentId = detail?.parent?.id ?? null;
+    try {
+      if (newParentId) {
+        await addResourceRelationship(newParentId, {
+          id: resourceId,
+          relationshipType: 'containsAsChild',
+        });
+      }
+      if (oldParentId && oldParentId !== newParentId) {
+        await removeResourceRelationship(oldParentId, resourceId, 'containsAsChild');
+      }
+      await reload();
+    } catch (err) {
+      setPatchError(err instanceof Error ? err.message : 'Não foi possível trocar o recurso pai.');
+    }
+  };
   const { children, loading: childrenLoading } = useResourceChildren(node);
   const isPort = node.resourceType === 'Port';
   const { detail: portDetail, loading: portDetailLoading, error: portDetailError } = usePortDetail(resourceId, isPort);
@@ -157,10 +201,10 @@ export function ResourcePanel({
         <ChevronLeft className="h-5 w-5" />
       </button>
       <div className="min-w-0 flex-1">
-        <div className="break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.08em] text-app-muted [overflow-wrap:anywhere]">
+        <div className="break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.08em] text-app-muted">
           {eyebrow}
         </div>
-        <h3 className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text [overflow-wrap:anywhere]">
+        <h3 className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text">
           {title}
         </h3>
       </div>
@@ -250,7 +294,18 @@ export function ResourcePanel({
           ) : null
         ) : detail ? (
           <div className="grid gap-2">
-            <ResourceOverviewTab detail={detail} onOpenResource={onOpenResource} />
+            {patchError ? (
+              <div className="rounded-[18px] border border-dashed border-status-red/30 bg-status-red-soft p-4 text-[0.84rem] text-status-red">
+                {patchError}
+              </div>
+            ) : null}
+            <ResourceOverviewTab
+              detail={detail}
+              canEdit={canEdit}
+              onPatch={patchResource}
+              onChangeParent={changeParent}
+              onOpenResource={onOpenResource}
+            />
             {/* Ponto único (a maioria dos recursos) já aparece inline como "Localização"
                 em ResourceOverviewTab — este bloco só entra para geometria de linha
                 (cabos/dutos), com o par Início/Fim. */}
@@ -294,7 +349,7 @@ export function ResourcePanel({
                 >
                   <ResourceIcon resource={{ resourceType: drop.resource.resourceType, name: drop.resource.name }} variant="badge" size={26} />
                   <span className="min-w-0 flex-1">
-                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">{drop.resource.name}</span>
+                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">{drop.resource.name}</span>
                     <span className="mt-0.5 block text-[0.75rem] text-app-muted">{drop.active ? 'Conexão atual' : 'Conexão histórica'}</span>
                   </span>
                 </button>
@@ -308,7 +363,7 @@ export function ResourcePanel({
                 >
                   <ResourceIcon resource={{ resourceType: activeDropOnt.resourceType ?? '', name: activeDropOnt.name }} variant="badge" size={26} />
                   <span className="min-w-0 flex-1">
-                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">{activeDropOnt.name}</span>
+                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">{activeDropOnt.name}</span>
                     <span className="mt-0.5 block text-[0.75rem] text-app-muted">ONT alimentada</span>
                   </span>
                 </button>
@@ -349,10 +404,10 @@ export function ResourcePanel({
                     size={26}
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text [overflow-wrap:anywhere]">
+                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">
                       {child.label}
                     </span>
-                    <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
+                    <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted">
                       {[
                         resourceIconFor({
                           resourceType: child.resourceType ?? '',

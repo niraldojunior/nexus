@@ -27,7 +27,7 @@ export function IconInfoRow({
       </span>
       <span className="sr-only">{hint}</span>
       <span
-        className={`min-w-0 max-w-full flex-1 break-words text-[0.84rem] leading-snug text-app-text [overflow-wrap:anywhere] ${mono ? 'font-mono text-[0.78rem]' : ''}`}
+        className={`min-w-0 max-w-full flex-1 break-words text-[0.84rem] leading-snug text-app-text ${mono ? 'font-mono text-[0.78rem]' : ''}`}
       >
         {value}
       </span>

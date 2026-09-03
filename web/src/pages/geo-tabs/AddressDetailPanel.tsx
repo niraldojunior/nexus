@@ -193,10 +193,10 @@ export function AddressDetailPanel({
 
   const header = (
     <div className="border-y border-app-border px-3 py-3">
-      <div className="break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.08em] text-app-muted [overflow-wrap:anywhere]">
+      <div className="break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.08em] text-app-muted">
         Endereço
       </div>
-      <h3 className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text [overflow-wrap:anywhere]">
+      <h3 className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text">
         {title}
       </h3>
     </div>

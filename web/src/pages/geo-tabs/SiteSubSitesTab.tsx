@@ -11,6 +11,9 @@ export type SiteSubSitesTabProps = {
   siteSpecificationId: string;
   specs: GeoSpec[];
   specById: Map<string, GeoSpec>;
+  // Gate de UI (inventory.editor/platform.admin) — oculta (não desabilita) "Adicionar
+  // sub-local", "Criar sub-local filho" e "Excluir" quando ausente.
+  canEdit: boolean;
   onOpenSubSite: (siteId: string) => void;
   onChanged: () => void;
 };
@@ -28,6 +31,7 @@ export function SiteSubSitesTab({
   siteSpecificationId,
   specs,
   specById,
+  canEdit,
   onOpenSubSite,
   onChanged,
 }: SiteSubSitesTabProps) {
@@ -72,24 +76,26 @@ export function SiteSubSitesTab({
   return (
     <div>
       <div className="mb-3 flex items-start justify-between gap-3">
-        <div className="min-w-0 break-words text-[0.82rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
+        <div className="min-w-0 break-words text-[0.82rem] leading-snug text-app-muted">
           Espaços internos do site (sala, andar, gaveta, etc)
         </div>
-        <button
-          type="button"
-          className="geo-btn primary shrink-0"
-          onClick={() =>
-            setCreateTarget({
-              parentId: siteId,
-              parentLabel: 'este local',
-              parentSpecificationId: siteSpecificationId,
-            })
-          }
-          disabled={rootAllowedSpecs.length === 0}
-          aria-label="Adicionar sub-local"
-        >
-          <Plus className="h-4 w-4" />
-        </button>
+        {canEdit ? (
+          <button
+            type="button"
+            className="geo-btn primary shrink-0"
+            onClick={() =>
+              setCreateTarget({
+                parentId: siteId,
+                parentLabel: 'este local',
+                parentSpecificationId: siteSpecificationId,
+              })
+            }
+            disabled={rootAllowedSpecs.length === 0}
+            aria-label="Adicionar sub-local"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        ) : null}
       </div>
 
       {loading ? (
@@ -105,6 +111,7 @@ export function SiteSubSitesTab({
               key={node.id}
               node={node}
               depth={0}
+              canEdit={canEdit}
               onOpen={onOpenSubSite}
               onCreateUnder={(parentId, parentLabel, parentSpecificationId) =>
                 setCreateTarget({ parentId, parentLabel, parentSpecificationId })
@@ -160,12 +167,14 @@ export function SiteSubSitesTab({
 function SubSiteBranch({
   node,
   depth,
+  canEdit,
   onOpen,
   onCreateUnder,
   onDelete,
 }: {
   node: GeoTreeNode;
   depth: number;
+  canEdit: boolean;
   onOpen: (siteId: string) => void;
   onCreateUnder: (parentId: string, parentLabel: string, parentSpecificationId: string) => void;
   onDelete: (id: string, label: string) => void;
@@ -247,28 +256,32 @@ function SubSiteBranch({
                 >
                   Abrir
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onCreateUnder(refId, node.label, specificationId);
-                  }}
-                  className="flex w-full items-center px-3 py-2 text-left text-[0.84rem] font-medium text-app-text transition hover:bg-app-accent-soft"
-                >
-                  Criar sub-local filho
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onDelete(refId, node.label);
-                  }}
-                  className="flex w-full items-center px-3 py-2 text-left text-[0.84rem] font-medium text-status-red transition hover:bg-status-red-soft"
-                >
-                  Excluir
-                </button>
+                {canEdit ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onCreateUnder(refId, node.label, specificationId);
+                    }}
+                    className="flex w-full items-center px-3 py-2 text-left text-[0.84rem] font-medium text-app-text transition hover:bg-app-accent-soft"
+                  >
+                    Criar sub-local filho
+                  </button>
+                ) : null}
+                {canEdit ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onDelete(refId, node.label);
+                    }}
+                    className="flex w-full items-center px-3 py-2 text-left text-[0.84rem] font-medium text-status-red transition hover:bg-status-red-soft"
+                  >
+                    Excluir
+                  </button>
+                ) : null}
               </div>
             </>
           ) : null}
@@ -285,6 +298,7 @@ function SubSiteBranch({
               key={child.id}
               node={child}
               depth={depth + 1}
+              canEdit={canEdit}
               onOpen={onOpen}
               onCreateUnder={onCreateUnder}
               onDelete={onDelete}

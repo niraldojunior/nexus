@@ -130,7 +130,7 @@ export function SchematicTab({ nodeId, onSimulate, onPreview }: SchematicTabProp
       {!path.reachedSite ? (
         <div className="flex items-start gap-2 rounded-[14px] border border-status-amber/30 bg-status-amber-soft px-3 py-2 text-[0.78rem] leading-snug text-status-amber">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <span>
+          <span className="min-w-0 flex-1">
             {path.truncated
               ? `Caminho muito longo — mostrando os primeiros ${path.hops.length} saltos.`
               : 'A caminhada não chegou a uma Estação — cadeia incompleta na origem.'}
@@ -156,10 +156,10 @@ export function SchematicTab({ nodeId, onSimulate, onPreview }: SchematicTabProp
                   <NodeIcon node={hop.node} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block break-words text-[0.85rem] font-medium leading-snug [overflow-wrap:anywhere]">
+                  <span className="block break-words text-[0.85rem] font-medium leading-snug">
                     {hop.node.label}
                   </span>
-                  <span className="block break-words text-[0.72rem] leading-snug text-app-muted [overflow-wrap:anywhere]">
+                  <span className="block break-words text-[0.72rem] leading-snug text-app-muted">
                     {hopTypeLabel(hop)}
                     {hop.node.status ? ` · ${statusBadgeMeta(hop.node.status).label}` : null}
                     {statusText ? ` (${statusText})` : null}

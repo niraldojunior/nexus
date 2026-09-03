@@ -142,11 +142,19 @@ export type PhysicalResourcePayload = {
   '@type'?: 'PhysicalResource';
   name?: string;
   resourceSpecificationId?: string;
-  placeId?: string;
+  // `null` desvincula o place (C2) — distinto de campo ausente. Ver cleanUpdatePayload.
+  placeId?: string | null;
   placeType?: string;
   status?: PhysicalResource['status'];
+  administrativeState?: PhysicalResource['administrativeState'];
+  operationalState?: PhysicalResource['operationalState'];
+  usageState?: PhysicalResource['usageState'];
+  statusCode?: string;
+  label?: string;
+  assetReference?: string;
   serialNumber?: string;
   partNumber?: string;
+  characteristic?: PhysicalResource['characteristic'];
   validFor?: TimePeriod;
 };
 
@@ -173,6 +181,16 @@ const cleanObject = <T extends Record<string, unknown>>(value: T): Partial<T> =>
     if (typeof item === 'object') return Object.keys(item as Record<string, unknown>).length > 0;
     return true;
   });
+  return Object.fromEntries(entries) as Partial<T>;
+};
+
+// Variante para PATCH de Recurso: `null` explícito tem significado próprio no backend
+// (desvincular `place`, apagar um identificador — domain.ts UpdatePhysicalResourceInput) e
+// não pode ser descartado como o `cleanObject` acima faz. Só a chave de fato ausente
+// (`undefined`) é removida; string vazia também sobrevive — quem limpa um campo de texto
+// decide entre `''` e `null` explicitamente, esta função não arbitra por eles.
+const cleanUpdatePayload = <T extends Record<string, unknown>>(value: T): Partial<T> => {
+  const entries = Object.entries(value).filter(([, item]) => item !== undefined);
   return Object.fromEntries(entries) as Partial<T>;
 };
 
@@ -394,7 +412,7 @@ export async function updateResource(
     `/tmf-api/resourceInventoryManagement/v4/resource/${encodeURIComponent(id)}`,
     {
       method: 'PATCH',
-      body: cleanObject(payload as Record<string, unknown>),
+      body: cleanUpdatePayload(payload as Record<string, unknown>),
     },
   );
   if (payload['@type'] === 'PhysicalResource') invalidateMapTiles();
@@ -524,6 +542,41 @@ export async function listResourceStatusCatalog(resourceType?: string): Promise<
   if (resourceType) searchParams.set('resourceType', resourceType);
   const query = searchParams.toString();
   return await requestJson<ResourceStatusCatalogEntry[]>(`/v1/resource-statuses${query ? `?${query}` : ''}`);
+}
+
+export type ResourceRelationshipPayload = {
+  id: string;
+  relationshipType: string;
+  '@referredType'?: 'Resource';
+  validFor?: TimePeriod;
+};
+
+// Trocar o Recurso Pai não é um PATCH (o backend ignora `resourceRelationship` na gravação,
+// service.ts — regrava `current.resourceRelationship`) — é a relação `containsAsChild`
+// dedicada. `resourceId` aqui é sempre o **pai**: a aresta fica `resource_from_id=resourceId,
+// resource_to_id=relationship.id` (postgres-repository.ts upsertResourceRelationship).
+export async function addResourceRelationship(
+  resourceId: string,
+  relationship: ResourceRelationshipPayload,
+): Promise<ResourceRelationshipPayload> {
+  return await requestJson<ResourceRelationshipPayload>(
+    `${API_BASE_URL}/resourceInventoryManagement/v4/resource/${encodeURIComponent(resourceId)}/relationships`,
+    {
+      method: 'POST',
+      body: { '@referredType': 'Resource', ...relationship },
+    },
+  );
+}
+
+export async function removeResourceRelationship(
+  resourceId: string,
+  relatedResourceId: string,
+  relationshipType: string,
+): Promise<void> {
+  await requestJson<void>(
+    `${API_BASE_URL}/resourceInventoryManagement/v4/resource/${encodeURIComponent(resourceId)}/relationships/${encodeURIComponent(relatedResourceId)}/${encodeURIComponent(relationshipType)}`,
+    { method: 'DELETE' },
+  );
 }
 
 export async function deleteResource(id: string): Promise<ResourceEntity> {

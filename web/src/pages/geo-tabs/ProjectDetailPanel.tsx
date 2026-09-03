@@ -64,6 +64,10 @@ export type ProjectDetailPanelProps = {
   selectedSiteId?: string | null;
   onSnapChange?: (state: BottomSheetSnapState) => void;
   minimizeSignal?: number;
+  // Gate de UI (inventory.editor/platform.admin) — sem ele, título/descrição/ícone/status
+  // do projeto viram texto estático e os botões de criar/excluir (local, recurso, projeto)
+  // somem.
+  canEdit: boolean;
   onUpdate: (
     patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>>,
   ) => Promise<{ siteCascade?: GeoProjectSiteCascade } | void>;
@@ -100,6 +104,7 @@ export function ProjectDetailPanel({
   selectedSiteId,
   onSnapChange,
   minimizeSignal,
+  canEdit,
   onUpdate,
   onDelete,
   onBack,
@@ -282,75 +287,91 @@ export function ProjectDetailPanel({
       <ProjectIcon
         iconDataUrl={project.iconDataUrl}
         size={44}
-        onChangeFile={handleIconFile}
+        onChangeFile={canEdit ? handleIconFile : undefined}
         label="Alterar ícone do projeto"
       />
       <div className="min-w-0 max-w-[220px] flex-1">
-        <input
-          ref={titleInputRef}
-          value={titleDraft}
-          onChange={(event) => setTitleDraft(event.target.value)}
-          onBlur={commitTitle}
-          onKeyDown={handleTitleKeyDown}
-          aria-label="Nome do projeto"
-          className="-mx-1 w-full rounded-[8px] border border-transparent bg-transparent px-1 py-1 font-display text-[1.02rem] font-semibold leading-tight text-app-text outline-none transition hover:border-app-border focus:border-app-accent-border focus:bg-white"
-        />
+        {canEdit ? (
+          <input
+            ref={titleInputRef}
+            value={titleDraft}
+            onChange={(event) => setTitleDraft(event.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={handleTitleKeyDown}
+            aria-label="Nome do projeto"
+            className="-mx-1 w-full rounded-[8px] border border-transparent bg-transparent px-1 py-1 font-display text-[1.02rem] font-semibold leading-tight text-app-text outline-none transition hover:border-app-border focus:border-app-accent-border focus:bg-white"
+          />
+        ) : (
+          <p className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text">
+            {project.name}
+          </p>
+        )}
         {iconError ? <p className="mt-1 text-[0.72rem] text-status-red">{iconError}</p> : null}
       </div>
       </div>
-      <div className="relative shrink-0">
-        <button
-          type="button"
-          onClick={() => setMenuOpen((open) => !open)}
-          className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
-          aria-label="Mais opções do projeto"
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-        >
-          <MoreVertical className="h-4 w-4" />
-        </button>
-        {menuOpen ? (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-            <div
-              role="menu"
-              className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-[12px] border border-app-border bg-white py-1 shadow-soft"
-            >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setConfirmDelete(true);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.84rem] font-medium text-status-red transition hover:bg-status-red-soft"
+      {canEdit ? (
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setMenuOpen((open) => !open)}
+            className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
+            aria-label="Mais opções do projeto"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+          >
+            <MoreVertical className="h-4 w-4" />
+          </button>
+          {menuOpen ? (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+              <div
+                role="menu"
+                className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-[12px] border border-app-border bg-white py-1 shadow-soft"
               >
-                <Trash2 className="h-3.5 w-3.5" />
-                Excluir projeto
-              </button>
-            </div>
-          </>
-        ) : null}
-      </div>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setConfirmDelete(true);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.84rem] font-medium text-status-red transition hover:bg-status-red-soft"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Excluir projeto
+                </button>
+              </div>
+            </>
+          ) : null}
+        </div>
+      ) : (
+        <div aria-hidden="true" />
+      )}
     </div>
   );
 
   const descriptionBlock = (
     <div className="flex items-start gap-2">
-      <textarea
-        ref={descriptionRef}
-        value={descriptionDraft}
-        onChange={(event) => setDescriptionDraft(event.target.value)}
-        onBlur={commitDescription}
-        placeholder="Adicione uma descrição para este projeto…"
-        rows={1}
-        aria-label="Descrição do projeto"
-        className="-mx-1 w-full flex-1 resize-none rounded-[8px] border border-transparent bg-transparent px-1 py-1 text-[0.84rem] leading-snug text-app-text outline-none transition placeholder:text-app-muted hover:border-app-border focus:border-app-accent-border focus:bg-white"
-      />
+      {canEdit ? (
+        <textarea
+          ref={descriptionRef}
+          value={descriptionDraft}
+          onChange={(event) => setDescriptionDraft(event.target.value)}
+          onBlur={commitDescription}
+          placeholder="Adicione uma descrição para este projeto…"
+          rows={1}
+          aria-label="Descrição do projeto"
+          className="-mx-1 w-full flex-1 resize-none rounded-[8px] border border-transparent bg-transparent px-1 py-1 text-[0.84rem] leading-snug text-app-text outline-none transition placeholder:text-app-muted hover:border-app-border focus:border-app-accent-border focus:bg-white"
+        />
+      ) : (
+        <p className="-mx-1 w-full flex-1 break-words px-1 py-1 text-[0.84rem] leading-snug text-app-text">
+          {descriptionDraft.trim() || '—'}
+        </p>
+      )}
       {/* Projeto terminado não volta (RF-010): a combo de troca de status some — os
           locais já foram liberados (viraram Ativo, vida própria) e o projeto passa a
           ser só um registro histórico. */}
-      {project.status === 'terminated' ? (
+      {project.status === 'terminated' || !canEdit ? (
         <div className="flex h-8 shrink-0 items-center">
           <StatusBadge status={project.status} />
         </div>
@@ -407,7 +428,7 @@ export function ProjectDetailPanel({
   );
 
 
-  const addSiteButton = (
+  const addSiteButton = canEdit ? (
     <button
       type="button"
       onClick={onAddSite}
@@ -417,7 +438,7 @@ export function ProjectDetailPanel({
       <Plus className="h-4 w-4" />
       Adicionar Local
     </button>
-  );
+  ) : null;
 
   const siteRows =
     sitesLoading && sites.length === 0 ? (
@@ -444,15 +465,17 @@ export function ProjectDetailPanel({
               {site.label}
             </span>
           </button>
-          <button
-            type="button"
-            onClick={() => setPendingRemoveSite(site)}
-            title="Excluir local"
-            aria-label={`Excluir local ${site.label}`}
-            className="shrink-0 rounded-[8px] p-1.5 text-app-muted opacity-0 transition hover:bg-status-red-soft hover:text-status-red focus-visible:opacity-100 group-hover:opacity-100"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          {canEdit ? (
+            <button
+              type="button"
+              onClick={() => setPendingRemoveSite(site)}
+              title="Excluir local"
+              aria-label={`Excluir local ${site.label}`}
+              className="shrink-0 rounded-[8px] p-1.5 text-app-muted opacity-0 transition hover:bg-status-red-soft hover:text-status-red focus-visible:opacity-100 group-hover:opacity-100"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
         </div>
       ))
     );
@@ -481,12 +504,13 @@ export function ProjectDetailPanel({
       ))}
     </div>
   );
-  const addResourceButton = (mode: 'infrastructure' | 'resources') => (
-    <button type="button" onClick={() => setCreateResourceMode(mode)} disabled={Boolean(createResourceMode) || project.status === 'terminated' || project.status === 'cancelled'} className="geo-btn primary mb-2 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60">
-      <Plus className="h-4 w-4" />
-      {mode === 'infrastructure' ? 'Criar infraestrutura' : 'Criar recurso'}
-    </button>
-  );
+  const addResourceButton = (mode: 'infrastructure' | 'resources') =>
+    canEdit ? (
+      <button type="button" onClick={() => setCreateResourceMode(mode)} disabled={Boolean(createResourceMode) || project.status === 'terminated' || project.status === 'cancelled'} className="geo-btn primary mb-2 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60">
+        <Plus className="h-4 w-4" />
+        {mode === 'infrastructure' ? 'Criar infraestrutura' : 'Criar recurso'}
+      </button>
+    ) : null;
 
   const resourceRows = resourcesLoading ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Carregando recursos…</p>
     : resources.length === 0 ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Nenhum recurso nesta visão.</p>

@@ -17,6 +17,12 @@ import type {
   ResourceQuery,
   ResourceRelationship,
   ResourceCategory,
+  ResourceCatalog,
+  ResourceCatalogNode,
+  ResourceCatalogPath,
+  ResourceCatalogPathEntry,
+  ResourceCatalogQuery,
+  ResourceCatalogTreeNode,
   ResourceLayer,
   ResourceType,
   ResourceSpecification,
@@ -34,6 +40,11 @@ import type {
   UpdateResourceLayerInput,
   UpdateResourceFunctionSpecificationInput,
   UpdateResourceSpecificationInput,
+  CreateResourceCatalogInput,
+  UpdateResourceCatalogInput,
+  CreateResourceCatalogNodeInput,
+  UpdateResourceCatalogNodeInput,
+  MoveResourceCatalogNodeInput,
 } from './domain.js';
 import type {
   IResourceRepository,
@@ -344,6 +355,490 @@ export class ResourceService {
 
   public async listResourceLayers(context?: RequestContext): Promise<ResourceLayer[]> {
     return await this.repository.listResourceLayers(scopeOf(context));
+  }
+
+  // --- Árvore dinâmica de catálogo (issue #188) -------------------------------------------------
+  // Convive com Category/Layer acima até o cutover lógico (plano §7.8). ResourceType ainda não tem
+  // CRUD/tenant-scoping próprio (bootstrap estático em catalog.ts) — a resolução por id abaixo usa
+  // listResourceTypes() em memória, aceitável no tamanho atual do catálogo; ganha método dedicado
+  // quando ResourceType ganhar CRUD (tarefas #7/#9 do plano).
+
+  public async createResourceCatalog(
+    input: CreateResourceCatalogInput,
+    context?: RequestContext,
+  ): Promise<ResourceCatalog> {
+    assertName(input.code, 'code');
+    assertName(input.name);
+    const tenantId = tenantOf(context);
+    const duplicate = await this.repository.getResourceCatalogByCode(input.code.trim(), {
+      tenantId,
+    });
+    if (duplicate) {
+      throw new AppError('resource catalog code already exists', {
+        code: 'RESOURCE_CATALOG_CODE_DUPLICATE',
+        statusCode: 409,
+      });
+    }
+    const isDefault = input.isDefault ?? false;
+    if (isDefault && (await this.repository.getDefaultResourceCatalog({ tenantId }))) {
+      throw new AppError('resource catalog default already exists', {
+        code: 'RESOURCE_CATALOG_DEFAULT_DUPLICATE',
+        statusCode: 409,
+      });
+    }
+    const id = createCanonicalId();
+    const catalog: ResourceCatalog = {
+      '@type': 'ResourceCatalog',
+      id,
+      href: buildHref('resourceCatalog', id),
+      code: input.code.trim(),
+      name: input.name.trim(),
+      status: 'active',
+      isDefault,
+      sortOrder: input.sortOrder ?? 0,
+      tenantId,
+      ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+      ...(context?.actorSub ? { createdBy: context.actorSub, updatedBy: context.actorSub } : {}),
+    };
+    const stored = await this.repository.upsertResourceCatalog(catalog);
+    await this.emit('ResourceCatalogCreateEvent', stored.id, 'ResourceCatalog', stored, context);
+    return stored;
+  }
+
+  public async updateResourceCatalog(
+    id: string,
+    input: UpdateResourceCatalogInput,
+    context?: RequestContext,
+  ): Promise<ResourceCatalog> {
+    const current = await this.getResourceCatalogOrThrow(id, context);
+    if (input.name !== undefined) assertName(input.name);
+    const tenantId = tenantOf(context);
+    const nextIsDefault = input.isDefault ?? current.isDefault;
+    if (nextIsDefault && !current.isDefault) {
+      const existingDefault = await this.repository.getDefaultResourceCatalog({ tenantId });
+      if (existingDefault && existingDefault.id !== current.id) {
+        throw new AppError('resource catalog default already exists', {
+          code: 'RESOURCE_CATALOG_DEFAULT_DUPLICATE',
+          statusCode: 409,
+        });
+      }
+    }
+    const updated = await this.repository.upsertResourceCatalog({
+      ...current,
+      name: input.name?.trim() ?? current.name,
+      status: input.status ?? current.status,
+      isDefault: nextIsDefault,
+      sortOrder: input.sortOrder ?? current.sortOrder,
+      ...(input.description !== undefined
+        ? input.description.trim()
+          ? { description: input.description.trim() }
+          : {}
+        : current.description
+          ? { description: current.description }
+          : {}),
+      ...(context?.actorSub ? { updatedBy: context.actorSub } : {}),
+    });
+    await this.emit(
+      'ResourceCatalogAttributeValueChangeEvent',
+      updated.id,
+      'ResourceCatalog',
+      updated,
+      context,
+      current,
+    );
+    return updated;
+  }
+
+  public async deleteResourceCatalog(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ResourceCatalog> {
+    const current = await this.getResourceCatalogOrThrow(id, context);
+    const activeNodes = await this.repository.listResourceCatalogNodes(current.id, scopeOf(context));
+    if (activeNodes.length > 0) {
+      throw new AppError('resource catalog is not empty', {
+        code: 'RESOURCE_CATALOG_NOT_EMPTY',
+        statusCode: 409,
+      });
+    }
+    const retired = await this.repository.upsertResourceCatalog({
+      ...current,
+      status: 'inactive',
+      ...(context?.actorSub ? { updatedBy: context.actorSub } : {}),
+    });
+    await this.emit(
+      'ResourceCatalogAttributeValueChangeEvent',
+      retired.id,
+      'ResourceCatalog',
+      retired,
+      context,
+      current,
+    );
+    return retired;
+  }
+
+  public async getResourceCatalog(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ResourceCatalog | undefined> {
+    return await this.repository.getResourceCatalog(id, scopeOf(context));
+  }
+
+  public async listResourceCatalogs(
+    query?: ResourceCatalogQuery,
+    context?: RequestContext,
+  ): Promise<ResourceCatalog[]> {
+    return await this.repository.listResourceCatalogs({ ...query, tenantId: tenantOf(context) });
+  }
+
+  public async createResourceCatalogNode(
+    catalogId: string,
+    input: CreateResourceCatalogNodeInput,
+    context?: RequestContext,
+  ): Promise<ResourceCatalogNode> {
+    assertName(input.code, 'code');
+    assertName(input.name);
+    const catalog = await this.getResourceCatalogOrThrow(catalogId, context);
+    const tenantId = tenantOf(context);
+    const duplicate = await this.repository.getResourceCatalogNodeByCode(
+      catalog.id,
+      input.code.trim(),
+      { tenantId },
+    );
+    if (duplicate) {
+      throw new AppError('resource catalog node code already exists', {
+        code: 'RESOURCE_CATALOG_NODE_CODE_DUPLICATE',
+        statusCode: 409,
+      });
+    }
+    const parent = await this.assertValidParent(catalog.id, input.parentNodeId, context);
+    const resourceType =
+      input.kind === 'RESOURCE_TYPE'
+        ? await this.getResourceTypeByIdOrThrow(input.resourceTypeId)
+        : undefined;
+    const id = createCanonicalId();
+    const node: ResourceCatalogNode = {
+      '@type': 'ResourceCatalogNode',
+      id,
+      href: buildHref('resourceCatalogNode', id),
+      catalogId: catalog.id,
+      code: input.code.trim(),
+      name: input.name.trim(),
+      kind: input.kind,
+      status: 'active',
+      sortOrder: input.sortOrder ?? 0,
+      tenantId,
+      ...(parent ? { parentNodeId: parent.id } : {}),
+      ...(resourceType ? { resourceTypeId: resourceType.id } : {}),
+      ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+      ...(input.metadata ? { metadata: input.metadata } : {}),
+      ...(context?.actorSub ? { createdBy: context.actorSub, updatedBy: context.actorSub } : {}),
+    };
+    const stored = await this.repository.upsertResourceCatalogNode(node);
+    await this.emit(
+      'ResourceCatalogNodeCreateEvent',
+      stored.id,
+      'ResourceCatalogNode',
+      stored,
+      context,
+    );
+    return stored;
+  }
+
+  public async updateResourceCatalogNode(
+    catalogId: string,
+    nodeId: string,
+    input: UpdateResourceCatalogNodeInput,
+    context?: RequestContext,
+  ): Promise<ResourceCatalogNode> {
+    const current = await this.getResourceCatalogNodeOrThrow(catalogId, nodeId, context);
+    if (input.name !== undefined) assertName(input.name);
+    const updated = await this.repository.upsertResourceCatalogNode({
+      ...current,
+      name: input.name?.trim() ?? current.name,
+      status: input.status ?? current.status,
+      ...(input.metadata !== undefined
+        ? { metadata: input.metadata }
+        : current.metadata
+          ? { metadata: current.metadata }
+          : {}),
+      ...(input.description !== undefined
+        ? input.description.trim()
+          ? { description: input.description.trim() }
+          : {}
+        : current.description
+          ? { description: current.description }
+          : {}),
+      ...(context?.actorSub ? { updatedBy: context.actorSub } : {}),
+    });
+    await this.emit(
+      'ResourceCatalogNodeAttributeValueChangeEvent',
+      updated.id,
+      'ResourceCatalogNode',
+      updated,
+      context,
+      current,
+    );
+    return updated;
+  }
+
+  /**
+   * Único caminho que muda `parentNodeId`/`sortOrder` (plano §4) — centraliza a prevenção de
+   * ciclo/self-parent. `PATCH` normal (acima) nunca toca posição.
+   */
+  public async moveResourceCatalogNode(
+    catalogId: string,
+    nodeId: string,
+    input: MoveResourceCatalogNodeInput,
+    context?: RequestContext,
+  ): Promise<ResourceCatalogNode> {
+    const current = await this.getResourceCatalogNodeOrThrow(catalogId, nodeId, context);
+    if (input.parentNodeId === current.id) {
+      throw new AppError('resource catalog node cannot be its own parent', {
+        code: 'RESOURCE_CATALOG_NODE_SELF_PARENT',
+        statusCode: 409,
+      });
+    }
+    const parent =
+      input.parentNodeId === null
+        ? undefined
+        : await this.assertValidParent(current.catalogId, input.parentNodeId, context);
+
+    if (parent) {
+      // Caminha do novo pai até a raiz; se alcançar o próprio nó movido, é ciclo (direto ou
+      // indireto) — cobre também árvore preexistente já corrompida via `visited`.
+      const allNodes = await this.repository.listResourceCatalogNodes(current.catalogId, {
+        ...scopeOf(context),
+        includeInactive: true,
+      });
+      const parentById = new Map(allNodes.map((node) => [node.id, node.parentNodeId]));
+      const visited = new Set<string>();
+      let cursor: string | undefined = parent.id;
+      while (cursor) {
+        if (cursor === current.id) {
+          throw new AppError('resource catalog node move creates a cycle', {
+            code: 'RESOURCE_CATALOG_NODE_CYCLE',
+            statusCode: 409,
+          });
+        }
+        if (visited.has(cursor)) break;
+        visited.add(cursor);
+        cursor = parentById.get(cursor);
+      }
+    }
+
+    const updated = await this.repository.upsertResourceCatalogNode({
+      ...current,
+      sortOrder: input.sortOrder,
+      ...(parent ? { parentNodeId: parent.id } : {}),
+      ...(context?.actorSub ? { updatedBy: context.actorSub } : {}),
+    });
+    if (input.parentNodeId === null) {
+      // spread acima não remove parentNodeId quando current já tinha um — grava explicitamente
+      // a raiz via segundo upsert só quando necessário (evita mutar objetos parciais no meio do caminho).
+      const { parentNodeId: _discardedParentNodeId, ...withoutParent } = updated;
+      const uprooted = await this.repository.upsertResourceCatalogNode(withoutParent);
+      await this.emit(
+        'ResourceCatalogNodeAttributeValueChangeEvent',
+        uprooted.id,
+        'ResourceCatalogNode',
+        uprooted,
+        context,
+        current,
+      );
+      return uprooted;
+    }
+    await this.emit(
+      'ResourceCatalogNodeAttributeValueChangeEvent',
+      updated.id,
+      'ResourceCatalogNode',
+      updated,
+      context,
+      current,
+    );
+    return updated;
+  }
+
+  public async deleteResourceCatalogNode(
+    catalogId: string,
+    nodeId: string,
+    context?: RequestContext,
+  ): Promise<ResourceCatalogNode> {
+    const current = await this.getResourceCatalogNodeOrThrow(catalogId, nodeId, context);
+    const childCount = await this.repository.countResourceCatalogNodeChildren(
+      current.id,
+      scopeOf(context),
+    );
+    if (childCount > 0) {
+      throw new AppError('resource catalog node has children', {
+        code: 'RESOURCE_CATALOG_NODE_HAS_CHILDREN',
+        statusCode: 409,
+      });
+    }
+    const retired = await this.repository.upsertResourceCatalogNode({
+      ...current,
+      status: 'inactive',
+      ...(context?.actorSub ? { updatedBy: context.actorSub } : {}),
+    });
+    await this.emit(
+      'ResourceCatalogNodeAttributeValueChangeEvent',
+      retired.id,
+      'ResourceCatalogNode',
+      retired,
+      context,
+      current,
+    );
+    return retired;
+  }
+
+  public async getResourceCatalogNode(
+    catalogId: string,
+    nodeId: string,
+    context?: RequestContext,
+  ): Promise<ResourceCatalogNode | undefined> {
+    const node = await this.repository.getResourceCatalogNode(nodeId, scopeOf(context));
+    return node && node.catalogId === catalogId ? node : undefined;
+  }
+
+  public async listResourceCatalogNodes(
+    catalogId: string,
+    context?: RequestContext,
+    includeInactive = false,
+  ): Promise<ResourceCatalogNode[]> {
+    await this.getResourceCatalogOrThrow(catalogId, context);
+    return await this.repository.listResourceCatalogNodes(catalogId, {
+      ...scopeOf(context),
+      includeInactive,
+    });
+  }
+
+  /** Monta a árvore a partir de uma consulta flat, em memória, O(n) (plano §4). */
+  public async getResourceCatalogTree(
+    catalogId: string,
+    context?: RequestContext,
+    includeInactive = false,
+  ): Promise<ResourceCatalogTreeNode[]> {
+    const flat = await this.listResourceCatalogNodes(catalogId, context, includeInactive);
+    return buildResourceCatalogTree(flat);
+  }
+
+  public async getResourceCatalogNodePath(
+    catalogId: string,
+    nodeId: string,
+    context?: RequestContext,
+  ): Promise<ResourceCatalogPath> {
+    const catalog = await this.getResourceCatalogOrThrow(catalogId, context);
+    const allNodes = await this.repository.listResourceCatalogNodes(catalog.id, {
+      ...scopeOf(context),
+      includeInactive: true,
+    });
+    const byId = new Map(allNodes.map((node) => [node.id, node]));
+    const target = byId.get(nodeId);
+    if (!target) {
+      throw new AppError('resource catalog node not found', {
+        code: 'RESOURCE_CATALOG_NODE_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    const chain: ResourceCatalogPathEntry[] = [];
+    const visited = new Set<string>();
+    let cursor: ResourceCatalogNode | undefined = target;
+    while (cursor && !visited.has(cursor.id)) {
+      visited.add(cursor.id);
+      chain.unshift({
+        id: cursor.id,
+        code: cursor.code,
+        name: cursor.name,
+        kind: cursor.kind,
+        ...(cursor.resourceTypeId ? { resourceTypeId: cursor.resourceTypeId } : {}),
+      });
+      cursor = cursor.parentNodeId ? byId.get(cursor.parentNodeId) : undefined;
+    }
+    return {
+      catalog: { id: catalog.id, code: catalog.code, name: catalog.name },
+      nodes: chain,
+    };
+  }
+
+  private async assertValidParent(
+    catalogId: string,
+    parentNodeId: string | undefined,
+    context?: RequestContext,
+  ): Promise<ResourceCatalogNode | undefined> {
+    if (!parentNodeId) return undefined;
+    const parent = await this.repository.getResourceCatalogNode(parentNodeId, scopeOf(context));
+    if (!parent) {
+      throw new AppError('resource catalog parent node not found', {
+        code: 'RESOURCE_CATALOG_NODE_PARENT_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    if (parent.catalogId !== catalogId) {
+      throw new AppError('resource catalog parent node belongs to another catalog', {
+        code: 'RESOURCE_CATALOG_NODE_CROSS_CATALOG',
+        statusCode: 409,
+      });
+    }
+    if (parent.kind !== 'GROUP') {
+      throw new AppError('resource catalog parent node must be a group', {
+        code: 'RESOURCE_CATALOG_NODE_PARENT_NOT_GROUP',
+        statusCode: 409,
+      });
+    }
+    if (parent.status !== 'active') {
+      throw new AppError('resource catalog parent node is inactive', {
+        code: 'RESOURCE_CATALOG_NODE_PARENT_INACTIVE',
+        statusCode: 409,
+      });
+    }
+    return parent;
+  }
+
+  private async getResourceCatalogOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ResourceCatalog> {
+    const catalog = await this.repository.getResourceCatalog(id, scopeOf(context));
+    if (!catalog) {
+      throw new AppError('resource catalog not found', {
+        code: 'RESOURCE_CATALOG_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    return catalog;
+  }
+
+  private async getResourceCatalogNodeOrThrow(
+    catalogId: string,
+    nodeId: string,
+    context?: RequestContext,
+  ): Promise<ResourceCatalogNode> {
+    const node = await this.repository.getResourceCatalogNode(nodeId, scopeOf(context));
+    if (!node || node.catalogId !== catalogId) {
+      throw new AppError('resource catalog node not found', {
+        code: 'RESOURCE_CATALOG_NODE_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    return node;
+  }
+
+  private async getResourceTypeByIdOrThrow(id: string): Promise<ResourceType> {
+    const types = await this.repository.listResourceTypes();
+    const type = types.find((candidate) => candidate.id === id);
+    if (!type) {
+      throw new AppError('resource type not found', {
+        code: 'RESOURCE_TYPE_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    if (type.status !== 'active') {
+      throw new AppError('resource type is inactive', {
+        code: 'RESOURCE_TYPE_INACTIVE',
+        statusCode: 409,
+      });
+    }
+    return type;
   }
 
   /**
@@ -1159,6 +1654,26 @@ const assertName = (value: unknown, field = 'name'): void => {
       statusCode: 400,
     });
   }
+};
+
+/**
+ * Monta a árvore a partir de uma lista flat, O(n): agrupa por `parentNodeId`, depois monta
+ * recursivamente a partir das raízes. Ordenação determinística (`sortOrder`, nome, id) já vem do
+ * repositório — aqui só preserva a ordem recebida.
+ */
+const buildResourceCatalogTree = (flat: ResourceCatalogNode[]): ResourceCatalogTreeNode[] => {
+  const childrenByParent = new Map<string | undefined, ResourceCatalogNode[]>();
+  for (const node of flat) {
+    const key = node.parentNodeId;
+    const siblings = childrenByParent.get(key) ?? [];
+    siblings.push(node);
+    childrenByParent.set(key, siblings);
+  }
+  const attach = (node: ResourceCatalogNode): ResourceCatalogTreeNode => ({
+    ...node,
+    children: (childrenByParent.get(node.id) ?? []).map(attach),
+  });
+  return (childrenByParent.get(undefined) ?? []).map(attach);
 };
 
 const buildTimePeriod = (

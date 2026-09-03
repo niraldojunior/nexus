@@ -83,6 +83,12 @@ export const transformOracleSchemaSql = (sql: string): string => {
     /CREATE UNIQUE INDEX\s+([a-zA-Z0-9_]+)\s+ON\s+([a-zA-Z0-9_]+)\s*\(resource_id\)\s+WHERE\s+detached_at\s+IS\s+NULL/gi,
     'CREATE UNIQUE INDEX $1 ON $2(CASE WHEN detached_at IS NULL THEN resource_id END)',
   );
+  // No máximo um ResourceCatalog default por tenant (issue #188 §2.1) — mesma técnica de índice
+  // funcional acima, aplicada a tmf_resource_catalog.is_default em vez de detached_at.
+  output = output.replace(
+    /CREATE UNIQUE INDEX\s+([a-zA-Z0-9_]+)\s+ON\s+([a-zA-Z0-9_]+)\s*\(tenant_id\)\s+WHERE\s+is_default\s*=\s*1/gi,
+    'CREATE UNIQUE INDEX $1 ON $2(CASE WHEN is_default = 1 THEN tenant_id END)',
+  );
 
   output = output.replace(
     /^(\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s+TEXT\b/gm,

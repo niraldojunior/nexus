@@ -7,6 +7,20 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 
+// A categoria legada Infrastructure.Passive foi substituída pelos códigos técnicos
+// canônicos de ResourceType. O catálogo é navegação; esta classificação operacional
+// não depende de um caminho ou de um nó de catálogo.
+const INFRASTRUCTURE_RESOURCE_TYPE_CODES = [
+  'Splitter',
+  'CTO',
+  'DIO',
+  'SpliceClosure',
+  'OpticalNode',
+] as const;
+const INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL = INFRASTRUCTURE_RESOURCE_TYPE_CODES.map(
+  (code) => `'${code}'`,
+).join(', ');
+
 // Mesmo vocabulário de GeoStatus (web/src/services/geoApi.ts) — o projeto é a unidade de
 // estado do REQ-MOD01-015: mudar o status do projeto cascateia (best-effort) para cada Site
 // vinculado via GeoService.transitionSite (ver /v1/geo/projects/:id em app.ts). Um local de
@@ -186,7 +200,10 @@ const PROJECT_SELECT = `
          (SELECT COUNT(*) FROM geo_project_resource pr
             JOIN tmf_physical_resource r ON r.id = pr.resource_id
             JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-           WHERE pr.project_id = p.id AND pr.detached_at IS NULL AND rs.category = 'Infrastructure.Passive') AS infrastructureCount,
+            JOIN tmf_resource_type rt
+              ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+           WHERE pr.project_id = p.id AND pr.detached_at IS NULL
+             AND rt.code IN (${INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL})) AS infrastructureCount,
          (SELECT COUNT(*) FROM geo_project_area pa WHERE pa.project_id = p.id) AS areaCount
     FROM geo_project p
     LEFT JOIN geo_project_status_catalog sc
@@ -478,28 +495,32 @@ export class GeoProjectRepository {
       `SELECT * FROM (
          SELECT r.id, 'resource' AS kind, r.name AS label,
                 CASE WHEN LOWER(r.name) LIKE LOWER(?) THEN 0
-                     WHEN LOWER(COALESCE(rs.resource_type, '')) LIKE LOWER(?) THEN 1
+                     WHEN LOWER(COALESCE(rt.code, '')) LIKE LOWER(?) THEN 1
                      WHEN LOWER(COALESCE(rs.name, '')) LIKE LOWER(?) THEN 1 ELSE 2 END AS rank
            FROM geo_project_resource pr
            JOIN geo_project p ON p.id = pr.project_id
            JOIN tmf_physical_resource r ON r.id = pr.resource_id
            LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+           LEFT JOIN tmf_resource_type rt
+             ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
           WHERE p.tenant_id = ? AND pr.project_id = ? AND pr.detached_at IS NULL
             AND pr.resource_kind = 'PhysicalResource'
-            ${scope === 'infrastructure' ? "AND rs.category = 'Infrastructure.Passive'" : ''}
-            AND (LOWER(r.name) LIKE LOWER(?) OR LOWER(COALESCE(rs.resource_type, '')) LIKE LOWER(?) OR LOWER(COALESCE(rs.name, '')) LIKE LOWER(?))
+            ${scope === 'infrastructure' ? `AND rt.code IN (${INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL})` : ''}
+            AND (LOWER(r.name) LIKE LOWER(?) OR LOWER(COALESCE(rt.code, '')) LIKE LOWER(?) OR LOWER(COALESCE(rs.name, '')) LIKE LOWER(?))
          ${scope === 'infrastructure' ? '' : `UNION ALL
          SELECT r.id, 'resource' AS kind, r.name AS label,
                 CASE WHEN LOWER(r.name) LIKE LOWER(?) THEN 0
-                     WHEN LOWER(COALESCE(rs.resource_type, '')) LIKE LOWER(?) THEN 1
+                     WHEN LOWER(COALESCE(rt.code, '')) LIKE LOWER(?) THEN 1
                      WHEN LOWER(COALESCE(rs.name, '')) LIKE LOWER(?) THEN 1 ELSE 2 END AS rank
            FROM geo_project_resource pr
            JOIN geo_project p ON p.id = pr.project_id
            JOIN tmf_logical_resource r ON r.id = pr.resource_id
            LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+           LEFT JOIN tmf_resource_type rt
+             ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
           WHERE p.tenant_id = ? AND pr.project_id = ? AND pr.detached_at IS NULL
             AND pr.resource_kind = 'LogicalResource'
-            AND (LOWER(r.name) LIKE LOWER(?) OR LOWER(COALESCE(rs.resource_type, '')) LIKE LOWER(?) OR LOWER(COALESCE(rs.name, '')) LIKE LOWER(?))`}
+            AND (LOWER(r.name) LIKE LOWER(?) OR LOWER(COALESCE(rt.code, '')) LIKE LOWER(?) OR LOWER(COALESCE(rs.name, '')) LIKE LOWER(?))`}
        ) AS matches
        ORDER BY rank, label
        LIMIT ?`,

@@ -733,10 +733,12 @@ export class GeoTreeService {
     cableId: string,
   ): Promise<{ types: string[]; count: number } | undefined> {
     const rows = await this.db.all<{ resource_type: string | null }>(
-      `SELECT rs.resource_type AS resource_type
+      `SELECT rt.code AS resource_type
          FROM tmf_resource_relationship e
          JOIN tmf_physical_resource r ON r.id = e.resource_to_id
          LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+         LEFT JOIN tmf_resource_type rt
+           ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
         WHERE e.resource_from_id = ? AND e.relationship_type = 'supportedBy'`,
       [cableId],
     );
@@ -1224,7 +1226,9 @@ export class GeoTreeService {
       `SELECT count(*) AS n
          FROM tmf_physical_resource r
          JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-        WHERE r.id = ? AND rs.resource_type IN (${placeholders([...INTERNAL_RESOURCE_TYPES])})`,
+         JOIN tmf_resource_type rt
+           ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+        WHERE r.id = ? AND rt.code IN (${placeholders([...INTERNAL_RESOURCE_TYPES])})`,
       [resourceId, ...INTERNAL_RESOURCE_TYPES],
     );
     return Number(row?.n ?? 0) > 0;
@@ -1326,7 +1330,9 @@ export class GeoTreeService {
               OR EXISTS (
                 SELECT 1 FROM tmf_physical_resource p
                   JOIN tmf_resource_specification rs ON rs.id = p.resource_specification_id
-                 WHERE p.id = f.node_id AND rs.resource_type IN (${INTERNAL_RESOURCE_TYPES_SQL})
+                  JOIN tmf_resource_type rt
+                    ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+                 WHERE p.id = f.node_id AND rt.code IN (${INTERNAL_RESOURCE_TYPES_SQL})
               )
             )
        )
@@ -1336,7 +1342,9 @@ export class GeoTreeService {
           AND NOT EXISTS (
             SELECT 1 FROM tmf_physical_resource p
               JOIN tmf_resource_specification rs ON rs.id = p.resource_specification_id
-             WHERE p.id = frontier.node_id AND rs.resource_type IN (${INTERNAL_RESOURCE_TYPES_SQL})
+              JOIN tmf_resource_type rt
+                ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+             WHERE p.id = frontier.node_id AND rt.code IN (${INTERNAL_RESOURCE_TYPES_SQL})
           )
         GROUP BY root_id`,
       [...seed.binds, ...TREE_EDGE_TYPES],
@@ -1423,7 +1431,7 @@ const RESOURCE_BY_SERVING_SITE_WHERE = `
 // Predicado que exclui item interno (ver INTERNAL_RESOURCE_TYPES) da fonte. Só
 // entra em `scope: 'tree'`; em `scope: 'all'` fica vazio.
 const hideInternalResourceSql = (scope: GeoTreeScope): string =>
-  scope === 'tree' ? `AND rs.resource_type NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})` : '';
+  scope === 'tree' ? `AND rt.code NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})` : '';
 
 // Substatus é extensão V.tal (C1): vive numa characteristic de topo (sem grupo),
 // não em coluna. Extraímos SÓ o valor como escalar — payload minúsculo — em vez
@@ -1455,13 +1463,15 @@ const siteResourceEntityBlock = (
   const serial = entity === 'PhysicalResource' ? 'r.serial_number' : 'NULL';
   const substatus = entity === 'PhysicalResource' ? RESOURCE_SUBSTATUS_SQL : 'NULL';
   return `
-  SELECT r.id, r.name, '${entity}' AS entity_type, rs.resource_type, r.status,
+  SELECT r.id, r.name, '${entity}' AS entity_type, rt.code AS resource_type, r.status,
          rs.name AS spec_name, NULL AS manufacturer, NULL AS model, ${serial} AS serial_number,
          ${substatus} AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
     FROM ${table} r
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN tmf_resource_type rt
+      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
    WHERE (${where}) ${extra}`;
 };
@@ -1478,7 +1488,9 @@ const siteResourceIdSource = (scope: GeoTreeScope): string => {
   const extra = hideInternalResourceSql(scope);
   const idBlock = (entity: 'PhysicalResource' | 'LogicalResource', where: string): string => {
     const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
-    return `SELECT r.id, r.name, '${entity}' AS entity_type FROM ${table} r LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id WHERE (${where}) ${extra}`;
+    return `SELECT r.id, r.name, '${entity}' AS entity_type FROM ${table} r LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN tmf_resource_type rt
+      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id WHERE (${where}) ${extra}`;
   };
   const blocksFor = (entity: 'PhysicalResource' | 'LogicalResource'): string[] => [
     idBlock(entity, RESOURCE_BY_PLACE_WHERE),
@@ -1503,13 +1515,13 @@ const siteResourceIdSource = (scope: GeoTreeScope): string => {
 // não filtra por bbox, então não pode herdar daqui.
 const VIEWPORT_POINT_WHERE = `
   l.geometry_type = 'Point'
-  AND rs.resource_type NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})
+  AND rt.code NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})
   AND (l.geometry::jsonb->'coordinates'->>0)::float8 BETWEEN ? AND ?
   AND (l.geometry::jsonb->'coordinates'->>1)::float8 BETWEEN ? AND ?`;
 
 const VIEWPORT_LINE_WHERE = `
   l.geometry_type = 'LineString'
-  AND rs.resource_type NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})
+  AND rt.code NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})
   AND EXISTS (
     SELECT 1 FROM jsonb_array_elements(l.geometry::jsonb->'coordinates') AS v
      WHERE (v->>0)::float8 BETWEEN ? AND ?
@@ -1521,7 +1533,7 @@ const viewportBlock = (entity: 'PhysicalResource' | 'LogicalResource', where: st
   const serial = entity === 'PhysicalResource' ? 'r.serial_number' : 'NULL';
   const substatus = entity === 'PhysicalResource' ? RESOURCE_SUBSTATUS_SQL : 'NULL';
   return `
-  SELECT r.id, r.name, '${entity}' AS entity_type, rs.resource_type, r.status,
+  SELECT r.id, r.name, '${entity}' AS entity_type, rt.code AS resource_type, r.status,
          rs.name AS spec_name, NULL AS manufacturer, NULL AS model, ${serial} AS serial_number,
          ${substatus} AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
@@ -1529,6 +1541,8 @@ const viewportBlock = (entity: 'PhysicalResource' | 'LogicalResource', where: st
     FROM ${table} r
     JOIN tmf_geographic_location l ON l.id = r.place_id
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN tmf_resource_type rt
+      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
    WHERE r.status <> 'terminated' AND (${where})`;
 };
 
@@ -1560,9 +1574,9 @@ function viewportResourceSource(shapes: { point: boolean; line: boolean }): stri
 const SEARCH_RESOURCE_ID_WHERE = `
   r.place_id IS NOT NULL
   AND r.status <> 'terminated'
-  AND rs.resource_type NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})
+  AND rt.code NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})
   AND LOWER(r.name) LIKE LOWER(?)`;
-// `resourceTypes` (RF-013) vira `AND rs.resource_type IN (?, …)` — os `?` extras entram
+// `resourceTypes` (RF-013) vira `AND rt.code IN (?, …)` — os `?` extras entram
 // DEPOIS do `?` do LIKE acima, e o chamador (searchResourceCandidatesPass) precisa
 // passar os binds na mesma ordem.
 const searchResourceIdBlock = (
@@ -1572,9 +1586,11 @@ const searchResourceIdBlock = (
   const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
   const typeFilter =
     resourceTypes && resourceTypes.length > 0
-      ? ` AND rs.resource_type IN (${placeholders(resourceTypes)})`
+      ? ` AND rt.code IN (${placeholders(resourceTypes)})`
       : '';
-  return `SELECT r.id, r.name FROM ${table} r LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id WHERE (${SEARCH_RESOURCE_ID_WHERE}${typeFilter})`;
+  return `SELECT r.id, r.name FROM ${table} r LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN tmf_resource_type rt
+      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id WHERE (${SEARCH_RESOURCE_ID_WHERE}${typeFilter})`;
 };
 
 // Colunas (na ordem) que RESOURCE_CHILD_SOURCE / RESOURCE_CHILD_TREE_SOURCE projetam. Listadas
@@ -1587,7 +1603,7 @@ const RESOURCE_TREE_COLUMNS =
 // Filhos de um recurso: o outro lado das arestas de contenção e conexão. Usada em
 // `scope: 'all'` (painel de detalhe) — devolve tudo, Splitter incluso.
 const RESOURCE_CHILD_SOURCE = `
-  SELECT r.id, r.name, 'PhysicalResource' AS entity_type, rs.resource_type, r.status,
+  SELECT r.id, r.name, 'PhysicalResource' AS entity_type, rt.code AS resource_type, r.status,
          rs.name AS spec_name, NULL AS manufacturer, NULL AS model, r.serial_number,
          ${RESOURCE_SUBSTATUS_SQL} AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
@@ -1595,11 +1611,13 @@ const RESOURCE_CHILD_SOURCE = `
     FROM tmf_resource_relationship e
     JOIN tmf_physical_resource r ON r.id = e.resource_to_id
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN tmf_resource_type rt
+      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
    WHERE e.resource_from_id = ?
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')
   UNION ALL
-  SELECT r.id, r.name, 'LogicalResource' AS entity_type, rs.resource_type, r.status,
+  SELECT r.id, r.name, 'LogicalResource' AS entity_type, rt.code AS resource_type, r.status,
          rs.name AS spec_name, NULL AS manufacturer, NULL AS model, NULL AS serial_number,
          NULL AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
@@ -1607,6 +1625,8 @@ const RESOURCE_CHILD_SOURCE = `
     FROM tmf_resource_relationship e
     JOIN tmf_logical_resource r ON r.id = e.resource_to_id
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN tmf_resource_type rt
+      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
    WHERE e.resource_from_id = ?
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')`;
@@ -1629,10 +1649,12 @@ const RESOURCE_CHILD_TREE_SOURCE = `
        AND EXISTS (
          SELECT 1 FROM tmf_physical_resource p
            JOIN tmf_resource_specification rs ON rs.id = p.resource_specification_id
-          WHERE p.id = e.resource_to_id AND rs.resource_type IN (${INTERNAL_RESOURCE_TYPES_SQL})
+           JOIN tmf_resource_type rt
+             ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+          WHERE p.id = e.resource_to_id AND rt.code IN (${INTERNAL_RESOURCE_TYPES_SQL})
        )
   )
-  SELECT r.id, r.name, 'PhysicalResource' AS entity_type, rs.resource_type, r.status,
+  SELECT r.id, r.name, 'PhysicalResource' AS entity_type, rt.code AS resource_type, r.status,
          rs.name AS spec_name, NULL AS manufacturer, NULL AS model, r.serial_number,
          ${RESOURCE_SUBSTATUS_SQL} AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
@@ -1640,12 +1662,14 @@ const RESOURCE_CHILD_TREE_SOURCE = `
     FROM tmf_resource_relationship e
     JOIN tmf_physical_resource r ON r.id = e.resource_to_id
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN tmf_resource_type rt
+      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
    WHERE e.resource_from_id IN (SELECT id FROM hidden_chain)
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')
-     AND rs.resource_type NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})
+     AND rt.code NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})
   UNION ALL
-  SELECT r.id, r.name, 'LogicalResource' AS entity_type, rs.resource_type, r.status,
+  SELECT r.id, r.name, 'LogicalResource' AS entity_type, rt.code AS resource_type, r.status,
          rs.name AS spec_name, NULL AS manufacturer, NULL AS model, NULL AS serial_number,
          NULL AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
@@ -1653,10 +1677,12 @@ const RESOURCE_CHILD_TREE_SOURCE = `
     FROM tmf_resource_relationship e
     JOIN tmf_logical_resource r ON r.id = e.resource_to_id
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN tmf_resource_type rt
+      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
    WHERE e.resource_from_id IN (SELECT id FROM hidden_chain)
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')
-     AND rs.resource_type NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})`;
+     AND rt.code NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})`;
 
 // --------------------------------------------------------------- helpers ----
 

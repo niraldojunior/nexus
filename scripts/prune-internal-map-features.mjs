@@ -45,14 +45,15 @@ async function main() {
     const typePlaceholders = INTERNAL_RESOURCE_TYPES.map((_, i) => `$${i + 2}`).join(', ');
 
     const preview = await client.query(
-      `SELECT rs.resource_type, COUNT(*) AS n
+      `SELECT rt.code AS resource_type, COUNT(*) AS n
          FROM geo_map_feature f
          JOIN tmf_physical_resource r ON r.id = f.entity_id
          JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+         JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
         WHERE f.tenant_id = $1 AND f.feature_kind = 'resource'
-          AND rs.resource_type IN (${typePlaceholders})
-        GROUP BY rs.resource_type
-        ORDER BY rs.resource_type`,
+          AND rt.code IN (${typePlaceholders})
+        GROUP BY rt.code
+        ORDER BY rt.code`,
       [TENANT, ...INTERNAL_RESOURCE_TYPES],
     );
 
@@ -80,7 +81,9 @@ async function main() {
           AND entity_id IN (
                 SELECT r.id FROM tmf_physical_resource r
                   JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-                 WHERE rs.resource_type IN (${typePlaceholders})
+                  JOIN tmf_resource_type rt
+                    ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+                 WHERE rt.code IN (${typePlaceholders})
               )`,
       [TENANT, ...INTERNAL_RESOURCE_TYPES],
     );

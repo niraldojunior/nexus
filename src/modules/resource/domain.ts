@@ -64,7 +64,7 @@ export type ResourceStatusCatalogEntry = {
   code: string;
   name: string;
   /** `undefined` = vale para qualquer tipo de recurso; preenchido = específico daquele tipo. */
-  resourceType?: string;
+  resourceTypeId?: string;
   sortOrder: number;
   active: boolean;
   behavior: ResourceStatusBehavior;
@@ -100,8 +100,6 @@ export type ResourceQuery = {
   resourceSpecificationIdIn?: string[];
   resourceType?: string;
   resourceTypeIn?: string[];
-  /** Categoria da ResourceSpecification referenciada — resolvida via join/subquery, não é coluna própria do recurso. */
-  category?: string;
   placeId?: string;
   relatedPartyId?: string;
   kind?: ResourceKind;
@@ -122,8 +120,7 @@ export type UpdateResourceLayerInput = Partial<CreateResourceLayerInput> & {
 
 export type ResourceSpecificationQuery = {
   name?: string;
-  category?: string;
-  resourceType?: string;
+  resourceTypeId?: string;
   includeEnded?: boolean;
   limit?: number;
   offset?: number;
@@ -142,6 +139,129 @@ export type ResourceCatalogQuery = {
   status?: ResourceCatalogStatus;
 };
 
+// --- Árvore dinâmica de catálogo (issue #188) ---------------------------------------------------
+// Convive, por ora, com ResourceCategory/ResourceLayer acima: são as entidades de classificação
+// legadas, que só saem depois do backfill auditado e do cutover lógico (plano §7.8, §13). Nenhum
+// código de runtime deve inferir uma a partir da outra.
+
+export type ResourceCatalogNodeKind = 'GROUP' | 'RESOURCE_TYPE';
+
+/** Contêiner tenant-scoped de uma árvore de catálogo governada; não é nó da árvore em si. */
+export type ResourceCatalog = {
+  '@type': 'ResourceCatalog';
+  id: string;
+  href: string;
+  code: string;
+  name: string;
+  description?: string;
+  status: ResourceCatalogStatus;
+  isDefault: boolean;
+  sortOrder: number;
+  tenantId: string;
+  createdBy?: string;
+  updatedBy?: string;
+};
+
+/** Referência resumida a um ResourceType, usada nas projeções de leitura da árvore. */
+export type ResourceTypeRef = {
+  id: string;
+  href: string;
+  code: string;
+  name: string;
+  '@referredType': 'ResourceType';
+};
+
+/**
+ * Nó da árvore de catálogo. `GROUP` é organizacional e nunca referencia tipo; `RESOURCE_TYPE` é
+ * sempre folha e referencia exatamente um `ResourceType` — sem unicidade global, o mesmo tipo pode
+ * aparecer em 0..N nós, inclusive no mesmo catálogo. `code` é a chave estável do nó dentro do
+ * catálogo, distinta do `code` do ResourceType que ele eventualmente referencia.
+ */
+export type ResourceCatalogNode = {
+  '@type': 'ResourceCatalogNode';
+  id: string;
+  href: string;
+  catalogId: string;
+  parentNodeId?: string;
+  code: string;
+  name: string;
+  description?: string;
+  kind: ResourceCatalogNodeKind;
+  resourceTypeId?: string;
+  /** Presente só quando `kind === 'RESOURCE_TYPE'`; projeção de leitura, nunca persistida no nó. */
+  resourceType?: ResourceTypeRef;
+  status: ResourceCatalogStatus;
+  sortOrder: number;
+  metadata?: Record<string, unknown>;
+  tenantId: string;
+  createdBy?: string;
+  updatedBy?: string;
+};
+
+/** Nó com filhos já resolvidos e ordenados — forma devolvida por `GET .../tree`. */
+export type ResourceCatalogTreeNode = ResourceCatalogNode & {
+  children: ResourceCatalogTreeNode[];
+};
+
+export type ResourceCatalogPathEntry = {
+  id: string;
+  code: string;
+  name: string;
+  kind: ResourceCatalogNodeKind;
+  resourceTypeId?: string;
+};
+
+/** Um caminho raiz→nó dentro de um catálogo — usado tanto por `GET .../path` quanto pela visão consolidada. */
+export type ResourceCatalogPath = {
+  catalog: { id: string; code: string; name: string };
+  nodes: ResourceCatalogPathEntry[];
+};
+
+/** Visão consolidada de um ResourceType: onde ele aparece na(s) árvore(s) + suas specifications. */
+export type ResourceTypeCatalogContext = {
+  resourceType: ResourceType;
+  specifications: Array<{ id: string; href: string; name: string }>;
+  catalogPaths: ResourceCatalogPath[];
+};
+
+export type CreateResourceCatalogInput = {
+  code: string;
+  name: string;
+  description?: string;
+  isDefault?: boolean;
+  sortOrder?: number;
+};
+
+export type UpdateResourceCatalogInput = Partial<Omit<CreateResourceCatalogInput, 'code'>> & {
+  status?: ResourceCatalogStatus;
+};
+
+type ResourceCatalogNodeShapeInput =
+  | { kind: 'GROUP'; resourceTypeId?: undefined }
+  | { kind: 'RESOURCE_TYPE'; resourceTypeId: string };
+
+export type CreateResourceCatalogNodeInput = ResourceCatalogNodeShapeInput & {
+  code: string;
+  name: string;
+  description?: string;
+  parentNodeId?: string;
+  sortOrder?: number;
+  metadata?: Record<string, unknown>;
+};
+
+/** `PATCH` normal — nunca muda `parentNodeId`/posição; isso é só `.../move` (RN de ciclo/pai). */
+export type UpdateResourceCatalogNodeInput = {
+  name?: string;
+  description?: string;
+  status?: ResourceCatalogStatus;
+  metadata?: Record<string, unknown>;
+};
+
+export type MoveResourceCatalogNodeInput = {
+  parentNodeId: string | null;
+  sortOrder: number;
+};
+
 export type ResourceRelationship = {
   id: string;
   relationshipType: string;
@@ -154,10 +274,10 @@ export type ResourceSpecification = {
   id: string;
   href: string;
   name: string;
-  category: string;
-  resourceType: string;
+  resourceTypeId: string;
+  /** Referência expandida do ResourceType — projeção de leitura, nunca persistida na Specification. */
+  resourceType: ResourceTypeRef;
   description?: string;
-  resourceLayerId?: string;
   validFor?: TimePeriod;
   resourceSpecificationCharacteristic: Characteristic[];
   relatedParty: RelatedParty[];
@@ -274,7 +394,6 @@ export type PhysicalResourceDetail = {
     resourceTypeName: string;
     manufacturer?: ResourceDetailReference;
     model?: string;
-    resourceLayer?: ResourceDetailReference & { code: string };
   };
   statusCatalogEntry?: ResourceStatusCatalogEntry;
   parent?: ResourceDetailReference & { relationshipType: string };
@@ -302,10 +421,8 @@ export type PhysicalResourceDetail = {
 
 export type CreateResourceSpecificationInput = {
   name: string;
-  category: string;
-  resourceType: string;
+  resourceTypeId: string;
   description?: string;
-  resourceLayerId?: string;
   validFor?: TimePeriod;
   resourceSpecificationCharacteristic?: Characteristic[];
   relatedParty?: RelatedParty[];

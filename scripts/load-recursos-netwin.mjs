@@ -473,6 +473,15 @@ async function main() {
       `SELECT id, name FROM tmf_resource_specification`,
     );
     const specByName = new Map(specRows.map((r) => [r.name, r.id]));
+    const { rows: resourceTypeRows } = await client.query(
+      `SELECT id, code FROM tmf_resource_type WHERE tenant_id = 'vtal' AND code IN ('CTO', 'Splitter')`,
+    );
+    const resourceTypeIdByCode = new Map(resourceTypeRows.map((row) => [row.code, row.id]));
+    for (const code of ['CTO', 'Splitter']) {
+      if (!resourceTypeIdByCode.has(code)) {
+        throw new Error(`ResourceType ${code} não encontrado para o tenant vtal`);
+      }
+    }
 
     // Índice do que já foi carregado, pela chave natural em _origin.id. Com
     // TRUNCATE ligado (padrão) a base de recursos é zerada antes de gravar, então
@@ -580,11 +589,6 @@ async function main() {
     }
 
     // 1. Specs (uma por tipo de caixa + Splitter), reaproveitando as existentes.
-    const { rows: layerRows } = await client.query(
-      `SELECT id FROM tmf_resource_layer WHERE code = 'gpon_network' AND tenant_id = 'default' LIMIT 1`,
-    );
-    const gponLayerId = layerRows[0]?.id ?? null;
-
     const specIdFor = new Map();
     const novasSpecs = [];
     for (const [name, resourceType] of [
@@ -600,9 +604,7 @@ async function main() {
       novasSpecs.push({
         id,
         name,
-        category: 'Infrastructure.Passive',
-        resource_type: resourceType,
-        resource_layer_id: gponLayerId,
+        resource_type_id: resourceTypeIdByCode.get(resourceType),
         description: `Importado do Netwin — ${name}`,
         characteristics: JSON.stringify([{ name: 'seed', value: SEED_TAG, valueType: 'string' }]),
       });
@@ -610,7 +612,7 @@ async function main() {
     await bulkInsert(
       client,
       'tmf_resource_specification',
-      ['id', 'name', 'category', 'resource_type', 'resource_layer_id', 'description', 'characteristics'],
+      ['id', 'name', 'resource_type_id', 'description', 'characteristics'],
       novasSpecs,
     );
 

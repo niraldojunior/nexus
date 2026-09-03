@@ -268,8 +268,7 @@ test('TMF party and resource endpoints support read, update, delete and relation
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     {
       name: 'OLT MA5800',
-      category: 'Equipment.Access',
-      resourceType: 'OLT',
+      resourceTypeId: 'rt-olt',
       resourceSpecificationCharacteristic: [
         { name: 'manufacturer', value: 'Huawei', valueType: 'string', group: 'commercial' },
         { name: 'stockable', value: true, valueType: 'boolean', group: 'capability' },
@@ -538,8 +537,7 @@ test('TMF service endpoints support read, update, delete and relationships', asy
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     {
       name: 'ONT',
-      category: 'Equipment.Access',
-      resourceType: 'OLT',
+      resourceTypeId: 'rt-olt',
     },
   );
   assert.equal(resourceSpec.statusCode, 201);
@@ -834,8 +832,7 @@ test('TMF order endpoints support read, update and delete', async (t) => {
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     {
       name: 'ONT',
-      category: 'Equipment.Access',
-      resourceType: 'OLT',
+      resourceTypeId: 'rt-olt',
     },
   );
   assert.equal(resourceSpec.statusCode, 201);

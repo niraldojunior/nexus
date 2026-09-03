@@ -1,4 +1,4 @@
-import { MIGRATIONS_SQL, SCHEMA_SQL } from './schema.js';
+import { MIGRATION_BATCHES, MIGRATIONS_SQL, SCHEMA_SQL, type MigrationBatch } from './schema.js';
 import { quoteOracleReservedColumns } from './oracle-object-names.js';
 
 const CLOB_COLUMNS = new Set([
@@ -83,6 +83,12 @@ export const transformOracleSchemaSql = (sql: string): string => {
     /CREATE UNIQUE INDEX\s+([a-zA-Z0-9_]+)\s+ON\s+([a-zA-Z0-9_]+)\s*\(resource_id\)\s+WHERE\s+detached_at\s+IS\s+NULL/gi,
     'CREATE UNIQUE INDEX $1 ON $2(CASE WHEN detached_at IS NULL THEN resource_id END)',
   );
+  // No máximo um ResourceCatalog default por tenant (issue #188 §2.1) — mesma técnica de índice
+  // funcional acima, aplicada a tmf_resource_catalog.is_default em vez de detached_at.
+  output = output.replace(
+    /CREATE UNIQUE INDEX\s+([a-zA-Z0-9_]+)\s+ON\s+([a-zA-Z0-9_]+)\s*\(tenant_id\)\s+WHERE\s+is_default\s*=\s*1/gi,
+    'CREATE UNIQUE INDEX $1 ON $2(CASE WHEN is_default = 1 THEN tenant_id END)',
+  );
 
   output = output.replace(
     /^(\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s+TEXT\b/gm,
@@ -126,6 +132,12 @@ export const transformOracleSchemaSql = (sql: string): string => {
 
 export const ORACLE_SCHEMA_SQL = transformOracleSchemaSql(SCHEMA_SQL);
 export const ORACLE_MIGRATIONS_SQL = transformOracleSchemaSql(MIGRATIONS_SQL);
+
+// Oracle-dialect mirror of schema.ts's MIGRATION_BATCHES — same versions/names, SQL rewritten
+// per statement so OracleDatabase.applyMigrations() can apply/skip per batch like Postgres does.
+export const ORACLE_MIGRATION_BATCHES: readonly MigrationBatch[] = MIGRATION_BATCHES.map(
+  (batch) => ({ ...batch, sql: transformOracleSchemaSql(batch.sql) }),
+);
 
 // `context` holds JSON in mcp_confirmation but free-form markdown (the Nexus Copilot system prompt)
 // in research_session, so the IS JSON check must be skipped for that column there. Keyed by

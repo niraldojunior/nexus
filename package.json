@@ -24,6 +24,7 @@
     "migrate:postgres-to-oracle": "npm run build && node dist/src/scripts/migrate-postgres-to-oracle.js",
     "migrate:netwin:infranode": "npm run build && node dist/src/scripts/migrate-netwin-infranode.js",
     "migrate:netwin:osp": "npm run build && node dist/src/scripts/migrate-netwin-osp.js",
+    "migrate:resource-catalog": "npm run build && node dist/src/scripts/migrate-resource-catalog.js",
     "addresses:enrich": "npm run build && node --use-system-ca dist/scripts/enrich-installation-addresses.js",
     "service-catalog:load": "npm run build && node --use-system-ca dist/scripts/load-service-catalog-netwin.js",
     "mcp:tmf": "npm run build && node dist/src/modules/mcp/stdio-server.js",

@@ -116,8 +116,7 @@ test('MCP exposes and executes resource specification creation', async () => {
       {
         payload: {
           name: 'F6201BV9.3.12',
-          category: 'Equipment.CustomerPremises',
-          resourceType: 'ONT',
+          resourceTypeId: 'rt-ont',
           relatedParty: [
             {
               id: vendor.id,
@@ -143,8 +142,11 @@ test('MCP exposes and executes resource specification creation', async () => {
 
     assert.equal(committed.ok, true);
     assert.equal((committed.data as { name: string }).name, 'F6201BV9.3.12');
-    assert.equal((committed.data as { category: string }).category, 'Equipment.CustomerPremises');
-    assert.equal((committed.data as { resourceType: string }).resourceType, 'ONT');
+    assert.equal((committed.data as { resourceTypeId: string }).resourceTypeId, 'rt-ont');
+    assert.equal(
+      (committed.data as { resourceType: { code: string } }).resourceType.code,
+      'ONT',
+    );
   } finally {
     fixture.cleanup();
   }
@@ -180,8 +182,11 @@ test('MCP cadastra modelo de equipamento resolvendo fabricante por nome', async 
 
     assert.equal(committed.ok, true);
     assert.equal((committed.data as { name: string }).name, 'F6201BV9.3.12');
-    assert.equal((committed.data as { category: string }).category, 'Equipment.CustomerPremises');
-    assert.equal((committed.data as { resourceType: string }).resourceType, 'ONT');
+    assert.equal((committed.data as { resourceTypeId: string }).resourceTypeId, 'rt-ont');
+    assert.equal(
+      (committed.data as { resourceType: { code: string } }).resourceType.code,
+      'ONT',
+    );
     assert.equal(
       (committed.data as { relatedParty?: Array<{ name?: string; role?: string }> })
         .relatedParty?.[0]?.role,
@@ -259,8 +264,7 @@ test('MCP remove modelo de equipamento como soft-delete com fabricante resolvido
 
     const created = await fixture.runtime.resourceService.createResourceSpecification({
       name: 'F6201BV9.3.12',
-      category: 'Equipment.CustomerPremises',
-      resourceType: 'ONT',
+      resourceTypeId: 'rt-ont',
       relatedParty: [
         {
           id: manufacturer.id,

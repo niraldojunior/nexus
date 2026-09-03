@@ -9,7 +9,13 @@ import type {
   DatabaseRunResult,
   DatabaseSession,
 } from './database-client.js';
-import { findColumnDrift, MIGRATIONS_SQL, SCHEMA_SQL, transformSchemaSql } from './schema.js';
+import {
+  checksumMigrationBatch,
+  findColumnDrift,
+  MIGRATION_BATCHES,
+  SCHEMA_SQL,
+  transformSchemaSql,
+} from './schema.js';
 
 types.setTypeParser(20, (value) => Number.parseInt(value, 10));
 types.setTypeParser(1700, (value) => Number.parseFloat(value));
@@ -264,6 +270,12 @@ export class PostgresDatabase implements DatabaseClient {
     }
   }
 
+  // Applies each MIGRATION_BATCHES entry that isn't already recorded in schema_migrations, in
+  // version order, and stamps a row per batch actually applied. Before this, the whole
+  // MIGRATIONS_SQL block re-ran on every boot and a single hardcoded version=1 row was always
+  // (re)written — see the MIGRATION_BATCHES doc comment in schema.ts (issue #188 §7.0). Batches
+  // already applied are skipped entirely, so a future destructive-DDL batch is never at risk of
+  // being silently re-created by an additive batch's still-idempotent statements.
   private async applyMigrations(client: PoolClient): Promise<void> {
     const migrationTable = this.schemaName
       ? `${quoteIdentifier(this.schemaName)}.schema_migrations`
@@ -274,19 +286,27 @@ export class PostgresDatabase implements DatabaseClient {
       checksum TEXT NOT NULL,
       applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`);
-    for (const statement of splitSqlStatements(MIGRATIONS_SQL)) {
-      try {
-        await client.query(transformPostgresQuery(statement));
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!/already exists|duplicate column|does not exist/i.test(message)) throw error;
-      }
-    }
-    await client.query(
-      `INSERT INTO ${migrationTable}(version, name, checksum)
-       VALUES (1, 'postgres-baseline', 'schema-v1')
-       ON CONFLICT(version) DO UPDATE SET checksum = EXCLUDED.checksum`,
+    const appliedResult = await client.query<{ version: number }>(
+      `SELECT version FROM ${migrationTable}`,
     );
+    const applied = new Set(appliedResult.rows.map((row) => Number(row.version)));
+    for (const batch of MIGRATION_BATCHES) {
+      if (applied.has(batch.version)) continue;
+      for (const statement of splitSqlStatements(batch.sql)) {
+        try {
+          await client.query(transformPostgresQuery(statement));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!/already exists|duplicate column|does not exist/i.test(message)) throw error;
+        }
+      }
+      await client.query(
+        `INSERT INTO ${migrationTable}(version, name, checksum)
+         VALUES ($1, $2, $3)
+         ON CONFLICT(version) DO UPDATE SET checksum = EXCLUDED.checksum`,
+        [batch.version, `postgres-${batch.name}`, checksumMigrationBatch(batch.sql)],
+      );
+    }
   }
 
   private async validateSchemaVersion(client: PoolClient): Promise<void> {
@@ -296,7 +316,9 @@ export class PostgresDatabase implements DatabaseClient {
     const result = await client
       .query(`SELECT version FROM ${migrationTable} ORDER BY version DESC LIMIT 1`)
       .catch(() => undefined);
-    if (!result || result.rows[0]?.version !== 1) {
+    const highestBatchVersion = Math.max(...MIGRATION_BATCHES.map((batch) => batch.version));
+    const latestApplied = result?.rows[0]?.version;
+    if (typeof latestApplied !== 'number' || latestApplied < highestBatchVersion) {
       throw new Error(
         'Database schema is missing or outdated. Run npm run db:migrate before starting Nexus.',
       );

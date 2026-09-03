@@ -14,7 +14,7 @@ import type {
 } from './database-client.js';
 import {
   ORACLE_JSON_CONSTRAINTS_SQL,
-  ORACLE_MIGRATIONS_SQL,
+  ORACLE_MIGRATION_BATCHES,
   ORACLE_SCHEMA_SQL,
   splitOracleStatements,
 } from './oracle-schema.js';
@@ -25,7 +25,7 @@ import {
   rewriteTableReferences,
 } from './oracle-object-names.js';
 import { replaceQuestionBinds } from './postgres-database.js';
-import { findColumnDrift } from './schema.js';
+import { checksumMigrationBatch, findColumnDrift, MIGRATION_BATCHES } from './schema.js';
 
 export type OracleConnectionConfig = {
   connectString: string;
@@ -194,14 +194,16 @@ export class OracleDatabase implements DatabaseClient {
     }
   }
 
+  // Mirrors PostgresDatabase.applyMigrations() batch-by-batch — see the MIGRATION_BATCHES doc
+  // comment in schema.ts (issue #188 §7.0). ORACLE_SCHEMA_SQL/ORACLE_JSON_CONSTRAINTS_SQL still
+  // run unconditionally on every boot (they're pure CREATE-if-missing/constraint-if-missing DDL,
+  // idempotent via executeOracleDdl's ORA-* allowlist); only the migration batches gained real
+  // per-version tracking, since those are the ones a destructive DDL phase would otherwise undo.
   private async applyMigrations(connection: Connection): Promise<void> {
     const prefix = this.config.objectPrefix;
     const prefixDdl = (sql: string): string =>
       rewriteTableReferences(rewriteDdlObjectNames(sql, prefix), prefix);
     for (const statement of splitOracleStatements(ORACLE_SCHEMA_SQL)) {
-      await executeOracleDdl(connection, prefixDdl(statement));
-    }
-    for (const statement of splitOracleStatements(ORACLE_MIGRATIONS_SQL)) {
       await executeOracleDdl(connection, prefixDdl(statement));
     }
     for (const statement of splitOracleStatements(ORACLE_JSON_CONSTRAINTS_SQL)) {
@@ -217,19 +219,32 @@ export class OracleDatabase implements DatabaseClient {
         applied_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
       )`,
     );
-    await connection.execute(
-      `MERGE INTO ${migrations} target
-       USING (SELECT 1 version, 'oracle-baseline' name, 'schema-v1' checksum FROM DUAL) source
-       ON (target.version = source.version)
-       WHEN MATCHED THEN UPDATE SET target.checksum = source.checksum
-       WHEN NOT MATCHED THEN INSERT (version, name, checksum)
-       VALUES (source.version, source.name, source.checksum)`,
+    const appliedResult = await connection.execute<{ version: number }>(
+      `SELECT version AS "version" FROM ${migrations}`,
       [],
-      { autoCommit: true },
+      QUERY_OPTIONS,
     );
+    const applied = new Set((appliedResult.rows ?? []).map((row) => Number(row.version)));
+    for (const batch of ORACLE_MIGRATION_BATCHES) {
+      if (applied.has(batch.version)) continue;
+      for (const statement of splitOracleStatements(batch.sql)) {
+        await executeOracleDdl(connection, prefixDdl(statement));
+      }
+      await connection.execute(
+        `MERGE INTO ${migrations} target
+         USING (SELECT :1 version, :2 name, :3 checksum FROM DUAL) source
+         ON (target.version = source.version)
+         WHEN MATCHED THEN UPDATE SET target.checksum = source.checksum
+         WHEN NOT MATCHED THEN INSERT (version, name, checksum)
+         VALUES (source.version, source.name, source.checksum)`,
+        [batch.version, `oracle-${batch.name}`, checksumMigrationBatch(batch.sql)],
+        { autoCommit: true },
+      );
+    }
   }
 
   private async validateSchemaVersion(connection: Connection): Promise<void> {
+    const highestBatchVersion = Math.max(...MIGRATION_BATCHES.map((batch) => batch.version));
     try {
       const result = await connection.execute<Record<string, unknown>>(
         `SELECT version AS "version" FROM ${prefixed('schema_migrations', this.config.objectPrefix)}
@@ -238,7 +253,7 @@ export class OracleDatabase implements DatabaseClient {
         QUERY_OPTIONS,
       );
       const row = result.rows?.[0];
-      if (!row || Number(row.version) !== 1) throw new Error('outdated');
+      if (!row || Number(row.version) < highestBatchVersion) throw new Error('outdated');
     } catch {
       throw new Error(
         'Database schema is missing or outdated. Run npm run db:migrate before starting Nexus.',

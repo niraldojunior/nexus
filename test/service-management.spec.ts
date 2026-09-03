@@ -96,8 +96,7 @@ test('TMF633 and TMF638 service endpoints create and constrain services', async 
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     {
       name: 'ONT',
-      category: 'Equipment.CustomerPremises',
-      resourceType: 'ONT',
+      resourceTypeId: 'rt-ont',
     },
   );
   assert.equal(resourceSpec.statusCode, 201);

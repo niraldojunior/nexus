@@ -9,7 +9,7 @@ TMFC003 + TMFC024 · TMF634 / TMF639 / TMF688
 | Campo                   | Valor                                                              |
 | ----------------------- | ------------------------------------------------------------------ |
 | **Document Reference**  | VTN-HLD-MOD02-RES                                                  |
-| **Versão**              | 1.10 — draft                                                       |
+| **Versão**              | 1.11 — draft                                                       |
 | **Data**                | Agosto 2026                                                        |
 | **Documento âncora**    | VTN-HLD-OVERVIEW-001                                               |
 | **HLD predecessor**     | VTN-HLD-MOD01-GEO (Geographic)                                     |
@@ -3696,6 +3696,7 @@ Esta seção não replica estados; ver §2.3 para o vínculo de cada requisito c
 | **D-RES-003 — Service Assurance externa, preparar para futura migração** | REQ-MOD02-025                                                    | O catálogo de eventos TMF688 já cobre as necessidades futuras de Service Assurance. O consumo permanece externo no MVP.                                                   |
 | **D-RES-004 — Swap via Módulo 5 (BPMN)**                                 | REQ-MOD02-014 (RF-009 Substituição), REQ-MOD02-019 (swap de DIO) | `/resource/{id}/swap` inicia workflow no Módulo 5, que executa as etapas de forma orquestrada e auditável.                                                                |
 | **D-RES-005 — Catálogo de Relationships extensível**                     | REQ-MOD02-024                                                    | RelationshipType é entidade com bootstrap + CRUD governado via API, não lista fechada hardcoded.                                                                          |
+| **D-RES-006 — Refatoração Resource Catalog: Árvore dinâmica**            | REQ-MOD02-001, REQ-MOD02-002                                     | `ResourceCatalog` e `ResourceCatalogNode` (árvore dinâmica de nós `GROUP` e `RESOURCE_TYPE`) substituem Category/Layer fixas; `ResourceSpecification` aponta para `ResourceType` exclusivamente via FK `resource_type_id`. |
 
 ### 37.2 Decisão de migração — Identidade e proveniência de Resources
 
@@ -3802,6 +3803,7 @@ Esta seção não replica estados; ver §2.3 para o vínculo de cada requisito c
 | 1.8    | Agosto 2026 | Engenharia — V.tal Nexus | Estruturação relacional da ResourceSpecification ([#171](https://github.com/niraldojunior/nexus/issues/171)): Fabricante modelado exclusivamente como Party (`relatedParty` com PartyRole `manufacturer`), camada de recurso estruturada como entidade de catálogo (`tmf_resource_layer`, substituindo a characteristic `networkType`), e eliminação de dívida técnica com remoção de colunas redundantes nas instâncias (`manufacturer`, `model`, `resource_type`) e characteristics legadas das especificações. |
 | 1.9    | Agosto 2026 | Engenharia — V.tal Nexus | Fase 3 da especialização CTO ([#171](https://github.com/niraldojunior/nexus/issues/171), [#173](https://github.com/niraldojunior/nexus/issues/173)): Porta (FO.I/FO.O) materializada como PhysicalResource contida no splitter (`containsAsChild`), aba "Portas" exclusiva de CTO no painel de recurso substituindo "Recursos internos", e painel empilhado para abrir uma porta individual ao lado da CTO (mesmo precedente de Projeto→Local). Materialização **limitada ao piloto Niterói/Icaraí** (`scripts/load-cto-ports.mjs`) — a carga nacional Netwin não expõe a razão de divisão real do splitter na origem; carga nacional de portas fica para um importador futuro, direto do BD de DR do Netwin. |
 | 1.10   | Agosto 2026 | Engenharia — V.tal Nexus | Conexão física Porta→CaboDrop e especialização de Porta ([#177](https://github.com/niraldojunior/nexus/issues/177)): substituição da aresta legada `CDOE → DropCable` por `Port(FO.O.n) → DropCable`; ocupação de splitter calculada a partir do grafo físico de Resource (`usageState` derivado); guarda de write com 409 para segundo drop ativo; novo endpoint agregado `GET /v1/resources/:ctoId/ports` e detalhe `GET /v1/resources/:portId/port-detail`; painel empilhado de Porta com faróis SID/X.731, sem chrome geográfico, drops internos (atuais/históricos) e aba Serviço apenas para cadeia ativa RFS/CFS. |
+| 1.11   | Setembro 2026 | Engenharia — V.tal Nexus | Refatoração estrutural do Resource Catalog ([#188](https://github.com/niraldojunior/nexus/issues/188)): introdução de `ResourceCatalog` e `ResourceCatalogNode` (árvore dinâmica de nós `GROUP` e `RESOURCE_TYPE` com profundidade arbitrária), desacoplamento de `ResourceType` de categorias fixas, substituição das colunas legadas `category`/`resource_type`/`resource_layer_id` em `ResourceSpecification` pela FK `resource_type_id`, governança de catálogo multi-tenant (`vtal`) e cutover lógico de backend completado. |
 
 ---
 

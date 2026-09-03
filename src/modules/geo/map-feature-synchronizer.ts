@@ -71,14 +71,15 @@ export class GeoMapFeatureSynchronizer implements MapFeatureSynchronizer {
 // interno, do JOIN de map_presence e do filtro de projeto em curso direto no texto do SQL.
 export function candidatesSql(idPlaceholders: string): string {
   return `SELECT r.id entity_id, 'resource' feature_kind, 'PhysicalResource' entity_type,
-                rs.resource_type type_code, NULL site_category, r.status status, r.name label,
+                rt.code type_code, NULL site_category, r.status status, r.name label,
                 NULL sublabel, l.geometry geometry
            FROM tmf_physical_resource r
            JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+           JOIN tmf_resource_type rt
+             ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
            JOIN tmf_geographic_location l ON l.id = r.place_id
-           LEFT JOIN tmf_resource_type rt ON rt.code = rs.resource_type
           WHERE r.id IN (${idPlaceholders}) AND r.status <> 'terminated'
-            AND ${excludeInternalResourceTypesSql('rs')}
+            AND ${excludeInternalResourceTypesSql('rt')}
             AND COALESCE(rt.map_presence, 1) = 1
             AND l.geometry_type = 'Point'
          UNION ALL

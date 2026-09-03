@@ -191,12 +191,19 @@ async function ensureServiceSpec(name, category, serviceType) {
   return spec.id;
 }
 
-async function ensureResourceSpec(name, category, resourceType) {
+async function ensureResourceSpec(name, resourceTypeCode) {
   if (specByName.has(`R:${name}`)) return specByName.get(`R:${name}`);
+  const resourceTypes = await api(
+    'GET',
+    `/tmf-api/resourceCatalogManagement/v4/resourceType?code=${encodeURIComponent(resourceTypeCode)}&status=active&limit=2`,
+  );
+  const resourceType = Array.isArray(resourceTypes)
+    ? resourceTypes.find((item) => item.code === resourceTypeCode)
+    : undefined;
+  if (!resourceType) throw new Error(`ResourceType ativo não encontrado: ${resourceTypeCode}`);
   const spec = await api('POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
     name,
-    category,
-    resourceType,
+    resourceTypeId: resourceType.id,
   });
   specByName.set(`R:${name}`, spec.id);
   return spec.id;
@@ -451,13 +458,12 @@ async function seedAtacado({
   rfsSpecName,
   cfsSpecName,
   resourceType,
-  resourceCategory,
   count,
   rfsPrefix,
   cfsPrefix,
   accessLabel,
 }) {
-  const resourceSpecId = await ensureResourceSpec(accessLabel, resourceCategory, resourceType);
+  const resourceSpecId = await ensureResourceSpec(accessLabel, resourceType);
   const rfsSpecId = await ensureServiceSpec(rfsSpecName, category, 'RFS');
   const cfsSpecId = await ensureServiceSpec(cfsSpecName, category, 'CFS');
   const siteName = `POP ${product}`;
@@ -517,7 +523,6 @@ async function main() {
     rfsSpecName: 'Acesso GPON Atacado',
     cfsSpecName: 'IP Connect GPON',
     resourceType: 'Port',
-    resourceCategory: 'Equipment.Access',
     accessLabel: 'PortaGPON',
     count: 3,
     rfsPrefix: 'Acesso-GPON-IPC',
@@ -529,7 +534,6 @@ async function main() {
     rfsSpecName: 'Acesso P2P',
     cfsSpecName: 'IP Connect P2P',
     resourceType: 'Port',
-    resourceCategory: 'Equipment.Access',
     accessLabel: 'PortaP2P',
     count: 4,
     rfsPrefix: 'Acesso-P2P',
@@ -541,7 +545,6 @@ async function main() {
     rfsSpecName: 'Acesso Ethernet Dedicado',
     cfsSpecName: 'Link Dedicado Ethernet',
     resourceType: 'Port',
-    resourceCategory: 'Equipment.Access',
     accessLabel: 'PortaEth',
     count: 3,
     rfsPrefix: 'Acesso-Ethernet',
@@ -553,7 +556,6 @@ async function main() {
     rfsSpecName: 'Transporte L3VPN',
     cfsSpecName: 'VPN L3',
     resourceType: 'Port',
-    resourceCategory: 'Equipment.Access',
     accessLabel: 'PortaPE',
     count: 5,
     rfsPrefix: 'Transporte-L3VPN',

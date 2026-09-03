@@ -16,14 +16,13 @@ export const INTERNAL_RESOURCE_TYPES_SQL = INTERNAL_RESOURCE_TYPES.map((t) => `'
   ', ',
 );
 
-// Fragmento SQL que exclui recurso interno pelo resource_type já resolvido na
-// ResourceSpecification (alias do JOIN, ex. "rs"). `resource_type` é NOT NULL na spec (ver
-// schema.ts), então NOT IN simples é seguro — mesma forma usada em tree-service.ts.
-export function excludeInternalResourceTypesSql(specAlias: string): string {
-  return `${specAlias}.resource_type NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})`;
+// Fragmentos SQL sobre o ResourceType resolvido pela FK de ResourceSpecification.
+// O alias deve apontar para o JOIN de tmf_resource_type (por exemplo, "rt").
+export function excludeInternalResourceTypesSql(alias = 'rt'): string {
+  return `${alias}.code NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})`;
 }
 
 // Inverso: casa só recurso interno (usado pelo pass-through da árvore).
-export function includeInternalResourceTypesSql(specAlias: string): string {
-  return `${specAlias}.resource_type IN (${INTERNAL_RESOURCE_TYPES_SQL})`;
+export function includeInternalResourceTypesSql(alias = 'rt'): string {
+  return `${alias}.code IN (${INTERNAL_RESOURCE_TYPES_SQL})`;
 }

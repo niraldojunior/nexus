@@ -19,7 +19,7 @@ const specs = [
     prefix: 'REQ-MOD02-',
     decisionPrefix: 'D-RES-',
     count: 28,
-    version: '1.10',
+    version: '1.11',
     illustrative: new Set(),
   },
   {

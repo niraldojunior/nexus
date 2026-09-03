@@ -315,8 +315,7 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     {
       name: 'CDOE 1:8',
-      category: 'Infrastructure.Passive',
-      resourceType: 'CTO',
+      resourceTypeId: 'rt-cto',
     },
   );
   const splitterSpec = await requestJson(
@@ -325,8 +324,7 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     {
       name: 'Splitter óptico 1:8',
-      category: 'Infrastructure.Passive',
-      resourceType: 'Splitter',
+      resourceTypeId: 'rt-splitter',
     },
   );
   const cableSpec = await requestJson(
@@ -335,8 +333,7 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     {
       name: 'Cabo secundário 6FO',
-      category: 'Cable.OutsidePlant',
-      resourceType: 'DistributionCable',
+      resourceTypeId: 'rt-distribution-cable',
     },
   );
   const boxPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
@@ -612,13 +609,13 @@ test('Geo tree pass-through skips a chain of hidden splitters to the first visib
     port,
     'POST',
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'CDOE 1:8', category: 'Infrastructure.Passive', resourceType: 'CTO' },
+    { name: 'CDOE 1:8', resourceTypeId: 'rt-cto' },
   );
   const splitterSpec = await requestJson(
     port,
     'POST',
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'Splitter óptico 1:8', category: 'Infrastructure.Passive', resourceType: 'Splitter' },
+    { name: 'Splitter óptico 1:8', resourceTypeId: 'rt-splitter' },
   );
   const cableSpec = await requestJson(
     port,
@@ -626,8 +623,7 @@ test('Geo tree pass-through skips a chain of hidden splitters to the first visib
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     {
       name: 'Cabo secundário 6FO',
-      category: 'Cable.OutsidePlant',
-      resourceType: 'DistributionCable',
+      resourceTypeId: 'rt-distribution-cable',
     },
   );
   const place = await requestJson(port, 'POST', '/v1/geo/locations', {
@@ -740,25 +736,25 @@ test('Geo tree hides Port like Splitter (issue #171 Fase 3), but a drop hanging 
     port,
     'POST',
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'CDOE 1:8', category: 'Infrastructure.Passive', resourceType: 'CTO' },
+    { name: 'CDOE 1:8', resourceTypeId: 'rt-cto' },
   );
   const splitterSpec = await requestJson(
     port,
     'POST',
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'Splitter óptico 1:8', category: 'Infrastructure.Passive', resourceType: 'Splitter' },
+    { name: 'Splitter óptico 1:8', resourceTypeId: 'rt-splitter' },
   );
   const portSpec = await requestJson(
     port,
     'POST',
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'Porta de Splitter', category: 'Equipment.Access', resourceType: 'Port' },
+    { name: 'Porta de Splitter', resourceTypeId: 'rt-port' },
   );
   const cableSpec = await requestJson(
     port,
     'POST',
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'Cabo drop 1FO', category: 'Cable.OutsidePlant', resourceType: 'DropCable' },
+    { name: 'Cabo drop 1FO', resourceTypeId: 'rt-drop-cable' },
   );
   const place = await requestJson(port, 'POST', '/v1/geo/locations', {
     geometryType: 'Point',
@@ -897,8 +893,7 @@ test('Geo tree viewport serves passive infra by bounding box, independent of hie
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     {
       name: 'CDOE 1:8',
-      category: 'Infrastructure.Passive',
-      resourceType: 'CTO',
+      resourceTypeId: 'rt-cto',
     },
   );
 
@@ -1493,8 +1488,7 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     {
       name: 'CDOE 1:8',
-      category: 'Infrastructure.Passive',
-      resourceType: 'CTO',
+      resourceTypeId: 'rt-cto',
     },
   );
   const boxPlace = await requestJson(port, 'POST', '/v1/geo/locations', {

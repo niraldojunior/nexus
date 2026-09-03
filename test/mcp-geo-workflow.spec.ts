@@ -245,8 +245,7 @@ const seedCondominiumDependencies = async (
   });
   const specification = await runtime.resourceService.createResourceSpecification({
     name: 'CDOI',
-    category: 'Infrastructure.Passive',
-    resourceType: 'CTO',
+    resourceTypeId: 'rt-cto',
   });
   const cdoi1 = await runtime.resourceService.createPhysicalResource({
     name: 'CDOI-3917PS (ICI)',

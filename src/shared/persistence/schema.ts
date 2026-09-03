@@ -24,9 +24,14 @@ export const TABLE_NAMES = [
   'geo_project_area_resource',
   'tmf_geographic_relationship_type',
   'tmf_resource_layer',
-  'tmf_resource_specification',
   'tmf_resource_category',
   'tmf_resource_type',
+  // Ordem a partir daqui reflete o plano de refatoração do Resource Catalog (issue #188 §2.6):
+  // tmf_resource_catalog/tmf_resource_catalog_node entram como pais em potencial de
+  // tmf_resource_type (via resource_type_id) — category/layer legados saem só na Fase B.
+  'tmf_resource_catalog',
+  'tmf_resource_catalog_node',
+  'tmf_resource_specification',
   'tmf_resource_status_catalog',
   'tmf_resource_function_specification',
   'tmf_physical_resource',
@@ -1577,6 +1582,136 @@ export const SCHEMA_SQL = `
         ON geo_gpon_coverage_area(tenant_id, lod_level, cdo_total);
 `;
 
+/**
+ * Real migration versioning (fixes the gap tracked in issue #188 §7.0): before this, both
+ * PostgresDatabase.applyMigrations() and OracleDatabase.applyMigrations() re-executed the
+ * *entire* MIGRATIONS_SQL block on every boot and always stamped schema_migrations with a single
+ * hardcoded version=1 row — there was no real batch granularity, so a future destructive DDL
+ * phase would be silently undone by the next boot with DATABASE_AUTO_SCHEMA=true (it would just
+ * re-run the still-idempotent ADD COLUMN/CREATE INDEX statements that recreate the dropped
+ * objects). `MIGRATION_BATCHES` gives each slice of MIGRATIONS_SQL a stable version number that
+ * both providers record individually in `schema_migrations` and skip once applied.
+ *
+ * The existing MIGRATIONS_SQL content becomes batch 1 verbatim — this is a pure refactor of how
+ * it's tracked, not a schema change. New additive migrations (e.g. the Resource Catalog tree)
+ * get their own batch with the next version number; a future destructive phase gets its own
+ * batch too, but it must never run automatically (see §7 Fase B) — only via the controlled
+ * script, which is why destructive DDL does not belong in MIGRATIONS_SQL/MIGRATION_BATCHES at
+ * all.
+ */
+export type MigrationBatch = {
+  version: number;
+  name: string;
+  sql: string;
+};
+
+/**
+ * Batch 2 — Resource Catalog tree (issue #188 §2/§7 passo 4). Purely additive: two new tables
+ * (`tmf_resource_catalog`, `tmf_resource_catalog_node`) plus a nullable `resource_type_id` on
+ * the tables that will eventually replace the `category`/`resource_type`/`resource_layer_id`
+ * textual classification. Deliberately does NOT touch the legacy columns, does NOT add the
+ * `(tenant_id, code)` unique constraint on `tmf_resource_type` (still globally unique — that
+ * relaxation depends on the audited backfill, see plan §2.2/§7 passo 4), and does NOT add the
+ * `resource_type_id` FK/NOT NULL yet (those land post-backfill, plan §7.8). Runtime code must
+ * not read or write `resource_type_id` until the domain/service/repository layers (tasks #4-#8)
+ * exist — this batch only makes the columns available for the backfill script to populate.
+ */
+const MIGRATIONS_SQL_V2_RESOURCE_CATALOG = `
+  -- Contêiner tenant-scoped de uma árvore de catálogo governada; não é nó da árvore em si.
+  CREATE TABLE IF NOT EXISTS tmf_resource_catalog (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
+    is_default INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT,
+    updated_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, code),
+    UNIQUE(tenant_id, id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_catalog_tenant_order
+    ON tmf_resource_catalog(tenant_id, status, sort_order, name, id);
+  -- No máximo um catálogo default por tenant. Oracle não tem índice parcial nativo —
+  -- transformOracleSchemaSql reescreve este padrão exato como índice funcional (mesma técnica
+  -- já usada para geo_project_resource.resource_id/detached_at, ver oracle-schema.ts).
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_tmf_resource_catalog_one_default
+    ON tmf_resource_catalog(tenant_id) WHERE is_default = 1;
+
+  -- Composite FK target for tmf_resource_catalog_node.resource_type_id below — Postgres/Oracle
+  -- both require a real unique constraint on the referenced column pair, not just PK(id).
+  -- Harmless alongside the existing global UNIQUE(code): this doesn't relax it, just adds the
+  -- tenant-scoped pair FKs need. That relaxation (UNIQUE(tenant_id, code) replacing the global
+  -- one) is deferred to the audited backfill per plan §2.2/§7 passo 4.
+  ALTER TABLE tmf_resource_type ADD CONSTRAINT tmf_resource_type_tenant_id_id_key UNIQUE(tenant_id, id);
+
+  -- Nó da árvore de catálogo: GROUP (organizacional, nunca referencia tipo) ou RESOURCE_TYPE
+  -- (folha, referencia exatamente um ResourceType — sem unicidade global: o mesmo tipo pode
+  -- estar em 0..N nós, inclusive no mesmo catálogo). Profundidade arbitrária via parent_node_id.
+  CREATE TABLE IF NOT EXISTS tmf_resource_catalog_node (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    catalog_id TEXT NOT NULL,
+    parent_node_id TEXT,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    kind TEXT NOT NULL CHECK(kind IN ('GROUP', 'RESOURCE_TYPE')),
+    resource_type_id TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    metadata TEXT,
+    created_by TEXT,
+    updated_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CHECK ((kind = 'GROUP' AND resource_type_id IS NULL) OR (kind = 'RESOURCE_TYPE' AND resource_type_id IS NOT NULL)),
+    CHECK (parent_node_id IS NULL OR parent_node_id <> id),
+    UNIQUE(tenant_id, catalog_id, code),
+    UNIQUE(tenant_id, catalog_id, id),
+    FOREIGN KEY (tenant_id, catalog_id) REFERENCES tmf_resource_catalog(tenant_id, id),
+    FOREIGN KEY (tenant_id, catalog_id, parent_node_id) REFERENCES tmf_resource_catalog_node(tenant_id, catalog_id, id),
+    FOREIGN KEY (tenant_id, resource_type_id) REFERENCES tmf_resource_type(tenant_id, id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_catalog_node_tree
+    ON tmf_resource_catalog_node(tenant_id, catalog_id, parent_node_id, status, sort_order, name, id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_catalog_node_type
+    ON tmf_resource_catalog_node(tenant_id, resource_type_id, status, catalog_id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_catalog_node_catalog_kind
+    ON tmf_resource_catalog_node(tenant_id, catalog_id, status, kind);
+
+  -- FK futura (pós-backfill, plan §7.8): coluna nullable por enquanto, populada pelo script de
+  -- migração controlado. Nenhum código de runtime deve ler/gravar esta coluna antes disso.
+  ALTER TABLE tmf_resource_specification ADD COLUMN IF NOT EXISTS resource_type_id TEXT;
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_specification_resource_type_id
+    ON tmf_resource_specification(tenant_id, resource_type_id, valid_for_end, name, id);
+  ALTER TABLE tmf_resource_status_catalog ADD COLUMN IF NOT EXISTS resource_type_id TEXT;
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_status_catalog_resource_type_id
+    ON tmf_resource_status_catalog(tenant_id, resource_type_id);
+`;
+
+export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
+  { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
+  { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
+];
+
+/**
+ * Deterministic, dependency-free checksum for a migration batch's SQL — not cryptographic,
+ * just stable across runs so `schema_migrations.checksum` can flag "this version's SQL changed
+ * since it was applied" without pulling in Node's `crypto` module for a bookkeeping column.
+ */
+export const checksumMigrationBatch = (sql: string): string => {
+  let hash = 0;
+  for (let i = 0; i < sql.length; i += 1) {
+    hash = (Math.imul(hash, 31) + sql.charCodeAt(i)) | 0;
+  }
+  return `batch-${(hash >>> 0).toString(16)}`;
+};
+
 // Rewrites the SQLite-dialect schema DDL to its Postgres equivalent: SQLite type names to
 // Postgres ones and the json_extract() expression index to a jsonb expression index. Comments
 // are stripped so the statements can be split on ';' safely.
@@ -1664,10 +1799,12 @@ export const parseDeclaredColumns = (sql: string): Map<string, Set<string>> => {
   return declared;
 };
 
-// Parsed once at import time — SCHEMA_SQL/MIGRATIONS_SQL are static template literals, so this is
-// the same declared-column map every caller would otherwise recompute.
+// Parsed once at import time — SCHEMA_SQL/MIGRATION_BATCHES are static template literals, so this
+// is the same declared-column map every caller would otherwise recompute. Derives from every
+// batch (not just MIGRATIONS_SQL) so a new additive batch's tables/columns are picked up by the
+// drift check automatically, without editing this line each time.
 export const DECLARED_COLUMNS: ReadonlyMap<string, ReadonlySet<string>> = parseDeclaredColumns(
-  `${SCHEMA_SQL}\n${MIGRATIONS_SQL}`,
+  `${SCHEMA_SQL}\n${MIGRATION_BATCHES.map((batch) => batch.sql).join('\n')}`,
 );
 
 /**

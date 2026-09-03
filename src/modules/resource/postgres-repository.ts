@@ -21,14 +21,23 @@ import type {
   ResourcePortConnection,
   ResourcePortDetail,
   ResourcePortsView,
+  ResourceCatalog,
+  ResourceCatalogNode,
+  ResourceCatalogQuery,
 } from './domain.js';
 import type {
   IResourceRepository,
   ResourceTenantScope,
 } from './resource-repository-interface.js';
-import { RESOURCE_CATEGORIES, RESOURCE_TYPES } from './catalog.js';
+import {
+  RESOURCE_CATALOG_BOOTSTRAP,
+  RESOURCE_CATEGORIES,
+  RESOURCE_TENANTS,
+  RESOURCE_TYPES,
+} from './catalog.js';
 import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
 import { buildHref } from '../../shared/tmf/index.js';
+import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 
 // Nome da characteristic que diz qual GeographicSite atende o recurso — a estação
 // dona da planta externa que fica na rua (o `place` dela é a Location do ponto, não
@@ -79,6 +88,47 @@ const characteristicStringFromJson = (raw: string | null, name: string): string 
   }
 };
 
+type ResourceCatalogRow = {
+  id: string;
+  tenant_id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  status: 'active' | 'inactive';
+  is_default: number | boolean;
+  sort_order: number | string;
+  created_by?: string | null;
+  updated_by?: string | null;
+};
+
+type ResourceCatalogNodeRow = {
+  id: string;
+  tenant_id: string;
+  catalog_id: string;
+  parent_node_id?: string | null;
+  code: string;
+  name: string;
+  description?: string | null;
+  kind: 'GROUP' | 'RESOURCE_TYPE';
+  resource_type_id?: string | null;
+  status: 'active' | 'inactive';
+  sort_order: number | string;
+  metadata?: string | null;
+  created_by?: string | null;
+  updated_by?: string | null;
+  rt_id?: string | null;
+  rt_code?: string | null;
+  rt_name?: string | null;
+};
+
+// LEFT JOIN em ResourceType para expandir `resourceType` em nós RESOURCE_TYPE sem N+1 (plano §8).
+const RESOURCE_CATALOG_NODE_SELECT = `
+  SELECT n.id, n.tenant_id, n.catalog_id, n.parent_node_id, n.code, n.name, n.description, n.kind,
+         n.resource_type_id, n.status, n.sort_order, n.metadata, n.created_by, n.updated_by,
+         rt.id AS rt_id, rt.code AS rt_code, rt.name AS rt_name
+    FROM tmf_resource_catalog_node n
+    LEFT JOIN tmf_resource_type rt ON rt.id = n.resource_type_id AND rt.tenant_id = n.tenant_id`;
+
 const comparePortDetails = (a: ResourcePortDetail, b: ResourcePortDetail): number => {
   if (a.role !== b.role) return a.role === 'FO.I' ? -1 : b.role === 'FO.I' ? 1 : 0;
   return (a.index ?? 0) - (b.index ?? 0);
@@ -115,23 +165,25 @@ const servingSiteIdOf = (resource: {
 // asset_reference/project_id na issue #171). `serving_site_id` fica fora de propósito: é
 // armazenamento derivado da characteristic `servingSite`, que já viaja em `characteristics`.
 const PHYSICAL_RESOURCE_COLUMNS = `r.id, r.name, r.resource_specification_id,
-       rs.resource_type, r.status, r.status_code, r.place_id, r.place_type,
+       rt.code AS resource_type, r.status, r.status_code, r.place_id, r.place_type,
        r.administrative_state, r.operational_state, r.usage_state,
        r.serial_number, r.part_number, r.label, r.asset_reference, r.project_id,
        r.valid_for_start, r.valid_for_end, r.related_party, r.characteristics, r.tenant_id,
        r.created_at, r.updated_at`;
 
 const PHYSICAL_RESOURCE_FROM = `tmf_physical_resource r
-       JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id`;
+       JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+       JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id`;
 
 const LOGICAL_RESOURCE_COLUMNS = `r.id, r.name, r.resource_specification_id,
-       rs.resource_type, r.status, r.place_id, r.place_type,
+       rt.code AS resource_type, r.status, r.place_id, r.place_type,
        r.supporting_physical_resource_id, r.administrative_state, r.operational_state,
        r.usage_state, r.related_party, r.characteristics, r.valid_for_start, r.valid_for_end,
        r.tenant_id`;
 
 const LOGICAL_RESOURCE_FROM = `tmf_logical_resource r
-       JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id`;
+       JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+       JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id`;
 
 // Compartilhado entre list*Resources e count*Resources para que a contagem use exatamente
 // os mesmos filtros da listagem (sem limit/offset), evitando total e página divergirem.
@@ -159,15 +211,11 @@ const buildResourceConditions = (
     params.push(query.resourceSpecificationId);
   }
   if (query?.resourceTypeIn && query.resourceTypeIn.length > 0) {
-    conditions.push(`rs.resource_type IN (${query.resourceTypeIn.map(() => '?').join(', ')})`);
+    conditions.push(`rt.code IN (${query.resourceTypeIn.map(() => '?').join(', ')})`);
     params.push(...query.resourceTypeIn);
   } else if (query?.resourceType) {
-    conditions.push('rs.resource_type = ?');
+    conditions.push('rt.code = ?');
     params.push(query.resourceType);
-  }
-  if (query?.category) {
-    conditions.push('rs.category = ?');
-    params.push(query.category);
   }
   if (query?.placeId) {
     conditions.push('r.place_id = ?');
@@ -193,9 +241,42 @@ export class PostgresResourceRepository implements IResourceRepository {
     await this.seedResourceCatalog();
     await this.seedResourceLayers();
     await this.seedStatusCatalog();
+    await this.seedResourceCatalogContainers();
   }
 
-  private async seedResourceLayers(tenantId = 'default'): Promise<void> {
+  /**
+   * Bootstrap governado do contêiner `ResourceCatalog` (issue #188, plano §6/§7 passo 5) — só o
+   * container, insert-if-missing, nunca `DO UPDATE` (C9). A árvore de nodes fica para o backfill
+   * auditado (plano §7 Fase A passo 6, tarefa #10): hoje `ResourceType` só existe com
+   * `tenant_id='default'`, e a FK composta de `tmf_resource_catalog_node` exige tenant igual ao do
+   * `ResourceCatalog` — criar nodes agora violaria essa FK ou duplicaria o backfill antes da hora.
+   */
+  private async seedResourceCatalogContainers(): Promise<void> {
+    const now = new Date().toISOString();
+    for (const tenantId of RESOURCE_TENANTS) {
+      const existing = await this.db.get<{ id: string }>(
+        `SELECT id FROM tmf_resource_catalog WHERE tenant_id = ? AND code = ?`,
+        [tenantId, RESOURCE_CATALOG_BOOTSTRAP.code],
+      );
+      if (existing) continue;
+      await this.db.run(
+        `INSERT INTO tmf_resource_catalog
+         (id, tenant_id, code, name, description, status, is_default, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'active', 1, 0, ?, ?)`,
+        [
+          createCanonicalId(),
+          tenantId,
+          RESOURCE_CATALOG_BOOTSTRAP.code,
+          RESOURCE_CATALOG_BOOTSTRAP.name,
+          RESOURCE_CATALOG_BOOTSTRAP.description,
+          now,
+          now,
+        ],
+      );
+    }
+  }
+
+  private async seedResourceLayers(tenantId = 'vtal'): Promise<void> {
     const layers = [
       ['resource-layer-infrastructure', 'infrastructure', 'Infraestrutura'],
       ['resource-layer-gpon-network', 'gpon_network', 'Rede GPON'],
@@ -203,8 +284,8 @@ export class PostgresResourceRepository implements IResourceRepository {
     const now = new Date().toISOString();
     for (const [id, code, name] of layers) {
       const existing = await this.db.get<{ id: string }>(
-        `SELECT id FROM tmf_resource_layer WHERE tenant_id = ? AND code = ?`,
-        [tenantId, code],
+        `SELECT id FROM tmf_resource_layer WHERE (tenant_id = ? OR tenant_id = 'default' OR id = ?) AND code = ?`,
+        [tenantId, id, code],
       );
       if (existing) continue;
       await this.db.run(
@@ -222,22 +303,33 @@ export class PostgresResourceRepository implements IResourceRepository {
    * falta e nunca sobrescreve o que o operador ajustou. Mesmo desenho de
    * `GeoProjectRepository.ensureStatusCatalog`.
    */
-  private async seedStatusCatalog(tenantId = 'default'): Promise<void> {
+  private async seedStatusCatalog(tenantId = 'vtal'): Promise<void> {
     for (const entry of RESOURCE_STATUS_DEFAULTS) {
       const existing = await this.db.get<{ code: string }>(
-        `SELECT code FROM tmf_resource_status_catalog WHERE tenant_id = ? AND code = ?`,
+        `SELECT code FROM tmf_resource_status_catalog WHERE (tenant_id = ? OR tenant_id = 'default') AND code = ?`,
         [tenantId, entry.code],
       );
       if (existing) continue;
+      // Bootstrap é por `code` (dado estático, sem tenant) — resolve o `id` do ResourceType no
+      // tenant de destino antes de gravar. Tipo ainda não materializado nesse tenant ⇒ grava sem
+      // `resource_type_id` (vale para qualquer tipo) em vez de falhar o boot.
+      const resourceTypeId = entry.resourceTypeCode
+        ? ((
+            await this.db.get<{ id: string }>(
+              `SELECT id FROM tmf_resource_type WHERE (tenant_id = ? OR tenant_id = 'default') AND code = ?`,
+              [tenantId, entry.resourceTypeCode],
+            )
+          )?.id ?? null)
+        : null;
       await this.db.run(
         `INSERT INTO tmf_resource_status_catalog
-         (tenant_id, code, name, resource_type, sort_order, active, behavior)
+         (tenant_id, code, name, resource_type_id, sort_order, active, behavior)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           tenantId,
           entry.code,
           entry.name,
-          entry.resourceType ?? null,
+          resourceTypeId,
           entry.sortOrder,
           entry.active ? 1 : 0,
           entry.behavior,
@@ -247,30 +339,30 @@ export class PostgresResourceRepository implements IResourceRepository {
   }
 
   public async listResourceStatusCatalog(
-    query: { resourceType?: string; tenantId?: string } = {},
+    query: { resourceTypeId?: string; tenantId?: string } = {},
   ): Promise<ResourceStatusCatalogEntry[]> {
     const tenantId = query.tenantId ?? 'default';
     await this.seedStatusCatalog(tenantId);
-    // `resource_type IS NULL` = estado transversal; sempre volta junto com os do tipo pedido.
+    // `resource_type_id IS NULL` = estado transversal; sempre volta junto com os do tipo pedido.
     const rows = await this.db.all<{
       code: string;
       name: string;
-      resource_type: string | null;
+      resource_type_id: string | null;
       sort_order: number;
       active: number;
       behavior: ResourceStatusBehavior;
     }>(
-      `SELECT code, name, resource_type, sort_order, active, behavior
+      `SELECT code, name, resource_type_id, sort_order, active, behavior
          FROM tmf_resource_status_catalog
-        WHERE tenant_id = ?${query.resourceType ? ' AND (resource_type IS NULL OR resource_type = ?)' : ''}
+        WHERE tenant_id = ?${query.resourceTypeId ? ' AND (resource_type_id IS NULL OR resource_type_id = ?)' : ''}
         ORDER BY sort_order, code`,
-      query.resourceType ? [tenantId, query.resourceType] : [tenantId],
+      query.resourceTypeId ? [tenantId, query.resourceTypeId] : [tenantId],
     );
     return rows.map((row) => ({
       '@type': 'ResourceStatusCatalogEntry' as const,
       code: row.code,
       name: row.name,
-      ...(row.resource_type ? { resourceType: row.resource_type } : {}),
+      ...(row.resource_type_id ? { resourceTypeId: row.resource_type_id } : {}),
       sortOrder: Number(row.sort_order),
       active: Number(row.active) === 1,
       behavior: row.behavior,
@@ -338,21 +430,33 @@ export class PostgresResourceRepository implements IResourceRepository {
     }));
   }
 
-  private async seedResourceCatalog(): Promise<void> {
+  /**
+   * Bootstrap governado de Category/Type (issue #188, plano §6/addendum Task #12). Insert-if-missing
+   * tenant-aware, nunca `DO UPDATE` — preserva edição do operador (C9). Roda só para `tenant_id =
+   * 'vtal'` (`tecto` fica com árvore vazia, decisão firmada); `default` deixa de receber seed novo,
+   * mas as linhas legadas não são tocadas aqui — migram para `vtal` só via
+   * `src/scripts/migrate-resource-catalog.ts --apply`. Isto é pré-requisito da migração v3.1/3.2
+   * (relaxamento de `UNIQUE(code)` global para `UNIQUE(tenant_id, code)` em
+   * `tmf_resource_category`/`tmf_resource_type`): com `DO UPDATE` a cláusula `ON CONFLICT(code)`
+   * deixaria de casar com qualquer constraint/índice assim que a coluna passasse a ser única por
+   * tenant, e o boot quebraria.
+   */
+  private async seedResourceCatalog(tenantId: (typeof RESOURCE_TENANTS)[number] = 'vtal'): Promise<void> {
     const now = new Date().toISOString();
     await this.db.transaction(async () => {
       for (const category of RESOURCE_CATEGORIES) {
+        const existing = await this.db.get<{ id: string }>(
+          `SELECT id FROM tmf_resource_category WHERE (tenant_id = ? OR tenant_id = 'default') AND code = ?`,
+          [tenantId, category.code],
+        );
+        if (existing) continue;
         await this.db.run(
-          `INSERT INTO tmf_resource_category (id, code, name, parent_category_code, description, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(code) DO UPDATE SET
-           name = excluded.name,
-           parent_category_code = excluded.parent_category_code,
-           description = excluded.description,
-           status = excluded.status,
-           updated_at = excluded.updated_at`,
+          `INSERT INTO tmf_resource_category
+           (id, tenant_id, code, name, parent_category_code, description, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            category.id,
+            createCanonicalId(),
+            tenantId,
             category.code,
             category.name,
             category.parentCategoryCode ?? null,
@@ -365,17 +469,18 @@ export class PostgresResourceRepository implements IResourceRepository {
       }
 
       for (const type of RESOURCE_TYPES) {
+        const existing = await this.db.get<{ id: string }>(
+          `SELECT id FROM tmf_resource_type WHERE (tenant_id = ? OR tenant_id = 'default') AND code = ?`,
+          [tenantId, type.code],
+        );
+        if (existing) continue;
         await this.db.run(
-          `INSERT INTO tmf_resource_type (id, code, name, category_code, description, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(code) DO UPDATE SET
-           name = excluded.name,
-           category_code = excluded.category_code,
-           description = excluded.description,
-           status = excluded.status,
-           updated_at = excluded.updated_at`,
+          `INSERT INTO tmf_resource_type
+           (id, tenant_id, code, name, category_code, description, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            type.id,
+            createCanonicalId(),
+            tenantId,
             type.code,
             type.name,
             type.categoryCode,
@@ -522,19 +627,274 @@ export class PostgresResourceRepository implements IResourceRepository {
     return rows.map((row) => this.mapResourceLayer(row));
   }
 
+  // --- Árvore dinâmica de catálogo (issue #188) ---------------------------------------------------
+  // Convive com Category/Layer acima até o cutover lógico (plano §7.8). Sem bootstrap lazy aqui —
+  // o catálogo/árvore inicial é governado (task #7, catalog.ts), não um vocabulário fixo reescrito
+  // a cada boot como seedResourceLayers.
+
+  public async upsertResourceCatalog(catalog: ResourceCatalog): Promise<ResourceCatalog> {
+    const now = new Date().toISOString();
+    await this.db.run(
+      `INSERT INTO tmf_resource_catalog
+       (id, tenant_id, code, name, description, status, is_default, sort_order, created_by, updated_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         code = excluded.code,
+         name = excluded.name,
+         description = excluded.description,
+         status = excluded.status,
+         is_default = excluded.is_default,
+         sort_order = excluded.sort_order,
+         updated_by = excluded.updated_by,
+         updated_at = excluded.updated_at`,
+      [
+        catalog.id,
+        catalog.tenantId,
+        catalog.code,
+        catalog.name,
+        catalog.description ?? null,
+        catalog.status,
+        catalog.isDefault ? 1 : 0,
+        catalog.sortOrder,
+        catalog.createdBy ?? null,
+        catalog.updatedBy ?? null,
+        now,
+        now,
+      ],
+    );
+    return (await this.getResourceCatalog(catalog.id, { tenantId: catalog.tenantId })) ?? catalog;
+  }
+
+  public async getResourceCatalog(
+    id: string,
+    scope: ResourceTenantScope,
+  ): Promise<ResourceCatalog | undefined> {
+    const row = await this.db.get<ResourceCatalogRow>(
+      `SELECT id, tenant_id, code, name, description, status, is_default, sort_order, created_by, updated_by
+         FROM tmf_resource_catalog WHERE id = ? AND tenant_id = ?`,
+      [id, scope.tenantId ?? 'default'],
+    );
+    return row ? this.mapResourceCatalog(row) : undefined;
+  }
+
+  public async getResourceCatalogByCode(
+    code: string,
+    scope: ResourceTenantScope,
+  ): Promise<ResourceCatalog | undefined> {
+    const row = await this.db.get<ResourceCatalogRow>(
+      `SELECT id, tenant_id, code, name, description, status, is_default, sort_order, created_by, updated_by
+         FROM tmf_resource_catalog WHERE tenant_id = ? AND code = ?`,
+      [scope.tenantId ?? 'default', code],
+    );
+    return row ? this.mapResourceCatalog(row) : undefined;
+  }
+
+  public async getDefaultResourceCatalog(
+    scope: ResourceTenantScope,
+  ): Promise<ResourceCatalog | undefined> {
+    const row = await this.db.get<ResourceCatalogRow>(
+      `SELECT id, tenant_id, code, name, description, status, is_default, sort_order, created_by, updated_by
+         FROM tmf_resource_catalog WHERE tenant_id = ? AND is_default = 1`,
+      [scope.tenantId ?? 'default'],
+    );
+    return row ? this.mapResourceCatalog(row) : undefined;
+  }
+
+  public async listResourceCatalogs(
+    query: ResourceCatalogQuery & ResourceTenantScope,
+  ): Promise<ResourceCatalog[]> {
+    const conditions = ['tenant_id = ?'];
+    const params: Array<string | number> = [query.tenantId ?? 'default'];
+    if (query.status) {
+      conditions.push('status = ?');
+      params.push(query.status);
+    }
+    if (query.name) {
+      conditions.push('LOWER(name) LIKE ?');
+      params.push(`%${query.name.toLowerCase()}%`);
+    }
+    const rows = await this.db.all<ResourceCatalogRow>(
+      `SELECT id, tenant_id, code, name, description, status, is_default, sort_order, created_by, updated_by
+         FROM tmf_resource_catalog
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY sort_order, name, id`,
+      params,
+    );
+    return rows.map((row) => this.mapResourceCatalog(row));
+  }
+
+  public async upsertResourceCatalogNode(node: ResourceCatalogNode): Promise<ResourceCatalogNode> {
+    const now = new Date().toISOString();
+    await this.db.run(
+      `INSERT INTO tmf_resource_catalog_node
+       (id, tenant_id, catalog_id, parent_node_id, code, name, description, kind, resource_type_id, status, sort_order, metadata, created_by, updated_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         parent_node_id = excluded.parent_node_id,
+         code = excluded.code,
+         name = excluded.name,
+         description = excluded.description,
+         kind = excluded.kind,
+         resource_type_id = excluded.resource_type_id,
+         status = excluded.status,
+         sort_order = excluded.sort_order,
+         metadata = excluded.metadata,
+         updated_by = excluded.updated_by,
+         updated_at = excluded.updated_at`,
+      [
+        node.id,
+        node.tenantId,
+        node.catalogId,
+        node.parentNodeId ?? null,
+        node.code,
+        node.name,
+        node.description ?? null,
+        node.kind,
+        node.resourceTypeId ?? null,
+        node.status,
+        node.sortOrder,
+        node.metadata ? JSON.stringify(node.metadata) : null,
+        node.createdBy ?? null,
+        node.updatedBy ?? null,
+        now,
+        now,
+      ],
+    );
+    return (await this.getResourceCatalogNode(node.id, { tenantId: node.tenantId })) ?? node;
+  }
+
+  public async getResourceCatalogNode(
+    id: string,
+    scope: ResourceTenantScope,
+  ): Promise<ResourceCatalogNode | undefined> {
+    const row = await this.db.get<ResourceCatalogNodeRow>(
+      `${RESOURCE_CATALOG_NODE_SELECT} WHERE n.id = ? AND n.tenant_id = ?`,
+      [id, scope.tenantId ?? 'default'],
+    );
+    return row ? this.mapResourceCatalogNode(row) : undefined;
+  }
+
+  public async getResourceCatalogNodeByCode(
+    catalogId: string,
+    code: string,
+    scope: ResourceTenantScope,
+  ): Promise<ResourceCatalogNode | undefined> {
+    const row = await this.db.get<ResourceCatalogNodeRow>(
+      `${RESOURCE_CATALOG_NODE_SELECT} WHERE n.tenant_id = ? AND n.catalog_id = ? AND n.code = ?`,
+      [scope.tenantId ?? 'default', catalogId, code],
+    );
+    return row ? this.mapResourceCatalogNode(row) : undefined;
+  }
+
+  public async listResourceCatalogNodes(
+    catalogId: string,
+    scope: ResourceTenantScope & { includeInactive?: boolean },
+  ): Promise<ResourceCatalogNode[]> {
+    const conditions = ['n.tenant_id = ?', 'n.catalog_id = ?'];
+    const params: Array<string | number> = [scope.tenantId ?? 'default', catalogId];
+    if (!scope.includeInactive) conditions.push(`n.status = 'active'`);
+    const rows = await this.db.all<ResourceCatalogNodeRow>(
+      `${RESOURCE_CATALOG_NODE_SELECT} WHERE ${conditions.join(' AND ')}
+        ORDER BY n.sort_order, n.name, n.id`,
+      params,
+    );
+    return rows.map((row) => this.mapResourceCatalogNode(row));
+  }
+
+  public async listResourceCatalogNodesByResourceType(
+    resourceTypeId: string,
+    scope: ResourceTenantScope,
+  ): Promise<ResourceCatalogNode[]> {
+    const rows = await this.db.all<ResourceCatalogNodeRow>(
+      `${RESOURCE_CATALOG_NODE_SELECT} WHERE n.tenant_id = ? AND n.resource_type_id = ?
+        ORDER BY n.sort_order, n.name, n.id`,
+      [scope.tenantId ?? 'default', resourceTypeId],
+    );
+    return rows.map((row) => this.mapResourceCatalogNode(row));
+  }
+
+  public async countResourceCatalogNodeChildren(
+    nodeId: string,
+    scope: ResourceTenantScope,
+  ): Promise<number> {
+    const row = await this.db.get<{ count: number | string }>(
+      `SELECT COUNT(*) AS count FROM tmf_resource_catalog_node
+        WHERE tenant_id = ? AND parent_node_id = ?`,
+      [scope.tenantId ?? 'default', nodeId],
+    );
+    return Number(row?.count ?? 0);
+  }
+
+  private mapResourceCatalog(row: ResourceCatalogRow): ResourceCatalog {
+    return {
+      '@type': 'ResourceCatalog',
+      id: row.id,
+      href: buildHref('resourceCatalog', row.id),
+      code: row.code,
+      name: row.name,
+      ...(row.description ? { description: row.description } : {}),
+      status: row.status,
+      isDefault: Number(row.is_default) === 1,
+      sortOrder: Number(row.sort_order),
+      tenantId: row.tenant_id,
+      ...(row.created_by ? { createdBy: row.created_by } : {}),
+      ...(row.updated_by ? { updatedBy: row.updated_by } : {}),
+    };
+  }
+
+  private mapResourceCatalogNode(row: ResourceCatalogNodeRow): ResourceCatalogNode {
+    const metadata = row.metadata ? this.parseNodeMetadata(row.metadata) : undefined;
+    return {
+      '@type': 'ResourceCatalogNode',
+      id: row.id,
+      href: buildHref('resourceCatalogNode', row.id),
+      catalogId: row.catalog_id,
+      ...(row.parent_node_id ? { parentNodeId: row.parent_node_id } : {}),
+      code: row.code,
+      name: row.name,
+      ...(row.description ? { description: row.description } : {}),
+      kind: row.kind,
+      ...(row.resource_type_id ? { resourceTypeId: row.resource_type_id } : {}),
+      ...(row.kind === 'RESOURCE_TYPE' && row.rt_id
+        ? {
+            resourceType: {
+              id: row.rt_id,
+              href: buildHref('resourceType', row.rt_id),
+              code: row.rt_code ?? '',
+              name: row.rt_name ?? '',
+              '@referredType': 'ResourceType' as const,
+            },
+          }
+        : {}),
+      status: row.status,
+      sortOrder: Number(row.sort_order),
+      ...(metadata ? { metadata } : {}),
+      tenantId: row.tenant_id,
+      ...(row.created_by ? { createdBy: row.created_by } : {}),
+      ...(row.updated_by ? { updatedBy: row.updated_by } : {}),
+    };
+  }
+
+  private parseNodeMetadata(raw: string): Record<string, unknown> | undefined {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   public async upsertResourceSpecification(
     spec: ResourceSpecification,
   ): Promise<ResourceSpecification> {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_resource_specification
-       (id, name, category, resource_type, resource_layer_id, description, valid_for_start, valid_for_end, related_party, characteristics, tenant_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, name, resource_type_id, description, valid_for_start, valid_for_end, related_party, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
-       category = excluded.category,
-       resource_type = excluded.resource_type,
-       resource_layer_id = excluded.resource_layer_id,
+       resource_type_id = excluded.resource_type_id,
        description = excluded.description,
        valid_for_start = excluded.valid_for_start,
        valid_for_end = excluded.valid_for_end,
@@ -544,9 +904,7 @@ export class PostgresResourceRepository implements IResourceRepository {
       [
         spec.id,
         spec.name,
-        spec.category,
-        spec.resourceType,
-        spec.resourceLayerId ?? null,
+        spec.resourceTypeId,
         spec.description ?? null,
         spec.validFor?.startDateTime ?? null,
         spec.validFor?.endDateTime ?? null,
@@ -565,18 +923,18 @@ export class PostgresResourceRepository implements IResourceRepository {
     id: string,
     scope?: ResourceTenantScope,
   ): Promise<ResourceSpecification | undefined> {
-    const conditions = ['id = ?'];
+    const conditions = ['rs.id = ?'];
     const params: Array<string | number> = [id];
     if (scope?.tenantId) {
-      conditions.push('tenant_id = ?');
+      conditions.push('rs.tenant_id = ?');
       params.push(scope.tenantId);
     }
     const row = await this.db.get<{
       id: string;
       name: string;
-      category: string;
-      resource_type: string;
-      resource_layer_id?: string | null;
+      resource_type_id: string;
+      rt_code: string;
+      rt_name: string;
       description?: string | null;
       valid_for_start?: string | null;
       valid_for_end?: string | null;
@@ -584,8 +942,11 @@ export class PostgresResourceRepository implements IResourceRepository {
       characteristics?: string | null;
       tenant_id: string;
     }>(
-      `SELECT id, name, category, resource_type, resource_layer_id, description, valid_for_start, valid_for_end, related_party, characteristics, tenant_id
-       FROM tmf_resource_specification
+      `SELECT rs.id, rs.name, rs.resource_type_id, rt.code AS rt_code, rt.name AS rt_name,
+              rs.description, rs.valid_for_start, rs.valid_for_end, rs.related_party,
+              rs.characteristics, rs.tenant_id
+       FROM tmf_resource_specification rs
+       JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
        WHERE ${conditions.join(' AND ')}`,
       params,
     );
@@ -600,31 +961,31 @@ export class PostgresResourceRepository implements IResourceRepository {
     const params: Array<string | number> = [];
 
     if (query?.name) {
-      conditions.push('LOWER(name) LIKE LOWER(?)');
+      conditions.push('LOWER(rs.name) LIKE LOWER(?)');
       params.push(`%${query.name}%`);
     }
-    if (query?.category) {
-      conditions.push('category = ?');
-      params.push(query.category);
-    }
-    if (query?.resourceType) {
-      conditions.push('resource_type = ?');
-      params.push(query.resourceType);
+    if (query?.resourceTypeId) {
+      conditions.push('rs.resource_type_id = ?');
+      params.push(query.resourceTypeId);
     }
     if (!query?.includeEnded) {
-      conditions.push('valid_for_end IS NULL');
+      conditions.push('rs.valid_for_end IS NULL');
     }
     if (query?.tenantId) {
-      conditions.push('tenant_id = ?');
+      conditions.push('rs.tenant_id = ?');
       params.push(query.tenantId);
     }
 
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, name, category, resource_type, resource_layer_id, description, valid_for_start, valid_for_end, related_party, characteristics, tenant_id FROM tmf_resource_specification',
+      `SELECT rs.id, rs.name, rs.resource_type_id, rt.code AS rt_code, rt.name AS rt_name,
+              rs.description, rs.valid_for_start, rs.valid_for_end, rs.related_party,
+              rs.characteristics, rs.tenant_id
+       FROM tmf_resource_specification rs
+       JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
-      'ORDER BY category, name, id',
+      'ORDER BY rt.code, rs.name, rs.id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
       hasOffset ? 'OFFSET ?' : '',
     ]
@@ -637,9 +998,9 @@ export class PostgresResourceRepository implements IResourceRepository {
     const rows = await this.db.all<{
       id: string;
       name: string;
-      category: string;
-      resource_type: string;
-      resource_layer_id?: string | null;
+      resource_type_id: string;
+      rt_code: string;
+      rt_name: string;
       description?: string | null;
       valid_for_start?: string | null;
       valid_for_end?: string | null;
@@ -848,7 +1209,6 @@ export class PostgresResourceRepository implements IResourceRepository {
     const resource = this.mapPhysicalResource(row, await this.listResourceRelationships(id));
     const specification = await this.getResourceSpecification(row.resource_specification_id, scope);
     if (!specification) return undefined;
-    const resourceType = await this.getResourceType(specification.resourceType);
     const tenantId = scope?.tenantId ?? row.tenant_id ?? 'default';
 
     const statusCatalogEntry = row.status_code
@@ -905,16 +1265,13 @@ export class PostgresResourceRepository implements IResourceRepository {
     };
     const manufacturer = specification.relatedParty.find((party) => party.role === 'manufacturer');
     const model = characteristicValue('model');
-    const resourceLayer = specification.resourceLayerId
-      ? await this.getResourceLayer(specification.resourceLayerId, { tenantId })
-      : undefined;
 
     return {
       '@type': 'PhysicalResourceDetail',
       resource: { ...resource, createdAt: row.created_at, updatedAt: row.updated_at },
       specification: {
         ...specification,
-        resourceTypeName: resourceType?.name ?? specification.resourceType,
+        resourceTypeName: specification.resourceType.name,
         ...(manufacturer
           ? {
               manufacturer: {
@@ -925,16 +1282,6 @@ export class PostgresResourceRepository implements IResourceRepository {
             }
           : {}),
         ...(model ? { model } : {}),
-        ...(resourceLayer
-          ? {
-              resourceLayer: {
-                id: resourceLayer.id,
-                code: resourceLayer.code,
-                name: resourceLayer.name,
-                '@referredType': 'ResourceLayer',
-              },
-            }
-          : {}),
       },
       ...(statusCatalogEntry ? { statusCatalogEntry } : {}),
       ...(parentRow
@@ -1579,9 +1926,9 @@ export class PostgresResourceRepository implements IResourceRepository {
   private mapSpec(row: {
     id: string;
     name: string;
-    category: string;
-    resource_type: string;
-    resource_layer_id?: string | null;
+    resource_type_id: string;
+    rt_code: string;
+    rt_name: string;
     description?: string | null;
     valid_for_start?: string | null;
     valid_for_end?: string | null;
@@ -1594,9 +1941,14 @@ export class PostgresResourceRepository implements IResourceRepository {
       id: row.id,
       href: buildHref('resourceSpecification', row.id),
       name: row.name,
-      category: row.category,
-      resourceType: row.resource_type,
-      ...(row.resource_layer_id ? { resourceLayerId: row.resource_layer_id } : {}),
+      resourceTypeId: row.resource_type_id,
+      resourceType: {
+        id: row.resource_type_id,
+        href: buildHref('resourceType', row.resource_type_id),
+        code: row.rt_code ?? '',
+        name: row.rt_name ?? '',
+        '@referredType': 'ResourceType' as const,
+      },
       resourceSpecificationCharacteristic: JSON.parse(
         row.characteristics || '[]',
       ) as ResourceSpecification['resourceSpecificationCharacteristic'],

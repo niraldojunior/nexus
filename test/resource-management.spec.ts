@@ -96,8 +96,7 @@ test('TMF634, TMF639 and TMF664 resource endpoints create and activate resources
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     {
       name: 'OLT MA5800',
-      category: 'Equipment.Access',
-      resourceType: 'OLT',
+      resourceTypeId: 'rt-olt',
       relatedParty: [
         {
           id: (party.body as { id: string }).id,
@@ -108,19 +107,6 @@ test('TMF634, TMF639 and TMF664 resource endpoints create and activate resources
     },
   );
   assert.equal(resourceSpec.statusCode, 201);
-
-  const categories = await requestJson(
-    port,
-    'GET',
-    '/tmf-api/resourceCatalogManagement/v4/resourceCategory',
-  );
-  assert.equal(categories.statusCode, 200);
-  assert.ok(Array.isArray(categories.body));
-  assert.ok(
-    (categories.body as Array<{ code: string }>).some(
-      (category) => category.code === 'Equipment.Access',
-    ),
-  );
 
   const types = await requestJson(
     port,
@@ -137,34 +123,31 @@ test('TMF634, TMF639 and TMF664 resource endpoints create and activate resources
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
     {
       name: 'OLT sem tipo',
-      category: 'Equipment.Access',
     },
   );
   assert.equal(invalidResourceSpec.statusCode, 400);
   assert.equal((invalidResourceSpec.body as { error?: string }).error, 'RESOURCE_REQUIRED_FIELD');
   assert.equal(
     (invalidResourceSpec.body as { message?: string }).message,
-    'resourceType is required',
+    'resourceTypeId is required',
   );
 
   const workspace = await requestJson(
     port,
     'GET',
-    '/v1/resource/workspace?tab=PhysicalResource&limit=20&offset=0&category=Equipment.Access',
+    '/v1/resource/workspace?tab=PhysicalResource&limit=20&offset=0',
   );
   assert.equal(workspace.statusCode, 200);
   const workspaceBody = workspace.body as {
     items: Array<{ id: string }>;
     totalCount: number;
     resourceSpecificationOptions: Array<{ id: string }>;
-    resourceCategories: Array<{ code: string }>;
     resourceTypes: Array<{ code: string }>;
     manufacturerOptions: Array<{ id: string }>;
   };
   assert.ok(Array.isArray(workspaceBody.items));
   assert.equal(typeof workspaceBody.totalCount, 'number');
   assert.ok(Array.isArray(workspaceBody.resourceSpecificationOptions));
-  assert.ok(Array.isArray(workspaceBody.resourceCategories));
   assert.ok(Array.isArray(workspaceBody.resourceTypes));
   assert.ok(Array.isArray(workspaceBody.manufacturerOptions));
 
@@ -284,11 +267,11 @@ test('POST /v1/resource/specifications/bulk-import creates valid rows and report
     items: [
       {
         line: 2,
-        input: { name: 'OLT Boa', category: 'Equipment.Access', resourceType: 'OLT' },
+        input: { name: 'OLT Boa', resourceTypeId: 'rt-olt' },
       },
       {
         line: 3,
-        input: { name: 'Roteador Errado', category: 'Equipment.Access', resourceType: 'Router' },
+        input: { name: 'Tipo ausente', resourceTypeId: 'missing' },
       },
     ],
   });
@@ -309,7 +292,7 @@ test('POST /v1/resource/specifications/bulk-import creates valid rows and report
 
   const failedResult = invalidBody.results.find((result) => result.line === 3);
   assert.equal(failedResult?.status, 'error');
-  assert.equal(failedResult?.code, 'RESOURCE_TYPE_CATEGORY_MISMATCH');
+  assert.equal(failedResult?.code, 'RESOURCE_TYPE_NOT_FOUND');
 
   const persisted = await requestJson(
     port,

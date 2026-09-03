@@ -7,6 +7,7 @@ import type {
   CreateLogicalResourceInput,
   CreateResourceSpecificationInput,
   ResourceFunctionActivationInput,
+  ResourceSpecification,
   ResourceQuery,
   UpdatePhysicalResourceInput,
 } from '../resource/index.js';
@@ -70,13 +71,13 @@ const SOURCE = 'nexus-tmf-mcp' as const;
 const DEFAULT_CONFIRMATION_TTL_MS = 30 * 60 * 1000;
 const EQUIPMENT_MODEL_CATALOG: Record<
   'ONT' | 'CPE' | 'OLT' | 'Router' | 'Switch',
-  { category: string; resourceType: string; label: string }
+  { resourceTypeCode: string; label: string }
 > = {
-  ONT: { category: 'Equipment.CustomerPremises', resourceType: 'ONT', label: 'ONT' },
-  CPE: { category: 'Equipment.CustomerPremises', resourceType: 'CPE', label: 'CPE' },
-  OLT: { category: 'Equipment.Access', resourceType: 'OLT', label: 'OLT' },
-  Router: { category: 'Equipment.Transport', resourceType: 'Router', label: 'Router' },
-  Switch: { category: 'Equipment.Transport', resourceType: 'Switch', label: 'Switch' },
+  ONT: { resourceTypeCode: 'ONT', label: 'ONT' },
+  CPE: { resourceTypeCode: 'CPE', label: 'CPE' },
+  OLT: { resourceTypeCode: 'OLT', label: 'OLT' },
+  Router: { resourceTypeCode: 'Router', label: 'Router' },
+  Switch: { resourceTypeCode: 'Switch', label: 'Switch' },
 };
 
 type PrepareResult = {
@@ -87,10 +88,7 @@ type PrepareResult = {
 export class McpToolRegistry {
   private readonly tools = new Map<string, McpToolDefinition>();
 
-  public constructor(
-    private readonly runtime: NexusRuntime,
-    private readonly confirmations: PostgresMcpConfirmationRepository,
-  ) {}
+  public constructor(private readonly confirmations: PostgresMcpConfirmationRepository) {}
 
   public register(tool: McpToolDefinition): void {
     this.tools.set(tool.name, tool);
@@ -359,7 +357,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     runtime.db.provider === 'oracle'
       ? new OracleMcpConfirmationRepository(runtime.db)
       : new PostgresMcpConfirmationRepository(runtime.db);
-  const registry = new McpToolRegistry(runtime, confirmations);
+  const registry = new McpToolRegistry(confirmations);
 
   const querySiteSchema: JsonSchema = {
     type: 'object',
@@ -993,8 +991,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       type: 'object',
       properties: {
         name: { type: 'string' },
-        category: { type: 'string' },
-        resourceType: { type: 'string' },
+        resourceTypeId: { type: 'string' },
         limit: { type: 'integer' },
         offset: { type: 'integer' },
       },
@@ -1003,14 +1000,12 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     handler: async (input, context) => {
       const query: {
         name?: string;
-        category?: string;
-        resourceType?: string;
+        resourceTypeId?: string;
         limit?: number;
         offset?: number;
       } = {};
       if (typeof input.name === 'string') query.name = input.name;
-      if (typeof input.category === 'string') query.category = input.category;
-      if (typeof input.resourceType === 'string') query.resourceType = input.resourceType;
+      if (typeof input.resourceTypeId === 'string') query.resourceTypeId = input.resourceTypeId;
       if (typeof input.limit === 'number') query.limit = input.limit;
       if (typeof input.offset === 'number') query.offset = input.offset;
       const items = await runtime.resourceService.listResourceSpecifications(query);
@@ -1070,37 +1065,6 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
   });
 
   registry.register({
-    name: 'resource.list_resource_categories',
-    description:
-      'Lista ResourceCategory do catalogo de recursos (TMF634). Use para resolver categorias canônicas antes de criar ResourceSpecification.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string' },
-        status: { type: 'string', enum: ['active', 'inactive'] },
-      },
-      additionalProperties: false,
-    },
-    handler: async (input, context) => {
-      const name = typeof input.name === 'string' ? input.name.trim().toLowerCase() : '';
-      const status =
-        input.status === 'active' || input.status === 'inactive' ? input.status : undefined;
-      const items = (await runtime.resourceService.listResourceCategories())
-        .filter(
-          (item) =>
-            !name ||
-            item.name.toLowerCase().includes(name) ||
-            item.code.toLowerCase().includes(name),
-        )
-        .filter((item) => !status || item.status === status);
-      return registry.successResult('resource', 'list_resource_categories', context, {
-        items,
-        count: items.length,
-      });
-    },
-  });
-
-  registry.register({
     name: 'resource.list_resource_types',
     description:
       'Lista ResourceType do catalogo de recursos (TMF634). Use para resolver tipos canônicos antes de criar ResourceSpecification.',
@@ -1108,14 +1072,12 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       type: 'object',
       properties: {
         name: { type: 'string' },
-        categoryCode: { type: 'string' },
         status: { type: 'string', enum: ['active', 'inactive'] },
       },
       additionalProperties: false,
     },
     handler: async (input, context) => {
       const name = typeof input.name === 'string' ? input.name.trim().toLowerCase() : '';
-      const categoryCode = typeof input.categoryCode === 'string' ? input.categoryCode.trim() : '';
       const status =
         input.status === 'active' || input.status === 'inactive' ? input.status : undefined;
       const items = (await runtime.resourceService.listResourceTypes())
@@ -1125,7 +1087,6 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
             item.name.toLowerCase().includes(name) ||
             item.code.toLowerCase().includes(name),
         )
-        .filter((item) => !categoryCode || item.categoryCode === categoryCode)
         .filter((item) => !status || item.status === status);
       return registry.successResult('resource', 'list_resource_types', context, {
         items,
@@ -1356,13 +1317,12 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         type: 'object',
         properties: {
           name: { type: 'string' },
-          category: { type: 'string' },
-          resourceType: { type: 'string' },
+          resourceTypeId: { type: 'string' },
           description: { type: 'string' },
           relatedParty: entityRefArraySchema,
           resourceSpecificationCharacteristic: characteristicArraySchema,
         },
-        required: ['name', 'category', 'resourceType'],
+        required: ['name', 'resourceTypeId'],
         additionalProperties: true,
       },
     },
@@ -1378,24 +1338,8 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     'create_resource_specification',
     async (payload) => {
       const typedPayload = payload as CreateResourceSpecificationInput;
-      const category = (await runtime.resourceService.listResourceCategories()).find(
-        (item) => item.code === typedPayload.category || item.id === typedPayload.category,
-      );
-      if (!category) {
-        throw new AppError('resource category not found', {
-          code: 'RESOURCE_CATEGORY_NOT_FOUND',
-          statusCode: 404,
-        });
-      }
-      if (category.status !== 'active') {
-        throw new AppError('resource category is inactive', {
-          code: 'RESOURCE_CATEGORY_INACTIVE',
-          statusCode: 409,
-        });
-      }
-
       const resourceType = (await runtime.resourceService.listResourceTypes()).find(
-        (item) => item.code === typedPayload.resourceType || item.id === typedPayload.resourceType,
+        (item) => item.id === typedPayload.resourceTypeId,
       );
       if (!resourceType) {
         throw new AppError('resource type not found', {
@@ -1409,12 +1353,6 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           statusCode: 409,
         });
       }
-      if (resourceType.categoryCode !== category.code) {
-        throw new AppError('resource type is not allowed for category', {
-          code: 'RESOURCE_TYPE_CATEGORY_MISMATCH',
-          statusCode: 409,
-        });
-      }
       for (const party of typedPayload.relatedParty ?? []) {
         if (!(await runtime.partyService.getParty(party.id))) {
           throw new AppError('related party not found', {
@@ -1425,7 +1363,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       }
 
       return {
-        summary: `ResourceSpecification ${typedPayload.name} sera criada como ${resourceType.code} em ${category.code}.`,
+        summary: `ResourceSpecification ${typedPayload.name} sera criada como ${resourceType.code}.`,
         warnings: typedPayload.relatedParty?.length
           ? []
           : ['Nenhum relatedParty informado para o ResourceSpecification.'],
@@ -2677,35 +2615,15 @@ type EquipmentModelInput = {
 type PreparedEquipmentModel = EquipmentModelInput & {
   manufacturer: ManufacturerPartyReference;
   catalogEntry: (typeof EQUIPMENT_MODEL_CATALOG)[keyof typeof EQUIPMENT_MODEL_CATALOG];
+  resourceTypeId: string;
 };
 
-type EquipmentModelLookupResult =
-  | {
-      state: 'active';
-      spec: {
-        id: string;
-        name: string;
-        category: string;
-        resourceType: string;
-        validFor?: { startDateTime?: string; endDateTime?: string };
-        relatedParty: Array<{ id: string; name?: string; role?: string; '@referredType': string }>;
-      };
-      manufacturer: ManufacturerPartyReference;
-      label: string;
-    }
-  | {
-      state: 'alreadyRemoved';
-      spec: {
-        id: string;
-        name: string;
-        category: string;
-        resourceType: string;
-        validFor?: { startDateTime?: string; endDateTime?: string };
-        relatedParty: Array<{ id: string; name?: string; role?: string; '@referredType': string }>;
-      };
-      manufacturer: ManufacturerPartyReference;
-      label: string;
-    };
+type EquipmentModelLookupResult = {
+  state: 'active' | 'alreadyRemoved';
+  spec: ResourceSpecification;
+  manufacturer: ManufacturerPartyReference;
+  label: string;
+};
 
 const resolveManufacturerParty = async (
   runtime: NexusRuntime,
@@ -2821,11 +2739,28 @@ const prepareEquipmentModel = async (
     });
   }
 
+  const resourceType = (await runtime.resourceService.listResourceTypes()).find(
+    (item) => item.code === catalogEntry.resourceTypeCode,
+  );
+  if (!resourceType) {
+    throw new AppError('resource type not found', {
+      code: 'RESOURCE_TYPE_NOT_FOUND',
+      statusCode: 404,
+    });
+  }
+  if (resourceType.status !== 'active') {
+    throw new AppError('resource type is inactive', {
+      code: 'RESOURCE_TYPE_INACTIVE',
+      statusCode: 409,
+    });
+  }
+
   const manufacturer = await resolveManufacturerParty(runtime, normalized.manufacturerName);
   return {
     ...normalized,
     manufacturer,
     catalogEntry,
+    resourceTypeId: resourceType.id,
   };
 };
 
@@ -2833,8 +2768,7 @@ const buildEquipmentModelSpecificationInput = (
   item: PreparedEquipmentModel,
 ): CreateResourceSpecificationInput => ({
   name: item.model,
-  category: item.catalogEntry.category,
-  resourceType: item.catalogEntry.resourceType,
+  resourceTypeId: item.resourceTypeId,
   ...(item.description ? { description: item.description } : {}),
   relatedParty: [
     {
@@ -2896,10 +2830,7 @@ const findEquipmentModelSpecification = async (
     if (normalizeSearchText(spec.name) !== normalizedModel) {
       return false;
     }
-    if (
-      catalogEntry &&
-      (spec.category !== catalogEntry.category || spec.resourceType !== catalogEntry.resourceType)
-    ) {
+    if (catalogEntry && spec.resourceType.code !== catalogEntry.resourceTypeCode) {
       return false;
     }
 
@@ -2922,7 +2853,7 @@ const findEquipmentModelSpecification = async (
         state: 'active',
         spec,
         manufacturer,
-        label: catalogEntry?.label ?? spec.resourceType,
+        label: catalogEntry?.label ?? spec.resourceType.code,
       };
     }
   }
@@ -2942,7 +2873,7 @@ const findEquipmentModelSpecification = async (
         state: 'alreadyRemoved',
         spec,
         manufacturer,
-        label: catalogEntry?.label ?? spec.resourceType,
+        label: catalogEntry?.label ?? spec.resourceType.code,
       };
     }
   }

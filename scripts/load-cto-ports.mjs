@@ -80,13 +80,20 @@ async function findResourceSpecByExactName(name) {
   return (results ?? []).find((s) => s.name === name) ?? null;
 }
 
-async function ensureResourceSpec(name, category, resourceType) {
+async function ensureResourceSpec(name, resourceTypeCode) {
   const found = await findResourceSpecByExactName(name);
   if (found) return found.id;
+  const resourceTypes = await api(
+    'GET',
+    `/tmf-api/resourceCatalogManagement/v4/resourceType?code=${encodeURIComponent(resourceTypeCode)}&status=active&limit=2`,
+  );
+  const resourceType = Array.isArray(resourceTypes)
+    ? resourceTypes.find((item) => item.code === resourceTypeCode)
+    : undefined;
+  if (!resourceType) throw new Error(`ResourceType ativo não encontrado: ${resourceTypeCode}`);
   const spec = await api('POST', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', {
     name,
-    category,
-    resourceType,
+    resourceTypeId: resourceType.id,
   });
   report.specsCreated++;
   return spec.id;
@@ -165,7 +172,6 @@ async function processCdoe(name) {
 
   const splitterSpecId = await ensureResourceSpec(
     `${SPLITTER_SPEC_NAME_PREFIX}${ratio}`,
-    'Infrastructure.Passive',
     'Splitter',
   );
   const splitterName = `${name} · Splitter`;
@@ -179,7 +185,7 @@ async function processCdoe(name) {
   });
   await link(cdoeRef, splitter, 'containsAsChild');
 
-  const portSpecId = await ensureResourceSpec(PORT_SPEC_NAME, 'Equipment.Access', 'Port');
+  const portSpecId = await ensureResourceSpec(PORT_SPEC_NAME, 'Port');
 
   const portaIn = await ensureResource({
     name: `${splitterName} · FO.I`,

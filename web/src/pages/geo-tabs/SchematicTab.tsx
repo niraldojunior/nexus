@@ -130,7 +130,7 @@ export function SchematicTab({ nodeId, onSimulate, onPreview }: SchematicTabProp
       {!path.reachedSite ? (
         <div className="flex items-start gap-2 rounded-[14px] border border-status-amber/30 bg-status-amber-soft px-3 py-2 text-[0.78rem] leading-snug text-status-amber">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <span>
+          <span className="min-w-0 flex-1">
             {path.truncated
               ? `Caminho muito longo — mostrando os primeiros ${path.hops.length} saltos.`
               : 'A caminhada não chegou a uma Estação — cadeia incompleta na origem.'}

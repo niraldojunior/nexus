@@ -35,7 +35,7 @@ export function InlineEditRow({
         </div>
       )}
       {Icon ? <span className="sr-only">{label}</span> : null}
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         {editing ? (
           children
         ) : (

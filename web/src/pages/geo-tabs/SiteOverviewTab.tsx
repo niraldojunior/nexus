@@ -215,7 +215,7 @@ export function SiteOverviewTab({
         <div className="flex min-w-0 items-start gap-2.5 py-1" title="Coordenadas">
           <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true"><Crosshair className="h-[18px] w-[18px]" /></span>
           <span className="sr-only">Coordenadas</span>
-          <div className="min-w-0 break-words px-1.5 py-1 text-[0.84rem] leading-snug text-app-text">
+          <div className="min-w-0 flex-1 break-words px-1.5 py-1 text-[0.84rem] leading-snug text-app-text">
             {location.geometry.coordinates[1].toFixed(6)}, {location.geometry.coordinates[0].toFixed(6)}
           </div>
         </div>
@@ -224,7 +224,7 @@ export function SiteOverviewTab({
       <div className="flex min-w-0 items-start gap-2.5 py-1" title="Origem">
         <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true"><Database className="h-[18px] w-[18px]" /></span>
         <span className="sr-only">Origem</span>
-        <div className="min-w-0 break-words px-1.5 py-1 text-[0.84rem] leading-snug text-app-text">
+        <div className="min-w-0 flex-1 break-words px-1.5 py-1 text-[0.84rem] leading-snug text-app-text">
           {originLabel(origin)}
         </div>
       </div>

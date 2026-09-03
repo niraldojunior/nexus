@@ -8,6 +8,9 @@ import { StatusBadge } from './StatusBadge';
 export type ProjectListViewProps = {
   projects: GeoProject[];
   loading: boolean;
+  // Gate de UI (inventory.editor/platform.admin) — sem ele, "Novo Projeto" some e o botão
+  // de excluir (que só aparece no hover) some junto.
+  canEdit: boolean;
   onCreate: () => void;
   onOpen: (projectId: string) => void;
   onDelete: (projectId: string) => Promise<GeoProjectDeleteSummary>;
@@ -21,6 +24,7 @@ export type ProjectListViewProps = {
 export function ProjectListView({
   projects,
   loading,
+  canEdit,
   onCreate,
   onOpen,
   onDelete,
@@ -61,10 +65,12 @@ export function ProjectListView({
 
   return (
     <div className="grid gap-3">
-      <button type="button" onClick={onCreate} className="geo-btn primary w-full justify-center">
-        <Plus className="h-4 w-4" />
-        Novo Projeto
-      </button>
+      {canEdit ? (
+        <button type="button" onClick={onCreate} className="geo-btn primary w-full justify-center">
+          <Plus className="h-4 w-4" />
+          Novo Projeto
+        </button>
+      ) : null}
 
       {loading && projects.length === 0 ? (
         <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.86rem] text-app-muted">
@@ -97,15 +103,17 @@ export function ProjectListView({
                   </span>
                 </span>
               </button>
-              <button
-                type="button"
-                onClick={() => setPendingDelete(project)}
-                title="Excluir projeto"
-                aria-label={`Excluir projeto ${project.name}`}
-                className="shrink-0 rounded-[8px] p-1.5 text-app-muted opacity-0 transition hover:bg-status-red-soft hover:text-status-red focus-visible:opacity-100 group-hover:opacity-100"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              {canEdit ? (
+                <button
+                  type="button"
+                  onClick={() => setPendingDelete(project)}
+                  title="Excluir projeto"
+                  aria-label={`Excluir projeto ${project.name}`}
+                  className="shrink-0 rounded-[8px] p-1.5 text-app-muted opacity-0 transition hover:bg-status-red-soft hover:text-status-red focus-visible:opacity-100 group-hover:opacity-100"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
             </div>
           ))}
         </div>

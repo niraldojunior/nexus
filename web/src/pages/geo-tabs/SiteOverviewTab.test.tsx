@@ -69,6 +69,7 @@ const specById = new Map([
 const renderTab = (overrides: Partial<Parameters<typeof SiteOverviewTab>[0]> = {}) => {
   const props = {
     site: site(),
+    canEdit: true,
     address: null as GeoAddress | null,
     origin: null,
     sites: [site(), coSite],
@@ -127,6 +128,7 @@ describe('SiteOverviewTab', () => {
     const { rerender } = render(
       <SiteOverviewTab
         site={site()}
+        canEdit
         address={null}
         origin={{ kind: 'import', system: 'Netwin' }}
         sites={[site()]}
@@ -140,6 +142,7 @@ describe('SiteOverviewTab', () => {
     rerender(
       <SiteOverviewTab
         site={site()}
+        canEdit
         address={null}
         origin={{ kind: 'project', projectId: 'prj-1', projectName: 'Expansão Icaraí' }}
         sites={[site()]}
@@ -153,6 +156,7 @@ describe('SiteOverviewTab', () => {
     rerender(
       <SiteOverviewTab
         site={site()}
+        canEdit
         address={null}
         origin={{ kind: 'manual', actorSub: 'niraldo.junior', createdAt: '2026-08-01T00:00:00Z' }}
         sites={[site()]}

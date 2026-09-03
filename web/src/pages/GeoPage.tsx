@@ -60,6 +60,7 @@ import type { GeoViewContext, MapCamera } from '../utils/geoViewState';
 import { acquireDeviceLocation, DEVICE_LOCATION_POOR_ACCURACY_M } from '../utils/deviceLocation';
 import { useGeoTree } from '../hooks/useGeoTree';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useSession } from '../hooks/useSession';
 import {
   resourceIconFor,
   resourceIconDataUrl,
@@ -394,6 +395,11 @@ const resourceStatusLabel: Record<GeoStatus, string> = {
 
 export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => void } = {}) {
   const isMobile = useIsMobile();
+  // Gate de UI para edição de Locais/Recursos (inventory.editor ou platform.admin) — repassado
+  // a SitePanel e ResourcePanel, que por sua vez repassam às abas. O backend já barra a
+  // escrita; este flag só evita o beco sem saída de um 403 depois de editar (ver plano
+  // "Edição do painel de Recursos + gate de permissão por papel").
+  const { canEdit } = useSession();
   const [sites, setSites] = useState<GeoSite[]>([]);
   const [specs, setSpecs] = useState<GeoSpec[]>([]);
   const [draftAddress, setDraftAddress] = useState<DraftAddress | null>(null);
@@ -1596,6 +1602,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
             <SitePanel
               key={`site:${detailTarget.siteId}`}
               isMobile={isMobile}
+              canEdit={canEdit}
               mode="view"
               siteId={detailTarget.siteId}
               project={null}
@@ -1624,6 +1631,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                 <ResourcePanel
                   key={detailTarget.node.id}
                   isMobile={isMobile}
+                  canEdit={canEdit}
                   node={detailTarget.node}
                   onSnapChange={onMobileSheetSnapChange}
                   minimizeSignal={sheetMinimizeSignal}
@@ -1640,6 +1648,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                 <ResourcePanel
                   key={stackedPortNode.id}
                   isMobile={isMobile}
+                  canEdit={canEdit}
                   node={stackedPortNode}
                   onSnapChange={onMobileSheetSnapChange}
                   minimizeSignal={sheetMinimizeSignal}
@@ -1660,6 +1669,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               {!isMobile || !activeProjectSiteView ? (
                 <ProjectDetailPanel
                   isMobile={isMobile}
+                  canEdit={canEdit}
                   project={activeProject}
                   sites={projectSites}
                   sitesLoading={projectSitesLoading}
@@ -1698,6 +1708,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                 <SitePanel
                   key={`${dockView.projectId}:${activeProjectSiteView.mode === 'view' ? activeProjectSiteView.siteId : 'new'}`}
                   isMobile={isMobile}
+                  canEdit={canEdit}
                   mode={activeProjectSiteView.mode}
                   siteId={
                     activeProjectSiteView.mode === 'view' ? activeProjectSiteView.siteId : null
@@ -1742,6 +1753,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               onTabChange={setHierarchyTab}
               projects={projects.projects}
               projectsLoading={projects.loading}
+              canEdit={canEdit}
               onCreateProject={() => void handleCreateProject()}
               onOpenProject={handleOpenProject}
               onDeleteProject={handleDeleteProject}

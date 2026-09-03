@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import {
+  canEditInventory,
   getSessionUser,
   isAdmin,
   isAuthenticated,
@@ -10,6 +11,9 @@ import {
 export type SessionState = {
   authenticated: boolean;
   admin: boolean;
+  // Pode editar Geo/Resource/Service (painéis de Locais e Recursos) — inventory.editor ou
+  // platform.admin. Ver canEditInventory em services/session.ts.
+  canEdit: boolean;
   user: SessionUser | null;
 };
 
@@ -25,16 +29,18 @@ function snapshot(): SessionState {
   const authenticated = isAuthenticated();
   const user = getSessionUser();
   const admin = isAdmin();
+  const canEdit = canEditInventory();
   // getSnapshot precisa devolver referência estável enquanto nada muda, senão o
   // useSyncExternalStore entra em loop de re-render.
   if (
     cached &&
     cached.authenticated === authenticated &&
     cached.admin === admin &&
+    cached.canEdit === canEdit &&
     cached.user?.id === user?.id
   ) {
     return cached;
   }
-  cached = { authenticated, admin, user };
+  cached = { authenticated, admin, canEdit, user };
   return cached;
 }

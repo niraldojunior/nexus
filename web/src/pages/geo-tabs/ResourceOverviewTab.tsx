@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Activity,
   AlertCircle,
@@ -20,8 +21,14 @@ import {
   Tag,
   Wrench,
 } from 'lucide-react';
-import type { PhysicalResourceDetail } from '../../services/resourceApi';
+import {
+  listResourceStatusCatalog,
+  type PhysicalResourceDetail,
+  type PhysicalResourcePayload,
+  type ResourceStatusCatalogEntry,
+} from '../../services/resourceApi';
 import { IconInfoRow } from './IconInfoRow';
+import { InlineEditRow } from './InlineEditRow';
 import { TonePill } from './TonePill';
 import { formatCoordinatePoint } from './CoordinateStreetView';
 import { formatDateBR } from '../../utils/helpers';
@@ -38,6 +45,11 @@ import {
 
 export type ResourceOverviewTabProps = {
   detail: PhysicalResourceDetail;
+  // Gate de UI (inventory.editor/platform.admin) — sem ele, todo campo abaixo vira texto
+  // estático: sem alvo de clique, sem hover, sem cursor de edição (mesmo padrão de
+  // SiteOverviewTab). Requerido junto com `onPatch`.
+  canEdit: boolean;
+  onPatch: (patch: PhysicalResourcePayload) => Promise<void>;
   onOpenResource?: (resourceId: string) => void;
 };
 
@@ -62,9 +74,101 @@ function formatPlaceAddress(place: PhysicalResourceDetail['place']): string | nu
 // Perfil e ordem alinhados ao padrão Netwin/CDOE usado pelo time de negócio (ver plano
 // da issue #184) — os 19 campos "padrão" + os 2 characteristics são sempre renderizados,
 // mesmo vazios (`—`), em vez de somem quando não há valor.
-export function ResourceOverviewTab({ detail, onOpenResource }: ResourceOverviewTabProps) {
+export function ResourceOverviewTab({ detail, canEdit, onPatch, onOpenResource }: ResourceOverviewTabProps) {
   const { resource, specification, statusCatalogEntry, parent, place, location, servingSite, project } =
     detail;
+
+  const [editingAdmin, setEditingAdmin] = useState(false);
+  const [editingOp, setEditingOp] = useState(false);
+  const [editingUsage, setEditingUsage] = useState(false);
+
+  const [editingStatusCode, setEditingStatusCode] = useState(false);
+  const [statusCatalog, setStatusCatalog] = useState<ResourceStatusCatalogEntry[] | null>(null);
+  const [statusCatalogLoading, setStatusCatalogLoading] = useState(false);
+
+  const [editingLabel, setEditingLabel] = useState(false);
+  const [labelDraft, setLabelDraft] = useState('');
+  const [editingSerial, setEditingSerial] = useState(false);
+  const [serialDraft, setSerialDraft] = useState('');
+  const [editingPartNumber, setEditingPartNumber] = useState(false);
+  const [partNumberDraft, setPartNumberDraft] = useState('');
+  const [editingAsset, setEditingAsset] = useState(false);
+  const [assetDraft, setAssetDraft] = useState('');
+
+  const commitAdmin = async (value: string) => {
+    setEditingAdmin(false);
+    if (value === resource.administrativeState) return;
+    await onPatch({ administrativeState: value as PhysicalResourcePayload['administrativeState'] });
+  };
+
+  const commitOp = async (value: string) => {
+    setEditingOp(false);
+    if (value === resource.operationalState) return;
+    await onPatch({ operationalState: value as PhysicalResourcePayload['operationalState'] });
+  };
+
+  const commitUsage = async (value: string) => {
+    setEditingUsage(false);
+    if (value === resource.usageState) return;
+    await onPatch({ usageState: value as PhysicalResourcePayload['usageState'] });
+  };
+
+  // Catálogo granular (43 códigos, filtrado por resourceType — status-catalog.ts) buscado sob
+  // demanda ao abrir o editor, não a cada render (o backend serializa requisições).
+  const startEditStatusCode = () => {
+    setEditingStatusCode(true);
+    if (statusCatalog || statusCatalogLoading) return;
+    setStatusCatalogLoading(true);
+    void listResourceStatusCatalog(resource.resourceType)
+      .then((entries) => setStatusCatalog([...entries].sort((a, b) => a.sortOrder - b.sortOrder)))
+      .finally(() => setStatusCatalogLoading(false));
+  };
+
+  const commitStatusCode = async (code: string) => {
+    setEditingStatusCode(false);
+    if (code === (resource.statusCode ?? '')) return;
+    await onPatch({ statusCode: code });
+  };
+
+  const startEditLabel = () => {
+    setLabelDraft(resource.label ?? '');
+    setEditingLabel(true);
+  };
+  const commitLabel = () => {
+    const next = labelDraft.trim();
+    setEditingLabel(false);
+    if (next !== (resource.label ?? '')) void onPatch({ label: next });
+  };
+
+  const startEditSerial = () => {
+    setSerialDraft(resource.serialNumber ?? '');
+    setEditingSerial(true);
+  };
+  const commitSerial = () => {
+    const next = serialDraft.trim();
+    setEditingSerial(false);
+    if (next !== (resource.serialNumber ?? '')) void onPatch({ serialNumber: next });
+  };
+
+  const startEditPartNumber = () => {
+    setPartNumberDraft(resource.partNumber ?? '');
+    setEditingPartNumber(true);
+  };
+  const commitPartNumber = () => {
+    const next = partNumberDraft.trim();
+    setEditingPartNumber(false);
+    if (next !== (resource.partNumber ?? '')) void onPatch({ partNumber: next });
+  };
+
+  const startEditAsset = () => {
+    setAssetDraft(resource.assetReference ?? '');
+    setEditingAsset(true);
+  };
+  const commitAsset = () => {
+    const next = assetDraft.trim();
+    setEditingAsset(false);
+    if (next !== (resource.assetReference ?? '')) void onPatch({ assetReference: next });
+  };
 
   const manufacturer = specification.manufacturer;
   const model = specification.model;
@@ -89,67 +193,234 @@ export function ResourceOverviewTab({ detail, onOpenResource }: ResourceOverview
 
   return (
     <div className="grid gap-1">
-      <IconInfoRow
-        icon={Wrench}
-        hint="Estado administrativo"
-        value={
-          resource.administrativeState ? (
-            <TonePill
-              label={ADMIN_STATE_LABELS[resource.administrativeState] ?? resource.administrativeState}
-              tone={ADMIN_STATE_TONE[resource.administrativeState] ?? 'neutral'}
-            />
-          ) : (
-            '—'
-          )
-        }
-      />
+      {canEdit ? (
+        <InlineEditRow
+          label="Estado administrativo"
+          icon={Wrench}
+          editing={editingAdmin}
+          onActivate={() => setEditingAdmin(true)}
+          value={
+            resource.administrativeState ? (
+              <TonePill
+                label={ADMIN_STATE_LABELS[resource.administrativeState] ?? resource.administrativeState}
+                tone={ADMIN_STATE_TONE[resource.administrativeState] ?? 'neutral'}
+              />
+            ) : (
+              '—'
+            )
+          }
+        >
+          <select
+            autoFocus
+            value={resource.administrativeState ?? ''}
+            onChange={(event) => void commitAdmin(event.target.value)}
+            onBlur={() => setEditingAdmin(false)}
+            aria-label="Estado administrativo"
+            className="geo-input"
+          >
+            {Object.entries(ADMIN_STATE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </InlineEditRow>
+      ) : (
+        <IconInfoRow
+          icon={Wrench}
+          hint="Estado administrativo"
+          value={
+            resource.administrativeState ? (
+              <TonePill
+                label={ADMIN_STATE_LABELS[resource.administrativeState] ?? resource.administrativeState}
+                tone={ADMIN_STATE_TONE[resource.administrativeState] ?? 'neutral'}
+              />
+            ) : (
+              '—'
+            )
+          }
+        />
+      )}
 
-      <IconInfoRow
-        icon={Activity}
-        hint="Estado operacional"
-        value={
-          resource.operationalState ? (
-            <TonePill
-              label={OP_STATE_LABELS[resource.operationalState] ?? resource.operationalState}
-              tone={OP_STATE_TONE[resource.operationalState] ?? 'neutral'}
-            />
-          ) : (
-            '—'
-          )
-        }
-      />
+      {canEdit ? (
+        <InlineEditRow
+          label="Estado operacional"
+          icon={Activity}
+          editing={editingOp}
+          onActivate={() => setEditingOp(true)}
+          value={
+            resource.operationalState ? (
+              <TonePill
+                label={OP_STATE_LABELS[resource.operationalState] ?? resource.operationalState}
+                tone={OP_STATE_TONE[resource.operationalState] ?? 'neutral'}
+              />
+            ) : (
+              '—'
+            )
+          }
+        >
+          <select
+            autoFocus
+            value={resource.operationalState ?? ''}
+            onChange={(event) => void commitOp(event.target.value)}
+            onBlur={() => setEditingOp(false)}
+            aria-label="Estado operacional"
+            className="geo-input"
+          >
+            {Object.entries(OP_STATE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </InlineEditRow>
+      ) : (
+        <IconInfoRow
+          icon={Activity}
+          hint="Estado operacional"
+          value={
+            resource.operationalState ? (
+              <TonePill
+                label={OP_STATE_LABELS[resource.operationalState] ?? resource.operationalState}
+                tone={OP_STATE_TONE[resource.operationalState] ?? 'neutral'}
+              />
+            ) : (
+              '—'
+            )
+          }
+        />
+      )}
 
-      <IconInfoRow
-        icon={Layers}
-        hint="Estado de uso"
-        value={
-          resource.usageState ? (
-            <TonePill
-              label={USAGE_STATE_LABELS[resource.usageState] ?? resource.usageState}
-              tone={USAGE_STATE_TONE[resource.usageState] ?? 'neutral'}
-            />
-          ) : (
-            '—'
-          )
-        }
-      />
+      {canEdit ? (
+        <InlineEditRow
+          label="Estado de uso"
+          icon={Layers}
+          editing={editingUsage}
+          onActivate={() => setEditingUsage(true)}
+          value={
+            resource.usageState ? (
+              <TonePill
+                label={USAGE_STATE_LABELS[resource.usageState] ?? resource.usageState}
+                tone={USAGE_STATE_TONE[resource.usageState] ?? 'neutral'}
+              />
+            ) : (
+              '—'
+            )
+          }
+        >
+          <select
+            autoFocus
+            value={resource.usageState ?? ''}
+            onChange={(event) => void commitUsage(event.target.value)}
+            onBlur={() => setEditingUsage(false)}
+            aria-label="Estado de uso"
+            className="geo-input"
+          >
+            {Object.entries(USAGE_STATE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </InlineEditRow>
+      ) : (
+        <IconInfoRow
+          icon={Layers}
+          hint="Estado de uso"
+          value={
+            resource.usageState ? (
+              <TonePill
+                label={USAGE_STATE_LABELS[resource.usageState] ?? resource.usageState}
+                tone={USAGE_STATE_TONE[resource.usageState] ?? 'neutral'}
+              />
+            ) : (
+              '—'
+            )
+          }
+        />
+      )}
 
-      <IconInfoRow
-        icon={AlertCircle}
-        hint="Estado"
-        value={
-          statusCatalogEntry ? (
-            <TonePill
-              label={statusCatalogEntry.name}
-              tone={STATUS_BEHAVIOR_TONE[statusCatalogEntry.behavior] ?? 'neutral'}
-            />
+      {canEdit ? (
+        <InlineEditRow
+          label="Estado"
+          icon={AlertCircle}
+          editing={editingStatusCode}
+          onActivate={startEditStatusCode}
+          value={
+            statusCatalogEntry ? (
+              <TonePill
+                label={statusCatalogEntry.name}
+                tone={STATUS_BEHAVIOR_TONE[statusCatalogEntry.behavior] ?? 'neutral'}
+              />
+            ) : (
+              legacySubstatus ?? '—'
+            )
+          }
+        >
+          {statusCatalogLoading || !statusCatalog ? (
+            <div className="flex items-center gap-1.5 px-1.5 py-1 text-[0.82rem] text-app-muted">
+              Carregando catálogo…
+            </div>
           ) : (
-            legacySubstatus ?? '—'
-          )
-        }
-      />
+            <select
+              autoFocus
+              value={resource.statusCode ?? ''}
+              onChange={(event) => void commitStatusCode(event.target.value)}
+              onBlur={() => setEditingStatusCode(false)}
+              aria-label="Estado"
+              className="geo-input"
+            >
+              <option value="">—</option>
+              {statusCatalog.map((entry) => (
+                <option key={entry.code} value={entry.code}>
+                  {entry.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </InlineEditRow>
+      ) : (
+        <IconInfoRow
+          icon={AlertCircle}
+          hint="Estado"
+          value={
+            statusCatalogEntry ? (
+              <TonePill
+                label={statusCatalogEntry.name}
+                tone={STATUS_BEHAVIOR_TONE[statusCatalogEntry.behavior] ?? 'neutral'}
+              />
+            ) : (
+              legacySubstatus ?? '—'
+            )
+          }
+        />
+      )}
 
-      <IconInfoRow icon={Tag} hint="Etiqueta física" value={resource.label ?? '—'} />
+      {canEdit ? (
+        <InlineEditRow
+          label="Etiqueta física"
+          icon={Tag}
+          editing={editingLabel}
+          onActivate={startEditLabel}
+          value={resource.label ?? '—'}
+        >
+          <input
+            autoFocus
+            value={labelDraft}
+            onChange={(event) => setLabelDraft(event.target.value)}
+            onBlur={commitLabel}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur();
+              if (event.key === 'Escape') setEditingLabel(false);
+            }}
+            placeholder="Etiqueta física…"
+            aria-label="Etiqueta física"
+            className="geo-input"
+          />
+        </InlineEditRow>
+      ) : (
+        <IconInfoRow icon={Tag} hint="Etiqueta física" value={resource.label ?? '—'} />
+      )}
 
       <IconInfoRow icon={Cpu} hint="Modelo" value={model ?? '—'} />
 
@@ -219,11 +490,83 @@ export function ResourceOverviewTab({ detail, onOpenResource }: ResourceOverview
         value={project ? (project.name ?? project.id) : '—'}
       />
 
-      <IconInfoRow icon={Fingerprint} hint="Imobilizado (SAP)" value={resource.assetReference ?? '—'} mono />
+      {canEdit ? (
+        <InlineEditRow
+          label="Imobilizado (SAP)"
+          icon={Fingerprint}
+          editing={editingAsset}
+          onActivate={startEditAsset}
+          value={<span className="font-mono text-[0.78rem]">{resource.assetReference ?? '—'}</span>}
+        >
+          <input
+            autoFocus
+            value={assetDraft}
+            onChange={(event) => setAssetDraft(event.target.value)}
+            onBlur={commitAsset}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur();
+              if (event.key === 'Escape') setEditingAsset(false);
+            }}
+            placeholder="Nº do imobilizado (SAP)…"
+            aria-label="Imobilizado (SAP)"
+            className="geo-input font-mono"
+          />
+        </InlineEditRow>
+      ) : (
+        <IconInfoRow icon={Fingerprint} hint="Imobilizado (SAP)" value={resource.assetReference ?? '—'} mono />
+      )}
 
-      <IconInfoRow icon={Barcode} hint="Nº de série" value={resource.serialNumber ?? '—'} mono />
+      {canEdit ? (
+        <InlineEditRow
+          label="Nº de série"
+          icon={Barcode}
+          editing={editingSerial}
+          onActivate={startEditSerial}
+          value={<span className="font-mono text-[0.78rem]">{resource.serialNumber ?? '—'}</span>}
+        >
+          <input
+            autoFocus
+            value={serialDraft}
+            onChange={(event) => setSerialDraft(event.target.value)}
+            onBlur={commitSerial}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur();
+              if (event.key === 'Escape') setEditingSerial(false);
+            }}
+            placeholder="Nº de série…"
+            aria-label="Nº de série"
+            className="geo-input font-mono"
+          />
+        </InlineEditRow>
+      ) : (
+        <IconInfoRow icon={Barcode} hint="Nº de série" value={resource.serialNumber ?? '—'} mono />
+      )}
 
-      <IconInfoRow icon={Hash} hint="Part Number" value={resource.partNumber ?? '—'} mono />
+      {canEdit ? (
+        <InlineEditRow
+          label="Part Number"
+          icon={Hash}
+          editing={editingPartNumber}
+          onActivate={startEditPartNumber}
+          value={<span className="font-mono text-[0.78rem]">{resource.partNumber ?? '—'}</span>}
+        >
+          <input
+            autoFocus
+            value={partNumberDraft}
+            onChange={(event) => setPartNumberDraft(event.target.value)}
+            onBlur={commitPartNumber}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur();
+              if (event.key === 'Escape') setEditingPartNumber(false);
+            }}
+            placeholder="Part Number…"
+            aria-label="Part Number"
+            className="geo-input font-mono"
+          />
+        </InlineEditRow>
+      ) : (
+        <IconInfoRow icon={Hash} hint="Part Number" value={resource.partNumber ?? '—'} mono />
+      )}
 
       <IconInfoRow icon={Calendar} hint="Criado em" value={formatDateBR(resource.createdAt) ?? '—'} />
 

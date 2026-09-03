@@ -14,6 +14,7 @@ import { useResourceChildren } from '../../hooks/useResourceChildren';
 import { usePortDetail } from '../../hooks/usePortDetail';
 import { usePortService } from '../../hooks/usePortService';
 import { fetchTreeNode, treeNodeRoute, type GeoTreeNode } from '../../services/geoTreeApi';
+import { updateResource, type PhysicalResourcePayload } from '../../services/resourceApi';
 import type { PortDropPreview } from '../../utils/dropSimulation';
 import { resourceIconFor } from '../../utils/resourceIcon';
 import { ResourceIcon } from '../../components/ResourceIcon';
@@ -41,6 +42,9 @@ import type { DropSimulation } from './ViabilityTab';
 
 export type ResourcePanelProps = {
   isMobile: boolean;
+  // Gate de UI (inventory.editor/platform.admin) — repassado à aba Visão geral
+  // (ResourceOverviewTab); sem ele, os campos ficam estáticos.
+  canEdit: boolean;
   node: GeoTreeNode;
   onOpenResource: (resourceId: string) => void;
   // Abre uma Porta no painel empilhado ao lado da CTO (issue #171 Fase 3) — só chamado
@@ -59,6 +63,7 @@ export type ResourcePanelProps = {
 
 export function ResourcePanel({
   isMobile,
+  canEdit,
   node,
   onOpenResource,
   onOpenPort,
@@ -72,7 +77,20 @@ export function ResourcePanel({
 }: ResourcePanelProps) {
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
   const resourceId = node.refId ?? node.id.replace(/^resource:/, '');
-  const { detail, loading: detailLoading, error: detailError } = useResourceDetail(resourceId);
+  const { detail, loading: detailLoading, error: detailError, reload } = useResourceDetail(resourceId);
+  // Diferente do Site (SitePanel.tsx patchCurrentSite), o backend recusa conflitos como
+  // RESOURCE_PORT_DROP_OCCUPIED (409) — em vez de reverter em silêncio, o erro fica visível
+  // acima da aba Visão geral até a próxima tentativa.
+  const [patchError, setPatchError] = useState<string | null>(null);
+  const patchResource = async (patch: PhysicalResourcePayload) => {
+    setPatchError(null);
+    try {
+      await updateResource(resourceId, { '@type': 'PhysicalResource', ...patch });
+      await reload();
+    } catch (err) {
+      setPatchError(err instanceof Error ? err.message : 'Não foi possível salvar a alteração.');
+    }
+  };
   const { children, loading: childrenLoading } = useResourceChildren(node);
   const isPort = node.resourceType === 'Port';
   const { detail: portDetail, loading: portDetailLoading, error: portDetailError } = usePortDetail(resourceId, isPort);
@@ -250,7 +268,17 @@ export function ResourcePanel({
           ) : null
         ) : detail ? (
           <div className="grid gap-2">
-            <ResourceOverviewTab detail={detail} onOpenResource={onOpenResource} />
+            {patchError ? (
+              <div className="rounded-[18px] border border-dashed border-status-red/30 bg-status-red-soft p-4 text-[0.84rem] text-status-red">
+                {patchError}
+              </div>
+            ) : null}
+            <ResourceOverviewTab
+              detail={detail}
+              canEdit={canEdit}
+              onPatch={patchResource}
+              onOpenResource={onOpenResource}
+            />
             {/* Ponto único (a maioria dos recursos) já aparece inline como "Localização"
                 em ResourceOverviewTab — este bloco só entra para geometria de linha
                 (cabos/dutos), com o par Início/Fim. */}

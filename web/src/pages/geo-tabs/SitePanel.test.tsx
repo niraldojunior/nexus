@@ -95,6 +95,7 @@ const renderPanel = (
   mocks.useSiteDetail.mockReturnValue(detailState(detailOverrides));
   const props = {
     isMobile: false,
+    canEdit: true,
     mode: 'view' as const,
     siteId: 'site-1',
     specs: [spec()],

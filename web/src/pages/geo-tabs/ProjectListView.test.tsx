@@ -27,6 +27,7 @@ describe('ProjectListView', () => {
       <ProjectListView
         projects={[]}
         loading={false}
+        canEdit
         onCreate={vi.fn()}
         onOpen={vi.fn()}
         onDelete={vi.fn()}
@@ -42,6 +43,7 @@ describe('ProjectListView', () => {
       <ProjectListView
         projects={[]}
         loading={false}
+        canEdit
         onCreate={onCreate}
         onOpen={vi.fn()}
         onDelete={vi.fn()}
@@ -57,6 +59,7 @@ describe('ProjectListView', () => {
       <ProjectListView
         projects={[project(), project({ id: 'prj-2', name: 'Levantamento Centro', siteCount: 1 })]}
         loading={false}
+        canEdit
         onCreate={vi.fn()}
         onOpen={onOpen}
         onDelete={vi.fn()}
@@ -76,6 +79,7 @@ describe('ProjectListView', () => {
       <ProjectListView
         projects={[project({ status: 'active' })]}
         loading={false}
+        canEdit
         onCreate={vi.fn()}
         onOpen={vi.fn()}
         onDelete={vi.fn()}
@@ -90,6 +94,7 @@ describe('ProjectListView', () => {
       <ProjectListView
         projects={[project()]}
         loading={false}
+        canEdit
         onCreate={vi.fn()}
         onOpen={vi.fn()}
         onDelete={onDelete}
@@ -111,6 +116,7 @@ describe('ProjectListView', () => {
       <ProjectListView
         projects={[project()]}
         loading={false}
+        canEdit
         onCreate={vi.fn()}
         onOpen={vi.fn()}
         onDelete={onDelete}
@@ -131,6 +137,7 @@ describe('ProjectListView', () => {
       <ProjectListView
         projects={[project()]}
         loading={false}
+        canEdit
         onCreate={vi.fn()}
         onOpen={vi.fn()}
         onDelete={onDelete}
@@ -152,6 +159,7 @@ describe('ProjectListView', () => {
       <ProjectListView
         projects={[project()]}
         loading={false}
+        canEdit
         onCreate={vi.fn()}
         onOpen={vi.fn()}
         onDelete={onDelete}
@@ -164,5 +172,23 @@ describe('ProjectListView', () => {
     expect(
       await screen.findByText(/não foi possível excluir o projeto/i),
     ).toBeInTheDocument();
+  });
+
+  it('sem canEdit, oculta "Novo Projeto" e a lixeira de cada projeto', () => {
+    render(
+      <ProjectListView
+        projects={[project()]}
+        loading={false}
+        canEdit={false}
+        onCreate={vi.fn()}
+        onOpen={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /novo projeto/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /excluir projeto expansão icaraí/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('Expansão Icaraí')).toBeInTheDocument();
   });
 });

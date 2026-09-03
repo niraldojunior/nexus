@@ -81,7 +81,7 @@ const detail = (overrides: Partial<PhysicalResourceDetail> = {}): PhysicalResour
 
 describe('ResourceOverviewTab', () => {
   it('prioriza os atributos de catálogo e mostra os estados SID localizados', () => {
-    render(<ResourceOverviewTab detail={detail()} />);
+    render(<ResourceOverviewTab detail={detail()} canEdit={false} onPatch={vi.fn()} />);
 
     expect(screen.getByText('Furukawa')).toBeInTheDocument();
     expect(screen.getByText('FDT 8')).toBeInTheDocument();
@@ -107,6 +107,8 @@ describe('ResourceOverviewTab', () => {
             sourceSystem: 'NETWIN',
           },
         })}
+        canEdit={false}
+        onPatch={vi.fn()}
       />,
     );
 
@@ -116,13 +118,15 @@ describe('ResourceOverviewTab', () => {
   });
 
   it('quando há endereço, não mostra coordenadas em Localização (evita duplicidade com Endereço)', () => {
-    render(<ResourceOverviewTab detail={detail()} />);
+    render(<ResourceOverviewTab detail={detail()} canEdit={false} onPatch={vi.fn()} />);
 
     expect(screen.queryByText('[-43.10944, -22.90278]')).not.toBeInTheDocument();
   });
 
   it('quando só há coordenadas (sem endereço), mostra-as em Localização', () => {
-    render(<ResourceOverviewTab detail={detail({ place: undefined })} />);
+    render(
+      <ResourceOverviewTab detail={detail({ place: undefined })} canEdit={false} onPatch={vi.fn()} />,
+    );
 
     expect(screen.getByText('[-43.10944, -22.90278]')).toBeInTheDocument();
   });
@@ -133,6 +137,8 @@ describe('ResourceOverviewTab', () => {
         detail={detail({
           place: { id: 'site-1', name: 'Icaraí', '@referredType': 'GeographicSite' },
         })}
+        canEdit={false}
+        onPatch={vi.fn()}
       />,
     );
 
@@ -145,6 +151,8 @@ describe('ResourceOverviewTab', () => {
         detail={detail({
           resource: { ...detail().resource, administrativeState: 'locked' },
         })}
+        canEdit={false}
+        onPatch={vi.fn()}
       />,
     );
 
@@ -162,6 +170,8 @@ describe('ResourceOverviewTab', () => {
           project: undefined,
           statusCatalogEntry: undefined,
         })}
+        canEdit={false}
+        onPatch={vi.fn()}
       />,
     );
 
@@ -180,11 +190,31 @@ describe('ResourceOverviewTab', () => {
             relationshipType: 'containsAsChild',
           },
         })}
+        canEdit={false}
+        onPatch={vi.fn()}
         onOpenResource={onOpenResource}
       />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Splitter S8' }));
     expect(onOpenResource).toHaveBeenCalledWith('parent-1');
+  });
+
+  it('com canEdit, editar o estado administrativo chama onPatch com o novo valor', () => {
+    const onPatch = vi.fn().mockResolvedValue(undefined);
+    render(<ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} />);
+
+    fireEvent.click(screen.getByLabelText('Editar Estado administrativo'));
+    fireEvent.change(screen.getByLabelText('Estado administrativo'), {
+      target: { value: 'locked' },
+    });
+
+    expect(onPatch).toHaveBeenCalledWith({ administrativeState: 'locked' });
+  });
+
+  it('sem canEdit, não mostra nenhum alvo de edição', () => {
+    render(<ResourceOverviewTab detail={detail()} canEdit={false} onPatch={vi.fn()} />);
+
+    expect(screen.queryByLabelText(/^Editar /)).not.toBeInTheDocument();
   });
 });

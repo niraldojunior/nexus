@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  canEditInventory,
   clearSession,
   getSessionRoles,
   getSessionUser,
@@ -75,6 +76,17 @@ describe('session', () => {
   it('não reconhece admin sem papel administrativo', () => {
     setSession({ token: makeToken({ roles: ['inventory.reader'], exp: futureExp }), user });
     expect(isAdmin()).toBe(false);
+  });
+
+  it('canEditInventory: true para inventory.editor e platform.admin, false para inventory.reader isolado', () => {
+    setSession({ token: makeToken({ roles: ['inventory.editor'], exp: futureExp }), user });
+    expect(canEditInventory()).toBe(true);
+
+    setSession({ token: makeToken({ roles: ['platform.admin'], exp: futureExp }), user });
+    expect(canEditInventory()).toBe(true);
+
+    setSession({ token: makeToken({ roles: ['inventory.reader'], exp: futureExp }), user });
+    expect(canEditInventory()).toBe(false);
   });
 
   it('notifica assinantes em login e logout', () => {

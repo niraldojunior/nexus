@@ -99,3 +99,13 @@ const USER_ADMIN_ROLES = ['tenant.admin', 'platform.admin'];
 
 export const isAdmin = (): boolean =>
   getSessionRoles().some((role) => USER_ADMIN_ROLES.includes(role));
+
+// Espelha INVENTORY_WRITE_ROLES do backend (src/shared/http/app.ts) — mesmo critério estrito
+// do RBAC do servidor (papel exato ou platform.admin, sem hierarquia implícita entre papéis).
+// O gate aqui é só UX (evita o beco sem saída de um 403 depois de editar); a autorização de
+// verdade continua sendo imposta no backend a cada rota de escrita.
+const INVENTORY_WRITE_ROLES = ['inventory.editor', 'platform.admin'];
+
+/** O usuário da sessão pode editar Geo/Resource/Service (painéis de Locais e Recursos). */
+export const canEditInventory = (): boolean =>
+  getSessionRoles().some((role) => INVENTORY_WRITE_ROLES.includes(role));

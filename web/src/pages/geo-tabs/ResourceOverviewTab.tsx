@@ -27,6 +27,9 @@ import {
   type PhysicalResourcePayload,
   type ResourceStatusCatalogEntry,
 } from '../../services/resourceApi';
+import { PlacePicker } from '../../components/PlacePicker';
+import { useResourceSearch } from '../../hooks/useResourceSearch';
+import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
 import { IconInfoRow } from './IconInfoRow';
 import { InlineEditRow } from './InlineEditRow';
 import { TonePill } from './TonePill';
@@ -50,6 +53,10 @@ export type ResourceOverviewTabProps = {
   // SiteOverviewTab). Requerido junto com `onPatch`.
   canEdit: boolean;
   onPatch: (patch: PhysicalResourcePayload) => Promise<void>;
+  // Trocar o Recurso Pai não é um PATCH — é a relação `containsAsChild` dedicada
+  // (ver resourceApi.ts addResourceRelationship/removeResourceRelationship). `null` remove o
+  // pai atual sem definir um novo.
+  onChangeParent: (newParentId: string | null) => Promise<void>;
   onOpenResource?: (resourceId: string) => void;
 };
 
@@ -74,9 +81,22 @@ function formatPlaceAddress(place: PhysicalResourceDetail['place']): string | nu
 // Perfil e ordem alinhados ao padrão Netwin/CDOE usado pelo time de negócio (ver plano
 // da issue #184) — os 19 campos "padrão" + os 2 characteristics são sempre renderizados,
 // mesmo vazios (`—`), em vez de somem quando não há valor.
-export function ResourceOverviewTab({ detail, canEdit, onPatch, onOpenResource }: ResourceOverviewTabProps) {
+export function ResourceOverviewTab({
+  detail,
+  canEdit,
+  onPatch,
+  onChangeParent,
+  onOpenResource,
+}: ResourceOverviewTabProps) {
   const { resource, specification, statusCatalogEntry, parent, place, location, servingSite, project } =
     detail;
+
+  // Calculado cedo (antes dos hooks de estado abaixo) porque o `useState(notes ?? '')` da
+  // Observação precisa do valor já pronto na primeira renderização — mesmo padrão de
+  // `site.note` em SiteOverviewTab, que é prop e por isso não tem esse problema de ordem.
+  const notes =
+    resource.characteristic?.find((c) => c.name === 'notes' || c.name === 'observacao')
+      ?.value as string | undefined;
 
   const [editingAdmin, setEditingAdmin] = useState(false);
   const [editingOp, setEditingOp] = useState(false);
@@ -170,6 +190,55 @@ export function ResourceOverviewTab({ detail, canEdit, onPatch, onOpenResource }
     if (next !== (resource.assetReference ?? '')) void onPatch({ assetReference: next });
   };
 
+  // Endereço (place) — sempre um GeographicSite por convenção (memória geo-place-canonico-
+  // site), mas o PlacePicker também aceita GeographicAddress, igual ao formulário de criação
+  // (ResourcePage.tsx). `null` desvincula.
+  const [editingPlace, setEditingPlace] = useState(false);
+  const commitPlace = (next: { id: string; '@referredType': string } | null) => {
+    setEditingPlace(false);
+    if (next?.id === place?.id) return;
+    void onPatch({ placeId: next?.id ?? null, placeType: next?.['@referredType'] });
+  };
+
+  // Recurso Pai — relação `containsAsChild`, não um PATCH (ver onChangeParent). Busca sob
+  // demanda ao digitar, nunca o inventário inteiro.
+  const [editingParent, setEditingParent] = useState(false);
+  const [parentQuery, setParentQuery] = useState('');
+  const { options: parentMatches } = useResourceSearch(parentQuery, resource.id);
+  const startEditParent = () => {
+    setParentQuery('');
+    setEditingParent(true);
+  };
+  const selectParent = (candidateId: string) => {
+    setEditingParent(false);
+    if (candidateId === parent?.id) return;
+    void onChangeParent(candidateId);
+  };
+  const clearParent = () => {
+    setEditingParent(false);
+    if (!parent) return;
+    void onChangeParent(null);
+  };
+
+  // Observações vivem em `characteristic` (nome legado `observacao` ou o atual `notes`) e o
+  // PATCH substitui o array inteiro (service.ts) — nunca enviar um array parcial, ou o grupo
+  // `_origin` (C5, irrecuperável) some junto. Mesmo padrão de rascunho/blur de
+  // SiteOverviewTab.commitNote.
+  const [notesDraft, setNotesDraft] = useState(notes ?? '');
+  const notesRef = useAutoResizeTextarea(notesDraft, 160);
+  const commitNotes = () => {
+    const next = notesDraft.trim();
+    if (next === (notes ?? '')) return;
+    const noteName =
+      resource.characteristic?.find((c) => c.name === 'notes' || c.name === 'observacao')?.name ??
+      'notes';
+    const rest = (resource.characteristic ?? []).filter(
+      (c) => c.name !== 'notes' && c.name !== 'observacao',
+    );
+    const nextCharacteristic = next ? [...rest, { name: noteName, value: next }] : rest;
+    void onPatch({ characteristic: nextCharacteristic });
+  };
+
   const manufacturer = specification.manufacturer;
   const model = specification.model;
   const resourceLayer = specification.resourceLayer;
@@ -186,10 +255,6 @@ export function ResourceOverviewTab({ detail, canEdit, onPatch, onOpenResource }
 
   const legacySubstatus =
     resource.characteristic?.find((c) => c.name === 'substatus')?.value as string | undefined;
-
-  const notes =
-    resource.characteristic?.find((c) => c.name === 'notes' || c.name === 'observacao')
-      ?.value as string | undefined;
 
   return (
     <div className="grid gap-1">
@@ -438,7 +503,60 @@ export function ResourceOverviewTab({ detail, canEdit, onPatch, onOpenResource }
 
       <IconInfoRow icon={Radio} hint="Topologia" value={resourceLayer?.name ?? '—'} />
 
-      {parent ? (
+      {canEdit ? (
+        <InlineEditRow
+          label="Recurso Pai"
+          icon={Boxes}
+          editing={editingParent}
+          onActivate={startEditParent}
+          value={parent ? (parent.name ?? parent.id) : <span className="whitespace-nowrap">Nenhum</span>}
+        >
+          <div className="relative">
+            <input
+              autoFocus
+              value={parentQuery}
+              onChange={(event) => setParentQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') setEditingParent(false);
+              }}
+              placeholder="Digite o nome do recurso pai…"
+              aria-label="Buscar recurso pai"
+              className="geo-input"
+            />
+            <div className="fixed inset-0 z-40" onClick={() => setEditingParent(false)} />
+            <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-auto rounded-[12px] border border-app-border bg-white py-1 shadow-soft">
+              {parent ? (
+                <button
+                  type="button"
+                  onClick={clearParent}
+                  className="flex w-full items-center px-3 py-2 text-left text-[0.82rem] text-status-red transition hover:bg-status-red-soft"
+                >
+                  Remover recurso pai
+                </button>
+              ) : null}
+              {parentMatches.length === 0 ? (
+                <p className="px-3 py-2 text-[0.8rem] text-app-muted">
+                  {parentQuery.trim() ? 'Nenhum recurso encontrado.' : 'Digite para buscar um recurso…'}
+                </p>
+              ) : (
+                parentMatches.map((candidate) => (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    onClick={() => selectParent(candidate.id)}
+                    className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-[0.82rem] text-app-text transition hover:bg-app-accent-soft"
+                  >
+                    <span className="min-w-0 flex-1 truncate">{candidate.name}</span>
+                    <span className="shrink-0 text-[0.7rem] text-app-muted">
+                      {candidate.resourceType ?? ''}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </InlineEditRow>
+      ) : parent ? (
         <div className="flex min-w-0 items-center gap-2.5 py-1" title="Recurso Pai">
           <span
             className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-0 bg-transparent text-app-muted shadow-none ring-0"
@@ -467,7 +585,23 @@ export function ResourceOverviewTab({ detail, canEdit, onPatch, onOpenResource }
         <IconInfoRow icon={Boxes} hint="Recurso Pai" value="—" />
       )}
 
-      <IconInfoRow icon={MapPin} hint="Endereço" value={placeFormatted ?? '—'} />
+      {canEdit ? (
+        <InlineEditRow
+          label="Endereço"
+          icon={MapPin}
+          editing={editingPlace}
+          onActivate={() => setEditingPlace(true)}
+          value={placeFormatted ?? '—'}
+        >
+          <PlacePicker
+            value={place ? { id: place.id, '@referredType': place['@referredType'] } : null}
+            onChange={commitPlace}
+            placeholder="Selecione um local…"
+          />
+        </InlineEditRow>
+      ) : (
+        <IconInfoRow icon={MapPin} hint="Endereço" value={placeFormatted ?? '—'} />
+      )}
 
       {/* Mesma exclusão mútua do painel de Site (SiteOverviewTab): coordenadas só entram
           quando não há endereço detalhado — senão duplicariam a mesma informação. */}
@@ -579,7 +713,29 @@ export function ResourceOverviewTab({ detail, canEdit, onPatch, onOpenResource }
       <div className="mt-1 border-t border-app-border pt-1">
         <IconInfoRow icon={Database} hint="Sistema de origem" value={originSystem ?? '—'} />
 
-        <IconInfoRow icon={FileText} hint="Observações" value={notes ?? '—'} />
+        {canEdit ? (
+          <div className="flex min-w-0 items-start gap-2.5 py-1" title="Observações">
+            <span
+              className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted"
+              aria-hidden="true"
+            >
+              <FileText className="h-[18px] w-[18px]" />
+            </span>
+            <span className="sr-only">Observações</span>
+            <textarea
+              ref={notesRef}
+              value={notesDraft}
+              onChange={(event) => setNotesDraft(event.target.value)}
+              onBlur={commitNotes}
+              placeholder="Adicione uma observação para este recurso…"
+              rows={1}
+              aria-label="Observações do recurso"
+              className="-mx-1.5 -my-1 w-full resize-none rounded-[8px] border border-transparent bg-transparent px-1.5 py-1 text-[0.84rem] leading-snug text-app-text outline-none transition placeholder:text-app-muted hover:border-app-border focus:border-app-accent-border focus:bg-white"
+            />
+          </div>
+        ) : (
+          <IconInfoRow icon={FileText} hint="Observações" value={notes ?? '—'} />
+        )}
       </div>
     </div>
   );

@@ -14,7 +14,12 @@ import { useResourceChildren } from '../../hooks/useResourceChildren';
 import { usePortDetail } from '../../hooks/usePortDetail';
 import { usePortService } from '../../hooks/usePortService';
 import { fetchTreeNode, treeNodeRoute, type GeoTreeNode } from '../../services/geoTreeApi';
-import { updateResource, type PhysicalResourcePayload } from '../../services/resourceApi';
+import {
+  addResourceRelationship,
+  removeResourceRelationship,
+  updateResource,
+  type PhysicalResourcePayload,
+} from '../../services/resourceApi';
 import type { PortDropPreview } from '../../utils/dropSimulation';
 import { resourceIconFor } from '../../utils/resourceIcon';
 import { ResourceIcon } from '../../components/ResourceIcon';
@@ -89,6 +94,27 @@ export function ResourcePanel({
       await reload();
     } catch (err) {
       setPatchError(err instanceof Error ? err.message : 'Não foi possível salvar a alteração.');
+    }
+  };
+  // Trocar o Recurso Pai não é PATCH — é a relação `containsAsChild` dedicada (ver
+  // resourceApi.ts). As duas chamadas não são transacionais: POST antes de DELETE para nunca
+  // deixar o recurso órfão se a segunda falhar (plano da issue #186, Fase 3.2).
+  const changeParent = async (newParentId: string | null) => {
+    setPatchError(null);
+    const oldParentId = detail?.parent?.id ?? null;
+    try {
+      if (newParentId) {
+        await addResourceRelationship(newParentId, {
+          id: resourceId,
+          relationshipType: 'containsAsChild',
+        });
+      }
+      if (oldParentId && oldParentId !== newParentId) {
+        await removeResourceRelationship(oldParentId, resourceId, 'containsAsChild');
+      }
+      await reload();
+    } catch (err) {
+      setPatchError(err instanceof Error ? err.message : 'Não foi possível trocar o recurso pai.');
     }
   };
   const { children, loading: childrenLoading } = useResourceChildren(node);
@@ -277,6 +303,7 @@ export function ResourcePanel({
               detail={detail}
               canEdit={canEdit}
               onPatch={patchResource}
+              onChangeParent={changeParent}
               onOpenResource={onOpenResource}
             />
             {/* Ponto único (a maioria dos recursos) já aparece inline como "Localização"

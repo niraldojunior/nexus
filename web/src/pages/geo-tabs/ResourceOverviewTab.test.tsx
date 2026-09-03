@@ -1,7 +1,31 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResourceOverviewTab } from './ResourceOverviewTab';
 import type { PhysicalResourceDetail } from '../../services/resourceApi';
+
+const mocks = vi.hoisted(() => ({
+  useResourceSearch: vi.fn(),
+}));
+
+vi.mock('../../hooks/useResourceSearch', () => ({ useResourceSearch: mocks.useResourceSearch }));
+
+// PlacePicker tem cobertura própria (busca de local via usePlaceSearch/usePlaceLabel) — aqui só
+// interessa confirmar que ResourceOverviewTab liga onChange -> onPatch({placeId, placeType}).
+vi.mock('../../components/PlacePicker', () => ({
+  PlacePicker: ({
+    onChange,
+  }: {
+    onChange: (place: { id: string; '@referredType': string } | null) => void;
+  }) => (
+    <button type="button" onClick={() => onChange({ id: 'site-2', '@referredType': 'GeographicSite' })}>
+      Selecionar Estação Icaraí
+    </button>
+  ),
+}));
+
+beforeEach(() => {
+  mocks.useResourceSearch.mockReturnValue({ options: [], searching: false });
+});
 
 afterEach(() => {
   cleanup();
@@ -81,7 +105,14 @@ const detail = (overrides: Partial<PhysicalResourceDetail> = {}): PhysicalResour
 
 describe('ResourceOverviewTab', () => {
   it('prioriza os atributos de catálogo e mostra os estados SID localizados', () => {
-    render(<ResourceOverviewTab detail={detail()} canEdit={false} onPatch={vi.fn()} />);
+    render(
+      <ResourceOverviewTab
+        detail={detail()}
+        canEdit={false}
+        onPatch={vi.fn()}
+        onChangeParent={vi.fn()}
+      />,
+    );
 
     expect(screen.getByText('Furukawa')).toBeInTheDocument();
     expect(screen.getByText('FDT 8')).toBeInTheDocument();
@@ -109,6 +140,7 @@ describe('ResourceOverviewTab', () => {
         })}
         canEdit={false}
         onPatch={vi.fn()}
+        onChangeParent={vi.fn()}
       />,
     );
 
@@ -118,14 +150,26 @@ describe('ResourceOverviewTab', () => {
   });
 
   it('quando há endereço, não mostra coordenadas em Localização (evita duplicidade com Endereço)', () => {
-    render(<ResourceOverviewTab detail={detail()} canEdit={false} onPatch={vi.fn()} />);
+    render(
+      <ResourceOverviewTab
+        detail={detail()}
+        canEdit={false}
+        onPatch={vi.fn()}
+        onChangeParent={vi.fn()}
+      />,
+    );
 
     expect(screen.queryByText('[-43.10944, -22.90278]')).not.toBeInTheDocument();
   });
 
   it('quando só há coordenadas (sem endereço), mostra-as em Localização', () => {
     render(
-      <ResourceOverviewTab detail={detail({ place: undefined })} canEdit={false} onPatch={vi.fn()} />,
+      <ResourceOverviewTab
+        detail={detail({ place: undefined })}
+        canEdit={false}
+        onPatch={vi.fn()}
+        onChangeParent={vi.fn()}
+      />,
     );
 
     expect(screen.getByText('[-43.10944, -22.90278]')).toBeInTheDocument();
@@ -139,6 +183,7 @@ describe('ResourceOverviewTab', () => {
         })}
         canEdit={false}
         onPatch={vi.fn()}
+        onChangeParent={vi.fn()}
       />,
     );
 
@@ -153,6 +198,7 @@ describe('ResourceOverviewTab', () => {
         })}
         canEdit={false}
         onPatch={vi.fn()}
+        onChangeParent={vi.fn()}
       />,
     );
 
@@ -172,6 +218,7 @@ describe('ResourceOverviewTab', () => {
         })}
         canEdit={false}
         onPatch={vi.fn()}
+        onChangeParent={vi.fn()}
       />,
     );
 
@@ -192,6 +239,7 @@ describe('ResourceOverviewTab', () => {
         })}
         canEdit={false}
         onPatch={vi.fn()}
+        onChangeParent={vi.fn()}
         onOpenResource={onOpenResource}
       />,
     );
@@ -202,7 +250,9 @@ describe('ResourceOverviewTab', () => {
 
   it('com canEdit, editar o estado administrativo chama onPatch com o novo valor', () => {
     const onPatch = vi.fn().mockResolvedValue(undefined);
-    render(<ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} />);
+    render(
+      <ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} onChangeParent={vi.fn()} />,
+    );
 
     fireEvent.click(screen.getByLabelText('Editar Estado administrativo'));
     fireEvent.change(screen.getByLabelText('Estado administrativo'), {
@@ -213,8 +263,91 @@ describe('ResourceOverviewTab', () => {
   });
 
   it('sem canEdit, não mostra nenhum alvo de edição', () => {
-    render(<ResourceOverviewTab detail={detail()} canEdit={false} onPatch={vi.fn()} />);
+    render(
+      <ResourceOverviewTab
+        detail={detail()}
+        canEdit={false}
+        onPatch={vi.fn()}
+        onChangeParent={vi.fn()}
+      />,
+    );
 
     expect(screen.queryByLabelText(/^Editar /)).not.toBeInTheDocument();
+  });
+
+  it('Observações: editar preserva o grupo _origin (C5) — reenvia o array inteiro', () => {
+    const onPatch = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} onChangeParent={vi.fn()} />,
+    );
+
+    const note = screen.getByLabelText('Observações do recurso');
+    fireEvent.change(note, { target: { value: 'porta trocada em campo' } });
+    fireEvent.blur(note);
+
+    expect(onPatch).toHaveBeenCalledWith({
+      characteristic: [
+        { name: '_origin.system', value: 'Netwin', group: '_origin' },
+        { name: 'notes', value: 'porta trocada em campo' },
+      ],
+    });
+  });
+
+  it('Recurso Pai: escolher um candidato chama onChangeParent com o novo id', async () => {
+    mocks.useResourceSearch.mockReturnValue({
+      options: [{ id: 'splitter-2', name: 'Splitter S9', resourceType: 'Splitter' }],
+      searching: false,
+    });
+    const onChangeParent = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ResourceOverviewTab
+        detail={detail()}
+        canEdit
+        onPatch={vi.fn()}
+        onChangeParent={onChangeParent}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Editar Recurso Pai'));
+    fireEvent.change(screen.getByLabelText('Buscar recurso pai'), { target: { value: 'Splitter' } });
+    fireEvent.click(await screen.findByText('Splitter S9'));
+
+    expect(onChangeParent).toHaveBeenCalledWith('splitter-2');
+  });
+
+  it('Recurso Pai: com pai atual, "Remover recurso pai" chama onChangeParent(null)', () => {
+    const onChangeParent = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ResourceOverviewTab
+        detail={detail({
+          parent: {
+            id: 'parent-1',
+            name: 'Splitter S8',
+            '@referredType': 'PhysicalResource',
+            relationshipType: 'containsAsChild',
+          },
+        })}
+        canEdit
+        onPatch={vi.fn()}
+        onChangeParent={onChangeParent}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Editar Recurso Pai'));
+    fireEvent.click(screen.getByText('Remover recurso pai'));
+
+    expect(onChangeParent).toHaveBeenCalledWith(null);
+  });
+
+  it('Endereço: selecionar um local no PlacePicker chama onPatch com placeId/placeType', () => {
+    const onPatch = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} onChangeParent={vi.fn()} />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Editar Endereço'));
+    fireEvent.click(screen.getByText('Selecionar Estação Icaraí'));
+
+    expect(onPatch).toHaveBeenCalledWith({ placeId: 'site-2', placeType: 'GeographicSite' });
   });
 });

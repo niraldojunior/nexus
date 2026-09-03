@@ -544,6 +544,41 @@ export async function listResourceStatusCatalog(resourceType?: string): Promise<
   return await requestJson<ResourceStatusCatalogEntry[]>(`/v1/resource-statuses${query ? `?${query}` : ''}`);
 }
 
+export type ResourceRelationshipPayload = {
+  id: string;
+  relationshipType: string;
+  '@referredType'?: 'Resource';
+  validFor?: TimePeriod;
+};
+
+// Trocar o Recurso Pai não é um PATCH (o backend ignora `resourceRelationship` na gravação,
+// service.ts — regrava `current.resourceRelationship`) — é a relação `containsAsChild`
+// dedicada. `resourceId` aqui é sempre o **pai**: a aresta fica `resource_from_id=resourceId,
+// resource_to_id=relationship.id` (postgres-repository.ts upsertResourceRelationship).
+export async function addResourceRelationship(
+  resourceId: string,
+  relationship: ResourceRelationshipPayload,
+): Promise<ResourceRelationshipPayload> {
+  return await requestJson<ResourceRelationshipPayload>(
+    `${API_BASE_URL}/resourceInventoryManagement/v4/resource/${encodeURIComponent(resourceId)}/relationships`,
+    {
+      method: 'POST',
+      body: { '@referredType': 'Resource', ...relationship },
+    },
+  );
+}
+
+export async function removeResourceRelationship(
+  resourceId: string,
+  relatedResourceId: string,
+  relationshipType: string,
+): Promise<void> {
+  await requestJson<void>(
+    `${API_BASE_URL}/resourceInventoryManagement/v4/resource/${encodeURIComponent(resourceId)}/relationships/${encodeURIComponent(relatedResourceId)}/${encodeURIComponent(relationshipType)}`,
+    { method: 'DELETE' },
+  );
+}
+
 export async function deleteResource(id: string): Promise<ResourceEntity> {
   const resource = await requestJson<ResourceEntity>(
     `/tmf-api/resourceInventoryManagement/v4/resource/${encodeURIComponent(id)}`,

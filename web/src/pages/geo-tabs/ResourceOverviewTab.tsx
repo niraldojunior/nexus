@@ -22,16 +22,23 @@ import {
   Wrench,
 } from 'lucide-react';
 import {
+  listResourceLayers,
+  listResourceSpecifications,
   listResourceStatusCatalog,
+  listResourceTypes,
   type PhysicalResourceDetail,
   type PhysicalResourcePayload,
+  type ResourceLayer,
+  type ResourceSpecification,
   type ResourceStatusCatalogEntry,
+  type ResourceType,
 } from '../../services/resourceApi';
 import { PlacePicker } from '../../components/PlacePicker';
 import { useResourceSearch } from '../../hooks/useResourceSearch';
 import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
 import { IconInfoRow } from './IconInfoRow';
 import { InlineEditRow } from './InlineEditRow';
+import { ResourceModelCascadeFields } from './ResourceModelCascadeFields';
 import { TonePill } from './TonePill';
 import { formatCoordinatePoint } from './CoordinateStreetView';
 import { formatDateBR } from '../../utils/helpers';
@@ -150,6 +157,37 @@ export function ResourceOverviewTab({
     await onPatch({ statusCode: code });
   };
 
+  // Cascata de Modelo (Topologia → Tipo → Fornecedor → Modelo, issue #186 — extensão). Reaponta
+  // `resourceSpecificationId`; Fabricante/Tipo do recurso/Topologia continuam somente-leitura
+  // porque são derivados da Specification escolhida (atualizam sozinhos após o PATCH recarregar
+  // o painel). Catálogo buscado sob demanda, mesmo padrão lazy de startEditStatusCode acima.
+  const [editingModel, setEditingModel] = useState(false);
+  const [modelCatalog, setModelCatalog] = useState<{
+    layers: ResourceLayer[];
+    types: ResourceType[];
+    specifications: ResourceSpecification[];
+  } | null>(null);
+  const [modelCatalogLoading, setModelCatalogLoading] = useState(false);
+
+  const startEditModel = () => {
+    setEditingModel(true);
+    if (modelCatalog || modelCatalogLoading) return;
+    setModelCatalogLoading(true);
+    void Promise.all([
+      listResourceLayers(),
+      listResourceTypes(),
+      listResourceSpecifications({ limit: 500, offset: 0, includeEnded: false }),
+    ])
+      .then(([layers, types, specifications]) => setModelCatalog({ layers, types, specifications }))
+      .finally(() => setModelCatalogLoading(false));
+  };
+
+  const commitModel = (specificationId: string) => {
+    setEditingModel(false);
+    if (specificationId === specification.id) return;
+    void onPatch({ resourceSpecificationId: specificationId });
+  };
+
   const startEditLabel = () => {
     setLabelDraft(resource.label ?? '');
     setEditingLabel(true);
@@ -242,6 +280,15 @@ export function ResourceOverviewTab({
   const manufacturer = specification.manufacturer;
   const model = specification.model;
   const resourceLayer = specification.resourceLayer;
+  // `specification.resourceLayerId` já vem herdado do spread da spec completa (postgres-
+  // repository.ts getPhysicalResourceDetail), mas o fallback pro id do `resourceLayer` aninhado
+  // cobre qualquer serialização futura que só populee o objeto. Variável separada (não literal
+  // inline na prop) para não disparar excess-property-check dos campos extras de detail
+  // (resourceTypeName/manufacturer/model/resourceLayer) contra o tipo ResourceSpecification.
+  const modelCascadeSpecification = {
+    ...specification,
+    resourceLayerId: specification.resourceLayerId ?? specification.resourceLayer?.id,
+  };
   const placeFormatted = formatPlaceAddress(place);
   const coordinates =
     location?.geometryType === 'Point' && location.geometry?.type === 'Point'
@@ -487,7 +534,32 @@ export function ResourceOverviewTab({
         <IconInfoRow icon={Tag} hint="Etiqueta física" value={resource.label ?? '—'} />
       )}
 
-      <IconInfoRow icon={Cpu} hint="Modelo" value={model ?? '—'} />
+      {canEdit ? (
+        <InlineEditRow
+          label="Modelo"
+          icon={Cpu}
+          editing={editingModel}
+          onActivate={startEditModel}
+          value={model ?? '—'}
+        >
+          {modelCatalogLoading || !modelCatalog ? (
+            <div className="flex items-center gap-1.5 px-1.5 py-1 text-[0.82rem] text-app-muted">
+              Carregando catálogo…
+            </div>
+          ) : (
+            <ResourceModelCascadeFields
+              layers={modelCatalog.layers}
+              types={modelCatalog.types}
+              specifications={modelCatalog.specifications}
+              currentSpecification={modelCascadeSpecification}
+              onCommit={commitModel}
+              onCancel={() => setEditingModel(false)}
+            />
+          )}
+        </InlineEditRow>
+      ) : (
+        <IconInfoRow icon={Cpu} hint="Modelo" value={model ?? '—'} />
+      )}
 
       <IconInfoRow
         icon={Factory}

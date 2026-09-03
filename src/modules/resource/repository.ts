@@ -16,8 +16,11 @@ import type {
   ResourceStatusCatalogEntry,
   ResourcePortDetail,
   ResourcePortsView,
+  ResourceCatalog,
+  ResourceCatalogNode,
+  ResourceCatalogQuery,
 } from './domain.js';
-import type { IResourceRepository } from './resource-repository-interface.js';
+import type { IResourceRepository, ResourceTenantScope } from './resource-repository-interface.js';
 import { RESOURCE_CATEGORIES, RESOURCE_TYPES } from './catalog.js';
 import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
 import { buildHref } from '../../shared/tmf/index.js';
@@ -59,6 +62,8 @@ export class ResourceRepository implements IResourceRepository {
   private readonly physicalResources = new Map<string, PhysicalResource>();
   private readonly logicalResources = new Map<string, LogicalResource>();
   private readonly relationships = new Map<string, ResourceRelationship[]>();
+  private readonly resourceCatalogs = new Map<string, ResourceCatalog>();
+  private readonly resourceCatalogNodes = new Map<string, ResourceCatalogNode>();
 
   public constructor() {
     for (const category of RESOURCE_CATEGORIES) {
@@ -145,6 +150,132 @@ export class ResourceRepository implements IResourceRepository {
 
   public listResourceLayers(): ResourceLayer[] {
     return [...this.resourceLayers.values()].map((layer) => ({ ...layer }));
+  }
+
+  public upsertResourceCatalog(catalog: ResourceCatalog): ResourceCatalog {
+    const stored = { ...catalog };
+    this.resourceCatalogs.set(stored.id, stored);
+    return { ...stored };
+  }
+
+  public getResourceCatalog(id: string, scope: ResourceTenantScope): ResourceCatalog | undefined {
+    const catalog = this.resourceCatalogs.get(id);
+    return catalog && sameTenant(catalog.tenantId, scope.tenantId) ? { ...catalog } : undefined;
+  }
+
+  public getResourceCatalogByCode(
+    code: string,
+    scope: ResourceTenantScope,
+  ): ResourceCatalog | undefined {
+    const catalog = [...this.resourceCatalogs.values()].find(
+      (item) => item.code === code && sameTenant(item.tenantId, scope.tenantId),
+    );
+    return catalog ? { ...catalog } : undefined;
+  }
+
+  public getDefaultResourceCatalog(scope: ResourceTenantScope): ResourceCatalog | undefined {
+    const catalog = [...this.resourceCatalogs.values()].find(
+      (item) => item.isDefault && sameTenant(item.tenantId, scope.tenantId),
+    );
+    return catalog ? { ...catalog } : undefined;
+  }
+
+  public listResourceCatalogs(
+    query: ResourceCatalogQuery & ResourceTenantScope,
+  ): ResourceCatalog[] {
+    return [...this.resourceCatalogs.values()]
+      .filter((catalog) => sameTenant(catalog.tenantId, query.tenantId))
+      .filter((catalog) => !query.status || catalog.status === query.status)
+      .filter(
+        (catalog) =>
+          !query.name || catalog.name.toLowerCase().includes(query.name.toLowerCase()),
+      )
+      .sort(compareCatalogOrNode)
+      .map((catalog) => ({ ...catalog }));
+  }
+
+  public upsertResourceCatalogNode(node: ResourceCatalogNode): ResourceCatalogNode {
+    const stored: ResourceCatalogNode = { ...node };
+    this.resourceCatalogNodes.set(stored.id, stored);
+    return this.expandCatalogNode(stored);
+  }
+
+  public getResourceCatalogNode(
+    id: string,
+    scope: ResourceTenantScope,
+  ): ResourceCatalogNode | undefined {
+    const node = this.resourceCatalogNodes.get(id);
+    return node && sameTenant(node.tenantId, scope.tenantId) ? this.expandCatalogNode(node) : undefined;
+  }
+
+  public getResourceCatalogNodeByCode(
+    catalogId: string,
+    code: string,
+    scope: ResourceTenantScope,
+  ): ResourceCatalogNode | undefined {
+    const node = [...this.resourceCatalogNodes.values()].find(
+      (item) =>
+        item.catalogId === catalogId &&
+        item.code === code &&
+        sameTenant(item.tenantId, scope.tenantId),
+    );
+    return node ? this.expandCatalogNode(node) : undefined;
+  }
+
+  public listResourceCatalogNodes(
+    catalogId: string,
+    scope: ResourceTenantScope & { includeInactive?: boolean },
+  ): ResourceCatalogNode[] {
+    return [...this.resourceCatalogNodes.values()]
+      .filter(
+        (node) =>
+          node.catalogId === catalogId &&
+          sameTenant(node.tenantId, scope.tenantId) &&
+          (scope.includeInactive || node.status === 'active'),
+      )
+      .sort(compareCatalogOrNode)
+      .map((node) => this.expandCatalogNode(node));
+  }
+
+  public listResourceCatalogNodesByResourceType(
+    resourceTypeId: string,
+    scope: ResourceTenantScope,
+  ): ResourceCatalogNode[] {
+    return [...this.resourceCatalogNodes.values()]
+      .filter(
+        (node) =>
+          node.resourceTypeId === resourceTypeId && sameTenant(node.tenantId, scope.tenantId),
+      )
+      .map((node) => this.expandCatalogNode(node));
+  }
+
+  public countResourceCatalogNodeChildren(nodeId: string, scope: ResourceTenantScope): number {
+    return [...this.resourceCatalogNodes.values()].filter(
+      (node) => node.parentNodeId === nodeId && sameTenant(node.tenantId, scope.tenantId),
+    ).length;
+  }
+
+  private expandCatalogNode(node: ResourceCatalogNode): ResourceCatalogNode {
+    if (node.kind !== 'RESOURCE_TYPE' || !node.resourceTypeId) return { ...node };
+    // resourceTypes é indexado por code (chave de negócio); resourceTypeId é o id — busca linear,
+    // aceitável no repositório em memória (usado só em testes, não em produção).
+    const type = [...this.resourceTypes.values()].find(
+      (candidate) => candidate.id === node.resourceTypeId,
+    );
+    return {
+      ...node,
+      ...(type
+        ? {
+            resourceType: {
+              id: type.id,
+              href: type.href,
+              code: type.code,
+              name: type.name,
+              '@referredType': 'ResourceType',
+            },
+          }
+        : {}),
+    };
   }
 
   public listResourceStatusCatalog(
@@ -528,6 +659,19 @@ const cloneResourceFunctionSpecification = (
 const cloneResourceCategory = (category: ResourceCategory): ResourceCategory => ({
   ...category,
 });
+
+// Tenant não informado no scope enxerga tudo — mesma convenção liberal do repositório em memória
+// para as demais entidades acima (usado só em testes; o service normaliza tenant antes de chamar).
+const sameTenant = (entityTenant: string, scopeTenant?: string): boolean =>
+  !scopeTenant || entityTenant === scopeTenant;
+
+const compareCatalogOrNode = (
+  a: { sortOrder: number; name: string; id: string },
+  b: { sortOrder: number; name: string; id: string },
+): number =>
+  a.sortOrder - b.sortOrder ||
+  a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) ||
+  a.id.localeCompare(b.id);
 
 const cloneResourceType = (type: ResourceType): ResourceType => ({
   ...type,

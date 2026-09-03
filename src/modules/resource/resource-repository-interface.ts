@@ -18,6 +18,9 @@ import type {
   ResourceStatusCatalogEntry,
   ResourcePortDetail,
   ResourcePortsView,
+  ResourceCatalog,
+  ResourceCatalogNode,
+  ResourceCatalogQuery,
 } from './domain.js';
 
 // Escopo de tenant para leitura por id — as mesmas entidades cujo `list*` já aceita `tenantId`
@@ -55,6 +58,46 @@ export interface IResourceRepository {
   upsertResourceLayer(layer: ResourceLayer): Awaitable<ResourceLayer>;
   getResourceLayer(id: string, scope?: ResourceTenantScope): Awaitable<ResourceLayer | undefined>;
   listResourceLayers(scope?: ResourceTenantScope): Awaitable<ResourceLayer[]>;
+
+  // Árvore dinâmica de catálogo (issue #188) — sempre tenant-scoped, convive com Category/Layer
+  // acima até o cutover lógico (plano §7.8). `resourceTypeId` em ResourceType não existe: o mesmo
+  // ResourceType é global ao módulo (chave de negócio `code`), a árvore é que é por tenant.
+  upsertResourceCatalog(catalog: ResourceCatalog): Awaitable<ResourceCatalog>;
+  getResourceCatalog(id: string, scope: ResourceTenantScope): Awaitable<ResourceCatalog | undefined>;
+  getResourceCatalogByCode(
+    code: string,
+    scope: ResourceTenantScope,
+  ): Awaitable<ResourceCatalog | undefined>;
+  getDefaultResourceCatalog(scope: ResourceTenantScope): Awaitable<ResourceCatalog | undefined>;
+  listResourceCatalogs(
+    query: ResourceCatalogQuery & ResourceTenantScope,
+  ): Awaitable<ResourceCatalog[]>;
+
+  upsertResourceCatalogNode(node: ResourceCatalogNode): Awaitable<ResourceCatalogNode>;
+  getResourceCatalogNode(
+    id: string,
+    scope: ResourceTenantScope,
+  ): Awaitable<ResourceCatalogNode | undefined>;
+  getResourceCatalogNodeByCode(
+    catalogId: string,
+    code: string,
+    scope: ResourceTenantScope,
+  ): Awaitable<ResourceCatalogNode | undefined>;
+  /** Lista flat (sem árvore montada) de todos os nós de um catálogo, com ResourceType expandido via JOIN. */
+  listResourceCatalogNodes(
+    catalogId: string,
+    scope: ResourceTenantScope & { includeInactive?: boolean },
+  ): Awaitable<ResourceCatalogNode[]>;
+  /** Nós (de qualquer catálogo do tenant) que referenciam este ResourceType — usado por delete/context. */
+  listResourceCatalogNodesByResourceType(
+    resourceTypeId: string,
+    scope: ResourceTenantScope,
+  ): Awaitable<ResourceCatalogNode[]>;
+  /** Conta filhos diretos (qualquer status) — bloqueia soft-delete de GROUP não-vazio. */
+  countResourceCatalogNodeChildren(
+    nodeId: string,
+    scope: ResourceTenantScope,
+  ): Awaitable<number>;
 
   // Catálogo de estados granulares (issue #171). Diferente de Category/Type, é por tenant:
   // o operador pode acrescentar estado próprio via API (C9).

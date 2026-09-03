@@ -19,6 +19,9 @@ export const HREF_PATHS = {
   resourceCategory: '/tmf-api/resourceCatalogManagement/v4/resourceCategory',
   resourceType: '/tmf-api/resourceCatalogManagement/v4/resourceType',
   resourceLayer: '/v1/resource-layers',
+  resourceCatalog: '/tmf-api/resourceCatalogManagement/v4/resourceCatalog',
+  /** Fora do namespace TMF — árvore V.tal não tem equivalente TMF634 direto (issue #188). */
+  resourceCatalogNode: '/v1/resource-catalog-nodes',
   /** Cobre PhysicalResource e LogicalResource — ambos compartilham este path hoje. */
   resource: '/tmf-api/resourceInventoryManagement/v4/resource',
   serviceSpecification: '/tmf-api/serviceCatalogManagement/v4/serviceSpecification',

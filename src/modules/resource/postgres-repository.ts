@@ -21,6 +21,9 @@ import type {
   ResourcePortConnection,
   ResourcePortDetail,
   ResourcePortsView,
+  ResourceCatalog,
+  ResourceCatalogNode,
+  ResourceCatalogQuery,
 } from './domain.js';
 import type {
   IResourceRepository,
@@ -78,6 +81,47 @@ const characteristicStringFromJson = (raw: string | null, name: string): string 
     return undefined;
   }
 };
+
+type ResourceCatalogRow = {
+  id: string;
+  tenant_id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  status: 'active' | 'inactive';
+  is_default: number | boolean;
+  sort_order: number | string;
+  created_by?: string | null;
+  updated_by?: string | null;
+};
+
+type ResourceCatalogNodeRow = {
+  id: string;
+  tenant_id: string;
+  catalog_id: string;
+  parent_node_id?: string | null;
+  code: string;
+  name: string;
+  description?: string | null;
+  kind: 'GROUP' | 'RESOURCE_TYPE';
+  resource_type_id?: string | null;
+  status: 'active' | 'inactive';
+  sort_order: number | string;
+  metadata?: string | null;
+  created_by?: string | null;
+  updated_by?: string | null;
+  rt_id?: string | null;
+  rt_code?: string | null;
+  rt_name?: string | null;
+};
+
+// LEFT JOIN em ResourceType para expandir `resourceType` em nós RESOURCE_TYPE sem N+1 (plano §8).
+const RESOURCE_CATALOG_NODE_SELECT = `
+  SELECT n.id, n.tenant_id, n.catalog_id, n.parent_node_id, n.code, n.name, n.description, n.kind,
+         n.resource_type_id, n.status, n.sort_order, n.metadata, n.created_by, n.updated_by,
+         rt.id AS rt_id, rt.code AS rt_code, rt.name AS rt_name
+    FROM tmf_resource_catalog_node n
+    LEFT JOIN tmf_resource_type rt ON rt.id = n.resource_type_id AND rt.tenant_id = n.tenant_id`;
 
 const comparePortDetails = (a: ResourcePortDetail, b: ResourcePortDetail): number => {
   if (a.role !== b.role) return a.role === 'FO.I' ? -1 : b.role === 'FO.I' ? 1 : 0;
@@ -520,6 +564,263 @@ export class PostgresResourceRepository implements IResourceRepository {
       [tenantId],
     );
     return rows.map((row) => this.mapResourceLayer(row));
+  }
+
+  // --- Árvore dinâmica de catálogo (issue #188) ---------------------------------------------------
+  // Convive com Category/Layer acima até o cutover lógico (plano §7.8). Sem bootstrap lazy aqui —
+  // o catálogo/árvore inicial é governado (task #7, catalog.ts), não um vocabulário fixo reescrito
+  // a cada boot como seedResourceLayers.
+
+  public async upsertResourceCatalog(catalog: ResourceCatalog): Promise<ResourceCatalog> {
+    const now = new Date().toISOString();
+    await this.db.run(
+      `INSERT INTO tmf_resource_catalog
+       (id, tenant_id, code, name, description, status, is_default, sort_order, created_by, updated_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         code = excluded.code,
+         name = excluded.name,
+         description = excluded.description,
+         status = excluded.status,
+         is_default = excluded.is_default,
+         sort_order = excluded.sort_order,
+         updated_by = excluded.updated_by,
+         updated_at = excluded.updated_at`,
+      [
+        catalog.id,
+        catalog.tenantId,
+        catalog.code,
+        catalog.name,
+        catalog.description ?? null,
+        catalog.status,
+        catalog.isDefault ? 1 : 0,
+        catalog.sortOrder,
+        catalog.createdBy ?? null,
+        catalog.updatedBy ?? null,
+        now,
+        now,
+      ],
+    );
+    return (await this.getResourceCatalog(catalog.id, { tenantId: catalog.tenantId })) ?? catalog;
+  }
+
+  public async getResourceCatalog(
+    id: string,
+    scope: ResourceTenantScope,
+  ): Promise<ResourceCatalog | undefined> {
+    const row = await this.db.get<ResourceCatalogRow>(
+      `SELECT id, tenant_id, code, name, description, status, is_default, sort_order, created_by, updated_by
+         FROM tmf_resource_catalog WHERE id = ? AND tenant_id = ?`,
+      [id, scope.tenantId ?? 'default'],
+    );
+    return row ? this.mapResourceCatalog(row) : undefined;
+  }
+
+  public async getResourceCatalogByCode(
+    code: string,
+    scope: ResourceTenantScope,
+  ): Promise<ResourceCatalog | undefined> {
+    const row = await this.db.get<ResourceCatalogRow>(
+      `SELECT id, tenant_id, code, name, description, status, is_default, sort_order, created_by, updated_by
+         FROM tmf_resource_catalog WHERE tenant_id = ? AND code = ?`,
+      [scope.tenantId ?? 'default', code],
+    );
+    return row ? this.mapResourceCatalog(row) : undefined;
+  }
+
+  public async getDefaultResourceCatalog(
+    scope: ResourceTenantScope,
+  ): Promise<ResourceCatalog | undefined> {
+    const row = await this.db.get<ResourceCatalogRow>(
+      `SELECT id, tenant_id, code, name, description, status, is_default, sort_order, created_by, updated_by
+         FROM tmf_resource_catalog WHERE tenant_id = ? AND is_default = 1`,
+      [scope.tenantId ?? 'default'],
+    );
+    return row ? this.mapResourceCatalog(row) : undefined;
+  }
+
+  public async listResourceCatalogs(
+    query: ResourceCatalogQuery & ResourceTenantScope,
+  ): Promise<ResourceCatalog[]> {
+    const conditions = ['tenant_id = ?'];
+    const params: Array<string | number> = [query.tenantId ?? 'default'];
+    if (query.status) {
+      conditions.push('status = ?');
+      params.push(query.status);
+    }
+    if (query.name) {
+      conditions.push('LOWER(name) LIKE ?');
+      params.push(`%${query.name.toLowerCase()}%`);
+    }
+    const rows = await this.db.all<ResourceCatalogRow>(
+      `SELECT id, tenant_id, code, name, description, status, is_default, sort_order, created_by, updated_by
+         FROM tmf_resource_catalog
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY sort_order, name, id`,
+      params,
+    );
+    return rows.map((row) => this.mapResourceCatalog(row));
+  }
+
+  public async upsertResourceCatalogNode(node: ResourceCatalogNode): Promise<ResourceCatalogNode> {
+    const now = new Date().toISOString();
+    await this.db.run(
+      `INSERT INTO tmf_resource_catalog_node
+       (id, tenant_id, catalog_id, parent_node_id, code, name, description, kind, resource_type_id, status, sort_order, metadata, created_by, updated_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         parent_node_id = excluded.parent_node_id,
+         code = excluded.code,
+         name = excluded.name,
+         description = excluded.description,
+         kind = excluded.kind,
+         resource_type_id = excluded.resource_type_id,
+         status = excluded.status,
+         sort_order = excluded.sort_order,
+         metadata = excluded.metadata,
+         updated_by = excluded.updated_by,
+         updated_at = excluded.updated_at`,
+      [
+        node.id,
+        node.tenantId,
+        node.catalogId,
+        node.parentNodeId ?? null,
+        node.code,
+        node.name,
+        node.description ?? null,
+        node.kind,
+        node.resourceTypeId ?? null,
+        node.status,
+        node.sortOrder,
+        node.metadata ? JSON.stringify(node.metadata) : null,
+        node.createdBy ?? null,
+        node.updatedBy ?? null,
+        now,
+        now,
+      ],
+    );
+    return (await this.getResourceCatalogNode(node.id, { tenantId: node.tenantId })) ?? node;
+  }
+
+  public async getResourceCatalogNode(
+    id: string,
+    scope: ResourceTenantScope,
+  ): Promise<ResourceCatalogNode | undefined> {
+    const row = await this.db.get<ResourceCatalogNodeRow>(
+      `${RESOURCE_CATALOG_NODE_SELECT} WHERE n.id = ? AND n.tenant_id = ?`,
+      [id, scope.tenantId ?? 'default'],
+    );
+    return row ? this.mapResourceCatalogNode(row) : undefined;
+  }
+
+  public async getResourceCatalogNodeByCode(
+    catalogId: string,
+    code: string,
+    scope: ResourceTenantScope,
+  ): Promise<ResourceCatalogNode | undefined> {
+    const row = await this.db.get<ResourceCatalogNodeRow>(
+      `${RESOURCE_CATALOG_NODE_SELECT} WHERE n.tenant_id = ? AND n.catalog_id = ? AND n.code = ?`,
+      [scope.tenantId ?? 'default', catalogId, code],
+    );
+    return row ? this.mapResourceCatalogNode(row) : undefined;
+  }
+
+  public async listResourceCatalogNodes(
+    catalogId: string,
+    scope: ResourceTenantScope & { includeInactive?: boolean },
+  ): Promise<ResourceCatalogNode[]> {
+    const conditions = ['n.tenant_id = ?', 'n.catalog_id = ?'];
+    const params: Array<string | number> = [scope.tenantId ?? 'default', catalogId];
+    if (!scope.includeInactive) conditions.push(`n.status = 'active'`);
+    const rows = await this.db.all<ResourceCatalogNodeRow>(
+      `${RESOURCE_CATALOG_NODE_SELECT} WHERE ${conditions.join(' AND ')}
+        ORDER BY n.sort_order, n.name, n.id`,
+      params,
+    );
+    return rows.map((row) => this.mapResourceCatalogNode(row));
+  }
+
+  public async listResourceCatalogNodesByResourceType(
+    resourceTypeId: string,
+    scope: ResourceTenantScope,
+  ): Promise<ResourceCatalogNode[]> {
+    const rows = await this.db.all<ResourceCatalogNodeRow>(
+      `${RESOURCE_CATALOG_NODE_SELECT} WHERE n.tenant_id = ? AND n.resource_type_id = ?
+        ORDER BY n.sort_order, n.name, n.id`,
+      [scope.tenantId ?? 'default', resourceTypeId],
+    );
+    return rows.map((row) => this.mapResourceCatalogNode(row));
+  }
+
+  public async countResourceCatalogNodeChildren(
+    nodeId: string,
+    scope: ResourceTenantScope,
+  ): Promise<number> {
+    const row = await this.db.get<{ count: number | string }>(
+      `SELECT COUNT(*) AS count FROM tmf_resource_catalog_node
+        WHERE tenant_id = ? AND parent_node_id = ?`,
+      [scope.tenantId ?? 'default', nodeId],
+    );
+    return Number(row?.count ?? 0);
+  }
+
+  private mapResourceCatalog(row: ResourceCatalogRow): ResourceCatalog {
+    return {
+      '@type': 'ResourceCatalog',
+      id: row.id,
+      href: buildHref('resourceCatalog', row.id),
+      code: row.code,
+      name: row.name,
+      ...(row.description ? { description: row.description } : {}),
+      status: row.status,
+      isDefault: Number(row.is_default) === 1,
+      sortOrder: Number(row.sort_order),
+      tenantId: row.tenant_id,
+      ...(row.created_by ? { createdBy: row.created_by } : {}),
+      ...(row.updated_by ? { updatedBy: row.updated_by } : {}),
+    };
+  }
+
+  private mapResourceCatalogNode(row: ResourceCatalogNodeRow): ResourceCatalogNode {
+    const metadata = row.metadata ? this.parseNodeMetadata(row.metadata) : undefined;
+    return {
+      '@type': 'ResourceCatalogNode',
+      id: row.id,
+      href: buildHref('resourceCatalogNode', row.id),
+      catalogId: row.catalog_id,
+      ...(row.parent_node_id ? { parentNodeId: row.parent_node_id } : {}),
+      code: row.code,
+      name: row.name,
+      ...(row.description ? { description: row.description } : {}),
+      kind: row.kind,
+      ...(row.resource_type_id ? { resourceTypeId: row.resource_type_id } : {}),
+      ...(row.kind === 'RESOURCE_TYPE' && row.rt_id
+        ? {
+            resourceType: {
+              id: row.rt_id,
+              href: buildHref('resourceType', row.rt_id),
+              code: row.rt_code ?? '',
+              name: row.rt_name ?? '',
+              '@referredType': 'ResourceType' as const,
+            },
+          }
+        : {}),
+      status: row.status,
+      sortOrder: Number(row.sort_order),
+      ...(metadata ? { metadata } : {}),
+      tenantId: row.tenant_id,
+      ...(row.created_by ? { createdBy: row.created_by } : {}),
+      ...(row.updated_by ? { updatedBy: row.updated_by } : {}),
+    };
+  }
+
+  private parseNodeMetadata(raw: string): Record<string, unknown> | undefined {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   public async upsertResourceSpecification(

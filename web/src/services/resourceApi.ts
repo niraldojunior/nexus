@@ -1,4 +1,5 @@
 import type { Party } from './partyApi';
+import type { GeoGeometry } from './geoApi';
 import { invalidateMapTiles } from '../utils/mapTileCache';
 import { bearerToken } from './session';
 
@@ -458,8 +459,14 @@ export type PhysicalResourceDetail = {
     city?: string;
     stateOrProvince?: string;
     postcode?: string;
+    // Presente também quando o place é um GeographicSite com endereço vinculado —
+    // ver resolveDetailPlace no backend.
+    sourceSystem?: string;
   };
-  location?: ResourceDetailReference;
+  location?: ResourceDetailReference & {
+    geometryType?: 'Point' | 'LineString' | 'Polygon';
+    geometry?: GeoGeometry;
+  };
   servingSite?: ResourceDetailReference;
   project?: ResourceDetailReference;
   childCount: number;

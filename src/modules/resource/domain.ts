@@ -1,4 +1,5 @@
 import type { Characteristic, RelatedParty, TimePeriod } from '../../shared/tmf/index.js';
+import type { GeoGeometryType, GeoJSONGeometry } from '../geo/domain.js';
 
 export type ResourceKind = 'PhysicalResource' | 'LogicalResource';
 export type ResourceStatus = 'active' | 'inactive' | 'suspended' | 'terminated';
@@ -285,8 +286,15 @@ export type PhysicalResourceDetail = {
     city?: string;
     stateOrProvince?: string;
     postcode?: string;
+    // Presente também quando o place é um GeographicSite com endereço vinculado
+    // (geographic_address_id) — a UI usa o par rua+sourceSystem, não o Site em si,
+    // para o campo "Endereço" (ver resolveDetailPlace).
+    sourceSystem?: string;
   };
-  location?: ResourceDetailReference;
+  location?: ResourceDetailReference & {
+    geometryType?: GeoGeometryType;
+    geometry?: GeoJSONGeometry;
+  };
   servingSite?: ResourceDetailReference;
   project?: ResourceDetailReference;
   childCount: number;

@@ -39,6 +39,16 @@ export function projectStatusLabel(status: string | undefined): string {
 
 export type StatusTone = 'green' | 'red' | 'amber' | 'neutral';
 
+// Classes do "pill" de tom — usadas por StatusBadge e TonePill (geo-tabs), e por qualquer
+// outro selo colorido de estado. Extraído para cá para não duplicar o trio de classes a
+// cada novo consumidor (já estava repetido em StatusBadge/PrecisionBadge/AddressSourceCard).
+export const TONE_CLASS: Record<StatusTone, string> = {
+  green: 'border-status-green/30 bg-status-green-soft text-status-green',
+  red: 'border-status-red/30 bg-status-red-soft text-status-red',
+  amber: 'border-status-amber/30 bg-status-amber-soft text-status-amber',
+  neutral: 'border-app-border bg-app-sidebar text-app-muted',
+};
+
 const STATUS_BADGE_META: Record<string, { label: string; tone: StatusTone }> = {
   planned: { label: 'Planejado', tone: 'amber' },
   active: { label: 'Ativo', tone: 'green' },

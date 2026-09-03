@@ -251,7 +251,10 @@ export function ResourcePanel({
         ) : detail ? (
           <div className="grid gap-2">
             <ResourceOverviewTab detail={detail} onOpenResource={onOpenResource} />
-            {streetViewTargets.length > 0 ? (
+            {/* Ponto único (a maioria dos recursos) já aparece inline como "Localização"
+                em ResourceOverviewTab — este bloco só entra para geometria de linha
+                (cabos/dutos), com o par Início/Fim. */}
+            {streetViewTargets.length > 1 ? (
               <div className="border-t border-app-border pt-2">
                 {streetViewTargets.map((target) => (
                   <div key={`${target.label ?? 'ponto'}:${target.point.join(',')}`} className="py-1">

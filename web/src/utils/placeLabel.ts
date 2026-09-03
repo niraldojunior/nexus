@@ -102,8 +102,9 @@ export function formatAddress(address: GeoAddress): string {
 }
 
 // Rótulo da fonte para o parêntese final do endereço na aba Visão Geral do painel de Local
-// (ex.: "Rua Cinco de Julho, 237, Niterói, RJ, 24220110 (geonet)").
-const SOURCE_SYSTEM_LABEL: Record<string, string> = {
+// (ex.: "Rua Cinco de Julho, 237, Niterói, RJ, 24220110 (geonet)"). Exportado porque o painel
+// de recurso (ResourceOverviewTab) reusa o mesmo sufixo para o campo Endereço.
+export const SOURCE_SYSTEM_LABEL: Record<string, string> = {
   GEONET: 'geonet',
   GOOGLE_MAPS: 'google maps',
   NETWIN: 'netwin',
@@ -113,10 +114,13 @@ const SOURCE_SYSTEM_LABEL: Record<string, string> = {
   MANUAL: 'cadastro livre',
 };
 
-export function formatAddressWithSource(address: GeoAddress): string {
-  const base = formatAddress(address);
-  const sourceLabel = address.sourceSystem ? SOURCE_SYSTEM_LABEL[address.sourceSystem] : undefined;
+export function withSourceSuffix(base: string, sourceSystem: string | undefined): string {
+  const sourceLabel = sourceSystem ? SOURCE_SYSTEM_LABEL[sourceSystem] : undefined;
   return sourceLabel ? `${base} (${sourceLabel})` : base;
+}
+
+export function formatAddressWithSource(address: GeoAddress): string {
+  return withSourceSuffix(formatAddress(address), address.sourceSystem);
 }
 
 export function formatCoordinates(coordinates: [number, number]): string {

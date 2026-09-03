@@ -1,4 +1,5 @@
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import type { GeoGeometryType } from '../geo/domain.js';
 import type {
   LogicalResource,
   PhysicalResource,
@@ -1179,46 +1180,79 @@ export class PostgresResourceRepository implements IResourceRepository {
     tenantId: string,
   ): Promise<PhysicalResourceDetail['place'] | undefined> {
     if (referredType === 'GeographicAddress') {
-      const address = await this.db.get<{
-        id: string;
-        street_type: string | null;
-        street_name: string;
-        street_nr: string | null;
-        locality: string | null;
-        city: string | null;
-        state_or_province: string | null;
-        postcode: string | null;
-      }>(
-        `SELECT id, street_type, street_name, street_nr, locality, city, state_or_province, postcode
-           FROM tmf_geographic_address WHERE id = ? AND tenant_id = ?`,
-        [id, tenantId],
-      );
-      if (!address) return undefined;
+      const fields = await this.fetchAddressStreetFields(id, tenantId);
+      if (!fields) return undefined;
       return {
-        id: address.id,
+        id,
         '@referredType': 'GeographicAddress',
-        name: [address.street_type, address.street_name, address.street_nr]
-          .filter(Boolean)
-          .join(' '),
-        ...(address.street_type ? { streetType: address.street_type } : {}),
-        streetName: address.street_name,
-        ...(address.street_nr ? { streetNr: address.street_nr } : {}),
-        ...(address.locality ? { locality: address.locality } : {}),
-        ...(address.city ? { city: address.city } : {}),
-        ...(address.state_or_province ? { stateOrProvince: address.state_or_province } : {}),
-        ...(address.postcode ? { postcode: address.postcode } : {}),
+        name: [fields.streetType, fields.streetName, fields.streetNr].filter(Boolean).join(' '),
+        ...fields,
       };
     }
     if (referredType === 'GeographicSite') {
-      const site = await this.db.get<{ id: string; name: string }>(
-        `SELECT id, name FROM tmf_geographic_site WHERE id = ? AND tenant_id = ?`,
+      const site = await this.db.get<{ id: string; name: string; geographic_address_id: string | null }>(
+        `SELECT id, name, geographic_address_id FROM tmf_geographic_site WHERE id = ? AND tenant_id = ?`,
         [id, tenantId],
       );
-      return site
-        ? { id: site.id, name: site.name, '@referredType': 'GeographicSite' }
+      if (!site) return undefined;
+      // Endereço vinculado ao site (a rua real onde ele fica) — quando presente, a UI usa
+      // esses campos no lugar do nome do site para o campo "Endereço" do painel de recurso
+      // (ver formatPlaceAddress em ResourceOverviewTab.tsx). O Site continua sendo a
+      // referência (id/@referredType/name).
+      const addressFields = site.geographic_address_id
+        ? await this.fetchAddressStreetFields(site.geographic_address_id, tenantId)
         : undefined;
+      return {
+        id: site.id,
+        name: site.name,
+        '@referredType': 'GeographicSite',
+        ...addressFields,
+      };
     }
     return { id, '@referredType': referredType ?? 'GeographicLocation' };
+  }
+
+  private async fetchAddressStreetFields(
+    addressId: string,
+    tenantId: string,
+  ): Promise<
+    | {
+        streetType?: string;
+        streetName: string;
+        streetNr?: string;
+        locality?: string;
+        city?: string;
+        stateOrProvince?: string;
+        postcode?: string;
+        sourceSystem?: string;
+      }
+    | undefined
+  > {
+    const address = await this.db.get<{
+      street_type: string | null;
+      street_name: string;
+      street_nr: string | null;
+      locality: string | null;
+      city: string | null;
+      state_or_province: string | null;
+      postcode: string | null;
+      source_system: string | null;
+    }>(
+      `SELECT street_type, street_name, street_nr, locality, city, state_or_province, postcode, source_system
+         FROM tmf_geographic_address WHERE id = ? AND tenant_id = ?`,
+      [addressId, tenantId],
+    );
+    if (!address) return undefined;
+    return {
+      ...(address.street_type ? { streetType: address.street_type } : {}),
+      streetName: address.street_name,
+      ...(address.street_nr ? { streetNr: address.street_nr } : {}),
+      ...(address.locality ? { locality: address.locality } : {}),
+      ...(address.city ? { city: address.city } : {}),
+      ...(address.state_or_province ? { stateOrProvince: address.state_or_province } : {}),
+      ...(address.postcode ? { postcode: address.postcode } : {}),
+      ...(address.source_system ? { sourceSystem: address.source_system } : {}),
+    };
   }
 
   private async resolveDetailLocation(
@@ -1241,11 +1275,20 @@ export class PostgresResourceRepository implements IResourceRepository {
       );
       locationId = site?.geographic_location_id ?? null;
     }
-    return locationId
-      ? { id: locationId, '@referredType': 'GeographicLocation' }
-      : place?.['@referredType'] === 'GeographicLocation'
-        ? place
-        : undefined;
+    if (!locationId && place?.['@referredType'] === 'GeographicLocation') {
+      locationId = place.id;
+    }
+    if (!locationId) return undefined;
+
+    const geo = await this.db.get<{ geometry_type: GeoGeometryType; geometry: string }>(
+      `SELECT geometry_type, geometry FROM tmf_geographic_location WHERE id = ? AND tenant_id = ?`,
+      [locationId, tenantId],
+    );
+    return {
+      id: locationId,
+      '@referredType': 'GeographicLocation',
+      ...(geo ? { geometryType: geo.geometry_type, geometry: JSON.parse(geo.geometry) } : {}),
+    };
   }
 
   public async listPhysicalResources(query?: ResourceQuery): Promise<PhysicalResource[]> {

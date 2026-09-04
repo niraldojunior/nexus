@@ -105,22 +105,33 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center px-7 py-9">
-      <div className="w-full max-w-[680px]">
+    <div className="relative flex min-h-screen items-center justify-center bg-white px-7 py-9">
+      <div className="flex w-full flex-col items-center" style={{ maxWidth: 'var(--thread-max)' }}>
         {/* Greeting */}
-        <h1 className="mb-7 animate-vt-rise text-center font-display text-[2rem] font-semibold leading-tight tracking-[-0.02em] text-app-text [animation-delay:40ms]">
+        <h1
+          className="mb-10 animate-vt-rise text-center text-app-text [animation-delay:40ms]"
+          style={{ font: 'var(--text-greeting)', letterSpacing: 'var(--tracking-snug)' }}
+        >
           {greeting}
         </h1>
 
         {/* Error */}
         {error && (
-          <div className="mb-4 animate-vt-rise rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div
+            className="mb-4 w-full animate-vt-rise px-4 py-3 text-sm [animation-delay:80ms]"
+            style={{
+              background: 'var(--status-red-soft)',
+              color: 'var(--status-red)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              borderRadius: 'var(--radius-lg)',
+            }}
+          >
             {error}
           </div>
         )}
 
         {/* Composer */}
-        <div className="animate-vt-rise [animation-delay:120ms]">
+        <div className="w-full animate-vt-rise [animation-delay:120ms]">
           <Composer
             value={input}
             onChange={setInput}
@@ -137,15 +148,15 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
         </div>
 
         {/* Prompt starters */}
-        <div className="mt-4 flex animate-vt-rise flex-wrap items-center justify-center gap-2 [animation-delay:200ms]">
+        <div className="vt-suggestions mt-10 animate-vt-rise [animation-delay:200ms]">
           {promptStarters.map(({ icon: Icon, label, prompt }) => (
             <button
               key={label}
               type="button"
               onClick={() => setInput(prompt)}
-              className="flex items-center gap-2 rounded-full border border-app-border bg-transparent px-3.5 py-1.5 text-[0.9rem] text-app-muted transition hover:border-app-accent-border hover:text-app-text"
+              className="vt-suggestion"
             >
-              <Icon className="h-4 w-4" strokeWidth={1.8} />
+              <Icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
               <span>{label}</span>
             </button>
           ))}

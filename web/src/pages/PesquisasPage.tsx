@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Clock, Trash2, Loader } from 'lucide-react';
+import { ArchiveConfirmModal } from './ResearchHistoryPage';
 
 interface ResearchSession {
   '@type': 'ResearchSession';
@@ -27,6 +28,7 @@ export const ConversasPage: React.FC<{
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [archiveTarget, setArchiveTarget] = useState<ResearchSession | null>(null);
   const ITEMS_PER_PAGE = 20;
 
   useEffect(() => {
@@ -69,9 +71,16 @@ export const ConversasPage: React.FC<{
     }
   };
 
-  const handleDelete = async (sessionId: string, e: React.MouseEvent) => {
+  const handleDelete = (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Arquivar esta conversa?')) return;
+    const target = sessions.find((s) => s.id === sessionId);
+    if (!target) return;
+    setArchiveTarget(target);
+  };
+
+  const confirmArchive = async () => {
+    if (!archiveTarget) return;
+    const sessionId = archiveTarget.id;
 
     try {
       const response = await fetch(`/v1/research/sessions/${sessionId}`, {
@@ -84,6 +93,8 @@ export const ConversasPage: React.FC<{
       }
     } catch (err) {
       console.error('Erro ao arquivar:', err);
+    } finally {
+      setArchiveTarget(null);
     }
   };
 
@@ -94,37 +105,61 @@ export const ConversasPage: React.FC<{
   const totalPages = Math.ceil(filteredSessions.length / ITEMS_PER_PAGE);
 
   return (
-    <div className="min-h-full px-8 py-8 bg-app-canvas">
-      <div className="mx-auto max-w-[1200px]">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="font-display text-4xl font-semibold text-app-text mb-2">Conversas</h1>
-          <p className="text-app-muted">{filteredSessions.length} conversa(s) encontrada(s)</p>
+    <div className="min-h-full bg-white px-6 pb-8 pt-0">
+      {archiveTarget ? (
+        <ArchiveConfirmModal
+          sessionTitle={archiveTarget.title}
+          onConfirm={() => {
+            void confirmArchive();
+          }}
+          onCancel={() => setArchiveTarget(null)}
+        />
+      ) : null}
+      <div className="mx-auto" style={{ maxWidth: 'var(--thread-max)' }}>
+        {/* Header — o título sobe para alinhar horizontalmente com a marca "Nexus"
+            do sidebar (o header do sidebar tem ~48px de altura incluindo o padding). */}
+        <div className="mb-6 flex items-center" style={{ height: 48 }}>
+          <h1
+            className="text-app-text"
+            style={{ font: 'var(--text-h1)', letterSpacing: 'var(--tracking-snug)' }}
+          >
+            Conversas
+          </h1>
         </div>
 
         {/* Search */}
-        <div className="mb-8 flex items-center gap-3 rounded-2xl border border-app-border bg-white px-4 py-3 shadow-soft transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15">
-          <Search className="h-5 w-5 text-app-muted flex-shrink-0" />
+        <div className="vt-searchbar vt-searchbar-flat mb-6">
+          <Search className="h-4 w-4 shrink-0 text-app-muted" strokeWidth={1.8} />
           <input
             type="text"
             placeholder="Buscar conversas por título..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 bg-transparent text-app-text placeholder-app-muted outline-none text-base"
           />
         </div>
+        <p className="-mt-4 mb-6 text-app-muted" style={{ fontSize: 'var(--fs-sm)' }}>
+          {filteredSessions.length} conversa(s) encontrada(s)
+        </p>
 
         {/* Error */}
         {error && (
-          <div className="mb-8 px-6 py-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-700">{error}</p>
+          <div
+            className="mb-6 px-4 py-3 text-sm"
+            style={{
+              background: 'var(--status-red-soft)',
+              color: 'var(--status-red)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              borderRadius: 'var(--radius-lg)',
+            }}
+          >
+            {error}
           </div>
         )}
 
         {/* Loading */}
         {loading && (
           <div className="flex items-center justify-center py-12">
-            <Loader className="h-8 w-8 animate-spin text-app-accent" />
+            <Loader className="h-6 w-6 animate-spin text-app-accent" />
           </div>
         )}
 
@@ -132,7 +167,7 @@ export const ConversasPage: React.FC<{
         {!loading && filteredSessions.length === 0 && (
           <div className="flex items-center justify-center py-12 text-center">
             <div>
-              <p className="text-lg text-app-muted mb-2">
+              <p className="text-app-muted mb-2" style={{ fontSize: 'var(--fs-body-relaxed)' }}>
                 {searchQuery ? 'Nenhuma conversa encontrada' : 'Nenhuma conversa ainda'}
               </p>
               {searchQuery && (
@@ -152,15 +187,23 @@ export const ConversasPage: React.FC<{
           <>
             <div className="space-y-3">
               {paginatedSessions.map((session) => (
-                <button
+                <div
                   key={session.id}
                   onClick={() => onSelectSession(session.id)}
-                  className="w-full flex items-start justify-between p-4 bg-white border border-app-border rounded-lg hover:border-app-accent-border hover:bg-app-accent-soft transition group text-left"
+                  className="vt-card-interactive group flex items-center p-4 text-left hover:!bg-neutral-50 hover:!border-neutral-300"
                 >
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-app-text truncate mb-1">{session.title}</h3>
-                    <div className="flex items-center gap-1 text-xs text-app-muted">
-                      <Clock className="h-3 w-3 flex-shrink-0" />
+                    <h3
+                      className="truncate mb-1 text-app-text"
+                      style={{ font: 'var(--text-h3)' }}
+                    >
+                      {session.title}
+                    </h3>
+                    <div
+                      className="flex items-center gap-1.5 text-app-muted"
+                      style={{ fontSize: 'var(--fs-sm)' }}
+                    >
+                      <Clock className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
                       <span>
                         Modificado em{' '}
                         {new Date(session.updatedAt).toLocaleDateString('pt-BR', {
@@ -175,12 +218,12 @@ export const ConversasPage: React.FC<{
                   </div>
                   <button
                     onClick={(e) => handleDelete(session.id, e)}
-                    className="ml-4 opacity-0 group-hover:opacity-100 transition p-2 text-app-muted hover:text-red-600 hover:bg-red-50 rounded"
+                    className="ml-4 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-app-muted opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
                     title="Arquivar conversa"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-4 w-4" strokeWidth={1.8} />
                   </button>
-                </button>
+                </div>
               ))}
             </div>
 
@@ -190,7 +233,7 @@ export const ConversasPage: React.FC<{
                 <button
                   onClick={() => setPage(Math.max(1, page - 1))}
                   disabled={page === 1}
-                  className="px-4 py-2 border border-app-border rounded-lg text-app-text hover:bg-app-accent-soft disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  className="px-3.5 py-1.5 border border-app-border rounded-lg text-app-text hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed transition text-sm"
                 >
                   Anterior
                 </button>
@@ -199,10 +242,10 @@ export const ConversasPage: React.FC<{
                     <button
                       key={p}
                       onClick={() => setPage(p)}
-                      className={`px-3 py-2 rounded-lg transition ${
+                      className={`px-3 py-1.5 rounded-lg text-sm transition ${
                         p === page
                           ? 'bg-app-accent text-app-ink font-semibold'
-                          : 'border border-app-border text-app-text hover:bg-app-accent-soft'
+                          : 'border border-app-border text-app-text hover:bg-neutral-100'
                       }`}
                     >
                       {p}
@@ -212,7 +255,7 @@ export const ConversasPage: React.FC<{
                 <button
                   onClick={() => setPage(Math.min(totalPages, page + 1))}
                   disabled={page === totalPages}
-                  className="px-4 py-2 border border-app-border rounded-lg text-app-text hover:bg-app-accent-soft disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  className="px-3.5 py-1.5 border border-app-border rounded-lg text-app-text hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed transition text-sm"
                 >
                   Próxima
                 </button>

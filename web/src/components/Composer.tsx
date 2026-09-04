@@ -55,12 +55,10 @@ export default function Composer({
   };
 
   return (
-    <div>
+    <div className="w-full" style={{ maxWidth: 'var(--thread-max)' }}>
       <form
         onSubmit={handleSubmit}
-        className={`flex items-end gap-2 rounded-[24px] border border-app-border bg-white shadow-soft transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15 ${
-          isHero ? 'px-4 py-2.5' : 'px-4 py-2'
-        }`}
+        className={`vt-composer ${isHero ? 'vt-composer-hero' : ''}`}
       >
         <textarea
           ref={textareaRef}
@@ -70,17 +68,17 @@ export default function Composer({
           placeholder={placeholder}
           rows={1}
           autoFocus={autoFocus}
-          className={`flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-app-text placeholder:text-app-muted focus:outline-none focus:ring-0 ${
+          className={
             isHero
-              ? 'min-h-[28px] max-h-[320px] overflow-y-auto text-[1.05rem] leading-[1.5]'
-              : 'min-h-[26px] max-h-[240px] overflow-y-auto text-[0.98rem] leading-[1.5]'
-          }`}
+              ? 'min-h-[28px] max-h-[320px] overflow-y-auto'
+              : 'min-h-[26px] max-h-[240px] overflow-y-auto'
+          }
         />
 
         <button
           type="submit"
           disabled={loading || !value.trim()}
-          className="mb-0.5 shrink-0 rounded-xl bg-app-accent p-2 text-app-text shadow-soft transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+          className="vt-send"
           aria-label="Enviar"
         >
           {loading ? (
@@ -92,7 +90,9 @@ export default function Composer({
       </form>
 
       <div
-        className={`flex items-center gap-2 px-2 pt-2 text-[0.78rem] text-app-muted ${isHero ? 'justify-center' : ''}`}
+        className={`flex items-center gap-2 pt-4 text-[0.78rem] text-app-muted ${
+          isHero ? 'justify-center' : 'justify-start'
+        }`}
       >
         {isModelSelectable ? (
           <select
@@ -100,7 +100,16 @@ export default function Composer({
             onChange={(event) => onModelChange?.(event.target.value)}
             disabled={loading}
             aria-label="Modelo"
-            className="rounded-full border border-app-border bg-transparent px-2.5 py-1 text-app-text disabled:cursor-not-allowed disabled:opacity-60"
+            style={{
+              height: 30,
+              padding: '0 8px',
+              background: 'var(--surface-card)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              font: 'var(--text-label)',
+              color: 'var(--text-primary)',
+            }}
+            className="outline-none disabled:cursor-not-allowed disabled:opacity-60"
           >
             {models!.map((model) => (
               <option key={model.value} value={model.value}>
@@ -109,9 +118,37 @@ export default function Composer({
             ))}
           </select>
         ) : (
-          <span className="rounded-full border border-app-border px-2.5 py-1">{modelLabel}</span>
+          <span
+            style={{
+              height: 28,
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '0 10px',
+              background: 'var(--surface-card)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              font: 'var(--text-label)',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            {modelLabel}
+          </span>
         )}
-        <span className="rounded-full border border-app-border px-2.5 py-1">{qualityLabel}</span>
+        <span
+          style={{
+            height: 28,
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '0 10px',
+            background: 'var(--surface-card)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)',
+            font: 'var(--text-label)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          {qualityLabel}
+        </span>
       </div>
     </div>
   );

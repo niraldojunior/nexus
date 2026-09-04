@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>V.tal Nexus</title>
+    <style>
+      /* Evita o flash de fundo cinza antes do CSS principal carregar — o canvas do
+         novo design system é branco plano (ver docs/4-design-system/tokens/colors.css). */
+      html,
+      body {
+        background: #ffffff;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

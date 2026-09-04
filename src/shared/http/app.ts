@@ -4118,10 +4118,31 @@ const resolveResourceRoute = (pathname: string): ResourceRoute | undefined => {
   const inventoryBase = '/tmf-api/resourceInventoryManagement/v4/resource';
   const activationBase = '/tmf-api/resourceFunctionActivation/v4/resourceFunction';
 
-  if (pathname === `${catalogBase}/resourceCatalog`) return { kind: 'resourceCatalog' };
+  if (pathname === '/v1/resource-catalogs' || pathname === `${catalogBase}/resourceCatalog`)
+    return { kind: 'resourceCatalog' };
+  if (
+    pathname.startsWith('/v1/resource-catalogs/') &&
+    !pathname.startsWith('/v1/resource-catalogs/')
+  )
+    return { kind: 'resourceCatalog' };
+  if (pathname.startsWith('/v1/resource-catalogs/')) {
+    const id = pathname.slice('/v1/resource-catalogs/'.length);
+    if (id && !id.includes('/')) return { kind: 'resourceCatalog', id: decodeURIComponent(id) };
+  }
   if (pathname.startsWith(`${catalogBase}/resourceCatalog/`)) {
     const id = pathname.slice(`${catalogBase}/resourceCatalog/`.length);
     if (id && !id.includes('/')) return { kind: 'resourceCatalog', id: decodeURIComponent(id) };
+  }
+
+  if (pathname === '/v1/resource-types' || pathname === `${catalogBase}/resourceType`)
+    return { kind: 'resourceType' };
+  if (pathname.startsWith('/v1/resource-types/')) {
+    const id = pathname.slice('/v1/resource-types/'.length);
+    if (id && !id.includes('/')) return { kind: 'resourceType', id: decodeURIComponent(id) };
+  }
+  if (pathname.startsWith(`${catalogBase}/resourceType/`)) {
+    const id = pathname.slice(`${catalogBase}/resourceType/`.length);
+    if (id && !id.includes('/')) return { kind: 'resourceType', id: decodeURIComponent(id) };
   }
 
   if (pathname === `${catalogBase}/resourceSpecification`) return { kind: 'resourceSpecification' };
@@ -4129,20 +4150,6 @@ const resolveResourceRoute = (pathname: string): ResourceRoute | undefined => {
     const id = pathname.slice(`${catalogBase}/resourceSpecification/`.length);
     if (id && !id.includes('/'))
       return { kind: 'resourceSpecification', id: decodeURIComponent(id) };
-  }
-
-  if (pathname === `${catalogBase}/resourceFunctionSpecification`)
-    return { kind: 'resourceFunctionSpecification' };
-  if (pathname.startsWith(`${catalogBase}/resourceFunctionSpecification/`)) {
-    const id = pathname.slice(`${catalogBase}/resourceFunctionSpecification/`.length);
-    if (id && !id.includes('/'))
-      return { kind: 'resourceFunctionSpecification', id: decodeURIComponent(id) };
-  }
-
-  if (pathname === `${catalogBase}/resourceType`) return { kind: 'resourceType' };
-  if (pathname.startsWith(`${catalogBase}/resourceType/`)) {
-    const id = pathname.slice(`${catalogBase}/resourceType/`.length);
-    if (id && !id.includes('/')) return { kind: 'resourceType', id: decodeURIComponent(id) };
   }
 
   if (pathname === inventoryBase) return { kind: 'resource' };

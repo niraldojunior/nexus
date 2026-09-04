@@ -35,6 +35,9 @@ import { OracleEventRepository } from '../tmf/oracle-event-repository.js';
 import { AuthService } from '../../modules/auth/index.js';
 import { GeoSearchHistoryRepository } from '../../modules/geo/search-history-repository.js';
 import { GeoProjectRepository } from '../../modules/geo/project-repository.js';
+import { StudioService } from '../../modules/studio/service.js';
+import { PostgresStudioRepository } from '../../modules/studio/postgres-repository.js';
+import { OracleStudioRepository } from '../../modules/studio/oracle-repository.js';
 import {
   GeonetAddressGateway,
   type GeonetGatewayConfig,
@@ -210,6 +213,8 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     partyService,
   });
   const searchService = new SearchService(researchRepository);
+  const studioRepository = oracle ? new OracleStudioRepository(db) : new PostgresStudioRepository(db);
+  const studioService = new StudioService(studioRepository, eventService, { db });
 
   let defaultUser = await userRepository.getByExternalId(DEFAULT_RUNTIME_USER.externalId);
   if (!defaultUser) {
@@ -248,6 +253,8 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     serviceService,
     orderRepository,
     orderService,
+    studioRepository,
+    studioService,
     defaultUser,
     createToolContext: (options: NexusToolContextOptions = {}) => ({
       user: {

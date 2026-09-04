@@ -44,6 +44,8 @@ import {
 import type { PartyService } from '../../modules/party/service.js';
 import type { ResourceService } from '../../modules/resource/service.js';
 import type { ServiceService } from '../../modules/service/service.js';
+import type { StudioService } from '../../modules/studio/service.js';
+import { isStudioDomain } from '../../modules/studio/domain.js';
 import type {
   AddMessageInput,
   LLMRequest,
@@ -781,6 +783,11 @@ const routeRequest = async ({
     return;
   }
 
+  if (url.pathname.startsWith('/v1/studio/')) {
+    await routeStudioRequest({ request, response, config, studioService: runtime.studioService, url });
+    return;
+  }
+
   if (url.pathname.startsWith('/v1/research/')) {
     const llmToolCatalog = buildLlmToolCatalog(mcpModule);
     await routeResearchRequest({
@@ -798,6 +805,133 @@ const routeRequest = async ({
       llmRateLimiter,
       url,
     });
+    return;
+  }
+
+  throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
+};
+
+// Rotas comuns do Nexus Studio (D-ARQ-005) — status/draft/validate/publish/discard/versions/audit
+// são idênticas para todo domínio; a diferença fica no adapter registrado em StudioService, não
+// aqui. `/v1/studio/{domain}/{ação}` — domínio validado por isStudioDomain antes de qualquer
+// leitura de banco, para não vazar um 500 por domínio inexistente.
+const readIfMatch = (request: IncomingMessage): string | undefined => {
+  const header = request.headers['if-match'];
+  return Array.isArray(header) ? header[0] : header;
+};
+
+const routeStudioRequest = async ({
+  request,
+  response,
+  config,
+  studioService,
+  url,
+}: {
+  request: IncomingMessage;
+  response: ServerResponse;
+  config: AppConfig;
+  studioService: StudioService;
+  url: URL;
+}): Promise<void> => {
+  const segments = url.pathname.split('/').filter(Boolean); // ['v1', 'studio', domain, action?]
+  const domainParam = segments[2];
+  const action = segments[3];
+  if (!domainParam || !isStudioDomain(domainParam)) {
+    throw new AppError('unknown studio domain', { code: 'STUDIO_DOMAIN_UNKNOWN', statusCode: 404 });
+  }
+  const domain = domainParam;
+
+  if (request.method === 'GET' && action === 'status') {
+    const context = await buildRequestContext(request, config);
+    requireRoles(context, STUDIO_READ_ROLES);
+    sendJson(response, 200, await studioService.getStatus(domain, context));
+    return;
+  }
+
+  if (request.method === 'GET' && action === 'versions') {
+    const context = await buildRequestContext(request, config);
+    requireRoles(context, STUDIO_READ_ROLES);
+    const limit = parseOptionalNumber(url.searchParams.get('limit'));
+    const offset = parseOptionalNumber(url.searchParams.get('offset'));
+    sendJson(
+      response,
+      200,
+      await studioService.listVersions(domain, context, {
+        ...(limit !== undefined ? { limit } : {}),
+        ...(offset !== undefined ? { offset } : {}),
+      }),
+    );
+    return;
+  }
+
+  if (request.method === 'GET' && action === 'audit') {
+    const context = await buildRequestContext(request, config);
+    requireRoles(context, STUDIO_READ_ROLES);
+    const limit = parseOptionalNumber(url.searchParams.get('limit'));
+    const offset = parseOptionalNumber(url.searchParams.get('offset'));
+    sendJson(
+      response,
+      200,
+      await studioService.listAudit(domain, context, {
+        ...(limit !== undefined ? { limit } : {}),
+        ...(offset !== undefined ? { offset } : {}),
+      }),
+    );
+    return;
+  }
+
+  if (request.method === 'PUT' && action === 'draft') {
+    const context = await buildRequestContext(request, config);
+    requireRoles(context, STUDIO_EDIT_ROLES);
+    const body = (await readBody(request)) as { snapshot?: unknown };
+    if (!body.snapshot || Array.isArray(body.snapshot) || typeof body.snapshot !== 'object') {
+      throw new AppError('snapshot is required', { code: 'STUDIO_SNAPSHOT_REQUIRED', statusCode: 400 });
+    }
+    const version = await studioService.saveDraft(
+      domain,
+      body.snapshot as Record<string, unknown>,
+      context,
+      readIfMatch(request),
+    );
+    response.setHeader('ETag', version.checksum);
+    sendJson(response, 200, version);
+    return;
+  }
+
+  if (request.method === 'POST' && action === 'validate') {
+    const context = await buildRequestContext(request, config);
+    requireRoles(context, STUDIO_EDIT_ROLES);
+    sendJson(response, 200, await studioService.validateDraft(domain, context));
+    return;
+  }
+
+  if (request.method === 'POST' && action === 'publish') {
+    const context = await buildRequestContext(request, config);
+    requireRoles(context, STUDIO_ADMIN_ROLES);
+    const ifMatch = readIfMatch(request);
+    if (!ifMatch) {
+      throw new AppError('If-Match precondition required', {
+        code: 'STUDIO_PRECONDITION_REQUIRED',
+        statusCode: 428,
+      });
+    }
+    const version = await studioService.publish(domain, context, ifMatch);
+    response.setHeader('ETag', version.checksum);
+    sendJson(response, 200, version);
+    return;
+  }
+
+  if (request.method === 'POST' && action === 'discard') {
+    const context = await buildRequestContext(request, config);
+    requireRoles(context, STUDIO_ADMIN_ROLES);
+    const ifMatch = readIfMatch(request);
+    if (!ifMatch) {
+      throw new AppError('If-Match precondition required', {
+        code: 'STUDIO_PRECONDITION_REQUIRED',
+        statusCode: 428,
+      });
+    }
+    sendJson(response, 200, await studioService.discardDraft(domain, context, ifMatch));
     return;
   }
 

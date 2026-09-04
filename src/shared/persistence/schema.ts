@@ -59,6 +59,9 @@ export const TABLE_NAMES = [
   'geo_gpon_coverage_area',
   'geo_map_feature',
   'geo_map_density',
+  'studio_workspace',
+  'studio_version',
+  'studio_audit_log',
 ] as const;
 
 // Column migrations added after the base schema so databases created before these columns get
@@ -1636,9 +1639,67 @@ const MIGRATIONS_SQL_V2_RESOURCE_CATALOG = `
     ON tmf_resource_status_catalog(tenant_id, resource_type_id);
 `;
 
+/**
+ * Batch 3 — Nexus Studio governance kernel (issue #191/#193, D-ARQ-005). Purely additive: three
+ * new tables backing `StudioWorkspace`/`StudioVersion`/`StudioAuditEntry` (see
+ * src/modules/studio/domain.ts). No FK from studio_workspace to studio_version (or vice-versa) —
+ * both point at each other by id (published/draft version id ↔ tenant+domain), and enforcing that
+ * as a DB-level FK would require a deferred/circular constraint for no real safety gain; the
+ * kernel (StudioService) is the sole writer and keeps them consistent inside a transaction.
+ */
+const MIGRATIONS_SQL_V3_STUDIO = `
+  CREATE TABLE IF NOT EXISTS studio_workspace (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    published_version_id TEXT,
+    draft_version_id TEXT,
+    updated_at TIMESTAMPTZ NOT NULL,
+    UNIQUE(tenant_id, domain)
+  );
+  CREATE INDEX IF NOT EXISTS idx_studio_workspace_tenant ON studio_workspace(tenant_id, domain);
+
+  CREATE TABLE IF NOT EXISTS studio_version (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    version_number INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('draft', 'published', 'discarded')),
+    snapshot TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    validation TEXT,
+    base_version_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL,
+    created_by TEXT NOT NULL,
+    published_at TIMESTAMPTZ,
+    published_by TEXT,
+    discarded_at TIMESTAMPTZ,
+    discarded_by TEXT,
+    UNIQUE(tenant_id, domain, version_number)
+  );
+  CREATE INDEX IF NOT EXISTS idx_studio_version_tenant_domain
+    ON studio_version(tenant_id, domain, version_number DESC);
+  CREATE INDEX IF NOT EXISTS idx_studio_version_status
+    ON studio_version(tenant_id, domain, status);
+
+  CREATE TABLE IF NOT EXISTS studio_audit_log (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    action TEXT NOT NULL,
+    version_id TEXT NOT NULL,
+    version_number INTEGER NOT NULL,
+    actor_sub TEXT NOT NULL,
+    event_time TIMESTAMPTZ NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_studio_audit_log_tenant_domain
+    ON studio_audit_log(tenant_id, domain, event_time DESC);
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
+  { version: 3, name: 'studio-governance-kernel', sql: MIGRATIONS_SQL_V3_STUDIO },
 ];
 
 /**

@@ -12,7 +12,20 @@ import {
   Workflow,
   type LucideIcon,
 } from 'lucide-react';
+import { StudioGovernanceBar } from '../components/StudioGovernanceBar';
+import type { StudioDomain } from '../services/studioApi';
 import type { StudioSection } from '../utils/appRoute';
+
+const studioDomainBySection: Partial<Record<StudioSection, StudioDomain>> = {
+  'resource-model': 'resource-model',
+  'location-model': 'location-model',
+  spatial: 'spatial',
+  'geo-experience': 'geo-experience',
+  parties: 'parties',
+  'reference-data': 'reference-data',
+  'rules-workflows': 'rules-workflows',
+  templates: 'templates',
+};
 
 type StudioNavItem = {
   id: StudioSection;
@@ -126,6 +139,7 @@ export function StudioPage({
   const activeItem = itemBySection.get(section) ?? itemBySection.get('resource-model');
   if (!activeItem) return null;
   const ActiveIcon = activeItem.icon;
+  const studioDomain = studioDomainBySection[section];
 
   return (
     <div className="h-full overflow-y-auto bg-app-bg px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
@@ -200,6 +214,12 @@ export function StudioPage({
               <StudioAccessBadge canEdit={canEdit} canAdmin={canAdmin} />
             </div>
           </header>
+
+          {studioDomain ? (
+            <div className="mt-5">
+              <StudioGovernanceBar domain={studioDomain} canEdit={canEdit} canAdmin={canAdmin} />
+            </div>
+          ) : null}
 
           <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
             <article className="rounded-[26px] border border-app-border bg-white p-5 shadow-soft sm:p-6">

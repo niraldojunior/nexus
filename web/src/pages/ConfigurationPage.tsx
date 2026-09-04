@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  Activity,
   Briefcase,
   Check,
   FolderTree,
@@ -9,6 +10,7 @@ import {
   Network,
   Pencil,
   Plus,
+  ServerCog,
   Trash2,
   Truck,
   Users,
@@ -49,6 +51,8 @@ import Field from '../components/Field';
 import { ResourceCatalogTab } from './config-tabs/ResourceCatalogTab';
 import { ServiceCatalogTab } from './config-tabs/ServiceCatalogTab';
 import { UsersTab } from './config-tabs/UsersTab';
+import { EnvironmentTab } from './config-tabs/EnvironmentTab';
+import { EventsTab } from './config-tabs/EventsTab';
 import { SortableHeader, sortedBy, useSort } from './config-tabs/sortable';
 
 const behaviors: Array<{ value: GeoProjectStatusBehavior; label: string }> = [
@@ -75,6 +79,8 @@ const supplierCnpj = (role: PartyRole): string => {
 
 type ConfigTab =
   | 'users'
+  | 'environment'
+  | 'events'
   | 'projects'
   | 'suppliers'
   | 'sites'
@@ -106,6 +112,8 @@ type SupplierDraft = { name: string; cnpj: string };
 
 const tabs: Array<{ id: ConfigTab; label: string; icon: LucideIcon }> = [
   { id: 'users', label: 'Usuários', icon: Users },
+  { id: 'environment', label: 'Ambiente', icon: ServerCog },
+  { id: 'events', label: 'Eventos', icon: Activity },
   { id: 'projects', label: 'Projetos', icon: FolderTree },
   { id: 'sites', label: 'Locais', icon: MapPinned },
   { id: 'resourcesCivil', label: 'Infraestrutura', icon: HardHat },
@@ -539,6 +547,10 @@ export function ConfigurationPage() {
       <section className="min-w-0 flex-1 overflow-y-auto bg-white px-8 py-8 max-md:px-5 max-md:py-6">
         {tab === 'users' ? (
           <UsersTab />
+        ) : tab === 'environment' ? (
+          <EnvironmentTab />
+        ) : tab === 'events' ? (
+          <EventsTab />
         ) : tab === 'projects' ? (
           <>
             <div className="mb-5 flex items-start justify-between gap-4">

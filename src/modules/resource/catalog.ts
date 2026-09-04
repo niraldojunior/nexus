@@ -1,22 +1,5 @@
-import type { ResourceCategory, ResourceType } from './domain.js';
+import type { ResourceType } from './domain.js';
 import { buildHref } from '../../shared/tmf/index.js';
-
-const category = (
-  id: string,
-  code: string,
-  name: string,
-  parentCategoryCode?: string,
-  description?: string,
-): ResourceCategory => ({
-  '@type': 'ResourceCategory',
-  id,
-  href: buildHref('resourceCategory', id),
-  code,
-  name,
-  ...(parentCategoryCode ? { parentCategoryCode } : {}),
-  ...(description ? { description } : {}),
-  status: 'active',
-});
 
 const resourceType = (
   id: string,
@@ -35,21 +18,6 @@ const resourceType = (
   ...(description ? { description } : {}),
   status,
 });
-
-export const RESOURCE_CATEGORIES: ResourceCategory[] = [
-  category('cat-equipment-access', 'Equipment.Access', 'Equipamentos de Acesso'),
-  category('cat-equipment-transport', 'Equipment.Transport', 'Equipamentos de Transporte'),
-  category('cat-equipment-cpe', 'Equipment.CustomerPremises', 'Equipamentos de Cliente'),
-  category('cat-infrastructure-passive', 'Infrastructure.Passive', 'Infraestrutura Passiva'),
-  // Obra civil (dutos, postes, caixas de passagem) — distinta da infraestrutura passiva óptica
-  // (splitter/CTO/DIO, acima), que é equipamento de rede mesmo sendo "passivo".
-  category('cat-infrastructure-civil-works', 'Infrastructure.CivilWorks', 'Infraestrutura Civil'),
-  category('cat-cable-outside-plant', 'Cable.OutsidePlant', 'Cabos OSP'),
-  category('cat-cable-inside-plant', 'Cable.InsidePlant', 'Cabos ISP'),
-  category('cat-logical-ipam', 'Logical.IPAM', 'Endereçamento e IPAM'),
-  category('cat-logical-l2', 'Logical.L2', 'Recursos L2'),
-  category('cat-logical-l3', 'Logical.L3', 'Recursos L3'),
-];
 
 export const RESOURCE_TYPES: ResourceType[] = [
   resourceType('rt-olt', 'OLT', 'Optical Line Terminal', 'Equipment.Access'),
@@ -100,18 +68,12 @@ export const RESOURCE_TYPES: ResourceType[] = [
   resourceType('rt-route-target', 'RouteTarget', 'Route Target', 'Logical.L3'),
 ];
 
-export const getResourceCategoryByCode = (code: string): ResourceCategory | undefined =>
-  RESOURCE_CATEGORIES.find((category) => category.code === code);
-
 export const getResourceTypeByCode = (code: string): ResourceType | undefined =>
   RESOURCE_TYPES.find((type) => type.code === code);
 
-export const listResourceTypesByCategory = (categoryCode: string): ResourceType[] =>
-  RESOURCE_TYPES.filter((type) => type.categoryCode === categoryCode);
-
 // --- Árvore dinâmica de catálogo (issue #188) ---------------------------------------------------
 // Só o container do catálogo é bootstrap estático aqui — insert-if-missing, nunca sobrescreve
-// edição do operador (C9), mesmo padrão de RESOURCE_CATEGORIES/RESOURCE_TYPES acima. A árvore de
+// edição do operador (C9), mesmo padrão de RESOURCE_TYPES acima. A árvore de
 // nodes (Category → GROUP, Type → RESOURCE_TYPE) **não** nasce aqui: ela depende de ResourceType
 // já materializado por tenant, o que só acontece no backfill auditado (plano §7 Fase A, tarefa
 // #10) — criar nodes agora, antes disso, violaria a FK composta (tenant_id, resource_type_id) já

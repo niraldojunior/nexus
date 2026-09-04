@@ -13,18 +13,6 @@ export type UsageState = 'idle' | 'active' | 'busy' | 'unknown';
 
 export type ResourceCatalogStatus = 'active' | 'inactive';
 
-export type ResourceCategory = {
-  '@type': 'ResourceCategory';
-  id: string;
-  href: string;
-  code: string;
-  name: string;
-  parentCategoryCode?: string;
-  description?: string;
-  status: ResourceCatalogStatus;
-  tenantId?: string;
-};
-
 export type ResourceType = {
   '@type': 'ResourceType';
   id: string;
@@ -32,18 +20,6 @@ export type ResourceType = {
   code: string;
   name: string;
   categoryCode: string;
-  description?: string;
-  status: ResourceCatalogStatus;
-  tenantId?: string;
-};
-
-/** Camada funcional da planta a que a ResourceSpecification pertence (C9). */
-export type ResourceLayer = {
-  '@type': 'ResourceLayer';
-  id: string;
-  href: string;
-  code: string;
-  name: string;
   description?: string;
   status: ResourceCatalogStatus;
   tenantId?: string;
@@ -108,16 +84,6 @@ export type ResourceQuery = {
   tenantId?: string;
 };
 
-export type CreateResourceLayerInput = {
-  code: string;
-  name: string;
-  description?: string;
-};
-
-export type UpdateResourceLayerInput = Partial<CreateResourceLayerInput> & {
-  status?: ResourceCatalogStatus;
-};
-
 export type ResourceSpecificationQuery = {
   name?: string;
   resourceTypeId?: string;
@@ -140,9 +106,9 @@ export type ResourceCatalogQuery = {
 };
 
 // --- Árvore dinâmica de catálogo (issue #188) ---------------------------------------------------
-// Convive, por ora, com ResourceCategory/ResourceLayer acima: são as entidades de classificação
-// legadas, que só saem depois do backfill auditado e do cutover lógico (plano §7.8, §13). Nenhum
-// código de runtime deve inferir uma a partir da outra.
+// ResourceCategory/ResourceLayer (classificação legada, pré-refactor) foram removidas fisicamente
+// na Fase B do cutover (issue #188). `categoryCode` de ResourceType agora deriva do node
+// RESOURCE_TYPE mais específico desta árvore (ver postgres-repository.ts).
 
 export type ResourceCatalogNodeKind = 'GROUP' | 'RESOURCE_TYPE';
 

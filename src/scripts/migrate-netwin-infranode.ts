@@ -17,7 +17,6 @@ import {
   ensureControlTables,
   ensureMapEntityIndex,
   ensureResourceType as ensureResourceTypeShared,
-  ensureCategory as ensureCategoryShared,
   ensureSiteSpec as ensureSiteSpecShared,
   identity as identityShared,
   identityState as identityStateShared,
@@ -397,7 +396,6 @@ async function merge(
 }
 
 async function ensureCatalog(target: Connection) {
-  await ensureCategoryShared(target, t, 'Infrastructure.Passive', 'Infraestrutura Passiva');
   for (const [code, name] of [
     ['Tower', 'Torre'],
     ['RisingTube', 'Tubo de subida'],

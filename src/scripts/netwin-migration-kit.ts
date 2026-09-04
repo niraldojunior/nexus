@@ -140,36 +140,28 @@ export async function merge(
 
 // ---- catálogo (Category / ResourceType / ResourceSpecification / SiteSpecification) ----
 
-export async function ensureCategory(
-  target: Connection,
-  t: TablePrefixer,
-  code: string,
-  name: string,
-): Promise<void> {
-  const id = `cat-${code.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-  await merge(target, t, 'tmf_resource_category', ['code'], {
-    id,
-    code,
-    name,
-    status: 'active',
-  });
-}
-
 export async function ensureResourceType(
   target: Connection,
   t: TablePrefixer,
   code: string,
   name: string,
-  categoryCode = 'Infrastructure.Passive',
-): Promise<void> {
+  tenantId = 'vtal',
+): Promise<string> {
+  const existing = await target.execute<{ ID: string }>(
+    `SELECT id AS "ID" FROM ${t('tmf_resource_type')} WHERE tenant_id=:1 AND code=:2 FETCH FIRST 1 ROWS ONLY`,
+    [tenantId, code],
+    { outFormat: oracledb.OUT_FORMAT_OBJECT },
+  );
+  if (existing.rows?.[0]?.ID) return existing.rows[0].ID;
   const id = `rt-${code.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-  await merge(target, t, 'tmf_resource_type', ['code'], {
+  await merge(target, t, 'tmf_resource_type', ['tenant_id', 'code'], {
     id,
+    tenant_id: tenantId,
     code,
     name,
-    category_code: categoryCode,
     status: 'active',
   });
+  return id;
 }
 
 export async function ensureSiteSpec(
@@ -211,19 +203,20 @@ export async function resourceSpecId(
   target: Connection,
   t: TablePrefixer,
   name: string,
-  resourceType: string,
-  categoryCode = 'Infrastructure.Passive',
+  resourceTypeCode: string,
+  tenantId = 'vtal',
 ): Promise<string> {
+  const resourceTypeId = await ensureResourceType(target, t, resourceTypeCode, resourceTypeCode, tenantId);
   const row = await target.execute<{ ID: string }>(
-    `SELECT id AS "ID" FROM ${t('tmf_resource_specification')} WHERE name=:1 AND resource_type=:2 FETCH FIRST 1 ROWS ONLY`,
-    [name, resourceType],
+    `SELECT id AS "ID" FROM ${t('tmf_resource_specification')} WHERE tenant_id=:1 AND name=:2 AND resource_type_id=:3 FETCH FIRST 1 ROWS ONLY`,
+    [tenantId, name, resourceTypeId],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
   if (row.rows?.[0]?.ID) return row.rows[0].ID;
   const id = createCanonicalId();
   await target.execute(
-    `INSERT INTO ${t('tmf_resource_specification')} (id,name,category,resource_type,characteristics) VALUES (:1,:2,:3,:4,'[]')`,
-    [id, name, categoryCode, resourceType],
+    `INSERT INTO ${t('tmf_resource_specification')} (id,tenant_id,name,resource_type_id,characteristics) VALUES (:1,:2,:3,:4,'[]')`,
+    [id, tenantId, name, resourceTypeId],
   );
   return id;
 }

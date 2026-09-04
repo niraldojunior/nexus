@@ -4,7 +4,6 @@ import { buildHref, type EventService, type RelatedParty } from '../../shared/tm
 import type {
   CreateLogicalResourceInput,
   CreatePhysicalResourceInput,
-  CreateResourceLayerInput,
   CreateResourceFunctionSpecificationInput,
   CreateResourceSpecificationInput,
   LogicalResource,
@@ -16,14 +15,12 @@ import type {
   ResourceFunctionSpecificationQuery,
   ResourceQuery,
   ResourceRelationship,
-  ResourceCategory,
   ResourceCatalog,
   ResourceCatalogNode,
   ResourceCatalogPath,
   ResourceCatalogPathEntry,
   ResourceCatalogQuery,
   ResourceCatalogTreeNode,
-  ResourceLayer,
   ResourceType,
   ResourceTypeCatalogContext,
   ResourceSpecification,
@@ -38,7 +35,6 @@ import type {
   ResourcePortsView,
   UpdateLogicalResourceInput,
   UpdatePhysicalResourceInput,
-  UpdateResourceLayerInput,
   UpdateResourceFunctionSpecificationInput,
   UpdateResourceSpecificationInput,
   CreateResourceCatalogInput,
@@ -250,120 +246,22 @@ export class ResourceService {
     return await this.repository.getResourceSpecification(id, scopeOf(context));
   }
 
-  public async listResourceCategories(): Promise<ResourceCategory[]> {
-    return await this.repository.listResourceCategories();
-  }
-
-  public async listResourceTypes(): Promise<ResourceType[]> {
-    return await this.repository.listResourceTypes();
-  }
-
-  public async createResourceLayer(
-    input: CreateResourceLayerInput,
-    context?: RequestContext,
-  ): Promise<ResourceLayer> {
-    assertName(input.code, 'code');
-    assertName(input.name);
-    const tenantId = tenantOf(context);
-    const duplicate = (await this.repository.listResourceLayers({ tenantId })).find(
-      (layer) => layer.code === input.code.trim(),
-    );
-    if (duplicate) {
-      throw new AppError('resource layer code already exists', {
-        code: 'RESOURCE_LAYER_CODE_DUPLICATE',
-        statusCode: 409,
-      });
-    }
-    const id = createCanonicalId();
-    const layer: ResourceLayer = {
-      '@type': 'ResourceLayer',
-      id,
-      href: buildHref('resourceLayer', id),
-      code: input.code.trim(),
-      name: input.name.trim(),
-      status: 'active',
-      tenantId,
-      ...(input.description?.trim() ? { description: input.description.trim() } : {}),
-    };
-    const stored = await this.repository.upsertResourceLayer(layer);
-    await this.emit('ResourceLayerCreateEvent', stored.id, 'ResourceLayer', stored, context);
-    return stored;
-  }
-
-  public async updateResourceLayer(
-    id: string,
-    input: UpdateResourceLayerInput,
-    context?: RequestContext,
-  ): Promise<ResourceLayer> {
-    const current = await this.getResourceLayerOrThrow(id, context, false);
-    if (input.code !== undefined) assertName(input.code, 'code');
-    if (input.name !== undefined) assertName(input.name);
-    const nextCode = input.code?.trim() ?? current.code;
-    if (nextCode !== current.code) {
-      const duplicate = (await this.repository.listResourceLayers(scopeOf(context))).find(
-        (layer) => layer.code === nextCode && layer.id !== current.id,
-      );
-      if (duplicate) {
-        throw new AppError('resource layer code already exists', {
-          code: 'RESOURCE_LAYER_CODE_DUPLICATE',
-          statusCode: 409,
-        });
-      }
-    }
-    const updated = await this.repository.upsertResourceLayer({
-      ...current,
-      code: nextCode,
-      name: input.name?.trim() ?? current.name,
-      status: input.status ?? current.status,
-      ...(input.description !== undefined
-        ? input.description.trim()
-          ? { description: input.description.trim() }
-          : {}
-        : current.description
-          ? { description: current.description }
-          : {}),
-    });
-    await this.emit(
-      'ResourceLayerAttributeValueChangeEvent',
-      updated.id,
-      'ResourceLayer',
-      updated,
-      context,
-      current,
-    );
-    return updated;
-  }
-
-  public async deleteResourceLayer(id: string, context?: RequestContext): Promise<ResourceLayer> {
-    const current = await this.getResourceLayerOrThrow(id, context, false);
-    const retired = await this.repository.upsertResourceLayer({ ...current, status: 'inactive' });
-    await this.emit(
-      'ResourceLayerAttributeValueChangeEvent',
-      retired.id,
-      'ResourceLayer',
-      retired,
-      context,
-      current,
-    );
-    return retired;
-  }
-
-  public async getResourceLayer(
-    id: string,
-    context?: RequestContext,
-  ): Promise<ResourceLayer | undefined> {
-    return await this.repository.getResourceLayer(id, scopeOf(context));
-  }
-
-  public async listResourceLayers(context?: RequestContext): Promise<ResourceLayer[]> {
-    return await this.repository.listResourceLayers(scopeOf(context));
+  public async listResourceTypes(context?: RequestContext): Promise<ResourceType[]> {
+    // RequestContext.tenantId nunca vem undefined em chamadas HTTP reais (resolve pra
+    // DEFAULT_TENANT_ID='default' sem header x-tenant-id — ver request-context.ts) — só
+    // ambientes fora do HTTP (MCP sem sessão) chegam aqui com context undefined. 'default' não é
+    // um tenant do módulo Resource (RESOURCE_TENANTS = vtal/tecto): tratar como "sem tenant
+    // explícito" e cair no default do módulo, não no default genérico da aplicação.
+    const tenantId =
+      context?.tenantId && context.tenantId !== 'default' ? context.tenantId : 'vtal';
+    return await this.repository.listResourceTypes({ tenantId });
   }
 
   // --- Árvore dinâmica de catálogo (issue #188) -------------------------------------------------
-  // Convive com Category/Layer acima até o cutover lógico (plano §7.8). ResourceType ainda não tem
-  // CRUD/tenant-scoping próprio (bootstrap estático em catalog.ts) — a resolução por id abaixo usa
-  // listResourceTypes() em memória, aceitável no tamanho atual do catálogo; ganha método dedicado
-  // quando ResourceType ganhar CRUD (tarefas #7/#9 do plano).
+  // Category/Layer foram removidas fisicamente na Fase B do cutover (issue #188). ResourceType
+  // ainda não tem CRUD/tenant-scoping próprio (bootstrap estático em catalog.ts) — a resolução por
+  // id abaixo usa listResourceTypes() em memória, aceitável no tamanho atual do catálogo; ganha
+  // método dedicado quando ResourceType ganhar CRUD (tarefas #7/#9 do plano).
 
   public async createResourceCatalog(
     input: CreateResourceCatalogInput,
@@ -1607,27 +1505,6 @@ export class ResourceService {
         statusCode: 404,
       });
     return spec;
-  }
-
-  private async getResourceLayerOrThrow(
-    id: string,
-    context?: RequestContext,
-    requireActive = true,
-  ): Promise<ResourceLayer> {
-    const layer = await this.repository.getResourceLayer(id.trim(), scopeOf(context));
-    if (!layer) {
-      throw new AppError('resource layer not found', {
-        code: 'RESOURCE_LAYER_NOT_FOUND',
-        statusCode: 404,
-      });
-    }
-    if (requireActive && layer.status !== 'active') {
-      throw new AppError('resource layer is inactive', {
-        code: 'RESOURCE_LAYER_INACTIVE',
-        statusCode: 409,
-      });
-    }
-    return layer;
   }
 
   private async getResourceFunctionSpecificationOrThrow(

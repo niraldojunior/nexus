@@ -24,7 +24,6 @@ const TABLES_WITH_HREF = [
   'tmf_geographic_site',
   'tmf_geographic_relationship_type',
   'tmf_resource_specification',
-  'tmf_resource_category',
   'tmf_resource_type',
   'tmf_resource_function_specification',
   'tmf_physical_resource',

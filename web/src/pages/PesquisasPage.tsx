@@ -105,7 +105,7 @@ export const ConversasPage: React.FC<{
   const totalPages = Math.ceil(filteredSessions.length / ITEMS_PER_PAGE);
 
   return (
-    <div className="min-h-full bg-white px-6 pb-8 pt-0">
+    <div className="min-h-full bg-white px-6 pb-8">
       {archiveTarget ? (
         <ArchiveConfirmModal
           sessionTitle={archiveTarget.title}
@@ -116,12 +116,19 @@ export const ConversasPage: React.FC<{
         />
       ) : null}
       <div className="mx-auto" style={{ maxWidth: 'var(--thread-max)' }}>
-        {/* Header — o título sobe para alinhar horizontalmente com a marca "Nexus"
-            do sidebar (o header do sidebar tem ~48px de altura incluindo o padding). */}
-        <div className="mb-6 flex items-center" style={{ height: 48 }}>
+        {/* Header — o centro vertical do título "Conversas" alinha com o centro do
+            item "Nova Conversa" da sidebar. Geometria: header da sidebar (pt 6px +
+            item 48px + pb 2px = 56px) + metade do primeiro item do nav (34px/2 = 17px)
+            ⇒ centro a 73px do topo. A página vive no wrapper scale-[0.93], então o
+            padding-top compensa a escala: (73 − 12.8)/0.93 ≈ 65px. */}
+        <div className="mb-6" style={{ paddingTop: 65 }}>
           <h1
             className="text-app-text"
-            style={{ font: 'var(--text-h1)', letterSpacing: 'var(--tracking-snug)' }}
+            style={{
+              font: 'var(--text-h1)',
+              letterSpacing: 'var(--tracking-snug)',
+              lineHeight: 'var(--lh-tight)',
+            }}
           >
             Conversas
           </h1>

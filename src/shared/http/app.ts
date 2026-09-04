@@ -726,9 +726,11 @@ const routeRequest = async ({
   }
 
   if (
-    url.pathname.startsWith('/v1/resources/') ||
+    url.pathname === '/v1/resource-catalogs' ||
     url.pathname.startsWith('/v1/resource-catalogs/') ||
+    url.pathname === '/v1/resource-types' ||
     url.pathname.startsWith('/v1/resource-types/') ||
+    url.pathname.startsWith('/v1/resources/') ||
     url.pathname === '/v1/resource-statuses' ||
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceCatalog') ||
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceSpecification') ||

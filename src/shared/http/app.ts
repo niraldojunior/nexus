@@ -620,9 +620,11 @@ const routeRequest = async ({
       requireRoles(context, USER_ADMIN_ROLES);
       const body = await readBody(request);
       const email = body.email ? String(body.email) : undefined;
+      const tenantId = body.tenantId ? String(body.tenantId) : undefined;
       const user = await userRepository.update(userId, {
         ...(body.name ? { name: String(body.name) } : {}),
         ...(email ? { email } : {}),
+        ...(tenantId ? { tenantId } : {}),
       });
       if (!user) {
         throw new AppError('user not found', { code: 'USER_NOT_FOUND', statusCode: 404 });

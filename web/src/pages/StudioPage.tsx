@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { StudioGovernanceBar } from '../components/StudioGovernanceBar';
 import { ResourceModelStudio } from './studio/resource-model/ResourceModelStudio';
+import { LocationModelStudio } from './studio/location-model/LocationModelStudio';
+import { SpatialStudio } from './studio/spatial/SpatialStudio';
 import type { StudioDomain } from '../services/studioApi';
 import type { StudioSection } from '../utils/appRoute';
 
@@ -225,6 +227,14 @@ export function StudioPage({
           {section === 'resource-model' ? (
             <div className="mt-5">
               <ResourceModelStudio canEdit={canEdit} canAdmin={canAdmin} />
+            </div>
+          ) : section === 'location-model' ? (
+            <div className="mt-5">
+              <LocationModelStudio canEdit={canEdit} canAdmin={canAdmin} />
+            </div>
+          ) : section === 'spatial' ? (
+            <div className="mt-5">
+              <SpatialStudio canEdit={canEdit} canAdmin={canAdmin} />
             </div>
           ) : (
             <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">

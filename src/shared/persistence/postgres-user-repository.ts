@@ -182,12 +182,16 @@ export class PostgresUserRepository {
     if (!existing) return undefined;
 
     const now = new Date().toISOString();
-    await this.db.run(`UPDATE users SET name = ?, email = ?, updated_at = ? WHERE id = ?`, [
-      input.name || existing.name,
-      input.email || existing.email || null,
-      now,
-      id,
-    ]);
+    await this.db.run(
+      `UPDATE users SET name = ?, email = ?, tenant_id = ?, updated_at = ? WHERE id = ?`,
+      [
+        input.name || existing.name,
+        input.email || existing.email || null,
+        input.tenantId || existing.tenantId,
+        now,
+        id,
+      ],
+    );
 
     return await this.getById(id);
   }

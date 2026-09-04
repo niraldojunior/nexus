@@ -360,7 +360,7 @@ export const ResearchPage: React.FC<{
 
   if (loadingSession) {
     return (
-      <div className="flex items-center justify-center h-full bg-app-canvas">
+      <div className="flex items-center justify-center h-full bg-white">
         <div className="text-center">
           <NexusLoadingMark size={40} className="mx-auto mb-4 h-10 w-10" />
           <p className="text-app-muted">Carregando conversa...</p>
@@ -371,7 +371,7 @@ export const ResearchPage: React.FC<{
 
   if (!session) {
     return (
-      <div className="flex items-center justify-center h-full bg-app-canvas">
+      <div className="flex items-center justify-center h-full bg-white">
         <div className="text-center text-app-muted">
           <p>Conversa não encontrada</p>
         </div>
@@ -380,9 +380,9 @@ export const ResearchPage: React.FC<{
   }
 
   return (
-    <div className="flex flex-col h-full bg-app-canvas">
+    <div className="flex flex-col h-full bg-white">
       {/* Fixed Header - Top */}
-      <div className="flex-shrink-0 border-b border-app-border bg-app-canvas px-6 py-4">
+      <div className="flex-shrink-0 border-b border-app-border bg-white px-6 py-4">
         <div className="flex w-full items-center justify-between gap-4">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <Diamond size={7} />
@@ -407,7 +407,7 @@ export const ResearchPage: React.FC<{
 
       {/* Scrollable Messages Area - Middle */}
       <div ref={messagesScrollRef} className="flex-1 overflow-y-auto px-6 py-2">
-        <div className="mx-auto flex min-h-full w-full max-w-[780px] flex-col justify-start gap-5 pb-10 pt-8">
+        <div className="vt-thread pb-10 pt-8">
           {messages.length === 0 ? (
             <div className="flex min-h-[240px] items-center justify-center text-center">
               <p className="text-app-muted">Inicie uma conversa...</p>
@@ -416,31 +416,33 @@ export const ResearchPage: React.FC<{
             messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`vt-turn ${msg.role === 'user' ? 'vt-turn-user' : 'vt-turn-assistant'}`}
               >
                 {msg.role === 'user' ? (
-                  <div className="flex w-full flex-col gap-3">
+                  <>
                     {pendingMessageIdRef.current === msg.id ? (
                       <div ref={activeTurnAnchorRef} className="h-1 w-full" />
                     ) : null}
-                    <div className="ml-auto w-fit max-w-[760px] rounded-[24px] border border-app-border bg-white px-6 py-5 shadow-sm">
-                      <p className="whitespace-pre-wrap text-[0.92rem] leading-[1.6] tracking-[-0.01em] text-app-text">
-                        {msg.content}
-                      </p>
-                      <div className="mt-3 text-xs text-app-muted">
-                        {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </div>
+                    <div className="vt-bubble">
+                      <p className="whitespace-pre-wrap">{msg.content}</p>
                     </div>
+                    <span className="vt-turn-time">
+                      {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
                     {sendingMessage && pendingMessageIdRef.current === msg.id ? (
-                      <CopilotPendingResponse />
+                      <div className="w-full">
+                        <CopilotPendingResponse />
+                      </div>
                     ) : null}
-                  </div>
+                  </>
                 ) : (
                   <div className="w-full">
-                    <MarkdownMessage content={msg.content} />
+                    <div className="vt-bubble">
+                      <MarkdownMessage content={msg.content} />
+                    </div>
                     {(() => {
                       const pendingItems = readPendingConfirmations(msg).filter(
                         (pending) => !resolvedConfirmationTokens.has(pending.confirmationToken),
@@ -453,14 +455,31 @@ export const ResearchPage: React.FC<{
                             return (
                               <div
                                 key={pending.confirmationToken}
-                                className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-app-border border-l-[3px] border-l-app-accent bg-white px-4 py-3 shadow-soft"
+                                className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-3"
+                                style={{
+                                  border: '1px solid var(--border)',
+                                  borderLeft: '3px solid var(--vt-yellow)',
+                                  borderRadius: 'var(--radius-lg)',
+                                }}
                               >
                                 <div className="min-w-0">
-                                  <div className="flex items-center gap-2 text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+                                  <div
+                                    className="flex items-center gap-2 uppercase tracking-[0.08em]"
+                                    style={{
+                                      font: 'var(--text-eyebrow)',
+                                      color: 'var(--text-tertiary)',
+                                    }}
+                                  >
                                     <Diamond size={6} />
                                     {getPendingConfirmationTitle(pending)}
                                   </div>
-                                  <div className="mt-1 text-[0.92rem] leading-[1.55] text-app-text">
+                                  <div
+                                    className="mt-1"
+                                    style={{
+                                      font: 'var(--fw-regular) var(--fs-body)/var(--lh-snug) var(--font-ui)',
+                                      color: 'var(--text-primary)',
+                                    }}
+                                  >
                                     {pending.summary ?? 'Confirme para concluir a operação.'}
                                   </div>
                                   {pending.items?.length ? (
@@ -468,7 +487,11 @@ export const ResearchPage: React.FC<{
                                       {pending.items.map((item) => (
                                         <div
                                           key={`${item.manufacturerName}-${item.equipmentType}-${item.model}`}
-                                          className="rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text shadow-soft"
+                                          className="bg-white px-3 py-2 text-[0.88rem] text-app-text"
+                                          style={{
+                                            border: '1px solid var(--border)',
+                                            borderRadius: 'var(--radius-md)',
+                                          }}
                                         >
                                           {formatPendingItemLabel(item)}
                                         </div>
@@ -482,8 +505,13 @@ export const ResearchPage: React.FC<{
                                     void handleConfirmPending(msg, pending);
                                   }}
                                   disabled={isConfirming}
-                                  style={{ border: '2px solid #000000' }}
-                                  className="inline-flex items-center gap-2 rounded-[16px] !border-2 !border-black bg-white px-4 py-2 text-[0.9rem] font-semibold text-app-text shadow-soft transition hover:bg-app-accent-soft disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="inline-flex items-center gap-2 px-4 py-2 text-[0.88rem] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
+                                  style={{
+                                    background: 'var(--vt-yellow)',
+                                    color: 'var(--vt-ink)',
+                                    border: '1px solid var(--vt-yellow)',
+                                    borderRadius: 'var(--radius-md)',
+                                  }}
                                 >
                                   {isConfirming ? (
                                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -502,12 +530,12 @@ export const ResearchPage: React.FC<{
                         </div>
                       );
                     })()}
-                    <div className="mt-3 text-xs text-app-muted">
+                    <span className="vt-turn-time mt-2 block">
                       {new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
-                    </div>
+                    </span>
                   </div>
                 )}
               </div>
@@ -517,30 +545,42 @@ export const ResearchPage: React.FC<{
       </div>
 
       {/* Fixed Input Area - Bottom */}
-      <div className="flex-shrink-0 px-6 py-4 bg-app-canvas">
-        <div className="mx-auto flex w-full max-w-[780px] items-end gap-4 rounded-[24px] border border-app-border bg-white px-5 py-4 shadow-soft transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Digite sua pergunta..."
-            rows={1}
-            className="flex-1 min-h-[56px] max-h-[220px] resize-none overflow-y-auto bg-transparent text-[0.95rem] leading-[1.55] text-app-text placeholder-app-muted outline-none"
-          />
-          <button
-            onClick={sendingMessage ? handleStopGenerating : handleSendMessage}
-            disabled={!sendingMessage && !input.trim()}
-            className="inline-flex items-center justify-center rounded-full bg-app-accent w-10 h-10 text-app-ink transition hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-            title={sendingMessage ? 'Parar geração' : 'Enviar mensagem'}
-            aria-label={sendingMessage ? 'Parar geração' : 'Enviar mensagem'}
+      <div className="flex-shrink-0 px-6 py-4 bg-white">
+        <div className="mx-auto w-full" style={{ maxWidth: 'var(--thread-max)' }}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (sendingMessage) {
+                handleStopGenerating();
+              } else {
+                handleSendMessage();
+              }
+            }}
+            className="vt-composer"
           >
-            {sendingMessage ? (
-              <Square className="h-4 w-4 fill-current" />
-            ) : (
-              <Send className="h-5 w-5" />
-            )}
-          </button>
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Digite sua pergunta..."
+              rows={1}
+              className="min-h-[26px] max-h-[220px] overflow-y-auto"
+            />
+            <button
+              type="submit"
+              disabled={!sendingMessage && !input.trim()}
+              className="vt-send"
+              title={sendingMessage ? 'Parar geração' : 'Enviar mensagem'}
+              aria-label={sendingMessage ? 'Parar geração' : 'Enviar mensagem'}
+            >
+              {sendingMessage ? (
+                <Square className="h-4 w-4 fill-current" />
+              ) : (
+                <Send className="h-[18px] w-[18px]" strokeWidth={1.8} />
+              )}
+            </button>
+          </form>
         </div>
       </div>
     </div>

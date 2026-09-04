@@ -10,7 +10,7 @@ import {
   PanelLeftOpen,
   Plus,
   Settings,
-  SlidersHorizontal,
+  Shapes,
 } from 'lucide-react';
 import { PageId, RecentGroup, RecentItem } from '../types';
 import { ResearchHistoryPage } from '../pages/ResearchHistoryPage';
@@ -23,7 +23,6 @@ import {
 import { SERVICE_CATEGORY_DEFAULTS } from '../data/serviceCatalogDefaults';
 import { listServiceCategories } from '../data/serviceCategoryViews';
 import { isCivilInfrastructureCategory } from '../utils/resourceSpecificationForm';
-import Diamond from './Diamond';
 import NexusMark from './NexusMark';
 
 type PrimaryItemId =
@@ -57,7 +56,7 @@ interface SidebarProps {
   resourceMenuOpen: boolean;
   activeServiceCategory: string;
   serviceMenuOpen: boolean;
-  settingsOpen: boolean;
+  settingsOpen?: boolean;
   recentItems: RecentItem[];
   recentGroup: RecentGroup;
   onGroupChange: (group: RecentGroup) => void;
@@ -87,17 +86,10 @@ const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: LucideIcon }
   { id: 'resource', label: 'Recursos', icon: Boxes },
   { id: 'service', label: 'Serviços', icon: Briefcase },
   { id: 'order', label: 'Ordens', icon: FolderTree },
-  { id: 'studio', label: 'Studio', icon: SlidersHorizontal },
+  { id: 'studio', label: 'Studio', icon: Shapes },
 ];
 
 const initialOf = (name?: string): string => name?.trim()?.[0]?.toUpperCase() ?? 'U';
-
-const primaryRoleLabel = (roles?: string[]): string => {
-  if (!roles || roles.length === 0) return 'Sem papéis';
-  if (roles.includes('platform.admin')) return 'Administrador da plataforma';
-  if (roles.includes('tenant.admin')) return 'Administrador do tenant';
-  return roles[0] ?? 'Sem papéis';
-};
 
 // Rede antes de Civil, espelhando a ordem das abas do catálogo em Configurações (ver
 // ResourceCatalogTab) — cada categoria ganha um `sectionLabel` para o Sidebar desenhar o
@@ -128,7 +120,6 @@ export default function Sidebar({
   resourceMenuOpen,
   activeServiceCategory,
   serviceMenuOpen,
-  settingsOpen,
   onToggleCollapse,
   onNewResearch,
   onSelectPage,
@@ -180,6 +171,16 @@ export default function Sidebar({
     if (isMobile) onToggleCollapse();
   };
 
+  // Classes do <aside>. No rail recolhido não usamos overflow-hidden: o tooltip
+  // (.vt-sb-tip) dos itens precisa escapar da sidebar para aparecer ao lado do ícone.
+  const asideClassName = isMobile
+    ? `fixed inset-y-0 left-0 z-50 flex w-[248px] max-w-[85vw] flex-col overflow-hidden border-r border-app-border bg-app-sidebar transition-transform duration-300 ease-in-out ${
+        currentPage === 'configuracoes' ? 'relative z-10 shadow-dock' : 'shadow-soft'
+      } ${collapsed ? '-translate-x-full' : 'translate-x-0'}`
+    : `flex flex-col ${collapsed ? '' : 'overflow-hidden'} border-r border-app-border bg-app-sidebar transition-[width,min-width] duration-200 ease-in-out ${
+        currentPage === 'configuracoes' ? 'relative z-10 shadow-dock' : ''
+      } ${collapsed ? 'w-[58px] min-w-[58px]' : 'w-[248px] min-w-[248px]'}`;
+
   return (
     <>
       {isMobile && collapsed && showMobileToggle ? (
@@ -201,98 +202,82 @@ export default function Sidebar({
         />
       ) : null}
 
-      <aside
-        className={
-          isMobile
-            ? `fixed inset-y-0 left-0 z-50 flex w-[256px] max-w-[85vw] flex-col overflow-hidden border-r border-app-border bg-app-sidebar transition-transform duration-300 ease-in-out ${
-                currentPage === 'configuracoes' ? 'relative z-10 shadow-dock' : 'shadow-soft'
-              } ${collapsed ? '-translate-x-full' : 'translate-x-0'}`
-            : `flex flex-col overflow-hidden border-r border-app-border bg-app-sidebar transition-[width,min-width] duration-300 ease-in-out ${
-                // A doca do módulo Geo usa este mesmo par (relative z-10 + shadow-dock, ver
-                // DOCK_ELEVATION_CLASS) para a sombra pintar por cima do painel de abas de
-                // Configurações — sem a camada de empilhamento, o painel branco ao lado (que
-                // desenha depois no DOM) cobre a sombra em vez de recebê-la.
-                currentPage === 'configuracoes' ? 'relative z-10 shadow-dock' : 'shadow-soft'
-              } ${collapsed ? 'w-[58px] min-w-[58px]' : 'w-[256px] min-w-[256px]'}`
-        }
-      >
-        <div
-          className={`flex min-h-[53px] items-center pb-3 pt-3 ${
-            contentCollapsed ? 'justify-center px-0' : 'pl-[15px] pr-[15px]'
-          }`}
-        >
-          <button
-            type="button"
-            // Mesma geometria dos NavItem abaixo (px-[15px] + ícone 1.18rem + gap-4): a marca cai na
-            // mesma coluna dos ícones do menu e o "N" do wordmark alinha com a primeira letra de cada item.
-            className={`flex items-center gap-4 overflow-hidden whitespace-nowrap font-display text-[1.75rem] font-semibold leading-none tracking-[-0.03em] text-app-text transition-all duration-200 ease-in-out ${
-              contentCollapsed
-                ? 'max-w-0 opacity-0 pointer-events-none'
-                : 'max-w-[200px] opacity-100'
-            }`}
-          >
-            <NexusMark className="h-[1.18rem] w-[1.18rem] shrink-0" />
-            <span>Nexus</span>
-          </button>
+      <aside className={asideClassName}>
+        {/* SidebarHeader — compacto: a lista de itens começa logo abaixo da marca. */}
+        <div className="flex flex-shrink-0 items-center px-2 pt-1.5 pb-0.5">
           <div
-            className={`${contentCollapsed ? 'flex items-center' : 'ml-auto flex items-center'}`}
+            className="vt-sb-btn vt-sb-btn-lg w-full"
+            style={{ justifyContent: contentCollapsed ? 'center' : 'flex-start' }}
           >
-            {contentCollapsed ? (
-              // No rail recolhido, o primeiro botão é a marca do Nexus (mesma da barra de pesquisa
-              // do Geo mobile). Passar o mouse revela o ícone de abrir painel — a troca é só CSS,
-              // sem estado; o clique continua expandindo a barra.
+            {!contentCollapsed ? (
+              <NexusMark className="h-[22px] w-[22px] shrink-0" />
+            ) : (
+              // No rail recolhido, o botão é a marca do Nexus; o hover revela o ícone de
+              // abrir a sidebar — a troca é só CSS, sem estado; o clique expande a barra.
               <button
                 type="button"
                 onClick={onToggleCollapse}
-                className="group relative flex h-[42px] w-[42px] items-center justify-center rounded-[14px] border border-transparent text-app-text transition hover:border-app-border hover:bg-white hover:shadow-soft"
+                className="group relative flex h-[40px] w-[40px] items-center justify-center"
                 aria-label="Expandir barra lateral"
+                title="Expandir"
               >
-                <NexusMark className="h-[1.62rem] w-[1.62rem] transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0" />
+                <NexusMark className="h-[22px] w-[22px] transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0" />
                 <PanelLeftOpen
-                  className="absolute h-[1.15rem] w-[1.15rem] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+                  className="absolute h-[18px] w-[18px] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
                   strokeWidth={1.8}
                 />
               </button>
-            ) : (
+            )}
+            {!contentCollapsed && (
+              <span
+                style={{
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 600,
+                  fontSize: 17,
+                  letterSpacing: 'var(--tracking-snug)',
+                  color: 'var(--text-primary)',
+                  flex: 1,
+                }}
+              >
+                Nexus
+              </span>
+            )}
+            {!contentCollapsed && (
               <button
                 type="button"
                 onClick={onToggleCollapse}
-                className="rounded-xl border border-transparent p-0 text-app-text transition hover:bg-app-accent-soft"
-                aria-label={collapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'}
+                className="flex items-center text-app-muted hover:text-app-text"
+                aria-label="Recolher barra lateral"
+                title="Recolher"
               >
-                {collapsed ? (
-                  <PanelLeftOpen className="h-[1.15rem] w-[1.15rem]" strokeWidth={1.8} />
-                ) : (
-                  <PanelLeftClose className="h-[1.15rem] w-[1.15rem]" strokeWidth={1.8} />
-                )}
+                <PanelLeftClose className="h-4 w-4" strokeWidth={1.8} />
               </button>
             )}
           </div>
         </div>
 
-        <div className="px-0">
-          <nav className="space-y-0.6">
-            {primaryItems
-              .filter(({ id }) => id === 'research')
-              .map(({ id, label, icon: Icon }) => (
-                <NavItem
-                  key={id}
-                  active={currentPage === 'research' && activeResearchSessionId === null}
-                  icon={Icon}
-                  label={label}
-                  onClick={() => {
-                    onNewResearch();
-                    closeMobileDrawer();
-                  }}
-                  collapsed={contentCollapsed}
-                />
-              ))}
-          </nav>
-        </div>
-
-        <div className="relative min-h-0 flex-1 overflow-hidden">
-          <div className="h-full overflow-y-auto">
-            <nav className="space-y-0.6">
+        {/* Navigation — container de scroll sem padding horizontal: a calha da
+            scrollbar fica colada na borda direita do aside. O padding vive no
+            <nav> interno. Todos os itens (incluindo Nova Conversa) compartilham
+            o mesmo gap do nav — sem espaçamento extra entre grupos. */}
+        <div className="hover-scroll relative min-h-0 flex-1 overflow-y-auto">
+          <div className="h-full">
+            <nav className="flex flex-col gap-[2px] px-2">
+              {primaryItems
+                .filter(({ id }) => id === 'research')
+                .map(({ id, label, icon: Icon }) => (
+                  <NavItem
+                    key={id}
+                    active={currentPage === 'research' && activeResearchSessionId === null}
+                    icon={Icon}
+                    label={label}
+                    onClick={() => {
+                      onNewResearch();
+                      closeMobileDrawer();
+                    }}
+                    collapsed={contentCollapsed}
+                  />
+                ))}
               {primaryItems
                 .filter(({ id }) => id !== 'research' && (id !== 'studio' || canViewStudio))
                 .map(({ id, label, icon: Icon }) => {
@@ -330,7 +315,7 @@ export default function Sidebar({
                         collapsed={contentCollapsed}
                       />
                       {categoryMenu && categoryMenu.open && !contentCollapsed ? (
-                        <div className="ml-[35px] mt-1 space-y-1 border-l border-app-border pl-3">
+                        <div className="my-1 ml-4 space-y-0.5 border-l border-app-border pl-2">
                           {categoryMenu.items.map((item, index) => {
                             const subItemActive =
                               currentPage === id && categoryMenu.activeCode === item.code;
@@ -340,13 +325,9 @@ export default function Sidebar({
                             return (
                               <div key={item.code}>
                                 {showSectionHeader ? (
-                                  <p
-                                    className={`px-3 text-[0.7rem] font-semibold uppercase tracking-[0.06em] text-app-muted ${
-                                      index === 0 ? 'mb-1' : 'mb-1 mt-3'
-                                    }`}
-                                  >
+                                  <div className="vt-sb-group-label text-[0.72rem]">
                                     {item.sectionLabel}
-                                  </p>
+                                  </div>
                                 ) : null}
                                 <button
                                   type="button"
@@ -354,13 +335,11 @@ export default function Sidebar({
                                     categoryMenu.onSelect(item.code);
                                     closeMobileDrawer();
                                   }}
-                                  className={`flex h-[28px] w-full items-center rounded-[10px] px-3 text-left text-[0.84rem] transition ${
-                                    subItemActive
-                                      ? 'bg-app-accent-soft font-semibold text-app-text'
-                                      : 'font-medium text-app-muted hover:bg-app-accent-soft hover:text-app-text'
+                                  className={`vt-sb-btn w-full text-left text-xs ${
+                                    subItemActive ? 'is-active' : ''
                                   }`}
                                 >
-                                  {item.label}
+                                  <span className="truncate">{item.label}</span>
                                 </button>
                               </div>
                             );
@@ -373,7 +352,7 @@ export default function Sidebar({
               {isAdmin ? (
                 <NavItem
                   active={currentPage === 'configuracoes'}
-                  icon={SlidersHorizontal}
+                  icon={Settings}
                   label="Configurações"
                   onClick={() => {
                     onSelectPage('configuracoes');
@@ -385,78 +364,80 @@ export default function Sidebar({
             </nav>
 
             {!contentCollapsed ? (
-              <>
-                <div className="flex items-center justify-between pb-2 pl-4 pr-[15px] pt-3">
-                  <span className="text-[0.8rem] font-medium text-app-muted">
-                    Conversas recentes
-                  </span>
-                </div>
-
-                <div className="pb-2 pl-4 pr-1">
-                  <ResearchHistoryPage
-                    activeSessionId={activeResearchSessionId}
-                    refreshTrigger={researchSessionRefreshTrigger}
-                    onSessionSelected={(sessionId) => {
-                      onSelectResearchSession?.(sessionId);
-                      closeMobileDrawer();
-                    }}
-                  />
-                </div>
-              </>
+              <div className="pb-2 px-2">
+                <ResearchHistoryPage
+                  activeSessionId={activeResearchSessionId}
+                  refreshTrigger={researchSessionRefreshTrigger}
+                  onSessionSelected={(sessionId) => {
+                    onSelectResearchSession?.(sessionId);
+                    closeMobileDrawer();
+                  }}
+                />
+              </div>
             ) : null}
           </div>
         </div>
 
-        <div
-          className={`flex min-h-[56px] border-t border-app-border pl-[15px] pr-[15px] ${
-            contentCollapsed ? 'items-center justify-center' : 'items-center gap-4'
-          }`}
-        >
-          <div className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-app-accent text-app-text">
-            <span className="text-[1.12rem] font-medium">{initialOf(sessionUser?.name)}</span>
-          </div>
-          {!contentCollapsed ? (
-            <>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[0.96rem] font-semibold leading-[1.1] text-app-text">
-                  {sessionUser?.name ?? 'Usuário'}
+        <div className="flex-shrink-0 border-t border-app-border p-2">
+          <div
+            className="vt-sb-btn vt-sb-btn-lg w-full"
+            style={{ justifyContent: contentCollapsed ? 'center' : 'flex-start' }}
+          >
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: '50%',
+                background: 'var(--vt-yellow)',
+                color: 'var(--vt-ink)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 600,
+                fontSize: 12,
+                flexShrink: 0,
+              }}
+            >
+              {initialOf(sessionUser?.name)}
+            </div>
+            {!contentCollapsed && (
+              <>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-medium text-app-text">
+                    {sessionUser?.name ?? 'Administrador'}
+                  </div>
+                  <div className="truncate text-[0.75rem] text-app-muted">
+                    {sessionUser?.email ?? 'admin@vtal.com.br'}
+                  </div>
                 </div>
-                <div className="truncate text-[0.84rem] leading-[1.1] text-app-muted">
-                  {sessionUser?.email ?? primaryRoleLabel(sessionUser?.roles)}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectPage('settings');
-                  closeMobileDrawer();
-                }}
-                className={`rounded-xl border p-1.5 transition ${
-                  settingsOpen
-                    ? 'border-app-border bg-white text-app-text shadow-soft'
-                    : 'border-transparent text-app-muted hover:bg-app-accent-soft hover:text-app-text'
-                }`}
-                aria-label="Preferências"
-                title="Preferências"
-              >
-                <Settings className="h-[1rem] w-[1rem]" strokeWidth={1.8} />
-              </button>
-              {onLogout ? (
                 <button
                   type="button"
                   onClick={() => {
-                    onLogout();
+                    onSelectPage('settings');
                     closeMobileDrawer();
                   }}
-                  className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:bg-app-accent-soft hover:text-app-text"
-                  aria-label="Sair"
-                  title="Sair"
+                  className="rounded p-1 text-app-muted hover:text-app-text"
+                  title="Configurações"
                 >
-                  <LogOut className="h-[1rem] w-[1rem]" strokeWidth={1.8} />
+                  <Settings className="h-3.5 w-3.5" strokeWidth={1.8} />
                 </button>
-              ) : null}
-            </>
-          ) : null}
+                {onLogout ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onLogout();
+                      closeMobileDrawer();
+                    }}
+                    className="rounded p-1 text-app-muted hover:text-red-600"
+                    title="Sair"
+                  >
+                    <LogOut className="h-3.5 w-3.5" strokeWidth={1.8} />
+                  </button>
+                ) : null}
+              </>
+            )}
+            {contentCollapsed && <span className="vt-sb-tip">{sessionUser?.name ?? 'Usuário'}</span>}
+          </div>
         </div>
       </aside>
     </>
@@ -480,43 +461,20 @@ function NavItem({
     <button
       type="button"
       onClick={onClick}
-      className={`menu-item-nav relative flex w-full items-center text-left transition ${
-        collapsed
-          ? 'h-[46px] justify-center px-0'
-          : 'h-[34px] rounded-[14px] px-[15px] gap-4 border'
-      } ${
-        collapsed
-          ? 'text-app-text'
-          : active
-            ? 'border-app-border bg-white text-app-text shadow-soft'
-            : 'border-transparent text-app-text hover:bg-app-accent-soft'
-      }`}
+      className={`vt-sb-btn relative flex w-full items-center text-left ${
+        collapsed ? 'vt-sb-btn-rail' : ''
+      } ${active ? 'is-active' : ''}`}
     >
-      {collapsed ? (
+      <Icon className="menu-item-icon h-[1.12rem] w-[1.12rem] shrink-0" strokeWidth={1.8} />
+      {!collapsed && (
         <span
-          className={`relative flex h-[42px] w-[42px] items-center justify-center rounded-[14px] border transition ${
-            active
-              ? 'border-app-accent-border bg-app-accent-soft text-app-text shadow-soft'
-              : 'border-transparent text-app-text hover:border-app-border hover:bg-white hover:shadow-soft'
-          }`}
+          className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+          style={{ fontSize: 'var(--fs-body)', lineHeight: 1.2 }}
         >
-          <Icon className="menu-item-icon h-[1.2rem] w-[1.2rem]" strokeWidth={1.8} />
+          {label}
         </span>
-      ) : (
-        <Icon className="menu-item-icon h-[1.18rem] w-[1.18rem]" strokeWidth={1.8} />
       )}
-      <span
-        className={`overflow-hidden whitespace-nowrap text-[0.94rem] transition-all duration-200 ease-in-out ${
-          active ? 'font-semibold' : 'font-normal'
-        } ${collapsed ? 'max-w-0 opacity-0' : 'max-w-[160px] opacity-100'}`}
-      >
-        {label}
-      </span>
-      {!collapsed && active ? (
-        <span className="ml-auto flex items-center">
-          <Diamond size={6} />
-        </span>
-      ) : null}
+      {collapsed && <span className="vt-sb-tip">{label}</span>}
     </button>
   );
 }

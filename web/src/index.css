@@ -1,3 +1,10 @@
+@import '../../docs/4-design-system/tokens/fonts.css';
+@import '../../docs/4-design-system/tokens/colors.css';
+@import '../../docs/4-design-system/tokens/typography.css';
+@import '../../docs/4-design-system/tokens/spacing.css';
+@import '../../docs/4-design-system/tokens/effects.css';
+@import '../../docs/4-design-system/tokens/base.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -14,7 +21,7 @@ body,
 }
 
 html {
-  background: #e7eaf0;
+  background: var(--surface-app, #fafafb);
   font-size: 16px;
 }
 
@@ -22,9 +29,9 @@ body {
   position: relative;
   margin: 0;
   overflow: hidden;
-  background: #e7eaf0;
-  color: #243041;
-  font-family: 'Aptos', 'Segoe UI', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
+  background: var(--surface-app, #fafafb);
+  color: var(--text-primary, #2e2d39);
+  font-family: var(--font-ui, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -38,7 +45,7 @@ body::before {
   z-index: 1000;
   width: 100%;
   height: 3px;
-  background: #ffd200;
+  background: var(--vt-yellow, #ffd919);
   pointer-events: none;
   /* A faixa engorda durante o carregamento (ver .geo-map-loading); a transição evita o
      salto seco de 3px para 5px. */
@@ -96,6 +103,39 @@ button {
   border: 0;
   background: none;
   cursor: pointer;
+}
+
+@layer components {
+  /* Botão de envio do composer sempre amarelo — o estado desabilitado (input vazio)
+     só muda o cursor, não a cor (feedback constante da ação primária). */
+  .vt-composer .vt-send:disabled,
+  button.vt-send:disabled {
+    background: var(--vt-yellow);
+    border-color: var(--vt-yellow);
+    color: var(--vt-ink);
+    cursor: not-allowed;
+    opacity: 0.85;
+  }
+
+  /* Bordas mais presentes nos componentes de entrada: o hairline padrão
+     (--border #E8E8EE) some sobre o canvas branco. Inputs de texto, busca e
+     cards interativos usam --border-strong (#DADAE3) no estado de repouso. */
+  .vt-composer,
+  .vt-searchbar,
+  .vt-searchbar-flat {
+    border-color: var(--border-strong);
+  }
+  .vt-card-interactive {
+    border-color: var(--border-strong);
+  }
+
+  /* Hero composer (Nova Conversa): com uma linha, o cursor deve sentar no centro
+     vertical do campo — o textarea ocupa a altura toda e centra o texto. */
+  .vt-composer-hero textarea {
+    display: flex;
+    align-items: center;
+    min-height: 36px;
+  }
 }
 
 @layer components {
@@ -189,8 +229,8 @@ button:focus-visible {
 }
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -200,12 +240,12 @@ button:focus-visible {
 ::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
-  background: rgba(100, 116, 139, 0.42);
+  background: rgba(138, 136, 153, 0.42);
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.6);
+  background: rgba(138, 136, 153, 0.6);
   background-clip: padding-box;
 }
 
@@ -221,9 +261,22 @@ button:focus-visible {
   .hover-scroll-host:hover .hover-scroll::-webkit-scrollbar-thumb,
   .hover-scroll:hover::-webkit-scrollbar-thumb,
   .hover-scroll:focus-within::-webkit-scrollbar-thumb {
-    background: rgba(100, 116, 139, 0.42);
+    background: rgba(138, 136, 153, 0.42);
     background-clip: padding-box;
   }
+}
+
+/* Scrollbar da sidebar: fina (6px) com 2px de respiro da borda direita do aside —
+   o thumb usa borda transparente à direita, criando a distância sem reservar
+   espaço no conteúdo. */
+aside .hover-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+aside .hover-scroll::-webkit-scrollbar-thumb {
+  border: none;
+  border-right: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
 }
 
 /* Barra SOBREPOSTA (ver OverlayScrollArea): a barra nativa é ocultada — o conteúdo ocupa

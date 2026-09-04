@@ -735,7 +735,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
   };
 
   return (
-    <div className="flex h-screen bg-app-bg text-app-text">
+    <div className="flex h-screen bg-white text-app-text">
       <Sidebar
         collapsed={sidebarCollapsed}
         isMobile={isMobile}

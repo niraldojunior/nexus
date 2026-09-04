@@ -82,6 +82,16 @@ export type GeoSpecCategory = 'Region' | 'FunctionalGroup' | 'Site' | 'SubSite';
 // (onde ele cabe na hierarquia). Ver src/modules/geo/domain.ts GeographicSiteRole.
 export type GeoSiteRole = 'grouping' | 'network' | 'property' | 'service';
 
+export type GeoSpecCharacteristic = {
+  group?: string;
+  name: string;
+  description?: string;
+  valueType: string;
+  mandatory?: boolean;
+  configurable?: boolean;
+  defaultValue?: unknown;
+};
+
 export type GeoSpec = {
   '@type': 'GeographicSiteSpecification';
   id: string;
@@ -91,9 +101,60 @@ export type GeoSpec = {
   category: GeoSpecCategory;
   siteRole: GeoSiteRole;
   lifecycleStatus: 'Active' | 'Retired';
+  description?: string;
+  specCharacteristic?: GeoSpecCharacteristic[];
   allowedParentSpecIds: string[];
   allowedChildSpecIds: string[];
+  allowedParentSpec?: Array<{ id: string; name: string; code: string; category: GeoSpecCategory }>;
+  allowedChildSpec?: Array<{ id: string; name: string; code: string; category: GeoSpecCategory }>;
+  _bootstrapProtected?: boolean;
 };
+
+export type CreateGeoSpecInput = {
+  name: string;
+  code?: string;
+  category: GeoSpecCategory;
+  siteRole?: GeoSiteRole;
+  description?: string;
+  lifecycleStatus?: 'Active' | 'Retired';
+  allowedParentSpecIds?: string[];
+  allowedChildSpecIds?: string[];
+  specCharacteristic?: GeoSpecCharacteristic[];
+};
+
+export type UpdateGeoSpecInput = Partial<CreateGeoSpecInput>;
+
+export type ContainmentImpactResult = {
+  specId: string;
+  removedAllowedParentSpecIds: string[];
+  removedAllowedChildSpecIds: string[];
+  impactedParentAssignments: number;
+  impactedChildAssignments: number;
+  impactedSiteIds: string[];
+  blocking: boolean;
+};
+
+export async function createGeoSpec(input: CreateGeoSpecInput): Promise<GeoSpec> {
+  return postJson<GeoSpec>('/v1/geo/site-specifications', input);
+}
+
+export async function updateGeoSpec(id: string, input: UpdateGeoSpecInput): Promise<GeoSpec> {
+  return patchJson<GeoSpec>(`/v1/geo/site-specifications/${encodeURIComponent(id)}`, input);
+}
+
+export async function retireGeoSpec(id: string): Promise<GeoSpec> {
+  return deleteJson<GeoSpec>(`/v1/geo/site-specifications/${encodeURIComponent(id)}`);
+}
+
+export async function getGeoSpecImpact(
+  id: string,
+  input: { allowedParentSpecIds?: string[]; allowedChildSpecIds?: string[] },
+): Promise<ContainmentImpactResult> {
+  return postJson<ContainmentImpactResult>(
+    `/v1/geo/site-specifications/${encodeURIComponent(id)}/containment-impact`,
+    input,
+  );
+}
 
 export type RelatedSite = {
   id: string;

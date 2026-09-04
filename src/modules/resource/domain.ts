@@ -228,6 +228,46 @@ export type MoveResourceCatalogNodeInput = {
   sortOrder: number;
 };
 
+export type ReorderResourceCatalogNodesInput = {
+  parentNodeId?: string | null;
+  orderedNodeIds: string[];
+};
+
+export type ResourceCatalogNodeImpact = {
+  nodeId: string;
+  catalogId: string;
+  descendantCount: number;
+  descendantNodeIds: string[];
+  resourceTypeIds: string[];
+  specificationCount: number;
+  specifications: Array<{ id: string; name: string; resourceTypeId: string }>;
+  activePhysicalResourceCount: number;
+  activeLogicalResourceCount: number;
+};
+
+export type ResourceModelSnapshot = {
+  catalog: {
+    id?: string;
+    code: string;
+    name: string;
+    description?: string;
+  };
+  nodes: Array<{
+    id?: string;
+    code: string;
+    name: string;
+    description?: string;
+    kind: ResourceCatalogNodeKind;
+    resourceTypeId?: string;
+    resourceTypeCode?: string;
+    parentNodeId?: string | null;
+    parentCode?: string | null;
+    sortOrder?: number;
+    status?: ResourceCatalogStatus;
+    metadata?: Record<string, unknown>;
+  }>;
+};
+
 export type ResourceRelationship = {
   id: string;
   relationshipType: string;

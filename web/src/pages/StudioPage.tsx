@@ -13,6 +13,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { StudioGovernanceBar } from '../components/StudioGovernanceBar';
+import { ResourceModelStudio } from './studio/resource-model/ResourceModelStudio';
 import type { StudioDomain } from '../services/studioApi';
 import type { StudioSection } from '../utils/appRoute';
 
@@ -221,39 +222,45 @@ export function StudioPage({
             </div>
           ) : null}
 
-          <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <article className="rounded-[26px] border border-app-border bg-white p-5 shadow-soft sm:p-6">
-              <p className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-                Em preparação
-              </p>
-              <h3 className="mt-2 font-display text-[1.45rem] font-semibold tracking-[-0.02em] text-app-text">
-                A área será habilitada por contrato publicado
-              </h3>
-              <p className="mt-3 max-w-2xl text-[0.95rem] leading-7 text-app-muted">
-                Esta fundação estabelece a navegação, o acesso e a superfície comum do Studio. Os
-                editores passam a ser disponibilizados quando os contratos, validações e versões
-                publicadas de cada domínio estiverem prontos.
-              </p>
-            </article>
+          {section === 'resource-model' ? (
+            <div className="mt-5">
+              <ResourceModelStudio canEdit={canEdit} canAdmin={canAdmin} />
+            </div>
+          ) : (
+            <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <article className="rounded-[26px] border border-app-border bg-white p-5 shadow-soft sm:p-6">
+                <p className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+                  Em preparação
+                </p>
+                <h3 className="mt-2 font-display text-[1.45rem] font-semibold tracking-[-0.02em] text-app-text">
+                  A área será habilitada por contrato publicado
+                </h3>
+                <p className="mt-3 max-w-2xl text-[0.95rem] leading-7 text-app-muted">
+                  Esta fundação estabelece a navegação, o acesso e a superfície comum do Studio. Os
+                  editores passam a ser disponibilizados quando os contratos, validações e versões
+                  publicadas de cada domínio estiverem prontos.
+                </p>
+              </article>
 
-            <aside className="rounded-[26px] border border-app-border bg-white p-5 shadow-soft">
-              <h3 className="font-display text-[1.1rem] font-semibold text-app-text">Governança</h3>
-              <dl className="mt-4 space-y-3 text-[0.88rem]">
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="text-app-muted">Edição de draft</dt>
-                  <dd className="font-semibold text-app-text">{canEdit ? 'Permitida' : 'Somente leitura'}</dd>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="text-app-muted">Publicação</dt>
-                  <dd className="font-semibold text-app-text">{canAdmin ? 'Permitida' : 'Não permitida'}</dd>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="text-app-muted">Fonte operacional</dt>
-                  <dd className="font-semibold text-app-text">Published</dd>
-                </div>
-              </dl>
-            </aside>
-          </div>
+              <aside className="rounded-[26px] border border-app-border bg-white p-5 shadow-soft">
+                <h3 className="font-display text-[1.1rem] font-semibold text-app-text">Governança</h3>
+                <dl className="mt-4 space-y-3 text-[0.88rem]">
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-app-muted">Edição de draft</dt>
+                    <dd className="font-semibold text-app-text">{canEdit ? 'Permitida' : 'Somente leitura'}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-app-muted">Publicação</dt>
+                    <dd className="font-semibold text-app-text">{canAdmin ? 'Permitida' : 'Não permitida'}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-app-muted">Fonte operacional</dt>
+                    <dd className="font-semibold text-app-text">Published</dd>
+                  </div>
+                </dl>
+              </aside>
+            </div>
+          )}
         </section>
       </div>
     </div>

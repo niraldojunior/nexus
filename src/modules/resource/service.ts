@@ -42,6 +42,8 @@ import type {
   CreateResourceCatalogNodeInput,
   UpdateResourceCatalogNodeInput,
   MoveResourceCatalogNodeInput,
+  ReorderResourceCatalogNodesInput,
+  ResourceCatalogNodeImpact,
 } from './domain.js';
 import type {
   IResourceRepository,
@@ -384,6 +386,13 @@ export class ResourceService {
     return await this.repository.getResourceCatalog(id, scopeOf(context));
   }
 
+  public async getResourceCatalogByCode(
+    code: string,
+    context?: RequestContext,
+  ): Promise<ResourceCatalog | undefined> {
+    return await this.repository.getResourceCatalogByCode(code, scopeOf(context));
+  }
+
   public async listResourceCatalogs(
     query?: ResourceCatalogQuery,
     context?: RequestContext,
@@ -557,6 +566,157 @@ export class ResourceService {
       current,
     );
     return updated;
+  }
+
+  /**
+   * Reordena um conjunto de nós irmãos sob o mesmo pai ou raiz.
+   */
+  public async reorderResourceCatalogNodes(
+    catalogId: string,
+    input: ReorderResourceCatalogNodesInput,
+    context?: RequestContext,
+  ): Promise<ResourceCatalogNode[]> {
+    if (!input.orderedNodeIds || !Array.isArray(input.orderedNodeIds) || input.orderedNodeIds.length === 0) {
+      throw new AppError('orderedNodeIds must be a non-empty array of node ids', {
+        code: 'RESOURCE_CATALOG_REORDER_INVALID',
+        statusCode: 400,
+      });
+    }
+
+    const catalog = await this.getResourceCatalogOrThrow(catalogId, context);
+    const allNodes = await this.repository.listResourceCatalogNodes(catalog.id, {
+      ...scopeOf(context),
+      includeInactive: true,
+    });
+    const byId = new Map(allNodes.map((node) => [node.id, node]));
+
+    const targetParentId = input.parentNodeId ?? null;
+    const reorderedNodes: ResourceCatalogNode[] = [];
+
+    for (let index = 0; index < input.orderedNodeIds.length; index++) {
+      const id = input.orderedNodeIds[index];
+      if (!id) continue;
+      const node = byId.get(id);
+      if (!node) {
+        throw new AppError(`node ${id} not found in catalog`, {
+          code: 'RESOURCE_CATALOG_NODE_NOT_FOUND',
+          statusCode: 404,
+        });
+      }
+      const nodeParentId = node.parentNodeId ?? null;
+      if (nodeParentId !== targetParentId) {
+        throw new AppError(`node ${id} does not belong to the target parent ${targetParentId}`, {
+          code: 'RESOURCE_CATALOG_REORDER_PARENT_MISMATCH',
+          statusCode: 400,
+        });
+      }
+
+      const updated = await this.repository.upsertResourceCatalogNode({
+        ...node,
+        sortOrder: index,
+        ...(context?.actorSub ? { updatedBy: context.actorSub } : {}),
+      });
+      reorderedNodes.push(updated);
+    }
+
+    return reorderedNodes;
+  }
+
+  /**
+   * Calcula recursivamente o impacto de um nó e sua subárvore antes de inativação/remoção.
+   */
+  public async getResourceCatalogNodeImpact(
+    catalogId: string,
+    nodeId: string,
+    context?: RequestContext,
+  ): Promise<ResourceCatalogNodeImpact> {
+    const catalog = await this.getResourceCatalogOrThrow(catalogId, context);
+    const allNodes = await this.repository.listResourceCatalogNodes(catalog.id, {
+      ...scopeOf(context),
+      includeInactive: true,
+    });
+    const byId = new Map(allNodes.map((node) => [node.id, node]));
+    const rootNode = byId.get(nodeId);
+    if (!rootNode) {
+      throw new AppError('resource catalog node not found', {
+        code: 'RESOURCE_CATALOG_NODE_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+
+    // Coleta subárvore
+    const childrenByParent = new Map<string, ResourceCatalogNode[]>();
+    for (const node of allNodes) {
+      if (!node.parentNodeId) continue;
+      const list = childrenByParent.get(node.parentNodeId) ?? [];
+      list.push(node);
+      childrenByParent.set(node.parentNodeId, list);
+    }
+
+    const descendantNodeIds: string[] = [];
+    const resourceTypeIdsSet = new Set<string>();
+    if (rootNode.kind === 'RESOURCE_TYPE' && rootNode.resourceTypeId) {
+      resourceTypeIdsSet.add(rootNode.resourceTypeId);
+    }
+
+    const queue = [...(childrenByParent.get(rootNode.id) ?? [])];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      descendantNodeIds.push(current.id);
+      if (current.kind === 'RESOURCE_TYPE' && current.resourceTypeId) {
+        resourceTypeIdsSet.add(current.resourceTypeId);
+      }
+      const children = childrenByParent.get(current.id) ?? [];
+      queue.push(...children);
+    }
+
+    const resourceTypeIds = Array.from(resourceTypeIdsSet);
+    const specifications: Array<{ id: string; name: string; resourceTypeId: string }> = [];
+
+    let activePhysicalResourceCount = 0;
+    let activeLogicalResourceCount = 0;
+
+    if (resourceTypeIds.length > 0) {
+      for (const rtId of resourceTypeIds) {
+        const specs = await this.repository.listResourceSpecifications({
+          resourceTypeId: rtId,
+          tenantId: tenantOf(context),
+        });
+        for (const s of specs) {
+          specifications.push({ id: s.id, name: s.name, resourceTypeId: rtId });
+        }
+      }
+
+      if (specifications.length > 0) {
+        const specIds = specifications.map((s) => s.id);
+        const [physCount, logCount] = await Promise.all([
+          this.repository.countPhysicalResources({
+            resourceSpecificationIdIn: specIds,
+            status: 'active',
+            tenantId: tenantOf(context),
+          }),
+          this.repository.countLogicalResources({
+            resourceSpecificationIdIn: specIds,
+            status: 'active',
+            tenantId: tenantOf(context),
+          }),
+        ]);
+        activePhysicalResourceCount = physCount;
+        activeLogicalResourceCount = logCount;
+      }
+    }
+
+    return {
+      nodeId: rootNode.id,
+      catalogId: catalog.id,
+      descendantCount: descendantNodeIds.length,
+      descendantNodeIds,
+      resourceTypeIds,
+      specificationCount: specifications.length,
+      specifications,
+      activePhysicalResourceCount,
+      activeLogicalResourceCount,
+    };
   }
 
   public async deleteResourceCatalogNode(

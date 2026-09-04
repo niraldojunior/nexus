@@ -726,9 +726,11 @@ const routeRequest = async ({
   }
 
   if (
-    url.pathname.startsWith('/v1/resources/') ||
+    url.pathname === '/v1/resource-catalogs' ||
     url.pathname.startsWith('/v1/resource-catalogs/') ||
+    url.pathname === '/v1/resource-types' ||
     url.pathname.startsWith('/v1/resource-types/') ||
+    url.pathname.startsWith('/v1/resources/') ||
     url.pathname === '/v1/resource-statuses' ||
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceCatalog') ||
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceSpecification') ||
@@ -2829,7 +2831,7 @@ const routeResourceRequest = async ({
   }
 
   const resourceCatalogNodeMatch = url.pathname.match(
-    /^\/v1\/resource-catalogs\/([^/]+)\/nodes(?:\/([^/]+)(?:\/(move|path))?)?$/,
+    /^\/v1\/resource-catalogs\/([^/]+)\/nodes(?:\/([^/]+)(?:\/(move|path|impact))?)?$/,
   );
   if (resourceCatalogNodeMatch?.[1]) {
     const catalogId = decodeURIComponent(resourceCatalogNodeMatch[1]);
@@ -2837,6 +2839,21 @@ const routeResourceRequest = async ({
       ? decodeURIComponent(resourceCatalogNodeMatch[2])
       : undefined;
     const action = resourceCatalogNodeMatch[3];
+
+    // Rota de reordenação em lote (POST /v1/resource-catalogs/:id/nodes/reorder)
+    if (nodeId === 'reorder' && !action && request.method === 'POST') {
+      requireRoles(context, CATALOG_ADMIN_ROLES);
+      return sendJson(
+        response,
+        200,
+        await resourceService.reorderResourceCatalogNodes(
+          catalogId,
+          (await readBody(request)) as Parameters<typeof resourceService.reorderResourceCatalogNodes>[1],
+          context,
+        ),
+      );
+    }
+
     requireRoles(context, request.method === 'GET' ? INVENTORY_READ_ROLES : CATALOG_ADMIN_ROLES);
 
     if (!nodeId && request.method === 'GET') {
@@ -2897,6 +2914,13 @@ const routeResourceRequest = async ({
     }
     if (nodeId && action === 'path' && request.method === 'GET') {
       return sendJson(response, 200, resourceService.getResourceCatalogNodePath(catalogId, nodeId, context));
+    }
+    if (nodeId && action === 'impact' && request.method === 'GET') {
+      return sendJson(
+        response,
+        200,
+        await resourceService.getResourceCatalogNodeImpact(catalogId, nodeId, context),
+      );
     }
     throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
   }
@@ -4094,10 +4118,31 @@ const resolveResourceRoute = (pathname: string): ResourceRoute | undefined => {
   const inventoryBase = '/tmf-api/resourceInventoryManagement/v4/resource';
   const activationBase = '/tmf-api/resourceFunctionActivation/v4/resourceFunction';
 
-  if (pathname === `${catalogBase}/resourceCatalog`) return { kind: 'resourceCatalog' };
+  if (pathname === '/v1/resource-catalogs' || pathname === `${catalogBase}/resourceCatalog`)
+    return { kind: 'resourceCatalog' };
+  if (
+    pathname.startsWith('/v1/resource-catalogs/') &&
+    !pathname.startsWith('/v1/resource-catalogs/')
+  )
+    return { kind: 'resourceCatalog' };
+  if (pathname.startsWith('/v1/resource-catalogs/')) {
+    const id = pathname.slice('/v1/resource-catalogs/'.length);
+    if (id && !id.includes('/')) return { kind: 'resourceCatalog', id: decodeURIComponent(id) };
+  }
   if (pathname.startsWith(`${catalogBase}/resourceCatalog/`)) {
     const id = pathname.slice(`${catalogBase}/resourceCatalog/`.length);
     if (id && !id.includes('/')) return { kind: 'resourceCatalog', id: decodeURIComponent(id) };
+  }
+
+  if (pathname === '/v1/resource-types' || pathname === `${catalogBase}/resourceType`)
+    return { kind: 'resourceType' };
+  if (pathname.startsWith('/v1/resource-types/')) {
+    const id = pathname.slice('/v1/resource-types/'.length);
+    if (id && !id.includes('/')) return { kind: 'resourceType', id: decodeURIComponent(id) };
+  }
+  if (pathname.startsWith(`${catalogBase}/resourceType/`)) {
+    const id = pathname.slice(`${catalogBase}/resourceType/`.length);
+    if (id && !id.includes('/')) return { kind: 'resourceType', id: decodeURIComponent(id) };
   }
 
   if (pathname === `${catalogBase}/resourceSpecification`) return { kind: 'resourceSpecification' };
@@ -4105,20 +4150,6 @@ const resolveResourceRoute = (pathname: string): ResourceRoute | undefined => {
     const id = pathname.slice(`${catalogBase}/resourceSpecification/`.length);
     if (id && !id.includes('/'))
       return { kind: 'resourceSpecification', id: decodeURIComponent(id) };
-  }
-
-  if (pathname === `${catalogBase}/resourceFunctionSpecification`)
-    return { kind: 'resourceFunctionSpecification' };
-  if (pathname.startsWith(`${catalogBase}/resourceFunctionSpecification/`)) {
-    const id = pathname.slice(`${catalogBase}/resourceFunctionSpecification/`.length);
-    if (id && !id.includes('/'))
-      return { kind: 'resourceFunctionSpecification', id: decodeURIComponent(id) };
-  }
-
-  if (pathname === `${catalogBase}/resourceType`) return { kind: 'resourceType' };
-  if (pathname.startsWith(`${catalogBase}/resourceType/`)) {
-    const id = pathname.slice(`${catalogBase}/resourceType/`.length);
-    if (id && !id.includes('/')) return { kind: 'resourceType', id: decodeURIComponent(id) };
   }
 
   if (pathname === inventoryBase) return { kind: 'resource' };

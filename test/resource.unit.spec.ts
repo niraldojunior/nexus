@@ -169,11 +169,6 @@ test('ResourceRepository clones stored entities and filters across resource kind
   );
   assert.ok(repository.getResourceSpecification('spec-1')?.validFor?.endDateTime);
   assert.equal(repository.listResourceFunctionSpecifications({ name: 'act' }).length, 1);
-  assert.ok(repository.getResourceCategory('Equipment.Access'));
-  assert.ok(repository.getResourceCategory('Equipment.CustomerPremises'));
-  assert.ok(repository.getResourceType('OLT'));
-  assert.ok(repository.getResourceType('CPE'));
-  assert.ok(repository.listResourceCategories().length > 0);
   assert.ok(repository.listResourceTypes().length > 0);
   assert.equal(
     repository.listPhysicalResources({

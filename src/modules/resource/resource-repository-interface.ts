@@ -3,14 +3,12 @@ type Awaitable<T> = T | Promise<T>;
 import type {
   LogicalResource,
   PhysicalResource,
-  ResourceCategory,
   Resource,
   ResourceFunctionSpecification,
   ResourceFunctionSpecificationQuery,
   ResourceQuery,
   ResourceRelationship,
   ResourceType,
-  ResourceLayer,
   ResourceSpecification,
   ResourceSpecificationQuery,
   PhysicalResourceDetail,
@@ -24,8 +22,7 @@ import type {
 } from './domain.js';
 
 // Escopo de tenant para leitura por id — as mesmas entidades cujo `list*` já aceita `tenantId`
-// na query. Category/Type ficam de fora (ver nota em postgres-repository.ts): são vocabulário
-// fixo com `code` globalmente único, semeado por catálogo estático, não por usuário/tenant.
+// na query.
 export type ResourceTenantScope = { tenantId?: string };
 
 export interface IResourceRepository {
@@ -51,17 +48,14 @@ export interface IResourceRepository {
     query?: ResourceFunctionSpecificationQuery,
   ): Awaitable<ResourceFunctionSpecification[]>;
 
-  getResourceCategory(code: string): Awaitable<ResourceCategory | undefined>;
-  listResourceCategories(): Awaitable<ResourceCategory[]>;
-  getResourceType(code: string): Awaitable<ResourceType | undefined>;
-  listResourceTypes(): Awaitable<ResourceType[]>;
-  upsertResourceLayer(layer: ResourceLayer): Awaitable<ResourceLayer>;
-  getResourceLayer(id: string, scope?: ResourceTenantScope): Awaitable<ResourceLayer | undefined>;
-  listResourceLayers(scope?: ResourceTenantScope): Awaitable<ResourceLayer[]>;
+  // Category/Layer foram removidos fisicamente na Fase B do cutover (issue #188). ResourceType
+  // permanece vocabulário fixo com `code` globalmente único, mas agora tenant-scoped na leitura
+  // (`tmf_resource_type.tenant_id`) — default 'vtal' quando o chamador não informa escopo.
+  listResourceTypes(scope?: ResourceTenantScope): Awaitable<ResourceType[]>;
 
-  // Árvore dinâmica de catálogo (issue #188) — sempre tenant-scoped, convive com Category/Layer
-  // acima até o cutover lógico (plano §7.8). `resourceTypeId` em ResourceType não existe: o mesmo
-  // ResourceType é global ao módulo (chave de negócio `code`), a árvore é que é por tenant.
+  // Árvore dinâmica de catálogo (issue #188) — sempre tenant-scoped. `resourceTypeId` em
+  // ResourceType não existe: o mesmo ResourceType é global ao módulo (chave de negócio `code`),
+  // a árvore é que é por tenant.
   upsertResourceCatalog(catalog: ResourceCatalog): Awaitable<ResourceCatalog>;
   getResourceCatalog(id: string, scope: ResourceTenantScope): Awaitable<ResourceCatalog | undefined>;
   getResourceCatalogByCode(

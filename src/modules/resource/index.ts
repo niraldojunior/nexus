@@ -4,7 +4,6 @@ export type {
   CreatePhysicalResourceInput,
   CreateResourceFunctionSpecificationInput,
   CreateResourceSpecificationInput,
-  ResourceCategory,
   LogicalResource,
   OperationalState,
   PhysicalResource,

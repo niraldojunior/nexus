@@ -2977,10 +2977,10 @@ const routeResourceRequest = async ({
 
   if (route.kind === 'resourceType') {
     if (!route.id && request.method === 'GET') {
-      return sendJson(response, 200, resourceService.listResourceTypes());
+      return sendJson(response, 200, resourceService.listResourceTypes(context));
     }
     if (route.id && request.method === 'GET') {
-      const resourceType = (await resourceService.listResourceTypes()).find(
+      const resourceType = (await resourceService.listResourceTypes(context)).find(
         (item) => item.id === route.id || item.code === route.id,
       );
       return sendJsonOrNotFound(response, resourceType, 'RESOURCE_TYPE_NOT_FOUND');
@@ -4366,7 +4366,7 @@ const buildResourceWorkspaceSnapshot = async ({
     resourceService,
     context,
   );
-  const resourceTypes = await resourceService.listResourceTypes();
+  const resourceTypes = await resourceService.listResourceTypes(context);
   const manufacturerOptions = await loadAllManufacturerOptions(partyService);
 
   const items = await getResourceWorkspaceItems(

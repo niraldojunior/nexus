@@ -3,14 +3,12 @@ import type { GeoGeometryType } from '../geo/domain.js';
 import type {
   LogicalResource,
   PhysicalResource,
-  ResourceCategory,
   Resource,
   ResourceFunctionSpecification,
   ResourceFunctionSpecificationQuery,
   ResourceQuery,
   ResourceRelationship,
   ResourceType,
-  ResourceLayer,
   ResourceSpecification,
   ResourceSpecificationQuery,
   PhysicalResourceDetail,
@@ -33,6 +31,7 @@ import {
   RESOURCE_CATALOG_BOOTSTRAP,
   RESOURCE_TENANTS,
   RESOURCE_TYPES,
+  getResourceTypeByCode,
 } from './catalog.js';
 import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
 import { buildHref } from '../../shared/tmf/index.js';
@@ -439,141 +438,60 @@ export class PostgresResourceRepository implements IResourceRepository {
     });
   }
 
-  public async getResourceCategory(code: string): Promise<ResourceCategory | undefined> {
-    const row = await this.db.get<{
-      id: string;
-      code: string;
-      name: string;
-      parent_category_code?: string | null;
-      description?: string | null;
-      status: 'active' | 'inactive';
-    }>(
-      `SELECT id, code, name, parent_category_code, description, status
-       FROM tmf_resource_category
-       WHERE code = ?`,
-      [code],
-    );
+  // Category/Layer (tmf_resource_category/tmf_resource_layer) foram removidas fisicamente do
+  // banco na Fase B do cutover (issue #188) — nenhum HTTP route ou MCP tool as expõe desde a
+  // Fase A. `getResourceType(code)` também foi removido aqui: zero call sites no repositório
+  // inteiro (só `listResourceTypes()` é usado; ver `service.ts`).
 
-    return row ? this.mapResourceCategory(row) : undefined;
-  }
-
-  public async listResourceCategories(): Promise<ResourceCategory[]> {
+  public async listResourceTypes(scope?: ResourceTenantScope): Promise<ResourceType[]> {
+    // RESOURCE_TENANTS (vtal/tecto) é o universo real do módulo; `tenant_id='default'` é
+    // vocabulário morto pré-refactor (ver §"limpeza tenant=default" no plano da issue #188) —
+    // sem filtro aqui, o SELECT devolvia as duas linhas por code (ex.: 'CTO' em 'default' E em
+    // 'vtal') e a ordem de retorno do Oracle decidia qual "vencia".
+    const tenantId = scope?.tenantId ?? 'vtal';
     const rows = await this.db.all<{
       id: string;
       code: string;
       name: string;
-      parent_category_code?: string | null;
       description?: string | null;
       status: 'active' | 'inactive';
     }>(
-      `SELECT id, code, name, parent_category_code, description, status
-       FROM tmf_resource_category
+      `SELECT id, code, name, description, status
+       FROM tmf_resource_type
+       WHERE tenant_id = ?
        ORDER BY code`,
-    );
-    return rows.map((row) => this.mapResourceCategory(row));
-  }
-
-  public async getResourceType(code: string): Promise<ResourceType | undefined> {
-    const row = await this.db.get<{
-      id: string;
-      code: string;
-      name: string;
-      category_code: string;
-      description?: string | null;
-      status: 'active' | 'inactive';
-    }>(
-      `SELECT id, code, name, category_code, description, status
-       FROM tmf_resource_type
-       WHERE code = ?`,
-      [code],
-    );
-
-    return row ? this.mapResourceType(row) : undefined;
-  }
-
-  public async listResourceTypes(): Promise<ResourceType[]> {
-    const rows = await this.db.all<{
-      id: string;
-      code: string;
-      name: string;
-      category_code: string;
-      description?: string | null;
-      status: 'active' | 'inactive';
-    }>(
-      `SELECT id, code, name, category_code, description, status
-       FROM tmf_resource_type
-       ORDER BY category_code, code`,
-    );
-    return rows.map((row) => this.mapResourceType(row));
-  }
-
-  public async upsertResourceLayer(layer: ResourceLayer): Promise<ResourceLayer> {
-    const now = new Date().toISOString();
-    await this.db.run(
-      `INSERT INTO tmf_resource_layer
-       (id, tenant_id, code, name, description, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET
-         code = excluded.code,
-         name = excluded.name,
-         description = excluded.description,
-         status = excluded.status,
-         updated_at = excluded.updated_at`,
-      [
-        layer.id,
-        layer.tenantId ?? 'default',
-        layer.code,
-        layer.name,
-        layer.description ?? null,
-        layer.status,
-        now,
-        now,
-      ],
-    );
-    return layer;
-  }
-
-  public async getResourceLayer(
-    id: string,
-    scope?: ResourceTenantScope,
-  ): Promise<ResourceLayer | undefined> {
-    const tenantId = scope?.tenantId ?? 'default';
-    const row = await this.db.get<{
-      id: string;
-      code: string;
-      name: string;
-      description: string | null;
-      status: 'active' | 'inactive';
-      tenant_id: string;
-    }>(
-      `SELECT id, code, name, description, status, tenant_id
-         FROM tmf_resource_layer WHERE id = ? AND tenant_id = ?`,
-      [id, tenantId],
-    );
-    return row ? this.mapResourceLayer(row) : undefined;
-  }
-
-  public async listResourceLayers(scope?: ResourceTenantScope): Promise<ResourceLayer[]> {
-    const tenantId = scope?.tenantId ?? 'default';
-    const rows = await this.db.all<{
-      id: string;
-      code: string;
-      name: string;
-      description: string | null;
-      status: 'active' | 'inactive';
-      tenant_id: string;
-    }>(
-      `SELECT id, code, name, description, status, tenant_id
-         FROM tmf_resource_layer WHERE tenant_id = ? ORDER BY code`,
       [tenantId],
     );
-    return rows.map((row) => this.mapResourceLayer(row));
+    const categoryCodeById = await this.loadCategoryCodeByResourceTypeId(tenantId);
+    return rows.map((row) => this.mapResourceType(row, categoryCodeById.get(row.id)));
+  }
+
+  // `tmf_resource_type.category_code` foi removida na Fase B: categoryCode agora vem do node
+  // RESOURCE_TYPE mais específico na árvore ResourceCatalog (plano §7 Fase B, achado durante o
+  // cutover — a árvore só cobre o tenant migrado, não o bootstrap estático). Onde o tipo ainda
+  // não tem node (ambiente novo, seed a partir de catalog.ts), cai no categoryCode estático de
+  // `RESOURCE_TYPES`; sem os dois, 'Uncategorized' em vez de quebrar o contrato `categoryCode:
+  // string`.
+  private async loadCategoryCodeByResourceTypeId(tenantId: string): Promise<Map<string, string>> {
+    const rows = await this.db.all<{ resource_type_id: string; node_code: string }>(
+      `SELECT resource_type_id, code AS node_code
+       FROM tmf_resource_catalog_node
+       WHERE tenant_id = ? AND kind = 'RESOURCE_TYPE' AND resource_type_id IS NOT NULL
+       ORDER BY sort_order, created_at`,
+      [tenantId],
+    );
+    const byId = new Map<string, string>();
+    for (const row of rows) {
+      if (byId.has(row.resource_type_id)) continue; // primeira ocorrência (mais antiga) vence
+      const match = /^category:([^:]+)/.exec(row.node_code);
+      if (match?.[1]) byId.set(row.resource_type_id, match[1]);
+    }
+    return byId;
   }
 
   // --- Árvore dinâmica de catálogo (issue #188) ---------------------------------------------------
-  // Convive com Category/Layer acima até o cutover lógico (plano §7.8). Sem bootstrap lazy aqui —
-  // o catálogo/árvore inicial é governado (task #7, catalog.ts), não um vocabulário fixo reescrito
-  // a cada boot como seedResourceLayers.
+  // Sem bootstrap lazy aqui — o catálogo/árvore inicial é governado (task #7, catalog.ts), não um
+  // vocabulário fixo reescrito a cada boot.
 
   public async upsertResourceCatalog(catalog: ResourceCatalog): Promise<ResourceCatalog> {
     const now = new Date().toISOString();
@@ -1909,61 +1827,23 @@ export class PostgresResourceRepository implements IResourceRepository {
     return spec;
   }
 
-  private mapResourceLayer(row: {
-    id: string;
-    code: string;
-    name: string;
-    description?: string | null;
-    status: 'active' | 'inactive';
-    tenant_id?: string;
-  }): ResourceLayer {
-    return {
-      '@type': 'ResourceLayer',
-      id: row.id,
-      href: buildHref('resourceLayer', row.id),
-      code: row.code,
-      name: row.name,
-      ...(row.description ? { description: row.description } : {}),
-      status: row.status,
-      tenantId: row.tenant_id ?? 'default',
-    };
-  }
-
-  private mapResourceCategory(row: {
-    id: string;
-    code: string;
-    name: string;
-    parent_category_code?: string | null;
-    description?: string | null;
-    status: 'active' | 'inactive';
-  }): ResourceCategory {
-    return {
-      '@type': 'ResourceCategory',
-      id: row.id,
-      href: buildHref('resourceCategory', row.id),
-      code: row.code,
-      name: row.name,
-      ...(row.parent_category_code ? { parentCategoryCode: row.parent_category_code } : {}),
-      ...(row.description ? { description: row.description } : {}),
-      status: row.status,
-    };
-  }
-
-  private mapResourceType(row: {
-    id: string;
-    code: string;
-    name: string;
-    category_code: string;
-    description?: string | null;
-    status: 'active' | 'inactive';
-  }): ResourceType {
+  private mapResourceType(
+    row: {
+      id: string;
+      code: string;
+      name: string;
+      description?: string | null;
+      status: 'active' | 'inactive';
+    },
+    categoryCode?: string,
+  ): ResourceType {
     return {
       '@type': 'ResourceType',
       id: row.id,
       href: buildHref('resourceType', row.id),
       code: row.code,
       name: row.name,
-      categoryCode: row.category_code,
+      categoryCode: categoryCode ?? getResourceTypeByCode(row.code)?.categoryCode ?? 'Uncategorized',
       ...(row.description ? { description: row.description } : {}),
       status: row.status,
     };

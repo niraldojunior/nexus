@@ -1,14 +1,12 @@
 import type {
   LogicalResource,
   PhysicalResource,
-  ResourceCategory,
   Resource,
   ResourceFunctionSpecification,
   ResourceFunctionSpecificationQuery,
   ResourceQuery,
   ResourceRelationship,
   ResourceType,
-  ResourceLayer,
   ResourceSpecification,
   ResourceSpecificationQuery,
   PhysicalResourceDetail,
@@ -21,39 +19,11 @@ import type {
   ResourceCatalogQuery,
 } from './domain.js';
 import type { IResourceRepository, ResourceTenantScope } from './resource-repository-interface.js';
-import { RESOURCE_CATEGORIES, RESOURCE_TYPES } from './catalog.js';
+import { RESOURCE_TYPES } from './catalog.js';
 import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
-import { buildHref } from '../../shared/tmf/index.js';
 
 export class ResourceRepository implements IResourceRepository {
-  private readonly resourceCategories = new Map<string, ResourceCategory>();
   private readonly resourceTypes = new Map<string, ResourceType>();
-  private readonly resourceLayers = new Map<string, ResourceLayer>([
-    [
-      'resource-layer-infrastructure',
-      {
-        '@type': 'ResourceLayer',
-        id: 'resource-layer-infrastructure',
-        href: buildHref('resourceLayer', 'resource-layer-infrastructure'),
-        code: 'infrastructure',
-        name: 'Infraestrutura',
-        status: 'active',
-        tenantId: 'default',
-      },
-    ],
-    [
-      'resource-layer-gpon-network',
-      {
-        '@type': 'ResourceLayer',
-        id: 'resource-layer-gpon-network',
-        href: buildHref('resourceLayer', 'resource-layer-gpon-network'),
-        code: 'gpon_network',
-        name: 'Rede GPON',
-        status: 'active',
-        tenantId: 'default',
-      },
-    ],
-  ]);
   private readonly resourceSpecifications = new Map<string, ResourceSpecification>();
   private readonly resourceFunctionSpecifications = new Map<
     string,
@@ -66,9 +36,6 @@ export class ResourceRepository implements IResourceRepository {
   private readonly resourceCatalogNodes = new Map<string, ResourceCatalogNode>();
 
   public constructor() {
-    for (const category of RESOURCE_CATEGORIES) {
-      this.resourceCategories.set(category.code, cloneResourceCategory(category));
-    }
     for (const type of RESOURCE_TYPES) {
       this.resourceTypes.set(type.code, cloneResourceType(type));
     }
@@ -117,37 +84,11 @@ export class ResourceRepository implements IResourceRepository {
       .map(cloneResourceFunctionSpecification);
   }
 
-  public getResourceCategory(code: string): ResourceCategory | undefined {
-    const category = this.resourceCategories.get(code);
-    return category ? cloneResourceCategory(category) : undefined;
-  }
-
-  public listResourceCategories(): ResourceCategory[] {
-    return [...this.resourceCategories.values()].map(cloneResourceCategory);
-  }
-
-  public getResourceType(code: string): ResourceType | undefined {
-    const type = this.resourceTypes.get(code);
-    return type ? cloneResourceType(type) : undefined;
-  }
-
-  public listResourceTypes(): ResourceType[] {
+  public listResourceTypes(scope?: ResourceTenantScope): ResourceType[] {
+    // Repositório in-memory não é multi-tenant de fato (usado só por testes unitários) — o
+    // parâmetro existe para satisfazer a interface, sem filtrar.
+    void scope;
     return [...this.resourceTypes.values()].map(cloneResourceType);
-  }
-
-  public upsertResourceLayer(layer: ResourceLayer): ResourceLayer {
-    const stored = { ...layer };
-    this.resourceLayers.set(stored.id, stored);
-    return { ...stored };
-  }
-
-  public getResourceLayer(id: string): ResourceLayer | undefined {
-    const layer = this.resourceLayers.get(id);
-    return layer ? { ...layer } : undefined;
-  }
-
-  public listResourceLayers(): ResourceLayer[] {
-    return [...this.resourceLayers.values()].map((layer) => ({ ...layer }));
   }
 
   public upsertResourceCatalog(catalog: ResourceCatalog): ResourceCatalog {
@@ -655,10 +596,6 @@ const cloneResourceFunctionSpecification = (
     (item) => ({ ...item }),
   ),
   ...(spec.validFor ? { validFor: { ...spec.validFor } } : {}),
-});
-
-const cloneResourceCategory = (category: ResourceCategory): ResourceCategory => ({
-  ...category,
 });
 
 // Tenant não informado no scope enxerga tudo — mesma convenção liberal do repositório em memória

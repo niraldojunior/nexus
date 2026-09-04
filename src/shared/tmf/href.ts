@@ -36,6 +36,9 @@ export const HREF_PATHS = {
   partyRole: '/tmf-api/partyRoleManagement/v4/partyRole',
   /** Fora do namespace TMF — rota interna do módulo de busca. */
   researchSession: '/v1/search/sessions',
+  /** Fora do namespace TMF — control plane do Nexus Studio (D-ARQ-005, sem Open API TMF própria). */
+  studioWorkspace: '/v1/studio/workspaces',
+  studioVersion: '/v1/studio/versions',
 } as const satisfies Record<string, `/${string}`>;
 
 export type HrefEntity = keyof typeof HREF_PATHS;

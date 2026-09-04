@@ -106,6 +106,9 @@ export const ASSIGNABLE_ROLES = [
   'order.requester',
   'order.operator',
   'catalog.admin',
+  'studio.reader',
+  'studio.editor',
+  'studio.admin',
   'tenant.admin',
   'platform.admin',
 ] as const;

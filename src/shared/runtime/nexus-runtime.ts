@@ -40,6 +40,7 @@ import { PostgresStudioRepository } from '../../modules/studio/postgres-reposito
 import { OracleStudioRepository } from '../../modules/studio/oracle-repository.js';
 import { ResourceModelStudioAdapter } from '../../modules/studio/adapters/resource-model-adapter.js';
 import { LocationModelStudioAdapter } from '../../modules/studio/adapters/location-model-adapter.js';
+import { SpatialStudioAdapter } from '../../modules/studio/adapters/spatial-studio-adapter.js';
 import {
   GeonetAddressGateway,
   type GeonetGatewayConfig,
@@ -219,6 +220,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   const studioService = new StudioService(studioRepository, eventService, { db });
   studioService.registerAdapter(new ResourceModelStudioAdapter(resourceService));
   studioService.registerAdapter(new LocationModelStudioAdapter(geoService));
+  studioService.registerAdapter(new SpatialStudioAdapter(geoService));
 
   let defaultUser = await userRepository.getByExternalId(DEFAULT_RUNTIME_USER.externalId);
   if (!defaultUser) {

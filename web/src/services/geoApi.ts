@@ -32,6 +32,13 @@ export type GeoSourceSystem =
 
 export type GeoAccuracyLevel = 'high' | 'medium' | 'low' | 'unknown';
 
+export type GeoCharacteristic = {
+  group?: string;
+  name: string;
+  value: unknown;
+  valueType?: 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'json';
+};
+
 export type GeoLocation = {
   '@type': 'GeographicLocation';
   id: string;
@@ -44,6 +51,28 @@ export type GeoLocation = {
   sourceSystem?: GeoSourceSystem;
   sourceRef?: string;
   accuracyLevel?: GeoAccuracyLevel;
+  validFor?: { startDateTime?: string; endDateTime?: string };
+  characteristic?: GeoCharacteristic[];
+};
+
+export type GeoLocationInput = {
+  geometryType: GeoLocation['geometryType'];
+  geometry: GeoGeometry;
+  spatialRef?: string;
+  accuracy?: string;
+  referencePoint?: string;
+  sourceSystem?: GeoSourceSystem;
+  sourceRef?: string;
+  accuracyLevel?: GeoAccuracyLevel;
+  validFor?: GeoLocation['validFor'];
+  characteristic?: GeoCharacteristic[];
+};
+
+export type GeoLocationReferences = {
+  locationId: string;
+  activeAddressCount: number;
+  activeSiteCount: number;
+  blocking: boolean;
 };
 
 // TMF673: sub-endereço dentro do GeographicAddress — localiza torre/bloco/andar/unidade dentro
@@ -280,7 +309,29 @@ export const listGeoAddresses = (options?: { q?: string; limit?: number }) => {
   const query = params.toString();
   return getJson<GeoAddress[]>(`/v1/geo/addresses${query ? `?${query}` : ''}`);
 };
-export const listGeoLocations = () => getJson<GeoLocation[]>('/v1/geo/locations');
+export const listGeoLocations = (options?: {
+  bbox?: { minLng: number; minLat: number; maxLng: number; maxLat: number };
+  limit?: number;
+  offset?: number;
+}) => {
+  const params = new URLSearchParams();
+  if (options?.bbox) {
+    const { minLng, minLat, maxLng, maxLat } = options.bbox;
+    params.set('bbox', `${minLng},${minLat},${maxLng},${maxLat}`);
+  }
+  if (options?.limit !== undefined) params.set('limit', String(options.limit));
+  if (options?.offset !== undefined) params.set('offset', String(options.offset));
+  const query = params.toString();
+  return getJson<GeoLocation[]>(`/v1/geo/locations${query ? `?${query}` : ''}`);
+};
+export const createGeoLocation = (input: GeoLocationInput) =>
+  postJson<GeoLocation>('/v1/geo/locations', input);
+export const updateGeoLocation = (id: string, input: Partial<GeoLocationInput>) =>
+  patchJson<GeoLocation>(`/v1/geo/locations/${encodeURIComponent(id)}`, input);
+export const terminateGeoLocation = (id: string) =>
+  deleteJson<GeoLocation>(`/v1/geo/locations/${encodeURIComponent(id)}`);
+export const getGeoLocationReferences = (id: string) =>
+  getJson<GeoLocationReferences>(`/v1/geo/locations/${encodeURIComponent(id)}/references`);
 export const listGeoSiteSpecifications = () => getJson<GeoSpec[]>('/v1/geo/site-specifications');
 export const getGeoSite = (id: string) =>
   getJsonOrUndefined<GeoSite>(`/v1/geo/sites/${encodeURIComponent(id)}`);

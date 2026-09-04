@@ -68,7 +68,12 @@ export function StudioGovernanceBar({ domain, canEdit, canAdmin }: StudioGoverna
   const draft = status?.draftVersion;
   const published = status?.publishedVersion;
   const validation = draft?.validation;
-  const hasValidationErrors = validation?.issues.some((issue) => issue.severity === 'error') ?? false;
+  // Um draft recém-criado ou recém-editado ainda não tem `validation` — tratar essa ausência
+  // como "sem erro" habilitaria Publicar sem nunca ter passado por Validar, e o backend só
+  // valida de fato dentro de publish(), respondendo 422 quando o snapshot é inválido (ex.:
+  // Studio Spatial sem `coverages`). Exigir `validation.valid === true` fecha essa lacuna.
+  const isValidated = validation?.valid === true;
+  const validationIssues = validation?.issues ?? [];
 
   return (
     <section
@@ -120,7 +125,8 @@ export function StudioGovernanceBar({ domain, canEdit, canAdmin }: StudioGoverna
                   <button
                     type="button"
                     onClick={() => void runAction('publish', () => publishStudioDraft(domain, draft.checksum))}
-                    disabled={busy !== null || hasValidationErrors}
+                    disabled={busy !== null || !isValidated}
+                    title={!isValidated ? 'Valide o draft antes de publicar.' : undefined}
                     className="inline-flex items-center gap-2 rounded-xl bg-app-accent px-3 py-2 text-[0.82rem] font-semibold text-app-text transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {busy === 'publish' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -180,6 +186,22 @@ export function StudioGovernanceBar({ domain, canEdit, canAdmin }: StudioGoverna
             </dd>
           </div>
         </dl>
+      ) : null}
+
+      {validationIssues.length > 0 ? (
+        <ul className="mt-4 space-y-1.5 border-t border-app-border pt-4 text-[0.82rem] text-app-text">
+          {validationIssues.map((issue, index) => (
+            <li key={`${issue.code}-${index}`} className="flex items-start gap-2">
+              <AlertTriangle
+                className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${issue.severity === 'error' ? 'text-red-600' : 'text-amber-600'}`}
+              />
+              <span>
+                {issue.message}
+                {issue.path ? <span className="text-app-muted"> ({issue.path})</span> : null}
+              </span>
+            </li>
+          ))}
+        </ul>
       ) : null}
     </section>
   );

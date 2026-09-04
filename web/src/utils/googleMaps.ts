@@ -3,6 +3,7 @@
 
 export type GoogleLatLng = { lat: () => number; lng: () => number };
 export type GoogleMapMouseEvent = { latLng: GoogleLatLng };
+export type GoogleMapsListener = { remove: () => void };
 export type GoogleMapBounds = {
   getCenter: () => GoogleLatLng;
   getNorthEast: () => GoogleLatLng;
@@ -17,7 +18,10 @@ export type GoogleMapStyle = {
   stylers: Array<Record<string, string | number>>;
 };
 export type GoogleMapInstance = {
-  addListener: (eventName: string, listener: (event: GoogleMapMouseEvent) => void) => void;
+  addListener: (
+    eventName: string,
+    listener: (event: GoogleMapMouseEvent) => void,
+  ) => GoogleMapsListener;
   getBounds: () => GoogleMapBounds | undefined;
   getCenter: () => GoogleLatLng | undefined;
   getDiv: () => HTMLElement;
@@ -35,8 +39,9 @@ export type GoogleStreetViewPanoramaInstance = {
   setVisible: (visible: boolean) => void;
 };
 export type GoogleMarkerInstance = {
-  addListener: (eventName: string, listener: () => void) => void;
+  addListener: (eventName: string, listener: () => void) => GoogleMapsListener;
   setIcon: (icon: unknown) => void;
+  getPosition: () => GoogleLatLng | undefined;
   setMap: (map: GoogleMapInstance | GoogleStreetViewPanoramaInstance | null) => void;
   setPosition: (position: { lat: number; lng: number }) => void;
   setOptions: (options: Record<string, unknown>) => void;
@@ -49,10 +54,14 @@ export type GoogleStreetViewPanoramaData = {
   };
 };
 export type GooglePolylineInstance = {
-  addListener: (eventName: string, listener: () => void) => void;
+  addListener: (eventName: string, listener: () => void) => GoogleMapsListener;
   setMap: (map: GoogleMapInstance | null) => void;
   setOptions: (options: Record<string, unknown>) => void;
   setPath: (path: Array<{ lat: number; lng: number }>) => void;
+};
+export type GooglePolygonInstance = {
+  setMap: (map: GoogleMapInstance | null) => void;
+  setOptions: (options: Record<string, unknown>) => void;
 };
 export type GoogleCircleInstance = {
   setMap: (map: GoogleMapInstance | null) => void;
@@ -108,6 +117,7 @@ export type GoogleMapsApi = {
     Map: new (element: HTMLElement, options: Record<string, unknown>) => GoogleMapInstance;
     Marker: new (options: Record<string, unknown>) => GoogleMarkerInstance;
     Polyline: new (options: Record<string, unknown>) => GooglePolylineInstance;
+    Polygon: new (options: Record<string, unknown>) => GooglePolygonInstance;
     Circle: new (options: Record<string, unknown>) => GoogleCircleInstance;
     InfoWindow: new (options: Record<string, unknown>) => GoogleInfoWindowInstance;
     StreetViewService: new () => {
@@ -127,9 +137,9 @@ export type GoogleMapsApi = {
     SymbolPath: { CIRCLE: unknown };
     event: {
       clearInstanceListeners: (instance: object) => void;
-      // Dispara uma única vez e se auto-remove — usado pela câmera para encadear os
+          // Dispara uma única vez e se auto-remove — usado pela câmera para encadear os
       // estágios de um voo longo no `idle` (fim de cada animação nativa), ver mapCamera.
-      addListenerOnce: (instance: object, eventName: string, handler: () => void) => void;
+      addListenerOnce: (instance: object, eventName: string, handler: () => void) => GoogleMapsListener;
       // Dispara um evento sintético na instância — usado para avisar o mapa que seu
       // contêiner mudou de tamanho (ver ResizeObserver em GeoPage), já que redimensionar
       // o `<div>` por CSS não é suficiente para o Maps recalcular a projeção sozinho.

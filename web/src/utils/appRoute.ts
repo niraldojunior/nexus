@@ -17,6 +17,31 @@ import { DEFAULT_SERVICE_CATEGORY_CODE } from '../data/serviceCategoryViews';
  * `res`/`addr`/`q`/`place`) para não colidir com este `AppRoute` nem com `clearNavigationParams`;
  * ver `utils/geoViewState.ts`.
  */
+export type StudioSection =
+  | 'resource-model'
+  | 'location-model'
+  | 'spatial'
+  | 'geo-experience'
+  | 'parties'
+  | 'reference-data'
+  | 'rules-workflows'
+  | 'templates'
+  | 'governance';
+
+const STUDIO_SECTIONS: readonly StudioSection[] = [
+  'resource-model',
+  'location-model',
+  'spatial',
+  'geo-experience',
+  'parties',
+  'reference-data',
+  'rules-workflows',
+  'templates',
+  'governance',
+];
+
+export const DEFAULT_STUDIO_SECTION: StudioSection = 'resource-model';
+
 export type AppRoute = {
   page: PageId;
   /** Sessão de pesquisa aberta (rota `/c/<id>`), quando a página é `research`. */
@@ -27,6 +52,8 @@ export type AppRoute = {
   resourceCategory?: string;
   /** Categoria ativa do módulo de Serviços, quando a página é `service`. */
   serviceCategory?: string;
+  /** Área ativa do Nexus Studio, quando a página é `studio`. */
+  studioSection?: StudioSection;
 };
 
 /** `Equipment.Access` → `equipment-access`; `Access` → `access`. */
@@ -98,6 +125,13 @@ export function parseAppRoute(pathname: string, options: { isMobile: boolean }):
       return { page: 'assistant' };
     case 'settings':
       return { page: 'configuracoes' };
+    case 'studio':
+      return {
+        page: 'studio',
+        studioSection: STUDIO_SECTIONS.includes(tail as StudioSection)
+          ? (tail as StudioSection)
+          : DEFAULT_STUDIO_SECTION,
+      };
     default:
       return deviceDefaultRoute(options.isMobile);
   }
@@ -116,6 +150,8 @@ export function appRoutePath(route: AppRoute): string {
       return '/orders';
     case 'configuracoes':
       return '/settings';
+    case 'studio':
+      return `/studio/${route.studioSection ?? DEFAULT_STUDIO_SECTION}`;
     case 'conversas':
       return '/conversations';
     case 'assistant':

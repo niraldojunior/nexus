@@ -26,6 +26,7 @@ import NewResearchPage from './pages/NewResearchPage';
 import ResourcePage from './pages/ResourcePage';
 import ServicePage from './pages/ServicePage';
 import { ConfigurationPage } from './pages/ConfigurationPage';
+import { StudioPage } from './pages/StudioPage';
 import { ResearchPage } from './pages/ResearchPage';
 import { ConversasPage } from './pages/PesquisasPage';
 import { useSession } from './hooks/useSession';
@@ -43,7 +44,13 @@ import { sendMessage } from './services/api';
 import { useIsMobile } from './hooks/useIsMobile';
 import { DEFAULT_RESOURCE_CATEGORY_CODE } from './data/resourceCategoryViews';
 import { DEFAULT_SERVICE_CATEGORY_CODE } from './data/serviceCategoryViews';
-import { appRoutePath, parseAppRoute, type AppRoute } from './utils/appRoute';
+import {
+  appRoutePath,
+  DEFAULT_STUDIO_SECTION,
+  parseAppRoute,
+  type AppRoute,
+  type StudioSection,
+} from './utils/appRoute';
 import {
   Conversation,
   ConversationEntry,
@@ -63,7 +70,7 @@ const assistantChips = [
 ];
 
 const domainMeta: Record<
-  Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'configuracoes'>,
+  Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'configuracoes' | 'studio'>,
   { title: string; subtitle: string; icon: typeof MapPin }
 > = {
   geo: { title: 'Geo', subtitle: 'Onde? Geographic Site, Address & Location', icon: MapPinned },
@@ -140,7 +147,7 @@ function DomainPage({
   page,
   onOpenMainMenu,
 }: {
-  page: Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'configuracoes'>;
+  page: Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'configuracoes' | 'studio'>;
   onOpenMainMenu?: () => void;
 }) {
   const meta = domainMeta[page];
@@ -225,7 +232,7 @@ function MetricGrid({ metrics }: { metrics: DomainMetric[] }) {
 function DomainOverview({
   page,
 }: {
-  page: Exclude<PageId, 'assistant' | 'conversation' | 'research'>;
+  page: Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'configuracoes' | 'studio'>;
 }) {
   const cards = domainCards[page];
 
@@ -428,6 +435,9 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     parseAppRoute(window.location.pathname, { isMobile }),
   );
   const [currentPage, setCurrentPage] = useState<PageId>(initialRoute.page);
+  const [activeStudioSection, setActiveStudioSection] = useState<StudioSection>(
+    initialRoute.studioSection ?? DEFAULT_STUDIO_SECTION,
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [recentGroup, setRecentGroup] = useState<RecentGroup>('none');
@@ -505,6 +515,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     setActiveResearchSessionId(route.sessionId ?? null);
     if (route.resourceCategory) setActiveResourceCategory(route.resourceCategory);
     if (route.serviceCategory) setActiveServiceCategory(route.serviceCategory);
+    if (route.studioSection) setActiveStudioSection(route.studioSection);
     setResourceMenuOpen(route.page === 'resource');
     setServiceMenuOpen(route.page === 'service');
     setCurrentPage(route.page);
@@ -528,6 +539,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
         currentPage === 'conversation' ? (activeConversationId ?? undefined) : undefined,
       resourceCategory: activeResourceCategory,
       serviceCategory: activeServiceCategory,
+      studioSection: activeStudioSection,
     });
 
     if (window.location.pathname !== expectedPath) {
@@ -539,6 +551,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     activeResearchSessionId,
     activeResourceCategory,
     activeServiceCategory,
+    activeStudioSection,
   ]);
 
   const activeConversation = useMemo(
@@ -631,6 +644,11 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     setServiceMenuOpen(page === 'service' ? serviceMenuOpen : false);
     setCurrentPage(page);
     setActiveResearchSessionId(null);
+  };
+
+  const handleStudioSectionChange = (section: StudioSection) => {
+    setActiveStudioSection(section);
+    setCurrentPage('studio');
   };
 
   const handleAssistantNavigate = (page: PageId) => {
@@ -758,6 +776,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
         }}
         sessionUser={session.user}
         isAdmin={session.admin}
+        canViewStudio={session.canViewStudio}
         onLogout={onLogout}
       />
 
@@ -786,6 +805,21 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
             ) : (
               <div className="p-8 text-app-muted">
                 Você não tem permissão para acessar Configurações.
+              </div>
+            )}
+          </div>
+        ) : currentPage === 'studio' ? (
+          <div className="h-full min-h-0 overflow-hidden">
+            {session.canViewStudio ? (
+              <StudioPage
+                section={activeStudioSection}
+                canEdit={session.canEditStudio}
+                canAdmin={session.canAdminStudio}
+                onSectionChange={handleStudioSectionChange}
+              />
+            ) : (
+              <div className="p-8 text-app-muted">
+                Você não tem permissão para acessar o Studio.
               </div>
             )}
           </div>

@@ -106,6 +106,15 @@ test('primary navigation remains clickable when collapsed', async () => {
   expect(onToggleResourceMenu).toHaveBeenCalledTimes(1);
 });
 
+test('shows Studio only to authorized users', () => {
+  renderSidebar({ canViewStudio: true });
+  expect(screen.getByRole('button', { name: 'Studio' })).toBeInTheDocument();
+
+  cleanup();
+  renderSidebar({ canViewStudio: false });
+  expect(screen.queryByRole('button', { name: 'Studio' })).not.toBeInTheDocument();
+});
+
 test('mobile floating toggle appears by default when collapsed and shows the Nexus mark', () => {
   renderSidebar({ isMobile: true, collapsed: true });
 

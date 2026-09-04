@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  canAdminStudio,
   canEditInventory,
+  canEditStudio,
+  canViewStudio,
   clearSession,
   getSessionRoles,
   getSessionUser,
@@ -87,6 +90,28 @@ describe('session', () => {
 
     setSession({ token: makeToken({ roles: ['inventory.reader'], exp: futureExp }), user });
     expect(canEditInventory()).toBe(false);
+  });
+
+  it('distingue leitura, edição e administração do Studio', () => {
+    setSession({ token: makeToken({ roles: ['studio.reader'], exp: futureExp }), user });
+    expect(canViewStudio()).toBe(true);
+    expect(canEditStudio()).toBe(false);
+    expect(canAdminStudio()).toBe(false);
+
+    setSession({ token: makeToken({ roles: ['studio.editor'], exp: futureExp }), user });
+    expect(canViewStudio()).toBe(true);
+    expect(canEditStudio()).toBe(true);
+    expect(canAdminStudio()).toBe(false);
+
+    setSession({ token: makeToken({ roles: ['studio.admin'], exp: futureExp }), user });
+    expect(canViewStudio()).toBe(true);
+    expect(canEditStudio()).toBe(true);
+    expect(canAdminStudio()).toBe(true);
+
+    setSession({ token: makeToken({ roles: ['platform.admin'], exp: futureExp }), user });
+    expect(canViewStudio()).toBe(true);
+    expect(canEditStudio()).toBe(true);
+    expect(canAdminStudio()).toBe(true);
   });
 
   it('notifica assinantes em login e logout', () => {

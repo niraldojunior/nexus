@@ -87,6 +87,9 @@ spoofing.
 | `order.requester`  | Abrir ordens e consultar viabilidade                                   |
 | `order.operator`   | Executar designação, avançar estado de ordem                           |
 | `catalog.admin`    | Manter catálogos (Specifications, RelationshipTypes) — C9              |
+| `studio.reader`    | Consultar modelos e versões publicadas/draft do Studio do próprio tenant |
+| `studio.editor`    | Criar, alterar e validar drafts do Studio do próprio tenant            |
+| `studio.admin`     | Publicar, descartar drafts e executar exclusões lógicas governadas     |
 | `tenant.admin`     | Gerir usuários do próprio tenant                                       |
 | `platform.admin`   | **Cross-tenant**; exclusivo da operação V.tal, com auditoria reforçada |
 

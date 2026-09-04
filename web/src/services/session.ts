@@ -109,3 +109,21 @@ const INVENTORY_WRITE_ROLES = ['inventory.editor', 'platform.admin'];
 /** O usuário da sessão pode editar Geo/Resource/Service (painéis de Locais e Recursos). */
 export const canEditInventory = (): boolean =>
   getSessionRoles().some((role) => INVENTORY_WRITE_ROLES.includes(role));
+
+// Espelham os gates do control plane no backend. Papéis não são hierárquicos: editor e admin
+// incluem leitura explicitamente para evitar que a UI exponha um beco sem saída por falta de GET.
+const STUDIO_READ_ROLES = ['studio.reader', 'studio.editor', 'studio.admin', 'platform.admin'];
+const STUDIO_EDIT_ROLES = ['studio.editor', 'studio.admin', 'platform.admin'];
+const STUDIO_ADMIN_ROLES = ['studio.admin', 'platform.admin'];
+
+/** O usuário da sessão pode consultar o Nexus Studio. */
+export const canViewStudio = (): boolean =>
+  getSessionRoles().some((role) => STUDIO_READ_ROLES.includes(role));
+
+/** O usuário da sessão pode editar drafts no Nexus Studio. */
+export const canEditStudio = (): boolean =>
+  getSessionRoles().some((role) => STUDIO_EDIT_ROLES.includes(role));
+
+/** O usuário da sessão pode publicar e descartar drafts no Nexus Studio. */
+export const canAdminStudio = (): boolean =>
+  getSessionRoles().some((role) => STUDIO_ADMIN_ROLES.includes(role));

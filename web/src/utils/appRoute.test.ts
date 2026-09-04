@@ -52,6 +52,21 @@ describe('parseAppRoute', () => {
     expect(parseAppRoute('/assistant', desktop)).toEqual({ page: 'assistant' });
   });
 
+  test('Studio root and sections resolve to canonical routes', () => {
+    expect(parseAppRoute('/studio', desktop)).toEqual({
+      page: 'studio',
+      studioSection: 'resource-model',
+    });
+    expect(parseAppRoute('/studio/geo-experience', desktop)).toEqual({
+      page: 'studio',
+      studioSection: 'geo-experience',
+    });
+    expect(parseAppRoute('/studio/unknown', desktop)).toEqual({
+      page: 'studio',
+      studioSection: 'resource-model',
+    });
+  });
+
   test('resource and service categories', () => {
     expect(parseAppRoute('/resources/logical-ipam', desktop)).toEqual({
       page: 'resource',
@@ -90,6 +105,9 @@ describe('appRoutePath round-trips', () => {
     expect(appRoutePath({ page: 'conversas' })).toBe('/conversations');
     expect(appRoutePath({ page: 'assistant' })).toBe('/assistant');
     expect(appRoutePath({ page: 'research' })).toBe('/new-conversation');
+    expect(appRoutePath({ page: 'studio', studioSection: 'location-model' })).toBe(
+      '/studio/location-model',
+    );
     expect(appRoutePath({ page: 'resource', resourceCategory: 'Logical.IPAM' })).toBe(
       '/resources/logical-ipam',
     );

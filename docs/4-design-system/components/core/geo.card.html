@@ -1,0 +1,213 @@
+<!-- @dsCard group="Components" viewport="1000x540" name="Locais — sidebar states, floating panel, map layers" subtitle="Retractable nav (248px ⇄ 72px rail) · search pill · IconTabs · MapMarker · Switch · legend ramp" -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  body { margin: 0; font-family: var(--font-ui); }
+  #root { height: 540px; }
+  .basemap { position: absolute; inset: 0; background: #F1F0EC; background-image: linear-gradient(90deg, rgba(46,45,57,.05) 1px, transparent 1px), linear-gradient(rgba(46,45,57,.05) 1px, transparent 1px), radial-gradient(circle at 70% 30%, #DDECE0 0 22%, transparent 22%), radial-gradient(circle at 14% 80%, #BFE3EE 0 28%, transparent 28%); background-size: 46px 46px, 46px 46px, 100% 100%, 100% 100%; }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <script src="../../_ds_bundle.js"></script>
+  <script type="text/babel">
+    const { IconTabs, Switch, MapMarker, Badge } = window.VTalNexusDesignSystem_63587b;
+    const kebab = (s) => s.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+    const Ic = ({ name, size = 16 }) => {
+      const ref = React.useRef(null);
+      React.useEffect(() => {
+        if (ref.current && window.lucide) {
+          ref.current.innerHTML = \`<i data-lucide="\${kebab(name)}" style="width:\${size}px;height:\${size}px"></i>\`;
+          window.lucide.createIcons({ attrs: { width: size, height: size }, nameAttr: 'data-lucide', root: ref.current });
+        }
+      });
+      return <span ref={ref} style={{ display: 'flex' }} />;
+    };
+
+    const NAV = [
+      { id: 'new', label: 'Nova Conversa', icon: 'Plus' },
+      { id: 'chats', label: 'Conversas', icon: 'MessagesSquare' },
+      { id: 'locais', label: 'Locais', icon: 'MapPin' },
+      { id: 'recursos', label: 'Recursos', icon: 'Boxes' },
+      { id: 'servicos', label: 'Serviços', icon: 'Briefcase' },
+      { id: 'ordens', label: 'Ordens', icon: 'Network' },
+      { id: 'studio', label: 'Studio', icon: 'SlidersHorizontal' },
+      { id: 'config', label: 'Configurações', icon: 'Settings2' },
+    ];
+    const LAYERS = [
+      { group: 'Locais', icon: 'MapPin', items: ['Estações', 'Sites de Rede', 'Sites de Serviço', 'Torres'] },
+      { group: 'Infraestrutura Civil', icon: 'Network', items: ['Postes', 'Dutos', 'Caixas Subterrâneas'] },
+    ];
+    // Coords keep clear of the floating panels in both nav states.
+    const MARKERS = [
+      { t: 'available', x: 40, y: 9 }, { t: 'suspended', x: 54, y: 15 }, { t: 'available', x: 47, y: 24 },
+      { t: 'partial', x: 41, y: 38 }, { t: 'available', x: 57, y: 33 }, { t: 'station', x: 52, y: 46, s: 'md' },
+      { t: 'available', x: 13, y: 72 }, { t: 'suspended', x: 21, y: 80 },
+      { t: 'available', x: 78, y: 73 }, { t: 'partial', x: 87, y: 80 },
+    ];
+
+    function Demo() {
+      const [rail, setRail] = React.useState(false);
+      const [tab, setTab] = React.useState('cobertura');
+      const [layers, setLayers] = React.useState({ 'Postes': false, 'Estações': true, 'Sites de Rede': true, 'Sites de Serviço': true, 'Torres': true, 'Dutos': true, 'Caixas Subterrâneas': true });
+
+      return (
+        <div style={{ display: 'flex', height: '100%', overflow: 'hidden', borderTop: '3px solid var(--vt-yellow)', background: 'var(--surface-app)' }}>
+          <aside style={{
+            position: 'relative', width: rail ? 'var(--rail-width)' : 'var(--sidebar-width)', flexShrink: 0,
+            display: 'flex', flexDirection: 'column',
+            background: 'var(--sidebar-bg)', borderRight: '1px solid var(--sidebar-border)',
+            transition: 'width var(--transition-normal)', zIndex: 20,
+          }}>
+            <div style={{ padding: 8 }}>
+              <div className="vt-sb-btn vt-sb-btn-lg" style={{ justifyContent: rail ? 'center' : 'flex-start', cursor: rail ? 'pointer' : 'default' }} onClick={rail ? () => setRail(false) : undefined}>
+                <img src="../../assets/nexus-mark.svg" alt="Nexus" style={{ height: 22 }} />
+                {!rail && <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 17, letterSpacing: 'var(--tracking-snug)', color: 'var(--text-primary)', flex: 1 }}>Nexus</span>}
+                {!rail && <span onClick={(e) => { e.stopPropagation(); setRail(true); }} title="Recolher" style={{ display: 'flex', color: 'var(--text-tertiary)' }}><Ic name="PanelLeftClose" size={16} /></span>}
+              </div>
+            </div>
+
+            <nav style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 2, alignItems: rail ? 'center' : 'stretch' }}>
+              {NAV.map((it) => {
+                const on = it.id === 'locais';
+                return (
+                  <div key={it.id} className={'vt-sb-btn' + (rail ? ' vt-sb-btn-rail' : '') + (on ? ' is-active' : '')} title={rail ? undefined : undefined}>
+                    <Ic name={it.icon} size={18} />
+                    {!rail && <span style={{ flex: 1 }}>{it.label}</span>}
+                    {rail && <span className="vt-sb-tip">{it.label}</span>}
+                  </div>
+                );
+              })}
+              {!rail && (
+                <>
+                  <div className="vt-sb-group-label" style={{ marginTop: 14 }}>Conversas recentes</div>
+                  {['Viabilidade Icaraí', 'CDOI-2924 (ICI)'].map((r) => (
+                    <div key={r} className="vt-sb-btn" style={{ fontWeight: 'var(--fw-regular)', color: 'var(--text-secondary)' }}>
+                      <Ic name="MessageSquare" size={18} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </nav>
+
+            <div style={{ flexShrink: 0, borderTop: '1px solid var(--sidebar-border)', padding: 8 }}>
+              <div className="vt-sb-btn vt-sb-btn-lg" style={{ justifyContent: rail ? 'center' : 'flex-start' }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--vt-yellow)', color: 'var(--vt-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 12, flexShrink: 0 }}>A</div>
+                {!rail && (
+                  <>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 'var(--fs-body-lg)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Administrador</div>
+                      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>admin@vtal.com.br</div>
+                    </div>
+                    <Ic name="ChevronsUpDown" size={15} />
+                  </>
+                )}
+                {rail && <span className="vt-sb-tip">Administrador</span>}
+              </div>
+            </div>
+
+            <div className="vt-sb-rail" onClick={() => setRail((r) => !r)} title={rail ? 'Expandir' : 'Recolher'} />
+          </aside>
+
+          {/* map stage */}
+          <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+            <div className="basemap" />
+            {MARKERS.map((m, i) => (
+              <div key={i} style={{ position: 'absolute', left: m.x + '%', top: m.y + '%' }}>
+                <MapMarker tone={m.t} size={m.s || 'sm'} icon={m.s ? <Ic name="Building2" size={13} /> : null} />
+              </div>
+            ))}
+            <div style={{ position: 'absolute', left: '45%', top: '62%' }}>
+              <MapMarker tone="available" size="md" selected icon={<Ic name="Building2" size={13} />} />
+            </div>
+
+            {rail ? (
+              /* retracted: the detail panel owns the search row */
+              <div className="vt-float-panel" style={{ position: 'absolute', left: 'var(--float-gap)', top: 'var(--float-gap)', width: 320 }}>
+                <div className="vt-searchbar" style={{ border: 'none', boxShadow: 'none', borderBottom: '1px solid var(--border)', borderRadius: 0, height: 46 }}>
+                  <Ic name="SlidersHorizontal" size={17} />
+                  <input defaultValue="CDOI-2924 (ICI)" />
+                  <Ic name="Search" size={17} />
+                </div>
+                <div className="vt-panel-head">
+                  <Ic name="ChevronLeft" size={17} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="vt-panel-eyebrow">CDOI</div>
+                    <div style={{ font: 'var(--text-h3)' }}>CDOI-2924 (ICI)</div>
+                  </div>
+                  <Ic name="X" size={17} />
+                </div>
+                <div style={{ padding: '14px 12px 4px' }}>
+                  <IconTabs value={tab} onChange={setTab} items={[
+                    { id: 'visao', label: 'Visão geral', icon: <Ic name="Info" size={18} /> },
+                    { id: 'portas', label: 'Portas', icon: <Ic name="Network" size={18} /> },
+                    { id: 'cobertura', label: 'Cobertura', icon: <Ic name="Layers" size={18} /> },
+                    { id: 'historico', label: 'Histórico', icon: <Ic name="History" size={18} /> },
+                  ]} />
+                </div>
+                <div style={{ padding: '12px 16px 16px' }}>
+                  <dl className="vt-kv">
+                    <dt>Endereço</dt><dd>Sem endereço</dd>
+                    <dt>Status</dt><dd><Badge tone="green" dot>Ativo</Badge></dd>
+                    <dt>Portas</dt><dd>16 · 11 ocupadas</dd>
+                  </dl>
+                </div>
+              </div>
+            ) : (
+              /* expanded: nav takes the width, so search floats on its own */
+              <div className="vt-searchbar" style={{ position: 'absolute', left: 'var(--float-gap)', top: 'var(--float-gap)', width: 400 }}>
+                <Ic name="SlidersHorizontal" size={18} />
+                <input placeholder="Pesquise no Nexus" />
+                <Ic name="ListFilter" size={18} />
+                <Ic name="Search" size={19} />
+              </div>
+            )}
+
+            {/* layers */}
+            <div className="vt-float-panel" style={{ position: 'absolute', right: 'var(--float-gap)', top: 'var(--float-gap)', width: 250, padding: '4px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px 8px' }}>
+                <div style={{ flex: 1, font: 'var(--text-h3)' }}>Camadas</div>
+                <Ic name="X" size={16} />
+              </div>
+              {LAYERS.map((g) => (
+                <div key={g.group} style={{ borderTop: '1px solid var(--border)', padding: '10px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
+                    <Ic name={g.icon} size={16} />
+                    <span style={{ flex: 1, font: 'var(--fw-semibold) var(--fs-body-relaxed)/1.3 var(--font-ui)' }}>{g.group}</span>
+                    <Switch size="sm" checked onChange={() => {}} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7, paddingLeft: 25 }}>
+                    {g.items.map((name) => (
+                      <Switch key={name} size="sm" label={name} checked={layers[name]} onChange={(v) => setLayers((s) => ({ ...s, [name]: v }))} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* legend + map control */}
+            <div className="vt-float-panel" style={{ position: 'absolute', left: 'var(--float-gap)', bottom: 'var(--float-gap)', display: 'flex', alignItems: 'center', gap: 12, padding: '9px 16px', borderRadius: 'var(--radius-full)' }}>
+              <span style={{ fontSize: 'var(--fs-body-lg)', color: 'var(--text-secondary)' }}>Suspenso</span>
+              <span style={{ width: 120, height: 8, borderRadius: 'var(--radius-full)', background: 'var(--map-ramp)' }} />
+              <span style={{ fontSize: 'var(--fs-body-lg)', color: 'var(--text-secondary)' }}>Disponível</span>
+            </div>
+            <div className="vt-map-btn" style={{ position: 'absolute', right: 'var(--float-gap)', bottom: 'var(--float-gap)' }}><Ic name="Locate" size={18} /></div>
+          </div>
+        </div>
+      );
+    }
+
+    const el = document.getElementById('root');
+    window.__geoCardRoot = window.__geoCardRoot || ReactDOM.createRoot(el);
+    window.__geoCardRoot.render(<Demo />);
+  </script>
+</body>
+</html>

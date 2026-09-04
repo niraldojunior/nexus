@@ -13,19 +13,17 @@ function Icon({ name, size = 18, color, strokeWidth = 2, style }) {
       });
     }
   }, [name, size, strokeWidth]);
-  return (
-    <span ref={ref} style={{ display: 'inline-flex', color: color || 'currentColor', ...style }} />
-  );
+  return <span ref={ref} style={{ display: 'inline-flex', color: color || 'currentColor', ...style }} />;
 }
 
 // element type -> taxonomy color + icon
 const ELEMENT_META = {
-  OLT: { color: 'var(--net-olt)', icon: 'server' },
+  OLT:      { color: 'var(--net-olt)',      icon: 'server' },
   Splitter: { color: 'var(--net-splitter)', icon: 'split' },
-  CTO: { color: 'var(--net-cto)', icon: 'box' },
-  Poste: { color: 'var(--net-poste)', icon: 'utility-pole' },
-  Cabo: { color: 'var(--net-cabo)', icon: 'cable' },
-  Site: { color: 'var(--net-site)', icon: 'radio-tower' },
+  CTO:      { color: 'var(--net-cto)',      icon: 'box' },
+  Poste:    { color: 'var(--net-poste)',    icon: 'utility-pole' },
+  Cabo:     { color: 'var(--net-cabo)',     icon: 'cable' },
+  Site:     { color: 'var(--net-site)',     icon: 'radio-tower' },
 };
 
 Object.assign(window, { Icon, ELEMENT_META, kebab });

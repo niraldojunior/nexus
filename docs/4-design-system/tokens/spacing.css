@@ -16,11 +16,16 @@
   --space-8: 64px;
 
   /* ---- App layout ------------------------------------------ */
-  --sidebar-width: 220px;
+  --rail-width: 72px;        /* icon-only primary nav (Locais module default) */
+  --sidebar-width: 248px;    /* labeled sidebar (Studio, Settings) */
+  --panel-width: 400px;      /* floating panel over the map */
+  --float-gap: 16px;         /* inset of floating chrome from the viewport */
   --sidebar-collapsed: 56px;
-  --header-height: 48px;
-  --content-pad: 18px;
+  --header-height: 52px;      /* floating chrome only — there is no fixed top bar */
+  --content-pad: 20px;
   --content-max: 1440px;
+  --prose-max: 46rem;   /* reading column cap */
+  --thread-max: 52rem;  /* conversation transcript + composer column */
 
   /* ---- Common gaps ----------------------------------------- */
   --gap-tight: 8px;

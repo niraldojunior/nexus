@@ -6,21 +6,17 @@ import React from 'react';
  * Maps a semantic status to color + dot; richer than a plain Badge.
  */
 const STATUS = {
-  online: { label: 'Online', color: 'var(--status-green)', bg: 'var(--status-green-soft)' },
-  viavel: { label: 'Viável', color: 'var(--status-green)', bg: 'var(--status-green-soft)' },
-  ativo: { label: 'Ativo', color: 'var(--status-green)', bg: 'var(--status-green-soft)' },
-  curso: { label: 'Em curso', color: 'var(--status-blue)', bg: 'var(--status-blue-soft)' },
-  sincronizando: {
-    label: 'Sincronizando',
-    color: 'var(--status-blue)',
-    bg: 'var(--status-blue-soft)',
-  },
-  parcial: { label: 'Parcial', color: 'var(--status-amber)', bg: 'var(--status-amber-soft)' },
-  degradado: { label: 'Degradado', color: 'var(--status-amber)', bg: 'var(--status-amber-soft)' },
-  inviavel: { label: 'Inviável', color: 'var(--status-red)', bg: 'var(--status-red-soft)' },
-  offline: { label: 'Offline', color: 'var(--status-red)', bg: 'var(--status-red-soft)' },
-  planejado: { label: 'Planejado', color: 'var(--status-purple)', bg: 'var(--status-purple-soft)' },
-  reservado: { label: 'Reservado', color: 'var(--status-purple)', bg: 'var(--status-purple-soft)' },
+  online:    { label: 'Online',     color: 'var(--status-green)',  bg: 'var(--status-green-soft)' },
+  viavel:    { label: 'Viável',     color: 'var(--status-green)',  bg: 'var(--status-green-soft)' },
+  ativo:     { label: 'Ativo',      color: 'var(--status-green)',  bg: 'var(--status-green-soft)' },
+  curso:     { label: 'Em curso',   color: 'var(--status-blue)',   bg: 'var(--status-blue-soft)' },
+  sincronizando: { label: 'Sincronizando', color: 'var(--status-blue)', bg: 'var(--status-blue-soft)' },
+  parcial:   { label: 'Parcial',    color: 'var(--status-amber)',  bg: 'var(--status-amber-soft)' },
+  degradado: { label: 'Degradado',  color: 'var(--status-amber)',  bg: 'var(--status-amber-soft)' },
+  inviavel:  { label: 'Inviável',   color: 'var(--status-red)',    bg: 'var(--status-red-soft)' },
+  offline:   { label: 'Offline',    color: 'var(--status-red)',    bg: 'var(--status-red-soft)' },
+  planejado: { label: 'Planejado',  color: 'var(--status-purple)', bg: 'var(--status-purple-soft)' },
+  reservado: { label: 'Reservado',  color: 'var(--status-purple)', bg: 'var(--status-purple-soft)' },
 };
 
 export function StatusPill({ status = 'online', label, pulse = false, style, ...rest }) {
@@ -45,24 +41,12 @@ export function StatusPill({ status = 'online', label, pulse = false, style, ...
       {...rest}
     >
       <span style={{ position: 'relative', width: 8, height: 8, flexShrink: 0 }}>
-        <span
-          style={{
-            position: 'absolute',
-            inset: 0,
-            borderRadius: '50%',
-            background: 'currentColor',
-          }}
-        />
+        <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'currentColor' }} />
         {pulse && (
-          <span
-            style={{
-              position: 'absolute',
-              inset: 0,
-              borderRadius: '50%',
-              background: 'currentColor',
-              animation: 'vtPulse 1.6s ease-out infinite',
-            }}
-          />
+          <span style={{
+            position: 'absolute', inset: 0, borderRadius: '50%', background: 'currentColor',
+            animation: 'vtPulse 1.6s ease-out infinite',
+          }} />
         )}
       </span>
       {label || s.label}

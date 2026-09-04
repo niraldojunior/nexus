@@ -2,13 +2,14 @@ import * as React from 'react';
 
 export interface CardProps {
   children?: React.ReactNode;
-  /** Add hover lift + golden glow. @default false */
+  /** Shift background + border on hover. @default false */
   interactive?: boolean;
-  /** Inner padding in px. @default 20 */
+  /** flat = border only (default). raised = subtle shadow. float = over-the-map panel. @default "flat" */
+  elevation?: 'flat' | 'raised' | 'float';
+  /** Inner padding in px. @default 16 */
   pad?: number;
   style?: React.CSSProperties;
-  onClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
 }
 
-/** Base white surface; opt into hover lift with `interactive`. */
+/** Flat, border-led base surface. */
 export function Card(props: CardProps): React.ReactElement;

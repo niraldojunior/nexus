@@ -1,84 +1,28 @@
-<!-- @dsCard group="Colors" viewport="700x150" name="Neutrals & Surfaces" subtitle="Cool-gray canvas, white cards, dark chrome, hairline borders." -->
-<!doctype html>
+<!-- @dsCard group="Colors" viewport="820x160" name="Neutrals & Surfaces" subtitle="White canvas, near-white chrome, hairline borders. Ramp derived from the V.tal brand grays." -->
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="stylesheet" href="../styles.css" />
-    <style>
-      body {
-        margin: 0;
-        padding: 18px;
-        background: var(--surface-card);
-        font-family: var(--font-ui);
-      }
-      .row {
-        display: flex;
-        gap: 14px;
-      }
-      .sw {
-        flex: 1;
-        border-radius: var(--radius-md);
-        border: 1px solid var(--border);
-        overflow: hidden;
-      }
-      .chip {
-        height: 70px;
-      }
-      .meta {
-        padding: 8px 10px;
-      }
-      .name {
-        font: var(--text-label);
-        color: var(--text-primary);
-      }
-      .hex {
-        font: var(--text-eyebrow);
-        font-family: var(--font-mono);
-        color: var(--text-tertiary);
-        text-transform: uppercase;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="row">
-      <div class="sw">
-        <div class="chip" style="background: var(--surface-app)"></div>
-        <div class="meta">
-          <div class="name">App</div>
-          <div class="hex">#E7EAF0</div>
-        </div>
-      </div>
-      <div class="sw">
-        <div
-          class="chip"
-          style="background: var(--surface-card); border-bottom: 1px solid var(--border)"
-        ></div>
-        <div class="meta">
-          <div class="name">Card</div>
-          <div class="hex">#FFFFFF</div>
-        </div>
-      </div>
-      <div class="sw">
-        <div class="chip" style="background: var(--surface-inset)"></div>
-        <div class="meta">
-          <div class="name">Inset</div>
-          <div class="hex">#F1F5F9</div>
-        </div>
-      </div>
-      <div class="sw">
-        <div class="chip" style="background: var(--surface-sidebar)"></div>
-        <div class="meta">
-          <div class="name">Sidebar</div>
-          <div class="hex">#2E3238</div>
-        </div>
-      </div>
-      <div class="sw">
-        <div class="chip" style="background: var(--border-strong)"></div>
-        <div class="meta">
-          <div class="name">Border</div>
-          <div class="hex">#CBD5E1</div>
-        </div>
-      </div>
-    </div>
-  </body>
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 18px; background: var(--surface-card); font-family: var(--font-ui); }
+  .row { display: flex; gap: 10px; }
+  .sw { flex: 1; border-radius: var(--radius-lg); border: 1px solid var(--border); overflow: hidden; }
+  .chip { height: 68px; }
+  .meta { padding: 8px 10px; border-top: 1px solid var(--border); }
+  .name { font: var(--text-label); color: var(--text-primary); }
+  .hex { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-tertiary); }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:var(--surface-app)"></div><div class="meta"><div class="name">Canvas</div><div class="hex">#FFFFFF</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--surface-sidebar)"></div><div class="meta"><div class="name">Chrome</div><div class="hex">#FAFAFB</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--surface-muted)"></div><div class="meta"><div class="name">Muted</div><div class="hex">#F5F5F8</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--border)"></div><div class="meta"><div class="name">Border</div><div class="hex">#E8E8EE</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--neutral-500)"></div><div class="meta"><div class="name">Cinza médio</div><div class="hex">#BCC1D6</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--text-secondary)"></div><div class="meta"><div class="name">Cinza escuro</div><div class="hex">#514F66</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--text-primary)"></div><div class="meta"><div class="name">Ink</div><div class="hex">#2E2D39</div></div></div>
+  </div>
+</body>
 </html>

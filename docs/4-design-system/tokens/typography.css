@@ -1,41 +1,58 @@
 /* ============================================================
-   V.tal Nexus - Typography Tokens
-   Assistant/workspace typography aligned to Lab001.
+   V.tal Nexus — Typography Tokens
+   Product UI is single-family: Inter, all weights, headings at
+   600. Montserrat is reserved for brand/display surfaces
+   (login, marketing, hero numbers) — it no longer sets the
+   voice of the application chrome.
+   Scale is rem against a 16px root.
    ============================================================ */
 
 :root {
-  --font-ui: 'Aptos', 'Inter', 'Segoe UI', system-ui, sans-serif;
-  --font-display: 'Aptos Display', 'Aptos', 'Inter', 'Segoe UI', system-ui, sans-serif;
+  /* ---- Families -------------------------------------------- */
+  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+  --font-display: 'Montserrat', 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  --fw-regular: 400;
-  --fw-medium: 500;
-  --fw-semibold: 600;
-  --fw-bold: 700;
-  --fw-extrabold: 800;
+  /* ---- Weights --------------------------------------------- */
+  --fw-regular: 400;   /* @kind font */
+  --fw-medium: 500;    /* @kind font */
+  --fw-semibold: 600;  /* @kind font */
+  --fw-bold: 700;      /* @kind font */
+  --fw-extrabold: 800; /* @kind font */
 
-  --fs-display: 3rem;
-  --fs-h1: 2.6rem;
-  --fs-h2: 1.4rem;
-  --fs-h3: 1.1rem;
-  --fs-body-lg: 1rem;
-  --fs-body: 0.94rem;
-  --fs-sm: 0.82rem;
-  --fs-xs: 0.74rem;
+  /* ---- Type scale ------------------------------------------ */
+  --fs-display: 1.9rem;      /* 30px — brand hero, KPI numbers */
+  --fs-greeting: 1.875rem;   /* 30px — new-conversation greeting, Inter semibold */
+  --fs-h1: 1.5rem;           /* 24px — page title */
+  --fs-h2: 1.125rem;         /* 18px — section title */
+  --fs-h3: 1rem;             /* 16px — card title */
+  --fs-body-relaxed: 0.9375rem; /* 15px — reading columns, chat turns */
+  --fs-body-lg: 0.875rem;    /* 14px — default UI body */
+  --fs-body: 0.8125rem;      /* 13px — dense body + tables */
+  --fs-sm: 0.75rem;          /* 12px — labels, chips, helper text */
+  --fs-xs: 0.6875rem;        /* 11px — table heads, eyebrows */
 
-  --lh-tight: 1.1;
-  --lh-snug: 1.22;
-  --lh-normal: 1.45;
+  /* ---- Line heights ---------------------------------------- */
+  --lh-tight: 1.15;    /* @kind other */
+  --lh-snug: 1.3;      /* @kind other */
+  --lh-normal: 1.45;   /* @kind other */
+  --lh-relaxed: 1.65; /* @kind other */
 
-  --tracking-tight: -0.03em;
+  /* ---- Tracking -------------------------------------------- */
+  --tracking-tight: -0.02em;   /* display */
+  --tracking-snug: -0.01em;    /* headings */
   --tracking-normal: 0;
-  --tracking-wide: 0.08em;
+  --tracking-wide: 0.05em;     /* eyebrows, badges (uppercase) */
 
-  --text-display: var(--fw-semibold) var(--fs-display)/var(--lh-tight) var(--font-display);
-  --text-h1: var(--fw-semibold) var(--fs-h1)/var(--lh-tight) var(--font-display);
-  --text-h2: var(--fw-semibold) var(--fs-h2)/var(--lh-snug) var(--font-display);
+  /* ---- Semantic roles -------------------------------------- */
+  /* Display keeps Montserrat. Everything below it is Inter. */
+  --text-display: var(--fw-extrabold) var(--fs-display)/var(--lh-tight) var(--font-display);
+  --text-greeting: var(--fw-semibold) var(--fs-greeting)/var(--lh-tight) var(--font-ui);
+  --text-h1: var(--fw-semibold) var(--fs-h1)/var(--lh-tight) var(--font-ui);
+  --text-h2: var(--fw-semibold) var(--fs-h2)/var(--lh-snug) var(--font-ui);
   --text-h3: var(--fw-semibold) var(--fs-h3)/var(--lh-snug) var(--font-ui);
-  --text-body: var(--fw-regular) var(--fs-body)/var(--lh-normal) var(--font-ui);
-  --text-label: var(--fw-semibold) var(--fs-sm)/var(--lh-snug) var(--font-ui);
-  --text-eyebrow: var(--fw-semibold) var(--fs-xs)/var(--lh-snug) var(--font-ui);
+  --text-body: var(--fw-regular) var(--fs-body-lg)/var(--lh-normal) var(--font-ui);
+  --text-prose: var(--fw-regular) var(--fs-body-relaxed)/var(--lh-relaxed) var(--font-ui);
+  --text-label: var(--fw-medium) var(--fs-sm)/var(--lh-snug) var(--font-ui);
+  --text-eyebrow: var(--fw-medium) var(--fs-xs)/var(--lh-snug) var(--font-ui);
 }

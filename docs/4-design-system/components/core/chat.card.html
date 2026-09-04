@@ -1,0 +1,195 @@
+<!-- @dsCard group="Components" viewport="1000x620" name="Conversas — nova conversa, transcrição, histórico" subtitle="Hero composer · suggestion row · user bubble vs. canvas assistant · history list" -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  body { margin: 0; font-family: var(--font-ui); background: var(--surface-app); }
+  #root { height: 620px; }
+  .stage { display: flex; height: 100%; overflow: hidden; border-top: 3px solid var(--vt-yellow); }
+  .content { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .switcher { display: flex; gap: 2px; padding: 10px 24px 0; }
+  .switcher button { height: 30px; padding: 0 12px; border: 1px solid var(--border); background: var(--surface-card); border-radius: var(--radius-md); font: var(--text-label); color: var(--text-secondary); cursor: pointer; }
+  .switcher button[data-on='true'] { background: var(--sidebar-item-active); color: var(--text-primary); border-color: var(--vt-yellow); }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <script src="../../_ds_bundle.js"></script>
+  <script type="text/babel">
+    const kebab = (s) => s.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+    const Ic = ({ name, size = 16 }) => {
+      const ref = React.useRef(null);
+      React.useEffect(() => {
+        if (ref.current && window.lucide) {
+          ref.current.innerHTML = \`<i data-lucide="\${kebab(name)}" style="width:\${size}px;height:\${size}px"></i>\`;
+          window.lucide.createIcons({ attrs: { width: size, height: size }, nameAttr: 'data-lucide', root: ref.current });
+        }
+      });
+      return <span ref={ref} style={{ display: 'flex' }} />;
+    };
+    const Diamond = () => <span style={{ width: 7, height: 7, background: 'var(--vt-yellow)', transform: 'rotate(45deg)', flexShrink: 0 }} />;
+
+    const NAV = [
+      { id: 'new', label: 'Nova Conversa', icon: 'Plus' },
+      { id: 'chats', label: 'Conversas', icon: 'MessagesSquare' },
+      { id: 'locais', label: 'Locais', icon: 'MapPin' },
+      { id: 'recursos', label: 'Recursos', icon: 'Boxes' },
+      { id: 'servicos', label: 'Serviços', icon: 'Briefcase' },
+      { id: 'ordens', label: 'Ordens', icon: 'Network' },
+      { id: 'studio', label: 'Studio', icon: 'SlidersHorizontal' },
+      { id: 'config', label: 'Configurações', icon: 'Settings2' },
+    ];
+    const SUGGESTIONS = [
+      { label: 'Locais', icon: 'MapPin' }, { label: 'Recursos', icon: 'Layers' },
+      { label: 'Serviços', icon: 'Network' }, { label: 'Ordens', icon: 'Zap' },
+      { label: 'Especificação TMF', icon: 'FileText' },
+    ];
+    const TURNS = [
+      { by: 'assistant', text: 'Olá! Como posso ajudar você hoje com o V.tal Nexus?', at: '19:39' },
+      { by: 'user', text: 'tudo bem?', at: '09:55' },
+      { by: 'assistant', text: 'Estou bem, obrigado! Como posso te auxiliar com algo relacionado ao V.tal Nexus, telecomunicações, inventário ou APIs?', at: '09:55' },
+    ];
+
+    // Sidebar composition mirrors ui_kits/nexus/Shell.jsx (shadcn Sidebar
+    // pattern: header / content menu-button groups / footer), V.tal colors only.
+    function Sidebar({ active }) {
+      return (
+        <aside style={{ position: 'relative', width: 'var(--sidebar-width)', flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--sidebar-bg)', borderRight: '1px solid var(--sidebar-border)' }}>
+          <div style={{ padding: 8 }}>
+            <div className="vt-sb-btn vt-sb-btn-lg" style={{ cursor: 'default' }}>
+              <img src="../../assets/nexus-mark.svg" alt="Nexus" style={{ height: 22 }} />
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 17, letterSpacing: 'var(--tracking-snug)', flex: 1 }}>Nexus</span>
+              <Ic name="PanelLeftClose" size={16} />
+            </div>
+          </div>
+          <nav style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {NAV.map((it, i) => (
+              <React.Fragment key={it.id}>
+                {i === 6 && <div style={{ height: 1, background: 'var(--sidebar-border)', margin: '8px 4px' }} />}
+                <div className={'vt-sb-btn' + (it.id === active ? ' is-active' : '')}>
+                  <Ic name={it.icon} size={18} />
+                  <span style={{ flex: 1 }}>{it.label}</span>
+                </div>
+              </React.Fragment>
+            ))}
+            <div className="vt-sb-group-label" style={{ marginTop: 14 }}>Conversas recentes</div>
+            <div className={'vt-sb-btn' + (active === 'thread' ? ' is-active' : '')} style={{ fontWeight: 'var(--fw-regular)' }}>
+              <Ic name="MessageSquare" size={18} /><span style={{ flex: 1 }}>oi</span>
+            </div>
+          </nav>
+          <div style={{ flexShrink: 0, borderTop: '1px solid var(--sidebar-border)', padding: 8 }}>
+            <div className="vt-sb-btn vt-sb-btn-lg">
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--vt-yellow)', color: 'var(--vt-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 12, flexShrink: 0 }}>A</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 'var(--fs-body-lg)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Administrador</div>
+                <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>admin@vtal.com.br</div>
+              </div>
+              <Ic name="ChevronsUpDown" size={15} />
+            </div>
+          </div>
+        </aside>
+      );
+    }
+
+    function NewConversation() {
+      return (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 22, padding: 'var(--content-pad)' }}>
+          <h1 style={{ font: 'var(--text-greeting)', letterSpacing: 'var(--tracking-snug)' }}>Bom dia</h1>
+          <div className="vt-composer vt-composer-hero" style={{ width: '100%', maxWidth: 'var(--thread-max)' }}>
+            <input placeholder="Pergunte sobre Locais, Recursos, Serviços, Ordens ou gere uma especificação…" />
+            <button className="vt-send"><Ic name="Send" size={18} /></button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <select style={{ height: 32, padding: '0 8px', background: 'var(--surface-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', font: 'var(--text-label)', color: 'var(--text-primary)' }}>
+              <option>Gemini 2.5 Flash</option>
+            </select>
+            <span style={{ height: 30, display: 'flex', alignItems: 'center', padding: '0 12px', background: 'var(--surface-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', font: 'var(--text-label)', color: 'var(--text-secondary)' }}>TMF-first</span>
+          </div>
+          <div className="vt-suggestions">
+            {SUGGESTIONS.map((s) => (
+              <button key={s.label} className="vt-suggestion"><Ic name={s.icon} size={17} />{s.label}</button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function Thread() {
+      return (
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '18px 24px' }}>
+            <Diamond />
+            <span style={{ flex: 1, font: 'var(--fw-medium) var(--fs-body-relaxed)/1.3 var(--font-ui)' }}>oi</span>
+            <div className="vt-rail-item" style={{ width: 34 }}><Ic name="Trash2" size={18} /></div>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 24px' }}>
+            <div className="vt-thread">
+              {TURNS.map((t, i) => (
+                <div key={i} className={'vt-turn vt-turn-' + t.by}>
+                  <div className="vt-bubble">{t.text}</div>
+                  <span className="vt-turn-time">{t.at}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{ flexShrink: 0, padding: '18px 24px 22px' }}>
+            <div className="vt-composer" style={{ maxWidth: 'var(--thread-max)', margin: '0 auto' }}>
+              <textarea rows="2" placeholder="Digite sua pergunta…"></textarea>
+              <button className="vt-send"><Ic name="Send" size={18} /></button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function History() {
+      return (
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 'var(--content-pad)' }}>
+          <h1 style={{ font: 'var(--text-title)', letterSpacing: 'var(--tracking-snug)' }}>Conversas</h1>
+          <p style={{ marginTop: 6, fontSize: 'var(--fs-body-relaxed)', color: 'var(--text-tertiary)' }}>1 conversa(s) encontrada(s)</p>
+          <div className="vt-searchbar" style={{ marginTop: 22, boxShadow: 'none' }}>
+            <Ic name="Search" size={18} />
+            <input placeholder="Buscar conversas por título…" />
+          </div>
+          <div className="vt-card-interactive" style={{ marginTop: 18, padding: '16px 20px' }}>
+            <div style={{ font: 'var(--text-h3)' }}>oi</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, fontSize: 'var(--fs-body-lg)', color: 'var(--text-tertiary)' }}>
+              <Ic name="Clock" size={14} />Modificado em 27 de agosto de 2026 às 19:39
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function Demo() {
+      const [view, setView] = React.useState('new');
+      const active = view === 'new' ? 'new' : view === 'thread' ? 'thread' : 'chats';
+      return (
+        <div className="stage">
+          <Sidebar active={active} />
+          <div className="content">
+            <div className="switcher">
+              {[['new', 'Nova conversa'], ['thread', 'Transcrição'], ['history', 'Histórico']].map(([id, label]) => (
+                <button key={id} data-on={view === id} onClick={() => setView(id)}>{label}</button>
+              ))}
+            </div>
+            {view === 'new' && <NewConversation />}
+            {view === 'thread' && <Thread />}
+            {view === 'history' && <History />}
+          </div>
+        </div>
+      );
+    }
+
+    const el = document.getElementById('root');
+    window.__chatCardRoot = window.__chatCardRoot || ReactDOM.createRoot(el);
+    window.__chatCardRoot.render(<Demo />);
+  </script>
+</body>
+</html>

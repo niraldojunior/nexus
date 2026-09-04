@@ -19,9 +19,9 @@ export function Button({
   ...rest
 }) {
   const sizes = {
-    sm: { padding: '6px 12px', fontSize: '0.8rem', height: 32, gap: 6 },
-    md: { padding: '9px 16px', fontSize: '0.9rem', height: 40, gap: 8 },
-    lg: { padding: '12px 22px', fontSize: '1rem', height: 48, gap: 10 },
+    sm: { padding: '0 12px', fontSize: 'var(--fs-body)', height: 32, gap: 6 },
+    md: { padding: '0 14px', fontSize: 'var(--fs-body-lg)', height: 36, gap: 8 },
+    lg: { padding: '0 18px', fontSize: 'var(--fs-body-relaxed)', height: 44, gap: 8 },
   };
   const s = sizes[size] || sizes.md;
 
@@ -36,13 +36,12 @@ export function Button({
     fontSize: s.fontSize,
     fontWeight: 600,
     lineHeight: 1,
-    borderRadius: 'var(--radius-sm)',
+    borderRadius: 'var(--radius-md)',
     border: '1px solid transparent',
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.5 : 1,
     width: fullWidth ? '100%' : 'auto',
-    transition:
-      'transform var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast), filter var(--transition-fast)',
+    transition: 'background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast)',
     whiteSpace: 'nowrap',
   };
 
@@ -50,14 +49,12 @@ export function Button({
     primary: {
       background: 'var(--vt-yellow)',
       color: 'var(--vt-ink)',
-      borderColor: 'var(--vt-yellow-light)',
-      boxShadow: 'var(--shadow-sm)',
+      borderColor: 'var(--vt-yellow)',
     },
     secondary: {
       background: 'var(--surface-card)',
       color: 'var(--text-primary)',
       borderColor: 'var(--border-strong)',
-      boxShadow: 'var(--shadow-sm)',
     },
     ghost: {
       background: 'transparent',
@@ -65,9 +62,9 @@ export function Button({
       borderColor: 'transparent',
     },
     dark: {
-      background: 'var(--surface-sidebar)',
+      background: 'var(--surface-ink)',
       color: 'var(--text-on-dark)',
-      borderColor: 'var(--surface-sidebar)',
+      borderColor: 'var(--surface-ink)',
     },
     danger: {
       background: 'var(--status-red)',
@@ -77,15 +74,14 @@ export function Button({
   };
 
   const [hover, setHover] = React.useState(false);
-  const hoverStyle =
-    !disabled && hover
-      ? {
-          transform: 'translateY(-1px)',
-          boxShadow: variant === 'primary' ? 'var(--shadow-md)' : 'var(--shadow-sm)',
-          filter: variant === 'ghost' ? 'none' : 'brightness(1.03)',
-          background: variant === 'ghost' ? 'var(--surface-inset)' : undefined,
-        }
-      : {};
+  const hovers = {
+    primary: { background: 'var(--vt-yellow-light)', borderColor: 'var(--vt-yellow-light)' },
+    secondary: { background: 'var(--surface-muted)' },
+    ghost: { background: 'var(--surface-muted)', color: 'var(--text-primary)' },
+    dark: { background: 'var(--neutral-700)', borderColor: 'var(--neutral-700)' },
+    danger: { background: '#DC3F3F', borderColor: '#DC3F3F' },
+  };
+  const hoverStyle = !disabled && hover ? (hovers[variant] || {}) : {};
 
   return (
     <button

@@ -1,52 +1,24 @@
-<!-- @dsCard group="Effects" viewport="700x170" name="Elevation & golden glow" subtitle="Soft low-contrast shadows; the gold glow signals focus & lift." -->
-<!doctype html>
+<!-- @dsCard group="Effects" viewport="820x190" name="Elevation" subtitle="Flat by default — a card is a 1px border. Shadow is reserved for chrome that floats over the map." -->
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="stylesheet" href="../styles.css" />
-    <style>
-      body {
-        margin: 0;
-        padding: 26px 22px;
-        background: var(--surface-app);
-        font-family: var(--font-ui);
-      }
-      .row {
-        display: flex;
-        gap: 22px;
-      }
-      .card {
-        flex: 1;
-        background: var(--surface-card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-md);
-        height: 80px;
-        display: flex;
-        align-items: flex-end;
-        padding: 10px;
-      }
-      .name {
-        font: var(--text-eyebrow);
-        text-transform: uppercase;
-        letter-spacing: var(--tracking-wide);
-        color: var(--text-tertiary);
-      }
-    </style>
-  </head>
-  <body>
-    <div class="row">
-      <div class="card" style="box-shadow: var(--shadow-sm)">
-        <span class="name">shadow-sm</span>
-      </div>
-      <div class="card" style="box-shadow: var(--shadow-md)">
-        <span class="name">shadow-md</span>
-      </div>
-      <div class="card" style="box-shadow: var(--shadow-lg)">
-        <span class="name">shadow-lg</span>
-      </div>
-      <div class="card" style="box-shadow: var(--shadow-gold); border-color: var(--vt-yellow)">
-        <span class="name">shadow-gold</span>
-      </div>
-    </div>
-  </body>
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 26px 22px; background: var(--surface-muted); font-family: var(--font-ui); }
+  .row { display: flex; gap: 18px; }
+  .card { flex: 1; background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-lg); height: 92px; display: flex; flex-direction: column; justify-content: flex-end; padding: 11px; }
+  .name { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-primary); }
+  .use { font-size: var(--fs-xs); color: var(--text-tertiary); margin-top: 3px; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="card"><span class="name">none</span><span class="use">cards, panels, rows — the default</span></div>
+    <div class="card" style="box-shadow:var(--shadow-md)"><span class="name">shadow-md</span><span class="use">dropdowns, tooltips</span></div>
+    <div class="card" style="box-shadow:var(--shadow-lg)"><span class="name">shadow-lg</span><span class="use">popovers, menus</span></div>
+    <div class="card" style="box-shadow:var(--shadow-float)"><span class="name">shadow-float</span><span class="use">search pill, map panels</span></div>
+    <div class="card" style="box-shadow:var(--shadow-xl)"><span class="name">shadow-xl</span><span class="use">dialogs, sheets</span></div>
+  </div>
+</body>
 </html>

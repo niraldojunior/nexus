@@ -1,0 +1,31 @@
+<!-- @dsCard group="Colors" viewport="820x180" name="Map layer palette" subtitle="Markers are the only place saturated color is allowed to shout. One hue per state." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 20px; background: var(--surface-card); font-family: var(--font-ui); }
+  .row { display: flex; gap: 10px; margin-bottom: 16px; }
+  .sw { flex: 1; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .chip { height: 52px; }
+  .meta { padding: 7px 10px; border-top: 1px solid var(--border); }
+  .name { font: var(--text-label); color: var(--text-primary); }
+  .hex { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-tertiary); }
+  .legend { display: inline-flex; align-items: center; gap: 12px; padding: 9px 16px; border: 1px solid var(--border); border-radius: var(--radius-full); box-shadow: var(--shadow-float); }
+  .legend span { font-size: var(--fs-body-lg); color: var(--text-secondary); }
+  .ramp { width: 150px; height: 8px; border-radius: var(--radius-full); background: var(--map-ramp); }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:var(--map-available)"></div><div class="meta"><div class="name">Disponível</div><div class="hex">#12805C</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--map-suspended)"></div><div class="meta"><div class="name">Suspenso</div><div class="hex">#E8615C</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--map-partial)"></div><div class="meta"><div class="name">Parcial</div><div class="hex">#F0A32E</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--map-station)"></div><div class="meta"><div class="name">Estação</div><div class="hex">#7C5CE0</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--map-selected)"></div><div class="meta"><div class="name">Selecionado</div><div class="hex">#FFD919</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--map-coverage-fill);border-bottom:2px solid var(--map-coverage-stroke)"></div><div class="meta"><div class="name">Cobertura</div><div class="hex">#C08A2A · 35%</div></div></div>
+  </div>
+  <div class="legend"><span>Suspenso</span><div class="ramp"></div><span>Disponível</span></div>
+</body>
+</html>

@@ -1,24 +1,37 @@
 /* ============================================================
-   V.tal Nexus - Effects Tokens
-   Roomier assistant/workspace radii + soft elevation.
+   V.tal Nexus — Effects: radii, shadows, motion
+   Flat by default. Structure comes from the 1px border, not
+   from elevation — shadows are reserved for things that truly
+   float (popovers, dialogs, dropdowns).
    ============================================================ */
 
 :root {
-  --radius-sm: 16px;
-  --radius-md: 22px;
-  --radius-lg: 28px;
+  /* ---- Radii (10px base, shadcn-style derivation) ----------- */
+  --radius: 10px;
+  --radius-sm: 6px;     /* chips, badges, small inputs */
+  --radius-md: 8px;     /* buttons, inputs, nav items */
+  --radius-lg: 10px;    /* cards, panels */
+  --radius-xl: 14px;    /* sheets, dialogs, popovers */
+  --radius-2xl: 18px;   /* floating panels over the map */
   --radius-full: 9999px;
 
-  --shadow-sm: 0 10px 30px rgba(15, 23, 42, 0.08);
-  --shadow-md: 0 10px 30px rgba(15, 23, 42, 0.08);
-  --shadow-lg: 0 28px 64px rgba(15, 23, 42, 0.18);
-  --shadow-xl: 0 28px 64px rgba(15, 23, 42, 0.18);
-  --shadow-gold: 0 10px 30px rgba(255, 210, 0, 0.2);
+  /* ---- Shadows --------------------------------------------- */
+  /* sm/md are near-invisible on purpose: a card is a border. */
+  --shadow-sm: 0 1px 2px rgba(46, 45, 57, 0.04);
+  --shadow-md: 0 1px 2px rgba(46, 45, 57, 0.05), 0 1px 3px rgba(46, 45, 57, 0.04);
+  --shadow-lg: 0 4px 12px rgba(46, 45, 57, 0.08), 0 1px 3px rgba(46, 45, 57, 0.04);
+  --shadow-xl: 0 16px 40px rgba(46, 45, 57, 0.14);
+  /* Floating chrome over the map: the one place elevation is load-bearing. */
+  --shadow-float: 0 2px 6px rgba(46, 45, 57, 0.08), 0 12px 32px rgba(46, 45, 57, 0.12);
+  /* Reserved: deliberate brand emphasis only. Never a default hover. */
+  --shadow-gold: 0 0 0 3px rgba(255, 217, 25, 0.28);
 
-  --ease: cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-fast: 150ms var(--ease);
-  --transition-normal: 300ms var(--ease);
-  --transition-slow: 400ms var(--ease);
+  /* ---- Motion ---------------------------------------------- */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1); /* @kind other */
+  --transition-fast: 120ms var(--ease);
+  --transition-normal: 180ms var(--ease);
+  --transition-slow: 300ms var(--ease);
 
-  --focus-shadow: 0 0 0 4px var(--focus-ring);
+  /* ---- Focus ----------------------------------------------- */
+  --focus-shadow: 0 0 0 3px var(--focus-ring);
 }

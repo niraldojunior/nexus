@@ -1,5 +1,8 @@
 {
-  "plugins": ["react", "import"],
+  "plugins": [
+    "react",
+    "import"
+  ],
   "rules": {
     "react/forbid-elements": [
       "warn",
@@ -12,7 +15,12 @@
       {
         "patterns": [
           {
-            "group": ["components/core/**", "ui_kits/nexus/**"],
+            "group": [
+              "animations.jsx",
+              "components/core/**",
+              "nexus-anim-scene.jsx",
+              "ui_kits/nexus/**"
+            ],
             "message": "Import design-system components from 'index.js', not component internals."
           }
         ]
@@ -57,12 +65,32 @@
         "message": "<Button> type must be one of 'button' | 'submit' | 'reset'."
       },
       {
-        "selector": "JSXOpeningElement[name.name='Card'] > JSXAttribute > JSXIdentifier[name!=/^(?:children|interactive|pad|style|onClick|key|ref|className|style|children)$/]",
-        "message": "<Card> doesn't accept that prop. Declared props: children, interactive, pad, style, onClick."
+        "selector": "JSXOpeningElement[name.name='Card'] > JSXAttribute > JSXIdentifier[name!=/^(?:children|interactive|elevation|pad|style|key|ref|className|style|children)$/]",
+        "message": "<Card> doesn't accept that prop. Declared props: children, interactive, elevation, pad, style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Card'] > JSXAttribute[name.name='elevation'] > Literal[value!=/^(?:flat|raised|float)$/]",
+        "message": "<Card> elevation must be one of 'flat' | 'raised' | 'float'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='IconTabItem'] > JSXAttribute > JSXIdentifier[name!=/^(?:id|label|icon|key|ref|className|style|children)$/]",
+        "message": "<IconTabItem> doesn't accept that prop. Declared props: id, label, icon."
       },
       {
         "selector": "JSXOpeningElement[name.name='Input'] > JSXAttribute > JSXIdentifier[name!=/^(?:label|hint|iconLeft|type|value|placeholder|onChange|disabled|fullWidth|style|key|ref|className|style|children)$/]",
         "message": "<Input> doesn't accept that prop. Declared props: label, hint, iconLeft, type, value, placeholder, onChange, disabled, fullWidth, style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='MapMarker'] > JSXAttribute > JSXIdentifier[name!=/^(?:tone|size|icon|selected|style|key|ref|className|style|children)$/]",
+        "message": "<MapMarker> doesn't accept that prop. Declared props: tone, size, icon, selected, style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='MapMarker'] > JSXAttribute[name.name='tone'] > Literal[value!=/^(?:available|suspended|partial|station)$/]",
+        "message": "<MapMarker> tone must be one of 'available' | 'suspended' | 'partial' | 'station'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='MapMarker'] > JSXAttribute[name.name='size'] > Literal[value!=/^(?:sm|md|lg)$/]",
+        "message": "<MapMarker> size must be one of 'sm' | 'md' | 'lg'."
       },
       {
         "selector": "JSXOpeningElement[name.name='MetricCard'] > JSXAttribute > JSXIdentifier[name!=/^(?:label|value|unit|delta|deltaDir|icon|accent|style|key|ref|className|style|children)$/]",
@@ -79,12 +107,22 @@
       {
         "selector": "JSXOpeningElement[name.name='StatusPill'] > JSXAttribute[name.name='status'] > Literal[value!=/^(?:online|viavel|ativo|curso|sincronizando|parcial|degradado|inviavel|offline|planejado|reservado)$/]",
         "message": "<StatusPill> status must be one of 'online' | 'viavel' | 'ativo' | 'curso' | 'sincronizando' | 'parcial' | 'degradado' | 'inviavel' | 'offline' | 'planejado' | 'reservado'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Switch'] > JSXAttribute > JSXIdentifier[name!=/^(?:checked|onChange|disabled|size|label|style|key|ref|className|style|children)$/]",
+        "message": "<Switch> doesn't accept that prop. Declared props: checked, onChange, disabled, size, label, style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Switch'] > JSXAttribute[name.name='size'] > Literal[value!=/^(?:sm|md)$/]",
+        "message": "<Switch> size must be one of 'sm' | 'md'."
       }
     ]
   },
   "overrides": [
     {
-      "files": ["**/index.js"],
+      "files": [
+        "**/index.js"
+      ],
       "rules": {
         "no-restricted-imports": "off"
       }
@@ -101,13 +139,22 @@
       "Card": {
         "replaces": []
       },
+      "IconTabItem": {
+        "replaces": []
+      },
       "Input": {
+        "replaces": []
+      },
+      "MapMarker": {
         "replaces": []
       },
       "MetricCard": {
         "replaces": []
       },
       "StatusPill": {
+        "replaces": []
+      },
+      "Switch": {
         "replaces": []
       }
     },
@@ -119,9 +166,14 @@
       "--bg-card",
       "--border",
       "--border-strong",
+      "--chat-assistant-bg",
+      "--chat-meta",
+      "--chat-user-bubble",
+      "--composer-bg",
       "--content-max",
       "--content-pad",
       "--ease",
+      "--float-gap",
       "--focus-ring",
       "--focus-shadow",
       "--font-display",
@@ -129,7 +181,9 @@
       "--font-ui",
       "--fs-body",
       "--fs-body-lg",
+      "--fs-body-relaxed",
       "--fs-display",
+      "--fs-greeting",
       "--fs-h1",
       "--fs-h2",
       "--fs-h3",
@@ -145,24 +199,60 @@
       "--gap-tight",
       "--header-height",
       "--lh-normal",
+      "--lh-relaxed",
       "--lh-snug",
       "--lh-tight",
+      "--map-available",
+      "--map-coverage-fill",
+      "--map-coverage-stroke",
+      "--map-duct",
+      "--map-partial",
+      "--map-ramp",
+      "--map-route",
+      "--map-selected",
+      "--map-station",
+      "--map-suspended",
       "--net-cabo",
       "--net-cto",
       "--net-olt",
       "--net-poste",
       "--net-site",
       "--net-splitter",
+      "--neutral-0",
+      "--neutral-100",
+      "--neutral-200",
+      "--neutral-300",
+      "--neutral-400",
+      "--neutral-50",
+      "--neutral-500",
+      "--neutral-600",
+      "--neutral-700",
+      "--neutral-900",
+      "--panel-width",
+      "--prose-max",
+      "--radius",
+      "--radius-2xl",
       "--radius-full",
       "--radius-lg",
       "--radius-md",
       "--radius-sm",
+      "--radius-xl",
+      "--rail-width",
+      "--ring",
+      "--shadow-float",
       "--shadow-gold",
       "--shadow-lg",
       "--shadow-md",
       "--shadow-sm",
       "--shadow-xl",
+      "--sidebar-bg",
+      "--sidebar-border",
       "--sidebar-collapsed",
+      "--sidebar-fg",
+      "--sidebar-fg-active",
+      "--sidebar-item-active",
+      "--sidebar-item-hover",
+      "--sidebar-section",
       "--sidebar-width",
       "--slate",
       "--slate-500",
@@ -189,11 +279,17 @@
       "--surface-app",
       "--surface-card",
       "--surface-card-hover",
+      "--surface-ink",
       "--surface-inset",
+      "--surface-muted",
+      "--surface-muted-hover",
       "--surface-sidebar",
+      "--surface-subtle",
       "--text-body",
+      "--text-disabled",
       "--text-display",
       "--text-eyebrow",
+      "--text-greeting",
       "--text-h1",
       "--text-h2",
       "--text-h3",
@@ -201,9 +297,12 @@
       "--text-on-dark",
       "--text-on-dark-dim",
       "--text-primary",
+      "--text-prose",
       "--text-secondary",
       "--text-tertiary",
+      "--thread-max",
       "--tracking-normal",
+      "--tracking-snug",
       "--tracking-tight",
       "--tracking-wide",
       "--transition-fast",
@@ -212,23 +311,47 @@
       "--vt-ink",
       "--vt-yellow",
       "--vt-yellow-dim",
-      "--vt-yellow-light"
+      "--vt-yellow-light",
+      "--vt-yellow-tint"
     ],
     "tokenKinds": {
       "--vt-yellow": "color",
       "--vt-yellow-light": "color",
       "--vt-yellow-dim": "color",
+      "--vt-yellow-tint": "color",
       "--vt-ink": "color",
+      "--neutral-0": "color",
+      "--neutral-50": "color",
+      "--neutral-100": "color",
+      "--neutral-200": "color",
+      "--neutral-300": "color",
+      "--neutral-400": "color",
+      "--neutral-500": "color",
+      "--neutral-600": "color",
+      "--neutral-700": "color",
+      "--neutral-900": "color",
       "--surface-app": "color",
       "--surface-card": "color",
       "--surface-card-hover": "color",
-      "--surface-sidebar": "color",
+      "--surface-subtle": "color",
+      "--surface-muted": "color",
+      "--surface-muted-hover": "color",
       "--surface-inset": "color",
+      "--surface-ink": "color",
+      "--surface-sidebar": "color",
+      "--sidebar-bg": "color",
+      "--sidebar-border": "color",
+      "--sidebar-fg": "color",
+      "--sidebar-fg-active": "color",
+      "--sidebar-item-hover": "color",
+      "--sidebar-item-active": "color",
+      "--sidebar-section": "color",
       "--border": "color",
       "--border-strong": "color",
       "--text-primary": "font",
       "--text-secondary": "font",
       "--text-tertiary": "font",
+      "--text-disabled": "font",
       "--text-on-dark": "font",
       "--text-on-dark-dim": "font",
       "--slate": "color",
@@ -244,6 +367,20 @@
       "--status-amber-soft": "color",
       "--status-red-soft": "color",
       "--status-purple-soft": "color",
+      "--chat-user-bubble": "color",
+      "--chat-assistant-bg": "color",
+      "--chat-meta": "color",
+      "--composer-bg": "color",
+      "--map-available": "color",
+      "--map-suspended": "color",
+      "--map-partial": "color",
+      "--map-station": "color",
+      "--map-selected": "color",
+      "--map-route": "color",
+      "--map-duct": "color",
+      "--map-coverage-fill": "color",
+      "--map-coverage-stroke": "color",
+      "--map-ramp": "other",
       "--net-olt": "color",
       "--net-splitter": "color",
       "--net-cto": "color",
@@ -256,6 +393,7 @@
       "--bg-app": "color",
       "--bg-card": "color",
       "--focus-ring": "color",
+      "--ring": "color",
       "--font-ui": "font",
       "--font-display": "font",
       "--font-mono": "font",
@@ -265,9 +403,11 @@
       "--fw-bold": "font",
       "--fw-extrabold": "font",
       "--fs-display": "spacing",
+      "--fs-greeting": "spacing",
       "--fs-h1": "spacing",
       "--fs-h2": "spacing",
       "--fs-h3": "spacing",
+      "--fs-body-relaxed": "spacing",
       "--fs-body-lg": "spacing",
       "--fs-body": "spacing",
       "--fs-sm": "spacing",
@@ -275,14 +415,18 @@
       "--lh-tight": "other",
       "--lh-snug": "other",
       "--lh-normal": "other",
+      "--lh-relaxed": "other",
       "--tracking-tight": "font",
+      "--tracking-snug": "font",
       "--tracking-normal": "font",
       "--tracking-wide": "font",
       "--text-display": "font",
+      "--text-greeting": "font",
       "--text-h1": "font",
       "--text-h2": "font",
       "--text-h3": "font",
       "--text-body": "font",
+      "--text-prose": "font",
       "--text-label": "font",
       "--text-eyebrow": "font",
       "--space-0": "spacing",
@@ -294,22 +438,31 @@
       "--space-6": "spacing",
       "--space-7": "spacing",
       "--space-8": "spacing",
+      "--rail-width": "spacing",
       "--sidebar-width": "spacing",
+      "--panel-width": "spacing",
+      "--float-gap": "spacing",
       "--sidebar-collapsed": "spacing",
       "--header-height": "spacing",
       "--content-pad": "spacing",
       "--content-max": "spacing",
+      "--prose-max": "spacing",
+      "--thread-max": "spacing",
       "--gap-tight": "spacing",
       "--gap-card": "spacing",
       "--gap-section": "spacing",
+      "--radius": "radius",
       "--radius-sm": "radius",
       "--radius-md": "radius",
       "--radius-lg": "radius",
+      "--radius-xl": "radius",
+      "--radius-2xl": "radius",
       "--radius-full": "radius",
       "--shadow-sm": "shadow",
       "--shadow-md": "shadow",
       "--shadow-lg": "shadow",
       "--shadow-xl": "shadow",
+      "--shadow-float": "shadow",
       "--shadow-gold": "shadow",
       "--ease": "other",
       "--transition-fast": "color",
@@ -317,6 +470,10 @@
       "--transition-slow": "color",
       "--focus-shadow": "shadow"
     },
-    "fontFamilies": ["Inter", "JetBrains Mono", "Montserrat"]
+    "fontFamilies": [
+      "Inter",
+      "JetBrains Mono",
+      "Montserrat"
+    ]
   }
 }

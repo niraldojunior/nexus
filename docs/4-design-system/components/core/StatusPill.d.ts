@@ -3,17 +3,11 @@ import * as React from 'react';
 export interface StatusPillProps {
   /** Domain status key. @default "online" */
   status?:
-    | 'online'
-    | 'viavel'
-    | 'ativo'
-    | 'curso'
-    | 'sincronizando'
-    | 'parcial'
-    | 'degradado'
-    | 'inviavel'
-    | 'offline'
-    | 'planejado'
-    | 'reservado';
+    | 'online' | 'viavel' | 'ativo'
+    | 'curso' | 'sincronizando'
+    | 'parcial' | 'degradado'
+    | 'inviavel' | 'offline'
+    | 'planejado' | 'reservado';
   /** Override the default Portuguese label */
   label?: string;
   /** Animate a radar pulse on the dot (use for live/online states) */

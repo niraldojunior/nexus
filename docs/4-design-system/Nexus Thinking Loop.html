@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Nexus · Thinking Loop Preview</title>
+<style>
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background: repeating-conic-gradient(#cfd3da 0% 25%, #e5e7eb 0% 50%) 50% / 20px 20px; font-family:sans-serif; }
+  canvas { width:280px; height:280px; }
+</style>
+</head>
+<body>
+<canvas id="c" width="140" height="140"></canvas>
+<script>
+const W = 140, H = 140;
+const COLS = 5, ROWS = 5;
+const MARGIN = 10;
+const CELL = (W - MARGIN*2) / COLS;
+const GAP = 3;
+const SQ = CELL - GAP;
+const STEP = 70;          // ms per cell reveal
+const TRAIL_WINDOW = 250; // ms yellow->ink fade
+const POP_DUR = 150;      // ms pop-in
+const FILL_END = COLS*ROWS*STEP; // 1750
+const HOLD_END = FILL_END + 300; // 2050
+const EXIT_DUR = 400;
+const DURATION = HOLD_END + EXIT_DUR; // 2450
+
+const YELLOW = [255,217,25];
+const INK = [24,25,25];
+
+function buildPath(){
+  const list = [];
+  for (let r=0;r<ROWS;r++){
+    if (r % 2 === 0) { for (let c=0;c<COLS;c++) list.push([c,r]); }
+    else { for (let c=COLS-1;c>=0;c--) list.push([c,r]); }
+  }
+  return list;
+}
+const PATH = buildPath();
+
+function lerp(a,b,t){ return a+(b-a)*t; }
+function easeOutCubic(x){ return 1-Math.pow(1-x,3); }
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+
+function cellCenter(c,r){
+  return [MARGIN + c*CELL + CELL/2, MARGIN + r*CELL + CELL/2];
+}
+
+function drawRoundRect(ctx,x,y,w,h,r,color,opacity){
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  ctx.fillStyle = `rgb(${Math.round(color[0])},${Math.round(color[1])},${Math.round(color[2])})`;
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawFrame(ctx, tRaw){
+  const t = ((tRaw % DURATION) + DURATION) % DURATION;
+  ctx.clearRect(0,0,W,H);
+
+  let globalExit = 0;
+  if (t >= HOLD_END) {
+    const exitT = clamp((t-HOLD_END)/EXIT_DUR, 0, 1);
+    globalExit = easeOutCubic(exitT);
+  }
+  let holdPulse = 0;
+  if (t >= FILL_END && t < HOLD_END) {
+    const ht = (t-FILL_END)/(HOLD_END-FILL_END);
+    holdPulse = Math.sin(ht*Math.PI)*0.35;
+  }
+
+  PATH.forEach(([c,r], k) => {
+    const revealT = k*STEP;
+    if (t < revealT) return;
+    const age = t - revealT;
+    let scale = 1, opacity = 1;
+    if (age < POP_DUR) {
+      const p = easeOutCubic(age/POP_DUR);
+      scale = 0.5 + 0.5*p;
+      opacity = p;
+    }
+    let color;
+    if (age < TRAIL_WINDOW) {
+      const tt = age/TRAIL_WINDOW;
+      color = [lerp(YELLOW[0],INK[0],tt), lerp(YELLOW[1],INK[1],tt), lerp(YELLOW[2],INK[2],tt)];
+    } else {
+      color = [lerp(INK[0],YELLOW[0],holdPulse), lerp(INK[1],YELLOW[1],holdPulse), lerp(INK[2],YELLOW[2],holdPulse)];
+    }
+    opacity *= (1-globalExit);
+    if (opacity <= 0.01) return;
+    const [cx,cy] = cellCenter(c,r);
+    const s = SQ*scale;
+    const rad = 5*scale;
+    drawRoundRect(ctx, cx-s/2, cy-s/2, s, s, rad, color, opacity);
+  });
+}
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let start = null;
+function loop(ts){
+  if (start === null) start = ts;
+  drawFrame(ctx, ts - start);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

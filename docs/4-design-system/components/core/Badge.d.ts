@@ -9,5 +9,5 @@ export interface BadgeProps {
   style?: React.CSSProperties;
 }
 
-/** Compact uppercase status/category label with a soft tinted fill. */
+/** Compact sentence-case status/category label with a soft tinted fill. */
 export function Badge(props: BadgeProps): React.ReactElement;

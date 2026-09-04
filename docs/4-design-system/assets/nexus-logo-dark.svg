@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="361" height="64" viewBox="0 0 361 64" role="img" aria-label="V.tal Nexus">
+  <title>V.tal Nexus</title>
+  <defs>
+    
+  </defs>
+  <rect width="361" height="64" fill="#181919"></rect>
+  
+  <polygon points="32,6 58,32 32,58 6,32" fill="none" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"></polygon>
+  <circle cx="58" cy="32" r="2.8" fill="#ffffff"></circle>
+  <circle cx="32" cy="58" r="2.8" fill="#ffffff"></circle>
+  <circle cx="6" cy="32" r="2.8" fill="#ffffff"></circle>
+  <circle cx="32" cy="6" r="3.6" fill="#FFD919" stroke="#ffffff" stroke-width="1.5"></circle>
+  <polygon points="32,18 45,25.5 32,33 19,25.5" fill="#FFD919"></polygon>
+  <polygon points="19,25.5 32,33 32,47 19,39.5" fill="#ffffff" opacity="0.92"></polygon>
+  <polygon points="45,25.5 32,33 32,47 45,39.5" fill="#ffffff" opacity="0.55"></polygon>
+  <polygon points="32,18 45,25.5 32,33 19,25.5" fill="none" stroke="#000000" stroke-width="0.6" opacity="0.25"></polygon>
+  
+  <image x="80" y="19.5" width="119" height="25"></image>
+  
+  <line x1="244" y1="20" x2="244" y2="44" stroke="rgba(255,255,255,0.2)" stroke-width="1"></line>
+  
+  <text x="260" y="38" font-family="Montserrat, sans-serif" font-weight="600" font-size="21" fill="#ffffff" letter-spacing="-0.21">Nexus</text>
+</svg>

@@ -92,6 +92,12 @@ Frontend React + Vite, com navegação lateral persistente:
 | **Recursos**                      | Inventário físico e lógico, com catálogo de especificações  |
 | **Serviços**                      | CFS/RFS e suas amarrações                                   |
 | **Ordens**                        | Viabilidade e ordens de serviço/recurso                     |
+| **Studio**                         | Control plane de metadados, versões e publicações governadas |
+
+O Studio fica separado de **Configuração**, que continua destinada à gestão de TI. A fundação de
+navegação e RBAC está em entrega pela issue [#192](https://github.com/niraldojunior/nexus/issues/192);
+os editores passam a ser habilitados por domínio apenas quando seus contratos draft/published estiverem
+prontos.
 
 O módulo Geo preserva a semântica TMF673/674/675 na interface: o Site **referencia** Address e
 Location, não os embute.

@@ -5086,6 +5086,16 @@ const INVENTORY_WRITE_ROLES = ['inventory.editor', 'platform.admin'] as const;
 // Specifications/RelationshipTypes (catálogo) só mudam com catalog.admin; a leitura do catálogo
 // segue o papel de leitura comum, mesmo critério do GeoService para RelationshipType (§3, C9).
 const CATALOG_ADMIN_ROLES = ['catalog.admin', 'platform.admin'] as const;
+// Studio é o control plane de metadados. Os papéis são explícitos para que o leitor também possa
+// consultar o draft compartilhado; escrita/publicação usam gates mais estritos em seus endpoints.
+export const STUDIO_READ_ROLES = [
+  'studio.reader',
+  'studio.editor',
+  'studio.admin',
+  'platform.admin',
+] as const;
+export const STUDIO_EDIT_ROLES = ['studio.editor', 'studio.admin', 'platform.admin'] as const;
+export const STUDIO_ADMIN_ROLES = ['studio.admin', 'platform.admin'] as const;
 // order.requester abre ordens e consulta viabilidade (leitura + criação); order.operator executa
 // designação e avança o estado de uma ordem existente (PATCH/DELETE).
 const ORDER_READ_ROLES = ['order.requester', 'order.operator', 'platform.admin'] as const;

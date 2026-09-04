@@ -26,7 +26,14 @@ import { isCivilInfrastructureCategory } from '../utils/resourceSpecificationFor
 import Diamond from './Diamond';
 import NexusMark from './NexusMark';
 
-type PrimaryItemId = 'conversations' | 'research' | 'geo' | 'resource' | 'service' | 'order';
+type PrimaryItemId =
+  | 'conversations'
+  | 'research'
+  | 'geo'
+  | 'resource'
+  | 'service'
+  | 'order'
+  | 'studio';
 
 /**
  * Item de submenu de categoria — a forma comum entre Resource e Service. `sectionLabel` é opcional
@@ -69,6 +76,7 @@ interface SidebarProps {
   // (só para admin). Ver useSession/App.
   sessionUser?: { name: string; email?: string; roles: string[] } | null;
   isAdmin?: boolean;
+  canViewStudio?: boolean;
   onLogout?: () => void;
 }
 
@@ -79,6 +87,7 @@ const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: LucideIcon }
   { id: 'resource', label: 'Recursos', icon: Boxes },
   { id: 'service', label: 'Serviços', icon: Briefcase },
   { id: 'order', label: 'Ordens', icon: FolderTree },
+  { id: 'studio', label: 'Studio', icon: SlidersHorizontal },
 ];
 
 const initialOf = (name?: string): string => name?.trim()?.[0]?.toUpperCase() ?? 'U';
@@ -131,6 +140,7 @@ export default function Sidebar({
   researchSessionRefreshTrigger,
   sessionUser,
   isAdmin = false,
+  canViewStudio = false,
   onLogout,
 }: SidebarProps) {
   // Os módulos com submenu de categoria compartilham a mesma mecânica; só variam os dados.
@@ -284,12 +294,16 @@ export default function Sidebar({
           <div className="h-full overflow-y-auto">
             <nav className="space-y-0.6">
               {primaryItems
-                .filter(({ id }) => id !== 'research')
+                .filter(({ id }) => id !== 'research' && (id !== 'studio' || canViewStudio))
                 .map(({ id, label, icon: Icon }) => {
                   const isActive =
                     (id === 'conversations' &&
                       (currentPage === 'conversas' || currentPage === 'conversation')) ||
-                    ((id === 'geo' || id === 'resource' || id === 'service' || id === 'order') &&
+                    ((id === 'geo' ||
+                      id === 'resource' ||
+                      id === 'service' ||
+                      id === 'order' ||
+                      id === 'studio') &&
                       currentPage === id);
 
                   const categoryMenu = categoryMenus[id];

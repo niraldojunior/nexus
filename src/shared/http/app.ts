@@ -2829,7 +2829,7 @@ const routeResourceRequest = async ({
   }
 
   const resourceCatalogNodeMatch = url.pathname.match(
-    /^\/v1\/resource-catalogs\/([^/]+)\/nodes(?:\/([^/]+)(?:\/(move|path))?)?$/,
+    /^\/v1\/resource-catalogs\/([^/]+)\/nodes(?:\/([^/]+)(?:\/(move|path|impact))?)?$/,
   );
   if (resourceCatalogNodeMatch?.[1]) {
     const catalogId = decodeURIComponent(resourceCatalogNodeMatch[1]);
@@ -2837,6 +2837,21 @@ const routeResourceRequest = async ({
       ? decodeURIComponent(resourceCatalogNodeMatch[2])
       : undefined;
     const action = resourceCatalogNodeMatch[3];
+
+    // Rota de reordenação em lote (POST /v1/resource-catalogs/:id/nodes/reorder)
+    if (nodeId === 'reorder' && !action && request.method === 'POST') {
+      requireRoles(context, CATALOG_ADMIN_ROLES);
+      return sendJson(
+        response,
+        200,
+        await resourceService.reorderResourceCatalogNodes(
+          catalogId,
+          (await readBody(request)) as Parameters<typeof resourceService.reorderResourceCatalogNodes>[1],
+          context,
+        ),
+      );
+    }
+
     requireRoles(context, request.method === 'GET' ? INVENTORY_READ_ROLES : CATALOG_ADMIN_ROLES);
 
     if (!nodeId && request.method === 'GET') {
@@ -2897,6 +2912,13 @@ const routeResourceRequest = async ({
     }
     if (nodeId && action === 'path' && request.method === 'GET') {
       return sendJson(response, 200, resourceService.getResourceCatalogNodePath(catalogId, nodeId, context));
+    }
+    if (nodeId && action === 'impact' && request.method === 'GET') {
+      return sendJson(
+        response,
+        200,
+        await resourceService.getResourceCatalogNodeImpact(catalogId, nodeId, context),
+      );
     }
     throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
   }

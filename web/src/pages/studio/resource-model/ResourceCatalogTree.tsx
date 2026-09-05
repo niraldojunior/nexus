@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ChevronRight,
   ChevronDown,
@@ -16,6 +16,8 @@ import type { ResourceCatalogTreeNode, ResourceCatalogNode } from '../../../serv
 
 export type ResourceCatalogTreeProps = {
   tree: ResourceCatalogTreeNode[];
+  /** Exibe a textbox de busca — alternada pela lupa no cabeçalho, em `ResourceModelStudio`. */
+  showSearch: boolean;
   selectedNodeId: string | null;
   onSelectNode: (node: ResourceCatalogNode) => void;
   onAddChild: (parentNode: ResourceCatalogNode) => void;
@@ -29,6 +31,7 @@ export type ResourceCatalogTreeProps = {
 
 export function ResourceCatalogTree({
   tree,
+  showSearch,
   selectedNodeId,
   onSelectNode,
   onAddChild,
@@ -41,6 +44,12 @@ export function ResourceCatalogTree({
   const canMutate = canEdit && isEditing;
   const [filterText, setFilterText] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  // Ao ocultar a textbox de busca (lupa desligada), limpa o filtro — senão um filtro esquecido
+  // continuaria restringindo a árvore de forma invisível.
+  useEffect(() => {
+    if (!showSearch) setFilterText('');
+  }, [showSearch]);
 
   const toggleExpand = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -203,16 +212,19 @@ export function ResourceCatalogTree({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="relative mb-3">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-app-muted" />
-        <input
-          type="text"
-          value={filterText}
-          onChange={(e) => setFilterText(e.target.value)}
-          placeholder="Buscar nós por nome ou código..."
-          className="w-full rounded-[14px] border border-app-border bg-white pl-8 pr-3 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
-        />
-      </div>
+      {showSearch && (
+        <div className="relative mb-3">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-app-muted" />
+          <input
+            type="text"
+            autoFocus
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            placeholder="Buscar nós por nome ou código..."
+            className="w-full rounded-[14px] border border-app-border bg-white pl-8 pr-3 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+          />
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto space-y-0.5 pr-1 max-h-[680px]">
         {tree.length === 0 ? (

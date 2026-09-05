@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Box, Plus, AlertCircle } from 'lucide-react';
+import { Box, Plus, AlertCircle, Search } from 'lucide-react';
 import type {
   ResourceCatalog,
   ResourceCatalogTreeNode,
@@ -68,6 +68,8 @@ export function ResourceModelStudio({
   const [tree, setTree] = useState<ResourceCatalogTreeNode[]>([]);
   const [selectedNode, setSelectedNode] = useState<ResourceCatalogNode | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Textbox de busca da hierarquia começa oculta; a lupa no cabeçalho alterna a exibição.
+  const [showSearch, setShowSearch] = useState(false);
 
   // Modals state
   const [formModalOpen, setFormModalOpen] = useState(false);
@@ -241,7 +243,19 @@ export function ResourceModelStudio({
         {/* Left: Árvore Hierárquica */}
         <div className="vt-card flex min-h-[560px] flex-col p-4">
           <div className="mb-3 flex items-center justify-between border-b border-app-border pb-3">
-            <h3 className="font-bold">Hierarquia</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold">Hierarquia</h3>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowSearch((prev) => !prev)}
+                title={showSearch ? 'Ocultar busca' : 'Buscar nós'}
+                aria-label={showSearch ? 'Ocultar busca' : 'Buscar nós'}
+                aria-pressed={showSearch}
+              >
+                <Search className="h-4 w-4" />
+              </Button>
+            </div>
             <div className="flex items-center gap-2">
               {canMutate && (
                 <Button
@@ -260,6 +274,7 @@ export function ResourceModelStudio({
           <div className="flex-1">
             <ResourceCatalogTree
               tree={tree}
+              showSearch={showSearch}
               selectedNodeId={selectedNode?.id ?? null}
               onSelectNode={setSelectedNode}
               onAddChild={(parent) => {

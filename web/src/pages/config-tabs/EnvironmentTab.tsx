@@ -1,4 +1,7 @@
-import { CheckCircle2, LockKeyhole, ServerCog } from 'lucide-react';
+import { useMemo } from 'react';
+import { CheckCircle2, LockKeyhole } from 'lucide-react';
+import PageHead from '../../components/ui/PageHead';
+import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 
 type EnvironmentMetadata = {
   name: string;
@@ -18,20 +21,51 @@ const environmentMetadata: EnvironmentMetadata[] = [
 ];
 
 export function EnvironmentTab() {
+  const columns: DataTableColumn<EnvironmentMetadata>[] = useMemo(
+    () => [
+      {
+        key: 'name',
+        header: 'Variável',
+        render: (item) => (
+          <span className="font-mono text-[0.82rem] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {item.name}
+          </span>
+        ),
+      },
+      {
+        key: 'origin',
+        header: 'Origem',
+        render: (item) => (
+          <span style={{ color: 'var(--text-secondary)' }}>{item.origin}</span>
+        ),
+      },
+      {
+        key: 'scope',
+        header: 'Escopo',
+        render: (item) => (
+          <span style={{ color: 'var(--text-secondary)' }}>{item.scope}</span>
+        ),
+      },
+      {
+        key: 'status',
+        header: 'Estado',
+        render: (item) => (
+          <span className="inline-flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+            <CheckCircle2 className="h-4 w-4" strokeWidth={1.8} />
+            {item.status}
+          </span>
+        ),
+      },
+    ],
+    [],
+  );
+
   return (
     <div>
-      <div className="mb-5 flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-app-accent-border bg-app-accent-soft text-app-text">
-          <ServerCog className="h-5 w-5" strokeWidth={1.8} />
-        </div>
-        <div>
-          <h1 className="font-display text-[1.5rem] font-semibold text-app-text">Ambiente</h1>
-          <p className="mt-1 text-[0.88rem] leading-5 text-app-muted">
-            Metadados operacionais allowlisted. Valores, segredos e conteúdo de arquivos de ambiente
-            nunca são expostos pelo Nexus.
-          </p>
-        </div>
-      </div>
+      <PageHead
+        title="Ambiente"
+        subtitle="Metadados operacionais allowlisted. Valores, segredos e conteúdo de arquivos de ambiente nunca são expostos pelo Nexus."
+      />
 
       <div className="mb-4 flex items-start gap-2 rounded-[14px] border border-app-border bg-app-accent-soft px-3 py-3 text-[0.82rem] leading-5 text-app-text">
         <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.8} />
@@ -40,33 +74,11 @@ export function EnvironmentTab() {
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-[20px] border border-app-border bg-white shadow-soft">
-        <table className="w-full min-w-[620px] text-left">
-          <thead>
-            <tr className="border-b border-app-border bg-slate-50 text-[0.82rem] font-semibold text-app-muted">
-              <th className="px-5 py-3">Variável</th>
-              <th className="px-5 py-3">Origem</th>
-              <th className="px-5 py-3">Escopo</th>
-              <th className="px-5 py-3">Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {environmentMetadata.map((item) => (
-              <tr key={item.name} className="border-b border-app-border text-[0.88rem] text-app-text last:border-0">
-                <td className="px-5 py-3 font-mono text-[0.82rem] font-semibold">{item.name}</td>
-                <td className="px-5 py-3 text-app-muted">{item.origin}</td>
-                <td className="px-5 py-3 text-app-muted">{item.scope}</td>
-                <td className="px-5 py-3">
-                  <span className="inline-flex items-center gap-1.5 text-app-text">
-                    <CheckCircle2 className="h-4 w-4" strokeWidth={1.8} />
-                    {item.status}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        columns={columns}
+        rows={environmentMetadata}
+        rowKey={(item) => item.name}
+      />
     </div>
   );
 }

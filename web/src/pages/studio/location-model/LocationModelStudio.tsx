@@ -31,6 +31,7 @@ import {
   getStudioStatus,
   saveStudioDraft,
 } from '../../../services/studioApi';
+import { Button, Badge } from '../../../components/ui';
 import { LocationSpecFormModal } from './LocationSpecFormModal';
 import { LocationSpecImpactModal } from './LocationSpecImpactModal';
 
@@ -53,11 +54,11 @@ const ROLE_LABELS: Record<GeoSiteRole, string> = {
   service: 'Serviço',
 };
 
-const ROLE_COLORS: Record<GeoSiteRole, string> = {
-  grouping: 'bg-amber-50 text-amber-700 border-amber-200',
-  network: 'bg-blue-50 text-blue-700 border-blue-200',
-  property: 'bg-purple-50 text-purple-700 border-purple-200',
-  service: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+const ROLE_TONE: Record<GeoSiteRole, 'amber' | 'blue' | 'purple' | 'green'> = {
+  grouping: 'amber',
+  network: 'blue',
+  property: 'purple',
+  service: 'green',
 };
 
 export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
@@ -182,13 +183,13 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
   return (
     <div className="space-y-4">
       {/* Top Bar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-[22px] border border-app-border bg-white p-4 shadow-soft">
+      <div className="vt-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-app-accent-soft text-app-text">
             <MapPin className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-[1.05rem] font-semibold text-app-text">Modelo de Locais & Contenção</h2>
+            <h3>Modelo de locais & contenção</h3>
             <p className="text-[0.78rem] text-app-muted">
               Especificações geográficas (TMF674), papéis funcionais (C11) e regras de hierarquia.
             </p>
@@ -198,50 +199,57 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
         <div className="flex items-center gap-2">
           {canEdit && (
             <>
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="sm"
+                iconLeft={<Plus className="h-4 w-4" />}
                 onClick={() => {
                   setEditingSpec(null);
                   setFormModalOpen(true);
                 }}
-                className="flex items-center gap-1.5 rounded-[12px] bg-app-accent px-3.5 py-2 text-[0.82rem] font-semibold text-white hover:opacity-90 transition shadow-soft"
               >
-                <Plus className="h-4 w-4" />
-                Nova Especificação
-              </button>
+                Nova especificação
+              </Button>
 
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="sm"
+                iconLeft={<Save className="h-4 w-4" />}
                 onClick={handleCaptureAsDraft}
                 disabled={capturingDraft}
-                className="flex items-center gap-1.5 rounded-[12px] border border-app-border bg-white px-3.5 py-2 text-[0.82rem] font-medium text-app-text hover:bg-app-accent-soft transition"
               >
-                <Save className="h-4 w-4 text-app-muted" />
-                {capturingDraft ? 'Salvando...' : 'Salvar como Draft'}
-              </button>
+                {capturingDraft ? 'Salvando…' : 'Salvar como draft'}
+              </Button>
             </>
           )}
 
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={loadSpecs}
-            title="Recarregar Especificações"
-            className="rounded-[12px] border border-app-border bg-white p-2 text-app-muted hover:text-app-text hover:bg-black/[0.02] transition"
+            title="Recarregar especificações"
+            aria-label="Recarregar especificações"
           >
             <RefreshCw className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       </div>
 
       {draftSuccess && (
-        <div className="flex items-center gap-2 rounded-[16px] border border-emerald-200 bg-emerald-50 p-3 text-[0.84rem] text-emerald-800">
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+        <div
+          className="flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
+          style={{ background: 'var(--status-green-soft)', color: 'var(--status-green)' }}
+        >
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
           <span>{draftSuccess}</span>
         </div>
       )}
 
       {error && (
-        <div className="flex items-center gap-2 rounded-[16px] border border-red-200 bg-red-50 p-3 text-[0.84rem] text-red-700">
+        <div
+          className="flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
+          style={{ background: 'var(--status-red-soft)', color: 'var(--status-red)' }}
+        >
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>
@@ -250,7 +258,7 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
       {/* Master / Detail Grid */}
       <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
         {/* Left: Lista de Especificações */}
-        <div className="rounded-[22px] border border-app-border bg-white p-4 shadow-soft min-h-[580px] flex flex-col">
+        <div className="vt-card flex min-h-[580px] flex-col p-4">
           <div className="space-y-2 pb-3 border-b border-app-border mb-3">
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-app-muted" />
@@ -259,7 +267,7 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
                 value={filterText}
                 onChange={(e) => setFilterText(e.target.value)}
                 placeholder="Buscar por nome ou código..."
-                className="w-full rounded-[12px] border border-app-border bg-white pl-8 pr-3 py-1.5 text-[0.82rem] text-app-text outline-none focus:border-app-accent"
+                className="w-full rounded-[10px] border border-app-border bg-white pl-8 pr-3 py-1.5 text-[0.82rem] text-app-text outline-none focus:border-app-accent"
               />
             </div>
             <div className="flex gap-1 overflow-x-auto py-0.5">
@@ -300,9 +308,9 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
                         setSelectedSpecId(spec.id);
                       }
                     }}
-                    className={`p-3 rounded-[14px] border transition cursor-pointer flex items-center justify-between gap-2 ${
+                    className={`p-3 rounded-[10px] border transition cursor-pointer flex items-center justify-between gap-2 ${
                       isSelected
-                        ? 'border-app-accent bg-app-accent-soft text-app-text font-semibold shadow-xs'
+                        ? 'border-app-accent bg-app-accent-soft text-app-text font-semibold'
                         : 'border-app-border hover:bg-black/[0.02] text-app-text'
                     }`}
                   >
@@ -323,13 +331,9 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
                       </div>
                     </div>
 
-                    <span
-                      className={`text-[0.68rem] px-2 py-0.5 rounded-full border font-semibold shrink-0 ${
-                        ROLE_COLORS[spec.siteRole]
-                      }`}
-                    >
+                    <Badge tone={ROLE_TONE[spec.siteRole]}>
                       {ROLE_LABELS[spec.siteRole]}
-                    </span>
+                    </Badge>
                   </div>
                 );
               })
@@ -340,68 +344,56 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
         {/* Right: Detalhe da Especificação Selecionada */}
         <div className="min-w-0">
           {selectedSpec ? (
-            <div className="flex flex-col h-full bg-white rounded-[22px] border border-app-border overflow-hidden shadow-soft">
+            <div className="vt-card flex h-full flex-col overflow-hidden p-0">
               {/* Header do Detalhe */}
-              <div className="p-6 border-b border-app-border bg-gradient-to-b from-black/[0.01] to-transparent">
+              <div className="p-6 border-b border-app-border">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-center gap-3.5">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] border border-app-border bg-app-bg text-app-accent">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] border border-app-accent-border bg-app-accent-soft text-app-text">
                       <Building className="h-6 w-6" />
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-[0.74rem] font-bold uppercase tracking-wider text-app-muted">
+                        <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
                           {CATEGORY_LABELS[selectedSpec.category]}
                         </span>
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.72rem] font-semibold border ${
-                            ROLE_COLORS[selectedSpec.siteRole]
-                          }`}
-                        >
+                        <Badge tone={ROLE_TONE[selectedSpec.siteRole]}>
                           {ROLE_LABELS[selectedSpec.siteRole]}
-                        </span>
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.72rem] font-semibold ${
-                            selectedSpec.lifecycleStatus === 'Active'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-red-50 text-red-700 border border-red-200'
-                          }`}
-                        >
+                        </Badge>
+                        <Badge tone={selectedSpec.lifecycleStatus === 'Active' ? 'green' : 'red'} dot>
                           {selectedSpec.lifecycleStatus === 'Active' ? 'Ativo' : 'Aposentado'}
-                        </span>
+                        </Badge>
                       </div>
-                      <h2 className="text-[1.35rem] font-semibold text-app-text mt-0.5 tracking-[-0.01em]">
-                        {selectedSpec.name}
-                      </h2>
+                      <h2 className="mt-0.5">{selectedSpec.name}</h2>
                       <p className="text-[0.82rem] font-mono text-app-muted mt-0.5">{selectedSpec.code}</p>
                     </div>
                   </div>
 
                   {canEdit && (
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        iconLeft={<Edit2 className="h-4 w-4" />}
                         onClick={() => {
                           setEditingSpec(selectedSpec);
                           setFormModalOpen(true);
                         }}
-                        className="rounded-[12px] border border-app-border bg-white px-3 py-1.5 text-[0.82rem] font-medium text-app-text hover:bg-app-accent-soft transition"
                       >
-                        <Edit2 className="h-4 w-4 inline mr-1 text-app-muted" />
                         Editar
-                      </button>
+                      </Button>
                       {!selectedSpec._bootstrapProtected && selectedSpec.lifecycleStatus === 'Active' && (
-                        <button
-                          type="button"
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          iconLeft={<Trash2 className="h-4 w-4" />}
                           onClick={() => {
                             setImpactingSpec(selectedSpec);
                             setImpactModalOpen(true);
                           }}
-                          className="rounded-[12px] border border-red-200 bg-red-50 px-3 py-1.5 text-[0.82rem] font-medium text-red-700 hover:bg-red-100 transition"
                         >
-                          <Trash2 className="h-4 w-4 inline mr-1 text-red-600" />
                           Aposentar
-                        </button>
+                        </Button>
                       )}
                     </div>
                   )}
@@ -411,7 +403,7 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
               {/* Corpo com Grid de Informações e Regras */}
               <div className="p-6 space-y-6 overflow-y-auto flex-1">
                 <div>
-                  <h3 className="text-[0.82rem] font-semibold uppercase tracking-wider text-app-muted mb-2">
+                  <h3 className="mb-2" style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
                     Descrição
                   </h3>
                   <p className="text-[0.92rem] text-app-text leading-relaxed">
@@ -422,15 +414,15 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
                 {/* Regras de Contenção Permitidas */}
                 <div className="grid gap-4 md:grid-cols-2">
                   {/* Pais Permitidos */}
-                  <div className="rounded-[18px] border border-app-border p-4 bg-app-bg/40">
+                  <div className="rounded-[10px] border border-app-border p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <FolderTree className="h-4 w-4 text-amber-600" />
                       <h4 className="text-[0.85rem] font-semibold text-app-text">
-                        Pode ser contido por (Pais Permitidos)
+                        Pode ser contido por (pais permitidos)
                       </h4>
                     </div>
                     {selectedSpec.allowedParentSpecIds.length === 0 ? (
-                      <p className="text-[0.8rem] text-app-muted italic">Nenhum pai permitido (Raiz do modelo).</p>
+                      <p className="text-[0.8rem] text-app-muted italic">Nenhum pai permitido (raiz do modelo).</p>
                     ) : (
                       <div className="flex flex-wrap gap-1.5">
                         {selectedSpec.allowedParentSpecIds.map((pId) => {
@@ -452,15 +444,15 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
                   </div>
 
                   {/* Filhos Permitidos */}
-                  <div className="rounded-[18px] border border-app-border p-4 bg-app-bg/40">
+                  <div className="rounded-[10px] border border-app-border p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <Layers className="h-4 w-4 text-sky-600" />
                       <h4 className="text-[0.85rem] font-semibold text-app-text">
-                        Pode conter diretamente (Filhos Permitidos)
+                        Pode conter diretamente (filhos permitidos)
                       </h4>
                     </div>
                     {selectedSpec.allowedChildSpecIds.length === 0 ? (
-                      <p className="text-[0.8rem] text-app-muted italic">Nenhum filho permitido (Folha do modelo).</p>
+                      <p className="text-[0.8rem] text-app-muted italic">Nenhum filho permitido (folha do modelo).</p>
                     ) : (
                       <div className="flex flex-wrap gap-1.5">
                         {selectedSpec.allowedChildSpecIds.map((cId) => {
@@ -484,15 +476,15 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
 
                 {/* Características Canônicas */}
                 <div>
-                  <h3 className="text-[0.82rem] font-semibold uppercase tracking-wider text-app-muted mb-3">
-                    Características da Especificação ({selectedSpec.specCharacteristic?.length ?? 0})
+                  <h3 className="mb-3" style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                    Características da especificação ({selectedSpec.specCharacteristic?.length ?? 0})
                   </h3>
                   {!selectedSpec.specCharacteristic || selectedSpec.specCharacteristic.length === 0 ? (
-                    <div className="rounded-[16px] border border-dashed border-app-border p-6 text-center text-[0.84rem] text-app-muted">
+                    <div className="rounded-[10px] border border-dashed border-app-border p-6 text-center text-[0.84rem] text-app-muted">
                       Nenhuma característica personalizada definida nesta especificação.
                     </div>
                   ) : (
-                    <div className="divide-y divide-app-border rounded-[16px] border border-app-border overflow-hidden">
+                    <div className="divide-y divide-app-border rounded-[10px] border border-app-border overflow-hidden">
                       {selectedSpec.specCharacteristic.map((c, idx) => (
                         <div key={idx} className="p-3.5 hover:bg-black/[0.01] flex items-center justify-between text-[0.85rem]">
                           <div>
@@ -517,9 +509,9 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
               </div>
             </div>
           ) : (
-            <div className="rounded-[22px] border border-dashed border-app-border bg-white p-12 text-center text-app-muted flex flex-col items-center justify-center min-h-[580px]">
+            <div className="flex min-h-[580px] flex-col items-center justify-center rounded-[10px] border border-dashed border-app-border p-12 text-center text-app-muted">
               <MapPin className="h-10 w-10 mb-3 opacity-30" />
-              <h3 className="text-[1.1rem] font-semibold text-app-text">Nenhuma especificação selecionada</h3>
+              <h3 className="text-[1.1rem]">Nenhuma especificação selecionada</h3>
               <p className="text-[0.85rem] mt-1 max-w-sm">
                 Selecione uma especificação de local à esquerda para visualizar suas regras de contenção e características.
               </p>

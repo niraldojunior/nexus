@@ -12,9 +12,8 @@ export default function Field({
 }) {
   return (
     <label
-      className={`grid gap-2 text-[0.78rem] font-semibold uppercase tracking-[0.07em] text-app-muted ${
-        fullWidth ? 'md:col-span-2' : ''
-      }`}
+      className={`grid gap-2 ${fullWidth ? 'md:col-span-2' : ''}`}
+      style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}
     >
       {label}
       {children}

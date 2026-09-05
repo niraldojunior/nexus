@@ -5,6 +5,7 @@ import {
   Briefcase,
   Filter,
   Loader2,
+  MapPin,
   Network,
   Plus,
   Users,
@@ -42,6 +43,8 @@ import {
   emptyServiceSpecFormState,
   type ServiceSpecFormState,
 } from '../utils/serviceSpecificationForm';
+import { PageHead, Button, Badge, StatusPill, DataTable, Modal } from '../components/ui';
+import type { DataTableColumn } from '../components/ui';
 
 const PAGE_SIZE = 20;
 
@@ -115,12 +118,6 @@ const tabConfig: Record<
   },
 };
 
-// Colunas cujo domínio é um conjunto fechado de valores de sistema — ganham picklist no cabeçalho.
-const FILTERABLE_COLUMNS: Record<ServiceTabId, string[]> = {
-  CustomerFacingService: ['kind', 'spec', 'state'],
-  ResourceFacingService: ['kind', 'spec', 'state'],
-};
-
 type OpenFilterState = { key: string; rect: DOMRect };
 
 interface ServicePageProps {
@@ -160,7 +157,6 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
   const activeTabConfig = tabConfig[effectiveTab];
   const activeColumns = activeTabConfig.buildColumns();
   const categoryName = serviceCategories.find((item) => item.code === category)?.name ?? category;
-  const CategoryIcon = activeTabConfig.icon;
 
   const specificationsById = useMemo(() => {
     const map = new Map<string, ServiceSpecification>();
@@ -198,7 +194,6 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
 
   // Valor exibido de uma coluna — usado para montar o domínio do filtro e para aplicá-lo, garantindo
   // que o filtro casa exatamente com o texto renderizado na célula.
-  const filterableColumns = FILTERABLE_COLUMNS[effectiveTab];
   const columnValueFor = (service: ServiceEntity, key: string): string => {
     switch (key) {
       case 'kind':
@@ -457,13 +452,57 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
     }
   };
 
-  const rows = pageItems.map((service) => (
-    <tr
-      key={service.id}
-      className="cursor-pointer border-b border-app-border last:border-b-0 hover:bg-app-accent-soft"
-      onClick={() => openEditModal(service)}
-    >
-      <td className="px-4 py-3">
+  // Cabeçalho de coluna filtrável — botão sentence-case (o rótulo já vem em sentence case de
+  // tabConfig) com o indicador de picklist; abre o ColumnFilterMenu ancorado no próprio botão.
+  const renderFilterableHeader = (key: string, label: string) => {
+    const activeCount = columnFilters[key]?.size ?? 0;
+    return (
+      <button
+        type="button"
+        title={`Filtrar por ${label}`}
+        aria-expanded={openFilter?.key === key}
+        onClick={(event) => {
+          event.stopPropagation();
+          const rect = event.currentTarget.getBoundingClientRect();
+          setOpenFilter((current) => (current?.key === key ? null : { key, rect }));
+        }}
+        className="-mx-2 inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 transition hover:bg-app-accent-soft"
+        style={{ color: activeCount ? 'var(--text-primary)' : 'var(--text-tertiary)' }}
+      >
+        <span>{label}</span>
+        <Filter
+          className="h-3 w-3"
+          strokeWidth={2}
+          fill={activeCount ? 'currentColor' : 'none'}
+          style={{ opacity: activeCount ? 1 : 0.6 }}
+          aria-hidden
+        />
+        {activeCount ? (
+          <span
+            className="rounded-full px-1.5 text-[0.6rem] font-bold leading-[1.4]"
+            style={{ background: 'var(--vt-yellow)', color: 'var(--text-primary)' }}
+          >
+            {activeCount}
+          </span>
+        ) : null}
+      </button>
+    );
+  };
+
+  const columns: DataTableColumn<ServiceEntity>[] = [
+    {
+      key: 'select',
+      headerClassName: 'w-[44px]',
+      header: (
+        <input
+          ref={selectAllRef}
+          type="checkbox"
+          aria-label="Selecionar página atual"
+          checked={pageItems.length > 0 && pageSelectionCount === pageItems.length}
+          onChange={toggleSelectPage}
+        />
+      ),
+      render: (service) => (
         <input
           type="checkbox"
           aria-label={`Selecionar ${service.name}`}
@@ -471,204 +510,159 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
           onClick={(event) => event.stopPropagation()}
           onChange={() => toggleSelected(service.id)}
         />
-      </td>
-      <td className="px-4 py-3 text-[0.92rem] font-semibold text-app-text">{service.name}</td>
-      <td className="px-4 py-3">
-        <LayerBadge label={serviceKindLabel(service)} />
-      </td>
-      <td className="px-4 py-3 text-[0.88rem] text-app-muted">
-        {specificationsById.get(service.serviceSpecificationId)?.name ?? '-'}
-      </td>
-      <td className="px-4 py-3">
-        <StateBadge state={service.state} />
-      </td>
-      <td className="px-4 py-3 text-[0.88rem] text-app-muted">{serviceBindingSummary(service)}</td>
-      <td className="px-4 py-3 text-[0.88rem] text-app-muted">
+      ),
+    },
+    {
+      key: 'name',
+      header: 'Serviço',
+      render: (service) => (
+        <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+          {service.name}
+        </span>
+      ),
+    },
+    {
+      key: 'kind',
+      header: renderFilterableHeader('kind', 'Camada'),
+      render: (service) => <LayerBadge label={serviceKindLabel(service)} />,
+    },
+    {
+      key: 'spec',
+      header: renderFilterableHeader('spec', 'Especificação'),
+      render: (service) => specificationsById.get(service.serviceSpecificationId)?.name ?? '-',
+    },
+    {
+      key: 'state',
+      header: renderFilterableHeader('state', 'Estado'),
+      render: (service) => (
+        <StatusPill status={service.state} label={SERVICE_STATE_LABELS[service.state]} />
+      ),
+    },
+    {
+      key: 'binding',
+      header: 'Assinante / Recursos',
+      render: (service) => serviceBindingSummary(service),
+    },
+    {
+      key: 'place',
+      header: 'Local',
+      render: (service) => (
         <div className="flex items-center gap-2">
           <PlaceLabelCompact place={service.place?.[0]} />
           {service.place?.[0]?.id && (
             <button
               type="button"
               onClick={() => goToGeo(service.place![0].id)}
-              className="text-[0.75rem] font-semibold text-app-accent hover:text-app-accent-border transition"
+              className="inline-flex items-center text-app-accent transition hover:text-app-accent-border"
               title="Ver no mapa de locais"
             >
-              📍
+              <MapPin className="h-3.5 w-3.5" aria-hidden />
             </button>
           )}
         </div>
-      </td>
-    </tr>
-  ));
+      ),
+    },
+  ];
 
   return (
-    <div className="h-full min-h-0 overflow-hidden px-8 py-8">
-      <div className="mx-auto flex h-full max-w-[1460px] flex-col gap-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <CategoryIcon className="h-7 w-7 shrink-0 text-app-muted" strokeWidth={2} />
-              <h1 className="font-display text-4xl font-semibold text-app-text">{categoryName}</h1>
-            </div>
-            <p className="mt-2 max-w-[820px] text-[0.96rem] text-app-muted">
-              {activeTabConfig.description}
-            </p>
-          </div>
-          <div className="mt-1 flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => openCreateModal('ResourceFacingService')}
-              aria-label="Criar serviço de rede (RFS)"
-              title="Criar serviço de rede (RFS)"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-[16px] border border-app-border bg-white px-4 text-[0.88rem] font-semibold text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text"
-            >
-              <Plus className="h-4 w-4" />
-              RFS
-            </button>
-            <button
-              type="button"
-              onClick={() => openCreateModal('CustomerFacingService')}
-              aria-label="Criar serviço de cliente (CFS)"
-              title="Criar serviço de cliente (CFS)"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-[16px] border border-app-border bg-white px-4 text-[0.88rem] font-semibold text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text"
-            >
-              <Plus className="h-4 w-4" />
-              CFS
-            </button>
-            <button
-              type="button"
-              onClick={openTerminateConfirmation}
-              disabled={!selectedCount || saving || terminating}
-              aria-label="Encerrar selecionados"
-              title="Encerrar selecionados"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-app-border bg-white text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text focus-visible:border-app-accent-border disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
+    <div className="min-h-full px-8 py-8">
+      <div className="mx-auto flex flex-col gap-6" style={{ maxWidth: 'var(--content-max)' }}>
+        <PageHead
+          title={categoryName}
+          subtitle={activeTabConfig.description}
+          actions={
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => openCreateModal('ResourceFacingService')}
+                iconLeft={<Plus className="h-4 w-4" />}
+                aria-label="Criar serviço de rede (RFS)"
+                title="Criar serviço de rede (RFS)"
+              >
+                RFS
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => openCreateModal('CustomerFacingService')}
+                iconLeft={<Plus className="h-4 w-4" />}
+                aria-label="Criar serviço de cliente (CFS)"
+                title="Criar serviço de cliente (CFS)"
+              >
+                CFS
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={openTerminateConfirmation}
+                disabled={!selectedCount || saving || terminating}
+                iconLeft={<X className="h-4 w-4" />}
+                aria-label="Encerrar selecionados"
+                title="Encerrar selecionados"
+              />
+            </>
+          }
+        />
 
         {error ? (
-          <div className="rounded-[18px] border border-red-200 bg-red-50 px-4 py-3 text-[0.9rem] text-red-700 shadow-soft">
+          <div
+            className="px-4 py-3 text-[0.9rem]"
+            style={{
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--status-red)',
+              background: 'var(--status-red-soft)',
+              color: 'var(--status-red)',
+            }}
+          >
             {error}
           </div>
         ) : null}
 
-        <div className="flex min-h-0 flex-1 flex-col rounded-[28px] border border-app-border bg-white shadow-soft">
-          <div className="flex-1 overflow-auto">
-            <table className="min-w-full border-collapse text-left">
-              <thead className="sticky top-0 z-10 bg-white">
-                <tr className="border-b border-app-border">
-                  <th className="w-[56px] px-4 py-3">
-                    <input
-                      ref={selectAllRef}
-                      type="checkbox"
-                      aria-label="Selecionar página atual"
-                      checked={pageItems.length > 0 && pageSelectionCount === pageItems.length}
-                      onChange={toggleSelectPage}
-                    />
-                  </th>
-                  {activeColumns.map((column) => {
-                    const isFilterable = filterableColumns.includes(column.key);
-                    const activeCount = columnFilters[column.key]?.size ?? 0;
-                    return (
-                      <th
-                        key={column.key}
-                        className="px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted"
-                      >
-                        {isFilterable ? (
-                          <button
-                            type="button"
-                            title={`Filtrar por ${column.label}`}
-                            aria-expanded={openFilter?.key === column.key}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              const rect = event.currentTarget.getBoundingClientRect();
-                              setOpenFilter((current) =>
-                                current?.key === column.key ? null : { key: column.key, rect },
-                              );
-                            }}
-                            className={`-mx-2 inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 uppercase tracking-[0.08em] transition hover:bg-app-accent-soft ${
-                              activeCount ? 'text-app-text' : 'text-app-muted'
-                            }`}
-                          >
-                            <span>{column.label}</span>
-                            <Filter
-                              className={`h-3 w-3 ${activeCount ? 'text-app-text' : 'text-app-muted opacity-60'}`}
-                              strokeWidth={2}
-                              fill={activeCount ? 'currentColor' : 'none'}
-                              aria-hidden
-                            />
-                            {activeCount ? (
-                              <span className="rounded-full bg-app-accent px-1.5 text-[0.6rem] font-bold leading-[1.4] text-app-text">
-                                {activeCount}
-                              </span>
-                            ) : null}
-                          </button>
-                        ) : (
-                          column.label
-                        )}
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length ? (
-                  rows
-                ) : (
-                  <tr>
-                    <td
-                      colSpan={activeColumns.length + 1}
-                      className="px-4 py-10 text-center text-[0.9rem] text-app-muted"
-                    >
-                      Nenhum registro encontrado.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex items-center justify-between gap-3 border-t border-app-border px-5 py-4">
-            <div className="text-[0.88rem] text-app-muted">
-              {selectedCount
-                ? `${selectedCount} selecionados no total`
-                : filteredItems.length
-                  ? `Mostrando ${(activePage - 1) * PAGE_SIZE + 1}–${Math.min(activePage * PAGE_SIZE, filteredItems.length)} de ${filteredItems.length} registro(s)${
-                      filteredItems.length !== categoryItems.length
-                        ? ` (filtrado de ${categoryItems.length})`
-                        : ''
-                    }`
-                  : categoryItems.length
-                    ? 'Nenhum registro para os filtros aplicados'
-                    : 'Nenhuma seleção ativa'}
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-[0.88rem] text-app-muted">
-                Página {activePage} de {totalPages}
+        <DataTable
+          columns={columns}
+          rows={pageItems}
+          rowKey={(service) => service.id}
+          onRowClick={openEditModal}
+          emptyMessage="Nenhum registro encontrado."
+          footer={
+            <>
+              <div style={{ fontSize: 'var(--fs-body-lg)', color: 'var(--text-tertiary)' }}>
+                {selectedCount
+                  ? `${selectedCount} selecionados no total`
+                  : filteredItems.length
+                    ? `Mostrando ${(activePage - 1) * PAGE_SIZE + 1}–${Math.min(activePage * PAGE_SIZE, filteredItems.length)} de ${filteredItems.length} registro(s)${
+                        filteredItems.length !== categoryItems.length
+                          ? ` (filtrado de ${categoryItems.length})`
+                          : ''
+                      }`
+                    : categoryItems.length
+                      ? 'Nenhum registro para os filtros aplicados'
+                      : 'Nenhuma seleção ativa'}
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="geo-btn secondary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-app-border disabled:hover:bg-white"
-                  onClick={() => goToPage(activePage - 1)}
-                  disabled={activePage <= 1 || isLoading}
-                >
-                  Anterior
-                </button>
-                <button
-                  type="button"
-                  className="geo-btn secondary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-app-border disabled:hover:bg-white"
-                  onClick={() => goToPage(activePage + 1)}
-                  disabled={!hasMore || isLoading}
-                >
-                  Próximo
-                </button>
+              <div className="flex items-center gap-4">
+                <div style={{ fontSize: 'var(--fs-body-lg)', color: 'var(--text-tertiary)' }}>
+                  Página {activePage} de {totalPages}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => goToPage(activePage - 1)}
+                    disabled={activePage <= 1 || isLoading}
+                  >
+                    Anterior
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => goToPage(activePage + 1)}
+                    disabled={!hasMore || isLoading}
+                  >
+                    Próximo
+                  </Button>
+                </div>
               </div>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+        />
       </div>
 
       {openFilter ? (
@@ -703,83 +697,108 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
 
       {terminateConfirmOpen
         ? createPortal(
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="terminate-confirmation-title"
-                className="w-full max-w-[560px] rounded-[28px] border border-app-border bg-white p-6 shadow-modal"
-              >
-                <div className="mb-5 flex items-start justify-between gap-4 border-b border-app-border pb-4">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-[14px] bg-amber-50 p-2 text-amber-700">
-                      <AlertTriangle className="h-5 w-5" aria-hidden="true" />
-                    </div>
-                    <div>
-                      <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-                        Confirmação de encerramento
-                      </div>
-                      <h2
-                        id="terminate-confirmation-title"
-                        className="mt-1 font-display text-[1.4rem] font-semibold text-app-text"
-                      >
-                        Encerrar {selectedCount} selecionado{selectedCount === 1 ? '' : 's'}?
-                      </h2>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
+            <Modal
+              onClose={closeTerminateConfirmation}
+              width={560}
+              ariaLabel="Confirmação de encerramento"
+              footer={
+                <>
+                  <Button
+                    variant="secondary"
                     onClick={closeTerminateConfirmation}
                     disabled={terminating}
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-
-                <div className="grid gap-4 text-[0.92rem] text-app-muted">
-                  <p>
-                    O encerramento é lógico: os serviços passam ao estado Encerrado e saem da
-                    operação, mas permanecem no inventário para auditoria e rastreabilidade.
-                    Encerrar um RFS com CFS ativo é recusado pelo inventário.
-                  </p>
-                  {selectedTerminatePreview ? (
-                    <div className="rounded-[18px] border border-app-border bg-app-accent-soft px-4 py-3 text-[0.88rem] text-app-text">
-                      {selectedTerminatePreview}
-                      {selectedCount > selectedOnPage.length
-                        ? ' e outros itens selecionados em páginas anteriores.'
-                        : ''}
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="mt-6 flex items-center justify-end gap-3 border-t border-app-border pt-4">
-                  <button
-                    type="button"
-                    onClick={closeTerminateConfirmation}
-                    disabled={terminating}
-                    className="geo-btn secondary"
                   >
                     Cancelar
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="danger"
                     onClick={() => void confirmTerminateSelected()}
                     disabled={terminating}
-                    className="inline-flex items-center gap-2 rounded-[16px] border border-red-200 bg-red-600 px-4 py-2 text-[0.92rem] font-semibold text-white shadow-soft transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    iconLeft={<X className="h-4 w-4" />}
                   >
-                    <X className="h-4 w-4" />
                     {terminating ? 'Encerrando...' : 'Confirmar encerramento'}
-                  </button>
+                  </Button>
+                </>
+              }
+            >
+              <div
+                className="mb-4 flex items-start justify-between gap-4 border-b pb-4"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className="mt-0.5 p-2"
+                    style={{
+                      borderRadius: 'var(--radius-md)',
+                      background: 'var(--status-amber-soft)',
+                      color: 'var(--status-amber)',
+                    }}
+                  >
+                    <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <div>
+                    <div className="vt-eyebrow">Confirmação de encerramento</div>
+                    <h2
+                      className="mt-1 text-app-text"
+                      style={{ font: 'var(--text-h2)', letterSpacing: 'var(--tracking-snug)' }}
+                    >
+                      Encerrar {selectedCount} selecionado{selectedCount === 1 ? '' : 's'}?
+                    </h2>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  className="rounded-full p-2 transition hover:bg-app-accent-soft"
+                  style={{ color: 'var(--text-tertiary)' }}
+                  onClick={closeTerminateConfirmation}
+                  disabled={terminating}
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-            </div>,
+
+              <div
+                className="grid gap-4"
+                style={{ fontSize: 'var(--fs-body-lg)', color: 'var(--text-secondary)' }}
+              >
+                <p>
+                  O encerramento é lógico: os serviços passam ao estado Encerrado e saem da
+                  operação, mas permanecem no inventário para auditoria e rastreabilidade.
+                  Encerrar um RFS com CFS ativo é recusado pelo inventário.
+                </p>
+                {selectedTerminatePreview ? (
+                  <div
+                    className="px-4 py-3 text-[0.88rem]"
+                    style={{
+                      borderRadius: 'var(--radius-lg)',
+                      border: '1px solid var(--border)',
+                      background: 'var(--vt-yellow-tint)',
+                      color: 'var(--text-primary)',
+                    }}
+                  >
+                    {selectedTerminatePreview}
+                    {selectedCount > selectedOnPage.length
+                      ? ' e outros itens selecionados em páginas anteriores.'
+                      : ''}
+                  </div>
+                ) : null}
+              </div>
+            </Modal>,
             document.body,
           )
         : null}
 
       {isLoading ? (
-        <div className="pointer-events-none fixed bottom-6 right-6 z-50 rounded-[18px] border border-app-border bg-white/90 px-4 py-3 text-[0.88rem] font-medium text-app-muted shadow-soft backdrop-blur">
+        <div
+          className="pointer-events-none fixed bottom-6 right-6 z-50 px-4 py-3 text-[0.88rem] font-medium backdrop-blur"
+          style={{
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--border)',
+            background: 'rgba(255,255,255,0.9)',
+            color: 'var(--text-tertiary)',
+            boxShadow: 'var(--shadow-md)',
+          }}
+        >
           <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
           Carregando dados...
         </div>
@@ -848,29 +867,25 @@ function ServiceModal({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
-      <form
-        onSubmit={onSubmit}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="service-modal-title"
-        className="max-h-full w-full max-w-[760px] overflow-auto rounded-[28px] border border-app-border bg-white p-6 shadow-modal"
-      >
-        <div className="mb-5 flex items-start justify-between gap-4 border-b border-app-border pb-4">
+    <Modal onClose={onClose} width={760} ariaLabel={title}>
+      <form onSubmit={onSubmit} className="grid gap-4">
+        <div
+          className="mb-1 flex items-start justify-between gap-4 border-b pb-4"
+          style={{ borderColor: 'var(--border)' }}
+        >
           <div>
-            <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-              Inventário de serviços
-            </div>
+            <div className="vt-eyebrow">Inventário de serviços</div>
             <h2
-              id="service-modal-title"
-              className="mt-1 font-display text-[1.4rem] font-semibold text-app-text"
+              className="mt-1 text-app-text"
+              style={{ font: 'var(--text-h2)', letterSpacing: 'var(--tracking-snug)' }}
             >
               {title}
             </h2>
           </div>
           <button
             type="button"
-            className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
+            className="rounded-full p-2 transition hover:bg-app-accent-soft"
+            style={{ color: 'var(--text-tertiary)' }}
             onClick={onClose}
           >
             <X className="h-5 w-5" />
@@ -878,7 +893,15 @@ function ServiceModal({
         </div>
 
         {cfsBlockedByMissingRfs ? (
-          <div className="mb-5 flex items-start gap-3 rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-3 text-[0.88rem] text-amber-800">
+          <div
+            className="flex items-start gap-3 px-4 py-3 text-[0.88rem]"
+            style={{
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--status-amber)',
+              background: 'var(--status-amber-soft)',
+              color: 'var(--status-amber)',
+            }}
+          >
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <span>
               Um serviço de cliente precisa apoiar-se em ao menos um serviço de rede. Cadastre um
@@ -997,7 +1020,15 @@ function ServiceModal({
             )}
 
             {isCfs && formState.supportingServiceIds.length ? (
-              <div className="md:col-span-2 rounded-[18px] border border-app-border bg-app-accent-soft px-4 py-3 text-[0.82rem] text-app-text">
+              <div
+                className="px-4 py-3 text-[0.82rem] md:col-span-2"
+                style={{
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1px solid var(--border)',
+                  background: 'var(--vt-yellow-tint)',
+                  color: 'var(--text-primary)',
+                }}
+              >
                 <span className="font-semibold">Cadeia: </span>
                 {formState.name || 'CFS'} →{' '}
                 {formState.supportingServiceIds
@@ -1008,20 +1039,19 @@ function ServiceModal({
           </>
         </div>
 
-        <div className="mt-6 flex items-center justify-end gap-3 border-t border-app-border pt-4">
-          <button type="button" onClick={onClose} className="geo-btn secondary">
+        <div
+          className="mt-2 flex items-center justify-end gap-3 border-t pt-4"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          <Button type="button" variant="secondary" onClick={onClose}>
             Cancelar
-          </button>
-          <button
-            type="submit"
-            disabled={saving || !submitValid || cfsBlockedByMissingRfs}
-            className="inline-flex items-center gap-2 rounded-[16px] border border-app-accent-border bg-app-accent px-4 py-2 text-[0.92rem] font-semibold text-app-text shadow-soft transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
-          >
+          </Button>
+          <Button type="submit" disabled={saving || !submitValid || cfsBlockedByMissingRfs}>
             {saving ? 'Salvando...' : 'Salvar'}
-          </button>
+          </Button>
         </div>
       </form>
-    </div>,
+    </Modal>,
     document.body,
   );
 }
@@ -1039,18 +1069,34 @@ function CheckboxList({
 }) {
   if (!options.length) {
     return (
-      <div className="rounded-[14px] border border-app-border bg-white px-3 py-4 text-center text-[0.82rem] font-normal normal-case tracking-normal text-app-muted">
+      <div
+        className="px-3 py-4 text-center text-[0.82rem]"
+        style={{
+          borderRadius: 'var(--radius-md)',
+          border: '1px solid var(--border)',
+          background: 'var(--surface-card)',
+          color: 'var(--text-tertiary)',
+        }}
+      >
         {emptyMessage}
       </div>
     );
   }
 
   return (
-    <div className="max-h-[180px] overflow-auto rounded-[14px] border border-app-border bg-white">
+    <div
+      className="max-h-[180px] overflow-auto"
+      style={{
+        borderRadius: 'var(--radius-md)',
+        border: '1px solid var(--border)',
+        background: 'var(--surface-card)',
+      }}
+    >
       {options.map((option) => (
         <label
           key={option.id}
-          className="flex cursor-pointer items-center gap-3 px-3 py-2 text-[0.86rem] font-normal normal-case tracking-normal text-app-text transition hover:bg-app-accent-soft"
+          className="flex cursor-pointer items-center gap-3 px-3 py-2 text-[0.86rem] transition hover:bg-app-accent-soft"
+          style={{ color: 'var(--text-primary)' }}
         >
           <input
             type="checkbox"
@@ -1060,7 +1106,12 @@ function CheckboxList({
           />
           <span className="truncate">{option.label}</span>
           {option.hint ? (
-            <span className="ml-auto shrink-0 text-[0.76rem] text-app-muted">{option.hint}</span>
+            <span
+              className="ml-auto shrink-0 text-[0.76rem]"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              {option.hint}
+            </span>
           ) : null}
         </label>
       ))}
@@ -1071,36 +1122,14 @@ function CheckboxList({
 function LayerBadge({ label }: { label: string }) {
   const isCfs = label === 'CFS';
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[0.74rem] font-semibold ${
-        isCfs
-          ? 'border-app-accent-border bg-app-accent-soft text-app-text'
-          : 'border-app-border bg-white text-app-muted'
-      }`}
-    >
+    <Badge tone={isCfs ? 'brand' : 'neutral'}>
       {isCfs ? (
         <Users className="h-3 w-3" aria-hidden />
       ) : (
         <Network className="h-3 w-3" aria-hidden />
       )}
       {label}
-    </span>
-  );
-}
-
-function StateBadge({ state }: { state: ServiceState }) {
-  const tone =
-    state === 'active'
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-      : state === 'terminated'
-        ? 'border-app-border bg-slate-50 text-app-muted'
-        : 'border-amber-200 bg-amber-50 text-amber-800';
-  return (
-    <span
-      className={`inline-flex rounded-full border px-2.5 py-0.5 text-[0.74rem] font-semibold ${tone}`}
-    >
-      {SERVICE_STATE_LABELS[state] ?? state}
-    </span>
+    </Badge>
   );
 }
 

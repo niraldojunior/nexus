@@ -1,6 +1,9 @@
-import { Activity, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listStudioAudit, type StudioAuditEntry, type StudioDomain } from '../../services/studioApi';
+import PageHead from '../../components/ui/PageHead';
+import Button from '../../components/ui/Button';
+import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 
 const domains: Array<{ value: StudioDomain; label: string }> = [
   { value: 'resource-model', label: 'Modelo de recursos' },
@@ -47,30 +50,60 @@ export function EventsTab() {
     void load();
   }, [load]);
 
+  const columns: DataTableColumn<StudioAuditEntry>[] = useMemo(
+    () => [
+      {
+        key: 'eventTime',
+        header: 'Data e hora',
+        render: (entry) => (
+          <span style={{ color: 'var(--text-secondary)' }}>{formatDateTime(entry.eventTime)}</span>
+        ),
+      },
+      {
+        key: 'action',
+        header: 'Evento',
+        render: (entry) => (
+          <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
+            {actionLabel[entry.action]}
+          </span>
+        ),
+      },
+      {
+        key: 'versionNumber',
+        header: 'Versão',
+        render: (entry) => (
+          <span style={{ color: 'var(--text-secondary)' }}>v{entry.versionNumber}</span>
+        ),
+      },
+      {
+        key: 'actorSub',
+        header: 'Ator',
+        render: (entry) => (
+          <span className="font-mono text-[0.8rem]" style={{ color: 'var(--text-secondary)' }}>
+            {entry.actorSub}
+          </span>
+        ),
+      },
+    ],
+    [],
+  );
+
   return (
     <div>
-      <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-app-accent-border bg-app-accent-soft text-app-text">
-            <Activity className="h-5 w-5" strokeWidth={1.8} />
-          </div>
-          <div>
-            <h1 className="font-display text-[1.5rem] font-semibold text-app-text">Eventos</h1>
-            <p className="mt-1 text-[0.88rem] leading-5 text-app-muted">
-              Trilha de auditoria de drafts e publicações do tenant por domínio do Studio.
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          disabled={loading}
-          className="inline-flex w-fit items-center gap-2 rounded-xl border border-app-border px-3 py-2 text-[0.82rem] font-semibold text-app-text transition hover:bg-app-accent-soft disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
-          Atualizar
-        </button>
-      </div>
+      <PageHead
+        title="Eventos"
+        subtitle="Trilha de auditoria de drafts e publicações do tenant por domínio do Studio."
+        actions={
+          <Button
+            variant="secondary"
+            onClick={() => void load()}
+            disabled={loading}
+            iconLeft={<RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />}
+          >
+            Atualizar
+          </Button>
+        }
+      />
 
       <label className="mb-4 block max-w-md text-[0.82rem] font-semibold text-app-text">
         Domínio
@@ -88,48 +121,29 @@ export function EventsTab() {
       </label>
 
       {error ? (
-        <p className="mb-4 flex items-start gap-2 rounded-[14px] border border-app-border bg-app-accent-soft px-3 py-3 text-[0.82rem] leading-5 text-app-text" role="alert">
+        <p
+          className="mb-4 flex items-start gap-2 rounded-[14px] border border-app-border bg-app-accent-soft px-3 py-3 text-[0.82rem] leading-5 text-app-text"
+          role="alert"
+        >
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.8} />
           {error}
         </p>
       ) : null}
 
-      <div className="overflow-hidden rounded-[20px] border border-app-border bg-white shadow-soft">
-        <table className="w-full min-w-[720px] text-left">
-          <thead>
-            <tr className="border-b border-app-border bg-slate-50 text-[0.82rem] font-semibold text-app-muted">
-              <th className="px-5 py-3">Data e hora</th>
-              <th className="px-5 py-3">Evento</th>
-              <th className="px-5 py-3">Versão</th>
-              <th className="px-5 py-3">Ator</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={4} className="px-5 py-5 text-[0.88rem] text-app-muted">
-                  <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Carregando eventos…</span>
-                </td>
-              </tr>
-            ) : entries.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="px-5 py-5 text-[0.88rem] text-app-muted">
-                  Nenhum evento registrado para este domínio.
-                </td>
-              </tr>
-            ) : (
-              entries.map((entry) => (
-                <tr key={entry.id} className="border-b border-app-border text-[0.88rem] text-app-text last:border-0">
-                  <td className="px-5 py-3 text-app-muted">{formatDateTime(entry.eventTime)}</td>
-                  <td className="px-5 py-3 font-medium">{actionLabel[entry.action]}</td>
-                  <td className="px-5 py-3 text-app-muted">v{entry.versionNumber}</td>
-                  <td className="px-5 py-3 font-mono text-[0.8rem] text-app-muted">{entry.actorSub}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        columns={columns}
+        rows={entries}
+        rowKey={(entry) => entry.id}
+        emptyMessage={
+          loading ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" /> Carregando eventos…
+            </span>
+          ) : (
+            'Nenhum evento registrado para este domínio.'
+          )
+        }
+      />
     </div>
   );
 }

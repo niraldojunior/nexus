@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ChevronDown,
   Download,
   FileText,
   FolderTree,
   Layers3,
   MapPin,
   MapPinned,
-  Settings,
   Workflow,
   Zap,
 } from 'lucide-react';
@@ -16,10 +14,12 @@ import CopilotPendingResponse from './components/CopilotPendingResponse';
 import Diamond from './components/Diamond';
 import Composer from './components/Composer';
 import DocumentTile from './components/DocumentTile';
+import EmptyState from './components/EmptyState';
 import MarkdownMessage from './components/MarkdownMessage';
 import GoogleDriveMark from './components/GoogleDriveMark';
 import SettingsModal from './components/SettingsModal';
 import Sidebar from './components/Sidebar';
+import PageHead from './components/ui/PageHead';
 import GeoPage from './pages/GeoPage';
 import LoginPage from './pages/LoginPage';
 import NewResearchPage from './pages/NewResearchPage';
@@ -33,13 +33,7 @@ import { useSession } from './hooks/useSession';
 import { logout as logoutRequest } from './services/authApi';
 import { clearSession } from './services/session';
 import { scrollChatAnchorIntoView, scrollChatToBottom } from './utils/chatScroll';
-import {
-  domainCards,
-  domainMetrics,
-  initialConversations,
-  initialRecentItems,
-  settingsSections,
-} from './data/mockData';
+import { initialConversations, initialRecentItems, settingsSections } from './data/mockData';
 import { sendMessage } from './services/api';
 import { useIsMobile } from './hooks/useIsMobile';
 import { DEFAULT_RESOURCE_CATEGORY_CODE } from './data/resourceCategoryViews';
@@ -51,15 +45,7 @@ import {
   type AppRoute,
   type StudioSection,
 } from './utils/appRoute';
-import {
-  Conversation,
-  ConversationEntry,
-  DomainCardData,
-  DomainMetric,
-  PageId,
-  RecentGroup,
-  SettingsSection,
-} from './types';
+import { Conversation, ConversationEntry, PageId, RecentGroup, SettingsSection } from './types';
 
 const assistantChips = [
   { icon: MapPinned, label: 'Explorar Geo' },
@@ -150,9 +136,6 @@ function DomainPage({
   page: Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'configuracoes' | 'studio'>;
   onOpenMainMenu?: () => void;
 }) {
-  const meta = domainMeta[page];
-  const Icon = meta.icon;
-
   if (page === 'geo') {
     return (
       <div className="h-full min-h-0 min-w-0">
@@ -161,122 +144,18 @@ function DomainPage({
     );
   }
 
+  const meta = domainMeta[page];
+
   return (
-    <div className="min-h-full px-8 py-8">
-      <div className="mx-auto max-w-[1420px]">
-        <div className="mb-7 flex items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-app-accent-border bg-app-accent-soft text-app-text">
-              <Icon className="h-6 w-6" strokeWidth={1.8} />
-            </div>
-            <div>
-              <h1 className="font-display text-[2.6rem] font-semibold leading-[0.96] tracking-[-0.03em] text-app-text">
-                {meta.title}
-              </h1>
-              <p className="mt-2 text-[0.96rem] text-app-muted">{meta.subtitle}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <HeaderSelect prefix="Filtrar por" value="Todos" />
-            <button
-              type="button"
-              className="flex h-[48px] items-center rounded-[999px] border border-app-accent-border bg-app-accent px-5 text-[0.94rem] font-semibold text-app-text shadow-soft transition hover:brightness-95"
-            >
-              Nova entidade
-            </button>
-          </div>
-        </div>
-
-        <MetricGrid metrics={domainMetrics[page]} />
-        <DomainOverview page={page} />
+    <div className="min-h-full bg-white px-5 pb-5 pt-2">
+      <div className="mx-auto" style={{ maxWidth: 'var(--content-max)' }}>
+        <PageHead title={meta.title} subtitle={meta.subtitle} />
+        <EmptyState
+          title="Módulo em construção"
+          description="O módulo de Order ainda não foi implementado no Nexus."
+        />
       </div>
     </div>
-  );
-}
-
-function HeaderSelect({ prefix, value }: { prefix: string; value: string }) {
-  return (
-    <button
-      type="button"
-      className="flex h-[48px] items-center gap-2 rounded-[16px] border border-app-border bg-white px-[16px] text-[0.94rem] font-medium text-app-text shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft"
-    >
-      <span className="text-app-muted">{prefix}</span>
-      <span className="font-semibold text-app-text">{value}</span>
-      <ChevronDown className="h-[0.95rem] w-[0.95rem] text-app-muted" strokeWidth={1.8} />
-    </button>
-  );
-}
-
-function MetricGrid({ metrics }: { metrics: DomainMetric[] }) {
-  return (
-    <div className="mb-8 grid gap-4 md:grid-cols-4">
-      {metrics.map((metric) => (
-        <article
-          key={metric.label}
-          className="rounded-[22px] border border-app-border bg-white p-5 shadow-soft"
-        >
-          <div className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-            {metric.label}
-          </div>
-          <div className="mt-3 font-display text-[2rem] font-semibold leading-none tracking-[-0.03em] text-app-text">
-            {metric.value}
-          </div>
-          <div className="mt-2 text-[0.88rem] text-app-muted">{metric.sub}</div>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function DomainOverview({
-  page,
-}: {
-  page: Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'configuracoes' | 'studio'>;
-}) {
-  const cards = domainCards[page];
-
-  return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="grid gap-5 md:grid-cols-2">
-        {cards.map((card) => (
-          <DomainCard key={card.title} card={card} />
-        ))}
-      </div>
-
-      <aside className="rounded-[26px] border border-app-border bg-white p-5 shadow-soft">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-display text-[1.25rem] font-semibold text-app-text">Contratos TMF</h2>
-          <Settings className="h-5 w-5 text-app-muted" />
-        </div>
-        <div className="space-y-3 text-[0.92rem] text-app-muted">
-          <p>
-            A UI mantém o modelo canônico: entidades referenciam camadas vizinhas; não copiam
-            atributos de outro domínio.
-          </p>
-          <p>
-            Extensões V.tal entram como <strong className="text-app-text">characteristic</strong>{' '}
-            via catálogo, preservando interoperabilidade ODA.
-          </p>
-          <p>Alterações relevantes publicam eventos TMF688 e preservam trilha operacional.</p>
-        </div>
-      </aside>
-    </div>
-  );
-}
-
-function DomainCard({ card }: { card: DomainCardData }) {
-  return (
-    <article className="rounded-[26px] border border-app-border bg-white p-6 shadow-soft transition hover:-translate-y-[1px] hover:border-app-accent-border hover:shadow-soft-lg">
-      <div className="mb-5 inline-flex items-center gap-2 rounded-[999px] border border-app-border bg-white px-3 py-1 text-[0.78rem] font-semibold text-app-text">
-        <Diamond size={6} />
-        {card.tag}
-      </div>
-      <h2 className="mb-3 font-display text-[1.4rem] font-semibold tracking-[-0.02em] text-app-text">
-        {card.title}
-      </h2>
-      <p className="text-[0.95rem] leading-7 text-app-muted">{card.description}</p>
-    </article>
   );
 }
 
@@ -477,11 +356,16 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSection>('skills');
 
-  // Locais (Geo) e Configurações abrem com o conteúdo em foco: recolhe a barra lateral com
-  // animação ao entrar e a reabre com animação ao navegar para qualquer outro menu.
+  // Locais (Geo), Configurações e Studio abrem com o conteúdo em foco: recolhe a barra lateral ao entrar.
   // No mobile a barra é um drawer sobreposto e começa sempre fechada.
   useEffect(() => {
-    setSidebarCollapsed(isMobile ? true : currentPage === 'geo' || currentPage === 'configuracoes');
+    if (isMobile) {
+      setSidebarCollapsed(true);
+      return;
+    }
+    if (currentPage === 'geo' || currentPage === 'configuracoes' || currentPage === 'studio') {
+      setSidebarCollapsed(true);
+    }
   }, [currentPage, isMobile]);
 
   // Reaplica o estado de navegação a partir de uma rota — usado tanto pelo `popstate` (voltar/avançar
@@ -584,6 +468,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     setConversations((current) => [newConversation, ...current]);
     setActiveConversationId(id);
     setCurrentPage('assistant');
+    if (!isMobile) setSidebarCollapsed(false);
     setInput('');
     setAssistantError(null);
     setPendingConversationEntryId(null);
@@ -594,6 +479,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     // Don't create session immediately - let user type first (lazy creation)
     setActiveResearchSessionId(null);
     setCurrentPage('research');
+    if (!isMobile) setSidebarCollapsed(false);
     setInput('');
     setAssistantError(null);
     setPendingConversationEntryId(null);
@@ -643,6 +529,9 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     setResourceMenuOpen(page === 'resource' ? resourceMenuOpen : false);
     setServiceMenuOpen(page === 'service' ? serviceMenuOpen : false);
     setCurrentPage(page);
+    if (!isMobile && (page === 'conversas' || page === 'conversation' || page === 'assistant' || page === 'research')) {
+      setSidebarCollapsed(false);
+    }
     setActiveResearchSessionId(null);
   };
 
@@ -673,6 +562,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     setAssistantError(null);
     setResourceMenuOpen(false);
     setCurrentPage('conversation');
+    if (!isMobile) setSidebarCollapsed(false);
     setActiveConversationId(nextConversationId);
     setPendingConversationEntryId(userEntry.id);
 
@@ -767,12 +657,14 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
           setResourceMenuOpen(false);
           setActiveConversationId(conversationId);
           setCurrentPage('conversation');
+          if (!isMobile) setSidebarCollapsed(false);
         }}
         onSelectResearchSession={(sessionId) => {
           setSettingsOpen(false);
           setResourceMenuOpen(false);
           setActiveResearchSessionId(sessionId);
           setCurrentPage('research');
+          if (!isMobile) setSidebarCollapsed(false);
         }}
         sessionUser={session.user}
         isAdmin={session.admin}
@@ -795,10 +687,11 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
             <DomainPage page="geo" onOpenMainMenu={() => setSidebarCollapsed(false)} />
           </div>
         ) : currentPage === 'configuracoes' ? (
-          // Fora do wrapper escalado abaixo (scale-[0.93] só compensa largura, não altura —
-          // deixava cinza do fundo (bg-app-bg) aparecendo quando a aba tinha pouco conteúdo,
-          // ex. Serviços vazio). Mesmo tratamento full-bleed de 'geo', sem a barra lateral
-          // principal expandida (ver useEffect de sidebarCollapsed).
+          // Mesmo tratamento full-bleed de 'geo' (h-full/overflow-hidden gerenciado pela
+          // própria página), sem a barra lateral principal expandida (ver useEffect de
+          // sidebarCollapsed). O wrapper com scale que existia aqui foi removido — media
+          // apenas largura, não altura, e por isso já deixou o cinza de fundo (bg-app-bg)
+          // vazar quando a aba tinha pouco conteúdo (ex. Serviços vazio).
           <div className="h-full min-h-0 overflow-hidden">
             {session.admin ? (
               <ConfigurationPage />
@@ -829,13 +722,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
               currentPage === 'conversation' ? 'h-full overflow-hidden' : 'h-full overflow-y-auto'
             }
           >
-            <div
-              className={
-                currentPage === 'conversation'
-                  ? 'h-full min-h-0'
-                  : 'min-h-full origin-top-left scale-[0.93] [width:107.5269%]'
-              }
-            >
+            <div className={currentPage === 'conversation' ? 'h-full min-h-0' : 'min-h-full'}>
               {currentPage === 'assistant' ? (
                 <AssistantHome
                   input={input}

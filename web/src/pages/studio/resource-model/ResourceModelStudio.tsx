@@ -29,6 +29,7 @@ import {
   getStudioStatus,
   saveStudioDraft,
 } from '../../../services/studioApi';
+import { Button } from '../../../components/ui';
 import { ResourceCatalogTree } from './ResourceCatalogTree';
 import { ResourceNodeDetail } from './ResourceNodeDetail';
 import { ResourceNodeFormModal } from './ResourceNodeFormModal';
@@ -192,14 +193,18 @@ export function ResourceModelStudio({ canEdit }: ResourceModelStudioProps) {
   return (
     <div className="space-y-4">
       {/* Top Bar / Catalog Picker & Actions */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-[22px] border border-app-border bg-white p-4 shadow-soft">
+      <div className="vt-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-app-accent-soft text-app-text">
             <Network className="h-5 w-5" />
           </div>
           <div>
-            <label htmlFor="catalog-select" className="text-[0.72rem] font-bold uppercase tracking-wider text-app-muted block">
-              Catálogo de Recursos Ativo
+            <label
+              htmlFor="catalog-select"
+              className="block"
+              style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}
+            >
+              Catálogo de recursos ativo
             </label>
             <select
               id="catalog-select"
@@ -222,51 +227,58 @@ export function ResourceModelStudio({ canEdit }: ResourceModelStudioProps) {
         <div className="flex items-center gap-2">
           {canEdit && (
             <>
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="sm"
+                iconLeft={<Plus className="h-4 w-4" />}
                 onClick={() => {
                   setFormEditingNode(null);
                   setFormParentNode(null);
                   setFormModalOpen(true);
                 }}
-                className="flex items-center gap-1.5 rounded-[12px] bg-app-accent px-3.5 py-2 text-[0.82rem] font-semibold text-white hover:opacity-90 transition shadow-soft"
               >
-                <Plus className="h-4 w-4" />
-                Novo Nó na Raiz
-              </button>
+                Novo nó na raiz
+              </Button>
 
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="sm"
+                iconLeft={<Save className="h-4 w-4" />}
                 onClick={handleCaptureAsDraft}
                 disabled={capturingDraft}
-                className="flex items-center gap-1.5 rounded-[12px] border border-app-border bg-white px-3.5 py-2 text-[0.82rem] font-medium text-app-text hover:bg-app-accent-soft transition"
               >
-                <Save className="h-4 w-4 text-app-muted" />
-                {capturingDraft ? 'Salvando...' : 'Salvar como Draft'}
-              </button>
+                {capturingDraft ? 'Salvando…' : 'Salvar como draft'}
+              </Button>
             </>
           )}
 
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={reloadTree}
-            title="Recarregar Árvore"
-            className="rounded-[12px] border border-app-border bg-white p-2 text-app-muted hover:text-app-text hover:bg-black/[0.02] transition"
+            title="Recarregar árvore"
+            aria-label="Recarregar árvore"
           >
             <RefreshCw className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       </div>
 
       {draftSuccess && (
-        <div className="flex items-center gap-2 rounded-[16px] border border-emerald-200 bg-emerald-50 p-3 text-[0.84rem] text-emerald-800">
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+        <div
+          className="flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
+          style={{ background: 'var(--status-green-soft)', color: 'var(--status-green)' }}
+        >
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
           <span>{draftSuccess}</span>
         </div>
       )}
 
       {error && (
-        <div className="flex items-center gap-2 rounded-[16px] border border-red-200 bg-red-50 p-3 text-[0.84rem] text-red-700">
+        <div
+          className="flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
+          style={{ background: 'var(--status-red-soft)', color: 'var(--status-red)' }}
+        >
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>
@@ -275,10 +287,10 @@ export function ResourceModelStudio({ canEdit }: ResourceModelStudioProps) {
       {/* Main Master/Detail Layout */}
       <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
         {/* Left: Árvore Hierárquica */}
-        <div className="rounded-[22px] border border-app-border bg-white p-4 shadow-soft min-h-[560px] flex flex-col">
-          <div className="flex items-center justify-between pb-3 border-b border-app-border mb-3">
-            <span className="text-[0.78rem] font-semibold uppercase tracking-wider text-app-muted">
-              Hierarquia do Catálogo
+        <div className="vt-card flex min-h-[560px] flex-col p-4">
+          <div className="mb-3 flex items-center justify-between border-b border-app-border pb-3">
+            <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+              Hierarquia do catálogo
             </span>
             <span className="text-[0.75rem] text-app-muted font-mono">
               {tree.length} nós raiz
@@ -335,9 +347,9 @@ export function ResourceModelStudio({ canEdit }: ResourceModelStudioProps) {
               }}
             />
           ) : (
-            <div className="rounded-[22px] border border-dashed border-app-border bg-white p-12 text-center text-app-muted flex flex-col items-center justify-center min-h-[560px]">
+            <div className="flex min-h-[560px] flex-col items-center justify-center rounded-[10px] border border-dashed border-app-border p-12 text-center text-app-muted">
               <Box className="h-10 w-10 mb-3 opacity-30" />
-              <h3 className="text-[1.1rem] font-semibold text-app-text">Nenhum nó selecionado</h3>
+              <h3 className="text-[1.1rem]">Nenhum nó selecionado</h3>
               <p className="text-[0.85rem] mt-1 max-w-sm">
                 Selecione um grupo ou tipo de recurso na árvore à esquerda para visualizar seus
                 detalhes, especificações e dependências.

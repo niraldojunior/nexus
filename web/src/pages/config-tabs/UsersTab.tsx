@@ -1,5 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Check, KeyRound, Loader2, Plus, Trash2, UserCog, X } from 'lucide-react';
 import {
   ASSIGNABLE_ROLES,
@@ -14,7 +13,47 @@ import {
 import { PasswordStrengthField } from '../../components/PasswordStrengthField';
 import Field from '../../components/Field';
 import { isPasswordValid } from '../../utils/passwordPolicy';
+import PageHead from '../../components/ui/PageHead';
+import Button from '../../components/ui/Button';
+import Badge from '../../components/ui/Badge';
+import Modal from '../../components/ui/Modal';
 import { SortableHeader, sortedBy, useSort } from './sortable';
+
+function ModalTitle({
+  eyebrow,
+  title,
+  subtitle,
+  onClose,
+}: {
+  eyebrow?: string;
+  title: ReactNode;
+  subtitle?: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        {eyebrow ? (
+          <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+            {eyebrow}
+          </div>
+        ) : null}
+        <div className="mt-0.5 font-display text-[1.3rem] font-semibold text-app-text">{title}</div>
+        {subtitle ? (
+          <p className="mt-1 truncate text-[0.82rem] font-normal text-app-muted">{subtitle}</p>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        className="rounded-full p-2 text-app-muted transition hover:bg-app-accent-soft"
+        onClick={onClose}
+        aria-label="Fechar"
+      >
+        <X className="h-5 w-5" />
+      </button>
+    </div>
+  );
+}
 
 // Administração de contas — aba de Configurações visível apenas para papéis admin (o
 // ConfigurationPage/App condiciona o acesso à rota). Criar usuário, editar papéis, ativar/
@@ -89,18 +128,15 @@ export function UsersTab() {
 
   return (
     <>
-      <div className="mb-5 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-[1.5rem] font-semibold text-app-text">Usuários</h1>
-          <p className="mt-1 text-[0.88rem] text-app-muted">
-            Contas de acesso à plataforma, papéis (RBAC) e redefinição de senha.
-          </p>
-        </div>
-        <button type="button" onClick={() => setCreateOpen(true)} className="geo-btn primary shrink-0">
-          <Plus className="h-4 w-4" />
-          Adicionar
-        </button>
-      </div>
+      <PageHead
+        title="Usuários"
+        subtitle="Contas de acesso à plataforma, papéis (RBAC) e redefinição de senha."
+        actions={
+          <Button onClick={() => setCreateOpen(true)} iconLeft={<Plus className="h-4 w-4" />}>
+            Adicionar
+          </Button>
+        }
+      />
 
       {error ? (
         <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
@@ -115,10 +151,10 @@ export function UsersTab() {
         className="geo-input mb-3 max-w-sm"
       />
 
-      <div className="overflow-hidden rounded-[20px] border border-app-border bg-white shadow-soft">
-        <table className="w-full min-w-[750px] text-left">
+      <div className="vt-card vt-table-card" style={{ overflow: 'hidden', padding: 0 }}>
+        <table className="vt-table" style={{ minWidth: 750 }}>
           <thead>
-            <tr className="border-b border-app-border bg-slate-50 text-[0.82rem] font-semibold text-app-muted">
+            <tr>
               <SortableHeader label="Nome" sortKey="name" sort={sort} onSort={onSort} />
               <SortableHeader label="E-mail" sortKey="email" sort={sort} onSort={onSort} />
               <SortableHeader label="Papéis" sortKey="roles" sort={sort} onSort={onSort} />
@@ -129,40 +165,29 @@ export function UsersTab() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-5 py-4 text-[0.88rem] text-app-muted">
-                  Carregando…
-                </td>
+                <td colSpan={5}>Carregando…</td>
               </tr>
             ) : sortedUsers.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-5 py-4 text-[0.88rem] text-app-muted">
-                  Nenhum usuário encontrado.
-                </td>
+                <td colSpan={5}>Nenhum usuário encontrado.</td>
               </tr>
             ) : (
               sortedUsers.map((user) => {
                 const disabled = user.status !== 'active';
                 const busy = busyId === user.id;
                 return (
-                  <tr
-                    key={user.id}
-                    className="border-b border-app-border text-[0.88rem] text-app-text last:border-0"
-                  >
-                    <td className="px-5 py-3 font-medium">{user.name}</td>
-                    <td className="px-5 py-3 text-app-muted">{user.email ?? user.externalId}</td>
-                    <td className="px-5 py-3 text-app-muted">{user.roles.join(', ') || '-'}</td>
-                    <td className="px-5 py-3">
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-[0.7rem] font-semibold uppercase ${
-                          disabled
-                            ? 'bg-app-border text-app-muted'
-                            : 'bg-status-green-soft text-status-green'
-                        }`}
-                      >
-                        {disabled ? 'Inativo' : 'Ativo'}
-                      </span>
+                  <tr key={user.id}>
+                    <td className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                      {user.name}
                     </td>
-                    <td className="px-5 py-3">
+                    <td>{user.email ?? user.externalId}</td>
+                    <td>{user.roles.join(', ') || '-'}</td>
+                    <td>
+                      <Badge tone={disabled ? 'neutral' : 'green'}>
+                        {disabled ? 'Inativo' : 'Ativo'}
+                      </Badge>
+                    </td>
+                    <td>
                       <div className="flex items-center justify-end gap-1">
                         {busy ? <Loader2 className="h-4 w-4 animate-spin text-app-muted" /> : null}
                         <button
@@ -315,88 +340,66 @@ function CreateUserModal({
     }
   };
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
-      <form
-        onSubmit={(event) => void submit(event)}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="create-user-modal-title"
-        className="max-h-full w-full max-w-[560px] overflow-auto rounded-[28px] border border-app-border bg-white p-6 shadow-modal"
-      >
-        <div className="mb-5 flex items-start justify-between gap-4 border-b border-app-border pb-4">
-          <div>
-            <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-              Usuários
-            </div>
-            <h2
-              id="create-user-modal-title"
-              className="mt-1 font-display text-[1.4rem] font-semibold text-app-text"
-            >
-              Novo usuário
-            </h2>
-          </div>
-          <button
-            type="button"
-            className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
-            onClick={onClose}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {error ? (
-          <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
-            {error}
-          </p>
-        ) : null}
-
-        <div className="grid gap-4">
-          <Field label="Nome">
-            <input
-              className="geo-input"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </Field>
-          <Field label="E-mail">
-            <input
-              type="email"
-              className="geo-input"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </Field>
-          <PasswordStrengthField label="Senha" value={password} onChange={setPassword} showGenerator />
-          <Field label="Papéis">
-            <div className="flex flex-wrap gap-1.5">
-              {ASSIGNABLE_ROLES.map((role) => (
-                <RoleChip
-                  key={role}
-                  role={role}
-                  active={roles.includes(role)}
-                  onToggle={() => toggleRole(role)}
-                />
-              ))}
-            </div>
-          </Field>
-        </div>
-
-        <div className="mt-6 flex items-center justify-end gap-3 border-t border-app-border pt-4">
-          <button type="button" onClick={onClose} className="geo-btn secondary">
+  return (
+    <Modal
+      title={
+        <ModalTitle
+          eyebrow="Usuários"
+          title="Novo usuário"
+          onClose={onClose}
+        />
+      }
+      onClose={onClose}
+      width={560}
+      footer={
+        <>
+          <Button variant="secondary" type="button" onClick={onClose} disabled={submitting}>
             Cancelar
-          </button>
-          <button
-            type="submit"
-            disabled={submitting || !submitValid}
-            className="inline-flex items-center gap-2 rounded-[16px] border border-app-accent-border bg-app-accent px-4 py-2 text-[0.92rem] font-semibold text-app-text shadow-soft transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
-          >
+          </Button>
+          <Button type="submit" form="create-user-form" disabled={submitting || !submitValid}>
             {submitting ? 'Criando...' : 'Criar'}
-          </button>
-        </div>
+          </Button>
+        </>
+      }
+    >
+      {error ? (
+        <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
+          {error}
+        </p>
+      ) : null}
+
+      <form id="create-user-form" onSubmit={(event) => void submit(event)} className="grid gap-4">
+        <Field label="Nome">
+          <input
+            className="geo-input"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            autoFocus
+          />
+        </Field>
+        <Field label="E-mail">
+          <input
+            type="email"
+            className="geo-input"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </Field>
+        <PasswordStrengthField label="Senha" value={password} onChange={setPassword} showGenerator />
+        <Field label="Papéis">
+          <div className="flex flex-wrap gap-1.5">
+            {ASSIGNABLE_ROLES.map((role) => (
+              <RoleChip
+                key={role}
+                role={role}
+                active={roles.includes(role)}
+                onToggle={() => toggleRole(role)}
+              />
+            ))}
+          </div>
+        </Field>
       </form>
-    </div>,
-    document.body,
+    </Modal>
   );
 }
 
@@ -418,69 +421,44 @@ function EditRolesModal({
       current.includes(role) ? current.filter((item) => item !== role) : [...current, role],
     );
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="edit-roles-modal-title"
-        className="w-full max-w-[480px] rounded-[28px] border border-app-border bg-white p-6 shadow-modal"
-      >
-        <div className="mb-5 flex items-start justify-between gap-4 border-b border-app-border pb-4">
-          <div>
-            <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-              Usuários
-            </div>
-            <h2
-              id="edit-roles-modal-title"
-              className="mt-1 font-display text-[1.4rem] font-semibold text-app-text"
-            >
-              Editar papéis
-            </h2>
-            <p className="mt-1 truncate text-[0.82rem] text-app-muted">
-              {user.name} · {user.email ?? user.externalId}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
-            onClick={onClose}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="flex flex-wrap gap-1.5">
-          {ASSIGNABLE_ROLES.map((role) => (
-            <RoleChip
-              key={role}
-              role={role}
-              active={draftRoles.includes(role)}
-              onToggle={() => toggleDraft(role)}
-            />
-          ))}
-        </div>
-
-        <div className="mt-6 flex items-center justify-end gap-3 border-t border-app-border pt-4">
-          <button type="button" onClick={onClose} className="geo-btn secondary">
+  return (
+    <Modal
+      title={
+        <ModalTitle
+          eyebrow="Usuários"
+          title="Editar papéis"
+          subtitle={`${user.name} · ${user.email ?? user.externalId}`}
+          onClose={onClose}
+        />
+      }
+      onClose={onClose}
+      width={480}
+      footer={
+        <>
+          <Button variant="secondary" type="button" onClick={onClose}>
             Cancelar
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             onClick={() => onSubmit(draftRoles)}
-            className="inline-flex items-center gap-2 rounded-[16px] border border-app-accent-border bg-app-accent px-4 py-2 text-[0.92rem] font-semibold text-app-text shadow-soft transition hover:brightness-95"
+            iconLeft={<Check className="h-4 w-4" />}
           >
-            <Check className="h-4 w-4" /> Salvar
-          </button>
-        </div>
+            Salvar
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-wrap gap-1.5">
+        {ASSIGNABLE_ROLES.map((role) => (
+          <RoleChip
+            key={role}
+            role={role}
+            active={draftRoles.includes(role)}
+            onToggle={() => toggleDraft(role)}
+          />
+        ))}
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }
 
@@ -494,132 +472,77 @@ function ResetPasswordModal({
   onSubmit: (password: string) => void;
 }) {
   const titleId = useId();
-  const dialogRef = useRef<HTMLDivElement>(null);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-      const focusable = Array.from(
-        dialogRef.current?.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ) ?? [],
-      );
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (!first || !last) return;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      } else if (!dialogRef.current?.contains(document.activeElement)) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown, true);
-    return () => document.removeEventListener('keydown', handleKeyDown, true);
-  }, [onClose]);
+  useEscapeToClose(true, onClose);
 
   const mismatch = confirm.length > 0 && password !== confirm;
   const canSubmit = isPasswordValid(password) && password === confirm;
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-6"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="w-full max-w-[460px] rounded-[26px] border border-app-border bg-white p-5 shadow-modal"
-      >
-        <div className="mb-4 flex items-start justify-between gap-4 border-b border-app-border pb-4">
-          <div className="min-w-0">
-            <h3 id={titleId} className="font-display text-[1.35rem] font-semibold text-app-text">
-              Redefinir senha
-            </h3>
-            <p className="mt-1 truncate text-[0.82rem] text-app-muted">
-              {user.name} · {user.email ?? user.externalId}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full p-2 text-app-muted transition hover:bg-app-accent-soft"
-            aria-label="Fechar"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="flex flex-col gap-4">
-          <PasswordStrengthField
-            label="Nova senha"
-            value={password}
-            onChange={setPassword}
-            autoFocus
-            showGenerator
-          />
-
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor={`${titleId}-confirm`}
-              className="text-[0.78rem] font-medium text-app-muted"
-            >
-              Confirmar senha
-            </label>
-            <input
-              id={`${titleId}-confirm`}
-              type="password"
-              autoComplete="new-password"
-              value={confirm}
-              onChange={(event) => setConfirm(event.target.value)}
-              className="h-11 rounded-xl border border-app-border bg-white px-3 text-[0.92rem] text-app-text outline-none focus:border-app-accent-border"
-              placeholder="••••••••••••"
-            />
-            {mismatch ? (
-              <p className="text-[0.76rem] text-status-red">As senhas não conferem.</p>
-            ) : null}
-          </div>
-
-          <p className="text-[0.76rem] text-app-muted">
-            Redefinir a senha encerra as sessões ativas do usuário.
-          </p>
-        </div>
-
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-10 items-center rounded-lg border border-app-border px-4 text-[0.88rem] font-medium text-app-text transition hover:bg-black/5"
-          >
+  return (
+    <Modal
+      title={
+        <ModalTitle
+          title="Redefinir senha"
+          subtitle={`${user.name} · ${user.email ?? user.externalId}`}
+          onClose={onClose}
+        />
+      }
+      onClose={onClose}
+      width={460}
+      footer={
+        <>
+          <Button variant="secondary" type="button" onClick={onClose}>
             Cancelar
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="dark"
             type="button"
             onClick={() => onSubmit(password)}
             disabled={!canSubmit}
-            className="flex h-10 items-center gap-2 rounded-lg bg-app-ink px-4 text-[0.88rem] font-semibold text-app-on-ink transition hover:brightness-110 disabled:opacity-50"
+            iconLeft={<KeyRound className="h-4 w-4" />}
           >
-            <KeyRound className="h-4 w-4" /> Redefinir senha
-          </button>
+            Redefinir senha
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <PasswordStrengthField
+          label="Nova senha"
+          value={password}
+          onChange={setPassword}
+          autoFocus
+          showGenerator
+        />
+
+        <div className="flex flex-col gap-1.5">
+          <label
+            htmlFor={`${titleId}-confirm`}
+            className="text-[0.78rem] font-medium text-app-muted"
+          >
+            Confirmar senha
+          </label>
+          <input
+            id={`${titleId}-confirm`}
+            type="password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(event) => setConfirm(event.target.value)}
+            className="h-11 rounded-xl border border-app-border bg-white px-3 text-[0.92rem] text-app-text outline-none focus:border-app-accent-border"
+            placeholder="••••••••••••"
+          />
+          {mismatch ? (
+            <p className="text-[0.76rem] text-status-red">As senhas não conferem.</p>
+          ) : null}
         </div>
+
+        <p className="text-[0.76rem] text-app-muted">
+          Redefinir a senha encerra as sessões ativas do usuário.
+        </p>
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }
 

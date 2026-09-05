@@ -174,12 +174,12 @@ export default function Sidebar({
   // Classes do <aside>. No rail recolhido não usamos overflow-hidden: o tooltip
   // (.vt-sb-tip) dos itens precisa escapar da sidebar para aparecer ao lado do ícone.
   const asideClassName = isMobile
-    ? `fixed inset-y-0 left-0 z-50 flex w-[248px] max-w-[85vw] flex-col overflow-hidden border-r border-app-border bg-app-sidebar transition-transform duration-300 ease-in-out ${
-        currentPage === 'configuracoes' ? 'relative z-10 shadow-dock' : 'shadow-soft'
-      } ${collapsed ? '-translate-x-full' : 'translate-x-0'}`
-    : `flex flex-col ${collapsed ? '' : 'overflow-hidden'} border-r border-app-border bg-app-sidebar transition-[width,min-width] duration-200 ease-in-out ${
-        currentPage === 'configuracoes' ? 'relative z-10 shadow-dock' : ''
-      } ${collapsed ? 'w-[58px] min-w-[58px]' : 'w-[248px] min-w-[248px]'}`;
+    ? `vt-main-nav fixed inset-y-0 left-0 z-50 flex w-[248px] max-w-[85vw] flex-col overflow-hidden border-r border-app-border bg-app-sidebar shadow-soft transition-transform duration-300 ease-in-out ${
+        collapsed ? '-translate-x-full' : 'translate-x-0'
+      }`
+    : `vt-main-nav flex flex-col ${collapsed ? '' : 'overflow-hidden'} border-r border-app-border bg-app-sidebar transition-[width,min-width] duration-200 ease-in-out ${
+        collapsed ? 'w-[58px] min-w-[58px]' : 'w-[248px] min-w-[248px]'
+      }`;
 
   return (
     <>

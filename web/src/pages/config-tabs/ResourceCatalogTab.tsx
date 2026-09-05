@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, Loader2, Pencil, Plus, Trash2, Upload, X } from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { Loader2, Pencil, Plus, Trash2, Upload, X } from 'lucide-react';
 import {
   createResourceSpecification,
   deleteResourceSpecification,
@@ -31,6 +30,10 @@ import {
   buildResourceSpecificationPayload,
   type ResourceSpecFormState,
 } from '../../utils/resourceSpecificationForm';
+import PageHead from '../../components/ui/PageHead';
+import Button from '../../components/ui/Button';
+import Modal from '../../components/ui/Modal';
+import { DataTablePagination } from '../../components/ui/DataTable';
 import { SortableHeader, sortedBy, useSort } from './sortable';
 
 export type ResourceInfraTab = 'network' | 'civil';
@@ -47,6 +50,37 @@ const RESOURCE_INFRA_TAB_COPY: Record<ResourceInfraTab, { title: string; descrip
       'Especificações (ResourceSpecification) de obra civil — dutos, postes e caixas de passagem — sem tipo de rede próprio.',
   },
 };
+
+function ModalTitle({
+  eyebrow,
+  title,
+  onClose,
+}: {
+  eyebrow?: string;
+  title: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        {eyebrow ? (
+          <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+            {eyebrow}
+          </div>
+        ) : null}
+        <div className="mt-0.5 font-display text-[1.35rem] font-semibold text-app-text">{title}</div>
+      </div>
+      <button
+        type="button"
+        className="rounded-full p-2 text-app-muted transition hover:bg-app-accent-soft"
+        onClick={onClose}
+        aria-label="Fechar"
+      >
+        <X className="h-5 w-5" />
+      </button>
+    </div>
+  );
+}
 
 /**
  * Catálogo de Recursos (ResourceSpecification) em Configurações — mesma implementação de campos e
@@ -284,28 +318,26 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
 
   return (
     <>
-      <div className="mb-5 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-[1.5rem] font-semibold text-app-text">{copy.title}</h1>
-          <p className="mt-1 text-[0.88rem] text-app-muted">{copy.description}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {isNetworkTab ? (
-            <button
-              type="button"
-              onClick={() => setBulkImportOpen(true)}
-              className="geo-btn secondary"
-            >
-              <Upload className="h-4 w-4" />
-              Carga em massa
-            </button>
-          ) : null}
-          <button type="button" onClick={openCreateModal} className="geo-btn primary">
-            <Plus className="h-4 w-4" />
-            Adicionar
-          </button>
-        </div>
-      </div>
+      <PageHead
+        title={copy.title}
+        subtitle={copy.description}
+        actions={
+          <div className="flex shrink-0 items-center gap-2">
+            {isNetworkTab ? (
+              <Button
+                variant="secondary"
+                onClick={() => setBulkImportOpen(true)}
+                iconLeft={<Upload className="h-4 w-4" />}
+              >
+                Carga em massa
+              </Button>
+            ) : null}
+            <Button onClick={openCreateModal} iconLeft={<Plus className="h-4 w-4" />}>
+              Adicionar
+            </Button>
+          </div>
+        }
+      />
 
       {error ? (
         <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
@@ -367,10 +399,10 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
         )}
       </div>
 
-      <div className="overflow-hidden rounded-[20px] border border-app-border bg-white shadow-soft">
-        <table className="w-full min-w-[750px] text-left">
+      <div className="vt-card vt-table-card" style={{ overflow: 'hidden', padding: 0 }}>
+        <table className="vt-table" style={{ minWidth: 750 }}>
           <thead>
-            <tr className="border-b border-app-border bg-slate-50 text-[0.82rem] font-semibold text-app-muted">
+            <tr>
               <SortableHeader label="Especificação" sortKey="name" sort={sort} onSort={onSort} />
               {isNetworkTab ? (
                 <SortableHeader
@@ -402,187 +434,144 @@ export function ResourceCatalogTab({ infraTab }: { infraTab: ResourceInfraTab })
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={columnCount} className="px-5 py-4 text-[0.88rem] text-app-muted">
-                  Carregando…
-                </td>
+                <td colSpan={columnCount}>Carregando…</td>
               </tr>
             ) : sortedSpecs.length === 0 ? (
               <tr>
-                <td colSpan={columnCount} className="px-5 py-4 text-[0.88rem] text-app-muted">
-                  Nenhuma especificação cadastrada.
-                </td>
+                <td colSpan={columnCount}>Nenhuma especificação cadastrada.</td>
               </tr>
             ) : (
               pagedSpecs.map((spec) => (
-                <tr
-                  key={spec.id}
-                  className="border-b border-app-border text-[0.88rem] text-app-text last:border-0"
-                >
-                  <td className="px-5 py-3 font-medium">{readSpecificationModel(spec)}</td>
+                <tr key={spec.id}>
+                  <td className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {readSpecificationModel(spec)}
+                  </td>
                   {isNetworkTab ? (
-                    <td className="px-5 py-3 text-app-muted">
-                      {resourceLayerName(spec.resourceLayerId)}
-                    </td>
+                    <td>{resourceLayerName(spec.resourceLayerId)}</td>
                   ) : null}
-                  {isNetworkTab ? (
-                    <td className="px-5 py-3 text-app-muted">{categoryLabel(spec.category)}</td>
-                  ) : null}
-                  <td className="px-5 py-3 text-app-muted">
-                    {readResourceTypeCode(resourceTypes, spec.resourceType)}
-                  </td>
-                  <td className="px-5 py-3 text-app-muted">
-                    {readSpecificationManufacturer(spec)}
-                  </td>
-                  <td className="px-5 py-3 text-app-muted">
-                    {readSpecLifecycleStatus(spec.resourceSpecificationCharacteristic)}
-                  </td>
-                  <td className="flex justify-end gap-1 px-5 py-3">
-                    <button
-                      type="button"
-                      onClick={() => openEditModal(spec)}
-                      className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft"
-                      aria-label={`Editar ${readSpecificationModel(spec)}`}
-                      disabled={saving}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    {pendingRemoval?.id === spec.id ? (
+                  {isNetworkTab ? <td>{categoryLabel(spec.category)}</td> : null}
+                  <td>{readResourceTypeCode(resourceTypes, spec.resourceType)}</td>
+                  <td>{readSpecificationManufacturer(spec)}</td>
+                  <td>{readSpecLifecycleStatus(spec.resourceSpecificationCharacteristic)}</td>
+                  <td>
+                    <div className="flex justify-end gap-1">
                       <button
                         type="button"
-                        onClick={() => void removeSpec()}
-                        className="rounded-xl border border-status-red/30 bg-status-red-soft px-2 py-1 text-[0.75rem] font-semibold text-status-red"
+                        onClick={() => openEditModal(spec)}
+                        className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft"
+                        aria-label={`Editar ${readSpecificationModel(spec)}`}
                         disabled={saving}
                       >
-                        Confirmar
+                        <Pencil className="h-4 w-4" />
                       </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPendingRemoval(spec);
-                          setError(null);
-                        }}
-                        className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft"
-                        aria-label={`Remover ${readSpecificationModel(spec)}`}
-                        disabled={saving}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
+                      {pendingRemoval?.id === spec.id ? (
+                        <button
+                          type="button"
+                          onClick={() => void removeSpec()}
+                          className="rounded-xl border border-status-red/30 bg-status-red-soft px-2 py-1 text-[0.75rem] font-semibold text-status-red"
+                          disabled={saving}
+                        >
+                          Confirmar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPendingRemoval(spec);
+                            setError(null);
+                          }}
+                          className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft"
+                          aria-label={`Remover ${readSpecificationModel(spec)}`}
+                          disabled={saving}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
+        {!loading && sortedSpecs.length > 0 ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 20px',
+              borderTop: '1px solid var(--border)',
+            }}
+          >
+            <DataTablePagination
+              count={Math.min((currentPage + 1) * PAGE_SIZE, sortedSpecs.length)}
+              total={sortedSpecs.length}
+              label="especificações"
+              hasPrevious={currentPage > 0}
+              hasNext={currentPage < pageCount - 1}
+              onPrevious={() => setPage((current) => Math.max(0, current - 1))}
+              onNext={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
+            />
+          </div>
+        ) : null}
       </div>
 
-      {!loading && sortedSpecs.length > 0 ? (
-        <div className="mt-3 flex items-center justify-between text-[0.82rem] text-app-muted">
-          <span>
-            {currentPage * PAGE_SIZE + 1}–{Math.min((currentPage + 1) * PAGE_SIZE, sortedSpecs.length)}{' '}
-            de {sortedSpecs.length}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setPage((current) => Math.max(0, current - 1))}
-              disabled={currentPage === 0}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-app-border text-app-text transition hover:bg-app-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="Página anterior"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span>
-              Página {currentPage + 1} de {pageCount}
-            </span>
-            <button
-              type="button"
-              onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
-              disabled={currentPage >= pageCount - 1}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-app-border text-app-text transition hover:bg-app-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="Próxima página"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {modalState
-        ? createPortal(
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="resource-catalog-modal-title"
-                className={`max-h-[92vh] w-full overflow-auto rounded-[28px] border border-app-border bg-white p-6 shadow-modal ${
-                  infraTab === 'civil' ? 'max-w-[620px]' : 'max-w-[880px]'
-                }`}
+      {modalState ? (
+        <Modal
+          title={
+            <ModalTitle
+              eyebrow={
+                infraTab === 'civil'
+                  ? 'Catálogo de Infraestrutura Civil'
+                  : 'Catálogo de Recursos'
+              }
+              title={`${modalState.mode === 'create' ? 'Criar' : 'Editar'} ${
+                infraTab === 'civil' ? 'Recurso de Infra Civil' : 'Especificação de Recurso'
+              }`}
+              onClose={closeModal}
+            />
+          }
+          onClose={closeModal}
+          width={infraTab === 'civil' ? 620 : 880}
+          footer={
+            <>
+              <Button variant="secondary" type="button" onClick={closeModal} disabled={saving}>
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                form="resource-spec-form"
+                disabled={saving || !submitValid}
               >
-                <div className="mb-5 flex items-start justify-between gap-4 border-b border-app-border pb-4">
-                  <div>
-                    <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-                      {infraTab === 'civil'
-                        ? 'Catálogo de Infraestrutura Civil'
-                        : 'Catálogo de Recursos'}
-                    </div>
-                    <h2
-                      id="resource-catalog-modal-title"
-                      className="mt-1 font-display text-[1.45rem] font-semibold text-app-text"
-                    >
-                      {modalState.mode === 'create' ? 'Criar' : 'Editar'}{' '}
-                      {infraTab === 'civil' ? 'Recurso de Infra Civil' : 'Especificação de Recurso'}
-                    </h2>
-                  </div>
-                  <button
-                    type="button"
-                    className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
-                    onClick={closeModal}
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-
-                <form onSubmit={submitModal} className="grid gap-4">
-                  {infraTab === 'civil' ? (
-                    <CivilResourceSpecificationFields
-                      formState={formState}
-                      onChange={setFormState}
-                      resourceTypes={resourceTypes}
-                      manufacturerOptions={manufacturerOptions}
-                      selectionValid={selectionValid}
-                    />
-                  ) : (
-                    <ResourceSpecificationFields
-                      formState={formState}
-                      onChange={setFormState}
-                      resourceTypes={resourceTypes}
-                      manufacturerOptions={manufacturerOptions}
-                      resourceLayers={resourceLayers}
-                      categoryOptions={categoryOptionsForTab}
-                      selectionValid={selectionValid}
-                    />
-                  )}
-
-                  <div className="mt-2 flex justify-end gap-3 border-t border-app-border pt-4">
-                    <button type="button" onClick={closeModal} className="geo-btn secondary">
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={saving || !submitValid}
-                      className="geo-btn primary disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {saving ? 'Salvando...' : modalState.mode === 'create' ? 'Criar' : 'Salvar'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+                {saving ? 'Salvando...' : modalState.mode === 'create' ? 'Criar' : 'Salvar'}
+              </Button>
+            </>
+          }
+        >
+          <form id="resource-spec-form" onSubmit={submitModal} className="grid gap-4">
+            {infraTab === 'civil' ? (
+              <CivilResourceSpecificationFields
+                formState={formState}
+                onChange={setFormState}
+                resourceTypes={resourceTypes}
+                manufacturerOptions={manufacturerOptions}
+                selectionValid={selectionValid}
+              />
+            ) : (
+              <ResourceSpecificationFields
+                formState={formState}
+                onChange={setFormState}
+                resourceTypes={resourceTypes}
+                manufacturerOptions={manufacturerOptions}
+                resourceLayers={resourceLayers}
+                categoryOptions={categoryOptionsForTab}
+                selectionValid={selectionValid}
+              />
+            )}
+          </form>
+        </Modal>
+      ) : null}
 
       {bulkImportOpen ? (
         <ResourceSpecificationBulkImportModal

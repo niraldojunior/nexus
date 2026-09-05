@@ -1,27 +1,30 @@
 import ArtifactsIllustration from './ArtifactsIllustration';
+import Button from './ui/Button';
 
 interface EmptyStateProps {
   title: string;
   description: string;
-  actionLabel: string;
+  actionLabel?: string;
+  onAction?: () => void;
 }
 
-export default function EmptyState({ title, description, actionLabel }: EmptyStateProps) {
+export default function EmptyState({ title, description, actionLabel, onAction }: EmptyStateProps) {
   return (
-    <div className="flex min-h-[430px] flex-col items-center justify-center rounded-[24px] border border-app-border bg-white px-8 text-center shadow-soft">
-      <ArtifactsIllustration className="mb-9 h-[140px] w-[160px] text-app-text" />
+    <div className="vt-card flex min-h-[360px] flex-col items-center justify-center px-8 text-center">
+      <ArtifactsIllustration className="mb-8 h-[120px] w-[140px] text-app-text" />
 
-      <h2 className="mb-5 font-display text-[1.95rem] font-semibold tracking-[-0.02em] text-app-text">
+      <h2 style={{ font: 'var(--text-h2)', letterSpacing: 'var(--tracking-snug)', color: 'var(--text-primary)' }}>
         {title}
       </h2>
-      <p className="mb-8 max-w-[620px] text-[1.06rem] leading-8 text-app-muted">{description}</p>
+      <p className="mt-3 max-w-[520px]" style={{ fontSize: 'var(--fs-body-relaxed)', color: 'var(--text-tertiary)' }}>
+        {description}
+      </p>
 
-      <button
-        type="button"
-        className="rounded-[999px] border border-app-accent-border bg-app-accent px-7 py-4 text-[1.05rem] font-semibold text-app-text shadow-soft transition hover:brightness-95"
-      >
-        {actionLabel}
-      </button>
+      {actionLabel && (
+        <Button variant="primary" size="lg" style={{ marginTop: 24 }} onClick={onAction}>
+          {actionLabel}
+        </Button>
+      )}
     </div>
   );
 }

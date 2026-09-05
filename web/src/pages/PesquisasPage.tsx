@@ -121,7 +121,7 @@ export const ConversasPage: React.FC<{
             item 48px + pb 2px = 56px) + metade do primeiro item do nav (34px/2 = 17px)
             ⇒ centro a 73px do topo. A página vive no wrapper scale-[0.93], então o
             padding-top compensa a escala: (73 − 12.8)/0.93 ≈ 65px. */}
-        <div className="mb-6" style={{ paddingTop: 65 }}>
+        <div className="mb-6" style={{ paddingTop: 55 }}>
           <h1
             className="text-app-text"
             style={{

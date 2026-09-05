@@ -8,7 +8,6 @@ import {
   Loader2,
   Plus,
   Trash2,
-  X,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -31,6 +30,7 @@ import { PlaceLabelCompact } from '../components/PlaceLabel';
 import { PlacePicker } from '../components/PlacePicker';
 import ColumnFilterMenu from '../components/ColumnFilterMenu';
 import Field from '../components/Field';
+import { PageHead, Button, Card, StatusPill, Modal } from '../components/ui';
 import { resourceFieldLabel } from '../utils/resourceFieldLabels';
 import {
   DEFAULT_RESOURCE_CATEGORY_CODE,
@@ -492,11 +492,7 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   };
 
   const rows = pageItems.map((resourceItem) => (
-    <tr
-      key={resourceItem.id}
-      className="cursor-pointer border-b border-app-border last:border-b-0 hover:bg-app-accent-soft"
-      onClick={() => openEditModal(resourceItem)}
-    >
+    <tr key={resourceItem.id} className="cursor-pointer" onClick={() => openEditModal(resourceItem)}>
       <td className="px-4 py-3">
         <input
           type="checkbox"
@@ -536,7 +532,9 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
           )}
         </div>
       </td>
-      <td className="px-4 py-3 text-[0.88rem] text-app-muted">{resourceItem.status ?? '-'}</td>
+      <td className="px-4 py-3">
+        {resourceItem.status ? <StatusPill status={resourceItem.status} /> : '-'}
+      </td>
       <td className="px-4 py-3 text-[0.88rem] text-app-muted">
         {effectiveTab === 'PhysicalResource'
           ? physicalDetails(resourceItem as PhysicalResource)
@@ -546,55 +544,54 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
   ));
 
   return (
-    <div className="h-full min-h-0 overflow-hidden px-8 py-8">
-      <div className="mx-auto flex h-full max-w-[1460px] flex-col gap-6">
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-3">
-              <CategoryIcon className="h-7 w-7 shrink-0 text-app-muted" strokeWidth={2} />
-              <h1 className="truncate font-display text-4xl font-semibold text-app-text">
-                {categoryName}
-              </h1>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
+    <div className="h-full min-h-0 overflow-hidden bg-white px-8 py-8">
+      <div className="mx-auto flex h-full flex-col gap-6" style={{ maxWidth: 'var(--content-max)' }}>
+        <PageHead
+          title={
+            <span className="flex min-w-0 items-center gap-3">
+              <CategoryIcon className="h-6 w-6 shrink-0 text-app-muted" strokeWidth={2} />
+              <span className="truncate">{categoryName}</span>
+            </span>
+          }
+          subtitle={resourceCategoryDescription(category)}
+          actions={
+            <>
+              <Button
+                variant="secondary"
+                size="md"
                 onClick={openCreateModal}
                 aria-label="Criar recurso"
                 title="Criar recurso"
-                className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-app-border bg-white text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text focus-visible:border-app-accent-border disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
+                iconLeft={<Plus className="h-4 w-4" />}
+              />
+              <Button
+                variant="secondary"
+                size="md"
                 onClick={openDeleteConfirmation}
                 disabled={!selectedCount || saving || deleting}
                 aria-label="Excluir selecionados"
                 title="Excluir selecionados"
-                className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-app-border bg-white text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft hover:text-app-text focus-visible:border-app-accent-border disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-          <p className="max-w-[760px] text-[0.9rem] text-app-muted">
-            {resourceCategoryDescription(category)}
-          </p>
-        </div>
+                iconLeft={<Trash2 className="h-4 w-4" />}
+              />
+            </>
+          }
+        />
 
         {error ? (
-          <div className="rounded-[18px] border border-red-200 bg-red-50 px-4 py-3 text-[0.9rem] text-red-700 shadow-soft">
-            {error}
-          </div>
+          <Card
+            elevation="flat"
+            style={{ borderColor: 'var(--status-red)', background: 'var(--status-red-soft)' }}
+          >
+            <span style={{ color: 'var(--status-red)', fontSize: 'var(--fs-body-lg)' }}>{error}</span>
+          </Card>
         ) : null}
 
-        <div className="flex min-h-0 flex-1 flex-col rounded-[28px] border border-app-border bg-white shadow-soft">
+        <Card elevation="flat" pad={0} className="flex min-h-0 flex-1 flex-col">
           <div className="flex-1 overflow-auto">
-            <table className="min-w-full border-collapse text-left">
+            <table className="vt-table">
               <thead className="sticky top-0 z-10 bg-white">
-                <tr className="border-b border-app-border">
-                  <th className="w-[56px] px-4 py-3">
+                <tr>
+                  <th className="w-[56px]">
                     <input
                       ref={selectAllRef}
                       type="checkbox"
@@ -607,10 +604,7 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
                     const isFilterable = filterableColumns.includes(column.key);
                     const activeCount = columnFilters[column.key]?.size ?? 0;
                     return (
-                      <th
-                        key={column.key}
-                        className="px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted"
-                      >
+                      <th key={column.key}>
                         {isFilterable ? (
                           <button
                             type="button"
@@ -623,7 +617,7 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
                                 current?.key === column.key ? null : { key: column.key, rect },
                               );
                             }}
-                            className={`-mx-2 inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 uppercase tracking-[0.08em] transition hover:bg-app-accent-soft ${
+                            className={`-mx-2 inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 transition hover:bg-app-accent-soft ${
                               activeCount ? 'text-app-text' : 'text-app-muted'
                             }`}
                           >
@@ -653,10 +647,7 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
                   rows
                 ) : (
                   <tr>
-                    <td
-                      colSpan={activeColumns.length + 1}
-                      className="px-4 py-10 text-center text-[0.9rem] text-app-muted"
-                    >
+                    <td colSpan={activeColumns.length + 1} className="text-center">
                       Nenhum registro encontrado.
                     </td>
                   </tr>
@@ -680,26 +671,26 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
                 Página {activePage} de {totalPages}
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="geo-btn secondary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-app-border disabled:hover:bg-white"
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() => goToPage(activePage - 1)}
                   disabled={activePage <= 1 || isLoading}
                 >
                   Anterior
-                </button>
-                <button
-                  type="button"
-                  className="geo-btn secondary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-app-border disabled:hover:bg-white"
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() => goToPage(activePage + 1)}
                   disabled={!hasMore || isLoading}
                 >
                   Próximo
-                </button>
+                </Button>
               </div>
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
       {openFilter ? (
@@ -734,82 +725,74 @@ export default function ResourcePage({ category: categoryProp }: ResourcePagePro
 
       {deleteConfirmOpen
         ? createPortal(
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="delete-confirmation-title"
-                className="w-full max-w-[560px] rounded-[28px] border border-app-border bg-white p-6 shadow-modal"
-              >
-                <div className="mb-5 flex items-start justify-between gap-4 border-b border-app-border pb-4">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-[14px] bg-amber-50 p-2 text-amber-700">
-                      <AlertTriangle className="h-5 w-5" aria-hidden="true" />
-                    </div>
-                    <div>
-                      <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-                        Confirmação de exclusão
-                      </div>
-                      <h2
-                        id="delete-confirmation-title"
-                        className="mt-1 font-display text-[1.4rem] font-semibold text-app-text"
-                      >
-                        Excluir {selectedCount} selecionado{selectedCount === 1 ? '' : 's'}?
-                      </h2>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
-                    onClick={closeDeleteConfirmation}
-                    disabled={deleting}
+            <Modal
+              title={
+                <span className="flex items-center gap-3">
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                    style={{ background: 'var(--status-amber-soft)', color: 'var(--status-amber)' }}
                   >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-
-                <div className="grid gap-4 text-[0.92rem] text-app-muted">
-                  <p>
-                    A exclusão é lógica. Os itens selecionados serão encerrados e removidos da
-                    listagem ativa.
-                  </p>
-                  {selectedDeletePreview ? (
-                    <div className="rounded-[18px] border border-app-border bg-app-accent-soft px-4 py-3 text-[0.88rem] text-app-text">
-                      {selectedDeletePreview}
-                      {selectedCount > selectedOnPage.length
-                        ? ' e outros itens selecionados em páginas anteriores.'
-                        : ''}
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="mt-6 flex items-center justify-end gap-3 border-t border-app-border pt-4">
-                  <button
-                    type="button"
-                    onClick={closeDeleteConfirmation}
-                    disabled={deleting}
-                    className="geo-btn secondary"
-                  >
+                    <AlertTriangle className="h-4.5 w-4.5" aria-hidden="true" />
+                  </span>
+                  <span>
+                    Excluir {selectedCount} selecionado{selectedCount === 1 ? '' : 's'}?
+                  </span>
+                </span>
+              }
+              width={520}
+              onClose={closeDeleteConfirmation}
+              footer={
+                <>
+                  <Button variant="secondary" onClick={closeDeleteConfirmation} disabled={deleting}>
                     Cancelar
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="danger"
                     onClick={() => void confirmDeleteSelected()}
                     disabled={deleting}
-                    className="inline-flex items-center gap-2 rounded-[16px] border border-red-200 bg-red-600 px-4 py-2 text-[0.92rem] font-semibold text-white shadow-soft transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    iconLeft={<Trash2 className="h-4 w-4" />}
                   >
-                    <Trash2 className="h-4 w-4" />
                     {deleting ? 'Excluindo...' : 'Confirmar exclusão'}
-                  </button>
-                </div>
+                  </Button>
+                </>
+              }
+            >
+              <div className="grid gap-4" style={{ color: 'var(--text-secondary)' }}>
+                <p>
+                  A exclusão é lógica. Os itens selecionados serão encerrados e removidos da
+                  listagem ativa.
+                </p>
+                {selectedDeletePreview ? (
+                  <div
+                    className="px-4 py-3"
+                    style={{
+                      borderRadius: 'var(--radius-xl)',
+                      background: 'var(--surface-muted)',
+                      color: 'var(--text-primary)',
+                    }}
+                  >
+                    {selectedDeletePreview}
+                    {selectedCount > selectedOnPage.length
+                      ? ' e outros itens selecionados em páginas anteriores.'
+                      : ''}
+                  </div>
+                ) : null}
               </div>
-            </div>,
+            </Modal>,
             document.body,
           )
         : null}
 
       {isLoading ? (
-        <div className="pointer-events-none fixed bottom-6 right-6 z-50 rounded-[18px] border border-app-border bg-white/90 px-4 py-3 text-[0.88rem] font-medium text-app-muted shadow-soft backdrop-blur">
+        <div
+          className="pointer-events-none fixed bottom-6 right-6 z-50 px-4 py-3 text-[0.88rem] font-medium backdrop-blur"
+          style={{
+            borderRadius: 'var(--radius-xl)',
+            border: '1px solid var(--border)',
+            background: 'rgba(255, 255, 255, 0.9)',
+            color: 'var(--text-tertiary)',
+          }}
+        >
           <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
           Carregando dados...
         </div>
@@ -874,36 +857,9 @@ function ResourceModal({
   }, [onClose]);
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="resource-modal-title"
-        className="max-h-[92vh] w-full max-w-[880px] overflow-auto rounded-[28px] border border-app-border bg-white p-6 shadow-modal"
-      >
-        <div className="mb-5 flex items-start justify-between gap-4 border-b border-app-border pb-4">
-          <div>
-            <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-              CRUD de Recursos
-            </div>
-            <h2
-              id="resource-modal-title"
-              className="mt-1 font-display text-[1.45rem] font-semibold text-app-text"
-            >
-              {title}
-            </h2>
-          </div>
-          <button
-            type="button"
-            className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
-            onClick={onClose}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <form onSubmit={onSubmit} className="grid gap-4">
-          {tab === 'PhysicalResource' ? (
+    <Modal title={title} width={880} onClose={onClose}>
+      <form onSubmit={onSubmit} className="grid gap-4">
+        {tab === 'PhysicalResource' ? (
             <div className="grid gap-4 md:grid-cols-2">
               <Field label={resourceFieldLabel('name')}>
                 <input
@@ -1130,20 +1086,15 @@ function ResourceModal({
           ) : null}
 
           <div className="mt-2 flex justify-end gap-3 border-t border-app-border pt-4">
-            <button type="button" onClick={onClose} className="geo-btn secondary">
+            <Button variant="secondary" onClick={onClose}>
               Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="geo-btn primary disabled:cursor-not-allowed disabled:opacity-60"
-            >
+            </Button>
+            <Button type="submit" disabled={saving}>
               {saving ? 'Salvando...' : mode === 'create' ? 'Criar' : 'Salvar'}
-            </button>
+            </Button>
           </div>
-        </form>
-      </div>
-    </div>,
+      </form>
+    </Modal>,
     document.body,
   );
 }

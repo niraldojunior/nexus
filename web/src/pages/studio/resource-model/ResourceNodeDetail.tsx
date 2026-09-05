@@ -18,6 +18,7 @@ import {
   listResourceSpecifications,
 } from '../../../services/resourceCatalogApi';
 import type { ResourceSpecification } from '../../../services/resourceApi';
+import { Button, Badge } from '../../../components/ui';
 
 export type ResourceNodeDetailProps = {
   catalogId: string;
@@ -88,9 +89,9 @@ export function ResourceNodeDetail({
   const isGroup = node.kind === 'GROUP';
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-[22px] border border-app-border overflow-hidden">
+    <div className="vt-card flex h-full flex-col overflow-hidden p-0">
       {/* Header */}
-      <div className="p-6 border-b border-app-border bg-gradient-to-b from-black/[0.01] to-transparent">
+      <div className="p-6 border-b border-app-border">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3.5">
             <div
@@ -104,54 +105,29 @@ export function ResourceNodeDetail({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[0.74rem] font-bold uppercase tracking-wider text-app-muted">
-                  {isGroup ? 'Grupo de Catálogo' : 'Tipo de Recurso'}
+                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                  {isGroup ? 'Grupo de catálogo' : 'Tipo de recurso'}
                 </span>
-                <span
-                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.72rem] font-semibold ${
-                    node.status === 'active'
-                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                      : 'bg-red-50 text-red-700 border border-red-200'
-                  }`}
-                >
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      node.status === 'active' ? 'bg-emerald-500' : 'bg-red-500'
-                    }`}
-                  />
+                <Badge tone={node.status === 'active' ? 'green' : 'red'} dot>
                   {node.status === 'active' ? 'Ativo' : 'Inativo'}
-                </span>
+                </Badge>
               </div>
-              <h2 className="text-[1.35rem] font-semibold text-app-text mt-0.5 tracking-[-0.01em]">
-                {node.name}
-              </h2>
+              <h2 className="mt-0.5">{node.name}</h2>
               <p className="text-[0.82rem] font-mono text-app-muted mt-0.5">{node.code}</p>
             </div>
           </div>
 
           {canEdit && (
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onMove}
-                className="rounded-[12px] border border-app-border bg-white px-3 py-1.5 text-[0.82rem] font-medium text-app-text hover:bg-app-accent-soft transition"
-              >
+              <Button variant="secondary" size="sm" onClick={onMove}>
                 Mover
-              </button>
-              <button
-                type="button"
-                onClick={onEdit}
-                className="rounded-[12px] border border-app-border bg-white px-3 py-1.5 text-[0.82rem] font-medium text-app-text hover:bg-app-accent-soft transition"
-              >
+              </Button>
+              <Button variant="secondary" size="sm" onClick={onEdit}>
                 Editar
-              </button>
-              <button
-                type="button"
-                onClick={onImpact}
-                className="rounded-[12px] border border-red-200 bg-red-50 px-3 py-1.5 text-[0.82rem] font-medium text-red-700 hover:bg-red-100 transition"
-              >
+              </Button>
+              <Button variant="danger" size="sm" onClick={onImpact}>
                 Inativar
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -232,7 +208,7 @@ export function ResourceNodeDetail({
         {activeTab === 'overview' && (
           <div className="space-y-6">
             <div>
-              <h3 className="text-[0.82rem] font-semibold uppercase tracking-wider text-app-muted mb-3">
+              <h3 className="mb-3" style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
                 Descrição
               </h3>
               <p className="text-[0.92rem] text-app-text leading-relaxed">
@@ -241,18 +217,18 @@ export function ResourceNodeDetail({
             </div>
 
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <div className="rounded-[16px] border border-app-border p-4 bg-app-bg/50">
-                <span className="text-[0.74rem] font-semibold uppercase text-app-muted">Tipo de Nó</span>
+              <div className="rounded-[10px] border border-app-border p-4">
+                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Tipo de nó</span>
                 <p className="text-[0.95rem] font-medium text-app-text mt-1">{node.kind}</p>
               </div>
-              <div className="rounded-[16px] border border-app-border p-4 bg-app-bg/50">
-                <span className="text-[0.74rem] font-semibold uppercase text-app-muted">Ordem (Sort)</span>
+              <div className="rounded-[10px] border border-app-border p-4">
+                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Ordem (sort)</span>
                 <p className="text-[0.95rem] font-medium text-app-text mt-1">{node.sortOrder}</p>
               </div>
               {node.resourceType && (
-                <div className="rounded-[16px] border border-app-border p-4 bg-app-bg/50">
-                  <span className="text-[0.74rem] font-semibold uppercase text-app-muted">
-                    Tipo Referenciado
+                <div className="rounded-[10px] border border-app-border p-4">
+                  <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                    Tipo referenciado
                   </span>
                   <p className="text-[0.95rem] font-medium text-app-text mt-1">
                     {node.resourceType.name}
@@ -263,8 +239,8 @@ export function ResourceNodeDetail({
 
             {node.metadata && Object.keys(node.metadata).length > 0 && (
               <div>
-                <h3 className="text-[0.82rem] font-semibold uppercase tracking-wider text-app-muted mb-3">
-                  Metadados Adicionais
+                <h3 className="mb-3" style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                  Metadados adicionais
                 </h3>
                 <pre className="rounded-[16px] border border-app-border bg-black/[0.02] p-4 text-[0.82rem] font-mono overflow-x-auto text-app-text">
                   {JSON.stringify(node.metadata, null, 2)}
@@ -346,26 +322,26 @@ export function ResourceNodeDetail({
         {activeTab === 'impact' && (
           <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <div className="rounded-[16px] border border-app-border p-4 bg-app-bg/50">
-                <span className="text-[0.74rem] font-semibold uppercase text-app-muted">Descendentes</span>
+              <div className="rounded-[10px] border border-app-border p-4">
+                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Descendentes</span>
                 <p className="text-[1.25rem] font-semibold text-app-text mt-1">
                   {impact?.descendantCount ?? 0}
                 </p>
               </div>
-              <div className="rounded-[16px] border border-app-border p-4 bg-app-bg/50">
-                <span className="text-[0.74rem] font-semibold uppercase text-app-muted">Tipos Afetados</span>
+              <div className="rounded-[10px] border border-app-border p-4">
+                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Tipos afetados</span>
                 <p className="text-[1.25rem] font-semibold text-app-text mt-1">
                   {impact?.resourceTypeIds.length ?? 0}
                 </p>
               </div>
-              <div className="rounded-[16px] border border-app-border p-4 bg-app-bg/50">
-                <span className="text-[0.74rem] font-semibold uppercase text-app-muted">Recursos Físicos</span>
+              <div className="rounded-[10px] border border-app-border p-4">
+                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Recursos físicos</span>
                 <p className="text-[1.25rem] font-semibold text-app-text mt-1">
                   {impact?.activePhysicalResourceCount ?? 0}
                 </p>
               </div>
-              <div className="rounded-[16px] border border-app-border p-4 bg-app-bg/50">
-                <span className="text-[0.74rem] font-semibold uppercase text-app-muted">Recursos Lógicos</span>
+              <div className="rounded-[10px] border border-app-border p-4">
+                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Recursos lógicos</span>
                 <p className="text-[1.25rem] font-semibold text-app-text mt-1">
                   {impact?.activeLogicalResourceCount ?? 0}
                 </p>

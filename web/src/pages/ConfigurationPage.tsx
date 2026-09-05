@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   Activity,
   Briefcase,
@@ -48,6 +47,9 @@ import {
   SITE_ROLE_OPTIONS,
 } from '../utils/geoLabels';
 import Field from '../components/Field';
+import PageHead from '../components/ui/PageHead';
+import Button from '../components/ui/Button';
+import Modal from '../components/ui/Modal';
 import { ResourceCatalogTab } from './config-tabs/ResourceCatalogTab';
 import { ServiceCatalogTab } from './config-tabs/ServiceCatalogTab';
 import { UsersTab } from './config-tabs/UsersTab';
@@ -121,6 +123,23 @@ const tabs: Array<{ id: ConfigTab; label: string; icon: LucideIcon }> = [
   { id: 'services', label: 'Serviços', icon: Briefcase },
   { id: 'suppliers', label: 'Fornecedores', icon: Truck },
 ];
+
+/** Cabeçalho de modal com título + botão de fechar — usado pelos três modais desta página. */
+function ModalTitle({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span>{children}</span>
+      <button
+        type="button"
+        className="rounded-full p-2 text-app-muted transition hover:bg-app-accent-soft"
+        onClick={onClose}
+        aria-label="Fechar"
+      >
+        <X className="h-5 w-5" />
+      </button>
+    </div>
+  );
+}
 
 export function ConfigurationPage() {
   const [tab, setTab] = useState<ConfigTab>('users');
@@ -518,8 +537,8 @@ export function ConfigurationPage() {
 
   return (
     <div className="flex h-full w-full items-stretch overflow-hidden max-md:flex-col">
-      <aside className="w-[238px] shrink-0 overflow-y-auto border-r border-app-border bg-app-sidebar px-3 py-6 max-md:w-full max-md:border-b max-md:border-r-0 max-md:px-5">
-        <p className="px-2 pb-2 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+      <aside className="w-[185px] shrink-0 overflow-y-auto border-r border-app-border bg-app-sidebar px-[11px] py-[22px] max-md:w-full max-md:border-b max-md:border-r-0 max-md:px-5">
+        <p className="px-2 pb-2.5 text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
           Configurações
         </p>
         <div className="space-y-1">
@@ -530,14 +549,14 @@ export function ConfigurationPage() {
                 key={id}
                 type="button"
                 onClick={() => setTab(id)}
-                className={`flex w-full items-center gap-3 rounded-[12px] border px-3 py-2 text-left transition ${
+                className={`flex w-full items-center gap-[9px] rounded-[11px] border px-[11px] py-[7px] text-left transition ${
                   active
-                    ? 'border-app-accent-border bg-app-accent-soft text-app-text shadow-soft'
+                    ? 'vt-yellow-selected text-app-text'
                     : 'border-transparent text-app-text hover:border-app-border hover:bg-white'
                 }`}
               >
-                <Icon className="h-4 w-4" strokeWidth={1.8} />
-                <span className="text-[0.88rem] font-medium">{label}</span>
+                <Icon className="h-3.5 w-3.5" strokeWidth={1.8} />
+                <span className="text-[0.76rem] font-medium">{label}</span>
               </button>
             );
           })}
@@ -553,24 +572,15 @@ export function ConfigurationPage() {
           <EventsTab />
         ) : tab === 'projects' ? (
           <>
-            <div className="mb-5 flex items-start justify-between gap-4">
-              <div>
-                <h1 className="font-display text-[1.5rem] font-semibold text-app-text">
-                  Status de Projetos
-                </h1>
-                <p className="mt-1 text-[0.88rem] text-app-muted">
-                  Desativar preserva o histórico e remove a opção de novas escolhas.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={openCreateProjectStatus}
-                className="geo-btn primary shrink-0"
-              >
-                <Plus className="h-4 w-4" />
-                Adicionar
-              </button>
-            </div>
+            <PageHead
+              title="Status de Projetos"
+              subtitle="Desativar preserva o histórico e remove a opção de novas escolhas."
+              actions={
+                <Button onClick={openCreateProjectStatus} iconLeft={<Plus className="h-4 w-4" />}>
+                  Adicionar
+                </Button>
+              }
+            />
 
             {error && !projectModalOpen ? (
               <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
@@ -578,10 +588,10 @@ export function ConfigurationPage() {
               </p>
             ) : null}
 
-            <div className="overflow-hidden rounded-[20px] border border-app-border bg-white shadow-soft">
-              <table className="w-full min-w-[650px] text-left">
+            <div className="vt-card vt-table-card" style={{ overflow: 'hidden', padding: 0 }}>
+              <table className="vt-table" style={{ minWidth: 650 }}>
                 <thead>
-                  <tr className="border-b border-app-border bg-slate-50 text-[0.82rem] font-semibold text-app-muted">
+                  <tr>
                     <SortableHeader label="Nome" sortKey="name" sort={projectSort} onSort={onProjectSort} />
                     <SortableHeader
                       label="Comportamento"
@@ -597,9 +607,7 @@ export function ConfigurationPage() {
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan={5} className="px-5 py-4 text-[0.88rem] text-app-muted">
-                        Carregando…
-                      </td>
+                      <td colSpan={5}>Carregando…</td>
                     </tr>
                   ) : (
                     sortedItems.map((item) => {
@@ -610,13 +618,10 @@ export function ConfigurationPage() {
                       // mesmo com o status já inativo — só os dois protegidos (1, 17) ficam de fora.
                       const canDeactivate = item.code !== '1' && item.code !== '17';
                       return (
-                        <tr
-                          key={item.code}
-                          className="border-b border-app-border text-[0.88rem] text-app-text last:border-0"
-                        >
+                        <tr key={item.code}>
                           {isEditing && editDraft ? (
                             <>
-                              <td className="px-5 py-2.5">
+                              <td>
                                 <input
                                   value={editDraft.name}
                                   onChange={(event) =>
@@ -626,7 +631,7 @@ export function ConfigurationPage() {
                                   autoFocus
                                 />
                               </td>
-                              <td className="px-5 py-2.5">
+                              <td>
                                 <select
                                   value={editDraft.behavior}
                                   disabled={behaviorLocked}
@@ -645,7 +650,7 @@ export function ConfigurationPage() {
                                   ))}
                                 </select>
                               </td>
-                              <td className="px-5 py-2.5">
+                              <td>
                                 <input
                                   type="number"
                                   value={editDraft.sortOrder}
@@ -658,7 +663,7 @@ export function ConfigurationPage() {
                                   className="geo-input h-9 w-24 text-[0.86rem]"
                                 />
                               </td>
-                              <td className="px-5 py-2.5">
+                              <td>
                                 <label className="flex items-center gap-2 text-[0.86rem] text-app-text">
                                   <input
                                     type="checkbox"
@@ -674,69 +679,71 @@ export function ConfigurationPage() {
                             </>
                           ) : (
                             <>
-                              <td className="px-5 py-3 font-medium">{item.name}</td>
-                              <td className="px-5 py-3 text-app-muted">
+                              <td className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                                {item.name}
+                              </td>
+                              <td>
                                 {behaviors.find((behavior) => behavior.value === item.behavior)
                                   ?.label ?? item.behavior}
                               </td>
-                              <td className="px-5 py-3 text-app-muted">{item.sortOrder}</td>
-                              <td className="px-5 py-3 text-app-muted">
-                                {item.active ? 'Sim' : 'Não'}
-                              </td>
+                              <td>{item.sortOrder}</td>
+                              <td>{item.active ? 'Sim' : 'Não'}</td>
                             </>
                           )}
-                          <td className="flex justify-end gap-1 px-5 py-3">
-                            {isEditing ? (
-                              <>
+                          <td>
+                            <div className="flex justify-end gap-1">
+                              {isEditing ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => void saveEditProjectStatus()}
+                                    className="rounded-xl border border-transparent p-1.5 text-status-green transition hover:border-status-green hover:bg-status-green-soft"
+                                    aria-label={`Salvar ${item.name}`}
+                                    disabled={projectSaving || !editDraft?.name.trim()}
+                                  >
+                                    <Check className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditProjectStatus}
+                                    className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft"
+                                    aria-label={`Cancelar edição de ${item.name}`}
+                                    disabled={projectSaving}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                </>
+                              ) : (
                                 <button
                                   type="button"
-                                  onClick={() => void saveEditProjectStatus()}
-                                  className="rounded-xl border border-transparent p-1.5 text-status-green transition hover:border-status-green hover:bg-status-green-soft"
-                                  aria-label={`Salvar ${item.name}`}
-                                  disabled={projectSaving || !editDraft?.name.trim()}
-                                >
-                                  <Check className="h-4 w-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={cancelEditProjectStatus}
+                                  onClick={() => startEditProjectStatus(item)}
                                   className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft"
-                                  aria-label={`Cancelar edição de ${item.name}`}
+                                  aria-label={`Editar ${item.name}`}
                                   disabled={projectSaving}
                                 >
-                                  <X className="h-4 w-4" />
+                                  <Pencil className="h-4 w-4" />
                                 </button>
-                              </>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => startEditProjectStatus(item)}
-                                className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft"
-                                aria-label={`Editar ${item.name}`}
-                                disabled={projectSaving}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </button>
-                            )}
-                            {canDeactivate ? (
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  try {
-                                    await deactivateProjectStatusCatalogItem(item.code);
-                                    if (isEditing) cancelEditProjectStatus();
-                                    reload();
-                                  } catch {
-                                    setError('Não foi possível desativar o status.');
-                                  }
-                                }}
-                                className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft"
-                                aria-label={`Desativar ${item.name}`}
-                                disabled={projectSaving}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            ) : null}
+                              )}
+                              {canDeactivate ? (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      await deactivateProjectStatusCatalogItem(item.code);
+                                      if (isEditing) cancelEditProjectStatus();
+                                      reload();
+                                    } catch {
+                                      setError('Não foi possível desativar o status.');
+                                    }
+                                  }}
+                                  className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft"
+                                  aria-label={`Desativar ${item.name}`}
+                                  disabled={projectSaving}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              ) : null}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -759,21 +766,15 @@ export function ConfigurationPage() {
           </>
         ) : tab === 'suppliers' ? (
           <>
-            <div className="mb-5 flex items-start justify-between gap-4">
-              <div>
-                <h1 className="font-display text-[1.5rem] font-semibold text-app-text">
-                  Fornecedores
-                </h1>
-                <p className="mt-1 text-[0.88rem] text-app-muted">
-                  Cadastro de organizações fornecedoras (Party com papel de Fornecedor). Desativar
-                  preserva o histórico de vínculos já criados.
-                </p>
-              </div>
-              <button type="button" onClick={openCreateSupplier} className="geo-btn primary shrink-0">
-                <Plus className="h-4 w-4" />
-                Adicionar
-              </button>
-            </div>
+            <PageHead
+              title="Fornecedores"
+              subtitle="Cadastro de organizações fornecedoras (Party com papel de Fornecedor). Desativar preserva o histórico de vínculos já criados."
+              actions={
+                <Button onClick={openCreateSupplier} iconLeft={<Plus className="h-4 w-4" />}>
+                  Adicionar
+                </Button>
+              }
+            />
 
             {suppliersError && !supplierModal ? (
               <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
@@ -781,10 +782,10 @@ export function ConfigurationPage() {
               </p>
             ) : null}
 
-            <div className="overflow-hidden rounded-[20px] border border-app-border bg-white shadow-soft">
-              <table className="w-full min-w-[650px] text-left">
+            <div className="vt-card vt-table-card" style={{ overflow: 'hidden', padding: 0 }}>
+              <table className="vt-table" style={{ minWidth: 650 }}>
                 <thead>
-                  <tr className="border-b border-app-border bg-slate-50 text-[0.82rem] font-semibold text-app-muted">
+                  <tr>
                     <SortableHeader label="Nome" sortKey="name" sort={supplierSort} onSort={onSupplierSort} />
                     <SortableHeader label="CNPJ" sortKey="cnpj" sort={supplierSort} onSort={onSupplierSort} />
                     <SortableHeader label="Status" sortKey="status" sort={supplierSort} onSort={onSupplierSort} />
@@ -794,44 +795,41 @@ export function ConfigurationPage() {
                 <tbody>
                   {suppliersLoading ? (
                     <tr>
-                      <td colSpan={4} className="px-5 py-4 text-[0.88rem] text-app-muted">
-                        Carregando…
-                      </td>
+                      <td colSpan={4}>Carregando…</td>
                     </tr>
                   ) : suppliers.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-5 py-4 text-[0.88rem] text-app-muted">
-                        Nenhum fornecedor cadastrado.
-                      </td>
+                      <td colSpan={4}>Nenhum fornecedor cadastrado.</td>
                     </tr>
                   ) : (
                     sortedSuppliers.map((role) => (
-                      <tr
-                        key={role.id}
-                        className="border-b border-app-border text-[0.88rem] text-app-text last:border-0"
-                      >
-                        <td className="px-5 py-3 font-medium">{role.party.name}</td>
-                        <td className="px-5 py-3 text-app-muted">{supplierCnpj(role) || '-'}</td>
-                        <td className="px-5 py-3 text-app-muted">{supplierStatusLabel[role.status]}</td>
-                        <td className="flex justify-end gap-1 px-5 py-3">
-                          <button
-                            type="button"
-                            onClick={() => openEditSupplier(role)}
-                            className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft"
-                            aria-label={`Editar ${role.party.name ?? ''}`}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          {role.status === 'active' ? (
+                      <tr key={role.id}>
+                        <td className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                          {role.party.name}
+                        </td>
+                        <td>{supplierCnpj(role) || '-'}</td>
+                        <td>{supplierStatusLabel[role.status]}</td>
+                        <td>
+                          <div className="flex justify-end gap-1">
                             <button
                               type="button"
-                              onClick={() => void deactivateSupplier(role)}
-                              className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft"
-                              aria-label={`Desativar ${role.party.name ?? ''}`}
+                              onClick={() => openEditSupplier(role)}
+                              className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft"
+                              aria-label={`Editar ${role.party.name ?? ''}`}
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Pencil className="h-4 w-4" />
                             </button>
-                          ) : null}
+                            {role.status === 'active' ? (
+                              <button
+                                type="button"
+                                onClick={() => void deactivateSupplier(role)}
+                                className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft"
+                                aria-label={`Desativar ${role.party.name ?? ''}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -854,26 +852,15 @@ export function ConfigurationPage() {
           </>
         ) : tab === 'sites' ? (
           <>
-            <div className="mb-5 flex items-start justify-between gap-4">
-              <div>
-                <h1 className="font-display text-[1.5rem] font-semibold text-app-text">
-                  Tipos de Locais
-                </h1>
-                <p className="mt-1 text-[0.88rem] text-app-muted">
-                  Catálogo de especificações de Local (GeographicSiteSpecification). Papel
-                  (siteRole) define o que o tipo é (C11); novos tipos entram na categoria Local —
-                  tipos de Sub-local (Sala, Pavimento…) são cadastrados via API.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={openCreateSiteType}
-                className="geo-btn primary shrink-0"
-              >
-                <Plus className="h-4 w-4" />
-                Adicionar
-              </button>
-            </div>
+            <PageHead
+              title="Tipos de Locais"
+              subtitle="Catálogo de especificações de Local (GeographicSiteSpecification). Papel (siteRole) define o que o tipo é (C11); novos tipos entram na categoria Local — tipos de Sub-local (Sala, Pavimento…) são cadastrados via API."
+              actions={
+                <Button onClick={openCreateSiteType} iconLeft={<Plus className="h-4 w-4" />}>
+                  Adicionar
+                </Button>
+              }
+            />
 
             {siteTypeError && !siteTypeModal ? (
               <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
@@ -881,10 +868,10 @@ export function ConfigurationPage() {
               </p>
             ) : null}
 
-            <div className="overflow-hidden rounded-[20px] border border-app-border bg-white shadow-soft">
-              <table className="w-full min-w-[650px] text-left">
+            <div className="vt-card vt-table-card" style={{ overflow: 'hidden', padding: 0 }}>
+              <table className="vt-table" style={{ minWidth: 650 }}>
                 <thead>
-                  <tr className="border-b border-app-border bg-slate-50 text-[0.82rem] font-semibold text-app-muted">
+                  <tr>
                     <SortableHeader label="Nome" sortKey="name" sort={siteTypeSort} onSort={onSiteTypeSort} />
                     <SortableHeader
                       label="Categoria"
@@ -905,57 +892,52 @@ export function ConfigurationPage() {
                 <tbody>
                   {siteTypesLoading ? (
                     <tr>
-                      <td colSpan={5} className="px-5 py-4 text-[0.88rem] text-app-muted">
-                        Carregando…
-                      </td>
+                      <td colSpan={5}>Carregando…</td>
                     </tr>
                   ) : (
                     sortedSiteSpecs.map((spec) => (
-                      <tr
-                        key={spec.id}
-                        className="border-b border-app-border text-[0.88rem] text-app-text last:border-0"
-                      >
-                        <td className="px-5 py-3 font-medium">{siteSpecLabel(spec)}</td>
-                        <td className="px-5 py-3 text-app-muted">
-                          {siteSpecCategoryLabel(spec.category)}
+                      <tr key={spec.id}>
+                        <td className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                          {siteSpecLabel(spec)}
                         </td>
-                        <td className="px-5 py-3 text-app-muted">{siteRoleLabel(spec.siteRole)}</td>
-                        <td className="px-5 py-3 text-app-muted">
-                          {spec.allowedChildSpecIds.length ? allowedChildNames(spec) : '-'}
-                        </td>
-                        <td className="flex justify-end gap-1 px-5 py-3">
-                          <button
-                            type="button"
-                            onClick={() => openEditSiteType(spec)}
-                            className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft"
-                            aria-label={`Editar ${siteSpecLabel(spec)}`}
-                            disabled={siteTypeSaving}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          {pendingSiteTypeRemoval?.id === spec.id ? (
+                        <td>{siteSpecCategoryLabel(spec.category)}</td>
+                        <td>{siteRoleLabel(spec.siteRole)}</td>
+                        <td>{spec.allowedChildSpecIds.length ? allowedChildNames(spec) : '-'}</td>
+                        <td>
+                          <div className="flex justify-end gap-1">
                             <button
                               type="button"
-                              onClick={() => void removeSiteType()}
-                              className="rounded-xl border border-status-red/30 bg-status-red-soft px-2 py-1 text-[0.75rem] font-semibold text-status-red"
+                              onClick={() => openEditSiteType(spec)}
+                              className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft"
+                              aria-label={`Editar ${siteSpecLabel(spec)}`}
                               disabled={siteTypeSaving}
                             >
-                              Confirmar
+                              <Pencil className="h-4 w-4" />
                             </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPendingSiteTypeRemoval(spec);
-                                setSiteTypeError(null);
-                              }}
-                              className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft"
-                              aria-label={`Remover ${siteSpecLabel(spec)}`}
-                              disabled={siteTypeSaving}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          )}
+                            {pendingSiteTypeRemoval?.id === spec.id ? (
+                              <button
+                                type="button"
+                                onClick={() => void removeSiteType()}
+                                className="rounded-xl border border-status-red/30 bg-status-red-soft px-2 py-1 text-[0.75rem] font-semibold text-status-red"
+                                disabled={siteTypeSaving}
+                              >
+                                Confirmar
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPendingSiteTypeRemoval(spec);
+                                  setSiteTypeError(null);
+                                }}
+                                className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft"
+                                aria-label={`Remover ${siteSpecLabel(spec)}`}
+                                disabled={siteTypeSaving}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -1014,85 +996,64 @@ function ProjectStatusModal({
 
   const submitDisabled = saving || !draft.name.trim();
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="project-status-modal-title"
-        className="w-full max-w-[480px] rounded-[28px] border border-app-border bg-white p-6 shadow-modal"
-      >
-        <div className="mb-5 flex items-start justify-between gap-4 border-b border-app-border pb-4">
-          <h2
-            id="project-status-modal-title"
-            className="font-display text-[1.3rem] font-semibold text-app-text"
+  return (
+    <Modal
+      title={<ModalTitle onClose={onClose}>Criar status de Projeto</ModalTitle>}
+      onClose={onClose}
+      width={480}
+      footer={
+        <>
+          <Button variant="secondary" type="button" onClick={onClose} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button type="submit" form="project-status-form" disabled={submitDisabled}>
+            {saving ? 'Salvando...' : 'Criar'}
+          </Button>
+        </>
+      }
+    >
+      {error ? (
+        <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
+          {error}
+        </p>
+      ) : null}
+
+      <form id="project-status-form" onSubmit={onSubmit} className="grid gap-4">
+        <Field label="Nome">
+          <input
+            value={draft.name}
+            onChange={(event) => onChange({ ...draft, name: event.target.value })}
+            className="geo-input"
+            autoFocus
+          />
+        </Field>
+        <Field label="Comportamento">
+          <select
+            value={draft.behavior}
+            onChange={(event) =>
+              onChange({ ...draft, behavior: event.target.value as GeoProjectStatusBehavior })
+            }
+            className="geo-input"
           >
-            Criar status de Projeto
-          </h2>
-          <button
-            type="button"
-            className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
-            onClick={onClose}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {error ? (
-          <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
-            {error}
-          </p>
-        ) : null}
-
-        <form onSubmit={onSubmit} className="grid gap-4">
-          <Field label="Nome">
-            <input
-              value={draft.name}
-              onChange={(event) => onChange({ ...draft, name: event.target.value })}
-              className="geo-input"
-              autoFocus
-            />
-          </Field>
-          <Field label="Comportamento">
-            <select
-              value={draft.behavior}
-              onChange={(event) =>
-                onChange({ ...draft, behavior: event.target.value as GeoProjectStatusBehavior })
-              }
-              className="geo-input"
-            >
-              {behaviors
-                .filter((item) => item.value !== 'close-release')
-                .map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-            </select>
-          </Field>
-          <Field label="Ordem">
-            <input
-              type="number"
-              value={draft.sortOrder}
-              onChange={(event) =>
-                onChange({ ...draft, sortOrder: Number(event.target.value) })
-              }
-              className="geo-input"
-            />
-          </Field>
-
-          <div className="mt-2 flex items-center justify-end gap-3 border-t border-app-border pt-4">
-            <button type="button" onClick={onClose} className="geo-btn secondary" disabled={saving}>
-              Cancelar
-            </button>
-            <button type="submit" className="geo-btn primary" disabled={submitDisabled}>
-              {saving ? 'Salvando...' : 'Criar'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>,
-    document.body,
+            {behaviors
+              .filter((item) => item.value !== 'close-release')
+              .map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+          </select>
+        </Field>
+        <Field label="Ordem">
+          <input
+            type="number"
+            value={draft.sortOrder}
+            onChange={(event) => onChange({ ...draft, sortOrder: Number(event.target.value) })}
+            className="geo-input"
+          />
+        </Field>
+      </form>
+    </Modal>
   );
 }
 
@@ -1123,66 +1084,51 @@ function SupplierModal({
 
   const submitDisabled = saving || !draft.name.trim();
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="supplier-modal-title"
-        className="w-full max-w-[480px] rounded-[28px] border border-app-border bg-white p-6 shadow-modal"
-      >
-        <div className="mb-5 flex items-start justify-between gap-4 border-b border-app-border pb-4">
-          <h2
-            id="supplier-modal-title"
-            className="font-display text-[1.3rem] font-semibold text-app-text"
-          >
-            {mode === 'create' ? 'Criar fornecedor' : 'Editar fornecedor'}
-          </h2>
-          <button
-            type="button"
-            className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
-            onClick={onClose}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+  return (
+    <Modal
+      title={
+        <ModalTitle onClose={onClose}>
+          {mode === 'create' ? 'Criar fornecedor' : 'Editar fornecedor'}
+        </ModalTitle>
+      }
+      onClose={onClose}
+      width={480}
+      footer={
+        <>
+          <Button variant="secondary" type="button" onClick={onClose} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button type="submit" form="supplier-form" disabled={submitDisabled}>
+            {saving ? 'Salvando...' : mode === 'create' ? 'Criar' : 'Salvar'}
+          </Button>
+        </>
+      }
+    >
+      {error ? (
+        <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
+          {error}
+        </p>
+      ) : null}
 
-        {error ? (
-          <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
-            {error}
-          </p>
-        ) : null}
-
-        <form onSubmit={onSubmit} className="grid gap-4">
-          <Field label="Nome">
-            <input
-              value={draft.name}
-              onChange={(event) => onChange({ ...draft, name: event.target.value })}
-              className="geo-input"
-              autoFocus
-            />
-          </Field>
-          <Field label="CNPJ">
-            <input
-              value={draft.cnpj}
-              onChange={(event) => onChange({ ...draft, cnpj: event.target.value })}
-              className="geo-input"
-              placeholder="(opcional)"
-            />
-          </Field>
-
-          <div className="mt-2 flex items-center justify-end gap-3 border-t border-app-border pt-4">
-            <button type="button" onClick={onClose} className="geo-btn secondary" disabled={saving}>
-              Cancelar
-            </button>
-            <button type="submit" className="geo-btn primary" disabled={submitDisabled}>
-              {saving ? 'Salvando...' : mode === 'create' ? 'Criar' : 'Salvar'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>,
-    document.body,
+      <form id="supplier-form" onSubmit={onSubmit} className="grid gap-4">
+        <Field label="Nome">
+          <input
+            value={draft.name}
+            onChange={(event) => onChange({ ...draft, name: event.target.value })}
+            className="geo-input"
+            autoFocus
+          />
+        </Field>
+        <Field label="CNPJ">
+          <input
+            value={draft.cnpj}
+            onChange={(event) => onChange({ ...draft, cnpj: event.target.value })}
+            className="geo-input"
+            placeholder="(opcional)"
+          />
+        </Field>
+      </form>
+    </Modal>
   );
 }
 
@@ -1223,115 +1169,98 @@ function SiteTypeModal({
   const submitDisabled =
     saving || !draft.name.trim() || (mode === 'create' && !draft.code.trim());
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="site-type-modal-title"
-        className="flex max-h-[88vh] w-full max-w-[480px] flex-col rounded-[28px] border border-app-border bg-white p-6 shadow-modal"
-      >
-        <div className="mb-5 flex shrink-0 items-start justify-between gap-4 border-b border-app-border pb-4">
-          <h2
-            id="site-type-modal-title"
-            className="font-display text-[1.3rem] font-semibold text-app-text"
+  return (
+    <Modal
+      title={
+        <ModalTitle onClose={onClose}>
+          {mode === 'create' ? 'Criar tipo de Local' : 'Editar tipo de Local'}
+        </ModalTitle>
+      }
+      onClose={onClose}
+      width={480}
+      footer={
+        <>
+          <Button variant="secondary" type="button" onClick={onClose} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button type="submit" form="site-type-form" disabled={submitDisabled}>
+            {saving ? 'Salvando...' : mode === 'create' ? 'Criar' : 'Salvar'}
+          </Button>
+        </>
+      }
+    >
+      {error ? (
+        <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
+          {error}
+        </p>
+      ) : null}
+
+      <form id="site-type-form" onSubmit={onSubmit} className="grid gap-4">
+        <Field label="Código">
+          <input
+            value={draft.code}
+            onChange={(event) => onChange({ ...draft, code: event.target.value })}
+            className="geo-input"
+            placeholder="ex: CENTRAL_OFFICE"
+            disabled={mode === 'edit'}
+            autoFocus={mode === 'create'}
+          />
+          {mode === 'edit' ? (
+            <span className="text-[0.72rem] font-medium normal-case tracking-normal text-app-muted">
+              O código não pode ser alterado após o cadastro.
+            </span>
+          ) : null}
+        </Field>
+        <Field label="Label">
+          <input
+            value={draft.name}
+            onChange={(event) => onChange({ ...draft, name: event.target.value })}
+            className="geo-input"
+            autoFocus={mode === 'edit'}
+          />
+        </Field>
+        <Field label="Papel">
+          <select
+            value={draft.siteRole}
+            onChange={(event) =>
+              onChange({ ...draft, siteRole: event.target.value as GeoSpec['siteRole'] })
+            }
+            className="geo-input"
           >
-            {mode === 'create' ? 'Criar tipo de Local' : 'Editar tipo de Local'}
-          </h2>
-          <button
-            type="button"
-            className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
-            onClick={onClose}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {error ? (
-          <p className="mb-3 shrink-0 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
-            {error}
-          </p>
-        ) : null}
-
-        <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
-          <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto pr-1">
-            <Field label="Código">
-              <input
-                value={draft.code}
-                onChange={(event) => onChange({ ...draft, code: event.target.value })}
-                className="geo-input"
-                placeholder="ex: CENTRAL_OFFICE"
-                disabled={mode === 'edit'}
-                autoFocus={mode === 'create'}
-              />
-              {mode === 'edit' ? (
-                <span className="text-[0.72rem] font-medium normal-case tracking-normal text-app-muted">
-                  O código não pode ser alterado após o cadastro.
-                </span>
-              ) : null}
-            </Field>
-            <Field label="Label">
-              <input
-                value={draft.name}
-                onChange={(event) => onChange({ ...draft, name: event.target.value })}
-                className="geo-input"
-                autoFocus={mode === 'edit'}
-              />
-            </Field>
-            <Field label="Papel">
-              <select
-                value={draft.siteRole}
-                onChange={(event) =>
-                  onChange({ ...draft, siteRole: event.target.value as GeoSpec['siteRole'] })
-                }
-                className="geo-input"
-              >
-                {SITE_ROLE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Filhos permitidos">
-              {specOptions.length === 0 ? (
-                <div className="rounded-[14px] border border-app-border bg-white px-3 py-4 text-center text-[0.82rem] font-normal normal-case tracking-normal text-app-muted">
-                  Nenhum outro tipo de Local cadastrado.
-                </div>
-              ) : (
-                <div className="max-h-[130px] overflow-auto rounded-[14px] border border-app-border bg-white">
-                  {specOptions.map((option) => (
-                    <label
-                      key={option.id}
-                      className="flex cursor-pointer items-center gap-3 px-3 py-2 text-[0.86rem] font-normal normal-case tracking-normal text-app-text transition hover:bg-app-accent-soft"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={draft.allowedChildSpecIds.includes(option.id)}
-                        onChange={() => toggleChild(option.id)}
-                      />
-                      <span className="min-w-0 flex-1 truncate">{siteSpecLabel(option)}</span>
-                      <span className="text-[0.72rem] text-app-muted">
-                        {siteSpecCategoryLabel(option.category)}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </Field>
-          </div>
-
-          <div className="mt-4 flex shrink-0 items-center justify-end gap-3 border-t border-app-border pt-4">
-            <button type="button" onClick={onClose} className="geo-btn secondary" disabled={saving}>
-              Cancelar
-            </button>
-            <button type="submit" className="geo-btn primary" disabled={submitDisabled}>
-              {saving ? 'Salvando...' : mode === 'create' ? 'Criar' : 'Salvar'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>,
-    document.body,
+            {SITE_ROLE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Filhos permitidos">
+          {specOptions.length === 0 ? (
+            <div className="rounded-[14px] border border-app-border bg-white px-3 py-4 text-center text-[0.82rem] font-normal normal-case tracking-normal text-app-muted">
+              Nenhum outro tipo de Local cadastrado.
+            </div>
+          ) : (
+            <div className="max-h-[130px] overflow-auto rounded-[14px] border border-app-border bg-white">
+              {specOptions.map((option) => (
+                <label
+                  key={option.id}
+                  className="flex cursor-pointer items-center gap-3 px-3 py-2 text-[0.86rem] font-normal normal-case tracking-normal text-app-text transition hover:bg-app-accent-soft"
+                >
+                  <input
+                    type="checkbox"
+                    checked={draft.allowedChildSpecIds.includes(option.id)}
+                    onChange={() => toggleChild(option.id)}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{siteSpecLabel(option)}</span>
+                  <span className="text-[0.72rem] text-app-muted">
+                    {siteSpecCategoryLabel(option.category)}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </Field>
+      </form>
+    </Modal>
   );
 }

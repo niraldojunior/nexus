@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Folder, Box, AlertCircle } from 'lucide-react';
+import { Folder, Box, AlertCircle } from 'lucide-react';
 import type {
   ResourceCatalogNode,
   ResourceCatalogTreeNode,
@@ -9,6 +9,7 @@ import type {
 } from '../../../services/resourceCatalogApi';
 import type { ResourceType } from '../../../services/resourceApi';
 import { listResourceTypes } from '../../../services/resourceCatalogApi';
+import { Modal, Button } from '../../../components/ui';
 
 export type ResourceNodeFormModalProps = {
   isOpen: boolean;
@@ -124,39 +125,45 @@ export function ResourceNodeFormModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
-      <div className="w-full max-w-lg rounded-[24px] border border-app-border bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-        <div className="flex items-center justify-between border-b border-app-border pb-4">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-app-accent-soft text-app-text">
-              {kind === 'GROUP' ? <Folder className="h-5 w-5" /> : <Box className="h-5 w-5" />}
-            </div>
-            <div>
-              <h3 className="font-semibold text-app-text text-[1.1rem]">
-                {isEditing ? 'Editar Nó do Catálogo' : 'Novo Nó do Catálogo'}
-              </h3>
-              <p className="text-[0.78rem] text-app-muted">
-                {isEditing ? editingNode?.code : 'Adicionar nó na hierarquia'}
-              </p>
-            </div>
+    <Modal
+      onClose={onClose}
+      width={560}
+      title={
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-app-accent-soft text-app-text">
+            {kind === 'GROUP' ? <Folder className="h-5 w-5" /> : <Box className="h-5 w-5" />}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full p-1.5 text-app-muted hover:bg-black/[0.04] hover:text-app-text"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div>
+            <h3>{isEditing ? 'Editar nó do catálogo' : 'Novo nó do catálogo'}</h3>
+            <p className="text-[0.78rem] text-app-muted">
+              {isEditing ? editingNode?.code : 'Adicionar nó na hierarquia'}
+            </p>
+          </div>
         </div>
-
+      }
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="primary" type="submit" form="resource-node-form" disabled={submitting}>
+            {submitting ? 'Salvando…' : isEditing ? 'Atualizar nó' : 'Criar nó'}
+          </Button>
+        </>
+      }
+    >
+      <div>
         {error && (
-          <div className="mt-4 flex items-center gap-2 rounded-[14px] border border-red-200 bg-red-50 p-3 text-[0.84rem] text-red-700">
+          <div
+            className="mb-4 flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
+            style={{ background: 'var(--status-red-soft)', color: 'var(--status-red)' }}
+          >
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+        <form id="resource-node-form" onSubmit={handleSubmit} className="space-y-4">
           {!isEditing && (
             <div>
               <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
@@ -273,24 +280,8 @@ export function ResourceNodeFormModal({
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-app-border">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-[14px] border border-app-border px-4 py-2 text-[0.84rem] font-medium text-app-muted hover:bg-black/[0.02]"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="rounded-[14px] bg-app-accent px-5 py-2 text-[0.84rem] font-semibold text-white hover:opacity-90 disabled:opacity-50 transition shadow-soft"
-            >
-              {submitting ? 'Salvando...' : isEditing ? 'Atualizar Nó' : 'Criar Nó'}
-            </button>
-          </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 }

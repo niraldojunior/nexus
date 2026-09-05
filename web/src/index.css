@@ -213,6 +213,33 @@ button {
     border: 1px solid var(--vt-yellow-selected-border);
   }
 
+  /* Janela "Studio Control" (aside da nav interna do Studio, ver StudioPage): fundo
+     --vt-ink em vez do card branco padrão. `.vt-sb-btn` assume texto escuro sobre
+     fundo claro — em repouso e hover isso fica ilegível sobre ink, então invertemos
+     só aqui. O estado ativo mantém o mesmo amarelo + borda acima; funciona igual
+     sobre fundo escuro. */
+  .vt-studio-nav-ink .vt-sb-group-label {
+    color: rgba(255, 255, 255, 0.45);
+  }
+  .vt-studio-nav-ink .vt-sb-btn {
+    color: rgba(255, 255, 255, 0.7);
+  }
+  .vt-studio-nav-ink .vt-sb-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+  }
+  /* Selecionado: o wash amarelo claro de `.is-active` (herdado do base.css) não
+     rende contra texto/ícone brancos — força de volta o texto escuro padrão do
+     item selecionado (--sidebar-fg-active), a mesma cor usada sobre fundo claro. */
+  .vt-studio-nav-ink .vt-sb-btn.is-active {
+    color: var(--sidebar-fg-active);
+  }
+  /* Selecionado + mouse em cima: inverte de volta para branco — o wash amarelo
+     sozinho já indica seleção, o hover não precisa repetir o contraste escuro. */
+  .vt-studio-nav-ink .vt-sb-btn.is-active:hover {
+    color: #ffffff;
+  }
+
   /* Conversa recente ativa (ResearchHistoryPage, dentro da sidebar principal):
      mesmo tratamento do item de nav ativo acima — mesmo amarelo, mesma borda. */
   .vt-sb-recent-active {

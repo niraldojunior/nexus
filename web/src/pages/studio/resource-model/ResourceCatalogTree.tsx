@@ -64,6 +64,13 @@ export function ResourceCatalogTree({
   };
 
   const renderNode = (node: ResourceCatalogTreeNode, level: number) => {
+    // Fora do modo de edição (ou seja, depois de publicado), nós inativos somem da hierarquia —
+    // soft-delete (C6) preserva o histórico no banco, mas não deve mais aparecer na árvore para
+    // quem só está consultando. Em modo de edição eles continuam visíveis (com a tag "Inativo")
+    // para permitir reativação/gestão.
+    if (!isEditing && node.status === 'inactive') {
+      return null;
+    }
     if (filterText && !matchesFilter(node, filterText)) {
       return null;
     }

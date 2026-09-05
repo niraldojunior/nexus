@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   Database,
   FileStack,
@@ -153,6 +153,16 @@ export function StudioPage({
     setIsEditing(editing);
   }, []);
 
+  // Função de captura de draft registrada pelo Studio do domínio ativo (hoje só
+  // `ResourceModelStudio`; domínios sem captura própria simplesmente não registram nada, e o
+  // `beforePublish` vira um no-op). Um ref, não estado — não precisa provocar re-render, só
+  // precisa existir no momento em que `StudioGovernanceSummary` publica.
+  const captureDraftRef = useRef<(() => Promise<void>) | null>(null);
+  const handleRegisterCaptureDraft = useCallback((fn: (() => Promise<void>) | null) => {
+    captureDraftRef.current = fn;
+  }, []);
+  const handleBeforePublish = useCallback(() => captureDraftRef.current?.(), []);
+
   if (!activeItem) return null;
 
   return (
@@ -226,6 +236,7 @@ export function StudioPage({
                   canEdit={canEdit}
                   canAdmin={canAdmin}
                   onEditingChange={handleEditingChange}
+                  beforePublish={handleBeforePublish}
                 />
               ) : undefined
             }
@@ -233,7 +244,12 @@ export function StudioPage({
 
           {section === 'resource-model' ? (
             <div className="mt-5">
-              <ResourceModelStudio canEdit={canEdit} canAdmin={canAdmin} isEditing={isEditing} />
+              <ResourceModelStudio
+                canEdit={canEdit}
+                canAdmin={canAdmin}
+                isEditing={isEditing}
+                onRegisterCaptureDraft={handleRegisterCaptureDraft}
+              />
             </div>
           ) : section === 'location-model' ? (
             <div className="mt-5">

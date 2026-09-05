@@ -1,12 +1,5 @@
-import { useState, useEffect } from 'react';
-import {
-  Box,
-  Plus,
-  RefreshCw,
-  Save,
-  CheckCircle2,
-  AlertCircle,
-} from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Box, Plus, AlertCircle } from 'lucide-react';
 import type {
   ResourceCatalog,
   ResourceCatalogTreeNode,
@@ -54,16 +47,27 @@ export type ResourceModelStudioProps = {
   canAdmin: boolean;
   /** Existe um draft de governança aberto para o domínio "resource-model" (ver StudioPage). */
   isEditing: boolean;
+  /**
+   * Registra (ou desregistra, com `null`) a função que captura o estado atual do catálogo como
+   * draft de governança. `StudioPage` guarda essa função e a repassa a `StudioGovernanceSummary`
+   * como `beforePublish`, para que a hierarquia gravada seja sempre a mais recente no momento da
+   * publicação — nunca um draft esquecido/desatualizado (ver issue #214).
+   */
+  onRegisterCaptureDraft?: (fn: (() => Promise<void>) | null) => void;
 };
 
-export function ResourceModelStudio({ canEdit, isEditing }: ResourceModelStudioProps) {
+export function ResourceModelStudio({
+  canEdit,
+  isEditing,
+  onRegisterCaptureDraft,
+}: ResourceModelStudioProps) {
+  // Um catálogo por tenant — sem seletor. Assume-se sempre o catálogo padrão (ou o primeiro,
+  // se nenhum estiver marcado como padrão).
   const [catalogs, setCatalogs] = useState<ResourceCatalog[]>([]);
   const [selectedCatalogId, setSelectedCatalogId] = useState<string>('');
   const [tree, setTree] = useState<ResourceCatalogTreeNode[]>([]);
   const [selectedNode, setSelectedNode] = useState<ResourceCatalogNode | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [capturingDraft, setCapturingDraft] = useState(false);
-  const [draftSuccess, setDraftSuccess] = useState<string | null>(null);
 
   // Modals state
   const [formModalOpen, setFormModalOpen] = useState(false);
@@ -174,69 +178,54 @@ export function ResourceModelStudio({ canEdit, isEditing }: ResourceModelStudioP
     setFormModalOpen(true);
   };
 
-  // Capturar estado atual como draft do Studio
-  const handleCaptureAsDraft = async () => {
+  // Captura o estado atual do catálogo (que já reflete cada edição, gravada imediatamente via
+  // API) como snapshot do draft de governança. Não é mais acionada por um botão manual — o
+  // usuário podia editar a árvore, esquecer de "salvar como draft" e publicar um snapshot velho
+  // por cima da hierarquia real, destruindo-a (issue #214). Em vez disso, `StudioPage` registra
+  // esta função e a chama automaticamente logo antes de validar/publicar
+  // (`StudioGovernanceSummary.beforePublish`), garantindo que o que é publicado é sempre o
+  // estado vivo do catálogo. Erros propagam para quem chama, que já lida com eles.
+  const handleCaptureAsDraft = useCallback(async () => {
     if (!selectedCatalogId) return;
     const currentCat = catalogs.find((c) => c.id === selectedCatalogId);
     if (!currentCat) return;
 
-    try {
-      setCapturingDraft(true);
-      setError(null);
-      setDraftSuccess(null);
+    const allNodes = await listResourceCatalogNodes(selectedCatalogId, true);
+    const snapshot = {
+      catalog: {
+        id: currentCat.id,
+        code: currentCat.code,
+        name: currentCat.name,
+        description: currentCat.description,
+      },
+      nodes: allNodes.map((n) => ({
+        id: n.id,
+        code: n.code,
+        name: n.name,
+        description: n.description,
+        kind: n.kind,
+        resourceTypeId: n.resourceTypeId,
+        resourceTypeCode: n.resourceType?.code,
+        parentNodeId: n.parentNodeId ?? null,
+        sortOrder: n.sortOrder,
+        status: n.status,
+        metadata: n.metadata,
+      })),
+    };
 
-      const allNodes = await listResourceCatalogNodes(selectedCatalogId, true);
-      const snapshot = {
-        catalog: {
-          id: currentCat.id,
-          code: currentCat.code,
-          name: currentCat.name,
-          description: currentCat.description,
-        },
-        nodes: allNodes.map((n) => ({
-          id: n.id,
-          code: n.code,
-          name: n.name,
-          description: n.description,
-          kind: n.kind,
-          resourceTypeId: n.resourceTypeId,
-          resourceTypeCode: n.resourceType?.code,
-          parentNodeId: n.parentNodeId ?? null,
-          sortOrder: n.sortOrder,
-          status: n.status,
-          metadata: n.metadata,
-        })),
-      };
+    const status = await getStudioStatus('resource-model');
+    await saveStudioDraft('resource-model', snapshot, status.draftVersion?.checksum);
+  }, [selectedCatalogId, catalogs]);
 
-      const status = await getStudioStatus('resource-model');
-      await saveStudioDraft(
-        'resource-model',
-        snapshot,
-        status.draftVersion?.checksum,
-      );
-      setDraftSuccess('Snapshot do catálogo salvo como draft de governança!');
-      setTimeout(() => setDraftSuccess(null), 4000);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Falha ao salvar draft no Studio.');
-    } finally {
-      setCapturingDraft(false);
-    }
-  };
+  useEffect(() => {
+    onRegisterCaptureDraft?.(handleCaptureAsDraft);
+    return () => onRegisterCaptureDraft?.(null);
+  }, [handleCaptureAsDraft, onRegisterCaptureDraft]);
 
   const canMutate = canEdit && isEditing;
 
   return (
     <div className="space-y-4">
-      {draftSuccess && (
-        <div
-          className="flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
-          style={{ background: 'var(--status-green-soft)', color: 'var(--status-green)' }}
-        >
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          <span>{draftSuccess}</span>
-        </div>
-      )}
-
       {error && (
         <div
           className="flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
@@ -251,48 +240,7 @@ export function ResourceModelStudio({ canEdit, isEditing }: ResourceModelStudioP
       <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
         {/* Left: Árvore Hierárquica */}
         <div className="vt-card flex min-h-[560px] flex-col p-4">
-          <div className="mb-3 flex items-center gap-2 border-b border-app-border pb-3">
-            <select
-              id="catalog-select"
-              value={selectedCatalogId}
-              onChange={(e) => {
-                setSelectedCatalogId(e.target.value);
-                setSelectedNode(null);
-              }}
-              className="min-w-0 flex-1 rounded-[10px] border border-app-border bg-white px-2.5 py-1 text-[0.85rem] font-semibold text-app-text outline-none focus:border-app-accent"
-            >
-              {catalogs.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.code}) {c.isDefault ? '— Padrão' : ''}
-                </option>
-              ))}
-            </select>
-
-            {canEdit && (
-              <Button
-                variant="secondary"
-                size="sm"
-                iconLeft={<Save className="h-4 w-4" />}
-                onClick={handleCaptureAsDraft}
-                disabled={capturingDraft}
-                title="Salvar como draft"
-              >
-                {capturingDraft ? 'Salvando…' : 'Salvar'}
-              </Button>
-            )}
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={reloadTree}
-              title="Recarregar árvore"
-              aria-label="Recarregar árvore"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          </div>
-
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex items-center justify-between border-b border-app-border pb-3">
             <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
               Hierarquia do catálogo
             </span>

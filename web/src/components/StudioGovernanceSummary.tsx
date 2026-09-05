@@ -18,6 +18,12 @@ export type StudioGovernanceSummaryProps = {
   canAdmin: boolean;
   /** Notifica o pai sempre que o modo de edição (existência de um draft aberto) mudar. */
   onEditingChange?: (editing: boolean) => void;
+  /**
+   * Chamado logo antes de validar/publicar, para que o domínio capture o estado vivo mais
+   * recente no draft (ex.: `ResourceModelStudio` grava cada edição direto nas tabelas canônicas,
+   * não no draft — sem isto, publicar gravaria um snapshot velho por cima da hierarquia real).
+   */
+  beforePublish?: () => Promise<void> | void;
 };
 
 type ModalErrorState = {
@@ -39,6 +45,7 @@ export function StudioGovernanceSummary({
   canEdit,
   canAdmin,
   onEditingChange,
+  beforePublish,
 }: StudioGovernanceSummaryProps) {
   const [status, setStatus] = useState<StudioStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,6 +113,10 @@ export function StudioGovernanceSummary({
     if (!draft) return;
     setBusy('publish');
     try {
+      // 0. Dá ao domínio a chance de capturar seu estado vivo mais recente no draft antes de
+      //    validar — ver doc de `beforePublish`.
+      await beforePublish?.();
+
       // 1. Valida o draft — sem botão "Validar" separado no fluxo; a validação ocorre
       //    automaticamente dentro do clique de publicação.
       const validation = await validateStudioDraft(domain);

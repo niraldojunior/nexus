@@ -537,7 +537,11 @@ export function ConfigurationPage() {
 
   return (
     <div className="flex h-full w-full items-stretch overflow-hidden max-md:flex-col">
-      <aside className="w-[185px] shrink-0 overflow-y-auto border-r border-app-border bg-app-sidebar px-[11px] py-[22px] max-md:w-full max-md:border-b max-md:border-r-0 max-md:px-5">
+      <aside className="w-[185px] shrink-0 overflow-y-auto border-r border-app-border bg-app-sidebar px-[11px] pb-[22px] pt-[42px] max-md:w-full max-md:border-b max-md:border-r-0 max-md:px-5">
+        {/* pt-[42px]: alinha o topo de "Configurações" com o topo do título da aba ativa
+            (ex.: "Usuários" em UsersTab/PageHead) — a seção de conteúdo tem py-8 (32px) e
+            o título fica dentro de uma caixa de 48px centralizada verticalmente
+            (ver PageHead), então o texto visualmente começa ~10px abaixo do padding. */}
         <p className="px-2 pb-2.5 text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
           Configurações
         </p>

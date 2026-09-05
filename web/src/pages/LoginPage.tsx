@@ -49,12 +49,12 @@ export default function LoginPage({ onSuccess }: { onSuccess?: () => void }) {
           <span className="font-display text-[2rem] font-semibold tracking-[-0.01em]">Nexus</span>
         </div>
         <div className="relative">
-          <h1 className="font-display text-[2rem] font-extrabold leading-[1.15] tracking-[-0.02em]">
+          <h1 className="font-display text-[2rem] font-extrabold leading-[1.15] tracking-[-0.02em] text-white">
             Inteligência de rede de <span className="text-app-accent">nova geração</span>.
           </h1>
           <p className="mt-4 max-w-md text-[0.9rem] leading-relaxed text-app-on-ink-muted">
-            Inventário de Redes da V.tal — Geosite, Logradouros, Geonet e Viabilidade unificados sob
-            arquitetura modular, API-first e padrão TM Forum.
+            Inventário Convergente - Locais, Infraestrutura Cívil, Recursos Lógicos e Físicos,
+            habilitando seu negócio a uma gestão inteligente agnóstica a indústria.
           </p>
           <div className="mt-6 flex gap-2.5">
             {['TM Forum', 'API-first', 'Escala nacional'].map((tag) => (

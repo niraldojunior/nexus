@@ -9,8 +9,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Presentation,
   Settings,
-  Shapes,
 } from 'lucide-react';
 import { PageId, RecentGroup, RecentItem } from '../types';
 import { ResearchHistoryPage } from '../pages/ResearchHistoryPage';
@@ -86,7 +86,7 @@ const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: LucideIcon }
   { id: 'resource', label: 'Recursos', icon: Boxes },
   { id: 'service', label: 'Serviços', icon: Briefcase },
   { id: 'order', label: 'Ordens', icon: FolderTree },
-  { id: 'studio', label: 'Studio', icon: Shapes },
+  { id: 'studio', label: 'Studio', icon: Presentation },
 ];
 
 const initialOf = (name?: string): string => name?.trim()?.[0]?.toUpperCase() ?? 'U';

@@ -1,22 +1,21 @@
 import {
-  Braces,
   Database,
   FileStack,
   Layers3,
   Map as MapIcon,
   MapPinned,
   Network,
-  Settings2,
+  Presentation,
   ShieldCheck,
   Users,
   Workflow,
   type LucideIcon,
 } from 'lucide-react';
-import { StudioGovernanceBar } from '../components/StudioGovernanceBar';
+import { StudioGovernanceSummary } from '../components/StudioGovernanceSummary';
 import { ResourceModelStudio } from './studio/resource-model/ResourceModelStudio';
 import { LocationModelStudio } from './studio/location-model/LocationModelStudio';
 import { SpatialStudio } from './studio/spatial/SpatialStudio';
-import { Badge, PageHead } from '../components/ui';
+import { PageHead } from '../components/ui';
 import type { StudioDomain } from '../services/studioApi';
 import type { StudioSection } from '../utils/appRoute';
 
@@ -145,28 +144,39 @@ export function StudioPage({
   const studioDomain = studioDomainBySection[section];
 
   return (
-    <div className="h-full overflow-y-auto bg-white px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+    <div
+      className="h-full overflow-y-auto bg-white px-[11px] py-4 sm:px-[17px] sm:py-6 lg:px-[22px]"
+      style={{
+        /* Glow radial verde ambiente atrás da janela Studio Control — pintado direto no
+           container mais externo (não num wrapper extra ao redor da `aside`) para não haver
+           nenhuma borda de caixa aninhada cortando o degradê pela metade. Ancorado no canto
+           onde a `aside` nasce (0% 0%) e com raio grande (1400px) para se espalhar por toda a
+           altura útil da página — como a `aside` é `sticky` e mais baixa que o conteúdo, um
+           glow do tamanho da própria `aside` parava seco onde ela termina; este cobre a coluna
+           inteira e esmaece suavemente antes de alcançar o conteúdo da direita. */
+        backgroundImage:
+          'radial-gradient(1400px circle at 0% 0%, rgba(18, 128, 92, 0.14) 0%, rgba(18, 128, 92, 0.05) 35%, rgba(18, 128, 92, 0) 62%)',
+        backgroundRepeat: 'no-repeat',
+      }}
+    >
       <div
-        className="mx-auto grid gap-5 lg:grid-cols-[252px_minmax(0,1fr)]"
+        className="relative mx-auto grid gap-5 lg:grid-cols-[202px_minmax(0,1fr)]"
         style={{ maxWidth: 'var(--content-max)' }}
       >
-        <aside className="vt-card h-fit p-3 lg:sticky lg:top-0">
+        <aside className="relative h-fit rounded-[10px] bg-app-ink p-3 text-app-on-ink shadow-soft lg:sticky lg:top-0">
           <div className="flex items-center gap-3 px-3 pb-4 pt-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-[14px] border border-app-accent-border bg-app-accent-soft text-app-text">
-              <Settings2 className="h-5 w-5" strokeWidth={1.8} />
+            <div className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-white/[0.08] text-app-accent">
+              <Presentation className="h-5 w-5" strokeWidth={1.8} />
             </div>
             <div>
-              <span
-                className="block"
-                style={{ font: 'var(--fw-semibold) var(--fs-body-lg)/1.2 var(--font-ui)', color: 'var(--text-primary)' }}
-              >
+              <span className="block" style={{ font: 'var(--text-h3)' }}>
                 Studio
               </span>
-              <p className="text-[0.78rem] text-app-muted">Control plane</p>
+              <p className="text-[0.78rem] text-app-on-ink-muted">Control</p>
             </div>
           </div>
 
-          <nav aria-label="Áreas do Studio" className="vt-studio-nav space-y-4">
+          <nav aria-label="Áreas do Studio" className="vt-studio-nav vt-studio-nav-ink space-y-4">
             {studioNavigation.map((group) => (
               <div key={group.label}>
                 <p className="vt-sb-group-label">{group.label}</p>
@@ -197,14 +207,16 @@ export function StudioPage({
           <PageHead
             title={activeItem.label}
             subtitle={activeItem.description}
-            actions={<StudioAccessBadge canEdit={canEdit} canAdmin={canAdmin} />}
+            actions={
+              studioDomain ? (
+                <StudioGovernanceSummary
+                  domain={studioDomain}
+                  canEdit={canEdit}
+                  canAdmin={canAdmin}
+                />
+              ) : undefined
+            }
           />
-
-          {studioDomain ? (
-            <div className="mt-5">
-              <StudioGovernanceBar domain={studioDomain} canEdit={canEdit} canAdmin={canAdmin} />
-            </div>
-          ) : null}
 
           {section === 'resource-model' ? (
             <div className="mt-5">
@@ -219,9 +231,11 @@ export function StudioPage({
               <SpatialStudio canEdit={canEdit} canAdmin={canAdmin} />
             </div>
           ) : (
-            <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="mt-5">
               <article className="vt-card p-5 sm:p-6">
-                <p style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Em preparação</p>
+                <p style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                  Em preparação
+                </p>
                 <h3 className="mt-2">A área será habilitada por contrato publicado</h3>
                 <p className="mt-3 max-w-2xl text-[0.95rem] leading-7 text-app-muted">
                   Esta fundação estabelece a navegação, o acesso e a superfície comum do Studio. Os
@@ -229,38 +243,10 @@ export function StudioPage({
                   publicadas de cada domínio estiverem prontos.
                 </p>
               </article>
-
-              <aside className="vt-card p-5">
-                <h3>Governança</h3>
-                <dl className="mt-4 space-y-3 text-[0.88rem]">
-                  <div className="flex items-center justify-between gap-3">
-                    <dt className="text-app-muted">Edição de draft</dt>
-                    <dd className="font-semibold text-app-text">{canEdit ? 'Permitida' : 'Somente leitura'}</dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <dt className="text-app-muted">Publicação</dt>
-                    <dd className="font-semibold text-app-text">{canAdmin ? 'Permitida' : 'Não permitida'}</dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <dt className="text-app-muted">Fonte operacional</dt>
-                    <dd className="font-semibold text-app-text">Published</dd>
-                  </div>
-                </dl>
-              </aside>
             </div>
           )}
         </section>
       </div>
     </div>
-  );
-}
-
-function StudioAccessBadge({ canEdit, canAdmin }: { canEdit: boolean; canAdmin: boolean }) {
-  const label = canAdmin ? 'Administrador' : canEdit ? 'Editor' : 'Leitura';
-  return (
-    <Badge tone={canAdmin ? 'brand' : canEdit ? 'blue' : 'neutral'}>
-      <Braces className="h-3.5 w-3.5" strokeWidth={1.8} />
-      {label}
-    </Badge>
   );
 }

@@ -9,7 +9,7 @@ const domains: Array<{ value: StudioDomain; label: string }> = [
   { value: 'resource-model', label: 'Modelo de recursos' },
   { value: 'location-model', label: 'Modelo de locais' },
   { value: 'spatial', label: 'Espacial' },
-  { value: 'geo-experience', label: 'Experiência GEO' },
+  { value: 'studio-geo', label: 'Locais' },
   { value: 'parties', label: 'Partes' },
   { value: 'reference-data', label: 'Dados de referência' },
   { value: 'rules-workflows', label: 'Regras e workflows' },

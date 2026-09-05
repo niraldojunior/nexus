@@ -15,6 +15,7 @@ import { StudioGovernanceSummary } from '../components/StudioGovernanceSummary';
 import { ResourceModelStudio } from './studio/resource-model/ResourceModelStudio';
 import { LocationModelStudio } from './studio/location-model/LocationModelStudio';
 import { SpatialStudio } from './studio/spatial/SpatialStudio';
+import EmptyState from '../components/EmptyState';
 import { PageHead } from '../components/ui';
 import type { StudioDomain } from '../services/studioApi';
 import type { StudioSection } from '../utils/appRoute';
@@ -23,7 +24,7 @@ const studioDomainBySection: Partial<Record<StudioSection, StudioDomain>> = {
   'resource-model': 'resource-model',
   'location-model': 'location-model',
   spatial: 'spatial',
-  'geo-experience': 'geo-experience',
+  'studio-geo': 'studio-geo',
   parties: 'parties',
   'reference-data': 'reference-data',
   'rules-workflows': 'rules-workflows',
@@ -70,8 +71,8 @@ const studioNavigation: StudioNavGroup[] = [
     label: 'Experiência',
     items: [
       {
-        id: 'geo-experience',
-        label: 'Experiência GEO',
+        id: 'studio-geo',
+        label: 'Locais',
         description: 'Camadas, estilos, escalas e informações de mapa.',
         icon: Layers3,
       },
@@ -232,17 +233,10 @@ export function StudioPage({
             </div>
           ) : (
             <div className="mt-5">
-              <article className="vt-card p-5 sm:p-6">
-                <p style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
-                  Em preparação
-                </p>
-                <h3 className="mt-2">A área será habilitada por contrato publicado</h3>
-                <p className="mt-3 max-w-2xl text-[0.95rem] leading-7 text-app-muted">
-                  Esta fundação estabelece a navegação, o acesso e a superfície comum do Studio. Os
-                  editores passam a ser disponibilizados quando os contratos, validações e versões
-                  publicadas de cada domínio estiverem prontos.
-                </p>
-              </article>
+              <EmptyState
+                title="Módulo em construção"
+                description={`A área de ${activeItem.label.toLowerCase()} ainda não foi implementada no Nexus.`}
+              />
             </div>
           )}
         </section>

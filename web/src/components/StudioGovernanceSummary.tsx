@@ -24,6 +24,14 @@ export type StudioGovernanceSummaryProps = {
    * não no draft — sem isto, publicar gravaria um snapshot velho por cima da hierarquia real).
    */
   beforePublish?: () => Promise<void> | void;
+  /**
+   * Chamado ao clicar em "Editar", para que o draft nasça com uma fotografia do estado vivo do
+   * domínio ("baseline"). É o que permite `handleCancel` restaurar de verdade em vez de só
+   * descartar a linha de governança — ver `discardDraft` em `src/modules/studio/service.ts`.
+   * Domínios sem captura própria (ex.: location-model, spatial) simplesmente não a registram, e
+   * o draft nasce com `{}` como hoje.
+   */
+  captureInitialSnapshot?: () => Promise<Record<string, unknown>>;
 };
 
 type ModalErrorState = {
@@ -46,6 +54,7 @@ export function StudioGovernanceSummary({
   canAdmin,
   onEditingChange,
   beforePublish,
+  captureInitialSnapshot,
 }: StudioGovernanceSummaryProps) {
   const [status, setStatus] = useState<StudioStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,7 +90,8 @@ export function StudioGovernanceSummary({
   const handleEdit = async () => {
     setBusy('edit');
     try {
-      await saveStudioDraft(domain, {});
+      const initialSnapshot = (await captureInitialSnapshot?.()) ?? {};
+      await saveStudioDraft(domain, initialSnapshot);
       await loadStatus();
     } catch (err) {
       setModalError({

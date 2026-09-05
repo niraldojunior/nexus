@@ -8,8 +8,11 @@ export type CharacteristicValue = string | number | boolean | Record<string, unk
 export type Characteristic = {
   group?: string;
   name: string;
+  description?: string;
   value: CharacteristicValue;
-  valueType?: 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'json';
+  valueType?: 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'list' | 'enum' | 'json';
+  /** Opções permitidas quando `valueType === 'list'` ou `'enum'`. */
+  allowedValues?: string[];
 };
 
 export type EntityRef = {

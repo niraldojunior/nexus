@@ -19,6 +19,7 @@ import type {
   ResourceCatalogQuery,
 } from './domain.js';
 import type { IResourceRepository, ResourceTenantScope } from './resource-repository-interface.js';
+import type { Characteristic } from '../../shared/tmf/index.js';
 import { RESOURCE_TYPES } from './catalog.js';
 import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
 
@@ -89,6 +90,17 @@ export class ResourceRepository implements IResourceRepository {
     // parâmetro existe para satisfazer a interface, sem filtrar.
     void scope;
     return [...this.resourceTypes.values()].map(cloneResourceType);
+  }
+
+  public updateResourceTypeCharacteristics(
+    id: string,
+    characteristics: Characteristic[],
+    scope?: ResourceTenantScope,
+  ): void {
+    void scope;
+    const type = [...this.resourceTypes.values()].find((candidate) => candidate.id === id);
+    if (!type) return;
+    this.resourceTypes.set(type.code, { ...type, resourceTypeCharacteristic: characteristics });
   }
 
   public upsertResourceCatalog(catalog: ResourceCatalog): ResourceCatalog {

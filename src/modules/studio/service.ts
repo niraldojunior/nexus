@@ -140,6 +140,10 @@ export class StudioService {
         versionNumber,
         status: 'draft',
         snapshot,
+        // Fotografia do estado vivo do domínio no instante em que o draft nasce — nunca
+        // atualizada depois (só a criação passa por aqui; o ramo `existingDraft` acima não toca
+        // este campo). É o que `discardDraft` usa para restaurar o domínio ao cancelar.
+        baselineSnapshot: snapshot,
         checksum,
         ...(workspace.publishedVersionId ? { baseVersionId: workspace.publishedVersionId } : {}),
         createdAt: now,
@@ -243,6 +247,17 @@ export class StudioService {
         draft.checksum,
       );
       if (!discarded) this.throwPreconditionFailed();
+
+      // Revert real: cada ação do domínio já gravou imediatamente nas tabelas canônicas (sem
+      // draft em memória), então "Cancelar" só descartar a linha de governança deixaria as
+      // mudanças em pé. Restaura o estado vivo capturado no "Editar" reaproveitando o mesmo
+      // `materialize()` do publish — se não houver baseline (drafts criados antes desta
+      // mudança, ou domínios que não capturam estado inicial), não há o que restaurar.
+      if (discarded.baselineSnapshot) {
+        const adapter = this.adapterFor(domain);
+        await adapter.materialize(discarded.baselineSnapshot, { tenantId: workspace.tenantId });
+      }
+
       await this.repository.upsertWorkspace({
         ...withoutDraft(workspace),
         updatedAt: now,

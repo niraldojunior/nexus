@@ -1696,10 +1696,30 @@ const MIGRATIONS_SQL_V3_STUDIO = `
     ON studio_audit_log(tenant_id, domain, event_time DESC);
 `;
 
+// Estado vivo do domínio no instante em que o draft foi aberto ("Editar"), gravado uma única vez
+// na criação do draft e nunca mais atualizado. Permite `discardDraft` restaurar o domínio ao
+// estado anterior à edição (revert real de "Cancelar" — issue de UX: cancelar não desfazia nada).
+const MIGRATIONS_SQL_V4_STUDIO_BASELINE = `
+  ALTER TABLE studio_version ADD COLUMN IF NOT EXISTS baseline_snapshot TEXT;
+`;
+
+// Características que definem um tipo de recurso — o contrato estrutural herdado por toda
+// `ResourceSpecification` do tipo (issue #216). JSON, mesmo tratamento dado a
+// `tmf_resource_specification.characteristics`.
+const MIGRATIONS_SQL_V5_RESOURCE_TYPE_CHARACTERISTICS = `
+  ALTER TABLE tmf_resource_type ADD COLUMN IF NOT EXISTS characteristics TEXT;
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
   { version: 3, name: 'studio-governance-kernel', sql: MIGRATIONS_SQL_V3_STUDIO },
+  { version: 4, name: 'studio-baseline-snapshot', sql: MIGRATIONS_SQL_V4_STUDIO_BASELINE },
+  {
+    version: 5,
+    name: 'resource-type-characteristics',
+    sql: MIGRATIONS_SQL_V5_RESOURCE_TYPE_CHARACTERISTICS,
+  },
 ];
 
 /**

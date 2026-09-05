@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, Plus, AlertCircle, Search } from 'lucide-react';
 import type {
   ResourceCatalog,
@@ -6,7 +6,6 @@ import type {
   ResourceCatalogNode,
   CreateResourceCatalogNodeInput,
   UpdateResourceCatalogNodeInput,
-  MoveResourceCatalogNodeInput,
 } from '../../../services/resourceCatalogApi';
 import {
   listResourceCatalogs,
@@ -15,6 +14,7 @@ import {
   updateResourceCatalogNode,
   deleteResourceCatalogNode,
   moveResourceCatalogNode,
+  reorderResourceCatalogNodes,
   listResourceCatalogNodes,
 } from '../../../services/resourceCatalogApi';
 import {
@@ -25,7 +25,6 @@ import { Button } from '../../../components/ui';
 import { ResourceCatalogTree } from './ResourceCatalogTree';
 import { ResourceNodeDetail } from './ResourceNodeDetail';
 import { ResourceNodeFormModal } from './ResourceNodeFormModal';
-import { ResourceNodeMoveModal } from './ResourceNodeMoveModal';
 import { ResourceNodeImpactModal } from './ResourceNodeImpactModal';
 
 const findNodeById = (
@@ -54,12 +53,21 @@ export type ResourceModelStudioProps = {
    * publicação — nunca um draft esquecido/desatualizado (ver issue #214).
    */
   onRegisterCaptureDraft?: (fn: (() => Promise<void>) | null) => void;
+  /**
+   * Registra (ou desregistra, com `null`) a função que apenas monta — sem salvar — o snapshot do
+   * estado vivo atual do catálogo. `StudioPage` guarda essa função e a repassa a
+   * `StudioGovernanceSummary` como `captureInitialSnapshot`, chamada no clique de "Editar" para
+   * que o draft nasça com uma fotografia ("baseline") do estado anterior à edição — é o que
+   * permite "Cancelar" restaurar de verdade em vez de só descartar a versão de governança.
+   */
+  onRegisterCaptureInitialSnapshot?: (fn: (() => Promise<Record<string, unknown>>) | null) => void;
 };
 
 export function ResourceModelStudio({
   canEdit,
   isEditing,
   onRegisterCaptureDraft,
+  onRegisterCaptureInitialSnapshot,
 }: ResourceModelStudioProps) {
   // Um catálogo por tenant — sem seletor. Assume-se sempre o catálogo padrão (ou o primeiro,
   // se nenhum estiver marcado como padrão).
@@ -75,9 +83,6 @@ export function ResourceModelStudio({
   const [formModalOpen, setFormModalOpen] = useState(false);
   const [formParentNode, setFormParentNode] = useState<ResourceCatalogNode | null>(null);
   const [formEditingNode, setFormEditingNode] = useState<ResourceCatalogNode | null>(null);
-
-  const [moveModalOpen, setMoveModalOpen] = useState(false);
-  const [movingNode, setMovingNode] = useState<ResourceCatalogNode | null>(null);
 
   const [impactModalOpen, setImpactModalOpen] = useState(false);
   const [impactingNode, setImpactingNode] = useState<ResourceCatalogNode | null>(null);
@@ -149,28 +154,50 @@ export function ResourceModelStudio({
     setSelectedNode(updated);
   };
 
-  const handleMoveNode = async (input: MoveResourceCatalogNodeInput) => {
-    if (!selectedCatalogId || !movingNode) return;
-    const moved = await moveResourceCatalogNode(selectedCatalogId, movingNode.id, input);
+  const handleUpdateSelectedNode = async (input: UpdateResourceCatalogNodeInput) => {
+    if (!selectedCatalogId || !selectedNode) return;
+    const updated = await updateResourceCatalogNode(
+      selectedCatalogId,
+      selectedNode.id,
+      input,
+    );
     await reloadTree();
-    setSelectedNode(moved);
+    setSelectedNode(updated);
   };
 
   const handleDirectMove = async (
     nodeId: string,
     parentNodeId: string | null,
-    sortOrder?: number,
+    orderedSiblingIds?: string[],
   ) => {
     if (!selectedCatalogId) return;
     try {
-      const moved = await moveResourceCatalogNode(selectedCatalogId, nodeId, {
-        parentNodeId,
-        sortOrder: sortOrder ?? 0,
-      });
+      const currentNode = findNodeById(tree, nodeId);
+      const isParentChange = !currentNode || (currentNode.parentNodeId ?? null) !== parentNodeId;
+
+      let moved: ResourceCatalogNode | null = null;
+      if (isParentChange) {
+        // Se mudou de pai ou virou raiz, move o nó para o novo pai
+        moved = await moveResourceCatalogNode(selectedCatalogId, nodeId, {
+          parentNodeId,
+          sortOrder: orderedSiblingIds ? orderedSiblingIds.indexOf(nodeId) : 0,
+        });
+      }
+
+      // Se foi passada a nova ordem de irmãos, grava a ordem de todos
+      if (orderedSiblingIds && orderedSiblingIds.length > 0) {
+        const reordered = await reorderResourceCatalogNodes(selectedCatalogId, {
+          parentNodeId,
+          orderedNodeIds: orderedSiblingIds,
+        });
+        const found = reordered.find((n) => n.id === nodeId);
+        if (found) moved = found;
+      }
+
       await reloadTree();
-      setSelectedNode(moved);
+      if (moved) setSelectedNode(moved);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Falha ao mover nó na hierarquia.');
+      setError(err instanceof Error ? err.message : 'Falha ao mover/reordenar nó na hierarquia.');
     }
   };
 
@@ -205,13 +232,13 @@ export function ResourceModelStudio({
   // esta função e a chama automaticamente logo antes de validar/publicar
   // (`StudioGovernanceSummary.beforePublish`), garantindo que o que é publicado é sempre o
   // estado vivo do catálogo. Erros propagam para quem chama, que já lida com eles.
-  const handleCaptureAsDraft = useCallback(async () => {
-    if (!selectedCatalogId) return;
+  const buildSnapshot = useCallback(async (): Promise<Record<string, unknown>> => {
+    if (!selectedCatalogId) return {};
     const currentCat = catalogs.find((c) => c.id === selectedCatalogId);
-    if (!currentCat) return;
+    if (!currentCat) return {};
 
     const allNodes = await listResourceCatalogNodes(selectedCatalogId, true);
-    const snapshot = {
+    return {
       catalog: {
         id: currentCat.id,
         code: currentCat.code,
@@ -232,15 +259,35 @@ export function ResourceModelStudio({
         metadata: n.metadata,
       })),
     };
+  }, [selectedCatalogId, catalogs]);
 
+  const handleCaptureAsDraft = useCallback(async () => {
+    const snapshot = await buildSnapshot();
     const status = await getStudioStatus('resource-model');
     await saveStudioDraft('resource-model', snapshot, status.draftVersion?.checksum);
-  }, [selectedCatalogId, catalogs]);
+  }, [buildSnapshot]);
 
   useEffect(() => {
     onRegisterCaptureDraft?.(handleCaptureAsDraft);
     return () => onRegisterCaptureDraft?.(null);
   }, [handleCaptureAsDraft, onRegisterCaptureDraft]);
+
+  useEffect(() => {
+    onRegisterCaptureInitialSnapshot?.(buildSnapshot);
+    return () => onRegisterCaptureInitialSnapshot?.(null);
+  }, [buildSnapshot, onRegisterCaptureInitialSnapshot]);
+
+  // Ao encerrar a edição (draft publicado ou cancelado — em ambos os casos o backend acabou de
+  // gravar um estado novo nas tabelas canônicas), recarrega a árvore para refletir o resultado.
+  // Sem isto, depois de um "Cancelar" bem-sucedido a tela continuaria mostrando o estado
+  // pré-restauração até alguma outra ação forçar reload.
+  const wasEditingRef = useRef(isEditing);
+  useEffect(() => {
+    if (wasEditingRef.current && !isEditing) {
+      reloadTree();
+    }
+    wasEditingRef.current = isEditing;
+  }, [isEditing]);
 
   const canMutate = canEdit && isEditing;
 
@@ -257,10 +304,10 @@ export function ResourceModelStudio({
       )}
 
       {/* Main Master/Detail Layout */}
-      <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
+      <div className="grid gap-5 lg:grid-cols-[342px_minmax(0,1fr)]">
         {/* Left: Árvore Hierárquica */}
         <div className="vt-card flex min-h-[560px] flex-col p-4">
-          <div className="mb-3 flex items-center justify-between border-b border-app-border pb-3">
+          <div className="mb-3 flex items-center justify-between">
             <h3 className="font-bold">Hierarquia</h3>
             <div className="flex items-center gap-2">
               <Button
@@ -298,11 +345,6 @@ export function ResourceModelStudio({
                 setFormParentNode(parent);
                 setFormModalOpen(true);
               }}
-              onEditNode={(n) => {
-                setFormEditingNode(n);
-                setFormParentNode(null);
-                setFormModalOpen(true);
-              }}
               onImpactNode={(n) => {
                 setImpactingNode(n);
                 setImpactModalOpen(true);
@@ -322,19 +364,11 @@ export function ResourceModelStudio({
               node={selectedNode}
               canEdit={canEdit}
               isEditing={isEditing}
-              onEdit={() => {
-                setFormEditingNode(selectedNode);
-                setFormParentNode(null);
-                setFormModalOpen(true);
-              }}
-              onMove={() => {
-                setMovingNode(selectedNode);
-                setMoveModalOpen(true);
-              }}
               onImpact={() => {
                 setImpactingNode(selectedNode);
                 setImpactModalOpen(true);
               }}
+              onUpdateNode={handleUpdateSelectedNode}
             />
           ) : (
             <div className="vt-card flex min-h-[560px] flex-col items-center justify-center p-12 text-center text-app-muted">
@@ -359,19 +393,6 @@ export function ResourceModelStudio({
         editingNode={formEditingNode}
         tree={tree}
       />
-
-      {movingNode && (
-        <ResourceNodeMoveModal
-          isOpen={moveModalOpen}
-          onClose={() => {
-            setMoveModalOpen(false);
-            setMovingNode(null);
-          }}
-          onMove={handleMoveNode}
-          node={movingNode}
-          tree={tree}
-        />
-      )}
 
       {impactingNode && selectedCatalogId && (
         <ResourceNodeImpactModal

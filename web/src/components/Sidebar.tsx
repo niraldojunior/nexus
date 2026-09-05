@@ -82,7 +82,7 @@ interface SidebarProps {
 const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: LucideIcon }> = [
   { id: 'research', label: 'Nova Conversa', icon: Plus },
   { id: 'conversations', label: 'Conversas', icon: MessagesSquare },
-  { id: 'geo', label: 'Locais', icon: MapPinned },
+  { id: 'geo', label: 'Mapa', icon: MapPinned },
   { id: 'resource', label: 'Recursos', icon: Boxes },
   { id: 'service', label: 'Serviços', icon: Briefcase },
   { id: 'order', label: 'Ordens', icon: FolderTree },

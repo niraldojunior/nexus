@@ -12,6 +12,7 @@ export default function Modal({
   onClose,
   width = 480,
   ariaLabel,
+  closeOnClickOutside = false,
 }: {
   title?: ReactNode;
   children: ReactNode;
@@ -19,11 +20,12 @@ export default function Modal({
   onClose: () => void;
   width?: number;
   ariaLabel?: string;
+  closeOnClickOutside?: boolean;
 }) {
   return (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30"
-      onClick={onClose}
+      onClick={closeOnClickOutside ? onClose : undefined}
       role="dialog"
       aria-modal="true"
       aria-label={ariaLabel ?? (typeof title === 'string' ? title : undefined)}

@@ -6,10 +6,10 @@ import Button from '../../components/ui/Button';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 
 const domains: Array<{ value: StudioDomain; label: string }> = [
-  { value: 'resource-model', label: 'Modelo de recursos' },
-  { value: 'location-model', label: 'Modelo de locais' },
-  { value: 'spatial', label: 'Espacial' },
-  { value: 'studio-geo', label: 'Locais' },
+  { value: 'resource-model', label: 'Recursos' },
+  { value: 'location-model', label: 'Locais' },
+  { value: 'spatial', label: 'Camadas' },
+  { value: 'studio-geo', label: 'Mapa' },
   { value: 'parties', label: 'Partes' },
   { value: 'reference-data', label: 'Dados de referência' },
   { value: 'rules-workflows', label: 'Regras e workflows' },

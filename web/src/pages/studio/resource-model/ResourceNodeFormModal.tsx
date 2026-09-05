@@ -79,17 +79,39 @@ export function ResourceNodeFormModal({
   };
   collectGroups(tree);
 
+  const isDuplicateCodeInTree = (
+    nodes: ResourceCatalogTreeNode[],
+    targetCode: string,
+    excludeId?: string,
+  ): boolean => {
+    const term = targetCode.trim().toLowerCase();
+    for (const n of nodes) {
+      if (n.code.trim().toLowerCase() === term && n.id !== excludeId) {
+        return true;
+      }
+      if (n.children && isDuplicateCodeInTree(n.children, targetCode, excludeId)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (!name.trim()) {
-      setError('O nome é obrigatório.');
+    if (!code.trim()) {
+      setError('O código é obrigatório.');
       return;
     }
 
-    if (!isEditing && !code.trim()) {
-      setError('O código é obrigatório.');
+    if (isDuplicateCodeInTree(tree, code, editingNode?.id)) {
+      setError('Este código já está em uso por outro nó neste catálogo.');
+      return;
+    }
+
+    if (!name.trim()) {
+      setError('O nome é obrigatório.');
       return;
     }
 
@@ -102,6 +124,7 @@ export function ResourceNodeFormModal({
       setSubmitting(true);
       if (isEditing && onSubmitUpdate) {
         await onSubmitUpdate({
+          code: code.trim(),
           name: name.trim(),
           description: description.trim() || undefined,
         });
@@ -219,20 +242,18 @@ export function ResourceNodeFormModal({
             </div>
           )}
 
-          {!isEditing && (
-            <div>
-              <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
-                Código (Identificador único no catálogo) *
-              </label>
-              <input
-                type="text"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="Ex.: gpon_access, cto_distribution..."
-                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-mono text-app-text outline-none focus:border-app-accent"
-              />
-            </div>
-          )}
+          <div>
+            <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
+              Código (Identificador único no catálogo) *
+            </label>
+            <input
+              type="text"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="Ex.: gpon_access, cto_distribution..."
+              className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-mono text-app-text outline-none focus:border-app-accent"
+            />
+          </div>
 
           <div>
             <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">

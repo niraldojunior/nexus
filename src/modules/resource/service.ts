@@ -23,6 +23,7 @@ import type {
   ResourceCatalogTreeNode,
   ResourceType,
   ResourceTypeCatalogContext,
+  UpdateResourceTypeInput,
   ResourceSpecification,
   ResourceSpecificationBulkItem,
   ResourceSpecificationBulkItemResult,
@@ -109,7 +110,7 @@ export class ResourceService {
         name: resourceType.name,
         '@referredType': 'ResourceType',
       },
-      resourceSpecificationCharacteristic: assertCanonicalSpecificationCharacteristics(
+      resourceSpecificationCharacteristic: assertCanonicalCharacteristics(
         input.resourceSpecificationCharacteristic ?? [],
       ),
       relatedParty: await normalizeSpecificationRelatedParties(
@@ -160,7 +161,7 @@ export class ResourceService {
             },
           }
         : {}),
-      resourceSpecificationCharacteristic: assertCanonicalSpecificationCharacteristics(
+      resourceSpecificationCharacteristic: assertCanonicalCharacteristics(
         input.resourceSpecificationCharacteristic ?? current.resourceSpecificationCharacteristic,
       ),
       relatedParty:
@@ -257,6 +258,30 @@ export class ResourceService {
     const tenantId =
       context?.tenantId && context.tenantId !== 'default' ? context.tenantId : 'vtal';
     return await this.repository.listResourceTypes({ tenantId });
+  }
+
+  /**
+   * Único campo mutável de `ResourceType` hoje (issue #216) — as características que definem o
+   * tipo, herdadas por toda `ResourceSpecification` vinculada. Nome/código/categoria continuam
+   * fora de escopo (CRUD completo é trabalho futuro, ver comentário abaixo).
+   */
+  public async updateResourceType(
+    id: string,
+    input: UpdateResourceTypeInput,
+    context?: RequestContext,
+  ): Promise<ResourceType> {
+    const current = await this.getResourceTypeByIdOrThrow(id);
+    const characteristics = assertCanonicalCharacteristics(input.resourceTypeCharacteristic);
+    await this.repository.updateResourceTypeCharacteristics(id, characteristics, scopeOf(context));
+    const updated: ResourceType = { ...current, resourceTypeCharacteristic: characteristics };
+    await this.emit(
+      'ResourceTypeAttributeValueChangeEvent',
+      updated.id,
+      'ResourceType',
+      updated,
+      context,
+    );
+    return updated;
   }
 
   // --- Árvore dinâmica de catálogo (issue #188) -------------------------------------------------
@@ -462,8 +487,28 @@ export class ResourceService {
   ): Promise<ResourceCatalogNode> {
     const current = await this.getResourceCatalogNodeOrThrow(catalogId, nodeId, context);
     if (input.name !== undefined) assertName(input.name);
+    if (input.code !== undefined) {
+      assertName(input.code, 'code');
+      const newCode = input.code.trim();
+      if (newCode !== current.code) {
+        const tenantId = tenantOf(context);
+        const duplicate = await this.repository.getResourceCatalogNodeByCode(
+          current.catalogId,
+          newCode,
+          { tenantId },
+        );
+        if (duplicate && duplicate.id !== current.id) {
+          throw new AppError('resource catalog node code already exists', {
+            code: 'RESOURCE_CATALOG_NODE_CODE_DUPLICATE',
+            statusCode: 409,
+          });
+        }
+      }
+    }
+
     const updated = await this.repository.upsertResourceCatalogNode({
       ...current,
+      code: input.code !== undefined ? input.code.trim() : current.code,
       name: input.name?.trim() ?? current.name,
       status: input.status ?? current.status,
       ...(input.metadata !== undefined
@@ -1749,14 +1794,16 @@ const buildTimePeriod = (
   return period;
 };
 
-const assertCanonicalSpecificationCharacteristics = (
-  characteristics: ResourceSpecification['resourceSpecificationCharacteristic'],
-): ResourceSpecification['resourceSpecificationCharacteristic'] => {
+// Compartilhada entre ResourceSpecification e ResourceType (issue #216) — os dois modelam o
+// mesmo conceito TMF (`Characteristic[]`), então a mesma lista de nomes proibidos vale nos dois
+// níveis: `manufacturer`/`networkType` já são campos de primeira classe (relatedParty/categoryCode),
+// não fazem sentido como characteristic solto em nenhum dos dois.
+const assertCanonicalCharacteristics = <T extends { name: string }>(characteristics: T[]): T[] => {
   const forbidden = characteristics.find(
     (characteristic) => characteristic.name === 'manufacturer' || characteristic.name === 'networkType',
   );
   if (forbidden) {
-    throw new AppError(`${forbidden.name} is not a ResourceSpecification characteristic`, {
+    throw new AppError(`${forbidden.name} is not a canonical characteristic`, {
       code: 'RESOURCE_SPEC_CHARACTERISTIC_FORBIDDEN',
       statusCode: 400,
     });

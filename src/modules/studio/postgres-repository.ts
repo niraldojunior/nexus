@@ -19,6 +19,7 @@ type StudioVersionRow = {
   version_number: number;
   status: string;
   snapshot: string;
+  baseline_snapshot: string | null;
   checksum: string;
   validation: string | null;
   base_version_id: string | null;
@@ -91,8 +92,8 @@ export class PostgresStudioRepository implements IStudioRepository {
       params.push(scope.tenantId);
     }
     const row = await this.db.get<StudioVersionRow>(
-      `SELECT id, tenant_id, domain, version_number, status, snapshot, checksum, validation,
-              base_version_id, created_at, created_by, published_at, published_by,
+      `SELECT id, tenant_id, domain, version_number, status, snapshot, baseline_snapshot, checksum,
+              validation, base_version_id, created_at, created_by, published_at, published_by,
               discarded_at, discarded_by
        FROM studio_version WHERE ${conditions.join(' AND ')}`,
       params,
@@ -103,9 +104,10 @@ export class PostgresStudioRepository implements IStudioRepository {
   public async insertVersion(version: StudioVersion): Promise<StudioVersion> {
     await this.db.run(
       `INSERT INTO studio_version
-       (id, tenant_id, domain, version_number, status, snapshot, checksum, validation,
-        base_version_id, created_at, created_by, published_at, published_by, discarded_at, discarded_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, tenant_id, domain, version_number, status, snapshot, baseline_snapshot, checksum,
+        validation, base_version_id, created_at, created_by, published_at, published_by,
+        discarded_at, discarded_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         version.id,
         version.tenantId,
@@ -113,6 +115,7 @@ export class PostgresStudioRepository implements IStudioRepository {
         version.versionNumber,
         version.status,
         JSON.stringify(version.snapshot),
+        version.baselineSnapshot !== undefined ? JSON.stringify(version.baselineSnapshot) : null,
         version.checksum,
         version.validation ? JSON.stringify(version.validation) : null,
         version.baseVersionId ?? null,
@@ -163,8 +166,8 @@ export class PostgresStudioRepository implements IStudioRepository {
     const hasOffset = query?.offset !== undefined;
     const params: Array<string | number> = [tenantId, domain];
     const sql = [
-      `SELECT id, tenant_id, domain, version_number, status, snapshot, checksum, validation,
-              base_version_id, created_at, created_by, published_at, published_by,
+      `SELECT id, tenant_id, domain, version_number, status, snapshot, baseline_snapshot, checksum,
+              validation, base_version_id, created_at, created_by, published_at, published_by,
               discarded_at, discarded_by
        FROM studio_version WHERE tenant_id = ? AND domain = ?`,
       'ORDER BY version_number DESC',
@@ -260,6 +263,9 @@ export class PostgresStudioRepository implements IStudioRepository {
       versionNumber: row.version_number,
       status: row.status as StudioVersion['status'],
       snapshot: JSON.parse(row.snapshot) as Record<string, unknown>,
+      ...(row.baseline_snapshot
+        ? { baselineSnapshot: JSON.parse(row.baseline_snapshot) as Record<string, unknown> }
+        : {}),
       checksum: row.checksum,
       ...(row.validation ? { validation: JSON.parse(row.validation) } : {}),
       ...(row.base_version_id ? { baseVersionId: row.base_version_id } : {}),

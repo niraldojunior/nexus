@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Bot,
   Database,
   FileStack,
   Layers3,
@@ -20,6 +21,30 @@ import EmptyState from '../components/EmptyState';
 import { PageHead } from '../components/ui';
 import type { StudioDomain } from '../services/studioApi';
 import type { StudioSection } from '../utils/appRoute';
+
+// Paleta que o quadro do ícone "Studio Control" (o `Presentation`, um quadro sobre cavalete)
+// percorre — puramente decorativo, por isso os hex ficam aqui em vez de token de design system
+// (§7 do AGENTS.md é para tokens semânticos de UI; isto é uma animação de vitrine, não um estado
+// da interface). 35% de opacidade em todas as cores para não competir com o ícone por cima.
+const STUDIO_EASEL_COLORS = [
+  '#7C5CE0',
+  '#12805C',
+  '#E8615C',
+  '#F0A32E',
+  '#FFD919',
+  '#3B82F6',
+  '#C08A2A',
+];
+const STUDIO_EASEL_OPACITY = 0.35;
+const STUDIO_EASEL_INTERVAL_MS = 5000;
+
+function hexToRgba(hex: string, alpha: number): string {
+  const value = hex.replace('#', '');
+  const r = parseInt(value.substring(0, 2), 16);
+  const g = parseInt(value.substring(2, 4), 16);
+  const b = parseInt(value.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 const studioDomainBySection: Partial<Record<StudioSection, StudioDomain>> = {
   'resource-model': 'resource-model',
@@ -50,21 +75,15 @@ const studioNavigation: StudioNavGroup[] = [
     items: [
       {
         id: 'resource-model',
-        label: 'Modelo de recursos',
+        label: 'Recursos',
         description: 'Catálogos, tipos, características e especificações.',
         icon: Network,
       },
       {
         id: 'location-model',
-        label: 'Modelo de locais',
+        label: 'Locais',
         description: 'Tipos de local e relações de contenção.',
         icon: MapPinned,
-      },
-      {
-        id: 'spatial',
-        label: 'Espacial',
-        description: 'Tipos de cobertura e objetos geográficos.',
-        icon: MapIcon,
       },
     ],
   },
@@ -73,15 +92,27 @@ const studioNavigation: StudioNavGroup[] = [
     items: [
       {
         id: 'studio-geo',
-        label: 'Locais',
+        label: 'Mapa',
         description: 'Camadas, estilos, escalas e informações de mapa.',
         icon: Layers3,
+      },
+      {
+        id: 'copilot',
+        label: 'Copilot',
+        description: 'Configurações, agentes, prompts e contexto do assistente IA.',
+        icon: Bot,
       },
     ],
   },
   {
     label: 'Dados mestres',
     items: [
+      {
+        id: 'spatial',
+        label: 'Camadas',
+        description: 'Tipos de cobertura e objetos geográficos.',
+        icon: MapIcon,
+      },
       {
         id: 'parties',
         label: 'Partes',
@@ -163,6 +194,31 @@ export function StudioPage({
   }, []);
   const handleBeforePublish = useCallback(() => captureDraftRef.current?.(), []);
 
+  // Função de captura do estado inicial ("baseline"), registrada pelo Studio do domínio ativo —
+  // espelha `captureDraftRef` acima, mas para o instante do "Editar" em vez do "Publicar". Ver
+  // doc de `onRegisterCaptureInitialSnapshot` em `ResourceModelStudio`.
+  const captureInitialSnapshotRef = useRef<(() => Promise<Record<string, unknown>>) | null>(null);
+  const handleRegisterCaptureInitialSnapshot = useCallback(
+    (fn: (() => Promise<Record<string, unknown>>) | null) => {
+      captureInitialSnapshotRef.current = fn;
+    },
+    [],
+  );
+  const handleCaptureInitialSnapshot = useCallback(
+    () => captureInitialSnapshotRef.current?.() ?? Promise.resolve({}),
+    [],
+  );
+
+  // Quadro do ícone "Studio Control" (aside): o fundo atrás do `Presentation` troca de cor a
+  // cada 5s, percorrendo STUDIO_EASEL_COLORS em looping.
+  const [easelColorIndex, setEaselColorIndex] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setEaselColorIndex((prev) => (prev + 1) % STUDIO_EASEL_COLORS.length);
+    }, STUDIO_EASEL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, []);
+
   if (!activeItem) return null;
 
   return (
@@ -187,7 +243,10 @@ export function StudioPage({
       >
         <aside className="relative h-fit rounded-[10px] bg-app-ink p-3 text-app-on-ink shadow-soft lg:sticky lg:top-0">
           <div className="flex items-center gap-3 px-3 pb-4 pt-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-white/[0.08] text-app-accent">
+            <div
+              className="flex h-10 w-10 items-center justify-center rounded-[14px] text-app-accent transition-colors duration-1000 ease-in-out"
+              style={{ backgroundColor: hexToRgba(STUDIO_EASEL_COLORS[easelColorIndex], STUDIO_EASEL_OPACITY) }}
+            >
               <Presentation className="h-5 w-5" strokeWidth={1.8} />
             </div>
             <div>
@@ -237,6 +296,7 @@ export function StudioPage({
                   canAdmin={canAdmin}
                   onEditingChange={handleEditingChange}
                   beforePublish={handleBeforePublish}
+                  captureInitialSnapshot={handleCaptureInitialSnapshot}
                 />
               ) : undefined
             }
@@ -249,6 +309,7 @@ export function StudioPage({
                 canAdmin={canAdmin}
                 isEditing={isEditing}
                 onRegisterCaptureDraft={handleRegisterCaptureDraft}
+                onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
               />
             </div>
           ) : section === 'location-model' ? (

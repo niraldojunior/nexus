@@ -273,3 +273,139 @@ test('ResourceModelStudioAdapter: republishing without parent info preserves the
   assert.equal(treeAfterSecond[0]?.children[0]?.code, 'child-preserve');
   assert.equal(treeAfterSecond[0]?.children[0]?.name, 'Filho Renomeado');
 });
+
+test('StudioService.discardDraft: restores the domain to the baseline captured when the draft was opened (revert real do "Cancelar")', async () => {
+  // Reproduz o fluxo real: cada mutação do Studio grava imediatamente nas tabelas canônicas
+  // (sem draft em memória). O "Editar" captura o estado vivo como `baselineSnapshot`; editar
+  // à vontade e depois "Cancelar" deve devolver exatamente esse estado — não apenas descartar a
+  // linha de governança.
+  const { studioService, resourceService } = createTestServices();
+
+  const catalog = await resourceService.createResourceCatalog(
+    { code: 'catalog-revert', name: 'Catálogo Revert' },
+    context,
+  );
+  const root = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'root-revert', name: 'Raiz', kind: 'GROUP', sortOrder: 0 },
+    context,
+  );
+  const groupA = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'group-a', name: 'Grupo A', kind: 'GROUP', parentNodeId: root.id, sortOrder: 0 },
+    context,
+  );
+  const groupB = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'group-b', name: 'Grupo B', kind: 'GROUP', parentNodeId: root.id, sortOrder: 1 },
+    context,
+  );
+  const movable = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'node-movable', name: 'Nó Móvel', kind: 'GROUP', parentNodeId: groupA.id, sortOrder: 0 },
+    context,
+  );
+  const toInactivate = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'node-to-inactivate', name: 'Nó a Inativar', kind: 'GROUP', parentNodeId: groupB.id, sortOrder: 0 },
+    context,
+  );
+
+  // "Editar": captura a baseline do estado vivo atual (o que `ResourceModelStudio.buildSnapshot`
+  // faria).
+  const allNodes = await resourceService.listResourceCatalogNodes(catalog.id, context, true);
+  const baseline = {
+    catalog: { id: catalog.id, code: catalog.code, name: catalog.name, description: catalog.description },
+    nodes: allNodes.map((n) => ({
+      id: n.id,
+      code: n.code,
+      name: n.name,
+      description: n.description,
+      kind: n.kind,
+      resourceTypeId: n.resourceTypeId,
+      resourceTypeCode: n.resourceType?.code,
+      parentNodeId: n.parentNodeId ?? null,
+      sortOrder: n.sortOrder,
+      status: n.status,
+      metadata: n.metadata,
+    })),
+  };
+  const draft = await studioService.saveDraft('resource-model', baseline as never, context);
+
+  // Diverge o catálogo enquanto o draft está aberto: cria, renomeia, move e inativa nós.
+  const createdDuringEdit = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'node-created-during-edit', name: 'Nó Novo', kind: 'GROUP', parentNodeId: root.id, sortOrder: 2 },
+    context,
+  );
+  await resourceService.updateResourceCatalogNode(
+    catalog.id,
+    groupA.id,
+    { code: 'group-a-renamed', name: 'Grupo A Renomeado' },
+    context,
+  );
+  await resourceService.moveResourceCatalogNode(
+    catalog.id,
+    movable.id,
+    { parentNodeId: groupB.id, sortOrder: 1 },
+    context,
+  );
+  await resourceService.deleteResourceCatalogNode(catalog.id, toInactivate.id, context);
+
+  // "Cancelar": descarta o draft — e deve restaurar o estado capturado na baseline.
+  await studioService.discardDraft('resource-model', context, draft.checksum);
+
+  const restoredNodes = await resourceService.listResourceCatalogNodes(catalog.id, context, true);
+  const byId = new Map(restoredNodes.map((n) => [n.id, n]));
+
+  // Renomeado durante a edição -> volta ao nome/código original.
+  assert.equal(byId.get(groupA.id)?.code, 'group-a');
+  assert.equal(byId.get(groupA.id)?.name, 'Grupo A');
+
+  // Movido durante a edição -> volta ao pai original.
+  assert.equal(byId.get(movable.id)?.parentNodeId, groupA.id);
+
+  // Inativado durante a edição -> reativado.
+  assert.equal(byId.get(toInactivate.id)?.status, 'active');
+
+  // Criado durante a edição, ausente da baseline -> inativado (poda), não apagado (C6).
+  assert.equal(byId.get(createdDuringEdit.id)?.status, 'inactive');
+});
+
+test('ResourceService.updateResourceType: persists resourceTypeCharacteristic (issue #216)', async () => {
+  const { resourceService } = createTestServices();
+  const types = await resourceService.listResourceTypes(context);
+  const ctoType = types.find((t) => t.code === 'CTO') ?? types[0]!;
+
+  const updated = await resourceService.updateResourceType(
+    ctoType.id,
+    {
+      resourceTypeCharacteristic: [
+        { name: 'portCount', value: 16, valueType: 'integer' },
+        { name: 'connectorType', value: 'SC/APC', valueType: 'string' },
+      ],
+    },
+    context,
+  );
+
+  assert.equal(updated.resourceTypeCharacteristic?.length, 2);
+  assert.equal(updated.resourceTypeCharacteristic?.[0]?.name, 'portCount');
+
+  // Persistido de fato — releitura via listResourceTypes reflete o novo estado.
+  const reloaded = (await resourceService.listResourceTypes(context)).find((t) => t.id === ctoType.id);
+  assert.equal(reloaded?.resourceTypeCharacteristic?.length, 2);
+});
+
+test('ResourceService.updateResourceType: rejects forbidden characteristic names (manufacturer/networkType)', async () => {
+  const { resourceService } = createTestServices();
+  const types = await resourceService.listResourceTypes(context);
+  const ctoType = types.find((t) => t.code === 'CTO') ?? types[0]!;
+
+  await assert.rejects(
+    resourceService.updateResourceType(
+      ctoType.id,
+      { resourceTypeCharacteristic: [{ name: 'manufacturer', value: 'Acme' }] },
+      context,
+    ),
+  );
+});

@@ -32,6 +32,9 @@ export type ResourceType = {
   categoryCode: string;
   description?: string;
   status: 'active' | 'inactive';
+  // Características que definem o tipo (issue #216) — herdadas por toda ResourceSpecification
+  // desse tipo. Único campo mutável de ResourceType hoje; ver updateResourceType.
+  resourceTypeCharacteristic?: ResourceCharacteristic[];
 };
 
 export type ResourceLayer = {
@@ -61,6 +64,8 @@ export type ResourceCharacteristic = {
   value: unknown;
   valueType?: string;
   group?: string;
+  description?: string;
+  allowedValues?: string[];
 };
 
 export type ResourceSpecification = {
@@ -129,13 +134,21 @@ export type ListParams = {
 
 export type ResourceSpecificationPayload = {
   name?: string;
+  // Campos legados (category/resourceType/resourceLayerId) — o backend os rejeita com 400
+  // RESOURCE_SPEC_FIELD_REMOVED (débito pré-existente em ResourceCatalogTab, fora de escopo aqui).
+  // Código novo deve usar resourceTypeId.
   category?: string;
   resourceType?: string;
   resourceLayerId?: string;
+  resourceTypeId?: string;
   description?: string;
   validFor?: TimePeriod;
   resourceSpecificationCharacteristic?: ResourceCharacteristic[];
   relatedParty?: Array<{ id: string; '@referredType': string; role?: string; name?: string }>;
+};
+
+export type UpdateResourceTypeInput = {
+  resourceTypeCharacteristic: ResourceCharacteristic[];
 };
 
 export type PhysicalResourcePayload = {
@@ -272,6 +285,16 @@ export async function updateResourceLayer(
 export async function deleteResourceLayer(id: string): Promise<ResourceLayer> {
   return await requestJson<ResourceLayer>(`/v1/resource-layers/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+  });
+}
+
+export async function updateResourceType(
+  id: string,
+  payload: UpdateResourceTypeInput,
+): Promise<ResourceType> {
+  return await requestJson<ResourceType>(`/v1/resource-types/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: cleanObject(payload),
   });
 }
 

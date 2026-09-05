@@ -99,7 +99,7 @@ test('primary navigation remains clickable when collapsed', async () => {
     onToggleResourceMenu,
   });
 
-  await user.click(screen.getByRole('button', { name: 'Locais' }));
+  await user.click(screen.getByRole('button', { name: 'Mapa' }));
   await user.click(screen.getByRole('button', { name: 'Recursos' }));
 
   expect(onSelectPage).toHaveBeenCalledWith('geo');

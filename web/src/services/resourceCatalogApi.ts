@@ -90,6 +90,7 @@ export type CreateResourceCatalogNodeInput = {
 };
 
 export type UpdateResourceCatalogNodeInput = {
+  code?: string;
   name?: string;
   description?: string;
   status?: ResourceCatalogStatus;

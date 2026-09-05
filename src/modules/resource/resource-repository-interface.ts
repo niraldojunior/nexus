@@ -20,6 +20,7 @@ import type {
   ResourceCatalogNode,
   ResourceCatalogQuery,
 } from './domain.js';
+import type { Characteristic } from '../../shared/tmf/index.js';
 
 // Escopo de tenant para leitura por id — as mesmas entidades cujo `list*` já aceita `tenantId`
 // na query.
@@ -52,6 +53,13 @@ export interface IResourceRepository {
   // permanece vocabulário fixo com `code` globalmente único, mas agora tenant-scoped na leitura
   // (`tmf_resource_type.tenant_id`) — default 'vtal' quando o chamador não informa escopo.
   listResourceTypes(scope?: ResourceTenantScope): Awaitable<ResourceType[]>;
+
+  // Único campo mutável de ResourceType hoje (issue #216) — ver `UpdateResourceTypeInput`.
+  updateResourceTypeCharacteristics(
+    id: string,
+    characteristics: Characteristic[],
+    scope?: ResourceTenantScope,
+  ): Awaitable<void>;
 
   // Árvore dinâmica de catálogo (issue #188) — sempre tenant-scoped. `resourceTypeId` em
   // ResourceType não existe: o mesmo ResourceType é global ao módulo (chave de negócio `code`),

@@ -156,6 +156,24 @@ export function ResourceModelStudio({
     setSelectedNode(moved);
   };
 
+  const handleDirectMove = async (
+    nodeId: string,
+    parentNodeId: string | null,
+    sortOrder?: number,
+  ) => {
+    if (!selectedCatalogId) return;
+    try {
+      const moved = await moveResourceCatalogNode(selectedCatalogId, nodeId, {
+        parentNodeId,
+        sortOrder: sortOrder ?? 0,
+      });
+      await reloadTree();
+      setSelectedNode(moved);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Falha ao mover nó na hierarquia.');
+    }
+  };
+
   const handleInactivateNode = async () => {
     if (!selectedCatalogId || !impactingNode) return;
     await deleteResourceCatalogNode(selectedCatalogId, impactingNode.id);
@@ -285,14 +303,11 @@ export function ResourceModelStudio({
                 setFormParentNode(null);
                 setFormModalOpen(true);
               }}
-              onMoveNode={(n) => {
-                setMovingNode(n);
-                setMoveModalOpen(true);
-              }}
               onImpactNode={(n) => {
                 setImpactingNode(n);
                 setImpactModalOpen(true);
               }}
+              onDirectMove={handleDirectMove}
               canEdit={canEdit}
               isEditing={isEditing}
             />

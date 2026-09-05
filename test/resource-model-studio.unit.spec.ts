@@ -169,3 +169,107 @@ test('ResourceModelStudioAdapter: publishes and materializes draft snapshot into
   assert.equal(tree[0]?.children[0]?.code, 'sub-cto');
   assert.equal(tree[0]?.children[0]?.kind, 'RESOURCE_TYPE');
 });
+
+test('ResourceModelStudioAdapter: materializes a snapshot linking parents by parentNodeId (UUID), the shape the real UI sends (issue #214)', async () => {
+  // O Studio real (`ResourceModelStudio.tsx: handleCaptureAsDraft`) nunca envia `parentCode` —
+  // só `id` + `parentNodeId`, ambos os UUIDs reais dos nós no momento da captura. Publicar isso
+  // chegou a derrubar a hierarquia inteira (todo nó virava raiz) porque a resolução de pai só
+  // sabia casar por código. Este teste reproduz exatamente essa forma de payload.
+  const { studioService, resourceService } = createTestServices();
+
+  const snapshot: ResourceModelSnapshot = {
+    catalog: {
+      code: 'catalog-studio-pub-by-id',
+      name: 'Catálogo Publicado por parentNodeId',
+    },
+    nodes: [
+      {
+        id: 'client-uuid-root',
+        code: 'root-uuid',
+        name: 'Planta GPON',
+        kind: 'GROUP',
+        parentNodeId: null,
+        sortOrder: 0,
+      },
+      {
+        id: 'client-uuid-child',
+        code: 'child-uuid',
+        name: 'Subgrupo',
+        kind: 'GROUP',
+        parentNodeId: 'client-uuid-root',
+        sortOrder: 0,
+      },
+      {
+        id: 'client-uuid-grandchild',
+        code: 'grandchild-uuid',
+        name: 'Distribuição',
+        kind: 'GROUP',
+        parentNodeId: 'client-uuid-child',
+        sortOrder: 0,
+      },
+    ],
+  };
+
+  const draft = await studioService.saveDraft('resource-model', snapshot as never, context);
+  const validation = await studioService.validateDraft('resource-model', context);
+  assert.equal(validation.valid, true);
+
+  const published = await studioService.publish('resource-model', context, draft.checksum);
+  assert.equal(published.status, 'published');
+
+  const catalog = await resourceService.getResourceCatalogByCode('catalog-studio-pub-by-id', context);
+  assert.ok(catalog);
+
+  const tree = await resourceService.getResourceCatalogTree(catalog.id, context, true);
+  assert.equal(tree.length, 1, 'apenas o nó raiz deve estar no nível 0 — os demais têm pai');
+  assert.equal(tree[0]?.code, 'root-uuid');
+  assert.equal(tree[0]?.children.length, 1);
+  assert.equal(tree[0]?.children[0]?.code, 'child-uuid');
+  assert.equal(tree[0]?.children[0]?.children.length, 1);
+  assert.equal(tree[0]?.children[0]?.children[0]?.code, 'grandchild-uuid');
+});
+
+test('ResourceModelStudioAdapter: republishing without parent info preserves the existing hierarchy instead of uprooting', async () => {
+  // Uma segunda publicação cujo snapshot omite `parentNodeId`/`parentCode` para um nó (ex.: um
+  // consumidor externo que só atualiza nome/status) não pode silenciosamente jogar esse nó pra
+  // raiz — a ausência de informação de pai não é o mesmo que "sem pai".
+  const { studioService, resourceService } = createTestServices();
+
+  const first: ResourceModelSnapshot = {
+    catalog: { code: 'catalog-studio-preserve', name: 'Catálogo Preserva Hierarquia' },
+    nodes: [
+      { id: 'r1', code: 'root-preserve', name: 'Raiz', kind: 'GROUP', parentNodeId: null, sortOrder: 0 },
+      {
+        id: 'c1',
+        code: 'child-preserve',
+        name: 'Filho',
+        kind: 'GROUP',
+        parentNodeId: 'r1',
+        sortOrder: 0,
+      },
+    ],
+  };
+  const draft1 = await studioService.saveDraft('resource-model', first as never, context);
+  await studioService.publish('resource-model', context, draft1.checksum);
+
+  const catalog = await resourceService.getResourceCatalogByCode('catalog-studio-preserve', context);
+  assert.ok(catalog);
+  const treeAfterFirst = await resourceService.getResourceCatalogTree(catalog.id, context, true);
+  assert.equal(treeAfterFirst[0]?.children[0]?.code, 'child-preserve');
+
+  // Segunda publicação: mesmo catálogo, nó `child-preserve` sem NENHUMA chave de pai.
+  const second: ResourceModelSnapshot = {
+    catalog: { code: 'catalog-studio-preserve', name: 'Catálogo Preserva Hierarquia' },
+    nodes: [
+      { code: 'root-preserve', name: 'Raiz', kind: 'GROUP', sortOrder: 0 } as never,
+      { code: 'child-preserve', name: 'Filho Renomeado', kind: 'GROUP', sortOrder: 0 } as never,
+    ],
+  };
+  const draft2 = await studioService.saveDraft('resource-model', second as never, context);
+  await studioService.publish('resource-model', context, draft2.checksum);
+
+  const treeAfterSecond = await resourceService.getResourceCatalogTree(catalog.id, context, true);
+  assert.equal(treeAfterSecond.length, 1, 'child-preserve não deve ter migrado para a raiz');
+  assert.equal(treeAfterSecond[0]?.children[0]?.code, 'child-preserve');
+  assert.equal(treeAfterSecond[0]?.children[0]?.name, 'Filho Renomeado');
+});

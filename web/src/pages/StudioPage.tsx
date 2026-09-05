@@ -1,3 +1,4 @@
+import { useCallback, useRef, useState } from 'react';
 import {
   Database,
   FileStack,
@@ -15,6 +16,7 @@ import { StudioGovernanceSummary } from '../components/StudioGovernanceSummary';
 import { ResourceModelStudio } from './studio/resource-model/ResourceModelStudio';
 import { LocationModelStudio } from './studio/location-model/LocationModelStudio';
 import { SpatialStudio } from './studio/spatial/SpatialStudio';
+import EmptyState from '../components/EmptyState';
 import { PageHead } from '../components/ui';
 import type { StudioDomain } from '../services/studioApi';
 import type { StudioSection } from '../utils/appRoute';
@@ -23,7 +25,7 @@ const studioDomainBySection: Partial<Record<StudioSection, StudioDomain>> = {
   'resource-model': 'resource-model',
   'location-model': 'location-model',
   spatial: 'spatial',
-  'geo-experience': 'geo-experience',
+  'studio-geo': 'studio-geo',
   parties: 'parties',
   'reference-data': 'reference-data',
   'rules-workflows': 'rules-workflows',
@@ -70,8 +72,8 @@ const studioNavigation: StudioNavGroup[] = [
     label: 'Experiência',
     items: [
       {
-        id: 'geo-experience',
-        label: 'Experiência GEO',
+        id: 'studio-geo',
+        label: 'Locais',
         description: 'Camadas, estilos, escalas e informações de mapa.',
         icon: Layers3,
       },
@@ -140,8 +142,28 @@ export function StudioPage({
   onSectionChange: (section: StudioSection) => void;
 }) {
   const activeItem = itemBySection.get(section) ?? itemBySection.get('resource-model');
+  const studioDomain = activeItem ? studioDomainBySection[section] : undefined;
+
+  // "Modo de edição" = existe um draft de governança aberto para o domínio ativo — um único
+  // conceito, elevado de `StudioGovernanceSummary` (que sabe quando o draft existe) até aqui,
+  // para repassar aos Studios de cada domínio (ex.: `ResourceModelStudio`) sem inventar um
+  // segundo toggle local.
+  const [isEditing, setIsEditing] = useState(false);
+  const handleEditingChange = useCallback((editing: boolean) => {
+    setIsEditing(editing);
+  }, []);
+
+  // Função de captura de draft registrada pelo Studio do domínio ativo (hoje só
+  // `ResourceModelStudio`; domínios sem captura própria simplesmente não registram nada, e o
+  // `beforePublish` vira um no-op). Um ref, não estado — não precisa provocar re-render, só
+  // precisa existir no momento em que `StudioGovernanceSummary` publica.
+  const captureDraftRef = useRef<(() => Promise<void>) | null>(null);
+  const handleRegisterCaptureDraft = useCallback((fn: (() => Promise<void>) | null) => {
+    captureDraftRef.current = fn;
+  }, []);
+  const handleBeforePublish = useCallback(() => captureDraftRef.current?.(), []);
+
   if (!activeItem) return null;
-  const studioDomain = studioDomainBySection[section];
 
   return (
     <div
@@ -213,6 +235,8 @@ export function StudioPage({
                   domain={studioDomain}
                   canEdit={canEdit}
                   canAdmin={canAdmin}
+                  onEditingChange={handleEditingChange}
+                  beforePublish={handleBeforePublish}
                 />
               ) : undefined
             }
@@ -220,7 +244,12 @@ export function StudioPage({
 
           {section === 'resource-model' ? (
             <div className="mt-5">
-              <ResourceModelStudio canEdit={canEdit} canAdmin={canAdmin} />
+              <ResourceModelStudio
+                canEdit={canEdit}
+                canAdmin={canAdmin}
+                isEditing={isEditing}
+                onRegisterCaptureDraft={handleRegisterCaptureDraft}
+              />
             </div>
           ) : section === 'location-model' ? (
             <div className="mt-5">
@@ -232,17 +261,10 @@ export function StudioPage({
             </div>
           ) : (
             <div className="mt-5">
-              <article className="vt-card p-5 sm:p-6">
-                <p style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
-                  Em preparação
-                </p>
-                <h3 className="mt-2">A área será habilitada por contrato publicado</h3>
-                <p className="mt-3 max-w-2xl text-[0.95rem] leading-7 text-app-muted">
-                  Esta fundação estabelece a navegação, o acesso e a superfície comum do Studio. Os
-                  editores passam a ser disponibilizados quando os contratos, validações e versões
-                  publicadas de cada domínio estiverem prontos.
-                </p>
-              </article>
+              <EmptyState
+                title="Módulo em construção"
+                description={`A área de ${activeItem.label.toLowerCase()} ainda não foi implementada no Nexus.`}
+              />
             </div>
           )}
         </section>

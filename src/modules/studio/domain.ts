@@ -11,7 +11,7 @@ export type StudioDomain =
   | 'resource-model'
   | 'location-model'
   | 'spatial'
-  | 'geo-experience'
+  | 'studio-geo'
   | 'parties'
   | 'reference-data'
   | 'rules-workflows'
@@ -21,7 +21,7 @@ export const STUDIO_DOMAINS: StudioDomain[] = [
   'resource-model',
   'location-model',
   'spatial',
-  'geo-experience',
+  'studio-geo',
   'parties',
   'reference-data',
   'rules-workflows',

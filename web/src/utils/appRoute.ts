@@ -21,7 +21,7 @@ export type StudioSection =
   | 'resource-model'
   | 'location-model'
   | 'spatial'
-  | 'geo-experience'
+  | 'studio-geo'
   | 'parties'
   | 'reference-data'
   | 'rules-workflows'
@@ -32,7 +32,7 @@ const STUDIO_SECTIONS: readonly StudioSection[] = [
   'resource-model',
   'location-model',
   'spatial',
-  'geo-experience',
+  'studio-geo',
   'parties',
   'reference-data',
   'rules-workflows',

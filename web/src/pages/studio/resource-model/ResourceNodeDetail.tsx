@@ -18,12 +18,14 @@ import {
   listResourceSpecifications,
 } from '../../../services/resourceCatalogApi';
 import type { ResourceSpecification } from '../../../services/resourceApi';
-import { Button, Badge } from '../../../components/ui';
+import { Button } from '../../../components/ui';
 
 export type ResourceNodeDetailProps = {
   catalogId: string;
   node: ResourceCatalogNode;
   canEdit: boolean;
+  /** Existe um draft de governança aberto — controla a visibilidade dos botões de mutação. */
+  isEditing: boolean;
   onEdit: () => void;
   onMove: () => void;
   onImpact: () => void;
@@ -35,6 +37,7 @@ export function ResourceNodeDetail({
   catalogId,
   node,
   canEdit,
+  isEditing,
   onEdit,
   onMove,
   onImpact,
@@ -87,38 +90,39 @@ export function ResourceNodeDetail({
   }, [catalogId, node]);
 
   const isGroup = node.kind === 'GROUP';
+  const pathString = path
+    ? path.nodes.length > 1
+      ? `/ ${path.nodes.slice(0, -1).map((n) => n.name).join(' / ')} /`
+      : '/'
+    : '';
 
   return (
     <div className="vt-card flex h-full flex-col overflow-hidden p-0">
       {/* Header */}
-      <div className="p-6 border-b border-app-border">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3.5">
+      <div className="border-b border-app-border p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
             <div
-              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] border ${
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border ${
                 isGroup
                   ? 'border-amber-200 bg-amber-50 text-amber-600'
                   : 'border-sky-200 bg-sky-50 text-sky-600'
               }`}
             >
-              {isGroup ? <Folder className="h-6 w-6" /> : <Box className="h-6 w-6" />}
+              {isGroup ? <Folder className="h-5 w-5" /> : <Box className="h-5 w-5" />}
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
-                  {isGroup ? 'Grupo de catálogo' : 'Tipo de recurso'}
-                </span>
-                <Badge tone={node.status === 'active' ? 'green' : 'red'} dot>
-                  {node.status === 'active' ? 'Ativo' : 'Inativo'}
-                </Badge>
-              </div>
-              <h2 className="mt-0.5">{node.name}</h2>
-              <p className="text-[0.82rem] font-mono text-app-muted mt-0.5">{node.code}</p>
+            <div className="min-w-0">
+              <h3 className="font-bold leading-tight text-app-text truncate">{node.name}</h3>
+              {pathString && (
+                <p className="text-[0.78rem] text-app-muted leading-tight mt-0.5 truncate font-normal">
+                  {pathString}
+                </p>
+              )}
             </div>
           </div>
 
-          {canEdit && (
-            <div className="flex items-center gap-2">
+          {canEdit && isEditing && (
+            <div className="flex items-center gap-2 shrink-0">
               <Button variant="secondary" size="sm" onClick={onMove}>
                 Mover
               </Button>
@@ -132,74 +136,61 @@ export function ResourceNodeDetail({
           )}
         </div>
 
-        {/* Caminho / Breadcrumb */}
-        {path && path.nodes.length > 0 && (
-          <div className="mt-4 flex items-center gap-1.5 text-[0.78rem] text-app-muted overflow-x-auto py-1">
-            <span className="font-semibold text-app-text">{path.catalog.name}</span>
-            {path.nodes.map((step) => (
-              <span key={step.id} className="flex items-center gap-1.5 shrink-0">
-                <span className="text-app-border">/</span>
-                <span className={step.id === node.id ? 'font-semibold text-app-accent' : ''}>
-                  {step.name}
+        {/* Tabs — segmented control pill */}
+        <div className="mt-3.5 flex">
+          <div className="inline-flex items-center rounded-xl bg-black/[0.04] p-1 gap-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab('overview')}
+              className={`rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
+                activeTab === 'overview'
+                  ? 'bg-white text-app-text font-semibold shadow-sm'
+                  : 'text-app-muted hover:text-app-text'
+              }`}
+            >
+              Visão Geral
+            </button>
+            {!isGroup && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('specifications')}
+                className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
+                  activeTab === 'specifications'
+                    ? 'bg-white text-app-text font-semibold shadow-sm'
+                    : 'text-app-muted hover:text-app-text'
+                }`}
+              >
+                Especificações
+                <span className="rounded-full bg-black/[0.06] px-1.5 py-0.2 text-[0.7rem]">
+                  {specifications.length}
                 </span>
-              </span>
-            ))}
+              </button>
+            )}
+            {!isGroup && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('context')}
+                className={`rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
+                  activeTab === 'context'
+                    ? 'bg-white text-app-text font-semibold shadow-sm'
+                    : 'text-app-muted hover:text-app-text'
+                }`}
+              >
+                Ocorrências na Árvore
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setActiveTab('impact')}
+              className={`rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
+                activeTab === 'impact'
+                  ? 'bg-white text-app-text font-semibold shadow-sm'
+                  : 'text-app-muted hover:text-app-text'
+              }`}
+            >
+              Impacto no Inventário
+            </button>
           </div>
-        )}
-
-        {/* Tabs */}
-        <div className="mt-6 flex gap-1 border-b border-app-border -mb-6">
-          <button
-            type="button"
-            onClick={() => setActiveTab('overview')}
-            className={`px-4 py-2.5 text-[0.85rem] font-medium transition border-b-2 -mb-px ${
-              activeTab === 'overview'
-                ? 'border-app-accent text-app-accent font-semibold'
-                : 'border-transparent text-app-muted hover:text-app-text'
-            }`}
-          >
-            Visão Geral
-          </button>
-          {!isGroup && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('specifications')}
-              className={`flex items-center gap-1.5 px-4 py-2.5 text-[0.85rem] font-medium transition border-b-2 -mb-px ${
-                activeTab === 'specifications'
-                  ? 'border-app-accent text-app-accent font-semibold'
-                  : 'border-transparent text-app-muted hover:text-app-text'
-              }`}
-            >
-              Especificações
-              <span className="rounded-full bg-black/[0.06] px-1.5 py-0.2 text-[0.72rem]">
-                {specifications.length}
-              </span>
-            </button>
-          )}
-          {!isGroup && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('context')}
-              className={`px-4 py-2.5 text-[0.85rem] font-medium transition border-b-2 -mb-px ${
-                activeTab === 'context'
-                  ? 'border-app-accent text-app-accent font-semibold'
-                  : 'border-transparent text-app-muted hover:text-app-text'
-              }`}
-            >
-              Ocorrências na Árvore
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setActiveTab('impact')}
-            className={`px-4 py-2.5 text-[0.85rem] font-medium transition border-b-2 -mb-px ${
-              activeTab === 'impact'
-                ? 'border-app-accent text-app-accent font-semibold'
-                : 'border-transparent text-app-muted hover:text-app-text'
-            }`}
-          >
-            Impacto no Inventário
-          </button>
         </div>
       </div>
 

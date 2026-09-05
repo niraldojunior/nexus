@@ -226,21 +226,17 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
 
     const snapshotNodes = typedSnapshot.nodes ?? [];
     const codeToIdMap = new Map<string, string>();
+    // `id` no snapshot é o id de origem (pode até já ser o id real, se o snapshot foi capturado
+    // do próprio catálogo materializado) — mapeia para o id real pós upsert/create, que é o que
+    // `moveResourceCatalogNode` precisa. Sem este mapa, resolver `parentNodeId` (um UUID) contra
+    // `codeToIdMap` (indexado por código) nunca casa — foi a causa da hierarquia inteira cair pra
+    // raiz numa publicação (issue #214): todo nó recebia `targetParentId = null` silenciosamente.
+    const snapshotIdToDbId = new Map<string, string>();
 
     // 4. Criação / atualização básica dos nós (sem parentNodeId definitivo inicialmente para garantir existência)
     for (let i = 0; i < snapshotNodes.length; i++) {
       const snapNode = snapshotNodes[i];
       if (!snapNode) continue;
-      let resolvedTypeId: string | undefined = undefined;
-
-      if (snapNode.kind === 'RESOURCE_TYPE') {
-        if (snapNode.resourceTypeId && typeById.has(snapNode.resourceTypeId)) {
-          resolvedTypeId = snapNode.resourceTypeId;
-        } else if (snapNode.resourceTypeCode && typeByCode.has(snapNode.resourceTypeCode)) {
-          resolvedTypeId = typeByCode.get(snapNode.resourceTypeCode)?.id;
-        }
-      }
-
       const existing = existingByCode.get(snapNode.code);
       if (existing) {
         const updateInput: UpdateResourceCatalogNodeInput = {
@@ -256,7 +252,25 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
           reqContext,
         );
         codeToIdMap.set(snapNode.code, updated.id);
+        if (snapNode.id) snapshotIdToDbId.set(snapNode.id, updated.id);
       } else {
+        let resolvedTypeId: string | undefined = undefined;
+        if (snapNode.kind === 'RESOURCE_TYPE') {
+          if (snapNode.resourceTypeId && typeById.has(snapNode.resourceTypeId)) {
+            resolvedTypeId = snapNode.resourceTypeId;
+          } else if (snapNode.resourceTypeCode && typeByCode.has(snapNode.resourceTypeCode)) {
+            resolvedTypeId = typeByCode.get(snapNode.resourceTypeCode)?.id;
+          } else {
+            // Falha cedo, antes de escrever qualquer coisa: sem isto, `resourceTypeId: ''` seguia
+            // para `createResourceCatalogNode`, que lança no meio do laço e deixa o catálogo
+            // parcialmente materializado (alguns nós criados, hierarquia do restante intocada).
+            throw new Error(
+              `Nó RESOURCE_TYPE '${snapNode.code}' referencia um tipo de recurso inexistente ` +
+                `(resourceTypeId=${snapNode.resourceTypeId ?? '—'}, resourceTypeCode=${snapNode.resourceTypeCode ?? '—'}).`,
+            );
+          }
+        }
+
         const nodePayload: CreateResourceCatalogNodeInput =
           snapNode.kind === 'RESOURCE_TYPE'
             ? {
@@ -283,6 +297,7 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
           reqContext,
         );
         codeToIdMap.set(snapNode.code, created.id);
+        if (snapNode.id) snapshotIdToDbId.set(snapNode.id, created.id);
       }
     }
 
@@ -293,11 +308,23 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
       const nodeId = codeToIdMap.get(snapNode.code);
       if (!nodeId) continue;
 
-      let targetParentId: string | null = null;
-      if (snapNode.parentNodeId && codeToIdMap.has(snapNode.parentNodeId)) {
-        targetParentId = snapNode.parentNodeId;
+      // Resolve o pai id-first (UUID do snapshot -> id real pós-materialização), depois por
+      // código. Só grava `null` (raiz) quando o snapshot afirma isso explicitamente — uma chave
+      // `parentNodeId`/`parentCode` presente mas vazia/nula. Se o nó não trouxer NENHUMA
+      // informação de pai (nem sequer a chave), a hierarquia existente do nó não é tocada — uma
+      // ausência não pode degradar silenciosamente em "vira raiz" (issue #214).
+      let targetParentId: string | null;
+      if (snapNode.parentNodeId && snapshotIdToDbId.has(snapNode.parentNodeId)) {
+        targetParentId = snapshotIdToDbId.get(snapNode.parentNodeId)!;
       } else if (snapNode.parentCode && codeToIdMap.has(snapNode.parentCode)) {
         targetParentId = codeToIdMap.get(snapNode.parentCode)!;
+      } else if (
+        Object.prototype.hasOwnProperty.call(snapNode, 'parentNodeId') ||
+        Object.prototype.hasOwnProperty.call(snapNode, 'parentCode')
+      ) {
+        targetParentId = null;
+      } else {
+        continue;
       }
 
       await this.resourceService.moveResourceCatalogNode(

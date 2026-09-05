@@ -241,9 +241,12 @@ export function ResourceModelStudio({
         {/* Left: Árvore Hierárquica */}
         <div className="vt-card flex min-h-[560px] flex-col p-4">
           <div className="mb-3 flex items-center justify-between border-b border-app-border pb-3">
-            <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
-              Hierarquia do catálogo
-            </span>
+            <div>
+              <h3>Hierarquia do catálogo</h3>
+              <p className="text-[0.78rem] text-app-muted">
+                Grupos e tipos de recurso, do genérico ao específico.
+              </p>
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-[0.75rem] text-app-muted font-mono">
                 {tree.length} nós raiz

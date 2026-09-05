@@ -243,10 +243,10 @@ export function ResourceModelStudio({
         {/* Left: Árvore Hierárquica */}
         <div className="vt-card flex min-h-[560px] flex-col p-4">
           <div className="mb-3 flex items-center justify-between border-b border-app-border pb-3">
+            <h3 className="font-bold">Hierarquia</h3>
             <div className="flex items-center gap-2">
-              <h3 className="font-bold">Hierarquia</h3>
               <Button
-                variant="secondary"
+                variant={showSearch ? 'secondary' : 'primary'}
                 size="sm"
                 onClick={() => setShowSearch((prev) => !prev)}
                 title={showSearch ? 'Ocultar busca' : 'Buscar nós'}
@@ -255,8 +255,6 @@ export function ResourceModelStudio({
               >
                 <Search className="h-4 w-4" />
               </Button>
-            </div>
-            <div className="flex items-center gap-2">
               {canMutate && (
                 <Button
                   variant="primary"

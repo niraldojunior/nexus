@@ -52,16 +52,15 @@ export function SortableHeader<K extends string>({
   const active = sort?.key === sortKey;
   const Icon = sort && sort.key === sortKey ? (sort.direction === 'asc' ? ChevronUp : ChevronDown) : ChevronsUpDown;
   return (
-    <th className={`px-5 py-4 font-semibold ${align === 'center' ? 'text-center' : ''}`}>
+    <th style={{ textAlign: align === 'center' ? 'center' : 'left' }}>
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className={`flex items-center gap-1 uppercase tracking-[0.08em] transition ${
-          align === 'center' ? 'mx-auto justify-center' : ''
-        } ${active ? 'text-app-text' : 'hover:text-app-text'}`}
+        className={`inline-flex items-center gap-1 transition ${align === 'center' ? 'mx-auto justify-center' : ''}`}
+        style={{ color: active ? 'var(--text-primary)' : 'inherit' }}
       >
         {label}
-        <Icon className={`h-3.5 w-3.5 ${active ? '' : 'opacity-40'}`} />
+        <Icon className="h-3.5 w-3.5" style={{ opacity: active ? 1 : 0.4 }} />
       </button>
     </th>
   );

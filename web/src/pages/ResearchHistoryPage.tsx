@@ -267,8 +267,8 @@ export const ResearchHistoryPage: React.FC<{
                   key={session.id}
                   className={`group relative flex h-[30px] items-center rounded-md px-2.5 text-left transition ${
                     activeSessionId === session.id
-                      ? 'bg-app-accent-soft text-app-text font-medium'
-                      : 'text-app-text hover:bg-neutral-100'
+                      ? 'vt-sb-recent-active text-app-text font-medium'
+                      : 'border border-transparent text-app-text hover:bg-neutral-100'
                   }`}
                   style={{ color: 'var(--sidebar-fg)' }}
                 >

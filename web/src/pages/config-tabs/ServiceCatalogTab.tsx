@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, Loader2, Pencil, Plus, Trash2, Upload, X } from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { Loader2, Pencil, Plus, Trash2, Upload, X } from 'lucide-react';
 import {
   createServiceSpecification,
   deleteServiceSpecification,
@@ -14,6 +13,10 @@ import ServiceSpecificationFields from '../../components/ServiceSpecificationFie
 import ServiceSpecificationCharacteristicsEditor from '../../components/ServiceSpecificationCharacteristicsEditor';
 import ServiceSpecificationBulkImportModal from '../../components/ServiceSpecificationBulkImportModal';
 import Field from '../../components/Field';
+import PageHead from '../../components/ui/PageHead';
+import Button from '../../components/ui/Button';
+import Modal from '../../components/ui/Modal';
+import { DataTablePagination } from '../../components/ui/DataTable';
 import { SERVICE_CATEGORY_DEFAULTS } from '../../data/serviceCatalogDefaults';
 import {
   buildServiceSpecificationPayload,
@@ -23,6 +26,37 @@ import {
   type ServiceSpecFormState,
 } from '../../utils/serviceSpecificationForm';
 import { SortableHeader, sortedBy, useSort } from './sortable';
+
+function ModalTitle({
+  eyebrow,
+  title,
+  onClose,
+}: {
+  eyebrow?: string;
+  title: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        {eyebrow ? (
+          <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+            {eyebrow}
+          </div>
+        ) : null}
+        <div className="mt-0.5 font-display text-[1.35rem] font-semibold text-app-text">{title}</div>
+      </div>
+      <button
+        type="button"
+        className="rounded-full p-2 text-app-muted transition hover:bg-app-accent-soft"
+        onClick={onClose}
+        aria-label="Fechar"
+      >
+        <X className="h-5 w-5" />
+      </button>
+    </div>
+  );
+}
 
 /**
  * Catálogo de Serviços (ServiceSpecification) em Configurações — reusa os campos e o payload do
@@ -173,31 +207,24 @@ export function ServiceCatalogTab() {
 
   return (
     <>
-      <div className="mb-5 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-[1.5rem] font-semibold text-app-text">
-            Catálogo de Serviços
-          </h1>
-          <p className="mt-1 text-[0.88rem] text-app-muted">
-            Especificações (ServiceSpecification) que tipam os serviços de cliente (CFS) e de rede
-            (RFS) do inventário.
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setBulkImportOpen(true)}
-            className="geo-btn secondary"
-          >
-            <Upload className="h-4 w-4" />
-            Carga em massa
-          </button>
-          <button type="button" onClick={openCreateModal} className="geo-btn primary">
-            <Plus className="h-4 w-4" />
-            Adicionar
-          </button>
-        </div>
-      </div>
+      <PageHead
+        title="Catálogo de Serviços"
+        subtitle="Especificações (ServiceSpecification) que tipam os serviços de cliente (CFS) e de rede (RFS) do inventário."
+        actions={
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => setBulkImportOpen(true)}
+              iconLeft={<Upload className="h-4 w-4" />}
+            >
+              Carga em massa
+            </Button>
+            <Button onClick={openCreateModal} iconLeft={<Plus className="h-4 w-4" />}>
+              Adicionar
+            </Button>
+          </div>
+        }
+      />
 
       {error ? (
         <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
@@ -229,8 +256,8 @@ export function ServiceCatalogTab() {
         </select>
       </div>
 
-      <div className="overflow-x-auto rounded-[20px] border border-app-border bg-white shadow-soft">
-        <table className="w-full min-w-[820px] table-fixed text-left">
+      <div className="vt-card vt-table-card" style={{ overflow: 'hidden', padding: 0 }}>
+        <table className="vt-table" style={{ minWidth: 820, tableLayout: 'fixed' }}>
           <colgroup>
             <col className="w-[26%]" />
             <col className="w-[10%]" />
@@ -240,7 +267,7 @@ export function ServiceCatalogTab() {
             <col className="w-[130px]" />
           </colgroup>
           <thead>
-            <tr className="border-b border-app-border bg-slate-50 text-[0.82rem] font-semibold text-app-muted">
+            <tr>
               <SortableHeader label="Especificação" sortKey="name" sort={sort} onSort={onSort} />
               <SortableHeader label="Camada" sortKey="serviceType" sort={sort} onSort={onSort} />
               <SortableHeader label="Categoria" sortKey="category" sort={sort} onSort={onSort} />
@@ -263,39 +290,29 @@ export function ServiceCatalogTab() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-5 py-4 text-[0.88rem] text-app-muted">
-                  Carregando…
-                </td>
+                <td colSpan={6}>Carregando…</td>
               </tr>
             ) : sortedSpecs.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-5 py-4 text-[0.88rem] text-app-muted">
-                  Nenhuma especificação cadastrada.
-                </td>
+                <td colSpan={6}>Nenhuma especificação cadastrada.</td>
               </tr>
             ) : (
               pagedSpecs.map((spec) => (
-                <tr
-                  key={spec.id}
-                  className="border-b border-app-border text-[0.88rem] text-app-text last:border-0"
-                >
-                  <td className="truncate px-5 py-3 font-medium" title={spec.name}>
+                <tr key={spec.id}>
+                  <td className="truncate font-medium" style={{ color: 'var(--text-primary)' }} title={spec.name}>
                     {spec.name}
                   </td>
-                  <td className="px-5 py-3 text-app-muted">{spec.serviceType}</td>
-                  <td className="truncate px-5 py-3 text-app-muted" title={spec.category}>
+                  <td>{spec.serviceType}</td>
+                  <td className="truncate" title={spec.category}>
                     {spec.category}
                   </td>
-                  <td
-                    className="truncate px-5 py-3 text-app-muted"
-                    title={spec.description || undefined}
-                  >
+                  <td className="truncate" title={spec.description || undefined}>
                     {spec.description || '-'}
                   </td>
-                  <td className="px-5 py-3 text-center text-app-muted">
+                  <td className="text-center">
                     {spec.serviceSpecificationCharacteristic.length}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3">
+                  <td className="whitespace-nowrap">
                     <div className="flex items-center justify-end gap-1">
                       <button
                         type="button"
@@ -336,39 +353,28 @@ export function ServiceCatalogTab() {
             )}
           </tbody>
         </table>
-      </div>
-
-      {!loading && sortedSpecs.length > 0 ? (
-        <div className="mt-3 flex items-center justify-between text-[0.82rem] text-app-muted">
-          <span>
-            {currentPage * PAGE_SIZE + 1}–{Math.min((currentPage + 1) * PAGE_SIZE, sortedSpecs.length)}{' '}
-            de {sortedSpecs.length}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setPage((current) => Math.max(0, current - 1))}
-              disabled={currentPage === 0}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-app-border text-app-text transition hover:bg-app-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="Página anterior"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span>
-              Página {currentPage + 1} de {pageCount}
-            </span>
-            <button
-              type="button"
-              onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
-              disabled={currentPage >= pageCount - 1}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-app-border text-app-text transition hover:bg-app-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="Próxima página"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
+        {!loading && sortedSpecs.length > 0 ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 20px',
+              borderTop: '1px solid var(--border)',
+            }}
+          >
+            <DataTablePagination
+              count={Math.min((currentPage + 1) * PAGE_SIZE, sortedSpecs.length)}
+              total={sortedSpecs.length}
+              label="especificações"
+              hasPrevious={currentPage > 0}
+              hasNext={currentPage < pageCount - 1}
+              onPrevious={() => setPage((current) => Math.max(0, current - 1))}
+              onNext={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
+            />
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
       {bulkImportOpen ? (
         <ServiceSpecificationBulkImportModal
@@ -381,86 +387,65 @@ export function ServiceCatalogTab() {
         />
       ) : null}
 
-      {modalState
-        ? createPortal(
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
-              <form
-                onSubmit={submitModal}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="service-catalog-modal-title"
-                className="max-h-full w-full max-w-[980px] overflow-auto rounded-[28px] border border-app-border bg-white p-6 shadow-modal"
+      {modalState ? (
+        <Modal
+          title={
+            <ModalTitle
+              eyebrow="Catálogo de Serviços"
+              title={modalState.mode === 'create' ? 'Nova especificação' : 'Editar especificação'}
+              onClose={closeModal}
+            />
+          }
+          onClose={closeModal}
+          width={980}
+          footer={
+            <>
+              <Button variant="secondary" type="button" onClick={closeModal}>
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                form="service-spec-form"
+                disabled={saving || !submitValid}
               >
-                <div className="mb-5 flex items-start justify-between gap-4 border-b border-app-border pb-4">
-                  <div>
-                    <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-                      Catálogo de Serviços
-                    </div>
-                    <h2
-                      id="service-catalog-modal-title"
-                      className="mt-1 font-display text-[1.4rem] font-semibold text-app-text"
-                    >
-                      {modalState.mode === 'create' ? 'Nova especificação' : 'Editar especificação'}
-                    </h2>
-                  </div>
-                  <button
-                    type="button"
-                    className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
-                    onClick={closeModal}
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="Nome" fullWidth>
-                    <input
-                      className="geo-input"
-                      value={formState.name}
-                      onChange={(event) =>
-                        setFormState({ ...formState, name: event.target.value })
-                      }
-                    />
-                  </Field>
-                  <ServiceSpecificationFields
-                    formState={formState}
-                    onChange={setFormState}
-                    categoryOptions={serviceCategories}
-                  />
-                  <ServiceSpecificationCharacteristicsEditor
-                    characteristics={formState.characteristics}
-                    onChange={(characteristics) => setFormState({ ...formState, characteristics })}
-                  />
-                  <Field label="Observação" fullWidth>
-                    <textarea
-                      className="w-full rounded-[16px] border border-app-border bg-white px-3 py-2 text-[0.9rem] font-medium text-app-text shadow-sm transition focus:border-app-accent-border"
-                      rows={4}
-                      placeholder="Anotação livre sobre a especificação"
-                      value={formState.observation}
-                      onChange={(event) =>
-                        setFormState({ ...formState, observation: event.target.value })
-                      }
-                    />
-                  </Field>
-                </div>
-
-                <div className="mt-6 flex items-center justify-end gap-3 border-t border-app-border pt-4">
-                  <button type="button" onClick={closeModal} className="geo-btn secondary">
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving || !submitValid}
-                    className="inline-flex items-center gap-2 rounded-[16px] border border-app-accent-border bg-app-accent px-4 py-2 text-[0.92rem] font-semibold text-app-text shadow-soft transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {saving ? 'Salvando...' : modalState.mode === 'create' ? 'Criar' : 'Salvar'}
-                  </button>
-                </div>
-              </form>
-            </div>,
-            document.body,
-          )
-        : null}
+                {saving ? 'Salvando...' : modalState.mode === 'create' ? 'Criar' : 'Salvar'}
+              </Button>
+            </>
+          }
+        >
+          <form id="service-spec-form" onSubmit={submitModal} className="grid gap-4 md:grid-cols-2">
+            <Field label="Nome" fullWidth>
+              <input
+                className="geo-input"
+                value={formState.name}
+                onChange={(event) =>
+                  setFormState({ ...formState, name: event.target.value })
+                }
+              />
+            </Field>
+            <ServiceSpecificationFields
+              formState={formState}
+              onChange={setFormState}
+              categoryOptions={serviceCategories}
+            />
+            <ServiceSpecificationCharacteristicsEditor
+              characteristics={formState.characteristics}
+              onChange={(characteristics) => setFormState({ ...formState, characteristics })}
+            />
+            <Field label="Observação" fullWidth>
+              <textarea
+                className="w-full rounded-[16px] border border-app-border bg-white px-3 py-2 text-[0.9rem] font-medium text-app-text shadow-sm transition focus:border-app-accent-border"
+                rows={4}
+                placeholder="Anotação livre sobre a especificação"
+                value={formState.observation}
+                onChange={(event) =>
+                  setFormState({ ...formState, observation: event.target.value })
+                }
+              />
+            </Field>
+          </form>
+        </Modal>
+      ) : null}
 
       {loading ? (
         <div className="pointer-events-none fixed bottom-6 right-6 z-50 rounded-[18px] border border-app-border bg-white/90 px-4 py-3 text-[0.88rem] font-medium text-app-muted shadow-soft backdrop-blur">

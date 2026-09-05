@@ -10,7 +10,6 @@ import {
   Search,
   Trash2,
   Undo2,
-  X,
 } from 'lucide-react';
 import type { GeoLocation } from '../../../services/geoApi';
 import {
@@ -21,6 +20,7 @@ import {
   updateGeoLocation,
 } from '../../../services/geoApi';
 import { getStudioStatus, saveStudioDraft } from '../../../services/studioApi';
+import { Button, Modal } from '../../../components/ui';
 import {
   GOOGLE_MAPS_KEY,
   loadGoogleMaps,
@@ -199,50 +199,67 @@ export function SpatialStudio({ canEdit }: SpatialStudioProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 rounded-[22px] border border-app-border bg-white p-4 shadow-soft sm:flex-row sm:items-center sm:justify-between">
+      <div className="vt-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-app-accent-soft text-app-text">
             <Map className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-[0.78rem] font-semibold uppercase tracking-wider text-app-muted">TMF675</p>
+            <p style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>TMF675</p>
             <p className="text-[0.9rem] font-semibold text-app-text">Coberturas operacionais manuais</p>
           </div>
         </div>
         <div className="flex gap-2">
           {canEdit ? (
             <>
-              <button type="button" onClick={() => setEditing(null)} className="flex items-center gap-1.5 rounded-[12px] bg-app-accent px-3.5 py-2 text-[0.82rem] font-semibold text-white shadow-soft">
-                <Plus className="h-4 w-4" /> Nova cobertura
-              </button>
-              <button type="button" onClick={() => void captureDraft()} disabled={capturing} className="flex items-center gap-1.5 rounded-[12px] border border-app-border px-3.5 py-2 text-[0.82rem] font-medium text-app-text">
-                <Save className="h-4 w-4" />{capturing ? 'Salvando...' : 'Salvar como Draft'}
-              </button>
+              <Button
+                variant="primary"
+                size="sm"
+                iconLeft={<Plus className="h-4 w-4" />}
+                onClick={() => setEditing(null)}
+              >
+                Nova cobertura
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                iconLeft={<Save className="h-4 w-4" />}
+                onClick={() => void captureDraft()}
+                disabled={capturing}
+              >
+                {capturing ? 'Salvando…' : 'Salvar como draft'}
+              </Button>
             </>
           ) : null}
-          <button type="button" onClick={() => void load()} className="rounded-[12px] border border-app-border p-2 text-app-muted" title="Recarregar">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void load()}
+            title="Recarregar"
+            aria-label="Recarregar"
+          >
             <RefreshCw className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       </div>
       {error ? <Notice icon={<AlertCircle className="h-4 w-4" />} className="border-red-200 bg-red-50 text-red-700" text={error} /> : null}
       {success ? <Notice icon={<CheckCircle2 className="h-4 w-4" />} className="border-emerald-200 bg-emerald-50 text-emerald-800" text={success} /> : null}
       <div className="grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="min-h-[520px] rounded-[22px] border border-app-border bg-white p-4 shadow-soft">
-          <label className="flex items-center gap-2 rounded-[12px] border border-app-border px-3 py-2 text-app-muted">
+        <aside className="vt-card min-h-[520px] p-4">
+          <label className="flex items-center gap-2 rounded-[10px] border border-app-border px-3 py-2 text-app-muted">
             <Search className="h-4 w-4" />
             <input value={query} onChange={(event) => setQuery(event.target.value)} className="w-full bg-transparent text-[0.86rem] outline-none" placeholder="Buscar cobertura" />
           </label>
           <div className="mt-3 space-y-1">
             {filtered.map((location) => (
-              <button type="button" key={location.id} onClick={() => setSelectedId(location.id)} className={`w-full rounded-[14px] p-3 text-left ${location.id === selectedId ? 'bg-app-accent-soft' : 'hover:bg-black/[0.02]'}`}>
+              <button type="button" key={location.id} onClick={() => setSelectedId(location.id)} className={`w-full rounded-[10px] p-3 text-left ${location.id === selectedId ? 'bg-app-accent-soft' : 'hover:bg-black/[0.02]'}`}>
                 <p className="text-[0.88rem] font-semibold text-app-text">{valueOf(location, 'name')}</p>
                 <p className="mt-1 text-[0.76rem] text-app-muted">{valueOf(location, 'coverageType')} · {location.validFor?.endDateTime ? 'Encerrada' : 'Ativa'}</p>
               </button>
             ))}
           </div>
         </aside>
-        <section className="min-h-[520px] rounded-[22px] border border-app-border bg-white p-5 shadow-soft">
+        <section className="vt-card min-h-[520px] p-5">
           {selected ? <CoverageDetail location={selected} canEdit={canEdit} onEdit={() => setEditing(selected)} onTerminate={() => setTerminating(selected)} /> : <div className="flex h-full flex-col items-center justify-center text-center text-app-muted"><Map className="h-10 w-10 opacity-30" /><p className="mt-3 text-[0.9rem]">Nenhuma cobertura manual selecionada.</p></div>}
         </section>
       </div>
@@ -253,12 +270,33 @@ export function SpatialStudio({ canEdit }: SpatialStudioProps) {
 }
 
 function Notice({ icon, className, text }: { icon: ReactNode; className: string; text: string }) {
-  return <div className={`flex items-center gap-2 rounded-[16px] border p-3 text-[0.84rem] ${className}`}>{icon}<span>{text}</span></div>;
+  return <div className={`flex items-center gap-2 rounded-[10px] border p-3 text-[0.84rem] ${className}`}>{icon}<span>{text}</span></div>;
 }
 
 function CoverageDetail({ location, canEdit, onEdit, onTerminate }: { location: GeoLocation; canEdit: boolean; onEdit: () => void; onTerminate: () => void }) {
   const vertexCount = polygonVertices(location.geometry).length;
-  return <div><div className="flex items-start justify-between gap-4 border-b border-app-border pb-4"><div><p className="text-[0.76rem] font-semibold uppercase tracking-wider text-app-muted">Cobertura espacial</p><h3 className="mt-1 font-display text-[1.5rem] font-semibold text-app-text">{valueOf(location, 'name')}</h3><p className="mt-1 text-[0.86rem] text-app-muted">{valueOf(location, 'coverageType')} · EPSG:4326 · {vertexCount} vértices</p></div>{canEdit && !location.validFor?.endDateTime ? <div className="flex gap-2"><button type="button" onClick={onEdit} className="rounded-[12px] border border-app-border px-3 py-2 text-[0.82rem] font-semibold text-app-text">Editar</button><button type="button" onClick={onTerminate} className="flex items-center gap-1 rounded-[12px] border border-red-200 px-3 py-2 text-[0.82rem] font-semibold text-red-700"><Trash2 className="h-4 w-4" /> Encerrar</button></div> : null}</div><pre className="mt-5 max-h-[360px] overflow-auto rounded-[16px] bg-app-bg p-4 text-[0.75rem] leading-5 text-app-text">{JSON.stringify(location.geometry, null, 2)}</pre></div>;
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-4 border-b border-app-border pb-4">
+        <div>
+          <p style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Cobertura espacial</p>
+          <h3 className="mt-1">{valueOf(location, 'name')}</h3>
+          <p className="mt-1 text-[0.86rem] text-app-muted">{valueOf(location, 'coverageType')} · EPSG:4326 · {vertexCount} vértices</p>
+        </div>
+        {canEdit && !location.validFor?.endDateTime ? (
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={onEdit}>
+              Editar
+            </Button>
+            <Button variant="danger" size="sm" iconLeft={<Trash2 className="h-4 w-4" />} onClick={onTerminate}>
+              Encerrar
+            </Button>
+          </div>
+        ) : null}
+      </div>
+      <pre className="mt-5 max-h-[360px] overflow-auto rounded-[10px] border border-app-border p-4 text-[0.75rem] leading-5 text-app-text">{JSON.stringify(location.geometry, null, 2)}</pre>
+    </div>
+  );
 }
 
 function SpatialCoverageFormModal({ location, onClose, onSave }: { location?: GeoLocation; onClose: () => void; onSave: (draft: CoverageDraft, location?: GeoLocation) => Promise<void> }) {
@@ -338,14 +376,210 @@ function SpatialCoverageFormModal({ location, onClose, onSave }: { location?: Ge
     }
   };
 
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs"><form onSubmit={(event) => void submit(event)} className="max-h-[92vh] w-full max-w-4xl overflow-auto rounded-[24px] border border-app-border bg-white p-6 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><h3 className="font-display text-[1.25rem] font-semibold text-app-text">{location ? 'Editar cobertura' : 'Nova cobertura'}</h3><p className="mt-1 text-[0.84rem] text-app-muted">Clique no mapa para desenhar; arraste os vértices para ajustar. A camada GPON derivada não é alterada.</p></div><button type="button" onClick={onClose} className="rounded-full p-1.5 text-app-muted hover:bg-black/[0.04]"><X className="h-5 w-5" /></button></div>{error ? <Notice icon={<AlertCircle className="h-4 w-4" />} className="mt-4 border-red-200 bg-red-50 text-red-700" text={error} /> : null}<div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="text-[0.82rem] font-semibold text-app-text">Chave<input required disabled={Boolean(location)} value={draft.key} onChange={(event) => setDraft({ ...draft, key: event.target.value })} className="mt-1 w-full rounded-[10px] border border-app-border px-3 py-2 font-normal" /></label><label className="text-[0.82rem] font-semibold text-app-text">Tipo<input required value={draft.coverageType} onChange={(event) => setDraft({ ...draft, coverageType: event.target.value })} className="mt-1 w-full rounded-[10px] border border-app-border px-3 py-2 font-normal" /></label></div><label className="mt-4 block text-[0.82rem] font-semibold text-app-text">Nome<input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="mt-1 w-full rounded-[10px] border border-app-border px-3 py-2 font-normal" /></label><div className="mt-4 overflow-hidden rounded-[16px] border border-app-border"><div ref={mapElement} className="h-[360px] bg-app-bg" />{!GOOGLE_MAPS_KEY ? <p className="p-3 text-[0.82rem] text-app-muted">Google Maps não está configurado neste ambiente. Configure a chave para desenhar a cobertura.</p> : null}</div><div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-[0.82rem] text-app-muted">{vertices.length} de 3 vértices mínimos · GeoJSON WGS84 / EPSG:4326</p><div className="flex gap-2"><button type="button" onClick={() => setVertices((current) => current.slice(0, -1))} disabled={vertices.length === 0} className="flex items-center gap-1 rounded-[10px] border border-app-border px-3 py-1.5 text-[0.78rem] text-app-text disabled:opacity-50"><Undo2 className="h-3.5 w-3.5" /> Desfazer</button><button type="button" onClick={() => setVertices([])} disabled={vertices.length === 0} className="flex items-center gap-1 rounded-[10px] border border-app-border px-3 py-1.5 text-[0.78rem] text-app-text disabled:opacity-50"><RotateCcw className="h-3.5 w-3.5" /> Reiniciar</button></div></div><pre className="mt-4 max-h-32 overflow-auto rounded-[12px] bg-app-bg p-3 text-[0.72rem] text-app-muted">{JSON.stringify(polygonFromVertices(vertices), null, 2)}</pre><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={onClose} className="rounded-[12px] border border-app-border px-4 py-2 text-[0.84rem]">Cancelar</button><button disabled={saving || !polygonIsReady(vertices)} className="rounded-[12px] bg-app-accent px-4 py-2 text-[0.84rem] font-semibold text-white disabled:opacity-50">{saving ? 'Salvando...' : 'Salvar cobertura'}</button></div></form></div>;
+  return (
+    <Modal
+      onClose={onClose}
+      width={800}
+      title={
+        <div>
+          <h3>{location ? 'Editar cobertura' : 'Nova cobertura'}</h3>
+          <p className="mt-1 text-[0.84rem] text-app-muted font-normal">
+            Clique no mapa para desenhar; arraste os vértices para ajustar. A camada GPON derivada não é alterada.
+          </p>
+        </div>
+      }
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            variant="primary"
+            type="submit"
+            form="spatial-coverage-form"
+            disabled={saving || !polygonIsReady(vertices)}
+          >
+            {saving ? 'Salvando…' : 'Salvar cobertura'}
+          </Button>
+        </>
+      }
+    >
+      <div>
+        {error ? (
+          <Notice
+            icon={<AlertCircle className="h-4 w-4" />}
+            className="mb-4 border-red-200 bg-red-50 text-red-700"
+            text={error}
+          />
+        ) : null}
+
+        <form id="spatial-coverage-form" onSubmit={(event) => void submit(event)}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-[0.82rem] font-semibold text-app-text">
+              Chave
+              <input
+                required
+                disabled={Boolean(location)}
+                value={draft.key}
+                onChange={(event) => setDraft({ ...draft, key: event.target.value })}
+                className="mt-1 w-full rounded-[10px] border border-app-border px-3 py-2 font-normal"
+              />
+            </label>
+            <label className="text-[0.82rem] font-semibold text-app-text">
+              Tipo
+              <input
+                required
+                value={draft.coverageType}
+                onChange={(event) => setDraft({ ...draft, coverageType: event.target.value })}
+                className="mt-1 w-full rounded-[10px] border border-app-border px-3 py-2 font-normal"
+              />
+            </label>
+          </div>
+          <label className="mt-4 block text-[0.82rem] font-semibold text-app-text">
+            Nome
+            <input
+              required
+              value={draft.name}
+              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+              className="mt-1 w-full rounded-[10px] border border-app-border px-3 py-2 font-normal"
+            />
+          </label>
+          <div className="mt-4 overflow-hidden rounded-[10px] border border-app-border">
+            <div ref={mapElement} className="h-[360px] bg-neutral-100" />
+            {!GOOGLE_MAPS_KEY ? (
+              <p className="p-3 text-[0.82rem] text-app-muted">
+                Google Maps não está configurado neste ambiente. Configure a chave para desenhar a cobertura.
+              </p>
+            ) : null}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-[0.82rem] text-app-muted">
+              {vertices.length} de 3 vértices mínimos · GeoJSON WGS84 / EPSG:4326
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                iconLeft={<Undo2 className="h-3.5 w-3.5" />}
+                onClick={() => setVertices((current) => current.slice(0, -1))}
+                disabled={vertices.length === 0}
+              >
+                Desfazer
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                iconLeft={<RotateCcw className="h-3.5 w-3.5" />}
+                onClick={() => setVertices([])}
+                disabled={vertices.length === 0}
+              >
+                Reiniciar
+              </Button>
+            </div>
+          </div>
+          <pre className="mt-4 max-h-32 overflow-auto rounded-[10px] border border-app-border p-3 text-[0.72rem] text-app-muted">
+            {JSON.stringify(polygonFromVertices(vertices), null, 2)}
+          </pre>
+        </form>
+      </div>
+    </Modal>
+  );
 }
 
-function SpatialCoverageImpactModal({ location, onClose, onConfirm }: { location: GeoLocation; onClose: () => void; onConfirm: () => Promise<void> }) {
-  const [references, setReferences] = useState<{ activeAddressCount: number; activeSiteCount: number; blocking: boolean } | null>(null);
+function SpatialCoverageImpactModal({
+  location,
+  onClose,
+  onConfirm,
+}: {
+  location: GeoLocation;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [references, setReferences] = useState<{
+    activeAddressCount: number;
+    activeSiteCount: number;
+    blocking: boolean;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  useEffect(() => { getGeoLocationReferences(location.id).then(setReferences).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Falha ao carregar dependências.')); }, [location.id]);
-  const confirm = async () => { try { setSubmitting(true); setError(null); await onConfirm(); } catch (cause: unknown) { setError(cause instanceof Error ? cause.message : 'Falha ao encerrar cobertura.'); } finally { setSubmitting(false); } };
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs"><div className="w-full max-w-lg rounded-[24px] border border-app-border bg-white p-6 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><h3 className="font-display text-[1.2rem] font-semibold text-app-text">Encerrar cobertura</h3><p className="mt-1 text-[0.84rem] text-app-muted">{valueOf(location, 'name')}</p></div><button type="button" onClick={onClose} className="rounded-full p-1.5 text-app-muted hover:bg-black/[0.04]"><X className="h-5 w-5" /></button></div><p className="mt-4 text-[0.88rem] leading-6 text-app-text">Conforme C6, o encerramento é lógico: o histórico e a geometria serão preservados.</p>{error ? <Notice icon={<AlertCircle className="h-4 w-4" />} className="mt-4 border-red-200 bg-red-50 text-red-700" text={error} /> : null}{references ? <div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-[14px] border border-app-border bg-app-bg p-3"><p className="text-[0.72rem] font-semibold uppercase text-app-muted">Endereços ativos</p><p className="mt-1 text-lg font-semibold text-app-text">{references.activeAddressCount}</p></div><div className="rounded-[14px] border border-app-border bg-app-bg p-3"><p className="text-[0.72rem] font-semibold uppercase text-app-muted">Locais ativos</p><p className="mt-1 text-lg font-semibold text-app-text">{references.activeSiteCount}</p></div></div> : <p className="mt-4 text-[0.84rem] text-app-muted">Calculando dependências...</p>}{references?.blocking ? <p className="mt-4 rounded-[14px] border border-red-200 bg-red-50 p-3 text-[0.84rem] text-red-700">Existem referências ativas. O backend bloqueará o encerramento até que sejam resolvidas.</p> : null}<div className="mt-5 flex justify-end gap-2 border-t border-app-border pt-4"><button type="button" onClick={onClose} className="rounded-[12px] border border-app-border px-4 py-2 text-[0.84rem]">Cancelar</button><button type="button" onClick={() => void confirm()} disabled={submitting || references?.blocking || !references} className="rounded-[12px] bg-red-600 px-4 py-2 text-[0.84rem] font-semibold text-white disabled:opacity-50">{submitting ? 'Encerrando...' : 'Encerrar cobertura'}</button></div></div></div>;
+  useEffect(() => {
+    getGeoLocationReferences(location.id)
+      .then(setReferences)
+      .catch((cause: unknown) =>
+        setError(cause instanceof Error ? cause.message : 'Falha ao carregar dependências.'),
+      );
+  }, [location.id]);
+  const confirm = async () => {
+    try {
+      setSubmitting(true);
+      setError(null);
+      await onConfirm();
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : 'Falha ao encerrar cobertura.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  return (
+    <Modal
+      onClose={onClose}
+      width={560}
+      title={
+        <div>
+          <h3>Encerrar cobertura</h3>
+          <p className="mt-1 text-[0.84rem] text-app-muted font-normal">{valueOf(location, 'name')}</p>
+        </div>
+      }
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => void confirm()}
+            disabled={submitting || references?.blocking || !references}
+          >
+            {submitting ? 'Encerrando…' : 'Encerrar cobertura'}
+          </Button>
+        </>
+      }
+    >
+      <div>
+        <p className="text-[0.88rem] leading-6 text-app-text">
+          Conforme C6, o encerramento é lógico: o histórico e a geometria serão preservados.
+        </p>
+        {error ? (
+          <Notice
+            icon={<AlertCircle className="h-4 w-4" />}
+            className="mt-4 border-red-200 bg-red-50 text-red-700"
+            text={error}
+          />
+        ) : null}
+        {references ? (
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-[10px] border border-app-border p-3">
+              <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                Endereços ativos
+              </span>
+              <p className="mt-1 text-lg font-semibold text-app-text">{references.activeAddressCount}</p>
+            </div>
+            <div className="rounded-[10px] border border-app-border p-3">
+              <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                Locais ativos
+              </span>
+              <p className="mt-1 text-lg font-semibold text-app-text">{references.activeSiteCount}</p>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-4 text-[0.84rem] text-app-muted">Calculando dependências...</p>
+        )}
+        {references?.blocking ? (
+          <p className="mt-4 rounded-[10px] border border-red-200 bg-red-50 p-3 text-[0.84rem] text-red-700">
+            Existem referências ativas. O backend bloqueará o encerramento até que sejam resolvidas.
+          </p>
+        ) : null}
+      </div>
+    </Modal>
+  );
 }

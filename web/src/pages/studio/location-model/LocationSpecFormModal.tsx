@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, MapPin, AlertCircle } from 'lucide-react';
+import { MapPin, AlertCircle } from 'lucide-react';
 import type {
   GeoSpec,
   GeoSpecCategory,
@@ -7,6 +7,7 @@ import type {
   CreateGeoSpecInput,
   UpdateGeoSpecInput,
 } from '../../../services/geoApi';
+import { Modal, Button } from '../../../components/ui';
 
 export type LocationSpecFormModalProps = {
   isOpen: boolean;
@@ -133,39 +134,47 @@ export function LocationSpecFormModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
-      <div className="w-full max-w-lg rounded-[24px] border border-app-border bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between border-b border-app-border pb-4">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-app-accent-soft text-app-text">
-              <MapPin className="h-5 w-5" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-app-text text-[1.1rem]">
-                {isEditing ? 'Editar Especificação de Local' : 'Nova Especificação de Local'}
-              </h3>
-              <p className="text-[0.78rem] text-app-muted">
-                {isEditing ? editingSpec?.code : 'TMF674 · GeographicSiteSpecification'}
-              </p>
-            </div>
+    <Modal
+      onClose={onClose}
+      width={560}
+      title={
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-app-accent-soft text-app-text">
+            <MapPin className="h-5 w-5" />
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full p-1.5 text-app-muted hover:bg-black/[0.04] hover:text-app-text"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div>
+            <h3>
+              {isEditing ? 'Editar especificação de local' : 'Nova especificação de local'}
+            </h3>
+            <p className="text-[0.78rem] text-app-muted">
+              {isEditing ? editingSpec?.code : 'TMF674 · GeographicSiteSpecification'}
+            </p>
+          </div>
         </div>
-
+      }
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="primary" type="submit" form="location-spec-form" disabled={submitting}>
+            {submitting ? 'Salvando…' : isEditing ? 'Atualizar especificação' : 'Criar especificação'}
+          </Button>
+        </>
+      }
+    >
+      <div>
         {error && (
-          <div className="mt-4 flex items-center gap-2 rounded-[14px] border border-red-200 bg-red-50 p-3 text-[0.84rem] text-red-700">
+          <div
+            className="mb-4 flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
+            style={{ background: 'var(--status-red-soft)', color: 'var(--status-red)' }}
+          >
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+        <form id="location-spec-form" onSubmit={handleSubmit} className="space-y-4">
           {!isEditing && (
             <div>
               <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
@@ -176,7 +185,7 @@ export function LocationSpecFormModal({
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="Ex.: CO, FLOOR, ROOM..."
-                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-mono text-app-text outline-none focus:border-app-accent"
+                className="w-full rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-mono text-app-text outline-none focus:border-app-accent"
               />
             </div>
           )}
@@ -190,7 +199,7 @@ export function LocationSpecFormModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Ex.: Central Office, Pavimento..."
-              className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent"
+              className="w-full rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent"
             />
           </div>
 
@@ -203,7 +212,7 @@ export function LocationSpecFormModal({
                 value={category}
                 onChange={(e) => setCategory(e.target.value as GeoSpecCategory)}
                 disabled={isEditing}
-                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:opacity-60"
+                className="w-full rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:opacity-60"
               >
                 {CATEGORY_OPTIONS.map((c) => (
                   <option key={c.value} value={c.value}>
@@ -219,7 +228,7 @@ export function LocationSpecFormModal({
               <select
                 value={siteRole}
                 onChange={(e) => setSiteRole(e.target.value as GeoSiteRole)}
-                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent"
+                className="w-full rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent"
               >
                 {ROLE_OPTIONS.map((r) => (
                   <option key={r.value} value={r.value}>
@@ -239,7 +248,7 @@ export function LocationSpecFormModal({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Descreva a finalidade deste tipo de local..."
-              className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent"
+              className="w-full rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent"
             />
           </div>
 
@@ -248,7 +257,7 @@ export function LocationSpecFormModal({
               <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
                 Pais Permitidos
               </label>
-              <div className="max-h-32 overflow-y-auto rounded-[14px] border border-app-border p-2 space-y-1">
+              <div className="max-h-32 overflow-y-auto rounded-[10px] border border-app-border p-2 space-y-1">
                 {otherSpecs.length === 0 ? (
                   <p className="text-[0.76rem] text-app-muted italic px-1">Nenhuma outra especificação.</p>
                 ) : (
@@ -273,7 +282,7 @@ export function LocationSpecFormModal({
               <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
                 Filhos Permitidos
               </label>
-              <div className="max-h-32 overflow-y-auto rounded-[14px] border border-app-border p-2 space-y-1">
+              <div className="max-h-32 overflow-y-auto rounded-[10px] border border-app-border p-2 space-y-1">
                 {otherSpecs.length === 0 ? (
                   <p className="text-[0.76rem] text-app-muted italic px-1">Nenhuma outra especificação.</p>
                 ) : (
@@ -295,25 +304,8 @@ export function LocationSpecFormModal({
               </div>
             </div>
           </div>
-
-          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-app-border">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-[14px] border border-app-border px-4 py-2 text-[0.84rem] font-medium text-app-muted hover:bg-black/[0.02]"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="rounded-[14px] bg-app-accent px-5 py-2 text-[0.84rem] font-semibold text-white hover:opacity-90 disabled:opacity-50 transition shadow-soft"
-            >
-              {submitting ? 'Salvando...' : isEditing ? 'Atualizar Especificação' : 'Criar Especificação'}
-            </button>
-          </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 }

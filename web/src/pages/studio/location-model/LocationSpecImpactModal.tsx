@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { X, AlertTriangle, AlertCircle, Trash2 } from 'lucide-react';
+import { AlertTriangle, AlertCircle, Trash2 } from 'lucide-react';
 import type { GeoSpec, ContainmentImpactResult } from '../../../services/geoApi';
 import { getGeoSpecImpact } from '../../../services/geoApi';
+import { Modal, Button } from '../../../components/ui';
 
 export type LocationSpecImpactModalProps = {
   isOpen: boolean;
@@ -58,37 +59,50 @@ export function LocationSpecImpactModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
-      <div className="w-full max-w-lg rounded-[24px] border border-app-border bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-        <div className="flex items-center justify-between border-b border-app-border pb-4">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-red-50 text-red-600 border border-red-200">
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-app-text text-[1.1rem]">Aposentar Especificação de Local</h3>
-              <p className="text-[0.78rem] text-app-muted">
-                {spec.name} ({spec.code})
-              </p>
-            </div>
+    <Modal
+      onClose={onClose}
+      width={560}
+      title={
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-[12px] border border-red-200 bg-red-50 text-red-600">
+            <AlertTriangle className="h-5 w-5" />
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full p-1.5 text-app-muted hover:bg-black/[0.04] hover:text-app-text"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div>
+            <h3>Aposentar especificação de local</h3>
+            <p className="text-[0.78rem] text-app-muted">
+              {spec.name} ({spec.code})
+            </p>
+          </div>
         </div>
-
+      }
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            variant="danger"
+            onClick={handleConfirm}
+            disabled={submitting}
+            iconLeft={<Trash2 className="h-4 w-4" />}
+          >
+            {submitting ? 'Aposentando…' : 'Aposentar especificação'}
+          </Button>
+        </>
+      }
+    >
+      <div>
         {error && (
-          <div className="mt-4 flex items-center gap-2 rounded-[14px] border border-red-200 bg-red-50 p-3 text-[0.84rem] text-red-700">
+          <div
+            className="mb-4 flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
+            style={{ background: 'var(--status-red-soft)', color: 'var(--status-red)' }}
+          >
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        <div className="mt-4 space-y-4">
+        <div className="space-y-4">
           {loading ? (
             <div className="py-8 text-center text-[0.85rem] text-app-muted">
               Calculando impacto de contenção...
@@ -111,17 +125,17 @@ export function LocationSpecImpactModal({
               )}
 
               <div className="grid grid-cols-2 gap-3 pt-1">
-                <div className="rounded-[14px] border border-app-border p-3 bg-app-bg/50">
-                  <span className="text-[0.7rem] font-semibold uppercase text-app-muted">
-                    Impacto como Pai
+                <div className="rounded-[10px] border border-app-border p-3">
+                  <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                    Impacto como pai
                   </span>
                   <p className="text-[1.1rem] font-semibold text-app-text mt-0.5">
                     {impact?.impactedParentAssignments ?? 0}
                   </p>
                 </div>
-                <div className="rounded-[14px] border border-app-border p-3 bg-app-bg/50">
-                  <span className="text-[0.7rem] font-semibold uppercase text-app-muted">
-                    Impacto como Filho
+                <div className="rounded-[10px] border border-app-border p-3">
+                  <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                    Impacto como filho
                   </span>
                   <p className="text-[1.1rem] font-semibold text-app-text mt-0.5">
                     {impact?.impactedChildAssignments ?? 0}
@@ -130,27 +144,8 @@ export function LocationSpecImpactModal({
               </div>
             </>
           )}
-
-          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-app-border">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-[14px] border border-app-border px-4 py-2 text-[0.84rem] font-medium text-app-muted hover:bg-black/[0.02]"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={handleConfirm}
-              disabled={submitting}
-              className="rounded-[14px] bg-red-600 px-5 py-2 text-[0.84rem] font-semibold text-white hover:bg-red-700 disabled:opacity-50 transition shadow-soft flex items-center gap-1.5"
-            >
-              <Trash2 className="h-4 w-4" />
-              {submitting ? 'Aposentando...' : 'Aposentar Especificação'}
-            </button>
-          </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

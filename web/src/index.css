@@ -13,6 +13,18 @@
   box-sizing: border-box;
 }
 
+/* Radar pulse used by StatusPill's live-status dot (components/ui/StatusPill.tsx). */
+@keyframes vtPulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
 html,
 body,
 #root {
@@ -105,6 +117,22 @@ button {
   cursor: pointer;
 }
 
+:root {
+  /* Um degrau abaixo de --neutral-500 (#BCC1D6, cinza médio da marca — escuro
+     demais para hairline): usado só nos textboxes (composer, busca) e nas
+     tabelas de Configuração/Studio, onde --border-strong ainda ficava sutil
+     demais sobre o canvas branco. */
+  --border-input-strong: #C7C7D4;
+
+  /* Amarelo dedicado ao item selecionado da sidebar principal do app — mesma
+     família de matiz de --vt-yellow (51°), porém mais dourado e menos
+     saturado que --vt-yellow-tint (#FEF7DC, usado em hovers/washes rasos),
+     para que o item ativo se distinga com um preenchimento mais presente e
+     uma borda visível em vez do wash plano sem contorno. */
+  --vt-yellow-selected-bg: #FBEFC2;
+  --vt-yellow-selected-border: #E8C34A;
+}
+
 @layer components {
   /* Botão de envio do composer sempre amarelo — o estado desabilitado (input vazio)
      só muda o cursor, não a cor (feedback constante da ação primária). */
@@ -118,15 +146,37 @@ button {
   }
 
   /* Bordas mais presentes nos componentes de entrada: o hairline padrão
-     (--border #E8E8EE) some sobre o canvas branco. Inputs de texto, busca e
-     cards interativos usam --border-strong (#DADAE3) no estado de repouso. */
+     (--border #E8E8EE) some sobre o canvas branco. Inputs de texto e busca
+     usam --border-input-strong no estado de repouso; cards interativos ficam
+     um degrau abaixo, em --border-strong. */
   .vt-composer,
   .vt-searchbar,
   .vt-searchbar-flat {
-    border-color: var(--border-strong);
+    border-color: var(--border-input-strong);
+  }
+  /* O tema base recua para --border (hairline claro) no :focus-within — pensado
+     para quando a borda de repouso já era --border. Como o repouso agora é mais
+     escuro, o foco precisa reafirmar --border-input-strong (senão a borda
+     clareia justamente quando o usuário está digitando). */
+  .vt-composer:focus-within,
+  .vt-searchbar:focus-within {
+    border-color: var(--border-input-strong);
   }
   .vt-card-interactive {
     border-color: var(--border-strong);
+  }
+
+  /* Tabelas de Configuração e Studio: a casca `.vt-card` que envolve `.vt-table`
+     (DataTable) e os painéis de árvore/detalhe do Studio ganham a mesma borda
+     mais presente dos textboxes — pedido explícito para destacá-las do canvas
+     branco tanto quanto os campos de entrada. */
+  .vt-table-card,
+  .vt-studio-scope .vt-card {
+    border-color: var(--border-input-strong);
+  }
+  .vt-table th,
+  .vt-table td {
+    border-bottom-color: var(--border-input-strong);
   }
 
   /* Hero composer (Nova Conversa): com uma linha, o cursor deve sentar no centro
@@ -135,6 +185,39 @@ button {
     display: flex;
     align-items: center;
     min-height: 36px;
+  }
+
+  /* Amarelo + borda do item selecionado — utilitário compartilhado por toda navegação
+     lateral do app (sidebar principal, conversas recentes, abas de Configuração e nav
+     interna do Studio), para as quatro superfícies usarem exatamente o mesmo tom. */
+  .vt-yellow-selected {
+    background: var(--vt-yellow-selected-bg);
+    border: 1px solid var(--vt-yellow-selected-border);
+  }
+
+  /* Item selecionado da sidebar principal (Conversas, Locais, Recursos, Serviços,
+     Ordens, Studio): o tema base só aplica um wash amarelo plano, sem contorno.
+     Escopado a `.vt-main-nav` para não alcançar a navegação interna do Studio,
+     que também usa `.vt-sb-btn` mas segue sem borda. */
+  .vt-main-nav .vt-sb-btn.is-active {
+    background: var(--vt-yellow-selected-bg);
+    border: 1px solid var(--vt-yellow-selected-border);
+  }
+
+  /* Nav interna do Studio (Modelo de recursos, Modelo de locais, Espacial...): mesmo
+     amarelo + borda da sidebar principal, replicado por pedido explícito — reusa
+     `.vt-sb-btn` como a sidebar principal, mas escopado a `.vt-studio-nav` em vez de
+     `.vt-main-nav`. */
+  .vt-studio-nav .vt-sb-btn.is-active {
+    background: var(--vt-yellow-selected-bg);
+    border: 1px solid var(--vt-yellow-selected-border);
+  }
+
+  /* Conversa recente ativa (ResearchHistoryPage, dentro da sidebar principal):
+     mesmo tratamento do item de nav ativo acima — mesmo amarelo, mesma borda. */
+  .vt-sb-recent-active {
+    background: var(--vt-yellow-selected-bg);
+    border: 1px solid var(--vt-yellow-selected-border);
   }
 }
 
@@ -151,8 +234,19 @@ button {
     @apply border-app-border bg-white text-app-text shadow-soft hover:border-app-accent-border hover:bg-app-accent-soft;
   }
 
+  /* Textbox padrão do sistema (config de Usuários, formulários de Infraestrutura Civil
+     etc.): 10% menor que o tamanho original, com a mesma borda mais presente das
+     tabelas (--border-input-strong) e o mesmo par borda/sombra do composer de Nova
+     Conversa e da busca de Histórico de conversas (.vt-composer/.vt-searchbar-flat)
+     — sem sombra em repouso, sombra flutuante só ao focar, borda que não clareia. */
   .geo-input {
-    @apply h-11 w-full rounded-[16px] border border-app-border bg-white px-3 text-[0.9rem] font-medium text-app-text shadow-sm transition focus:border-app-accent-border;
+    @apply h-[39.6px] w-full rounded-[14.4px] border bg-white px-[10.8px] text-[0.81rem] font-medium text-app-text transition;
+    border-color: var(--border-input-strong);
+    box-shadow: none;
+  }
+  .geo-input:focus {
+    border-color: var(--border-input-strong);
+    box-shadow: 0 4px 16px rgba(46, 45, 57, 0.1);
   }
 
   .geo-combobox {
@@ -164,46 +258,54 @@ button {
   }
 }
 
+/* Combobox padrão do sistema (<select class="geo-input">): partiu de 20% menor que o
+   `.geo-input` de texto, depois voltou 10% (líquido: ~12% menor que o original) —
+   altura, raio, fonte e a zona do ícone (largura do wash + seta) andam juntos, senão a
+   seta fica desproporcional ao campo. */
 select.geo-input {
   appearance: none;
   cursor: pointer;
+  height: 2.42rem;
+  border-radius: 14px;
   border-color: #c8d2e1;
   background-color: #ffffff;
+  padding-left: 0.66rem;
+  font-size: 0.79rem;
   background-image:
     linear-gradient(
       90deg,
-      transparent calc(100% - 42px),
-      rgba(255, 210, 0, 0.18) calc(100% - 42px)
+      transparent calc(100% - 37px),
+      rgba(255, 217, 25, 0.18) calc(100% - 37px)
     ),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23243041' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position:
     right 0 top 0,
-    right 12px center;
+    right 11px center;
   background-size:
-    42px 100%,
-    18px 18px;
-  padding-right: 3rem;
+    37px 100%,
+    15px 15px;
+  padding-right: 2.64rem;
   box-shadow:
     inset 0 0 0 1px rgba(36, 48, 65, 0.04),
     0 1px 2px rgba(36, 48, 65, 0.08);
 }
 
 select.geo-input:hover {
-  border-color: #d6b300;
+  border-color: var(--vt-yellow);
   background-image:
     linear-gradient(
       90deg,
-      transparent calc(100% - 42px),
-      rgba(255, 210, 0, 0.28) calc(100% - 42px)
+      transparent calc(100% - 37px),
+      rgba(255, 217, 25, 0.28) calc(100% - 37px)
     ),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23243041' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 select.geo-input:focus {
-  border-color: #d6b300;
+  border-color: var(--vt-yellow);
   box-shadow:
-    0 0 0 4px rgba(255, 210, 0, 0.2),
+    0 0 0 4px rgba(255, 217, 25, 0.2),
     inset 0 0 0 1px rgba(36, 48, 65, 0.04);
 }
 
@@ -224,8 +326,8 @@ button:focus-visible {
 }
 
 ::selection {
-  background: rgba(255, 210, 0, 0.32);
-  color: #243041;
+  background: rgba(255, 217, 25, 0.32);
+  color: var(--text-primary);
 }
 
 ::-webkit-scrollbar {
@@ -382,11 +484,11 @@ aside .hover-scroll::-webkit-scrollbar-thumb {
   display: block;
   width: 100%;
   max-width: none;
-  color: #334155;
-  font-family: 'Aptos', 'Segoe UI', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
-  font-size: 1rem;
-  font-weight: 400;
-  line-height: 1.45;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-relaxed);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-relaxed);
   letter-spacing: 0;
 }
 
@@ -406,9 +508,9 @@ aside .hover-scroll::-webkit-scrollbar-thumb {
 .markdown-content h5,
 .markdown-content h6 {
   margin: 1.1rem 0 0.5rem;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   line-height: 1.3;
-  color: #1f2937;
+  color: var(--text-primary);
 }
 
 .markdown-content h1 {
@@ -447,26 +549,26 @@ aside .hover-scroll::-webkit-scrollbar-thumb {
 }
 
 .markdown-content a {
-  color: #1f4d8f;
+  color: var(--status-blue);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
 
 .markdown-content code {
-  border: 1px solid #d6dbe4;
-  border-radius: 8px;
-  background: #f7f9fc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
   padding: 0.12rem 0.35rem;
-  font-family: 'Cascadia Mono', 'Consolas', 'SF Mono', Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 0.88em;
 }
 
 .markdown-content pre {
   overflow-x: auto;
-  border: 1px solid #d6dbe4;
-  border-radius: 12px;
-  background: #f7f9fc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-muted);
   padding: 0.75rem 0.85rem;
 }
 
@@ -477,9 +579,9 @@ aside .hover-scroll::-webkit-scrollbar-thumb {
 }
 
 .markdown-content blockquote {
-  border-left: 3px solid #c8d2e1;
+  border-left: 3px solid var(--border-strong);
   padding-left: 0.8rem;
-  color: #4d5d73;
+  color: var(--text-secondary);
 }
 
 .markdown-content table {
@@ -489,13 +591,13 @@ aside .hover-scroll::-webkit-scrollbar-thumb {
 
 .markdown-content th,
 .markdown-content td {
-  border: 1px solid #d6dbe4;
+  border: 1px solid var(--border);
   padding: 0.45rem 0.55rem;
   text-align: left;
 }
 
 .markdown-content hr {
   border: 0;
-  border-top: 1px solid #d6dbe4;
+  border-top: 1px solid var(--border);
   margin: 1rem 0;
 }

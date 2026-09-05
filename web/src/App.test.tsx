@@ -105,7 +105,7 @@ test('restores the resource category page from the URL on load (F5)', () => {
   expect(screen.getByText('ResourcePage:Logical.IPAM')).toBeInTheDocument();
 });
 
-test('mobile opens Locais at the root and canonicalizes the URL to /geo', () => {
+test('mobile opens Mapa at the root and canonicalizes the URL to /geo', () => {
   setViewport(true);
   window.history.replaceState({}, '', '/');
   render(<App />);
@@ -118,7 +118,7 @@ test('navigating via the menu updates the URL path', async () => {
   const user = userEvent.setup();
   render(<App />);
 
-  await user.click(screen.getByRole('button', { name: 'Locais' }));
+  await user.click(screen.getByRole('button', { name: 'Mapa' }));
   expect(window.location.pathname).toBe('/geo');
 
   await user.click(screen.getByRole('button', { name: 'Ordens' }));

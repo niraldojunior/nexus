@@ -5,14 +5,17 @@ import {
   Folder,
   FolderOpen,
   Box,
+  Cpu,
   Plus,
   Trash2,
-  Edit2,
   AlertCircle,
   Search,
   GripVertical,
 } from 'lucide-react';
 import type { ResourceCatalogTreeNode, ResourceCatalogNode } from '../../../services/resourceCatalogApi';
+import { isLogicalResourceNode } from '../../../utils/resourceNodeNature';
+
+export type DropPosition = 'before' | 'after' | 'inside';
 
 export type ResourceCatalogTreeProps = {
   tree: ResourceCatalogTreeNode[];
@@ -21,14 +24,37 @@ export type ResourceCatalogTreeProps = {
   selectedNodeId: string | null;
   onSelectNode: (node: ResourceCatalogNode) => void;
   onAddChild: (parentNode: ResourceCatalogNode) => void;
-  onEditNode: (node: ResourceCatalogNode) => void;
-  onMoveNode?: (node: ResourceCatalogNode) => void;
   onImpactNode: (node: ResourceCatalogNode) => void;
-  /** Callback para mover um nó diretamente via arrastar e soltar na árvore. */
-  onDirectMove?: (nodeId: string, parentNodeId: string | null, sortOrder?: number) => void | Promise<void>;
+  /** Callback para mover ou reordenar um nó diretamente via arrastar e soltar na árvore. */
+  onDirectMove?: (
+    nodeId: string,
+    parentNodeId: string | null,
+    orderedSiblingIds?: string[],
+  ) => void | Promise<void>;
   canEdit: boolean;
   /** Existe um draft de governança aberto — controla a visibilidade dos botões de mutação. */
   isEditing: boolean;
+};
+
+const getSiblingsOfParent = (
+  nodes: ResourceCatalogTreeNode[],
+  parentId: string | null,
+): ResourceCatalogTreeNode[] => {
+  if (parentId === null) {
+    return nodes;
+  }
+  const findParent = (list: ResourceCatalogTreeNode[]): ResourceCatalogTreeNode | null => {
+    for (const item of list) {
+      if (item.id === parentId) return item;
+      if (item.children) {
+        const found = findParent(item.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+  const parent = findParent(nodes);
+  return parent?.children ?? [];
 };
 
 export function ResourceCatalogTree({
@@ -37,7 +63,6 @@ export function ResourceCatalogTree({
   selectedNodeId,
   onSelectNode,
   onAddChild,
-  onEditNode,
   onImpactNode,
   onDirectMove,
   canEdit,
@@ -50,6 +75,7 @@ export function ResourceCatalogTree({
   // Estado de Arrastar e Soltar (Drag and Drop)
   const [draggedNode, setDraggedNode] = useState<ResourceCatalogTreeNode | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<DropPosition | null>(null);
   const [isOverRoot, setIsOverRoot] = useState(false);
 
   // Ao ocultar a textbox de busca (lupa desligada), limpa o filtro — senão um filtro esquecido
@@ -102,15 +128,37 @@ export function ResourceCatalogTree({
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
-    if (dropTargetId !== targetNode.id) {
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relY = (e.clientY - rect.top) / rect.height;
+
+    let nextPosition: DropPosition;
+    if (targetNode.kind === 'GROUP') {
+      if (relY < 0.25) {
+        nextPosition = 'before';
+      } else if (relY > 0.75) {
+        nextPosition = 'after';
+      } else {
+        nextPosition = 'inside';
+      }
+    } else {
+      nextPosition = relY < 0.5 ? 'before' : 'after';
+    }
+
+    if (dropTargetId !== targetNode.id || dropPosition !== nextPosition) {
       setDropTargetId(targetNode.id);
+      setDropPosition(nextPosition);
     }
   };
 
   const handleDragLeave = (targetNode: ResourceCatalogTreeNode, e: React.DragEvent) => {
     e.stopPropagation();
+    const related = e.relatedTarget as HTMLElement | null;
+    if (e.currentTarget.contains(related)) return;
+
     if (dropTargetId === targetNode.id) {
       setDropTargetId(null);
+      setDropPosition(null);
     }
   };
 
@@ -120,29 +168,57 @@ export function ResourceCatalogTree({
     if (!canMutate || !draggedNode || draggedNode.id === targetNode.id) {
       setDraggedNode(null);
       setDropTargetId(null);
+      setDropPosition(null);
       return;
     }
     if (isDescendant(draggedNode, targetNode.id)) {
       setDraggedNode(null);
       setDropTargetId(null);
+      setDropPosition(null);
       return;
     }
 
-    // Se soltou em cima de um GROUP, o novo pai é esse GROUP.
-    // Se soltou em cima de um RESOURCE_TYPE, vira irmão dele (mesmo pai do target).
-    const targetParentId =
-      targetNode.kind === 'GROUP' ? targetNode.id : (targetNode.parentNodeId ?? null);
+    const pos = dropPosition ?? (targetNode.kind === 'GROUP' ? 'inside' : 'after');
 
-    // Auto-expande o grupo destino para o nó aparecer aberto
-    if (targetNode.kind === 'GROUP') {
+    let targetParentId: string | null = null;
+    let orderedSiblingIds: string[] = [];
+
+    if (pos === 'inside') {
+      targetParentId = targetNode.id;
+      const rawSiblings = getSiblingsOfParent(tree, targetParentId);
+      const siblingIds = rawSiblings.map((s) => s.id).filter((id) => id !== draggedNode.id);
+      orderedSiblingIds = [...siblingIds, draggedNode.id];
+      // Auto-expande o grupo destino
       setExpandedIds((prev) => new Set(prev).add(targetNode.id));
+    } else {
+      targetParentId = targetNode.parentNodeId ?? null;
+      const rawSiblings = getSiblingsOfParent(tree, targetParentId);
+      const siblingIds = rawSiblings.map((s) => s.id).filter((id) => id !== draggedNode.id);
+      const targetIdx = siblingIds.indexOf(targetNode.id);
+      if (targetIdx === -1) {
+        orderedSiblingIds = [...siblingIds, draggedNode.id];
+      } else if (pos === 'before') {
+        orderedSiblingIds = [
+          ...siblingIds.slice(0, targetIdx),
+          draggedNode.id,
+          ...siblingIds.slice(targetIdx),
+        ];
+      } else {
+        // pos === 'after'
+        orderedSiblingIds = [
+          ...siblingIds.slice(0, targetIdx + 1),
+          draggedNode.id,
+          ...siblingIds.slice(targetIdx + 1),
+        ];
+      }
     }
 
     try {
-      await onDirectMove?.(draggedNode.id, targetParentId, targetNode.sortOrder ?? 0);
+      await onDirectMove?.(draggedNode.id, targetParentId, orderedSiblingIds);
     } finally {
       setDraggedNode(null);
       setDropTargetId(null);
+      setDropPosition(null);
       setIsOverRoot(false);
     }
   };
@@ -150,6 +226,7 @@ export function ResourceCatalogTree({
   const handleDragEnd = () => {
     setDraggedNode(null);
     setDropTargetId(null);
+    setDropPosition(null);
     setIsOverRoot(false);
   };
 
@@ -172,8 +249,21 @@ export function ResourceCatalogTree({
     const isBeingDragged = draggedNode?.id === node.id;
     const isCurrentDropTarget = dropTargetId === node.id;
 
+    // Indicadores visuais para reordenação (antes / depois) e reparenting (dentro de grupo)
+    const showDropTop = isCurrentDropTarget && dropPosition === 'before';
+    const showDropBottom = isCurrentDropTarget && dropPosition === 'after';
+    const showDropInside = isCurrentDropTarget && dropPosition === 'inside';
+
     return (
-      <div key={node.id} className="select-none">
+      <div key={node.id} className="relative select-none">
+        {/* Linha indicadora azul de inserção ANTES do nó */}
+        {showDropTop && (
+          <div
+            className="absolute -top-0.5 left-2 right-2 h-0.5 bg-app-accent rounded z-10 pointer-events-none"
+            style={{ marginLeft: `${Math.max(level * 16 + 8, 8)}px` }}
+          />
+        )}
+
         <div
           role="button"
           tabIndex={0}
@@ -193,10 +283,8 @@ export function ResourceCatalogTree({
           className={`group flex items-center justify-between gap-1 rounded-[12px] px-2 py-1.5 text-[0.85rem] transition ${
             canMutate ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
           } ${isBeingDragged ? 'opacity-30 scale-[0.98]' : ''} ${
-            isCurrentDropTarget
-              ? isGroup
-                ? 'ring-2 ring-app-accent bg-app-accent-soft text-app-text font-semibold'
-                : 'ring-2 ring-sky-400 bg-sky-50 text-app-text'
+            showDropInside
+              ? 'ring-2 ring-app-accent bg-app-accent-soft text-app-text font-semibold'
               : isSelected
                 ? 'bg-app-accent-soft text-app-text font-semibold'
                 : 'text-app-text hover:bg-black/[0.04]'
@@ -239,6 +327,8 @@ export function ResourceCatalogTree({
               ) : (
                 <Folder className="h-4 w-4 shrink-0 text-amber-500" />
               )
+            ) : isLogicalResourceNode(node) ? (
+              <Cpu className="h-4 w-4 shrink-0 text-purple-600" />
             ) : (
               <Box className="h-4 w-4 shrink-0 text-sky-600" />
             )}
@@ -270,17 +360,6 @@ export function ResourceCatalogTree({
               )}
               <button
                 type="button"
-                title="Editar"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEditNode(node);
-                }}
-                className="rounded p-1 text-app-muted hover:bg-white hover:text-app-text"
-              >
-                <Edit2 className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
                 title="Análise de impacto / Inativar"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -293,6 +372,14 @@ export function ResourceCatalogTree({
             </div>
           )}
         </div>
+
+        {/* Linha indicadora azul de inserção DEPOIS do nó */}
+        {showDropBottom && (
+          <div
+            className="absolute -bottom-0.5 left-2 right-2 h-0.5 bg-app-accent rounded z-10 pointer-events-none"
+            style={{ marginLeft: `${Math.max(level * 16 + 8, 8)}px` }}
+          />
+        )}
 
         {isGroup && isExpanded && hasChildren && (
           <div className="mt-0.5 space-y-0.5">
@@ -345,8 +432,13 @@ export function ResourceCatalogTree({
                   e.preventDefault();
                   e.stopPropagation();
                   if (!draggedNode) return;
+                  const rootSiblings = getSiblingsOfParent(tree, null);
+                  const rootSiblingIds = rootSiblings
+                    .map((s) => s.id)
+                    .filter((id) => id !== draggedNode.id);
+                  const orderedIds = [...rootSiblingIds, draggedNode.id];
                   try {
-                    await onDirectMove?.(draggedNode.id, null, 0);
+                    await onDirectMove?.(draggedNode.id, null, orderedIds);
                   } finally {
                     setDraggedNode(null);
                     setDropTargetId(null);

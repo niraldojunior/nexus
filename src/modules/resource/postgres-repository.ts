@@ -34,6 +34,7 @@ import {
   getResourceTypeByCode,
 } from './catalog.js';
 import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
+import type { Characteristic } from '../../shared/tmf/index.js';
 import { buildHref } from '../../shared/tmf/index.js';
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 
@@ -455,8 +456,9 @@ export class PostgresResourceRepository implements IResourceRepository {
       name: string;
       description?: string | null;
       status: 'active' | 'inactive';
+      characteristics?: string | null;
     }>(
-      `SELECT id, code, name, description, status
+      `SELECT id, code, name, description, status, characteristics
        FROM tmf_resource_type
        WHERE tenant_id = ?
        ORDER BY code`,
@@ -464,6 +466,28 @@ export class PostgresResourceRepository implements IResourceRepository {
     );
     const categoryCodeById = await this.loadCategoryCodeByResourceTypeId(tenantId);
     return rows.map((row) => this.mapResourceType(row, categoryCodeById.get(row.id)));
+  }
+
+  /**
+   * Grava as características que definem o tipo (issue #216). Escopo deliberadamente estreito:
+   * `ResourceType` não tem CRUD — nome, código e categoria continuam derivados do nó de catálogo.
+   */
+  public async updateResourceTypeCharacteristics(
+    id: string,
+    characteristics: Characteristic[],
+    scope?: ResourceTenantScope,
+  ): Promise<void> {
+    const params: Array<string | null> = [
+      JSON.stringify(characteristics),
+      new Date().toISOString(),
+      id,
+    ];
+    let sql = `UPDATE tmf_resource_type SET characteristics = ?, updated_at = ? WHERE id = ?`;
+    if (scope?.tenantId) {
+      sql += ' AND tenant_id = ?';
+      params.push(scope.tenantId);
+    }
+    await this.db.run(sql, params);
   }
 
   // `tmf_resource_type.category_code` foi removida na Fase B: categoryCode agora vem do node
@@ -1834,6 +1858,7 @@ export class PostgresResourceRepository implements IResourceRepository {
       name: string;
       description?: string | null;
       status: 'active' | 'inactive';
+      characteristics?: string | null;
     },
     categoryCode?: string,
   ): ResourceType {
@@ -1846,6 +1871,7 @@ export class PostgresResourceRepository implements IResourceRepository {
       categoryCode: categoryCode ?? getResourceTypeByCode(row.code)?.categoryCode ?? 'Uncategorized',
       ...(row.description ? { description: row.description } : {}),
       status: row.status,
+      resourceTypeCharacteristic: JSON.parse(row.characteristics || '[]'),
     };
   }
 

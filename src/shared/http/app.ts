@@ -2951,7 +2951,8 @@ const routeResourceRequest = async ({
   const isResourceCatalogKind =
     route.kind === 'resourceCatalog' ||
     route.kind === 'resourceSpecification' ||
-    route.kind === 'resourceFunctionSpecification';
+    route.kind === 'resourceFunctionSpecification' ||
+    route.kind === 'resourceType';
 
   requireRoles(
     context,
@@ -3144,6 +3145,17 @@ const routeResourceRequest = async ({
         (item) => item.id === route.id || item.code === route.id,
       );
       return sendJsonOrNotFound(response, resourceType, 'RESOURCE_TYPE_NOT_FOUND');
+    }
+    if (route.id && request.method === 'PATCH') {
+      return sendJson(
+        response,
+        200,
+        resourceService.updateResourceType(
+          route.id,
+          parseUpdateResourceTypeInput(await readBody(request)),
+          context,
+        ),
+      );
     }
   }
 
@@ -4371,6 +4383,30 @@ const assertResourceSpecificationLegacyFieldsAbsent = (body: Record<string, unkn
       statusCode: 400,
     });
   }
+};
+
+// ResourceType ainda não tem CRUD completo (issue #216 restringe deliberadamente a
+// resourceTypeCharacteristic) — qualquer outro campo no corpo é rejeitado com o mesmo padrão de
+// erro usado em assertResourceSpecificationLegacyFieldsAbsent.
+const parseUpdateResourceTypeInput = (
+  body: Record<string, unknown>,
+): Parameters<ResourceService['updateResourceType']>[1] => {
+  const unexpected = Object.keys(body).find((field) => field !== 'resourceTypeCharacteristic');
+  if (unexpected) {
+    throw new AppError(`${unexpected} is not editable; only resourceTypeCharacteristic is`, {
+      code: 'RESOURCE_TYPE_FIELD_NOT_EDITABLE',
+      statusCode: 400,
+    });
+  }
+  if (!Array.isArray(body.resourceTypeCharacteristic)) {
+    throw new AppError('resourceTypeCharacteristic must be an array', {
+      code: 'RESOURCE_REQUIRED_FIELD',
+      statusCode: 400,
+    });
+  }
+  return { resourceTypeCharacteristic: body.resourceTypeCharacteristic } as Parameters<
+    ResourceService['updateResourceType']
+  >[1];
 };
 
 // Mesmo limite do Resource (RESOURCE_SPEC_BULK_IMPORT_MAX_ITEMS) — Configurações → Catálogo de

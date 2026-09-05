@@ -36,6 +36,7 @@ import { scrollChatAnchorIntoView, scrollChatToBottom } from './utils/chatScroll
 import { initialConversations, initialRecentItems, settingsSections } from './data/mockData';
 import { sendMessage } from './services/api';
 import { useIsMobile } from './hooks/useIsMobile';
+import { clearGeoViewParams } from './utils/geoViewState';
 import { DEFAULT_RESOURCE_CATEGORY_CODE } from './data/resourceCategoryViews';
 import { DEFAULT_SERVICE_CATEGORY_CODE } from './data/serviceCategoryViews';
 import {
@@ -437,6 +438,22 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     activeServiceCategory,
     activeStudioSection,
   ]);
+
+  // Limpa os parâmetros de viewport do Geo (`ll`, `z`, `site`, `res`, `addr`, `q`, `place`) da URL
+  // ao navegar para fora de `/geo` — sem isto, sobrevivem indefinidamente em qualquer outra página
+  // (ex.: `/studio/resource-model?ll=...&z=...`), já que a página seguinte não os consome nem os
+  // remove. Um efeito de nível de `App` (e não algo dentro de `GeoPage`) é necessário para rodar
+  // depois do cleanup de desmontagem de `useGeoViewState` — que recommita `ll`/`z` na URL ao
+  // desmontar — pois cleanups de filhos disparam antes dos efeitos do pai no mesmo commit. Não
+  // mexe no outro conjunto de parâmetros (`page`/`siteId`/`resourceId`) usado pelos deep links do
+  // `useNavigation`.
+  const previousPageRef = useRef(currentPage);
+  useEffect(() => {
+    if (previousPageRef.current === 'geo' && currentPage !== 'geo') {
+      clearGeoViewParams();
+    }
+    previousPageRef.current = currentPage;
+  }, [currentPage]);
 
   const activeConversation = useMemo(
     () =>

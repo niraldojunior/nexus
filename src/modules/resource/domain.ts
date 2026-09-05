@@ -22,7 +22,23 @@ export type ResourceType = {
   categoryCode: string;
   description?: string;
   status: ResourceCatalogStatus;
+  /**
+   * Características que **definem** este tipo de recurso — o contrato estrutural que toda
+   * `ResourceSpecification` do tipo herda. Cada entrada carrega também um valor padrão, copiado
+   * para a spec no momento da criação e editável por spec dali em diante (C1: extensão V.tal entra
+   * como `characteristic` tipada via catálogo, nunca campo hardcoded).
+   */
+  resourceTypeCharacteristic?: Characteristic[];
   tenantId?: string;
+};
+
+/**
+ * Único campo de `ResourceType` editável hoje. `ResourceType` ainda não tem CRUD completo (nome,
+ * código e categoria continuam derivados do nó de catálogo); esta entrada existe só para o
+ * contrato de características do tipo.
+ */
+export type UpdateResourceTypeInput = {
+  resourceTypeCharacteristic: Characteristic[];
 };
 
 /**
@@ -217,6 +233,7 @@ export type CreateResourceCatalogNodeInput = ResourceCatalogNodeShapeInput & {
 
 /** `PATCH` normal — nunca muda `parentNodeId`/posição; isso é só `.../move` (RN de ciclo/pai). */
 export type UpdateResourceCatalogNodeInput = {
+  code?: string;
   name?: string;
   description?: string;
   status?: ResourceCatalogStatus;

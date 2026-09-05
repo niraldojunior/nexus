@@ -63,6 +63,13 @@ export type StudioVersion = {
   versionNumber: number;
   status: StudioVersionStatus;
   snapshot: Record<string, unknown>;
+  /**
+   * Estado vivo do domínio capturado no instante em que este draft foi aberto ("Editar").
+   * Imutável após a criação do draft — nunca é atualizado por `saveDraft` em drafts existentes.
+   * Usado por `discardDraft` para restaurar o domínio ao estado anterior à edição (revert real),
+   * já que cada ação do Studio grava imediatamente nas tabelas canônicas (sem draft em memória).
+   */
+  baselineSnapshot?: Record<string, unknown>;
   /** SHA-256 do snapshot serializado — usado como precondição otimista (`If-Match`). */
   checksum: string;
   validation?: StudioValidationResult;

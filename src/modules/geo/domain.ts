@@ -23,13 +23,22 @@ export type TimePeriod = {
 };
 
 export type CharacteristicValueType =
-  'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'json';
+  | 'string'
+  | 'integer'
+  | 'decimal'
+  | 'boolean'
+  | 'date'
+  | 'list'
+  | 'enum'
+  | 'json';
 
 export type Characteristic = {
   group?: string;
   name: string;
+  description?: string;
   value: string | number | boolean | Record<string, unknown> | null;
   valueType?: CharacteristicValueType;
+  allowedValues?: string[];
 };
 
 export type GeoSiteStatus = 'Planned' | 'InConstruction' | 'Active' | 'InDeactivation' | 'Retired';

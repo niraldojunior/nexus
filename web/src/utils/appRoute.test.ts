@@ -61,6 +61,10 @@ describe('parseAppRoute', () => {
       page: 'studio',
       studioSection: 'studio-geo',
     });
+    expect(parseAppRoute('/studio/copilot', desktop)).toEqual({
+      page: 'studio',
+      studioSection: 'copilot',
+    });
     expect(parseAppRoute('/studio/unknown', desktop)).toEqual({
       page: 'studio',
       studioSection: 'resource-model',

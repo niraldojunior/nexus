@@ -218,6 +218,11 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
     // 2. Carregar nós existentes do catálogo
     const existingNodes = await this.resourceService.listResourceCatalogNodes(catalog.id, reqContext, true);
     const existingByCode = new Map(existingNodes.map((n) => [n.code, n]));
+    // Casamento id-first: no publish normal `snapshot.id` já é o id real do nó, então isto não
+    // muda nada. Mas ao restaurar uma baseline (revert de "Cancelar"), um nó pode ter sido
+    // renomeado (code incluso) depois da baseline — casar só por code criaria um duplicado em vez
+    // de reverter o nome/código para o original.
+    const existingById = new Map(existingNodes.map((n) => [n.id, n]));
 
     // 3. Obter tipos de recursos para mapear códigos se necessário
     const allResourceTypes = await this.resourceService.listResourceTypes(reqContext);
@@ -237,9 +242,12 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
     for (let i = 0; i < snapshotNodes.length; i++) {
       const snapNode = snapshotNodes[i];
       if (!snapNode) continue;
-      const existing = existingByCode.get(snapNode.code);
+      const existing = (snapNode.id ? existingById.get(snapNode.id) : undefined) ?? existingByCode.get(snapNode.code);
       if (existing) {
         const updateInput: UpdateResourceCatalogNodeInput = {
+          // Casado por id (ver `existingById` acima), então `code` também precisa ser reafirmado
+          // aqui — senão um code renomeado depois da baseline nunca volta ao original no restore.
+          code: snapNode.code,
           name: snapNode.name,
           ...(snapNode.description !== undefined ? { description: snapNode.description } : {}),
           status: (snapNode.status as ResourceCatalogStatus) ?? 'active',
@@ -336,6 +344,24 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
         },
         reqContext,
       );
+    }
+
+    // 6. Poda: inativa nós ativos que existiam antes da materialização mas não estão no snapshot.
+    // No publish normal isto é sempre um no-op — a listagem viva capturada como snapshot já é
+    // exatamente `existingNodes`. Mas ao restaurar uma baseline anterior (revert de "Cancelar"),
+    // é o que remove nós criados durante a sessão de edição abortada. Soft-delete (C6): preserva
+    // histórico e instâncias de recursos já criadas contra o nó, que ficam órfãs de um nó
+    // inativo — mesmo comportamento de `deleteResourceCatalogNode`, não um caso novo.
+    const survivingIds = new Set([...codeToIdMap.values(), ...snapshotIdToDbId.values()]);
+    for (const node of existingNodes) {
+      if (node.status === 'active' && !survivingIds.has(node.id)) {
+        await this.resourceService.updateResourceCatalogNode(
+          catalog.id,
+          node.id,
+          { status: 'inactive' },
+          reqContext,
+        );
+      }
     }
   }
 }

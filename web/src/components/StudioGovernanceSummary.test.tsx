@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StudioGovernanceSummary } from './StudioGovernanceSummary';
 import * as studioApi from '../services/studioApi';
@@ -51,6 +51,17 @@ const makeStatus = (published?: StudioVersion, draft?: StudioVersion): StudioSta
 });
 
 describe('StudioGovernanceSummary', () => {
+  beforeEach(() => {
+    // resetAllMocks (não clearAllMocks): precisa também apagar o mockResolvedValue/
+    // mockResolvedValueOnce configurado no teste anterior, senão o próximo teste herda a
+    // implementação alheia além do histórico de chamadas.
+    vi.resetAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
   it('exibe a versão publicada e o botão "Editar" quando não há draft', async () => {
     const published = makeVersion(3, 'published', 'chk-pub-3');
     vi.mocked(studioApi.getStudioStatus).mockResolvedValue(makeStatus(published, undefined));

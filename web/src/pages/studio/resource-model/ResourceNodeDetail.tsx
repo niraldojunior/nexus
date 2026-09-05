@@ -24,6 +24,8 @@ export type ResourceNodeDetailProps = {
   catalogId: string;
   node: ResourceCatalogNode;
   canEdit: boolean;
+  /** Existe um draft de governança aberto — controla a visibilidade dos botões de mutação. */
+  isEditing: boolean;
   onEdit: () => void;
   onMove: () => void;
   onImpact: () => void;
@@ -35,6 +37,7 @@ export function ResourceNodeDetail({
   catalogId,
   node,
   canEdit,
+  isEditing,
   onEdit,
   onMove,
   onImpact,
@@ -117,7 +120,7 @@ export function ResourceNodeDetail({
             </div>
           </div>
 
-          {canEdit && (
+          {canEdit && isEditing && (
             <div className="flex items-center gap-2">
               <Button variant="secondary" size="sm" onClick={onMove}>
                 Mover

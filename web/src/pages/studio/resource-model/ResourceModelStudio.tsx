@@ -3,7 +3,6 @@ import {
   Box,
   Plus,
   RefreshCw,
-  Network,
   Save,
   CheckCircle2,
   AlertCircle,
@@ -36,12 +35,28 @@ import { ResourceNodeFormModal } from './ResourceNodeFormModal';
 import { ResourceNodeMoveModal } from './ResourceNodeMoveModal';
 import { ResourceNodeImpactModal } from './ResourceNodeImpactModal';
 
+const findNodeById = (
+  nodes: ResourceCatalogTreeNode[],
+  id: string,
+): ResourceCatalogNode | null => {
+  for (const n of nodes) {
+    if (n.id === id) return n;
+    if (n.children) {
+      const sub = findNodeById(n.children, id);
+      if (sub) return sub;
+    }
+  }
+  return null;
+};
+
 export type ResourceModelStudioProps = {
   canEdit: boolean;
   canAdmin: boolean;
+  /** Existe um draft de governança aberto para o domínio "resource-model" (ver StudioPage). */
+  isEditing: boolean;
 };
 
-export function ResourceModelStudio({ canEdit }: ResourceModelStudioProps) {
+export function ResourceModelStudio({ canEdit, isEditing }: ResourceModelStudioProps) {
   const [catalogs, setCatalogs] = useState<ResourceCatalog[]>([]);
   const [selectedCatalogId, setSelectedCatalogId] = useState<string>('');
   const [tree, setTree] = useState<ResourceCatalogTreeNode[]>([]);
@@ -141,6 +156,24 @@ export function ResourceModelStudio({ canEdit }: ResourceModelStudioProps) {
     await reloadTree();
   };
 
+  // Botão "+" da Hierarquia: sem seleção, cria na raiz; com um GROUP selecionado, cria abaixo
+  // dele; com um RESOURCE_TYPE selecionado (que nunca tem filhos — é sempre folha), cria como
+  // irmão, usando o mesmo pai do nó selecionado.
+  const handleAddNodeClick = () => {
+    setFormEditingNode(null);
+    if (!selectedNode) {
+      setFormParentNode(null);
+    } else if (selectedNode.kind === 'GROUP') {
+      setFormParentNode(selectedNode);
+    } else {
+      const parentOfSelected = selectedNode.parentNodeId
+        ? findNodeById(tree, selectedNode.parentNodeId)
+        : null;
+      setFormParentNode(parentOfSelected);
+    }
+    setFormModalOpen(true);
+  };
+
   // Capturar estado atual como draft do Studio
   const handleCaptureAsDraft = async () => {
     if (!selectedCatalogId) return;
@@ -190,80 +223,10 @@ export function ResourceModelStudio({ canEdit }: ResourceModelStudioProps) {
     }
   };
 
+  const canMutate = canEdit && isEditing;
+
   return (
     <div className="space-y-4">
-      {/* Top Bar / Catalog Picker & Actions */}
-      <div className="vt-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-app-accent-soft text-app-text">
-            <Network className="h-5 w-5" />
-          </div>
-          <div>
-            <label
-              htmlFor="catalog-select"
-              className="block"
-              style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}
-            >
-              Catálogo de recursos ativo
-            </label>
-            <select
-              id="catalog-select"
-              value={selectedCatalogId}
-              onChange={(e) => {
-                setSelectedCatalogId(e.target.value);
-                setSelectedNode(null);
-              }}
-              className="mt-0.5 rounded-[10px] border border-app-border bg-white px-2.5 py-1 text-[0.88rem] font-semibold text-app-text outline-none focus:border-app-accent"
-            >
-              {catalogs.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.code}) {c.isDefault ? '— Padrão' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {canEdit && (
-            <>
-              <Button
-                variant="primary"
-                size="sm"
-                iconLeft={<Plus className="h-4 w-4" />}
-                onClick={() => {
-                  setFormEditingNode(null);
-                  setFormParentNode(null);
-                  setFormModalOpen(true);
-                }}
-              >
-                Novo nó na raiz
-              </Button>
-
-              <Button
-                variant="secondary"
-                size="sm"
-                iconLeft={<Save className="h-4 w-4" />}
-                onClick={handleCaptureAsDraft}
-                disabled={capturingDraft}
-              >
-                {capturingDraft ? 'Salvando…' : 'Salvar como draft'}
-              </Button>
-            </>
-          )}
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={reloadTree}
-            title="Recarregar árvore"
-            aria-label="Recarregar árvore"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
       {draftSuccess && (
         <div
           className="flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
@@ -288,13 +251,67 @@ export function ResourceModelStudio({ canEdit }: ResourceModelStudioProps) {
       <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
         {/* Left: Árvore Hierárquica */}
         <div className="vt-card flex min-h-[560px] flex-col p-4">
-          <div className="mb-3 flex items-center justify-between border-b border-app-border pb-3">
+          <div className="mb-3 flex items-center gap-2 border-b border-app-border pb-3">
+            <select
+              id="catalog-select"
+              value={selectedCatalogId}
+              onChange={(e) => {
+                setSelectedCatalogId(e.target.value);
+                setSelectedNode(null);
+              }}
+              className="min-w-0 flex-1 rounded-[10px] border border-app-border bg-white px-2.5 py-1 text-[0.85rem] font-semibold text-app-text outline-none focus:border-app-accent"
+            >
+              {catalogs.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.code}) {c.isDefault ? '— Padrão' : ''}
+                </option>
+              ))}
+            </select>
+
+            {canEdit && (
+              <Button
+                variant="secondary"
+                size="sm"
+                iconLeft={<Save className="h-4 w-4" />}
+                onClick={handleCaptureAsDraft}
+                disabled={capturingDraft}
+                title="Salvar como draft"
+              >
+                {capturingDraft ? 'Salvando…' : 'Salvar'}
+              </Button>
+            )}
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={reloadTree}
+              title="Recarregar árvore"
+              aria-label="Recarregar árvore"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <div className="mb-3 flex items-center justify-between">
             <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
               Hierarquia do catálogo
             </span>
-            <span className="text-[0.75rem] text-app-muted font-mono">
-              {tree.length} nós raiz
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[0.75rem] text-app-muted font-mono">
+                {tree.length} nós raiz
+              </span>
+              {canMutate && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleAddNodeClick}
+                  title="Incluir nó"
+                  aria-label="Incluir nó"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
 
           <div className="flex-1">
@@ -321,6 +338,7 @@ export function ResourceModelStudio({ canEdit }: ResourceModelStudioProps) {
                 setImpactModalOpen(true);
               }}
               canEdit={canEdit}
+              isEditing={isEditing}
             />
           </div>
         </div>
@@ -332,6 +350,7 @@ export function ResourceModelStudio({ canEdit }: ResourceModelStudioProps) {
               catalogId={selectedCatalogId}
               node={selectedNode}
               canEdit={canEdit}
+              isEditing={isEditing}
               onEdit={() => {
                 setFormEditingNode(selectedNode);
                 setFormParentNode(null);
@@ -347,7 +366,7 @@ export function ResourceModelStudio({ canEdit }: ResourceModelStudioProps) {
               }}
             />
           ) : (
-            <div className="flex min-h-[560px] flex-col items-center justify-center rounded-[10px] border border-dashed border-app-border p-12 text-center text-app-muted">
+            <div className="vt-card flex min-h-[560px] flex-col items-center justify-center p-12 text-center text-app-muted">
               <Box className="h-10 w-10 mb-3 opacity-30" />
               <h3 className="text-[1.1rem]">Nenhum nó selecionado</h3>
               <p className="text-[0.85rem] mt-1 max-w-sm">

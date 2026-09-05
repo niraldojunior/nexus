@@ -16,6 +16,8 @@ export type StudioGovernanceSummaryProps = {
   domain: StudioDomain;
   canEdit: boolean;
   canAdmin: boolean;
+  /** Notifica o pai sempre que o modo de edição (existência de um draft aberto) mudar. */
+  onEditingChange?: (editing: boolean) => void;
 };
 
 type ModalErrorState = {
@@ -36,6 +38,7 @@ export function StudioGovernanceSummary({
   domain,
   canEdit,
   canAdmin,
+  onEditingChange,
 }: StudioGovernanceSummaryProps) {
   const [status, setStatus] = useState<StudioStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,6 +66,10 @@ export function StudioGovernanceSummary({
   const draft = status?.draftVersion;
   const published = status?.publishedVersion;
   const editing = Boolean(draft);
+
+  useEffect(() => {
+    onEditingChange?.(editing);
+  }, [editing, onEditingChange]);
 
   const handleEdit = async () => {
     setBusy('edit');

@@ -1,3 +1,4 @@
+import { useCallback, useState } from 'react';
 import {
   Database,
   FileStack,
@@ -141,8 +142,18 @@ export function StudioPage({
   onSectionChange: (section: StudioSection) => void;
 }) {
   const activeItem = itemBySection.get(section) ?? itemBySection.get('resource-model');
+  const studioDomain = activeItem ? studioDomainBySection[section] : undefined;
+
+  // "Modo de edição" = existe um draft de governança aberto para o domínio ativo — um único
+  // conceito, elevado de `StudioGovernanceSummary` (que sabe quando o draft existe) até aqui,
+  // para repassar aos Studios de cada domínio (ex.: `ResourceModelStudio`) sem inventar um
+  // segundo toggle local.
+  const [isEditing, setIsEditing] = useState(false);
+  const handleEditingChange = useCallback((editing: boolean) => {
+    setIsEditing(editing);
+  }, []);
+
   if (!activeItem) return null;
-  const studioDomain = studioDomainBySection[section];
 
   return (
     <div
@@ -214,6 +225,7 @@ export function StudioPage({
                   domain={studioDomain}
                   canEdit={canEdit}
                   canAdmin={canAdmin}
+                  onEditingChange={handleEditingChange}
                 />
               ) : undefined
             }
@@ -221,7 +233,7 @@ export function StudioPage({
 
           {section === 'resource-model' ? (
             <div className="mt-5">
-              <ResourceModelStudio canEdit={canEdit} canAdmin={canAdmin} />
+              <ResourceModelStudio canEdit={canEdit} canAdmin={canAdmin} isEditing={isEditing} />
             </div>
           ) : section === 'location-model' ? (
             <div className="mt-5">

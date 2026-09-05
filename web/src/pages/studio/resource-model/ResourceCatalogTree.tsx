@@ -23,6 +23,8 @@ export type ResourceCatalogTreeProps = {
   onMoveNode: (node: ResourceCatalogNode) => void;
   onImpactNode: (node: ResourceCatalogNode) => void;
   canEdit: boolean;
+  /** Existe um draft de governança aberto — controla a visibilidade dos botões de mutação. */
+  isEditing: boolean;
 };
 
 export function ResourceCatalogTree({
@@ -34,7 +36,9 @@ export function ResourceCatalogTree({
   onMoveNode,
   onImpactNode,
   canEdit,
+  isEditing,
 }: ResourceCatalogTreeProps) {
+  const canMutate = canEdit && isEditing;
   const [filterText, setFilterText] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -122,9 +126,6 @@ export function ResourceCatalogTree({
             <span className="truncate" title={node.name}>
               {node.name}
             </span>
-            <span className="shrink-0 text-[0.72rem] text-app-muted font-mono">
-              ({node.code})
-            </span>
             {node.status === 'inactive' && (
               <span className="shrink-0 rounded bg-red-100 px-1 py-0.2 text-[0.68rem] font-medium text-red-700">
                 Inativo
@@ -132,7 +133,7 @@ export function ResourceCatalogTree({
             )}
           </div>
 
-          {canEdit && (
+          {canMutate && (
             <div className="hidden group-hover:flex items-center gap-1 shrink-0 ml-2">
               {isGroup && (
                 <button

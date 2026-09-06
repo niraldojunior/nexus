@@ -1,3 +1,4 @@
+import { AppError } from '../../../shared/errors/app-error.js';
 import type { StudioDomainAdapter, StudioValidationIssue, StudioValidationResult } from '../domain.js';
 import type { GeoService } from '../../geo/service.js';
 import type {
@@ -188,7 +189,10 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
     const validation = await this.validate(snapshot);
     if (!validation.valid) {
       const errMsgs = validation.issues.map((i) => i.message).join('; ');
-      throw new Error(`Snapshot de location-model inválido para publicação: ${errMsgs}`);
+      throw new AppError(`Snapshot de location-model inválido para publicação: ${errMsgs}`, {
+        code: 'STUDIO_MATERIALIZE_INVALID',
+        statusCode: 422,
+      });
     }
 
     const typedSnapshot = snapshot as unknown as LocationModelSnapshot;

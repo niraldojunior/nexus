@@ -1,3 +1,4 @@
+import { AppError } from '../../../shared/errors/app-error.js';
 import type { StudioDomainAdapter, StudioValidationIssue, StudioValidationResult } from '../domain.js';
 import type { GeoService } from '../../geo/service.js';
 import type { Characteristic, GeoJSONPolygon, GeographicLocation } from '../../geo/domain.js';
@@ -158,7 +159,12 @@ export class SpatialStudioAdapter implements StudioDomainAdapter {
 
   public async materialize(snapshot: Record<string, unknown>, context: { tenantId: string }): Promise<void> {
     const validation = await this.validate(snapshot);
-    if (!validation.valid) throw new Error(validation.issues.map((issue) => issue.message).join('; '));
+    if (!validation.valid) {
+      throw new AppError(validation.issues.map((issue) => issue.message).join('; '), {
+        code: 'STUDIO_MATERIALIZE_INVALID',
+        statusCode: 422,
+      });
+    }
 
     const typed = snapshot as unknown as SpatialStudioSnapshot;
     const reqContext = studioContext(context.tenantId);
@@ -177,7 +183,10 @@ export class SpatialStudioAdapter implements StudioDomainAdapter {
     for (const coverage of typed.coverages) {
       const current = coverage.id ? managedById.get(coverage.id) : managedByKey.get(coverage.key);
       if (coverage.id && !current) {
-        throw new Error(`A cobertura ${coverage.id} não pertence ao domínio Espacial do Studio.`);
+        throw new AppError(`A cobertura ${coverage.id} não pertence ao domínio Espacial do Studio.`, {
+          code: 'STUDIO_MATERIALIZE_INVALID',
+          statusCode: 422,
+        });
       }
       if (current) {
         snapshotIds.add(current.id);

@@ -232,7 +232,7 @@ export function StudioPage({
     <div
       className="h-full overflow-y-auto bg-white px-[11px] py-4 sm:px-[17px] sm:py-6 lg:px-[22px]"
       style={{
-        /* Glow radial verde ambiente atrás da janela Studio Control — pintado direto no
+        /* Glow radial ambiente atrás da janela Studio Control — pintado direto no
            container mais externo (não num wrapper extra ao redor da `aside`) para não haver
            nenhuma borda de caixa aninhada cortando o degradê pela metade. Ancorado no canto
            onde a `aside` nasce (0% 0%) e com raio grande (1400px) para se espalhar por toda a
@@ -240,7 +240,7 @@ export function StudioPage({
            glow do tamanho da própria `aside` parava seco onde ela termina; este cobre a coluna
            inteira e esmaece suavemente antes de alcançar o conteúdo da direita. */
         backgroundImage:
-          'radial-gradient(1400px circle at 0% 0%, rgba(18, 128, 92, 0.14) 0%, rgba(18, 128, 92, 0.05) 35%, rgba(18, 128, 92, 0) 62%)',
+          'radial-gradient(1400px circle at 0% 0%, rgba(188, 193, 214, 0.14) 0%, rgba(188, 193, 214, 0.05) 35%, rgba(188, 193, 214, 0) 62%)',
         backgroundRepeat: 'no-repeat',
       }}
     >

@@ -242,7 +242,7 @@ export function LocationSpecDetail({
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-4">
               <div className="rounded-[10px] border border-app-border p-4">
                 <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Categoria</span>
                 <p className="text-[0.95rem] font-medium text-app-text mt-1">
@@ -257,18 +257,6 @@ export function LocationSpecDetail({
                 <p className="text-[0.95rem] font-medium text-app-text mt-1">
                   {ROLE_LABELS[spec.siteRole]}
                 </p>
-              </div>
-
-              <div className="rounded-[10px] border border-app-border p-4">
-                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Status</span>
-                <p className="text-[0.95rem] font-medium text-app-text mt-1">
-                  {spec.lifecycleStatus === 'Active' ? 'Ativo' : 'Inativo'}
-                </p>
-              </div>
-
-              <div className="rounded-[10px] border border-app-border p-4">
-                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Código do Tipo</span>
-                <p className="text-[0.95rem] font-medium text-app-text mt-1 font-mono">{spec.code}</p>
               </div>
             </div>
           </div>

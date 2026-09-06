@@ -1,16 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  Plus,
-  AlertCircle,
-  FolderTree,
-  Building,
-  Layers,
-  Shield,
-  Trash2,
-  Edit2,
-  Search,
-  MapPin,
-} from 'lucide-react';
+import { Plus, AlertCircle, Shield, Search, MapPin } from 'lucide-react';
 import type {
   GeoSpec,
   GeoSpecCategory,
@@ -28,6 +17,7 @@ import { getStudioStatus, saveStudioDraft } from '../../../services/studioApi';
 import { Button, Badge } from '../../../components/ui';
 import { LocationSpecFormModal } from './LocationSpecFormModal';
 import { LocationSpecImpactModal } from './LocationSpecImpactModal';
+import { LocationSpecDetail } from './LocationSpecDetail';
 
 export type LocationModelStudioProps = {
   canEdit: boolean;
@@ -321,163 +311,21 @@ export function LocationModelStudio({
         {/* Right: Detalhe da Especificação Selecionada */}
         <div className="min-w-0">
           {selectedSpec ? (
-            <div className="vt-card flex h-full flex-col overflow-hidden p-0">
-              {/* Header do Detalhe */}
-              <div className="p-6 border-b border-app-border">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3.5">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] border border-app-accent-border bg-app-accent-soft text-app-text">
-                      <Building className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
-                          {CATEGORY_LABELS[selectedSpec.category]}
-                        </span>
-                        <Badge tone={ROLE_TONE[selectedSpec.siteRole]}>
-                          {ROLE_LABELS[selectedSpec.siteRole]}
-                        </Badge>
-                        <Badge tone={selectedSpec.lifecycleStatus === 'Active' ? 'green' : 'neutral'} dot>
-                          {selectedSpec.lifecycleStatus === 'Active' ? 'Ativo' : 'Aposentado'}
-                        </Badge>
-                      </div>
-                      <h2 className="mt-0.5">{selectedSpec.name}</h2>
-                    </div>
-                  </div>
-
-                  {canMutate && (
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        iconLeft={<Edit2 className="h-4 w-4" />}
-                        onClick={() => {
-                          setEditingSpec(selectedSpec);
-                          setFormModalOpen(true);
-                        }}
-                      >
-                        Editar
-                      </Button>
-                      {!selectedSpec._bootstrapProtected && selectedSpec.lifecycleStatus === 'Active' && (
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          iconLeft={<Trash2 className="h-4 w-4" />}
-                          onClick={() => {
-                            setImpactingSpec(selectedSpec);
-                            setImpactModalOpen(true);
-                          }}
-                        >
-                          Aposentar
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Corpo com Grid de Informações e Regras */}
-              <div className="p-6 space-y-6 overflow-y-auto flex-1">
-                <div>
-                  <h3 className="mb-2" style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
-                    Descrição
-                  </h3>
-                  <p className="text-[0.92rem] text-app-text leading-relaxed">
-                    {selectedSpec.description || 'Nenhuma descrição informada.'}
-                  </p>
-                </div>
-
-                {/* Regras de Contenção Permitidas */}
-                <div className="grid gap-4 md:grid-cols-2">
-                  {/* Pais Permitidos */}
-                  <div className="rounded-[10px] border border-app-border p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <FolderTree className="h-4 w-4 text-amber-600" />
-                      <h4 className="text-[0.85rem] font-semibold text-app-text">
-                        Pode ser contido por
-                      </h4>
-                    </div>
-                    {selectedSpec.allowedParentSpecIds.length === 0 ? (
-                      <p className="text-[0.8rem] text-app-muted italic">Nenhum pai permitido (raiz do modelo).</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedSpec.allowedParentSpecIds.map((pId) => {
-                          const parentSpec = specs.find((s) => s.id === pId);
-                          return (
-                            <span
-                              key={pId}
-                              className="inline-flex items-center gap-1 rounded-[8px] border border-app-border bg-white px-2.5 py-1 text-[0.78rem] text-app-text font-medium"
-                            >
-                              {parentSpec ? parentSpec.name : pId}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Filhos Permitidos */}
-                  <div className="rounded-[10px] border border-app-border p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Layers className="h-4 w-4 text-sky-600" />
-                      <h4 className="text-[0.85rem] font-semibold text-app-text">
-                        Contém
-                      </h4>
-                    </div>
-                    {selectedSpec.allowedChildSpecIds.length === 0 ? (
-                      <p className="text-[0.8rem] text-app-muted italic">Nenhum filho permitido (folha do modelo).</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedSpec.allowedChildSpecIds.map((cId) => {
-                          const childSpec = specs.find((s) => s.id === cId);
-                          return (
-                            <span
-                              key={cId}
-                              className="inline-flex items-center gap-1 rounded-[8px] border border-app-border bg-white px-2.5 py-1 text-[0.78rem] text-app-text font-medium"
-                            >
-                              {childSpec ? childSpec.name : cId}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Características Canônicas */}
-                <div>
-                  <h3 className="mb-3" style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
-                    Características da especificação ({selectedSpec.specCharacteristic?.length ?? 0})
-                  </h3>
-                  {!selectedSpec.specCharacteristic || selectedSpec.specCharacteristic.length === 0 ? (
-                    <div className="rounded-[10px] border border-dashed border-app-border p-6 text-center text-[0.84rem] text-app-muted">
-                      Nenhuma característica personalizada definida nesta especificação.
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-app-border rounded-[10px] border border-app-border overflow-hidden">
-                      {selectedSpec.specCharacteristic.map((c, idx) => (
-                        <div key={idx} className="p-3.5 hover:bg-black/[0.01] flex items-center justify-between text-[0.85rem]">
-                          <div>
-                            <span className="font-semibold text-app-text">{c.name}</span>
-                            {c.description && <p className="text-[0.78rem] text-app-muted mt-0.5">{c.description}</p>}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[0.74rem] font-mono px-2 py-0.5 rounded bg-black/[0.04] text-app-muted">
-                              {c.valueType}
-                            </span>
-                            {c.mandatory && (
-                              <span className="text-[0.7rem] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-semibold">
-                                Obrigatório
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            <LocationSpecDetail
+              spec={selectedSpec}
+              allSpecs={specs}
+              canEdit={canEdit}
+              isEditing={isEditing}
+              onEdit={() => {
+                setEditingSpec(selectedSpec);
+                setFormModalOpen(true);
+              }}
+              onInactivate={() => {
+                setImpactingSpec(selectedSpec);
+                setImpactModalOpen(true);
+              }}
+              onUpdateCharacteristics={handleUpdateSpec}
+            />
           ) : (
             <div className="flex min-h-[580px] flex-col items-center justify-center rounded-[10px] border border-dashed border-app-border p-12 text-center text-app-muted">
               <MapPin className="h-10 w-10 mb-3 opacity-30" />

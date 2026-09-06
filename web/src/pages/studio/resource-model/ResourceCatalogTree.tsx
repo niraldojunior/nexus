@@ -4,8 +4,6 @@ import {
   ChevronDown,
   Folder,
   FolderOpen,
-  Box,
-  Cpu,
   Plus,
   Trash2,
   AlertCircle,
@@ -14,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { ResourceCatalogTreeNode, ResourceCatalogNode } from '../../../services/resourceCatalogApi';
 import { isLogicalResourceNode } from '../../../utils/resourceNodeNature';
+import { resolveNodeIcon } from './catalogNodeIcons';
 
 export type DropPosition = 'before' | 'after' | 'inside';
 
@@ -249,6 +248,12 @@ export function ResourceCatalogTree({
     const isBeingDragged = draggedNode?.id === node.id;
     const isCurrentDropTarget = dropTargetId === node.id;
 
+    const isLogical = isLogicalResourceNode(node);
+    const customIconName = node.metadata?.icon as string | undefined;
+    const hasCustomIcon = Boolean(customIconName && customIconName !== 'Folder' && customIconName !== (isLogical ? 'Cpu' : 'Box'));
+    const CustomGroupIcon = resolveNodeIcon(customIconName, 'GROUP', false);
+    const CustomResourceIcon = resolveNodeIcon(customIconName, 'RESOURCE_TYPE', isLogical);
+
     // Indicadores visuais para reordenação (antes / depois) e reparenting (dentro de grupo)
     const showDropTop = isCurrentDropTarget && dropPosition === 'before';
     const showDropBottom = isCurrentDropTarget && dropPosition === 'after';
@@ -322,15 +327,19 @@ export function ResourceCatalogTree({
             )}
 
             {isGroup ? (
-              isExpanded ? (
+              hasCustomIcon ? (
+                <CustomGroupIcon
+                  className={`h-4 w-4 shrink-0 ${isExpanded ? 'text-amber-600' : 'text-amber-500'}`}
+                />
+              ) : isExpanded ? (
                 <FolderOpen className="h-4 w-4 shrink-0 text-amber-600" />
               ) : (
                 <Folder className="h-4 w-4 shrink-0 text-amber-500" />
               )
-            ) : isLogicalResourceNode(node) ? (
-              <Cpu className="h-4 w-4 shrink-0 text-purple-600" />
+            ) : isLogical ? (
+              <CustomResourceIcon className="h-4 w-4 shrink-0 text-purple-600" />
             ) : (
-              <Box className="h-4 w-4 shrink-0 text-sky-600" />
+              <CustomResourceIcon className="h-4 w-4 shrink-0 text-sky-600" />
             )}
 
             <span className="truncate" title={node.name}>

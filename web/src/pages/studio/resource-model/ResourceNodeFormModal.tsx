@@ -9,6 +9,8 @@ import type {
 } from '../../../services/resourceCatalogApi';
 import type { ResourceType } from '../../../services/resourceApi';
 import { listResourceTypes } from '../../../services/resourceCatalogApi';
+import { isLogicalResourceNode } from '../../../utils/resourceNodeNature';
+import { resolveNodeIcon } from './catalogNodeIcons';
 import { Modal, Button } from '../../../components/ui';
 
 export type ResourceNodeFormModalProps = {
@@ -147,6 +149,13 @@ export function ResourceNodeFormModal({
     }
   };
 
+  const isLogical = editingNode ? isLogicalResourceNode(editingNode) : false;
+  const HeaderIcon = editingNode
+    ? resolveNodeIcon(editingNode.metadata?.icon as string | undefined, editingNode.kind, isLogical)
+    : kind === 'GROUP'
+      ? Folder
+      : Box;
+
   return (
     <Modal
       onClose={onClose}
@@ -154,7 +163,7 @@ export function ResourceNodeFormModal({
       title={
         <div className="flex items-center gap-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-app-accent-soft text-app-text">
-            {kind === 'GROUP' ? <Folder className="h-5 w-5" /> : <Box className="h-5 w-5" />}
+            <HeaderIcon className="h-5 w-5" />
           </div>
           <div>
             <h3>{isEditing ? 'Editar nó do catálogo' : 'Novo nó do catálogo'}</h3>

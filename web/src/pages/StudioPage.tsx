@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Bot,
+  Briefcase,
   Database,
   FileStack,
   Layers3,
@@ -84,6 +85,12 @@ const studioNavigation: StudioNavGroup[] = [
         label: 'Locais',
         description: 'Tipos de local e relações de contenção.',
         icon: MapPinned,
+      },
+      {
+        id: 'service-model',
+        label: 'Serviços',
+        description: 'Catálogos de serviço, CFS e RFS.',
+        icon: Briefcase,
       },
     ],
   },
@@ -314,7 +321,13 @@ export function StudioPage({
             </div>
           ) : section === 'location-model' ? (
             <div className="mt-5">
-              <LocationModelStudio canEdit={canEdit} canAdmin={canAdmin} />
+              <LocationModelStudio
+                canEdit={canEdit}
+                canAdmin={canAdmin}
+                isEditing={isEditing}
+                onRegisterCaptureDraft={handleRegisterCaptureDraft}
+                onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
+              />
             </div>
           ) : section === 'spatial' ? (
             <div className="mt-5">

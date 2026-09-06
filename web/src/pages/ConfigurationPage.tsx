@@ -4,9 +4,6 @@ import {
   Briefcase,
   Check,
   FolderTree,
-  HardHat,
-  MapPinned,
-  Network,
   Pencil,
   Plus,
   ServerCog,
@@ -33,24 +30,10 @@ import {
   updatePartyRole,
   type PartyRole,
 } from '../services/partyApi';
-import {
-  deleteJson,
-  listGeoSiteSpecifications,
-  patchJson,
-  postJson,
-  type GeoSpec,
-} from '../services/geoApi';
-import {
-  siteRoleLabel,
-  siteSpecCategoryLabel,
-  siteSpecLabel,
-  SITE_ROLE_OPTIONS,
-} from '../utils/geoLabels';
 import Field from '../components/Field';
 import PageHead from '../components/ui/PageHead';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
-import { ResourceCatalogTab } from './config-tabs/ResourceCatalogTab';
 import { ServiceCatalogTab } from './config-tabs/ServiceCatalogTab';
 import { UsersTab } from './config-tabs/UsersTab';
 import { EnvironmentTab } from './config-tabs/EnvironmentTab';
@@ -79,23 +62,7 @@ const supplierCnpj = (role: PartyRole): string => {
   return typeof characteristic?.value === 'string' ? characteristic.value : '';
 };
 
-type ConfigTab =
-  | 'users'
-  | 'environment'
-  | 'events'
-  | 'projects'
-  | 'suppliers'
-  | 'sites'
-  | 'resourcesCivil'
-  | 'resourcesNetwork'
-  | 'services';
-
-type SiteTypeDraft = {
-  code: string;
-  name: string;
-  siteRole: GeoSpec['siteRole'];
-  allowedChildSpecIds: string[];
-};
+type ConfigTab = 'users' | 'environment' | 'events' | 'projects' | 'suppliers' | 'services';
 
 type ProjectStatusDraft = {
   name: string;
@@ -117,9 +84,6 @@ const tabs: Array<{ id: ConfigTab; label: string; icon: LucideIcon }> = [
   { id: 'environment', label: 'Ambiente', icon: ServerCog },
   { id: 'events', label: 'Eventos', icon: Activity },
   { id: 'projects', label: 'Projetos', icon: FolderTree },
-  { id: 'sites', label: 'Locais', icon: MapPinned },
-  { id: 'resourcesCivil', label: 'Infraestrutura', icon: HardHat },
-  { id: 'resourcesNetwork', label: 'Recursos', icon: Network },
   { id: 'services', label: 'Serviços', icon: Briefcase },
   { id: 'suppliers', label: 'Fornecedores', icon: Truck },
 ];
@@ -362,176 +326,6 @@ export function ConfigurationPage() {
       reloadSuppliers();
     } catch {
       setSuppliersError('Não foi possível desativar o fornecedor.');
-    }
-  };
-
-  const emptySiteTypeDraft = (): SiteTypeDraft => ({
-    code: '',
-    name: '',
-    siteRole: 'network',
-    allowedChildSpecIds: [],
-  });
-
-  const [siteSpecs, setSiteSpecs] = useState<GeoSpec[]>([]);
-  const [siteTypesLoading, setSiteTypesLoading] = useState(true);
-  const [siteTypeError, setSiteTypeError] = useState<string | null>(null);
-  const [siteTypeSaving, setSiteTypeSaving] = useState(false);
-  const [siteTypeModal, setSiteTypeModal] = useState<{
-    mode: 'create' | 'edit';
-    spec: GeoSpec | null;
-  } | null>(null);
-  const [siteTypeDraft, setSiteTypeDraft] = useState<SiteTypeDraft>(emptySiteTypeDraft());
-  const [pendingSiteTypeRemoval, setPendingSiteTypeRemoval] = useState<GeoSpec | null>(null);
-
-  const reloadSiteTypes = () => {
-    setSiteTypesLoading(true);
-    void listGeoSiteSpecifications()
-      .then(setSiteSpecs)
-      .catch(() => setSiteTypeError('Não foi possível carregar os tipos de Local.'))
-      .finally(() => setSiteTypesLoading(false));
-  };
-  useEffect(reloadSiteTypes, []);
-
-  const activeSiteSpecs = siteSpecs.filter((spec) => spec.lifecycleStatus === 'Active');
-
-  const allowedChildNames = (spec: GeoSpec): string =>
-    spec.allowedChildSpecIds
-      .map((id) => {
-        const child = siteSpecs.find((item) => item.id === id);
-        return child ? siteSpecLabel(child) : id;
-      })
-      .join(', ');
-
-  const [siteTypeSort, onSiteTypeSort] = useSort<'name' | 'category' | 'siteRole' | 'children'>();
-  const sortedSiteSpecs = useMemo(
-    () =>
-      sortedBy(activeSiteSpecs, siteTypeSort, (spec, key) => {
-        switch (key) {
-          case 'name':
-            return siteSpecLabel(spec);
-          case 'category':
-            return siteSpecCategoryLabel(spec.category);
-          case 'siteRole':
-            return siteRoleLabel(spec.siteRole);
-          case 'children':
-            return allowedChildNames(spec);
-          default:
-            return '';
-        }
-      }),
-    [activeSiteSpecs, siteTypeSort],
-  );
-
-  const openCreateSiteType = () => {
-    setSiteTypeDraft(emptySiteTypeDraft());
-    setSiteTypeModal({ mode: 'create', spec: null });
-    setSiteTypeError(null);
-  };
-
-  const openEditSiteType = (spec: GeoSpec) => {
-    // O rótulo exibido na lista (siteSpecLabel) é a tradução pt-BR — pré-carrega o campo Label com
-    // ela, não com o `spec.name` cru (código/inglês legado), para o que o usuário vê ao editar
-    // seja o mesmo que ele vê na tabela.
-    setSiteTypeDraft({
-      code: spec.code,
-      name: siteSpecLabel(spec),
-      siteRole: spec.siteRole,
-      allowedChildSpecIds: spec.allowedChildSpecIds,
-    });
-    setSiteTypeModal({ mode: 'edit', spec });
-    setSiteTypeError(null);
-  };
-
-  const closeSiteTypeModal = () => {
-    if (siteTypeSaving) return;
-    setSiteTypeModal(null);
-  };
-
-  // `validateContainment` (src/modules/geo/service.ts) exige a relação nos dois sentidos: o pai
-  // precisa ter o filho em `allowedChildSpecIds` E o filho precisa ter o pai em
-  // `allowedParentSpecIds`. O PATCH desta tela grava só o lado do pai — este helper mantém o lado
-  // do filho em sincronia, igual ao padrão já usado nos scripts de carga (ensureContainment).
-  const syncChildParentLinks = async (
-    specId: string,
-    previousChildIds: string[],
-    nextChildIds: string[],
-  ) => {
-    const previousSet = new Set(previousChildIds);
-    const nextSet = new Set(nextChildIds);
-    const added = nextChildIds.filter((id) => !previousSet.has(id));
-    const removed = previousChildIds.filter((id) => !nextSet.has(id));
-    for (const childId of added) {
-      const child = siteSpecs.find((item) => item.id === childId);
-      const parentIds = new Set(child?.allowedParentSpecIds ?? []);
-      parentIds.add(specId);
-      await patchJson(`/v1/geo/site-specifications/${encodeURIComponent(childId)}`, {
-        allowedParentSpecIds: [...parentIds],
-      });
-    }
-    for (const childId of removed) {
-      const child = siteSpecs.find((item) => item.id === childId);
-      const parentIds = new Set(child?.allowedParentSpecIds ?? []);
-      parentIds.delete(specId);
-      await patchJson(`/v1/geo/site-specifications/${encodeURIComponent(childId)}`, {
-        allowedParentSpecIds: [...parentIds],
-      });
-    }
-  };
-
-  const submitSiteTypeModal = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!siteTypeModal || !siteTypeDraft.name.trim()) return;
-    if (siteTypeModal.mode === 'create' && !siteTypeDraft.code.trim()) return;
-    setSiteTypeSaving(true);
-    setSiteTypeError(null);
-    try {
-      if (siteTypeModal.mode === 'create') {
-        const created = await postJson<GeoSpec>('/v1/geo/site-specifications', {
-          code: siteTypeDraft.code.trim(),
-          name: siteTypeDraft.name.trim(),
-          siteRole: siteTypeDraft.siteRole,
-          category: 'Site',
-          allowedChildSpecIds: siteTypeDraft.allowedChildSpecIds,
-        });
-        await syncChildParentLinks(created.id, [], siteTypeDraft.allowedChildSpecIds);
-      } else if (siteTypeModal.spec) {
-        await patchJson(`/v1/geo/site-specifications/${encodeURIComponent(siteTypeModal.spec.id)}`, {
-          name: siteTypeDraft.name.trim(),
-          siteRole: siteTypeDraft.siteRole,
-          allowedChildSpecIds: siteTypeDraft.allowedChildSpecIds,
-        });
-        await syncChildParentLinks(
-          siteTypeModal.spec.id,
-          siteTypeModal.spec.allowedChildSpecIds,
-          siteTypeDraft.allowedChildSpecIds,
-        );
-      }
-      setSiteTypeModal(null);
-      reloadSiteTypes();
-    } catch (reason) {
-      setSiteTypeError(
-        reason instanceof Error ? reason.message : 'Não foi possível salvar o tipo de Local.',
-      );
-    } finally {
-      setSiteTypeSaving(false);
-    }
-  };
-
-  const removeSiteType = async () => {
-    if (!pendingSiteTypeRemoval) return;
-    setSiteTypeSaving(true);
-    setSiteTypeError(null);
-    try {
-      await deleteJson(`/v1/geo/site-specifications/${encodeURIComponent(pendingSiteTypeRemoval.id)}`);
-      if (siteTypeModal?.spec?.id === pendingSiteTypeRemoval.id) setSiteTypeModal(null);
-      setPendingSiteTypeRemoval(null);
-      reloadSiteTypes();
-    } catch (reason) {
-      setSiteTypeError(
-        reason instanceof Error ? reason.message : 'Não foi possível remover o tipo de Local.',
-      );
-    } finally {
-      setSiteTypeSaving(false);
     }
   };
 
@@ -854,119 +648,6 @@ export function ConfigurationPage() {
               />
             ) : null}
           </>
-        ) : tab === 'sites' ? (
-          <>
-            <PageHead
-              title="Tipos de Locais"
-              subtitle="Catálogo de especificações de Local (GeographicSiteSpecification). Papel (siteRole) define o que o tipo é (C11); novos tipos entram na categoria Local — tipos de Sub-local (Sala, Pavimento…) são cadastrados via API."
-              actions={
-                <Button onClick={openCreateSiteType} iconLeft={<Plus className="h-4 w-4" />}>
-                  Adicionar
-                </Button>
-              }
-            />
-
-            {siteTypeError && !siteTypeModal ? (
-              <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
-                {siteTypeError}
-              </p>
-            ) : null}
-
-            <div className="vt-card vt-table-card" style={{ overflow: 'hidden', padding: 0 }}>
-              <table className="vt-table" style={{ minWidth: 650 }}>
-                <thead>
-                  <tr>
-                    <SortableHeader label="Nome" sortKey="name" sort={siteTypeSort} onSort={onSiteTypeSort} />
-                    <SortableHeader
-                      label="Categoria"
-                      sortKey="category"
-                      sort={siteTypeSort}
-                      onSort={onSiteTypeSort}
-                    />
-                    <SortableHeader label="Papel" sortKey="siteRole" sort={siteTypeSort} onSort={onSiteTypeSort} />
-                    <SortableHeader
-                      label="Filhos permitidos"
-                      sortKey="children"
-                      sort={siteTypeSort}
-                      onSort={onSiteTypeSort}
-                    />
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {siteTypesLoading ? (
-                    <tr>
-                      <td colSpan={5}>Carregando…</td>
-                    </tr>
-                  ) : (
-                    sortedSiteSpecs.map((spec) => (
-                      <tr key={spec.id}>
-                        <td className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                          {siteSpecLabel(spec)}
-                        </td>
-                        <td>{siteSpecCategoryLabel(spec.category)}</td>
-                        <td>{siteRoleLabel(spec.siteRole)}</td>
-                        <td>{spec.allowedChildSpecIds.length ? allowedChildNames(spec) : '-'}</td>
-                        <td>
-                          <div className="flex justify-end gap-1">
-                            <button
-                              type="button"
-                              onClick={() => openEditSiteType(spec)}
-                              className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft"
-                              aria-label={`Editar ${siteSpecLabel(spec)}`}
-                              disabled={siteTypeSaving}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                            {pendingSiteTypeRemoval?.id === spec.id ? (
-                              <button
-                                type="button"
-                                onClick={() => void removeSiteType()}
-                                className="rounded-xl border border-status-red/30 bg-status-red-soft px-2 py-1 text-[0.75rem] font-semibold text-status-red"
-                                disabled={siteTypeSaving}
-                              >
-                                Confirmar
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setPendingSiteTypeRemoval(spec);
-                                  setSiteTypeError(null);
-                                }}
-                                className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft"
-                                aria-label={`Remover ${siteSpecLabel(spec)}`}
-                                disabled={siteTypeSaving}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {siteTypeModal ? (
-              <SiteTypeModal
-                mode={siteTypeModal.mode}
-                draft={siteTypeDraft}
-                specOptions={activeSiteSpecs.filter((spec) => spec.id !== siteTypeModal.spec?.id)}
-                saving={siteTypeSaving}
-                error={siteTypeError}
-                onChange={setSiteTypeDraft}
-                onSubmit={submitSiteTypeModal}
-                onClose={closeSiteTypeModal}
-              />
-            ) : null}
-          </>
-        ) : tab === 'resourcesCivil' ? (
-          <ResourceCatalogTab infraTab="civil" />
-        ) : tab === 'resourcesNetwork' ? (
-          <ResourceCatalogTab infraTab="network" />
         ) : (
           <ServiceCatalogTab />
         )}
@@ -1136,135 +817,3 @@ function SupplierModal({
   );
 }
 
-function SiteTypeModal({
-  mode,
-  draft,
-  specOptions,
-  saving,
-  error,
-  onChange,
-  onSubmit,
-  onClose,
-}: {
-  mode: 'create' | 'edit';
-  draft: SiteTypeDraft;
-  specOptions: GeoSpec[];
-  saving: boolean;
-  error: string | null;
-  onChange: (next: SiteTypeDraft) => void;
-  onSubmit: (event: FormEvent) => void;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
-  const toggleChild = (id: string) => {
-    const next = draft.allowedChildSpecIds.includes(id)
-      ? draft.allowedChildSpecIds.filter((item) => item !== id)
-      : [...draft.allowedChildSpecIds, id];
-    onChange({ ...draft, allowedChildSpecIds: next });
-  };
-
-  const submitDisabled =
-    saving || !draft.name.trim() || (mode === 'create' && !draft.code.trim());
-
-  return (
-    <Modal
-      title={
-        <ModalTitle onClose={onClose}>
-          {mode === 'create' ? 'Criar tipo de Local' : 'Editar tipo de Local'}
-        </ModalTitle>
-      }
-      onClose={onClose}
-      width={480}
-      footer={
-        <>
-          <Button variant="secondary" type="button" onClick={onClose} disabled={saving}>
-            Cancelar
-          </Button>
-          <Button type="submit" form="site-type-form" disabled={submitDisabled}>
-            {saving ? 'Salvando...' : mode === 'create' ? 'Criar' : 'Salvar'}
-          </Button>
-        </>
-      }
-    >
-      {error ? (
-        <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
-          {error}
-        </p>
-      ) : null}
-
-      <form id="site-type-form" onSubmit={onSubmit} className="grid gap-4">
-        <Field label="Código">
-          <input
-            value={draft.code}
-            onChange={(event) => onChange({ ...draft, code: event.target.value })}
-            className="geo-input"
-            placeholder="ex: CENTRAL_OFFICE"
-            disabled={mode === 'edit'}
-            autoFocus={mode === 'create'}
-          />
-          {mode === 'edit' ? (
-            <span className="text-[0.72rem] font-medium normal-case tracking-normal text-app-muted">
-              O código não pode ser alterado após o cadastro.
-            </span>
-          ) : null}
-        </Field>
-        <Field label="Label">
-          <input
-            value={draft.name}
-            onChange={(event) => onChange({ ...draft, name: event.target.value })}
-            className="geo-input"
-            autoFocus={mode === 'edit'}
-          />
-        </Field>
-        <Field label="Papel">
-          <select
-            value={draft.siteRole}
-            onChange={(event) =>
-              onChange({ ...draft, siteRole: event.target.value as GeoSpec['siteRole'] })
-            }
-            className="geo-input"
-          >
-            {SITE_ROLE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Filhos permitidos">
-          {specOptions.length === 0 ? (
-            <div className="rounded-[14px] border border-app-border bg-white px-3 py-4 text-center text-[0.82rem] font-normal normal-case tracking-normal text-app-muted">
-              Nenhum outro tipo de Local cadastrado.
-            </div>
-          ) : (
-            <div className="max-h-[130px] overflow-auto rounded-[14px] border border-app-border bg-white">
-              {specOptions.map((option) => (
-                <label
-                  key={option.id}
-                  className="flex cursor-pointer items-center gap-3 px-3 py-2 text-[0.86rem] font-normal normal-case tracking-normal text-app-text transition hover:bg-app-accent-soft"
-                >
-                  <input
-                    type="checkbox"
-                    checked={draft.allowedChildSpecIds.includes(option.id)}
-                    onChange={() => toggleChild(option.id)}
-                  />
-                  <span className="min-w-0 flex-1 truncate">{siteSpecLabel(option)}</span>
-                  <span className="text-[0.72rem] text-app-muted">
-                    {siteSpecCategoryLabel(option.category)}
-                  </span>
-                </label>
-              ))}
-            </div>
-          )}
-        </Field>
-      </form>
-    </Modal>
-  );
-}

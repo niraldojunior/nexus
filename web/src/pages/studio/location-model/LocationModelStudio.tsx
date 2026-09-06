@@ -1,10 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  MapPin,
   Plus,
-  RefreshCw,
-  Save,
-  CheckCircle2,
   AlertCircle,
   FolderTree,
   Building,
@@ -13,6 +9,7 @@ import {
   Trash2,
   Edit2,
   Search,
+  MapPin,
 } from 'lucide-react';
 import type {
   GeoSpec,
@@ -27,10 +24,7 @@ import {
   updateGeoSpec,
   retireGeoSpec,
 } from '../../../services/geoApi';
-import {
-  getStudioStatus,
-  saveStudioDraft,
-} from '../../../services/studioApi';
+import { getStudioStatus, saveStudioDraft } from '../../../services/studioApi';
 import { Button, Badge } from '../../../components/ui';
 import { LocationSpecFormModal } from './LocationSpecFormModal';
 import { LocationSpecImpactModal } from './LocationSpecImpactModal';
@@ -38,18 +32,33 @@ import { LocationSpecImpactModal } from './LocationSpecImpactModal';
 export type LocationModelStudioProps = {
   canEdit: boolean;
   canAdmin: boolean;
+  /** Existe um draft de governança aberto para o domínio "location-model" (ver StudioPage). */
+  isEditing: boolean;
+  /**
+   * Registra (ou desregistra, com `null`) a função que captura o estado atual do modelo de locais
+   * como draft de governança. `StudioPage` guarda essa função e a repassa a
+   * `StudioGovernanceSummary` como `beforePublish`, para que o snapshot gravado na publicação seja
+   * sempre o mais recente — mesmo padrão de `ResourceModelStudio` (ver issue #214).
+   */
+  onRegisterCaptureDraft?: (fn: (() => Promise<void>) | null) => void;
+  /**
+   * Registra (ou desregistra, com `null`) a função que apenas monta — sem salvar — o snapshot vivo
+   * atual das especificações. Chamada por `StudioPage` no clique de "Editar" para que o draft nasça
+   * com uma baseline, permitindo que "Cancelar" restaure de verdade.
+   */
+  onRegisterCaptureInitialSnapshot?: (fn: (() => Promise<Record<string, unknown>>) | null) => void;
 };
 
 const CATEGORY_LABELS: Record<GeoSpecCategory, string> = {
   Region: 'Região',
   FunctionalGroup: 'Grupo Funcional',
-  Site: 'Local (Site)',
-  SubSite: 'Sub-Local (SubSite)',
+  Site: 'Local',
+  SubSite: 'Sub-Local',
 };
 
 const ROLE_LABELS: Record<GeoSiteRole, string> = {
   grouping: 'Agrupamento',
-  network: 'Rede',
+  network: 'Recurso',
   property: 'Imobiliário',
   service: 'Serviço',
 };
@@ -61,20 +70,25 @@ const ROLE_TONE: Record<GeoSiteRole, 'amber' | 'blue' | 'purple' | 'green'> = {
   service: 'green',
 };
 
-export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
+export function LocationModelStudio({
+  canEdit,
+  isEditing,
+  onRegisterCaptureDraft,
+  onRegisterCaptureInitialSnapshot,
+}: LocationModelStudioProps) {
   const [specs, setSpecs] = useState<GeoSpec[]>([]);
   const [selectedSpecId, setSelectedSpecId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [error, setError] = useState<string | null>(null);
-  const [capturingDraft, setCapturingDraft] = useState(false);
-  const [draftSuccess, setDraftSuccess] = useState<string | null>(null);
 
   // Modals
   const [formModalOpen, setFormModalOpen] = useState(false);
   const [editingSpec, setEditingSpec] = useState<GeoSpec | null>(null);
   const [impactModalOpen, setImpactModalOpen] = useState(false);
   const [impactingSpec, setImpactingSpec] = useState<GeoSpec | null>(null);
+
+  const canMutate = canEdit && isEditing;
 
   const loadSpecs = async () => {
     try {
@@ -92,73 +106,91 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
     loadSpecs();
   }, []);
 
-  const selectedSpec = specs.find((s) => s.id === selectedSpecId) ?? null;
-
-  // Filtragem
+  // Filtragem — fora do modo de edição, especificações aposentadas ficam ocultas (só reaparecem
+  // depois de clicar "Editar" na barra de governança).
   const filteredSpecs = specs.filter((s) => {
     const matchesCat = selectedCategory === 'ALL' || s.category === selectedCategory;
+    const matchesLifecycle = isEditing || s.lifecycleStatus === 'Active';
     const term = filterText.toLowerCase();
     const matchesSearch =
       !term ||
       s.name.toLowerCase().includes(term) ||
       s.code.toLowerCase().includes(term) ||
       (s.description && s.description.toLowerCase().includes(term));
-    return matchesCat && matchesSearch;
+    return matchesCat && matchesLifecycle && matchesSearch;
   });
 
-  // Salvar snapshot como draft do Studio
-  const handleCaptureAsDraft = async () => {
-    try {
-      setCapturingDraft(true);
-      setError(null);
-      setDraftSuccess(null);
-
-      const snapshot = {
-        specifications: specs.map((s) => {
-          const allowedParentCodes = (s.allowedParentSpec || [])
-            .map((p) => p.code)
-            .concat(
-              s.allowedParentSpecIds
-                .map((id) => specs.find((x) => x.id === id)?.code)
-                .filter((code): code is string => Boolean(code)),
-            );
-          const allowedChildCodes = (s.allowedChildSpec || [])
-            .map((c) => c.code)
-            .concat(
-              s.allowedChildSpecIds
-                .map((id) => specs.find((x) => x.id === id)?.code)
-                .filter((code): code is string => Boolean(code)),
-            );
-
-          return {
-            id: s.id,
-            code: s.code,
-            name: s.name,
-            category: s.category,
-            siteRole: s.siteRole,
-            description: s.description,
-            lifecycleStatus: s.lifecycleStatus,
-            allowedParentCodes: Array.from(new Set(allowedParentCodes)),
-            allowedChildCodes: Array.from(new Set(allowedChildCodes)),
-            specCharacteristic: s.specCharacteristic || [],
-          };
-        }),
-      };
-
-      const status = await getStudioStatus('location-model');
-      await saveStudioDraft(
-        'location-model',
-        snapshot,
-        status.draftVersion?.checksum,
-      );
-      setDraftSuccess('Snapshot do modelo de locais salvo como draft de governança!');
-      setTimeout(() => setDraftSuccess(null), 4000);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Falha ao salvar draft no Studio.');
-    } finally {
-      setCapturingDraft(false);
+  // Se a especificação selecionada sair da lista filtrada (ex.: aposentada some ao encerrar a
+  // edição), o painel de detalhe não pode continuar apontando para ela.
+  useEffect(() => {
+    if (selectedSpecId && !filteredSpecs.some((s) => s.id === selectedSpecId)) {
+      setSelectedSpecId(filteredSpecs[0]?.id ?? null);
     }
-  };
+  }, [filteredSpecs, selectedSpecId]);
+
+  const selectedSpec = specs.find((s) => s.id === selectedSpecId) ?? null;
+
+  // Monta o snapshot do modelo de locais a partir do estado vivo — usado tanto para capturar a
+  // baseline ao entrar em edição quanto para gravar o draft final ao publicar.
+  const buildSnapshot = useCallback(async (): Promise<Record<string, unknown>> => {
+    return {
+      specifications: specs.map((s) => {
+        const allowedParentCodes = (s.allowedParentSpec || [])
+          .map((p) => p.code)
+          .concat(
+            s.allowedParentSpecIds
+              .map((id) => specs.find((x) => x.id === id)?.code)
+              .filter((code): code is string => Boolean(code)),
+          );
+        const allowedChildCodes = (s.allowedChildSpec || [])
+          .map((c) => c.code)
+          .concat(
+            s.allowedChildSpecIds
+              .map((id) => specs.find((x) => x.id === id)?.code)
+              .filter((code): code is string => Boolean(code)),
+          );
+
+        return {
+          id: s.id,
+          code: s.code,
+          name: s.name,
+          category: s.category,
+          siteRole: s.siteRole,
+          description: s.description,
+          lifecycleStatus: s.lifecycleStatus,
+          allowedParentCodes: Array.from(new Set(allowedParentCodes)),
+          allowedChildCodes: Array.from(new Set(allowedChildCodes)),
+          specCharacteristic: s.specCharacteristic || [],
+        };
+      }),
+    };
+  }, [specs]);
+
+  const handleCaptureAsDraft = useCallback(async () => {
+    const snapshot = await buildSnapshot();
+    const status = await getStudioStatus('location-model');
+    await saveStudioDraft('location-model', snapshot, status.draftVersion?.checksum);
+  }, [buildSnapshot]);
+
+  useEffect(() => {
+    onRegisterCaptureDraft?.(handleCaptureAsDraft);
+    return () => onRegisterCaptureDraft?.(null);
+  }, [handleCaptureAsDraft, onRegisterCaptureDraft]);
+
+  useEffect(() => {
+    onRegisterCaptureInitialSnapshot?.(buildSnapshot);
+    return () => onRegisterCaptureInitialSnapshot?.(null);
+  }, [buildSnapshot, onRegisterCaptureInitialSnapshot]);
+
+  // Ao encerrar a edição (draft publicado ou cancelado), recarrega as especificações para refletir
+  // o estado gravado — mesmo padrão de ResourceModelStudio.
+  const wasEditingRef = useRef(isEditing);
+  useEffect(() => {
+    if (wasEditingRef.current && !isEditing) {
+      loadSpecs();
+    }
+    wasEditingRef.current = isEditing;
+  }, [isEditing]);
 
   const handleCreateSpec = async (input: CreateGeoSpecInput) => {
     const created = await createGeoSpec(input);
@@ -182,69 +214,6 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
 
   return (
     <div className="space-y-4">
-      {/* Top Bar */}
-      <div className="vt-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-app-accent-soft text-app-text">
-            <MapPin className="h-5 w-5" />
-          </div>
-          <div>
-            <h3>Modelo de locais & contenção</h3>
-            <p className="text-[0.78rem] text-app-muted">
-              Especificações geográficas (TMF674), papéis funcionais (C11) e regras de hierarquia.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {canEdit && (
-            <>
-              <Button
-                variant="primary"
-                size="sm"
-                iconLeft={<Plus className="h-4 w-4" />}
-                onClick={() => {
-                  setEditingSpec(null);
-                  setFormModalOpen(true);
-                }}
-              >
-                Nova especificação
-              </Button>
-
-              <Button
-                variant="secondary"
-                size="sm"
-                iconLeft={<Save className="h-4 w-4" />}
-                onClick={handleCaptureAsDraft}
-                disabled={capturingDraft}
-              >
-                {capturingDraft ? 'Salvando…' : 'Salvar como draft'}
-              </Button>
-            </>
-          )}
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={loadSpecs}
-            title="Recarregar especificações"
-            aria-label="Recarregar especificações"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      {draftSuccess && (
-        <div
-          className="flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
-          style={{ background: 'var(--status-green-soft)', color: 'var(--status-green)' }}
-        >
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          <span>{draftSuccess}</span>
-        </div>
-      )}
-
       {error && (
         <div
           className="flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
@@ -260,18 +229,34 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
         {/* Left: Lista de Especificações */}
         <div className="vt-card flex min-h-[580px] flex-col p-4">
           <div className="space-y-2 pb-3 border-b border-app-border mb-3">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-app-muted" />
-              <input
-                type="text"
-                value={filterText}
-                onChange={(e) => setFilterText(e.target.value)}
-                placeholder="Buscar por nome ou código..."
-                className="w-full rounded-[10px] border border-app-border bg-white pl-8 pr-3 py-1.5 text-[0.82rem] text-app-text outline-none focus:border-app-accent"
-              />
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-app-muted" />
+                <input
+                  type="text"
+                  value={filterText}
+                  onChange={(e) => setFilterText(e.target.value)}
+                  placeholder="Buscar por nome ou código..."
+                  className="w-full rounded-[10px] border border-app-border bg-white pl-8 pr-3 py-1.5 text-[0.82rem] text-app-text outline-none focus:border-app-accent"
+                />
+              </div>
+              {canMutate && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    setEditingSpec(null);
+                    setFormModalOpen(true);
+                  }}
+                  title="Nova especificação de local"
+                  aria-label="Nova especificação de local"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              )}
             </div>
             <div className="flex gap-1 overflow-x-auto py-0.5">
-              {['ALL', 'Region', 'FunctionalGroup', 'Site', 'SubSite'].map((cat) => (
+              {['ALL', 'Region', 'Site', 'SubSite'].map((cat) => (
                 <button
                   key={cat}
                   type="button"
@@ -324,7 +309,6 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
                         )}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[0.72rem] font-mono text-app-muted">{spec.code}</span>
                         <span className="text-[0.7rem] px-1.5 py-0.2 rounded bg-black/[0.04] text-app-muted font-medium">
                           {CATEGORY_LABELS[spec.category]}
                         </span>
@@ -360,16 +344,15 @@ export function LocationModelStudio({ canEdit }: LocationModelStudioProps) {
                         <Badge tone={ROLE_TONE[selectedSpec.siteRole]}>
                           {ROLE_LABELS[selectedSpec.siteRole]}
                         </Badge>
-                        <Badge tone={selectedSpec.lifecycleStatus === 'Active' ? 'green' : 'red'} dot>
+                        <Badge tone={selectedSpec.lifecycleStatus === 'Active' ? 'green' : 'neutral'} dot>
                           {selectedSpec.lifecycleStatus === 'Active' ? 'Ativo' : 'Aposentado'}
                         </Badge>
                       </div>
                       <h2 className="mt-0.5">{selectedSpec.name}</h2>
-                      <p className="text-[0.82rem] font-mono text-app-muted mt-0.5">{selectedSpec.code}</p>
                     </div>
                   </div>
 
-                  {canEdit && (
+                  {canMutate && (
                     <div className="flex items-center gap-2">
                       <Button
                         variant="secondary"

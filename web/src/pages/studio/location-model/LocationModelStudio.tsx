@@ -394,7 +394,7 @@ export function LocationModelStudio({
                     <div className="flex items-center gap-2 mb-3">
                       <FolderTree className="h-4 w-4 text-amber-600" />
                       <h4 className="text-[0.85rem] font-semibold text-app-text">
-                        Pode ser contido por (pais permitidos)
+                        Pode ser contido por
                       </h4>
                     </div>
                     {selectedSpec.allowedParentSpecIds.length === 0 ? (
@@ -408,10 +408,7 @@ export function LocationModelStudio({
                               key={pId}
                               className="inline-flex items-center gap-1 rounded-[8px] border border-app-border bg-white px-2.5 py-1 text-[0.78rem] text-app-text font-medium"
                             >
-                              <span>{parentSpec ? parentSpec.name : pId}</span>
-                              <span className="text-[0.7rem] font-mono text-app-muted">
-                                ({parentSpec ? parentSpec.code : pId.slice(0, 6)})
-                              </span>
+                              {parentSpec ? parentSpec.name : pId}
                             </span>
                           );
                         })}
@@ -424,7 +421,7 @@ export function LocationModelStudio({
                     <div className="flex items-center gap-2 mb-3">
                       <Layers className="h-4 w-4 text-sky-600" />
                       <h4 className="text-[0.85rem] font-semibold text-app-text">
-                        Pode conter diretamente (filhos permitidos)
+                        Contém
                       </h4>
                     </div>
                     {selectedSpec.allowedChildSpecIds.length === 0 ? (
@@ -438,10 +435,7 @@ export function LocationModelStudio({
                               key={cId}
                               className="inline-flex items-center gap-1 rounded-[8px] border border-app-border bg-white px-2.5 py-1 text-[0.78rem] text-app-text font-medium"
                             >
-                              <span>{childSpec ? childSpec.name : cId}</span>
-                              <span className="text-[0.7rem] font-mono text-app-muted">
-                                ({childSpec ? childSpec.code : cId.slice(0, 6)})
-                              </span>
+                              {childSpec ? childSpec.name : cId}
                             </span>
                           );
                         })}

@@ -27,7 +27,7 @@ const CATEGORY_OPTIONS: Array<{ value: GeoSpecCategory; label: string }> = [
 
 const ROLE_OPTIONS: Array<{ value: GeoSiteRole; label: string }> = [
   { value: 'grouping', label: 'Agrupamento' },
-  { value: 'network', label: 'Rede' },
+  { value: 'network', label: 'Recurso' },
   { value: 'property', label: 'Imobiliário' },
   { value: 'service', label: 'Serviço' },
 ];
@@ -146,9 +146,6 @@ export function LocationSpecFormModal({
             <h3>
               {isEditing ? 'Editar especificação de local' : 'Nova especificação de local'}
             </h3>
-            <p className="text-[0.78rem] text-app-muted">
-              {isEditing ? editingSpec?.code : 'TMF674 · GeographicSiteSpecification'}
-            </p>
           </div>
         </div>
       }
@@ -223,7 +220,7 @@ export function LocationSpecFormModal({
             </div>
             <div>
               <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
-                Papel Funcional (C11) *
+                Papel Funcional *
               </label>
               <select
                 value={siteRole}

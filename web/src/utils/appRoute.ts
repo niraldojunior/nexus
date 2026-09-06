@@ -20,6 +20,7 @@ import { DEFAULT_SERVICE_CATEGORY_CODE } from '../data/serviceCategoryViews';
 export type StudioSection =
   | 'resource-model'
   | 'location-model'
+  | 'service-model'
   | 'spatial'
   | 'studio-geo'
   | 'copilot'
@@ -32,6 +33,7 @@ export type StudioSection =
 const STUDIO_SECTIONS: readonly StudioSection[] = [
   'resource-model',
   'location-model',
+  'service-model',
   'spatial',
   'studio-geo',
   'copilot',

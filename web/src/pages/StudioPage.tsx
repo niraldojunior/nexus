@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Bot,
+  Briefcase,
   Database,
   FileStack,
   Layers3,
@@ -17,6 +18,7 @@ import { StudioGovernanceSummary } from '../components/StudioGovernanceSummary';
 import { ResourceModelStudio } from './studio/resource-model/ResourceModelStudio';
 import { LocationModelStudio } from './studio/location-model/LocationModelStudio';
 import { SpatialStudio } from './studio/spatial/SpatialStudio';
+import { PartyModelStudio } from './studio/party-model/PartyModelStudio';
 import EmptyState from '../components/EmptyState';
 import { PageHead } from '../components/ui';
 import type { StudioDomain } from '../services/studioApi';
@@ -51,7 +53,6 @@ const studioDomainBySection: Partial<Record<StudioSection, StudioDomain>> = {
   'location-model': 'location-model',
   spatial: 'spatial',
   'studio-geo': 'studio-geo',
-  parties: 'parties',
   'reference-data': 'reference-data',
   'rules-workflows': 'rules-workflows',
   templates: 'templates',
@@ -84,6 +85,12 @@ const studioNavigation: StudioNavGroup[] = [
         label: 'Locais',
         description: 'Tipos de local e relações de contenção.',
         icon: MapPinned,
+      },
+      {
+        id: 'service-model',
+        label: 'Serviços',
+        description: 'Catálogos de serviço, CFS e RFS.',
+        icon: Briefcase,
       },
     ],
   },
@@ -225,7 +232,7 @@ export function StudioPage({
     <div
       className="h-full overflow-y-auto bg-white px-[11px] py-4 sm:px-[17px] sm:py-6 lg:px-[22px]"
       style={{
-        /* Glow radial verde ambiente atrás da janela Studio Control — pintado direto no
+        /* Glow radial ambiente atrás da janela Studio Control — pintado direto no
            container mais externo (não num wrapper extra ao redor da `aside`) para não haver
            nenhuma borda de caixa aninhada cortando o degradê pela metade. Ancorado no canto
            onde a `aside` nasce (0% 0%) e com raio grande (1400px) para se espalhar por toda a
@@ -233,7 +240,7 @@ export function StudioPage({
            glow do tamanho da própria `aside` parava seco onde ela termina; este cobre a coluna
            inteira e esmaece suavemente antes de alcançar o conteúdo da direita. */
         backgroundImage:
-          'radial-gradient(1400px circle at 0% 0%, rgba(18, 128, 92, 0.14) 0%, rgba(18, 128, 92, 0.05) 35%, rgba(18, 128, 92, 0) 62%)',
+          'radial-gradient(1400px circle at 0% 0%, rgba(188, 193, 214, 0.14) 0%, rgba(188, 193, 214, 0.05) 35%, rgba(188, 193, 214, 0) 62%)',
         backgroundRepeat: 'no-repeat',
       }}
     >
@@ -314,11 +321,21 @@ export function StudioPage({
             </div>
           ) : section === 'location-model' ? (
             <div className="mt-5">
-              <LocationModelStudio canEdit={canEdit} canAdmin={canAdmin} />
+              <LocationModelStudio
+                canEdit={canEdit}
+                canAdmin={canAdmin}
+                isEditing={isEditing}
+                onRegisterCaptureDraft={handleRegisterCaptureDraft}
+                onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
+              />
             </div>
           ) : section === 'spatial' ? (
             <div className="mt-5">
               <SpatialStudio canEdit={canEdit} canAdmin={canAdmin} />
+            </div>
+          ) : section === 'parties' ? (
+            <div className="mt-5">
+              <PartyModelStudio canEdit={canEdit} canAdmin={canAdmin} />
             </div>
           ) : (
             <div className="mt-5">

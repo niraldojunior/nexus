@@ -8,6 +8,7 @@ const CLOB_COLUMNS = new Set([
   'allowed_parent_spec_ids',
   'allowed_source_categories',
   'allowed_target_categories',
+  'allowed_values',
   'applicable_to_entity_types',
   'baseline_snapshot',
   'before_state',

@@ -45,6 +45,7 @@ export const TABLE_NAMES = [
   'tmf_party',
   'tmf_party_role',
   'tmf_party_relationship',
+  'party_role_type_characteristic',
   'tmf_event',
   'tmf_audit_log',
   'tmf_outbox',
@@ -1710,6 +1711,31 @@ const MIGRATIONS_SQL_V5_RESOURCE_TYPE_CHARACTERISTICS = `
   ALTER TABLE tmf_resource_type ADD COLUMN IF NOT EXISTS characteristics TEXT;
 `;
 
+// Catálogo de quais características cada "tipo de party" (identificado por role_name, ex.
+// "manufacturer") aceita — metadado de modelagem para a aba "Características Gerais" do Studio ->
+// Partes (issue #220), fora do contrato TMF632/669 de Party/PartyRole em si. Mesmo desenho de
+// geo_project_status_catalog: tabela simples, soft-delete via `active`, sem versionamento/draft.
+// `characteristic_group` (não `group`, palavra reservada em vários dialetos SQL) e `allowed_values`
+// como TEXT/JSON serializado replicam o padrão já usado em tmf_party.characteristics.
+const MIGRATIONS_SQL_V6_PARTY_ROLE_TYPE_CHARACTERISTIC = `
+  CREATE TABLE IF NOT EXISTS party_role_type_characteristic (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    role_name TEXT NOT NULL,
+    name TEXT NOT NULL,
+    characteristic_group TEXT,
+    description TEXT,
+    value_type TEXT NOT NULL,
+    allowed_values TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 100,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_party_role_type_characteristic_tenant_role
+    ON party_role_type_characteristic(tenant_id, role_name, sort_order, name);
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -1719,6 +1745,11 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 5,
     name: 'resource-type-characteristics',
     sql: MIGRATIONS_SQL_V5_RESOURCE_TYPE_CHARACTERISTICS,
+  },
+  {
+    version: 6,
+    name: 'party-role-type-characteristic',
+    sql: MIGRATIONS_SQL_V6_PARTY_ROLE_TYPE_CHARACTERISTIC,
   },
 ];
 

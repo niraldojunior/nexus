@@ -1,4 +1,5 @@
 import { AppError } from '../../../shared/errors/app-error.js';
+import { createCanonicalId } from '../../../shared/utils/canonical-id.js';
 import type { StudioDomainAdapter, StudioValidationIssue, StudioValidationResult } from '../domain.js';
 import type { GeoService } from '../../geo/service.js';
 import type { Characteristic, GeoJSONPolygon, GeographicLocation } from '../../geo/domain.js';
@@ -28,7 +29,9 @@ const studioContext = (tenantId: string) => ({
   tenantId,
   actorSub: 'studio-adapter',
   roles: ['studio.admin', 'geo.admin', 'platform.admin'],
-  traceId: `studio-materialize-spatial-${Date.now()}`,
+  // traceId vira correlationId em tmf_event (correlation_id) — coluna dimensionada para UUID
+  // (VARCHAR2(36) no Oracle, ver oracle-schema.ts), não string legível com prefixo.
+  traceId: createCanonicalId(),
 });
 
 export const spatialCharacteristic = (

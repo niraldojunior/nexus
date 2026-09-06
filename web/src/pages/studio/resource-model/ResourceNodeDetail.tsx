@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
   Box,
-  Folder,
   FileCode,
   Check,
   Save,
@@ -39,6 +38,8 @@ import {
 } from '../../../utils/resourceCharacteristicsForm';
 import ResourceCharacteristicsEditor from '../../../components/ResourceCharacteristicsEditor';
 import { ResourceSpecificationFormModal } from './ResourceSpecificationFormModal';
+import { IconPickerModal } from './IconPickerModal';
+import { resolveNodeIcon } from './catalogNodeIcons';
 import { Button } from '../../../components/ui';
 
 export type ResourceNodeDetailProps = {
@@ -89,6 +90,10 @@ export function ResourceNodeDetail({
   const [formDescription, setFormDescription] = useState(node.description || '');
   const [formNature, setFormNature] = useState<'PhysicalResource' | 'LogicalResource'>('PhysicalResource');
   const [formMapPresence, setFormMapPresence] = useState<boolean>(true);
+  const [formIcon, setFormIcon] = useState<string | undefined>(
+    (node.metadata?.icon as string) || undefined,
+  );
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +106,7 @@ export function ResourceNodeDetail({
     setFormName(node.name);
     setFormCode(node.code);
     setFormDescription(node.description || '');
+    setFormIcon((node.metadata?.icon as string) || undefined);
 
     const initialNature: 'PhysicalResource' | 'LogicalResource' =
       node.metadata?.nature === 'LogicalResource'
@@ -114,7 +120,7 @@ export function ResourceNodeDetail({
 
     const initialMapPresence =
       typeof node.metadata?.mapPresence === 'boolean'
-        ? Boolean(node.metadata.mapPresence)
+        ? Boolean(node.metadata?.mapPresence)
         : true;
     setFormMapPresence(initialMapPresence);
     setError(null);
@@ -181,6 +187,39 @@ export function ResourceNodeDetail({
         ? false
         : defaultIsLogical;
 
+  const handleSelectIcon = async (newIcon: string) => {
+    setFormIcon(newIcon);
+    setIconPickerOpen(false);
+
+    try {
+      setSaving(true);
+      const updatedMetadata: Record<string, unknown> = {
+        ...(node.metadata ?? {}),
+        icon: newIcon,
+        ...(node.kind === 'RESOURCE_TYPE'
+          ? {
+              nature: formNature,
+              mapPresence: formNature === 'PhysicalResource' ? formMapPresence : false,
+            }
+          : {}),
+      };
+
+      await onUpdateNode?.({
+        name: formName.trim() || node.name,
+        code: formCode.trim() || node.code,
+        description: formDescription.trim() || undefined,
+        metadata: updatedMetadata,
+      });
+
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Falha ao salvar novo ícone no catálogo.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSaveInline = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setError(null);
@@ -198,6 +237,7 @@ export function ResourceNodeDetail({
       setSaving(true);
       const updatedMetadata: Record<string, unknown> = {
         ...(node.metadata ?? {}),
+        ...(formIcon ? { icon: formIcon } : {}),
         ...(node.kind === 'RESOURCE_TYPE'
           ? {
               nature: formNature,
@@ -205,6 +245,11 @@ export function ResourceNodeDetail({
             }
           : {}),
       };
+
+      // Se o ícone foi resetado para vazio/padrão, remove do metadata
+      if (!formIcon && 'icon' in updatedMetadata) {
+        delete updatedMetadata.icon;
+      }
 
       await onUpdateNode?.({
         name: formName.trim(),
@@ -294,6 +339,7 @@ export function ResourceNodeDetail({
     setFormName(node.name);
     setFormCode(node.code);
     setFormDescription(node.description || '');
+    setFormIcon((node.metadata?.icon as string) || undefined);
     setFormNature(isLogical ? 'LogicalResource' : 'PhysicalResource');
     setFormMapPresence(
       typeof node.metadata?.mapPresence === 'boolean'
@@ -307,6 +353,7 @@ export function ResourceNodeDetail({
     formName !== node.name ||
     formCode !== node.code ||
     formDescription !== (node.description || '') ||
+    formIcon !== ((node.metadata?.icon as string) || undefined) ||
     (!isGroup && formNature !== (isLogical ? 'LogicalResource' : 'PhysicalResource')) ||
     (!isGroup &&
       formNature === 'PhysicalResource' &&
@@ -325,27 +372,48 @@ export function ResourceNodeDetail({
       (r) => !r.name.trim() && (r.valueText || r.description || r.group),
     );
 
+  const displayIcon = isEditing ? formIcon : (node.metadata?.icon as string | undefined);
+  const CurrentNodeIcon = resolveNodeIcon(displayIcon, node.kind, isLogical);
+
   return (
     <div className="vt-card flex h-full flex-col overflow-hidden p-0">
       {/* Header */}
       <div className="px-4 pt-4 pb-3">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div
-              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border ${
-                isGroup
-                  ? 'border-amber-200 bg-amber-50 text-amber-600'
-                  : isLogical
-                    ? 'border-purple-200 bg-purple-50 text-purple-600'
-                    : 'border-sky-200 bg-sky-50 text-sky-600'
-              }`}
-            >
-              {isGroup ? (
-                <Folder className="h-5 w-5" />
-              ) : isLogical ? (
-                <Cpu className="h-5 w-5" />
-              ) : (
-                <Box className="h-5 w-5" />
+            <div className="relative group/icon shrink-0">
+              <button
+                type="button"
+                disabled={!isEditing}
+                onClick={() => isEditing && setIconPickerOpen(true)}
+                title={isEditing ? 'Clique para trocar o ícone deste nó' : undefined}
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border transition ${
+                  isGroup
+                    ? 'border-amber-200 bg-amber-50 text-amber-600'
+                    : isLogical
+                      ? 'border-purple-200 bg-purple-50 text-purple-600'
+                      : 'border-sky-200 bg-sky-50 text-sky-600'
+                } ${
+                  isEditing
+                    ? 'cursor-pointer hover:scale-105 hover:shadow-sm ring-offset-1 focus:outline-none focus:ring-2 ' +
+                      (isGroup
+                        ? 'hover:border-amber-400 focus:ring-amber-400'
+                        : isLogical
+                          ? 'hover:border-purple-400 focus:ring-purple-400'
+                          : 'hover:border-sky-400 focus:ring-sky-400')
+                    : 'cursor-default'
+                }`}
+              >
+                <CurrentNodeIcon className="h-5 w-5" />
+              </button>
+              {isEditing && (
+                <span
+                  onClick={() => setIconPickerOpen(true)}
+                  title="Trocar ícone"
+                  className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-app-text text-white shadow-xs opacity-0 group-hover/icon:opacity-100 transition cursor-pointer"
+                >
+                  <Pencil className="h-2.5 w-2.5" />
+                </span>
               )}
             </div>
             <div className="min-w-0">
@@ -835,6 +903,15 @@ export function ResourceNodeDetail({
           onSaved={handleSpecSaved}
         />
       )}
+
+      <IconPickerModal
+        isOpen={iconPickerOpen}
+        onClose={() => setIconPickerOpen(false)}
+        onSelect={handleSelectIcon}
+        currentIcon={formIcon}
+        nodeKind={node.kind}
+        isLogical={isLogical}
+      />
     </div>
   );
 }

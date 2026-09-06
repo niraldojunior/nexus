@@ -299,20 +299,13 @@ export function LocationModelStudio({
                         : 'border-app-border hover:bg-black/[0.02] text-app-text'
                     }`}
                   >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="truncate font-medium text-[0.88rem]">{spec.name}</span>
-                        {spec._bootstrapProtected && (
-                          <span title="Protegido pelo bootstrap" className="inline-flex">
-                            <Shield className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[0.7rem] px-1.5 py-0.2 rounded bg-black/[0.04] text-app-muted font-medium">
-                          {CATEGORY_LABELS[spec.category]}
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate font-medium text-[0.88rem]">{spec.name}</span>
+                      {spec._bootstrapProtected && (
+                        <span title="Protegido pelo bootstrap" className="inline-flex">
+                          <Shield className="h-3.5 w-3.5 text-amber-600 shrink-0" />
                         </span>
-                      </div>
+                      )}
                     </div>
 
                     <Badge tone={ROLE_TONE[spec.siteRole]}>

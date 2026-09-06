@@ -50,14 +50,15 @@ export default function LoginPage({ onSuccess }: { onSuccess?: () => void }) {
         </div>
         <div className="relative">
           <h1 className="font-display text-[2rem] font-extrabold leading-[1.15] tracking-[-0.02em] text-white">
-            Inteligência de rede de <span className="text-app-accent">nova geração</span>.
+            Inteligência de recursos de <span className="text-app-accent">nova geração</span>.
           </h1>
           <p className="mt-4 max-w-md text-[0.9rem] leading-relaxed text-app-on-ink-muted">
-            Inventário Convergente - Locais, Infraestrutura Cívil, Recursos Lógicos e Físicos,
-            habilitando seu negócio a uma gestão inteligente agnóstica a indústria.
+            Infraestrutura conectada. Decisões inteligentes - O Nexus integra ativos, recursos e
+            contexto operacional em uma visão única, habilitando uma gestão inteligente de
+            infraestrutura em qualquer indústria.
           </p>
           <div className="mt-6 flex gap-2.5">
-            {['TM Forum', 'API-first', 'Escala nacional'].map((tag) => (
+            {['AssetIntelligence', 'SmartInfrastructure', 'ConvergedInfrastructure'].map((tag) => (
               <span
                 key={tag}
                 className="rounded-full bg-white/[0.08] px-3 py-1.5 text-[0.72rem] font-semibold text-app-on-ink-muted"
@@ -68,7 +69,7 @@ export default function LoginPage({ onSuccess }: { onSuccess?: () => void }) {
           </div>
         </div>
         <div className="relative text-[0.72rem] text-white/35">
-          Holding V.tal · Tecto · nio internet
+          Holding V.tal
         </div>
       </div>
 

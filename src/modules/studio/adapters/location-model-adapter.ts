@@ -158,23 +158,12 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
       }
     }
 
-    // 3ª passada: Detecção de auto-referência em contenção direta
-    for (let i = 0; i < specs.length; i++) {
-      const s = specs[i];
-      if (!s || !s.code) continue;
-      const normalizedCode = s.code.trim().toUpperCase();
-      const parents = (s.allowedParentCodes || []).map((c) => c.trim().toUpperCase());
-      const children = (s.allowedChildCodes || []).map((c) => c.trim().toUpperCase());
-
-      if (parents.includes(normalizedCode) || children.includes(normalizedCode)) {
-        issues.push({
-          severity: 'error',
-          code: 'CONTAINMENT_SELF_REFERENCE',
-          message: `A especificação '${s.code}' não pode conter a si mesma como pai ou filho direto.`,
-          path: `specifications[${i}]`,
-        });
-      }
-    }
+    // Nota: auto-referência direta (uma spec listada como pai/filho de si mesma) NÃO é
+    // rejeitada aqui — é o modelo canônico documentado em RF-004 para Region (Continente > País >
+    // Estado > Cidade > Regional V.tal > Bairro são todos category=Region, aninhados recursivamente
+    // via Region→Region). O bootstrap protege exatamente esse containment (ver
+    // BOOTSTRAP_SPECIFICATIONS em geo/service.ts), então rejeitar auto-referência aqui bloquearia
+    // toda publicação/descarte do modelo de locais.
 
     return {
       valid: issues.length === 0,
@@ -227,7 +216,7 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
             name: specInput.name,
             ...(specInput.description !== undefined ? { description: specInput.description } : {}),
             ...(specInput.siteRole !== undefined ? { siteRole: specInput.siteRole } : {}),
-            lifecycleStatus: specInput.lifecycleStatus ?? 'Active',
+            lifecycleStatus: specInput.lifecycleStatus ?? existing.lifecycleStatus ?? 'Active',
             specCharacteristic: specInput.specCharacteristic ?? existing.specCharacteristic,
           },
           reqContext,
@@ -263,11 +252,28 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
         .map((c) => codeToIdMap.get(c.trim().toUpperCase()))
         .filter((id): id is string => Boolean(id));
 
+      // As regras de contenção protegidas (bootstrap, C11) nunca podem ser removidas — mas o
+      // snapshot capturado no frontend resolve pai/filho só pelos códigos presentes nele. Se o
+      // snapshot estiver incompleto ou desatualizado em relação ao que já está protegido no banco
+      // (ex.: normalização de código, spec ausente do snapshot), a lista resolvida acima pode ficar
+      // menor que o conjunto protegido vigente, e `updateSpec` rejeitaria com
+      // GEO_SPEC_CONTAINMENT_PROTECTED. Mesclamos aqui os IDs já protegidos para nunca dropá-los —
+      // materialize() (publish e "Cancelar"/discard) precisa ser sempre idempotente sobre proteções.
+      const existing = existingByCode.get(normalizedCode);
+      const protectedParentIds = existing?._protectedAllowedParentSpecIds ?? [];
+      const protectedChildIds = existing?._protectedAllowedChildSpecIds ?? [];
+      const mergedAllowedParentSpecIds = Array.from(
+        new Set([...allowedParentSpecIds, ...protectedParentIds]),
+      );
+      const mergedAllowedChildSpecIds = Array.from(
+        new Set([...allowedChildSpecIds, ...protectedChildIds]),
+      );
+
       await this.geoService.updateSpec(
         specId,
         {
-          allowedParentSpecIds,
-          allowedChildSpecIds,
+          allowedParentSpecIds: mergedAllowedParentSpecIds,
+          allowedChildSpecIds: mergedAllowedChildSpecIds,
         },
         reqContext,
       );

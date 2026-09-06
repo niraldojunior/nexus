@@ -9,6 +9,7 @@ import {
   AlertCircle,
   Pencil,
   Plus,
+  RotateCcw,
   Trash2,
 } from 'lucide-react';
 import type {
@@ -48,8 +49,15 @@ export type ResourceNodeDetailProps = {
   canEdit: boolean;
   /** Existe um draft de governança aberto — controla a visibilidade dos botões de mutação. */
   isEditing: boolean;
+  /**
+   * O nó já estava `active` no instante em que a sessão de edição atual começou (baseline
+   * capturada em `ResourceModelStudio.captureInitialSnapshot`). Diferencia "inativado agora,
+   * pode reverter" de "já estava inativo antes desta sessão" — só a primeira ganha "Reativar".
+   */
+  wasActiveAtBaseline: boolean;
   onEdit?: () => void;
   onImpact: () => void;
+  onReactivate: () => void;
   onUpdateNode?: (input: UpdateResourceCatalogNodeInput) => Promise<void>;
 };
 
@@ -60,7 +68,9 @@ export function ResourceNodeDetail({
   node,
   canEdit,
   isEditing,
+  wasActiveAtBaseline,
   onImpact,
+  onReactivate,
   onUpdateNode,
 }: ResourceNodeDetailProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
@@ -428,9 +438,21 @@ export function ResourceNodeDetail({
 
           {canEdit && isEditing && (
             <div className="flex items-center gap-2 shrink-0">
-              <Button variant="danger" size="sm" onClick={onImpact}>
-                Inativar
-              </Button>
+              {node.status === 'active' && (
+                <Button variant="danger" size="sm" onClick={onImpact}>
+                  Inativar
+                </Button>
+              )}
+              {node.status !== 'active' && wasActiveAtBaseline && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  iconLeft={<RotateCcw className="h-4 w-4" />}
+                  onClick={onReactivate}
+                >
+                  Reativar
+                </Button>
+              )}
             </div>
           )}
         </div>

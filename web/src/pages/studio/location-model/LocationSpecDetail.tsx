@@ -1,7 +1,18 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, Building2, Check, FolderTree, Globe, Layers, Pencil, Save, Trash2 } from 'lucide-react';
+import {
+  AlertCircle,
+  Building2,
+  Check,
+  FolderTree,
+  Globe,
+  Layers,
+  Pencil,
+  RotateCcw,
+  Save,
+  Trash2,
+} from 'lucide-react';
 import type { GeoSpec, GeoSpecCategory, GeoSiteRole, UpdateGeoSpecInput } from '../../../services/geoApi';
-import { Badge, Button } from '../../../components/ui';
+import { Button } from '../../../components/ui';
 import GeoCharacteristicsEditor from '../../../components/GeoCharacteristicsEditor';
 import {
   buildGeoCharacteristicPayload,
@@ -22,13 +33,6 @@ const ROLE_LABELS: Record<GeoSiteRole, string> = {
   network: 'Recurso',
   property: 'Imobiliário',
   service: 'Serviço',
-};
-
-const ROLE_TONE: Record<GeoSiteRole, 'amber' | 'blue' | 'purple' | 'green'> = {
-  grouping: 'amber',
-  network: 'blue',
-  property: 'purple',
-  service: 'green',
 };
 
 // Ícone + paleta por categoria (mesmo padrão de cor-por-natureza do `ResourceNodeDetail`, mas o
@@ -55,8 +59,15 @@ export type LocationSpecDetailProps = {
   canEdit: boolean;
   /** Existe um draft de governança aberto — controla a visibilidade dos botões de mutação. */
   isEditing: boolean;
+  /**
+   * A especificação já estava `Active` no instante em que a sessão de edição atual começou
+   * (baseline capturada em `LocationModelStudio.buildSnapshot`). Diferencia "inativada agora,
+   * pode reverter" de "já estava inativa antes desta sessão" — só a primeira ganha "Reativar".
+   */
+  wasActiveAtBaseline: boolean;
   onEdit: () => void;
   onInactivate: () => void;
+  onReactivate: () => void;
   onUpdateCharacteristics: (id: string, input: UpdateGeoSpecInput) => Promise<void>;
 };
 
@@ -65,8 +76,10 @@ export function LocationSpecDetail({
   allSpecs,
   canEdit,
   isEditing,
+  wasActiveAtBaseline,
   onEdit,
   onInactivate,
+  onReactivate,
   onUpdateCharacteristics,
 }: LocationSpecDetailProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
@@ -132,15 +145,14 @@ export function LocationSpecDetail({
             </div>
             <div className="min-w-0">
               <h3 className="font-bold leading-tight text-app-text truncate">{spec.name}</h3>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
-                  {CATEGORY_LABELS[spec.category]}
-                </span>
-                <Badge tone={ROLE_TONE[spec.siteRole]}>{ROLE_LABELS[spec.siteRole]}</Badge>
-                <Badge tone={spec.lifecycleStatus === 'Active' ? 'green' : 'neutral'} dot>
-                  {spec.lifecycleStatus === 'Active' ? 'Ativo' : 'Inativo'}
-                </Badge>
-              </div>
+              {/* Papel funcional e status já aparecem na aba Geral logo abaixo — o título fica
+                  só com a categoria, em texto simples, para não duplicar informação em pill. */}
+              <span
+                className="mt-0.5 block"
+                style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}
+              >
+                {CATEGORY_LABELS[spec.category]}
+              </span>
             </div>
           </div>
 
@@ -157,6 +169,16 @@ export function LocationSpecDetail({
                   onClick={onInactivate}
                 >
                   Inativar
+                </Button>
+              )}
+              {spec.lifecycleStatus !== 'Active' && wasActiveAtBaseline && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  iconLeft={<RotateCcw className="h-4 w-4" />}
+                  onClick={onReactivate}
+                >
+                  Reativar
                 </Button>
               )}
             </div>

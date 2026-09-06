@@ -33,6 +33,12 @@ export type ResourceCatalogTreeProps = {
   canEdit: boolean;
   /** Existe um draft de governança aberto — controla a visibilidade dos botões de mutação. */
   isEditing: boolean;
+  /**
+   * IDs dos nós que já estavam `active` no instante em que a sessão de edição atual começou.
+   * `null` quando não há sessão em andamento. Usado para diferenciar "inativado nesta sessão"
+   * (continua visível, pode reativar) de "já estava inativo antes desta edição" (fica oculto).
+   */
+  baselineActiveIds: Set<string> | null;
 };
 
 const getSiblingsOfParent = (
@@ -66,6 +72,7 @@ export function ResourceCatalogTree({
   onDirectMove,
   canEdit,
   isEditing,
+  baselineActiveIds,
 }: ResourceCatalogTreeProps) {
   const canMutate = canEdit && isEditing;
   const [filterText, setFilterText] = useState('');
@@ -232,9 +239,11 @@ export function ResourceCatalogTree({
   const renderNode = (node: ResourceCatalogTreeNode, level: number) => {
     // Fora do modo de edição (ou seja, depois de publicado), nós inativos somem da hierarquia —
     // soft-delete (C6) preserva o histórico no banco, mas não deve mais aparecer na árvore para
-    // quem só está consultando. Em modo de edição eles continuam visíveis (com a tag "Inativo")
-    // para permitir reativação/gestão.
-    if (!isEditing && node.status === 'inactive') {
+    // quem só está consultando. Em modo de edição, só reaparecem os que foram inativados DURANTE
+    // a sessão atual (estavam `active` na baseline) — nós já inativos antes de "Editar" continuam
+    // ocultos mesmo em edição, para não reexibir lixo histórico.
+    const wasActiveAtBaseline = baselineActiveIds === null || baselineActiveIds.has(node.id);
+    if (node.status === 'inactive' && (!isEditing || !wasActiveAtBaseline)) {
       return null;
     }
     if (filterText && !matchesFilter(node, filterText)) {

@@ -3,7 +3,6 @@ import { Plus, AlertCircle, Shield, Search, MapPin } from 'lucide-react';
 import type {
   GeoSpec,
   GeoSpecCategory,
-  GeoSiteRole,
   CreateGeoSpecInput,
   UpdateGeoSpecInput,
 } from '../../../services/geoApi';
@@ -14,7 +13,7 @@ import {
   retireGeoSpec,
 } from '../../../services/geoApi';
 import { getStudioStatus, saveStudioDraft } from '../../../services/studioApi';
-import { Button, Badge } from '../../../components/ui';
+import { Button } from '../../../components/ui';
 import { LocationSpecFormModal } from './LocationSpecFormModal';
 import { LocationSpecImpactModal } from './LocationSpecImpactModal';
 import { LocationSpecDetail } from './LocationSpecDetail';
@@ -46,20 +45,6 @@ const CATEGORY_LABELS: Record<GeoSpecCategory, string> = {
   SubSite: 'Sub-Local',
 };
 
-const ROLE_LABELS: Record<GeoSiteRole, string> = {
-  grouping: 'Agrupamento',
-  network: 'Recurso',
-  property: 'Imobiliário',
-  service: 'Serviço',
-};
-
-const ROLE_TONE: Record<GeoSiteRole, 'amber' | 'blue' | 'purple' | 'green'> = {
-  grouping: 'amber',
-  network: 'blue',
-  property: 'purple',
-  service: 'green',
-};
-
 export function LocationModelStudio({
   canEdit,
   isEditing,
@@ -77,6 +62,12 @@ export function LocationModelStudio({
   const [editingSpec, setEditingSpec] = useState<GeoSpec | null>(null);
   const [impactModalOpen, setImpactModalOpen] = useState(false);
   const [impactingSpec, setImpactingSpec] = useState<GeoSpec | null>(null);
+
+  // Especificações que já estavam `Active` no instante em que a sessão de edição atual começou
+  // (capturado por `onRegisterCaptureInitialSnapshot`, chamado por `StudioGovernanceSummary` no
+  // clique de "Editar", antes de qualquer mutação). `null` = nenhuma sessão em andamento. Sem essa
+  // baseline, `filteredSpecs` reexibiria também especificações já aposentadas antes desta edição.
+  const [baselineActiveSpecIds, setBaselineActiveSpecIds] = useState<Set<string> | null>(null);
 
   const canMutate = canEdit && isEditing;
 
@@ -96,19 +87,24 @@ export function LocationModelStudio({
     loadSpecs();
   }, []);
 
-  // Filtragem — fora do modo de edição, especificações aposentadas ficam ocultas (só reaparecem
-  // depois de clicar "Editar" na barra de governança).
-  const filteredSpecs = specs.filter((s) => {
-    const matchesCat = selectedCategory === 'ALL' || s.category === selectedCategory;
-    const matchesLifecycle = isEditing || s.lifecycleStatus === 'Active';
-    const term = filterText.toLowerCase();
-    const matchesSearch =
-      !term ||
-      s.name.toLowerCase().includes(term) ||
-      s.code.toLowerCase().includes(term) ||
-      (s.description && s.description.toLowerCase().includes(term));
-    return matchesCat && matchesLifecycle && matchesSearch;
-  });
+  // Filtragem — fora do modo de edição, especificações aposentadas ficam ocultas. Dentro do modo
+  // de edição, só reaparecem as que foram inativadas DURANTE a sessão atual (estavam `Active` na
+  // baseline) — as que já estavam aposentadas antes de "Editar" continuam ocultas, mesmo em
+  // edição, para não reexibir lixo histórico.
+  const filteredSpecs = specs
+    .filter((s) => {
+      const matchesCat = selectedCategory === 'ALL' || s.category === selectedCategory;
+      const matchesLifecycle =
+        s.lifecycleStatus === 'Active' || (isEditing && (baselineActiveSpecIds?.has(s.id) ?? false));
+      const term = filterText.toLowerCase();
+      const matchesSearch =
+        !term ||
+        s.name.toLowerCase().includes(term) ||
+        s.code.toLowerCase().includes(term) ||
+        (s.description && s.description.toLowerCase().includes(term));
+      return matchesCat && matchesLifecycle && matchesSearch;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 
   // Se a especificação selecionada sair da lista filtrada (ex.: aposentada some ao encerrar a
   // edição), o painel de detalhe não pode continuar apontando para ela.
@@ -167,17 +163,28 @@ export function LocationModelStudio({
     return () => onRegisterCaptureDraft?.(null);
   }, [handleCaptureAsDraft, onRegisterCaptureDraft]);
 
+  // Captura a baseline de especificações ativas no exato momento em que "Editar" é clicado — além
+  // de montar o snapshot (comportamento já existente), grava quais specs estavam `Active` para
+  // `filteredSpecs` distinguir "inativada nesta sessão" de "já estava inativa antes".
+  const captureInitialSnapshot = useCallback(async () => {
+    setBaselineActiveSpecIds(
+      new Set(specs.filter((s) => s.lifecycleStatus === 'Active').map((s) => s.id)),
+    );
+    return buildSnapshot();
+  }, [specs, buildSnapshot]);
+
   useEffect(() => {
-    onRegisterCaptureInitialSnapshot?.(buildSnapshot);
+    onRegisterCaptureInitialSnapshot?.(captureInitialSnapshot);
     return () => onRegisterCaptureInitialSnapshot?.(null);
-  }, [buildSnapshot, onRegisterCaptureInitialSnapshot]);
+  }, [captureInitialSnapshot, onRegisterCaptureInitialSnapshot]);
 
   // Ao encerrar a edição (draft publicado ou cancelado), recarrega as especificações para refletir
-  // o estado gravado — mesmo padrão de ResourceModelStudio.
+  // o estado gravado e limpa a baseline — mesmo padrão de ResourceModelStudio.
   const wasEditingRef = useRef(isEditing);
   useEffect(() => {
     if (wasEditingRef.current && !isEditing) {
       loadSpecs();
+      setBaselineActiveSpecIds(null);
     }
     wasEditingRef.current = isEditing;
   }, [isEditing]);
@@ -297,10 +304,6 @@ export function LocationModelStudio({
                         </span>
                       )}
                     </div>
-
-                    <Badge tone={ROLE_TONE[spec.siteRole]}>
-                      {ROLE_LABELS[spec.siteRole]}
-                    </Badge>
                   </div>
                 );
               })
@@ -316,6 +319,7 @@ export function LocationModelStudio({
               allSpecs={specs}
               canEdit={canEdit}
               isEditing={isEditing}
+              wasActiveAtBaseline={baselineActiveSpecIds?.has(selectedSpec.id) ?? false}
               onEdit={() => {
                 setEditingSpec(selectedSpec);
                 setFormModalOpen(true);
@@ -324,6 +328,7 @@ export function LocationModelStudio({
                 setImpactingSpec(selectedSpec);
                 setImpactModalOpen(true);
               }}
+              onReactivate={() => handleUpdateSpec(selectedSpec.id, { lifecycleStatus: 'Active' })}
               onUpdateCharacteristics={handleUpdateSpec}
             />
           ) : (

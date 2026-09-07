@@ -87,6 +87,12 @@ export function ResourceModelStudio({
   const [impactModalOpen, setImpactModalOpen] = useState(false);
   const [impactingNode, setImpactingNode] = useState<ResourceCatalogNode | null>(null);
 
+  // Nós que já estavam `active` no instante em que a sessão de edição atual começou (capturado
+  // por `onRegisterCaptureInitialSnapshot`, chamado por `StudioGovernanceSummary` no clique de
+  // "Editar", antes de qualquer mutação). `null` = nenhuma sessão em andamento. Sem essa baseline,
+  // a árvore reexibiria também nós já inativados antes desta edição (ver `ResourceCatalogTree`).
+  const [baselineActiveNodeIds, setBaselineActiveNodeIds] = useState<Set<string> | null>(null);
+
   // Load catalogs on mount
   useEffect(() => {
     async function init() {
@@ -272,19 +278,29 @@ export function ResourceModelStudio({
     return () => onRegisterCaptureDraft?.(null);
   }, [handleCaptureAsDraft, onRegisterCaptureDraft]);
 
+  // Igual a `buildSnapshot`, mas também grava a baseline de nós ativos — reaproveita o
+  // `nodes[].status` que o snapshot já carrega, sem uma segunda chamada à API.
+  const captureInitialSnapshot = useCallback(async () => {
+    const snapshot = await buildSnapshot();
+    const nodes = (snapshot.nodes as Array<{ id: string; status: string }> | undefined) ?? [];
+    setBaselineActiveNodeIds(new Set(nodes.filter((n) => n.status === 'active').map((n) => n.id)));
+    return snapshot;
+  }, [buildSnapshot]);
+
   useEffect(() => {
-    onRegisterCaptureInitialSnapshot?.(buildSnapshot);
+    onRegisterCaptureInitialSnapshot?.(captureInitialSnapshot);
     return () => onRegisterCaptureInitialSnapshot?.(null);
-  }, [buildSnapshot, onRegisterCaptureInitialSnapshot]);
+  }, [captureInitialSnapshot, onRegisterCaptureInitialSnapshot]);
 
   // Ao encerrar a edição (draft publicado ou cancelado — em ambos os casos o backend acabou de
-  // gravar um estado novo nas tabelas canônicas), recarrega a árvore para refletir o resultado.
-  // Sem isto, depois de um "Cancelar" bem-sucedido a tela continuaria mostrando o estado
-  // pré-restauração até alguma outra ação forçar reload.
+  // gravar um estado novo nas tabelas canônicas), recarrega a árvore para refletir o resultado e
+  // limpa a baseline. Sem isto, depois de um "Cancelar" bem-sucedido a tela continuaria mostrando
+  // o estado pré-restauração até alguma outra ação forçar reload.
   const wasEditingRef = useRef(isEditing);
   useEffect(() => {
     if (wasEditingRef.current && !isEditing) {
       reloadTree();
+      setBaselineActiveNodeIds(null);
     }
     wasEditingRef.current = isEditing;
   }, [isEditing]);
@@ -352,6 +368,7 @@ export function ResourceModelStudio({
               onDirectMove={handleDirectMove}
               canEdit={canEdit}
               isEditing={isEditing}
+              baselineActiveIds={baselineActiveNodeIds}
             />
           </div>
         </div>
@@ -364,10 +381,12 @@ export function ResourceModelStudio({
               node={selectedNode}
               canEdit={canEdit}
               isEditing={isEditing}
+              wasActiveAtBaseline={baselineActiveNodeIds?.has(selectedNode.id) ?? false}
               onImpact={() => {
                 setImpactingNode(selectedNode);
                 setImpactModalOpen(true);
               }}
+              onReactivate={() => handleUpdateSelectedNode({ status: 'active' })}
               onUpdateNode={handleUpdateSelectedNode}
             />
           ) : (

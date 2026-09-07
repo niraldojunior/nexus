@@ -34,6 +34,7 @@ import type { CoverageLevel } from '../../modules/geo/coverage-service.js';
 import { parseNodeId, type GeoTreeService } from '../../modules/geo/tree-service.js';
 import { isMapDensityZoom, MAP_DENSITY_ZOOMS } from '../../modules/geo/map-density.js';
 import type { OrderService } from '../../modules/order/service.js';
+import type { PartyRoleTypeCharacteristicValueType } from '../../modules/party/party-role-type-characteristic-repository.js';
 import {
   createNexusRuntime,
   DEFAULT_RUNTIME_USER,
@@ -792,6 +793,11 @@ const routeRequest = async ({
     return;
   }
 
+  if (url.pathname.startsWith('/v1/party-role-types/')) {
+    await routePartyRoleTypeCharacteristicRequest({ request, response, config, runtime, url });
+    return;
+  }
+
   if (url.pathname.startsWith('/v1/research/')) {
     const llmToolCatalog = buildLlmToolCatalog(mcpModule);
     await routeResearchRequest({
@@ -937,6 +943,110 @@ const routeStudioRequest = async ({
     }
     sendJson(response, 200, await studioService.discardDraft(domain, context, ifMatch));
     return;
+  }
+
+  throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
+};
+
+// Catálogo de características por "tipo de party" (Studio -> Partes, issue #220). Fora do
+// namespace /tmf-api porque não é entidade TMF (é metadado de modelagem, como
+// /v1/geo/project-statuses) e fora de /v1/studio/ porque não passa pelo fluxo de
+// draft/publish do StudioService — o domínio 'parties' só tem o adapter no-op, então
+// publicação nunca completaria de verdade. Escrita usa CATALOG_ADMIN_ROLES (mesmo papel das
+// rotas de edição de catálogo de Recurso/Servico); leitura usa INVENTORY_READ_ROLES.
+const routePartyRoleTypeCharacteristicRequest = async ({
+  request,
+  response,
+  config,
+  runtime,
+  url,
+}: {
+  request: IncomingMessage;
+  response: ServerResponse;
+  config: AppConfig;
+  runtime: NexusRuntime;
+  url: URL;
+}): Promise<void> => {
+  const context = await buildRequestContext(request, config);
+  const collectionMatch = url.pathname.match(
+    /^\/v1\/party-role-types\/([^/]+)\/characteristics$/,
+  );
+  if (collectionMatch?.[1]) {
+    const roleName = decodeURIComponent(collectionMatch[1]);
+    if (request.method === 'GET') {
+      requireRoles(context, INVENTORY_READ_ROLES);
+      return sendJson(
+        response,
+        200,
+        await runtime.partyRoleTypeCharacteristicRepository.list(context.tenantId, roleName),
+      );
+    }
+    if (request.method === 'POST') {
+      requireRoles(context, CATALOG_ADMIN_ROLES);
+      const body = await readBody(request);
+      const name = String(body.name ?? '').trim();
+      const valueType = String(body.valueType ?? '').trim();
+      if (!name || !valueType) {
+        throw new AppError('characteristic name and valueType are required', {
+          code: 'PARTY_ROLE_TYPE_CHARACTERISTIC_INVALID',
+          statusCode: 400,
+        });
+      }
+      return sendJson(
+        response,
+        201,
+        await runtime.partyRoleTypeCharacteristicRepository.create(context.tenantId, roleName, {
+          name,
+          valueType: valueType as PartyRoleTypeCharacteristicValueType,
+          group: body.group ? String(body.group) : null,
+          description: body.description ? String(body.description) : null,
+          allowedValues: Array.isArray(body.allowedValues)
+            ? body.allowedValues.map((value: unknown) => String(value))
+            : null,
+          ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}),
+        }),
+      );
+    }
+  }
+
+  const itemMatch = url.pathname.match(
+    /^\/v1\/party-role-types\/([^/]+)\/characteristics\/([^/]+)$/,
+  );
+  if (itemMatch?.[1] && itemMatch?.[2]) {
+    const id = decodeURIComponent(itemMatch[2]);
+    if (request.method === 'PATCH' || request.method === 'DELETE') {
+      requireRoles(context, CATALOG_ADMIN_ROLES);
+      const body = request.method === 'PATCH' ? await readBody(request) : {};
+      const updated =
+        request.method === 'DELETE'
+          ? await runtime.partyRoleTypeCharacteristicRepository.deactivate(context.tenantId, id)
+          : await runtime.partyRoleTypeCharacteristicRepository.update(context.tenantId, id, {
+              ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
+              ...(body.group !== undefined ? { group: body.group ? String(body.group) : null } : {}),
+              ...(body.description !== undefined
+                ? { description: body.description ? String(body.description) : null }
+                : {}),
+              ...(body.valueType !== undefined
+                ? { valueType: String(body.valueType) as PartyRoleTypeCharacteristicValueType }
+                : {}),
+              ...(body.allowedValues !== undefined
+                ? {
+                    allowedValues: Array.isArray(body.allowedValues)
+                      ? body.allowedValues.map((value: unknown) => String(value))
+                      : null,
+                  }
+                : {}),
+              ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}),
+              ...(body.active !== undefined ? { active: Boolean(body.active) } : {}),
+            });
+      if (!updated) {
+        throw new AppError('party role type characteristic not found', {
+          code: 'PARTY_ROLE_TYPE_CHARACTERISTIC_NOT_FOUND',
+          statusCode: 404,
+        });
+      }
+      return sendJson(response, 200, updated);
+    }
   }
 
   throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });

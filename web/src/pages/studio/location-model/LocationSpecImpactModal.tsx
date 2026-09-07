@@ -26,7 +26,7 @@ export function LocationSpecImpactModal({
     if (isOpen) {
       setLoading(true);
       setError(null);
-      // Aposentar não altera as regras de contenção existentes (o backend preserva
+      // Inativar não altera as regras de contenção existentes (o backend preserva
       // allowedParentSpecIds/allowedChildSpecIds ao definir lifecycleStatus=Retired) —
       // avaliamos o impacto de uma remoção total das regras como sinal de alerta sobre
       // sites que hoje dependem desta especificação como pai ou filho direto.
@@ -51,7 +51,7 @@ export function LocationSpecImpactModal({
       await onConfirmRetire();
       onClose();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Falha ao aposentar especificação.';
+      const msg = err instanceof Error ? err.message : 'Falha ao inativar especificação.';
       setError(msg);
     } finally {
       setSubmitting(false);
@@ -68,7 +68,7 @@ export function LocationSpecImpactModal({
             <AlertTriangle className="h-5 w-5" />
           </div>
           <div>
-            <h3>Aposentar especificação de local</h3>
+            <h3>Inativar especificação de local</h3>
             <p className="text-[0.78rem] text-app-muted">
               {spec.name} ({spec.code})
             </p>
@@ -86,7 +86,7 @@ export function LocationSpecImpactModal({
             disabled={submitting}
             iconLeft={<Trash2 className="h-4 w-4" />}
           >
-            {submitting ? 'Aposentando…' : 'Aposentar especificação'}
+            {submitting ? 'Inativando…' : 'Inativar especificação'}
           </Button>
         </>
       }
@@ -110,7 +110,7 @@ export function LocationSpecImpactModal({
           ) : (
             <>
               <p className="text-[0.88rem] text-app-text leading-relaxed">
-                Você está prestes a aposentar <strong>{spec.name}</strong>. Conforme o cânone
+                Você está prestes a inativar <strong>{spec.name}</strong>. Conforme o cânone
                 arquitetural C6, a inativação é lógica (soft-terminate) — a especificação passa a
                 <code className="mx-1 rounded bg-black/[0.05] px-1 py-0.5 text-[0.8rem]">lifecycleStatus=Retired</code>
                 e não pode mais ser usada para novos locais, mas locais existentes são preservados.
@@ -120,7 +120,7 @@ export function LocationSpecImpactModal({
                 <div className="rounded-[16px] border border-red-200 bg-red-50/70 p-4 text-red-800 text-[0.84rem]">
                   <strong className="font-semibold block mb-1">Atenção: locais dependem desta especificação</strong>
                   Há locais ativos cuja relação de contenção (pai ou filho direto) depende desta
-                  especificação. Reveja essas relações antes de aposentá-la.
+                  especificação. Reveja essas relações antes de inativá-la.
                 </div>
               )}
 

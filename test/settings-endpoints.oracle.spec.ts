@@ -6,13 +6,14 @@ import { ResourceService } from '../src/modules/resource/service.js';
 import { PostgresResourceRepository } from '../src/modules/resource/postgres-repository.js';
 import { cleanupOracleTables, getOracleTestClient, isOracleTestConfigured } from './test-utils.js';
 
-// Regression coverage for issue #166: the Settings page's "Infraestrutura civil" (Resource
-// Specification workspace) and "Recursos de Rede" (manufacturer party roles) tabs both 500'd on
-// Oracle because `tenant_id` (C8) was declared in schema.ts but never migrated onto these tables
-// under NEXUS_DEV_ — ORA-00904 "TENANT_ID": invalid identifier the first time a service injected the
-// tenant filter. This exercises exactly the two service calls the Settings routes make
-// (app.ts:4100/4134/4165) against a real Oracle instance so a future drift fails here instead of in
-// the browser. Skips unless ORACLE_* is configured — same gate as oracle-roundtrip.spec.ts.
+// Regression coverage for issue #166: the Settings page's now-removed "Infraestrutura civil"
+// (Resource Specification workspace) and "Recursos de Rede" (manufacturer party roles) tabs both
+// 500'd on Oracle because `tenant_id` (C8) was declared in schema.ts but never migrated onto these
+// tables under NEXUS_DEV_ — ORA-00904 "TENANT_ID": invalid identifier the first time a service
+// injected the tenant filter. Those UI tabs are gone (issue #219 — this modeling now lives only in
+// Studio, with governance), but this still exercises the same two service calls directly against a
+// real Oracle instance so a future drift fails here instead of in the browser. Skips unless
+// ORACLE_* is configured — same gate as oracle-roundtrip.spec.ts.
 const oracleConfigured = isOracleTestConfigured() && process.env.DATABASE_PROVIDER === 'oracle';
 if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
 
@@ -26,7 +27,7 @@ afterAll(async () => {
 });
 
 test.skipIf(!oracleConfigured)(
-  'listPartyRoles filtra por tenant_id sem ORA-00904 (aba Recursos de Rede)',
+  'listPartyRoles filtra por tenant_id sem ORA-00904 (ex-aba Recursos de Rede)',
   async () => {
     const client = await getOracleTestClient();
     const service = new PartyService(new PostgresPartyRepository(client), stubEventService);
@@ -43,7 +44,7 @@ test.skipIf(!oracleConfigured)(
 );
 
 test.skipIf(!oracleConfigured)(
-  'listResourceSpecifications filtra por tenant_id sem ORA-00904 (aba Infraestrutura civil)',
+  'listResourceSpecifications filtra por tenant_id sem ORA-00904 (ex-aba Infraestrutura civil)',
   async () => {
     const client = await getOracleTestClient();
     const service = new ResourceService(new PostgresResourceRepository(client), stubEventService);

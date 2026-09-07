@@ -8,8 +8,48 @@
 
 import assert from 'node:assert/strict';
 import { afterAll, test } from 'vitest';
+import { createApp } from '../src/shared/http/app.js';
 import { PartyRoleTypeCharacteristicRepository } from '../src/modules/party/party-role-type-characteristic-repository.js';
-import { cleanupOracleTables, getOracleTestClient, isOracleTestConfigured } from './test-utils.js';
+import {
+  cleanupOracleTables,
+  getOracleTestClient,
+  isOracleTestConfigured,
+  requestJson,
+} from './test-utils.js';
+
+const createLogger = () => ({
+  debug: () => undefined,
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
+});
+
+const createConfig = (port: number) => ({
+  appName: 'v-tal-nexus',
+  authEnabled: true,
+  authToken: 'secret',
+  databaseUrl: 'oracle',
+  database: {
+    provider: 'oracle' as const,
+    connectString: process.env.ORACLE_CONNECTION_STRING ?? process.env.ORACLE_CONNECT_STRING ?? '',
+    user: process.env.ORACLE_USER ?? '',
+    password: process.env.ORACLE_PASSWORD ?? '',
+    pool: {
+      min: 1,
+      max: 1,
+      increment: 1,
+      queueTimeoutMs: 30_000,
+      connectionTimeoutMs: 30_000,
+    },
+    objectPrefix: process.env.ORACLE_TEST_OBJECT_PREFIX ?? 'NEXUS_TEST_',
+  },
+  logLevel: 'info' as const,
+  nodeEnv: 'test' as const,
+  port,
+});
+
+const withCatalogAdmin = { 'x-roles': 'catalog.admin' };
+const withInventoryReader = { 'x-roles': 'inventory.reader' };
 
 const oracleConfigured = isOracleTestConfigured() && process.env.DATABASE_PROVIDER === 'oracle';
 if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
@@ -80,6 +120,90 @@ test.skipIf(!oracleConfigured)(
     const stillThere = await repository.get(TENANT_ID, created.id);
     assert.ok(stillThere);
     assert.equal(stillThere?.active, false);
+  },
+);
+
+test.skipIf(!oracleConfigured)(
+  'API valida valueType/lista, normaliza não-lista e separa leitura de escrita por RBAC',
+  async () => {
+    const server = createApp({ config: createConfig(0), logger: createLogger() });
+    const port = await server.start();
+    try {
+      const invalidType = await requestJson(
+        port,
+        'POST',
+        '/v1/party-role-types/manufacturer/characteristics',
+        { name: 'campo inválido', valueType: 'xml' },
+        withCatalogAdmin,
+      );
+      assert.equal(invalidType.statusCode, 400);
+
+      const listWithoutValues = await requestJson(
+        port,
+        'POST',
+        '/v1/party-role-types/manufacturer/characteristics',
+        { name: 'segmento', valueType: 'list' },
+        withCatalogAdmin,
+      );
+      assert.equal(listWithoutValues.statusCode, 400);
+
+      const created = await requestJson(
+        port,
+        'POST',
+        '/v1/party-role-types/manufacturer/characteristics',
+        {
+          name: 'segmento',
+          description: 'Segmento de atuação do fornecedor',
+          valueType: 'list',
+          allowedValues: ['Óptico', 'Elétrico'],
+        },
+        withCatalogAdmin,
+      );
+      assert.equal(created.statusCode, 201);
+      assert.deepEqual((created.body as { allowedValues: string[] }).allowedValues, [
+        'Óptico',
+        'Elétrico',
+      ]);
+
+      const normalized = await requestJson(
+        port,
+        'PATCH',
+        `/v1/party-role-types/manufacturer/characteristics/${(created.body as { id: string }).id}`,
+        { valueType: 'string', allowedValues: ['não deve persistir'] },
+        withCatalogAdmin,
+      );
+      assert.equal(normalized.statusCode, 200);
+      assert.equal((normalized.body as { allowedValues: string[] | null }).allowedValues, null);
+
+      const roleMismatch = await requestJson(
+        port,
+        'PATCH',
+        `/v1/party-role-types/other-role/characteristics/${(created.body as { id: string }).id}`,
+        { description: 'não deve atualizar' },
+        withCatalogAdmin,
+      );
+      assert.equal(roleMismatch.statusCode, 404);
+
+      const readableByInventory = await requestJson(
+        port,
+        'GET',
+        '/v1/party-role-types/manufacturer/characteristics',
+        undefined,
+        withInventoryReader,
+      );
+      assert.equal(readableByInventory.statusCode, 200);
+
+      const rejectedWrite = await requestJson(
+        port,
+        'POST',
+        '/v1/party-role-types/manufacturer/characteristics',
+        { name: 'bloqueado', valueType: 'string' },
+        withInventoryReader,
+      );
+      assert.equal(rejectedWrite.statusCode, 403);
+    } finally {
+      await server.stop();
+    }
   },
 );
 

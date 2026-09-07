@@ -103,15 +103,28 @@ export function PartyCharacteristicCatalogEditor({
       .filter(Boolean);
   };
 
+  const changeValueType = (valueType: PartyRoleTypeCharacteristicValueType) => {
+    setEditDraft((current) => ({
+      ...current,
+      valueType,
+      ...(valueType === 'list' ? {} : { allowedValues: '' }),
+    }));
+  };
+
   const saveRow = async () => {
     if (!editDraft.name.trim()) {
       setError('O nome da característica é obrigatório.');
       return;
     }
+    const allowedValues =
+      editDraft.valueType === 'list' ? parseAllowedValues(editDraft.allowedValues) : null;
+    if (editDraft.valueType === 'list' && !allowedValues?.length) {
+      setError('Características do tipo Lista exigem ao menos um valor permitido.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      const allowedValues = parseAllowedValues(editDraft.allowedValues);
       if (editingId === 'new') {
         await createPartyRoleTypeCharacteristic(roleName, {
           name: editDraft.name.trim(),
@@ -184,6 +197,7 @@ export function PartyCharacteristicCatalogEditor({
             <tr>
               <th>Nome</th>
               <th>Grupo</th>
+              <th>Descrição</th>
               <th>Tipo</th>
               <th>Valores permitidos</th>
               <th>Ativo</th>
@@ -193,7 +207,7 @@ export function PartyCharacteristicCatalogEditor({
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6}>Carregando…</td>
+                <td colSpan={7}>Carregando…</td>
               </tr>
             ) : (
               <>
@@ -217,13 +231,18 @@ export function PartyCharacteristicCatalogEditor({
                       />
                     </td>
                     <td>
+                      <input
+                        value={editDraft.description}
+                        onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })}
+                        className={inputClass}
+                        placeholder="Descrição"
+                      />
+                    </td>
+                    <td>
                       <select
                         value={editDraft.valueType}
                         onChange={(e) =>
-                          setEditDraft({
-                            ...editDraft,
-                            valueType: e.target.value as PartyRoleTypeCharacteristicValueType,
-                          })
+                          changeValueType(e.target.value as PartyRoleTypeCharacteristicValueType)
                         }
                         className={inputClass}
                       >
@@ -277,7 +296,7 @@ export function PartyCharacteristicCatalogEditor({
                 )}
                 {rows.length === 0 && editingId !== 'new' ? (
                   <tr>
-                    <td colSpan={6}>Nenhuma característica cadastrada para este tipo.</td>
+                    <td colSpan={7}>Nenhuma característica cadastrada para este tipo.</td>
                   </tr>
                 ) : (
                   rows.map((item) => {
@@ -306,14 +325,20 @@ export function PartyCharacteristicCatalogEditor({
                               />
                             </td>
                             <td>
+                              <input
+                                value={editDraft.description}
+                                onChange={(e) =>
+                                  setEditDraft({ ...editDraft, description: e.target.value })
+                                }
+                                className={inputClass}
+                                placeholder="Descrição"
+                              />
+                            </td>
+                            <td>
                               <select
                                 value={editDraft.valueType}
                                 onChange={(e) =>
-                                  setEditDraft({
-                                    ...editDraft,
-                                    valueType:
-                                      e.target.value as PartyRoleTypeCharacteristicValueType,
-                                  })
+                                  changeValueType(e.target.value as PartyRoleTypeCharacteristicValueType)
                                 }
                                 className={inputClass}
                               >
@@ -373,13 +398,9 @@ export function PartyCharacteristicCatalogEditor({
                               style={{ color: 'var(--text-primary)' }}
                             >
                               {item.name}
-                              {item.description && (
-                                <p className="text-[0.76rem] text-app-muted font-normal mt-0.5">
-                                  {item.description}
-                                </p>
-                              )}
                             </td>
                             <td>{item.group || '—'}</td>
+                            <td>{item.description || '—'}</td>
                             <td>
                               <span className="text-[0.78rem] font-mono px-1.5 py-0.5 rounded bg-black/[0.04] text-app-muted">
                                 {VALUE_TYPE_OPTIONS.find((opt) => opt.value === item.valueType)

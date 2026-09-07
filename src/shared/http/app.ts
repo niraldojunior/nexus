@@ -954,6 +954,56 @@ const routeStudioRequest = async ({
 // draft/publish do StudioService — o domínio 'parties' só tem o adapter no-op, então
 // publicação nunca completaria de verdade. Escrita usa CATALOG_ADMIN_ROLES (mesmo papel das
 // rotas de edição de catálogo de Recurso/Servico); leitura usa INVENTORY_READ_ROLES.
+const PARTY_ROLE_TYPE_CHARACTERISTIC_VALUE_TYPES = new Set<PartyRoleTypeCharacteristicValueType>([
+  'string',
+  'integer',
+  'decimal',
+  'boolean',
+  'date',
+  'list',
+  'json',
+]);
+
+const parsePartyRoleTypeCharacteristicPayload = (
+  body: Record<string, unknown>,
+  currentValueType?: PartyRoleTypeCharacteristicValueType,
+  currentAllowedValues?: string[] | null,
+): {
+  valueType: PartyRoleTypeCharacteristicValueType;
+  allowedValues: string[] | null;
+} => {
+  const requestedValueType =
+    body.valueType === undefined ? currentValueType : String(body.valueType).trim();
+  if (
+    !requestedValueType ||
+    !PARTY_ROLE_TYPE_CHARACTERISTIC_VALUE_TYPES.has(
+      requestedValueType as PartyRoleTypeCharacteristicValueType,
+    )
+  ) {
+    throw new AppError('characteristic valueType is invalid', {
+      code: 'PARTY_ROLE_TYPE_CHARACTERISTIC_INVALID',
+      statusCode: 400,
+    });
+  }
+
+  const valueType = requestedValueType as PartyRoleTypeCharacteristicValueType;
+  if (valueType !== 'list') return { valueType, allowedValues: null };
+
+  const allowedValues =
+    body.allowedValues === undefined
+      ? currentAllowedValues ?? []
+      : Array.isArray(body.allowedValues)
+        ? body.allowedValues.map((value) => String(value).trim()).filter(Boolean)
+        : [];
+  if (allowedValues.length === 0) {
+    throw new AppError('list characteristic requires allowedValues', {
+      code: 'PARTY_ROLE_TYPE_CHARACTERISTIC_INVALID',
+      statusCode: 400,
+    });
+  }
+  return { valueType, allowedValues };
+};
+
 const routePartyRoleTypeCharacteristicRequest = async ({
   request,
   response,
@@ -985,24 +1035,22 @@ const routePartyRoleTypeCharacteristicRequest = async ({
       requireRoles(context, CATALOG_ADMIN_ROLES);
       const body = await readBody(request);
       const name = String(body.name ?? '').trim();
-      const valueType = String(body.valueType ?? '').trim();
-      if (!name || !valueType) {
+      if (!name || body.valueType === undefined) {
         throw new AppError('characteristic name and valueType are required', {
           code: 'PARTY_ROLE_TYPE_CHARACTERISTIC_INVALID',
           statusCode: 400,
         });
       }
+      const { valueType, allowedValues } = parsePartyRoleTypeCharacteristicPayload(body);
       return sendJson(
         response,
         201,
         await runtime.partyRoleTypeCharacteristicRepository.create(context.tenantId, roleName, {
           name,
-          valueType: valueType as PartyRoleTypeCharacteristicValueType,
+          valueType,
           group: body.group ? String(body.group) : null,
           description: body.description ? String(body.description) : null,
-          allowedValues: Array.isArray(body.allowedValues)
-            ? body.allowedValues.map((value: unknown) => String(value))
-            : null,
+          allowedValues,
           ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}),
         }),
       );
@@ -1013,10 +1061,22 @@ const routePartyRoleTypeCharacteristicRequest = async ({
     /^\/v1\/party-role-types\/([^/]+)\/characteristics\/([^/]+)$/,
   );
   if (itemMatch?.[1] && itemMatch?.[2]) {
+    const roleName = decodeURIComponent(itemMatch[1]);
     const id = decodeURIComponent(itemMatch[2]);
     if (request.method === 'PATCH' || request.method === 'DELETE') {
       requireRoles(context, CATALOG_ADMIN_ROLES);
       const body = request.method === 'PATCH' ? await readBody(request) : {};
+      const current = await runtime.partyRoleTypeCharacteristicRepository.get(context.tenantId, id);
+      if (!current || current.roleName !== roleName) {
+        throw new AppError('party role type characteristic not found', {
+          code: 'PARTY_ROLE_TYPE_CHARACTERISTIC_NOT_FOUND',
+          statusCode: 404,
+        });
+      }
+      const payload =
+        request.method === 'PATCH'
+          ? parsePartyRoleTypeCharacteristicPayload(body, current.valueType, current.allowedValues)
+          : undefined;
       const updated =
         request.method === 'DELETE'
           ? await runtime.partyRoleTypeCharacteristicRepository.deactivate(context.tenantId, id)
@@ -1026,16 +1086,8 @@ const routePartyRoleTypeCharacteristicRequest = async ({
               ...(body.description !== undefined
                 ? { description: body.description ? String(body.description) : null }
                 : {}),
-              ...(body.valueType !== undefined
-                ? { valueType: String(body.valueType) as PartyRoleTypeCharacteristicValueType }
-                : {}),
-              ...(body.allowedValues !== undefined
-                ? {
-                    allowedValues: Array.isArray(body.allowedValues)
-                      ? body.allowedValues.map((value: unknown) => String(value))
-                      : null,
-                  }
-                : {}),
+              valueType: payload!.valueType,
+              allowedValues: payload!.allowedValues,
               ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}),
               ...(body.active !== undefined ? { active: Boolean(body.active) } : {}),
             });

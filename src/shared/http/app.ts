@@ -35,6 +35,7 @@ import { parseNodeId, type GeoTreeService } from '../../modules/geo/tree-service
 import { isMapDensityZoom, MAP_DENSITY_ZOOMS } from '../../modules/geo/map-density.js';
 import type { OrderService } from '../../modules/order/service.js';
 import type { PartyRoleTypeCharacteristicValueType } from '../../modules/party/party-role-type-characteristic-repository.js';
+import type { CreatePartyRoleTypeInput, UpdatePartyRoleTypeInput } from '../../modules/party/party-role-type-repository.js';
 import {
   createNexusRuntime,
   DEFAULT_RUNTIME_USER,
@@ -793,6 +794,11 @@ const routeRequest = async ({
     return;
   }
 
+  if (url.pathname === '/v1/party-role-types' || /^\/v1\/party-role-types\/[^/]+$/.test(url.pathname)) {
+    await routePartyRoleTypeRequest({ request, response, config, runtime, url });
+    return;
+  }
+
   if (url.pathname.startsWith('/v1/party-role-types/')) {
     await routePartyRoleTypeCharacteristicRequest({ request, response, config, runtime, url });
     return;
@@ -948,12 +954,165 @@ const routeStudioRequest = async ({
   throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
 };
 
+// Tipos de party são metadados de modelagem do Studio; suas instâncias continuam em TMF632/669.
+// O papel é renomeável porque o repositório propaga a alteração para características e PartyRoles.
+const parsePartyRoleTypeInput = (
+  body: Record<string, unknown>,
+  current?: CreatePartyRoleTypeInput,
+): CreatePartyRoleTypeInput => {
+  const key = String(body.key ?? current?.key ?? '').trim();
+  const roleName = String(body.roleName ?? current?.roleName ?? '').trim();
+  const label = String(body.label ?? current?.label ?? '').trim();
+  const description =
+    body.description === undefined
+      ? current?.description
+      : body.description === null
+        ? null
+        : String(body.description).trim();
+  if (!key || !roleName || !label) {
+    throw new AppError('party role type key, roleName and label are required', {
+      code: 'PARTY_ROLE_TYPE_INVALID',
+      statusCode: 400,
+    });
+  }
+  if (!/^[a-z][a-z0-9-]*$/.test(key) || !/^[a-z][a-z0-9-]*$/.test(roleName)) {
+    throw new AppError('party role type key and roleName must be lowercase identifiers', {
+      code: 'PARTY_ROLE_TYPE_INVALID',
+      statusCode: 400,
+    });
+  }
+  return { key, roleName, label, description: description || null };
+};
+
+const routePartyRoleTypeRequest = async ({
+  request,
+  response,
+  config,
+  runtime,
+  url,
+}: {
+  request: IncomingMessage;
+  response: ServerResponse;
+  config: AppConfig;
+  runtime: NexusRuntime;
+  url: URL;
+}): Promise<void> => {
+  const context = await buildRequestContext(request, config);
+  if (url.pathname === '/v1/party-role-types') {
+    if (request.method === 'GET') {
+      requireRoles(context, INVENTORY_READ_ROLES);
+      return sendJson(response, 200, await runtime.partyRoleTypeRepository.list(context.tenantId));
+    }
+    if (request.method === 'POST') {
+      requireRoles(context, CATALOG_ADMIN_ROLES);
+      const input = parsePartyRoleTypeInput(await readBody(request));
+      const conflict = await runtime.partyRoleTypeRepository.findByKeyOrRoleName(
+        context.tenantId,
+        input.key,
+        input.roleName,
+      );
+      if (conflict) {
+        throw new AppError('party role type key or roleName already exists', {
+          code: 'PARTY_ROLE_TYPE_CONFLICT',
+          statusCode: 409,
+        });
+      }
+      return sendJson(response, 201, await runtime.partyRoleTypeRepository.create(context.tenantId, input));
+    }
+  }
+
+  const itemMatch = url.pathname.match(/^\/v1\/party-role-types\/([^/]+)$/);
+  if (itemMatch?.[1] && (request.method === 'PATCH' || request.method === 'DELETE')) {
+    requireRoles(context, CATALOG_ADMIN_ROLES);
+    const id = decodeURIComponent(itemMatch[1]);
+    const current = await runtime.partyRoleTypeRepository.get(context.tenantId, id);
+    if (!current) {
+      throw new AppError('party role type not found', {
+        code: 'PARTY_ROLE_TYPE_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    if (request.method === 'DELETE') {
+      return sendJson(response, 200, await runtime.partyRoleTypeRepository.deactivate(context.tenantId, id));
+    }
+    const input = parsePartyRoleTypeInput(await readBody(request), current);
+    const conflict = await runtime.partyRoleTypeRepository.findByKeyOrRoleName(
+      context.tenantId,
+      input.key,
+      input.roleName,
+    );
+    if (conflict && conflict.id !== current.id) {
+      throw new AppError('party role type key or roleName already exists', {
+        code: 'PARTY_ROLE_TYPE_CONFLICT',
+        statusCode: 409,
+      });
+    }
+    return sendJson(
+      response,
+      200,
+      await runtime.partyRoleTypeRepository.update(context.tenantId, id, input as UpdatePartyRoleTypeInput),
+    );
+  }
+
+  throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
+};
+
 // Catálogo de características por "tipo de party" (Studio -> Partes, issue #220). Fora do
 // namespace /tmf-api porque não é entidade TMF (é metadado de modelagem, como
 // /v1/geo/project-statuses) e fora de /v1/studio/ porque não passa pelo fluxo de
 // draft/publish do StudioService — o domínio 'parties' só tem o adapter no-op, então
 // publicação nunca completaria de verdade. Escrita usa CATALOG_ADMIN_ROLES (mesmo papel das
 // rotas de edição de catálogo de Recurso/Servico); leitura usa INVENTORY_READ_ROLES.
+const PARTY_ROLE_TYPE_CHARACTERISTIC_VALUE_TYPES = new Set<PartyRoleTypeCharacteristicValueType>([
+  'string',
+  'integer',
+  'decimal',
+  'boolean',
+  'date',
+  'list',
+  'json',
+]);
+
+const parsePartyRoleTypeCharacteristicPayload = (
+  body: Record<string, unknown>,
+  currentValueType?: PartyRoleTypeCharacteristicValueType,
+  currentAllowedValues?: string[] | null,
+): {
+  valueType: PartyRoleTypeCharacteristicValueType;
+  allowedValues: string[] | null;
+} => {
+  const requestedValueType =
+    body.valueType === undefined ? currentValueType : String(body.valueType).trim();
+  if (
+    !requestedValueType ||
+    !PARTY_ROLE_TYPE_CHARACTERISTIC_VALUE_TYPES.has(
+      requestedValueType as PartyRoleTypeCharacteristicValueType,
+    )
+  ) {
+    throw new AppError('characteristic valueType is invalid', {
+      code: 'PARTY_ROLE_TYPE_CHARACTERISTIC_INVALID',
+      statusCode: 400,
+    });
+  }
+
+  const valueType = requestedValueType as PartyRoleTypeCharacteristicValueType;
+  if (valueType !== 'list') return { valueType, allowedValues: null };
+
+  const allowedValues =
+    body.allowedValues === undefined
+      ? currentAllowedValues ?? []
+      : Array.isArray(body.allowedValues)
+        ? body.allowedValues.map((value) => String(value).trim()).filter(Boolean)
+        : [];
+  if (allowedValues.length === 0) {
+    throw new AppError('list characteristic requires allowedValues', {
+      code: 'PARTY_ROLE_TYPE_CHARACTERISTIC_INVALID',
+      statusCode: 400,
+    });
+  }
+  return { valueType, allowedValues };
+};
+
 const routePartyRoleTypeCharacteristicRequest = async ({
   request,
   response,
@@ -985,24 +1144,22 @@ const routePartyRoleTypeCharacteristicRequest = async ({
       requireRoles(context, CATALOG_ADMIN_ROLES);
       const body = await readBody(request);
       const name = String(body.name ?? '').trim();
-      const valueType = String(body.valueType ?? '').trim();
-      if (!name || !valueType) {
+      if (!name || body.valueType === undefined) {
         throw new AppError('characteristic name and valueType are required', {
           code: 'PARTY_ROLE_TYPE_CHARACTERISTIC_INVALID',
           statusCode: 400,
         });
       }
+      const { valueType, allowedValues } = parsePartyRoleTypeCharacteristicPayload(body);
       return sendJson(
         response,
         201,
         await runtime.partyRoleTypeCharacteristicRepository.create(context.tenantId, roleName, {
           name,
-          valueType: valueType as PartyRoleTypeCharacteristicValueType,
+          valueType,
           group: body.group ? String(body.group) : null,
           description: body.description ? String(body.description) : null,
-          allowedValues: Array.isArray(body.allowedValues)
-            ? body.allowedValues.map((value: unknown) => String(value))
-            : null,
+          allowedValues,
           ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}),
         }),
       );
@@ -1013,10 +1170,22 @@ const routePartyRoleTypeCharacteristicRequest = async ({
     /^\/v1\/party-role-types\/([^/]+)\/characteristics\/([^/]+)$/,
   );
   if (itemMatch?.[1] && itemMatch?.[2]) {
+    const roleName = decodeURIComponent(itemMatch[1]);
     const id = decodeURIComponent(itemMatch[2]);
     if (request.method === 'PATCH' || request.method === 'DELETE') {
       requireRoles(context, CATALOG_ADMIN_ROLES);
       const body = request.method === 'PATCH' ? await readBody(request) : {};
+      const current = await runtime.partyRoleTypeCharacteristicRepository.get(context.tenantId, id);
+      if (!current || current.roleName !== roleName) {
+        throw new AppError('party role type characteristic not found', {
+          code: 'PARTY_ROLE_TYPE_CHARACTERISTIC_NOT_FOUND',
+          statusCode: 404,
+        });
+      }
+      const payload =
+        request.method === 'PATCH'
+          ? parsePartyRoleTypeCharacteristicPayload(body, current.valueType, current.allowedValues)
+          : undefined;
       const updated =
         request.method === 'DELETE'
           ? await runtime.partyRoleTypeCharacteristicRepository.deactivate(context.tenantId, id)
@@ -1026,16 +1195,8 @@ const routePartyRoleTypeCharacteristicRequest = async ({
               ...(body.description !== undefined
                 ? { description: body.description ? String(body.description) : null }
                 : {}),
-              ...(body.valueType !== undefined
-                ? { valueType: String(body.valueType) as PartyRoleTypeCharacteristicValueType }
-                : {}),
-              ...(body.allowedValues !== undefined
-                ? {
-                    allowedValues: Array.isArray(body.allowedValues)
-                      ? body.allowedValues.map((value: unknown) => String(value))
-                      : null,
-                  }
-                : {}),
+              valueType: payload!.valueType,
+              allowedValues: payload!.allowedValues,
               ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}),
               ...(body.active !== undefined ? { active: Boolean(body.active) } : {}),
             });

@@ -191,8 +191,8 @@ export function PartyCharacteristicCatalogEditor({
         </div>
       )}
 
-      <div className="vt-card vt-table-card" style={{ overflow: 'hidden', padding: 0 }}>
-        <table className="vt-table" style={{ minWidth: 700 }}>
+      <div className="vt-card vt-table-card overflow-x-auto" style={{ padding: 0 }}>
+        <table className="vt-table" style={{ minWidth: 860 }}>
           <thead>
             <tr>
               <th>Nome</th>

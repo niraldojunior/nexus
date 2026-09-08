@@ -36,6 +36,7 @@ import { AuthService } from '../../modules/auth/index.js';
 import { GeoSearchHistoryRepository } from '../../modules/geo/search-history-repository.js';
 import { GeoProjectRepository } from '../../modules/geo/project-repository.js';
 import { PartyRoleTypeCharacteristicRepository } from '../../modules/party/party-role-type-characteristic-repository.js';
+import { PartyRoleTypeRepository } from '../../modules/party/party-role-type-repository.js';
 import { StudioService } from '../../modules/studio/service.js';
 import { PostgresStudioRepository } from '../../modules/studio/postgres-repository.js';
 import { OracleStudioRepository } from '../../modules/studio/oracle-repository.js';
@@ -108,6 +109,8 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   const partyRepository = oracle ? new OraclePartyRepository(db) : new PostgresPartyRepository(db);
   await partyRepository.initialize();
   const partyService = new PartyService(partyRepository, eventService, db);
+  const partyRoleTypeRepository = new PartyRoleTypeRepository(db);
+  await partyRoleTypeRepository.ensureSupplierSeed(DEFAULT_TENANT_ID);
   const partyRoleTypeCharacteristicRepository = new PartyRoleTypeCharacteristicRepository(db);
   await partyRoleTypeCharacteristicRepository.ensureManufacturerCnpjSeed(DEFAULT_TENANT_ID);
   const resourceRepository = oracle
@@ -257,6 +260,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     eventService,
     partyRepository,
     partyService,
+    partyRoleTypeRepository,
     partyRoleTypeCharacteristicRepository,
     resourceRepository,
     resourceService,

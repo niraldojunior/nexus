@@ -35,6 +35,7 @@ import { parseNodeId, type GeoTreeService } from '../../modules/geo/tree-service
 import { isMapDensityZoom, MAP_DENSITY_ZOOMS } from '../../modules/geo/map-density.js';
 import type { OrderService } from '../../modules/order/service.js';
 import type { PartyRoleTypeCharacteristicValueType } from '../../modules/party/party-role-type-characteristic-repository.js';
+import type { CreatePartyRoleTypeInput, UpdatePartyRoleTypeInput } from '../../modules/party/party-role-type-repository.js';
 import {
   createNexusRuntime,
   DEFAULT_RUNTIME_USER,
@@ -793,6 +794,11 @@ const routeRequest = async ({
     return;
   }
 
+  if (url.pathname === '/v1/party-role-types' || /^\/v1\/party-role-types\/[^/]+$/.test(url.pathname)) {
+    await routePartyRoleTypeRequest({ request, response, config, runtime, url });
+    return;
+  }
+
   if (url.pathname.startsWith('/v1/party-role-types/')) {
     await routePartyRoleTypeCharacteristicRequest({ request, response, config, runtime, url });
     return;
@@ -943,6 +949,109 @@ const routeStudioRequest = async ({
     }
     sendJson(response, 200, await studioService.discardDraft(domain, context, ifMatch));
     return;
+  }
+
+  throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
+};
+
+// Tipos de party são metadados de modelagem do Studio; suas instâncias continuam em TMF632/669.
+// O papel é renomeável porque o repositório propaga a alteração para características e PartyRoles.
+const parsePartyRoleTypeInput = (
+  body: Record<string, unknown>,
+  current?: CreatePartyRoleTypeInput,
+): CreatePartyRoleTypeInput => {
+  const key = String(body.key ?? current?.key ?? '').trim();
+  const roleName = String(body.roleName ?? current?.roleName ?? '').trim();
+  const label = String(body.label ?? current?.label ?? '').trim();
+  const description =
+    body.description === undefined
+      ? current?.description
+      : body.description === null
+        ? null
+        : String(body.description).trim();
+  if (!key || !roleName || !label) {
+    throw new AppError('party role type key, roleName and label are required', {
+      code: 'PARTY_ROLE_TYPE_INVALID',
+      statusCode: 400,
+    });
+  }
+  if (!/^[a-z][a-z0-9-]*$/.test(key) || !/^[a-z][a-z0-9-]*$/.test(roleName)) {
+    throw new AppError('party role type key and roleName must be lowercase identifiers', {
+      code: 'PARTY_ROLE_TYPE_INVALID',
+      statusCode: 400,
+    });
+  }
+  return { key, roleName, label, description: description || null };
+};
+
+const routePartyRoleTypeRequest = async ({
+  request,
+  response,
+  config,
+  runtime,
+  url,
+}: {
+  request: IncomingMessage;
+  response: ServerResponse;
+  config: AppConfig;
+  runtime: NexusRuntime;
+  url: URL;
+}): Promise<void> => {
+  const context = await buildRequestContext(request, config);
+  if (url.pathname === '/v1/party-role-types') {
+    if (request.method === 'GET') {
+      requireRoles(context, INVENTORY_READ_ROLES);
+      return sendJson(response, 200, await runtime.partyRoleTypeRepository.list(context.tenantId));
+    }
+    if (request.method === 'POST') {
+      requireRoles(context, CATALOG_ADMIN_ROLES);
+      const input = parsePartyRoleTypeInput(await readBody(request));
+      const conflict = await runtime.partyRoleTypeRepository.findByKeyOrRoleName(
+        context.tenantId,
+        input.key,
+        input.roleName,
+      );
+      if (conflict) {
+        throw new AppError('party role type key or roleName already exists', {
+          code: 'PARTY_ROLE_TYPE_CONFLICT',
+          statusCode: 409,
+        });
+      }
+      return sendJson(response, 201, await runtime.partyRoleTypeRepository.create(context.tenantId, input));
+    }
+  }
+
+  const itemMatch = url.pathname.match(/^\/v1\/party-role-types\/([^/]+)$/);
+  if (itemMatch?.[1] && (request.method === 'PATCH' || request.method === 'DELETE')) {
+    requireRoles(context, CATALOG_ADMIN_ROLES);
+    const id = decodeURIComponent(itemMatch[1]);
+    const current = await runtime.partyRoleTypeRepository.get(context.tenantId, id);
+    if (!current) {
+      throw new AppError('party role type not found', {
+        code: 'PARTY_ROLE_TYPE_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    if (request.method === 'DELETE') {
+      return sendJson(response, 200, await runtime.partyRoleTypeRepository.deactivate(context.tenantId, id));
+    }
+    const input = parsePartyRoleTypeInput(await readBody(request), current);
+    const conflict = await runtime.partyRoleTypeRepository.findByKeyOrRoleName(
+      context.tenantId,
+      input.key,
+      input.roleName,
+    );
+    if (conflict && conflict.id !== current.id) {
+      throw new AppError('party role type key or roleName already exists', {
+        code: 'PARTY_ROLE_TYPE_CONFLICT',
+        statusCode: 409,
+      });
+    }
+    return sendJson(
+      response,
+      200,
+      await runtime.partyRoleTypeRepository.update(context.tenantId, id, input as UpdatePartyRoleTypeInput),
+    );
   }
 
   throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });

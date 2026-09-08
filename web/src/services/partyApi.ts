@@ -20,7 +20,12 @@ export type PartyQuery = {
   offset: number;
 };
 
-export type Characteristic = { name: string; value: unknown };
+export type Characteristic = {
+  name: string;
+  value: unknown;
+  valueType?: 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'list' | 'json';
+  allowedValues?: string[];
+};
 
 export type Party = {
   '@type': PartyType;

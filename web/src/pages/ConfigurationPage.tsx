@@ -8,7 +8,6 @@ import {
   Plus,
   ServerCog,
   Trash2,
-  Truck,
   Users,
   X,
   type LucideIcon,
@@ -77,18 +76,21 @@ type ProjectStatusEditDraft = {
   active: boolean;
 };
 
-type SupplierDraft = { name: string; cnpj: string };
+type SupplierDraft = {
+  name: string;
+  cnpj: string;
+};
 
 const tabs: Array<{ id: ConfigTab; label: string; icon: LucideIcon }> = [
   { id: 'users', label: 'Usuários', icon: Users },
   { id: 'environment', label: 'Ambiente', icon: ServerCog },
   { id: 'events', label: 'Eventos', icon: Activity },
   { id: 'projects', label: 'Projetos', icon: FolderTree },
+  { id: 'suppliers', label: 'Fornecedores', icon: Briefcase },
   { id: 'services', label: 'Serviços', icon: Briefcase },
-  { id: 'suppliers', label: 'Fornecedores', icon: Truck },
 ];
 
-/** Cabeçalho de modal com título + botão de fechar — usado pelos três modais desta página. */
+/** Cabeçalho de modal com título + botão de fechar — usado pelos modais desta página. */
 function ModalTitle({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
     <div className="flex items-center justify-between gap-4">
@@ -332,10 +334,6 @@ export function ConfigurationPage() {
   return (
     <div className="flex h-full w-full items-stretch overflow-hidden max-md:flex-col">
       <aside className="w-[185px] shrink-0 overflow-y-auto border-r border-app-border bg-app-sidebar px-[11px] pb-[22px] pt-[42px] max-md:w-full max-md:border-b max-md:border-r-0 max-md:px-5">
-        {/* pt-[42px]: alinha o topo de "Configurações" com o topo do título da aba ativa
-            (ex.: "Usuários" em UsersTab/PageHead) — a seção de conteúdo tem py-8 (32px) e
-            o título fica dentro de uma caixa de 48px centralizada verticalmente
-            (ver PageHead), então o texto visualmente começa ~10px abaixo do padding. */}
         <p className="px-2 pb-2.5 text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
           Configurações
         </p>
@@ -412,8 +410,6 @@ export function ConfigurationPage() {
                       const isEditing = editingCode === item.code;
                       const behaviorLocked = isEditing && item.code === '17';
                       const activeLocked = isEditing && (item.code === '1' || item.code === '17');
-                      // Exclusão é soft (C6): o backend só marca active=false. Fica disponível
-                      // mesmo com o status já inativo — só os dois protegidos (1, 17) ficam de fora.
                       const canDeactivate = item.code !== '1' && item.code !== '17';
                       return (
                         <tr key={item.code}>
@@ -816,4 +812,3 @@ function SupplierModal({
     </Modal>
   );
 }
-

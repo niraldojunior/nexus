@@ -18,6 +18,7 @@ import { StudioGovernanceSummary } from '../components/StudioGovernanceSummary';
 import { ResourceModelStudio } from './studio/resource-model/ResourceModelStudio';
 import { LocationModelStudio } from './studio/location-model/LocationModelStudio';
 import { SpatialStudio } from './studio/spatial/SpatialStudio';
+import { PartyModelStudio } from './studio/party-model/PartyModelStudio';
 import EmptyState from '../components/EmptyState';
 import { PageHead } from '../components/ui';
 import type { StudioDomain } from '../services/studioApi';
@@ -52,7 +53,6 @@ const studioDomainBySection: Partial<Record<StudioSection, StudioDomain>> = {
   'location-model': 'location-model',
   spatial: 'spatial',
   'studio-geo': 'studio-geo',
-  parties: 'parties',
   'reference-data': 'reference-data',
   'rules-workflows': 'rules-workflows',
   templates: 'templates',
@@ -332,6 +332,10 @@ export function StudioPage({
           ) : section === 'spatial' ? (
             <div className="mt-5">
               <SpatialStudio canEdit={canEdit} canAdmin={canAdmin} />
+            </div>
+          ) : section === 'parties' ? (
+            <div className="mt-5">
+              <PartyModelStudio canEdit={canEdit} canAdmin={canAdmin} />
             </div>
           ) : (
             <div className="mt-5">

@@ -913,7 +913,11 @@ export class GeoService {
     }
 
     const nextLifecycleStatus = input.lifecycleStatus ?? current.lifecycleStatus;
-    if (current._bootstrapProtected && nextLifecycleStatus === 'Retired') {
+    if (
+      current._bootstrapProtected &&
+      current.lifecycleStatus !== 'Retired' &&
+      nextLifecycleStatus === 'Retired'
+    ) {
       throw new AppError('bootstrap specification cannot be retired', {
         code: 'GEO_SPEC_BOOTSTRAP_PROTECTED',
         statusCode: 409,

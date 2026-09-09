@@ -238,9 +238,9 @@ const SITE_MARKER_Z = 1500;
 
 // Stub de GeoTreeNode a partir de uma feature do InfraOverlay (canvas do mapa, Fase 3 da
 // issue #69) — clique/hover sobre o canvas não tem um GeoTreeNode pronto, só o essencial que o
-// índice de tile carrega. Suficiente para abrir o painel e desenhar o Marker/Polyline de
-// seleção na hora; `selectNodeFromInfraOverlay` hidrata em seguida (`detail` completo e, pra
-// cabo, a rota inteira — não só o trecho recortado neste tile).
+// índice de tile carrega. Serve para hover e como alvo da reidratação; o painel de Recurso só
+// abre depois de `selectNodeFromInfraOverlay` confirmar o nó canônico (`detail` completo e,
+// pra cabo, a rota inteira — não só o trecho recortado neste tile).
 function mapTileFeatureToNode(feature: MapTileFeature): GeoTreeNode {
   const node: GeoTreeNode = {
     id: mapTileFeatureNodeId(feature),
@@ -898,6 +898,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // detalhe próprio.
   const selectNode = useCallback(
     (node: GeoTreeNode, from: 'search' | 'tree' | 'map' | 'restore' = 'tree') => {
+      setError(null);
       setSelectedNode(node);
       setDraftAddress(null);
       setAddressLookup(null);
@@ -1186,27 +1187,41 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
 
   // Clique/hover resolvido pelo InfraOverlay (canvas do mapa, Fase 3 da issue #69): a feature
   // do índice de tile não tem `detail` nem (pra cabo) a rota inteira — ver mapTileFeatureToNode.
-  // Seleciona o stub na hora (painel abre, Marker/Polyline de seleção aparece de imediato) e
-  // troca pelo nó hidratado assim que a resposta chega, sem bloquear a interação por causa de
-  // uma volta ao servidor. Nunca é um Local de Projeto (esses continuam vindo de
-  // `projectViewportSites`/`projectSites`, um Marker real de sempre — `geo_map_feature` não os
-  // indexa). Site não precisa de hidratação própria aqui (SitePanel já busca o detalhe completo
-  // por id de qualquer jeito, e a geometria de Site no índice já é o ponto inteiro, nunca um
-  // trecho recortado).
+  // Site pode abrir pelo stub: o SitePanel busca o detalhe por id e sua geometria no índice já é
+  // completa. Recurso, porém, só abre após reidratar: uma entrada órfã do índice não pode cair no
+  // ResourcePanel (que depende do agregado físico e da rota canônica), nem um LogicalResource
+  // pode ser encaminhado a esse agregado físico.
   const selectNodeFromInfraOverlay = useCallback(
     (feature: MapTileFeature) => {
       const stub = mapTileFeatureToNode(feature);
-      selectNode(stub, 'map');
-      if (stub.kind !== 'resource') return;
+      if (stub.kind !== 'resource') {
+        selectNode(stub, 'map');
+        return;
+      }
       const token = ++hydrateTokenRef.current;
       void fetchTreeNode(stub.id)
         .then((hydrated) => {
           if (hydrateTokenRef.current !== token) return;
-          setSelectedNode((current) => (current?.id === stub.id ? hydrated : current));
+          if (hydrated.referredType !== 'PhysicalResource') {
+            setSelectedNode(null);
+            setDetailOpen(false);
+            setSearchSelection(null);
+            setError('Este tipo de recurso ainda não possui painel de detalhe no mapa.');
+            return;
+          }
+          setError(null);
+          selectNode(hydrated, 'map');
         })
-        .catch(() => {
-          // Hidratação falhou (recurso terminado entre o build do índice e o clique, rede
-          // instável): o stub já aberto continua funcional, só sem `detail`/rota completa.
+        .catch((reason) => {
+          if (hydrateTokenRef.current !== token) return;
+          setSelectedNode(null);
+          setDetailOpen(false);
+          setSearchSelection(null);
+          if (reason instanceof Error && reason.message.includes('(404)')) {
+            setError('O recurso selecionado não está mais disponível no inventário.');
+            return;
+          }
+          setError('Não foi possível carregar o recurso selecionado. Tente novamente.');
         });
     },
     [selectNode],

@@ -7,8 +7,8 @@
  * sem parse de JSON e sem grafo de relacionamentos — a PK da tabela É o índice de leitura.
  *
  * O que entra:
- *   · PhysicalResource/LogicalResource com geometria própria (Point ou LineString),
- *     status <> 'terminated', resource_type <> 'Splitter' (ele não tem ponto próprio — mora na
+ *   · PhysicalResource com geometria própria (Point ou LineString), status <> 'terminated',
+ *     resource_type <> 'Splitter' (ele não tem ponto próprio — mora na
  *     Location da caixa que o contém) e cujo ResourceType tem map_presence = 1 no catálogo (ou
  *     é desconhecido — tipo sem linha em tmf_resource_type entra por padrão, mesma régua de
  *     resourcePlant() no cliente: esconder o que não se sabe classificar é pior que mostrar
@@ -62,6 +62,72 @@ const UF = argOf('--uf', null);
 const TENANT = argOf('--tenant', 'default');
 const PROVIDER = argOf('--provider', process.env.DATABASE_PROVIDER ?? 'postgres');
 
+async function ensureMapFeaturePrimaryKey(client) {
+  const expected = ['TENANT_ID', 'TILE_Z', 'TILE_X', 'TILE_Y', 'ENTITY_ID', 'SHAPE', 'RANK'];
+  if (client.provider === 'oracle') {
+    const tableName = `${process.env.ORACLE_OBJECT_PREFIX ?? ''}geo_map_feature`.toUpperCase();
+    const primaryKey = (
+      await client.query(
+        `SELECT c.constraint_name
+           FROM user_constraints c
+          WHERE c.table_name = $1 AND c.constraint_type = 'P'`,
+        [tableName],
+      )
+    ).rows[0];
+    if (!primaryKey) return;
+    const columns = (
+      await client.query(
+        `SELECT cc.column_name
+           FROM user_cons_columns cc
+          WHERE cc.constraint_name = $1
+          ORDER BY cc.position`,
+        [primaryKey.constraint_name],
+      )
+    ).rows.map((row) => String(row.column_name).toUpperCase());
+    if (columns.join(',') === expected.join(',')) return;
+    await client.query('ALTER TABLE geo_map_feature DROP PRIMARY KEY');
+    await client.query(
+      'ALTER TABLE geo_map_feature ADD PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)',
+    );
+    console.log('Chave primária de geo_map_feature atualizada para incluir rank.');
+    return;
+  }
+
+  const constraint = (
+    await client.query(
+      `SELECT con.conname
+         FROM pg_constraint con
+         JOIN pg_class rel ON rel.oid = con.conrelid
+        WHERE rel.relname = 'geo_map_feature'
+          AND rel.relnamespace = current_schema()::regnamespace
+          AND con.contype = 'p'
+        ORDER BY con.oid
+        LIMIT 1`,
+    )
+  ).rows[0];
+  if (!constraint) return;
+  const columns = (
+    await client.query(
+      `SELECT att.attname
+         FROM pg_constraint con
+         JOIN pg_class rel ON rel.oid = con.conrelid
+         JOIN unnest(con.conkey) WITH ORDINALITY AS key(attnum, position) ON true
+         JOIN pg_attribute att ON att.attrelid = rel.oid AND att.attnum = key.attnum
+        WHERE rel.relname = 'geo_map_feature'
+          AND rel.relnamespace = current_schema()::regnamespace
+          AND con.contype = 'p'
+        ORDER BY key.position`,
+    )
+  ).rows.map((row) => String(row.attname).toUpperCase());
+  if (columns.join(',') === expected.join(',')) return;
+  const name = String(constraint.conname).replace(/"/g, '""');
+  await client.query(`ALTER TABLE geo_map_feature DROP CONSTRAINT "${name}"`);
+  await client.query(
+    'ALTER TABLE geo_map_feature ADD PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)',
+  );
+  console.log('Chave primária de geo_map_feature atualizada para incluir rank.');
+}
+
 async function ensureMapFeatureTable(client) {
   if (client.provider === 'oracle') {
     const ddl = `CREATE TABLE geo_map_feature (
@@ -83,7 +149,7 @@ async function ensureMapFeatureTable(client) {
       geometry CLOB,
       rank NUMBER(10) DEFAULT 0 NOT NULL,
       generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape)
+      PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)
     )`;
     try {
       await client.query(ddl);
@@ -91,9 +157,8 @@ async function ensureMapFeatureTable(client) {
     } catch (error) {
       if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
     }
-    return;
-  }
-  await client.query(`CREATE TABLE IF NOT EXISTS geo_map_feature (
+  } else {
+    await client.query(`CREATE TABLE IF NOT EXISTS geo_map_feature (
     tenant_id TEXT NOT NULL DEFAULT 'default',
     tile_z INTEGER NOT NULL,
     tile_x INTEGER NOT NULL,
@@ -112,8 +177,22 @@ async function ensureMapFeatureTable(client) {
     geometry TEXT,
     rank INTEGER NOT NULL DEFAULT 0,
     generated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape)
-  )`);
+      PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)
+    )`);
+  }
+  if (client.provider === 'oracle') {
+    const prefix = process.env.ORACLE_OBJECT_PREFIX ?? '';
+    try {
+      // CREATE INDEX não tem uma posição "TABLE <nome>" que o adapter consiga prefixar; ao
+      // contrário do CREATE/ALTER TABLE, os dois objetos precisam chegar explicitamente qualificados.
+      await client.query(
+        `CREATE INDEX ${prefix}idx_geo_map_feature_tile ON ${prefix}geo_map_feature(tenant_id, tile_z, tile_x, tile_y, rank)`,
+      );
+    } catch (error) {
+      if (!/ORA-00955|ORA-01408/.test(String(error?.message ?? error))) throw error;
+    }
+    return;
+  }
   await client.query(
     `CREATE INDEX IF NOT EXISTS idx_geo_map_feature_tile ON geo_map_feature(tenant_id, tile_z, tile_x, tile_y, rank)`,
   );
@@ -215,7 +294,7 @@ function pointRow({ entityId, kind, entityType, typeCode, siteCategory, status, 
 
 function lineRows({ entityId, entityType, typeCode, status, label, geometry }) {
   const segments = tileSegmentsForLine(geometry, MAP_TILE_ZOOM);
-  return segments.map(({ tile, coordinates }) => {
+  return segments.map(({ tile, coordinates, rank }) => {
     const anchor = coordinates[Math.floor(coordinates.length / 2)];
     return {
       tenant_id: TENANT,
@@ -234,7 +313,7 @@ function lineRows({ entityId, entityType, typeCode, status, label, geometry }) {
       lng: anchor[0],
       lat: anchor[1],
       geometry: JSON.stringify({ type: 'LineString', coordinates }),
-      rank: 0,
+      rank,
     };
   });
 }
@@ -253,10 +332,12 @@ async function main() {
     const scopeLabel = [CITY && `city=${CITY}`, UF && `uf=${UF}`].filter(Boolean).join(' · ') || 'base inteira';
     console.log(`Escopo   : ${scopeLabel} (tenant=${TENANT})`);
 
-    const resourceRows = [
-      ...(await client.query(resourceSource('PhysicalResource', scopeWhere), params)).rows,
-      ...(await client.query(resourceSource('LogicalResource', scopeWhere), params)).rows,
-    ];
+    // ResourcePanel expõe o agregado de detalhe exclusivamente para PhysicalResource. Manter
+    // LogicalResource no índice permitiria que um clique no mapa chegasse a uma rota incompatível.
+    const resourceRows = (await client.query(
+      resourceSource('PhysicalResource', scopeWhere),
+      params,
+    )).rows;
     const siteRows = (await client.query(SITE_SOURCE(scopeWhere), params)).rows;
 
     console.log(`Recursos : ${resourceRows.length} candidatos (Point + LineString)`);
@@ -332,6 +413,7 @@ async function main() {
     }
 
     await ensureMapFeatureTable(client);
+    await ensureMapFeaturePrimaryKey(client);
 
     const entityIds = [...new Set(features.map((f) => f.entity_id))];
     await client.query('BEGIN');

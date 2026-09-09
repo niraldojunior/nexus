@@ -230,6 +230,9 @@ export class OracleDatabase implements DatabaseClient {
       for (const statement of splitOracleStatements(batch.sql)) {
         await executeOracleDdl(connection, prefixDdl(statement));
       }
+      if (batch.name === 'geo-map-feature-segment-rank') {
+        await this.applyGeoMapFeatureSegmentRankPrimaryKey(connection);
+      }
       await connection.execute(
         `MERGE INTO ${migrations} target
          USING (SELECT :1 version, :2 name, :3 checksum FROM DUAL) source
@@ -241,6 +244,35 @@ export class OracleDatabase implements DatabaseClient {
         { autoCommit: true },
       );
     }
+  }
+
+  private async applyGeoMapFeatureSegmentRankPrimaryKey(connection: Connection): Promise<void> {
+    const tableName = prefixed('geo_map_feature', this.config.objectPrefix).toUpperCase();
+    const expected = ['TENANT_ID', 'TILE_Z', 'TILE_X', 'TILE_Y', 'ENTITY_ID', 'SHAPE', 'RANK'];
+    const primaryKey = await connection.execute<{ constraint_name: string }>(
+      `SELECT c.constraint_name AS "constraint_name"
+         FROM user_constraints c
+        WHERE c.table_name = :1 AND c.constraint_type = 'P'`,
+      [tableName],
+      QUERY_OPTIONS,
+    );
+    const name = primaryKey.rows?.[0]?.constraint_name;
+    if (!name) return;
+    const result = await connection.execute<{ column_name: string }>(
+      `SELECT cc.column_name AS "column_name"
+         FROM user_cons_columns cc
+        WHERE cc.constraint_name = :1
+        ORDER BY cc.position`,
+      [name],
+      QUERY_OPTIONS,
+    );
+    const columns = (result.rows ?? []).map((row) => row.column_name.toUpperCase());
+    if (columns.join(',') === expected.join(',')) return;
+    const table = prefixed('geo_map_feature', this.config.objectPrefix);
+    await connection.execute(`ALTER TABLE ${table} DROP PRIMARY KEY`);
+    await connection.execute(
+      `ALTER TABLE ${table} ADD PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)`,
+    );
   }
 
   private async validateSchemaVersion(connection: Connection): Promise<void> {

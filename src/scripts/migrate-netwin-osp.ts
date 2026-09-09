@@ -1118,7 +1118,7 @@ async function refreshMapFeatures(
             anchor[0],
             anchor[1],
             JSON.stringify({ type: 'LineString', coordinates: segment.coordinates }),
-            0,
+            segment.rank,
           ]);
         }
       }
@@ -1133,7 +1133,7 @@ async function refreshMapFeatures(
 
 // MERGE em vez de INSERT: idempotente por construção — uma reexecução (ou uma reindexação que
 // se sobrepõe a features já gravadas por outra rota) nunca esbarra na PK composta
-// (tenant_id,tile_z,tile_x,tile_y,entity_id,shape), só atualiza a linha existente.
+// (tenant_id,tile_z,tile_x,tile_y,entity_id,shape,rank), só atualiza o mesmo trecho.
 async function upsertMapFeatureRows(
   target: Connection,
   t: TablePrefixer,
@@ -1144,7 +1144,8 @@ async function upsertMapFeatureRows(
                   :7 feature_kind, :8 entity_type, :9 type_code, :10 site_category, :11 status,
                   :12 label, :13 sublabel, :14 lng, :15 lat, :16 geometry, :17 rank FROM DUAL) src
     ON (tgt.tenant_id=src.tenant_id AND tgt.tile_z=src.tile_z AND tgt.tile_x=src.tile_x
-        AND tgt.tile_y=src.tile_y AND tgt.entity_id=src.entity_id AND tgt.shape=src.shape)
+        AND tgt.tile_y=src.tile_y AND tgt.entity_id=src.entity_id AND tgt.shape=src.shape
+        AND tgt.rank=src.rank)
     WHEN MATCHED THEN UPDATE SET
       tgt.feature_kind=src.feature_kind, tgt.entity_type=src.entity_type, tgt.type_code=src.type_code,
       tgt.site_category=src.site_category, tgt.status=src.status, tgt.label=src.label,

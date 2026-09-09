@@ -519,7 +519,7 @@ export const MIGRATIONS_SQL = `
     geometry TEXT,
     rank INTEGER NOT NULL DEFAULT 0,
     generated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape)
+    PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)
   );
   CREATE INDEX IF NOT EXISTS idx_geo_map_feature_tile
     ON geo_map_feature(tenant_id, tile_z, tile_x, tile_y, rank);
@@ -1759,6 +1759,10 @@ const MIGRATIONS_SQL_V7_PARTY_ROLE_TYPE = `
     ON party_role_type(tenant_id, active, label, type_key);
 `;
 
+// A mudança da PK precisa inspecionar a constraint existente em cada provider antes de alterá-la;
+// esse batch é intencionalmente vazio e os adapters executam a operação controlada pelo nome.
+const MIGRATIONS_SQL_V8_GEO_MAP_FEATURE_SEGMENT_RANK = ``;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -1778,6 +1782,11 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 7,
     name: 'party-role-type',
     sql: MIGRATIONS_SQL_V7_PARTY_ROLE_TYPE,
+  },
+  {
+    version: 8,
+    name: 'geo-map-feature-segment-rank',
+    sql: MIGRATIONS_SQL_V8_GEO_MAP_FEATURE_SEGMENT_RANK,
   },
 ];
 

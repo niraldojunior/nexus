@@ -131,8 +131,8 @@ export const fetchTreeSearch = (
 // Nó por id, já hidratado (geometria inteira + `detail`) — completa a seleção feita a partir
 // de uma feature do InfraOverlay (canvas do mapa, ver useMapTiles): o índice de tile só carrega
 // o essencial pra desenhar, sem `detail` nem, para cabo, a rota inteira (só o trecho recortado
-// no tile clicado). Lança em 404 (recurso/site terminado entre o build do índice e o clique,
-// por exemplo) — quem chama decide se mantém o stub parcial (ver selectNodeFromInfraOverlay).
+// no tile clicado). Lança em 404 quando a feature do índice já não corresponde ao inventário
+// canônico; nesse caso o chamador descarta a seleção parcial.
 export const fetchTreeNode = (nodeId: string): Promise<GeoTreeNode> =>
   getJson<GeoTreeNode>(`/v1/geo/tree/node?id=${encodeURIComponent(nodeId)}`);
 

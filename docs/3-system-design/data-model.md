@@ -1,6 +1,6 @@
 # Modelo de Dados
 
-> Modelo canônico do V.tal Nexus, suportado nativamente em **Oracle e PostgreSQL** (C10). O alvo
+> Modelo canônico do V.tal Nexus, suportado nativamente em **Oracle**, único banco (C10). O alvo
 > corporativo homologado é Oracle 21c/23ai; a instância disponível hoje é Oracle 19c EE. Volumetria e
 > alvos em [`non-functional-requirements.md`](non-functional-requirements.md); decisões de
 > arquitetura em [`architecture.md`](architecture.md).
@@ -11,8 +11,8 @@ entra como `characteristic` tipada via catálogo — nunca coluna nova.
 > Este é o modelo **alvo**. `_origin`, outbox e multi-tenancy completo permanecem rastreados em
 > [#157](https://github.com/niraldojunior/nexus/issues/157)–[#159](https://github.com/niraldojunior/nexus/issues/159).
 
-> **Baseline portável implementado:** PostgreSQL e Oracle compartilham constraints e relacionamentos
-> funcionais. No Oracle 19c desta fase, UUID usa `VARCHAR2(36 CHAR)`, datas usam
+> **Baseline Oracle implementado:** o schema é autorado nativamente em dialeto Oracle, sem tradutor
+> genérico. No Oracle 19c desta fase, UUID usa `VARCHAR2(36 CHAR)`, datas usam
 > `TIMESTAMP(6) WITH TIME ZONE`, booleanos `NUMBER(1)` e JSON/GeoJSON `CLOB IS JSON`.
 > `RAW(16)` e `SDO_GEOMETRY` permanecem otimizações posteriores, no alvo Oracle 21c/23ai.
 
@@ -252,7 +252,7 @@ outro hemisfério. Cargas anteriores já sofreram com coordenada corrompida.
 > internamente o fallback para o Google — ver [`integrations.md`](integrations.md) §7. O que
 > permanece em aberto é a **capacidade de lote** para a carga inicial dos 22M endereços ([#90](https://github.com/niraldojunior/nexus/issues/90)).
 >
-> **Implementação atual (PostgreSQL, laboratório em Neon — Oracle Spatial pendente):** `sourceSystem`/`sourceRef` em
+> **Implementação atual (Oracle, execução local — Oracle Spatial pendente):** `sourceSystem`/`sourceRef` em
 > `tmf_geographic_location`/`tmf_geographic_address` e `accuracyLevel` em `tmf_geographic_location`
 > já existem no schema runtime, gravados pelo painel unificado de Local (REQ-MOD01-016,
 > `docs/2-functional-specs/01-module-geo.md` §21) — a coluna `DIMINFO`/`SDO_GEOM` acima permanece

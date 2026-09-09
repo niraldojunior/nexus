@@ -1,10 +1,4 @@
-import type { DatabasePoolConfig, DatabaseProvider } from '../persistence/database-client.js';
-
-export type PostgresConfig = {
-  provider: 'postgres';
-  url: string;
-  pool: DatabasePoolConfig;
-};
+import type { DatabasePoolConfig } from '../persistence/database-client.js';
 
 export type OracleConfig = {
   provider: 'oracle';
@@ -20,7 +14,6 @@ export type OracleConfig = {
   objectPrefix: string;
 };
 
-export type AppDatabaseConfig = PostgresConfig | OracleConfig;
 
 export type GeonetConfig = {
   apiBaseUrl: string;
@@ -60,26 +53,12 @@ export type AppConfig = {
    *  default: href fica relativo (`/tmf-api/...`), comportamento histórico. Configurar quando o
    *  Nexus é servido atrás de um gateway (Apigee) cujo host público difere do host interno. */
   tmfPublicBaseUrl?: string;
-  databaseUrl: string;
-  /** Resolved by loadConfig; optional only for legacy programmatic test fixtures. */
-  database?: AppDatabaseConfig;
+  database: OracleConfig;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   nodeEnv: 'development' | 'test' | 'production';
   port: number;
 };
 
-export const databaseConfigOf = (config: AppConfig): AppDatabaseConfig =>
-  config.database ?? {
-    provider: 'postgres',
-    url: config.databaseUrl,
-    pool: {
-      min: 2,
-      max: 10,
-      increment: 1,
-      queueTimeoutMs: 2_000,
-      connectionTimeoutMs: 15_000,
-    },
-  };
 
 const validLogLevels = new Set(['debug', 'info', 'warn', 'error'] as const);
 const validEnvs = new Set(['development', 'test', 'production'] as const);
@@ -87,7 +66,7 @@ const validEnvs = new Set(['development', 'test', 'production'] as const);
 export const loadConfig = (env: NodeJS.ProcessEnv): AppConfig => {
   const nodeEnv = normalizeEnum(env.NODE_ENV, validEnvs, 'development');
   const logLevel = normalizeEnum(env.LOG_LEVEL, validLogLevels, 'info');
-  const database = resolveDatabaseConfig(env, nodeEnv);
+  const database = resolveDatabaseConfig(env);
   const geonet = geonetConfigOf(env);
 
   if (nodeEnv === 'production' && env.DATABASE_AUTO_SCHEMA === 'true') {
@@ -117,7 +96,6 @@ export const loadConfig = (env: NodeJS.ProcessEnv): AppConfig => {
     ...(env.TMF_PUBLIC_BASE_URL?.trim()
       ? { tmfPublicBaseUrl: env.TMF_PUBLIC_BASE_URL.trim() }
       : {}),
-    databaseUrl: database.provider === 'postgres' ? database.url : database.connectString,
     database,
     logLevel,
     nodeEnv,
@@ -142,31 +120,18 @@ export const geonetConfigOf = (env: NodeJS.ProcessEnv): GeonetConfig | undefined
   };
 };
 
-export const resolveDatabaseConfig = (
-  env: NodeJS.ProcessEnv,
-  nodeEnv: AppConfig['nodeEnv'],
-): AppDatabaseConfig => {
-  const provider = normalizeDatabaseProvider(env.DATABASE_PROVIDER);
-  if (provider === 'postgres') {
-    return { provider, url: resolveDatabaseUrl(env, nodeEnv), pool: resolvePoolConfig(env) };
-  }
-
-  // The real instance ships `ORACLE_CONNECTION_STRING`; keep `ORACLE_CONNECT_STRING` as a fallback
-  // so older .env files (and the migration script's own naming) keep working.
-  const connectString = firstNonBlank(env.ORACLE_CONNECTION_STRING, env.ORACLE_CONNECT_STRING);
-  return {
-    provider,
-    connectString: requireOracleValue(connectString, 'ORACLE_CONNECTION_STRING'),
-    user: requireOracleValue(env.ORACLE_USER, 'ORACLE_USER'),
-    password: requireOracleValue(env.ORACLE_PASSWORD, 'ORACLE_PASSWORD'),
-    pool: resolveOraclePoolConfig(env),
-    objectPrefix: resolveOracleObjectPrefix(env),
-  };
-};
+export const resolveDatabaseConfig = (env: NodeJS.ProcessEnv): OracleConfig => ({
+  provider: 'oracle',
+  connectString: requireOracleValue(env.ORACLE_CONNECTION_STRING, 'ORACLE_CONNECTION_STRING'),
+  user: requireOracleValue(env.ORACLE_USER, 'ORACLE_USER'),
+  password: requireOracleValue(env.ORACLE_PASSWORD, 'ORACLE_PASSWORD'),
+  pool: resolveOraclePoolConfig(env),
+  objectPrefix: resolveOracleObjectPrefix(env),
+});
 
 // DEV/HML/PRD/TEST share one Oracle schema, so every object name carries this prefix. Validated to
 // a leading letter, word chars, and a trailing `_` so it can be interpolated straight into SQL
-// object names without escaping. Required whenever DATABASE_PROVIDER=oracle.
+// object names without escaping.
 const resolveOracleObjectPrefix = (env: NodeJS.ProcessEnv): string => {
   const value = requireOracleValue(env.ORACLE_OBJECT_PREFIX, 'ORACLE_OBJECT_PREFIX').trim();
   if (!/^[A-Za-z][A-Za-z0-9_]*_$/.test(value)) {
@@ -205,91 +170,13 @@ const resolveOraclePoolConfig = (env: NodeJS.ProcessEnv): DatabasePoolConfig => 
   };
 };
 
-const normalizeDatabaseProvider = (value: string | undefined): DatabaseProvider => {
-  if (!value) return 'postgres';
-  if (value === 'postgres' || value === 'oracle') return value;
-  throw new Error('DATABASE_PROVIDER must be either postgres or oracle.');
-};
-
 const requireOracleValue = (value: string | undefined, name: string): string => {
-  if (!value?.trim()) throw new Error(`${name} must be set when DATABASE_PROVIDER=oracle.`);
+  if (!value?.trim()) throw new Error(`${name} must be set.`);
   return value;
 };
 
-const resolvePoolConfig = (env: NodeJS.ProcessEnv): DatabasePoolConfig => {
-  const min = normalizeNonNegativeInteger(env.DATABASE_POOL_MIN, 2);
-  const max = normalizePositiveInteger(env.DATABASE_POOL_MAX, 10);
-  if (max < min)
-    throw new Error('DATABASE_POOL_MAX must be greater than or equal to DATABASE_POOL_MIN.');
-  return {
-    min,
-    max,
-    increment: normalizePositiveInteger(env.DATABASE_POOL_INCREMENT, 1),
-    queueTimeoutMs: normalizePositiveInteger(env.DATABASE_QUEUE_TIMEOUT_MS, 2_000),
-    connectionTimeoutMs: normalizePositiveInteger(env.DATABASE_CONNECTION_TIMEOUT_MS, 15_000),
-  };
-};
-
-export const isPostgresDatabaseUrl = (value: string | undefined): value is string =>
-  typeof value === 'string' &&
-  (value.startsWith('postgres://') || value.startsWith('postgresql://'));
-
-export const firstNonBlank = (...values: Array<string | undefined>): string | undefined =>
+const firstNonBlank = (...values: Array<string | undefined>): string | undefined =>
   values.find((value) => value !== undefined && value.trim().length > 0);
-
-export const resolveDatabaseUrl = (
-  env: NodeJS.ProcessEnv,
-  nodeEnv: AppConfig['nodeEnv'],
-): string => {
-  if (env.DATABASE_URL) {
-    return assertPostgresUrl(env.DATABASE_URL, 'DATABASE_URL');
-  }
-
-  if (env.VERCEL_ENV === 'production') {
-    return requirePostgresUrl(
-      firstNonBlank(env.DATABASE_URL_PROD, env.NEON_DATABASE_URL_PROD),
-      'DATABASE_URL_PROD',
-    );
-  }
-
-  if (env.VERCEL_ENV === 'preview' || env.VERCEL_ENV === 'development') {
-    return requirePostgresUrl(
-      firstNonBlank(env.DATABASE_URL_DEV, env.NEON_DATABASE_URL_DEV),
-      'DATABASE_URL_DEV',
-    );
-  }
-
-  if (nodeEnv === 'production') {
-    return requirePostgresUrl(
-      firstNonBlank(env.DATABASE_URL_PROD, env.NEON_DATABASE_URL_PROD),
-      'DATABASE_URL_PROD',
-    );
-  }
-
-  return requirePostgresUrl(
-    firstNonBlank(
-      env.DATABASE_URL_TEST,
-      env.NEON_DATABASE_URL_TEST,
-      env.DATABASE_URL_DEV,
-      env.NEON_DATABASE_URL_DEV,
-    ),
-    'DATABASE_URL_DEV',
-  );
-};
-
-const requirePostgresUrl = (value: string | undefined, name: string): string => {
-  if (!value) {
-    throw new Error(`${name} must be set to a postgres:// or postgresql:// connection string.`);
-  }
-  return assertPostgresUrl(value, name);
-};
-
-const assertPostgresUrl = (value: string, name: string): string => {
-  if (!isPostgresDatabaseUrl(value)) {
-    throw new Error(`${name} must be a postgres:// or postgresql:// connection string.`);
-  }
-  return value;
-};
 
 const parseRoleList = (value: string | undefined): string[] | undefined => {
   if (!value) return undefined;

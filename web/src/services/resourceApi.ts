@@ -577,7 +577,7 @@ export type ResourceRelationshipPayload = {
 // Trocar o Recurso Pai não é um PATCH (o backend ignora `resourceRelationship` na gravação,
 // service.ts — regrava `current.resourceRelationship`) — é a relação `containsAsChild`
 // dedicada. `resourceId` aqui é sempre o **pai**: a aresta fica `resource_from_id=resourceId,
-// resource_to_id=relationship.id` (postgres-repository.ts upsertResourceRelationship).
+// resource_to_id=relationship.id` (oracle-repository.ts upsertResourceRelationship).
 export async function addResourceRelationship(
   resourceId: string,
   relationship: ResourceRelationshipPayload,

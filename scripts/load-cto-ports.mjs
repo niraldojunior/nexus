@@ -66,7 +66,7 @@ async function api(method, pathname, body) {
   return text ? JSON.parse(text) : undefined;
 }
 
-/** Busca por nome é substring (ver postgres-repository.ts) — filtra o exato aqui. */
+/** Busca por nome é substring no repository — filtra o exato aqui. */
 async function findResourceByExactName(name) {
   const results = await api('GET', `/tmf-api/resourceInventoryManagement/v4/resource?name=${encodeURIComponent(name)}`);
   return (results ?? []).find((r) => r.name === name) ?? null;

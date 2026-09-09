@@ -1,10 +1,8 @@
 // Catálogo de características por "tipo de party" (Studio -> Partes, issue #220).
 // PartyRoleTypeCharacteristicRepository fala com o DatabaseClient direto, sem passar por
-// IPartyRepository/PartyService — como os demais specs do plano de trabalho do Nexus Studio, este
-// teste NÃO toca o Neon (test-utils.ts/createTestDatabase): valida direto contra Oracle de
-// desenvolvimento, no mesmo padrão de test/service-repository.oracle.spec.ts. Sem `OracleXxxRepository`
-// separada (achado 1 do plano) — a mesma classe roda com o client Oracle. Skips unless ORACLE_* is
-// configured.
+// IPartyRepository/PartyService — valida direto contra Oracle, no mesmo padrão de
+// test/service-repository.oracle.spec.ts. Sem `OracleXxxRepository` separada — a mesma classe roda
+// com o client Oracle. Skips unless ORACLE_* is configured.
 
 import assert from 'node:assert/strict';
 import { afterAll, test } from 'vitest';
@@ -12,46 +10,17 @@ import { createApp } from '../src/shared/http/app.js';
 import { PartyRoleTypeCharacteristicRepository } from '../src/modules/party/party-role-type-characteristic-repository.js';
 import {
   cleanupOracleTables,
+  createTestConfig,
+  createTestLogger,
   getOracleTestClient,
   isOracleTestConfigured,
   requestJson,
 } from './test-utils.js';
 
-const createLogger = () => ({
-  debug: () => undefined,
-  info: () => undefined,
-  warn: () => undefined,
-  error: () => undefined,
-});
-
-const createConfig = (port: number) => ({
-  appName: 'v-tal-nexus',
-  authEnabled: true,
-  authToken: 'secret',
-  databaseUrl: 'oracle',
-  database: {
-    provider: 'oracle' as const,
-    connectString: process.env.ORACLE_CONNECTION_STRING ?? process.env.ORACLE_CONNECT_STRING ?? '',
-    user: process.env.ORACLE_USER ?? '',
-    password: process.env.ORACLE_PASSWORD ?? '',
-    pool: {
-      min: 1,
-      max: 1,
-      increment: 1,
-      queueTimeoutMs: 30_000,
-      connectionTimeoutMs: 30_000,
-    },
-    objectPrefix: process.env.ORACLE_TEST_OBJECT_PREFIX ?? 'NEXUS_TEST_',
-  },
-  logLevel: 'info' as const,
-  nodeEnv: 'test' as const,
-  port,
-});
-
 const withCatalogAdmin = { 'x-roles': 'catalog.admin' };
 const withInventoryReader = { 'x-roles': 'inventory.reader' };
 
-const oracleConfigured = isOracleTestConfigured() && process.env.DATABASE_PROVIDER === 'oracle';
+const oracleConfigured = isOracleTestConfigured();
 if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
 
 const TENANT_ID = 'default';
@@ -126,7 +95,7 @@ test.skipIf(!oracleConfigured)(
 test.skipIf(!oracleConfigured)(
   'API valida valueType/lista, normaliza não-lista e separa leitura de escrita por RBAC',
   async () => {
-    const server = createApp({ config: createConfig(0), logger: createLogger() });
+    const server = createApp({ config: createTestConfig(0), logger: createTestLogger() });
     const port = await server.start();
     try {
       const invalidType = await requestJson(

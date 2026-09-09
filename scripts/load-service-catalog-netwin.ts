@@ -10,9 +10,8 @@
  *   npm run service-catalog:load -- --file caminho/catalogo_nexus_vtal_v3.csv
  *   npm run service-catalog:load -- --file caminho/catalogo_nexus_vtal_v3.csv --force
  *
- * Pré-requisito: backend local no ar (`npm run dev:neon` ou, para Oracle,
- * `DATABASE_PROVIDER=oracle npm run dev:neon` — confira .tmp-dev-backend.log antes de assumir qual
- * banco está de pé). --base-url aponta para outro backend; AUTH_TOKEN vem do .env.
+ * Pré-requisito: backend local no ar (`npm run dev` ou, só o backend, `npm run dev:db`).
+ * --base-url aponta para outro backend; AUTH_TOKEN vem do .env.
  *
  * Idempotência: consulta o catálogo já cadastrado e pula linhas cuja chave
  * Categoria+Camada+Nome já exista, a menos que --force seja passado (nesse caso faz PATCH em vez

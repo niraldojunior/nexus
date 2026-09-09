@@ -1,5 +1,4 @@
 import { createCanonicalId } from '../utils/canonical-id.js';
-import { PostgresGeoRepository } from '../../modules/geo/postgres-repository.js';
 import { OracleGeoRepository } from '../../modules/geo/oracle-repository.js';
 import { GeoService } from '../../modules/geo/service.js';
 import { GeoTreeService } from '../../modules/geo/tree-service.js';
@@ -8,29 +7,20 @@ import { GeoMapDensityService } from '../../modules/geo/map-density-service.js';
 import { GeoMapFeatureSynchronizer } from '../../modules/geo/map-feature-synchronizer.js';
 import { GeoCoverageService } from '../../modules/geo/coverage-service.js';
 import { OrderService } from '../../modules/order/service.js';
-import { PostgresOrderRepository } from '../../modules/order/postgres-repository.js';
 import { OracleOrderRepository } from '../../modules/order/oracle-repository.js';
 import { PartyService } from '../../modules/party/service.js';
-import { PostgresPartyRepository } from '../../modules/party/postgres-repository.js';
 import { OraclePartyRepository } from '../../modules/party/oracle-repository.js';
 import { ResourceService } from '../../modules/resource/service.js';
-import { PostgresResourceRepository } from '../../modules/resource/postgres-repository.js';
 import { OracleResourceRepository } from '../../modules/resource/oracle-repository.js';
 import { SearchService } from '../../modules/search/service.js';
-import { PostgresSearchRepository as ResearchRepository } from '../../modules/search/postgres-repository.js';
 import { OracleSearchRepository as OracleResearchRepository } from '../../modules/search/oracle-repository.js';
 import { ServiceService } from '../../modules/service/service.js';
-import { PostgresServiceRepository } from '../../modules/service/postgres-repository.js';
 import { OracleServiceRepository } from '../../modules/service/oracle-repository.js';
 import type { DatabaseClient } from '../persistence/database-client.js';
-import { PostgresSearchRepository } from '../persistence/postgres-search-repository.js';
 import { OracleSearchRepository } from '../persistence/oracle-search-repository.js';
-import {
-  PostgresUserRepository,
-  type UserRecord,
-} from '../persistence/postgres-user-repository.js';
+import type { UserRecord } from '../persistence/oracle-user-repository.js';
 import { OracleUserRepository } from '../persistence/oracle-user-repository.js';
-import { EventService, PostgresEventRepository } from '../tmf/index.js';
+import { EventService } from '../tmf/index.js';
 import { OracleEventRepository } from '../tmf/oracle-event-repository.js';
 import { AuthService } from '../../modules/auth/index.js';
 import { GeoSearchHistoryRepository } from '../../modules/geo/search-history-repository.js';
@@ -38,7 +28,6 @@ import { GeoProjectRepository } from '../../modules/geo/project-repository.js';
 import { PartyRoleTypeCharacteristicRepository } from '../../modules/party/party-role-type-characteristic-repository.js';
 import { PartyRoleTypeRepository } from '../../modules/party/party-role-type-repository.js';
 import { StudioService } from '../../modules/studio/service.js';
-import { PostgresStudioRepository } from '../../modules/studio/postgres-repository.js';
 import { OracleStudioRepository } from '../../modules/studio/oracle-repository.js';
 import { ResourceModelStudioAdapter } from '../../modules/studio/adapters/resource-model-adapter.js';
 import { LocationModelStudioAdapter } from '../../modules/studio/adapters/location-model-adapter.js';
@@ -82,19 +71,16 @@ export const DEFAULT_RUNTIME_USER = {
 } as const;
 
 export const createNexusRuntime = async (db: DatabaseClient, options: NexusRuntimeOptions = {}) => {
-  const oracle = db.provider === 'oracle';
-  const userRepository = oracle ? new OracleUserRepository(db) : new PostgresUserRepository(db);
+  const userRepository = new OracleUserRepository(db);
   const authService = new AuthService(userRepository, {
     ...(options.auth?.jwtSecret ? { jwtSecret: options.auth.jwtSecret } : {}),
     accessTokenTtlSeconds: options.auth?.accessTokenTtlSeconds ?? DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
   });
   const geoSearchHistoryRepository = new GeoSearchHistoryRepository(db);
   const geoProjectRepository = new GeoProjectRepository(db);
-  const searchRepository = oracle
-    ? new OracleSearchRepository(db)
-    : new PostgresSearchRepository(db);
-  const researchRepository = oracle ? new OracleResearchRepository(db) : new ResearchRepository(db);
-  const geoRepository = oracle ? new OracleGeoRepository(db) : new PostgresGeoRepository(db);
+  const searchRepository = new OracleSearchRepository(db);
+  const researchRepository = new OracleResearchRepository(db);
+  const geoRepository = new OracleGeoRepository(db);
   const mapFeatureSynchronizer = new GeoMapFeatureSynchronizer(db);
   const geoService = new GeoService(geoRepository, mapFeatureSynchronizer);
   await geoService.ensureBootstrapSpecifications();
@@ -104,18 +90,16 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   const geoMapDensityService = new GeoMapDensityService(db);
   const geoCoverageService = new GeoCoverageService(db);
   const geonetAddressGateway = options.geonet ? new GeonetAddressGateway(options.geonet) : null;
-  const eventRepository = oracle ? new OracleEventRepository(db) : new PostgresEventRepository(db);
+  const eventRepository = new OracleEventRepository(db);
   const eventService = new EventService(eventRepository);
-  const partyRepository = oracle ? new OraclePartyRepository(db) : new PostgresPartyRepository(db);
+  const partyRepository = new OraclePartyRepository(db);
   await partyRepository.initialize();
   const partyService = new PartyService(partyRepository, eventService, db);
   const partyRoleTypeRepository = new PartyRoleTypeRepository(db);
   await partyRoleTypeRepository.ensureSupplierSeed(DEFAULT_TENANT_ID);
   const partyRoleTypeCharacteristicRepository = new PartyRoleTypeCharacteristicRepository(db);
   await partyRoleTypeCharacteristicRepository.ensureManufacturerCnpjSeed(DEFAULT_TENANT_ID);
-  const resourceRepository = oracle
-    ? new OracleResourceRepository(db)
-    : new PostgresResourceRepository(db);
+  const resourceRepository = new OracleResourceRepository(db);
   await resourceRepository.initialize();
   const resourceService = new ResourceService(resourceRepository, eventService, {
     mapFeatureSynchronizer,
@@ -151,9 +135,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
         status: role.status,
       })),
   });
-  const serviceRepository = oracle
-    ? new OracleServiceRepository(db)
-    : new PostgresServiceRepository(db);
+  const serviceRepository = new OracleServiceRepository(db);
   const serviceService: ServiceService = new ServiceService(serviceRepository, eventService, {
     db,
     lookupParty: async (id) => {
@@ -189,7 +171,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     },
     lookupService: async (id) => await serviceService.getService(id),
   });
-  const orderRepository = oracle ? new OracleOrderRepository(db) : new PostgresOrderRepository(db);
+  const orderRepository = new OracleOrderRepository(db);
   const orderService = new OrderService(orderRepository, eventService, {
     db,
     lookupParty: async (id) => {
@@ -223,7 +205,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     partyService,
   });
   const searchService = new SearchService(researchRepository);
-  const studioRepository = oracle ? new OracleStudioRepository(db) : new PostgresStudioRepository(db);
+  const studioRepository = new OracleStudioRepository(db);
   const studioService = new StudioService(studioRepository, eventService, { db });
   studioService.registerAdapter(new ResourceModelStudioAdapter(resourceService));
   studioService.registerAdapter(new LocationModelStudioAdapter(geoService));

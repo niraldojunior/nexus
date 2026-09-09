@@ -1,5 +1,3 @@
-export type DatabaseProvider = 'postgres' | 'oracle';
-
 export type DatabaseRunResult = {
   changes: number;
   lastInsertRowid?: number | bigint;
@@ -19,11 +17,11 @@ export interface DatabaseExecutor {
 }
 
 export interface DatabaseSession extends DatabaseExecutor {
-  readonly provider: DatabaseProvider;
+  readonly provider: 'oracle';
 }
 
 export type DatabaseHealth = {
-  provider: DatabaseProvider;
+  provider: 'oracle';
   healthy: boolean;
   serverVersion?: string;
 };
@@ -41,9 +39,6 @@ export type DatabasePoolConfig = {
   increment: number;
   queueTimeoutMs: number;
   connectionTimeoutMs: number;
-  /**
-   * Oracle-only: seconds between pool health pings (oracledb `poolPingInterval`). Ignored by the
-   * Postgres pool, which does its own liveness checks.
-   */
+  /** Seconds between pool health pings (oracledb `poolPingInterval`). */
   pingIntervalSeconds?: number;
 };

@@ -27,5 +27,5 @@ export type {
   UpdateServiceSpecificationInput,
 } from './domain.js';
 export type { IServiceRepository } from './service-repository-interface.js';
-export { PostgresServiceRepository } from './postgres-repository.js';
+export { OracleServiceRepository } from './oracle-repository.js';
 export { ServiceService } from './service.js';

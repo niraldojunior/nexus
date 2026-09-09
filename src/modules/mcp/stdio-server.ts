@@ -1,6 +1,6 @@
 import { config as loadEnv } from 'dotenv';
 import { createInterface } from 'node:readline';
-import { databaseConfigOf, loadConfig } from '../../shared/config/env.js';
+import { loadConfig } from '../../shared/config/env.js';
 import { createLogger } from '../../shared/logging/logger.js';
 import { createDatabaseClient } from '../../shared/persistence/database-factory.js';
 import { createNexusRuntime, type NexusRuntime } from '../../shared/runtime/nexus-runtime.js';
@@ -18,7 +18,7 @@ loadEnv();
 const config = loadConfig(process.env);
 configureHrefBaseUrl(config.tmfPublicBaseUrl);
 const logger = createLogger(config.logLevel);
-const db = createDatabaseClient(databaseConfigOf(config));
+const db = createDatabaseClient(config.database);
 
 const writeMessage = (payload: unknown): void => {
   process.stdout.write(`${JSON.stringify(payload)}\n`);

@@ -1,17 +1,16 @@
 import assert from 'node:assert/strict';
 import { afterAll, test, vi } from 'vitest';
 import { ServiceService } from '../src/modules/service/service.js';
-import { PostgresServiceRepository } from '../src/modules/service/postgres-repository.js';
+import { OracleServiceRepository } from '../src/modules/service/oracle-repository.js';
 import { cleanupOracleTables, getOracleTestClient, isOracleTestConfigured } from './test-utils.js';
 
 // Cobertura da issue #180: distinguir "drop instalado" de "drop com serviço ativo" exige uma
 // consulta em lote — `listActiveSupportingResourceIds` — que confirma RFS `active` contra o array
 // TMF completo de `supportingResource`, não só a coluna indexada do primeiro item. Como o método
 // depende do dialeto SQL real (placeholders `?`→`:n`, JSON LIKE), o teste sobe contra Oracle de
-// verdade, no mesmo padrão de settings-endpoints.oracle.spec.ts. `OracleServiceRepository` só
-// herda `PostgresServiceRepository` sem sobrescrever nada, então exercitar a classe Postgres com o
-// client Oracle já cobre os dois provedores. Skips unless ORACLE_* is configured.
-const oracleConfigured = isOracleTestConfigured() && process.env.DATABASE_PROVIDER === 'oracle';
+// verdade, no mesmo padrão de settings-endpoints.oracle.spec.ts. Skips unless ORACLE_* is
+// configured.
+const oracleConfigured = isOracleTestConfigured();
 if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
 
 const stubEventService = { appendEvent: vi.fn(() => undefined) } as never;
@@ -27,7 +26,7 @@ test.skipIf(!oracleConfigured)(
   'listActiveSupportingResourceIds resolve RFS ativo, inclusive na segunda posição de supportingResource, e isola por tenant',
   async () => {
     const client = await getOracleTestClient();
-    const repository = new PostgresServiceRepository(client);
+    const repository = new OracleServiceRepository(client);
     const service = new ServiceService(repository, stubEventService, {
       lookupParty: () => undefined,
       lookupPlace: () => undefined,

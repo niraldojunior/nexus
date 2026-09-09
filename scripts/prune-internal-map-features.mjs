@@ -15,9 +15,8 @@
  * segue a mesma convenção de loader-db.mjs (que sim importa).
  *
  * Uso:
- *   node scripts/prune-internal-map-features.mjs                 # dry-run, postgres
+ *   node scripts/prune-internal-map-features.mjs                 # dry-run
  *   node scripts/prune-internal-map-features.mjs --apply
- *   DATABASE_PROVIDER=oracle node scripts/prune-internal-map-features.mjs --apply
  */
 
 import { config as loadEnv } from 'dotenv';
@@ -40,7 +39,7 @@ const INTERNAL_RESOURCE_TYPES = ['Splitter', 'Port'];
 async function main() {
   const client = await openLoaderDb();
   try {
-    console.log(`prune-internal-map-features: provider=${client.provider} tenant=${TENANT} apply=${APPLY}`);
+    console.log(`prune-internal-map-features: Oracle tenant=${TENANT} apply=${APPLY}`);
 
     const typePlaceholders = INTERNAL_RESOURCE_TYPES.map((_, i) => `$${i + 2}`).join(', ');
 

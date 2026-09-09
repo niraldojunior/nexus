@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /**
- * Atualiza as estatísticas do otimizador (DBMS_STATS no Oracle, ANALYZE no Postgres) para as
- * tabelas do Nexus. Sem isto o CBO decide o plano de execução com base na última contagem que viu
+ * Atualiza as estatísticas do otimizador Oracle (DBMS_STATS) para as tabelas do Nexus. Sem isto o CBO decide o plano de execução com base na última contagem que viu
  * — depois de uma carga massiva ele pode achar que uma tabela com 62 mil linhas tem 6 (visto no
  * Oracle de dev após a carga de sites do projeto ONITEL), trocando um HASH JOIN por um NESTED
  * LOOPS avaliado linha a linha.
@@ -34,7 +33,7 @@ const tables = tableArg
 
 async function main() {
   const client = await openLoaderDb();
-  console.log(`Coletando estatísticas (${client.provider}) de ${tables.length} tabela(s)...\n`);
+  console.log(`Coletando estatísticas Oracle de ${tables.length} tabela(s)...\n`);
   try {
     for (const table of tables) {
       const t0 = Date.now();

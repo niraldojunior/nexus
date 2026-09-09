@@ -86,7 +86,7 @@ test('rebuild do índice inclui somente PhysicalResource, compatível com Resour
 });
 
 test('repositório de Resource não consulta a coluna textual resource_type removida da specification', async () => {
-  const repository = await readFile(resolve(rootDir, 'src/modules/resource/postgres-repository.ts'), 'utf8');
+  const repository = await readFile(resolve(rootDir, 'src/modules/resource/oracle-repository.ts'), 'utf8');
   assert.doesNotMatch(repository, /\b(?:ps|ss|ctos|rs|ds|os)\.resource_type\b/);
   assert.match(repository, /prt\.code AS resource_type/);
   assert.match(repository, /srt\.code = 'Splitter'/);

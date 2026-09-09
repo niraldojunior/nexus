@@ -10,7 +10,7 @@ TMFC002 + TMFC022 · TMF633 / TMF638 / TMF688
 | ----------------------- | ---------------------------------------------------------------- |
 | **Document Reference**  | VTN-HLD-MOD03-SVC                                                |
 | **Sequência de HLD**    | HLD04 (4º documento) · Módulo 3 da arquitetura                   |
-| **Versão**              | 1.3 — draft                                                      |
+| **Versão**              | 1.4 — draft                                                      |
 | **Data**                | Agosto 2026                                                      |
 | **Documento âncora**    | VTN-HLD-OVERVIEW-001                                             |
 | **HLDs predecessores**  | VTN-HLD-MOD01-GEO (Geographic) · VTN-HLD-MOD02-RES (Resource)    |
@@ -76,7 +76,7 @@ Esta dualidade é tratada como decisão arquitetural explícita (seção 25.1, D
 
 ### 2.3 Aderência ao codebase atual
 
-O backend e o frontend já entregam a base TMF633/TMF638. A aderência abaixo considera também validações CFS/RFS, persistência Postgres, MCP/Copilot e testes; capacidades comerciais especializadas continuam como alvo.
+O backend e o frontend já entregam a base TMF633/TMF638. A aderência abaixo considera também validações CFS/RFS, persistência Oracle, MCP/Copilot e testes; capacidades comerciais especializadas continuam como alvo.
 
 | Requisito         | Estado     | Evidência atual                                                                                   | Gap principal                                                                                                                    | Bloqueador                                                                                                           | Backlog                                                                                                              |
 | ----------------- | ---------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -1738,6 +1738,7 @@ Esta seção não replica estados; ver §2.3 para o vínculo de cada requisito c
 | 1.1    | Julho 2026  | Engenharia — V.tal Nexus | Revisão de convergência com o codebase: adiciona matriz dos 16 requisitos, documenta a base TMF633/638 e o workspace atual, normaliza os requisitos 014–016 e liga os gaps de implementação ao backlog `DEV-*`.                                                                                                                |
 | 1.2    | Agosto 2026 | Produto — V.tal Nexus    | Incorporação da consulta operacional de OSP (`inspirations/geosite-legado.md`): REQ-MOD03-008 ganha o trace físico completo até o ativo civil (RF-005) e o impacto reverso a partir de caixa, duto ou poste (RF-006), como consultas compostas com REQ-MOD02-012 — sem duplicar modelagem de infraestrutura no Service Domain. |
 | 1.3    | Agosto 2026 | Engenharia — V.tal Nexus | Migração do backlog documental para GitHub Issues: questões (`Q-SVC-*`) e lacunas (`DEV-SVC-*`/`DEV-X-*`) passam a ser rastreadas por issue, com labels `tipo:decisão`/`tipo:lacuna` e `mod:service`. §25 aponta para o filtro de issues em vez de tabela local.                                                               |
+| 1.4    | Setembro 2026 | Engenharia — V.tal Nexus | Atualização de referências técnicas para Oracle-only / execução local (C10): §2.3 passa a citar persistência Oracle em vez de Postgres, sem mudança de comportamento funcional. |
 
 ---
 

@@ -1,10 +1,5 @@
-// Canonical database schema, shared by the Postgres sync worker (runtime schema init) and the
-// migrate-sqlite-to-neon script (target schema bootstrap). The DDL is authored in the SQLite
-// dialect the repositories emit; `transformSchemaSql` rewrites the SQLite-only constructs to
-// their Postgres equivalents before the schema is applied to Neon.
-
-// Every table in the schema, ordered parent-before-child so it is safe both for FK-ordered inserts
-// (migrate-sqlite-to-neon) and for a single TRUNCATE ... CASCADE between tests (test-utils).
+// Canonical database schema definitions for Oracle table structures.
+// Every table in the schema, ordered parent-before-child.
 export const TABLE_NAMES = [
   'users',
   'searches',

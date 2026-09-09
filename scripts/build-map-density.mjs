@@ -49,51 +49,31 @@ const argOf = (flag, fallback) => {
 
 const APPLY = has('--apply');
 const TENANT = argOf('--tenant', 'default');
-const PROVIDER = argOf('--provider', process.env.DATABASE_PROVIDER ?? 'postgres');
 
 async function ensureDensityTable(client) {
-  if (client.provider === 'oracle') {
-    const ddl = `CREATE TABLE geo_map_density (
-      tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
-      tile_z NUMBER(10) NOT NULL,
-      tile_x NUMBER(10) NOT NULL,
-      tile_y NUMBER(10) NOT NULL,
-      feature_count NUMBER(10) DEFAULT 0 NOT NULL,
-      resource_count NUMBER(10) DEFAULT 0 NOT NULL,
-      site_count NUMBER(10) DEFAULT 0 NOT NULL,
-      lng BINARY_DOUBLE NOT NULL,
-      lat BINARY_DOUBLE NOT NULL,
-      generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y)
-    )`;
-    try {
-      await client.query(ddl);
-      console.log('Tabela geo_map_density criada no Oracle.');
-    } catch (error) {
-      if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
-    }
-    // Índice fica por conta do applyMigrations do app (MIGRATIONS_SQL em schema.ts), que é quem
-    // sabe prefixar o NOME do índice além do da tabela — `transformOracleQuery` do loader só
-    // reescreve referências a tabela, então um CREATE INDEX aqui falharia com ORA-00942. Mesma
-    // razão pela qual build-map-features.mjs também só cria a tabela no caminho Oracle.
-    return;
-  }
-  await client.query(`CREATE TABLE IF NOT EXISTS geo_map_density (
-    tenant_id TEXT NOT NULL DEFAULT 'default',
-    tile_z INTEGER NOT NULL,
-    tile_x INTEGER NOT NULL,
-    tile_y INTEGER NOT NULL,
-    feature_count INTEGER NOT NULL DEFAULT 0,
-    resource_count INTEGER NOT NULL DEFAULT 0,
-    site_count INTEGER NOT NULL DEFAULT 0,
-    lng DOUBLE PRECISION NOT NULL,
-    lat DOUBLE PRECISION NOT NULL,
-    generated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  const ddl = `CREATE TABLE geo_map_density (
+    tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
+    tile_z NUMBER(10) NOT NULL,
+    tile_x NUMBER(10) NOT NULL,
+    tile_y NUMBER(10) NOT NULL,
+    feature_count NUMBER(10) DEFAULT 0 NOT NULL,
+    resource_count NUMBER(10) DEFAULT 0 NOT NULL,
+    site_count NUMBER(10) DEFAULT 0 NOT NULL,
+    lng BINARY_DOUBLE NOT NULL,
+    lat BINARY_DOUBLE NOT NULL,
+    generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y)
-  )`);
-  await client.query(
-    `CREATE INDEX IF NOT EXISTS idx_geo_map_density_bbox ON geo_map_density(tenant_id, tile_z, tile_x, tile_y, feature_count)`,
-  );
+  )`;
+  try {
+    await client.query(ddl);
+    console.log('Tabela geo_map_density criada no Oracle.');
+  } catch (error) {
+    if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
+  }
+  // Índice fica por conta do applyMigrations do app (MIGRATIONS_SQL em schema.ts), que é quem
+  // sabe prefixar o NOME do índice além do da tabela — `transformOracleQuery` do loader só
+  // reescreve referências a tabela, então um CREATE INDEX aqui falharia com ORA-00942. Mesma
+  // razão pela qual build-map-features.mjs também só cria a tabela no caminho Oracle.
 }
 
 // Um INSERT ... SELECT por nível. FLOOR(tile_x / factor) é a redução de zoom; o resto é
@@ -117,12 +97,12 @@ const aggregateSql = (zoom, placeholder) => {
 };
 
 async function main() {
-  const client = await openLoaderDb({ provider: PROVIDER });
+  const client = await openLoaderDb();
   try {
     console.log(`Tenant   : ${TENANT}`);
     console.log(`Níveis   : z${MAP_DENSITY_ZOOMS.join(', z')} (a partir de z${MAP_TILE_ZOOM})`);
 
-    const placeholder = client.provider === 'oracle' ? ':1' : '$1';
+    const placeholder = ':1';
     const source = await client.query(
       `SELECT COUNT(*) AS n FROM geo_map_feature WHERE tenant_id = ${placeholder} AND tile_z = ${MAP_TILE_ZOOM}`,
       [TENANT],

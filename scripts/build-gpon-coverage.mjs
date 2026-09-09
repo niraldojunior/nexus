@@ -58,8 +58,6 @@
  *   node scripts/build-gpon-coverage.mjs --levels neighborhood --apply   # só o nível de bairro
  *   node scripts/build-gpon-coverage.mjs --cell 50 --radius 200 --apply  # a estampagem, base de todos os níveis
  *   node scripts/build-gpon-coverage.mjs --smooth 2 --apply        # corner-cutting do contorno
- *   # cross-DB: lê as CDOs do Oracle e grava a cobertura no Postgres/Neon
- *   node scripts/build-gpon-coverage.mjs --source oracle --target postgres --uf RJ --apply
  */
 
 import { randomUUID } from 'node:crypto';
@@ -113,8 +111,8 @@ const MIN_COMPONENT_CELLS = Number(argOf('--min-cells', String(COVERAGE_MIN_COMP
 // Resolução do ÍNDICE de células gravado (geo_gpon_coverage_cell), que serve só para achar
 // polígonos por bbox — o polígono em si continua traçado em `--cell` (suave). Com `--index-cell`
 // maior que `--cell`, agrega o índice (célula grossa → polígono dominante), reduzindo MUITO as
-// linhas gravadas — útil quando o destino tem pouco espaço (ex.: Neon). Default: igual a --cell.
-// Só se aplica ao nível `neighborhood` (o único que grava geo_gpon_coverage_cell).
+// linhas gravadas. Default: igual a --cell. Só se aplica ao nível `neighborhood` (o único que
+// grava geo_gpon_coverage_cell).
 const INDEX_CELL_METERS = Number(argOf('--index-cell', String(CELL_METERS)));
 
 // Quais níveis (re)gerar nesta execução — default os três. Útil para iterar rápido num nível só
@@ -123,12 +121,6 @@ const LEVELS_ARG = argOf('--levels', 'neighborhood,city,uf')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
-
-// Cross-DB: `--source` é de onde vêm as CDOs; `--target` é onde a cobertura é gravada. Sem
-// eles, cai no DATABASE_PROVIDER (mesmo banco para ler e gravar). Ex.: `--source oracle
-// --target postgres` gera pelas CDOs do Oracle e persiste os polígonos no Neon.
-const SOURCE_PROVIDER = argOf('--source', process.env.DATABASE_PROVIDER ?? 'postgres');
-const TARGET_PROVIDER = argOf('--target', SOURCE_PROVIDER);
 
 const GENERATED_AT = new Date().toISOString();
 const GENERATOR = 'build-gpon-coverage';
@@ -183,115 +175,62 @@ const LEVELS = [
 const KNOWN_LEVELS = new Set(LEVELS.map((entry) => entry.level));
 
 // Garante a tabela de projeção geo_gpon_coverage_cell — o loader é dono dela, então a cria
-// se faltar em vez de depender de um restart do backend (schema init). DDL por provider: o
-// translator do loader-db prefixa a tabela no CREATE TABLE do Oracle (verificado), mas NÃO no
-// ON de um CREATE INDEX — por isso o índice fica a cargo do schema init do app (opcional; a
-// tabela tem poucos milhares de linhas). Idempotente: ORA-00955 = tabela já existe.
+// se faltar em vez de depender de um restart do backend (schema init). O translator do loader-db
+// prefixa a tabela no CREATE TABLE, mas NÃO o objeto após ON em um CREATE INDEX — por isso o
+// índice fica a cargo do schema init do app. Idempotente: ORA-00955 = tabela já existe.
 async function ensureCoverageTable(client) {
-  if (client.provider === 'oracle') {
-    const ddl = `CREATE TABLE geo_gpon_coverage_cell (
-      tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
-      grid_size_m NUMBER(10) NOT NULL,
-      grid_x NUMBER(10) NOT NULL,
-      grid_y NUMBER(10) NOT NULL,
-      coverage_area_id VARCHAR2(36 CHAR),
-      cdo_total NUMBER(10) DEFAULT 0 NOT NULL,
-      cdo_available NUMBER(10) DEFAULT 0 NOT NULL,
-      ports_total NUMBER(10),
-      ports_used NUMBER(10),
-      generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (tenant_id, grid_size_m, grid_x, grid_y)
-    )`;
-    try {
-      await client.query(ddl);
-      console.log('Tabela geo_gpon_coverage_cell criada no Oracle.');
-    } catch (error) {
-      if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
-    }
-    return;
-  }
-  await client.query(`CREATE TABLE IF NOT EXISTS geo_gpon_coverage_cell (
-    tenant_id TEXT NOT NULL DEFAULT 'default',
-    grid_size_m INTEGER NOT NULL,
-    grid_x INTEGER NOT NULL,
-    grid_y INTEGER NOT NULL,
-    coverage_area_id TEXT,
-    cdo_total INTEGER NOT NULL DEFAULT 0,
-    cdo_available INTEGER NOT NULL DEFAULT 0,
-    ports_total INTEGER,
-    ports_used INTEGER,
-    generated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  const ddl = `CREATE TABLE geo_gpon_coverage_cell (
+    tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
+    grid_size_m NUMBER(10) NOT NULL,
+    grid_x NUMBER(10) NOT NULL,
+    grid_y NUMBER(10) NOT NULL,
+    coverage_area_id VARCHAR2(36 CHAR),
+    cdo_total NUMBER(10) DEFAULT 0 NOT NULL,
+    cdo_available NUMBER(10) DEFAULT 0 NOT NULL,
+    ports_total NUMBER(10),
+    ports_used NUMBER(10),
+    generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (tenant_id, grid_size_m, grid_x, grid_y)
-  )`);
-  await client.query(
-    `CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_cell_xy ON geo_gpon_coverage_cell(grid_size_m, grid_x, grid_y)`,
-  );
-  await client.query(
-    `CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_cell_area ON geo_gpon_coverage_cell(coverage_area_id)`,
-  );
+  )`;
+  try {
+    await client.query(ddl);
+    console.log('Tabela geo_gpon_coverage_cell criada no Oracle.');
+  } catch (error) {
+    if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
+  }
 }
 
 // Garante geo_gpon_coverage_area — mesmo espírito/motivo de ensureCoverageTable acima. Os
-// índices por bbox (idx_geo_gpon_coverage_area_bbox/_rank) ficam a cargo do schema init do app
-// no Oracle, igual a geo_gpon_coverage_cell; no Postgres o próprio script já os cria.
+// índices por bbox (idx_geo_gpon_coverage_area_bbox/_rank) ficam a cargo do schema init do app,
+// igual a geo_gpon_coverage_cell.
 async function ensureCoverageAreaTable(client) {
-  if (client.provider === 'oracle') {
-    const ddl = `CREATE TABLE geo_gpon_coverage_area (
-      tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
-      location_id VARCHAR2(36 CHAR) NOT NULL,
-      lod_level VARCHAR2(255 CHAR) NOT NULL,
-      cell_size_m NUMBER(10) NOT NULL,
-      min_lng BINARY_DOUBLE NOT NULL,
-      min_lat BINARY_DOUBLE NOT NULL,
-      max_lng BINARY_DOUBLE NOT NULL,
-      max_lat BINARY_DOUBLE NOT NULL,
-      area_key VARCHAR2(255 CHAR) NOT NULL,
-      neighborhood VARCHAR2(255 CHAR),
-      city VARCHAR2(255 CHAR),
-      uf VARCHAR2(255 CHAR),
-      cdo_total NUMBER(10) DEFAULT 0 NOT NULL,
-      cdo_available NUMBER(10) DEFAULT 0 NOT NULL,
-      covered_area_km2 BINARY_DOUBLE DEFAULT 0 NOT NULL,
-      ports_total NUMBER(10),
-      ports_used NUMBER(10),
-      generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (tenant_id, location_id)
-    )`;
-    try {
-      await client.query(ddl);
-      console.log('Tabela geo_gpon_coverage_area criada no Oracle.');
-    } catch (error) {
-      if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
-    }
-    return;
-  }
-  await client.query(`CREATE TABLE IF NOT EXISTS geo_gpon_coverage_area (
-    tenant_id TEXT NOT NULL DEFAULT 'default',
-    location_id TEXT NOT NULL,
-    lod_level TEXT NOT NULL,
-    cell_size_m INTEGER NOT NULL,
-    min_lng REAL NOT NULL,
-    min_lat REAL NOT NULL,
-    max_lng REAL NOT NULL,
-    max_lat REAL NOT NULL,
-    area_key TEXT NOT NULL,
-    neighborhood TEXT,
-    city TEXT,
-    uf TEXT,
-    cdo_total INTEGER NOT NULL DEFAULT 0,
-    cdo_available INTEGER NOT NULL DEFAULT 0,
-    covered_area_km2 REAL NOT NULL DEFAULT 0,
-    ports_total INTEGER,
-    ports_used INTEGER,
-    generated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  const ddl = `CREATE TABLE geo_gpon_coverage_area (
+    tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
+    location_id VARCHAR2(36 CHAR) NOT NULL,
+    lod_level VARCHAR2(255 CHAR) NOT NULL,
+    cell_size_m NUMBER(10) NOT NULL,
+    min_lng BINARY_DOUBLE NOT NULL,
+    min_lat BINARY_DOUBLE NOT NULL,
+    max_lng BINARY_DOUBLE NOT NULL,
+    max_lat BINARY_DOUBLE NOT NULL,
+    area_key VARCHAR2(255 CHAR) NOT NULL,
+    neighborhood VARCHAR2(255 CHAR),
+    city VARCHAR2(255 CHAR),
+    uf VARCHAR2(255 CHAR),
+    cdo_total NUMBER(10) DEFAULT 0 NOT NULL,
+    cdo_available NUMBER(10) DEFAULT 0 NOT NULL,
+    covered_area_km2 BINARY_DOUBLE DEFAULT 0 NOT NULL,
+    ports_total NUMBER(10),
+    ports_used NUMBER(10),
+    generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (tenant_id, location_id)
-  )`);
-  await client.query(
-    `CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_area_bbox ON geo_gpon_coverage_area(tenant_id, lod_level, min_lng, max_lng, min_lat, max_lat)`,
-  );
-  await client.query(
-    `CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_area_rank ON geo_gpon_coverage_area(tenant_id, lod_level, cdo_total)`,
-  );
+  )`;
+  try {
+    await client.query(ddl);
+    console.log('Tabela geo_gpon_coverage_area criada no Oracle.');
+  } catch (error) {
+    if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
+  }
 }
 
 // Insere ids em blocos e devolve uma cláusula DELETE ... WHERE col IN (...) por bloco.
@@ -371,16 +310,9 @@ async function main() {
     console.log('Nível uf : pulado (regeneração parcial por --city não cobre o estado inteiro)');
   }
 
-  const source = await openLoaderDb({ provider: SOURCE_PROVIDER });
-  const target =
-    TARGET_PROVIDER === SOURCE_PROVIDER
-      ? source
-      : await openLoaderDb({ provider: TARGET_PROVIDER });
+  const client = await openLoaderDb();
   try {
-    if (source !== target) {
-      console.log(`Origem   : CDOs em ${SOURCE_PROVIDER} → cobertura em ${TARGET_PROVIDER}`);
-    }
-    // ---- CDOs do escopo (lidas da ORIGEM) ----
+    // ---- CDOs do escopo ----
     const filters = [];
     const params = [];
     if (CITY) {
@@ -395,7 +327,7 @@ async function main() {
 
     // ResourceType é sempre derivado pela FK da Specification, nunca de uma coluna do
     // exemplar PhysicalResource.
-    const { rows } = await source.query(
+    const { rows } = await client.query(
       `SELECT r.id, r.name, r.status, l.geometry,
               a.locality, a.city, a.state_or_province, a.street_nr
          FROM tmf_physical_resource r
@@ -570,12 +502,12 @@ async function main() {
       return;
     }
 
-    // ---- gravação no DESTINO ----
+    // ---- gravação ----
     // As tabelas de projeção são do loader — cria se faltar (dispensa restart do backend).
-    await ensureCoverageTable(target);
-    await ensureCoverageAreaTable(target);
+    await ensureCoverageTable(client);
+    await ensureCoverageAreaTable(client);
 
-    await target.query('BEGIN');
+    await client.query('BEGIN');
     // ROLLBACK explícito em erro: no Oracle o `close()` do loader-db faz commit() no
     // finally, então sem isto uma falha no meio (ex.: insert de células) deixaria os
     // polígonos já inseridos comitados — cobertura parcial. Como é idempotente por
@@ -592,7 +524,7 @@ async function main() {
         // Substitui a geração anterior DO ESCOPO, NESTE NÍVEL: acha as Locations do prefixo do
         // nível, apaga suas células/índice e depois as próprias Locations. Filtra o escopo em JS
         // (uf/city do reference_point) para não depender de LIKE com acento/caractere especial.
-        const { rows: existing } = await target.query(
+        const { rows: existing } = await client.query(
           `SELECT id, reference_point FROM tmf_geographic_location WHERE reference_point LIKE $1`,
           [`${levelConfig.prefix}%`],
         );
@@ -602,21 +534,21 @@ async function main() {
 
         if (levelConfig.level === 'neighborhood') {
           removedCellsTotal += await deleteByIds(
-            target,
+            client,
             'geo_gpon_coverage_cell',
             'coverage_area_id',
             staleIds,
           );
         }
         removedIndexTotal += await deleteByIds(
-          target,
+          client,
           'geo_gpon_coverage_area',
           'location_id',
           staleIds,
         );
-        removedAreasTotal += await deleteByIds(target, 'tmf_geographic_location', 'id', staleIds);
+        removedAreasTotal += await deleteByIds(client, 'tmf_geographic_location', 'id', staleIds);
 
-        insertedLocationsTotal += await target.bulkInsert(
+        insertedLocationsTotal += await client.bulkInsert(
           'tmf_geographic_location',
           [
             'id',
@@ -628,7 +560,7 @@ async function main() {
           ],
           locations,
         );
-        insertedIndexTotal += await target.bulkInsert(
+        insertedIndexTotal += await client.bulkInsert(
           'geo_gpon_coverage_area',
           [
             'tenant_id',
@@ -654,9 +586,10 @@ async function main() {
         if (levelConfig.level === 'neighborhood') {
           // Índice de células gravado na resolução de --index-cell (agrega o fino se for maior).
           const indexCells = aggregateIndex(cells);
-          // DO NOTHING protege a fronteira entre municípios em cargas por-cidade: uma célula já
-          // gravada por outro município (não apagada por este escopo) é preservada.
-          insertedCellsTotal += await target.bulkInsert(
+          // ignoreDuplicates protege a fronteira entre municípios em cargas por-cidade: uma célula
+          // já gravada por outro município (não apagada por este escopo) é preservada (chave
+          // tenant_id, grid_size_m, grid_x, grid_y).
+          insertedCellsTotal += await client.bulkInsert(
             'geo_gpon_coverage_cell',
             [
               'tenant_id',
@@ -668,12 +601,12 @@ async function main() {
               'cdo_available',
             ],
             indexCells,
-            { onConflict: 'ON CONFLICT (tenant_id, grid_size_m, grid_x, grid_y) DO NOTHING' },
+            { ignoreDuplicates: true },
           );
         }
       }
 
-      await target.query('COMMIT');
+      await client.query('COMMIT');
 
       console.log('\nGravado:');
       console.log(
@@ -683,12 +616,11 @@ async function main() {
       console.log(`  linhas de índice (área): ${insertedIndexTotal}`);
       console.log(`  células de grade        : ${insertedCellsTotal}`);
     } catch (err) {
-      await target.query('ROLLBACK');
+      await client.query('ROLLBACK');
       throw err;
     }
   } finally {
-    await target.close();
-    if (target !== source) await source.close();
+    await client.close();
   }
 }
 
@@ -702,7 +634,7 @@ function aggregateIndex(cells) {
     // Sem agregação de índice, mas ainda é preciso COLAPSAR células repetidas: a
     // mesma grid_x/grid_y aparece em componentes vizinhos (fronteira de bairro), e
     // sem dedup dá violação da PK (tenant_id, grid_size_m, grid_x, grid_y). Mantém a
-    // PRIMEIRA ocorrência — mesma semântica do ON CONFLICT DO NOTHING do Postgres.
+    // PRIMEIRA ocorrência — preserva a semântica de ignorar duplicatas da inserção em lote.
     const seen = new Map();
     for (const cell of cells) {
       const key = `${cell.grid_size_m},${cell.grid_x},${cell.grid_y}`;

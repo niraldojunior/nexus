@@ -7,7 +7,7 @@ import { DEFAULT_SERVICE_CATEGORY_CODE } from '../data/serviceCategoryViews';
 /**
  * Mapa único entre a URL (caminho) e o estado de navegação da aplicação.
  *
- * O SPA fallback já existe nos três ambientes (vercel.json, Caddyfile e o dev server do Vite),
+ * O SPA fallback já existe no dev server do Vite e no servidor estático local,
  * então caminhos aninhados como `/resources/equipment-access` funcionam sem mudança de infra: o
  * servidor sempre devolve `index.html` e a aplicação resolve a rota no cliente.
  *

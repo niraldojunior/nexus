@@ -1,22 +1,19 @@
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'vitest';
+import { test } from 'vitest';
 import { createNexusMcpModule } from '../src/modules/mcp/index.js';
-import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
 import { createNexusRuntime } from '../src/shared/runtime/nexus-runtime.js';
-import { createTestDatabase } from './test-utils.js';
+import { cleanupOracleTables, getOracleTestClient, isOracleTestConfigured } from './test-utils.js';
 
-afterEach(() => {
-  PostgresDatabase.resetForTesting();
-});
+// Skips unless ORACLE_* is configured, no mesmo padrão dos demais specs Oracle-backed.
+const oracleConfigured = isOracleTestConfigured();
+if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
 
 const createFixture = async () => {
-  const database = createTestDatabase('nexus-mcp-geo-');
-  const db = PostgresDatabase.getInstance(database.databaseUrl);
-  await db.initialize();
-  const runtime = await createNexusRuntime(db);
+  const client = await getOracleTestClient();
+  const runtime = await createNexusRuntime(client);
   const module = createNexusMcpModule(runtime);
   const context = runtime.createToolContext({ executionMode: 'internal-chat' });
-  return { database, db, runtime, module, context };
+  return { client, runtime, module, context };
 };
 
 const createPoint = async (runtime: Awaited<ReturnType<typeof createNexusRuntime>>, lng: number) =>
@@ -25,7 +22,7 @@ const createPoint = async (runtime: Awaited<ReturnType<typeof createNexusRuntime
     geometry: { type: 'Point', coordinates: [lng, -22.9] },
   });
 
-test('geo.list_addresses normaliza logradouro, numero, acento e mascara do CEP no banco', async () => {
+test.skipIf(!oracleConfigured)('geo.list_addresses normaliza logradouro, numero, acento e mascara do CEP no banco', async () => {
   const fixture = await createFixture();
   try {
     const location = await createPoint(fixture.runtime, -43.1);
@@ -61,11 +58,11 @@ test('geo.list_addresses normaliza logradouro, numero, acento e mascara do CEP n
     );
     assert.deepEqual(items[0]?.characteristic, []);
   } finally {
-    fixture.database.cleanup();
+    await cleanupOracleTables(fixture.client);
   }
 });
 
-test('MCP expoe consulta de specifications e criacao confirmavel de Address e Site por codigo', async () => {
+test.skipIf(!oracleConfigured)('MCP expoe consulta de specifications e criacao confirmavel de Address e Site por codigo', async () => {
   const fixture = await createFixture();
   try {
     const tools = fixture.module.registry.listTools().map((tool) => tool.name);
@@ -118,11 +115,11 @@ test('MCP expoe consulta de specifications e criacao confirmavel de Address e Si
       .payload;
     assert.match(storedPayload.siteSpecificationId ?? '', /^[0-9a-f-]{36}$/);
   } finally {
-    fixture.database.cleanup();
+    await cleanupOracleTables(fixture.client);
   }
 });
 
-test('geo.create_condominium cria hierarquia e vincula CDOIs existentes em uma confirmacao', async () => {
+test.skipIf(!oracleConfigured)('geo.create_condominium cria hierarquia e vincula CDOIs existentes em uma confirmacao', async () => {
   const fixture = await createFixture();
   try {
     const seeded = await seedCondominiumDependencies(fixture.runtime);
@@ -165,11 +162,11 @@ test('geo.create_condominium cria hierarquia e vincula CDOIs existentes em uma c
       assert.equal(block.cdoi.place?.['@referredType'], 'GeographicSite');
     }
   } finally {
-    fixture.database.cleanup();
+    await cleanupOracleTables(fixture.client);
   }
 });
 
-test('commit do condominio reverte todas as entidades quando um bloco falha', async () => {
+test.skipIf(!oracleConfigured)('commit do condominio reverte todas as entidades quando um bloco falha', async () => {
   const fixture = await createFixture();
   try {
     const seeded = await seedCondominiumDependencies(fixture.runtime);
@@ -199,7 +196,7 @@ test('commit do condominio reverte todas as entidades quando um bloco falha', as
       seeded.location2.id,
     );
   } finally {
-    fixture.database.cleanup();
+    await cleanupOracleTables(fixture.client);
   }
 });
 

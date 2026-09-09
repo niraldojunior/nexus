@@ -1,21 +1,27 @@
 import assert from 'node:assert/strict';
-import { afterEach, test, vi } from 'vitest';
+import { afterAll, test, vi } from 'vitest';
 import { ResourceService } from '../src/modules/resource/service.js';
-import { PostgresResourceRepository } from '../src/modules/resource/postgres-repository.js';
-import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
-import { createTestDatabase } from './test-utils.js';
+import { OracleResourceRepository } from '../src/modules/resource/oracle-repository.js';
+import { cleanupOracleTables, getOracleTestClient, isOracleTestConfigured } from './test-utils.js';
 
-afterEach(() => {
-  PostgresDatabase.resetForTesting();
+// Oracle round-trip coverage for the resource repository. Runs against a real Oracle instance,
+// same pattern as oracle-roundtrip.spec.ts — skips unless ORACLE_* is configured, so `npm run
+// test:unit` never tries to connect. Run with `npm run test:oracle`.
+const oracleConfigured = isOracleTestConfigured();
+if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
+
+afterAll(async () => {
+  if (!oracleConfigured) return;
+  const client = await getOracleTestClient();
+  await cleanupOracleTables(client);
+  await client.close();
 });
 
-test('Resource repository persists validFor when a resource specification is terminated', async () => {
-  const { databaseUrl, cleanup } = createTestDatabase('nexus-resource-spec-');
-  const sqlite = PostgresDatabase.getInstance(databaseUrl);
-  await sqlite.initialize();
-
-  try {
-    const repository = new PostgresResourceRepository(sqlite);
+test.skipIf(!oracleConfigured)(
+  'Resource repository persists validFor when a resource specification is terminated',
+  async () => {
+    const client = await getOracleTestClient();
+    const repository = new OracleResourceRepository(client);
     const appendEvent = vi.fn(() => undefined);
     const service = new ResourceService(repository, { appendEvent } as never);
 
@@ -45,65 +51,82 @@ test('Resource repository persists validFor when a resource specification is ter
       ).length,
       1,
     );
-  } finally {
-    PostgresDatabase.resetForTesting();
-    cleanup();
-  }
-});
+  },
+);
 
-test('Resource repository projects splitter ports from bidirectional drop connections', async () => {
-  const { databaseUrl, cleanup } = createTestDatabase('nexus-resource-ports-');
-  const database = PostgresDatabase.getInstance(databaseUrl);
-  await database.initialize();
-
-  try {
-    const repository = new PostgresResourceRepository(database);
+test.skipIf(!oracleConfigured)(
+  'Resource repository projects splitter ports from bidirectional drop connections',
+  async () => {
+    const client = await getOracleTestClient();
+    const repository = new OracleResourceRepository(client);
     await repository.initialize();
-    const service = new ResourceService(repository, { appendEvent: vi.fn(() => undefined) } as never);
+    const service = new ResourceService(repository, {
+      appendEvent: vi.fn(() => undefined),
+    } as never);
     const ctoSpec = await service.createResourceSpecification({
-      name: 'CTO de teste', resourceTypeId: 'rt-cto',
+      name: 'CTO de teste',
+      resourceTypeId: 'rt-cto',
     });
     const splitterSpec = await service.createResourceSpecification({
-      name: 'Splitter de teste', resourceTypeId: 'rt-splitter',
+      name: 'Splitter de teste',
+      resourceTypeId: 'rt-splitter',
     });
     const portSpec = await service.createResourceSpecification({
-      name: 'Porta de teste', resourceTypeId: 'rt-port',
+      name: 'Porta de teste',
+      resourceTypeId: 'rt-port',
     });
     const dropSpec = await service.createResourceSpecification({
-      name: 'Cabo drop de teste', resourceTypeId: 'rt-drop-cable',
+      name: 'Cabo drop de teste',
+      resourceTypeId: 'rt-drop-cable',
     });
     const ontSpec = await service.createResourceSpecification({
-      name: 'ONT de teste', resourceTypeId: 'rt-ont',
+      name: 'ONT de teste',
+      resourceTypeId: 'rt-ont',
     });
-    const cto = await service.createPhysicalResource({ name: 'CTO-1', resourceSpecificationId: ctoSpec.id });
+    const cto = await service.createPhysicalResource({
+      name: 'CTO-1',
+      resourceSpecificationId: ctoSpec.id,
+    });
     const splitter = await service.createPhysicalResource({
-      name: 'Splitter-1', resourceSpecificationId: splitterSpec.id,
+      name: 'Splitter-1',
+      resourceSpecificationId: splitterSpec.id,
       characteristic: [{ name: 'razao', value: '1:8', valueType: 'string' }],
     });
     const port = await service.createPhysicalResource({
-      name: 'FO.O.1', resourceSpecificationId: portSpec.id,
+      name: 'FO.O.1',
+      resourceSpecificationId: portSpec.id,
       characteristic: [
         { name: 'role', value: 'FO.O', valueType: 'string' },
         { name: 'index', value: '1', valueType: 'string' },
       ],
     });
     const drop = await service.createPhysicalResource({
-      name: 'DROP-1', resourceSpecificationId: dropSpec.id,
+      name: 'DROP-1',
+      resourceSpecificationId: dropSpec.id,
     });
     const ont = await service.createPhysicalResource({
-      name: 'ONT-1', resourceSpecificationId: ontSpec.id,
+      name: 'ONT-1',
+      resourceSpecificationId: ontSpec.id,
     });
     await service.addResourceRelationship(cto.id, {
-      id: splitter.id, relationshipType: 'containsAsChild', '@referredType': 'Resource',
+      id: splitter.id,
+      relationshipType: 'containsAsChild',
+      '@referredType': 'Resource',
     });
     await service.addResourceRelationship(splitter.id, {
-      id: port.id, relationshipType: 'containsAsChild', '@referredType': 'Resource',
+      id: port.id,
+      relationshipType: 'containsAsChild',
+      '@referredType': 'Resource',
     });
     await service.addResourceRelationship(drop.id, {
-      id: port.id, relationshipType: 'connectedTo', '@referredType': 'Resource',
+      id: port.id,
+      relationshipType: 'connectedTo',
+      '@referredType': 'Resource',
     });
     await service.addResourceRelationship(drop.id, {
-      id: ont.id, relationshipType: 'connectedTo', '@referredType': 'Resource',
+      id: ont.id,
+      relationshipType: 'connectedTo',
+      '@referredType': 'Resource',
     });
 
     const splitterDetail = await repository.getPhysicalResourceDetail(splitter.id);
@@ -122,19 +145,14 @@ test('Resource repository projects splitter ports from bidirectional drop connec
     assert.equal(detail?.splitRatio, '1:8');
     assert.equal(detail?.drops[0]?.ont?.id, ont.id);
     assert.equal((await repository.listIncidentResourceRelationships(port.id)).length, 2);
-  } finally {
-    PostgresDatabase.resetForTesting();
-    cleanup();
-  }
-});
+  },
+);
 
-test('Resource repository persists resource specification characteristics and related parties', async () => {
-  const { databaseUrl, cleanup } = createTestDatabase('nexus-resource-spec-');
-  const sqlite = PostgresDatabase.getInstance(databaseUrl);
-  await sqlite.initialize();
-
-  try {
-    const repository = new PostgresResourceRepository(sqlite);
+test.skipIf(!oracleConfigured)(
+  'Resource repository persists resource specification characteristics and related parties',
+  async () => {
+    const client = await getOracleTestClient();
+    const repository = new OracleResourceRepository(client);
     const appendEvent = vi.fn(() => undefined);
     const service = new ResourceService(repository, { appendEvent } as never);
 
@@ -153,8 +171,5 @@ test('Resource repository persists resource specification characteristics and re
     assert.equal(persisted?.resourceSpecificationCharacteristic[0]?.name, 'manufacturer');
     assert.equal(persisted?.relatedParty.length, 1);
     assert.equal(persisted?.relatedParty[0]?.role, 'manufacturer');
-  } finally {
-    PostgresDatabase.resetForTesting();
-    cleanup();
-  }
-});
+  },
+);

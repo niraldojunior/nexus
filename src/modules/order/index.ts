@@ -22,5 +22,5 @@ export type {
   UpdateResourceOrderInput,
 } from './domain.js';
 export type { IOrderRepository } from './order-repository-interface.js';
-export { PostgresOrderRepository } from './postgres-repository.js';
+export { OracleOrderRepository } from './oracle-repository.js';
 export { OrderService } from './service.js';

@@ -13,7 +13,7 @@ type EnvironmentMetadata = {
 // Catálogo estritamente allowlisted: nenhuma chave sensível nem valor de ambiente é serializado
 // para o browser. A inspeção operacional de segredo continua fora do Nexus.
 const environmentMetadata: EnvironmentMetadata[] = [
-  { name: 'DATABASE_PROVIDER', origin: 'Processo', scope: 'Backend', status: 'Configurada' },
+  { name: 'ORACLE_OBJECT_PREFIX', origin: 'Processo', scope: 'Backend', status: 'Configurada' },
   { name: 'TMF_PUBLIC_BASE_URL', origin: 'Processo', scope: 'API pública', status: 'Opcional' },
   { name: 'AUTH_ENABLED', origin: 'Processo', scope: 'Autenticação', status: 'Configurada' },
   { name: 'AUTH_ACCESS_TOKEN_TTL_HOURS', origin: 'Processo', scope: 'Autenticação', status: 'Configurada' },

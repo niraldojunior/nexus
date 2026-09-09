@@ -9,7 +9,7 @@ TMFC003 + TMFC024 · TMF634 / TMF639 / TMF688
 | Campo                   | Valor                                                              |
 | ----------------------- | ------------------------------------------------------------------ |
 | **Document Reference**  | VTN-HLD-MOD02-RES                                                  |
-| **Versão**              | 1.11 — draft                                                       |
+| **Versão**              | 1.12 — draft                                                       |
 | **Data**                | Agosto 2026                                                        |
 | **Documento âncora**    | VTN-HLD-OVERVIEW-001                                               |
 | **HLD predecessor**     | VTN-HLD-MOD01-GEO (Geographic)                                     |
@@ -54,11 +54,11 @@ Este documento é o segundo HLD de módulo da plataforma e estende o modelo arqu
 
 ### 2.3 Aderência ao codebase atual
 
-O codebase atual é TypeScript/Node com HTTP nativo, React/Vite e persistência dual em PostgreSQL e Oracle. Ele já entrega a base TMF634, TMF639 e TMF664; os subdomínios especializados continuam em diferentes graus de aderência ao HLD alvo.
+O codebase atual é TypeScript/Node com HTTP nativo, React/Vite e persistência Oracle-only, execução local. Ele já entrega a base TMF634, TMF639 e TMF664; os subdomínios especializados continuam em diferentes graus de aderência ao HLD alvo.
 
 | Requisito         | Estado           | Evidência atual                                                                                                      | Gap principal                                                                                         | Bloqueador                                                                                                           | Backlog                                                                                                                                                                         |
 | ----------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **REQ-MOD02-001** | Parcial          | `ResourceService`, repositório Postgres, rotas TMF634, UI de catálogo e testes cobrem CRUD de ResourceSpecification. | UUID v7/`_origin`, lifecycle completo, catálogo de characteristics e governança multi-tenant.         | [#112](https://github.com/niraldojunior/nexus/issues/112)                                                            | [#142](https://github.com/niraldojunior/nexus/issues/142), [#157](https://github.com/niraldojunior/nexus/issues/157), [#160](https://github.com/niraldojunior/nexus/issues/160) |
+| **REQ-MOD02-001** | Parcial          | `ResourceService`, repositório Oracle, rotas TMF634, UI de catálogo e testes cobrem CRUD de ResourceSpecification.   | UUID v7/`_origin`, lifecycle completo, catálogo de characteristics e governança multi-tenant.         | [#112](https://github.com/niraldojunior/nexus/issues/112)                                                            | [#142](https://github.com/niraldojunior/nexus/issues/142), [#157](https://github.com/niraldojunior/nexus/issues/157), [#160](https://github.com/niraldojunior/nexus/issues/160) |
 | **REQ-MOD02-002** | Parcial          | ResourceCategory hierárquica é persistida no bootstrap e consultável por API/UI.                                     | CRUD governado, versionamento e navegação completa; hoje é somente leitura.                           | [#112](https://github.com/niraldojunior/nexus/issues/112)                                                            | [#142](https://github.com/niraldojunior/nexus/issues/142)                                                                                                                       |
 | **REQ-MOD02-003** | Parcial          | ResourceFunctionSpecification tem CRUD e TMF664 ativa/suspende/termina Resources.                                    | Templates compostos, parâmetros de ativação e validação contra catálogo.                              | —                                                                                                                    | [#142](https://github.com/niraldojunior/nexus/issues/142)                                                                                                                       |
 | **REQ-MOD02-004** | Parcial          | Manufacturer pode ser resolvido por Party no frontend/MCP e persistido no Resource.                                  | Contrato canônico único de Manufacturer/Vendor como PartyRef e governança de fornecedor.              | [#112](https://github.com/niraldojunior/nexus/issues/112)                                                            | [#142](https://github.com/niraldojunior/nexus/issues/142), [#160](https://github.com/niraldojunior/nexus/issues/160)                                                            |
@@ -179,7 +179,7 @@ Resource Relationships têm tipos canônicos com semântica documentada (contain
 
 ### 4.4 Modelo de grafo sobre o relacional
 
-Inventário de telecom tem natureza inerentemente de grafo — Resources se conectam, se contêm, atravessam estruturas. O Nexus resolve isso com travessia em SQL recursivo sobre o storage relacional (CTE recursiva no PostgreSQL, `CONNECT BY` no Oracle — C10), habilitando queries de path computation, descendentes e raiz comum, portáveis entre os dois bancos e sem depender de um recurso proprietário de grafo.
+Inventário de telecom tem natureza inerentemente de grafo — Resources se conectam, se contêm, atravessam estruturas. O Nexus resolve isso com travessia em SQL recursivo sobre o storage relacional (`CONNECT BY` nativo do Oracle — C10), habilitando queries de path computation, descendentes e raiz comum, sem depender de um recurso proprietário de grafo.
 
 ### 4.5 Ciclo de vida multi-dimensional (X.731)
 
@@ -1520,7 +1520,7 @@ O trajeto físico (Path) é o caminho do sinal óptico de um ponto a outro: port
 
 ### 17.2 Racional arquitetural
 
-Path computation é o "consultar cadeia de relações" do modelo de inventário — capacidade que o Kuwaiba implementa nativamente via seu modelo de grafo (uma das suas maiores forças). O Netwin oferece consulta limitada. O NetBox tem path navigation para circuits mas não para FTTH. O Nexus implementa path computation como serviço dedicado sobre o TMF639, retornando trajeto completo ou parcial com metadados (atenuação acumulada, distância, número de splices). A técnica é travessia em SQL recursivo (CTE recursiva no PostgreSQL, `CONNECT BY` no Oracle — C10), portável entre os dois bancos, com performance a validar por benchmark e cache para a escala V.tal (22M+ HPs e 4M+ HCs).
+Path computation é o "consultar cadeia de relações" do modelo de inventário — capacidade que o Kuwaiba implementa nativamente via seu modelo de grafo (uma das suas maiores forças). O Netwin oferece consulta limitada. O NetBox tem path navigation para circuits mas não para FTTH. O Nexus implementa path computation como serviço dedicado sobre o TMF639, retornando trajeto completo ou parcial com metadados (atenuação acumulada, distância, número de splices). A técnica é travessia em SQL recursivo (`CONNECT BY` nativo do Oracle — C10), com performance a validar por benchmark e cache para a escala V.tal (22M+ HPs e 4M+ HCs).
 
 ### 17.3 Mapeamento de atributos TMF
 
@@ -3658,10 +3658,10 @@ Ambos os cenários compartilham os mesmos padrões de modelagem — comprovando 
 ## 35. Síntese arquitetural do módulo
 
 - **Catálogo + inventário.** TMF634 define tipos; TMF639 instancia PhysicalResource e LogicalResource.
-- **Modelo genérico já executável.** CRUD, filtros, paginação, workspace, relacionamentos e TMF664 existem sobre PostgreSQL e Oracle (C10).
+- **Modelo genérico já executável.** CRUD, filtros, paginação, workspace, relacionamentos e TMF664 existem sobre Oracle, único banco suportado (C10).
 - **Especializações são comportamento, não novas tabelas.** OSP, ISP e LogicalResource usam Specifications, characteristics e relações, mas suas invariantes ainda precisam ser construídas.
 - **RelationshipType deve ser governado.** Aceitar strings livres é divergência transitória frente a C9.
-- **Grafo é alvo arquitetural.** Path computation via SQL recursivo portável não está implementado no laboratório.
+- **Grafo é alvo arquitetural.** Path computation via `CONNECT BY` ainda não está implementado.
 - **Eventos ainda não são outbox.** TMF688 existe, porém atomicidade, schema e reprocessamento permanecem no backlog transversal.
 
 ---
@@ -3804,6 +3804,7 @@ Esta seção não replica estados; ver §2.3 para o vínculo de cada requisito c
 | 1.9    | Agosto 2026 | Engenharia — V.tal Nexus | Fase 3 da especialização CTO ([#171](https://github.com/niraldojunior/nexus/issues/171), [#173](https://github.com/niraldojunior/nexus/issues/173)): Porta (FO.I/FO.O) materializada como PhysicalResource contida no splitter (`containsAsChild`), aba "Portas" exclusiva de CTO no painel de recurso substituindo "Recursos internos", e painel empilhado para abrir uma porta individual ao lado da CTO (mesmo precedente de Projeto→Local). Materialização **limitada ao piloto Niterói/Icaraí** (`scripts/load-cto-ports.mjs`) — a carga nacional Netwin não expõe a razão de divisão real do splitter na origem; carga nacional de portas fica para um importador futuro, direto do BD de DR do Netwin. |
 | 1.10   | Agosto 2026 | Engenharia — V.tal Nexus | Conexão física Porta→CaboDrop e especialização de Porta ([#177](https://github.com/niraldojunior/nexus/issues/177)): substituição da aresta legada `CDOE → DropCable` por `Port(FO.O.n) → DropCable`; ocupação de splitter calculada a partir do grafo físico de Resource (`usageState` derivado); guarda de write com 409 para segundo drop ativo; novo endpoint agregado `GET /v1/resources/:ctoId/ports` e detalhe `GET /v1/resources/:portId/port-detail`; painel empilhado de Porta com faróis SID/X.731, sem chrome geográfico, drops internos (atuais/históricos) e aba Serviço apenas para cadeia ativa RFS/CFS. |
 | 1.11   | Setembro 2026 | Engenharia — V.tal Nexus | Refatoração estrutural do Resource Catalog ([#188](https://github.com/niraldojunior/nexus/issues/188)): introdução de `ResourceCatalog` e `ResourceCatalogNode` (árvore dinâmica de nós `GROUP` e `RESOURCE_TYPE` com profundidade arbitrária), desacoplamento de `ResourceType` de categorias fixas, substituição das colunas legadas `category`/`resource_type`/`resource_layer_id` em `ResourceSpecification` pela FK `resource_type_id`, governança de catálogo multi-tenant (`vtal`) e cutover lógico de backend completado. |
+| 1.12   | Setembro 2026 | Engenharia — V.tal Nexus | Atualização de referências técnicas para Oracle-only / execução local (C10): path computation e migração de Installation Point (§4.4, §17.2, §35) descritas como CONNECT BY nativo do Oracle, sem menção a portabilidade PostgreSQL; repositório referenciado em REQ-MOD02-001 passa a Oracle. |
 
 ---
 

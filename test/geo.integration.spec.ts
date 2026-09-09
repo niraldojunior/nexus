@@ -1,67 +1,18 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import test from 'node:test';
+import { test } from 'vitest';
 import { createApp } from '../src/shared/http/app.js';
-import { createTestDatabase as createPostgresTestDatabase } from './test-utils.js';
-import { createDatabaseClient } from '../src/shared/persistence/database-factory.js';
-import { databaseConfigOf } from '../src/shared/config/env.js';
+import {
+  cleanupOracleTables,
+  createTestConfig,
+  createTestLogger,
+  getOracleTestClient,
+  isOracleTestConfigured,
+  requestJson,
+} from './test-utils.js';
 import { COVERAGE_CELL_METERS, lngLatToMercator } from '../src/modules/geo/coverage-grid.js';
 
-const createLogger = () => ({
-  debug: () => undefined,
-  info: () => undefined,
-  warn: () => undefined,
-  error: () => undefined,
-});
-
-const createConfig = (port: number, databaseUrl: string) => ({
-  appName: 'v-tal-nexus',
-  authEnabled: true,
-  authToken: 'secret',
-  databaseUrl,
-  logLevel: 'info' as const,
-  nodeEnv: 'test' as const,
-  port,
-});
-
-const requestJson = async (
-  port: number,
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<{ statusCode: number; body: unknown }> => {
-  const payload = body === undefined ? undefined : JSON.stringify(body);
-  return await new Promise((resolve, reject) => {
-    const req = http.request(
-      {
-        hostname: '127.0.0.1',
-        port,
-        path,
-        method,
-        headers: {
-          authorization: 'Bearer secret',
-          ...(payload
-            ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
-            : {}),
-        },
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-        res.on('end', () => {
-          const text = Buffer.concat(chunks).toString('utf8');
-          resolve({
-            statusCode: res.statusCode ?? 0,
-            body: text ? JSON.parse(text) : undefined,
-          });
-        });
-      },
-    );
-    req.on('error', reject);
-    if (payload) req.write(payload);
-    req.end();
-  });
-};
+const oracleConfigured = isOracleTestConfigured();
 
 type GeoTreeResponseNode = {
   id?: string;
@@ -72,17 +23,13 @@ type GeoTreeResponseNode = {
   geometry?: { coordinates?: unknown };
 };
 
-test('Geo HTTP integration handles spec, location and site creation', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('Geo HTTP integration handles spec, location and site creation', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   const address = await requestJson(port, 'POST', '/v1/geo/addresses', {
     street: 'Rua Voluntarios da Patria',
@@ -108,19 +55,20 @@ test('Geo HTTP integration handles spec, location and site creation', async (t) 
     addressId: (address.body as { id: string }).id,
   });
   assert.equal(site.statusCode, 201);
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('Geo HTTP integration supports TMF aliases, workspace transaction, status event and relatedSite', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('Geo HTTP integration supports TMF aliases, workspace transaction, status event and relatedSite', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   const spec = await requestJson(
     port,
@@ -189,19 +137,20 @@ test('Geo HTTP integration supports TMF aliases, workspace transaction, status e
       (event) => event.eventType === 'GeographicSiteStatusChangeEvent',
     ),
   );
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('Geo HTTP integration exposes bootstrap, allowedChildren and containment impact', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('Geo HTTP integration exposes bootstrap, allowedChildren and containment impact', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   const bootstrap = await requestJson(port, 'POST', '/v1/geo/site-specifications/bootstrap');
   assert.equal(bootstrap.statusCode, 200);
@@ -250,19 +199,20 @@ test('Geo HTTP integration exposes bootstrap, allowedChildren and containment im
   );
   assert.equal(impact.statusCode, 200);
   assert.equal((impact.body as { blocking: boolean }).blocking, true);
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('Geo tree serves one level per call, with counts, pagination and child flags', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('Geo tree serves one level per call, with counts, pagination and child flags', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
 
@@ -589,19 +539,20 @@ test('Geo tree serves one level per call, with counts, pagination and child flag
     '/v1/geo/tree/node?id=resource:00000000-0000-0000-0000-000000000000',
   );
   assert.equal(unknownNode.statusCode, 404);
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('Geo tree pass-through skips a chain of hidden splitters to the first visible descendant', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('Geo tree pass-through skips a chain of hidden splitters to the first visible descendant', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
 
@@ -716,19 +667,20 @@ test('Geo tree pass-through skips a chain of hidden splitters to the first visib
     boxPage.nodes.map((item) => item.label),
     ['Cabo Secundário 02'],
   );
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('Geo tree hides Port like Splitter (issue #171 Fase 3), but a drop hanging off a hidden Port still passes through', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('Geo tree hides Port like Splitter (issue #171 Fase 3), but a drop hanging off a hidden Port still passes through', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
 
@@ -871,19 +823,20 @@ test('Geo tree hides Port like Splitter (issue #171 Fase 3), but a drop hanging 
     searchResults.some((item) => item.label === 'CDOE-ICARAI-01 · Splitter · FO.O.1'),
     false,
   );
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('Geo tree viewport serves passive infra by bounding box, independent of hierarchy state', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('Geo tree viewport serves passive infra by bounding box, independent of hierarchy state', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
 
@@ -1053,23 +1006,24 @@ test('Geo tree viewport serves passive infra by bounding box, independent of hie
 
   const missingBounds = await requestJson(port, 'GET', '/v1/geo/tree/viewport?minLng=-43.12');
   assert.equal(missingBounds.statusCode, 400);
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('Geo coverage serves the GPON heat grid and neighborhood polygons by bounding box', async (t) => {
-  const database = createPostgresTestDatabase('geo-coverage');
+test.skipIf(!oracleConfigured)('Geo coverage serves the GPON heat grid and neighborhood polygons by bounding box', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
-  // Mesma instância de banco que o app usa (PostgresDatabase é singleton por URL): a
-  // cobertura é semeada direto nas tabelas de projeção, como faz o build-gpon-coverage.
-  const db = createDatabaseClient(databaseConfigOf(createConfig(0, database.databaseUrl)));
+  // Mesma instância de banco que o app usa (getOracleTestClient() memoiza um único client por
+  // processo): a cobertura é semeada direto nas tabelas de projeção, como faz o build-gpon-coverage.
+  const db = await getOracleTestClient();
 
   const coverageChars = (stat: {
     key: string;
@@ -1312,21 +1266,22 @@ test('Geo coverage serves the GPON heat grid and neighborhood polygons by boundi
 
   const missingBounds = await requestJson(port, 'GET', '/v1/geo/coverage?minLng=-43.12&level=fine');
   assert.equal(missingBounds.statusCode, 400);
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('Geo coverage resolves by-resource id to the cell/areas that contain it (issue #171 Fase 4)', async (t) => {
-  const database = createPostgresTestDatabase('geo-coverage-by-resource');
+test.skipIf(!oracleConfigured)('Geo coverage resolves by-resource id to the cell/areas that contain it (issue #171 Fase 4)', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
-  const db = createDatabaseClient(databaseConfigOf(createConfig(0, database.databaseUrl)));
+  const db = await getOracleTestClient();
 
   // Ponto de uma CTO fictícia em Icaraí, com sua própria célula de 50 m e um bairro que a
   // contém — mesmo layout mínimo de `seedArea` do teste de bbox acima, sem polígono (a
@@ -1423,19 +1378,20 @@ test('Geo coverage resolves by-resource id to the cell/areas that contain it (is
   const missing = await requestJson(port, 'GET', '/v1/geo/coverage/by-resource/does-not-exist');
   assert.equal(missing.statusCode, 404);
   assert.equal((missing.body as { code: string }).code, 'GEO_COVERAGE_RESOURCE_NOT_FOUND');
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('Geo tree search finds stations and resources by name, but never sub-sites', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('Geo tree search finds stations and resources by name, but never sub-sites', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
 
@@ -1597,19 +1553,20 @@ test('Geo tree search finds stations and resources by name, but never sub-sites'
     '/v1/geo/tree/search?q=icara&kinds=resource&types=Pole',
   );
   assert.deepEqual(wrongType.body, []);
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('App exposes health without auth and protected routes reject missing token', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('App exposes health without auth and protected routes reject missing token', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   const health = await new Promise<{ statusCode: number; body: unknown }>((resolve, reject) => {
     const req = http.request(
@@ -1654,19 +1611,20 @@ test('App exposes health without auth and protected routes reject missing token'
 
   assert.equal(protectedRoute.statusCode, 401);
   assert.equal((protectedRoute.body as { error: string }).error, 'AUTH_REQUIRED');
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('Projetos de trabalho: local exige GEONET, herda status do projeto, e a cascata de status do PATCH funciona', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('Projetos de trabalho: local exige GEONET, herda status do projeto, e a cascata de status do PATCH funciona', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
     name: 'Ponto de Instalação',
@@ -1750,19 +1708,20 @@ test('Projetos de trabalho: local exige GEONET, herda status do projeto, e a cas
   assert.equal(removed.statusCode, 204);
   const sitesAfterRemove = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
   assert.deepEqual((sitesAfterRemove.body as { items: unknown[] }).items, []);
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('Projetos de trabalho: terminar o projeto libera os locais (viram Active, não Retired) e não volta', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('Projetos de trabalho: terminar o projeto libera os locais (viram Active, não Retired) e não volta', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
     name: 'Ponto de Instalação Término',
@@ -1816,6 +1775,11 @@ test('Projetos de trabalho: terminar o projeto libera os locais (viram Active, n
   });
   assert.equal(reopen.statusCode, 409);
   assert.equal((reopen.body as { error: string }).error, 'GEO_PROJECT_TERMINATED_IMMUTABLE');
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
 // issue #58: DELETE /v1/geo/projects/:id operava em massa (GeoService.transitionProjectSites),
@@ -1823,17 +1787,13 @@ test('Projetos de trabalho: terminar o projeto libera os locais (viram Active, n
 // c41a0e5) substituiu esse comportamento por arquivamento administrativo: DELETE só é aceito
 // depois que o projeto já chegou a um estado terminal via PATCH (terminated/cancelled) — a
 // cascata de Site (ver "cascata de status do PATCH funciona") já roda ali, não mais no DELETE.
-test('DELETE /v1/geo/projects/:id: arquiva projeto terminado e devolve o resumo; 404 para id inexistente', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('DELETE /v1/geo/projects/:id: arquiva projeto terminado e devolve o resumo; 404 para id inexistente', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   const missing = await requestJson(port, 'DELETE', '/v1/geo/projects/does-not-exist');
   assert.equal(missing.statusCode, 404);
@@ -1881,19 +1841,20 @@ test('DELETE /v1/geo/projects/:id: arquiva projeto terminado e devolve o resumo;
   assert.ok(!(projectsAfter.body as Array<{ id: string }>).some((p) => p.id === projectId));
   const siteAfter = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}`);
   assert.equal((siteAfter.body as { status: string }).status, 'Active');
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('DELETE /v1/geo/projects/:id: projeto não-terminado é recusado e mantém vínculos íntegros', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('DELETE /v1/geo/projects/:id: projeto não-terminado é recusado e mantém vínculos íntegros', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
     name: 'Ponto de Instalação Bloqueio',
@@ -1960,19 +1921,20 @@ test('DELETE /v1/geo/projects/:id: projeto não-terminado é recusado e mantém 
       .status,
     'Planned',
   );
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('Painel unificado de Local: Origem do Site e vínculo/desvínculo de Recurso', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('Painel unificado de Local: Origem do Site e vínculo/desvínculo de Recurso', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
 
@@ -2078,23 +2040,24 @@ test('Painel unificado de Local: Origem do Site e vínculo/desvínculo de Recurs
     `/tmf-api/resourceInventoryManagement/v4/resource/${resourceId}`,
   );
   assert.equal((resourceAfterTerminate.body as { status: string }).status, 'terminated');
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('Manchas de Projeto (REQ-MOD01-017): GET /areas lê o que o script grava, e GET /sites filtra por bbox e limita a página', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('Manchas de Projeto (REQ-MOD01-017): GET /areas lê o que o script grava, e GET /sites filtra por bbox e limita a página', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   // Mesma instância que o app usa — a mancha é semeada direto nas tabelas de projeção, como
   // faz scripts/build-project-areas.mjs (INSERT em tmf_geographic_location + geo_project_area).
-  const db = createDatabaseClient(databaseConfigOf(createConfig(0, database.databaseUrl)));
+  const db = await getOracleTestClient();
 
   const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
     name: 'Ponto de Instalação Mancha',
@@ -2198,19 +2161,20 @@ test('Manchas de Projeto (REQ-MOD01-017): GET /areas lê o que o script grava, e
     `/v1/geo/projects/${(otherProject.body as { id: string }).id}/areas`,
   );
   assert.deepEqual(otherAreas.body, { areas: [] });
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
 
-test('App root returns Nexus shell html', async (t) => {
-  const database = createTestDatabase();
+test.skipIf(!oracleConfigured)('App root returns Nexus shell html', async () => {
   const server = createApp({
-    config: createConfig(0, database.databaseUrl),
-    logger: createLogger(),
+    config: createTestConfig(0),
+    logger: createTestLogger(),
   });
   const port = await server.start();
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+  try {
 
   const html = await new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
     const req = http.request({ hostname: '127.0.0.1', port, path: '/', method: 'GET' }, (res) => {
@@ -2227,8 +2191,9 @@ test('App root returns Nexus shell html', async (t) => {
   assert.equal(html.statusCode, 200);
   assert.match(html.body, /<title>v-tal-nexus - Nexus<\/title>/);
   assert.match(html.body, /Interface migrada para Vite/);
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
 });
-
-const createTestDatabase = (): { databaseUrl: string; cleanup: () => void } => {
-  return createPostgresTestDatabase('nexus-geo-');
-};

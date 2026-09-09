@@ -6,10 +6,10 @@
 **Stack corporativa alvo:** Oracle (banco) · OpenShift (aplicação) · Redis (cache) · Kafka
 (mensageria) · Apigee (API Gateway).
 
-> ⚠️ O Vercel usado hoje é **infraestrutura temporária de laboratório** — OpenShift é o alvo. O
-> PostgreSQL do laboratório (hospedado em Neon) não é temporário: é um dos dois bancos suportados
-> nativamente por C10, ao lado de Oracle. Todo desenho aqui assume a stack corporativa. Onde há
-> divergência com o código atual, ela está sinalizada.
+> Nesta etapa a execução é **somente local** — sem hospedagem remota, Vercel, Docker/VPS/Caddy ou
+> CI/CD (C10). Oracle já é o único banco suportado, nativamente, conforme C10; OpenShift, Redis,
+> Kafka e Apigee seguem como alvo corporativo ainda não implantado. Todo desenho aqui assume a stack
+> corporativa alvo. Onde há divergência com o código atual, ela está sinalizada.
 > A cobertura funcional atual não é inferida deste desenho-alvo: use as matrizes 2.3 dos HLDs e o
 > [backlog de lacunas no GitHub Issues](https://github.com/niraldojunior/nexus/issues?q=is%3Aopen+label%3Atipo%3Alacuna).
 
@@ -66,14 +66,18 @@ A separação atual do código já está correta e **deve ser preservada**:
 
 | Camada     | Onde                                  | Responsabilidade                           |
 | ---------- | ------------------------------------- | ------------------------------------------ |
-| Domínio    | `modules/*/domain.ts`                 | Tipos e regras TMF. Sem I/O.               |
-| Porta      | `modules/*/*-repository-interface.ts` | Contrato de persistência                   |
-| Adaptador  | `modules/*/oracle-repository.ts`      | SQL Oracle (hoje `postgres-repository.ts`) |
-| Serviço    | `modules/*/service.ts`                | Casos de uso, orquestração, eventos        |
-| Transporte | `shared/http`                         | HTTP, TMF Open APIs                        |
+| Domínio    | `modules/*/domain.ts`                 | Tipos e regras TMF. Sem I/O.        |
+| Porta      | `modules/*/*-repository-interface.ts` | Contrato de persistência            |
+| Adaptador  | `modules/*/oracle-repository.ts`      | SQL Oracle — único adapter existente |
+| Serviço    | `modules/*/service.ts`                | Casos de uso, orquestração, eventos |
+| Transporte | `shared/http`                         | HTTP, TMF Open APIs                 |
 
-Trocar Postgres por Oracle é **substituir o adaptador**. O domínio não muda. Essa é a dívida que a
-arquitetura hexagonal já pagou adiantado.
+Hoje existe **um único adapter, Oracle** (C10) — sem seleção de provider nem tradutor de SQL
+genérico; o SQL é autorado direto em dialeto Oracle. A interface de repositório (`Porta`) continua
+separada do adapter porque isso é o que mantém o domínio isolado de infraestrutura — é essa
+separação que permitiria, no futuro, substituir o adapter sem tocar `modules/*/service.ts`, ainda
+que hoje não haja um segundo adapter implementado. Essa é a dívida que a arquitetura hexagonal já
+pagou adiantado.
 
 ---
 
@@ -81,11 +85,11 @@ arquitetura hexagonal já pagou adiantado.
 
 ### 4.1 Restrição removida
 
-O antigo `PostgresSyncBridge` baseado em `Atomics.wait()` foi removido. As interfaces `I*Repository`,
-services, lookups cruzados e transações agora são assíncronos e usam diretamente o pool do provider.
+O antigo bridge síncrono baseado em `Atomics.wait()` foi removido. As interfaces `I*Repository`,
+services, lookups cruzados e transações agora são assíncronos e usam diretamente o pool Oracle.
 
 O comportamento anterior serializava requisições. A regressão agora é coberta por teste concorrente
-e o dimensionamento de produção passa a depender do pool e do limite de sessões do provider.
+e o dimensionamento de produção passa a depender do pool e do limite de sessões do Oracle.
 
 ### 4.2 A correção
 
@@ -117,17 +121,16 @@ DEPOIS  handler → await service → await repository.get()  ──▶ pool ora
 
 ## 5. Persistência — Oracle
 
-### 5.0 Seleção de provider no runtime
+### 5.0 Composição do runtime
 
-O runtime seleciona exatamente um banco no boot por `DATABASE_PROVIDER=postgres|oracle`. A fábrica
-entrega um `DatabaseClient`/`DatabaseSession` assíncrono comum, e HTTP, TMF APIs, MCP e frontend
-mantêm os mesmos contratos. PostgreSQL usa `pg` com pool próprio (qualquer instância PostgreSQL
-comum — contêiner, RDS, on-prem — serve, sem depender de driver proprietário); Oracle usa
-`node-oracledb` 7 em Thin mode. Configuração inválida, schema incompatível ou conexão indisponível
-falham o boot, sem fallback.
+O runtime constrói exclusivamente um `OracleDatabase` no boot (`database-factory.ts`) — não há
+seleção de provider. A fábrica entrega um `DatabaseClient`/`DatabaseSession` assíncrono comum, e
+HTTP, TMF APIs, MCP e frontend consomem esse mesmo contrato. Oracle usa `node-oracledb` 7 em Thin
+mode. Configuração inválida, schema incompatível ou conexão indisponível falham o boot, sem
+fallback.
 
-As migrations são versionadas por provider em `schema_migrations`. Em produção o runtime somente
-valida a versão; DDL usa credencial separada. UUID permanece `VARCHAR2(36 CHAR)`, JSON/GeoJSON usa
+As migrations são versionadas em `schema_migrations`. Em produção o runtime somente valida a
+versão; DDL usa credencial separada. UUID permanece `VARCHAR2(36 CHAR)`, JSON/GeoJSON usa
 `CLOB IS JSON`, booleanos usam `NUMBER(1)` e datas `TIMESTAMP(6) WITH TIME ZONE` nesta fase.
 
 `RAW(16)`, Oracle Spatial, VPD e Wallet/mTLS são evoluções posteriores de C10.
@@ -140,7 +143,7 @@ arquiteturais:
 | Alta disponibilidade | **RAC** para falha de nó + **Data Guard** para desastre                                                                                                                     |
 | Leitura analítica    | **Active Data Guard** como réplica de leitura para relatórios e cargas                                                                                                      |
 | Geoespacial          | **Oracle Spatial (`SDO_GEOMETRY`) com SRID geodésico** — SIRGAS 2000 (4674). Cobertura continental exige cálculo sobre o elipsoide; ver [`data-model.md`](data-model.md) §4 |
-| Path computation     | **SQL recursivo portável** para a travessia porta OLT → ONT — CTE recursiva no PostgreSQL, `CONNECT BY` no Oracle (C10)                                                     |
+| Path computation     | **`CONNECT BY`** nativo do Oracle para a travessia porta OLT → ONT, não Property Graph (C10)                                                                                |
 | Identidade           | **UUID v7 em `RAW(16)`** — ordenável no tempo, evita fragmentação de índice (C5; hoje o código usa v4)                                                                      |
 
 > ⚠️ Guardar geometria como texto JSON é o maior gargalo latente do módulo Geo. Os 22M de HPs cobrem

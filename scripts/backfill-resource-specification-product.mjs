@@ -89,7 +89,7 @@ async function findOrCreateManufacturerParty(db, manufacturerName) {
 async function main() {
   console.log(APPLY ? '=== APLICANDO ===' : '=== DRY-RUN (combine com --apply para executar) ===');
   const db = await openLoaderDb();
-  console.log(`Provider: ${db.provider}`);
+  console.log('Banco: Oracle');
 
   try {
     const gponLayer = (

@@ -128,7 +128,7 @@ Para relações topológicas, faltam:
 - Consulta de subgrafo com profundidade configurável.
 - API pública para listar e remover relações.
 
-O serviço possui remoção interna, mas o repositório faz `DELETE` físico da relação, enquanto o HLD exige encerramento por `validFor.endDateTime`. Referência: `src/modules/geo/postgres-repository.ts`.
+O serviço possui remoção interna, mas o repositório faz `DELETE` físico da relação, enquanto o HLD exige encerramento por `validFor.endDateTime`. Referência: `src/modules/geo/oracle-repository.ts`.
 
 ### 7. Operações em massa
 

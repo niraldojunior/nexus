@@ -2,7 +2,7 @@ import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { AppError } from '../../shared/errors/app-error.js';
 
 // Hash de senha com scrypt nativo do Node — sem dependência externa (bcrypt/argon2 são
-// addons nativos que quebrariam o build serverless da Vercel e a imagem Docker). Os
+// addons nativos). Os
 // parâmetros seguem a recomendação do RFC 7914 para uso interativo; ~16 MB de memória por
 // derivação, abaixo do maxmem padrão de 32 MB.
 const SCRYPT_COST = 16384; // N

@@ -192,12 +192,13 @@ usam uma credencial DDL separada. Wallet/mTLS e VPD continuam no hardening poste
 | Certificados mTLS | cert-manager | Renovação automática |
 | Configuração não sensível | ConfigMap | Substitui o `.env` do laboratório |
 
-> ⚠️ O laboratório usa `.env` com `DATABASE_URL`, `AUTH_TOKEN` e `OPENAI_API_KEY` — aceitável só
-> enquanto for laboratório. O arquivo está no `.gitignore` e **não deve** ser replicado em OpenShift.
+> ⚠️ A execução local usa `.env` com `ORACLE_CONNECTION_STRING`, `ORACLE_USER`, `ORACLE_PASSWORD`,
+> `AUTH_TOKEN` e `OPENAI_API_KEY` — aceitável só enquanto a execução for local. O arquivo está no
+> `.gitignore` e **não deve** ser replicado em OpenShift.
 
-Também no laboratório, `scripts/dev-neon.mjs` define `NODE_TLS_REJECT_UNAUTHORIZED=0` para atravessar
-o proxy corporativo. **Isso desabilita validação de certificado e jamais pode ir para produção** —
-deve ser removido na migração.
+Também na execução local, `src/main.ts` define `NODE_TLS_REJECT_UNAUTHORIZED=0` fora de
+`NODE_ENV=production` para atravessar o proxy corporativo. **Isso desabilita validação de
+certificado e jamais pode ir para produção** — deve ser removido na migração.
 
 ---
 

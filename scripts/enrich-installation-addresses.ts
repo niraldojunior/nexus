@@ -40,8 +40,8 @@
  * distância a pé (Routes API do Google; cai para linha reta marcada "(linha reta)"
  * quando a rota falha, ou sempre em linha reta com --viab-straight, que desliga a Routes
  * API por completo). Este modo abre o Oracle diretamente com as credenciais ORACLE_*
- * do .env — é o único banco com as CDOs do Brasil inteiro, sempre, independentemente de
- * DATABASE_PROVIDER no ambiente. Exige GOOGLE_MAPS_API_KEY (createAddressServices o exige
+ * do .env — é o único banco com as CDOs do Brasil inteiro. Exige GOOGLE_MAPS_API_KEY
+ * (createAddressServices o exige
  * sempre, mesmo com --viab-straight — a chave segue configurada, só a chamada à Routes API
  * é que não acontece), mas não exige GEONET. LOG_VIAB marca a linha como processada
  * (inclusive "nenhuma CDO encontrada"), então reexecuções sem --overwrite não repetem
@@ -59,7 +59,7 @@ import {
   type GeonetAddressDetail,
 } from '../src/modules/geo/geonet-address-gateway.js';
 import { findNearbyCdos } from '../src/modules/geo/nearby-cdo.js';
-import { databaseConfigOf, geonetConfigOf, loadConfig } from '../src/shared/config/env.js';
+import { geonetConfigOf, loadConfig } from '../src/shared/config/env.js';
 import type { DatabaseClient } from '../src/shared/persistence/database-client.js';
 import { createDatabaseClient } from '../src/shared/persistence/database-factory.js';
 
@@ -613,7 +613,7 @@ export const usage = (): string =>
     'viab (opt-in, Oracle-only): até 3 CDOs (VIAB_FUZZY_CDOE_1..3_ID/NOME/DISTANCIA) num raio de',
     '--viab-radius metros (padrão 300) da coordenada de referência, com a distância a pé (Routes',
     '  API). Requer --viab-origin e abre o Oracle direto usando as credenciais ORACLE_* do .env,',
-    '  sempre — é o único banco com as CDOs do Brasil inteiro, independente de DATABASE_PROVIDER.',
+    '  sempre — é o único banco com as CDOs do Brasil inteiro.',
     '--viab-origin <geonet|gmaps|tenant|melhor> escolhe a coordenada de referência já presente',
     '  na linha (GEONET_LOCALIZACAO, GMAPS_LOCALIZACAO ou TENANT_LATITUDE/LONGITUDE); obrigatório',
     '  com viab ativo. Linha sem essa coordenada é pulada, sem erro. "melhor" lê, linha a linha,',
@@ -2108,27 +2108,21 @@ function formatDuration(milliseconds: number): string {
   return parts.join(' ');
 }
 
-// Abre o Oracle para o provider 'viab' — sempre Oracle, sempre, independente de
-// DATABASE_PROVIDER no ambiente: é o único banco com as CDOs do Brasil inteiro (o
-// Postgres/Neon guarda um recorte). As credenciais vêm das mesmas variáveis ORACLE_* do
-// .env que o resto do projeto usa (ver resolveDatabaseConfig em shared/config/env.ts).
-// Loga o alvo aberto (nunca a senha) para o operador conferir o ambiente (NEXUS_DEV_ vs
-// NEXUS_PRD_) antes de a planilha inteira sair preenchida com o banco errado.
+// Abre o Oracle para o provider 'viab' — é o único banco com as CDOs do Brasil inteiro.
+// As credenciais vêm das mesmas variáveis ORACLE_* do .env que o resto do projeto usa (ver
+// resolveDatabaseConfig em shared/config/env.ts). Loga o alvo aberto (nunca a senha) para o
+// operador conferir o ambiente (NEXUS_DEV_ vs NEXUS_PRD_) antes de a planilha inteira sair
+// preenchida com o banco errado.
 async function openOracleForViab(): Promise<DatabaseClient> {
   const databaseConfig = (() => {
     try {
-      return databaseConfigOf(
-        loadConfig({ ...process.env, DATABASE_PROVIDER: 'oracle', DATABASE_AUTO_SCHEMA: 'false' }),
-      );
+      return loadConfig({ ...process.env, DATABASE_AUTO_SCHEMA: 'false' }).database;
     } catch (error) {
       throw new Error(
         `Enriquecimento de viabilidade (--only viab) é Oracle-only: ${messageOf(error)}`,
       );
     }
   })();
-  if (databaseConfig.provider !== 'oracle') {
-    throw new Error('Enriquecimento de viabilidade (--only viab) é Oracle-only.');
-  }
   console.log(
     `Oracle (viabilidade): connectString=${databaseConfig.connectString} · usuário=${databaseConfig.user} · prefixo=${databaseConfig.objectPrefix}`,
   );

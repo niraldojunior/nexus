@@ -19,7 +19,7 @@
  *   node scripts/migrate-installation-point-to-customer-site.mjs            # dry-run
  *   node scripts/migrate-installation-point-to-customer-site.mjs --apply    # grava
  *
- * Funciona em Postgres e Oracle (DATABASE_PROVIDER + ORACLE_OBJECT_PREFIX), via scripts/loader-db.mjs.
+ * Executa no Oracle configurado, via scripts/loader-db.mjs.
  */
 
 import { config as loadEnv } from 'dotenv';

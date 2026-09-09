@@ -2,12 +2,21 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
-import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { createTestDatabase as createPostgresTestDatabase } from './test-utils.js';
+import { test } from 'vitest';
+import {
+  TEST_ORACLE_PREFIX,
+  cleanupOracleTables,
+  getOracleTestClient,
+  isOracleTestConfigured,
+} from './test-utils.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const serverPath = resolve(__dirname, '../src/modules/mcp/stdio-server.js');
+
+// Skips unless ORACLE_* is configured, no mesmo padrão dos demais specs Oracle-backed.
+const oracleConfigured = isOracleTestConfigured();
+if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
 
 type JsonRpcResponse = {
   jsonrpc: '2.0';
@@ -16,11 +25,13 @@ type JsonRpcResponse = {
   error?: { code: number; message: string };
 };
 
-const startStdioServer = (databaseUrl: string) => {
+// stdio-server.ts builds its Oracle config from ambient ORACLE_* env vars via loadConfig(), not from
+// a databaseUrl argument — so the child just inherits process.env, pinned to the test prefix.
+const startStdioServer = () => {
   const child = spawn(process.execPath, ['--use-system-ca', serverPath], {
     env: {
       ...process.env,
-      DATABASE_URL: databaseUrl,
+      ORACLE_OBJECT_PREFIX: TEST_ORACLE_PREFIX,
       NODE_ENV: 'test',
       DOTENV_CONFIG_QUIET: 'true',
     },
@@ -71,60 +82,68 @@ const startStdioServer = (databaseUrl: string) => {
   return { send, sendRaw, nextMessage, stop };
 };
 
-const createTestDatabase = () => createPostgresTestDatabase('nexus-mcp-stdio-');
+test.skipIf(!oracleConfigured)(
+  'MCP stdio server handles initialize, tools/list and tools/call over JSON-RPC',
+  async () => {
+    const server = startStdioServer();
+    try {
+      server.send({ id: 1, method: 'initialize' });
+      const initResponse = await server.nextMessage();
+      assert.equal(initResponse.id, 1);
+      assert.equal((initResponse.result?.serverInfo as { name: string }).name, 'nexus-tmf-mcp');
 
-test('MCP stdio server handles initialize, tools/list and tools/call over JSON-RPC', async (t) => {
-  const database = createTestDatabase();
-  const server = startStdioServer(database.databaseUrl);
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+      server.send({ id: 2, method: 'tools/list' });
+      const listResponse = await server.nextMessage();
+      const tools = listResponse.result?.tools as Array<{ name: string }>;
+      assert.ok(tools.some((tool) => tool.name === 'geo.list_sites'));
 
-  server.send({ id: 1, method: 'initialize' });
-  const initResponse = await server.nextMessage();
-  assert.equal(initResponse.id, 1);
-  assert.equal((initResponse.result?.serverInfo as { name: string }).name, 'nexus-tmf-mcp');
+      server.send({
+        id: 3,
+        method: 'tools/call',
+        params: { name: 'geo.list_sites', arguments: {} },
+      });
+      const callResponse = await server.nextMessage();
+      assert.equal((callResponse.result as { ok: boolean }).ok, true);
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
 
-  server.send({ id: 2, method: 'tools/list' });
-  const listResponse = await server.nextMessage();
-  const tools = listResponse.result?.tools as Array<{ name: string }>;
-  assert.ok(tools.some((tool) => tool.name === 'geo.list_sites'));
+test.skipIf(!oracleConfigured)(
+  'MCP stdio server reports JSON-RPC errors for invalid input',
+  async () => {
+    const server = startStdioServer();
+    try {
+      server.send({ id: 1, method: 'initialize' });
+      await server.nextMessage();
 
-  server.send({ id: 3, method: 'tools/call', params: { name: 'geo.list_sites', arguments: {} } });
-  const callResponse = await server.nextMessage();
-  assert.equal((callResponse.result as { ok: boolean }).ok, true);
-});
+      server.sendRaw('not json');
+      const parseError = await server.nextMessage();
+      assert.equal(parseError.id, null);
+      assert.equal(parseError.error?.code, -32700);
 
-test('MCP stdio server reports JSON-RPC errors for invalid input', async (t) => {
-  const database = createTestDatabase();
-  const server = startStdioServer(database.databaseUrl);
-  t.after(async () => {
-    await server.stop();
-    database.cleanup();
-  });
+      server.send({ id: 2 });
+      const missingMethod = await server.nextMessage();
+      assert.equal(missingMethod.error?.code, -32600);
 
-  server.send({ id: 1, method: 'initialize' });
-  await server.nextMessage();
+      server.send({ id: 3, method: 'unknown/method' });
+      const unknownMethod = await server.nextMessage();
+      assert.equal(unknownMethod.error?.code, -32601);
 
-  server.sendRaw('not json');
-  const parseError = await server.nextMessage();
-  assert.equal(parseError.id, null);
-  assert.equal(parseError.error?.code, -32700);
-
-  server.send({ id: 2 });
-  const missingMethod = await server.nextMessage();
-  assert.equal(missingMethod.error?.code, -32600);
-
-  server.send({ id: 3, method: 'unknown/method' });
-  const unknownMethod = await server.nextMessage();
-  assert.equal(unknownMethod.error?.code, -32601);
-
-  server.send({ id: 4, method: 'tools/call', params: { name: 'missing.tool', arguments: {} } });
-  const missingTool = await server.nextMessage();
-  assert.equal((missingTool.result as { ok: boolean }).ok, false);
-  assert.equal(
-    (missingTool.result as { error: { code: string } }).error.code,
-    'MCP_TOOL_NOT_FOUND',
-  );
-});
+      server.send({ id: 4, method: 'tools/call', params: { name: 'missing.tool', arguments: {} } });
+      const missingTool = await server.nextMessage();
+      assert.equal((missingTool.result as { ok: boolean }).ok, false);
+      assert.equal(
+        (missingTool.result as { error: { code: string } }).error.code,
+        'MCP_TOOL_NOT_FOUND',
+      );
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);

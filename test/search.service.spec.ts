@@ -3,7 +3,7 @@ import { afterEach, test, vi } from 'vitest';
 import type { LLMRequest, ResearchMessage, ResearchSession } from '../src/modules/search/domain.js';
 import { SearchService } from '../src/modules/search/index.js';
 import { configureHrefBaseUrl } from '../src/shared/tmf/index.js';
-import type { PostgresSearchRepository } from '../src/modules/search/postgres-repository.js';
+import type { OracleSearchRepository } from '../src/modules/search/oracle-repository.js';
 
 const createRepositoryMock = () =>
   ({
@@ -13,7 +13,7 @@ const createRepositoryMock = () =>
     addMessage: vi.fn(),
     updateSessionTitle: vi.fn(),
     archiveSession: vi.fn(),
-  }) as unknown as PostgresSearchRepository & {
+  }) as unknown as OracleSearchRepository & {
     createSession: ReturnType<typeof vi.fn>;
     getSession: ReturnType<typeof vi.fn>;
     listSessionsByUser: ReturnType<typeof vi.fn>;

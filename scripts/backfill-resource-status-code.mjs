@@ -28,25 +28,15 @@ const chunks = (items, size) => {
 };
 
 async function loadPending(db) {
-  if (db.provider === 'oracle') {
-    return (
-      await db.query(
-        `SELECT r.id, jt.substatus
-           FROM tmf_physical_resource r,
-                JSON_TABLE(r.characteristics, '$[*]' COLUMNS (
-                  char_name VARCHAR2(255) PATH '$.name',
-                  substatus VARCHAR2(4000) PATH '$.value'
-                )) jt
-          WHERE r.status_code IS NULL AND jt.char_name = 'substatus'`,
-      )
-    ).rows;
-  }
   return (
     await db.query(
-      `SELECT r.id, c->>'value' AS substatus
-         FROM tmf_physical_resource r
-         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(r.characteristics, '[]')::jsonb) c
-        WHERE r.status_code IS NULL AND c->>'name' = 'substatus'`,
+      `SELECT r.id, jt.substatus
+         FROM tmf_physical_resource r,
+              JSON_TABLE(r.characteristics, '$[*]' COLUMNS (
+                char_name VARCHAR2(255) PATH '$.name',
+                substatus VARCHAR2(4000) PATH '$.value'
+              )) jt
+        WHERE r.status_code IS NULL AND jt.char_name = 'substatus'`,
     )
   ).rows;
 }
@@ -54,7 +44,7 @@ async function loadPending(db) {
 async function main() {
   console.log(APPLY ? '=== APLICANDO ===' : '=== DRY-RUN (combine com --apply para executar) ===');
   const db = await openLoaderDb();
-  console.log(`Provider: ${db.provider}`);
+  console.log('Banco: Oracle');
 
   try {
     const pending = await loadPending(db);

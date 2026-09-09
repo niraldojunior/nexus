@@ -1,17 +1,15 @@
 // Fase 3 do projeto "remover coluna href" (issue #169): solta o NOT NULL da coluna `href` nas 22
-// tabelas TMF, nos dois providers. Pré-requisito da Fase 4 (parar de escrever href) — sem isso,
-// todo INSERT falha com ORA-01400 / 23502 assim que o código parar de mandar o valor.
+// tabelas TMF Oracle. Pré-requisito da Fase 4 (parar de escrever href) — sem isso, todo INSERT falha
+// com ORA-01400 assim que o código parar de mandar o valor.
 //
-// Idempotente: reexecutar é seguro nos dois providers (Postgres não erra soltando um NOT NULL que já
-// não existe; Oracle erra ORA-01451 "already nullable", que este script ignora).
+// Idempotente: Oracle retorna ORA-01451 quando a coluna já é nullable, e o script ignora esse caso.
 //
 // Uso:
-//   DATABASE_PROVIDER=postgres npx tsx src/scripts/drop-href-not-null.ts
-//   DATABASE_PROVIDER=oracle ORACLE_OBJECT_PREFIX=NEXUS_DEV_ npx tsx src/scripts/drop-href-not-null.ts
+//   ORACLE_OBJECT_PREFIX=NEXUS_DEV_ npx tsx src/scripts/drop-href-not-null.ts
 //
 // Rodar uma vez por prefixo Oracle (DEV/HML/PRD/TEST compartilham o mesmo schema físico).
 import { config as loadEnv } from 'dotenv';
-import { databaseConfigOf, loadConfig } from '../shared/config/env.js';
+import { loadConfig } from '../shared/config/env.js';
 import { createDatabaseClient } from '../shared/persistence/database-factory.js';
 
 loadEnv();
@@ -42,7 +40,7 @@ const TABLES_WITH_HREF = [
 ] as const;
 
 const config = loadConfig({ ...process.env, DATABASE_AUTO_SCHEMA: 'false' });
-const client = createDatabaseClient(databaseConfigOf(config));
+const client = createDatabaseClient(config.database);
 
 const isAlreadyNullable = (error: unknown): boolean =>
   error instanceof Error && /ORA-01451/.test(error.message);
@@ -55,13 +53,8 @@ try {
   await client.initialize();
 
   for (const table of TABLES_WITH_HREF) {
-    const sql =
-      client.provider === 'oracle'
-        ? `ALTER TABLE ${table} MODIFY (href NULL)`
-        : `ALTER TABLE ${table} ALTER COLUMN href DROP NOT NULL`;
-
     try {
-      await client.run(sql);
+      await client.run(`ALTER TABLE ${table} MODIFY (href NULL)`);
       process.stdout.write(`OK   ${table}\n`);
     } catch (error) {
       if (isAlreadyNullable(error)) {
@@ -72,7 +65,7 @@ try {
     }
   }
 
-  process.stdout.write(`href.NOT NULL removido em ${client.provider} — ${TABLES_WITH_HREF.length} tabelas.\n`);
+  process.stdout.write(`href.NOT NULL removido no Oracle — ${TABLES_WITH_HREF.length} tabelas.\n`);
 } finally {
   await client.close();
 }

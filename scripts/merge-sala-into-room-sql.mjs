@@ -6,7 +6,7 @@
  * Por quê: a versão via API (PATCH /v1/geo/sites/:id, um por site) processou os 3446
  * sites da spec "Sala" a 9-46s por request no Oracle dev e travou com 500 no 7º site —
  * carga incompatível com uma correção de catálogo (a mesma classe de problema já
- * resolvida em Postgres via SQL direto para o merge Estação→Central Office, ver memória
+ * resolvida via SQL direto para o merge Estação→Central Office, ver memória
  * "estacao-central-office-duplicate-spec"). Os sites de SALA/TECHNICAL_ROOM não têm
  * containment declarado (allowedParentSpecIds/allowedChildSpecIds vazios) nem
  * characteristics fora do padrão atual, então não há validação de escrita a preservar —
@@ -20,8 +20,8 @@
  *   node scripts/merge-sala-into-room-sql.mjs            # dry-run (só mostra as contagens)
  *   node scripts/merge-sala-into-room-sql.mjs --apply    # executa
  *
- * Requer `npm run build` (dist/) e as mesmas env vars de conexão dos loaders
- * (DATABASE_PROVIDER, ORACLE_* / DATABASE_URL_DEV — lidas do .env).
+ * Requer `npm run build` (dist/) e as variáveis Oracle dos loaders
+ * (ORACLE_CONNECTION_STRING, ORACLE_USER, ORACLE_PASSWORD e ORACLE_OBJECT_PREFIX).
  */
 
 import { config as loadEnv } from 'dotenv';
@@ -35,7 +35,7 @@ const DUPLICATE_CODES = ['SALA', 'TECHNICAL_ROOM'];
 async function main() {
   console.log(APPLY ? '=== APLICANDO ===' : '=== DRY-RUN (combine com --apply para executar) ===');
   const db = await openLoaderDb();
-  console.log(`Provider: ${db.provider}`);
+  console.log('Banco: Oracle');
 
   try {
     await db.query('BEGIN');

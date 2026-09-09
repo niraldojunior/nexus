@@ -1,61 +1,55 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { TABLE_NAMES } from '../src/shared/persistence/schema.js';
-import { TRUNCATE_SQL, assertNotProductionUrl } from './test-utils.js';
+import { assertOracleTestPrefix, isOracleTestConfigured } from './test-utils.js';
 
-// Regression guards for the incident where a CI run pointed the test suite at the production
-// database and the per-test TRUNCATE wiped it: the TRUNCATE resolved unqualified table names
-// against `public` because the worker schema was empty. These lock in the two defenses.
+// Regression guard: DEV/HML/PRD/TEST share one Oracle schema, distinguished only by an object
+// prefix, and the test suite DELETEs every table under that prefix between runs. Locking in
+// `assertOracleTestPrefix` here means a future refactor that loosens the check fails fast instead
+// of silently risking a DELETE against DEV/HML/PRD data.
 
-describe('TRUNCATE_SQL', () => {
-  it('qualifies every table with a per-worker test schema, never the public schema', () => {
-    // Physically cannot touch public: every table is prefixed with a "nexus_test_w..." schema.
-    for (const table of TABLE_NAMES) {
-      expect(TRUNCATE_SQL).toContain(`"nexus_test_w`);
-      expect(TRUNCATE_SQL).toMatch(new RegExp(`"nexus_test_w[^"]*"\\."${table}"`));
-      // The unqualified form (what caused the incident) must not appear.
-      expect(TRUNCATE_SQL).not.toContain(` "${table}"`);
-    }
-    expect(TRUNCATE_SQL).not.toContain('public.');
+describe('assertOracleTestPrefix', () => {
+  it('accepts prefixes ending in _TEST_ or _TST_ (case-insensitive)', () => {
+    expect(() => assertOracleTestPrefix('NEXUS_TEST_')).not.toThrow();
+    expect(() => assertOracleTestPrefix('nexus_test_')).not.toThrow();
+    expect(() => assertOracleTestPrefix('NEXUS_TST_')).not.toThrow();
+  });
+
+  it('rejects a non-test prefix, naming the risk of wiping DEV/HML/PRD data', () => {
+    expect(() => assertOracleTestPrefix('NEXUS_DEV_')).toThrow(/produção|DEV|HML|PRD/i);
+    expect(() => assertOracleTestPrefix('NEXUS_PRD_')).toThrow();
   });
 });
 
-describe('assertNotProductionUrl', () => {
-  const prevProd = process.env.DATABASE_URL_PROD;
-  const prevNeonProd = process.env.NEON_DATABASE_URL_PROD;
+describe('isOracleTestConfigured', () => {
+  const prevConn = process.env.ORACLE_CONNECTION_STRING;
+  const prevUser = process.env.ORACLE_USER;
+  const prevPassword = process.env.ORACLE_PASSWORD;
 
   afterEach(() => {
-    if (prevProd === undefined) delete process.env.DATABASE_URL_PROD;
-    else process.env.DATABASE_URL_PROD = prevProd;
-    if (prevNeonProd === undefined) delete process.env.NEON_DATABASE_URL_PROD;
-    else process.env.NEON_DATABASE_URL_PROD = prevNeonProd;
+    const restore = (key: string, value: string | undefined) => {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    };
+    restore('ORACLE_CONNECTION_STRING', prevConn);
+    restore('ORACLE_USER', prevUser);
+    restore('ORACLE_PASSWORD', prevPassword);
   });
 
-  it('throws when the test URL is the production database, ignoring credentials and schema param', () => {
-    process.env.DATABASE_URL_PROD =
-      'postgresql://prod-user:secret@ep-prod-123-pooler.neon.tech/nexus?sslmode=require';
-    // Same host + database, different user/password and with a ?schema= appended → still prod.
-    expect(() =>
-      assertNotProductionUrl(
-        'postgresql://someone:else@ep-prod-123-pooler.neon.tech/nexus?sslmode=require&schema=nexus_test_w1',
-      ),
-    ).toThrow(/produção/);
+  it('is false when any of connection string, user or password is missing', () => {
+    delete process.env.ORACLE_CONNECTION_STRING;
+    delete process.env.ORACLE_USER;
+    delete process.env.ORACLE_PASSWORD;
+    expect(isOracleTestConfigured()).toBe(false);
+
+    process.env.ORACLE_CONNECTION_STRING = 'localhost:1521/xe';
+    process.env.ORACLE_USER = 'nexus';
+    delete process.env.ORACLE_PASSWORD;
+    expect(isOracleTestConfigured()).toBe(false);
   });
 
-  it('does not throw for a different database host', () => {
-    process.env.DATABASE_URL_PROD =
-      'postgresql://prod-user:secret@ep-prod-123-pooler.neon.tech/nexus?sslmode=require';
-    expect(() =>
-      assertNotProductionUrl(
-        'postgresql://dev-user:secret@ep-dev-999-pooler.neon.tech/nexus?sslmode=require',
-      ),
-    ).not.toThrow();
-  });
-
-  it('does not throw when no production URL is configured', () => {
-    delete process.env.DATABASE_URL_PROD;
-    delete process.env.NEON_DATABASE_URL_PROD;
-    expect(() =>
-      assertNotProductionUrl('postgresql://u:p@ep-dev-1-pooler.neon.tech/nexus'),
-    ).not.toThrow();
+  it('is true once connection string, user and password are all set', () => {
+    process.env.ORACLE_CONNECTION_STRING = 'localhost:1521/xe';
+    process.env.ORACLE_USER = 'nexus';
+    process.env.ORACLE_PASSWORD = 'secret';
+    expect(isOracleTestConfigured()).toBe(true);
   });
 });

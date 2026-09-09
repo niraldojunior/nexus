@@ -99,13 +99,9 @@ test('LIMIT/OFFSET rewrite stays aligned with name-keyed binds (issue #43)', () 
   assert.equal(binds['2'], 0); // OFFSET :2 → offset
 });
 
-test('inlineRows differs by dialect: Postgres VALUES (N binds), Oracle JSON_TABLE (1 bind)', () => {
-  const pg = dialectFor('postgres').inlineRows(['a', 'b'], 'v', 'id');
-  assert.match(pg.sql, /\(VALUES \(\?\), \(\?\)\) AS v\(id\)/);
-  assert.deepEqual(pg.binds, ['a', 'b']);
-
+test('inlineRows uses a single JSON_TABLE bind, not an N-branch UNION ALL (issue #58)', () => {
   // Oracle uses a single JSON-array bind (not an N-branch UNION ALL) so it scales to thousands.
-  const ora = dialectFor('oracle').inlineRows(['a', 'b'], 'v', 'id');
+  const ora = dialectFor().inlineRows(['a', 'b'], 'v', 'id');
   assert.match(
     ora.sql,
     /JSON_TABLE\(\?, '\$\[\*\]' COLUMNS \(id VARCHAR2\(4000\) PATH '\$'\)\)\) v/,
@@ -113,12 +109,11 @@ test('inlineRows differs by dialect: Postgres VALUES (N binds), Oracle JSON_TABL
   assert.doesNotMatch(ora.sql, /VALUES|DUAL/);
   assert.deepEqual(ora.binds, ['["a","b"]']);
 
-  assert.throws(() => dialectFor('oracle').inlineRows([], 'v', 'id'), /at least one value/);
+  assert.throws(() => dialectFor().inlineRows([], 'v', 'id'), /at least one value/);
 });
 
-test('newRowId is a bind-free expression, one per dialect (issue #58)', () => {
-  assert.equal(dialectFor('postgres').newRowId(), 'gen_random_uuid()::text');
-  assert.equal(dialectFor('oracle').newRowId(), 'LOWER(RAWTOHEX(SYS_GUID()))');
+test('newRowId is a bind-free expression (issue #58)', () => {
+  assert.equal(dialectFor().newRowId(), 'LOWER(RAWTOHEX(SYS_GUID()))');
 });
 
 test('every managed table name is prefixed in a table position', () => {

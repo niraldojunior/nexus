@@ -1,6 +1,6 @@
 # Sequência de implementação
 
-> Sequência de convergência a partir da implementação-base existente, com persistência dual PostgreSQL/Oracle (laboratório hospedado em Neon). Não é um plano de construção do zero e não altera o cânone C1–C10.
+> Sequência de convergência a partir da implementação-base existente, com persistência Oracle-only, execução local (C10). Não é um plano de construção do zero e não altera o cânone C1–C10.
 
 ## 1. Princípios
 
@@ -8,7 +8,7 @@
 - Executar Geographic antes das extensões Resource dependentes de `place`, e Resource antes dos fluxos Service dependentes de `supportingResource`.
 - Tratar perguntas abertas como bloqueadores explícitos; decisões resolvidas usam IDs `D-*`.
 - Manter endpoints propostos fora do runtime até o item `DEV-*` correspondente ser implementado e testado.
-- Preservar o suporte dual PostgreSQL/Oracle como implementado (C10); path computation via SQL recursivo portável, sem Property Graph.
+- Preservar Oracle como único banco suportado (C10); path computation via `CONNECT BY` nativo, sem Property Graph.
 
 ## 2. Ondas
 

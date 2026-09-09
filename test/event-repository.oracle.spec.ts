@@ -1,34 +1,30 @@
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'vitest';
-import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
-import { PostgresEventRepository } from '../src/shared/tmf/postgres-event-repository.js';
-import { createTestDatabase } from './test-utils.js';
+import { afterAll, test } from 'vitest';
+import { OracleEventRepository } from '../src/shared/tmf/oracle-event-repository.js';
+import { cleanupOracleTables, getOracleTestClient, isOracleTestConfigured } from './test-utils.js';
 
-afterEach(() => {
-  PostgresDatabase.resetForTesting();
+// Oracle round-trip coverage for TMF688 event persistence. `appendEvent` upserts via an
+// `INSERT ... ON CONFLICT DO UPDATE` that the Oracle dialect translator rewrites into a `MERGE`
+// (see transformUpsertToMerge in oracle-database.ts) — that translation only proves itself against
+// a real Oracle instance, so this runs the same way as oracle-roundtrip.spec.ts: skips unless
+// ORACLE_* is configured. Run with `npm run test:oracle`.
+const oracleConfigured = isOracleTestConfigured();
+if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
+
+afterAll(async () => {
+  if (!oracleConfigured) return;
+  const client = await getOracleTestClient();
+  await cleanupOracleTables(client);
+  await client.close();
 });
 
-const setupDatabase = async () => {
-  const database = createTestDatabase('nexus-event-repository-');
-  const sqlite = PostgresDatabase.getInstance(database.databaseUrl);
-  await sqlite.initialize();
+test.skipIf(!oracleConfigured)(
+  'OracleEventRepository persists, updates and queries TMF688 events',
+  async () => {
+    const client = await getOracleTestClient();
+    const repository = new OracleEventRepository(client);
 
-  return {
-    sqlite,
-    cleanup: () => {
-      PostgresDatabase.resetForTesting();
-      database.cleanup();
-    },
-  };
-};
-
-test('PostgresEventRepository persists, updates and queries TMF688 events', async () => {
-  const { sqlite, cleanup } = await setupDatabase();
-
-  try {
-    const repository = new PostgresEventRepository(sqlite);
-
-    repository.appendEvent({
+    await repository.appendEvent({
       '@type': 'Event',
       id: 'event-1',
       eventType: 'GeographicSiteCreatedEvent',
@@ -37,7 +33,7 @@ test('PostgresEventRepository persists, updates and queries TMF688 events', asyn
       eventData: { entityId: 'site-1', status: 'created' },
       correlationId: 'corr-1',
     });
-    repository.appendEvent({
+    await repository.appendEvent({
       '@type': 'Event',
       id: 'event-2',
       eventType: 'GeographicSiteUpdatedEvent',
@@ -45,7 +41,7 @@ test('PostgresEventRepository persists, updates and queries TMF688 events', asyn
       source: 'geo-service',
       eventData: { entityId: 'site-1', status: 'updated' },
     });
-    repository.appendEvent({
+    await repository.appendEvent({
       '@type': 'Event',
       id: 'event-1',
       eventType: 'GeographicSiteRetiredEvent',
@@ -75,7 +71,5 @@ test('PostgresEventRepository persists, updates and queries TMF688 events', asyn
     const offset = await repository.listEvents({ limit: 1, offset: 1 });
     assert.equal(offset.length, 1);
     assert.equal(offset[0]?.id, 'event-2');
-  } finally {
-    cleanup();
-  }
-});
+  },
+);

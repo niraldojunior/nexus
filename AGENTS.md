@@ -10,7 +10,7 @@ Playbooks detalhados ficam em arquivos separados, lidos **sob demanda** (§9 e �
 
 **V.tal Nexus** — inventário de rede proprietário da V.tal, alinhado a **TM Forum ODA**. O repositório contém as duas metades do produto:
 
-- **Aplicação** — backend TypeScript/Node (`src/`, `api/`) + frontend React/Vite (`web/`), com persistência dual nativa em Oracle e PostgreSQL (`DATABASE_PROVIDER`).
+- **Aplicação** — backend TypeScript/Node (`src/`) + frontend React/Vite (`web/`), persistência Oracle-only, rodando somente localmente (sem Vercel, Docker ou CI/CD).
 - **Especificação** — HLDs por módulo, design técnico, design system e plano de entrega (`docs/`).
 
 A V.tal é uma **infraestrutura de fibra neutra (wholesale)** — o cliente primário do serviço é, em regra, um **ISP (Tenant)**, não o usuário final. Esta premissa molda todo o domínio de serviço.
@@ -24,7 +24,7 @@ Node **22+**. Instale com `npm install`, copie `.env.example` para `.env` e ajus
 | Comando                         | O que faz                                                                                                                                                      |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `npm run dev`                   | Stack local completa — backend em `127.0.0.1:4001`, Vite em `127.0.0.1:5200`. **Usa PowerShell** (`start-dev.ps1`); em shell POSIX use `dev:db` + `web:dev`. |
-| `npm run dev:db`                | Só o backend, contra o PostgreSQL de dev (respeita `DATABASE_PROVIDER`)                                                                                       |
+| `npm run dev:db`                | Só o backend, contra o Oracle configurado no `.env`                                                                                                          |
 | `npm run web:dev`               | Só o frontend Vite                                                                                                                                             |
 | `npm run build`                 | Compila TypeScript para `dist/`                                                                                                                                |
 | `npm run typecheck`             | `tsc --noEmit` na raiz **e** em `web/`                                                                                                                         |
@@ -33,9 +33,9 @@ Node **22+**. Instale com `npm install`, copie `.env.example` para `.env` e ajus
 | `npm run docs:check`            | Valida anatomia, JSON, links e rastreabilidade das functional specs                                                                                            |
 | `npm test`                      | Suíte completa: unit → integration → regression                                                                                                                |
 
-O **CI** (`.github/workflows/ci.yml`) roda, nesta ordem: `docs:check` → `lint` → `typecheck` → `build` → `test`. Rode ao menos `docs:check`, `lint` e `typecheck` antes de considerar uma mudança pronta.
+**Sem CI/CD nesta etapa** — o repositório não roda pipelines automatizados; os gates são comandos manuais. Rode ao menos `docs:check`, `lint` e `typecheck` antes de considerar uma mudança pronta; `docs:check` → `lint` → `typecheck` → `build` → `test` é a ordem recomendada.
 
-Setup de ambiente, variáveis do Vercel e layout PostgreSQL dev/prod: veja o [README.md](README.md).
+Setup de ambiente e variáveis Oracle: veja o [README.md](README.md).
 
 ---
 
@@ -43,7 +43,7 @@ Setup de ambiente, variáveis do Vercel e layout PostgreSQL dev/prod: veja o [RE
 
 | Camada      | Comando                    | Runner                      | Escopo                                |
 | ----------- | -------------------------- | --------------------------- | ------------------------------------- |
-| Unit        | `npm run test:unit`        | Vitest (`vitest.config.ts`) | Testes sem banco e sem acesso ao Postgres de dev |
+| Unit        | `npm run test:unit`        | Vitest (`vitest.config.ts`) | Testes sem banco                      |
 | Integration | `npm run test:integration` | Vitest                      | Path Oracle contra instância real     |
 | Regression  | `npm run test:regression`  | Playwright                  | E2E de browser contra Oracle          |
 
@@ -67,13 +67,12 @@ node --use-system-ca node_modules/vitest/vitest.mjs run --config vitest.config.t
 ```
 AGENTS.md          # este arquivo — cânone e convenções
 CLAUDE.md          # apenas `@AGENTS.md` (paridade Claude Code / Codex)
-README.md          # setup, env vars, deploy Vercel
+README.md          # setup, env vars, execução local
 
 src/
 ├── modules/       # domínios: geo · resource · service · party · order · search · mcp
 └── shared/        # config · http · persistence · tmf · logging · errors · runtime · ui · utils
 
-api/               # Vercel Functions: /v1, /tmf-api, /health
 web/src/           # React + Vite: pages · components · hooks · services · utils · data
 test/              # vitest (unit/integration) + playwright (regression)
 scripts/           # dev, seed e cargas de seed/migração
@@ -89,7 +88,7 @@ docs/
 └── 5-delivery-plan/       # roadmap · decisões arquiteturais · riscos
 ```
 
-**Anatomia de um módulo de domínio** (use `src/modules/geo/` como gabarito): `domain.ts` (tipos e regras) · `repository.ts` + `postgres-repository.ts` (persistência, com interface separada) · `service.ts` (casos de uso) · `ids.ts` · `index.ts` (composição).
+**Anatomia de um módulo de domínio** (use `src/modules/geo/` como gabarito): `domain.ts` (tipos e regras) · `repository.ts` + `oracle-repository.ts` (persistência, com interface separada) · `service.ts` (casos de uso) · `ids.ts` · `index.ts` (composição).
 
 > **Document references dos HLDs** (`VTN-HLD-MOD01-GEO`, `-MOD02-RES`, `-MOD03-SVC`) vivem **dentro** de cada arquivo e não mudam com reorganização de pastas. O número do arquivo (`01-`, `02-`, `03-`) é o número do **módulo**, independente do número da pasta.
 
@@ -126,7 +125,7 @@ Estas decisões estão firmadas. Respeite-as; não as reabra sem pedido explíci
 | **C7**  | **Event-driven (TMF688)**           | Toda mudança relevante publica evento via outbox pattern, idempotente (UUID v7), schema versionado em Schema Registry.                                                                                                     |
 | **C8**  | **Multi-tenant / wholesale**        | `relatedParty` com Tenant desde a criação. No Service, o subscriber do CFS é tipicamente um Tenant ISP (`modelo_comercial = wholesale \| direto`).                                                                         |
 | **C9**  | **Catálogos extensíveis via API**   | RelationshipTypes e Specifications têm bootstrap canônico + CRUD via API com governança (Audit + TMF688). Sem listas fechadas hardcoded.                                                                                   |
-| **C10** | **Oracle-native + portabilidade PostgreSQL** | Nexus suporta nativamente Oracle e PostgreSQL via `DATABASE_PROVIDER`, ambos de primeira classe. Oracle é o alvo corporativo homologado da V.tal; PostgreSQL não é modo de compatibilidade. Path computation usa SQL recursivo portável (CTE recursiva / `CONNECT BY`), não Property Graph — descartado após verificação (instância real é Oracle 19c, sem `CREATE PROPERTY GRAPH`). |
+| **C10** | **Oracle-only, execução local** | Nexus fala com um único banco — Oracle — sem seleção de provider, fallback ou tradutor de SQL genérico. PostgreSQL/Neon foram descontinuados (registro histórico em `business-rules.md`). Path computation usa `CONNECT BY` nativo, não Property Graph — descartado após verificação (instância real é Oracle 19c, sem `CREATE PROPERTY GRAPH`). O produto roda apenas localmente: sem Vercel, Docker/VPS/Caddy ou CI/CD. |
 | **C11** | **Papel do site (`siteRole`)**      | Todo `GeographicSiteSpecification` tem um eixo funcional ortogonal a `category`: `grouping \| network \| property \| service` — o que o site É, não onde ele cabe na hierarquia. Vive na spec (catálogo), nunca hardcoded. |
 
 ---
@@ -134,7 +133,7 @@ Estas decisões estão firmadas. Respeite-as; não as reabra sem pedido explíci
 ## 7. Convenções de código
 
 - **TypeScript estrito**, ESM. Prettier e ESLint mandam — não brigue com eles, rode `format:fix` / `lint:fix`.
-- **Domínio isolado da persistência.** Repositório é interface (`*-repository-interface.ts`) com implementação Postgres separada. Não vaze SQL para `service.ts`.
+- **Domínio isolado da persistência.** Repositório é interface (`*-repository-interface.ts`) com implementação Oracle separada (`oracle-repository.ts`). Não vaze SQL para `service.ts`.
 - **Nomes de arquivo em kebab-case** no backend; **PascalCase** para componentes React.
 - **Entidades e atributos seguem o vocabulário TMF** (C1), inclusive no banco e nas rotas.
 - **Nunca hardcode tokens visuais** (cor, espaçamento, fonte) — use as variáveis CSS do design system.

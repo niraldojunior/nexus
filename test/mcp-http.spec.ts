@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { afterEach, test, vi } from 'vitest';
-import { startHttpTestApp } from './test-utils.js';
+import { isOracleTestConfigured, startHttpTestApp } from './test-utils.js';
+
+// Exercita o Copilot/MCP contra a app HTTP inteira, incluindo persistência. Skips unless ORACLE_* is
+// configured, no mesmo padrão dos demais specs Oracle-backed.
+const oracleConfigured = isOracleTestConfigured();
+if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -8,7 +13,7 @@ afterEach(() => {
   delete process.env.OPENAI_API_KEY;
 });
 
-test('Copilot consulta sites via MCP e devolve dados reais do inventario', async () => {
+test.skipIf(!oracleConfigured)('Copilot consulta sites via MCP e devolve dados reais do inventario', async () => {
   process.env.OPENAI_API_KEY = 'test-key';
   let sawSanitizedToolCatalog = false;
 
@@ -66,7 +71,7 @@ test('Copilot consulta sites via MCP e devolve dados reais do inventario', async
 
   vi.stubGlobal('fetch', fetchMock);
 
-  const app = await startHttpTestApp('nexus-mcp-int-');
+  const app = await startHttpTestApp();
 
   try {
     const spec = await app.requestJson('POST', '/v1/geo/site-specifications', {
@@ -104,7 +109,7 @@ test('Copilot consulta sites via MCP e devolve dados reais do inventario', async
   }
 });
 
-test('Copilot prepara cadastro de PhysicalResource, exige confirmacao e faz commit depois', async () => {
+test.skipIf(!oracleConfigured)('Copilot prepara cadastro de PhysicalResource, exige confirmacao e faz commit depois', async () => {
   process.env.OPENAI_API_KEY = 'test-key';
 
   const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -228,7 +233,7 @@ test('Copilot prepara cadastro de PhysicalResource, exige confirmacao e faz comm
 
   vi.stubGlobal('fetch', fetchMock);
 
-  const app = await startHttpTestApp('nexus-mcp-int-');
+  const app = await startHttpTestApp();
 
   try {
     const siteSpec = await app.requestJson('POST', '/v1/geo/site-specifications', {
@@ -421,7 +426,7 @@ test('Copilot prepara cadastro de PhysicalResource, exige confirmacao e faz comm
   }
 });
 
-test('Copilot cadastra modelo de ONT resolvendo fabricante sem pedir ID', async () => {
+test.skipIf(!oracleConfigured)('Copilot cadastra modelo de ONT resolvendo fabricante sem pedir ID', async () => {
   process.env.OPENAI_API_KEY = 'test-key';
 
   const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -541,7 +546,7 @@ test('Copilot cadastra modelo de ONT resolvendo fabricante sem pedir ID', async 
 
   vi.stubGlobal('fetch', fetchMock);
 
-  const app = await startHttpTestApp('nexus-mcp-int-');
+  const app = await startHttpTestApp();
 
   try {
     const session = await app.requestJson('POST', '/v1/research/sessions', {
@@ -618,7 +623,7 @@ test('Copilot cadastra modelo de ONT resolvendo fabricante sem pedir ID', async 
   }
 });
 
-test('Copilot cadastra varios modelos de ONT em lote e mostra a lista completa na confirmacao', async () => {
+test.skipIf(!oracleConfigured)('Copilot cadastra varios modelos de ONT em lote e mostra a lista completa na confirmacao', async () => {
   process.env.OPENAI_API_KEY = 'test-key';
 
   const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -741,7 +746,7 @@ test('Copilot cadastra varios modelos de ONT em lote e mostra a lista completa n
 
   vi.stubGlobal('fetch', fetchMock);
 
-  const app = await startHttpTestApp('nexus-mcp-int-');
+  const app = await startHttpTestApp();
 
   try {
     const session = await app.requestJson('POST', '/v1/research/sessions', {
@@ -815,7 +820,7 @@ test('Copilot cadastra varios modelos de ONT em lote e mostra a lista completa n
   }
 });
 
-test('Copilot remove modelo de ONT usando o mesmo fluxo de confirmacao', async () => {
+test.skipIf(!oracleConfigured)('Copilot remove modelo de ONT usando o mesmo fluxo de confirmacao', async () => {
   process.env.OPENAI_API_KEY = 'test-key';
 
   const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -944,7 +949,7 @@ test('Copilot remove modelo de ONT usando o mesmo fluxo de confirmacao', async (
 
   vi.stubGlobal('fetch', fetchMock);
 
-  const app = await startHttpTestApp('nexus-mcp-int-');
+  const app = await startHttpTestApp();
 
   try {
     const manufacturer = await app.requestJson('POST', '/tmf-api/partyManagement/v4/party', {
@@ -1027,8 +1032,8 @@ test('Copilot remove modelo de ONT usando o mesmo fluxo de confirmacao', async (
   }
 });
 
-test('Fallback local sem OpenAI nao executa ferramentas MCP', async () => {
-  const app = await startHttpTestApp('nexus-mcp-int-');
+test.skipIf(!oracleConfigured)('Fallback local sem OpenAI nao executa ferramentas MCP', async () => {
+  const app = await startHttpTestApp();
 
   try {
     const session = await app.requestJson('POST', '/v1/research/sessions', {

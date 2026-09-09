@@ -74,7 +74,8 @@
  * Variáveis de ambiente (lidas também do `.env` na raiz do repo):
  *   NEXUS_API             (default http://127.0.0.1:4001) — modo API
  *   NEXUS_TOKEN           (default change-me) — modo API
- *   DATABASE_URL_DEV      (ou DATABASE_URL) — modo --fast, endpoint -pooler
+ *   ORACLE_CONNECTION_STRING, ORACLE_USER, ORACLE_PASSWORD e ORACLE_OBJECT_PREFIX
+ *                         — modo --fast
  *   GOOGLE_MAPS_API_KEY   (fallback: VITE_GOOGLE_MAPS_API_KEY) — só usada se
  *                         sobrar coordenada para geocodificar; sem ela, a
  *                         etapa 3 é pulada como se fosse --no-geocode.
@@ -732,15 +733,14 @@ async function main() {
 
 // ------------------------------------------------------------ modo --fast ---
 //
-// `main()` faz 1 POST HTTP por Location/Address/Site/Sala — cada POST é uma
-// viagem de rede até o Neon (remoto, não localhost) mais o processamento do
-// backend (RBAC, characteristics, containment, audit, outbox). Em ~519
+// `main()` faz 1 POST HTTP por Location/Address/Site/Sala — cada POST passa pelo
+// processamento do backend (RBAC, characteristics, containment, audit, outbox). Em ~519
 // estações + salas isso passa de milhares de round-trips sequenciais (o
 // backend dev atende requisições em série — ver AGENTS.md).
 //
-// `--fast` faz o que `load-recursos-netwin.mjs` já faz para os 24.6k recursos
-// de planta externa: grava direto no Postgres via `pg`, em poucos INSERTs
-// multi-linha dentro de uma única transação. Mesmo tradeoff aceito lá — **não
+// `--fast` faz o que `load-recursos-netwin.mjs` já faz para os recursos de
+// planta externa: grava direto no Oracle, em poucos INSERTs dentro de uma única
+// transação. Mesmo tradeoff aceito lá — **não
 // publica eventos TMF688 (C7) nem grava audit log**, porque é carga inicial
 // de migração, não mudança operacional feita por um usuário. Ainda assim:
 //   · gera os mesmos UUID v7 (`createCanonicalId`, mesmo gerador da app);
@@ -755,8 +755,8 @@ async function main() {
 //   node scripts/estacoes_carregar.mjs --fast              # dry-run, só mostra o plano
 //   node scripts/estacoes_carregar.mjs --fast --apply       # grava
 
-// Bulk insert delegated to the provider-aware adapter (Postgres multi-row VALUES; Oracle
-// executeMany). Same drop-in as load-recursos-netwin.mjs.
+// A inserção em lote usa executeMany do Oracle, pelo mesmo contrato de loader de
+// load-recursos-netwin.mjs.
 async function bulkInsert(client, table, columns, rows) {
   return client.bulkInsert(table, columns, rows);
 }
@@ -783,42 +783,50 @@ async function resetStations(client) {
   console.log('Identificando estações e salas para remoção…');
   const { rows: stations } = await client.query(`
     SELECT id, geographic_address_id, geographic_location_id
-    FROM tmf_geographic_site s
-    WHERE characteristics::jsonb @> '[{"name":"_origin.seed","value":"estacoes-carregar"}]'
-       OR EXISTS (
-         SELECT 1 FROM jsonb_array_elements(s.characteristics::jsonb) c
-         WHERE c->>'name' = '_origin.entity' AND c->>'value' = 'Estacao'
-       )
-       OR EXISTS (
-         SELECT 1 FROM jsonb_array_elements(s.characteristics::jsonb) c
-         WHERE c->>'group' = '_origin' AND c->>'name' = 'extra'
-           AND (c->'value'->>'sigla') IS NOT NULL
-       )
+      FROM tmf_geographic_site s
+     WHERE EXISTS (
+       SELECT 1
+         FROM JSON_TABLE(s.characteristics, '$[*]' COLUMNS (
+           char_name VARCHAR2(255) PATH '$.name',
+           char_group VARCHAR2(255) PATH '$.group',
+           char_value VARCHAR2(4000) PATH '$.value',
+           extra_sigla VARCHAR2(255) PATH '$.value.sigla'
+         )) c
+        WHERE (c.char_name = '_origin.seed' AND c.char_value = 'estacoes-carregar')
+           OR (c.char_name = '_origin.entity' AND c.char_value = 'Estacao')
+           OR (c.char_group = '_origin' AND c.char_name = 'extra' AND c.extra_sigla IS NOT NULL)
+     )
   `);
   if (stations.length === 0) {
     console.log('  Nenhuma estação encontrada.');
     return 0;
   }
   const stationIds = stations.map((r) => r.id);
+  const idsInJson = (column) =>
+    `${column} IN (SELECT id FROM JSON_TABLE($1, '$[*]' COLUMNS (id VARCHAR2(36) PATH '$')))`;
   const { rows: salas } = await client.query(
     `SELECT id, geographic_address_id, geographic_location_id
-     FROM tmf_geographic_site WHERE parent_site_id = ANY($1::text[])`,
-    [stationIds],
+       FROM tmf_geographic_site
+      WHERE ${idsInJson('parent_site_id')}`,
+    [JSON.stringify(stationIds)],
   );
   const all = [...stations, ...salas];
   const allIds = all.map((r) => r.id);
   const addrIds = [...new Set(all.map((r) => r.geographic_address_id).filter(Boolean))];
   const locIds = [...new Set(all.map((r) => r.geographic_location_id).filter(Boolean))];
 
-  await client.query(
-    'DELETE FROM tmf_geographic_site_status_history WHERE site_id = ANY($1::text[])',
-    [allIds],
-  );
-  await client.query('DELETE FROM tmf_geographic_site WHERE id = ANY($1::text[])', [allIds]);
+  if (allIds.length) {
+    const allIdsJson = JSON.stringify(allIds);
+    await client.query(
+      `DELETE FROM tmf_geographic_site_status_history WHERE ${idsInJson('site_id')}`,
+      [allIdsJson],
+    );
+    await client.query(`DELETE FROM tmf_geographic_site WHERE ${idsInJson('id')}`, [allIdsJson]);
+  }
   if (addrIds.length)
-    await client.query('DELETE FROM tmf_geographic_address WHERE id = ANY($1::text[])', [addrIds]);
+    await client.query(`DELETE FROM tmf_geographic_address WHERE ${idsInJson('id')}`, [JSON.stringify(addrIds)]);
   if (locIds.length)
-    await client.query('DELETE FROM tmf_geographic_location WHERE id = ANY($1::text[])', [locIds]);
+    await client.query(`DELETE FROM tmf_geographic_location WHERE ${idsInJson('id')}`, [JSON.stringify(locIds)]);
 
   console.log(
     `  Removidos: ${stations.length} estações, ${salas.length} salas, ${addrIds.length} endereços, ${locIds.length} locations.`,
@@ -1216,12 +1224,17 @@ async function mainFast() {
         const {
           rows: [check],
         } = await client.query(
-          `SELECT count(*)::int AS n FROM tmf_geographic_site WHERE id = ANY($1::text[])`,
-          [allIds],
+          `SELECT COUNT(*) AS n
+             FROM tmf_geographic_site
+            WHERE id IN (
+              SELECT id FROM JSON_TABLE($1, '$[*]' COLUMNS (id VARCHAR2(36) PATH '$'))
+            )`,
+          [JSON.stringify(allIds)],
         );
-        if (check.n !== allIds.length) {
+        const insertedCount = Number(check.n ?? check.N ?? 0);
+        if (insertedCount !== allIds.length) {
           throw new Error(
-            `conferência falhou: ${check.n}/${allIds.length} sites gravados — ROLLBACK`,
+            `conferência falhou: ${insertedCount}/${allIds.length} sites gravados — ROLLBACK`,
           );
         }
       }

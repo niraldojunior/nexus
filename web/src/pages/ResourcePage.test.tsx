@@ -202,7 +202,7 @@ type WorkspaceRequest = Parameters<typeof resourceApi.loadResourceWorkspaceSnaps
 
 /**
  * Mini réplica do backend (`buildResourceWorkspaceSnapshot`): aplica categoria/filtros/paginação
- * sobre os fixtures locais igual o servidor faz sobre o Postgres — os testes passam a exercitar o
+ * sobre os fixtures locais igual o servidor faz sobre o banco — os testes passam a exercitar o
  * contrato real (o que é pedido) em vez de assumir que o array inteiro sempre chega no cliente.
  */
 function buildSnapshot(

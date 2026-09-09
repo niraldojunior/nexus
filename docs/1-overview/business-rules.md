@@ -225,26 +225,33 @@ RelationshipType e parte dos lifecycles/versionamentos ainda estão pendentes ([
 
 ---
 
-## C10 — Oracle-native + portabilidade PostgreSQL
+## C10 — Oracle-only
 
-**Regra.** O Nexus suporta nativamente **dois bancos** — Oracle e PostgreSQL —, selecionados por
-`DATABASE_PROVIDER` no boot. Ambos são de primeira classe: mesma suíte de testes, mesmo contrato de
-domínio, sem fallback silencioso e sem degradação de funcionalidade entre eles. Oracle é o alvo
-corporativo homologado da V.tal; PostgreSQL é suportado nativamente — não é um modo de compatibilidade
-nem uma etapa transitória a ser descontinuada.
+**Regra.** O Nexus fala com **um único banco: Oracle**. Não há seleção de provider, fallback
+silencioso nem caminho de compatibilidade com outro banco — a aplicação, os repositories, os
+loaders, a suíte de testes e a documentação assumem Oracle como a única persistência suportada.
+Oracle é o alvo corporativo homologado da V.tal.
 
-**Racional.** Portabilidade entre bancos preserva a independência de plataforma e mantém o domínio
-isolado de infraestrutura (P4 em [`architecture.md`](../3-system-design/architecture.md)). SQL é
-autorado em dialeto portável e traduzido em runtime por provider — path computation (porta OLT → ONT)
-é resolvido por travessia em SQL recursivo (CTE recursiva no PostgreSQL, `CONNECT BY` no Oracle), que
-funciona nos dois bancos sem depender de um recurso proprietário.
+> **Histórico — decisão superada.** Até setembro de 2026 o Nexus suportou nativamente dois bancos
+> (Oracle e PostgreSQL, selecionados por `DATABASE_PROVIDER`), com PostgreSQL hospedado em Neon como
+> laboratório de desenvolvimento e um tradutor de SQL genérico em runtime. Essa dualidade foi
+> descontinuada: PostgreSQL, Neon, o tradutor genérico e todo o suporte técnico/operacional
+> associado foram removidos do código, dos scripts, dos testes e da documentação. Nesta mesma
+> janela, o produto também deixou de suportar deploy remoto — Vercel, Docker/VPS/Caddy e CI/CD do
+> GitHub saíram de escopo; a aplicação roda **somente localmente**.
+
+**Racional.** Manter dois bancos de primeira classe exigia um tradutor de SQL genérico e testava
+apenas o menor denominador comum entre os dialetos, escondendo path computation (porta OLT → ONT) e
+outras operações atrás de SQL portável em vez de aproveitar recursos nativos do Oracle (`MERGE`,
+`CONNECT BY`, `JSON_TABLE`). Com Oracle como único alvo, o SQL passa a ser autorado diretamente no
+dialeto Oracle, sem camada de tradução intermediária.
 
 **Confirmado como padrão corporativo.** Oracle é o banco padrão da V.tal, ao lado de OpenShift
 (aplicação), Redis (cache), Kafka (mensageria) e Apigee (API Gateway). C10 não é hipótese: é o alvo
 homologado.
 
-Status: ✅ **Implementado.** A seleção dual de provider já existe no runtime
-(`src/shared/persistence/database-factory.ts`) e roda contra Oracle e PostgreSQL. 
+Status: ✅ **Implementado.** `src/shared/persistence/database-factory.ts` constrói exclusivamente
+`OracleDatabase`; não existe seleção de provider em nenhuma camada do runtime.
 
 O desenho alvo completo sobre essa stack está em
 [`../3-system-design/architecture.md`](../3-system-design/architecture.md).
@@ -326,8 +333,8 @@ CRUD de spec (`TypeManagementModal`), resolução de ícone/rótulo de site no m
 (`siteKindFromSpec`, `web/src/utils/placeLabel.ts`) e o grupo "Locais" do seletor de camadas do
 mapa (`web/src/utils/mapLayers.ts`), reorganizado por papel em vez de categoria estrutural.
 
-Status: ✅ **Implementado** — coluna `site_role` em `tmf_geographic_site_specification`
-(Postgres e Oracle), backfill idempotente, validação em `createSpec`/`updateSpec`
+Status: ✅ **Implementado** — coluna `site_role` em `tmf_geographic_site_specification`,
+backfill idempotente, validação em `createSpec`/`updateSpec`
 (`GEO_SPEC_INVALID_SITE_ROLE`), script de migração `INSTALLATION_POINT → CUSTOMER_SITE`
 (`scripts/migrate-installation-point-to-customer-site.mjs`, dry-run/`--apply`).
 

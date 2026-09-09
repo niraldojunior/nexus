@@ -2,7 +2,7 @@
 /**
  * Backfill único de `street_search`/`street_nr_search`/`city_search`/`postcode_search` em
  * `tmf_geographic_address`, para linhas gravadas antes de essas colunas existirem (toda escrita
- * atual já as popula — ver `PostgresGeoRepository`).
+ * atual já as popula — ver `OracleGeoRepository`).
  *
  * Isto era um `UPDATE ... WHERE col IS NULL OR col IS NULL OR ...` dentro de MIGRATIONS_SQL,
  * rodando a cada boot com DATABASE_AUTO_SCHEMA=true — a condição em OR sobre quatro colunas não

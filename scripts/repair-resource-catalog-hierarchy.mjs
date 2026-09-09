@@ -29,8 +29,8 @@
  *   node scripts/repair-resource-catalog-hierarchy.mjs --apply
  *   node scripts/repair-resource-catalog-hierarchy.mjs --apply --version=2      # versão explícita
  *
- * Requer `npm run build` (dist/) e as env vars de conexão dos loaders (DATABASE_PROVIDER,
- * ORACLE_* / DATABASE_URL_DEV — lidas do .env).
+ * Requer `npm run build` (dist/) e as variáveis Oracle dos loaders
+ * (ORACLE_CONNECTION_STRING, ORACLE_USER, ORACLE_PASSWORD e ORACLE_OBJECT_PREFIX).
  */
 
 import { config as loadEnv } from 'dotenv';
@@ -93,7 +93,7 @@ async function findReferenceSnapshot(db) {
 async function main() {
   console.log(APPLY ? '=== APLICANDO ===' : '=== DRY-RUN (combine com --apply para executar) ===');
   const db = await openLoaderDb();
-  console.log(`Provider: ${db.provider}`);
+  console.log('Banco: Oracle');
 
   try {
     const before = await countRootsVsChildren(db);

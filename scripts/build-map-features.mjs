@@ -60,68 +60,30 @@ const APPLY = has('--apply');
 const CITY = argOf('--city', null);
 const UF = argOf('--uf', null);
 const TENANT = argOf('--tenant', 'default');
-const PROVIDER = argOf('--provider', process.env.DATABASE_PROVIDER ?? 'postgres');
 
 async function ensureMapFeaturePrimaryKey(client) {
   const expected = ['TENANT_ID', 'TILE_Z', 'TILE_X', 'TILE_Y', 'ENTITY_ID', 'SHAPE', 'RANK'];
-  if (client.provider === 'oracle') {
-    const tableName = `${process.env.ORACLE_OBJECT_PREFIX ?? ''}geo_map_feature`.toUpperCase();
-    const primaryKey = (
-      await client.query(
-        `SELECT c.constraint_name
-           FROM user_constraints c
-          WHERE c.table_name = $1 AND c.constraint_type = 'P'`,
-        [tableName],
-      )
-    ).rows[0];
-    if (!primaryKey) return;
-    const columns = (
-      await client.query(
-        `SELECT cc.column_name
-           FROM user_cons_columns cc
-          WHERE cc.constraint_name = $1
-          ORDER BY cc.position`,
-        [primaryKey.constraint_name],
-      )
-    ).rows.map((row) => String(row.column_name).toUpperCase());
-    if (columns.join(',') === expected.join(',')) return;
-    await client.query('ALTER TABLE geo_map_feature DROP PRIMARY KEY');
+  const tableName = `${process.env.ORACLE_OBJECT_PREFIX ?? ''}geo_map_feature`.toUpperCase();
+  const primaryKey = (
     await client.query(
-      'ALTER TABLE geo_map_feature ADD PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)',
-    );
-    console.log('Chave primária de geo_map_feature atualizada para incluir rank.');
-    return;
-  }
-
-  const constraint = (
-    await client.query(
-      `SELECT con.conname
-         FROM pg_constraint con
-         JOIN pg_class rel ON rel.oid = con.conrelid
-        WHERE rel.relname = 'geo_map_feature'
-          AND rel.relnamespace = current_schema()::regnamespace
-          AND con.contype = 'p'
-        ORDER BY con.oid
-        LIMIT 1`,
+      `SELECT c.constraint_name
+         FROM user_constraints c
+        WHERE c.table_name = $1 AND c.constraint_type = 'P'`,
+      [tableName],
     )
   ).rows[0];
-  if (!constraint) return;
+  if (!primaryKey) return;
   const columns = (
     await client.query(
-      `SELECT att.attname
-         FROM pg_constraint con
-         JOIN pg_class rel ON rel.oid = con.conrelid
-         JOIN unnest(con.conkey) WITH ORDINALITY AS key(attnum, position) ON true
-         JOIN pg_attribute att ON att.attrelid = rel.oid AND att.attnum = key.attnum
-        WHERE rel.relname = 'geo_map_feature'
-          AND rel.relnamespace = current_schema()::regnamespace
-          AND con.contype = 'p'
-        ORDER BY key.position`,
+      `SELECT cc.column_name
+         FROM user_cons_columns cc
+        WHERE cc.constraint_name = $1
+        ORDER BY cc.position`,
+      [primaryKey.constraint_name],
     )
-  ).rows.map((row) => String(row.attname).toUpperCase());
+  ).rows.map((row) => String(row.column_name).toUpperCase());
   if (columns.join(',') === expected.join(',')) return;
-  const name = String(constraint.conname).replace(/"/g, '""');
-  await client.query(`ALTER TABLE geo_map_feature DROP CONSTRAINT "${name}"`);
+  await client.query('ALTER TABLE geo_map_feature DROP PRIMARY KEY');
   await client.query(
     'ALTER TABLE geo_map_feature ADD PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)',
   );
@@ -129,73 +91,44 @@ async function ensureMapFeaturePrimaryKey(client) {
 }
 
 async function ensureMapFeatureTable(client) {
-  if (client.provider === 'oracle') {
-    const ddl = `CREATE TABLE geo_map_feature (
-      tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
-      tile_z NUMBER(10) NOT NULL,
-      tile_x NUMBER(10) NOT NULL,
-      tile_y NUMBER(10) NOT NULL,
-      entity_id VARCHAR2(36 CHAR) NOT NULL,
-      shape VARCHAR2(255 CHAR) NOT NULL,
-      feature_kind VARCHAR2(255 CHAR) NOT NULL,
-      entity_type VARCHAR2(255 CHAR) NOT NULL,
-      type_code VARCHAR2(255 CHAR),
-      site_category VARCHAR2(255 CHAR),
-      status VARCHAR2(255 CHAR),
-      label VARCHAR2(255 CHAR) NOT NULL,
-      sublabel VARCHAR2(255 CHAR),
-      lng BINARY_DOUBLE NOT NULL,
-      lat BINARY_DOUBLE NOT NULL,
-      geometry CLOB,
-      rank NUMBER(10) DEFAULT 0 NOT NULL,
-      generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)
-    )`;
-    try {
-      await client.query(ddl);
-      console.log('Tabela geo_map_feature criada no Oracle.');
-    } catch (error) {
-      if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
-    }
-  } else {
-    await client.query(`CREATE TABLE IF NOT EXISTS geo_map_feature (
-    tenant_id TEXT NOT NULL DEFAULT 'default',
-    tile_z INTEGER NOT NULL,
-    tile_x INTEGER NOT NULL,
-    tile_y INTEGER NOT NULL,
-    entity_id TEXT NOT NULL,
-    shape TEXT NOT NULL,
-    feature_kind TEXT NOT NULL,
-    entity_type TEXT NOT NULL,
-    type_code TEXT,
-    site_category TEXT,
-    status TEXT,
-    label TEXT NOT NULL,
-    sublabel TEXT,
-    lng DOUBLE PRECISION NOT NULL,
-    lat DOUBLE PRECISION NOT NULL,
-    geometry TEXT,
-    rank INTEGER NOT NULL DEFAULT 0,
-    generated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)
-    )`);
+  const ddl = `CREATE TABLE geo_map_feature (
+    tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
+    tile_z NUMBER(10) NOT NULL,
+    tile_x NUMBER(10) NOT NULL,
+    tile_y NUMBER(10) NOT NULL,
+    entity_id VARCHAR2(36 CHAR) NOT NULL,
+    shape VARCHAR2(255 CHAR) NOT NULL,
+    feature_kind VARCHAR2(255 CHAR) NOT NULL,
+    entity_type VARCHAR2(255 CHAR) NOT NULL,
+    type_code VARCHAR2(255 CHAR),
+    site_category VARCHAR2(255 CHAR),
+    status VARCHAR2(255 CHAR),
+    label VARCHAR2(255 CHAR) NOT NULL,
+    sublabel VARCHAR2(255 CHAR),
+    lng BINARY_DOUBLE NOT NULL,
+    lat BINARY_DOUBLE NOT NULL,
+    geometry CLOB,
+    rank NUMBER(10) DEFAULT 0 NOT NULL,
+    generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)
+  )`;
+  try {
+    await client.query(ddl);
+    console.log('Tabela geo_map_feature criada no Oracle.');
+  } catch (error) {
+    if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
   }
-  if (client.provider === 'oracle') {
-    const prefix = process.env.ORACLE_OBJECT_PREFIX ?? '';
-    try {
-      // CREATE INDEX não tem uma posição "TABLE <nome>" que o adapter consiga prefixar; ao
-      // contrário do CREATE/ALTER TABLE, os dois objetos precisam chegar explicitamente qualificados.
-      await client.query(
-        `CREATE INDEX ${prefix}idx_geo_map_feature_tile ON ${prefix}geo_map_feature(tenant_id, tile_z, tile_x, tile_y, rank)`,
-      );
-    } catch (error) {
-      if (!/ORA-00955|ORA-01408/.test(String(error?.message ?? error))) throw error;
-    }
-    return;
+
+  const prefix = process.env.ORACLE_OBJECT_PREFIX ?? '';
+  try {
+    // CREATE INDEX não tem uma posição "TABLE <nome>" que o adapter consiga prefixar; ao
+    // contrário do CREATE/ALTER TABLE, os dois objetos precisam chegar explicitamente qualificados.
+    await client.query(
+      `CREATE INDEX ${prefix}idx_geo_map_feature_tile ON ${prefix}geo_map_feature(tenant_id, tile_z, tile_x, tile_y, rank)`,
+    );
+  } catch (error) {
+    if (!/ORA-00955|ORA-01408/.test(String(error?.message ?? error))) throw error;
   }
-  await client.query(
-    `CREATE INDEX IF NOT EXISTS idx_geo_map_feature_tile ON geo_map_feature(tenant_id, tile_z, tile_x, tile_y, rank)`,
-  );
 }
 
 // Recursos outdoor (Point ou LineString), já filtrados por map_presence do catálogo — mesmo
@@ -325,7 +258,7 @@ const FEATURE_COLUMNS = [
 ];
 
 async function main() {
-  const client = await openLoaderDb({ provider: PROVIDER });
+  const client = await openLoaderDb();
   try {
     const params = [];
     const scopeWhere = scopeFilter(params);

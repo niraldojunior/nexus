@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test, vi } from 'vitest';
 import type { ResearchMessage, ResearchSession } from '../src/modules/search/domain.js';
 import { SearchService } from '../src/modules/search/index.js';
-import type { PostgresSearchRepository } from '../src/modules/search/postgres-repository.js';
+import type { OracleSearchRepository } from '../src/modules/search/oracle-repository.js';
 
 test('SearchService preserva todas as confirmacoes preparadas no mesmo turno', async () => {
   const session: ResearchSession = {
@@ -26,7 +26,7 @@ test('SearchService preserva todas as confirmacoes preparadas no mesmo turno', a
         researchSessionId: sessionId,
         createdAt: '2026-01-01T00:00:00.000Z',
       })),
-  } as unknown as PostgresSearchRepository;
+  } as unknown as OracleSearchRepository;
   const service = new SearchService(repository);
   const llmProvider = vi
     .fn()

@@ -21,8 +21,8 @@
 | R-014 | Design system sem governança de tokens/metadados.                         |      Baixa |         Média | Automação de UI e lint podem produzir falsos positivos.                                                                 | Corrigir manifest/adherence em P2.                                                                                                                           | Frontend                 |
 | R-015 | Service Assurance externo não consumir eventos esperados.                 |      Média |         Média | Impact analysis insuficiente no MVP.                                                                                    | Validar contrato com consumidor externo usando eventos Resource e Service.                                                                                   | Operações                |
 | R-016 | Implementação-base ser comunicada como aderência integral aos HLDs.       |       Alta |         Média | Gaps críticos desaparecem do planejamento e do aceite.                                                                  | Usar as matrizes 2.3 e exigir código+teste para estado `Implementado`.                                                                                       | Produto + Engenharia     |
-| R-017 | Maturidade falsa por validar apenas em PostgreSQL/laboratório.            |       Alta |         Média | A aplicação parece pronta, mas falha em volume, concorrência ou serviços corporativos.                                  | Gate com adapter Oracle, testes de contrato e benchmark antes de produção corporativa.                                                                       | Arquitetura + Engenharia |
-| R-018 | Divergência entre o adapter PostgreSQL e o adapter Oracle (dual C10).     |      Média |         Média | Bugs aparecem tarde em constraints, índices, tipos, paginação ou filtros específicos de um provider.                    | Isolar repositórios, versionar migrations por provider e executar [#161](https://github.com/niraldojunior/nexus/issues/161) com suíte compartilhada.        | Engenharia               |
+| R-017 | ~~Maturidade falsa por validar apenas em PostgreSQL/laboratório.~~ **Mitigado — histórico, superado pela C10 Oracle-only (setembro de 2026):** a validação dual foi descontinuada; toda a suíde e o runtime rodam exclusivamente contra Oracle, eliminando o "menor denominador comum" entre providers. | Alta | Baixa | Risco original: a aplicação parecia pronta, mas falhava em volume, concorrência ou serviços corporativos ao trocar de banco. | Gate com testes de contrato e benchmark Oracle antes de produção corporativa segue como mitigação vigente (sem mais depender de um segundo provider). | Arquitetura + Engenharia |
+| R-018 | ~~Divergência entre o adapter PostgreSQL e o adapter Oracle (dual C10).~~ **Mitigado — histórico, superado pela C10 Oracle-only (setembro de 2026):** o adapter PostgreSQL foi removido; existe hoje um único adapter (Oracle), sem divergência de dialeto possível. | Baixa | Baixa | Risco original: bugs apareciam tarde em constraints, índices, tipos, paginação ou filtros específicos de um provider. | Nenhuma mitigação adicional necessária — risco estrutural eliminado com a remoção do segundo adapter. | Engenharia               |
 | R-019 | Deploy OpenShift corporativo descoberto tarde.                            |       Alta |         Média | A aplicação funciona localmente, mas não atende secrets, probes, logs, routes, policies ou observabilidade corporativa. | Criar pipeline OpenShift não produtivo ainda em F1B.                                                                                                         | Plataforma               |
 
 ## 2. Top 6 Riscos Para Governança Semanal
@@ -31,10 +31,10 @@
 | ----- | ------------------------- | --------------------------------------------------------------------------- |
 | 1     | R-001 Netwin              | MOD01/MOD02 sem staging até Set/2026.                                       |
 | 2     | R-004 drift documental    | PR altera contrato ou status sem atualizar HLD/matriz/backlog.              |
-| 3     | R-018 divergência dual    | Bug reproduz só em um dos dois providers (PostgreSQL ou Oracle).            |
+| 3     | ~~R-018 divergência dual~~ (mitigado — histórico) | Não se aplica mais: adapter PostgreSQL removido, único adapter Oracle. |
 | 4     | R-010 Migração            | Falta de relatório `_origin` por wave ou baixa qualidade de dados origem.   |
 | 5     | R-007/R-008 Party e Order | MOD03 avança criando atalhos que violam C3/C4/C8.                           |
-| 6     | R-017 laboratório-only    | Funcionalidades fechadas sem testes/benchmark no ambiente corporativo alvo. |
+| 6     | ~~R-017 laboratório-only~~ (mitigado — histórico) | Não se aplica mais: não há mais laboratório PostgreSQL/Neon, toda a validação já é contra Oracle. |
 
 ## 3. Mitigações Estruturais
 
@@ -45,7 +45,7 @@
 | Pipeline de migração com `_origin` e relatórios.               | R-001, R-002, R-010. |
 | Testes de contrato TMF e eventos.                              | R-006, R-015.        |
 | Revisão quinzenal de decisões pendentes.                       | R-007, R-008, R-016. |
-| Suíte de contrato PostgreSQL + Oracle e benchmark de path computation. | R-017, R-018. |
+| Suíte de contrato Oracle e benchmark de path computation (histórico: cobria PostgreSQL + Oracle até C10 Oracle-only). | R-017, R-018. |
 | Deploy OpenShift não produtivo desde staging.                  | R-019.               |
 
 ---

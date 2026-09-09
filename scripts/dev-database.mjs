@@ -7,7 +7,6 @@ loadEnv();
 
 const distPath = resolve(process.cwd(), 'dist', 'src', 'main.js');
 const startOnly = process.argv.includes('--start-only');
-const provider = process.env.DATABASE_PROVIDER || 'postgres';
 const port = Number(process.env.PORT || 4001);
 
 if (!existsSync(distPath)) {
@@ -15,14 +14,13 @@ if (!existsSync(distPath)) {
   process.exit(1);
 }
 
-if (!startOnly) console.log(`Starting Nexus with ${provider} on http://localhost:${port}`);
+if (!startOnly) console.log(`Starting Nexus with Oracle on http://localhost:${port}`);
 
 const child = spawn(process.execPath, startOnly ? [distPath] : ['--watch', distPath], {
   stdio: 'inherit',
   env: {
     ...process.env,
-    DATABASE_PROVIDER: provider,
-    DATABASE_AUTO_SCHEMA: process.env.DATABASE_AUTO_SCHEMA ?? 'true',
+    DATABASE_AUTO_SCHEMA: process.env.DATABASE_AUTO_SCHEMA ?? 'false',
   },
   shell: false,
 });

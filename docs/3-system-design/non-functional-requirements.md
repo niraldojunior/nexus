@@ -88,7 +88,7 @@ devem usar `ONLINE` para não exigir janela.
 
 > ✅ **A restrição de bloqueio do event loop foi removida na camada de persistência.**
 
-PostgreSQL e Oracle agora usam pools assíncronos diretos por `DatabaseClient`; as interfaces de
+Oracle agora usa pool assíncrono direto por `DatabaseClient`; as interfaces de
 repositório e services retornam `Promise`. Um teste concorrente executa uma consulta rápida em
 paralelo a uma consulta lenta para impedir regressão ao bloqueio do event loop.
 

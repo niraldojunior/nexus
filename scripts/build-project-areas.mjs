@@ -29,8 +29,6 @@
  *   node scripts/build-project-areas.mjs --project "Onitel - Novo Gama" --apply
  *   node scripts/build-project-areas.mjs --all --apply                            # todo projeto do tenant
  *   node scripts/build-project-areas.mjs --project "..." --radius 200 --min-sites 5 --apply
- *   # cross-DB: lê os locais do Oracle e grava as manchas no Postgres/Neon
- *   node scripts/build-project-areas.mjs --project "..." --source oracle --target postgres --apply
  */
 
 import { randomUUID } from 'node:crypto';
@@ -61,11 +59,6 @@ const RADIUS_METERS = Number(argOf('--radius', String(PROJECT_AREA_RADIUS_METERS
 const CELL_METERS = Number(argOf('--cell', String(PROJECT_AREA_CELL_METERS)));
 const MIN_SITES = Number(argOf('--min-sites', String(PROJECT_AREA_MIN_SITES)));
 
-// Cross-DB, mesmo padrão de build-gpon-coverage.mjs: `--source` é de onde vêm os locais,
-// `--target` é onde as manchas são gravadas. Sem eles, cai no DATABASE_PROVIDER.
-const SOURCE_PROVIDER = argOf('--source', process.env.DATABASE_PROVIDER ?? 'postgres');
-const TARGET_PROVIDER = argOf('--target', SOURCE_PROVIDER);
-
 const GENERATED_AT = new Date().toISOString();
 const GENERATOR = 'build-project-areas';
 
@@ -80,41 +73,33 @@ async function main() {
   if (!Number.isFinite(CELL_METERS) || CELL_METERS <= 0) throw new Error('--cell inválido');
   if (!Number.isFinite(MIN_SITES) || MIN_SITES < 1) throw new Error('--min-sites inválido');
 
-  const source = await openLoaderDb({ provider: SOURCE_PROVIDER });
-  const target =
-    TARGET_PROVIDER === SOURCE_PROVIDER
-      ? source
-      : await openLoaderDb({ provider: TARGET_PROVIDER });
+  const client = await openLoaderDb();
   try {
-    if (source !== target) {
-      console.log(`Origem   : locais em ${SOURCE_PROVIDER} → manchas em ${TARGET_PROVIDER}`);
-    }
-    await ensureProjectAreaTable(target);
+    await ensureProjectAreaTable(client);
 
-    const projects = await resolveProjects(source);
+    const projects = await resolveProjects(client);
     if (projects.length === 0) {
       console.log('Nenhum projeto encontrado no escopo.');
       return;
     }
 
     for (const project of projects) {
-      await processProject(source, target, project);
+      await processProject(client, project);
     }
   } finally {
-    await target.close();
-    if (target !== source) await source.close();
+    await client.close();
   }
 }
 
-async function resolveProjects(source) {
+async function resolveProjects(client) {
   if (ALL) {
-    const { rows } = await source.query(
+    const { rows } = await client.query(
       `SELECT id, name FROM geo_project WHERE tenant_id = $1 ORDER BY name`,
       [TENANT],
     );
     return rows;
   }
-  const { rows } = await source.query(
+  const { rows } = await client.query(
     `SELECT id, name FROM geo_project WHERE tenant_id = $1 AND name = $2`,
     [TENANT, PROJECT_NAME],
   );
@@ -129,10 +114,10 @@ async function resolveProjects(source) {
   return rows;
 }
 
-async function processProject(source, target, project) {
+async function processProject(client, project) {
   console.log(`\n=== Projeto: ${project.name} (${project.id}) ===`);
 
-  const { rows } = await source.query(
+  const { rows } = await client.query(
     `SELECT s.id, l.geometry
        FROM geo_project_site ps
        JOIN tmf_geographic_site s ON s.id = ps.site_id
@@ -232,23 +217,23 @@ async function processProject(source, target, project) {
     };
   });
 
-  await target.query('BEGIN');
+  await client.query('BEGIN');
   try {
-    const { rows: existing } = await target.query(
+    const { rows: existing } = await client.query(
       `SELECT location_id FROM geo_project_area WHERE project_id = $1`,
       [project.id],
     );
     if (existing.length > 0) {
-      await target.query(`DELETE FROM geo_project_area WHERE project_id = $1`, [project.id]);
+      await client.query(`DELETE FROM geo_project_area WHERE project_id = $1`, [project.id]);
       await deleteByIds(
-        target,
+        client,
         'tmf_geographic_location',
         'id',
         existing.map((row) => row.location_id),
       );
     }
 
-    const insertedLocations = await target.bulkInsert(
+    const insertedLocations = await client.bulkInsert(
       'tmf_geographic_location',
       [
         'id',
@@ -268,7 +253,7 @@ async function processProject(source, target, project) {
       })),
     );
 
-    const insertedAreas = await target.bulkInsert(
+    const insertedAreas = await client.bulkInsert(
       'geo_project_area',
       [
         'project_id',
@@ -294,18 +279,18 @@ async function processProject(source, target, project) {
       })),
     );
 
-    await target.query(`UPDATE geo_project SET updated_at = $1 WHERE id = $2`, [
+    await client.query(`UPDATE geo_project SET updated_at = $1 WHERE id = $2`, [
       GENERATED_AT,
       project.id,
     ]);
 
-    await target.query('COMMIT');
+    await client.query('COMMIT');
     console.log(
       `\nGravado: ${insertedLocations} polígono(s) · ${insertedAreas} vínculo(s) ` +
         `(removidos ${existing.length} da geração anterior)`,
     );
   } catch (err) {
-    await target.query('ROLLBACK');
+    await client.query('ROLLBACK');
     throw err;
   }
 }
@@ -337,44 +322,25 @@ async function deleteByIds(client, table, column, ids) {
 // pode rodar contra um banco de dev que ainda não subiu o backend depois da migração; cria se
 // faltar em vez de depender de um restart (mesmo raciocínio de ensureCoverageTable).
 async function ensureProjectAreaTable(client) {
-  if (client.provider === 'oracle') {
-    const ddl = `CREATE TABLE geo_project_area (
-      project_id VARCHAR2(36 CHAR) NOT NULL,
-      location_id VARCHAR2(36 CHAR) NOT NULL,
-      kind VARCHAR2(255 CHAR) NOT NULL,
-      site_count NUMBER(10) DEFAULT 0 NOT NULL,
-      site_ids CLOB,
-      centroid_lng BINARY_DOUBLE,
-      centroid_lat BINARY_DOUBLE,
-      area_km2 BINARY_DOUBLE,
-      position NUMBER(10) DEFAULT 0 NOT NULL,
-      generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (project_id, location_id)
-    )`;
-    try {
-      await client.query(ddl);
-      console.log('Tabela geo_project_area criada no Oracle.');
-    } catch (error) {
-      if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
-    }
-    return;
-  }
-  await client.query(`CREATE TABLE IF NOT EXISTS geo_project_area (
-    project_id TEXT NOT NULL,
-    location_id TEXT NOT NULL,
-    kind TEXT NOT NULL,
-    site_count INTEGER NOT NULL DEFAULT 0,
-    site_ids TEXT,
-    centroid_lng REAL,
-    centroid_lat REAL,
-    area_km2 REAL,
-    position INTEGER NOT NULL DEFAULT 0,
-    generated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  const ddl = `CREATE TABLE geo_project_area (
+    project_id VARCHAR2(36 CHAR) NOT NULL,
+    location_id VARCHAR2(36 CHAR) NOT NULL,
+    kind VARCHAR2(255 CHAR) NOT NULL,
+    site_count NUMBER(10) DEFAULT 0 NOT NULL,
+    site_ids CLOB,
+    centroid_lng BINARY_DOUBLE,
+    centroid_lat BINARY_DOUBLE,
+    area_km2 BINARY_DOUBLE,
+    position NUMBER(10) DEFAULT 0 NOT NULL,
+    generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (project_id, location_id)
-  )`);
-  await client.query(
-    `CREATE INDEX IF NOT EXISTS idx_geo_project_area_project ON geo_project_area(project_id, position)`,
-  );
+  )`;
+  try {
+    await client.query(ddl);
+    console.log('Tabela geo_project_area criada no Oracle.');
+  } catch (error) {
+    if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
+  }
 }
 
 main().catch((err) => {

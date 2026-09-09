@@ -1314,7 +1314,7 @@ export class GeoTreeService {
     // partir de cada id da lista e, sempre que o nó alcançado for interno (Splitter),
     // continua descendo a partir dele; o que sobra na fronteira (visível, depth ≥ 1)
     // é o que conta como filho de cada raiz.
-    const seed = dialectFor(this.db.provider).inlineRows(resourceIds, 'v', 'id');
+    const seed = dialectFor().inlineRows(resourceIds, 'v', 'id');
     const rows = await this.db.all<{ root_id: string; n: number }>(
       `WITH RECURSIVE frontier(root_id, node_id, depth) AS (
          SELECT v.id, v.id, 0 FROM ${seed.sql}

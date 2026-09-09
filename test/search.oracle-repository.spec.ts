@@ -1,31 +1,28 @@
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'vitest';
-import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
-import { PostgresSearchRepository } from '../src/modules/search/postgres-repository.js';
-import { createTestDatabase } from './test-utils.js';
+import { afterAll, test } from 'vitest';
+import { OracleSearchRepository } from '../src/modules/search/oracle-repository.js';
+import { cleanupOracleTables, getOracleTestClient, isOracleTestConfigured } from './test-utils.js';
 
-afterEach(() => {
-  PostgresDatabase.resetForTesting();
+// Oracle round-trip coverage for the research-session repository (Nexus Copilot chat history).
+// Runs against a real Oracle instance, same pattern as oracle-roundtrip.spec.ts — skips unless
+// ORACLE_* is configured, so `npm run test:unit` never tries to connect. Run with
+// `npm run test:oracle`.
+const oracleConfigured = isOracleTestConfigured();
+if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
+
+afterAll(async () => {
+  if (!oracleConfigured) return;
+  const client = await getOracleTestClient();
+  await cleanupOracleTables(client);
+  await client.close();
 });
 
-const setupRepository = async () => {
-  const database = createTestDatabase('nexus-search-repository-');
-  const sqlite = PostgresDatabase.getInstance(database.databaseUrl);
-  await sqlite.initialize();
-  return {
-    sqlite,
-    repository: new PostgresSearchRepository(sqlite),
-    cleanup: () => {
-      PostgresDatabase.resetForTesting();
-      database.cleanup();
-    },
-  };
-};
+test.skipIf(!oracleConfigured)(
+  'OracleSearchRepository persiste, recarrega e arquiva sessões e mensagens',
+  async () => {
+    const client = await getOracleTestClient();
+    const repository = new OracleSearchRepository(client);
 
-test('PostgresSearchRepository persiste, recarrega e arquiva sessões e mensagens', async () => {
-  const { sqlite, repository, cleanup } = await setupRepository();
-
-  try {
     const created = await repository.createSession({
       '@type': 'ResearchSession',
       id: 'session-1',
@@ -70,7 +67,7 @@ test('PostgresSearchRepository persiste, recarrega e arquiva sessões e mensagen
     const archived = await repository.archiveSession('session-1');
     assert.equal(archived?.status, 'archived');
 
-    await sqlite.run(
+    await client.run(
       `INSERT INTO research_session
        (id, user_id, title, status, created_at, updated_at)
        VALUES (?, ?, ?, 'deleted', ?, ?)`,
@@ -87,15 +84,15 @@ test('PostgresSearchRepository persiste, recarrega e arquiva sessões e mensagen
     assert.equal(sessions.length, 1);
     assert.equal(sessions[0]?.id, 'session-1');
     assert.equal(sessions[0]?.status, 'archived');
-  } finally {
-    cleanup();
-  }
-});
+  },
+);
 
-test('PostgresSearchRepository lista várias sessões por usuário com limite', async () => {
-  const { repository, cleanup } = await setupRepository();
+test.skipIf(!oracleConfigured)(
+  'OracleSearchRepository lista várias sessões por usuário com limite',
+  async () => {
+    const client = await getOracleTestClient();
+    const repository = new OracleSearchRepository(client);
 
-  try {
     await repository.createSession({
       '@type': 'ResearchSession',
       id: 'session-a',
@@ -121,7 +118,5 @@ test('PostgresSearchRepository lista várias sessões por usuário com limite', 
     const sessions = await repository.listSessionsByUser('tenant-2', 1);
     assert.equal(sessions.length, 1);
     assert.equal(sessions[0]?.userId, 'tenant-2');
-  } finally {
-    cleanup();
-  }
-});
+  },
+);

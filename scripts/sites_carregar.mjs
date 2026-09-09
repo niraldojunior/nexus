@@ -52,9 +52,8 @@
  *   node scripts/sites_carregar.mjs --project-status active --tenant default
  *
  * Variáveis de ambiente (lidas também do `.env` na raiz):
- *   DATABASE_URL_DEV (ou DATABASE_URL)  — endpoint -pooler do Neon
- *   DATABASE_PROVIDER                   — 'postgres' (default) | 'oracle'
- *   ORACLE_OBJECT_PREFIX / ORACLE_*     — quando DATABASE_PROVIDER=oracle
+ *   ORACLE_CONNECTION_STRING, ORACLE_USER, ORACLE_PASSWORD
+ *   ORACLE_OBJECT_PREFIX
  */
 
 import { readFileSync } from 'node:fs';
@@ -323,7 +322,6 @@ async function main() {
   );
 
   const client = await openLoaderDb();
-  const isOracle = client.provider === 'oracle';
 
   try {
     // ---------------------------------------------------------- bootstrap ---
@@ -396,11 +394,9 @@ async function main() {
     }
     const addressIndex = new Map(); // addressKey -> { id, locationId, isNew:false }
     if (streetSearchNeeded.size > 0) {
-      const streetSearchCol = isOracle
-        ? `LOWER(TRANSLATE(street_name,
-             'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
-             'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc'))`
-        : 'street_search';
+      const streetSearchCol = `LOWER(TRANSLATE(street_name,
+           'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
+           'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc'))`;
       const streetSearchValues = [...streetSearchNeeded];
       const dbAddressRows = [];
       for (let i = 0; i < streetSearchValues.length; i += IN_BATCH_SIZE) {
@@ -836,37 +832,19 @@ async function main() {
               characteristics: JSON.stringify(characteristics),
             };
           });
-          const columns = isOracle
-            ? [
-                'id',
-                'tenant_id',
-                'street_type',
-                'street_name',
-                'street_nr',
-                'city',
-                'state_or_province',
-                'postcode',
-                'country',
-                'geographic_location_id',
-                'characteristics',
-              ]
-            : [
-                'id',
-                'tenant_id',
-                'street_type',
-                'street_name',
-                'street_search',
-                'street_nr',
-                'street_nr_search',
-                'city',
-                'city_search',
-                'state_or_province',
-                'postcode',
-                'postcode_search',
-                'country',
-                'geographic_location_id',
-                'characteristics',
-              ];
+          const columns = [
+            'id',
+            'tenant_id',
+            'street_type',
+            'street_name',
+            'street_nr',
+            'city',
+            'state_or_province',
+            'postcode',
+            'country',
+            'geographic_location_id',
+            'characteristics',
+          ];
           await client.bulkInsert('tmf_geographic_address', columns, addressRows);
         }
         for (const upd of chunk.addressLocationUpdates) {
@@ -941,7 +919,7 @@ async function main() {
             'geo_project_site',
             ['project_id', 'site_id', 'position', 'created_at'],
             linkRowsToInsert,
-            { onConflict: 'ON CONFLICT (project_id, site_id) DO NOTHING' },
+            { ignoreDuplicates: true },
           );
         }
         await client.query('COMMIT');

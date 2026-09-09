@@ -280,7 +280,7 @@ export function ResourceOverviewTab({
   const manufacturer = specification.manufacturer;
   const model = specification.model;
   const resourceLayer = specification.resourceLayer;
-  // `specification.resourceLayerId` já vem herdado do spread da spec completa (postgres-
+  // `specification.resourceLayerId` já vem herdado do spread da spec completa (oracle-
   // repository.ts getPhysicalResourceDetail), mas o fallback pro id do `resourceLayer` aninhado
   // cobre qualquer serialização futura que só populee o objeto. Variável separada (não literal
   // inline na prop) para não disparar excess-property-check dos campos extras de detail

@@ -1,6 +1,6 @@
 # Plano de APIs do backend
 
-> **Estado verificado:** 31/07/2026. O runtime atual usa TypeScript/Node, HTTP nativo e persistência dual PostgreSQL/Oracle (`DATABASE_PROVIDER`), com laboratório PostgreSQL hospedado em Neon. Este documento distingue contratos publicados de contratos apenas propostos.
+> **Estado verificado:** 31/07/2026. O runtime atual usa TypeScript/Node, HTTP nativo e persistência Oracle-only, execução local. Este documento distingue contratos publicados de contratos apenas propostos.
 
 ## 1. Base publicada
 
@@ -10,7 +10,7 @@
 | Resource      | TMF634, TMF639, TMF664; `/v1/resource/workspace`                    | `src/modules/resource/`, `web/src/services/resourceApi.ts`                 | Base ativa; gaps [#142](https://github.com/niraldojunior/nexus/issues/142)–[#147](https://github.com/niraldojunior/nexus/issues/147) |
 | Service       | TMF633, TMF638; `/v1/service/workspace`                             | `src/modules/service/`, `web/src/services/serviceApi.ts`                   | Base ativa; gaps [#151](https://github.com/niraldojunior/nexus/issues/151)–[#156](https://github.com/niraldojunior/nexus/issues/156) |
 | Party / Order | TMF632, TMF669, TMF645, TMF641, TMF652                              | `src/modules/party/`, `src/modules/order/`                                 | Base ativa; governança transversal parcial                                                                                           |
-| Event         | TMF688 sobre `tmf_event`                                            | `src/shared/http/app.ts`, repositórios Postgres                            | API ativa; outbox/registry pendentes em [#158](https://github.com/niraldojunior/nexus/issues/158)                                    |
+| Event         | TMF688 sobre `tmf_event`                                            | `src/shared/http/app.ts`, repositórios Oracle                              | API ativa; outbox/registry pendentes em [#158](https://github.com/niraldojunior/nexus/issues/158)                                    |
 | Copilot / MCP | Chat, catálogo de tools, confirmação antes de writes                | `src/modules/search/`, `src/modules/mcp/`, `/v1/chat/completions`          | Integração ativa; mantém as mesmas validações de domínio                                                                             |
 
 ## 2. Rotas existentes relevantes
@@ -56,7 +56,7 @@ Os contratos abaixo são alvo funcional e **não devem ser tratados como endpoin
 - Writes de Copilot/MCP exigem confirmação e passam pelo mesmo service de domínio das APIs.
 - Nenhum `DELETE` físico é introduzido; usar soft-delete/terminate.
 - Todo novo endpoint entra com contrato, erro, paginação aplicável, evento, autorização e teste.
-- PostgreSQL e Oracle são suportados nativamente (C10); otimizações Oracle-native e benchmark de escala pertencem a [#161](https://github.com/niraldojunior/nexus/issues/161).
+- Oracle é o único banco suportado (C10); otimizações Oracle-native e benchmark de escala pertencem a [#161](https://github.com/niraldojunior/nexus/issues/161).
 
 ## 5. Critério de pronto por API
 

@@ -13,7 +13,7 @@
 // ResourceCatalogNode e faz o backfill em lote de `resource_type_id`. Nunca remove coluna/tabela
 // legada — isso é Fase B, script/flag separados, ainda bloqueados.
 import { config as loadEnv } from 'dotenv';
-import { databaseConfigOf, loadConfig } from '../shared/config/env.js';
+import { loadConfig } from '../shared/config/env.js';
 import type { DatabaseSession } from '../shared/persistence/database-client.js';
 import { createDatabaseClient } from '../shared/persistence/database-factory.js';
 import { RESOURCE_CATALOG_BOOTSTRAP } from '../modules/resource/catalog.js';
@@ -27,7 +27,7 @@ type TenantRow = { tableName: string; tenantId: string; count: number | string }
 type CategoryRow = { id: string; code: string; parentCode: string | null };
 type AuditFinding = { code: string; table: string; count: number; sampleIds: string[] };
 type AuditReport = {
-  provider: 'postgres' | 'oracle';
+  provider: 'oracle';
   mode: 'audit-only';
   allowedTenants: readonly string[];
   findings: AuditFinding[];
@@ -90,15 +90,15 @@ const TENANT_MIGRATE_TABLES = [
 // Nomes de constraint tenant-scoped que este script cria — seguem a mesma convenção
 // `<tabela>_<colunas>_key` já usada em `tmf_resource_type_tenant_id_id_key` (batch v2). O nome da
 // constraint global antiga (`code TEXT NOT NULL UNIQUE` inline) nunca é hardcoded: é resolvido em
-// runtime via metadata (`findUniqueConstraintOnColumn`), porque Postgres e Oracle geram nomes
-// diferentes (e o Postgres em si pode variar conforme o histórico de migrations do ambiente).
+// runtime via metadata (`findUniqueConstraintOnColumn`), pois o nome pode variar conforme o
+// histórico de migrations do ambiente.
 const RELAX_GLOBAL_CODE_UNIQUENESS_TARGETS = [
   { table: 'tmf_resource_category', constraintName: 'tmf_resource_category_tenant_id_code_key' },
   { table: 'tmf_resource_type', constraintName: 'tmf_resource_type_tenant_id_code_key' },
 ] as const;
 
 const config = loadConfig({ ...process.env, DATABASE_AUTO_SCHEMA: 'false' });
-const databaseConfig = databaseConfigOf(config);
+const databaseConfig = config.database;
 const client = createDatabaseClient(databaseConfig);
 
 const count = async (db: DatabaseSession, sql: string, params: unknown[] = []): Promise<number> =>
@@ -409,7 +409,7 @@ const audit = async (db: DatabaseSession): Promise<AuditReport> => {
   await auditResourceSpecTenants(db, findings);
 
   return {
-    provider: databaseConfig.provider,
+    provider: 'oracle',
     mode: 'audit-only',
     allowedTenants: ALLOWED_TENANTS,
     findings,
@@ -435,44 +435,22 @@ const findUniqueConstraintOnColumn = async (
   table: string,
   column: string,
 ): Promise<string | null> => {
-  const candidates =
-    databaseConfig.provider === 'oracle'
-      ? await db.queryMany<UniqueConstraintNameRow>(
-          `SELECT DISTINCT uc.constraint_name AS "name"
-             FROM user_constraints uc
-            WHERE uc.table_name = UPPER(?) AND uc.constraint_type = 'U'
-              AND EXISTS (
-                SELECT 1 FROM user_cons_columns c1
-                 WHERE c1.constraint_name = uc.constraint_name AND UPPER(c1.column_name) = UPPER(?)
-              )`,
-          [`${databaseConfig.objectPrefix}${table}`, column],
-        )
-      : await db.queryMany<UniqueConstraintNameRow>(
-          `SELECT DISTINCT tc.constraint_name AS "name"
-             FROM information_schema.table_constraints tc
-             JOIN information_schema.key_column_usage kcu
-               ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema
-            WHERE tc.table_schema = current_schema() AND tc.table_name = ? AND tc.constraint_type = 'UNIQUE'
-              AND EXISTS (
-                SELECT 1 FROM information_schema.key_column_usage k1
-                 WHERE k1.constraint_name = tc.constraint_name AND k1.table_schema = tc.table_schema
-                   AND k1.column_name = ?
-              )`,
-          [table, column],
-        );
+  const candidates = await db.queryMany<UniqueConstraintNameRow>(
+    `SELECT DISTINCT uc.constraint_name AS "name"
+       FROM user_constraints uc
+      WHERE uc.table_name = UPPER(?) AND uc.constraint_type = 'U'
+        AND EXISTS (
+          SELECT 1 FROM user_cons_columns c1
+           WHERE c1.constraint_name = uc.constraint_name AND UPPER(c1.column_name) = UPPER(?)
+        )`,
+    [`${databaseConfig.objectPrefix}${table}`, column],
+  );
 
   for (const candidate of candidates) {
-    const columnCount =
-      databaseConfig.provider === 'oracle'
-        ? await db.queryOne<ConstraintColumnCountRow>(
-            `SELECT COUNT(*) AS count FROM user_cons_columns WHERE constraint_name = ?`,
-            [candidate.name],
-          )
-        : await db.queryOne<ConstraintColumnCountRow>(
-            `SELECT COUNT(*) AS count FROM information_schema.key_column_usage
-              WHERE table_schema = current_schema() AND constraint_name = ?`,
-            [candidate.name],
-          );
+    const columnCount = await db.queryOne<ConstraintColumnCountRow>(
+      `SELECT COUNT(*) AS count FROM user_cons_columns WHERE constraint_name = ?`,
+      [candidate.name],
+    );
     if (Number(columnCount?.count ?? 0) === 1) return candidate.name;
   }
   return null;
@@ -491,30 +469,18 @@ type ForeignKeyDependentRow = { tableName: string; name: string };
 const findDependentForeignKeys = async (
   db: DatabaseSession,
   parentConstraintName: string,
-): Promise<ForeignKeyDependentRow[]> => {
-  if (databaseConfig.provider === 'oracle') {
-    return db.queryMany<ForeignKeyDependentRow>(
-      `SELECT table_name AS "tableName", constraint_name AS "name"
-         FROM user_constraints
-        WHERE constraint_type = 'R' AND r_constraint_name = UPPER(?)`,
-      [parentConstraintName],
-    );
-  }
-  return db.queryMany<ForeignKeyDependentRow>(
-    `SELECT tc.table_name AS "tableName", tc.constraint_name AS "name"
-       FROM information_schema.table_constraints tc
-       JOIN information_schema.referential_constraints rc
-         ON rc.constraint_name = tc.constraint_name AND rc.constraint_schema = tc.table_schema
-      WHERE tc.constraint_type = 'FOREIGN KEY' AND rc.unique_constraint_name = ?`,
+): Promise<ForeignKeyDependentRow[]> =>
+  db.queryMany<ForeignKeyDependentRow>(
+    `SELECT table_name AS "tableName", constraint_name AS "name"
+       FROM user_constraints
+      WHERE constraint_type = 'R' AND r_constraint_name = UPPER(?)`,
     [parentConstraintName],
   );
-};
 
 /** Metadata de Oracle devolve o nome de objeto já prefixado (`ORACLE_OBJECT_PREFIX`) — as DDLs
  * deste script vão todas por `client.execute`, que reaplica o prefixo sozinho (`transformOracleQuery`),
  * então precisamos do nome "cru" de volta antes de montar o próximo `ALTER TABLE`. */
 const stripObjectPrefix = (rawTableName: string): string => {
-  if (databaseConfig.provider !== 'oracle') return rawTableName;
   const prefix = databaseConfig.objectPrefix.toUpperCase();
   const upper = rawTableName.toUpperCase();
   return (upper.startsWith(prefix) ? upper.slice(prefix.length) : upper).toLowerCase();
@@ -525,17 +491,10 @@ const constraintExistsByName = async (
   table: string,
   constraintName: string,
 ): Promise<boolean> => {
-  const row =
-    databaseConfig.provider === 'oracle'
-      ? await db.queryOne<ConstraintColumnCountRow>(
-          `SELECT COUNT(*) AS count FROM user_constraints WHERE table_name = UPPER(?) AND constraint_name = UPPER(?)`,
-          [`${databaseConfig.objectPrefix}${table}`, constraintName],
-        )
-      : await db.queryOne<ConstraintColumnCountRow>(
-          `SELECT COUNT(*) AS count FROM information_schema.table_constraints
-            WHERE table_schema = current_schema() AND table_name = ? AND constraint_name = ?`,
-          [table, constraintName],
-        );
+  const row = await db.queryOne<ConstraintColumnCountRow>(
+    `SELECT COUNT(*) AS count FROM user_constraints WHERE table_name = UPPER(?) AND constraint_name = UPPER(?)`,
+    [`${databaseConfig.objectPrefix}${table}`, constraintName],
+  );
   return Number(row?.count ?? 0) > 0;
 };
 
@@ -580,8 +539,8 @@ const NO_ID_COLUMN_TABLES = new Set<string>(['tmf_resource_status_catalog']);
 
 /**
  * `UPDATE ... WHERE id IN (SELECT ... FETCH FIRST n ROWS ONLY)` em loop até zerar. Cada chunk é
- * uma instrução isolada — no Oracle autocommita sozinha; no Postgres é uma transação implícita de
- * uma instrução. Uma falha no meio perde só o chunk em voo, nunca os já aplicados (idempotente:
+ * uma instrução isolada com commit automático. Uma falha no meio perde só o chunk em voo, nunca os
+ * já aplicados (idempotente:
  * a próxima chamada só vê o que ainda está em `fromTenant`). Tabelas sem coluna `id`
  * (`NO_ID_COLUMN_TABLES`) pulam o chunking e usam um `UPDATE` direto por `tenant_id`.
  */
@@ -1003,7 +962,7 @@ const auditGateD = async (db: DatabaseSession): Promise<AuditReport> => {
     [DESTINATION_TENANT],
   );
   return {
-    provider: databaseConfig.provider,
+    provider: 'oracle',
     mode: 'audit-only',
     allowedTenants: ALLOWED_TENANTS,
     findings,
@@ -1017,32 +976,18 @@ const columnExists = async (
   table: string,
   columnName: string,
 ): Promise<boolean> => {
-  const row =
-    databaseConfig.provider === 'oracle'
-      ? await db.queryOne<{ count: number | string }>(
-          `SELECT COUNT(*) AS count FROM user_tab_cols WHERE table_name = UPPER(?) AND column_name = UPPER(?)`,
-          [`${databaseConfig.objectPrefix}${table}`, columnName],
-        )
-      : await db.queryOne<{ count: number | string }>(
-          `SELECT COUNT(*) AS count FROM information_schema.columns
-            WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?`,
-          [table, columnName],
-        );
+  const row = await db.queryOne<{ count: number | string }>(
+    `SELECT COUNT(*) AS count FROM user_tab_cols WHERE table_name = UPPER(?) AND column_name = UPPER(?)`,
+    [`${databaseConfig.objectPrefix}${table}`, columnName],
+  );
   return Number(row?.count ?? 0) > 0;
 };
 
 const tableExists = async (db: DatabaseSession, table: string): Promise<boolean> => {
-  const row =
-    databaseConfig.provider === 'oracle'
-      ? await db.queryOne<{ count: number | string }>(
-          `SELECT COUNT(*) AS count FROM user_tables WHERE table_name = UPPER(?)`,
-          [`${databaseConfig.objectPrefix}${table}`],
-        )
-      : await db.queryOne<{ count: number | string }>(
-          `SELECT COUNT(*) AS count FROM information_schema.tables
-            WHERE table_schema = current_schema() AND table_name = ?`,
-          [table],
-        );
+  const row = await db.queryOne<{ count: number | string }>(
+    `SELECT COUNT(*) AS count FROM user_tables WHERE table_name = UPPER(?)`,
+    [`${databaseConfig.objectPrefix}${table}`],
+  );
   return Number(row?.count ?? 0) > 0;
 };
 
@@ -1055,12 +1000,8 @@ const dropColumnIfExists = async (
     process.stdout.write(`    DROP COLUMN ${table}.${columnName}: coluna já inexistente\n`);
     return false;
   }
-  // Remove FKs/constraints dependentes da coluna antes do drop
-  if (databaseConfig.provider === 'oracle') {
-    await db.execute(`ALTER TABLE ${table} DROP COLUMN ${columnName} CASCADE CONSTRAINTS`);
-  } else {
-    await db.execute(`ALTER TABLE ${table} DROP COLUMN IF EXISTS ${columnName} CASCADE`);
-  }
+  // Remove FKs/constraints dependentes da coluna antes do drop.
+  await db.execute(`ALTER TABLE ${table} DROP COLUMN ${columnName} CASCADE CONSTRAINTS`);
   process.stdout.write(`    DROP COLUMN ${table}.${columnName}: removida\n`);
   return true;
 };
@@ -1070,12 +1011,8 @@ const dropTableIfExists = async (db: DatabaseSession, table: string): Promise<bo
     process.stdout.write(`    DROP TABLE ${table}: tabela já inexistente\n`);
     return false;
   }
-  if (databaseConfig.provider === 'oracle') {
-    const physicalName = `${databaseConfig.objectPrefix}${table}`;
-    await db.execute(`DROP TABLE ${physicalName} CASCADE CONSTRAINTS`);
-  } else {
-    await db.execute(`DROP TABLE IF EXISTS ${table} CASCADE`);
-  }
+  const physicalName = `${databaseConfig.objectPrefix}${table}`;
+  await db.execute(`DROP TABLE ${physicalName} CASCADE CONSTRAINTS`);
   process.stdout.write(`    DROP TABLE ${table}: removida\n`);
   return true;
 };
@@ -1109,7 +1046,7 @@ try {
 
   if (isCutover) {
     process.stdout.write(
-      `Fase B --cutover iniciada: provider=${databaseConfig.provider}\n`,
+      `Fase B --cutover iniciada no Oracle\n`,
     );
 
     const preflight = await auditGateD(client);
@@ -1124,7 +1061,7 @@ try {
     await executePhaseBCutover(client);
 
     process.stdout.write(
-      `Fase B --cutover concluída com sucesso em ${databaseConfig.provider}.\n`,
+      `Fase B --cutover concluída com sucesso no Oracle.\n`,
     );
   } else if (!apply) {
     const report = await audit(client);
@@ -1137,7 +1074,7 @@ try {
     process.stdout.write('Gate A aprovado em modo audit-only. Nenhuma alteração foi aplicada.\n');
   } else {
     process.stdout.write(
-      `Fase A --apply iniciada: provider=${databaseConfig.provider}, ${SOURCE_TENANT} -> ${DESTINATION_TENANT}\n`,
+      `Fase A --apply iniciada no Oracle: ${SOURCE_TENANT} -> ${DESTINATION_TENANT}\n`,
     );
 
     const preflight = await audit(client);
@@ -1192,7 +1129,7 @@ try {
       );
     }
     process.stdout.write(
-      `Fase A --apply concluída com sucesso em ${databaseConfig.provider}. Gate B aprovado.\n`,
+      `Fase A --apply concluída com sucesso no Oracle. Gate B aprovado.\n`,
     );
   }
 } finally {

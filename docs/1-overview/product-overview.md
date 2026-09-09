@@ -53,9 +53,9 @@ _referencia_ geografia via `place`. Nenhum contém o outro.
 
 | #   | Módulo                    | Responde                                | Open APIs              | Estado                                                                                                                                                                                                                                                   |
 | --- | ------------------------- | --------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **Geographic**            | Onde                                    | TMF673, TMF674, TMF675 | ⚠️ Base implementada; aderência parcial ao HLD 1.23 (inclui Cobertura GPON por bairro, consulta inversa/aba Cobertura por Resource, Projetos de Trabalho com Resources e o Painel Unificado de Local)                                                    |
-| 2   | **Resource**              | O que existe                            | TMF634, TMF639, TMF664 | ⚠️ Base implementada; aderência ao HLD 1.11 (inclui catálogo em árvore dinâmica `ResourceCatalog`/`ResourceCatalogNode`, tipos desacoplados `ResourceType`, `ResourceSpecification` via FK `resourceTypeId`, detalhe agregado, Audit Trail, catálogo de estados granulares, portas de splitter no piloto Niterói/Icaraí e conexões físicas Porta→CaboDrop com faróis SID) |
-| 3   | **Service**               | Para quê / quem                         | TMF633, TMF638         | ⚠️ Base implementada; aderência parcial ao HLD 1.2                                                                                                                                                                                                       |
+| 1   | **Geographic**            | Onde                                    | TMF673, TMF674, TMF675 | ⚠️ Base implementada; aderência parcial ao HLD 1.24 (inclui Cobertura GPON por bairro, consulta inversa/aba Cobertura por Resource, Projetos de Trabalho com Resources e o Painel Unificado de Local)                                                    |
+| 2   | **Resource**              | O que existe                            | TMF634, TMF639, TMF664 | ⚠️ Base implementada; aderência ao HLD 1.12 (inclui catálogo em árvore dinâmica `ResourceCatalog`/`ResourceCatalogNode`, tipos desacoplados `ResourceType`, `ResourceSpecification` via FK `resourceTypeId`, detalhe agregado, Audit Trail, catálogo de estados granulares, portas de splitter no piloto Niterói/Icaraí e conexões físicas Porta→CaboDrop com faróis SID) |
+| 3   | **Service**               | Para quê / quem                         | TMF633, TMF638         | ⚠️ Base implementada; aderência parcial ao HLD 1.4                                                                                                                                                                                                       |
 | 4   | **Order & Fulfillment**   | Viabilidade e provisionamento           | TMF641, TMF645, TMF652 | ✅ Implementado                                                                                                                                                                                                                                          |
 | 5   | **Process Orchestration** | Fluxo de processo                       | TMF701                 | 📐 Previsto                                                                                                                                                                                                                                              |
 | 6   | **Party & Tenant**        | Quem é quem                             | TMF632, TMF669         | ✅ Implementado                                                                                                                                                                                                                                          |
@@ -107,14 +107,14 @@ Location, não os embute.
 ## 7. Stack atual
 
 | Camada   | Tecnologia                                                                                  |
-| -------- | ------------------------------------------------------------------------------------------- |
-| Backend  | Node 22+ · TypeScript (ESM) · HTTP nativo                                                   |
-| Frontend | React 18 · Vite · Tailwind                                                                  |
-| Banco    | **PostgreSQL** (laboratório hospedado em Neon) e **Oracle** — dual, via `DATABASE_PROVIDER` |
-| Deploy   | Vercel (Functions + estático)                                                               |
+| -------- | -------------------------------------------------------------------------------------------- |
+| Backend  | Node 22+ · TypeScript (ESM) · HTTP nativo                                                    |
+| Frontend | React 18 · Vite · Tailwind                                                                   |
+| Banco    | Oracle Thin (`node-oracledb`), único provider                                                |
+| Execução | Somente local — sem Vercel, Docker ou CI/CD                                                  |
 
-> ⚠️ O cânone **C10** define Oracle como alvo corporativo homologado, com suporte nativo permanente a
-> PostgreSQL — não um modo transitório. Só a hospedagem em Vercel/Neon é laboratório.
+> O cânone **C10** define Oracle como alvo corporativo homologado e único banco suportado. O produto
+> roda exclusivamente localmente nesta etapa, sem hospedagem remota.
 
 ---
 

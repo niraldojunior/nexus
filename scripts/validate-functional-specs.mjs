@@ -11,7 +11,7 @@ const specs = [
     prefix: 'REQ-MOD01-',
     decisionPrefix: 'D-GEO-',
     count: 18,
-    version: '1.23',
+    version: '1.24',
     illustrative: new Set(),
   },
   {
@@ -19,7 +19,7 @@ const specs = [
     prefix: 'REQ-MOD02-',
     decisionPrefix: 'D-RES-',
     count: 28,
-    version: '1.11',
+    version: '1.12',
     illustrative: new Set(),
   },
   {
@@ -27,7 +27,7 @@ const specs = [
     prefix: 'REQ-MOD03-',
     decisionPrefix: 'D-SVC-',
     count: 16,
-    version: '1.3',
+    version: '1.4',
     illustrative: new Set(['REQ-MOD03-012', 'REQ-MOD03-013', 'REQ-MOD03-014']),
   },
 ];

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { getOracleTestClient, isOracleTestConfigured } from './test-utils.js';
 
-const oracleConfigured = isOracleTestConfigured() && process.env.DATABASE_PROVIDER === 'oracle';
+const oracleConfigured = isOracleTestConfigured();
 
 test.skipIf(!oracleConfigured)(
   'Oracle Thin cumpre o contrato básico e rollback transacional',

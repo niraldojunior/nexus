@@ -5,7 +5,7 @@
 
 ## 1. Baseline real
 
-O runtime atual é TypeScript/Node, React/Vite e persistência dual PostgreSQL/Oracle (`DATABASE_PROVIDER`). Geo, Resource e Service possuem implementação-base executável, APIs TMF, frontend e testes; isso não equivale à aderência integral aos 53 requisitos. O alvo corporativo de C10 é Oracle 21c/23ai como banco homologado — path computation usa SQL recursivo portável, não Property Graph (descartado; ver `business-rules.md` C10).
+O runtime atual é TypeScript/Node, React/Vite e persistência Oracle-only, execução local. Geo, Resource e Service possuem implementação-base executável, APIs TMF, frontend e testes; isso não equivale à aderência integral aos 53 requisitos. O alvo corporativo de C10 é Oracle 21c/23ai como banco homologado — path computation usa `CONNECT BY` nativo, não Property Graph (descartado; ver `business-rules.md` C10).
 
 | Módulo             | HLD | Base existente                                                       | Aderência atual                                    |
 | ------------------ | --- | -------------------------------------------------------------------- | -------------------------------------------------- |
@@ -42,7 +42,7 @@ F0 docs/CI
 - Geographic precede Resource nos contratos `place`; Resource precede a conclusão de Service em `supportingResource`.
 - MOD06 Party/Tenant bloqueia a aderência completa de C8 e SubscriberID; D-SVC-003 permite somente validação diferida no MVP.
 - MOD05 bloqueia propagação de estado e swap orquestrado.
-- `D-ARQ-001` foi decidida: interfaces assíncronas e seleção PostgreSQL/Oracle no boot; permanecem os gates de contrato e benchmark Oracle.
+- `D-ARQ-001` foi decidida: interfaces assíncronas de repositório (a seleção de provider no boot foi superada pela C10 Oracle-only — ver `architecture-decisions.md`); permanecem os gates de contrato e benchmark Oracle.
 - [#114](https://github.com/niraldojunior/nexus/issues/114)/[#117](https://github.com/niraldojunior/nexus/issues/117) bloqueiam o desenho final de path computation e cache.
 
 ## 4. Marcos de aceite
@@ -70,7 +70,7 @@ Datas de produto e sunset devem ser replanejadas pelos donos após o dimensionam
 | Eventos      | Outbox transacional, idempotência, schema versionado, DLQ e reprocessamento.                               |
 | Multi-tenant | `relatedParty`, autorização, segregação e audit desde o write.                                             |
 | Evidência    | `Implementado` exige código e teste aprovado; endpoints propostos permanecem marcados como backlog.        |
-| Alvo         | PostgreSQL e Oracle são ambos de primeira classe (C10); Oracle é o alvo corporativo homologado, sem alegação de paridade de escala até benchmark. |
+| Alvo         | Oracle é o único banco suportado e o alvo corporativo homologado (C10), sem alegação de paridade de escala até benchmark. |
 
 ## 6. Riscos ligados
 

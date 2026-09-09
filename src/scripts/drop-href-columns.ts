@@ -1,13 +1,11 @@
 // Fase 6 do projeto "remover coluna href" (issue #169): audita os valores persistidos antes da
-// remoção física e só altera o schema com confirmação explícita. Execute uma vez por provider/prefixo.
+// remoção física e só altera o schema Oracle com confirmação explícita.
 //
 // Uso (somente auditoria, seguro):
-//   DATABASE_PROVIDER=postgres npx tsx src/scripts/drop-href-columns.ts
-//   DATABASE_PROVIDER=oracle ORACLE_OBJECT_PREFIX=NEXUS_DEV_ npx tsx src/scripts/drop-href-columns.ts
+//   ORACLE_OBJECT_PREFIX=NEXUS_DEV_ npx tsx src/scripts/drop-href-columns.ts
 //
 // Remoção física (irreversível no Oracle):
-//   DATABASE_PROVIDER=postgres npx tsx src/scripts/drop-href-columns.ts --apply --confirm-drop-href
-//   DATABASE_PROVIDER=oracle ORACLE_OBJECT_PREFIX=NEXUS_DEV_ npx tsx src/scripts/drop-href-columns.ts --apply --confirm-drop-href
+//   ORACLE_OBJECT_PREFIX=NEXUS_DEV_ npx tsx src/scripts/drop-href-columns.ts --apply --confirm-drop-href
 //
 // Se a auditoria encontrar hrefs legados divergentes, revise as amostras e declare a decisão de
 // descartá-los com --allow-divergent-hrefs junto das flags acima.
@@ -15,7 +13,7 @@
 // No Oracle, SET UNUSED é metadata-only; a recuperação do espaço exige uma janela posterior:
 //   ... --apply --confirm-drop-href --reclaim-space
 import { config as loadEnv } from 'dotenv';
-import { databaseConfigOf, loadConfig } from '../shared/config/env.js';
+import { loadConfig } from '../shared/config/env.js';
 import { createDatabaseClient } from '../shared/persistence/database-factory.js';
 
 loadEnv();
@@ -82,24 +80,15 @@ if (reclaimSpace && !apply) {
 }
 
 const config = loadConfig({ ...process.env, DATABASE_AUTO_SCHEMA: 'false' });
-const databaseConfig = databaseConfigOf(config);
-const client = createDatabaseClient(databaseConfig);
+const client = createDatabaseClient(config.database);
 
 const toNumber = (value: number | string): number => Number(value);
 
 const hrefColumnExists = async (table: string): Promise<boolean> => {
-  if (databaseConfig.provider === 'oracle') {
-    const objectName = `${databaseConfig.objectPrefix}${table}`;
-    const row = await client.queryOne<{ count: number | string }>(
-      "SELECT COUNT(*) AS count FROM user_tab_cols WHERE table_name = UPPER(?) AND column_name = 'HREF'",
-      [objectName],
-    );
-    return toNumber(row?.count ?? 0) > 0;
-  }
-
+  const objectName = `${config.database.objectPrefix}${table}`;
   const row = await client.queryOne<{ count: number | string }>(
-    "SELECT COUNT(*) AS count FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'href'",
-    [table],
+    "SELECT COUNT(*) AS count FROM user_tab_cols WHERE table_name = UPPER(?) AND column_name = 'HREF'",
+    [objectName],
   );
   return toNumber(row?.count ?? 0) > 0;
 };
@@ -177,22 +166,18 @@ try {
   } else {
     for (const [table] of HREF_TABLES) {
       if (!(await hrefColumnExists(table))) continue;
-      const sql =
-        client.provider === 'oracle'
-          ? `ALTER TABLE ${table} SET UNUSED COLUMN href`
-          : `ALTER TABLE ${table} DROP COLUMN href`;
-      await client.run(sql);
+      await client.run(`ALTER TABLE ${table} SET UNUSED COLUMN href`);
       process.stdout.write(`DROP ${table}\n`);
     }
 
-    if (reclaimSpace && client.provider === 'oracle') {
+    if (reclaimSpace) {
       for (const [table] of HREF_TABLES) {
         await client.run(`ALTER TABLE ${table} DROP UNUSED COLUMNS CHECKPOINT 1000`);
         process.stdout.write(`RECLAIM ${table}\n`);
       }
     }
 
-    process.stdout.write(`Remoção física de href concluída em ${client.provider}.\n`);
+    process.stdout.write('Remoção física de href concluída no Oracle.\n');
   }
 } finally {
   await client.close();

@@ -113,9 +113,9 @@ const BOX_TYPES = new Set(['CDOE', 'CDOI', 'CEO', 'CEOS', 'Indefinido']);
 // Tabelas de recurso zeradas antes de cada carga (autorizado pelo usuário). NÃO
 // inclui o catálogo (tmf_resource_specification) — é compartilhado e a carga o
 // reusa — nem as tabelas de Geo (Location/Address), que são responsabilidade do
-// truncate-geo-sites.mjs. As quatro entram num único TRUNCATE: o Postgres
-// resolve as FKs entre elas (logical→physical, relationship→physical) e nenhuma
-// outra tabela referencia recurso por FK, então não precisa de CASCADE.
+// ciclo de carga Geo. As quatro entram em uma única limpeza; as FKs entre elas
+// (logical→physical, relationship→physical) são removidas na ordem filha→pai, e
+// nenhuma outra tabela referencia recurso por FK.
 const RESOURCE_TABLES = [
   'tmf_resource_relationship',
   'tmf_resource_relationship_generic',
@@ -381,8 +381,8 @@ function assignDisplayNames(boxes) {
 
 // --------------------------------------------------------------- inserts -----
 
-// Bulk insert delegated to the provider-aware adapter (Postgres multi-row VALUES; Oracle
-// executeMany). The loader keeps its `$N`/`?`-free row objects; the adapter builds the SQL.
+// A inserção em lote usa executeMany do Oracle. O loader mantém objetos de linha sem
+// placeholders e constrói o SQL de inserção.
 async function bulkInsert(client, table, columns, rows, opts = {}) {
   return client.bulkInsert(table, columns, rows, opts);
 }
@@ -838,21 +838,22 @@ async function main() {
       'tmf_resource_relationship',
       ['resource_from_id', 'resource_to_id', 'relationship_type'],
       relationships,
-      { onConflict: 'ON CONFLICT DO NOTHING' },
+      { ignoreDuplicates: true },
     );
 
     // Conferência antes do COMMIT: o que foi inserido tem de bater com o plano.
     const {
       rows: [check],
     } = await client.query(
-      `SELECT count(*)::int AS n FROM tmf_physical_resource WHERE characteristics LIKE '%"Netwin"%'`,
+      `SELECT COUNT(*) AS n FROM tmf_physical_resource WHERE characteristics LIKE '%"Netwin"%'`,
     );
+    const actualCount = Number(check.n ?? check.N ?? 0);
     const esperado =
       preNetwinCount + boxResources.length + splitterResources.length + orphanResources.length;
-    if (check.n !== esperado) {
+    if (actualCount !== esperado) {
       await client.query('ROLLBACK');
       throw new Error(
-        `conferência falhou: base tem ${check.n} recursos, esperado ${esperado} — ROLLBACK`,
+        `conferência falhou: base tem ${actualCount} recursos, esperado ${esperado} — ROLLBACK`,
       );
     }
 

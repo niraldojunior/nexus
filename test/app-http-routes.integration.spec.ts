@@ -3,7 +3,7 @@ import test from 'node:test';
 import { startHttpTestApp } from './test-utils.js';
 
 test('App bootstrap and entity creation routes', async (t) => {
-  const app = await startHttpTestApp('nexus-app-bootstrap-');
+  const app = await startHttpTestApp();
   t.after(app.cleanup);
 
   const before = await app.requestJson('GET', '/v1/bootstrap');
@@ -22,7 +22,7 @@ test('App bootstrap and entity creation routes', async (t) => {
 });
 
 test('Users API creates, lists, reads, updates and deletes users', async (t) => {
-  const app = await startHttpTestApp('nexus-app-users-');
+  const app = await startHttpTestApp();
   t.after(app.cleanup);
 
   const created = await app.requestJson('POST', '/v1/users', {
@@ -58,7 +58,7 @@ test('Users API creates, lists, reads, updates and deletes users', async (t) => 
 });
 
 test('Searches API creates, lists, reads, updates and deletes searches', async (t) => {
-  const app = await startHttpTestApp('nexus-app-searches-');
+  const app = await startHttpTestApp();
   t.after(app.cleanup);
 
   const created = await app.requestJson('POST', '/v1/searches', {
@@ -101,7 +101,7 @@ test('Chat completions route falls back to local knowledge provider without an O
   const previousKey = process.env.OPENAI_API_KEY;
   delete process.env.OPENAI_API_KEY;
 
-  const app = await startHttpTestApp('nexus-app-chat-');
+  const app = await startHttpTestApp();
   t.after(() => {
     app.cleanup();
     if (previousKey !== undefined) process.env.OPENAI_API_KEY = previousKey;

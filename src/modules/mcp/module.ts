@@ -21,9 +21,10 @@ import type {
   CreateServiceQualificationInput,
 } from '../order/index.js';
 import { type JsonSchema, validateJsonSchema } from './schema.js';
-import { PostgresMcpConfirmationRepository } from './confirmation.js';
-import { OracleMcpConfirmationRepository } from './oracle-confirmation.js';
-import type { PendingMcpConfirmation } from './confirmation.js';
+import {
+  OracleMcpConfirmationRepository,
+  type PendingMcpConfirmation,
+} from './oracle-confirmation.js';
 import {
   commitCondominiumWorkflow,
   prepareCondominiumWorkflow,
@@ -88,7 +89,7 @@ type PrepareResult = {
 export class McpToolRegistry {
   private readonly tools = new Map<string, McpToolDefinition>();
 
-  public constructor(private readonly confirmations: PostgresMcpConfirmationRepository) {}
+  public constructor(private readonly confirmations: OracleMcpConfirmationRepository) {}
 
   public register(tool: McpToolDefinition): void {
     this.tools.set(tool.name, tool);
@@ -353,10 +354,7 @@ const characteristicArraySchema: JsonSchema = {
 };
 
 export const createNexusMcpModule = (runtime: NexusRuntime) => {
-  const confirmations =
-    runtime.db.provider === 'oracle'
-      ? new OracleMcpConfirmationRepository(runtime.db)
-      : new PostgresMcpConfirmationRepository(runtime.db);
+  const confirmations = new OracleMcpConfirmationRepository(runtime.db);
   const registry = new McpToolRegistry(confirmations);
 
   const querySiteSchema: JsonSchema = {

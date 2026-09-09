@@ -98,7 +98,7 @@ const ENRICH = !has('--no-enrich');
 // UF fixa para o arquivo inteiro; se ausente, cada linha resolve pela coluna `UF`.
 const UF_ARG = argOf('--uf', null);
 
-// Filtro opcional por município (subconjunto que caiba na cota do Neon).
+// Filtro opcional por município para processar a carga em subconjuntos menores.
 // Fold: sem acento + maiúsculo, para casar "São Gonçalo" com "SAO GONCALO".
 const fold = (s) =>
   String(s ?? '')

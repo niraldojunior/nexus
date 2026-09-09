@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import http from 'node:http';
-import test from 'node:test';
+import { test } from 'vitest';
 import { createApp } from '../src/shared/http/app.js';
-import { createTestConfig, createTestDatabase, createTestLogger } from './test-utils.js';
+import {
+  cleanupOracleTables,
+  createTestConfig,
+  createTestLogger,
+  getOracleTestClient,
+  isOracleTestConfigured,
+} from './test-utils.js';
 import { signAccessToken } from '../src/modules/auth/jwt.js';
+
+const oracleConfigured = isOracleTestConfigured();
 
 const ADMIN_EMAIL = 'admin@vtal.com.br';
 const ADMIN_PASSWORD = 'admin-password-1234';
@@ -12,10 +20,9 @@ const JWT_SECRET = 'test-jwt-secret-1234567890';
 
 type TestResponse = { statusCode: number; body: unknown };
 
-const startAuthApp = async (prefix: string) => {
-  const database = createTestDatabase(prefix);
+const startAuthApp = async () => {
   const config = {
-    ...createTestConfig(0, database.databaseUrl),
+    ...createTestConfig(0),
     authJwtSecret: JWT_SECRET,
     adminEmail: ADMIN_EMAIL,
     adminPassword: ADMIN_PASSWORD,
@@ -27,7 +34,8 @@ const startAuthApp = async (prefix: string) => {
     port,
     cleanup: async () => {
       await server.stop();
-      database.cleanup();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
     },
   };
 };
@@ -69,10 +77,9 @@ const request = (
 // o comportamento de produção sem precisar de um AUTH_TOKEN "real" — o que interessa aqui é
 // `nodeEnv: 'production'`, que é o que request-context.ts confere para ignorar os headers de
 // spoof (`x-actor-sub`/`x-tenant-id`/`x-roles`) do token estático.
-const startProdLikeAuthApp = async (prefix: string) => {
-  const database = createTestDatabase(prefix);
+const startProdLikeAuthApp = async () => {
   const config = {
-    ...createTestConfig(0, database.databaseUrl),
+    ...createTestConfig(0),
     nodeEnv: 'production' as const,
   };
   const server = createApp({ config, logger: createTestLogger() });
@@ -81,7 +88,8 @@ const startProdLikeAuthApp = async (prefix: string) => {
     port,
     cleanup: async () => {
       await server.stop();
-      database.cleanup();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
     },
   };
 };
@@ -92,255 +100,274 @@ const loginToken = async (port: number, email: string, password: string): Promis
   return (response.body as { token: string }).token;
 };
 
-test('login: sucesso com o admin semente e erro genérico com senha errada', async (t) => {
-  const app = await startAuthApp('nexus-auth-login-');
-  t.after(app.cleanup);
-
-  const ok = await request(app.port, 'POST', '/v1/auth/login', {
-    body: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
-  });
-  assert.equal(ok.statusCode, 200);
-  const okBody = ok.body as { token: string; user: { roles: string[] } };
-  assert.ok(okBody.token.split('.').length === 3);
-  assert.ok(okBody.user.roles.includes('platform.admin'));
-
-  const wrong = await request(app.port, 'POST', '/v1/auth/login', {
-    body: { email: ADMIN_EMAIL, password: 'senha-errada-1234' },
-  });
-  assert.equal(wrong.statusCode, 401);
-  assert.equal((wrong.body as { error: string }).error, 'AUTH_INVALID_CREDENTIALS');
-
-  const unknown = await request(app.port, 'POST', '/v1/auth/login', {
-    body: { email: 'ninguem@vtal.com.br', password: 'qualquer-coisa-1234' },
-  });
-  // Mesma resposta que senha errada — não revela se a conta existe.
-  assert.equal(unknown.statusCode, 401);
-  assert.equal((unknown.body as { error: string }).error, 'AUTH_INVALID_CREDENTIALS');
-});
-
-test('regressão do bypass: JWT com assinatura inválida é rejeitado', async (t) => {
-  const app = await startAuthApp('nexus-auth-bypass-');
-  t.after(app.cleanup);
-
-  // Token bem-formado, assinado com o segredo ERRADO. Antes da correção, ensureAuthorized
-  // aceitava qualquer JWT quando havia verificador configurado, sem checar a assinatura.
-  const forged = signAccessToken(
-    { sub: 'atacante', tenantId: 'default', roles: ['platform.admin'], tokenVersion: 0 },
-    'segredo-errado',
-    3600,
-  ).token;
-
-  const response = await request(app.port, 'GET', '/v1/searches', { token: forged });
-  assert.notEqual(response.statusCode, 200);
-  assert.equal(response.statusCode, 403);
-});
-
-test('/auth/me e revogação por logout (token_version)', async (t) => {
-  const app = await startAuthApp('nexus-auth-me-');
-  t.after(app.cleanup);
-
-  const token = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
-
-  const me = await request(app.port, 'GET', '/v1/auth/me', { token });
-  assert.equal(me.statusCode, 200);
-  assert.equal((me.body as { email: string }).email, ADMIN_EMAIL);
-
-  const loggedOut = await request(app.port, 'POST', '/v1/auth/logout', { token });
-  assert.equal(loggedOut.statusCode, 204);
-
-  // O mesmo token não vale mais — token_version foi incrementado.
-  const afterLogout = await request(app.port, 'GET', '/v1/auth/me', { token });
-  assert.equal(afterLogout.statusCode, 401);
-});
-
-test('RBAC: usuário não-admin recebe 403 na administração de usuários', async (t) => {
-  const app = await startAuthApp('nexus-auth-rbac-');
-  t.after(app.cleanup);
-
-  const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
-
-  const created = await request(app.port, 'POST', '/v1/users', {
-    token: adminToken,
-    body: {
-      email: 'reader@vtal.com.br',
-      name: 'Leitor',
-      password: 'reader-password-1234',
-      roles: ['inventory.reader'],
-    },
-  });
-  assert.equal(created.statusCode, 201);
-
-  const readerToken = await loginToken(app.port, 'reader@vtal.com.br', 'reader-password-1234');
-
-  const forbidden = await request(app.port, 'GET', '/v1/users', { token: readerToken });
-  assert.equal(forbidden.statusCode, 403);
-
-  // O admin continua podendo listar.
-  const allowed = await request(app.port, 'GET', '/v1/users', { token: adminToken });
-  assert.equal(allowed.statusCode, 200);
-});
-
-test('histórico Geo: ranking por visitas, isolamento por usuário e limpeza', async (t) => {
-  const app = await startAuthApp('nexus-auth-history-');
-  t.after(app.cleanup);
-
-  const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
-  await request(app.port, 'POST', '/v1/users', {
-    token: adminToken,
-    body: {
-      email: 'geo@vtal.com.br',
-      name: 'Geo',
-      password: 'geo-password-12345',
-      roles: ['inventory.reader'],
-    },
-  });
-  const userToken = await loginToken(app.port, 'geo@vtal.com.br', 'geo-password-12345');
-
-  const recordAddress = (token: string, key: string, label: string) =>
-    request(app.port, 'POST', '/v1/geo/search-history', {
-      token,
-      body: { entryKey: key, kind: 'address', label, payload: { label } },
+test.skipIf(!oracleConfigured)('login: sucesso com o admin semente e erro genérico com senha errada', async () => {
+  const app = await startAuthApp();
+  try {
+    const ok = await request(app.port, 'POST', '/v1/auth/login', {
+      body: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
     });
+    assert.equal(ok.statusCode, 200);
+    const okBody = ok.body as { token: string; user: { roles: string[] } };
+    assert.ok(okBody.token.split('.').length === 3);
+    assert.ok(okBody.user.roles.includes('platform.admin'));
 
-  // Endereço A visitado 2x, endereço B 1x → A deve vir primeiro (mais visitado).
-  await recordAddress(userToken, 'address:a', 'Endereço A');
-  await recordAddress(userToken, 'address:a', 'Endereço A');
-  await recordAddress(userToken, 'address:b', 'Endereço B');
+    const wrong = await request(app.port, 'POST', '/v1/auth/login', {
+      body: { email: ADMIN_EMAIL, password: 'senha-errada-1234' },
+    });
+    assert.equal(wrong.statusCode, 401);
+    assert.equal((wrong.body as { error: string }).error, 'AUTH_INVALID_CREDENTIALS');
 
-  const list = await request(app.port, 'GET', '/v1/geo/search-history', { token: userToken });
-  assert.equal(list.statusCode, 200);
-  const entries = list.body as Array<{ entryKey: string; visitCount: number }>;
-  assert.equal(entries.length, 2);
-  assert.equal(entries[0]?.entryKey, 'address:a');
-  assert.equal(entries[0]?.visitCount, 2);
-  assert.equal(entries[1]?.entryKey, 'address:b');
-
-  // Isolamento: o admin não vê o histórico do outro usuário.
-  const adminList = await request(app.port, 'GET', '/v1/geo/search-history', { token: adminToken });
-  assert.equal(adminList.statusCode, 200);
-  assert.equal((adminList.body as unknown[]).length, 0);
-
-  // Remoção individual e limpeza total.
-  const removed = await request(app.port, 'DELETE', '/v1/geo/search-history/address:a', {
-    token: userToken,
-  });
-  assert.equal(removed.statusCode, 204);
-  const afterRemove = await request(app.port, 'GET', '/v1/geo/search-history', {
-    token: userToken,
-  });
-  assert.equal((afterRemove.body as unknown[]).length, 1);
-
-  const cleared = await request(app.port, 'DELETE', '/v1/geo/search-history', { token: userToken });
-  assert.equal(cleared.statusCode, 204);
-  const afterClear = await request(app.port, 'GET', '/v1/geo/search-history', { token: userToken });
-  assert.equal((afterClear.body as unknown[]).length, 0);
-
-  // Sem sessão de usuário real (token estático de máquina), o histórico exige requireUser.
-  const anon = await request(app.port, 'GET', '/v1/geo/search-history', {
-    rawAuth: 'Bearer secret',
-  });
-  assert.equal(anon.statusCode, 401);
+    const unknown = await request(app.port, 'POST', '/v1/auth/login', {
+      body: { email: 'ninguem@vtal.com.br', password: 'qualquer-coisa-1234' },
+    });
+    // Mesma resposta que senha errada — não revela se a conta existe.
+    assert.equal(unknown.statusCode, 401);
+    assert.equal((unknown.body as { error: string }).error, 'AUTH_INVALID_CREDENTIALS');
+  } finally {
+    await app.cleanup();
+  }
 });
 
-test('produção: headers x-actor-sub/x-tenant-id/x-roles do token estático são ignorados', async (t) => {
-  const prod = await startProdLikeAuthApp('nexus-auth-prod-spoof-');
-  t.after(prod.cleanup);
-  const dev = await startAuthApp('nexus-auth-dev-spoof-');
-  t.after(dev.cleanup);
+test.skipIf(!oracleConfigured)('regressão do bypass: JWT com assinatura inválida é rejeitado', async () => {
+  const app = await startAuthApp();
+  try {
+    // Token bem-formado, assinado com o segredo ERRADO. Antes da correção, ensureAuthorized
+    // aceitava qualquer JWT quando havia verificador configurado, sem checar a assinatura.
+    const forged = signAccessToken(
+      { sub: 'atacante', tenantId: 'default', roles: ['platform.admin'], tokenVersion: 0 },
+      'segredo-errado',
+      3600,
+    ).token;
 
-  // Fora de produção, o header eleva o token estático a platform.admin — é o comportamento
-  // histórico que scripts/MCP/testes esperam.
-  const devResponse = await request(dev.port, 'GET', '/v1/users', {
-    rawAuth: 'Bearer secret',
-    headers: { 'x-roles': 'platform.admin' },
-  });
-  assert.equal(devResponse.statusCode, 200);
-
-  // Em produção, o mesmo header não tem efeito: o papel do token estático vem só da
-  // configuração (AUTH_TOKEN_ROLES, default migration.job) — spoofar platform.admin por
-  // header não deve funcionar.
-  const prodResponse = await request(prod.port, 'GET', '/v1/users', {
-    rawAuth: 'Bearer secret',
-    headers: { 'x-roles': 'platform.admin' },
-  });
-  assert.equal(prodResponse.statusCode, 403);
+    const response = await request(app.port, 'GET', '/v1/searches', { token: forged });
+    assert.notEqual(response.statusCode, 200);
+    assert.equal(response.statusCode, 403);
+  } finally {
+    await app.cleanup();
+  }
 });
 
-test('JWT sem claim exp é rejeitado', async (t) => {
-  const app = await startAuthApp('nexus-auth-no-exp-');
-  t.after(app.cleanup);
+test.skipIf(!oracleConfigured)('/auth/me e revogação por logout (token_version)', async () => {
+  const app = await startAuthApp();
+  try {
+    const token = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-  const base64UrlEncode = (input: Buffer | string): string =>
-    Buffer.from(input)
-      .toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/g, '');
+    const me = await request(app.port, 'GET', '/v1/auth/me', { token });
+    assert.equal(me.statusCode, 200);
+    assert.equal((me.body as { email: string }).email, ADMIN_EMAIL);
 
-  const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  // Sem `exp`: antes da correção, esse token nunca expirava.
-  const payload = base64UrlEncode(
-    JSON.stringify({ sub: 'someone', tenant_id: 'default', roles: ['inventory.reader'] }),
-  );
-  const signingInput = `${header}.${payload}`;
-  const signature = base64UrlEncode(createHmac('sha256', JWT_SECRET).update(signingInput).digest());
-  const tokenWithoutExp = `${signingInput}.${signature}`;
+    const loggedOut = await request(app.port, 'POST', '/v1/auth/logout', { token });
+    assert.equal(loggedOut.statusCode, 204);
 
-  const response = await request(app.port, 'GET', '/v1/searches', { token: tokenWithoutExp });
-  assert.equal(response.statusCode, 403);
-  assert.equal((response.body as { error: string }).error, 'AUTH_JWT_EXP_REQUIRED');
+    // O mesmo token não vale mais — token_version foi incrementado.
+    const afterLogout = await request(app.port, 'GET', '/v1/auth/me', { token });
+    assert.equal(afterLogout.statusCode, 401);
+  } finally {
+    await app.cleanup();
+  }
 });
 
-test('sessões de pesquisa são isoladas por usuário (V-05)', async (t) => {
-  const app = await startAuthApp('nexus-auth-research-isolation-');
-  t.after(app.cleanup);
+test.skipIf(!oracleConfigured)('RBAC: usuário não-admin recebe 403 na administração de usuários', async () => {
+  const app = await startAuthApp();
+  try {
+    const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-  const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
-  await request(app.port, 'POST', '/v1/users', {
-    token: adminToken,
-    body: {
-      email: 'pesquisador@vtal.com.br',
-      name: 'Pesquisador',
-      password: 'pesquisador-password-1',
-      roles: ['inventory.reader'],
-    },
-  });
-  const userToken = await loginToken(app.port, 'pesquisador@vtal.com.br', 'pesquisador-password-1');
+    const created = await request(app.port, 'POST', '/v1/users', {
+      token: adminToken,
+      body: {
+        email: 'reader@vtal.com.br',
+        name: 'Leitor',
+        password: 'reader-password-1234',
+        roles: ['inventory.reader'],
+      },
+    });
+    assert.equal(created.statusCode, 201);
 
-  const created = await request(app.port, 'POST', '/v1/research/sessions', {
-    token: userToken,
-    body: { title: 'Conversa privada' },
-  });
-  assert.equal(created.statusCode, 201);
-  const sessionId = (created.body as { id: string }).id;
+    const readerToken = await loginToken(app.port, 'reader@vtal.com.br', 'reader-password-1234');
 
-  // O dono enxerga a própria sessão.
-  const ownRead = await request(app.port, 'GET', `/v1/research/sessions/${sessionId}`, {
-    token: userToken,
-  });
-  assert.equal(ownRead.statusCode, 200);
+    const forbidden = await request(app.port, 'GET', '/v1/users', { token: readerToken });
+    assert.equal(forbidden.statusCode, 403);
 
-  // Outro usuário autenticado não enxerga — 404, não 403 (a existência já é informação).
-  const otherRead = await request(app.port, 'GET', `/v1/research/sessions/${sessionId}`, {
-    token: adminToken,
-  });
-  assert.equal(otherRead.statusCode, 404);
+    // O admin continua podendo listar.
+    const allowed = await request(app.port, 'GET', '/v1/users', { token: adminToken });
+    assert.equal(allowed.statusCode, 200);
+  } finally {
+    await app.cleanup();
+  }
+});
 
-  // Nem consegue renomear ou arquivar a sessão alheia.
-  const otherRename = await request(app.port, 'PUT', `/v1/research/sessions/${sessionId}`, {
-    token: adminToken,
-    body: { title: 'sequestrado' },
-  });
-  assert.equal(otherRename.statusCode, 404);
+test.skipIf(!oracleConfigured)('histórico Geo: ranking por visitas, isolamento por usuário e limpeza', async () => {
+  const app = await startAuthApp();
+  try {
+    const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
+    await request(app.port, 'POST', '/v1/users', {
+      token: adminToken,
+      body: {
+        email: 'geo@vtal.com.br',
+        name: 'Geo',
+        password: 'geo-password-12345',
+        roles: ['inventory.reader'],
+      },
+    });
+    const userToken = await loginToken(app.port, 'geo@vtal.com.br', 'geo-password-12345');
 
-  const otherArchive = await request(app.port, 'DELETE', `/v1/research/sessions/${sessionId}`, {
-    token: adminToken,
-  });
-  assert.equal(otherArchive.statusCode, 404);
+    const recordAddress = (token: string, key: string, label: string) =>
+      request(app.port, 'POST', '/v1/geo/search-history', {
+        token,
+        body: { entryKey: key, kind: 'address', label, payload: { label } },
+      });
 
-  // A lista de sessões do admin não inclui a sessão do outro usuário.
-  const adminList = await request(app.port, 'GET', '/v1/research/sessions', { token: adminToken });
-  assert.equal(adminList.statusCode, 200);
-  const adminSessionIds = (adminList.body as Array<{ id: string }>).map((s) => s.id);
-  assert.ok(!adminSessionIds.includes(sessionId));
+    // Endereço A visitado 2x, endereço B 1x → A deve vir primeiro (mais visitado).
+    await recordAddress(userToken, 'address:a', 'Endereço A');
+    await recordAddress(userToken, 'address:a', 'Endereço A');
+    await recordAddress(userToken, 'address:b', 'Endereço B');
+
+    const list = await request(app.port, 'GET', '/v1/geo/search-history', { token: userToken });
+    assert.equal(list.statusCode, 200);
+    const entries = list.body as Array<{ entryKey: string; visitCount: number }>;
+    assert.equal(entries.length, 2);
+    assert.equal(entries[0]?.entryKey, 'address:a');
+    assert.equal(entries[0]?.visitCount, 2);
+    assert.equal(entries[1]?.entryKey, 'address:b');
+
+    // Isolamento: o admin não vê o histórico do outro usuário.
+    const adminList = await request(app.port, 'GET', '/v1/geo/search-history', { token: adminToken });
+    assert.equal(adminList.statusCode, 200);
+    assert.equal((adminList.body as unknown[]).length, 0);
+
+    // Remoção individual e limpeza total.
+    const removed = await request(app.port, 'DELETE', '/v1/geo/search-history/address:a', {
+      token: userToken,
+    });
+    assert.equal(removed.statusCode, 204);
+    const afterRemove = await request(app.port, 'GET', '/v1/geo/search-history', {
+      token: userToken,
+    });
+    assert.equal((afterRemove.body as unknown[]).length, 1);
+
+    const cleared = await request(app.port, 'DELETE', '/v1/geo/search-history', { token: userToken });
+    assert.equal(cleared.statusCode, 204);
+    const afterClear = await request(app.port, 'GET', '/v1/geo/search-history', { token: userToken });
+    assert.equal((afterClear.body as unknown[]).length, 0);
+
+    // Sem sessão de usuário real (token estático de máquina), o histórico exige requireUser.
+    const anon = await request(app.port, 'GET', '/v1/geo/search-history', {
+      rawAuth: 'Bearer secret',
+    });
+    assert.equal(anon.statusCode, 401);
+  } finally {
+    await app.cleanup();
+  }
+});
+
+test.skipIf(!oracleConfigured)(
+  'produção: headers x-actor-sub/x-tenant-id/x-roles do token estático são ignorados',
+  async () => {
+    const prod = await startProdLikeAuthApp();
+    const dev = await startAuthApp();
+    try {
+      // Fora de produção, o header eleva o token estático a platform.admin — é o comportamento
+      // histórico que scripts/MCP/testes esperam.
+      const devResponse = await request(dev.port, 'GET', '/v1/users', {
+        rawAuth: 'Bearer secret',
+        headers: { 'x-roles': 'platform.admin' },
+      });
+      assert.equal(devResponse.statusCode, 200);
+
+      // Em produção, o mesmo header não tem efeito: o papel do token estático vem só da
+      // configuração (AUTH_TOKEN_ROLES, default migration.job) — spoofar platform.admin por
+      // header não deve funcionar.
+      const prodResponse = await request(prod.port, 'GET', '/v1/users', {
+        rawAuth: 'Bearer secret',
+        headers: { 'x-roles': 'platform.admin' },
+      });
+      assert.equal(prodResponse.statusCode, 403);
+    } finally {
+      await prod.cleanup();
+      await dev.cleanup();
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)('JWT sem claim exp é rejeitado', async () => {
+  const app = await startAuthApp();
+  try {
+    const base64UrlEncode = (input: Buffer | string): string =>
+      Buffer.from(input)
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+
+    const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+    // Sem `exp`: antes da correção, esse token nunca expirava.
+    const payload = base64UrlEncode(
+      JSON.stringify({ sub: 'someone', tenant_id: 'default', roles: ['inventory.reader'] }),
+    );
+    const signingInput = `${header}.${payload}`;
+    const signature = base64UrlEncode(createHmac('sha256', JWT_SECRET).update(signingInput).digest());
+    const tokenWithoutExp = `${signingInput}.${signature}`;
+
+    const response = await request(app.port, 'GET', '/v1/searches', { token: tokenWithoutExp });
+    assert.equal(response.statusCode, 403);
+    assert.equal((response.body as { error: string }).error, 'AUTH_JWT_EXP_REQUIRED');
+  } finally {
+    await app.cleanup();
+  }
+});
+
+test.skipIf(!oracleConfigured)('sessões de pesquisa são isoladas por usuário (V-05)', async () => {
+  const app = await startAuthApp();
+  try {
+    const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
+    await request(app.port, 'POST', '/v1/users', {
+      token: adminToken,
+      body: {
+        email: 'pesquisador@vtal.com.br',
+        name: 'Pesquisador',
+        password: 'pesquisador-password-1',
+        roles: ['inventory.reader'],
+      },
+    });
+    const userToken = await loginToken(app.port, 'pesquisador@vtal.com.br', 'pesquisador-password-1');
+
+    const created = await request(app.port, 'POST', '/v1/research/sessions', {
+      token: userToken,
+      body: { title: 'Conversa privada' },
+    });
+    assert.equal(created.statusCode, 201);
+    const sessionId = (created.body as { id: string }).id;
+
+    // O dono enxerga a própria sessão.
+    const ownRead = await request(app.port, 'GET', `/v1/research/sessions/${sessionId}`, {
+      token: userToken,
+    });
+    assert.equal(ownRead.statusCode, 200);
+
+    // Outro usuário autenticado não enxerga — 404, não 403 (a existência já é informação).
+    const otherRead = await request(app.port, 'GET', `/v1/research/sessions/${sessionId}`, {
+      token: adminToken,
+    });
+    assert.equal(otherRead.statusCode, 404);
+
+    // Nem consegue renomear ou arquivar a sessão alheia.
+    const otherRename = await request(app.port, 'PUT', `/v1/research/sessions/${sessionId}`, {
+      token: adminToken,
+      body: { title: 'sequestrado' },
+    });
+    assert.equal(otherRename.statusCode, 404);
+
+    const otherArchive = await request(app.port, 'DELETE', `/v1/research/sessions/${sessionId}`, {
+      token: adminToken,
+    });
+    assert.equal(otherArchive.statusCode, 404);
+
+    // A lista de sessões do admin não inclui a sessão do outro usuário.
+    const adminList = await request(app.port, 'GET', '/v1/research/sessions', { token: adminToken });
+    assert.equal(adminList.statusCode, 200);
+    const adminSessionIds = (adminList.body as Array<{ id: string }>).map((s) => s.id);
+    assert.ok(!adminSessionIds.includes(sessionId));
+  } finally {
+    await app.cleanup();
+  }
 });

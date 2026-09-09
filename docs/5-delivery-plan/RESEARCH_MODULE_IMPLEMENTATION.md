@@ -121,7 +121,7 @@ HTTP POST /v1/research/sessions/:id/messages/stream (SSE)
     ↓
 SearchService.addMessageAndGetResponse({ onDelta, signal })
     ↓
-Postgres: Store user message
+Oracle: Store user message
     ↓
 ChatGPTProvider.invoke() with `stream: true` → OpenAI API (token-by-token)
     ↓
@@ -130,7 +130,7 @@ Each token forwarded as an `event: delta` SSE frame
 web/src/services/researchApi.ts#sendResearchMessageStream reads the stream and
 appends each chunk to the assistant bubble as it arrives (ChatGPT/Claude-style typing)
     ↓
-Postgres: Store final assistant response once the stream ends
+Oracle: Store final assistant response once the stream ends
     ↓
 `event: done` SSE frame with the persisted { userMessage, assistantMessage }
     ↓
@@ -218,7 +218,7 @@ node scripts/test-research-api.mjs
 
 - ✅ HTTP endpoints implemented
 - ✅ React components created
-- ✅ Postgres/Neon persistence working
+- ✅ Oracle persistence working
 - ⏳ Token auth from localStorage
 - ✅ Streaming responses for long messages (`/messages/stream`, token-by-token UI, stop-generation button)
 
@@ -264,7 +264,7 @@ Replace ChatGPT with internal query provider:
 
 - **Backend**: Node.js + TypeScript
 - **Web Frontend**: React 18 + TypeScript
-- **Database atual**: PostgreSQL (laboratório hospedado em Neon; o registro original deste resumo usava SQLite antes da convergência de persistência)
+- **Database atual**: Oracle, único banco suportado, execução local (registro original deste resumo usava SQLite, depois PostgreSQL/Neon, antes da convergência para Oracle-only)
 - **LLM**: OpenAI API (ChatGPT)
 - **HTTP**: Native fetch API
 - **Styling**: CSS with design system tokens

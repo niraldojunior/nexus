@@ -1,35 +1,29 @@
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'vitest';
+import { test } from 'vitest';
 import { createNexusMcpModule } from '../src/modules/mcp/index.js';
-import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
 import { createNexusRuntime } from '../src/shared/runtime/nexus-runtime.js';
-import { createTestDatabase } from './test-utils.js';
+import { cleanupOracleTables, getOracleTestClient, isOracleTestConfigured } from './test-utils.js';
 
-afterEach(() => {
-  PostgresDatabase.resetForTesting();
-});
+// Skips unless ORACLE_* is configured, no mesmo padrão dos demais specs Oracle-backed.
+const oracleConfigured = isOracleTestConfigured();
+if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
 
 const createFixture = async () => {
-  const database = createTestDatabase('nexus-mcp-unit-');
-  const sqlite = PostgresDatabase.getInstance(database.databaseUrl);
-  await sqlite.initialize();
-  const runtime = await createNexusRuntime(sqlite);
+  const client = await getOracleTestClient();
+  const runtime = await createNexusRuntime(client);
   const module = createNexusMcpModule(runtime);
   const context = runtime.createToolContext({ executionMode: 'internal-http' });
 
   return {
-    sqlite,
+    client,
     runtime,
     module,
     context,
-    cleanup: () => {
-      PostgresDatabase.resetForTesting();
-      database.cleanup();
-    },
+    cleanup: () => cleanupOracleTables(client),
   };
 };
 
-test('MCP registry exposes tool metadata and handles unknown tools', async () => {
+test.skipIf(!oracleConfigured)('MCP registry exposes tool metadata and handles unknown tools', async () => {
   const fixture = await createFixture();
 
   try {
@@ -43,11 +37,11 @@ test('MCP registry exposes tool metadata and handles unknown tools', async () =>
     assert.equal(missing.ok, false);
     assert.equal(missing.error?.code, 'MCP_TOOL_NOT_FOUND');
   } finally {
-    fixture.cleanup();
+    await fixture.cleanup();
   }
 });
 
-test('MCP registry returns structured validation errors', async () => {
+test.skipIf(!oracleConfigured)('MCP registry returns structured validation errors', async () => {
   const fixture = await createFixture();
 
   try {
@@ -56,11 +50,11 @@ test('MCP registry returns structured validation errors', async () => {
     assert.equal(result.error?.code, 'MCP_INVALID_PAYLOAD');
     assert.deepEqual(result.error?.details, [{ path: '$.id', message: 'is required' }]);
   } finally {
-    fixture.cleanup();
+    await fixture.cleanup();
   }
 });
 
-test('MCP prepare/commit flow persists confirmation tokens and executes mutations', async () => {
+test.skipIf(!oracleConfigured)('MCP prepare/commit flow persists confirmation tokens and executes mutations', async () => {
   const fixture = await createFixture();
 
   try {
@@ -94,11 +88,11 @@ test('MCP prepare/commit flow persists confirmation tokens and executes mutation
     assert.equal((committed.data as { name: string }).name, 'CO Botafogo');
     assert.equal((await fixture.runtime.geoService.listSites()).length, 1);
   } finally {
-    fixture.cleanup();
+    await fixture.cleanup();
   }
 });
 
-test('MCP exposes and executes resource specification creation', async () => {
+test.skipIf(!oracleConfigured)('MCP exposes and executes resource specification creation', async () => {
   const fixture = await createFixture();
 
   try {
@@ -148,11 +142,11 @@ test('MCP exposes and executes resource specification creation', async () => {
       'ONT',
     );
   } finally {
-    fixture.cleanup();
+    await fixture.cleanup();
   }
 });
 
-test('MCP cadastra modelo de equipamento resolvendo fabricante por nome', async () => {
+test.skipIf(!oracleConfigured)('MCP cadastra modelo de equipamento resolvendo fabricante por nome', async () => {
   const fixture = await createFixture();
 
   try {
@@ -205,11 +199,11 @@ test('MCP cadastra modelo de equipamento resolvendo fabricante por nome', async 
       'F6201BV9.3.12',
     );
   } finally {
-    fixture.cleanup();
+    await fixture.cleanup();
   }
 });
 
-test('MCP cadastra modelos de equipamento em lote', async () => {
+test.skipIf(!oracleConfigured)('MCP cadastra modelos de equipamento em lote', async () => {
   const fixture = await createFixture();
 
   try {
@@ -249,11 +243,11 @@ test('MCP cadastra modelos de equipamento em lote', async () => {
     );
     assert.ok(items.every((item) => item.relatedParty?.[0]?.name === 'NOKIA'));
   } finally {
-    fixture.cleanup();
+    await fixture.cleanup();
   }
 });
 
-test('MCP remove modelo de equipamento como soft-delete com fabricante resolvido por nome', async () => {
+test.skipIf(!oracleConfigured)('MCP remove modelo de equipamento como soft-delete com fabricante resolvido por nome', async () => {
   const fixture = await createFixture();
 
   try {
@@ -312,11 +306,11 @@ test('MCP remove modelo de equipamento como soft-delete com fabricante resolvido
     });
     assert.equal(allList.length, 1);
   } finally {
-    fixture.cleanup();
+    await fixture.cleanup();
   }
 });
 
-test('MCP blocks commit without valid token and with expired token', async () => {
+test.skipIf(!oracleConfigured)('MCP blocks commit without valid token and with expired token', async () => {
   const fixture = await createFixture();
 
   try {
@@ -348,11 +342,11 @@ test('MCP blocks commit without valid token and with expired token', async () =>
     assert.equal(expired.ok, false);
     assert.equal(expired.error?.code, 'MCP_CONFIRMATION_EXPIRED');
   } finally {
-    fixture.cleanup();
+    await fixture.cleanup();
   }
 });
 
-test('MCP rejects invalid CFS preparation that references supportingResource directly', async () => {
+test.skipIf(!oracleConfigured)('MCP rejects invalid CFS preparation that references supportingResource directly', async () => {
   const fixture = await createFixture();
 
   try {
@@ -379,6 +373,6 @@ test('MCP rejects invalid CFS preparation that references supportingResource dir
     assert.equal(result.ok, false);
     assert.equal(result.error?.code, 'SERVICE_CFS_SUPPORTING_RESOURCE');
   } finally {
-    fixture.cleanup();
+    await fixture.cleanup();
   }
 });

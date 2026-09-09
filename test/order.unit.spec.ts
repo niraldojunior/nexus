@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
-import { afterEach, test, vi } from 'vitest';
-import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
-import { PostgresOrderRepository } from '../src/modules/order/postgres-repository.js';
+import { afterAll, test, vi } from 'vitest';
+import { OracleOrderRepository } from '../src/modules/order/oracle-repository.js';
 import { OrderService } from '../src/modules/order/service.js';
-import { createTestDatabase } from './test-utils.js';
+import { cleanupOracleTables, getOracleTestClient, isOracleTestConfigured } from './test-utils.js';
+
+// Exercises OrderService directly against the repository (no HTTP layer), same pattern as
+// service-repository.oracle.spec.ts — the corporate Oracle instance is the only supported
+// database, so this runs against a real Oracle test schema. Skips unless ORACLE_* is configured
+// (see test/test-utils.ts). Run with `npm run test:oracle`.
+const oracleConfigured = isOracleTestConfigured();
+if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
 
 type TestPlaceReference = { id: string; '@referredType': string };
 type TestResourceInput = {
@@ -55,16 +61,17 @@ type TestService = Required<
     href: string;
   };
 
-afterEach(() => {
-  PostgresDatabase.resetForTesting();
-  vi.restoreAllMocks();
+afterAll(async () => {
+  if (!oracleConfigured) return;
+  const client = await getOracleTestClient();
+  await cleanupOracleTables(client);
+  await client.close();
 });
 
 const setupOrder = async () => {
-  const database = createTestDatabase('nexus-order-unit-');
-  const sqlite = PostgresDatabase.getInstance(database.databaseUrl);
-  await sqlite.initialize();
-  const repository = new PostgresOrderRepository(sqlite);
+  vi.restoreAllMocks();
+  const client = await getOracleTestClient();
+  const repository = new OracleOrderRepository(client);
   const appendEvent = vi.fn(() => undefined);
   const eventService = { appendEvent };
 
@@ -224,7 +231,7 @@ const setupOrder = async () => {
   });
 
   return {
-    database,
+    client,
     repository,
     appendEvent,
     order,
@@ -239,208 +246,212 @@ const setupOrder = async () => {
   };
 };
 
-test('OrderService qualifies places and executes service/resource orders', async () => {
-  const {
-    database,
-    order,
-    appendEvent,
-    party,
-    site,
-    address,
-    location,
-    resourceService,
-    serviceStore,
-    resourceStore,
-  } = await setupOrder();
+test.skipIf(!oracleConfigured)(
+  'OrderService qualifies places and executes service/resource orders',
+  async () => {
+    const {
+      client,
+      order,
+      appendEvent,
+      party,
+      site,
+      address,
+      location,
+      resourceService,
+      serviceStore,
+      resourceStore,
+    } = await setupOrder();
 
-  try {
-    const activeResource = await resourceService.createPhysicalResource({
-      name: 'ONT-01',
-      resourceSpecificationId: 'spec-1',
-      placeId: site.id,
-      placeType: 'GeographicSite',
-      status: 'active',
-    });
-    resourceStore.set(activeResource.id, activeResource);
+    try {
+      const activeResource = await resourceService.createPhysicalResource({
+        name: 'ONT-01',
+        resourceSpecificationId: 'spec-1',
+        placeId: site.id,
+        placeType: 'GeographicSite',
+        status: 'active',
+      });
+      resourceStore.set(activeResource.id, activeResource);
 
-    const siteQualification = await order.createServiceQualification({
-      placeId: site.id,
-      serviceSpecificationId: 'svc-spec-1',
-      relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'requestor' }],
-    });
-    assert.equal(siteQualification.place[0]?.id, site.id);
-    assert.equal(siteQualification.serviceQualificationItem[0]?.eligibility, 'qualified');
+      const siteQualification = await order.createServiceQualification({
+        placeId: site.id,
+        serviceSpecificationId: 'svc-spec-1',
+        relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'requestor' }],
+      });
+      assert.equal(siteQualification.place[0]?.id, site.id);
+      assert.equal(siteQualification.serviceQualificationItem[0]?.eligibility, 'qualified');
 
-    const addressQualification = await order.createServiceQualification({ placeId: address.id });
-    const locationQualification = await order.createServiceQualification({ placeId: location.id });
-    assert.equal(addressQualification.place[0]?.id, address.id);
-    assert.equal(locationQualification.place[0]?.id, location.id);
+      const addressQualification = await order.createServiceQualification({ placeId: address.id });
+      const locationQualification = await order.createServiceQualification({ placeId: location.id });
+      assert.equal(addressQualification.place[0]?.id, address.id);
+      assert.equal(locationQualification.place[0]?.id, location.id);
 
-    const missingPlace = await order.createServiceQualification({ placeId: 'missing' });
-    assert.equal(missingPlace.serviceQualificationItem[0]?.eligibility, 'unqualified');
-    assert.equal(missingPlace.serviceQualificationItem[0]?.reason, 'placeId required');
+      const missingPlace = await order.createServiceQualification({ placeId: 'missing' });
+      assert.equal(missingPlace.serviceQualificationItem[0]?.eligibility, 'unqualified');
+      assert.equal(missingPlace.serviceQualificationItem[0]?.reason, 'placeId required');
 
-    const noPlace = await order.createServiceQualification({});
-    assert.equal(noPlace.serviceQualificationItem[0]?.reason, 'placeId required');
+      const noPlace = await order.createServiceQualification({});
+      assert.equal(noPlace.serviceQualificationItem[0]?.reason, 'placeId required');
 
-    const serviceOrder = await order.createServiceOrder({
-      relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'subscriber' }],
-      serviceOrderItem: [
-        {
-          action: 'add',
-          service: {
-            '@type': 'CustomerFacingService',
-            name: 'CFS GPON 1',
-            serviceSpecificationId: 'svc-spec-1',
-            subscriberId: 'SUB-1',
+      const serviceOrder = await order.createServiceOrder({
+        relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'subscriber' }],
+        serviceOrderItem: [
+          {
+            action: 'add',
+            service: {
+              '@type': 'CustomerFacingService',
+              name: 'CFS GPON 1',
+              serviceSpecificationId: 'svc-spec-1',
+              subscriberId: 'SUB-1',
+            },
           },
-        },
-        {
-          action: 'modify',
-          serviceId: 'service-1',
-          service: { name: 'CFS GPON 1A' },
-        },
-        {
-          action: 'delete',
-          serviceId: 'service-1',
-        },
-      ],
-    });
-    assert.equal(serviceOrder.state, 'completed');
-    assert.equal(serviceOrder.serviceOrderItem.length, 3);
-    assert.equal(
-      serviceOrder.serviceOrderItem[0]?.serviceResult?.['@type'],
-      'CustomerFacingService',
-    );
-    assert.equal(serviceOrder.serviceOrderItem[2]?.serviceResult?.state, 'terminated');
-    assert.equal(serviceStore.size, 1);
-
-    const resourceOrder = await order.createResourceOrder({
-      relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'requestor' }],
-      resourceOrderItem: [
-        {
-          action: 'add',
-          resource: {
-            '@type': 'PhysicalResource',
-            name: 'OLT-02',
-            resourceSpecificationId: 'spec-1',
-            placeId: site.id,
-            placeType: 'GeographicSite',
+          {
+            action: 'modify',
+            serviceId: 'service-1',
+            service: { name: 'CFS GPON 1A' },
           },
-        },
-        {
-          action: 'modify',
-          resourceId: activeResource.id,
-          resource: {
-            '@type': 'PhysicalResource',
-            name: 'ONT-01A',
+          {
+            action: 'delete',
+            serviceId: 'service-1',
           },
-        },
-        {
-          action: 'delete',
-          resourceId: activeResource.id,
-        },
-      ],
-    });
-    assert.equal(resourceOrder.state, 'completed');
-    assert.equal(resourceOrder.resourceOrderItem.length, 3);
-    assert.equal(resourceOrder.resourceOrderItem[0]?.resourceResult?.['@type'], 'PhysicalResource');
-    assert.equal(resourceOrder.resourceOrderItem[2]?.resourceResult?.status, 'terminated');
+        ],
+      });
+      assert.equal(serviceOrder.state, 'completed');
+      assert.equal(serviceOrder.serviceOrderItem.length, 3);
+      assert.equal(
+        serviceOrder.serviceOrderItem[0]?.serviceResult?.['@type'],
+        'CustomerFacingService',
+      );
+      assert.equal(serviceOrder.serviceOrderItem[2]?.serviceResult?.state, 'terminated');
+      assert.equal(serviceStore.size, 1);
 
-    const serviceOrderList = await order.listServiceOrders({ relatedPartyId: party.id });
-    const resourceOrderList = await order.listResourceOrders({
-      relatedPartyId: party.id,
-      resourceId: activeResource.id,
-    });
-    const qualificationList = await order.listServiceQualifications({
-      placeId: site.id,
-      serviceSpecificationId: 'svc-spec-1',
-    });
-    assert.equal(serviceOrderList.length, 1);
-    assert.equal(resourceOrderList.length, 1);
-    assert.equal(qualificationList.length, 1);
+      const resourceOrder = await order.createResourceOrder({
+        relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'requestor' }],
+        resourceOrderItem: [
+          {
+            action: 'add',
+            resource: {
+              '@type': 'PhysicalResource',
+              name: 'OLT-02',
+              resourceSpecificationId: 'spec-1',
+              placeId: site.id,
+              placeType: 'GeographicSite',
+            },
+          },
+          {
+            action: 'modify',
+            resourceId: activeResource.id,
+            resource: {
+              '@type': 'PhysicalResource',
+              name: 'ONT-01A',
+            },
+          },
+          {
+            action: 'delete',
+            resourceId: activeResource.id,
+          },
+        ],
+      });
+      assert.equal(resourceOrder.state, 'completed');
+      assert.equal(resourceOrder.resourceOrderItem.length, 3);
+      assert.equal(resourceOrder.resourceOrderItem[0]?.resourceResult?.['@type'], 'PhysicalResource');
+      assert.equal(resourceOrder.resourceOrderItem[2]?.resourceResult?.status, 'terminated');
 
-    const updatedQualification = await order.updateServiceQualification(siteQualification.id, {
-      state: 'terminated',
-    });
-    assert.equal(updatedQualification.state, 'terminated');
-    const cancelledServiceOrder = await order.cancelServiceOrder(serviceOrder.id);
-    const cancelledResourceOrder = await order.cancelResourceOrder(resourceOrder.id);
-    assert.equal(cancelledServiceOrder.state, 'cancelled');
-    assert.equal(cancelledResourceOrder.state, 'cancelled');
-    assert.ok(
-      (appendEvent.mock.calls as unknown as Array<[{ eventType?: string }]>).some(
-        (call) => call[0]?.eventType === 'ServiceOrderCreateEvent',
-      ),
-    );
-    assert.ok(
-      (appendEvent.mock.calls as unknown as Array<[{ eventType?: string }]>).some(
-        (call) => call[0]?.eventType === 'ResourceOrderCreateEvent',
-      ),
-    );
-  } finally {
-    PostgresDatabase.resetForTesting();
-    database.cleanup();
-  }
-});
+      const serviceOrderList = await order.listServiceOrders({ relatedPartyId: party.id });
+      const resourceOrderList = await order.listResourceOrders({
+        relatedPartyId: party.id,
+        resourceId: activeResource.id,
+      });
+      const qualificationList = await order.listServiceQualifications({
+        placeId: site.id,
+        serviceSpecificationId: 'svc-spec-1',
+      });
+      assert.equal(serviceOrderList.length, 1);
+      assert.equal(resourceOrderList.length, 1);
+      assert.equal(qualificationList.length, 1);
 
-test('OrderService rejects invalid order permutations and unknown references', async () => {
-  const { database, order } = await setupOrder();
+      const updatedQualification = await order.updateServiceQualification(siteQualification.id, {
+        state: 'terminated',
+      });
+      assert.equal(updatedQualification.state, 'terminated');
+      const cancelledServiceOrder = await order.cancelServiceOrder(serviceOrder.id);
+      const cancelledResourceOrder = await order.cancelResourceOrder(resourceOrder.id);
+      assert.equal(cancelledServiceOrder.state, 'cancelled');
+      assert.equal(cancelledResourceOrder.state, 'cancelled');
+      assert.ok(
+        (appendEvent.mock.calls as unknown as Array<[{ eventType?: string }]>).some(
+          (call) => call[0]?.eventType === 'ServiceOrderCreateEvent',
+        ),
+      );
+      assert.ok(
+        (appendEvent.mock.calls as unknown as Array<[{ eventType?: string }]>).some(
+          (call) => call[0]?.eventType === 'ResourceOrderCreateEvent',
+        ),
+      );
+    } finally {
+      await cleanupOracleTables(client);
+    }
+  },
+);
 
-  try {
-    await assert.rejects(
-      () => order.createServiceOrder({ serviceOrderItem: [] }),
-      /serviceOrderItem required/,
-    );
-    await assert.rejects(
-      () => order.createResourceOrder({ resourceOrderItem: [] }),
-      /resourceOrderItem required/,
-    );
-    await assert.rejects(
-      () => order.createServiceOrder({ serviceOrderItem: [{ action: 'add' as const }] }),
-      /service payload required/,
-    );
-    await assert.rejects(
-      () =>
-        order.createServiceOrder({
-          serviceOrderItem: [{ action: 'modify' as const, serviceId: 'x' }],
-        }),
-      /serviceId and service payload required/,
-    );
-    await assert.rejects(
-      () => order.createServiceOrder({ serviceOrderItem: [{ action: 'delete' as const }] }),
-      /serviceId required/,
-    );
-    await assert.rejects(
-      () => order.createResourceOrder({ resourceOrderItem: [{ action: 'add' as const }] }),
-      /resource payload required/,
-    );
-    await assert.rejects(
-      () =>
-        order.createResourceOrder({
-          resourceOrderItem: [{ action: 'modify' as const, resourceId: 'x' }],
-        }),
-      /resource not found/,
-    );
-    await assert.rejects(
-      () =>
-        order.createResourceOrder({
-          resourceOrderItem: [{ action: 'delete' as const, resourceId: 'missing' }],
-        }),
-      /resource not found/,
-    );
-    await assert.rejects(
-      () => order.deleteServiceQualification('missing'),
-      /service qualification not found/,
-    );
-    await assert.rejects(
-      () => order.updateServiceQualification('missing', { state: 'terminated' }),
-      /service qualification not found/,
-    );
-    await assert.rejects(() => order.cancelServiceOrder('missing'), /service order not found/);
-    await assert.rejects(() => order.cancelResourceOrder('missing'), /resource order not found/);
-  } finally {
-    PostgresDatabase.resetForTesting();
-    database.cleanup();
-  }
-});
+test.skipIf(!oracleConfigured)(
+  'OrderService rejects invalid order permutations and unknown references',
+  async () => {
+    const { client, order } = await setupOrder();
+
+    try {
+      await assert.rejects(
+        () => order.createServiceOrder({ serviceOrderItem: [] }),
+        /serviceOrderItem required/,
+      );
+      await assert.rejects(
+        () => order.createResourceOrder({ resourceOrderItem: [] }),
+        /resourceOrderItem required/,
+      );
+      await assert.rejects(
+        () => order.createServiceOrder({ serviceOrderItem: [{ action: 'add' as const }] }),
+        /service payload required/,
+      );
+      await assert.rejects(
+        () =>
+          order.createServiceOrder({
+            serviceOrderItem: [{ action: 'modify' as const, serviceId: 'x' }],
+          }),
+        /serviceId and service payload required/,
+      );
+      await assert.rejects(
+        () => order.createServiceOrder({ serviceOrderItem: [{ action: 'delete' as const }] }),
+        /serviceId required/,
+      );
+      await assert.rejects(
+        () => order.createResourceOrder({ resourceOrderItem: [{ action: 'add' as const }] }),
+        /resource payload required/,
+      );
+      await assert.rejects(
+        () =>
+          order.createResourceOrder({
+            resourceOrderItem: [{ action: 'modify' as const, resourceId: 'x' }],
+          }),
+        /resource not found/,
+      );
+      await assert.rejects(
+        () =>
+          order.createResourceOrder({
+            resourceOrderItem: [{ action: 'delete' as const, resourceId: 'missing' }],
+          }),
+        /resource not found/,
+      );
+      await assert.rejects(
+        () => order.deleteServiceQualification('missing'),
+        /service qualification not found/,
+      );
+      await assert.rejects(
+        () => order.updateServiceQualification('missing', { state: 'terminated' }),
+        /service qualification not found/,
+      );
+      await assert.rejects(() => order.cancelServiceOrder('missing'), /service order not found/);
+      await assert.rejects(() => order.cancelResourceOrder('missing'), /resource order not found/);
+    } finally {
+      await cleanupOracleTables(client);
+    }
+  },
+);

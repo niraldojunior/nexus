@@ -6,12 +6,11 @@ import type {
   UserRecord,
   UserSecurityUpdate,
   UserStatus,
-} from '../../shared/persistence/postgres-user-repository.js';
+} from '../../shared/persistence/oracle-user-repository.js';
 import { hashPassword, verifyPassword } from './password.js';
 import { signAccessToken, type SignedAccessToken } from './jwt.js';
 
-// Estrutura mínima que o AuthService precisa do repositório de usuários. Tanto o
-// PostgresUserRepository quanto o OracleUserRepository (que o estende) a satisfazem.
+// Estrutura mínima que o AuthService precisa do repositório de usuários Oracle.
 export type AuthUserRepository = {
   getCredentialsByEmail(email: string): Promise<UserCredentials | undefined>;
   getById(id: string): Promise<UserRecord | undefined>;

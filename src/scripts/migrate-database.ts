@@ -1,11 +1,11 @@
 import { config as loadEnv } from 'dotenv';
-import { databaseConfigOf, loadConfig } from '../shared/config/env.js';
+import { loadConfig } from '../shared/config/env.js';
 import { createDatabaseClient } from '../shared/persistence/database-factory.js';
 
 loadEnv();
 
 const config = loadConfig({ ...process.env, DATABASE_AUTO_SCHEMA: 'false' });
-const client = createDatabaseClient(databaseConfigOf(config));
+const client = createDatabaseClient(config.database);
 
 process.env.DATABASE_AUTO_SCHEMA = 'true';
 try {

@@ -24,7 +24,7 @@ import {
   rewriteDdlObjectNames,
   rewriteTableReferences,
 } from './oracle-object-names.js';
-import { replaceQuestionBinds } from './postgres-database.js';
+import { replaceQuestionBinds } from './question-binds.js';
 import { checksumMigrationBatch, findColumnDrift, MIGRATION_BATCHES } from './schema.js';
 
 export type OracleConnectionConfig = {
@@ -194,11 +194,10 @@ export class OracleDatabase implements DatabaseClient {
     }
   }
 
-  // Mirrors PostgresDatabase.applyMigrations() batch-by-batch — see the MIGRATION_BATCHES doc
-  // comment in schema.ts (issue #188 §7.0). ORACLE_SCHEMA_SQL/ORACLE_JSON_CONSTRAINTS_SQL still
-  // run unconditionally on every boot (they're pure CREATE-if-missing/constraint-if-missing DDL,
-  // idempotent via executeOracleDdl's ORA-* allowlist); only the migration batches gained real
-  // per-version tracking, since those are the ones a destructive DDL phase would otherwise undo.
+  // Aplica migrations em lotes com rastreabilidade de versão e checksum. Consulte a documentação
+  // de MIGRATION_BATCHES em schema.ts (issue #188 §7.0). ORACLE_SCHEMA_SQL e
+  // ORACLE_JSON_CONSTRAINTS_SQL executam em todo boot: são DDLs idempotentes de criação ou ajuste
+  // de constraints. Os lotes, que podem conter mudanças destrutivas, têm versão persistida.
   private async applyMigrations(connection: Connection): Promise<void> {
     const prefix = this.config.objectPrefix;
     const prefixDdl = (sql: string): string =>
@@ -296,7 +295,7 @@ export class OracleDatabase implements DatabaseClient {
 
   // The baseline version alone (checked above) does not prove every ADD COLUMN migration landed —
   // DEV/HML/PRD/TEST share one Oracle schema under separate prefixes, and a migration can be applied
-  // to Postgres/Neon (or one prefix) without ever reaching another. Diffing `DECLARED_COLUMNS`
+  // to one prefix without ever reaching another. Diffing `DECLARED_COLUMNS`
   // (schema.ts) against `user_tab_columns` catches that drift at boot instead of a repository query
   // failing with ORA-00904 the first time a caller reaches the missing column (issue #166).
   private async assertNoColumnDrift(connection: Connection): Promise<void> {
@@ -378,8 +377,8 @@ class OracleSession implements DatabaseSession {
 // (`2026-08-11`) deliberately do not match — those stay text.
 const ISO_DATETIME_BIND = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/;
 
-// The application emits ISO date-time strings (fine for Postgres timestamptz). Oracle cannot convert
-// them to TIMESTAMP via the default NLS format (ORA-01843), so bind them as native Date objects,
+// The application emits ISO date-time strings. Oracle cannot convert them to TIMESTAMP via the
+// default NLS format (ORA-01843), so bind them as native Date objects,
 // which oracledb maps straight to the TIMESTAMP column.
 // Oracle's VARCHAR bind cap is ~32k bytes; longer strings (e.g. a big JSON-array bind for an inline
 // id list) must bind as CLOB.
@@ -407,8 +406,8 @@ export const toBinds = (params: unknown[]): BindParameters => {
   return binds as BindParameters;
 };
 
-// Oracle caps an IN-list at 1000 expressions (ORA-01795); Postgres has no such limit. Split any
-// bound IN-list longer than that into OR-joined groups (NOT IN → AND-joined). The bind array is
+// Oracle caps an IN-list at 1000 expressions (ORA-01795). Split any bound IN-list longer than that
+// into OR-joined groups (NOT IN → AND-joined). The bind array is
 // unchanged — the same :n placeholders are just regrouped.
 const MAX_IN_LIST = 1000;
 const chunkOracleInLists = (sql: string): string =>

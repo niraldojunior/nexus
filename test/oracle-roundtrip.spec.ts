@@ -9,17 +9,13 @@ import {
 } from './test-utils.js';
 
 // End-to-end Oracle verification against a real instance. Skips unless ORACLE_* is configured, so
-// the default database-free suite never tries to connect. Run it with `npm run test:oracle` after setting
-// DATABASE_PROVIDER=oracle and the ORACLE_* connection in .env.
+// the default database-free suite never tries to connect. Run it with `npm run test:oracle` after
+// setting the ORACLE_* connection in .env.
 //
 // It exercises the whole Oracle path at once: DDL generation with the NEXUS_TEST_ prefix
 // (auto-schema), the `?`→`:n` + table-prefix translator, and a repository-shaped insert/select
 // round-trip. If the prefix or the SQL translation were wrong, this fails against the server.
-
-// Explicit opt-in: DATABASE_PROVIDER=oracle (set by `npm run test:oracle`). Creds alone are not
-// enough — a plain `npm test` must never reach out to the corporate Oracle just because .env has the
-// connection in it.
-const oracleConfigured = isOracleTestConfigured() && process.env.DATABASE_PROVIDER === 'oracle';
+const oracleConfigured = isOracleTestConfigured();
 
 // Auto-create the prefixed schema on initialize(). Only affects the NEXUS_TEST_ namespace.
 if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';

@@ -1,3 +1,333 @@
-import { PostgresOrderRepository } from './postgres-repository.js';
+import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import { buildHref } from '../../shared/tmf/index.js';
+import type {
+  ResourceOrder,
+  ResourceOrderQuery,
+  ServiceOrder,
+  ServiceOrderQuery,
+  ServiceQualification,
+  ServiceQualificationQuery,
+} from './domain.js';
+import type { IOrderRepository, OrderTenantScope } from './order-repository-interface.js';
 
-export class OracleOrderRepository extends PostgresOrderRepository {}
+import type { ResourceOrderRow, ServiceOrderRow, ServiceQualificationRow } from './rows.js';
+export class OracleOrderRepository implements IOrderRepository {
+  public constructor(private readonly db: DatabaseClient) {}
+
+  public transaction<T>(fn: () => T | Promise<T>): Promise<T> {
+    return this.db.transaction(async () => await fn());
+  }
+
+  public async upsertServiceQualification(
+    qualification: ServiceQualification,
+  ): Promise<ServiceQualification> {
+    const now = new Date().toISOString();
+    await this.db.run(
+      `INSERT INTO tmf_service_qualification
+       (id, state, place, related_party, service_characteristic, service_qualification_item, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+       state = excluded.state,
+       place = excluded.place,
+       related_party = excluded.related_party,
+       service_characteristic = excluded.service_characteristic,
+       service_qualification_item = excluded.service_qualification_item,
+       valid_for_start = excluded.valid_for_start,
+       valid_for_end = excluded.valid_for_end,
+       updated_at = excluded.updated_at`,
+      [
+        qualification.id,
+        qualification.state,
+        JSON.stringify(qualification.place),
+        JSON.stringify(qualification.relatedParty),
+        JSON.stringify(qualification.serviceCharacteristic),
+        JSON.stringify(qualification.serviceQualificationItem),
+        qualification.tenantId ?? 'default',
+        qualification.validFor?.startDateTime ?? null,
+        qualification.validFor?.endDateTime ?? null,
+        now,
+        now,
+      ],
+    );
+
+    return (await this.getServiceQualification(qualification.id)) ?? qualification;
+  }
+
+  public async getServiceQualification(
+    id: string,
+    scope?: OrderTenantScope,
+  ): Promise<ServiceQualification | undefined> {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
+    const row = await this.db.get<ServiceQualificationRow>(
+      `SELECT id, state, place, related_party, service_characteristic, service_qualification_item, tenant_id, valid_for_start, valid_for_end
+       FROM tmf_service_qualification
+       WHERE ${conditions.join(' AND ')}`,
+      params,
+    );
+
+    return row ? this.mapQualification(row) : undefined;
+  }
+
+  public async listServiceQualifications(
+    query?: ServiceQualificationQuery,
+  ): Promise<ServiceQualification[]> {
+    const rows = (
+      await this.db.all<ServiceQualificationRow>(
+        'SELECT id, state, place, related_party, service_characteristic, service_qualification_item, tenant_id, valid_for_start, valid_for_end FROM tmf_service_qualification ORDER BY id',
+      )
+    )
+      .map((row) => this.mapQualification(row))
+      .filter((qualification) => filterQualification(qualification, query));
+
+    return paginate(rows, query?.limit, query?.offset);
+  }
+
+  public async upsertServiceOrder(order: ServiceOrder): Promise<ServiceOrder> {
+    const now = new Date().toISOString();
+    await this.db.run(
+      `INSERT INTO tmf_service_order
+       (id, state, description, related_party, service_order_item, note, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+       state = excluded.state,
+       description = excluded.description,
+       related_party = excluded.related_party,
+       service_order_item = excluded.service_order_item,
+       note = excluded.note,
+       valid_for_start = excluded.valid_for_start,
+       valid_for_end = excluded.valid_for_end,
+       updated_at = excluded.updated_at`,
+      [
+        order.id,
+        order.state,
+        order.description ?? null,
+        JSON.stringify(order.relatedParty),
+        JSON.stringify(order.serviceOrderItem),
+        JSON.stringify(order.note),
+        order.tenantId ?? 'default',
+        order.validFor?.startDateTime ?? null,
+        order.validFor?.endDateTime ?? null,
+        now,
+        now,
+      ],
+    );
+
+    return (await this.getServiceOrder(order.id)) ?? order;
+  }
+
+  public async getServiceOrder(
+    id: string,
+    scope?: OrderTenantScope,
+  ): Promise<ServiceOrder | undefined> {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
+    const row = await this.db.get<ServiceOrderRow>(
+      `SELECT id, state, description, related_party, service_order_item, note, tenant_id, valid_for_start, valid_for_end
+       FROM tmf_service_order
+       WHERE ${conditions.join(' AND ')}`,
+      params,
+    );
+
+    return row ? this.mapOrder(row) : undefined;
+  }
+
+  public async listServiceOrders(query?: ServiceOrderQuery): Promise<ServiceOrder[]> {
+    const rows = (
+      await this.db.all<ServiceOrderRow>(
+        'SELECT id, state, description, related_party, service_order_item, note, tenant_id, valid_for_start, valid_for_end FROM tmf_service_order ORDER BY id',
+      )
+    )
+      .map((row) => this.mapOrder(row))
+      .filter((order) => filterOrder(order, query));
+
+    return paginate(rows, query?.limit, query?.offset);
+  }
+
+  public async upsertResourceOrder(order: ResourceOrder): Promise<ResourceOrder> {
+    const now = new Date().toISOString();
+    await this.db.run(
+      `INSERT INTO tmf_resource_order
+       (id, state, description, related_party, resource_order_item, note, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+       state = excluded.state,
+       description = excluded.description,
+       related_party = excluded.related_party,
+       resource_order_item = excluded.resource_order_item,
+       note = excluded.note,
+       valid_for_start = excluded.valid_for_start,
+       valid_for_end = excluded.valid_for_end,
+       updated_at = excluded.updated_at`,
+      [
+        order.id,
+        order.state,
+        order.description ?? null,
+        JSON.stringify(order.relatedParty),
+        JSON.stringify(order.resourceOrderItem),
+        JSON.stringify(order.note),
+        order.tenantId ?? 'default',
+        order.validFor?.startDateTime ?? null,
+        order.validFor?.endDateTime ?? null,
+        now,
+        now,
+      ],
+    );
+
+    return (await this.getResourceOrder(order.id)) ?? order;
+  }
+
+  public async getResourceOrder(
+    id: string,
+    scope?: OrderTenantScope,
+  ): Promise<ResourceOrder | undefined> {
+    const conditions = ['id = ?'];
+    const params: Array<string | number> = [id];
+    if (scope?.tenantId) {
+      conditions.push('tenant_id = ?');
+      params.push(scope.tenantId);
+    }
+    const row = await this.db.get<ResourceOrderRow>(
+      `SELECT id, state, description, related_party, resource_order_item, note, tenant_id, valid_for_start, valid_for_end
+       FROM tmf_resource_order
+       WHERE ${conditions.join(' AND ')}`,
+      params,
+    );
+
+    return row ? this.mapResourceOrder(row) : undefined;
+  }
+
+  public async listResourceOrders(query?: ResourceOrderQuery): Promise<ResourceOrder[]> {
+    const rows = (
+      await this.db.all<ResourceOrderRow>(
+        'SELECT id, state, description, related_party, resource_order_item, note, tenant_id, valid_for_start, valid_for_end FROM tmf_resource_order ORDER BY id',
+      )
+    )
+      .map((row) => this.mapResourceOrder(row))
+      .filter((order) => filterResourceOrder(order, query));
+
+    return paginate(rows, query?.limit, query?.offset);
+  }
+
+  private mapQualification(row: ServiceQualificationRow): ServiceQualification {
+    return {
+      '@type': 'ServiceQualification',
+      id: row.id,
+      href: buildHref('serviceQualification', row.id),
+      state: row.state,
+      place: JSON.parse(row.place || '[]'),
+      relatedParty: JSON.parse(row.related_party || '[]'),
+      serviceCharacteristic: JSON.parse(row.service_characteristic || '[]'),
+      serviceQualificationItem: JSON.parse(row.service_qualification_item || '[]'),
+      tenantId: row.tenant_id ?? 'default',
+      ...(row.valid_for_start || row.valid_for_end
+        ? {
+            validFor: {
+              ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
+              ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
+            },
+          }
+        : {}),
+    };
+  }
+
+  private mapOrder(row: ServiceOrderRow): ServiceOrder {
+    return {
+      '@type': 'ServiceOrder',
+      id: row.id,
+      href: buildHref('serviceOrder', row.id),
+      state: row.state,
+      ...(row.description ? { description: row.description } : {}),
+      relatedParty: JSON.parse(row.related_party || '[]'),
+      serviceOrderItem: JSON.parse(row.service_order_item || '[]'),
+      note: JSON.parse(row.note || '[]'),
+      tenantId: row.tenant_id ?? 'default',
+      ...(row.valid_for_start || row.valid_for_end
+        ? {
+            validFor: {
+              ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
+              ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
+            },
+          }
+        : {}),
+    };
+  }
+
+  private mapResourceOrder(row: ResourceOrderRow): ResourceOrder {
+    return {
+      '@type': 'ResourceOrder',
+      id: row.id,
+      href: buildHref('resourceOrder', row.id),
+      state: row.state,
+      ...(row.description ? { description: row.description } : {}),
+      relatedParty: JSON.parse(row.related_party || '[]'),
+      resourceOrderItem: JSON.parse(row.resource_order_item || '[]'),
+      note: JSON.parse(row.note || '[]'),
+      tenantId: row.tenant_id ?? 'default',
+      ...(row.valid_for_start || row.valid_for_end
+        ? {
+            validFor: {
+              ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
+              ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
+            },
+          }
+        : {}),
+    };
+  }
+}
+
+const filterQualification = (
+  qualification: ServiceQualification,
+  query?: ServiceQualificationQuery,
+): boolean => {
+  if (!query) return true;
+  if (query.tenantId && (qualification.tenantId ?? 'default') !== query.tenantId) return false;
+  if (query.state && qualification.state !== query.state) return false;
+  if (query.placeId && !qualification.place.some((item) => item.id === query.placeId)) return false;
+  if (query.serviceSpecificationId) {
+    const matches = qualification.serviceQualificationItem.some(
+      (item) => item.serviceSpecification?.id === query.serviceSpecificationId,
+    );
+    if (!matches) return false;
+  }
+  return true;
+};
+
+const filterOrder = (order: ServiceOrder, query?: ServiceOrderQuery): boolean => {
+  if (!query) return true;
+  if (query.tenantId && (order.tenantId ?? 'default') !== query.tenantId) return false;
+  if (query.state && order.state !== query.state) return false;
+  if (query.relatedPartyId && !order.relatedParty.some((item) => item.id === query.relatedPartyId))
+    return false;
+  return true;
+};
+
+const filterResourceOrder = (order: ResourceOrder, query?: ResourceOrderQuery): boolean => {
+  if (!query) return true;
+  if (query.tenantId && (order.tenantId ?? 'default') !== query.tenantId) return false;
+  if (query.state && order.state !== query.state) return false;
+  if (query.relatedPartyId && !order.relatedParty.some((item) => item.id === query.relatedPartyId))
+    return false;
+  if (query.resourceId) {
+    const matches = order.resourceOrderItem.some(
+      (item) =>
+        item.resourceId === query.resourceId || item.resourceResult?.id === query.resourceId,
+    );
+    if (!matches) return false;
+  }
+  return true;
+};
+
+const paginate = <T>(items: T[], limit?: number, offset?: number): T[] => {
+  const start = offset ?? 0;
+  const end = limit !== undefined ? start + limit : undefined;
+  return items.slice(start, end);
+};

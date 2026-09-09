@@ -1,5 +1,5 @@
 ﻿import { createServer, IncomingMessage, ServerResponse } from 'node:http';
-import { databaseConfigOf, type AppConfig } from '../config/env.js';
+import type { AppConfig } from '../config/env.js';
 import { AppError } from '../errors/app-error.js';
 import {
   buildRequestContext,
@@ -150,11 +150,10 @@ export const handleHttpRequest = async (
 export const createApp = ({ config, logger }: AppDependencies) => {
   configureHrefBaseUrl(config.tmfPublicBaseUrl);
   const repository = new InMemoryEntityRepository();
-  const databaseConfig = databaseConfigOf(config);
-  const db = createDatabaseClient(databaseConfig);
+  const db = createDatabaseClient(config.database);
   const runtimeOptions = runtimeOptionsFromConfig(config);
-  // The runtime builds every repository and runs their seeds, which over a Postgres/Neon
-  // backend means dozens of network round-trips. Build it ONCE at startup and reuse it for
+  // The runtime builds every repository and runs their seeds, which means dozens of database
+  // round-trips. Build it ONCE at startup and reuse it for
   // every request instead of rebuilding per request (which made each request take seconds).
   let runtimePromise: Promise<NexusRuntime> | null = null;
   // Uma instância por app (não módulo): o LLM custa dinheiro por chamada, então limita por ator
@@ -213,7 +212,7 @@ export const createApp = ({ config, logger }: AppDependencies) => {
   return {
     start: async (): Promise<number> => {
       await db.initialize();
-      logger.info({ databaseProvider: databaseConfig.provider }, 'database initialized');
+      logger.info({ databaseProvider: db.provider }, 'database initialized');
       const runtimeStartedAt = Date.now();
       runtimePromise = createNexusRuntime(db, runtimeOptions);
       const runtime = await runtimePromise;
@@ -254,10 +253,6 @@ export const createApp = ({ config, logger }: AppDependencies) => {
       outboxRelayHandle?.stop();
       outboxRelayHandle = null;
       runtimePromise = null;
-      // db.close() already removes just this instance from the static map. Calling
-      // PostgresDatabase.resetForTesting() here would additionally tear down every other
-      // instance still registered — including one from a test whose async teardown is
-      // still in flight — leaving it with a null bridge ("Database not initialized").
       await db.close();
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
@@ -308,11 +303,7 @@ const routeRequest = async ({
       status: 'ok',
       appName: config.appName,
       timestamp: new Date().toISOString(),
-      // Diagnóstico de deploy: identifica qual código está no ar e se ele enxerga as variáveis de
-      // autenticação. Só o SHA e booleanos — nenhum valor de segredo. O Vercel injeta env vars no
-      // deployment, então mudar uma variável sem redeploy não tem efeito; estes campos tornam essa
-      // diferença visível de fora.
-      commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local',
+      commit: process.env.GIT_COMMIT_SHA?.slice(0, 7) ?? 'local',
       auth: {
         jwtSecretConfigured: Boolean(config.authJwtSecret),
         adminSeedConfigured: Boolean(config.adminEmail && config.adminPassword),
@@ -5583,9 +5574,6 @@ const GEO_PROJECT_ICON_MAX_CHARS = 120_000;
 
 // Deriva as opções de autenticação do runtime a partir da AppConfig — o runtime não lê env
 // direto (testabilidade), então a fronteira HTTP traduz config → options.
-// Exportado porque o handler serverless (vercel-handler.ts) precisa construir o runtime com as
-// mesmas opções do servidor standalone — sem elas o AuthService nasce sem jwtSecret e todo login
-// responde 503, e o ensureAdmin nunca roda.
 export const runtimeOptionsFromConfig = (config: AppConfig): NexusRuntimeOptions => ({
   auth: {
     ...(config.authJwtSecret ? { jwtSecret: config.authJwtSecret } : {}),

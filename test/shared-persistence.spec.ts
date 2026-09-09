@@ -1,27 +1,25 @@
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'vitest';
+import { afterAll, test } from 'vitest';
 import { InMemoryEntityRepository } from '../src/shared/persistence/in-memory-entity-repository.js';
-import { PostgresDatabase } from '../src/shared/persistence/postgres-database.js';
-import { PostgresSearchRepository as SharedSqliteSearchRepository } from '../src/shared/persistence/postgres-search-repository.js';
-import { PostgresUserRepository } from '../src/shared/persistence/postgres-user-repository.js';
-import { createTestDatabase } from './test-utils.js';
+import {
+  OracleSearchRepository as SharedOracleSearchRepository,
+  type SearchRecord,
+} from '../src/shared/persistence/oracle-search-repository.js';
+import { OracleUserRepository } from '../src/shared/persistence/oracle-user-repository.js';
+import { cleanupOracleTables, getOracleTestClient, isOracleTestConfigured } from './test-utils.js';
 
-afterEach(() => {
-  PostgresDatabase.resetForTesting();
+// Oracle round-trip coverage for the shared user/search-history repositories (the ones actually
+// wired in nexus-runtime.ts, not the search-module's research-session repository). Skips unless
+// ORACLE_* is configured (see test/test-utils.ts). Run with `npm run test:oracle`.
+const oracleConfigured = isOracleTestConfigured();
+if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
+
+afterAll(async () => {
+  if (!oracleConfigured) return;
+  const client = await getOracleTestClient();
+  await cleanupOracleTables(client);
+  await client.close();
 });
-
-const setupDatabase = async () => {
-  const database = createTestDatabase('nexus-shared-persistence-');
-  const sqlite = PostgresDatabase.getInstance(database.databaseUrl);
-  await sqlite.initialize();
-  return {
-    sqlite,
-    cleanup: () => {
-      PostgresDatabase.resetForTesting();
-      database.cleanup();
-    },
-  };
-};
 
 test('InMemoryEntityRepository cria, conta e entrega listas independentes', async () => {
   const repository = new InMemoryEntityRepository();
@@ -37,11 +35,11 @@ test('InMemoryEntityRepository cria, conta e entrega listas independentes', asyn
   assert.equal(repository.list().length, 2);
 });
 
-test('PostgresUserRepository persiste e atualiza usuários', async () => {
-  const { sqlite, cleanup } = await setupDatabase();
+test.skipIf(!oracleConfigured)('OracleUserRepository persiste e atualiza usuários', async () => {
+  const client = await getOracleTestClient();
 
   try {
-    const repository = new PostgresUserRepository(sqlite);
+    const repository = new OracleUserRepository(client);
     const created = await repository.create({
       externalId: 'ext-1',
       name: 'Operações',
@@ -60,53 +58,58 @@ test('PostgresUserRepository persiste e atualiza usuários', async () => {
     assert.equal(await repository.count(), 0);
     assert.equal(await repository.getById(created.id), undefined);
   } finally {
-    cleanup();
+    await cleanupOracleTables(client);
   }
 });
 
-test('PostgresSearchRepository persiste filtros, resultados e remoção em lote', async () => {
-  const { sqlite, cleanup } = await setupDatabase();
+test.skipIf(!oracleConfigured)(
+  'OracleSearchRepository persiste filtros, resultados e remoção em lote',
+  async () => {
+    const client = await getOracleTestClient();
 
-  try {
-    const users = new PostgresUserRepository(sqlite);
-    const userOne = await users.create({ externalId: 'user-1', name: 'Tenant One' });
-    const userTwo = await users.create({ externalId: 'user-2', name: 'Tenant Two' });
+    try {
+      const users = new OracleUserRepository(client);
+      const userOne = await users.create({ externalId: 'user-1', name: 'Tenant One' });
+      const userTwo = await users.create({ externalId: 'user-2', name: 'Tenant Two' });
 
-    const repository = new SharedSqliteSearchRepository(sqlite);
-    const first = await repository.create({
-      userId: userOne.id,
-      query: 'geographic site',
-      filters: { domain: 'geo' },
-      results: { total: 2 },
-    });
-    const second = await repository.create({
-      userId: userOne.id,
-      query: 'service inventory',
-      results: { total: 1 },
-    });
-    await repository.create({
-      userId: userTwo.id,
-      query: 'resource inventory',
-    });
+      const repository = new SharedOracleSearchRepository(client);
+      const first = await repository.create({
+        userId: userOne.id,
+        query: 'geographic site',
+        filters: { domain: 'geo' },
+        results: { total: 2 },
+      });
+      const second = await repository.create({
+        userId: userOne.id,
+        query: 'service inventory',
+        results: { total: 1 },
+      });
+      await repository.create({
+        userId: userTwo.id,
+        query: 'resource inventory',
+      });
 
-    assert.equal(await repository.count(), 3);
-    assert.equal(await repository.countByUserId(userOne.id), 2);
-    assert.equal((await repository.getById(first.id))?.filters?.domain, 'geo');
-    assert.equal((await repository.getById(second.id))?.results?.total, 1);
-    assert.equal((await repository.listByUserId(userOne.id)).length, 2);
-    assert.ok((await repository.list()).some((entry) => entry.userId === userTwo.id));
+      assert.equal(await repository.count(), 3);
+      assert.equal(await repository.countByUserId(userOne.id), 2);
+      assert.equal((await repository.getById(first.id))?.filters?.domain, 'geo');
+      assert.equal((await repository.getById(second.id))?.results?.total, 1);
+      assert.equal((await repository.listByUserId(userOne.id)).length, 2);
+      assert.ok(
+        (await repository.list()).some((entry: SearchRecord) => entry.userId === userTwo.id),
+      );
 
-    const updated = await repository.update(first.id, {
-      query: 'geographic site updated',
-      filters: { domain: 'geo', scope: 'site' },
-    });
-    assert.equal(updated?.query, 'geographic site updated');
-    assert.equal(updated?.filters?.scope, 'site');
-    assert.equal(await repository.delete(second.id), true);
-    assert.equal(await repository.deleteByUserId(userTwo.id), 1);
-    assert.equal(await repository.count(), 1);
-    assert.equal(await repository.update('missing', { query: 'noop' }), undefined);
-  } finally {
-    cleanup();
-  }
-});
+      const updated = await repository.update(first.id, {
+        query: 'geographic site updated',
+        filters: { domain: 'geo', scope: 'site' },
+      });
+      assert.equal(updated?.query, 'geographic site updated');
+      assert.equal(updated?.filters?.scope, 'site');
+      assert.equal(await repository.delete(second.id), true);
+      assert.equal(await repository.deleteByUserId(userTwo.id), 1);
+      assert.equal(await repository.count(), 1);
+      assert.equal(await repository.update('missing', { query: 'noop' }), undefined);
+    } finally {
+      await cleanupOracleTables(client);
+    }
+  },
+);

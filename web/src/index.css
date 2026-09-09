@@ -204,6 +204,15 @@ button {
     border: 1px solid var(--vt-yellow-selected-border);
   }
 
+  /* Casca da sidebar principal: mesma hairline reforçada das janelas internas do Studio.
+     Centralizar aqui evita que variantes desktop/drawer dependam de classes Tailwind de borda. */
+  .vt-main-nav {
+    border-right: 1px solid var(--border-input-strong);
+  }
+  .vt-main-nav-mobile {
+    border-right: 1px solid var(--border-input-strong);
+  }
+
   /* Nav interna do Studio (Modelo de recursos, Modelo de locais, Espacial...): mesmo
      amarelo + borda da sidebar principal, replicado por pedido explícito — reusa
      `.vt-sb-btn` como a sidebar principal, mas escopado a `.vt-studio-nav` em vez de

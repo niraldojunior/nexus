@@ -211,18 +211,19 @@ export function tileForPoint(coordinates: LngLat, z: number = MAP_TILE_ZOOM): Ti
   return lngLatToTile(coordinates[0], coordinates[1], z);
 }
 
-// Tiles + trecho recortado de um cabo, prontos para virar linhas de geo_map_feature — um item
-// por tile atravessado, já com a geometria clipada (com margem) naquele tile.
+// Tiles + trecho recortado de um cabo, prontos para virar linhas de geo_map_feature. Um tile pode
+// receber mais de um trecho quando a rota sai dele e volta a entrar; `rank` é o ordinal estável
+// desses trechos na ordem da rota e completa a chave física da projeção.
 export function tileSegmentsForLine(
   line: GeoJSONLineString,
   z: number = MAP_TILE_ZOOM,
-): Array<{ tile: Tile; coordinates: LngLat[] }> {
+): Array<{ tile: Tile; coordinates: LngLat[]; rank: number }> {
   const coordinates = line.coordinates as LngLat[];
   const tiles = tilesForLine(coordinates, z);
-  const segments: Array<{ tile: Tile; coordinates: LngLat[] }> = [];
+  const segments: Array<{ tile: Tile; coordinates: LngLat[]; rank: number }> = [];
   for (const tile of tiles) {
     const runs = clipLineToBounds(coordinates, tileBounds(tile.z, tile.x, tile.y));
-    for (const run of runs) segments.push({ tile, coordinates: run });
+    for (const [rank, run] of runs.entries()) segments.push({ tile, coordinates: run, rank });
   }
   return segments;
 }

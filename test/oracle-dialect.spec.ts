@@ -17,7 +17,7 @@ import {
   rewriteTableReferences,
 } from '../src/shared/persistence/oracle-object-names.js';
 import { dialectFor } from '../src/shared/persistence/sql-dialect.js';
-import { TABLE_NAMES } from '../src/shared/persistence/schema.js';
+import { MIGRATION_BATCHES, TABLE_NAMES } from '../src/shared/persistence/schema.js';
 
 const PREFIX = 'NEXUS_TEST_';
 
@@ -192,6 +192,12 @@ test('geo_project_area (REQ-MOD01-017) survives the Oracle schema transform', ()
     statements.some((s) => /\bgeo_project_area\b[\s\S]*\(\s*site_ids\s+IS JSON\s*\)/i.test(s)),
     'geo_project_area.site_ids should carry an IS JSON constraint',
   );
+});
+
+test('migration do índice de mapa recebe versão própria nos dois providers', () => {
+  const migration = MIGRATION_BATCHES.find((batch) => batch.name === 'geo-map-feature-segment-rank');
+  assert.ok(migration);
+  assert.equal(migration.version, 8);
 });
 
 test('text_pattern_ops index (search prefix path) survives the Oracle schema transform', () => {

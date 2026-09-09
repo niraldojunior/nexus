@@ -240,7 +240,7 @@ export function StudioPage({
            glow do tamanho da própria `aside` parava seco onde ela termina; este cobre a coluna
            inteira e esmaece suavemente antes de alcançar o conteúdo da direita. */
         backgroundImage:
-          'radial-gradient(1400px circle at 0% 0%, rgba(188, 193, 214, 0.14) 0%, rgba(188, 193, 214, 0.05) 35%, rgba(188, 193, 214, 0) 62%)',
+          'radial-gradient(1400px circle at 0% 0%, rgba(81, 79, 102, 0.2) 0%, rgba(81, 79, 102, 0.08) 35%, rgba(81, 79, 102, 0) 62%)',
         backgroundRepeat: 'no-repeat',
       }}
     >
@@ -248,7 +248,7 @@ export function StudioPage({
         className="relative mx-auto grid gap-5 lg:grid-cols-[202px_minmax(0,1fr)]"
         style={{ maxWidth: 'var(--content-max)' }}
       >
-        <aside className="relative h-fit rounded-[10px] bg-app-ink p-3 text-app-on-ink shadow-soft lg:sticky lg:top-0">
+        <aside className="relative h-fit rounded-[10px] bg-app-ink-soft p-3 text-app-on-ink shadow-soft lg:sticky lg:top-0">
           <div className="flex items-center gap-3 px-3 pb-4 pt-2">
             <div
               className="flex h-10 w-10 items-center justify-center rounded-[14px] text-app-accent transition-colors duration-1000 ease-in-out"

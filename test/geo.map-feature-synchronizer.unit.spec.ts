@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 import {
   MAP_FEATURE_POINT_INSERT_SQL,
   candidatesSql,
 } from '../src/modules/geo/map-feature-synchronizer.js';
 import { INTERNAL_RESOURCE_TYPES } from '../src/modules/geo/map-visibility.js';
+
+const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 // O write-through monta o INSERT de `geo_map_feature` à mão, com a lista de colunas e a de
 // VALUES em linhas separadas. Um `?` a mais não quebra typecheck nem lint — estoura só em
@@ -72,4 +77,29 @@ test('candidatesSql restringe site a category = Site, fora de projeto em curso',
   assert.doesNotMatch(CANDIDATES_SQL, /'SubSite'/);
   assert.match(CANDIDATES_SQL, /geo_project_site/);
   assert.match(CANDIDATES_SQL, /p\.status <> 'terminated'/);
+});
+
+test('rebuild do índice inclui somente PhysicalResource, compatível com ResourcePanel', async () => {
+  const script = await readFile(resolve(rootDir, 'scripts/build-map-features.mjs'), 'utf8');
+  assert.match(script, /resourceSource\('PhysicalResource', scopeWhere\)/);
+  assert.doesNotMatch(script, /resourceSource\('LogicalResource', scopeWhere\)/);
+});
+
+test('repositório de Resource não consulta a coluna textual resource_type removida da specification', async () => {
+  const repository = await readFile(resolve(rootDir, 'src/modules/resource/postgres-repository.ts'), 'utf8');
+  assert.doesNotMatch(repository, /\b(?:ps|ss|ctos|rs|ds|os)\.resource_type\b/);
+  assert.match(repository, /prt\.code AS resource_type/);
+  assert.match(repository, /srt\.code = 'Splitter'/);
+  assert.match(repository, /drt\.code = 'DropCable'/);
+  assert.match(repository, /ort\.code = 'ONT'/);
+});
+
+test('rebuild preserva o rank dos trechos de cabo e a chave inclui o ordinal', async () => {
+  const script = await readFile(resolve(rootDir, 'scripts/build-map-features.mjs'), 'utf8');
+  assert.match(script, /segments\.map\(\(\{ tile, coordinates, rank \}\)/);
+  assert.match(script, /geometry: JSON\.stringify\(\{ type: 'LineString', coordinates \}\),\s*rank,/);
+  assert.match(
+    script,
+    /PRIMARY KEY \(tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank\)/,
+  );
 });

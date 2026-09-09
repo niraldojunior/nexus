@@ -1105,10 +1105,13 @@ export class PostgresResourceRepository implements IResourceRepository {
       resource_type: string;
       relationship_type: string;
     }>(
-      `SELECT p.id, p.name, ps.resource_type, rr.relationship_type
+      `SELECT p.id, p.name, prt.code AS resource_type, rr.relationship_type
          FROM tmf_resource_relationship rr
          JOIN tmf_physical_resource p ON p.id = rr.resource_from_id
-         JOIN tmf_resource_specification ps ON ps.id = p.resource_specification_id
+         JOIN tmf_resource_specification ps
+           ON ps.id = p.resource_specification_id AND ps.tenant_id = p.tenant_id
+         JOIN tmf_resource_type prt
+           ON prt.id = ps.resource_type_id AND prt.tenant_id = ps.tenant_id
         WHERE rr.resource_to_id = ?
           AND rr.relationship_type IN ('containsAsChild', 'connectedTo')
           AND p.tenant_id = ?
@@ -1212,12 +1215,15 @@ export class PostgresResourceRepository implements IResourceRepository {
     const cto = await this.getPhysicalResource(ctoId, { tenantId });
     if (!cto || cto.resourceType !== 'CTO') return undefined;
     const splitterRows = await this.db.all<{ id: string; name: string; resource_type: string; characteristics: string | null }>(
-      `SELECT s.id, s.name, ss.resource_type, s.characteristics
+      `SELECT s.id, s.name, srt.code AS resource_type, s.characteristics
          FROM tmf_resource_relationship c
          JOIN tmf_physical_resource s ON s.id = c.resource_to_id
-         JOIN tmf_resource_specification ss ON ss.id = s.resource_specification_id
+         JOIN tmf_resource_specification ss
+           ON ss.id = s.resource_specification_id AND ss.tenant_id = s.tenant_id
+         JOIN tmf_resource_type srt
+           ON srt.id = ss.resource_type_id AND srt.tenant_id = ss.tenant_id
         WHERE c.resource_from_id = ? AND c.relationship_type = 'containsAsChild'
-          AND s.tenant_id = ? AND ss.resource_type = 'Splitter'
+          AND s.tenant_id = ? AND srt.code = 'Splitter'
         ORDER BY s.name, s.id`,
       [ctoId, tenantId],
     );
@@ -1248,16 +1254,22 @@ export class PostgresResourceRepository implements IResourceRepository {
     const port = await this.getPhysicalResource(portId, { tenantId });
     if (!port || port.resourceType !== 'Port') return undefined;
     const parent = await this.db.get<{ id: string; name: string; resource_type: string; characteristics: string | null; cto_id: string | null; cto_name: string | null }>(
-      `SELECT s.id, s.name, ss.resource_type, s.characteristics, cto.id AS cto_id, cto.name AS cto_name
+      `SELECT s.id, s.name, srt.code AS resource_type, s.characteristics, cto.id AS cto_id, cto.name AS cto_name
          FROM tmf_resource_relationship p
          JOIN tmf_physical_resource s ON s.id = p.resource_from_id
-         JOIN tmf_resource_specification ss ON ss.id = s.resource_specification_id
+         JOIN tmf_resource_specification ss
+           ON ss.id = s.resource_specification_id AND ss.tenant_id = s.tenant_id
+         JOIN tmf_resource_type srt
+           ON srt.id = ss.resource_type_id AND srt.tenant_id = ss.tenant_id
          LEFT JOIN tmf_resource_relationship c ON c.resource_to_id = s.id AND c.relationship_type = 'containsAsChild'
          LEFT JOIN tmf_physical_resource cto ON cto.id = c.resource_from_id AND cto.tenant_id = ?
-         LEFT JOIN tmf_resource_specification ctos ON ctos.id = cto.resource_specification_id
+         LEFT JOIN tmf_resource_specification ctos
+           ON ctos.id = cto.resource_specification_id AND ctos.tenant_id = cto.tenant_id
+         LEFT JOIN tmf_resource_type ctort
+           ON ctort.id = ctos.resource_type_id AND ctort.tenant_id = ctos.tenant_id
         WHERE p.resource_to_id = ? AND p.relationship_type = 'containsAsChild'
-          AND s.tenant_id = ? AND ss.resource_type = 'Splitter'
-          AND (ctos.resource_type = 'CTO' OR cto.id IS NULL)
+          AND s.tenant_id = ? AND srt.code = 'Splitter'
+          AND (ctort.code = 'CTO' OR cto.id IS NULL)
         ORDER BY cto.name, s.name LIMIT 1`,
       [tenantId, portId, tenantId],
     );
@@ -1274,7 +1286,7 @@ export class PostgresResourceRepository implements IResourceRepository {
          FROM ${PHYSICAL_RESOURCE_FROM}
          JOIN tmf_resource_relationship rr ON rr.resource_to_id = r.id
         WHERE rr.resource_from_id = ? AND rr.relationship_type = 'containsAsChild'
-          AND r.tenant_id = ? AND rs.resource_type = 'Port'
+          AND r.tenant_id = ? AND rt.code = 'Port'
         ORDER BY r.name, r.id`,
       [splitterId, tenantId],
     );
@@ -1295,12 +1307,15 @@ export class PostgresResourceRepository implements IResourceRepository {
     tenantId: string,
   ): Promise<ResourcePortDetail> {
     const connectionRows = await this.db.all<{ id: string; name: string; resource_type: string; valid_for_start: string | null; valid_for_end: string | null }>(
-      `SELECT d.id, d.name, ds.resource_type, rr.valid_for_start, rr.valid_for_end
+      `SELECT d.id, d.name, drt.code AS resource_type, rr.valid_for_start, rr.valid_for_end
          FROM tmf_resource_relationship rr
          JOIN tmf_physical_resource d ON d.id = CASE WHEN rr.resource_from_id = ? THEN rr.resource_to_id ELSE rr.resource_from_id END
-         JOIN tmf_resource_specification ds ON ds.id = d.resource_specification_id
+         JOIN tmf_resource_specification ds
+           ON ds.id = d.resource_specification_id AND ds.tenant_id = d.tenant_id
+         JOIN tmf_resource_type drt
+           ON drt.id = ds.resource_type_id AND drt.tenant_id = ds.tenant_id
         WHERE rr.relationship_type = 'connectedTo' AND (rr.resource_from_id = ? OR rr.resource_to_id = ?)
-          AND d.tenant_id = ? AND ds.resource_type = 'DropCable'
+          AND d.tenant_id = ? AND drt.code = 'DropCable'
         ORDER BY d.name, d.id`,
       [port.id, port.id, port.id, tenantId],
     );
@@ -1350,12 +1365,15 @@ export class PostgresResourceRepository implements IResourceRepository {
     tenantId: string,
   ): Promise<ResourceDetailReference | undefined> {
     const ont = await this.db.get<{ id: string; name: string; resource_type: string }>(
-      `SELECT o.id, o.name, os.resource_type
+      `SELECT o.id, o.name, ort.code AS resource_type
          FROM tmf_resource_relationship rr
          JOIN tmf_physical_resource o ON o.id = CASE WHEN rr.resource_from_id = ? THEN rr.resource_to_id ELSE rr.resource_from_id END
-         JOIN tmf_resource_specification os ON os.id = o.resource_specification_id
+         JOIN tmf_resource_specification os
+           ON os.id = o.resource_specification_id AND os.tenant_id = o.tenant_id
+         JOIN tmf_resource_type ort
+           ON ort.id = os.resource_type_id AND ort.tenant_id = os.tenant_id
         WHERE rr.relationship_type = 'connectedTo' AND (rr.resource_from_id = ? OR rr.resource_to_id = ?)
-          AND o.tenant_id = ? AND os.resource_type = 'ONT'
+          AND o.tenant_id = ? AND ort.code = 'ONT'
         LIMIT 1`,
       [dropId, dropId, dropId, tenantId],
     );
@@ -1387,10 +1405,13 @@ export class PostgresResourceRepository implements IResourceRepository {
 
     const ids = [...removedDropIds];
     const rows = await this.db.all<{ id: string; name: string; resource_type: string }>(
-      `SELECT d.id, d.name, ds.resource_type
+      `SELECT d.id, d.name, drt.code AS resource_type
          FROM tmf_physical_resource d
-         JOIN tmf_resource_specification ds ON ds.id = d.resource_specification_id
-        WHERE d.tenant_id = ? AND ds.resource_type = 'DropCable'
+         JOIN tmf_resource_specification ds
+           ON ds.id = d.resource_specification_id AND ds.tenant_id = d.tenant_id
+         JOIN tmf_resource_type drt
+           ON drt.id = ds.resource_type_id AND drt.tenant_id = ds.tenant_id
+        WHERE d.tenant_id = ? AND drt.code = 'DropCable'
           AND d.id IN (${ids.map(() => '?').join(', ')})
         ORDER BY d.name, d.id`,
       [tenantId, ...ids],

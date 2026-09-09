@@ -198,5 +198,29 @@ test('tileSegmentsForLine: um item por tile atravessado, cada um com a geometria
   assert.equal(segments.length, 2);
   for (const segment of segments) {
     assert.ok(segment.coordinates.length >= 2);
+    assert.equal(segment.rank, 0);
   }
+});
+
+test('tileSegmentsForLine: trechos que reentram no mesmo tile têm rank distinto e estável', () => {
+  const z = MAP_TILE_ZOOM;
+  const tile = lngLatToTile(ICARAI[0], ICARAI[1], z);
+  const bounds = tileBounds(z, tile.x, tile.y);
+  const y1 = bounds.minLat + (bounds.maxLat - bounds.minLat) * 0.3;
+  const y2 = bounds.minLat + (bounds.maxLat - bounds.minLat) * 0.7;
+  const route: LngLat[] = [
+    [bounds.minLng - 0.01, y1],
+    [bounds.maxLng + 0.01, y1],
+    [bounds.maxLng + 0.01, y2],
+    [bounds.minLng - 0.01, y2],
+  ];
+
+  const segments = tileSegmentsForLine({ type: 'LineString', coordinates: route }, z).filter(
+    (segment) => segment.tile.x === tile.x && segment.tile.y === tile.y,
+  );
+  assert.equal(segments.length, 2);
+  assert.deepEqual(
+    segments.map((segment) => segment.rank),
+    [0, 1],
+  );
 });

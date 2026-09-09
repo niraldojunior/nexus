@@ -106,6 +106,10 @@ test('Resource repository projects splitter ports from bidirectional drop connec
       id: ont.id, relationshipType: 'connectedTo', '@referredType': 'Resource',
     });
 
+    const splitterDetail = await repository.getPhysicalResourceDetail(splitter.id);
+    assert.equal(splitterDetail?.parent?.id, cto.id);
+    assert.equal(splitterDetail?.parent?.resourceType, 'CTO');
+
     const view = await repository.getResourcePortsView(cto.id);
     assert.equal(view?.groups.length, 1);
     assert.equal(view?.groups[0]?.ports[0]?.resource.usageState, 'active');

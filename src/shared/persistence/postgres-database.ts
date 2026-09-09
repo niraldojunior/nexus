@@ -300,6 +300,9 @@ export class PostgresDatabase implements DatabaseClient {
           if (!/already exists|duplicate column|does not exist/i.test(message)) throw error;
         }
       }
+      if (batch.name === 'geo-map-feature-segment-rank') {
+        await this.applyGeoMapFeatureSegmentRankPrimaryKey(client);
+      }
       await client.query(
         `INSERT INTO ${migrationTable}(version, name, checksum)
          VALUES ($1, $2, $3)
@@ -307,6 +310,28 @@ export class PostgresDatabase implements DatabaseClient {
         [batch.version, `postgres-${batch.name}`, checksumMigrationBatch(batch.sql)],
       );
     }
+  }
+
+  private async applyGeoMapFeatureSegmentRankPrimaryKey(client: PoolClient): Promise<void> {
+    const expected = ['tenant_id', 'tile_z', 'tile_x', 'tile_y', 'entity_id', 'shape', 'rank'];
+    const constraint = await client.query<{ conname: string; columns: string[] }>(
+      `SELECT con.conname, array_agg(att.attname ORDER BY key.position) AS columns
+         FROM pg_constraint con
+         JOIN pg_class rel ON rel.oid = con.conrelid
+         JOIN unnest(con.conkey) WITH ORDINALITY AS key(attnum, position) ON true
+         JOIN pg_attribute att ON att.attrelid = rel.oid AND att.attnum = key.attnum
+        WHERE rel.relname = 'geo_map_feature'
+          AND rel.relnamespace = current_schema()::regnamespace
+          AND con.contype = 'p'
+        GROUP BY con.conname`,
+    );
+    const current = constraint.rows[0];
+    if (!current || current.columns.join(',') === expected.join(',')) return;
+    const name = current.conname.replace(/"/g, '""');
+    await client.query(`ALTER TABLE geo_map_feature DROP CONSTRAINT "${name}"`);
+    await client.query(
+      'ALTER TABLE geo_map_feature ADD PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)',
+    );
   }
 
   private async validateSchemaVersion(client: PoolClient): Promise<void> {

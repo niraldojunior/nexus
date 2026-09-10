@@ -202,11 +202,26 @@ export class OracleDatabase implements DatabaseClient {
     const prefix = this.config.objectPrefix;
     const prefixDdl = (sql: string): string =>
       rewriteTableReferences(rewriteDdlObjectNames(sql, prefix), prefix);
-    for (const statement of splitOracleStatements(ORACLE_SCHEMA_SQL)) {
-      await executeOracleDdl(connection, prefixDdl(statement));
-    }
-    for (const statement of splitOracleStatements(ORACLE_JSON_CONSTRAINTS_SQL)) {
-      await executeOracleDdl(connection, prefixDdl(statement));
+    // A fresh Oracle namespace has table dependencies that are not topologically ordered in the
+    // canonical schema (ResourceSpecification precedes ResourceType, for example). Retry only
+    // ORA-00904 statements until their dependencies have been materialized. This must finish before
+    // additive batches run: executeOracleDdl intentionally treats ORA-00942 as idempotent for an
+    // old optional table, which would otherwise skip an ALTER on a new table that appears later.
+    let pendingSchemaStatements = splitOracleStatements(ORACLE_SCHEMA_SQL).map(prefixDdl);
+    while (pendingSchemaStatements.length > 0) {
+      const deferred: string[] = [];
+      for (const statement of pendingSchemaStatements) {
+        try {
+          await executeOracleDdl(connection, statement, { ignoreMissingTable: false });
+        } catch (error) {
+          if (!isMissingOracleDependency(error)) throw error;
+          deferred.push(statement);
+        }
+      }
+      if (deferred.length === pendingSchemaStatements.length) {
+        throw new Error(`Oracle schema has unresolved DDL dependencies: ${deferred.join('; ')}`);
+      }
+      pendingSchemaStatements = deferred;
     }
     const migrations = prefixed('schema_migrations', prefix);
     await executeOracleDdl(
@@ -232,6 +247,12 @@ export class OracleDatabase implements DatabaseClient {
       if (batch.name === 'geo-map-feature-segment-rank') {
         await this.applyGeoMapFeatureSegmentRankPrimaryKey(connection);
       }
+      if (batch.name === 'shared-resource-type-catalog') {
+        await this.applySharedResourceTypeCatalogMigration(connection);
+      }
+      if (batch.name === 'resource-type-map-presence-numeric') {
+        await this.applyResourceTypeMapPresenceNumeric(connection);
+      }
       await connection.execute(
         `MERGE INTO ${migrations} target
          USING (SELECT :1 version, :2 name, :3 checksum FROM DUAL) source
@@ -242,6 +263,137 @@ export class OracleDatabase implements DatabaseClient {
         [batch.version, `oracle-${batch.name}`, checksumMigrationBatch(batch.sql)],
         { autoCommit: true },
       );
+    }
+
+    // Recupera namespaces interrompidos depois de registrar um batch, mas antes de concluir todas
+    // as adições de coluna. Reexecutar somente DDL aditivo é seguro e evita repetir os backfills
+    // potencialmente caros do baseline em todo boot. As adições vivem tanto nos batches como no
+    // SCHEMA_SQL: este último é a fonte das colunas já incluídas na baseline atual.
+    const additiveDdl = (sql: string): string[] =>
+      splitOracleStatements(sql).filter((statement) =>
+        /^ALTER TABLE\s+\S+\s+ADD(?:\s+COLUMN)?\s+(?!CONSTRAINT\b)/i.test(statement),
+      );
+    for (const statement of additiveDdl(ORACLE_SCHEMA_SQL)) {
+      await executeOracleDdl(connection, prefixDdl(statement));
+    }
+    for (const batch of ORACLE_MIGRATION_BATCHES) {
+      for (const statement of additiveDdl(batch.sql)) {
+        await executeOracleDdl(connection, prefixDdl(statement));
+      }
+    }
+    for (const statement of splitOracleStatements(ORACLE_JSON_CONSTRAINTS_SQL)) {
+      await executeOracleDdl(connection, prefixDdl(statement));
+    }
+  }
+
+  private async applySharedResourceTypeCatalogMigration(connection: Connection): Promise<void> {
+    const prefix = this.config.objectPrefix;
+    const typeTable = prefixed('tmf_resource_type', prefix);
+    const references = [
+      { table: prefixed('tmf_resource_specification', prefix), name: `${prefix}tmf_resource_specification_type_fk` },
+      { table: prefixed('tmf_resource_catalog_node', prefix), name: `${prefix}tmf_resource_catalog_node_type_fk` },
+    ];
+
+    for (const reference of references) {
+      // Em um namespace criado do zero, a tabela de specification pode estar na fila de DDLs
+      // adiados: o SCHEMA_SQL a declara antes de tmf_resource_type, sua referência ainda não
+      // existe e ela só será criada depois dos batches. Nesse caso o CREATE TABLE canônico já
+      // contém a FK simples correta; a conversão abaixo é necessária apenas para tabelas legadas
+      // materializadas antes da mudança de contrato.
+      const exists = await connection.execute<{ table_name: string }>(
+        `SELECT table_name AS "table_name" FROM user_tables WHERE table_name = :1`,
+        [reference.table.toUpperCase()],
+        QUERY_OPTIONS,
+      );
+      if (!exists.rows?.length) continue;
+
+      // A FK anterior inclui tenant_id, então precisa sair antes do repoint: uma specification
+      // de `vtal` passa a apontar para o tipo global `default` neste passo.
+      await this.dropResourceTypeForeignKeys(connection, reference.table, typeTable);
+      await this.repointResourceTypeReferences(connection, reference.table, typeTable);
+      await executeOracleDdl(
+        connection,
+        `ALTER TABLE ${reference.table}
+         ADD CONSTRAINT ${reference.name}
+         FOREIGN KEY (resource_type_id) REFERENCES ${typeTable}(id)`,
+      );
+    }
+  }
+
+  // A CREATE TABLE original declarava `map_presence TEXT` (bug — todo leitor trata a coluna como
+  // flag numérica, `COALESCE(rt.map_presence, 1) = 1`). Um namespace cujo CREATE TABLE rodou antes
+  // da correção em schema.ts ficou com VARCHAR2; a migration v1 (`ADD COLUMN IF NOT EXISTS`) nunca
+  // alcança esse caso porque a coluna já existe. Oracle não converte VARCHAR2→NUMBER via MODIFY
+  // com dados presentes (ORA-01439), então troca por coluna nova + cópia + rename.
+  private async applyResourceTypeMapPresenceNumeric(connection: Connection): Promise<void> {
+    const table = prefixed('tmf_resource_type', this.config.objectPrefix);
+    const result = await connection.execute<{ data_type: string }>(
+      `SELECT data_type AS "data_type" FROM user_tab_columns
+        WHERE table_name = :1 AND column_name = 'MAP_PRESENCE'`,
+      [table.toUpperCase()],
+      QUERY_OPTIONS,
+    );
+    const dataType = result.rows?.[0]?.data_type;
+    if (!dataType || dataType === 'NUMBER') return;
+
+    await executeOracleDdl(connection, `ALTER TABLE ${table} ADD map_presence_num NUMBER`);
+    await connection.execute(
+      `UPDATE ${table} SET map_presence_num = TO_NUMBER(map_presence) WHERE map_presence IS NOT NULL`,
+      [],
+      { autoCommit: true },
+    );
+    await executeOracleDdl(connection, `ALTER TABLE ${table} DROP COLUMN map_presence`);
+    await executeOracleDdl(
+      connection,
+      `ALTER TABLE ${table} RENAME COLUMN map_presence_num TO map_presence`,
+    );
+  }
+
+  private async repointResourceTypeReferences(
+    connection: Connection,
+    table: string,
+    typeTable: string,
+  ): Promise<void> {
+    await connection.execute(
+      `UPDATE ${table}
+          SET resource_type_id = (
+            SELECT canonical.id
+              FROM ${typeTable} legacy
+              JOIN ${typeTable} canonical
+                ON canonical.tenant_id = 'default' AND canonical.code = legacy.code
+             WHERE legacy.id = resource_type_id
+          )
+        WHERE resource_type_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+              FROM ${typeTable} legacy
+              JOIN ${typeTable} canonical
+                ON canonical.tenant_id = 'default' AND canonical.code = legacy.code
+             WHERE legacy.id = resource_type_id
+          )`,
+      [],
+      { autoCommit: true },
+    );
+  }
+
+  private async dropResourceTypeForeignKeys(
+    connection: Connection,
+    table: string,
+    typeTable: string,
+  ): Promise<void> {
+    const result = await connection.execute<{ constraint_name: string }>(
+      `SELECT constraint_name AS "constraint_name"
+         FROM user_constraints
+        WHERE table_name = :1
+          AND constraint_type = 'R'
+          AND r_constraint_name IN (
+            SELECT constraint_name FROM user_constraints WHERE table_name = :2
+          )`,
+      [table.toUpperCase(), typeTable.toUpperCase()],
+      QUERY_OPTIONS,
+    );
+    for (const row of result.rows ?? []) {
+      await connection.execute(`ALTER TABLE ${table} DROP CONSTRAINT ${row.constraint_name}`);
     }
   }
 
@@ -545,7 +697,14 @@ const normalizeOracleValue = (value: unknown): unknown => {
   return value;
 };
 
-const executeOracleDdl = async (connection: Connection, sql: string): Promise<void> => {
+const isMissingOracleDependency = (error: unknown): boolean =>
+  /ORA-00904|ORA-00942/.test(error instanceof Error ? error.message : String(error));
+
+const executeOracleDdl = async (
+  connection: Connection,
+  sql: string,
+  options: { ignoreMissingTable?: boolean } = {},
+): Promise<void> => {
   try {
     await connection.execute(sql, [], { autoCommit: true });
   } catch (error) {
@@ -553,11 +712,12 @@ const executeOracleDdl = async (connection: Connection, sql: string): Promise<vo
     // Swallow "already exists / already indexed / already (non-)nullable" so re-running the schema is
     // idempotent. ORA-01408 = column list already indexed (a UNIQUE constraint already covers it).
     // ORA-40664 = column already has an IS JSON constraint (idempotent re-run of the JSON checks).
-    if (
-      !/ORA-00955|ORA-01430|ORA-02260|ORA-02261|ORA-02264|ORA-02443|ORA-00942|ORA-01408|ORA-01442|ORA-01451|ORA-40664/.test(
-        message,
-      )
-    )
-      throw error;
+    // ORA-00942 is ignored only for optional migration objects; canonical schema creation requests
+    // strict dependency handling and retries the statement after the referenced table exists.
+    const idempotentErrors =
+      /ORA-00955|ORA-01430|ORA-02260|ORA-02261|ORA-02264|ORA-02443|ORA-01408|ORA-01442|ORA-01451|ORA-40664/;
+    if (idempotentErrors.test(message)) return;
+    if (options.ignoreMissingTable !== false && /ORA-00942/.test(message)) return;
+    throw error;
   }
 };

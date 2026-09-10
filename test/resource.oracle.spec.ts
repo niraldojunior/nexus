@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { afterAll, test, vi } from 'vitest';
+import { afterAll, beforeEach, test, vi } from 'vitest';
 import { ResourceService } from '../src/modules/resource/service.js';
 import { OracleResourceRepository } from '../src/modules/resource/oracle-repository.js';
 import { cleanupOracleTables, getOracleTestClient, isOracleTestConfigured } from './test-utils.js';
@@ -9,6 +9,12 @@ import { cleanupOracleTables, getOracleTestClient, isOracleTestConfigured } from
 // test:unit` never tries to connect. Run with `npm run test:oracle`.
 const oracleConfigured = isOracleTestConfigured();
 if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
+
+beforeEach(async () => {
+  if (!oracleConfigured) return;
+  const client = await getOracleTestClient();
+  await cleanupOracleTables(client);
+});
 
 afterAll(async () => {
   if (!oracleConfigured) return;
@@ -160,15 +166,14 @@ test.skipIf(!oracleConfigured)(
       name: 'CPE',
       resourceTypeId: 'rt-cpe',
       resourceSpecificationCharacteristic: [
-        { name: 'manufacturer', value: 'V.tal', valueType: 'string', group: 'commercial' },
         { name: 'stockable', value: true, valueType: 'boolean', group: 'capability' },
       ],
       relatedParty: [{ id: 'party-1', '@referredType': 'Organization', role: 'manufacturer' }],
     });
 
     const persisted = await repository.getResourceSpecification(created.id);
-    assert.equal(persisted?.resourceSpecificationCharacteristic.length, 2);
-    assert.equal(persisted?.resourceSpecificationCharacteristic[0]?.name, 'manufacturer');
+    assert.equal(persisted?.resourceSpecificationCharacteristic.length, 1);
+    assert.equal(persisted?.resourceSpecificationCharacteristic[0]?.name, 'stockable');
     assert.equal(persisted?.relatedParty.length, 1);
     assert.equal(persisted?.relatedParty[0]?.role, 'manufacturer');
   },

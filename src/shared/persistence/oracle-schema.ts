@@ -53,6 +53,11 @@ const JSON_COLUMNS = new Set(
         'message',
         'icon_data_url',
         'observation',
+        // `note` é anotação de plataforma em texto livre em toda tabela onde aparece
+        // (geo_project_site, tmf_service_order, tmf_resource_order, tmf_geographic_site) —
+        // nunca JSON. Mesma classe do bug de research_session.context (ORA-02290): o check
+        // IS JSON é global por nome de coluna, então "note" precisa da mesma exclusão.
+        'note',
       ].includes(column),
   ),
 );

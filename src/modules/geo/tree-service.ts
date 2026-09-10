@@ -738,7 +738,7 @@ export class GeoTreeService {
          JOIN tmf_physical_resource r ON r.id = e.resource_to_id
          LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
          LEFT JOIN tmf_resource_type rt
-           ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+           ON rt.id = rs.resource_type_id
         WHERE e.resource_from_id = ? AND e.relationship_type = 'supportedBy'`,
       [cableId],
     );
@@ -1227,7 +1227,7 @@ export class GeoTreeService {
          FROM tmf_physical_resource r
          JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
          JOIN tmf_resource_type rt
-           ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+           ON rt.id = rs.resource_type_id
         WHERE r.id = ? AND rt.code IN (${placeholders([...INTERNAL_RESOURCE_TYPES])})`,
       [resourceId, ...INTERNAL_RESOURCE_TYPES],
     );
@@ -1331,7 +1331,7 @@ export class GeoTreeService {
                 SELECT 1 FROM tmf_physical_resource p
                   JOIN tmf_resource_specification rs ON rs.id = p.resource_specification_id
                   JOIN tmf_resource_type rt
-                    ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+                    ON rt.id = rs.resource_type_id
                  WHERE p.id = f.node_id AND rt.code IN (${INTERNAL_RESOURCE_TYPES_SQL})
               )
             )
@@ -1343,7 +1343,7 @@ export class GeoTreeService {
             SELECT 1 FROM tmf_physical_resource p
               JOIN tmf_resource_specification rs ON rs.id = p.resource_specification_id
               JOIN tmf_resource_type rt
-                ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+                ON rt.id = rs.resource_type_id
              WHERE p.id = frontier.node_id AND rt.code IN (${INTERNAL_RESOURCE_TYPES_SQL})
           )
         GROUP BY root_id`,
@@ -1471,7 +1471,7 @@ const siteResourceEntityBlock = (
     FROM ${table} r
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
     LEFT JOIN tmf_resource_type rt
-      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+      ON rt.id = rs.resource_type_id
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
    WHERE (${where}) ${extra}`;
 };
@@ -1490,7 +1490,7 @@ const siteResourceIdSource = (scope: GeoTreeScope): string => {
     const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
     return `SELECT r.id, r.name, '${entity}' AS entity_type FROM ${table} r LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
     LEFT JOIN tmf_resource_type rt
-      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id WHERE (${where}) ${extra}`;
+      ON rt.id = rs.resource_type_id WHERE (${where}) ${extra}`;
   };
   const blocksFor = (entity: 'PhysicalResource' | 'LogicalResource'): string[] => [
     idBlock(entity, RESOURCE_BY_PLACE_WHERE),
@@ -1542,7 +1542,7 @@ const viewportBlock = (entity: 'PhysicalResource' | 'LogicalResource', where: st
     JOIN tmf_geographic_location l ON l.id = r.place_id
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
     LEFT JOIN tmf_resource_type rt
-      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+      ON rt.id = rs.resource_type_id
    WHERE r.status <> 'terminated' AND (${where})`;
 };
 
@@ -1590,7 +1590,7 @@ const searchResourceIdBlock = (
       : '';
   return `SELECT r.id, r.name FROM ${table} r LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
     LEFT JOIN tmf_resource_type rt
-      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id WHERE (${SEARCH_RESOURCE_ID_WHERE}${typeFilter})`;
+      ON rt.id = rs.resource_type_id WHERE (${SEARCH_RESOURCE_ID_WHERE}${typeFilter})`;
 };
 
 // Colunas (na ordem) que RESOURCE_CHILD_SOURCE / RESOURCE_CHILD_TREE_SOURCE projetam. Listadas
@@ -1612,7 +1612,7 @@ const RESOURCE_CHILD_SOURCE = `
     JOIN tmf_physical_resource r ON r.id = e.resource_to_id
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
     LEFT JOIN tmf_resource_type rt
-      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+      ON rt.id = rs.resource_type_id
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
    WHERE e.resource_from_id = ?
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')
@@ -1626,7 +1626,7 @@ const RESOURCE_CHILD_SOURCE = `
     JOIN tmf_logical_resource r ON r.id = e.resource_to_id
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
     LEFT JOIN tmf_resource_type rt
-      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+      ON rt.id = rs.resource_type_id
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
    WHERE e.resource_from_id = ?
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')`;
@@ -1650,7 +1650,7 @@ const RESOURCE_CHILD_TREE_SOURCE = `
          SELECT 1 FROM tmf_physical_resource p
            JOIN tmf_resource_specification rs ON rs.id = p.resource_specification_id
            JOIN tmf_resource_type rt
-             ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+             ON rt.id = rs.resource_type_id
           WHERE p.id = e.resource_to_id AND rt.code IN (${INTERNAL_RESOURCE_TYPES_SQL})
        )
   )
@@ -1663,7 +1663,7 @@ const RESOURCE_CHILD_TREE_SOURCE = `
     JOIN tmf_physical_resource r ON r.id = e.resource_to_id
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
     LEFT JOIN tmf_resource_type rt
-      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+      ON rt.id = rs.resource_type_id
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
    WHERE e.resource_from_id IN (SELECT id FROM hidden_chain)
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')
@@ -1678,7 +1678,7 @@ const RESOURCE_CHILD_TREE_SOURCE = `
     JOIN tmf_logical_resource r ON r.id = e.resource_to_id
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
     LEFT JOIN tmf_resource_type rt
-      ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+      ON rt.id = rs.resource_type_id
     LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
    WHERE e.resource_from_id IN (SELECT id FROM hidden_chain)
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')

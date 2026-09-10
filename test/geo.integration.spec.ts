@@ -216,21 +216,18 @@ test.skipIf(!oracleConfigured)('Geo tree serves one level per call, with counts,
 
   const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
 
-  // Estação com endereço (é dele que saem UF e Município) e ponto próprio.
-  const stationSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-    name: 'Estação',
-    category: 'Site',
-  });
-  // A contenção precisa ser declarada nos dois lados do catálogo: sem isso a criação da
-  // sala é recusada com 409 GEO_SPEC_CONTAINMENT_NOT_ALLOWED.
-  const roomSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-    name: 'Sala',
-    category: 'SubSite',
-    allowedParentSpecIds: [idOf(stationSpec)],
-  });
-  await requestJson(port, 'PATCH', `/v1/geo/site-specifications/${idOf(stationSpec)}`, {
-    allowedChildSpecIds: [idOf(roomSpec)],
-  });
+  // Estação com endereço (é dela que saem UF e Município) e ponto próprio. A árvore só expõe
+  // as specifications canônicas CO/POP como raiz; reutilizamos o bootstrap, em vez de disputar o
+  // código protegido CO com a inicialização do runtime.
+  const bootstrap = await requestJson(port, 'POST', '/v1/geo/site-specifications/bootstrap');
+  assert.equal(bootstrap.statusCode, 200);
+  const specifications = (bootstrap.body as { specs: Array<{ id: string; code: string }> }).specs;
+  const stationSpecId = specifications.find((spec) => spec.code === 'CO')?.id;
+  const roomSpecId = specifications.find((spec) => spec.code === 'ROOM')?.id;
+  assert.ok(stationSpecId, 'bootstrap deve fornecer a specification canônica CO');
+  assert.ok(roomSpecId, 'bootstrap deve fornecer a specification canônica ROOM');
+  const stationSpec = { body: { id: stationSpecId } };
+  const roomSpec = { body: { id: roomSpecId } };
   const address = await requestJson(port, 'POST', '/v1/geo/addresses', {
     street: 'Rua Coronel Moreira Cesar',
     city: 'Niterói',
@@ -895,7 +892,7 @@ test.skipIf(!oracleConfigured)('Geo tree viewport serves passive infra by boundi
     port,
     'POST',
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'Splitter óptico 1:8', category: 'Infrastructure.Passive', resourceType: 'Splitter' },
+    { name: 'Splitter óptico 1:8', resourceTypeId: 'rt-splitter' },
   );
   const splitter = await requestJson(
     port,
@@ -1299,8 +1296,9 @@ test.skipIf(!oracleConfigured)('Geo coverage resolves by-resource id to the cell
 
   const specId = '44444444-4444-7444-8444-444444444444';
   await db.run(
-    `INSERT INTO tmf_resource_specification (id, name, category, resource_type)
-     VALUES (?, 'CTO', 'Equipment.Access', 'CTO')`,
+    `INSERT INTO tmf_resource_specification
+       (id, tenant_id, name, resource_type_id, related_party, characteristics)
+     VALUES (?, 'default', 'CTO', 'rt-cto', '[]', '[]')`,
     [specId],
   );
 
@@ -1372,12 +1370,12 @@ test.skipIf(!oracleConfigured)('Geo coverage resolves by-resource id to the cell
   );
   const orphan = await requestJson(port, 'GET', `/v1/geo/coverage/by-resource/${orphanResourceId}`);
   assert.equal(orphan.statusCode, 404);
-  assert.equal((orphan.body as { code: string }).code, 'GEO_COVERAGE_RESOURCE_NOT_FOUND');
+  assert.equal((orphan.body as { error: string }).error, 'GEO_COVERAGE_RESOURCE_NOT_FOUND');
 
   // Id inexistente — mesma resposta 404.
   const missing = await requestJson(port, 'GET', '/v1/geo/coverage/by-resource/does-not-exist');
   assert.equal(missing.statusCode, 404);
-  assert.equal((missing.body as { code: string }).code, 'GEO_COVERAGE_RESOURCE_NOT_FOUND');
+  assert.equal((missing.body as { error: string }).error, 'GEO_COVERAGE_RESOURCE_NOT_FOUND');
   } finally {
     await server.stop();
     const client = await getOracleTestClient();
@@ -1466,7 +1464,7 @@ test.skipIf(!oracleConfigured)('Geo tree search finds stations and resources by 
     port,
     'POST',
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'Splitter óptico 1:8', category: 'Infrastructure.Passive', resourceType: 'Splitter' },
+    { name: 'Splitter óptico 1:8', resourceTypeId: 'rt-splitter' },
   );
   const splitter = await requestJson(
     port,
@@ -1980,7 +1978,7 @@ test.skipIf(!oracleConfigured)('Painel unificado de Local: Origem do Site e vín
     port,
     'POST',
     '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'OLT Origem', category: 'Equipment.Access', resourceType: 'OLT' },
+    { name: 'OLT Origem', resourceTypeId: 'rt-olt' },
   );
   const resource = await requestJson(
     port,

@@ -58,10 +58,9 @@ test.skipIf(!oracleConfigured)('MCP prepare/commit flow persists confirmation to
   const fixture = await createFixture();
 
   try {
-    const spec = await fixture.runtime.geoService.createSpec({
-      name: 'Central Office',
-      category: 'Site',
-    });
+    const bootstrap = await fixture.runtime.geoService.ensureBootstrapSpecifications();
+    const spec = bootstrap.specs.find((candidate) => candidate.code === 'CO');
+    assert.ok(spec, 'bootstrap deve fornecer a specification canônica CO');
 
     const prepared = await fixture.module.registry.executeTool(
       'geo.create_site',
@@ -103,6 +102,10 @@ test.skipIf(!oracleConfigured)('MCP exposes and executes resource specification 
     const vendor = await fixture.runtime.partyService.createParty({
       name: 'HUAWEI',
       partyType: 'Organization',
+    });
+    await fixture.runtime.partyService.createPartyRole({
+      partyId: vendor.id,
+      name: 'manufacturer',
     });
 
     const prepared = await fixture.module.registry.executeTool(
@@ -251,13 +254,20 @@ test.skipIf(!oracleConfigured)('MCP remove modelo de equipamento como soft-delet
   const fixture = await createFixture();
 
   try {
+    const suffix = Date.now();
+    const manufacturerName = `ZTE-${suffix}`;
+    const model = `F6201BV9.3.12-${suffix}`;
     const manufacturer = await fixture.runtime.partyService.createParty({
-      name: 'ZTE',
+      name: manufacturerName,
       partyType: 'Organization',
+    });
+    await fixture.runtime.partyService.createPartyRole({
+      partyId: manufacturer.id,
+      name: 'manufacturer',
     });
 
     const created = await fixture.runtime.resourceService.createResourceSpecification({
-      name: 'F6201BV9.3.12',
+      name: model,
       resourceTypeId: 'rt-ont',
       relatedParty: [
         {
@@ -267,14 +277,22 @@ test.skipIf(!oracleConfigured)('MCP remove modelo de equipamento como soft-delet
           name: manufacturer.name,
         },
       ],
+      resourceSpecificationCharacteristic: [
+        {
+          name: 'model',
+          value: model,
+          valueType: 'string',
+          group: 'commercial',
+        },
+      ],
     });
 
     const prepared = await fixture.module.registry.executeTool(
       'resource.delete_equipment_model',
       {
         payload: {
-          model: 'F6201BV9.3.12',
-          manufacturerName: 'ZTE',
+          model,
+          manufacturerName,
           equipmentType: 'ONT',
         },
       },
@@ -297,11 +315,11 @@ test.skipIf(!oracleConfigured)('MCP remove modelo de equipamento como soft-delet
     assert.ok((committed.data as { validFor?: { endDateTime?: string } }).validFor?.endDateTime);
 
     const activeList = await fixture.runtime.resourceService.listResourceSpecifications({
-      name: 'F6201BV9.3.12',
+      name: model,
     });
     assert.equal(activeList.length, 0);
     const allList = await fixture.runtime.resourceService.listResourceSpecifications({
-      name: 'F6201BV9.3.12',
+      name: model,
       includeEnded: true,
     });
     assert.equal(allList.length, 1);
@@ -322,7 +340,7 @@ test.skipIf(!oracleConfigured)('MCP blocks commit without valid token and with e
     assert.equal(missing.ok, false);
     assert.equal(missing.error?.code, 'MCP_CONFIRMATION_NOT_FOUND');
 
-    fixture.module.confirmations.create({
+    await fixture.module.confirmations.create({
       token: 'expired-token',
       domain: 'party',
       operation: 'create_party',

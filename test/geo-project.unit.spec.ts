@@ -26,6 +26,13 @@ const cleanup = async (): Promise<void> => {
 const createSiteSpec = async (runtime: NexusRuntime) =>
   runtime.geoService.createSpec({ name: `Ponto de Instalação ${Date.now()}`, category: 'Site' });
 
+const createStationSpec = async (runtime: NexusRuntime) => {
+  const bootstrap = await runtime.geoService.ensureBootstrapSpecifications();
+  const station = bootstrap.specs.find((spec) => spec.code === 'CO');
+  assert.ok(station, 'bootstrap deve fornecer a specification canônica CO');
+  return station;
+};
+
 test.skipIf(!oracleConfigured)(
   'GeoProjectRepository cria, atualiza e lista projetos do tenant',
   async () => {
@@ -352,7 +359,7 @@ test.skipIf(!oracleConfigured)(
   async () => {
     const fixture = await createFixture();
     try {
-      const spec = await createSiteSpec(fixture.runtime);
+      const spec = await createStationSpec(fixture.runtime);
       const project = await fixture.runtime.geoProjectRepository.create(TENANT_ID, ACTOR, {
         name: 'Projeto oculto',
       });

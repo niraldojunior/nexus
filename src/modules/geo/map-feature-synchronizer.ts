@@ -76,7 +76,7 @@ export function candidatesSql(idPlaceholders: string): string {
            FROM tmf_physical_resource r
            JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
            JOIN tmf_resource_type rt
-             ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+             ON rt.id = rs.resource_type_id
            JOIN tmf_geographic_location l ON l.id = r.place_id
           WHERE r.id IN (${idPlaceholders}) AND r.status <> 'terminated'
             AND ${excludeInternalResourceTypesSql('rt')}

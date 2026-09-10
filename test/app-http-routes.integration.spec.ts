@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { startHttpTestApp } from './test-utils.js';
 
-test('App bootstrap and entity creation routes', async (t) => {
+test('App bootstrap and entity creation routes', async () => {
   const app = await startHttpTestApp();
-  t.after(app.cleanup);
+  try {
 
   const before = await app.requestJson('GET', '/v1/bootstrap');
   assert.equal(before.statusCode, 200);
@@ -19,11 +19,14 @@ test('App bootstrap and entity creation routes', async (t) => {
     (after.body as { entities: number }).entities,
     (before.body as { entities: number }).entities + 1,
   );
+  } finally {
+    await app.cleanup();
+  }
 });
 
-test('Users API creates, lists, reads, updates and deletes users', async (t) => {
+test('Users API creates, lists, reads, updates and deletes users', async () => {
   const app = await startHttpTestApp();
-  t.after(app.cleanup);
+  try {
 
   const created = await app.requestJson('POST', '/v1/users', {
     externalId: 'ext-1',
@@ -55,11 +58,14 @@ test('Users API creates, lists, reads, updates and deletes users', async (t) => 
 
   const deletedAgain = await app.requestJson('DELETE', `/v1/users/${user.id}`);
   assert.equal(deletedAgain.statusCode, 404);
+  } finally {
+    await app.cleanup();
+  }
 });
 
-test('Searches API creates, lists, reads, updates and deletes searches', async (t) => {
+test('Searches API creates, lists, reads, updates and deletes searches', async () => {
   const app = await startHttpTestApp();
-  t.after(app.cleanup);
+  try {
 
   const created = await app.requestJson('POST', '/v1/searches', {
     query: 'sites in RJ',
@@ -95,17 +101,17 @@ test('Searches API creates, lists, reads, updates and deletes searches', async (
 
   const deletedAgain = await app.requestJson('DELETE', `/v1/searches/${search.id}`);
   assert.equal(deletedAgain.statusCode, 404);
+  } finally {
+    await app.cleanup();
+  }
 });
 
-test('Chat completions route falls back to local knowledge provider without an OpenAI key', async (t) => {
+test('Chat completions route falls back to local knowledge provider without an OpenAI key', async () => {
   const previousKey = process.env.OPENAI_API_KEY;
   delete process.env.OPENAI_API_KEY;
 
   const app = await startHttpTestApp();
-  t.after(() => {
-    app.cleanup();
-    if (previousKey !== undefined) process.env.OPENAI_API_KEY = previousKey;
-  });
+  try {
 
   const response = await app.requestJson('POST', '/v1/chat/completions', {
     messages: [{ role: 'user', content: 'Quais sites existem no Rio de Janeiro?' }],
@@ -119,4 +125,8 @@ test('Chat completions route falls back to local knowledge provider without an O
   const invalid = await app.requestJson('POST', '/v1/chat/completions', { messages: [] });
   assert.equal(invalid.statusCode, 400);
   assert.equal((invalid.body as { error: string }).error, 'INVALID_MESSAGE');
+  } finally {
+    await app.cleanup();
+    if (previousKey !== undefined) process.env.OPENAI_API_KEY = previousKey;
+  }
 });

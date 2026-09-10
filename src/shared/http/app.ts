@@ -4428,6 +4428,15 @@ const resolveResourceRoute = (pathname: string): ResourceRoute | undefined => {
       return { kind: 'resourceSpecification', id: decodeURIComponent(id) };
   }
 
+  if (pathname === `${catalogBase}/resourceFunctionSpecification`)
+    return { kind: 'resourceFunctionSpecification' };
+  if (pathname.startsWith(`${catalogBase}/resourceFunctionSpecification/`)) {
+    const id = pathname.slice(`${catalogBase}/resourceFunctionSpecification/`.length);
+    if (id && !id.includes('/')) {
+      return { kind: 'resourceFunctionSpecification', id: decodeURIComponent(id) };
+    }
+  }
+
   if (pathname === inventoryBase) return { kind: 'resource' };
   if (pathname.startsWith(`${inventoryBase}/`)) {
     const tail = pathname.slice(`${inventoryBase}/`.length);

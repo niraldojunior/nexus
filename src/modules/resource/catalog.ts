@@ -97,10 +97,9 @@ export const getResourceTypeByCode = (code: string): ResourceType | undefined =>
 // --- Árvore dinâmica de catálogo (issue #188) ---------------------------------------------------
 // Só o container do catálogo é bootstrap estático aqui — insert-if-missing, nunca sobrescreve
 // edição do operador (C9), mesmo padrão de RESOURCE_TYPES acima. A árvore de
-// nodes (Category → GROUP, Type → RESOURCE_TYPE) **não** nasce aqui: ela depende de ResourceType
-// já materializado por tenant, o que só acontece no backfill auditado (plano §7 Fase A, tarefa
-// #10) — criar nodes agora, antes disso, violaria a FK composta (tenant_id, resource_type_id) já
-// que ResourceType hoje só existe com tenant_id='default'. Ver também `RESOURCE_TENANTS` abaixo.
+// nodes (Category → GROUP, Type → RESOURCE_TYPE) continua dependente do backfill auditado; os
+// ResourceTypes são um vocabulário canônico compartilhado, enquanto catálogos, nodes e
+// specifications permanecem isolados por tenant.
 
 export const RESOURCE_CATALOG_BOOTSTRAP = {
   code: 'nexus-master-resource-catalog',
@@ -108,14 +107,6 @@ export const RESOURCE_CATALOG_BOOTSTRAP = {
   description: 'Árvore de navegação governada do Resource Catalog.',
 } as const;
 
-/**
- * Únicos tenants no escopo do módulo Resource após o refactor (decisão firmada, plano
- * "Decisões já firmadas"). Geo/Service/Party/Order e demais módulos não são afetados —
- * continuam em `default`.
- */
+// Tenants bootstrap do catálogo de navegação. O catálogo de tipos é canônico e compartilhado;
+// ResourceSpecifications e Resources preservam o tenant autenticado, inclusive tenants ISP.
 export const RESOURCE_TENANTS = ['vtal', 'tecto'] as const;
-
-// A normalização de tenant (`default` → `vtal`) será ativada junto ao backfill (tarefas #10/#12).
-// Antes disso, aplicá-la no runtime faria as operações deixarem de enxergar os dados existentes
-// sob `tenant_id='default'`. A aplicação continua aceitando tenants autenticados fora desta lista;
-// ela delimita apenas o bootstrap e o cutover de dados deste plano.

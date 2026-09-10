@@ -63,11 +63,9 @@ test('candidatesSql exclui todo tipo de recurso interno (Splitter e Porta)', () 
   }
 });
 
-test('candidatesSql filtra recurso por map_presence do ResourceType vinculado por FK', () => {
-  assert.match(
-    CANDIDATES_SQL,
-    /JOIN tmf_resource_type rt\s+ON rt\.id = rs\.resource_type_id AND rt\.tenant_id = rs\.tenant_id/,
-  );
+test('candidatesSql filtra recurso por map_presence do ResourceType canônico vinculado por FK', () => {
+  assert.match(CANDIDATES_SQL, /JOIN tmf_resource_type rt\s+ON rt\.id = rs\.resource_type_id/);
+  assert.doesNotMatch(CANDIDATES_SQL, /rt\.tenant_id = rs\.tenant_id/);
   assert.doesNotMatch(CANDIDATES_SQL, /rt\.code = rs\.resource_type/);
   assert.match(CANDIDATES_SQL, /COALESCE\(rt\.map_presence, 1\) = 1/);
 });

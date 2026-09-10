@@ -1,4 +1,5 @@
 import { expect, test, type CDPSession, type Page } from '@playwright/test';
+import { authenticateRegressionPage } from './auth.js';
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
@@ -40,6 +41,7 @@ const subSites = Array.from({ length: 30 }, (_, index) => ({
   refId: `sub-${index + 1}`,
   referredType: 'GeographicSite',
   siteCategory: 'SubSite',
+  siteSpecificationId: 'spec-1',
   status: 'active',
   hasChildren: false,
 }));
@@ -51,6 +53,10 @@ async function installGeoFixtures(page: Page) {
 
     if (path === '/api/v1/geo/sites') {
       await route.fulfill({ json: [site] });
+      return;
+    }
+    if (path === `/api/v1/geo/sites/${site.id}`) {
+      await route.fulfill({ json: site });
       return;
     }
     if (path === '/api/v1/geo/site-specifications') {
@@ -73,6 +79,10 @@ async function installGeoFixtures(page: Page) {
       await route.fulfill({ json: [{ ...siteNode, parentId: null }] });
       return;
     }
+    if (path === '/api/v1/geo/tree/search') {
+      await route.fulfill({ json: [siteNode] });
+      return;
+    }
     if (path === '/api/v1/geo/tree/children') {
       const nodeId = url.searchParams.get('nodeId');
       await route.fulfill({
@@ -88,6 +98,19 @@ async function installGeoFixtures(page: Page) {
     }
     if (path === '/api/v1/geo/tree/path') {
       await route.fulfill({ json: { nodeId: siteNode.id, path: [siteNode.id] } });
+      return;
+    }
+    if (path === '/api/v1/geo/coverage') {
+      await route.fulfill({
+        json: {
+          level: 'neighborhood',
+          grid: { sizeMeters: 100, projection: 'EPSG:3857' },
+          cells: [],
+          areas: [],
+          neighborhoods: [],
+          truncated: false,
+        },
+      });
       return;
     }
     if (path.endsWith('/events')) {
@@ -124,22 +147,27 @@ async function verticalTouchDrag(cdp: CDPSession, x: number, fromY: number, toY:
 test('bottom sheet mobile transfere o gesto entre expansão, lista longa e recolhimento', async ({
   context,
   page,
+  request,
 }) => {
   const cdp = await context.newCDPSession(page);
+  await authenticateRegressionPage(page, request);
   await installGeoFixtures(page);
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Abrir barra lateral' }).click();
-  await page.getByRole('navigation').getByRole('button', { name: 'Locais', exact: true }).click();
-
+  // A rota explícita evita depender da resolução do default responsivo durante a hidratação.
+  await page.goto('/geo');
+  await page.getByRole('button', { name: 'Abrir hierarquia' }).click();
   await page.locator(`button[title="${site.name} · Central"]`).click();
   const sheet = page.getByTestId('bottom-sheet');
   const content = page.getByTestId('bottom-sheet-content');
   await expect(sheet).toBeVisible();
+  // O viewport efetivo do Chromium mobile pode diferir dos 844px configurados (barras do
+  // navegador). A folha nasce em `mid` (48vh), portanto a geometria deve seguir o viewport
+  // que a aplicação recebeu, não valores absolutos do host.
+  const midHeight = await page.evaluate(() => window.innerHeight * 0.48);
   await expect
     .poll(() => sheet.evaluate((element) => element.getBoundingClientRect().height))
-    .toBeGreaterThan(400);
+    .toBeGreaterThan(midHeight - 2);
   expect(await sheet.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThan(
-    410,
+    midHeight + 2,
   );
 
   await sheet.getByRole('button', { name: /Sub-locais/ }).click();

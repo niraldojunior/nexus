@@ -211,6 +211,22 @@ test.skipIf(!oracleConfigured)(
       });
       assert.equal(site.statusCode, 201);
 
+      const manufacturer = await requestJson(port, 'POST', '/tmf-api/partyManagement/v4/party', {
+        name: 'Huawei',
+        partyType: 'Organization',
+      });
+      assert.equal(manufacturer.statusCode, 201);
+      const manufacturerRole = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/partyRoleManagement/v4/partyRole',
+        {
+          partyId: (manufacturer.body as { id: string }).id,
+          name: 'manufacturer',
+        },
+      );
+      assert.equal(manufacturerRole.statusCode, 201);
+
       const resourceSpec = await requestJson(
         port,
         'POST',
@@ -219,13 +235,12 @@ test.skipIf(!oracleConfigured)(
           name: 'OLT MA5800',
           resourceTypeId: 'rt-olt',
           resourceSpecificationCharacteristic: [
-            { name: 'manufacturer', value: 'Huawei', valueType: 'string', group: 'commercial' },
             { name: 'stockable', value: true, valueType: 'boolean', group: 'capability' },
             { name: 'endOfLifeDate', value: '2026-07-03', valueType: 'date', group: 'lifecycle' },
           ],
           relatedParty: [
             {
-              id: (party.body as { id: string }).id,
+              id: (manufacturer.body as { id: string }).id,
               '@referredType': 'Organization',
               role: 'manufacturer',
             },
@@ -239,7 +254,7 @@ test.skipIf(!oracleConfigured)(
             resourceSpecificationCharacteristic?: Array<{ name: string; value: unknown }>;
           }
         ).resourceSpecificationCharacteristic?.length,
-        3,
+        2,
       );
       assert.equal(
         (resourceSpec.body as { relatedParty?: Array<{ id: string }> }).relatedParty?.length,

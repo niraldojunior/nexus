@@ -95,7 +95,7 @@ export class ResourceService {
     context?: RequestContext,
   ): Promise<ResourceSpecification> {
     assertName(input.name);
-    const resourceType = await this.getResourceTypeByIdOrThrow(input.resourceTypeId);
+    const resourceType = await this.getResourceTypeByIdOrThrow(input.resourceTypeId, context);
     const id = createCanonicalId();
     const spec: ResourceSpecification = {
       '@type': 'ResourceSpecification',
@@ -143,7 +143,7 @@ export class ResourceService {
     if (input.name !== undefined) assertName(input.name);
     const nextResourceType =
       input.resourceTypeId !== undefined
-        ? await this.getResourceTypeByIdOrThrow(input.resourceTypeId)
+        ? await this.getResourceTypeByIdOrThrow(input.resourceTypeId, context)
         : undefined;
 
     const updated = await this.repository.upsertResourceSpecification({
@@ -250,14 +250,9 @@ export class ResourceService {
   }
 
   public async listResourceTypes(context?: RequestContext): Promise<ResourceType[]> {
-    // RequestContext.tenantId nunca vem undefined em chamadas HTTP reais (resolve pra
-    // DEFAULT_TENANT_ID='default' sem header x-tenant-id — ver request-context.ts) — só
-    // ambientes fora do HTTP (MCP sem sessão) chegam aqui com context undefined. 'default' não é
-    // um tenant do módulo Resource (RESOURCE_TENANTS = vtal/tecto): tratar como "sem tenant
-    // explícito" e cair no default do módulo, não no default genérico da aplicação.
-    const tenantId =
-      context?.tenantId && context.tenantId !== 'default' ? context.tenantId : 'vtal';
-    return await this.repository.listResourceTypes({ tenantId });
+    // ResourceType é vocabulário canônico compartilhado. O contexto só enriquece a categoria com
+    // a árvore ResourceCatalog do tenant; nunca restringe quais tipos podem ser referenciados.
+    return await this.repository.listResourceTypes(scopeOf(context));
   }
 
   /**
@@ -270,7 +265,7 @@ export class ResourceService {
     input: UpdateResourceTypeInput,
     context?: RequestContext,
   ): Promise<ResourceType> {
-    const current = await this.getResourceTypeByIdOrThrow(id);
+    const current = await this.getResourceTypeByIdOrThrow(id, context);
     const characteristics = assertCanonicalCharacteristics(input.resourceTypeCharacteristic);
     await this.repository.updateResourceTypeCharacteristics(id, characteristics, scopeOf(context));
     const updated: ResourceType = { ...current, resourceTypeCharacteristic: characteristics };
@@ -448,7 +443,7 @@ export class ResourceService {
     const parent = await this.assertValidParent(catalog.id, input.parentNodeId, context);
     const resourceType =
       input.kind === 'RESOURCE_TYPE'
-        ? await this.getResourceTypeByIdOrThrow(input.resourceTypeId)
+        ? await this.getResourceTypeByIdOrThrow(input.resourceTypeId, context)
         : undefined;
     const id = createCanonicalId();
     const node: ResourceCatalogNode = {
@@ -876,7 +871,7 @@ export class ResourceService {
     includeEndedSpecifications = false,
     includeInactivePaths = false,
   ): Promise<ResourceTypeCatalogContext> {
-    const resourceType = await this.getResourceTypeByIdOrThrow(resourceTypeId);
+    const resourceType = await this.getResourceTypeByIdOrThrow(resourceTypeId, context);
 
     const [specifications, referencingNodes] = await Promise.all([
       this.repository.listResourceSpecifications({
@@ -997,8 +992,11 @@ export class ResourceService {
     return node;
   }
 
-  private async getResourceTypeByIdOrThrow(id: string): Promise<ResourceType> {
-    const types = await this.repository.listResourceTypes();
+  private async getResourceTypeByIdOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ResourceType> {
+    const types = await this.repository.listResourceTypes(scopeOf(context));
     const type = types.find((candidate) => candidate.id === id);
     if (!type) {
       throw new AppError('resource type not found', {

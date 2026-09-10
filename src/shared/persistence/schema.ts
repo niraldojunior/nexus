@@ -478,10 +478,16 @@ export const MIGRATIONS_SQL = `
   -- Oracle não tem regra para o tipo, e o Oracle desta base não é 23c+) — todo flag existente
   -- (is_bootstrap, is_protected, is_symmetric...) já é INTEGER — mesma convenção aqui.
   ALTER TABLE tmf_resource_type ADD COLUMN IF NOT EXISTS map_presence INTEGER;
+  -- category_code deixou de ser coluna física na Fase B do catálogo (issue #188): a categoria
+  -- agora é derivada do nó. Este backfill precisa continuar compatível com um namespace recém-
+  -- criado, antes de haver nós, então usa os códigos canônicos equivalentes de RESOURCE_TYPES.
   UPDATE tmf_resource_type
      SET map_presence = CASE
-       WHEN category_code IN ('Infrastructure.Passive', 'Cable.OutsidePlant')
-            AND code NOT IN ('DIO', 'Splitter') THEN 1
+       WHEN code IN (
+         'Splitter', 'CTO', 'SpliceClosure', 'OpticalNode', 'Tower', 'Mast', 'Subduct',
+         'UndergroundChamber', 'Trench', 'Frame', 'Shelf', 'Slot', 'OpticalCable',
+         'OpticalConnector', 'CDO', 'Fiber', 'DropCable', 'DistributionCable', 'BackboneCable'
+       ) THEN 1
        ELSE 0
      END
    WHERE map_presence IS NULL;
@@ -960,7 +966,7 @@ export const SCHEMA_SQL = `
         characteristics TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (tenant_id, resource_type_id) REFERENCES tmf_resource_type(tenant_id, id)
+        FOREIGN KEY (resource_type_id) REFERENCES tmf_resource_type(id)
       );
       CREATE INDEX IF NOT EXISTS idx_tmf_resource_specification_resource_type_id ON tmf_resource_specification(tenant_id, resource_type_id, valid_for_end, name, id);
 
@@ -971,7 +977,13 @@ export const SCHEMA_SQL = `
         name TEXT NOT NULL,
         description TEXT,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
-        map_presence TEXT,
+        -- INTEGER (1/0), não TEXT — a migration mais abaixo (ALTER TABLE ... ADD COLUMN
+        -- map_presence INTEGER) e todo leitor (map-feature-synchronizer.ts, tree-service.ts)
+        -- tratam esta coluna como flag numérica (COALESCE(rt.map_presence, 1) = 1). Um namespace
+        -- recriado do zero (NEXUS_TEST_) cai só neste CREATE TABLE — se ficasse TEXT aqui, a
+        -- ALTER seguinte vira no-op (coluna já existe) e o namespace fica com VARCHAR2 em vez de
+        -- NUMBER, estourando ORA-00932 no primeiro JOIN que compara com o literal 1.
+        map_presence INTEGER,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(tenant_id, code),
@@ -1017,6 +1029,16 @@ export const SCHEMA_SQL = `
         -- Motivo granular do status, resolvido em tmf_resource_status_catalog (issue #171).
         status_code TEXT,
         geographic_location_id TEXT,
+        -- place sempre aponta para um GeographicSite (C2); geographic_location_id permanece para
+        -- compatibilidade de carga/mapa. O endereço do tipo de place é necessário nas leituras
+        -- TMF e deve existir já no CREATE TABLE, não só na migration de bases antigas.
+        place_id TEXT,
+        place_type TEXT,
+        administrative_state TEXT,
+        operational_state TEXT,
+        usage_state TEXT,
+        serving_site_id TEXT,
+        tenant_id TEXT NOT NULL DEFAULT 'default',
         serial_number TEXT UNIQUE,
         part_number TEXT,
         label TEXT,
@@ -1043,6 +1065,14 @@ export const SCHEMA_SQL = `
         resource_specification_id TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
         supporting_physical_resource_id TEXT,
+        place_id TEXT,
+        place_type TEXT,
+        administrative_state TEXT,
+        operational_state TEXT,
+        usage_state TEXT,
+        serving_site_id TEXT,
+        tenant_id TEXT NOT NULL DEFAULT 'default',
+        related_party TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
         characteristics TEXT,
@@ -1617,7 +1647,7 @@ const MIGRATIONS_SQL_V2_RESOURCE_CATALOG = `
     UNIQUE(tenant_id, catalog_id, id),
     FOREIGN KEY (tenant_id, catalog_id) REFERENCES tmf_resource_catalog(tenant_id, id),
     FOREIGN KEY (tenant_id, catalog_id, parent_node_id) REFERENCES tmf_resource_catalog_node(tenant_id, catalog_id, id),
-    FOREIGN KEY (tenant_id, resource_type_id) REFERENCES tmf_resource_type(tenant_id, id)
+    FOREIGN KEY (resource_type_id) REFERENCES tmf_resource_type(id)
   );
   CREATE INDEX IF NOT EXISTS idx_tmf_resource_catalog_node_tree
     ON tmf_resource_catalog_node(tenant_id, catalog_id, parent_node_id, status, sort_order, name, id);
@@ -1758,6 +1788,17 @@ const MIGRATIONS_SQL_V7_PARTY_ROLE_TYPE = `
 // esse batch é intencionalmente vazio e os adapters executam a operação controlada pelo nome.
 const MIGRATIONS_SQL_V8_GEO_MAP_FEATURE_SEGMENT_RANK = ``;
 
+// ResourceType é vocabulário canônico compartilhado. ResourceSpecification e Resource seguem
+// tenant-scoped, mas sua FK não pode exigir uma cópia do tipo em cada tenant.
+const MIGRATIONS_SQL_V9_SHARED_RESOURCE_TYPE_CATALOG = ``;
+
+// Um namespace criado do zero (nunca teve tmf_resource_type antes desta versão do CREATE TABLE)
+// nasce com map_presence NUMBER, correto de saída. Um namespace pré-existente cujo CREATE TABLE
+// rodou antes da correção acima ficou com a coluna TEXT — a ALTER ADD COLUMN IF NOT EXISTS da
+// migration v1 nunca a alcança (já existe). Repara o tipo por adapter (MODIFY não converte
+// CHAR→NUMBER em Oracle com dados existentes); batch intencionalmente vazio, ver oracle-database.ts.
+const MIGRATIONS_SQL_V10_RESOURCE_TYPE_MAP_PRESENCE_NUMERIC = ``;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -1782,6 +1823,16 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 8,
     name: 'geo-map-feature-segment-rank',
     sql: MIGRATIONS_SQL_V8_GEO_MAP_FEATURE_SEGMENT_RANK,
+  },
+  {
+    version: 9,
+    name: 'shared-resource-type-catalog',
+    sql: MIGRATIONS_SQL_V9_SHARED_RESOURCE_TYPE_CATALOG,
+  },
+  {
+    version: 10,
+    name: 'resource-type-map-presence-numeric',
+    sql: MIGRATIONS_SQL_V10_RESOURCE_TYPE_MAP_PRESENCE_NUMERIC,
   },
 ];
 

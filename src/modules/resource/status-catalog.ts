@@ -1,10 +1,9 @@
 import type { ResourceStatusCatalogEntry } from './domain.js';
 
 /**
- * Forma de bootstrap: `resourceTypeCode` (não `resourceTypeId`) porque estes são dados estáticos,
- * sem tenant — o `id` do ResourceType só existe depois de materializado por tenant
- * (`createCanonicalId()` em runtime). O seed resolve `code → id` no tenant de destino antes de
- * gravar (`PostgresResourceRepository.seedStatusCatalog`).
+ * Forma de bootstrap: `resourceTypeCode` (não `resourceTypeId`) porque estes são dados estáticos.
+ * O seed resolve `code → id` no vocabulário canônico compartilhado antes de gravar o estado
+ * tenant-scoped.
  */
 export type ResourceStatusDefault = Omit<
   ResourceStatusCatalogEntry,

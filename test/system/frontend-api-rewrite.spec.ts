@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
+import { authenticateRegressionPage } from './auth.js';
 
-test('frontend rewrites API calls to /api in the browser runtime', async ({ page }) => {
+test('frontend rewrites API calls to /api in the browser runtime', async ({ page, request }) => {
   const seenUrls: string[] = [];
 
   await page.route('**/api/**', async (route) => {
@@ -62,6 +63,7 @@ test('frontend rewrites API calls to /api in the browser runtime', async ({ page
     await route.fulfill({ json: [] });
   });
 
+  await authenticateRegressionPage(page, request);
   await page.goto('/');
 
   await expect(page.getByText('Nenhuma conversa ainda')).toBeVisible();

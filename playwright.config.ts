@@ -12,7 +12,9 @@ export default defineConfig({
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
   use: {
-    baseURL: 'http://127.0.0.1:5200',
+    // 5200 é a porta de desenvolvimento interativo; a regressão usa 5201 para nunca reutilizar
+    // uma sessão local nem disputar o fallback do backend nessa porta.
+    baseURL: 'http://127.0.0.1:5201',
     launchOptions:
       process.env.CI || !localChromiumPath ? {} : { executablePath: localChromiumPath },
     trace: 'retain-on-failure',
@@ -23,14 +25,15 @@ export default defineConfig({
     {
       command: 'node --use-system-ca scripts/test-oracle-server.mjs',
       url: 'http://127.0.0.1:4001/health',
-      // Never attach browser tests to a locally running Neon backend by accident.
+      // O backend precisa ser o que fixa NEXUS_TEST_; não reutilize uma sessão local.
       reuseExistingServer: false,
       timeout: 120_000,
     },
     {
-      command: 'npm run web:dev',
-      url: 'http://127.0.0.1:5200',
-      reuseExistingServer: !process.env.CI,
+      command: 'npm run web:dev -- --host 127.0.0.1 --port 5201 --strictPort',
+      url: 'http://127.0.0.1:5201',
+      // Não anexe a uma resposta arbitrária em 5200 (ex.: o fallback HTML do backend).
+      reuseExistingServer: false,
       timeout: 120_000,
     },
   ],

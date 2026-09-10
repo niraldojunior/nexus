@@ -126,7 +126,7 @@ const RESOURCE_CATALOG_NODE_SELECT = `
          n.resource_type_id, n.status, n.sort_order, n.metadata, n.created_by, n.updated_by,
          rt.id AS rt_id, rt.code AS rt_code, rt.name AS rt_name
     FROM tmf_resource_catalog_node n
-    LEFT JOIN tmf_resource_type rt ON rt.id = n.resource_type_id AND rt.tenant_id = n.tenant_id`;
+    LEFT JOIN tmf_resource_type rt ON rt.id = n.resource_type_id`;
 
 const comparePortDetails = (a: ResourcePortDetail, b: ResourcePortDetail): number => {
   if (a.role !== b.role) return a.role === 'FO.I' ? -1 : b.role === 'FO.I' ? 1 : 0;
@@ -172,7 +172,7 @@ const PHYSICAL_RESOURCE_COLUMNS = `r.id, r.name, r.resource_specification_id,
 
 const PHYSICAL_RESOURCE_FROM = `tmf_physical_resource r
        JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-       JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id`;
+       JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id`;
 
 const LOGICAL_RESOURCE_COLUMNS = `r.id, r.name, r.resource_specification_id,
        rt.code AS resource_type, r.status, r.place_id, r.place_type,
@@ -182,7 +182,7 @@ const LOGICAL_RESOURCE_COLUMNS = `r.id, r.name, r.resource_specification_id,
 
 const LOGICAL_RESOURCE_FROM = `tmf_logical_resource r
        JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-       JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id`;
+       JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id`;
 
 // Compartilhado entre list*Resources e count*Resources para que a contagem use exatamente
 // os mesmos filtros da listagem (sem limit/offset), evitando total e página divergirem.
@@ -245,9 +245,8 @@ export class OracleResourceRepository implements IResourceRepository {
   /**
    * Bootstrap governado do contêiner `ResourceCatalog` (issue #188, plano §6/§7 passo 5) — só o
    * container, insert-if-missing, nunca `DO UPDATE` (C9). A árvore de nodes fica para o backfill
-   * auditado (plano §7 Fase A passo 6, tarefa #10): hoje `ResourceType` só existe com
-   * `tenant_id='default'`, e a FK composta de `tmf_resource_catalog_node` exige tenant igual ao do
-   * `ResourceCatalog` — criar nodes agora violaria essa FK ou duplicaria o backfill antes da hora.
+   * auditado (plano §7 Fase A passo 6, tarefa #10); seus nós podem referenciar o vocabulário
+   * canônico compartilhado, mas continuam pertencendo ao tenant do `ResourceCatalog`.
    */
   private async seedResourceCatalogContainers(): Promise<void> {
     const now = new Date().toISOString();
@@ -280,21 +279,19 @@ export class OracleResourceRepository implements IResourceRepository {
    * falta e nunca sobrescreve o que o operador ajustou. Mesmo desenho de
    * `GeoProjectRepository.ensureStatusCatalog`.
    */
-  private async seedStatusCatalog(tenantId = 'vtal'): Promise<void> {
+  private async seedStatusCatalog(tenantId = 'default'): Promise<void> {
     for (const entry of RESOURCE_STATUS_DEFAULTS) {
       const existing = await this.db.get<{ code: string }>(
-        `SELECT code FROM tmf_resource_status_catalog WHERE (tenant_id = ? OR tenant_id = 'default') AND code = ?`,
+        `SELECT code FROM tmf_resource_status_catalog WHERE tenant_id = ? AND code = ?`,
         [tenantId, entry.code],
       );
       if (existing) continue;
-      // Bootstrap é por `code` (dado estático, sem tenant) — resolve o `id` do ResourceType no
-      // tenant de destino antes de gravar. Tipo ainda não materializado nesse tenant ⇒ grava sem
-      // `resource_type_id` (vale para qualquer tipo) em vez de falhar o boot.
+      // Status continua tenant-scoped, mas seu tipo opcional vem do vocabulário canônico global.
       const resourceTypeId = entry.resourceTypeCode
         ? ((
             await this.db.get<{ id: string }>(
-              `SELECT id FROM tmf_resource_type WHERE (tenant_id = ? OR tenant_id = 'default') AND code = ?`,
-              [tenantId, entry.resourceTypeCode],
+              `SELECT id FROM tmf_resource_type WHERE code = ? ORDER BY id FETCH FIRST 1 ROWS ONLY`,
+              [entry.resourceTypeCode],
             )
           )?.id ?? null)
         : null;
@@ -408,25 +405,28 @@ export class OracleResourceRepository implements IResourceRepository {
   }
 
   /**
-   * Bootstrap governado de ResourceType (issue #188). Insert-if-missing tenant-aware, nunca
-   * `DO UPDATE` — preserva edição do operador (C9). Roda para `tenant_id = 'vtal'`.
+   * Bootstrap governado do vocabulário canônico de ResourceType. Os tipos são compartilhados
+   * entre tenants; specifications, recursos e a árvore continuam tenant-scoped. Insert-if-missing
+   * preserva edições do operador (C9) e os IDs estáveis de catalog.ts permitem referências TMF
+   * previsíveis (`rt-olt`, `rt-cto` etc.).
    */
-  private async seedResourceCatalog(tenantId: (typeof RESOURCE_TENANTS)[number] = 'vtal'): Promise<void> {
+  private async seedResourceCatalog(): Promise<void> {
+    const existing = await this.db.all<{ id: string; code: string }>(
+      `SELECT id, code FROM tmf_resource_type`,
+    );
+    const existingIds = new Set(existing.map((type) => type.id));
+    const missing = RESOURCE_TYPES.filter((type) => !existingIds.has(type.id));
+    if (missing.length === 0) return;
+
     const now = new Date().toISOString();
     await this.db.transaction(async () => {
-      for (const type of RESOURCE_TYPES) {
-        const existing = await this.db.get<{ id: string }>(
-          `SELECT id FROM tmf_resource_type WHERE (tenant_id = ? OR tenant_id = 'default') AND code = ?`,
-          [tenantId, type.code],
-        );
-        if (existing) continue;
+      for (const type of missing) {
         await this.db.run(
           `INSERT INTO tmf_resource_type
            (id, tenant_id, code, name, description, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, 'default', ?, ?, ?, ?, ?, ?)`,
           [
-            createCanonicalId(),
-            tenantId,
+            type.id,
             type.code,
             type.name,
             type.description ?? null,
@@ -435,6 +435,25 @@ export class OracleResourceRepository implements IResourceRepository {
             now,
           ],
         );
+      }
+
+      // Uma base anterior pode ter IDs aleatórios por tenant para o mesmo código. Só no cutover
+      // (quando inserimos IDs canônicos ausentes) repontamos as referências em lote pequeno;
+      // inicializações subsequentes não percorrem essas tabelas.
+      const canonicalIdByCode = new Map(RESOURCE_TYPES.map((type) => [type.code, type.id]));
+      for (const legacy of existing) {
+        const canonicalId = canonicalIdByCode.get(legacy.code);
+        if (!canonicalId || canonicalId === legacy.id) continue;
+        for (const table of [
+          'tmf_resource_specification',
+          'tmf_resource_catalog_node',
+          'tmf_resource_status_catalog',
+        ]) {
+          await this.db.run(
+            `UPDATE ${table} SET resource_type_id = ? WHERE resource_type_id = ?`,
+            [canonicalId, legacy.id],
+          );
+        }
       }
     });
   }
@@ -445,11 +464,10 @@ export class OracleResourceRepository implements IResourceRepository {
   // inteiro (só `listResourceTypes()` é usado; ver `service.ts`).
 
   public async listResourceTypes(scope?: ResourceTenantScope): Promise<ResourceType[]> {
-    // RESOURCE_TENANTS (vtal/tecto) é o universo real do módulo; `tenant_id='default'` é
-    // vocabulário morto pré-refactor (ver §"limpeza tenant=default" no plano da issue #188) —
-    // sem filtro aqui, o SELECT devolvia as duas linhas por code (ex.: 'CTO' em 'default' E em
-    // 'vtal') e a ordem de retorno do Oracle decidia qual "vencia".
-    const tenantId = scope?.tenantId ?? 'vtal';
+    await this.seedResourceCatalog();
+    // ResourceType é vocabulário canônico compartilhado. O tenant ainda determina onde a árvore
+    // ResourceCatalog pode classificar o tipo, não quais tipos uma specification pode referenciar.
+    const categoryTenantId = scope?.tenantId ?? 'default';
     const rows = await this.db.all<{
       id: string;
       code: string;
@@ -460,11 +478,9 @@ export class OracleResourceRepository implements IResourceRepository {
     }>(
       `SELECT id, code, name, description, status, characteristics
        FROM tmf_resource_type
-       WHERE tenant_id = ?
        ORDER BY code`,
-      [tenantId],
     );
-    const categoryCodeById = await this.loadCategoryCodeByResourceTypeId(tenantId);
+    const categoryCodeById = await this.loadCategoryCodeByResourceTypeId(categoryTenantId);
     return rows.map((row) => this.mapResourceType(row, categoryCodeById.get(row.id)));
   }
 
@@ -477,17 +493,11 @@ export class OracleResourceRepository implements IResourceRepository {
     characteristics: Characteristic[],
     scope?: ResourceTenantScope,
   ): Promise<void> {
-    const params: Array<string | null> = [
-      JSON.stringify(characteristics),
-      new Date().toISOString(),
-      id,
-    ];
-    let sql = `UPDATE tmf_resource_type SET characteristics = ?, updated_at = ? WHERE id = ?`;
-    if (scope?.tenantId) {
-      sql += ' AND tenant_id = ?';
-      params.push(scope.tenantId);
-    }
-    await this.db.run(sql, params);
+    void scope;
+    await this.db.run(
+      `UPDATE tmf_resource_type SET characteristics = ?, updated_at = ? WHERE id = ?`,
+      [JSON.stringify(characteristics), new Date().toISOString(), id],
+    );
   }
 
   // `tmf_resource_type.category_code` foi removida na Fase B: categoryCode agora vem do node
@@ -831,7 +841,7 @@ export class OracleResourceRepository implements IResourceRepository {
               rs.description, rs.valid_for_start, rs.valid_for_end, rs.related_party,
               rs.characteristics, rs.tenant_id
        FROM tmf_resource_specification rs
-       JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+       JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id
        WHERE ${conditions.join(' AND ')}`,
       params,
     );
@@ -868,7 +878,7 @@ export class OracleResourceRepository implements IResourceRepository {
               rs.description, rs.valid_for_start, rs.valid_for_end, rs.related_party,
               rs.characteristics, rs.tenant_id
        FROM tmf_resource_specification rs
-       JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id`,
+       JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY rt.code, rs.name, rs.id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -1111,7 +1121,7 @@ export class OracleResourceRepository implements IResourceRepository {
          JOIN tmf_resource_specification ps
            ON ps.id = p.resource_specification_id AND ps.tenant_id = p.tenant_id
          JOIN tmf_resource_type prt
-           ON prt.id = ps.resource_type_id AND prt.tenant_id = ps.tenant_id
+           ON prt.id = ps.resource_type_id
         WHERE rr.resource_to_id = ?
           AND rr.relationship_type IN ('containsAsChild', 'connectedTo')
           AND p.tenant_id = ?
@@ -1221,7 +1231,7 @@ export class OracleResourceRepository implements IResourceRepository {
          JOIN tmf_resource_specification ss
            ON ss.id = s.resource_specification_id AND ss.tenant_id = s.tenant_id
          JOIN tmf_resource_type srt
-           ON srt.id = ss.resource_type_id AND srt.tenant_id = ss.tenant_id
+           ON srt.id = ss.resource_type_id
         WHERE c.resource_from_id = ? AND c.relationship_type = 'containsAsChild'
           AND s.tenant_id = ? AND srt.code = 'Splitter'
         ORDER BY s.name, s.id`,
@@ -1260,13 +1270,13 @@ export class OracleResourceRepository implements IResourceRepository {
          JOIN tmf_resource_specification ss
            ON ss.id = s.resource_specification_id AND ss.tenant_id = s.tenant_id
          JOIN tmf_resource_type srt
-           ON srt.id = ss.resource_type_id AND srt.tenant_id = ss.tenant_id
+           ON srt.id = ss.resource_type_id
          LEFT JOIN tmf_resource_relationship c ON c.resource_to_id = s.id AND c.relationship_type = 'containsAsChild'
          LEFT JOIN tmf_physical_resource cto ON cto.id = c.resource_from_id AND cto.tenant_id = ?
          LEFT JOIN tmf_resource_specification ctos
            ON ctos.id = cto.resource_specification_id AND ctos.tenant_id = cto.tenant_id
          LEFT JOIN tmf_resource_type ctort
-           ON ctort.id = ctos.resource_type_id AND ctort.tenant_id = ctos.tenant_id
+           ON ctort.id = ctos.resource_type_id
         WHERE p.resource_to_id = ? AND p.relationship_type = 'containsAsChild'
           AND s.tenant_id = ? AND srt.code = 'Splitter'
           AND (ctort.code = 'CTO' OR cto.id IS NULL)
@@ -1313,7 +1323,7 @@ export class OracleResourceRepository implements IResourceRepository {
          JOIN tmf_resource_specification ds
            ON ds.id = d.resource_specification_id AND ds.tenant_id = d.tenant_id
          JOIN tmf_resource_type drt
-           ON drt.id = ds.resource_type_id AND drt.tenant_id = ds.tenant_id
+           ON drt.id = ds.resource_type_id
         WHERE rr.relationship_type = 'connectedTo' AND (rr.resource_from_id = ? OR rr.resource_to_id = ?)
           AND d.tenant_id = ? AND drt.code = 'DropCable'
         ORDER BY d.name, d.id`,
@@ -1371,7 +1381,7 @@ export class OracleResourceRepository implements IResourceRepository {
          JOIN tmf_resource_specification os
            ON os.id = o.resource_specification_id AND os.tenant_id = o.tenant_id
          JOIN tmf_resource_type ort
-           ON ort.id = os.resource_type_id AND ort.tenant_id = os.tenant_id
+           ON ort.id = os.resource_type_id
         WHERE rr.relationship_type = 'connectedTo' AND (rr.resource_from_id = ? OR rr.resource_to_id = ?)
           AND o.tenant_id = ? AND ort.code = 'ONT'
         LIMIT 1`,
@@ -1410,7 +1420,7 @@ export class OracleResourceRepository implements IResourceRepository {
          JOIN tmf_resource_specification ds
            ON ds.id = d.resource_specification_id AND ds.tenant_id = d.tenant_id
          JOIN tmf_resource_type drt
-           ON drt.id = ds.resource_type_id AND drt.tenant_id = ds.tenant_id
+           ON drt.id = ds.resource_type_id
         WHERE d.tenant_id = ? AND drt.code = 'DropCable'
           AND d.id IN (${ids.map(() => '?').join(', ')})
         ORDER BY d.name, d.id`,

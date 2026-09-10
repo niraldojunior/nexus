@@ -1010,9 +1010,13 @@ export class GeoService {
 
   public async getAllowedChildren(specId: string): Promise<GeographicSiteSpecificationRef[]> {
     const spec = await this.getSpecOrThrow(specId);
-    return spec.allowedChildSpec.filter(
-      async (child) => (await this.getSpecOrThrow(child.id)).lifecycleStatus === 'Active',
+    const children = await Promise.all(
+      spec.allowedChildSpec.map(async (child) => ({
+        child,
+        isActive: (await this.getSpecOrThrow(child.id)).lifecycleStatus === 'Active',
+      })),
     );
+    return children.filter(({ isActive }) => isActive).map(({ child }) => child);
   }
 
   public async analyzeContainmentImpact(

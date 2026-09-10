@@ -81,6 +81,9 @@ const startProdLikeAuthApp = async () => {
   const config = {
     ...createTestConfig(0),
     nodeEnv: 'production' as const,
+    // createTestConfig concede platform.admin para viabilizar as fixtures locais; a app que
+    // simula produção precisa reproduzir o papel mínimo do token estático em produção.
+    authTokenRoles: ['migration.job'],
   };
   const server = createApp({ config, logger: createTestLogger() });
   const port = await server.start();

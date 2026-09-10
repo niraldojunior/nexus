@@ -12,7 +12,8 @@ import {
 } from './test-utils.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const serverPath = resolve(__dirname, '../src/modules/mcp/stdio-server.js');
+const serverPath = resolve(__dirname, '../dist/src/modules/mcp/stdio-server.js');
+const RESPONSE_TIMEOUT_MS = 15_000;
 
 // Skips unless ORACLE_* is configured, no mesmo padrão dos demais specs Oracle-backed.
 const oracleConfigured = isOracleTestConfigured();
@@ -40,23 +41,72 @@ const startStdioServer = () => {
 
   const rl = createInterface({ input: child.stdout });
   const pendingLines: JsonRpcResponse[] = [];
-  const waiters: Array<(line: JsonRpcResponse) => void> = [];
+  const waiters: Array<{
+    resolve: (line: JsonRpcResponse) => void;
+    reject: (error: Error) => void;
+  }> = [];
+  const stderr: string[] = [];
+  let terminalError: Error | undefined;
+
+  const failWaiters = (error: Error): void => {
+    terminalError ??= error;
+    for (const waiter of waiters.splice(0)) waiter.reject(terminalError);
+  };
+
+  child.stderr.on('data', (chunk) => stderr.push(String(chunk)));
+  child.once('error', (error) => failWaiters(new Error(`MCP stdio child failed to start: ${error.message}`)));
+  child.once('exit', (code, signal) => {
+    if (code === 0 || signal === 'SIGTERM') return;
+    const detail = stderr.join('').trim();
+    failWaiters(
+      new Error(
+        `MCP stdio child exited before responding (code=${String(code)}, signal=${signal ?? 'none'})` +
+          (detail ? `: ${detail}` : ''),
+      ),
+    );
+  });
 
   rl.on('line', (line) => {
     if (!line.trim()) return;
-    const parsed = JSON.parse(line) as JsonRpcResponse;
-    const waiter = waiters.shift();
-    if (waiter) {
-      waiter(parsed);
-    } else {
-      pendingLines.push(parsed);
+    let parsed: JsonRpcResponse;
+    try {
+      parsed = JSON.parse(line) as JsonRpcResponse;
+    } catch {
+      failWaiters(new Error(`MCP stdio child wrote invalid JSON to stdout: ${line}`));
+      return;
     }
+    const waiter = waiters.shift();
+    if (waiter) waiter.resolve(parsed);
+    else pendingLines.push(parsed);
   });
 
   const nextMessage = (): Promise<JsonRpcResponse> => {
     const buffered = pendingLines.shift();
     if (buffered) return Promise.resolve(buffered);
-    return new Promise((resolvePromise) => waiters.push(resolvePromise));
+    if (terminalError) return Promise.reject(terminalError);
+    return new Promise((resolvePromise, rejectPromise) => {
+      const waiter = { resolve: resolvePromise, reject: rejectPromise };
+      const timeout = setTimeout(() => {
+        const index = waiters.indexOf(waiter);
+        if (index >= 0) waiters.splice(index, 1);
+        const detail = stderr.join('').trim();
+        rejectPromise(
+          new Error(
+            `Timed out waiting ${RESPONSE_TIMEOUT_MS}ms for MCP stdio response` +
+              (detail ? `: ${detail}` : ''),
+          ),
+        );
+      }, RESPONSE_TIMEOUT_MS);
+      waiter.resolve = (response) => {
+        clearTimeout(timeout);
+        resolvePromise(response);
+      };
+      waiter.reject = (error) => {
+        clearTimeout(timeout);
+        rejectPromise(error);
+      };
+      waiters.push(waiter);
+    });
   };
 
   const send = (payload: unknown): void => {

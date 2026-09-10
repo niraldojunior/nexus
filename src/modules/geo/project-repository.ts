@@ -201,7 +201,7 @@ const PROJECT_SELECT = `
             JOIN tmf_physical_resource r ON r.id = pr.resource_id
             JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
             JOIN tmf_resource_type rt
-              ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+              ON rt.id = rs.resource_type_id
            WHERE pr.project_id = p.id AND pr.detached_at IS NULL
              AND rt.code IN (${INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL})) AS infrastructureCount,
          (SELECT COUNT(*) FROM geo_project_area pa WHERE pa.project_id = p.id) AS areaCount
@@ -502,7 +502,7 @@ export class GeoProjectRepository {
            JOIN tmf_physical_resource r ON r.id = pr.resource_id
            LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
            LEFT JOIN tmf_resource_type rt
-             ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+             ON rt.id = rs.resource_type_id
           WHERE p.tenant_id = ? AND pr.project_id = ? AND pr.detached_at IS NULL
             AND pr.resource_kind = 'PhysicalResource'
             ${scope === 'infrastructure' ? `AND rt.code IN (${INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL})` : ''}
@@ -517,7 +517,7 @@ export class GeoProjectRepository {
            JOIN tmf_logical_resource r ON r.id = pr.resource_id
            LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
            LEFT JOIN tmf_resource_type rt
-             ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+             ON rt.id = rs.resource_type_id
           WHERE p.tenant_id = ? AND pr.project_id = ? AND pr.detached_at IS NULL
             AND pr.resource_kind = 'LogicalResource'
             AND (LOWER(r.name) LIKE LOWER(?) OR LOWER(COALESCE(rt.code, '')) LIKE LOWER(?) OR LOWER(COALESCE(rs.name, '')) LIKE LOWER(?))`}

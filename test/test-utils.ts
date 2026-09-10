@@ -2,6 +2,7 @@ import http from 'node:http';
 import { config as loadEnv } from 'dotenv';
 import { createApp } from '../src/shared/http/app.js';
 import { resolveDatabaseConfig, type AppConfig, type OracleConfig } from '../src/shared/config/env.js';
+import { GEO_ADMIN_ROLES } from '../src/shared/http/request-context.js';
 import { createDatabaseClient } from '../src/shared/persistence/database-factory.js';
 import type { DatabaseClient } from '../src/shared/persistence/database-client.js';
 import { TABLE_NAMES } from '../src/shared/persistence/schema.js';
@@ -81,7 +82,10 @@ export const createTestConfig = (port: number): AppConfig => ({
   appName: 'v-tal-nexus',
   authEnabled: true,
   authToken: 'secret',
-  authTokenRoles: ['migration.job'],
+  // `platform.admin` é o escape hatch de todo `requireRoles`/`assertRole` do app (ver
+  // docs/3-system-design/security.md §3) — o token estático de teste precisa dele, não só de
+  // `migration.job`, ou toda rota RBAC-restrita (Geo write, Resource, Studio, Order...) volta 403.
+  authTokenRoles: [...GEO_ADMIN_ROLES],
   authAccessTokenTtlHours: 12,
   database: resolveTestOracleConfig(),
   logLevel: 'info',

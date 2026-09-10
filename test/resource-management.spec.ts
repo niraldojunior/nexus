@@ -36,6 +36,17 @@ test.skipIf(!oracleConfigured)(
       });
       assert.equal(site.statusCode, 201);
 
+      const manufacturerRole = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/partyRoleManagement/v4/partyRole',
+        {
+          partyId: (party.body as { id: string }).id,
+          name: 'manufacturer',
+        },
+      );
+      assert.equal(manufacturerRole.statusCode, 201);
+
       const resourceSpec = await requestJson(
         port,
         'POST',
@@ -78,7 +89,7 @@ test.skipIf(!oracleConfigured)(
       );
       assert.equal(
         (invalidResourceSpec.body as { message?: string }).message,
-        'resourceTypeId is required',
+        'body.resourceTypeId is required',
       );
 
       const workspace = await requestJson(

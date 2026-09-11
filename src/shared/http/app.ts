@@ -47,7 +47,17 @@ import type { PartyService } from '../../modules/party/service.js';
 import type { ResourceService } from '../../modules/resource/service.js';
 import type { ServiceService } from '../../modules/service/service.js';
 import type { StudioService } from '../../modules/studio/service.js';
-import { isStudioDomain } from '../../modules/studio/domain.js';
+import { isStudioDomain, type StudioDomain } from '../../modules/studio/domain.js';
+import {
+  CANONICAL_STUDIO_GEO_SNAPSHOT,
+  normalizeStudioGeoSnapshot,
+  type StudioGeoCatalog,
+} from '../../modules/studio/adapters/studio-geo-adapter.js';
+import {
+  StudioTemplateImportPlanner,
+  type ComputePlanInput,
+} from '../../modules/studio/template-import-planner.js';
+import { STUDIO_ASSET_MIME_TYPE } from '../../modules/studio/asset-service.js';
 import type {
   AddMessageInput,
   LLMRequest,
@@ -767,6 +777,11 @@ const routeRequest = async ({
     return;
   }
 
+  if (url.pathname === '/v1/geo/map-layer-catalog') {
+    await routePublishedGeoLayerCatalogRequest({ request, response, config, runtime, url });
+    return;
+  }
+
   if (url.pathname.startsWith('/v1/geo/') || url.pathname.startsWith('/tmf-api/')) {
     await routeGeoRequest({
       request,
@@ -777,6 +792,11 @@ const routeRequest = async ({
       runtime,
       url,
     });
+    return;
+  }
+
+  if (url.pathname.startsWith('/v1/studio/assets')) {
+    await routeStudioAssetRequest({ request, response, config, runtime, url });
     return;
   }
 
@@ -815,6 +835,111 @@ const routeRequest = async ({
     return;
   }
 
+  throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
+};
+
+// Read-model operacional de camadas: só a publicação pode dirigir o mapa. Quando não há versão
+// publicada (migração incompleta ou indisponibilidade transitória), devolve o catálogo canônico em
+// fallback para não deixar o mapa inoperante.
+const routePublishedGeoLayerCatalogRequest = async ({
+  request,
+  response,
+  config,
+  runtime,
+}: {
+  request: IncomingMessage;
+  response: ServerResponse;
+  config: AppConfig;
+  runtime: NexusRuntime;
+  url: URL;
+}): Promise<void> => {
+  if (request.method !== 'GET') throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
+  const context = await buildRequestContext(request, config);
+  requireRoles(context, GEO_PROJECT_READ_ROLES);
+  let published: Awaited<ReturnType<typeof runtime.studioService.getPublishedVersion>>;
+  try {
+    published = await runtime.studioService.ensurePublishedBootstrap(
+      'studio-geo',
+      CANONICAL_STUDIO_GEO_SNAPSHOT,
+      {
+        ...context,
+        actorSub: 'studio-bootstrap',
+        roles: ['studio.admin', 'platform.admin'],
+      },
+    );
+    // `ensurePublishedBootstrap` returns the existing publication without touching it; when a
+    // tenant already has Studio GEO, the operational read remains a pure published-version read.
+  } catch {
+    // O catálogo canônico mantém o mapa operacional durante uma migração ainda não aplicada ou
+    // uma falha transitória de leitura do control plane; drafts continuam inacessíveis aqui.
+    published = undefined;
+  }
+  const snapshot = published?.snapshot;
+  const catalog: StudioGeoCatalog =
+    snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
+      ? {
+          ...normalizeStudioGeoSnapshot(snapshot as Record<string, unknown>),
+          ...(published ? { publicationChecksum: published.checksum } : {}),
+          fallback: false,
+        }
+      : { ...CANONICAL_STUDIO_GEO_SNAPSHOT, fallback: true };
+  if (catalog.publicationChecksum) response.setHeader('ETag', catalog.publicationChecksum);
+  await sendJson(response, 200, catalog);
+};
+
+// Assets do control plane são administrados separadamente do snapshot; a layer publicada só retém
+// o ID. O endpoint de conteúdo força SVG + CSP restritiva, impedindo que um ícone execute script.
+const routeStudioAssetRequest = async ({
+  request,
+  response,
+  config,
+  runtime,
+  url,
+}: {
+  request: IncomingMessage;
+  response: ServerResponse;
+  config: AppConfig;
+  runtime: NexusRuntime;
+  url: URL;
+}): Promise<void> => {
+  const context = await buildRequestContext(request, config);
+  const idMatch = url.pathname.match(/^\/v1\/studio\/assets\/([^/]+)$/);
+  if (url.pathname === '/v1/studio/assets') {
+    if (request.method === 'GET') {
+      requireRoles(context, STUDIO_READ_ROLES);
+      const assets = await runtime.studioAssetService.list(context);
+      // A lista é usada pelo editor para associar IDs; o conteúdo SVG só sai pelo endpoint
+      // individual, com MIME fixo e CSP restritiva, evitando replicar CLOBs em toda abertura.
+      return sendJson(
+        response,
+        200,
+        assets.map(({ content: _content, ...asset }) => asset),
+      );
+    }
+    if (request.method === 'POST') {
+      requireRoles(context, STUDIO_EDIT_ROLES);
+      return sendJson(response, 201, await runtime.studioAssetService.create(await readBody(request), context));
+    }
+  }
+  if (idMatch?.[1]) {
+    const id = decodeURIComponent(idMatch[1]);
+    if (request.method === 'GET') {
+      requireRoles(context, STUDIO_READ_ROLES);
+      const asset = await runtime.studioAssetService.get(id, context);
+      if (!asset) throw new AppError('studio asset not found', { code: 'STUDIO_ASSET_NOT_FOUND', statusCode: 404 });
+      response.statusCode = 200;
+      response.setHeader('content-type', STUDIO_ASSET_MIME_TYPE);
+      response.setHeader('x-content-type-options', 'nosniff');
+      response.setHeader('content-security-policy', "default-src 'none'; style-src 'none'; sandbox");
+      response.setHeader('ETag', asset.checksum);
+      response.end(asset.content);
+      return;
+    }
+    if (request.method === 'DELETE') {
+      requireRoles(context, STUDIO_EDIT_ROLES);
+      return sendJson(response, 200, await runtime.studioAssetService.retire(id, context));
+    }
+  }
   throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
 };
 
@@ -939,6 +1064,68 @@ const routeStudioRequest = async ({
       });
     }
     sendJson(response, 200, await studioService.discardDraft(domain, context, ifMatch));
+    return;
+  }
+
+  if (domain === 'templates' && request.method === 'POST' && action === 'plan') {
+    const context = await buildRequestContext(request, config);
+    requireRoles(context, STUDIO_EDIT_ROLES);
+    const body = (await readBody(request)) as ComputePlanInput;
+    if (!body || !body.template || !Array.isArray(body.targets)) {
+      throw new AppError('template and targets array are required', {
+        code: 'STUDIO_TEMPLATE_PLAN_INVALID',
+        statusCode: 400,
+      });
+    }
+    const plan = StudioTemplateImportPlanner.computePlan(body);
+    sendJson(response, 200, plan);
+    return;
+  }
+
+  if (domain === 'templates' && request.method === 'POST' && action === 'apply') {
+    const context = await buildRequestContext(request, config);
+    requireRoles(context, STUDIO_EDIT_ROLES);
+    const body = (await readBody(request)) as {
+      planInput: ComputePlanInput;
+      planChecksum: string;
+      targetDrafts?: Partial<Record<StudioDomain, { ifMatch?: string }>>;
+    };
+    if (!body || !body.planInput || !body.planChecksum) {
+      throw new AppError('planInput and planChecksum are required', {
+        code: 'STUDIO_TEMPLATE_APPLY_INVALID',
+        statusCode: 400,
+      });
+    }
+    const computedPlan = StudioTemplateImportPlanner.computePlan(body.planInput);
+    if (computedPlan.planChecksum !== body.planChecksum) {
+      throw new AppError('plan checksum mismatch — recompute plan and try again', {
+        code: 'STUDIO_TEMPLATE_PLAN_CHECKSUM_MISMATCH',
+        statusCode: 412,
+      });
+    }
+    if (!computedPlan.canApply) {
+      throw new AppError('cannot apply template import plan with unresolved conflicts', {
+        code: 'STUDIO_TEMPLATE_PLAN_CONFLICTS_UNRESOLVED',
+        statusCode: 422,
+      });
+    }
+
+    const batchInput: Partial<Record<StudioDomain, { snapshot: Record<string, unknown>; ifMatch?: string }>> = {};
+    for (const [targetDomainStr, resultSnapshot] of Object.entries(computedPlan.resultSnapshots)) {
+      const targetDomain = targetDomainStr as StudioDomain;
+      const targetIfMatch = body.targetDrafts?.[targetDomain]?.ifMatch;
+      batchInput[targetDomain] = {
+        snapshot: resultSnapshot,
+        ...(targetIfMatch ? { ifMatch: targetIfMatch } : {}),
+      };
+    }
+
+    const appliedVersions = await studioService.applyBatchDrafts(batchInput, context);
+    sendJson(response, 200, {
+      applied: true,
+      planChecksum: computedPlan.planChecksum,
+      versions: appliedVersions,
+    });
     return;
   }
 
@@ -1300,6 +1487,17 @@ const routeGeoRequest = async ({
     return sendJson(response, 204, null);
   }
 
+  if (url.pathname === '/v1/geo/project-workflow') {
+    if (request.method === 'GET') {
+      requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+      return sendJson(
+        response,
+        200,
+        await runtime.geoProjectWorkflowService.getWorkflow(geoContext),
+      );
+    }
+  }
+
   // Projetos de trabalho da página Locais (REQ-MOD01-015, estilo "Salvos" do Google Maps):
   // coleções de locais compartilhadas por todo o tenant (C8), não por usuário — por isso
   // `requireRoles`, não `requireUser`. Projeto em si não é entidade TMF (GeoProjectRepository
@@ -1429,6 +1627,32 @@ const routeGeoRequest = async ({
     }
   }
 
+  const projectTransitionsMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/transitions$/);
+  if (projectTransitionsMatch?.[1]) {
+    const projectId = decodeURIComponent(projectTransitionsMatch[1]);
+    if (request.method === 'GET') {
+      requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+      return sendJson(
+        response,
+        200,
+        await runtime.geoProjectWorkflowService.getProjectTransitions(projectId, geoContext),
+      );
+    }
+    if (request.method === 'POST') {
+      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+      const body = await readBody(request);
+      const result = await runtime.geoProjectWorkflowService.executeTransition(
+        projectId,
+        {
+          transitionId: body.transitionId ? String(body.transitionId) : undefined,
+          targetStateCode: body.targetStateCode ? String(body.targetStateCode) : undefined,
+        },
+        geoContext,
+      );
+      return sendJson(response, 200, result);
+    }
+  }
+
   const projectMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)$/);
   if (projectMatch?.[1]) {
     const projectId = decodeURIComponent(projectMatch[1]);
@@ -1440,148 +1664,56 @@ const routeGeoRequest = async ({
       if (!current) {
         throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
       }
-      const requestedStatusCode =
-        body.statusCode === undefined ? undefined : String(body.statusCode);
-      const requestedCatalogStatus = await resolveProjectStatus(
-        runtime.geoProjectRepository,
-        geoContext.tenantId,
-        requestedStatusCode,
-      );
-      const nextStatus = requestedCatalogStatus
-        ? projectStatusOperationalStatus(requestedCatalogStatus)
-        : parseGeoProjectStatus(body.status);
-      // Projeto terminado não volta: terminar é o fim do ciclo de vida do projeto, não um
-      // estado como os demais — os locais já ganharam vida própria (ver cascata abaixo) e o
-      // projeto passa a ser só um registro histórico (Origem no painel de Local).
-      if (
-        (current.status === 'terminated' || current.status === 'cancelled') &&
-        nextStatus !== undefined &&
-        nextStatus !== 'terminated'
-      ) {
-        throw new AppError('terminated project status is immutable', {
-          code: 'GEO_PROJECT_TERMINATED_IMMUTABLE',
-          statusCode: 409,
+
+      const hasMetadataUpdate =
+        body.name !== undefined || body.description !== undefined || body.iconDataUrl !== undefined;
+      let updatedProject = current;
+
+      if (hasMetadataUpdate) {
+        const afterMeta = await runtime.geoProjectRepository.update(geoContext.tenantId, projectId, {
+          ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
+          ...(body.description !== undefined
+            ? { description: body.description ? String(body.description) : null }
+            : {}),
+          ...(body.iconDataUrl !== undefined
+            ? { iconDataUrl: body.iconDataUrl ? String(body.iconDataUrl) : null }
+            : {}),
         });
+        if (!afterMeta) {
+          throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
+        }
+        updatedProject = afterMeta;
       }
-      const updated = await runtime.geoProjectRepository.update(geoContext.tenantId, projectId, {
-        ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
-        ...(body.description !== undefined
-          ? { description: body.description ? String(body.description) : null }
-          : {}),
-        ...(body.iconDataUrl !== undefined
-          ? { iconDataUrl: body.iconDataUrl ? String(body.iconDataUrl) : null }
-          : {}),
-        ...(nextStatus !== undefined ? { status: nextStatus } : {}),
-        ...(requestedCatalogStatus ? { statusCode: requestedCatalogStatus.code } : {}),
-      });
-      if (!updated) {
-        throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
-      }
-      // O projeto é a unidade de estado (REQ-MOD01-015 §20): quando o status muda,
-      // cascateia para cada Site vinculado. Best-effort — uma transição que a máquina
-      // canônica recusa (SITE_STATUS_TRANSITIONS em service.ts) não aborta as demais nem
-      // o PATCH; o chamador só sabe quantas ficaram para trás (siteCascade). A cascata roda
-      // em massa (transitionProjectSites), não um `transitionSite` por local — um projeto
-      // com dezenas de milhares de locais (issue #58) nunca terminaria num laço um-a-um.
-      //
-      // 'terminated' é o único status que NÃO usa a tradução direta de GeoStatusAlias
-      // (que mapearia para Retired): terminar o projeto libera os locais — eles viram
-      // Active, com vida própria, e o projeto passa a ser só a Origem histórica deles
-      // (ver PROJECT_SITE_EXCLUSION_SQL em tree-service.ts, que volta a mostrá-los na
-      // Hierarquia/busca/mapa geral assim que o projeto termina).
-      let siteCascade: { updated: number; skipped: number; blocked?: number } | undefined;
-      let resourceCascade: { updated: number; skipped: number } | undefined;
-      if (nextStatus !== undefined && nextStatus !== current.status) {
-        const siteIds = await runtime.geoProjectRepository.listSiteIds(
-          geoContext.tenantId,
+
+      const requestedStatusCode =
+        body.statusCode !== undefined
+          ? String(body.statusCode)
+          : body.status !== undefined
+            ? body.status === 'active'
+              ? '22'
+              : body.status === 'suspended'
+                ? '23'
+                : body.status === 'terminated'
+                  ? '17'
+                  : body.status === 'cancelled'
+                    ? 'legacy-cancelled'
+                    : '11'
+            : undefined;
+
+      if (requestedStatusCode !== undefined && requestedStatusCode !== current.statusCode) {
+        const transitionResult = await runtime.geoProjectWorkflowService.executeTransition(
           projectId,
-        );
-        const cascadeStatus =
-          nextStatus === 'terminated'
-            ? 'active'
-            : nextStatus === 'cancelled'
-              ? 'terminated'
-              : nextStatus;
-        const statusReason =
-          nextStatus === 'terminated'
-            ? 'Projeto de origem concluído — local liberado para o inventário'
-            : nextStatus === 'cancelled'
-              ? 'Projeto cancelado — local encerrado'
-              : `Status do projeto alterado para ${nextStatus}`;
-        const cascadeResult = await geoService.transitionProjectSites(
-          projectId,
-          siteIds,
-          cascadeStatus,
-          statusReason,
+          { targetStateCode: requestedStatusCode },
           geoContext,
         );
-        siteCascade = {
-          updated: cascadeResult.updated,
-          skipped: cascadeResult.skipped,
-          ...(cascadeResult.blocked.length > 0 ? { blocked: cascadeResult.blocked.length } : {}),
-        };
-        // Recursos seguem o mesmo estado do Projeto, mas permanecem entidades TMF
-        // independentes. Terminar libera; cancelar encerra e bloqueia.
-        const resourceLinks = await runtime.geoProjectRepository.listResourceLinks(
-          geoContext.tenantId,
-          projectId,
-          { limit: 100000 },
-        );
-        let resourcesUpdated = 0;
-        for (const link of resourceLinks) {
-          const resource = await runtime.resourceService.getResource(link.resourceId, geoContext);
-          if (!resource) continue;
-          const resourcePatch =
-            nextStatus === 'terminated'
-              ? { status: 'active', administrativeState: 'unlocked', operationalState: 'enabled' }
-              : nextStatus === 'cancelled'
-                ? {
-                    status: 'terminated',
-                    administrativeState: 'locked',
-                    operationalState: 'disabled',
-                  }
-                : nextStatus === 'active'
-                  ? {
-                      status: 'active',
-                      administrativeState: 'unlocked',
-                      operationalState: 'enabled',
-                    }
-                  : nextStatus === 'suspended'
-                    ? {
-                        status: 'suspended',
-                        administrativeState: 'locked',
-                        operationalState: 'disabled',
-                      }
-                    : {
-                        status: 'inactive',
-                        administrativeState: 'locked',
-                        operationalState: 'disabled',
-                      };
-          if (resource['@type'] === 'LogicalResource') {
-            await runtime.resourceService.updateLogicalResource(
-              link.resourceId,
-              resourcePatch as Parameters<typeof runtime.resourceService.updateLogicalResource>[1],
-              geoContext,
-            );
-          } else {
-            await runtime.resourceService.updatePhysicalResource(
-              link.resourceId,
-              resourcePatch as Parameters<typeof runtime.resourceService.updatePhysicalResource>[1],
-              geoContext,
-            );
-          }
-          resourcesUpdated += 1;
-        }
-        resourceCascade = {
-          updated: resourcesUpdated,
-          skipped: resourceLinks.length - resourcesUpdated,
-        };
+        return sendJson(response, 200, {
+          ...transitionResult.project,
+          siteCascade: transitionResult.siteCascade,
+          resourceCascade: transitionResult.resourceCascade,
+        });
       }
-      return sendJson(
-        response,
-        200,
-        siteCascade ? { ...updated, siteCascade, resourceCascade } : updated,
-      );
+
+      return sendJson(response, 200, updatedProject);
     }
     if (request.method === 'DELETE') {
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);

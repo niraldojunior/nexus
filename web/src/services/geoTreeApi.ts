@@ -36,6 +36,8 @@ export type GeoTreeNode = {
   // Id da GeographicSiteSpecification do local (só em nó de Site) — pré-seleciona o tipo
   // salvo no combo de edição de um local de projeto (REQ-MOD01-015).
   siteSpecificationId?: string;
+  // Code canônico da specification — chave da entidade publicada no Studio GEO.
+  siteSpecificationCode?: string;
   // Code do catálogo de ResourceType — resolve o ícone (ver utils/resourceIcon).
   resourceType?: string;
   status?: string;

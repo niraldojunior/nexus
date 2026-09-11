@@ -39,11 +39,11 @@ test('VALUES tem exatamente uma expressão por coluna', () => {
 
 // As três expressões constantes são deliberadas (ver o comentário do SQL); travar a contagem
 // evita que alguém troque um literal por `?` sem acrescentar o parâmetro correspondente.
-test('14 placeholders + 3 expressões constantes (shape, geometry, rank)', () => {
+test('16 placeholders + 3 expressões constantes (shape, geometry, rank)', () => {
   assert.ok(parts);
   const values = split(parts[2]!);
   const placeholders = values.filter((value) => value === '?').length;
-  assert.equal(placeholders, 14, `esperava 14 placeholders, achei ${placeholders}`);
+  assert.equal(placeholders, 16, `esperava 16 placeholders, achei ${placeholders}`);
   assert.equal(values.length - placeholders, 3);
 });
 

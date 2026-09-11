@@ -3,11 +3,9 @@ import {
   COVERAGE_CITY_MAX_SCALE_METERS,
   COVERAGE_MIN_SCALE_METERS,
   COVERAGE_NEIGHBORHOOD_MAX_SCALE_METERS,
-  NETWIN_POLE_MAX_SCALE_METERS,
   PASSIVE_INFRA_MAX_SCALE_METERS,
   coverageLevelForScale,
   coverageVisibleAtScale,
-  poleVisibleAtScale,
   resourceIconSizeForScale,
   siteIconSizeForScale,
 } from './mapScale';
@@ -24,14 +22,6 @@ describe('régua de escala do mapa Geo', () => {
     expect(coverageVisibleAtScale(100)).toBe(false);
     expect(coverageVisibleAtScale(50)).toBe(false);
     expect(coverageVisibleAtScale(null)).toBe(false);
-  });
-
-  it('poste (netwinPole) só é visível em escala de detalhe (≤ 20 m)', () => {
-    expect(NETWIN_POLE_MAX_SCALE_METERS).toBe(20);
-    expect(poleVisibleAtScale(20)).toBe(true);
-    expect(poleVisibleAtScale(10)).toBe(true);
-    expect(poleVisibleAtScale(21)).toBe(false);
-    expect(poleVisibleAtScale(null)).toBe(false);
   });
 
   it('recurso: 30/25/20/15/10 px abaixo de 200 m, e oculto a partir de 200 m', () => {

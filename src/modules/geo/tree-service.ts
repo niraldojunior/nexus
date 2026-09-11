@@ -54,6 +54,9 @@ export type GeoTreeNode = {
   // painel de local de projeto (REQ-MOD01-015) precisa dele para pré-selecionar o tipo
   // salvo; sem este campo o formulário de edição sempre reabria em branco.
   siteSpecificationId?: string;
+  // Code canônico da GeographicSiteSpecification — associa o nó à entidade publicada no
+  // Studio sem depender do nome exibido em `sublabel` nem de ids de camada.
+  siteSpecificationCode?: string;
   // Code do catálogo de ResourceType (TMF634) — resolve o ícone no front.
   resourceType?: string;
   status?: string;
@@ -157,6 +160,7 @@ type SiteRow = {
   name: string;
   status: string;
   site_specification_id: string;
+  spec_code: string | null;
   spec_name: string | null;
   spec_category: string | null;
   geographic_location_id: string | null;
@@ -531,7 +535,7 @@ export class GeoTreeService {
       }
     >(
       `SELECT s.id, s.name, s.status, s.geographic_location_id, s.site_specification_id,
-              sp.name AS spec_name, sp.category AS spec_category,
+              sp.code AS spec_code, sp.name AS spec_name, sp.category AS spec_category,
               l.geometry_type, l.geometry,
               a.city, a.state_or_province AS uf, a.street_name AS street,
               ps.note, ps.geonet_address_id,
@@ -1029,6 +1033,7 @@ export class GeoTreeService {
       status: row.status,
       hasChildren: options.hasChildren,
     };
+    if (row.spec_code) node.siteSpecificationCode = row.spec_code;
     if (row.spec_name) node.sublabel = row.spec_name;
     if (row.spec_category) node.siteCategory = row.spec_category;
     const geometry = parseGeometry(row.geometry);
@@ -1358,7 +1363,7 @@ export class GeoTreeService {
 
 const SITE_SELECT = `
   SELECT s.id, s.name, s.status, s.geographic_location_id, s.site_specification_id,
-         sp.name AS spec_name, sp.category AS spec_category,
+         sp.code AS spec_code, sp.name AS spec_name, sp.category AS spec_category,
          l.geometry_type, l.geometry,
          a.city, a.state_or_province AS uf, a.street_name AS street
     FROM tmf_geographic_site s

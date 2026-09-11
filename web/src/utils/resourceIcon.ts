@@ -763,6 +763,16 @@ export function resourceTypeCode(resource: IconResourceLike | string | undefined
   return alias ? CODE_ALIAS[alias] : '__fallback';
 }
 
+/** Códigos de ícones de Resource disponíveis para seletores de configuração do mapa. */
+export function resourceMapIconOptions(): Array<{ code: string; name: string; color: string }> {
+  return Object.keys(ICONS)
+    .filter((code) => code !== '__fallback')
+    .map((code) => {
+      const entry = ICONS[code]!;
+      return { code, name: TYPE_LABEL[code] ?? code, color: familyColor[entry.family] };
+    });
+}
+
 export function resourceIconFor(resource: IconResourceLike | string | undefined): ResourceIcon {
   const code = resourceTypeCode(resource);
   const entry = ICONS[code] ?? ICONS.__fallback;

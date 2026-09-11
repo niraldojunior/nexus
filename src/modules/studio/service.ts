@@ -76,6 +76,29 @@ export class StudioService {
     };
   }
 
+  /** Leitura interna do snapshot publicado para read-models operacionais; nunca expõe draft. */
+  public async getPublishedVersion(
+    domain: StudioDomain,
+    context: RequestContext,
+  ): Promise<StudioVersion | undefined> {
+    return (await this.getStatus(domain, context)).publishedVersion;
+  }
+
+  /**
+   * Publica o bootstrap de um domínio somente quando o tenant ainda não possui versão publicada.
+   * A operação é idempotente e preserva um eventual draft manual já existente.
+   */
+  public async ensurePublishedBootstrap(
+    domain: StudioDomain,
+    snapshot: Record<string, unknown>,
+    context: RequestContext,
+  ): Promise<StudioVersion> {
+    const status = await this.getStatus(domain, context);
+    if (status.publishedVersion) return status.publishedVersion;
+    const draft = status.draftVersion ?? (await this.saveDraft(domain, snapshot, context));
+    return await this.publish(domain, context, draft.checksum);
+  }
+
   public async listVersions(
     domain: StudioDomain,
     context: RequestContext,
@@ -264,6 +287,22 @@ export class StudioService {
       });
       await this.emit('discarded', discarded, context);
       return discarded;
+    });
+  }
+
+  public async applyBatchDrafts(
+    domainSnapshots: Partial<Record<StudioDomain, { snapshot: Record<string, unknown>; ifMatch?: string }>>,
+    context: RequestContext,
+  ): Promise<Record<StudioDomain, StudioVersion>> {
+    return await this.repository.transaction(async () => {
+      const results: Partial<Record<StudioDomain, StudioVersion>> = {};
+      for (const [domainStr, data] of Object.entries(domainSnapshots)) {
+        const domain = domainStr as StudioDomain;
+        if (!data) continue;
+        const saved = await this.saveDraft(domain, data.snapshot, context, data.ifMatch);
+        results[domain] = saved;
+      }
+      return results as Record<StudioDomain, StudioVersion>;
     });
   }
 

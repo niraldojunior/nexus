@@ -102,6 +102,8 @@ async function ensureMapFeatureTable(client) {
     entity_type VARCHAR2(255 CHAR) NOT NULL,
     type_code VARCHAR2(255 CHAR),
     site_category VARCHAR2(255 CHAR),
+    source_model_type VARCHAR2(255 CHAR),
+    source_model_id VARCHAR2(255 CHAR),
     status VARCHAR2(255 CHAR),
     label VARCHAR2(255 CHAR) NOT NULL,
     sublabel VARCHAR2(255 CHAR),
@@ -157,7 +159,7 @@ function resourceSource(entity, scopeWhere) {
 // GeoTreeService.sitesInViewport (tree-service.ts), sem o corte por bbox (aqui é a base
 // inteira do escopo).
 const SITE_SOURCE = (scopeWhere) => `
-    SELECT s.id, s.name, s.status, sp.category AS spec_category, l.geometry_type, l.geometry
+    SELECT s.id, s.name, s.status, sp.code AS spec_code, sp.category AS spec_category, l.geometry_type, l.geometry
       FROM tmf_geographic_site s
       JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
       JOIN tmf_geographic_location l ON l.id = s.geographic_location_id
@@ -200,7 +202,19 @@ async function deleteByEntityIds(client, entityIds) {
   return removed;
 }
 
-function pointRow({ entityId, kind, entityType, typeCode, siteCategory, status, label, sublabel, coordinates }) {
+function pointRow({
+  entityId,
+  kind,
+  entityType,
+  typeCode,
+  siteCategory,
+  sourceModelType,
+  sourceModelId,
+  status,
+  label,
+  sublabel,
+  coordinates,
+}) {
   const [lng, lat] = coordinates;
   if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
   const tile = tileForPoint([lng, lat], MAP_TILE_ZOOM);
@@ -215,6 +229,8 @@ function pointRow({ entityId, kind, entityType, typeCode, siteCategory, status, 
     entity_type: entityType,
     type_code: typeCode ?? null,
     site_category: siteCategory ?? null,
+    source_model_type: sourceModelType ?? null,
+    source_model_id: sourceModelId ?? null,
     status: status ?? null,
     label,
     sublabel: sublabel ?? null,
@@ -240,6 +256,8 @@ function lineRows({ entityId, entityType, typeCode, status, label, geometry }) {
       entity_type: entityType,
       type_code: typeCode ?? null,
       site_category: null,
+      source_model_type: 'RESOURCE_TYPE',
+      source_model_id: typeCode ?? null,
       status: status ?? null,
       label,
       sublabel: null,
@@ -253,7 +271,8 @@ function lineRows({ entityId, entityType, typeCode, status, label, geometry }) {
 
 const FEATURE_COLUMNS = [
   'tenant_id', 'tile_z', 'tile_x', 'tile_y', 'entity_id', 'shape', 'feature_kind',
-  'entity_type', 'type_code', 'site_category', 'status', 'label', 'sublabel',
+  'entity_type', 'type_code', 'site_category', 'source_model_type', 'source_model_id',
+  'status', 'label', 'sublabel',
   'lng', 'lat', 'geometry', 'rank',
 ];
 
@@ -292,6 +311,8 @@ async function main() {
           kind: 'resource',
           entityType: row.entity_type,
           typeCode: row.resource_type,
+          sourceModelType: 'RESOURCE_TYPE',
+          sourceModelId: row.resource_type,
           status: row.status,
           label: row.name,
           coordinates: geometry.coordinates,
@@ -328,8 +349,11 @@ async function main() {
         kind: 'site',
         entityType: 'GeographicSite',
         siteCategory: row.spec_category,
+        sourceModelType: 'GEOGRAPHIC_SITE_SPECIFICATION',
+        sourceModelId: row.spec_code,
         status: row.status,
         label: row.name,
+        sublabel: row.spec_code,
         coordinates: geometry.coordinates,
       });
       if (feature) features.push(feature);

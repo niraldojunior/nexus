@@ -24,6 +24,10 @@ import type {
 } from '../../services/geoCoverageApi';
 import type { GoogleMapInstance, GoogleMapsApi } from '../../utils/googleMaps';
 import { coverageFill } from '../../utils/coverageColor';
+import type { StudioGeoPolygonVisualConfig } from '../../services/studioGeoApi';
+
+const lineDashFor = (style: StudioGeoPolygonVisualConfig['strokeStyle']): number[] =>
+  style === 'dashed' ? [6, 4] : style === 'dotted' ? [2, 3] : [];
 
 const EARTH_RADIUS_M = 6378137;
 const MAX_LAT = 85.05112878;
@@ -101,7 +105,7 @@ export function traceSmoothRing(sink: PathSink, points: Array<[number, number]>)
 }
 
 export type CoverageOverlayHandle = {
-  setData: (data: CoverageResponse | null) => void;
+  setData: (data: CoverageResponse | null, visualConfig?: StudioGeoPolygonVisualConfig) => void;
   // Bairro sob a coordenada (para o balão de hover), ou null fora da mancha.
   hitTest: (lng: number, lat: number) => CoverageNeighborhood | null;
   destroy: () => void;
@@ -111,6 +115,7 @@ type Maps = GoogleMapsApi['maps'];
 
 export function createCoverageOverlay(maps: Maps, map: GoogleMapInstance): CoverageOverlayHandle {
   let data: CoverageResponse | null = null;
+  let visualConfig: StudioGeoPolygonVisualConfig | undefined;
 
   class CoverageOverlay extends maps.OverlayView {
     private canvas: HTMLCanvasElement | null = null;
@@ -199,7 +204,8 @@ export function createCoverageOverlay(maps: Maps, map: GoogleMapInstance): Cover
 
         const neighborhood = coverage.neighborhoods[area.neighborhoodIndex];
         const ratio = neighborhood?.availabilityRatio ?? 0;
-        context.fillStyle = coverageFill(ratio, 0, { solid: true });
+        context.fillStyle = visualConfig?.fillColor ?? coverageFill(ratio, 0, { solid: true });
+        context.globalAlpha = visualConfig?.fillOpacity ?? 1;
 
         if (area.bounds) {
           const a = toLocal(area.bounds[0], area.bounds[1]);
@@ -232,6 +238,15 @@ export function createCoverageOverlay(maps: Maps, map: GoogleMapInstance): Cover
         }
         // evenodd desenha os buracos (anéis internos horários) como vazios.
         context.fill('evenodd');
+        if (visualConfig) {
+          context.globalAlpha = 1;
+          context.strokeStyle = visualConfig.strokeColor;
+          context.lineWidth = visualConfig.strokeWidth;
+          context.setLineDash(lineDashFor(visualConfig.strokeStyle));
+          context.stroke();
+          context.setLineDash([]);
+        }
+        context.globalAlpha = 1;
       }
     }
   }
@@ -240,8 +255,9 @@ export function createCoverageOverlay(maps: Maps, map: GoogleMapInstance): Cover
   overlay.setMap(map);
 
   return {
-    setData: (next) => {
+    setData: (next, nextVisualConfig) => {
       data = next;
+      visualConfig = nextVisualConfig;
       overlay.draw();
     },
     hitTest: (lng, lat) => {

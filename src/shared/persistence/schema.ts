@@ -59,6 +59,7 @@ export const TABLE_NAMES = [
   'studio_workspace',
   'studio_version',
   'studio_audit_log',
+  'studio_asset',
 ] as const;
 
 // Column migrations added after the base schema so databases created before these columns get
@@ -512,6 +513,8 @@ export const MIGRATIONS_SQL = `
     entity_type TEXT NOT NULL,
     type_code TEXT,
     site_category TEXT,
+    source_model_type TEXT,
+    source_model_id TEXT,
     status TEXT,
     label TEXT NOT NULL,
     sublabel TEXT,
@@ -634,6 +637,9 @@ export const MIGRATIONS_SQL = `
   -- vínculo de curadoria (entra/sai de um projeto ao longo do tempo); aqui é atributo de origem.
   ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS project_id TEXT;
   CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_project ON tmf_physical_resource(project_id);
+
+  -- Relações de ResourceFunctionSpecification para modelagem de templates Studio (issue #200)
+  ALTER TABLE tmf_resource_function_specification ADD COLUMN IF NOT EXISTS resource_function_specification_relationship TEXT;
 `;
 
 export const SCHEMA_SQL = `
@@ -1799,6 +1805,37 @@ const MIGRATIONS_SQL_V9_SHARED_RESOURCE_TYPE_CATALOG = ``;
 // CHAR→NUMBER em Oracle com dados existentes); batch intencionalmente vazio, ver oracle-database.ts.
 const MIGRATIONS_SQL_V10_RESOURCE_TYPE_MAP_PRESENCE_NUMERIC = ``;
 
+// Assets SVG do Studio GEO (issue #197). O conteúdo já chega sanitizado pelo StudioAssetService;
+// mantemos-o em CLOB/TEXT para que Oracle não trunque ícones válidos e para preservar o checksum
+// exato do artefato publicado. Inativação é lógica: versões publicadas podem continuar referenciando
+// um asset histórico sem que ele volte a ser oferecido em novos drafts.
+const MIGRATIONS_SQL_V11_STUDIO_ASSET = `
+  CREATE TABLE IF NOT EXISTS studio_asset (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    content TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL,
+    created_by TEXT NOT NULL,
+    retired_at TIMESTAMPTZ,
+    retired_by TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_studio_asset_tenant_active
+    ON studio_asset(tenant_id, active, name, id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_studio_asset_tenant_checksum
+    ON studio_asset(tenant_id, checksum);
+`;
+
+// Identidade de catálogo materializada no read-model de tile. Evita derivar a entidade Studio
+// por rótulo ou id de camada: cada feature aponta para sua specification ou ResourceType canônico.
+const MIGRATIONS_SQL_V12_GEO_MAP_FEATURE_SOURCE_MODEL = `
+  ALTER TABLE geo_map_feature ADD COLUMN IF NOT EXISTS source_model_type TEXT;
+  ALTER TABLE geo_map_feature ADD COLUMN IF NOT EXISTS source_model_id TEXT;
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -1833,6 +1870,12 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 10,
     name: 'resource-type-map-presence-numeric',
     sql: MIGRATIONS_SQL_V10_RESOURCE_TYPE_MAP_PRESENCE_NUMERIC,
+  },
+  { version: 11, name: 'studio-asset', sql: MIGRATIONS_SQL_V11_STUDIO_ASSET },
+  {
+    version: 12,
+    name: 'geo-map-feature-source-model',
+    sql: MIGRATIONS_SQL_V12_GEO_MAP_FEATURE_SOURCE_MODEL,
   },
 ];
 

@@ -1040,6 +1040,12 @@ export class ResourceService {
       name: input.name.trim(),
       resourceFunctionSpecificationCharacteristic:
         input.resourceFunctionSpecificationCharacteristic ?? [],
+      ...(input.resourceFunctionSpecificationRelationship
+        ? {
+            resourceFunctionSpecificationRelationship:
+              input.resourceFunctionSpecificationRelationship,
+          }
+        : {}),
       tenantId: tenantOf(context),
       ...(input.description ? { description: input.description } : {}),
       ...(input.validFor ? { validFor: input.validFor } : {}),
@@ -1070,6 +1076,12 @@ export class ResourceService {
       resourceFunctionSpecificationCharacteristic:
         input.resourceFunctionSpecificationCharacteristic ??
         current.resourceFunctionSpecificationCharacteristic,
+      ...(input.resourceFunctionSpecificationRelationship !== undefined
+        ? {
+            resourceFunctionSpecificationRelationship:
+              input.resourceFunctionSpecificationRelationship,
+          }
+        : {}),
       ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
     });

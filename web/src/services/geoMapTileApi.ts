@@ -12,6 +12,8 @@ export type MapTileFeature = {
   shape: 'point' | 'line';
   typeCode?: string;
   siteCategory?: string;
+  sourceModelType?: 'GEOGRAPHIC_SITE_SPECIFICATION' | 'RESOURCE_TYPE';
+  sourceModelId?: string;
   status?: string;
   label: string;
   sublabel?: string;

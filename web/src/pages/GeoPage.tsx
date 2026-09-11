@@ -42,15 +42,26 @@ import { useMapTiles } from '../hooks/useMapTiles';
 import { mapTileFeatureNodeId, type MapTileFeature } from '../services/geoMapTileApi';
 import { fetchTreeNode } from '../services/geoTreeApi';
 import { useMapLayers } from '../hooks/useMapLayers';
+import { useMapLayerCatalog } from '../hooks/useMapLayerCatalog';
 import { useGeoViewState } from '../hooks/useGeoViewState';
 import {
+  hasVisibleGponAggregate,
+  mapLayerEntities,
   viewportInclude,
   ALL_MAP_LAYERS_VISIBLE,
+  MAP_LAYER_CATALOG_FALLBACK,
   type MapLayerGroupId,
   type MapLayerId,
   type MapLayerVisibility,
   type MapSiteRole,
 } from '../utils/mapLayers';
+import type {
+  StudioGeoEntityNode,
+  StudioGeoPointVisualConfig,
+} from '../services/studioGeoApi';
+import { nativeMapIconDataUrl, nativeMapIconForCode } from '../utils/nativeMapIcons';
+import { getStudioSvgAssetDataUrl } from '../services/studioAssetApi';
+import { resolveScaleBandKey } from '../utils/studioGeoDefaults';
 import { createCoverageOverlay, type CoverageOverlayHandle } from './geo-tabs/CoverageOverlay';
 import { coverageSwatch, coverageSwatchDataUrl } from '../utils/coverageColor';
 import { projectAreaSwatchDataUrl } from '../utils/projectAreaColor';
@@ -258,6 +269,9 @@ function mapTileFeatureToNode(feature: MapTileFeature): GeoTreeNode {
   if (feature.sublabel) node.sublabel = feature.sublabel;
   if (feature.typeCode) node.resourceType = feature.typeCode;
   if (feature.siteCategory) node.siteCategory = feature.siteCategory;
+  if (feature.kind === 'site' && feature.sourceModelId) {
+    node.siteSpecificationCode = feature.sourceModelId;
+  }
   if (feature.status) node.status = feature.status;
   // `selectedSiteId` (GeoPage) só abre o SitePanel quando `referredType === 'GeographicSite'`
   // — sem isto, clicar um Site do canvas selecionava o nó mas nunca abria painel nenhum.
@@ -277,30 +291,63 @@ function mapTileFeatureToNode(feature: MapTileFeature): GeoTreeNode {
 // marcadores cujo estado `selected` de fato mudou (ver os dois `useEffect` de marcadores
 // logo abaixo). Mantém a mesma regra visual: o selecionado cresce, o resto segue o tier de
 // escala (cheio perto, reduzido em zoom baixo).
+function pointLayerForNode(
+  node: GeoTreeNode,
+  catalog: import('../services/studioGeoApi').StudioGeoCatalog,
+): StudioGeoEntityNode | undefined {
+  const sourceType =
+    node.kind === 'site' ? 'GEOGRAPHIC_SITE_SPECIFICATION' : 'RESOURCE_TYPE';
+  const sourceIds =
+    node.kind === 'site'
+      ? [node.siteSpecificationCode, node.siteSpecificationId]
+      : [node.resourceType];
+  return mapLayerEntities(catalog).find(
+    (candidate) =>
+      candidate.entity.sourceType === sourceType &&
+      sourceIds.some((sourceId) => sourceId === candidate.entity.sourceId) &&
+      candidate.visualConfig?.geometryKind === 'POINT',
+  );
+}
+
+function pointVisualConfigForNode(
+  node: GeoTreeNode,
+  catalog: import('../services/studioGeoApi').StudioGeoCatalog,
+): StudioGeoPointVisualConfig | undefined {
+  return pointLayerForNode(node, catalog)?.visualConfig as StudioGeoPointVisualConfig | undefined;
+}
+
 function buildPointMarkerVisual(
   maps: GoogleMapsApi['maps'],
   node: GeoTreeNode,
   selected: boolean,
-  siteMarkerSize: number,
+  stationMarkerSize: number,
   resourceMarkerSize: number | null,
+  scaleMeters: number | null,
+  pointConfig?: StudioGeoPointVisualConfig,
+  assetDataUrl?: string,
 ): { iconOptions: Record<string, unknown>; zIndex: number; title: string } {
+  const scaleConfig = pointConfig?.scaleBands[resolveScaleBandKey(scaleMeters)];
   if (node.kind === 'site') {
     const kind = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
     const icon = siteIconFor(kind, node.status);
     // Só a Central/Estação é referência permanente do mapa. Qualquer outro Site
     // (cliente, condomínio, edificação, POP...) usa a mesma régua de Resource.
     const isStation = kind === 'CO';
-    const size = isStation
-      ? (selected ? SITE_ICON_SIZE + 8 : siteMarkerSize)
-      : (selected ? MARKER_ICON_SIZE + 6 : (resourceMarkerSize ?? MARKER_ICON_SIZE));
+    const baseSize = isStation ? stationMarkerSize : (resourceMarkerSize ?? MARKER_ICON_SIZE);
+    const size = selected ? baseSize + (isStation ? 8 : 6) : (scaleConfig?.sizePx ?? baseSize);
+    const nativeIcon = nativeMapIconForCode(pointConfig?.iconCode);
     return {
       iconOptions: {
-        url: siteIconDataUrl(icon, { size }),
+        url:
+          assetDataUrl ??
+          (nativeIcon
+            ? nativeMapIconDataUrl(nativeIcon, { size, shape: 'squircle' })
+            : siteIconDataUrl(icon, { size })),
         scaledSize: new maps.Size(size, size),
         anchor: new maps.Point(size / 2, size / 2),
       },
       zIndex: isStation ? (selected ? SITE_MARKER_Z + 1 : SITE_MARKER_Z) : (selected ? EQUIPMENT_MARKER_Z + 1 : EQUIPMENT_MARKER_Z),
-      title: `${node.label} · ${icon.label}`,
+      title: `${node.label} · ${nativeIcon?.name ?? icon.label}`,
     };
   }
 
@@ -313,10 +360,16 @@ function buildPointMarkerVisual(
   // Um Recurso só chega aqui via Marker nativo quando é o nó selecionado (ver `mapNodes` em
   // GeoPage) — nesse caso `selected` é sempre true, então o fallback do `??` nunca é exercitado
   // de fato; existe só pra função ser total mesmo se isso mudar.
-  const size = selected ? MARKER_ICON_SIZE + 6 : (resourceMarkerSize ?? MARKER_ICON_SIZE);
+  const baseSize = resourceMarkerSize ?? MARKER_ICON_SIZE;
+  const size = selected ? baseSize + 6 : (scaleConfig?.sizePx ?? baseSize);
+  const nativeIcon = nativeMapIconForCode(pointConfig?.iconCode);
   return {
     iconOptions: {
-      url: resourceIconDataUrl(icon, { size }),
+      url:
+        assetDataUrl ??
+        (nativeIcon
+          ? nativeMapIconDataUrl(nativeIcon, { size, shape: 'circle' })
+          : resourceIconDataUrl(icon, { size })),
       scaledSize: new maps.Size(size, size),
       // Âncora no canto inferior-esquerdo: o equipamento fica acima e à direita da
       // coordenada. Um equipamento dentro de um CO compartilha a coordenada exata do
@@ -324,7 +377,7 @@ function buildPointMarkerVisual(
       anchor: new maps.Point(0, size),
     },
     zIndex: selected ? EQUIPMENT_MARKER_Z + 1 : EQUIPMENT_MARKER_Z,
-    title: `${node.label} · ${icon.label}`,
+    title: `${node.label} · ${nativeIcon?.name ?? icon.label}`,
   };
 }
 
@@ -531,23 +584,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // grupo, persistido em localStorage. `include` fica memoizado pelas flags que realmente
   // importam para o viewport — sem isso, `viewportInclude` devolveria uma referência de array
   // nova a cada render e o useEffect de useMapTiles reentraria em loop.
-  const mapLayers = useMapLayers();
+  const mapLayerCatalog = useMapLayerCatalog();
+  const mapLayers = useMapLayers(mapLayerCatalog.catalog);
   const viewportShapesInclude = useMemo(
-    () => viewportInclude(mapLayers.layers),
-    [
-      mapLayers.layers.siteNetwork,
-      mapLayers.layers.siteService,
-      mapLayers.layers.netwinPole,
-      mapLayers.layers.netwinDuct,
-      mapLayers.layers.netwinManhole,
-      mapLayers.layers.netwinTower,
-      mapLayers.layers.resourceCdoe,
-      mapLayers.layers.resourceCdoi,
-      mapLayers.layers.resourceCeo,
-      mapLayers.layers.resourceDio,
-      mapLayers.layers.resourceFiberCable,
-      mapLayers.layers.resourceDropCable,
-    ],
+    () => viewportInclude(mapLayers.layers, mapLayerCatalog.catalog),
+    [mapLayers.layers, mapLayerCatalog.catalog],
   );
   // Papel funcional (siteRole, C11) por code de spec, para o seletor de camadas roteirar cada
   // feature de site para o grupo certo (Sites de Rede / Sites de Serviço) sem depender de
@@ -573,6 +614,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     viewportShapesInclude,
     mapLayers.layers,
     siteRoleByCode,
+    mapLayerCatalog.catalog,
   );
   // Um CO dentro do tile também vira feature 'site'. Filtra pelos
   // ids da árvore INTEIRA (não só as Estações visíveis, que podem estar com a camada desligada)
@@ -583,17 +625,20 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   }, [infraFeaturesRaw, tree.mapNodes]);
   const siteMarkerSize = siteIconSizeForScale(scaleMeters);
   const resourceMarkerSize = resourceIconSizeForScale(scaleMeters);
-  // CO/Estação permanece visível em qualquer escala (só muda de tamanho por siteMarkerSize);
-  // a camada "Estações" do controle desliga só o desenho — a árvore precisa do fetch de
-  // qualquer forma (ver MAP_LAYER_GROUPS em utils/mapLayers.ts). Não depende de `selectedNode`:
-  // essa lista alimenta o efeito que cria/atualiza os N Marker do mapa (ver GoogleMapPanel), e
-  // trocar a seleção NÃO deve reprocessar todos eles — o item selecionado que precisar de
-  // Marker próprio fora deste recorte é responsabilidade isolada de `pinnedSelectedNode`, logo
-  // abaixo (issue #72).
+  // Cada marcador permanente resolve sua própria specification publicada. O catálogo Studio é
+  // a única fonte da associação/visibilidade; o nome exibido do Site nunca participa da regra.
   const mapNodes = useMemo(
-    () => (mapLayers.layers.stations ? tree.mapNodes : []),
-    [tree.mapNodes, mapLayers.layers.stations],
+    () =>
+      tree.mapNodes.filter((node) => {
+        const layer = pointLayerForNode(node, mapLayerCatalog.catalog);
+        if (!layer) return mapLayerCatalog.catalog.fallback;
+        const config = layer.visualConfig as StudioGeoPointVisualConfig;
+        const visible = mapLayers.layers[layer.id] ?? layer.defaultVisible;
+        return visible && config.scaleBands[resolveScaleBandKey(scaleMeters)]?.visible !== false;
+      }),
+    [tree.mapNodes, mapLayerCatalog.catalog, mapLayers.layers, scaleMeters],
   );
+  const stationMarkerSize = siteMarkerSize;
 
   // Locais do Projeto de trabalho aberto (REQ-MOD01-015), desenhados por ProjectSiteOverlay
   // (canvas — substitui até 1.500 Marker DOM reais por pin, issue #72), NUNCA por
@@ -639,11 +684,21 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Cobertura GPON da viewport (mapa de calor por bairro), só acima de 100 m.
   // Camada "Cobertura GPON" desligada corta a busca inteira: bounds nulo já limpa `coverage` e
   // zera o dedupe interno do hook, então religar refaz o fetch sem precisar mexer no mapa.
+  const gponAggregateVisible = hasVisibleGponAggregate(mapLayers.layers, mapLayerCatalog.catalog);
   const { data: coverage, loading: coverageLoading } = useGponCoverage(
-    mapLayers.layers.coverage ? viewportBounds : null,
+    gponAggregateVisible ? viewportBounds : null,
     scaleMeters,
   );
-  const coverageVisible = coverageVisibleAtScale(scaleMeters) && mapLayers.layers.coverage;
+  const coverageLayer = useMemo(
+    () =>
+      mapLayerEntities(mapLayerCatalog.catalog).find(
+        (node) => node.entity.sourceType === 'GPON_AGGREGATE',
+      ),
+    [mapLayerCatalog.catalog],
+  );
+  const coverageVisualConfig =
+    coverageLayer?.visualConfig?.geometryKind === 'POLYGON' ? coverageLayer.visualConfig : undefined;
+  const coverageVisible = coverageVisibleAtScale(scaleMeters) && gponAggregateVisible;
   // Bairro sob o cursor sobre a mancha — vira o balão de hover (ver coverageBalloon).
   const [coverageHover, setCoverageHover] = useState<{
     point: [number, number];
@@ -1816,8 +1871,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               }
               onViewportChange={handleViewportChange}
               coverage={coverageVisible ? coverage : null}
+              coverageVisualConfig={coverageVisualConfig}
               siteMarkerSize={siteMarkerSize}
+              stationMarkerSize={stationMarkerSize}
               resourceMarkerSize={resourceMarkerSize}
+              mapVisualScaleMeters={scaleMeters}
               onCoverageHover={setCoverageHover}
               projectAreas={projectAreas}
               onProjectAreaHover={setProjectAreaHover}
@@ -1829,6 +1887,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               // Qualquer camada do mapa em carga acende a barra fina no topo do mapa; o
               // script do Google Maps é somado à barra dentro do painel (ver MapLoadingBar).
               busy={mapDataLoading}
+              mapLayerCatalog={mapLayerCatalog.catalog}
               mapLayers={mapLayers.layers}
               onToggleMapLayer={mapLayers.toggleLayer}
               onToggleMapLayerGroup={mapLayers.toggleGroup}
@@ -1939,19 +1998,23 @@ export function GoogleMapPanel({
   selectionActive,
   onViewportChange,
   coverage,
+  coverageVisualConfig,
   siteMarkerSize,
+  stationMarkerSize = siteMarkerSize,
   resourceMarkerSize,
   onCoverageHover,
   projectAreas = [],
   onProjectAreaHover = noopProjectAreaHover,
   autoLocateOnOpen = false,
   busy = false,
+  mapLayerCatalog = MAP_LAYER_CATALOG_FALLBACK,
   mapLayers = ALL_MAP_LAYERS_VISIBLE,
   onToggleMapLayer = noopToggleMapLayer,
   onToggleMapLayerGroup = noopToggleMapLayerGroup,
   onResetMapLayers = noopResetMapLayers,
   mapLayersAllVisible = true,
   mapLayersScaleMeters = null,
+  mapVisualScaleMeters = null,
   siteRoleByCode,
 }: {
   nodes: GeoTreeNode[];
@@ -2025,8 +2088,11 @@ export function GoogleMapPanel({
   // Cobertura GPON da viewport (mapa de calor por bairro), ou null quando fora de escala. O
   // painel só a desenha na camada de canvas (ver CoverageOverlay); a busca é do chamador.
   coverage: CoverageResponse | null;
+  coverageVisualConfig?: import('../services/studioGeoApi').StudioGeoPolygonVisualConfig;
   // Tamanho em px do pin de Site na escala atual (ver siteIconSizeForScale em mapScale.ts).
   siteMarkerSize: number;
+  // Tamanho da Central Office publicado pelo Studio para a faixa de escala atual.
+  stationMarkerSize?: number;
   // Tamanho em px do pin de Recurso na escala atual (ver resourceIconSizeForScale em
   // mapScale.ts), ou `null` quando o Recurso não é desenhado nessa escala.
   resourceMarkerSize: number | null;
@@ -2050,8 +2116,9 @@ export function GoogleMapPanel({
   busy?: boolean;
   // Controle de camadas do mapa (RF-011, REQ-MOD01-011) — o painel só renderiza o botão/lista
   // (MapLayerControl); fetch e render condicionais são decididos pelo chamador (mapNodes,
-  // coverage, useMapTiles em GeoPage). Opcional com default "tudo visível", para os
-  // testes existentes que montam GoogleMapPanel sem o controle em jogo continuarem passando.
+  // coverage, useMapTiles em GeoPage). O catálogo publicado vem do Studio; os testes seguem
+  // usando o fallback canônico para montar o painel isoladamente.
+  mapLayerCatalog?: import('../services/studioGeoApi').StudioGeoCatalog;
   mapLayers?: MapLayerVisibility;
   onToggleMapLayer?: (id: MapLayerId) => void;
   onToggleMapLayerGroup?: (groupId: MapLayerGroupId) => void;
@@ -2060,6 +2127,9 @@ export function GoogleMapPanel({
   // Escala atual do mapa (ver mapScale.ts) — repassada ao MapLayerControl só para inibir
   // camadas com régua própria mais restrita que o toggle manual (hoje só o Poste).
   mapLayersScaleMeters?: number | null;
+  // Configuração visual publicada pelo Studio: o InfraOverlay resolve por feature a faixa de
+  // escala, tamanho de ícone e estilo de traço definidos em cada nó de entidade.
+  mapVisualScaleMeters?: number | null;
   // Papel funcional (siteRole, C11) por code de spec — refina o ícone de Site desenhado pelo
   // InfraOverlay (CO/POP/CTO) além da heurística por substring. Opcional: sem catálogo em mãos
   // (testes, ou carregamento inicial), o InfraOverlay cai no fallback por nome.
@@ -2174,6 +2244,9 @@ export function GoogleMapPanel({
   // carga (ver MapLoadingBar). Distinto de `mapsReady`: derivar a barra de `!mapsReady` a
   // deixaria girando para sempre se o script falhasse (o catch faz setMapsReady(false)).
   const [mapsLoading, setMapsLoading] = useState(true);
+  // Assets SVG são carregados uma vez pelo client compartilhado e só atualizam os markers que
+  // os referenciam quando o data URL chega; ícones nativos continuam inteiramente síncronos.
+  const [assetDataUrls, setAssetDataUrls] = useState<ReadonlyMap<string, string>>(new Map());
   const [baseLayerId, setBaseLayerId] = useState(BASE_MAP_LAYERS[0]?.id ?? 'roadmap');
   const selectedBaseLayer =
     BASE_MAP_LAYERS.find((layer) => layer.id === baseLayerId) ?? BASE_MAP_LAYERS[0];
@@ -2282,6 +2355,23 @@ export function GoogleMapPanel({
   useEffect(() => {
     onSelectInfraFeatureRef.current = onSelectInfraFeature;
   }, [onSelectInfraFeature]);
+
+  useEffect(() => {
+    const assetIds = new Set<string>();
+    for (const node of [...nodes, ...(pinnedNode ? [pinnedNode] : [])]) {
+      const assetId = pointVisualConfigForNode(node, mapLayerCatalog)?.assetId;
+      if (assetId && !assetDataUrls.has(assetId)) assetIds.add(assetId);
+    }
+    for (const assetId of assetIds) {
+      void getStudioSvgAssetDataUrl(assetId).then((dataUrl) => {
+        if (!dataUrl) return;
+        setAssetDataUrls((current) => {
+          if (current.get(assetId) === dataUrl) return current;
+          return new Map(current).set(assetId, dataUrl);
+        });
+      });
+    }
+  }, [nodes, pinnedNode, mapLayerCatalog, assetDataUrls]);
 
   useEffect(() => {
     if (!GOOGLE_MAPS_KEY || !mapEl.current) return;
@@ -2549,8 +2639,8 @@ export function GoogleMapPanel({
 
   // Repassa os dados de cobertura para a camada de canvas quando mudam (ou saem de escala).
   useEffect(() => {
-    coverageOverlayRef.current?.setData(coverage);
-  }, [coverage, mapsReady]);
+    coverageOverlayRef.current?.setData(coverage, coverageVisualConfig);
+  }, [coverage, coverageVisualConfig, mapsReady]);
 
   // Descarta a camada de cobertura no desmonte, junto do mapa.
   useEffect(
@@ -2588,6 +2678,8 @@ export function GoogleMapPanel({
       siteMarkerSize,
       excludeNodeId: selectedNodeId,
       roleByCode: siteRoleByCode,
+      catalog: mapLayerCatalog,
+      scaleMeters: mapVisualScaleMeters,
     });
   }, [
     infraFeatures,
@@ -2596,6 +2688,8 @@ export function GoogleMapPanel({
     selectedNodeId,
     mapsReady,
     siteRoleByCode,
+    mapLayerCatalog,
+    mapVisualScaleMeters,
   ]);
 
   // Descarta a camada de infra passiva no desmonte, junto do mapa.
@@ -2664,12 +2758,16 @@ export function GoogleMapPanel({
       const [lng, lat] = node.geometry.coordinates;
       const selected = node.id === selectedNodeIdAtRun;
       const existing = markersRef.current.get(node.id);
+      const pointConfig = pointVisualConfigForNode(node, mapLayerCatalog);
       const visual = buildPointMarkerVisual(
         maps,
         node,
         selected,
-        siteMarkerSize,
+        stationMarkerSize,
         resourceMarkerSize,
+        mapVisualScaleMeters,
+        pointConfig,
+        pointConfig?.assetId ? assetDataUrls.get(pointConfig.assetId) : undefined,
       );
 
       if (existing) {
@@ -2708,7 +2806,15 @@ export function GoogleMapPanel({
     // Cada ponto é um ícone individual no mapa — sem agrupamento. De 50 m para cima a leitura
     // da rede fica por conta da camada de cobertura GPON (ver CoverageOverlay), não de clusters.
     for (const marker of activeMarkers) marker.setMap(mapRef.current);
-  }, [mapsReady, nodes, siteMarkerSize, resourceMarkerSize]);
+  }, [
+    mapsReady,
+    nodes,
+    stationMarkerSize,
+    resourceMarkerSize,
+    mapVisualScaleMeters,
+    mapLayerCatalog,
+    assetDataUrls,
+  ]);
 
   // Troca de seleção: toca só os 1-2 marcadores cujo `selected` de fato mudou (o que estava
   // selecionado antes e o que passou a estar agora), em vez de reprocessar todos os N do efeito
@@ -2726,17 +2832,29 @@ export function GoogleMapPanel({
       const marker = markersRef.current.get(id);
       const node = nodeByIdRef.current.get(id);
       if (!marker || !node || node.geometry?.type !== 'Point') continue;
+      const pointConfig = pointVisualConfigForNode(node, mapLayerCatalog);
       const visual = buildPointMarkerVisual(
         maps,
         node,
         id === selectedNodeId,
-        siteMarkerSize,
+        stationMarkerSize,
         resourceMarkerSize,
+        mapVisualScaleMeters,
+        pointConfig,
+        pointConfig?.assetId ? assetDataUrls.get(pointConfig.assetId) : undefined,
       );
       marker.setIcon(visual.iconOptions);
       marker.setZIndex(visual.zIndex);
     }
-  }, [mapsReady, selectedNodeId, siteMarkerSize, resourceMarkerSize]);
+  }, [
+    mapsReady,
+    selectedNodeId,
+    stationMarkerSize,
+    resourceMarkerSize,
+    mapVisualScaleMeters,
+    mapLayerCatalog,
+    assetDataUrls,
+  ]);
 
   useEffect(() => {
     const maps = window.google?.maps;
@@ -2774,7 +2892,17 @@ export function GoogleMapPanel({
       return;
     }
     const [lng, lat] = pinnedNode.geometry.coordinates;
-    const visual = buildPointMarkerVisual(maps, pinnedNode, true, siteMarkerSize, resourceMarkerSize);
+    const pinnedPointConfig = pointVisualConfigForNode(pinnedNode, mapLayerCatalog);
+    const visual = buildPointMarkerVisual(
+      maps,
+      pinnedNode,
+      true,
+      stationMarkerSize,
+      resourceMarkerSize,
+      mapVisualScaleMeters,
+      pinnedPointConfig,
+      pinnedPointConfig?.assetId ? assetDataUrls.get(pinnedPointConfig.assetId) : undefined,
+    );
     nodeByIdRef.current.set(pinnedNode.id, pinnedNode);
     if (!pinnedMarkerRef.current) {
       const marker = new maps.Marker({
@@ -2797,7 +2925,7 @@ export function GoogleMapPanel({
       pinnedMarkerRef.current.setIcon(visual.iconOptions);
       pinnedMarkerRef.current.setZIndex(visual.zIndex);
     }
-  }, [mapsReady, pinnedNode, siteMarkerSize, resourceMarkerSize]);
+  }, [mapsReady, pinnedNode, stationMarkerSize, resourceMarkerSize]);
 
   // Voo de câmera até o item/endereço em foco (hierarquia, busca, clique no mapa ou
   // simulação de drop). `flyTo` afasta/reaproxima em saltos longos e pousa em zoom
@@ -3449,6 +3577,7 @@ export function GoogleMapPanel({
       <MapBaseLayerSelector value={baseLayerId} onChange={setBaseLayerId} />
       <MapLocateButton onLocate={handleDeviceLocate} />
       <MapLayerControl
+        catalog={mapLayerCatalog}
         layers={mapLayers}
         onToggleLayer={onToggleMapLayer}
         onToggleGroup={onToggleMapLayerGroup}

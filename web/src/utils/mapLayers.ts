@@ -1,283 +1,252 @@
-// Controle de camadas do mapa Geo (RF-011, REQ-MOD01-011): liga/desliga fetch + render por
-// grupo. É núcleo puro (sem React) — compartilhado entre o hook de estado (useMapLayers), o
-// controle flutuante (MapLayerControl) e o serviço HTTP (geoTreeApi.fetchViewportResources),
-// para os três lerem o mesmo catálogo e a mesma regra de tri-state de grupo.
+// Controle de camadas do mapa Geo. A publicação do Studio é a fonte operacional; o catálogo
+// canônico só mantém o mapa utilizável enquanto o control plane não tem publicação.
 
-import { poleVisibleAtScale } from './mapScale';
-import { isCdoiResource } from './resourceIcon';
+import type {
+  StudioGeoCatalog,
+  StudioGeoEntityNode,
+  StudioGeoNode,
+  StudioGeoSourceType,
+} from '../services/studioGeoApi';
+import type { GeoSiteRole } from '../services/geoApi';
 
-export type MapLayerId =
-  | 'stations'
-  | 'siteNetwork'
-  | 'siteService'
-  | 'netwinTower'
-  | 'coverage'
-  | 'netwinPole'
-  | 'netwinDuct'
-  | 'netwinManhole'
-  | 'resourceCdoe'
-  | 'resourceCdoi'
-  | 'resourceCeo'
-  | 'resourceDio'
-  | 'resourceFiberCable'
-  | 'resourceDropCable';
-
+export type MapSiteRole = GeoSiteRole;
+export type MapLayerId = string;
+export type MapLayerGroupId = string;
 export type MapLayerVisibility = Record<MapLayerId, boolean>;
-
-export const ALL_MAP_LAYERS_VISIBLE: MapLayerVisibility = {
-  stations: true,
-  siteNetwork: true,
-  siteService: true,
-  netwinTower: true,
-  coverage: true,
-  netwinPole: true,
-  netwinDuct: true,
-  netwinManhole: true,
-  resourceCdoe: true,
-  resourceCdoi: true,
-  resourceCeo: true,
-  resourceDio: true,
-  resourceFiberCable: true,
-  resourceDropCable: true,
-};
-
-export type MapLayerGroupId = 'locations' | 'coverage' | 'netwinInfrastructure' | 'resources';
-
-type MapLayerEntry = { id: MapLayerId; label: string; hint: string };
-
-export type MapLayerGroup = {
-  id: MapLayerGroupId;
-  label: string;
-  hint?: string;
-  // Grupo sem filhos (Cobertura) usa o próprio id como camada única.
-  children: MapLayerEntry[];
-};
-
-// Catálogo exibido pelo MapLayerControl, na mesma ordem em que aparece na UI. Estações
-// nunca deixam de SER BUSCADAS (vêm de useGeoTree, que a Hierarquia já precisa) — desligar
-// só tira do desenho; as outras cortam a requisição no cliente (ver viewportInclude).
-//
-// "Locais" é organizado por papel funcional (siteRole, C11) — o que o site É — e não por
-// categoria estrutural: Site é conceito agnóstico a telecom, então os rótulos são todos
-// em português, sem código cru de spec. Torre entra em Locais por pedido do usuário mesmo
-// sendo tecnicamente um PhysicalResource (mesma camada `netwinTower` de sempre — só muda o
-// grupo em que aparece na UI).
-export const MAP_LAYER_GROUPS: readonly MapLayerGroup[] = [
-  {
-    id: 'locations',
-    label: 'Locais',
-    children: [
-      { id: 'stations', label: 'Estações', hint: 'CO — sempre buscadas, só o desenho é afetado' },
-      {
-        id: 'siteNetwork',
-        label: 'Sites de Rede',
-        hint: 'CO, POP, Armário, Sala técnica, Contêiner…',
-      },
-      {
-        id: 'siteService',
-        label: 'Sites de Serviço',
-        hint: 'Unidade atendida (casa, apartamento)',
-      },
-      { id: 'netwinTower', label: 'Torres', hint: 'Estrutura de sustentação elevada' },
-    ],
-  },
-  {
-    id: 'coverage',
-    label: 'Cobertura',
-    hint: 'Manchas agregadas por tema — hoje só GPON, outras entram como novos itens do grupo',
-    children: [{ id: 'coverage', label: 'Cobertura GPON', hint: 'Mancha por bairro' }],
-  },
-  {
-    id: 'netwinInfrastructure',
-    label: 'Infraestrutura Civil',
-    children: [
-      { id: 'netwinPole', label: 'Postes', hint: 'Poste de rede aérea' },
-      {
-        id: 'netwinDuct',
-        label: 'Dutos',
-        hint: 'Duto, tubo de subida, túnel de cabos, pedestal, suporte',
-      },
-      {
-        id: 'netwinManhole',
-        label: 'Caixas Subterrâneas',
-        hint: 'Poço de visita / caixa enterrada',
-      },
-    ],
-  },
-  {
-    id: 'resources',
-    label: 'Recursos de Rede',
-    children: [
-      {
-        id: 'resourceCdoe',
-        label: 'CDOEs',
-        hint: 'Caixa de terminação óptica externa (via pública)',
-      },
-      {
-        id: 'resourceCdoi',
-        label: 'CDOIs',
-        hint: 'Caixa de terminação óptica interna (edificação)',
-      },
-      { id: 'resourceCeo', label: 'CEOs', hint: 'Caixa de emenda óptica' },
-      { id: 'resourceDio', label: 'DIOs', hint: 'Distribuidor interno óptico' },
-      { id: 'resourceFiberCable', label: 'Cabos de Fibra', hint: 'Backbone, distribuição e fibra' },
-      { id: 'resourceDropCable', label: 'Cabo Drop', hint: 'Cabo de acesso até o cliente' },
-    ],
-  },
-];
-
 export type GroupVisibility = 'all' | 'some' | 'none';
+export type ViewportShape = 'sites' | 'resource-points' | 'resource-lines';
+
+export type MapLayerTreeNode = StudioGeoNode & { children: MapLayerTreeNode[] };
+
+const group = (id: string, label: string, sortOrder: number, hint?: string): StudioGeoNode => ({
+  id, kind: 'GROUP', parentNodeId: null, label, hint, sortOrder, active: true,
+});
+const entity = (
+  id: string,
+  parentNodeId: string,
+  label: string,
+  sortOrder: number,
+  sourceType: StudioGeoSourceType,
+  sourceId: string,
+  hint?: string,
+): StudioGeoEntityNode => ({
+  id, kind: 'ENTITY', parentNodeId, label, hint, sortOrder, active: true, defaultVisible: true,
+  entity: {
+    category: sourceType === 'GEOGRAPHIC_SITE_SPECIFICATION' ? 'LOCAL' : sourceType === 'RESOURCE_TYPE' ? 'RESOURCE' : 'COVERAGE',
+    sourceDomain: sourceType === 'GEOGRAPHIC_SITE_SPECIFICATION' ? 'location-model' : sourceType === 'RESOURCE_TYPE' ? 'resource-model' : 'spatial',
+    sourceType, sourceId,
+  },
+});
+
+export const MAP_LAYER_CATALOG_FALLBACK: StudioGeoCatalog = {
+  schemaVersion: 2,
+  fallback: true,
+  nodes: [
+    group('locations', 'Locais', 10),
+    group('coverage', 'Cobertura', 20, 'Manchas agregadas por tema — hoje só GPON'),
+    group('netwinInfrastructure', 'Infraestrutura Civil', 30),
+    group('resources', 'Recursos de Rede', 40),
+    entity('stations', 'locations', 'Estações', 10, 'GEOGRAPHIC_SITE_SPECIFICATION', 'legacy-stations'),
+    entity('siteNetwork', 'locations', 'Sites de Rede', 20, 'GEOGRAPHIC_SITE_SPECIFICATION', 'legacy-site-network'),
+    entity('siteService', 'locations', 'Sites de Serviço', 30, 'GEOGRAPHIC_SITE_SPECIFICATION', 'legacy-site-service'),
+    entity('netwinTower', 'locations', 'Torres', 40, 'RESOURCE_TYPE', 'legacy-tower'),
+    entity('coverage-gpon', 'coverage', 'Cobertura GPON', 10, 'GPON_AGGREGATE', 'gpon-aggregate'),
+    entity('netwinPole', 'netwinInfrastructure', 'Postes', 10, 'RESOURCE_TYPE', 'legacy-pole'),
+    entity('netwinDuct', 'netwinInfrastructure', 'Dutos', 20, 'RESOURCE_TYPE', 'legacy-duct'),
+    entity('netwinManhole', 'netwinInfrastructure', 'Caixas Subterrâneas', 30, 'RESOURCE_TYPE', 'legacy-manhole'),
+    entity('resourceCdoe', 'resources', 'CDOEs', 10, 'RESOURCE_TYPE', 'legacy-cdoe'),
+    entity('resourceCdoi', 'resources', 'CDOIs', 20, 'RESOURCE_TYPE', 'legacy-cdoi'),
+    entity('resourceCeo', 'resources', 'CEOs', 30, 'RESOURCE_TYPE', 'legacy-ceo'),
+    entity('resourceDio', 'resources', 'DIOs', 40, 'RESOURCE_TYPE', 'legacy-dio'),
+    entity('resourceFiberCable', 'resources', 'Cabos de Fibra', 50, 'RESOURCE_TYPE', 'legacy-fiber-cable'),
+    entity('resourceDropCable', 'resources', 'Cabo Drop', 60, 'RESOURCE_TYPE', 'legacy-drop-cable'),
+  ],
+};
+
+const compare = (left: StudioGeoNode, right: StudioGeoNode) =>
+  left.sortOrder - right.sortOrder || left.id.localeCompare(right.id);
+
+export const mapLayerTree = (
+  catalog: StudioGeoCatalog,
+  options?: { pruneEmptyGroups?: boolean },
+): readonly MapLayerTreeNode[] => {
+  const pruneEmptyGroups = options?.pruneEmptyGroups ?? false;
+  const activeNodes = catalog.nodes.filter((node) => node.active);
+  const childrenByParent = new Map<string | null, StudioGeoNode[]>();
+  for (const node of activeNodes) {
+    const children = childrenByParent.get(node.parentNodeId) ?? [];
+    children.push(node);
+    childrenByParent.set(node.parentNodeId, children);
+  }
+  const create = (node: StudioGeoNode): MapLayerTreeNode => ({
+    ...node,
+    children: (childrenByParent.get(node.id) ?? []).sort(compare).map(create),
+  });
+  const prune = (node: MapLayerTreeNode): MapLayerTreeNode | undefined => {
+    if (!pruneEmptyGroups) return node;
+    return node.kind === 'ENTITY' || node.children.length > 0 ? node : undefined;
+  };
+  return (childrenByParent.get(null) ?? [])
+    .sort(compare)
+    .map(create)
+    .map(prune)
+    .filter(Boolean) as MapLayerTreeNode[];
+};
+
+export const mapLayerEntities = (catalog: StudioGeoCatalog): StudioGeoEntityNode[] =>
+  catalog.nodes.filter((node): node is StudioGeoEntityNode => node.kind === 'ENTITY' && node.active);
+
+export const descendantEntities = (catalog: StudioGeoCatalog, groupId: string): StudioGeoEntityNode[] => {
+  const byParent = new Map<string | null, StudioGeoNode[]>();
+  for (const node of catalog.nodes.filter((candidate) => candidate.active)) {
+    const children = byParent.get(node.parentNodeId) ?? [];
+    children.push(node);
+    byParent.set(node.parentNodeId, children);
+  }
+  const result: StudioGeoEntityNode[] = [];
+  const visit = (parentId: string): void => {
+    for (const node of byParent.get(parentId) ?? []) {
+      if (node.kind === 'ENTITY') result.push(node);
+      else visit(node.id);
+    }
+  };
+  visit(groupId);
+  return result;
+};
+
+export const defaultMapLayerVisibility = (catalog: StudioGeoCatalog): MapLayerVisibility =>
+  Object.fromEntries(mapLayerEntities(catalog).map((node) => [node.id, node.defaultVisible]));
+
+export const ALL_MAP_LAYERS_VISIBLE: MapLayerVisibility = Object.fromEntries(
+  mapLayerEntities(MAP_LAYER_CATALOG_FALLBACK).map((node) => [node.id, true]),
+);
 
 export function groupVisibility(
   visibility: MapLayerVisibility,
   groupId: MapLayerGroupId,
+  catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK,
 ): GroupVisibility {
-  const group = MAP_LAYER_GROUPS.find((candidate) => candidate.id === groupId);
-  if (!group || group.children.length === 0) return 'none';
-  const states = group.children.map((child) => visibility[child.id]);
+  const entities = descendantEntities(catalog, groupId);
+  if (entities.length === 0) return 'none';
+  const states = entities.map((node) => visibility[node.id] ?? node.defaultVisible);
   if (states.every(Boolean)) return 'all';
   if (states.every((state) => !state)) return 'none';
   return 'some';
 }
 
-// Clique no grupo: algum filho ligado (inclusive parcial) desliga todos; todos desligados
-// liga todos — mesmo padrão de checkbox tri-state indeterminado.
 export function setGroupVisibility(
   visibility: MapLayerVisibility,
   groupId: MapLayerGroupId,
+  catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK,
 ): MapLayerVisibility {
-  const group = MAP_LAYER_GROUPS.find((candidate) => candidate.id === groupId);
-  if (!group) return visibility;
-  const next = groupVisibility(visibility, groupId) === 'none';
-  const patch: Partial<MapLayerVisibility> = {};
-  for (const child of group.children) patch[child.id] = next;
-  return { ...visibility, ...patch };
+  const entities = descendantEntities(catalog, groupId);
+  if (!entities.length) return visibility;
+  const next = groupVisibility(visibility, groupId, catalog) === 'none';
+  return { ...visibility, ...Object.fromEntries(entities.map((node) => [node.id, next])) };
 }
 
-export type ViewportShape = 'sites' | 'resource-points' | 'resource-lines';
-
-// Eixo funcional (C11) de uma GeographicSiteSpecification — o mesmo vocabulário de
-// web/src/services/geoApi.ts GeoSiteRole, repetido aqui para o núcleo de camadas não
-// depender do módulo de serviço HTTP.
-export type MapSiteRole = 'grouping' | 'network' | 'property' | 'service';
-
 type MapFeatureLayerLike = {
-  kind: 'resource' | 'site';
-  shape: 'point' | 'line';
+  kind: 'resource' | 'site' | 'coverage';
+  shape: 'point' | 'line' | 'polygon';
+  sourceModelType?: StudioGeoSourceType;
+  sourceModelId?: string;
+  // Transitional fields are only read by the canonical fallback until tile identity is migrated.
   typeCode?: string;
   label?: string;
   sublabel?: string;
-  siteCategory?: string;
 };
 
-// Tipos de recurso que caem numa camada fixa por typeCode. CTO fica de fora — CDOE/CDOI
-// são o mesmo ResourceType e só se distinguem pelo nome (ver isCdoiResource).
-const RESOURCE_LAYER_BY_TYPE: Partial<Record<string, MapLayerId>> = {
-  Pole: 'netwinPole',
-  Manhole: 'netwinManhole',
-  Tower: 'netwinTower',
-  DIO: 'resourceDio',
-  SpliceClosure: 'resourceCeo',
-  Duct: 'netwinDuct',
-  RisingTube: 'netwinDuct',
-  Pedestal: 'netwinDuct',
-  SupportBracket: 'netwinDuct',
-  CableTunnel: 'netwinDuct',
-  IronPipe: 'netwinDuct',
-  Fiber: 'resourceFiberCable',
-  DistributionCable: 'resourceFiberCable',
-  BackboneCable: 'resourceFiberCable',
-  DropCable: 'resourceDropCable',
-};
-
-// Camada de site por papel funcional. `sublabel` da feature guarda o code da spec (ver
-// map-feature-synchronizer.ts) — o catálogo de specs já está em memória no front
-// (GeoPage carrega `specs`), então o roteamento é resolvido aqui sem coluna nova em
-// `geo_map_feature` nem rebuild do índice de 1.5M+ linhas (dívida server-side registrada na
-// issue https://github.com/niraldojunior/nexus/issues/111).
-//
-// Só existem duas camadas de site hoje (Sites de Rede / Sites de Serviço): qualquer papel
-// diferente de "service" (grouping, network, property) ou desconhecido cai em Sites de Rede.
-function siteLayerFor(
+const LEGACY_SOURCE_BY_FEATURE = (
   feature: MapFeatureLayerLike,
-  roleByCode: ReadonlyMap<string, MapSiteRole> | undefined,
-): MapLayerId {
-  const role = feature.sublabel ? roleByCode?.get(feature.sublabel) : undefined;
-  return role === 'service' ? 'siteService' : 'siteNetwork';
+  roleByCode?: ReadonlyMap<string, unknown>,
+): string | undefined => {
+  if (feature.kind === 'site') {
+    const role = feature.sublabel && roleByCode ? roleByCode.get(feature.sublabel) : undefined;
+    if (role === 'service') return 'legacy-site-service';
+    return 'legacy-site-network';
+  }
+  if (feature.typeCode === 'Tower') return 'legacy-tower';
+  if (feature.typeCode === 'Pole') return 'legacy-pole';
+  if (['Duct', 'RisingTube', 'CableTunnel', 'Pedestal', 'SupportBracket', 'IronPipe'].includes(feature.typeCode ?? '')) return 'legacy-duct';
+  if (feature.typeCode === 'Manhole') return 'legacy-manhole';
+  if (feature.typeCode === 'DIO') return 'legacy-dio';
+  if (feature.typeCode === 'SpliceClosure') return 'legacy-ceo';
+  if (['Fiber', 'DistributionCable', 'BackboneCable'].includes(feature.typeCode ?? '')) return 'legacy-fiber-cable';
+  if (feature.typeCode === 'DropCable') return 'legacy-drop-cable';
+  if (feature.typeCode === 'CTO') return feature.label?.toUpperCase().includes('CDOI') ? 'legacy-cdoi' : 'legacy-cdoe';
+  return undefined;
+};
+
+export function nodeForMapFeature(
+  feature: MapFeatureLayerLike,
+  catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK,
+  roleByCode?: ReadonlyMap<string, unknown>,
+): StudioGeoEntityNode | undefined {
+  const sourceId =
+    feature.sourceModelId ?? (catalog.fallback ? LEGACY_SOURCE_BY_FEATURE(feature, roleByCode) : undefined);
+  if (!sourceId) return undefined;
+  const sourceType = feature.sourceModelType;
+  return mapLayerEntities(catalog).find(
+    (candidate) =>
+      candidate.entity.sourceId === sourceId &&
+      (!sourceType || candidate.entity.sourceType === sourceType),
+  );
 }
 
-// O tile é compartilhado por todos os filtros. As camadas gerais evitam fetch
-// desnecessário; as camadas por tipo filtram cada classe sem multiplicar chamadas.
-//
-// `scaleMeters` é opcional (omitido = sem corte de escala, usado pelos testes que não simulam
-// o mapa): hoje só o Poste tem régua própria, mais restrita que o corte geral de infra passiva
-// (PASSIVE_INFRA_MAX_SCALE_METERS) — poluiria o desenho em qualquer escala mais aberta que a de
-// campo (ver poleVisibleAtScale em mapScale.ts).
 export function isMapFeatureVisible(
   feature: MapFeatureLayerLike,
   visibility: MapLayerVisibility,
-  roleByCode?: ReadonlyMap<string, MapSiteRole>,
-  scaleMeters?: number | null,
+  roleByCode?: ReadonlyMap<string, unknown>,
+  catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK,
 ): boolean {
-  if (feature.kind === 'site') {
-    return visibility[siteLayerFor(feature, roleByCode)];
+  const node = nodeForMapFeature(feature, catalog, roleByCode);
+  if (!node) {
+    // No fallback canônico de compatibilidade, recursos sem camada específica continuam visíveis.
+    return Boolean(catalog.fallback && feature.kind === 'resource');
   }
-  if (feature.typeCode === 'CTO') {
-    return isCdoiResource({ name: feature.label })
-      ? visibility.resourceCdoi
-      : visibility.resourceCdoe;
-  }
-  const layer = feature.typeCode ? RESOURCE_LAYER_BY_TYPE[feature.typeCode] : undefined;
-  if (layer === 'netwinPole' && scaleMeters !== undefined && !poleVisibleAtScale(scaleMeters)) {
-    return false;
-  }
-  return layer === undefined || visibility[layer];
+  return visibility[node.id] ?? node.defaultVisible;
 }
 
-// O que pedir a /v1/geo/tree/viewport para a visibilidade atual — omitido (`undefined`) quando
-// tudo está ligado, para o caminho quente não carregar um parâmetro extra à toa.
-export function viewportInclude(visibility: MapLayerVisibility): ViewportShape[] | undefined {
-  const shapes: ViewportShape[] = [];
-  if (visibility.siteNetwork || visibility.siteService) shapes.push('sites');
-  const anyResourcePoint =
-    visibility.netwinPole ||
-    visibility.netwinDuct ||
-    visibility.netwinManhole ||
-    visibility.netwinTower ||
-    visibility.resourceCdoe ||
-    visibility.resourceCdoi ||
-    visibility.resourceCeo ||
-    visibility.resourceDio;
-  if (anyResourcePoint) shapes.push('resource-points');
-  if (visibility.resourceFiberCable || visibility.resourceDropCable) shapes.push('resource-lines');
-  if (shapes.length === 3) return undefined;
-  return shapes;
+export function viewportInclude(
+  visibility: MapLayerVisibility,
+  catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK,
+): ViewportShape[] | undefined {
+  const entities = mapLayerEntities(catalog).filter((node) =>
+    node.id !== 'stations' && (visibility[node.id] ?? node.defaultVisible),
+  );
+  const shapes = new Set<ViewportShape>();
+  for (const node of entities) {
+    if (node.entity.sourceType === 'GEOGRAPHIC_SITE_SPECIFICATION') shapes.add('sites');
+    if (node.entity.sourceType === 'RESOURCE_TYPE') {
+      if (node.entity.sourceId.includes('cable')) shapes.add('resource-lines');
+      else shapes.add('resource-points');
+    }
+  }
+  const result = [...shapes];
+  return result.length === 3 ? undefined : result;
 }
+
+export const hasVisibleGponAggregate = (visibility: MapLayerVisibility, catalog: StudioGeoCatalog): boolean =>
+  mapLayerEntities(catalog).some((node) =>
+    node.entity.sourceType === 'GPON_AGGREGATE' && (visibility[node.id] ?? node.defaultVisible),
+  );
 
 const STORAGE_KEY = 'nexus.geo.mapLayers';
+const STORAGE_KEY_CONTROL_OPEN = 'nexus.geo.mapLayerControl.open';
+const STORAGE_KEY_EXPANDED_GROUPS = 'nexus.geo.mapLayerControl.expandedGroups';
 
-const isLayerId = (value: string): value is MapLayerId =>
-  Object.prototype.hasOwnProperty.call(ALL_MAP_LAYERS_VISIBLE, value);
-
-// Lê a preferência salva; qualquer coisa fora do formato esperado (JSON inválido, chave
-// desconhecida, valor não-booleano, storage indisponível) cai no default "tudo visível" — a
-// origem de dados nunca deve deixar o mapa em um estado que o usuário não escolheu. Chaves
-// antigas do localStorage (`sites`, `netwinBuilding`, `resourcePoints`…) somem sozinhas:
-// `isLayerId` só aceita o vocabulário atual, então não precisa versionar a chave de storage.
-export function readStoredLayers(): MapLayerVisibility {
-  if (typeof window === 'undefined') return ALL_MAP_LAYERS_VISIBLE;
+export function readStoredLayers(catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK): MapLayerVisibility {
+  const defaults = defaultMapLayerVisibility(catalog);
+  if (typeof window === 'undefined') return defaults;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return ALL_MAP_LAYERS_VISIBLE;
+    if (!raw) return defaults;
     const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== 'object' || parsed === null) return ALL_MAP_LAYERS_VISIBLE;
-    const result = { ...ALL_MAP_LAYERS_VISIBLE };
-    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-      if (isLayerId(key) && typeof value === 'boolean') result[key] = value;
-    }
-    return result;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return defaults;
+    const stored = parsed as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(defaults).map(([id, fallback]) => [id, typeof stored[id] === 'boolean' ? stored[id] : fallback]));
   } catch {
-    return ALL_MAP_LAYERS_VISIBLE;
+    return defaults;
   }
 }
 
@@ -286,6 +255,52 @@ export function writeStoredLayers(visibility: MapLayerVisibility): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(visibility));
   } catch {
-    // Storage indisponível (modo privado, cota): a preferência só não persiste.
+    // Storage indisponível: a preferência só não persiste.
+  }
+}
+
+export function readStoredLayerControlOpen(defaultOpen = false): boolean {
+  if (typeof window === 'undefined') return defaultOpen;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY_CONTROL_OPEN);
+    if (raw === null) return defaultOpen;
+    return raw === 'true';
+  } catch {
+    return defaultOpen;
+  }
+}
+
+export function writeStoredLayerControlOpen(open: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY_CONTROL_OPEN, open ? 'true' : 'false');
+  } catch {
+    // Storage indisponível: a preferência só não persiste.
+  }
+}
+
+export function readStoredExpandedGroups(catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK): Set<string> {
+  const allGroupIds = catalog.nodes.filter((n) => n.kind === 'GROUP').map((n) => n.id);
+  const defaultSet = new Set(allGroupIds);
+  if (typeof window === 'undefined') return defaultSet;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY_EXPANDED_GROUPS);
+    if (!raw) return defaultSet;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return defaultSet;
+    const validIds = new Set(allGroupIds);
+    const filtered = (parsed as unknown[]).filter((id): id is string => typeof id === 'string' && validIds.has(id));
+    return new Set(filtered);
+  } catch {
+    return defaultSet;
+  }
+}
+
+export function writeStoredExpandedGroups(expandedGroups: Set<string>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY_EXPANDED_GROUPS, JSON.stringify(Array.from(expandedGroups)));
+  } catch {
+    // Storage indisponível: a preferência só não persiste.
   }
 }

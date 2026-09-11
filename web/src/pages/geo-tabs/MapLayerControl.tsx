@@ -1,37 +1,53 @@
-import { useEffect, useId, useRef, useState } from 'react';
-import { Boxes, Layers, MapPin, Network, Radar, X, type LucideIcon } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
 import {
-  MAP_LAYER_GROUPS,
+  Box,
+  ChevronDown,
+  ChevronRight,
+  Folder,
+  FolderOpen,
+  Globe,
+  Layers,
+  X,
+} from 'lucide-react';
+import type { StudioGeoCatalog } from '../../services/studioGeoApi';
+import {
   groupVisibility,
+  MAP_LAYER_CATALOG_FALLBACK,
+  mapLayerTree,
+  readStoredExpandedGroups,
+  readStoredLayerControlOpen,
+  writeStoredExpandedGroups,
+  writeStoredLayerControlOpen,
   type MapLayerGroupId,
   type MapLayerId,
+  type MapLayerTreeNode,
   type MapLayerVisibility,
 } from '../../utils/mapLayers';
-import { NETWIN_POLE_MAX_SCALE_METERS, poleVisibleAtScale } from '../../utils/mapScale';
-
-// Ícone por grupo/camada — só para varredura visual rápida na lista; o rótulo é quem carrega
-// o significado (ver AGENTS.md §10, tokens do design system, nenhuma cor hardcoded aqui).
-const GROUP_ICONS: Record<MapLayerGroupId, LucideIcon> = {
-  locations: MapPin,
-  coverage: Radar,
-  resources: Boxes,
-  netwinInfrastructure: Network,
-};
+import { resolveScaleBandKey } from '../../utils/studioGeoDefaults';
 
 export type MapLayerControlProps = {
+  catalog?: StudioGeoCatalog;
   layers: MapLayerVisibility;
   onToggleLayer: (id: MapLayerId) => void;
   onToggleGroup: (groupId: MapLayerGroupId) => void;
   onReset: () => void;
   allVisible: boolean;
-  // Escala atual do mapa (ver mapScale.ts) — só usada para inibir camadas com régua própria
-  // mais restrita que o toggle manual (hoje só o Poste, ver POLE_SCALE_HINT). `undefined`/`null`
-  // = sem informação de escala ainda (primeiro render antes do `idle` do mapa): nada é inibido.
   scaleMeters?: number | null;
 };
 
-// Switch pequeno (role="switch") no mesmo padrão de trilha do design system: acento ligado,
-// borda neutra desligada. Sem dependência externa — é só um botão com duas classes.
+// Genérico: qualquer entidade de geometria POINT pode ter faixas de escala ocultas no Studio
+// GEO (visualConfig.scaleBands). Quando a faixa correspondente à escala atual está marcada
+// `visible: false` no catálogo publicado, o switch fica inibido — sem regra fixa por tipo.
+function disabledHint(node: MapLayerTreeNode, scaleMeters: number | null | undefined): string | null {
+  if (node.kind !== 'ENTITY') return null;
+  const config = node.visualConfig;
+  if (!config || config.geometryKind !== 'POINT') return null;
+  if (scaleMeters === undefined || scaleMeters === null) return null;
+  const band = config.scaleBands[resolveScaleBandKey(scaleMeters)];
+  if (band?.visible !== false) return null;
+  return 'Oculto nesta escala — configurado no Studio GEO';
+}
+
 function LayerSwitch({
   checked,
   label,
@@ -69,23 +85,8 @@ function LayerSwitch({
   );
 }
 
-// Camada com régua de escala própria, mais restrita que o toggle manual: fora da faixa, o
-// switch fica visível mas inibido (RN "só exiba postes em escala de detalhe") — desligar sem
-// mexer na preferência salva do usuário evitaria a régua reaparecer sozinha ao dar zoom, então
-// em vez de forçar `visibility` para `false`, só bloqueamos a interação e explicamos o motivo.
-function disabledHint(layerId: MapLayerId, scaleMeters: number | null | undefined): string | null {
-  if (layerId !== 'netwinPole') return null;
-  if (scaleMeters === undefined || scaleMeters === null) return null;
-  if (poleVisibleAtScale(scaleMeters)) return null;
-  return `Só aparece em escala de detalhe (≤ ${NETWIN_POLE_MAX_SCALE_METERS} m) — aproxime o zoom`;
-}
-
-// Controle de camadas do mapa (RF-011, REQ-MOD01-011): liga/desliga o que o mapa busca e
-// desenha, agrupado em Locais/Cobertura/Recursos — cada camada corta fetch, não só o desenho
-// (ver useMapTiles, filtro client-side sobre GET /v1/geo/map/tile). Fica ancorado no
-// canto superior direito, aberto/fechado como o MUB (ver MapBaseLayerSelector) — mesmo cromo
-// de controle flutuante (shadow-map-control, foco em app-accent).
 export function MapLayerControl({
+  catalog = MAP_LAYER_CATALOG_FALLBACK,
   layers,
   onToggleLayer,
   onToggleGroup,
@@ -93,146 +94,205 @@ export function MapLayerControl({
   allVisible,
   scaleMeters,
 }: MapLayerControlProps) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(() => readStoredLayerControlOpen(false));
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() =>
+    readStoredExpandedGroups(catalog),
+  );
+
   const panelId = useId();
+  const tree = mapLayerTree(catalog, { pruneEmptyGroups: true });
+
+  const handleSetOpen = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    writeStoredLayerControlOpen(nextOpen);
+  };
 
   useEffect(() => {
     if (!open) return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') handleSetOpen(false);
     };
-
-    document.addEventListener('mousedown', handlePointerDown);
     document.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [open]);
 
+  const toggleGroupExpand = (groupId: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      writeStoredExpandedGroups(next);
+      return next;
+    });
+  };
+
+  const renderNode = (node: MapLayerTreeNode, depth: number) => {
+    if (node.kind === 'ENTITY') {
+      const hint = disabledHint(node, scaleMeters);
+      const isLocal = node.entity.category === 'LOCAL';
+      const isResource = node.entity.category === 'RESOURCE';
+
+      return (
+        <div
+          key={node.id}
+          className="flex items-center gap-2 py-1 pl-1"
+          style={{ paddingLeft: `${depth * 14 + 4}px` }}
+          title={hint ?? node.hint ?? undefined}
+        >
+          {isLocal ? (
+            <Layers className="h-3.5 w-3.5 shrink-0 text-app-muted" />
+          ) : isResource ? (
+            <Box className="h-3.5 w-3.5 shrink-0 text-app-muted" />
+          ) : (
+            <Globe className="h-3.5 w-3.5 shrink-0 text-app-muted" />
+          )}
+          <span
+            className={`min-w-0 flex-1 truncate text-[0.78rem] ${hint ? 'text-app-muted' : 'text-app-text'}`}
+          >
+            {node.label}
+          </span>
+          <LayerSwitch
+            checked={layers[node.id] ?? node.defaultVisible}
+            label={node.label}
+            onChange={() => onToggleLayer(node.id)}
+            disabled={hint !== null}
+          />
+        </div>
+      );
+    }
+
+    const state = groupVisibility(layers, node.id, catalog);
+    const hasMultipleChildren = node.children.length > 1;
+    const isExpanded = expandedGroups.has(node.id);
+
+    return (
+      <div
+        key={node.id}
+        className="rounded-[10px] border border-app-border/70 p-2 mb-2 last:mb-0"
+        style={{ marginLeft: `${depth * 6}px` }}
+      >
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => toggleGroupExpand(node.id)}
+            aria-label={`${isExpanded ? 'Recolher' : 'Expandir'} ${node.label}`}
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-app-muted hover:text-app-text"
+          >
+            {node.children.length > 0 ? (
+              isExpanded ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )
+            ) : (
+              <span className="h-4 w-4 inline-block" />
+            )}
+          </button>
+
+          {isExpanded ? (
+            <FolderOpen className="h-4 w-4 shrink-0 text-app-muted" />
+          ) : (
+            <Folder className="h-4 w-4 shrink-0 text-app-muted" />
+          )}
+
+          <span
+            className="flex-1 truncate text-[0.82rem] font-semibold text-app-text cursor-pointer select-none"
+            title={node.hint}
+            onClick={() => toggleGroupExpand(node.id)}
+          >
+            {node.label}
+          </span>
+
+          {hasMultipleChildren ? (
+            <LayerSwitch
+              checked={state !== 'none'}
+              label={`Alternar grupo ${node.label}`}
+              onChange={() => onToggleGroup(node.id)}
+            />
+          ) : null}
+        </div>
+
+        {isExpanded && node.children.length > 0 && (
+          <div
+            className={`mt-1.5 flex flex-col gap-1 border-t border-app-border/60 pt-1.5 ${
+              !hasMultipleChildren ? 'justify-end' : ''
+            }`}
+          >
+            {node.children.map((child) => renderNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div
-      ref={containerRef}
       className="absolute right-3 top-[72px] z-30 md:top-3"
       data-testid="map-layer-control"
     >
-      <button
-        type="button"
-        aria-label="Camadas do mapa"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={open ? panelId : undefined}
-        title="Camadas do mapa"
-        onClick={() => setOpen((current) => !current)}
-        className="relative flex h-10 w-10 items-center justify-center rounded-[10px] border border-app-border bg-white text-app-text shadow-map-control transition hover:border-app-accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
-      >
-        <Layers className="h-5 w-5" aria-hidden="true" />
-        {!allVisible ? (
-          <span
-            aria-hidden="true"
-            title="Uma ou mais camadas estão desligadas"
-            className="absolute right-1 top-1 h-2 w-2 rounded-full border border-white bg-app-accent"
-          />
-        ) : null}
-      </button>
+      {/* Botão Launcher (oculto quando a janela está aberta) */}
+      {!open && (
+        <button
+          type="button"
+          aria-label="Camadas do mapa"
+          aria-haspopup="dialog"
+          aria-expanded={false}
+          title="Camadas do mapa"
+          onClick={() => handleSetOpen(true)}
+          className="relative flex h-10 w-10 items-center justify-center rounded-[10px] border border-app-border bg-white text-app-text shadow-map-control transition-all duration-200 ease-out hover:border-app-accent-border hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent active:scale-95"
+        >
+          <Layers className="h-5 w-5" aria-hidden="true" />
+          {!allVisible ? (
+            <span
+              aria-hidden="true"
+              title="Uma ou mais camadas estão desligadas"
+              className="absolute right-1 top-1 h-2 w-2 rounded-full border border-white bg-app-accent"
+            />
+          ) : null}
+        </button>
+      )}
 
-      {open ? (
+      {/* Janela de Camadas (posicionada na altura do botão, persistente, com animação de expansão/fechamento) */}
+      {open && (
         <div
           id={panelId}
           role="dialog"
           aria-label="Camadas do mapa"
-          className="absolute right-0 top-[calc(100%+8px)] max-h-[calc(100vh-96px)] w-[248px] overflow-y-auto rounded-[14px] border border-app-border bg-white p-2 shadow-map-control-lg"
+          className="relative right-0 top-0 max-h-[calc(100vh-96px)] w-[260px] overflow-y-auto rounded-[14px] border border-app-border bg-white p-2.5 shadow-map-control-lg animate-in fade-in zoom-in-95 duration-200 ease-out"
         >
-          <div className="flex items-center justify-between px-1.5 pb-1.5 pt-0.5">
-            <span className="text-[0.8rem] font-semibold text-app-text">Camadas</span>
+          <div className="flex items-center justify-between px-1 pb-2 pt-0.5 border-b border-app-border/50 mb-2">
+            <div className="flex items-center gap-1.5">
+              <Layers className="h-4 w-4 text-app-muted" />
+              <span className="text-[0.82rem] font-bold text-app-text">Camadas do Mapa</span>
+            </div>
             <button
               type="button"
               aria-label="Fechar camadas do mapa"
-              onClick={() => setOpen(false)}
+              onClick={() => handleSetOpen(false)}
               className="flex h-6 w-6 items-center justify-center rounded-[8px] text-app-muted transition hover:bg-app-accent-soft hover:text-app-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
 
-          <div className="flex flex-col gap-2.5">
-            {MAP_LAYER_GROUPS.map((group) => {
-              const GroupIcon = GROUP_ICONS[group.id];
-              const state = groupVisibility(layers, group.id);
-              return (
-                <div key={group.id} className="rounded-[10px] border border-app-border/70 p-2">
-                  <div className="flex items-center gap-2">
-                    <GroupIcon className="h-4 w-4 shrink-0 text-app-muted" aria-hidden="true" />
-                    <span className="flex-1 truncate text-[0.82rem] font-semibold text-app-text">
-                      {group.label}
-                    </span>
-                    {group.children.length > 1 ? (
-                      <LayerSwitch
-                        checked={state !== 'none'}
-                        label={`Alternar grupo ${group.label}`}
-                        onChange={() => onToggleGroup(group.id)}
-                      />
-                    ) : null}
-                  </div>
-
-                  {group.children.length > 1 ? (
-                    <div className="mt-1.5 flex flex-col gap-1.5 border-t border-app-border/60 pt-1.5">
-                      {group.children.map((child) => {
-                        const hint = disabledHint(child.id, scaleMeters);
-                        return (
-                          <div
-                            key={child.id}
-                            className="flex items-center gap-2 pl-1"
-                            title={hint ?? undefined}
-                          >
-                            <p
-                              className={`min-w-0 flex-1 truncate text-[0.78rem] ${hint ? 'text-app-muted' : 'text-app-text'}`}
-                            >
-                              {child.label}
-                            </p>
-                            <LayerSwitch
-                              checked={layers[child.id]}
-                              label={child.label}
-                              onChange={() => onToggleLayer(child.id)}
-                              disabled={hint !== null}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="mt-1.5 flex items-center justify-end border-t border-app-border/60 pt-1.5">
-                      <LayerSwitch
-                        checked={layers[group.children[0]!.id]}
-                        label={group.children[0]!.label}
-                        onChange={() => onToggleLayer(group.children[0]!.id)}
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <div className="flex flex-col gap-1.5">{tree.map((node) => renderNode(node, 0))}</div>
 
           {!allVisible ? (
             <button
               type="button"
               onClick={onReset}
-              className="mt-2 w-full rounded-[10px] px-2 py-1.5 text-center text-[0.76rem] font-semibold text-app-muted transition hover:bg-app-accent-soft hover:text-app-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
+              className="mt-2.5 w-full rounded-[10px] border border-app-border/60 bg-black/[0.02] px-2 py-1.5 text-center text-[0.76rem] font-semibold text-app-text transition hover:bg-app-accent-soft hover:border-app-accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
             >
               Restaurar padrão
             </button>
           ) : null}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

@@ -294,14 +294,14 @@ export function ResourceCatalogTree({
               onSelectNode(node);
             }
           }}
-          className={`group flex items-center justify-between gap-1 rounded-[12px] px-2 py-1.5 text-[0.85rem] transition ${
+          className={`group flex items-center justify-between gap-1 rounded-[10px] border px-2 py-1.5 text-[0.85rem] transition ${
             canMutate ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
           } ${isBeingDragged ? 'opacity-30 scale-[0.98]' : ''} ${
             showDropInside
-              ? 'ring-2 ring-app-accent bg-app-accent-soft text-app-text font-semibold'
+              ? 'ring-2 ring-app-accent border-app-accent bg-app-accent-soft text-app-text font-semibold'
               : isSelected
-                ? 'bg-app-accent-soft text-app-text font-semibold'
-                : 'text-app-text hover:bg-black/[0.04]'
+                ? 'border-app-accent bg-app-accent-soft text-app-text font-semibold'
+                : 'border-transparent text-app-text hover:bg-black/[0.04]'
           }`}
           style={{ paddingLeft: `${Math.max(level * 16 + 8, 8)}px` }}
         >

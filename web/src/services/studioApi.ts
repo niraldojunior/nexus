@@ -108,8 +108,21 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
   return payload;
 }
 
-export const getStudioStatus = async (domain: StudioDomain): Promise<StudioStatus> =>
-  await requestJson<StudioStatus>(`/${domain}/status`);
+const statusRequests = new Map<StudioDomain, Promise<StudioStatus>>();
+
+const invalidateStudioStatus = (domain: StudioDomain): void => {
+  statusRequests.delete(domain);
+};
+
+export const getStudioStatus = async (domain: StudioDomain): Promise<StudioStatus> => {
+  const pending = statusRequests.get(domain);
+  if (pending) return await pending;
+  const request = requestJson<StudioStatus>(`/${domain}/status`).finally(() => {
+    if (statusRequests.get(domain) === request) statusRequests.delete(domain);
+  });
+  statusRequests.set(domain, request);
+  return await request;
+};
 
 export const listStudioVersions = async (
   domain: StudioDomain,
@@ -137,24 +150,32 @@ export const saveStudioDraft = async (
   domain: StudioDomain,
   snapshot: Record<string, unknown>,
   ifMatch?: string,
-): Promise<StudioVersion> =>
-  await requestJson<StudioVersion>(`/${domain}/draft`, {
+): Promise<StudioVersion> => {
+  invalidateStudioStatus(domain);
+  return await requestJson<StudioVersion>(`/${domain}/draft`, {
     method: 'PUT',
     body: { snapshot },
     ...(ifMatch ? { ifMatch } : {}),
   });
+};
 
-export const validateStudioDraft = async (domain: StudioDomain): Promise<StudioValidationResult> =>
-  await requestJson<StudioValidationResult>(`/${domain}/validate`, { method: 'POST' });
+export const validateStudioDraft = async (domain: StudioDomain): Promise<StudioValidationResult> => {
+  invalidateStudioStatus(domain);
+  return await requestJson<StudioValidationResult>(`/${domain}/validate`, { method: 'POST' });
+};
 
 export const publishStudioDraft = async (
   domain: StudioDomain,
   ifMatch: string,
-): Promise<StudioVersion> =>
-  await requestJson<StudioVersion>(`/${domain}/publish`, { method: 'POST', ifMatch });
+): Promise<StudioVersion> => {
+  invalidateStudioStatus(domain);
+  return await requestJson<StudioVersion>(`/${domain}/publish`, { method: 'POST', ifMatch });
+};
 
 export const discardStudioDraft = async (
   domain: StudioDomain,
   ifMatch: string,
-): Promise<StudioVersion> =>
-  await requestJson<StudioVersion>(`/${domain}/discard`, { method: 'POST', ifMatch });
+): Promise<StudioVersion> => {
+  invalidateStudioStatus(domain);
+  return await requestJson<StudioVersion>(`/${domain}/discard`, { method: 'POST', ifMatch });
+};

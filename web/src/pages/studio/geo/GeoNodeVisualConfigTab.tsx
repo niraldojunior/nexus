@@ -103,6 +103,58 @@ export type GeoNodeVisualConfigTabProps = {
   onChange: (updatedVisualConfig: StudioGeoVisualConfig) => void;
 };
 
+type ScaleVisibilityConfig = {
+  scaleBands: Record<StudioGeoScaleBandKey, { visible: boolean }>;
+};
+
+function GeometryScaleVisibility({
+  config,
+  canEdit,
+  onChange,
+}: {
+  config: ScaleVisibilityConfig;
+  canEdit: boolean;
+  onChange: (scaleBands: ScaleVisibilityConfig['scaleBands']) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div>
+        <h5 className="text-[0.82rem] font-semibold text-app-text">Visibilidade por escala</h5>
+        <p className="text-[0.76rem] text-app-muted">
+          Esta regra publicada também inibe a camada correspondente no mapa.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+        {SCALE_BANDS.map((band) => {
+          const visible = config.scaleBands[band.key]?.visible !== false;
+          return (
+            <button
+              key={band.key}
+              type="button"
+              disabled={!canEdit}
+              aria-pressed={visible}
+              onClick={() =>
+                onChange({
+                  ...config.scaleBands,
+                  [band.key]: { visible: !visible },
+                })
+              }
+              className={`flex items-center justify-between rounded-[8px] border px-3 py-2 text-left text-[0.78rem] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-accent ${
+                visible
+                  ? 'border-app-border bg-white text-app-text'
+                  : 'border-app-border/60 bg-black/[0.02] text-app-muted'
+              }`}
+            >
+              <span>{band.label}</span>
+              <span className="font-semibold">{visible ? 'Visível' : 'Oculto'}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function GeoNodeVisualConfigTab({ node, canEdit, onChange }: GeoNodeVisualConfigTabProps) {
   // Catálogos históricos ainda podem não ter `visualConfig`; a inferência só cobre essa leitura.
   const visualConfig: StudioGeoVisualConfig =
@@ -375,6 +427,12 @@ export function GeoNodeVisualConfigTab({ node, canEdit, onChange }: GeoNodeVisua
             </div>
           </div>
 
+          <GeometryScaleVisibility
+            config={lineConfig}
+            canEdit={canEdit}
+            onChange={(scaleBands) => onChange({ ...lineConfig, scaleBands })}
+          />
+
           {/* Preview da Linha */}
           <div className="rounded-[10px] border border-app-border/80 bg-black/[0.02] p-4 text-center">
             <span className="block text-[0.72rem] text-app-muted mb-2">
@@ -499,6 +557,12 @@ export function GeoNodeVisualConfigTab({ node, canEdit, onChange }: GeoNodeVisua
             className="w-full accent-app-accent cursor-pointer"
           />
         </div>
+
+        <GeometryScaleVisibility
+          config={polygonConfig}
+          canEdit={canEdit}
+          onChange={(scaleBands) => onChange({ ...polygonConfig, scaleBands })}
+        />
 
         {/* Preview do Polígono */}
         <div className="rounded-[10px] border border-app-border/80 bg-black/[0.02] p-4 text-center">

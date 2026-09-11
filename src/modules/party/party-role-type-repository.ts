@@ -125,6 +125,16 @@ export class PartyRoleTypeRepository {
     return result.changes > 0 ? await this.get(tenantId, id) : null;
   }
 
+  // Contraparte de `deactivate` — usada pelo Studio ao republicar um tipo de parte que havia
+  // sido descartado numa publicação anterior (C6: nunca DELETE físico, sempre reversível).
+  public async reactivate(tenantId: string, id: string): Promise<PartyRoleType | null> {
+    const result = await this.db.run(
+      `UPDATE party_role_type SET active = ?, updated_at = ? WHERE tenant_id = ? AND id = ?`,
+      [1, new Date().toISOString(), tenantId, id],
+    );
+    return result.changes > 0 ? await this.get(tenantId, id) : null;
+  }
+
   public async ensureSupplierSeed(tenantId: string): Promise<void> {
     const existing = await this.db.get<{ id: string }>(
       `SELECT id FROM party_role_type WHERE tenant_id = ? AND type_key = ?`,

@@ -1,14 +1,13 @@
-// Densidade agregada da planta na viewport (Fase 4, issue #69) — a camada que entra quando a
-// feature individual sai, acima de PASSIVE_INFRA_MAX_SCALE_METERS.
+// Densidade agregada da planta na viewport (Fase 4, issue #69). `densityVisibleAtScale` está
+// fixado em `false` — a Cobertura GPON é hoje a única representação agregada permitida em
+// escalas abertas (ver comentário em mapScale.ts); este hook fica pronto para reativação sem
+// reintroduzir corte global de visibilidade de infra passiva.
 //
 // Segue o mesmo padrão de useGponCoverage, e não o de useMapTiles, porque a leitura é por bbox:
 // em zoom aberto a viewport cobre poucas células grossas e pedir uma a uma custaria mais em
 // ida-e-volta do que a consulta inteira. Daí também o reuso do truque de folga: o bbox pedido é
 // 25% maior que a viewport e arredondado a uma grade por nível, então um pan pequeno dentro da
 // área já carregada não reabre requisição.
-//
-// As duas camadas são mutuamente exclusivas por construção (`densityVisibleAtScale` usa `>`,
-// `useMapTiles` usa `<=`, ambos sobre PASSIVE_INFRA_MAX_SCALE_METERS): nunca desenham juntas.
 
 import { useEffect, useRef, useState } from 'react';
 import { fetchMapDensity, type MapDensityResponse } from '../services/geoMapDensityApi';

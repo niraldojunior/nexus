@@ -31,8 +31,6 @@ import {
   RESOURCE_FOCUS_SCALE_METERS,
   SITE_FOCUS_SCALE_METERS,
   ADDRESS_FOCUS_SCALE_METERS,
-  PASSIVE_INFRA_MAX_SCALE_METERS,
-  coverageVisibleAtScale,
   siteIconSizeForScale,
   resourceIconSizeForScale,
   type CoverageLevel,
@@ -321,7 +319,7 @@ function buildPointMarkerVisual(
   node: GeoTreeNode,
   selected: boolean,
   stationMarkerSize: number,
-  resourceMarkerSize: number | null,
+  resourceMarkerSize: number,
   scaleMeters: number | null,
   pointConfig?: StudioGeoPointVisualConfig,
   assetDataUrl?: string,
@@ -333,7 +331,7 @@ function buildPointMarkerVisual(
     // Só a Central/Estação é referência permanente do mapa. Qualquer outro Site
     // (cliente, condomínio, edificação, POP...) usa a mesma régua de Resource.
     const isStation = kind === 'CO';
-    const baseSize = isStation ? stationMarkerSize : (resourceMarkerSize ?? MARKER_ICON_SIZE);
+    const baseSize = isStation ? stationMarkerSize : resourceMarkerSize;
     const size = selected ? baseSize + (isStation ? 8 : 6) : (scaleConfig?.sizePx ?? baseSize);
     const nativeIcon = nativeMapIconForCode(pointConfig?.iconCode);
     return {
@@ -357,10 +355,7 @@ function buildPointMarkerVisual(
     name: node.label,
     sublabel: node.sublabel,
   });
-  // Um Recurso só chega aqui via Marker nativo quando é o nó selecionado (ver `mapNodes` em
-  // GeoPage) — nesse caso `selected` é sempre true, então o fallback do `??` nunca é exercitado
-  // de fato; existe só pra função ser total mesmo se isso mudar.
-  const baseSize = resourceMarkerSize ?? MARKER_ICON_SIZE;
+  const baseSize = resourceMarkerSize;
   const size = selected ? baseSize + 6 : (scaleConfig?.sizePx ?? baseSize);
   const nativeIcon = nativeMapIconForCode(pointConfig?.iconCode);
   return {
@@ -417,9 +412,10 @@ const PROJECT_PANEL_SITE_LIMIT = 200;
 const PROJECT_VIEWPORT_SITE_LIMIT = 1500;
 
 // A partir daqui o pin individual de um local de Projeto sai do mapa: a mancha de concentração/
-// dispersão do ProjectAreaOverlay já representa o conjunto (REQ-MOD01-017). Mais restrito que
-// PASSIVE_INFRA_MAX_SCALE_METERS (200 m, usado pela infra passiva comum) — coerente com o
-// comentário original de projectSitesInViewport em tree-service.ts.
+// dispersão do ProjectAreaOverlay já representa o conjunto (REQ-MOD01-017). Este corte é
+// específico de Projeto (agregação de UI, não inibição de camada) — a visibilidade de infra
+// passiva em si é 100% determinada pelo catálogo publicado do Studio GEO, sem corte global de
+// escala (ver mapScale.ts).
 const PROJECT_PIN_MAX_SCALE_METERS = 50;
 
 // Default de `onProjectAreaHover` — só usado pelos testes que montam GoogleMapPanel sem um
@@ -587,8 +583,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const mapLayerCatalog = useMapLayerCatalog();
   const mapLayers = useMapLayers(mapLayerCatalog.catalog);
   const viewportShapesInclude = useMemo(
-    () => viewportInclude(mapLayers.layers, mapLayerCatalog.catalog),
-    [mapLayers.layers, mapLayerCatalog.catalog],
+    () => viewportInclude(mapLayers.layers, mapLayerCatalog.catalog, scaleMeters),
+    [mapLayers.layers, mapLayerCatalog.catalog, scaleMeters],
   );
   // Papel funcional (siteRole, C11) por code de spec, para o seletor de camadas roteirar cada
   // feature de site para o grupo certo (Sites de Rede / Sites de Serviço) sem depender de
@@ -598,12 +594,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     [specs],
   );
 
-  // Infra passiva (recursos + Sites não-CO + cabos) só entra abaixo de 200 m;
-  // Estações (tree.mapNodes) continuam visíveis em qualquer escala — ver siteMarkerSize.
-  // Desenhada por InfraOverlay (canvas, Fase 3 da issue #69), não por
-  // Marker/Polyline — por isso fica FORA de `mapNodes` (que só alimenta os efeitos de
-  // Marker/Polyline, ver GoogleMapPanel): as duas fontes nunca se misturam.
-  const passiveInfraVisible = scaleMeters !== null && scaleMeters < PASSIVE_INFRA_MAX_SCALE_METERS;
+  // Infraestrutura de viewport é decidida exclusivamente pelo catálogo publicado, preferência
+  // do usuário e faixa de escala. O canvas mantém-se separado dos Marker/Polyline de `mapNodes`.
+  const passiveInfraVisible =
+    viewportShapesInclude === undefined || viewportShapesInclude.length > 0;
   // Régua de escala própria dos pins de local de Projeto com manchas geradas (REQ-MOD01-017) —
   // mais restrita que a infra passiva comum (ver PROJECT_PIN_MAX_SCALE_METERS).
   const projectPinScaleVisible =
@@ -684,10 +678,15 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Cobertura GPON da viewport (mapa de calor por bairro), só acima de 100 m.
   // Camada "Cobertura GPON" desligada corta a busca inteira: bounds nulo já limpa `coverage` e
   // zera o dedupe interno do hook, então religar refaz o fetch sem precisar mexer no mapa.
-  const gponAggregateVisible = hasVisibleGponAggregate(mapLayers.layers, mapLayerCatalog.catalog);
+  const gponAggregateVisible = hasVisibleGponAggregate(
+    mapLayers.layers,
+    mapLayerCatalog.catalog,
+    scaleMeters,
+  );
   const { data: coverage, loading: coverageLoading } = useGponCoverage(
     gponAggregateVisible ? viewportBounds : null,
     scaleMeters,
+    gponAggregateVisible,
   );
   const coverageLayer = useMemo(
     () =>
@@ -698,7 +697,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   );
   const coverageVisualConfig =
     coverageLayer?.visualConfig?.geometryKind === 'POLYGON' ? coverageLayer.visualConfig : undefined;
-  const coverageVisible = coverageVisibleAtScale(scaleMeters) && gponAggregateVisible;
+  const coverageVisible = gponAggregateVisible;
   // Bairro sob o cursor sobre a mancha — vira o balão de hover (ver coverageBalloon).
   const [coverageHover, setCoverageHover] = useState<{
     point: [number, number];
@@ -2094,8 +2093,8 @@ export function GoogleMapPanel({
   // Tamanho da Central Office publicado pelo Studio para a faixa de escala atual.
   stationMarkerSize?: number;
   // Tamanho em px do pin de Recurso na escala atual (ver resourceIconSizeForScale em
-  // mapScale.ts), ou `null` quando o Recurso não é desenhado nessa escala.
-  resourceMarkerSize: number | null;
+  // mapScale.ts). A visibilidade é resolvida pelo catálogo publicado do Studio GEO.
+  resourceMarkerSize: number;
   // Bairro sob o cursor sobre a mancha (ou null) — vira o balão de hover no GeoPage.
   onCoverageHover: (
     hover: { point: [number, number]; neighborhood: CoverageNeighborhood } | null,
@@ -2467,8 +2466,9 @@ export function GoogleMapPanel({
         // voos e reenquadramentos programáticos nunca são classificados como gesto.
         mapRef.current.addListener('dragstart', handleManualNavigation);
         mapRef.current.addListener('dblclick', handleManualNavigation);
-        // Reporta a região visível e a escala atual para o chamador decidir se busca
-        // infra passiva por viewport (ver PASSIVE_INFRA_MAX_SCALE_METERS).
+        // Reporta a região visível e a escala atual para o chamador buscar infra passiva por
+        // viewport; a escala só escolhe o LOD (tamanho/nível de detalhe), nunca se a camada é
+        // visível — isso é 100% resolvido pelo catálogo publicado do Studio GEO.
         const reportViewport = () => {
           if (!mapRef.current) return;
           const zoom = mapRef.current.getZoom();

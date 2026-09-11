@@ -2,8 +2,8 @@
 //
 // Segue o padrão dos demais hooks de mapa (useGeoTree/useAddressViability): debounce de 250 ms,
 // dedupe da requisição em voo por chave (o backend de dev atende em série e o StrictMode monta
-// duas vezes) e um token para descartar respostas fora de ordem. Só busca acima de 100 m — em
-// escala de detalhe a mancha não aparece e a planta individual toma conta.
+// duas vezes) e um token para descartar respostas fora de ordem. A decisão de buscar é recebida
+// do catálogo publicado do Studio GEO; a escala escolhe somente o nível de detalhe.
 //
 // O nível (bairro/município/estado) segue a escala — coverageLevelForScale — em vez de sempre
 // pedir polígono de bairro: pedir os ~12 mil polígonos de bairro numa visão de país inteiro é o
@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchCoverage, type CoverageResponse } from '../services/geoCoverageApi';
 import type { MapBounds } from '../services/geoTreeApi';
-import { coverageLevelForScale, coverageVisibleAtScale, type CoverageLevel } from '../utils/mapScale';
+import { coverageLevelForScale, type CoverageLevel } from '../utils/mapScale';
 
 const inFlight = new Map<string, Promise<CoverageResponse>>();
 
@@ -64,6 +64,7 @@ function contains(outer: MapBounds, inner: MapBounds): boolean {
 export function useGponCoverage(
   bounds: MapBounds | null,
   scaleMeters: number | null,
+  visible: boolean,
 ): { data: CoverageResponse | null; loading: boolean } {
   const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
   // Só é `true` quando uma requisição de fato está em voo — vira a barra de carga do mapa
@@ -79,7 +80,7 @@ export function useGponCoverage(
   const lastFetchedBoundsRef = useRef<MapBounds | null>(null);
 
   useEffect(() => {
-    if (!coverageVisibleAtScale(scaleMeters) || !bounds || scaleMeters === null) {
+    if (!visible || !bounds || scaleMeters === null) {
       if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
       lastKeyRef.current = null;
       lastLevelRef.current = null;
@@ -128,7 +129,7 @@ export function useGponCoverage(
     return () => {
       if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
     };
-  }, [bounds, scaleMeters]);
+  }, [bounds, scaleMeters, visible]);
 
   return { data: coverage, loading };
 }

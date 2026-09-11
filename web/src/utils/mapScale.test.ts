@@ -1,37 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import {
   COVERAGE_CITY_MAX_SCALE_METERS,
-  COVERAGE_MIN_SCALE_METERS,
   COVERAGE_NEIGHBORHOOD_MAX_SCALE_METERS,
-  PASSIVE_INFRA_MAX_SCALE_METERS,
   coverageLevelForScale,
-  coverageVisibleAtScale,
   resourceIconSizeForScale,
   siteIconSizeForScale,
 } from './mapScale';
 
 describe('régua de escala do mapa Geo', () => {
-  it('infra passiva some a partir de 200 m', () => {
-    expect(PASSIVE_INFRA_MAX_SCALE_METERS).toBe(200);
+  it('não contém cortes globais de visibilidade de infraestrutura ou cobertura', async () => {
+    const module = await import('./mapScale');
+
+    expect('PASSIVE_INFRA_MAX_SCALE_METERS' in module).toBe(false);
+    expect('COVERAGE_MIN_SCALE_METERS' in module).toBe(false);
+    expect('coverageVisibleAtScale' in module).toBe(false);
   });
 
-  it('cobertura só aparece acima de 100 m (nada de mancha em ≤ 100 m)', () => {
-    expect(COVERAGE_MIN_SCALE_METERS).toBe(100);
-    expect(coverageVisibleAtScale(200)).toBe(true);
-    expect(coverageVisibleAtScale(101)).toBe(true);
-    expect(coverageVisibleAtScale(100)).toBe(false);
-    expect(coverageVisibleAtScale(50)).toBe(false);
-    expect(coverageVisibleAtScale(null)).toBe(false);
-  });
-
-  it('recurso: 30/25/20/15/10 px abaixo de 200 m, e oculto a partir de 200 m', () => {
+  it('recurso: reduz o ícone pela escala, mas nunca o oculta', () => {
     expect(resourceIconSizeForScale(5)).toBe(30);
     expect(resourceIconSizeForScale(10)).toBe(25);
     expect(resourceIconSizeForScale(20)).toBe(20);
     expect(resourceIconSizeForScale(50)).toBe(15);
     expect(resourceIconSizeForScale(100)).toBe(10);
-    expect(resourceIconSizeForScale(200)).toBeNull();
-    expect(resourceIconSizeForScale(500)).toBeNull();
+    expect(resourceIconSizeForScale(200)).toBe(10);
+    expect(resourceIconSizeForScale(500)).toBe(10);
     expect(resourceIconSizeForScale(null)).toBe(30);
   });
 

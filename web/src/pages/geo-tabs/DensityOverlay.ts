@@ -1,9 +1,10 @@
 // Densidade agregada da planta desenhada num <canvas> sobre o mapa (Fase 4, issue #69).
 //
-// É a contraparte de InfraOverlay para zoom aberto: acima de PASSIVE_INFRA_MAX_SCALE_METERS a
-// feature individual some (780 mil pontos não são só caros — são ilegíveis) e entra esta camada,
-// que responde "onde HÁ planta" em vez de "qual é cada item". As duas nunca desenham juntas
-// (ver densityVisibleAtScale × useMapTiles), então o custo de manter dois canvases é nulo.
+// Pensada como contraparte de InfraOverlay para zoom aberto — onde a feature individual deixa
+// de ser legível (780 mil pontos não são só caros, são ilegíveis) e esta camada responderia
+// "onde HÁ planta" em vez de "qual é cada item". Hoje `densityVisibleAtScale` está fixado em
+// `false` (a Cobertura GPON é a única representação agregada permitida — ver useMapDensity.ts),
+// então este overlay fica pronto para reativação sem reintroduzir corte global de visibilidade.
 //
 // Mesma casca de CoverageOverlay/InfraOverlay: OverlayView + canvas no pane `overlayLayer`,
 // `pointerEvents:none`, projeção afim rápida reusada de CoverageOverlay.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { AlertCircle, Plus, Search, Users } from 'lucide-react';
 import { Button, Modal } from '../../../components/ui';
 import Field from '../../../components/Field';
@@ -9,15 +9,26 @@ import {
   type PartyRoleTypeInput,
 } from '../../../services/partyRoleTypeApi';
 import { PartyTypeDetail } from './PartyTypeDetail';
+import { getStudioStatus, saveStudioDraft } from '../../../services/studioApi';
 
 export type PartyModelStudioProps = {
   canEdit: boolean;
   canAdmin: boolean;
+  isEditing: boolean;
+  onRegisterCaptureDraft: (capture: (() => Promise<void>) | null) => void;
+  onRegisterCaptureInitialSnapshot: (
+    capture: (() => Promise<Record<string, unknown>>) | null,
+  ) => void;
 };
 
 const emptyDraft = (): PartyRoleTypeInput => ({ key: '', roleName: '', label: '', description: '' });
 
-export function PartyModelStudio({ canEdit }: PartyModelStudioProps) {
+export function PartyModelStudio({
+  canEdit,
+  isEditing,
+  onRegisterCaptureDraft,
+  onRegisterCaptureInitialSnapshot,
+}: PartyModelStudioProps) {
   const [types, setTypes] = useState<PartyRoleType[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState('');
@@ -39,6 +50,33 @@ export function PartyModelStudio({ canEdit }: PartyModelStudioProps) {
   useEffect(() => {
     void reload();
   }, []);
+
+  const captureSnapshot = useCallback(
+    (): Record<string, unknown> => ({
+      partyRoleTypes: types.map((partyType) => ({
+        id: partyType.id,
+        key: partyType.key,
+        roleName: partyType.roleName,
+        label: partyType.label,
+        description: partyType.description,
+        active: partyType.active,
+      })),
+    }),
+    [types],
+  );
+
+  useEffect(() => {
+    const capture = async (): Promise<void> => {
+      const status = await getStudioStatus('parties');
+      await saveStudioDraft('parties', captureSnapshot(), status.draftVersion?.checksum);
+    };
+    onRegisterCaptureDraft(capture);
+    onRegisterCaptureInitialSnapshot(async () => captureSnapshot());
+    return () => {
+      onRegisterCaptureDraft(null);
+      onRegisterCaptureInitialSnapshot(null);
+    };
+  }, [captureSnapshot, onRegisterCaptureDraft, onRegisterCaptureInitialSnapshot]);
 
   const filteredTypes = useMemo(() => {
     const term = filterText.toLowerCase().trim();
@@ -92,10 +130,11 @@ export function PartyModelStudio({ canEdit }: PartyModelStudioProps) {
                 value={filterText}
                 onChange={(event) => setFilterText(event.target.value)}
                 placeholder="Buscar tipo de parte..."
+                aria-label="Buscar tipo de parte"
                 className="w-full rounded-[10px] border border-app-border bg-white py-1.5 pl-8 pr-3 text-[0.82rem] text-app-text outline-none focus:border-app-accent"
               />
             </div>
-            {canEdit && (
+            {canEdit && isEditing && (
               <Button
                 variant="primary"
                 size="sm"
@@ -117,25 +156,19 @@ export function PartyModelStudio({ canEdit }: PartyModelStudioProps) {
               <div className="p-8 text-center text-[0.84rem] text-app-muted">Nenhum tipo de parte encontrado.</div>
             ) : (
               filteredTypes.map((item) => (
-                <div
+                <button
                   key={item.id}
-                  role="button"
-                  tabIndex={0}
+                  type="button"
+                  aria-pressed={selectedPartyType?.id === item.id}
                   onClick={() => setSelectedId(item.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      setSelectedId(item.id);
-                    }
-                  }}
-                  className={`cursor-pointer rounded-[10px] border p-3 text-[0.88rem] transition ${
+                  className={`w-full rounded-[10px] border p-3 text-left text-[0.88rem] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-accent ${
                     selectedPartyType?.id === item.id
                       ? 'border-app-accent bg-app-accent-soft font-semibold text-app-text'
                       : 'border-app-border text-app-text hover:bg-black/[0.02]'
                   }`}
                 >
                   <span className="block truncate font-medium">{item.label}</span>
-                </div>
+                </button>
               ))
             )}
           </div>
@@ -145,7 +178,7 @@ export function PartyModelStudio({ canEdit }: PartyModelStudioProps) {
           {selectedPartyType ? (
             <PartyTypeDetail
               partyType={selectedPartyType}
-              canMutate={canEdit}
+              canMutate={canEdit && isEditing}
               onUpdated={(updated) =>
                 setTypes((current) =>
                   current

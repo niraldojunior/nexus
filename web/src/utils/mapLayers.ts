@@ -8,6 +8,7 @@ import type {
   StudioGeoSourceType,
 } from '../services/studioGeoApi';
 import type { GeoSiteRole } from '../services/geoApi';
+import { resolveScaleBandKey } from './studioGeoDefaults';
 
 export type MapSiteRole = GeoSiteRole;
 export type MapLayerId = string;
@@ -193,42 +194,69 @@ export function nodeForMapFeature(
   );
 }
 
+export function isStudioGeoEntityVisible(
+  node: StudioGeoEntityNode,
+  visibility: MapLayerVisibility,
+  scaleMeters?: number | null,
+): boolean {
+  if (!(visibility[node.id] ?? node.defaultVisible)) return false;
+  if (scaleMeters === undefined || scaleMeters === null || !node.visualConfig) return true;
+  return node.visualConfig.scaleBands[resolveScaleBandKey(scaleMeters)]?.visible !== false;
+}
+
 export function isMapFeatureVisible(
   feature: MapFeatureLayerLike,
   visibility: MapLayerVisibility,
   roleByCode?: ReadonlyMap<string, unknown>,
   catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK,
+  scaleMeters?: number | null,
 ): boolean {
   const node = nodeForMapFeature(feature, catalog, roleByCode);
   if (!node) {
     // No fallback canônico de compatibilidade, recursos sem camada específica continuam visíveis.
     return Boolean(catalog.fallback && feature.kind === 'resource');
   }
-  return visibility[node.id] ?? node.defaultVisible;
+  return isStudioGeoEntityVisible(node, visibility, scaleMeters);
 }
+
+// `legacy-cable`-like ids são a única identidade de LINE no catálogo canônico de compatibilidade
+// — dutos e demais RESOURCE_TYPE ficam como POINT até haver publicação Studio GEO real.
+const fallbackGeometryKind = (node: StudioGeoEntityNode): 'POINT' | 'LINE' | undefined => {
+  if (!node.entity.sourceId.startsWith('legacy-')) return undefined;
+  if (node.entity.category === 'LOCAL') return 'POINT';
+  return node.entity.sourceId.includes('cable') ? 'LINE' : 'POINT';
+};
 
 export function viewportInclude(
   visibility: MapLayerVisibility,
   catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK,
+  scaleMeters?: number | null,
 ): ViewportShape[] | undefined {
-  const entities = mapLayerEntities(catalog).filter((node) =>
-    node.id !== 'stations' && (visibility[node.id] ?? node.defaultVisible),
-  );
   const shapes = new Set<ViewportShape>();
-  for (const node of entities) {
-    if (node.entity.sourceType === 'GEOGRAPHIC_SITE_SPECIFICATION') shapes.add('sites');
-    if (node.entity.sourceType === 'RESOURCE_TYPE') {
-      if (node.entity.sourceId.includes('cable')) shapes.add('resource-lines');
-      else shapes.add('resource-points');
-    }
+  for (const node of mapLayerEntities(catalog)) {
+    // Estações não são buscadas por viewport de tile — vêm da árvore Geo, não de `useMapTiles`.
+    if (node.id === 'stations') continue;
+    if (!isStudioGeoEntityVisible(node, visibility, scaleMeters)) continue;
+    // A publicação sempre declara a geometria. A inferência abaixo existe exclusivamente para o
+    // catálogo canônico de compatibilidade enquanto ainda não há publicação Studio GEO.
+    const geometryKind = node.visualConfig?.geometryKind ?? (catalog.fallback ? fallbackGeometryKind(node) : undefined);
+    if (node.entity.category === 'LOCAL' && geometryKind === 'POINT') shapes.add('sites');
+    if (node.entity.category === 'RESOURCE' && geometryKind === 'POINT') shapes.add('resource-points');
+    if (node.entity.category === 'RESOURCE' && geometryKind === 'LINE') shapes.add('resource-lines');
   }
   const result = [...shapes];
   return result.length === 3 ? undefined : result;
 }
 
-export const hasVisibleGponAggregate = (visibility: MapLayerVisibility, catalog: StudioGeoCatalog): boolean =>
-  mapLayerEntities(catalog).some((node) =>
-    node.entity.sourceType === 'GPON_AGGREGATE' && (visibility[node.id] ?? node.defaultVisible),
+export const hasVisibleGponAggregate = (
+  visibility: MapLayerVisibility,
+  catalog: StudioGeoCatalog,
+  scaleMeters?: number | null,
+): boolean =>
+  mapLayerEntities(catalog).some(
+    (node) =>
+      node.entity.sourceType === 'GPON_AGGREGATE' &&
+      isStudioGeoEntityVisible(node, visibility, scaleMeters),
   );
 
 const STORAGE_KEY = 'nexus.geo.mapLayers';

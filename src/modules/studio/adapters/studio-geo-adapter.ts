@@ -81,8 +81,11 @@ export type StudioGeoScaleBandKey =
   | 'le1km'
   | 'gt1km';
 
-export type StudioGeoScalePointConfig = {
+export type StudioGeoScaleVisibility = {
   visible: boolean;
+};
+
+export type StudioGeoScalePointConfig = StudioGeoScaleVisibility & {
   sizePx: number;
 };
 
@@ -99,6 +102,7 @@ export type StudioGeoLineVisualConfig = {
   strokeWidth: number;
   strokeStyle: 'solid' | 'dashed' | 'dotted';
   opacity: number;
+  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScaleVisibility>;
 };
 
 export type StudioGeoPolygonVisualConfig = {
@@ -108,6 +112,7 @@ export type StudioGeoPolygonVisualConfig = {
   strokeStyle: 'solid' | 'dashed' | 'dotted';
   fillColor: string;
   fillOpacity: number;
+  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScaleVisibility>;
 };
 
 export type StudioGeoVisualConfig =
@@ -320,6 +325,17 @@ const visualConfigIssues = (visualConfig: unknown, path: string): StudioValidati
     }
     if (config.geometryKind === 'POLYGON' && (!nonEmpty(config.fillColor) || !COLOR_PATTERN.test(config.fillColor) || typeof config.fillOpacity !== 'number' || config.fillOpacity < 0 || config.fillOpacity > 1)) {
       issues.push({ severity: 'error', code: 'STUDIO_GEO_FILL_CONFIG_INVALID', message: 'A configuração de preenchimento visual é inválida.', path });
+    }
+    const bands = config.scaleBands;
+    if (!bands || typeof bands !== 'object') {
+      issues.push({ severity: 'error', code: 'STUDIO_GEO_LINE_SCALE_BANDS_INVALID', message: 'Uma linha ou polígono deve configurar todas as faixas de escala.', path: `${path}.scaleBands` });
+    } else {
+      for (const key of SCALE_BAND_KEYS) {
+        const band = (bands as Record<string, unknown>)[key];
+        if (!band || typeof band !== 'object' || typeof (band as { visible?: unknown }).visible !== 'boolean') {
+          issues.push({ severity: 'error', code: 'STUDIO_GEO_LINE_SCALE_BAND_INVALID', message: `A faixa ${key} deve declarar visibilidade.`, path: `${path}.scaleBands.${key}` });
+        }
+      }
     }
     return issues;
   }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   Bot,
   Briefcase,
@@ -27,35 +27,12 @@ import { PageHead } from '../components/ui';
 import type { StudioDomain } from '../services/studioApi';
 import type { StudioSection } from '../utils/appRoute';
 
-// Paleta que o quadro do ícone "Studio Control" (o `Presentation`, um quadro sobre cavalete)
-// percorre — puramente decorativo, por isso os hex ficam aqui em vez de token de design system
-// (§7 do AGENTS.md é para tokens semânticos de UI; isto é uma animação de vitrine, não um estado
-// da interface). 35% de opacidade em todas as cores para não competir com o ícone por cima.
-const STUDIO_EASEL_COLORS = [
-  '#7C5CE0',
-  '#12805C',
-  '#E8615C',
-  '#F0A32E',
-  '#FFD919',
-  '#3B82F6',
-  '#C08A2A',
-];
-const STUDIO_EASEL_OPACITY = 0.35;
-const STUDIO_EASEL_INTERVAL_MS = 5000;
-
-function hexToRgba(hex: string, alpha: number): string {
-  const value = hex.replace('#', '');
-  const r = parseInt(value.substring(0, 2), 16);
-  const g = parseInt(value.substring(2, 4), 16);
-  const b = parseInt(value.substring(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
 const studioDomainBySection: Partial<Record<StudioSection, StudioDomain>> = {
   'resource-model': 'resource-model',
   'location-model': 'location-model',
   spatial: 'spatial',
   'studio-geo': 'studio-geo',
+  parties: 'parties',
   'reference-data': 'reference-data',
   'rules-workflows': 'rules-workflows',
   templates: 'templates',
@@ -219,44 +196,17 @@ export function StudioPage({
     [],
   );
 
-  // Quadro do ícone "Studio Control" (aside): o fundo atrás do `Presentation` troca de cor a
-  // cada 5s, percorrendo STUDIO_EASEL_COLORS em looping.
-  const [easelColorIndex, setEaselColorIndex] = useState(0);
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setEaselColorIndex((prev) => (prev + 1) % STUDIO_EASEL_COLORS.length);
-    }, STUDIO_EASEL_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, []);
-
   if (!activeItem) return null;
 
   return (
-    <div
-      className="h-full overflow-y-auto bg-white px-[11px] py-4 sm:px-[17px] sm:py-6 lg:px-[22px]"
-      style={{
-        /* Glow radial ambiente atrás da janela Studio Control — pintado direto no
-           container mais externo (não num wrapper extra ao redor da `aside`) para não haver
-           nenhuma borda de caixa aninhada cortando o degradê pela metade. Ancorado no canto
-           onde a `aside` nasce (0% 0%) e com raio grande (1400px) para se espalhar por toda a
-           altura útil da página — como a `aside` é `sticky` e mais baixa que o conteúdo, um
-           glow do tamanho da própria `aside` parava seco onde ela termina; este cobre a coluna
-           inteira e esmaece suavemente antes de alcançar o conteúdo da direita. */
-        backgroundImage:
-          'radial-gradient(1400px circle at 0% 0%, rgba(81, 79, 102, 0.2) 0%, rgba(81, 79, 102, 0.08) 35%, rgba(81, 79, 102, 0) 62%)',
-        backgroundRepeat: 'no-repeat',
-      }}
-    >
+    <div className="h-full overflow-y-auto bg-white px-[11px] py-4 sm:px-[17px] sm:py-6 lg:px-[22px]">
       <div
         className="relative mx-auto grid gap-5 lg:grid-cols-[202px_minmax(0,1fr)]"
         style={{ maxWidth: 'var(--content-max)' }}
       >
         <aside className="relative h-fit rounded-[10px] bg-app-ink-soft p-3 text-app-on-ink shadow-soft lg:sticky lg:top-0">
           <div className="flex items-center gap-3 px-3 pb-4 pt-2">
-            <div
-              className="flex h-10 w-10 items-center justify-center rounded-[14px] text-app-accent transition-colors duration-1000 ease-in-out"
-              style={{ backgroundColor: hexToRgba(STUDIO_EASEL_COLORS[easelColorIndex], STUDIO_EASEL_OPACITY) }}
-            >
+            <div className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-app-accent-soft text-app-accent">
               <Presentation className="h-5 w-5" strokeWidth={1.8} />
             </div>
             <div>
@@ -343,11 +293,23 @@ export function StudioPage({
             </div>
           ) : section === 'spatial' ? (
             <div className="mt-5">
-              <SpatialStudio canEdit={canEdit} canAdmin={canAdmin} />
+              <SpatialStudio
+                canEdit={canEdit}
+                canAdmin={canAdmin}
+                isEditing={isEditing}
+                onRegisterCaptureDraft={handleRegisterCaptureDraft}
+                onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
+              />
             </div>
           ) : section === 'parties' ? (
             <div className="mt-5">
-              <PartyModelStudio canEdit={canEdit} canAdmin={canAdmin} />
+              <PartyModelStudio
+                canEdit={canEdit}
+                canAdmin={canAdmin}
+                isEditing={isEditing}
+                onRegisterCaptureDraft={handleRegisterCaptureDraft}
+                onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
+              />
             </div>
           ) : section === 'rules-workflows' ? (
             <div className="mt-5">

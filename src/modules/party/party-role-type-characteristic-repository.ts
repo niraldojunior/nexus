@@ -2,10 +2,10 @@
 // "manufacturer") aceita — metadado de modelagem para a aba "Características Gerais" do Studio ->
 // Partes (issue #220). Como GeoProjectRepository.ensureStatusCatalog/listStatusCatalog, é uma
 // projeção de plataforma que fala direto com o DatabaseClient: não é entidade TMF, não passa pelo
-// IPartyRepository nem pelo PartyService, e não usa o fluxo de draft/publish do Studio — o domínio
-// 'parties' só tem o adapter no-op, então esse catálogo persiste direto via API (achado 4 do plano).
+// IPartyRepository nem pelo PartyService. Governado via PartiesStudioAdapter (publish/discard);
+// a API direta (create/update/deactivate) segue existindo para o editor mutar dentro de um draft.
 
-import { randomUUID } from 'node:crypto';
+import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 
 export type PartyRoleTypeCharacteristicValueType =
@@ -106,7 +106,7 @@ export class PartyRoleTypeCharacteristicRepository {
     roleName: string,
     input: CreatePartyRoleTypeCharacteristicInput,
   ): Promise<PartyRoleTypeCharacteristic> {
-    const id = randomUUID();
+    const id = createCanonicalId();
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO party_role_type_characteristic

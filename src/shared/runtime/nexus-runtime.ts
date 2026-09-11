@@ -34,6 +34,7 @@ import { LocationModelStudioAdapter } from '../../modules/studio/adapters/locati
 import { SpatialStudioAdapter } from '../../modules/studio/adapters/spatial-studio-adapter.js';
 import { StudioGeoAdapter, CANONICAL_STUDIO_GEO_SNAPSHOT } from '../../modules/studio/adapters/studio-geo-adapter.js';
 import { RulesWorkflowsStudioAdapter } from '../../modules/studio/adapters/rules-workflows-studio-adapter.js';
+import { PartiesStudioAdapter } from '../../modules/studio/adapters/parties-studio-adapter.js';
 import { TemplatesStudioAdapter, CANONICAL_TEMPLATES_SNAPSHOT } from '../../modules/studio/adapters/templates-studio-adapter.js';
 import { CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT } from '../../modules/geo/project-workflow.js';
 import { GeoProjectWorkflowService } from '../../modules/geo/project-workflow-service.js';
@@ -219,6 +220,9 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   studioService.registerAdapter(new ResourceModelStudioAdapter(resourceService));
   studioService.registerAdapter(new LocationModelStudioAdapter(geoService));
   studioService.registerAdapter(new SpatialStudioAdapter(geoService));
+  studioService.registerAdapter(
+    new PartiesStudioAdapter(partyRoleTypeRepository, partyRoleTypeCharacteristicRepository),
+  );
   studioService.registerAdapter(
     new StudioGeoAdapter(async (tenantId, assetId) => Boolean(await studioAssetRepository.get(tenantId, assetId))),
   );

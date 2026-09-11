@@ -37,8 +37,11 @@ export type StudioGeoScaleBandKey =
   | 'le1km'
   | 'gt1km';
 
-export type StudioGeoScalePointConfig = {
+export type StudioGeoScaleVisibility = {
   visible: boolean;
+};
+
+export type StudioGeoScalePointConfig = StudioGeoScaleVisibility & {
   sizePx: number;
 };
 
@@ -55,6 +58,7 @@ export type StudioGeoLineVisualConfig = {
   strokeWidth: number;
   strokeStyle: 'solid' | 'dashed' | 'dotted';
   opacity: number;
+  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScaleVisibility>;
 };
 
 export type StudioGeoPolygonVisualConfig = {
@@ -64,6 +68,7 @@ export type StudioGeoPolygonVisualConfig = {
   strokeStyle: 'solid' | 'dashed' | 'dotted';
   fillColor: string;
   fillOpacity: number;
+  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScaleVisibility>;
 };
 
 export type StudioGeoVisualConfig =

@@ -163,6 +163,17 @@ export function defaultPointVisualConfig(
 /**
  * Cria uma configuração padrão para linhas (cabos, dutos).
  */
+const visibleAtAllScales = () => ({
+  le5m: { visible: true },
+  le10m: { visible: true },
+  le20m: { visible: true },
+  le50m: { visible: true },
+  le100m: { visible: true },
+  le500m: { visible: true },
+  le1km: { visible: true },
+  gt1km: { visible: true },
+});
+
 export function defaultLineVisualConfig(
   reference: StudioGeoEntityReference,
   label?: string,
@@ -184,6 +195,7 @@ export function defaultLineVisualConfig(
       strokeWidth: 2,
       strokeStyle: 'dashed',
       opacity: 0.85,
+      scaleBands: visibleAtAllScales(),
     };
   }
 
@@ -194,6 +206,7 @@ export function defaultLineVisualConfig(
       strokeWidth: CABLE_STROKE_WEIGHT.DropCable ?? 2,
       strokeStyle: 'solid',
       opacity: 0.9,
+      scaleBands: visibleAtAllScales(),
     };
   }
 
@@ -203,6 +216,7 @@ export function defaultLineVisualConfig(
     strokeWidth: CABLE_STROKE_WEIGHT.DistributionCable ?? 3.5,
     strokeStyle: 'solid',
     opacity: 0.95,
+    scaleBands: visibleAtAllScales(),
   };
 }
 
@@ -217,6 +231,7 @@ export function defaultPolygonVisualConfig(): StudioGeoPolygonVisualConfig {
     strokeStyle: 'solid',
     fillColor: '#3b82f6',
     fillOpacity: 0.25,
+    scaleBands: visibleAtAllScales(),
   };
 }
 

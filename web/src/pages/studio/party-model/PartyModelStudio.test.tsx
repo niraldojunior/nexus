@@ -10,6 +10,10 @@ vi.mock('../../../services/partyRoleTypeApi', () => ({
   updatePartyRoleType: vi.fn(),
   deactivatePartyRoleType: vi.fn(),
 }));
+vi.mock('../../../services/studioApi', () => ({
+  getStudioStatus: vi.fn().mockResolvedValue({ draftVersion: undefined }),
+  saveStudioDraft: vi.fn().mockResolvedValue({}),
+}));
 vi.mock('./PartyCharacteristicCatalogEditor', () => ({ PartyCharacteristicCatalogEditor: () => null }));
 vi.mock('./SupplierRecordsTab', () => ({ SupplierRecordsTab: () => null }));
 
@@ -23,7 +27,15 @@ describe('PartyModelStudio', () => {
   it('shows only the party type name in the list and creates types from the plus button', async () => {
     vi.mocked(partyRoleTypeApi.listPartyRoleTypes).mockResolvedValue([supplier]);
     vi.mocked(partyRoleTypeApi.createPartyRoleType).mockResolvedValue({ ...supplier, id: 'type-2', key: 'partner', roleName: 'partner', label: 'Parceiros' });
-    render(<PartyModelStudio canEdit={true} canAdmin={true} />);
+    render(
+      <PartyModelStudio
+        canEdit={true}
+        canAdmin={true}
+        isEditing={true}
+        onRegisterCaptureDraft={() => {}}
+        onRegisterCaptureInitialSnapshot={() => {}}
+      />,
+    );
     await waitFor(() => expect(screen.getAllByText('Fornecedores')).toHaveLength(2));
     expect(screen.queryByText('manufacturer')).not.toBeInTheDocument();
 

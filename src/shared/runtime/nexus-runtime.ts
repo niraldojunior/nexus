@@ -32,6 +32,13 @@ import { OracleStudioRepository } from '../../modules/studio/oracle-repository.j
 import { ResourceModelStudioAdapter } from '../../modules/studio/adapters/resource-model-adapter.js';
 import { LocationModelStudioAdapter } from '../../modules/studio/adapters/location-model-adapter.js';
 import { SpatialStudioAdapter } from '../../modules/studio/adapters/spatial-studio-adapter.js';
+import { StudioGeoAdapter, CANONICAL_STUDIO_GEO_SNAPSHOT } from '../../modules/studio/adapters/studio-geo-adapter.js';
+import { RulesWorkflowsStudioAdapter } from '../../modules/studio/adapters/rules-workflows-studio-adapter.js';
+import { TemplatesStudioAdapter, CANONICAL_TEMPLATES_SNAPSHOT } from '../../modules/studio/adapters/templates-studio-adapter.js';
+import { CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT } from '../../modules/geo/project-workflow.js';
+import { GeoProjectWorkflowService } from '../../modules/geo/project-workflow-service.js';
+import { OracleStudioAssetRepository } from '../../modules/studio/oracle-asset-repository.js';
+import { StudioAssetService } from '../../modules/studio/asset-service.js';
 import {
   GeonetAddressGateway,
   type GeonetGatewayConfig,
@@ -206,10 +213,43 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   });
   const searchService = new SearchService(researchRepository);
   const studioRepository = new OracleStudioRepository(db);
+  const studioAssetRepository = new OracleStudioAssetRepository(db);
+  const studioAssetService = new StudioAssetService(studioAssetRepository);
   const studioService = new StudioService(studioRepository, eventService, { db });
   studioService.registerAdapter(new ResourceModelStudioAdapter(resourceService));
   studioService.registerAdapter(new LocationModelStudioAdapter(geoService));
   studioService.registerAdapter(new SpatialStudioAdapter(geoService));
+  studioService.registerAdapter(
+    new StudioGeoAdapter(async (tenantId, assetId) => Boolean(await studioAssetRepository.get(tenantId, assetId))),
+  );
+  studioService.registerAdapter(new RulesWorkflowsStudioAdapter(db));
+  studioService.registerAdapter(new TemplatesStudioAdapter(resourceService));
+  await studioService.ensurePublishedBootstrap('studio-geo', CANONICAL_STUDIO_GEO_SNAPSHOT, {
+    actorSub: 'studio-bootstrap',
+    tenantId: DEFAULT_TENANT_ID,
+    roles: ['studio.admin', 'platform.admin'],
+    traceId: createCanonicalId(),
+  });
+  await studioService.ensurePublishedBootstrap('rules-workflows', CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT, {
+    actorSub: 'studio-bootstrap',
+    tenantId: DEFAULT_TENANT_ID,
+    roles: ['studio.admin', 'platform.admin'],
+    traceId: createCanonicalId(),
+  });
+  await studioService.ensurePublishedBootstrap('templates', CANONICAL_TEMPLATES_SNAPSHOT as unknown as Record<string, unknown>, {
+    actorSub: 'studio-bootstrap',
+    tenantId: DEFAULT_TENANT_ID,
+    roles: ['studio.admin', 'platform.admin'],
+    traceId: createCanonicalId(),
+  });
+  const geoProjectWorkflowService = new GeoProjectWorkflowService(
+    db,
+    geoProjectRepository,
+    geoService,
+    resourceService,
+    studioService,
+    eventService,
+  );
 
   let defaultUser = await userRepository.getByExternalId(DEFAULT_RUNTIME_USER.externalId);
   if (!defaultUser) {
@@ -228,6 +268,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     authService,
     geoSearchHistoryRepository,
     geoProjectRepository,
+    geoProjectWorkflowService,
     searchRepository,
     researchRepository,
     searchService,
@@ -251,6 +292,8 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     orderRepository,
     orderService,
     studioRepository,
+    studioAssetRepository,
+    studioAssetService,
     studioService,
     defaultUser,
     createToolContext: (options: NexusToolContextOptions = {}) => ({

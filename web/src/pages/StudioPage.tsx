@@ -19,6 +19,9 @@ import { ResourceModelStudio } from './studio/resource-model/ResourceModelStudio
 import { LocationModelStudio } from './studio/location-model/LocationModelStudio';
 import { SpatialStudio } from './studio/spatial/SpatialStudio';
 import { PartyModelStudio } from './studio/party-model/PartyModelStudio';
+import { StudioGeoExperience } from './studio/StudioGeoExperience';
+import { GeoProjectWorkflowStudio } from './studio/rules-workflows/GeoProjectWorkflowStudio';
+import { TemplatesStudio } from './studio/templates/TemplatesStudio';
 import EmptyState from '../components/EmptyState';
 import { PageHead } from '../components/ui';
 import type { StudioDomain } from '../services/studioApi';
@@ -329,6 +332,15 @@ export function StudioPage({
                 onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
               />
             </div>
+          ) : section === 'studio-geo' ? (
+            <div className="mt-5">
+              <StudioGeoExperience
+                canEdit={canEdit}
+                isEditing={isEditing}
+                onRegisterCaptureDraft={handleRegisterCaptureDraft}
+                onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
+              />
+            </div>
           ) : section === 'spatial' ? (
             <div className="mt-5">
               <SpatialStudio canEdit={canEdit} canAdmin={canAdmin} />
@@ -336,6 +348,24 @@ export function StudioPage({
           ) : section === 'parties' ? (
             <div className="mt-5">
               <PartyModelStudio canEdit={canEdit} canAdmin={canAdmin} />
+            </div>
+          ) : section === 'rules-workflows' ? (
+            <div className="mt-5">
+              <GeoProjectWorkflowStudio
+                canEdit={canEdit}
+                isEditing={isEditing}
+                onRegisterCaptureDraft={handleRegisterCaptureDraft}
+                onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
+              />
+            </div>
+          ) : section === 'templates' ? (
+            <div className="mt-5">
+              <TemplatesStudio
+                canEdit={canEdit}
+                isEditing={isEditing}
+                onRegisterCaptureDraft={handleRegisterCaptureDraft}
+                onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
+              />
             </div>
           ) : (
             <div className="mt-5">

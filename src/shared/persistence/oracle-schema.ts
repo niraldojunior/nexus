@@ -25,6 +25,7 @@ const CLOB_COLUMNS = new Set([
   'payload',
   'place',
   'related_party',
+  'resource_function_specification_relationship',
   'resource_order_item',
   'results',
   'service_characteristic',

@@ -6,10 +6,12 @@ import {
   createProject,
   deleteProject,
   fetchProjects,
+  transitionProject,
   updateProject,
   type GeoProject,
   type GeoProjectDeleteSummary,
   type GeoProjectSiteCascade,
+  type GeoProjectTransitionResult,
 } from '../services/geoProjectApi';
 
 // Dedupe da carga inicial: o backend serializa requisições e o StrictMode monta o componente
@@ -23,8 +25,12 @@ export type UseGeoProjectsResult = {
   create: () => Promise<GeoProject>;
   update: (
     id: string,
-    patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status'>>,
+    patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>>,
   ) => Promise<{ siteCascade?: GeoProjectSiteCascade }>;
+  transition: (
+    id: string,
+    input: { transitionId?: string; targetStateCode?: string },
+  ) => Promise<GeoProjectTransitionResult>;
   remove: (id: string) => Promise<GeoProjectDeleteSummary>;
   // Ajuste otimista do contador de locais (criar/remover local de dentro do painel do
   // projeto) — sem isto, `siteCount` só era carregado uma vez no mount e a lista de
@@ -65,11 +71,23 @@ export function useGeoProjects(): UseGeoProjectsResult {
   const update = useCallback(
     async (
       id: string,
-      patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status'>>,
+      patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>>,
     ) => {
       const { siteCascade, ...updated } = await updateProject(id, patch);
       setProjects((current) => current.map((item) => (item.id === id ? updated : item)));
       return { siteCascade };
+    },
+    [],
+  );
+
+  const transition = useCallback(
+    async (
+      id: string,
+      input: { transitionId?: string; targetStateCode?: string },
+    ): Promise<GeoProjectTransitionResult> => {
+      const result = await transitionProject(id, input);
+      setProjects((current) => current.map((item) => (item.id === id ? result.project : item)));
+      return result;
     },
     [],
   );
@@ -80,7 +98,7 @@ export function useGeoProjects(): UseGeoProjectsResult {
   // por quê (issue #58). Erros propagam para quem chamou tratar (nunca `void`).
   const remove = useCallback(async (id: string) => {
     const summary = await deleteProject(id);
-    if (summary.deleted) {
+    if (summary.deleted || summary.archived) {
       setProjects((current) => current.filter((item) => item.id !== id));
     }
     return summary;
@@ -94,5 +112,5 @@ export function useGeoProjects(): UseGeoProjectsResult {
     );
   }, []);
 
-  return { projects, loading, reload, create, update, remove, adjustSiteCount };
+  return { projects, loading, reload, create, update, transition, remove, adjustSiteCount };
 }

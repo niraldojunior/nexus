@@ -38,14 +38,6 @@ export type CoverageLevel = 'neighborhood' | 'city' | 'uf';
 export const coverageVisibleAtScale = (scaleMeters: number | null): boolean =>
   scaleMeters !== null && scaleMeters > COVERAGE_MIN_SCALE_METERS;
 
-// Poste (netwinPole) só aparece na escala de detalhe de campo — acima disso, o ícone de rede
-// aérea polui o desenho sem agregar leitura (ver isMapFeatureVisible em mapLayers.ts e o switch
-// "Postes" em MapLayerControl, que fica inibido fora dessa faixa).
-export const NETWIN_POLE_MAX_SCALE_METERS = 20;
-
-export const poleVisibleAtScale = (scaleMeters: number | null): boolean =>
-  scaleMeters !== null && scaleMeters <= NETWIN_POLE_MAX_SCALE_METERS;
-
 // Nível de cobertura a pedir ao servidor para a escala atual (ver
 // GeoCoverageService.areaIndexLevel): bairro em zoom de detalhe, município em escala
 // intermediária, estado (e país) em zoom bem aberto.

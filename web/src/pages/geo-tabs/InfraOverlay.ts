@@ -23,7 +23,11 @@ import {
 } from '../../utils/resourceIcon';
 import { siteIconDataUrl, siteIconFor, SITE_ICON_SIZE } from '../../utils/siteIcon';
 import { siteKindFromSpec } from '../../utils/placeLabel';
-import type { MapSiteRole } from '../../utils/mapLayers';
+import { nodeForMapFeature, type MapSiteRole } from '../../utils/mapLayers';
+import { nativeMapIconDataUrl, nativeMapIconForCode } from '../../utils/nativeMapIcons';
+import type { StudioGeoCatalog, StudioGeoVisualConfig } from '../../services/studioGeoApi';
+import { resolveScaleBandKey } from '../../utils/studioGeoDefaults';
+import { getStudioSvgAssetDataUrl } from '../../services/studioAssetApi';
 import type { MapTileFeature } from '../../services/geoMapTileApi';
 
 type Maps = GoogleMapsApi['maps'];
@@ -56,6 +60,10 @@ export type InfraOverlayHandle = {
       // além da heurística por substring de siteKindFromSpec. Opcional: sem catálogo em mãos,
       // cai no fallback por nome.
       roleByCode?: ReadonlyMap<string, MapSiteRole>;
+      // Catálogo publicado pelo Studio GEO. Ausente apenas durante a inicialização/testes,
+      // quando a renderização conserva os perfis canônicos legados.
+      catalog?: StudioGeoCatalog;
+      scaleMeters?: number | null;
     },
   ) => void;
   // Feature sob a coordenada (clique/hover) — ponto vence linha em empate (equipamento é o
@@ -80,6 +88,17 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
   let siteMarkerSize: number = SITE_ICON_SIZE;
   let excludeNodeId: string | null = null;
   let roleByCode: ReadonlyMap<string, MapSiteRole> | undefined;
+  let catalog: StudioGeoCatalog | undefined;
+  let scaleMeters: number | null | undefined;
+
+  const visualConfigFor = (feature: MapTileFeature): StudioGeoVisualConfig | undefined =>
+    catalog ? nodeForMapFeature(feature, catalog, roleByCode)?.visualConfig : undefined;
+
+  const lineDashFor = (style: 'solid' | 'dashed' | 'dotted'): number[] => {
+    if (style === 'dashed') return [6, 4];
+    if (style === 'dotted') return [2, 3];
+    return [];
+  };
 
   // Projeção e resultado do último `draw()` — hitTest reusa os dois: reprojeta a coordenada
   // consultada no MESMO espaço de pixel local em que os pontos/linhas já foram desenhados, em
@@ -169,6 +188,26 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
     imageCache.set(dataUrl, img);
     img.onload = scheduleRedraw;
     img.src = dataUrl;
+    return null;
+  }
+
+  const assetDataUrlCache = new Map<string, string | null>();
+  const assetRequests = new Set<string>();
+
+  function loadStudioAsset(assetId: string): HTMLImageElement | null {
+    const cached = assetDataUrlCache.get(assetId);
+    if (cached !== undefined) return cached ? loadImage(cached) : null;
+    if (!assetRequests.has(assetId)) {
+      assetRequests.add(assetId);
+      void getStudioSvgAssetDataUrl(assetId)
+        .then((dataUrl) => {
+          assetDataUrlCache.set(assetId, dataUrl ?? null);
+        })
+        .finally(() => {
+          assetRequests.delete(assetId);
+          scheduleRedraw();
+        });
+    }
     return null;
   }
 
@@ -297,15 +336,19 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
         resourceType: feature.typeCode ?? '',
         status: feature.status,
       });
-      context.strokeStyle = icon.color;
-      context.globalAlpha = 0.9;
-      context.lineWidth = CABLE_STROKE_WEIGHT[icon.code] ?? 2.5;
+      const visualConfig = visualConfigFor(feature);
+      const lineConfig = visualConfig?.geometryKind === 'LINE' ? visualConfig : undefined;
+      context.strokeStyle = lineConfig?.strokeColor ?? icon.color;
+      context.globalAlpha = lineConfig?.opacity ?? 0.9;
+      context.lineWidth = lineConfig?.strokeWidth ?? CABLE_STROKE_WEIGHT[icon.code] ?? 2.5;
+      context.setLineDash(lineConfig ? lineDashFor(lineConfig.strokeStyle) : []);
       context.lineCap = 'round';
       context.lineJoin = 'round';
       context.beginPath();
       context.moveTo(points[0]![0], points[0]![1]);
       for (let i = 1; i < points.length; i += 1) context.lineTo(points[i]![0], points[i]![1]);
       context.stroke();
+      context.setLineDash([]);
       context.globalAlpha = 1;
 
       drawnLines.push({ points, feature });
@@ -319,9 +362,12 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const local = project(feature.lng, feature.lat);
       if (!local) return;
       const [x, y] = local;
-      if (resourceMarkerSize === null) return;
-      const size = resourceMarkerSize;
-      const icon = resourceIconFor({
+      const visualConfig = visualConfigFor(feature);
+      const pointConfig = visualConfig?.geometryKind === 'POINT' ? visualConfig : undefined;
+      const scaleConfig = pointConfig?.scaleBands[resolveScaleBandKey(scaleMeters)];
+      if (scaleConfig?.visible === false || resourceMarkerSize === null) return;
+      const size = scaleConfig?.sizePx ?? resourceMarkerSize;
+      const inferredIcon = resourceIconFor({
         resourceType: feature.typeCode ?? '',
         status: feature.status,
         // O índice pré-computado (geo_map_feature) não traz resourceSpecification para
@@ -330,7 +376,14 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
         // usado pelo resto do código (ex.: condominium-workflow.ts).
         name: feature.label,
       });
-      const img = loadImage(resourceIconDataUrl(icon, { size }));
+      const nativeIcon = nativeMapIconForCode(pointConfig?.iconCode);
+      const img = pointConfig?.assetId
+        ? loadStudioAsset(pointConfig.assetId)
+        : loadImage(
+            nativeIcon
+              ? nativeMapIconDataUrl(nativeIcon, { size, shape: 'circle' })
+              : resourceIconDataUrl(inferredIcon, { size }),
+          );
       // Âncora no canto inferior-esquerdo — mesma regra de buildPointMarkerVisual em GeoPage
       // (a coordenada real fica acima e à direita do próprio ícone).
       if (img) context.drawImage(img, x, y - size, size, size);
@@ -346,15 +399,26 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const local = project(feature.lng, feature.lat);
       if (!local) return;
       const [x, y] = local;
-      const kind = siteKindFromSpec({
+      const inferredKind = siteKindFromSpec({
         category: feature.siteCategory,
         name: feature.sublabel,
         siteRole: feature.sublabel ? roleByCode?.get(feature.sublabel) : undefined,
       });
-      const icon = siteIconFor(kind, feature.status);
-      const size = kind === 'CO' ? siteMarkerSize : resourceMarkerSize;
-      if (size === null) return;
-      const img = loadImage(siteIconDataUrl(icon, { size }));
+      const visualConfig = visualConfigFor(feature);
+      const pointConfig = visualConfig?.geometryKind === 'POINT' ? visualConfig : undefined;
+      const scaleConfig = pointConfig?.scaleBands[resolveScaleBandKey(scaleMeters)];
+      const size =
+        scaleConfig?.sizePx ?? (inferredKind === 'CO' ? siteMarkerSize : resourceMarkerSize);
+      if (scaleConfig?.visible === false || size === null) return;
+      const icon = siteIconFor(inferredKind, feature.status);
+      const nativeIcon = nativeMapIconForCode(pointConfig?.iconCode);
+      const img = pointConfig?.assetId
+        ? loadStudioAsset(pointConfig.assetId)
+        : loadImage(
+            nativeIcon
+              ? nativeMapIconDataUrl(nativeIcon, { size, shape: 'squircle' })
+              : siteIconDataUrl(icon, { size }),
+          );
       // Âncora central — mesma regra de buildPointMarkerVisual em GeoPage (squircle).
       if (img) context.drawImage(img, x - size / 2, y - size / 2, size, size);
       drawnPoints.push({ x, y, feature });
@@ -370,6 +434,8 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       siteMarkerSize = options.siteMarkerSize;
       excludeNodeId = options.excludeNodeId;
       roleByCode = options.roleByCode;
+      catalog = options.catalog;
+      scaleMeters = options.scaleMeters;
       data = features;
       overlay.draw();
     },

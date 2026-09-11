@@ -607,6 +607,12 @@ const cloneResourceFunctionSpecification = (
   resourceFunctionSpecificationCharacteristic: spec.resourceFunctionSpecificationCharacteristic.map(
     (item) => ({ ...item }),
   ),
+  ...(spec.resourceFunctionSpecificationRelationship
+    ? {
+        resourceFunctionSpecificationRelationship:
+          spec.resourceFunctionSpecificationRelationship.map((item) => ({ ...item })),
+      }
+    : {}),
   ...(spec.validFor ? { validFor: { ...spec.validFor } } : {}),
 });
 

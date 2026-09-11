@@ -17,6 +17,8 @@ type Candidate = {
   entity_type: 'PhysicalResource' | 'GeographicSite';
   type_code: string | null;
   site_category: string | null;
+  source_model_type: 'GEOGRAPHIC_SITE_SPECIFICATION' | 'RESOURCE_TYPE';
+  source_model_id: string;
   status: string | null;
   label: string;
   sublabel: string | null;
@@ -71,8 +73,8 @@ export class GeoMapFeatureSynchronizer implements MapFeatureSynchronizer {
 // interno, do JOIN de map_presence e do filtro de projeto em curso direto no texto do SQL.
 export function candidatesSql(idPlaceholders: string): string {
   return `SELECT r.id entity_id, 'resource' feature_kind, 'PhysicalResource' entity_type,
-                rt.code type_code, NULL site_category, r.status status, r.name label,
-                NULL sublabel, l.geometry geometry
+                rt.code type_code, NULL site_category, 'RESOURCE_TYPE' source_model_type,
+                rt.code source_model_id, r.status status, r.name label, NULL sublabel, l.geometry geometry
            FROM tmf_physical_resource r
            JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
            JOIN tmf_resource_type rt
@@ -84,8 +86,9 @@ export function candidatesSql(idPlaceholders: string): string {
             AND l.geometry_type = 'Point'
          UNION ALL
          SELECT s.id entity_id, 'site' feature_kind, 'GeographicSite' entity_type,
-                NULL type_code, spec.category site_category, s.status status, s.name label,
-                spec.code sublabel, l.geometry geometry
+                NULL type_code, spec.category site_category,
+                'GEOGRAPHIC_SITE_SPECIFICATION' source_model_type, spec.code source_model_id,
+                s.status status, s.name label, spec.code sublabel, l.geometry geometry
            FROM tmf_geographic_site s
            JOIN tmf_geographic_site_specification spec ON spec.id = s.site_specification_id
            JOIN tmf_geographic_location l ON l.id = s.geographic_location_id
@@ -105,8 +108,8 @@ export function candidatesSql(idPlaceholders: string): string {
 // no primeiro recurso pontual que passar por aqui.
 export const MAP_FEATURE_POINT_INSERT_SQL = `INSERT INTO geo_map_feature
       (tenant_id,tile_z,tile_x,tile_y,entity_id,shape,feature_kind,entity_type,
-       type_code,site_category,status,label,sublabel,lng,lat,geometry,rank)
-     VALUES (?,?,?,?,?,'point',?,?,?,?,?,?,?,?,?,NULL,0)`;
+       type_code,site_category,source_model_type,source_model_id,status,label,sublabel,lng,lat,geometry,rank)
+     VALUES (?,?,?,?,?,'point',?,?,?,?,?,?,?,?,?,?,?,NULL,0)`;
 
 async function insertFeature(
   db: DatabaseExecutor,
@@ -143,6 +146,8 @@ async function insertFeature(
     candidate.entity_type,
     candidate.type_code,
     candidate.site_category,
+    candidate.source_model_type,
+    candidate.source_model_id,
     candidate.status,
     candidate.label,
     candidate.sublabel,

@@ -258,6 +258,71 @@ export const linkProjectResource = (projectId: string, resourceId: string): Prom
 export const unlinkProjectResource = (projectId: string, resourceId: string): Promise<{ detached: boolean }> =>
   deleteJson<{ detached: boolean }>(`${BASE_URL}/${projectId}/resources/${resourceId}`);
 
+export type GeoProjectWorkflowRole = 'inventory.editor' | 'platform.admin';
+export type GeoProjectWorkflowAction =
+  | 'update-project'
+  | 'cascade-sites-planning'
+  | 'cascade-sites-execution'
+  | 'cascade-sites-suspended'
+  | 'release-inventory'
+  | 'terminate-inventory';
+
+export type GeoProjectWorkflowTransition = {
+  id: string;
+  fromStateCodes: string[];
+  toStateCode: string;
+  allowedRoles: GeoProjectWorkflowRole[];
+  actions: GeoProjectWorkflowAction[];
+};
+
+export type GeoProjectWorkflowReadModel = {
+  schemaVersion: 1;
+  workflowId: 'geo-project';
+  initialStateCode: string;
+  states: GeoProjectStatusCatalogItem[];
+  transitions: GeoProjectWorkflowTransition[];
+  publicationChecksum?: string;
+  fallback: boolean;
+};
+
+export type GeoProjectTransitionsResponse = {
+  project: GeoProject;
+  allowedTransitions: GeoProjectWorkflowTransition[];
+  workflow: GeoProjectWorkflowReadModel;
+};
+
+export type GeoProjectTransitionResult = {
+  project: GeoProject;
+  transitionId: string;
+  siteCascade: GeoProjectSiteCascade;
+  resourceCascade: { updated: number; skipped: number };
+};
+
+let workflowRequest: Promise<GeoProjectWorkflowReadModel> | null = null;
+
+export const fetchProjectWorkflow = (): Promise<GeoProjectWorkflowReadModel> => {
+  if (!workflowRequest) {
+    workflowRequest = getJson<GeoProjectWorkflowReadModel>('/v1/geo/project-workflow').finally(() => {
+      workflowRequest = null;
+    });
+  }
+  return workflowRequest;
+};
+
+export const fetchProjectTransitions = (projectId: string): Promise<GeoProjectTransitionsResponse> =>
+  getJson<GeoProjectTransitionsResponse>(`${BASE_URL}/${projectId}/transitions`);
+
+export const transitionProject = (
+  projectId: string,
+  input: { transitionId?: string; targetStateCode?: string },
+): Promise<GeoProjectTransitionResult> =>
+  postJson<GeoProjectTransitionResult>(`${BASE_URL}/${projectId}/transitions`, input);
+
+export const updateProjectMetadata = (
+  id: string,
+  patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl'>>,
+): Promise<GeoProject> => patchJson<GeoProject>(`${BASE_URL}/${id}`, patch);
+
 // Devolve o `projectId` carimbado por `fetchProjectSites`, ou `null` para qualquer outro
 // `GeoTreeNode` (árvore, busca, infra passiva) — usado por GeoPage.selectNodeFromMap para
 // distinguir um pin de projeto de um pin comum sem depender de qual lista o alimentou.

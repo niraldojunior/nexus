@@ -20,6 +20,10 @@ export type MapTileFeature = {
   shape: 'point' | 'line';
   typeCode?: string;
   siteCategory?: string;
+  // Identidade da entidade de catálogo que originou a feature. O cliente a usa para
+  // resolver exclusivamente a configuração publicada no Studio GEO.
+  sourceModelType?: 'GEOGRAPHIC_SITE_SPECIFICATION' | 'RESOURCE_TYPE';
+  sourceModelId?: string;
   status?: string;
   label: string;
   sublabel?: string;
@@ -36,6 +40,8 @@ type MapFeatureRow = {
   shape: 'point' | 'line';
   type_code: string | null;
   site_category: string | null;
+  source_model_type: 'GEOGRAPHIC_SITE_SPECIFICATION' | 'RESOURCE_TYPE' | null;
+  source_model_id: string | null;
   status: string | null;
   label: string;
   sublabel: string | null;
@@ -50,8 +56,8 @@ export class GeoMapTileService {
   public async tile(tile: Tile, options: { tenantId?: string } = {}): Promise<MapTileFeature[]> {
     const tenantId = options.tenantId ?? 'default';
     const rows = await this.db.all<MapFeatureRow>(
-      `SELECT entity_id, feature_kind, entity_type, shape, type_code, site_category, status,
-              label, sublabel, lng, lat, geometry
+      `SELECT entity_id, feature_kind, entity_type, shape, type_code, site_category,
+              source_model_type, source_model_id, status, label, sublabel, lng, lat, geometry
          FROM geo_map_feature
         WHERE tenant_id = ? AND tile_z = ? AND tile_x = ? AND tile_y = ?`,
       [tenantId, tile.z, tile.x, tile.y],
@@ -72,6 +78,8 @@ function toFeature(row: MapFeatureRow): MapTileFeature {
   };
   if (row.type_code) feature.typeCode = row.type_code;
   if (row.site_category) feature.siteCategory = row.site_category;
+  if (row.source_model_type) feature.sourceModelType = row.source_model_type;
+  if (row.source_model_id) feature.sourceModelId = row.source_model_id;
   if (row.status) feature.status = row.status;
   if (row.sublabel) feature.sublabel = row.sublabel;
   if (row.shape === 'line' && row.geometry) {

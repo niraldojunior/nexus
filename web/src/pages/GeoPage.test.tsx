@@ -709,11 +709,14 @@ describe('GoogleMapPanel', () => {
     );
 
     await waitFor(() =>
-      expect(infraOverlayMocks.setData).toHaveBeenCalledWith([feature], {
-        resourceMarkerSize: 30,
-        siteMarkerSize: 25,
-        excludeNodeId: null,
-      }),
+      expect(infraOverlayMocks.setData).toHaveBeenCalledWith(
+        [feature],
+        expect.objectContaining({
+          resourceMarkerSize: 30,
+          siteMarkerSize: 25,
+          excludeNodeId: null,
+        }),
+      ),
     );
 
     // O nó selecionado nunca é desenhado pelo overlay (fica só como Marker real) — trocar a
@@ -741,11 +744,14 @@ describe('GoogleMapPanel', () => {
     );
 
     await waitFor(() =>
-      expect(infraOverlayMocks.setData).toHaveBeenLastCalledWith([feature], {
-        resourceMarkerSize: 30,
-        siteMarkerSize: 25,
-        excludeNodeId: 'resource:r9',
-      }),
+      expect(infraOverlayMocks.setData).toHaveBeenLastCalledWith(
+        [feature],
+        expect.objectContaining({
+          resourceMarkerSize: 30,
+          siteMarkerSize: 25,
+          excludeNodeId: 'resource:r9',
+        }),
+      ),
     );
   });
 

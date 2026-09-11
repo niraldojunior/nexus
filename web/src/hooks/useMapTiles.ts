@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchMapTile, type MapTileFeature } from '../services/geoMapTileApi';
 import { tilesForBounds, tileKey, MAP_TILE_ZOOM } from '../utils/mapTile';
-import { PASSIVE_INFRA_MAX_SCALE_METERS, poleVisibleAtScale } from '../utils/mapScale';
+import { PASSIVE_INFRA_MAX_SCALE_METERS } from '../utils/mapScale';
 import {
   isMapFeatureVisible,
   type MapLayerVisibility,
@@ -23,6 +23,7 @@ import {
 } from '../utils/mapLayers';
 import { MAP_TILES_INVALIDATED_EVENT } from '../utils/mapTileCache';
 import type { MapBounds } from '../services/geoTreeApi';
+import type { StudioGeoCatalog } from '../services/studioGeoApi';
 
 // Cap do cache local: generoso o bastante para um pan longo numa área densa sem crescer sem
 // limite. LRU real (recência bump no hit via reinserção — Map preserva ordem de inserção), não
@@ -62,6 +63,7 @@ export function useMapTiles(
   include: ViewportShape[] | undefined,
   visibility?: MapLayerVisibility,
   roleByCode?: ReadonlyMap<string, MapSiteRole>,
+  catalog?: StudioGeoCatalog,
 ): { data: MapTileFeature[]; loading: boolean } {
   const [data, setData] = useState<MapTileFeature[]>([]);
   const [loading, setLoading] = useState(false);
@@ -101,11 +103,7 @@ export function useMapTiles(
           .map(([layer, visible]) => `${layer}:${visible ? '1' : '0'}`)
           .join(',')
       : include?.join(',') ?? 'all';
-    // Régua de escala do Poste (poleVisibleAtScale) é mais fina que o corte geral acima — sem
-    // isto na chave, cruzar 20 m sem trocar de tile (mesmo z de tile, ver MAP_TILE_ZOOM) não
-    // reaplicaria o filtro sobre o cache já servido.
-    const poleScaleKey = poleVisibleAtScale(scaleMeters ?? null) ? 'poleOn' : 'poleOff';
-    const key = `${tiles.map(tileKey).join(',')}|${visibilityKey}|${poleScaleKey}`;
+    const key = `${tiles.map(tileKey).join(',')}|${visibilityKey}`;
     if (key === lastKeyRef.current) return;
 
     if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
@@ -139,7 +137,7 @@ export function useMapTiles(
               (feature) =>
                 isIncluded(feature, include) &&
                 (visibility
-                  ? isMapFeatureVisible(feature, visibility, roleByCode, scaleMeters)
+                  ? isMapFeatureVisible(feature, visibility, roleByCode, catalog)
                   : true),
             );
           setData(merged);
@@ -155,7 +153,7 @@ export function useMapTiles(
     return () => {
       if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
     };
-  }, [bounds, scaleMeters, include, visibility, roleByCode, cacheRevision]);
+  }, [bounds, scaleMeters, include, visibility, roleByCode, catalog, cacheRevision]);
 
   return { data, loading };
 }

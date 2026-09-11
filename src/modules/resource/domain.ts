@@ -307,15 +307,26 @@ export type ResourceSpecification = {
   tenantId?: string;
 };
 
+export type ResourceFunctionSpecificationRelationship = {
+  id: string;
+  href?: string;
+  name?: string;
+  relationshipType: string;
+  role?: string;
+  validFor?: TimePeriod;
+  '@referredType'?: 'ResourceFunctionSpecification';
+};
+
 export type ResourceFunctionSpecification = {
   '@type': 'ResourceFunctionSpecification';
   id: string;
   href: string;
   name: string;
-  description?: string;
-  validFor?: TimePeriod;
+  description?: string | undefined;
+  validFor?: TimePeriod | undefined;
   resourceFunctionSpecificationCharacteristic: Characteristic[];
-  tenantId?: string;
+  resourceFunctionSpecificationRelationship?: ResourceFunctionSpecificationRelationship[] | undefined;
+  tenantId?: string | undefined;
 };
 
 export type ResourceBase = {
@@ -471,9 +482,10 @@ export type ResourceSpecificationBulkResult = {
 
 export type CreateResourceFunctionSpecificationInput = {
   name: string;
-  description?: string;
-  validFor?: TimePeriod;
-  resourceFunctionSpecificationCharacteristic?: Characteristic[];
+  description?: string | undefined;
+  validFor?: TimePeriod | undefined;
+  resourceFunctionSpecificationCharacteristic?: Characteristic[] | undefined;
+  resourceFunctionSpecificationRelationship?: ResourceFunctionSpecificationRelationship[] | undefined;
 };
 
 export type UpdateResourceFunctionSpecificationInput =

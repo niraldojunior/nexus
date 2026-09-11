@@ -913,18 +913,22 @@ export class OracleResourceRepository implements IResourceRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_resource_function_specification
-       (id, name, description, characteristics, tenant_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+       (id, name, description, characteristics, resource_function_specification_relationship, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
        description = excluded.description,
        characteristics = excluded.characteristics,
+       resource_function_specification_relationship = excluded.resource_function_specification_relationship,
        updated_at = excluded.updated_at`,
       [
         spec.id,
         spec.name,
         spec.description ?? null,
         JSON.stringify(spec.resourceFunctionSpecificationCharacteristic),
+        spec.resourceFunctionSpecificationRelationship
+          ? JSON.stringify(spec.resourceFunctionSpecificationRelationship)
+          : null,
         spec.tenantId ?? 'default',
         now,
         now,
@@ -949,9 +953,10 @@ export class OracleResourceRepository implements IResourceRepository {
       name: string;
       description?: string | null;
       characteristics?: string | null;
+      resource_function_specification_relationship?: string | null;
       tenant_id: string;
     }>(
-      `SELECT id, name, description, characteristics, tenant_id
+      `SELECT id, name, description, characteristics, resource_function_specification_relationship, tenant_id
        FROM tmf_resource_function_specification
        WHERE ${conditions.join(' AND ')}`,
       params,
@@ -978,7 +983,7 @@ export class OracleResourceRepository implements IResourceRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, name, description, characteristics, tenant_id FROM tmf_resource_function_specification',
+      'SELECT id, name, description, characteristics, resource_function_specification_relationship, tenant_id FROM tmf_resource_function_specification',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -1911,6 +1916,7 @@ export class OracleResourceRepository implements IResourceRepository {
     name: string;
     description?: string | null;
     characteristics?: string | null;
+    resource_function_specification_relationship?: string | null;
     tenant_id?: string;
   }): ResourceFunctionSpecification {
     const spec: ResourceFunctionSpecification = {
@@ -1921,6 +1927,13 @@ export class OracleResourceRepository implements IResourceRepository {
       resourceFunctionSpecificationCharacteristic: JSON.parse(
         row.characteristics || '[]',
       ) as ResourceFunctionSpecification['resourceFunctionSpecificationCharacteristic'],
+      ...(row.resource_function_specification_relationship
+        ? {
+            resourceFunctionSpecificationRelationship: JSON.parse(
+              row.resource_function_specification_relationship,
+            ) as ResourceFunctionSpecification['resourceFunctionSpecificationRelationship'],
+          }
+        : {}),
       tenantId: row.tenant_id ?? 'default',
     };
 

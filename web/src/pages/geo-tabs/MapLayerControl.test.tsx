@@ -1,8 +1,42 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MapLayerControl } from './MapLayerControl';
-import { ALL_MAP_LAYERS_VISIBLE } from '../../utils/mapLayers';
+import { ALL_MAP_LAYERS_VISIBLE, MAP_LAYER_CATALOG_FALLBACK } from '../../utils/mapLayers';
+import type { StudioGeoCatalog, StudioGeoPointVisualConfig } from '../../services/studioGeoApi';
+
+// Faixas todas visíveis, exceto a de 50 m — usado para simular uma publicação do Studio GEO
+// que oculta uma entidade numa escala específica, genericamente (qualquer entidade, não só Poste).
+const pointConfigHiddenAt50m: StudioGeoPointVisualConfig = {
+  geometryKind: 'POINT',
+  iconCode: 'legacy.pole',
+  scaleBands: {
+    le5m: { visible: true, sizePx: 18 },
+    le10m: { visible: true, sizePx: 18 },
+    le20m: { visible: true, sizePx: 18 },
+    le50m: { visible: false, sizePx: 18 },
+    le100m: { visible: true, sizePx: 18 },
+    le500m: { visible: true, sizePx: 18 },
+    le1km: { visible: true, sizePx: 18 },
+    gt1km: { visible: true, sizePx: 18 },
+  },
+};
+
+// Catálogo publicado com a restrição de escala aplicada só a `netwinPole`, para provar que o
+// switch de OUTRA entidade (netwinManhole) nunca é afetado — nenhum hardcode por layerId.
+const catalogWithPoleHiddenAt50m: StudioGeoCatalog = {
+  ...MAP_LAYER_CATALOG_FALLBACK,
+  fallback: false,
+  nodes: MAP_LAYER_CATALOG_FALLBACK.nodes.map((node) =>
+    node.id === 'netwinPole' && node.kind === 'ENTITY'
+      ? { ...node, visualConfig: pointConfigHiddenAt50m }
+      : node,
+  ),
+};
+
+beforeEach(() => {
+  window.localStorage.clear();
+});
 
 afterEach(() => {
   cleanup();
@@ -47,7 +81,7 @@ describe('MapLayerControl', () => {
     expect(screen.queryByRole('dialog', { name: 'Camadas do mapa' })).not.toBeInTheDocument();
   });
 
-  it('fecha ao clicar fora', async () => {
+  it('mantém a janela aberta ao interagir com elementos externos (persistente)', async () => {
     const user = userEvent.setup();
     render(
       <div>
@@ -64,7 +98,8 @@ describe('MapLayerControl', () => {
     await user.click(screen.getByRole('button', { name: 'Camadas do mapa' }));
     expect(screen.getByRole('dialog', { name: 'Camadas do mapa' })).toBeInTheDocument();
     await user.click(screen.getByTestId('outside'));
-    expect(screen.queryByRole('dialog', { name: 'Camadas do mapa' })).not.toBeInTheDocument();
+    // Permanece aberto, pois o painel é persistente e só fecha pelo botão X
+    expect(screen.getByRole('dialog', { name: 'Camadas do mapa' })).toBeInTheDocument();
   });
 
   it('emite o id da camada certa ao clicar em um switch de sub-camada', async () => {
@@ -136,14 +171,15 @@ describe('MapLayerControl', () => {
       screen.queryByRole('switch', { name: 'Alternar grupo Cobertura' }),
     ).not.toBeInTheDocument();
     await user.click(screen.getByRole('switch', { name: 'Cobertura GPON' }));
-    expect(onToggleLayer).toHaveBeenCalledWith('coverage');
+    expect(onToggleLayer).toHaveBeenCalledWith('coverage-gpon');
   });
 
-  it('inibe o switch de Postes fora da escala de detalhe (> 20 m), sem mexer nos outros', async () => {
+  it('inibe o switch de uma entidade quando o Studio publica a faixa de escala atual como oculta, sem mexer em outras', async () => {
     const user = userEvent.setup();
     const onToggleLayer = vi.fn();
     render(
       <MapLayerControl
+        catalog={catalogWithPoleHiddenAt50m}
         layers={ALL_MAP_LAYERS_VISIBLE}
         onToggleLayer={onToggleLayer}
         onToggleGroup={vi.fn()}
@@ -160,7 +196,24 @@ describe('MapLayerControl', () => {
     expect(screen.getByRole('switch', { name: 'Caixas Subterrâneas' })).toBeEnabled();
   });
 
-  it('libera o switch de Postes dentro da escala de detalhe (≤ 20 m)', async () => {
+  it('libera o switch fora da faixa de escala marcada oculta no Studio', async () => {
+    const user = userEvent.setup();
+    render(
+      <MapLayerControl
+        catalog={catalogWithPoleHiddenAt50m}
+        layers={ALL_MAP_LAYERS_VISIBLE}
+        onToggleLayer={vi.fn()}
+        onToggleGroup={vi.fn()}
+        onReset={vi.fn()}
+        allVisible
+        scaleMeters={20}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Camadas do mapa' }));
+    expect(screen.getByRole('switch', { name: 'Postes' })).toBeEnabled();
+  });
+
+  it('sem catálogo publicado (fallback, sem visualConfig), nenhum switch é inibido por escala', async () => {
     const user = userEvent.setup();
     render(
       <MapLayerControl
@@ -169,7 +222,7 @@ describe('MapLayerControl', () => {
         onToggleGroup={vi.fn()}
         onReset={vi.fn()}
         allVisible
-        scaleMeters={20}
+        scaleMeters={50}
       />,
     );
     await user.click(screen.getByRole('button', { name: 'Camadas do mapa' }));
@@ -209,5 +262,44 @@ describe('MapLayerControl', () => {
     expect(screen.queryByTitle('Uma ou mais camadas estão desligadas')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Camadas do mapa' }));
     expect(screen.queryByRole('button', { name: 'Restaurar padrão' })).not.toBeInTheDocument();
+  });
+
+  it('inicia aberto se estava aberto no localStorage', () => {
+    window.localStorage.setItem('nexus.geo.mapLayerControl.open', 'true');
+    render(
+      <MapLayerControl
+        layers={ALL_MAP_LAYERS_VISIBLE}
+        onToggleLayer={vi.fn()}
+        onToggleGroup={vi.fn()}
+        onReset={vi.fn()}
+        allVisible
+      />,
+    );
+    expect(screen.getByRole('dialog', { name: 'Camadas do mapa' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Camadas do mapa' })).not.toBeInTheDocument();
+  });
+
+  it('persiste quando um grupo é recolhido e reaberto', async () => {
+    const user = userEvent.setup();
+    render(
+      <MapLayerControl
+        layers={ALL_MAP_LAYERS_VISIBLE}
+        onToggleLayer={vi.fn()}
+        onToggleGroup={vi.fn()}
+        onReset={vi.fn()}
+        allVisible
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Camadas do mapa' }));
+    expect(screen.getByRole('switch', { name: 'Estações' })).toBeInTheDocument();
+
+    // Clica para recolher o grupo Locais
+    await user.click(screen.getByRole('button', { name: 'Recolher Locais' }));
+    expect(screen.queryByRole('switch', { name: 'Estações' })).not.toBeInTheDocument();
+
+    const storedGroups = JSON.parse(
+      window.localStorage.getItem('nexus.geo.mapLayerControl.expandedGroups') ?? '[]',
+    );
+    expect(storedGroups).not.toContain('locations');
   });
 });

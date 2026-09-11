@@ -50,10 +50,9 @@ export type InfraOverlayHandle = {
     features: MapTileFeature[],
     options: {
       // Tamanho em px do pin de Recurso na escala atual (ver resourceIconSizeForScale em
-      // mapScale.ts), ou `null` quando o Recurso não é desenhado nessa escala.
-      resourceMarkerSize: number | null;
-      // Tamanho em px do pin de Central/Estação na escala atual. Os demais Sites seguem a
-      // régua de Resource e não são desenhados acima do corte de infra passiva.
+      // mapScale.ts). A visibilidade é resolvida pelo catálogo publicado do Studio GEO.
+      resourceMarkerSize: number;
+      // Tamanho em px do pin de Central/Estação na escala atual.
       siteMarkerSize: number;
       excludeNodeId: string | null;
       // Papel funcional (siteRole, C11) por code de spec — refina o ícone de Site (CO/POP/CTO)
@@ -84,7 +83,7 @@ export function resourcePointHitCenter(x: number, y: number, size: number): [num
 
 export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOverlayHandle {
   let data: MapTileFeature[] = [];
-  let resourceMarkerSize: number | null = MARKER_ICON_SIZE;
+  let resourceMarkerSize: number = MARKER_ICON_SIZE;
   let siteMarkerSize: number = SITE_ICON_SIZE;
   let excludeNodeId: string | null = null;
   let roleByCode: ReadonlyMap<string, MapSiteRole> | undefined;
@@ -338,6 +337,11 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       });
       const visualConfig = visualConfigFor(feature);
       const lineConfig = visualConfig?.geometryKind === 'LINE' ? visualConfig : undefined;
+      if (
+        lineConfig?.scaleBands[resolveScaleBandKey(scaleMeters)]?.visible === false
+      ) {
+        return;
+      }
       context.strokeStyle = lineConfig?.strokeColor ?? icon.color;
       context.globalAlpha = lineConfig?.opacity ?? 0.9;
       context.lineWidth = lineConfig?.strokeWidth ?? CABLE_STROKE_WEIGHT[icon.code] ?? 2.5;
@@ -365,7 +369,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const visualConfig = visualConfigFor(feature);
       const pointConfig = visualConfig?.geometryKind === 'POINT' ? visualConfig : undefined;
       const scaleConfig = pointConfig?.scaleBands[resolveScaleBandKey(scaleMeters)];
-      if (scaleConfig?.visible === false || resourceMarkerSize === null) return;
+      if (scaleConfig?.visible === false) return;
       const size = scaleConfig?.sizePx ?? resourceMarkerSize;
       const inferredIcon = resourceIconFor({
         resourceType: feature.typeCode ?? '',
@@ -409,7 +413,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const scaleConfig = pointConfig?.scaleBands[resolveScaleBandKey(scaleMeters)];
       const size =
         scaleConfig?.sizePx ?? (inferredKind === 'CO' ? siteMarkerSize : resourceMarkerSize);
-      if (scaleConfig?.visible === false || size === null) return;
+      if (scaleConfig?.visible === false) return;
       const icon = siteIconFor(inferredKind, feature.status);
       const nativeIcon = nativeMapIconForCode(pointConfig?.iconCode);
       const img = pointConfig?.assetId

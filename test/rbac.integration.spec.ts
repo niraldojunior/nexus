@@ -287,12 +287,16 @@ test.skipIf(!oracleConfigured)('V-08: proxy do LLM (chat/completions) aplica rat
   // vários segundos (ida e volta HTTP completa + verificação de JWT), então exercitar o
   // default de produção (20/min) tornaria o teste lento e sensível à janela de 60s expirar
   // no meio da sequência. `llmRateLimitMax`/`llmRateLimitWindowMs` existem só para isso.
+  // O .env local pode conter credenciais remotas; removê-las força o provider local síncrono e
+  // impede que a janela expire durante chamadas externas.
+  const openAiApiKey = process.env.OPENAI_API_KEY;
+  const geminiApiKey = process.env.GEMINI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
   const app = await startApp({ llmRateLimitMax: 3, llmRateLimitWindowMs: 60_000 });
   try {
     const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-    // Sem OPENAI_API_KEY/GEMINI_API_KEY no ambiente de teste, a rota cai no provedor local
-    // (síncrono, sem chamada externa).
     const responses: TestResponse[] = [];
     for (let i = 0; i < 4; i += 1) {
       responses.push(
@@ -309,5 +313,9 @@ test.skipIf(!oracleConfigured)('V-08: proxy do LLM (chat/completions) aplica rat
     assert.equal(limitedCount, 1);
   } finally {
     await app.cleanup();
+    if (openAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = openAiApiKey;
+    if (geminiApiKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = geminiApiKey;
   }
 });

@@ -19,6 +19,9 @@ import {
 
 const withCatalogAdmin = { 'x-roles': 'catalog.admin' };
 const withInventoryReader = { 'x-roles': 'inventory.reader' };
+// Escrita nas rotas de characteristic agora exige draft ativo do domínio 'parties' — ver
+// `StudioService.assertActiveDraft` e o guard em `routePartyRoleTypeCharacteristicRequest`.
+const withCatalogAdminAndStudioEditor = { 'x-roles': 'catalog.admin,studio.editor' };
 
 const oracleConfigured = isOracleTestConfigured();
 if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
@@ -98,6 +101,16 @@ test.skipIf(!oracleConfigured)(
     const server = createApp({ config: createTestConfig(0), logger: createTestLogger() });
     const port = await server.start();
     try {
+      // Escrita exige draft ativo do domínio 'parties' desde o guard de assertActiveDraft.
+      const draftOpened = await requestJson(
+        port,
+        'PUT',
+        '/v1/studio/parties/draft',
+        { snapshot: {} },
+        withCatalogAdminAndStudioEditor,
+      );
+      assert.equal(draftOpened.statusCode, 200);
+
       const invalidType = await requestJson(
         port,
         'POST',

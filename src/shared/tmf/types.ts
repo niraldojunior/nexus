@@ -11,8 +11,15 @@ export type Characteristic = {
   description?: string;
   value: CharacteristicValue;
   valueType?: 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'list' | 'enum' | 'json';
-  /** Opções permitidas quando `valueType === 'list'` ou `'enum'`. */
+  /** Opções permitidas quando `valueType === 'list'` ou `'enum'`, digitadas inline. */
   allowedValues?: string[];
+  /**
+   * Alternativa a `allowedValues` inline: chave estável (não `id`, que muda a cada publish) de um
+   * conjunto publicado em Studio -> Dados de Referência (issue #196). As opções são resolvidas em
+   * runtime contra o catálogo publicado — nunca copiadas para cá. Mutuamente exclusivo com
+   * `allowedValues`; mantido opcional para não quebrar characteristics existentes com lista inline.
+   */
+  referenceDataSetKey?: string;
 };
 
 export type EntityRef = {

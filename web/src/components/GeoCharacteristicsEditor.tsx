@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import type { GeoCharacteristicRow } from '../utils/geoCharacteristicsForm';
+import { listReferenceDataSets, type ReferenceDataSet } from '../services/studioReferenceDataApi';
 
 const VALUE_TYPE_OPTIONS: { value: GeoCharacteristicRow['valueType']; label: string }[] = [
   { value: 'string', label: 'Texto' },
@@ -25,6 +27,16 @@ export default function GeoCharacteristicsEditor({
   onChange: (next: GeoCharacteristicRow[]) => void;
   disabled?: boolean;
 }) {
+  const [referenceDataSets, setReferenceDataSets] = useState<ReferenceDataSet[]>([]);
+
+  // Conjuntos publicados de Dados de Referência — alternativa a digitar as opções da lista
+  // inline; carregados uma vez, independente das linhas atuais.
+  useEffect(() => {
+    void listReferenceDataSets()
+      .then((sets) => setReferenceDataSets(sets.filter((set) => set.active)))
+      .catch(() => setReferenceDataSets([]));
+  }, []);
+
   const updateRow = (key: string, patch: Partial<GeoCharacteristicRow>) => {
     onChange(rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   };
@@ -153,19 +165,45 @@ export default function GeoCharacteristicsEditor({
                       {row.valueType === 'list' ? (
                         disabled ? (
                           <span className="text-app-muted text-[0.78rem]">
-                            {listOptions.length > 0 ? listOptions.join(', ') : '—'}
+                            {row.referenceDataSetKey
+                              ? `Conjunto: ${referenceDataSets.find((set) => set.key === row.referenceDataSetKey)?.name ?? row.referenceDataSetKey}`
+                              : listOptions.length > 0
+                                ? listOptions.join(', ')
+                                : '—'}
                           </span>
                         ) : (
-                          <input
-                            value={row.allowedValuesText ?? ''}
-                            onChange={(event) =>
-                              updateRow(row.key, {
-                                allowedValuesText: event.target.value,
-                              })
-                            }
-                            className="geo-input font-mono text-[0.78rem]"
-                            placeholder="Opção 1, Opção 2, Opção 3..."
-                          />
+                          <div className="grid gap-1">
+                            <select
+                              value={row.referenceDataSetKey ?? ''}
+                              onChange={(event) =>
+                                updateRow(row.key, {
+                                  referenceDataSetKey: event.target.value || null,
+                                  ...(event.target.value ? { allowedValuesText: '', allowedValues: undefined } : {}),
+                                })
+                              }
+                              className="geo-input text-[0.78rem]"
+                              aria-label="Conjunto de referência"
+                            >
+                              <option value="">Opções digitadas manualmente</option>
+                              {referenceDataSets.map((set) => (
+                                <option key={set.key} value={set.key}>
+                                  {set.name}
+                                </option>
+                              ))}
+                            </select>
+                            {!row.referenceDataSetKey && (
+                              <input
+                                value={row.allowedValuesText ?? ''}
+                                onChange={(event) =>
+                                  updateRow(row.key, {
+                                    allowedValuesText: event.target.value,
+                                  })
+                                }
+                                className="geo-input font-mono text-[0.78rem]"
+                                placeholder="Opção 1, Opção 2, Opção 3..."
+                              />
+                            )}
+                          </div>
                         )
                       ) : (
                         <span className="text-app-muted/40 text-[0.78rem]">—</span>

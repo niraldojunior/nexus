@@ -66,6 +66,8 @@ export type ResourceCharacteristic = {
   group?: string;
   description?: string;
   allowedValues?: string[];
+  /** Chave estável de um conjunto publicado em Studio -> Dados de Referência; alternativa a `allowedValues`. */
+  referenceDataSetKey?: string | null;
 };
 
 export type ResourceSpecification = {

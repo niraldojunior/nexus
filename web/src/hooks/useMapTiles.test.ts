@@ -115,7 +115,7 @@ describe('useMapTiles', () => {
     expect(mocks.fetchMapTile).toHaveBeenCalledTimes(1);
   });
 
-  it('na escala limite (≥ PASSIVE_INFRA_MAX_SCALE_METERS) não busca nada e zera os dados', async () => {
+  it('troca de faixa de escala reaplica a filtragem sem um corte global de infraestrutura', async () => {
     mocks.fetchMapTile.mockResolvedValue([feature()]);
     const bounds = freshBounds();
     const { result, rerender } = renderHook(
@@ -129,7 +129,11 @@ describe('useMapTiles', () => {
     expect(result.current.data).toHaveLength(1);
 
     rerender({ scaleMeters: 200 });
-    expect(result.current.data).toEqual([]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(result.current.data).toHaveLength(1);
+    expect(mocks.fetchMapTile).toHaveBeenCalledTimes(1);
   });
 
   it('`include` filtra o resultado no cliente (o endpoint de tile não tem esse parâmetro)', async () => {

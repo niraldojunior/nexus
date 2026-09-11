@@ -27,6 +27,7 @@ import { GeoSearchHistoryRepository } from '../../modules/geo/search-history-rep
 import { GeoProjectRepository } from '../../modules/geo/project-repository.js';
 import { PartyRoleTypeCharacteristicRepository } from '../../modules/party/party-role-type-characteristic-repository.js';
 import { PartyRoleTypeRepository } from '../../modules/party/party-role-type-repository.js';
+import { OracleReferenceDataRepository } from '../../modules/reference-data/oracle-repository.js';
 import { StudioService } from '../../modules/studio/service.js';
 import { OracleStudioRepository } from '../../modules/studio/oracle-repository.js';
 import { ResourceModelStudioAdapter } from '../../modules/studio/adapters/resource-model-adapter.js';
@@ -34,6 +35,8 @@ import { LocationModelStudioAdapter } from '../../modules/studio/adapters/locati
 import { SpatialStudioAdapter } from '../../modules/studio/adapters/spatial-studio-adapter.js';
 import { StudioGeoAdapter, CANONICAL_STUDIO_GEO_SNAPSHOT } from '../../modules/studio/adapters/studio-geo-adapter.js';
 import { RulesWorkflowsStudioAdapter } from '../../modules/studio/adapters/rules-workflows-studio-adapter.js';
+import { PartiesStudioAdapter } from '../../modules/studio/adapters/parties-studio-adapter.js';
+import { ReferenceDataStudioAdapter } from '../../modules/studio/adapters/reference-data-studio-adapter.js';
 import { TemplatesStudioAdapter, CANONICAL_TEMPLATES_SNAPSHOT } from '../../modules/studio/adapters/templates-studio-adapter.js';
 import { CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT } from '../../modules/geo/project-workflow.js';
 import { GeoProjectWorkflowService } from '../../modules/geo/project-workflow-service.js';
@@ -106,6 +109,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   await partyRoleTypeRepository.ensureSupplierSeed(DEFAULT_TENANT_ID);
   const partyRoleTypeCharacteristicRepository = new PartyRoleTypeCharacteristicRepository(db);
   await partyRoleTypeCharacteristicRepository.ensureManufacturerCnpjSeed(DEFAULT_TENANT_ID);
+  const referenceDataRepository = new OracleReferenceDataRepository(db);
   const resourceRepository = new OracleResourceRepository(db);
   await resourceRepository.initialize();
   const resourceService = new ResourceService(resourceRepository, eventService, {
@@ -220,6 +224,10 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   studioService.registerAdapter(new LocationModelStudioAdapter(geoService));
   studioService.registerAdapter(new SpatialStudioAdapter(geoService));
   studioService.registerAdapter(
+    new PartiesStudioAdapter(partyRoleTypeRepository, partyRoleTypeCharacteristicRepository),
+  );
+  studioService.registerAdapter(new ReferenceDataStudioAdapter(referenceDataRepository));
+  studioService.registerAdapter(
     new StudioGeoAdapter(async (tenantId, assetId) => Boolean(await studioAssetRepository.get(tenantId, assetId))),
   );
   studioService.registerAdapter(new RulesWorkflowsStudioAdapter(db));
@@ -285,6 +293,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     partyService,
     partyRoleTypeRepository,
     partyRoleTypeCharacteristicRepository,
+    referenceDataRepository,
     resourceRepository,
     resourceService,
     serviceRepository,

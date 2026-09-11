@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -6,7 +14,6 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
-  Save,
   Search,
   Trash2,
   Undo2,
@@ -48,7 +55,15 @@ type CoverageDraft = {
   geometry: Extract<GeoLocation['geometry'], { type: 'Polygon' }>;
 };
 
-export type SpatialStudioProps = { canEdit: boolean; canAdmin: boolean };
+export type SpatialStudioProps = {
+  canEdit: boolean;
+  canAdmin: boolean;
+  isEditing: boolean;
+  onRegisterCaptureDraft: (capture: (() => Promise<void>) | null) => void;
+  onRegisterCaptureInitialSnapshot: (
+    capture: (() => Promise<Record<string, unknown>>) | null,
+  ) => void;
+};
 
 const isCoverage = (location: GeoLocation): boolean =>
   location.geometryType === 'Polygon' &&
@@ -99,7 +114,12 @@ const coverageCharacteristics = (draft: CoverageDraft) => [
   },
 ];
 
-export function SpatialStudio({ canEdit }: SpatialStudioProps) {
+export function SpatialStudio({
+  canEdit,
+  isEditing,
+  onRegisterCaptureDraft,
+  onRegisterCaptureInitialSnapshot,
+}: SpatialStudioProps) {
   const [locations, setLocations] = useState<GeoLocation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -107,7 +127,6 @@ export function SpatialStudio({ canEdit }: SpatialStudioProps) {
   const [terminating, setTerminating] = useState<GeoLocation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [capturing, setCapturing] = useState(false);
 
   const load = async () => {
     try {
@@ -137,36 +156,37 @@ export function SpatialStudio({ canEdit }: SpatialStudioProps) {
   }, [locations, query]);
   const selected = locations.find((location) => location.id === selectedId) ?? null;
 
-  // Este botão substitui o "Criar draft" genérico da StudioGovernanceBar: aquele grava `{}`,
-  // que o SpatialStudioAdapter rejeita (coverages é obrigatório). Aqui sempre populamos
-  // `coverages` a partir das Locations `_spatial` ativas antes de salvar o draft.
-  const captureDraft = async () => {
-    try {
-      setCapturing(true);
-      setError(null);
+  const captureSnapshot = useCallback(
+    (): Record<string, unknown> => ({
+      coverages: locations
+        .filter((location) => !location.validFor?.endDateTime)
+        .map((location) => ({
+          id: location.id,
+          key: location.referencePoint?.slice(SPATIAL_REFERENCE_PREFIX.length) ?? location.id,
+          name: valueOf(location, 'name'),
+          coverageType: valueOf(location, 'coverageType'),
+          geometry: location.geometry,
+        })),
+    }),
+    [locations],
+  );
+
+  useEffect(() => {
+    const capture = async (): Promise<void> => {
       const status = await getStudioStatus('spatial');
-      await saveStudioDraft(
-        'spatial',
-        {
-          coverages: locations
-            .filter((location) => !location.validFor?.endDateTime)
-            .map((location) => ({
-              id: location.id,
-              key: location.referencePoint?.slice(SPATIAL_REFERENCE_PREFIX.length) ?? location.id,
-              name: valueOf(location, 'name'),
-              coverageType: valueOf(location, 'coverageType'),
-              geometry: location.geometry,
-            })),
-        },
-        status.draftVersion?.checksum,
-      );
-      setSuccess('Snapshot das coberturas manuais salvo como draft de governança.');
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : 'Falha ao salvar draft espacial.');
-    } finally {
-      setCapturing(false);
-    }
-  };
+      await saveStudioDraft('spatial', captureSnapshot(), status.draftVersion?.checksum);
+    };
+    onRegisterCaptureDraft(capture);
+    onRegisterCaptureInitialSnapshot(async () => captureSnapshot());
+    return () => {
+      onRegisterCaptureDraft(null);
+      onRegisterCaptureInitialSnapshot(null);
+    };
+  }, [captureSnapshot, onRegisterCaptureDraft, onRegisterCaptureInitialSnapshot]);
+
+  // As mutations continuam live-write como os demais editores do Studio. O controlador comum
+  // captura este snapshot imediatamente antes de validar/publicar e mantém a baseline ao cancelar.
+  const canMutate = canEdit && isEditing;
 
   const saveCoverage = async (draft: CoverageDraft, editingLocation?: GeoLocation) => {
     const input = {
@@ -210,26 +230,15 @@ export function SpatialStudio({ canEdit }: SpatialStudioProps) {
           </div>
         </div>
         <div className="flex gap-2">
-          {canEdit ? (
-            <>
-              <Button
-                variant="primary"
-                size="sm"
-                iconLeft={<Plus className="h-4 w-4" />}
-                onClick={() => setEditing(null)}
-              >
-                Nova cobertura
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                iconLeft={<Save className="h-4 w-4" />}
-                onClick={() => void captureDraft()}
-                disabled={capturing}
-              >
-                {capturing ? 'Salvando…' : 'Salvar como draft'}
-              </Button>
-            </>
+          {canMutate ? (
+            <Button
+              variant="primary"
+              size="sm"
+              iconLeft={<Plus className="h-4 w-4" />}
+              onClick={() => setEditing(null)}
+            >
+              Nova cobertura
+            </Button>
           ) : null}
           <Button
             variant="ghost"
@@ -260,7 +269,7 @@ export function SpatialStudio({ canEdit }: SpatialStudioProps) {
           </div>
         </aside>
         <section className="vt-card min-h-[520px] p-5">
-          {selected ? <CoverageDetail location={selected} canEdit={canEdit} onEdit={() => setEditing(selected)} onTerminate={() => setTerminating(selected)} /> : <div className="flex h-full flex-col items-center justify-center text-center text-app-muted"><Map className="h-10 w-10 opacity-30" /><p className="mt-3 text-[0.9rem]">Nenhuma cobertura manual selecionada.</p></div>}
+          {selected ? <CoverageDetail location={selected} canEdit={canMutate} onEdit={() => setEditing(selected)} onTerminate={() => setTerminating(selected)} /> : <div className="flex h-full flex-col items-center justify-center text-center text-app-muted"><Map className="h-10 w-10 opacity-30" /><p className="mt-3 text-[0.9rem]">Nenhuma cobertura manual selecionada.</p></div>}
         </section>
       </div>
       {editing !== undefined ? <SpatialCoverageFormModal location={editing ?? undefined} onClose={() => setEditing(undefined)} onSave={saveCoverage} /> : null}

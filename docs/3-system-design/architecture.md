@@ -64,13 +64,13 @@ sem competir com o cumprimento de 3M ordens/mês (padrão _bulkhead_).
 
 A separação atual do código já está correta e **deve ser preservada**:
 
-| Camada     | Onde                                  | Responsabilidade                           |
-| ---------- | ------------------------------------- | ------------------------------------------ |
-| Domínio    | `modules/*/domain.ts`                 | Tipos e regras TMF. Sem I/O.        |
-| Porta      | `modules/*/*-repository-interface.ts` | Contrato de persistência            |
+| Camada     | Onde                                  | Responsabilidade                     |
+| ---------- | ------------------------------------- | ------------------------------------ |
+| Domínio    | `modules/*/domain.ts`                 | Tipos e regras TMF. Sem I/O.         |
+| Porta      | `modules/*/*-repository-interface.ts` | Contrato de persistência             |
 | Adaptador  | `modules/*/oracle-repository.ts`      | SQL Oracle — único adapter existente |
-| Serviço    | `modules/*/service.ts`                | Casos de uso, orquestração, eventos |
-| Transporte | `shared/http`                         | HTTP, TMF Open APIs                 |
+| Serviço    | `modules/*/service.ts`                | Casos de uso, orquestração, eventos  |
+| Transporte | `shared/http`                         | HTTP, TMF Open APIs                  |
 
 Hoje existe **um único adapter, Oracle** (C10) — sem seleção de provider nem tradutor de SQL
 genérico; o SQL é autorado direto em dialeto Oracle. A interface de repositório (`Porta`) continua
@@ -81,9 +81,83 @@ pagou adiantado.
 
 ---
 
-## 4. Modelo de concorrência — a mudança que destrava tudo
+## 4. Studio — control plane de metadados publicado
 
-### 4.1 Restrição removida
+O Studio (issues #191–#201) é o control plane que governa metadado modelado — catálogos, tipos,
+características, cobertura espacial, papéis de party, dados de referência, regras/workflows e
+templates. Ele **não substitui** as camadas de domínio/porta/adaptador/serviço da §3: cada
+`StudioDomain` grava sua própria tabela canônica através do mesmo par porta/adaptador Oracle; o
+Studio adiciona um envelope de versionamento e publicação por cima.
+
+### 4.1 Oito domínios, um kernel de governança
+
+`src/modules/studio/service.ts` implementa um único fluxo — baseline → draft → validate → publish →
+discard — reaplicado a oito `StudioDomain`: `resource-model`, `location-model`, `spatial`,
+`studio-geo`, `parties`, `reference-data`, `rules-workflows`, `templates`. Cada domínio tem um
+adapter (`src/modules/studio/adapters/*.ts`) responsável por capturar o snapshot do estado vivo ao
+abrir um draft e materializá-lo de volta às tabelas canônicas ao publicar — nunca por `DELETE`
+físico (C6): ausências na publicação tornam-se inativas (`administrativeState=locked` ou
+equivalente) e podem ser reativadas por um publish subsequente que as reintroduza.
+
+```text
+GET  /v1/studio/{domain}/status    → workspace + versão publicada + draft aberto (se houver)
+PUT  /v1/studio/{domain}/draft     → abre ou atualiza o draft (snapshot completo)
+POST /v1/studio/{domain}/validate  → valida o draft sem publicar
+POST /v1/studio/{domain}/publish   → materializa o snapshot nas tabelas canônicas
+POST /v1/studio/{domain}/discard   → descarta o draft, restaura a baseline
+GET  /v1/studio/{domain}/audit     → trilha de eventos (draft-created/updated/validated, published, discarded)
+```
+
+### 4.2 Mutação de metadado exige draft ativo
+
+Nem toda escrita de metadado passa pelo envelope `snapshot`/`publish` — características de party e
+conjuntos de dados de referência, por exemplo, gravam direto nas tabelas canônicas (fora do
+envelope, junto de `/v1/geo/project-statuses` e outras rotas de metadado histórico), porque
+publicação/descarte desses domínios seguem operando sobre a mesma tabela via adapter. Para que a
+governança valha mesmo nesses atalhos, toda rota HTTP que muta metadado dos domínios `parties`,
+`spatial` e `reference-data` chama `StudioService.assertActiveDraft(domain, context)` antes de
+gravar — devolve `404 STUDIO_NO_DRAFT` se não houver draft aberto para o tenant. A rota Spatial é
+condicional: `/v1/geo/locations*` também serve inventário Geo comum não-Studio, então o guard só
+dispara quando o registro carrega o prefixo reservado `STUDIO-SPATIAL:` no `referencePoint` (ver
+`isStudioSpatialCoverage` em `spatial-studio-adapter.ts`).
+
+### 4.3 RBAC do Studio
+
+Dois conjuntos de papel, propositalmente distintos:
+
+| Papel                                              | Abrangência                                                       |
+| -------------------------------------------------- | ----------------------------------------------------------------- |
+| `studio.reader` / `studio.editor` / `studio.admin` | Ciclo de vida do envelope Studio (draft/validate/publish/discard) |
+| `catalog.admin`                                    | Mutação direta das tabelas canônicas de catálogo/metadado         |
+| `platform.admin`                                   | Superconjunto — cobre os dois grupos acima                        |
+
+Como os fluxos de Party/Spatial/Reference Data cruzam os dois mundos (abrir draft exige papel
+Studio; gravar characteristic/reference-data exige papel de catálogo), um operador completando o
+ciclo `editar → mutar → publicar` precisa dos dois papéis — ver detalhe de RBAC em
+[`security.md`](security.md) §RBAC.
+
+### 4.4 Reference Data — tenant-scoped, versionado
+
+`src/modules/reference-data/` é um módulo de domínio convencional (não um apêndice do Studio):
+conjuntos e valores com `tenantId`, UUID v7, chave estável e `active`. Characteristics de
+qualquer módulo (Resource, Geo, Party) podem referenciar um conjunto publicado por identidade — a
+referência aponta para o conjunto, não copia seus valores — preservando ao mesmo tempo o contrato
+legado de `allowedValues` inline para specs que nunca migraram.
+
+### 4.5 Visibilidade do mapa é contrato publicado, não corte de escala
+
+A visibilidade de camada no mapa Geo (seletor, `viewportInclude`, fetch de tiles, desenho e
+hit-test) é decidida por `scaleBands` publicado no domínio `studio-geo`, aplicado uniformemente a
+POINT, LINE e POLYGON — nunca por cortes globais fixos de escala (`PASSIVE_INFRA_MAX_SCALE_METERS`
+e similares foram removidos como regra de visibilidade; cálculo de escala/LOD de cobertura
+permanece como otimização de desempenho, não como ocultação). `web/src/utils/mapLayers.ts`
+centraliza essa decisão; nenhum outro ponto do frontend reimplementa a lógica.
+
+---
+
+## 5. Modelo de concorrência — a mudança que destrava tudo
+
+### 5.1 Restrição removida
 
 O antigo bridge síncrono baseado em `Atomics.wait()` foi removido. As interfaces `I*Repository`,
 services, lookups cruzados e transações agora são assíncronos e usam diretamente o pool Oracle.
@@ -91,7 +165,7 @@ services, lookups cruzados e transações agora são assíncronos e usam diretam
 O comportamento anterior serializava requisições. A regressão agora é coberta por teste concorrente
 e o dimensionamento de produção passa a depender do pool e do limite de sessões do Oracle.
 
-### 4.2 A correção
+### 5.2 A correção
 
 ```text
 ANTES   handler → service → repository.get()  ──▶ Atomics.wait  ◀── event loop CONGELADO
@@ -108,7 +182,7 @@ DEPOIS  handler → await service → await repository.get()  ──▶ pool ora
 
 > Esta é a **pré-condição** de todo o resto. Sem ela, HPA multiplica pods sem multiplicar vazão.
 
-### 4.3 Dimensionamento do pool
+### 5.3 Dimensionamento do pool
 
 | Parâmetro         | Valor sugerido | Racional                                          |
 | ----------------- | -------------- | ------------------------------------------------- |
@@ -119,9 +193,9 @@ DEPOIS  handler → await service → await repository.get()  ──▶ pool ora
 
 ---
 
-## 5. Persistência — Oracle
+## 6. Persistência — Oracle
 
-### 5.0 Composição do runtime
+### 6.0 Composição do runtime
 
 O runtime constrói exclusivamente um `OracleDatabase` no boot (`database-factory.ts`) — não há
 seleção de provider. A fábrica entrega um `DatabaseClient`/`DatabaseSession` assíncrono comum, e
@@ -154,7 +228,7 @@ arquiteturais:
 
 ---
 
-## 6. Cache — Redis
+## 7. Cache — Redis
 
 | Uso                                                | Chave                       | TTL    | Invalidação                         |
 | -------------------------------------------------- | --------------------------- | ------ | ----------------------------------- |
@@ -168,11 +242,11 @@ arquiteturais:
 pequeno, quente e muda pouco — é onde o ganho é maior. Alvo: ≥80% de hit em catálogo, ≥60% em
 viabilidade (5M consultas/mês têm forte repetição por endereço).
 
-> ❗ **Redis não é usado para designação.** Ver §8.
+> ❗ **Redis não é usado para designação.** Ver §9.
 
 ---
 
-## 7. Mensageria — Kafka
+## 8. Mensageria — Kafka
 
 ### 7.1 Outbox transacional (C7)
 
@@ -230,7 +304,7 @@ ordem.
 
 ---
 
-## 8. Designação de recurso — o ponto de contenção
+## 9. Designação de recurso — o ponto de contenção
 
 Designar é alocar recurso **escasso** (porta de splitter, fibra) sob concorrência. Com 3M ordens/mês
 haverá disputa pela mesma porta, e alocar a mesma porta duas vezes é falha de campo.
@@ -256,7 +330,7 @@ pedidos simultâneos recebem **portas diferentes**, não erro.
 
 ---
 
-## 9. API Gateway — Apigee
+## 10. API Gateway — Apigee
 
 | Política                  | Função                                                      |
 | ------------------------- | ----------------------------------------------------------- |
@@ -271,7 +345,7 @@ como filtro obrigatório — ver [`security.md`](security.md).
 
 ---
 
-## 10. OpenShift
+## 11. OpenShift
 
 | Aspecto     | Definição                                                                          |
 | ----------- | ---------------------------------------------------------------------------------- |
@@ -284,7 +358,7 @@ como filtro obrigatório — ver [`security.md`](security.md).
 
 ---
 
-## 11. Migração a partir do laboratório
+## 12. Migração a partir do laboratório
 
 | #   | Etapa                                            | Depende de   |
 | --- | ------------------------------------------------ | ------------ |
@@ -302,7 +376,7 @@ A etapa 1 não depende de nada e destrava todas as outras — é por onde começ
 
 ---
 
-## 12. Referências
+## 13. Referências
 
 | Onde                                                                 | O quê                                     |
 | -------------------------------------------------------------------- | ----------------------------------------- |

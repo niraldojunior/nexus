@@ -60,6 +60,8 @@ export const TABLE_NAMES = [
   'studio_version',
   'studio_audit_log',
   'studio_asset',
+  'reference_data_set',
+  'reference_data_value',
 ] as const;
 
 // Column migrations added after the base schema so databases created before these columns get
@@ -1836,6 +1838,50 @@ const MIGRATIONS_SQL_V12_GEO_MAP_FEATURE_SOURCE_MODEL = `
   ALTER TABLE geo_map_feature ADD COLUMN IF NOT EXISTS source_model_id TEXT;
 `;
 
+// Reference Data (domínio 'reference-data' do Studio, issue #196): conjuntos e valores
+// versionados e tenant-scoped, governados via draft/publish. Nunca DELETE físico (C6) — um
+// valor/conjunto ausente na publicação vira `active = 0`, nunca some da tabela.
+const MIGRATIONS_SQL_V13_REFERENCE_DATA = `
+  CREATE TABLE IF NOT EXISTS reference_data_set (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    set_key TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, set_key)
+  );
+  CREATE INDEX IF NOT EXISTS idx_reference_data_set_tenant_active
+    ON reference_data_set(tenant_id, active, name, set_key);
+
+  CREATE TABLE IF NOT EXISTS reference_data_value (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    set_id TEXT NOT NULL,
+    value_key TEXT NOT NULL,
+    label TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 100,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, set_id, value_key)
+  );
+  CREATE INDEX IF NOT EXISTS idx_reference_data_value_set_active
+    ON reference_data_value(tenant_id, set_id, active, sort_order, value_key);
+`;
+
+// Liga uma characteristic de Party a um conjunto publicado de Reference Data (issue #196) sem
+// remover `allowed_values` — as duas formas coexistem: characteristics legadas continuam com
+// opções inline; characteristics novas podem referenciar um conjunto pela `set_key` (estável,
+// sobrevive a republish, diferente de `id` que é trocado a cada materialize). Guardamos a chave,
+// nunca uma cópia dos valores: a lista de opções é resolvida em runtime contra o catálogo
+// publicado, então editar o conjunto no Studio reflete automaticamente em quem o referencia.
+const MIGRATIONS_SQL_V14_PARTY_CHARACTERISTIC_REFERENCE_DATA = `
+  ALTER TABLE party_role_type_characteristic ADD COLUMN IF NOT EXISTS reference_data_set_key TEXT;
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -1876,6 +1922,12 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 12,
     name: 'geo-map-feature-source-model',
     sql: MIGRATIONS_SQL_V12_GEO_MAP_FEATURE_SOURCE_MODEL,
+  },
+  { version: 13, name: 'reference-data', sql: MIGRATIONS_SQL_V13_REFERENCE_DATA },
+  {
+    version: 14,
+    name: 'party-characteristic-reference-data',
+    sql: MIGRATIONS_SQL_V14_PARTY_CHARACTERISTIC_REFERENCE_DATA,
   },
 ];
 

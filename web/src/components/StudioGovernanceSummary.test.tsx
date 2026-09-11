@@ -69,7 +69,7 @@ describe('StudioGovernanceSummary', () => {
     render(<StudioGovernanceSummary domain="resource-model" canEdit={true} canAdmin={true} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/v3 publicado/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/v3 publicado/i)[0]).toBeInTheDocument();
     });
 
     const editBtn = screen.getByRole('button', { name: /editar/i });
@@ -104,7 +104,7 @@ describe('StudioGovernanceSummary', () => {
     render(<StudioGovernanceSummary domain="resource-model" canEdit={true} canAdmin={true} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/draft v4/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/draft v4/i)[0]).toBeInTheDocument();
     });
 
     const publishBtn = screen.getByRole('button', { name: /publicar/i });
@@ -138,7 +138,7 @@ describe('StudioGovernanceSummary', () => {
     render(<StudioGovernanceSummary domain="resource-model" canEdit={true} canAdmin={true} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/draft v4/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/draft v4/i)[0]).toBeInTheDocument();
     });
 
     const publishBtn = screen.getByRole('button', { name: /publicar/i });
@@ -173,7 +173,7 @@ describe('StudioGovernanceSummary', () => {
     render(<StudioGovernanceSummary domain="resource-model" canEdit={true} canAdmin={true} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/draft v4/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/draft v4/i)[0]).toBeInTheDocument();
     });
 
     const cancelBtn = screen.getByRole('button', { name: /cancelar/i });
@@ -190,7 +190,7 @@ describe('StudioGovernanceSummary', () => {
     render(<StudioGovernanceSummary domain="resource-model" canEdit={true} canAdmin={false} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/draft v4/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/draft v4/i)[0]).toBeInTheDocument();
     });
 
     expect(screen.queryByRole('button', { name: /publicar/i })).not.toBeInTheDocument();

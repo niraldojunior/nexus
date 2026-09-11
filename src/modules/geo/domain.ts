@@ -39,6 +39,8 @@ export type Characteristic = {
   value: string | number | boolean | Record<string, unknown> | null;
   valueType?: CharacteristicValueType;
   allowedValues?: string[];
+  /** Chave estável de um conjunto publicado em Studio -> Dados de Referência; ver shared/tmf/types.ts. */
+  referenceDataSetKey?: string;
 };
 
 export type GeoSiteStatus = 'Planned' | 'InConstruction' | 'Active' | 'InDeactivation' | 'Retired';
@@ -279,6 +281,8 @@ export type GeographicSiteSpecificationCharacteristic = {
   defaultValue?: Characteristic['value'];
   regex?: string;
   allowedValues?: Array<string | number | boolean>;
+  /** Chave estável de um conjunto publicado em Studio -> Dados de Referência; ver shared/tmf/types.ts. */
+  referenceDataSetKey?: string;
   min?: number;
   max?: number;
   lookup?: string;

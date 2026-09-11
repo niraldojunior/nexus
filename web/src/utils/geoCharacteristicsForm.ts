@@ -26,10 +26,15 @@ export type GeoCharacteristicRow = {
   valueType: CharacteristicValueType;
   valueText: string;
   mandatory: boolean;
-  /** Valores permitidos da lista (quando `valueType === 'list'`). */
+  /** Valores permitidos da lista (quando `valueType === 'list'`), digitados inline. */
   allowedValues?: string[];
   /** Texto livre separado por vírgula para edição dos valores da lista. */
   allowedValuesText?: string;
+  /**
+   * Alternativa a `allowedValues`: chave de um conjunto publicado em Studio -> Dados de
+   * Referência. Mutuamente exclusivo com `allowedValues`.
+   */
+  referenceDataSetKey?: string | null;
 };
 
 let rowKeySeq = 0;
@@ -61,7 +66,9 @@ export function geoCharacteristicRowsFrom(
   return (characteristics ?? []).map((characteristic) => {
     const valueType =
       (characteristic.valueType as CharacteristicValueType) || inferValueType(characteristic.defaultValue);
-    const allowedValues = (characteristic as { allowedValues?: string[] }).allowedValues;
+    // A API tipa `allowedValues` como `Array<string | number | boolean>` (specs legadas podiam
+    // guardar número/boolean), mas a linha do formulário só edita texto — cada opção vira string.
+    const allowedValues = characteristic.allowedValues?.map((value) => String(value));
     return {
       key: nextRowKey(),
       name: characteristic.name,
@@ -72,6 +79,7 @@ export function geoCharacteristicRowsFrom(
       mandatory: Boolean(characteristic.mandatory),
       allowedValues,
       allowedValuesText: allowedValues ? allowedValues.join(', ') : '',
+      referenceDataSetKey: characteristic.referenceDataSetKey ?? null,
     };
   });
 }
@@ -109,9 +117,13 @@ export function buildGeoCharacteristicPayload(rows: GeoCharacteristicRow[]): Geo
   return rows
     .filter((row) => row.name.trim().length > 0)
     .map((row) => {
+      // Lista tem opções inline OU por referência a um conjunto de Dados de Referência, nunca as
+      // duas — a referência tem prioridade quando ambas chegam preenchidas do formulário.
+      const referenceDataSetKey =
+        row.valueType === 'list' && row.referenceDataSetKey ? row.referenceDataSetKey : undefined;
       const allowedValues =
-        row.valueType === 'list'
-          ? parseAllowedValues(row.allowedValuesText) ?? row.allowedValues
+        row.valueType === 'list' && !referenceDataSetKey
+          ? (parseAllowedValues(row.allowedValuesText) ?? row.allowedValues)
           : undefined;
       return {
         name: row.name.trim(),
@@ -121,6 +133,7 @@ export function buildGeoCharacteristicPayload(rows: GeoCharacteristicRow[]): Geo
         ...(row.description?.trim() ? { description: row.description.trim() } : {}),
         ...(row.group?.trim() ? { group: row.group.trim() } : {}),
         ...(allowedValues && allowedValues.length > 0 ? { allowedValues } : {}),
+        ...(referenceDataSetKey ? { referenceDataSetKey } : {}),
       };
     });
 }

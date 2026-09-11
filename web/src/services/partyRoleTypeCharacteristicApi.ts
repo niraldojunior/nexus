@@ -1,8 +1,8 @@
 // Catálogo de características por "tipo de party" (Studio -> Partes, issue #220). Não é entidade
-// TMF — vive fora de partyApi.ts (que fala com /tmf-api/partyManagement e /partyRoleManagement) e
-// não passa pelo fluxo de draft/publish do Studio (/v1/studio/*): o domínio 'parties' só tem o
-// adapter no-op, então persiste direto contra /v1/party-role-types/*, como
-// geoProjectApi.ts faz com /v1/geo/project-statuses.
+// TMF — vive fora de partyApi.ts (que fala com /tmf-api/partyManagement e /partyRoleManagement).
+// O CRUD direto (/v1/party-role-types/*) segue existindo para o editor mutar dentro de um draft
+// ativo; a publicação/descarte em si passa pelo PartiesStudioAdapter (/v1/studio/*), que diffa este
+// catálogo contra o snapshot publicado — ver PartyModelStudio.tsx.
 
 import { getJson, postJson, patchJson, deleteJson } from './geoApi';
 
@@ -24,6 +24,8 @@ export type PartyRoleTypeCharacteristic = {
   description: string | null;
   valueType: PartyRoleTypeCharacteristicValueType;
   allowedValues: string[] | null;
+  /** Chave estável de um conjunto publicado em Studio -> Dados de Referência; alternativa a `allowedValues`. */
+  referenceDataSetKey: string | null;
   sortOrder: number;
   active: boolean;
   createdAt: string;
@@ -36,6 +38,7 @@ export type CreatePartyRoleTypeCharacteristicInput = {
   description?: string | null;
   valueType: PartyRoleTypeCharacteristicValueType;
   allowedValues?: string[] | null;
+  referenceDataSetKey?: string | null;
   sortOrder?: number;
 };
 

@@ -54,6 +54,10 @@ import {
   type StudioGeoCatalog,
 } from '../../modules/studio/adapters/studio-geo-adapter.js';
 import {
+  isStudioSpatialCoverage,
+  SPATIAL_REFERENCE_PREFIX,
+} from '../../modules/studio/adapters/spatial-studio-adapter.js';
+import {
   StudioTemplateImportPlanner,
   type ComputePlanInput,
 } from '../../modules/studio/template-import-planner.js';
@@ -815,6 +819,16 @@ const routeRequest = async ({
     return;
   }
 
+  if (url.pathname === '/v1/reference-data/sets' || /^\/v1\/reference-data\/sets\/[^/]+$/.test(url.pathname)) {
+    await routeReferenceDataSetRequest({ request, response, config, runtime, url });
+    return;
+  }
+
+  if (url.pathname.startsWith('/v1/reference-data/sets/')) {
+    await routeReferenceDataValueRequest({ request, response, config, runtime, url });
+    return;
+  }
+
   if (url.pathname.startsWith('/v1/research/')) {
     const llmToolCatalog = buildLlmToolCatalog(mcpModule);
     await routeResearchRequest({
@@ -1183,6 +1197,7 @@ const routePartyRoleTypeRequest = async ({
     }
     if (request.method === 'POST') {
       requireRoles(context, CATALOG_ADMIN_ROLES);
+      await runtime.studioService.assertActiveDraft('parties', context);
       const input = parsePartyRoleTypeInput(await readBody(request));
       const conflict = await runtime.partyRoleTypeRepository.findByKeyOrRoleName(
         context.tenantId,
@@ -1202,6 +1217,7 @@ const routePartyRoleTypeRequest = async ({
   const itemMatch = url.pathname.match(/^\/v1\/party-role-types\/([^/]+)$/);
   if (itemMatch?.[1] && (request.method === 'PATCH' || request.method === 'DELETE')) {
     requireRoles(context, CATALOG_ADMIN_ROLES);
+    await runtime.studioService.assertActiveDraft('parties', context);
     const id = decodeURIComponent(itemMatch[1]);
     const current = await runtime.partyRoleTypeRepository.get(context.tenantId, id);
     if (!current) {
@@ -1237,10 +1253,12 @@ const routePartyRoleTypeRequest = async ({
 
 // Catálogo de características por "tipo de party" (Studio -> Partes, issue #220). Fora do
 // namespace /tmf-api porque não é entidade TMF (é metadado de modelagem, como
-// /v1/geo/project-statuses) e fora de /v1/studio/ porque não passa pelo fluxo de
-// draft/publish do StudioService — o domínio 'parties' só tem o adapter no-op, então
-// publicação nunca completaria de verdade. Escrita usa CATALOG_ADMIN_ROLES (mesmo papel das
-// rotas de edição de catálogo de Recurso/Servico); leitura usa INVENTORY_READ_ROLES.
+// /v1/geo/project-statuses) e fora de /v1/studio/ porque a mutação grava direto na tabela
+// canônica (fora do envelope de snapshot draft/publish) — a governança do domínio 'parties'
+// entra via `assertActiveDraft`, que exige um draft aberto antes de qualquer escrita aqui,
+// e a publicação/descarte seguem passando por /v1/studio/parties via `PartiesStudioAdapter`.
+// Escrita usa CATALOG_ADMIN_ROLES (mesmo papel das rotas de edição de catálogo de
+// Recurso/Servico); leitura usa INVENTORY_READ_ROLES.
 const PARTY_ROLE_TYPE_CHARACTERISTIC_VALUE_TYPES = new Set<PartyRoleTypeCharacteristicValueType>([
   'string',
   'integer',
@@ -1255,9 +1273,11 @@ const parsePartyRoleTypeCharacteristicPayload = (
   body: Record<string, unknown>,
   currentValueType?: PartyRoleTypeCharacteristicValueType,
   currentAllowedValues?: string[] | null,
+  currentReferenceDataSetKey?: string | null,
 ): {
   valueType: PartyRoleTypeCharacteristicValueType;
   allowedValues: string[] | null;
+  referenceDataSetKey: string | null;
 } => {
   const requestedValueType =
     body.valueType === undefined ? currentValueType : String(body.valueType).trim();
@@ -1274,7 +1294,19 @@ const parsePartyRoleTypeCharacteristicPayload = (
   }
 
   const valueType = requestedValueType as PartyRoleTypeCharacteristicValueType;
-  if (valueType !== 'list') return { valueType, allowedValues: null };
+  if (valueType !== 'list') return { valueType, allowedValues: null, referenceDataSetKey: null };
+
+  // Opções da lista vêm de uma das duas formas — inline (`allowedValues`) ou por referência a um
+  // conjunto publicado do Studio -> Dados de Referência (`referenceDataSetKey`) — nunca as duas.
+  const referenceDataSetKey =
+    body.referenceDataSetKey === undefined
+      ? (currentReferenceDataSetKey ?? null)
+      : body.referenceDataSetKey
+        ? String(body.referenceDataSetKey).trim()
+        : null;
+  if (referenceDataSetKey) {
+    return { valueType, allowedValues: null, referenceDataSetKey };
+  }
 
   const allowedValues =
     body.allowedValues === undefined
@@ -1283,12 +1315,12 @@ const parsePartyRoleTypeCharacteristicPayload = (
         ? body.allowedValues.map((value) => String(value).trim()).filter(Boolean)
         : [];
   if (allowedValues.length === 0) {
-    throw new AppError('list characteristic requires allowedValues', {
+    throw new AppError('list characteristic requires allowedValues or referenceDataSetKey', {
       code: 'PARTY_ROLE_TYPE_CHARACTERISTIC_INVALID',
       statusCode: 400,
     });
   }
-  return { valueType, allowedValues };
+  return { valueType, allowedValues, referenceDataSetKey: null };
 };
 
 const routePartyRoleTypeCharacteristicRequest = async ({
@@ -1320,6 +1352,7 @@ const routePartyRoleTypeCharacteristicRequest = async ({
     }
     if (request.method === 'POST') {
       requireRoles(context, CATALOG_ADMIN_ROLES);
+      await runtime.studioService.assertActiveDraft('parties', context);
       const body = await readBody(request);
       const name = String(body.name ?? '').trim();
       if (!name || body.valueType === undefined) {
@@ -1328,7 +1361,8 @@ const routePartyRoleTypeCharacteristicRequest = async ({
           statusCode: 400,
         });
       }
-      const { valueType, allowedValues } = parsePartyRoleTypeCharacteristicPayload(body);
+      const { valueType, allowedValues, referenceDataSetKey } =
+        parsePartyRoleTypeCharacteristicPayload(body);
       return sendJson(
         response,
         201,
@@ -1338,6 +1372,7 @@ const routePartyRoleTypeCharacteristicRequest = async ({
           group: body.group ? String(body.group) : null,
           description: body.description ? String(body.description) : null,
           allowedValues,
+          referenceDataSetKey,
           ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}),
         }),
       );
@@ -1352,6 +1387,7 @@ const routePartyRoleTypeCharacteristicRequest = async ({
     const id = decodeURIComponent(itemMatch[2]);
     if (request.method === 'PATCH' || request.method === 'DELETE') {
       requireRoles(context, CATALOG_ADMIN_ROLES);
+      await runtime.studioService.assertActiveDraft('parties', context);
       const body = request.method === 'PATCH' ? await readBody(request) : {};
       const current = await runtime.partyRoleTypeCharacteristicRepository.get(context.tenantId, id);
       if (!current || current.roleName !== roleName) {
@@ -1362,7 +1398,12 @@ const routePartyRoleTypeCharacteristicRequest = async ({
       }
       const payload =
         request.method === 'PATCH'
-          ? parsePartyRoleTypeCharacteristicPayload(body, current.valueType, current.allowedValues)
+          ? parsePartyRoleTypeCharacteristicPayload(
+              body,
+              current.valueType,
+              current.allowedValues,
+              current.referenceDataSetKey,
+            )
           : undefined;
       const updated =
         request.method === 'DELETE'
@@ -1375,12 +1416,193 @@ const routePartyRoleTypeCharacteristicRequest = async ({
                 : {}),
               valueType: payload!.valueType,
               allowedValues: payload!.allowedValues,
+              referenceDataSetKey: payload!.referenceDataSetKey,
               ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}),
               ...(body.active !== undefined ? { active: Boolean(body.active) } : {}),
             });
       if (!updated) {
         throw new AppError('party role type characteristic not found', {
           code: 'PARTY_ROLE_TYPE_CHARACTERISTIC_NOT_FOUND',
+          statusCode: 404,
+        });
+      }
+      return sendJson(response, 200, updated);
+    }
+  }
+
+  throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
+};
+
+// Conjuntos e valores de Reference Data (Studio -> Dados de Referência, issue #196). Fora de
+// /tmf-api porque não é entidade TMF (metadado de plataforma, como /v1/party-role-types); leitura
+// usa INVENTORY_READ_ROLES, escrita usa CATALOG_ADMIN_ROLES. A mutação direta serve o editor do
+// Studio dentro de um draft — a publicação passa pelo ReferenceDataStudioAdapter via
+// /v1/studio/reference-data.
+const parseReferenceDataSetInput = (
+  body: Record<string, unknown>,
+): { key: string; name: string; description: string | null } => {
+  const key = String(body.key ?? '').trim();
+  const name = String(body.name ?? '').trim();
+  const description = body.description ? String(body.description).trim() : null;
+  if (!key || !name) {
+    throw new AppError('reference data set key and name are required', {
+      code: 'REFERENCE_DATA_SET_INVALID',
+      statusCode: 400,
+    });
+  }
+  if (!/^[a-z][a-z0-9-]*$/.test(key)) {
+    throw new AppError('reference data set key must be a lowercase identifier', {
+      code: 'REFERENCE_DATA_SET_INVALID',
+      statusCode: 400,
+    });
+  }
+  return { key, name, description };
+};
+
+const routeReferenceDataSetRequest = async ({
+  request,
+  response,
+  config,
+  runtime,
+  url,
+}: {
+  request: IncomingMessage;
+  response: ServerResponse;
+  config: AppConfig;
+  runtime: NexusRuntime;
+  url: URL;
+}): Promise<void> => {
+  const context = await buildRequestContext(request, config);
+  if (url.pathname === '/v1/reference-data/sets') {
+    if (request.method === 'GET') {
+      requireRoles(context, INVENTORY_READ_ROLES);
+      return sendJson(response, 200, await runtime.referenceDataRepository.listSets(context.tenantId));
+    }
+    if (request.method === 'POST') {
+      requireRoles(context, CATALOG_ADMIN_ROLES);
+      await runtime.studioService.assertActiveDraft('reference-data', context);
+      const input = parseReferenceDataSetInput(await readBody(request));
+      const conflict = await runtime.referenceDataRepository.getSetByKey(context.tenantId, input.key);
+      if (conflict) {
+        throw new AppError('reference data set key already exists', {
+          code: 'REFERENCE_DATA_SET_CONFLICT',
+          statusCode: 409,
+        });
+      }
+      return sendJson(response, 201, await runtime.referenceDataRepository.createSet(context.tenantId, input));
+    }
+  }
+
+  const itemMatch = url.pathname.match(/^\/v1\/reference-data\/sets\/([^/]+)$/);
+  if (itemMatch?.[1] && (request.method === 'PATCH' || request.method === 'DELETE')) {
+    requireRoles(context, CATALOG_ADMIN_ROLES);
+    await runtime.studioService.assertActiveDraft('reference-data', context);
+    const id = decodeURIComponent(itemMatch[1]);
+    const current = await runtime.referenceDataRepository.getSet(context.tenantId, id);
+    if (!current) {
+      throw new AppError('reference data set not found', {
+        code: 'REFERENCE_DATA_SET_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    if (request.method === 'DELETE') {
+      return sendJson(response, 200, await runtime.referenceDataRepository.deactivateSet(context.tenantId, id));
+    }
+    const input = parseReferenceDataSetInput(await readBody(request));
+    if (input.key !== current.key) {
+      const conflict = await runtime.referenceDataRepository.getSetByKey(context.tenantId, input.key);
+      if (conflict && conflict.id !== current.id) {
+        throw new AppError('reference data set key already exists', {
+          code: 'REFERENCE_DATA_SET_CONFLICT',
+          statusCode: 409,
+        });
+      }
+    }
+    return sendJson(response, 200, await runtime.referenceDataRepository.updateSet(context.tenantId, id, input));
+  }
+
+  throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
+};
+
+const parseReferenceDataValueInput = (
+  body: Record<string, unknown>,
+): { key: string; label: string; sortOrder?: number } => {
+  const key = String(body.key ?? '').trim();
+  const label = String(body.label ?? '').trim();
+  if (!key || !label) {
+    throw new AppError('reference data value key and label are required', {
+      code: 'REFERENCE_DATA_VALUE_INVALID',
+      statusCode: 400,
+    });
+  }
+  return { key, label, ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}) };
+};
+
+const routeReferenceDataValueRequest = async ({
+  request,
+  response,
+  config,
+  runtime,
+  url,
+}: {
+  request: IncomingMessage;
+  response: ServerResponse;
+  config: AppConfig;
+  runtime: NexusRuntime;
+  url: URL;
+}): Promise<void> => {
+  const context = await buildRequestContext(request, config);
+  const collectionMatch = url.pathname.match(/^\/v1\/reference-data\/sets\/([^/]+)\/values$/);
+  if (collectionMatch?.[1]) {
+    const setId = decodeURIComponent(collectionMatch[1]);
+    const set = await runtime.referenceDataRepository.getSet(context.tenantId, setId);
+    if (!set) {
+      throw new AppError('reference data set not found', {
+        code: 'REFERENCE_DATA_SET_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    if (request.method === 'GET') {
+      requireRoles(context, INVENTORY_READ_ROLES);
+      return sendJson(response, 200, await runtime.referenceDataRepository.listValues(context.tenantId, setId));
+    }
+    if (request.method === 'POST') {
+      requireRoles(context, CATALOG_ADMIN_ROLES);
+      await runtime.studioService.assertActiveDraft('reference-data', context);
+      const input = parseReferenceDataValueInput(await readBody(request));
+      return sendJson(
+        response,
+        201,
+        await runtime.referenceDataRepository.createValue(context.tenantId, setId, input),
+      );
+    }
+  }
+
+  const itemMatch = url.pathname.match(/^\/v1\/reference-data\/sets\/([^/]+)\/values\/([^/]+)$/);
+  if (itemMatch?.[1] && itemMatch?.[2]) {
+    const setId = decodeURIComponent(itemMatch[1]);
+    const id = decodeURIComponent(itemMatch[2]);
+    if (request.method === 'PATCH' || request.method === 'DELETE') {
+      requireRoles(context, CATALOG_ADMIN_ROLES);
+      await runtime.studioService.assertActiveDraft('reference-data', context);
+      const current = await runtime.referenceDataRepository.getValue(context.tenantId, id);
+      if (!current || current.setId !== setId) {
+        throw new AppError('reference data value not found', {
+          code: 'REFERENCE_DATA_VALUE_NOT_FOUND',
+          statusCode: 404,
+        });
+      }
+      const updated =
+        request.method === 'DELETE'
+          ? await runtime.referenceDataRepository.deactivateValue(context.tenantId, id)
+          : await runtime.referenceDataRepository.updateValue(
+              context.tenantId,
+              id,
+              parseReferenceDataValueInput(await readBody(request)),
+            );
+      if (!updated) {
+        throw new AppError('reference data value not found', {
+          code: 'REFERENCE_DATA_VALUE_NOT_FOUND',
           statusCode: 404,
         });
       }
@@ -2826,22 +3048,32 @@ const routeGeoRequest = async ({
       }
       return sendJson(response, 200, locations);
     }
-    if (!route.id && request.method === 'POST')
-      return sendJson(
-        response,
-        201,
-        geoService.createLocation(
-          (await readBody(request)) as Parameters<typeof geoService.createLocation>[0],
-          geoContext,
-        ),
-      );
+    if (!route.id && request.method === 'POST') {
+      const body = (await readBody(request)) as Parameters<typeof geoService.createLocation>[0];
+      // Guarda condicional: estas rotas também servem inventário Geo comum (não-Studio); só
+      // coberturas Spatial do Studio (marcadas por `referencePoint` com o prefixo reservado)
+      // exigem papel de catálogo e draft ativo antes de criar.
+      if (
+        typeof (body as { referencePoint?: unknown }).referencePoint === 'string' &&
+        (body as { referencePoint: string }).referencePoint.startsWith(SPATIAL_REFERENCE_PREFIX)
+      ) {
+        requireRoles(geoContext, CATALOG_ADMIN_ROLES);
+        await runtime.studioService.assertActiveDraft('spatial', geoContext);
+      }
+      return sendJson(response, 201, geoService.createLocation(body, geoContext));
+    }
     if (route.id && request.method === 'GET')
       return sendJsonOrNotFound(
         response,
         geoService.getLocation(route.id, geoContext),
         'GEO_LOCATION_NOT_FOUND',
       );
-    if (route.id && request.method === 'PATCH')
+    if (route.id && request.method === 'PATCH') {
+      const current = await geoService.getLocation(route.id, geoContext);
+      if (current && isStudioSpatialCoverage(current)) {
+        requireRoles(geoContext, CATALOG_ADMIN_ROLES);
+        await runtime.studioService.assertActiveDraft('spatial', geoContext);
+      }
       return sendJson(
         response,
         200,
@@ -2851,8 +3083,15 @@ const routeGeoRequest = async ({
           geoContext,
         ),
       );
-    if (route.id && request.method === 'DELETE')
+    }
+    if (route.id && request.method === 'DELETE') {
+      const current = await geoService.getLocation(route.id, geoContext);
+      if (current && isStudioSpatialCoverage(current)) {
+        requireRoles(geoContext, CATALOG_ADMIN_ROLES);
+        await runtime.studioService.assertActiveDraft('spatial', geoContext);
+      }
       return sendJson(response, 200, geoService.terminateLocation(route.id, geoContext));
+    }
   }
 
   if (route.resource === 'addresses') {

@@ -13,7 +13,13 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const serverPath = resolve(__dirname, '../dist/src/modules/mcp/stdio-server.js');
-const RESPONSE_TIMEOUT_MS = 15_000;
+// `DATABASE_AUTO_SCHEMA=true` (setado abaixo) faz o processo filho reconciliar o schema inteiro
+// contra o Oracle real antes de responder ao primeiro `initialize` — com o crescimento do schema
+// pelos domínios do Studio (issue #191, workspace/version/audit/asset + Reference Data), essa
+// reconciliação foi medida entre ~28s e ~100s sobre a instância de rede usada nos testes,
+// variando com a carga concorrente do host. 15s estourava de forma consistente, não por
+// flakiness pontual. 100s dá margem sob o `testTimeout` global de 120s (vitest.oracle.config.ts).
+const RESPONSE_TIMEOUT_MS = 100_000;
 
 // Skips unless ORACLE_* is configured, no mesmo padrão dos demais specs Oracle-backed.
 const oracleConfigured = isOracleTestConfigured();

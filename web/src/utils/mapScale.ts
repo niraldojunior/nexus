@@ -1,8 +1,7 @@
 // Escala do mapa em metros, no mesmo espírito da barra de escala nativa do Google Maps
 // (`scaleControl: true`, ver GeoPage.tsx): calcula metros por pixel a partir de
-// zoom+latitude e arredonda para o maior valor "redondo" (1/2/5 × 10^n) que caberia na
-// barra. É o número usado para decidir se a infra passiva aparece no mapa — ver
-// PASSIVE_INFRA_MAX_SCALE_METERS.
+// zoom+latitude e arredonda para o maior valor "redondo" (1/2/5 × 10^n) que caberia na barra.
+// A escala é entrada do catálogo Studio GEO; ela não decide a visibilidade operacional.
 
 // Metros por pixel no equador em zoom 0 (constante de projeção Web Mercator do Google Maps).
 const EARTH_METERS_PER_PIXEL_AT_ZOOM_0 = 156543.03392;
@@ -12,17 +11,6 @@ const EARTH_METERS_PER_PIXEL_AT_ZOOM_0 = 156543.03392;
 // exato da barra do Google, então esta constante quase nunca entra em jogo; ~64 px é a
 // melhor estimativa da barra real do Google (100 px arredondava um passo acima).
 const SCALE_BAR_MAX_PX = 64;
-
-// A partir deste valor, a infra passiva (recursos + cabos + Sites não-CO) some do mapa. Ficam
-// apenas a camada de cobertura GPON (ver COVERAGE_MIN_SCALE_METERS) e as Estações.
-export const PASSIVE_INFRA_MAX_SCALE_METERS = 200;
-
-// Cobertura GPON (mapa de calor por bairro/município/estado) só entra ACIMA desta escala
-// (exclusive) — nada de mancha em ≤ 100 m, onde a planta individual (postes, caixas, cabos)
-// já é legível e a mancha só atrapalharia a leitura. Entre 100 e 200 m a mancha e os ícones
-// reduzidos de Recurso coexistem (ver resourceIconSizeForScale) — é a faixa de transição entre
-// as duas camadas; a partir de 200 m só a cobertura resta (ver PASSIVE_INFRA_MAX_SCALE_METERS).
-export const COVERAGE_MIN_SCALE_METERS = 100;
 
 // LOD da cobertura por escala (REQ-MOD01-014): polígono de bairro até aqui, de município até
 // COVERAGE_CITY_MAX_SCALE_METERS e de estado acima disso. Em zoom aberto um bairro é sub-pixel
@@ -34,10 +22,6 @@ export const COVERAGE_CITY_MAX_SCALE_METERS = 10_000;
 
 export type CoverageLevel = 'neighborhood' | 'city' | 'uf';
 
-// Cobertura visível? Só ACIMA de 100 m — em 100 m ou abaixo, some.
-export const coverageVisibleAtScale = (scaleMeters: number | null): boolean =>
-  scaleMeters !== null && scaleMeters > COVERAGE_MIN_SCALE_METERS;
-
 // Nível de cobertura a pedir ao servidor para a escala atual (ver
 // GeoCoverageService.areaIndexLevel): bairro em zoom de detalhe, município em escala
 // intermediária, estado (e país) em zoom bem aberto.
@@ -47,11 +31,11 @@ export function coverageLevelForScale(scaleMeters: number): CoverageLevel {
   return 'uf';
 }
 
-// Zoom da densidade agregada da planta (Fase 4, issue #69) — a camada que entra quando a
-// feature individual sai, acima de PASSIVE_INFRA_MAX_SCALE_METERS. Espelha `densityZoomForScale`
-// do backend (src/modules/geo/map-density.ts) e reusa os MESMOS degraus da cobertura GPON, para
-// a troca de nível coincidir com um degrau que o usuário já percebe. Precisa bater com os níveis
-// que scripts/build-map-density.mjs gerou — pedir um zoom não gerado devolve 400.
+// Zoom da densidade agregada da planta (Fase 4, issue #69). A escolha do nível é uma
+// otimização de payload e não controla a visibilidade das entidades individuais: isso pertence
+// exclusivamente ao catálogo publicado do Studio GEO. Espelha `densityZoomForScale` do backend
+// (src/modules/geo/map-density.ts) e reusa os mesmos degraus da cobertura GPON. Precisa bater
+// com os níveis que scripts/build-map-density.mjs gerou — pedir um zoom não gerado devolve 400.
 export type MapDensityZoom = 13 | 10 | 7;
 
 export function densityZoomForScale(scaleMeters: number): MapDensityZoom {
@@ -73,13 +57,10 @@ export function siteIconSizeForScale(scaleMeters: number | null): number {
   return 25;
 }
 
-// Tamanho do pin de Recurso (caixa/splitter) no mapa, em px, pela escala atual — ou `null`
-// a partir de 200 m, quando ele não é mais desenhado (mesmo corte de PASSIVE_INFRA_MAX_SCALE_METERS,
-// que já governa se o dado é buscado). Note que o `null` de retorno é redundante com esse corte
-// externo — existe só pra função ser correta mesmo se chamada fora dele.
-export function resourceIconSizeForScale(scaleMeters: number | null): number | null {
+// Tamanho do pin de Recurso (caixa/splitter) no mapa, em px, pela escala atual. Nunca é
+// autoridade de visibilidade: a exibição é governada pela faixa publicada no Studio GEO.
+export function resourceIconSizeForScale(scaleMeters: number | null): number {
   if (scaleMeters === null) return 30;
-  if (scaleMeters >= PASSIVE_INFRA_MAX_SCALE_METERS) return null;
   if (scaleMeters >= 100) return 10;
   if (scaleMeters >= 50) return 15;
   if (scaleMeters >= 20) return 20;

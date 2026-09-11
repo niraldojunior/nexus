@@ -35,13 +35,13 @@ export type MapLayerControlProps = {
   scaleMeters?: number | null;
 };
 
-// Genérico: qualquer entidade de geometria POINT pode ter faixas de escala ocultas no Studio
-// GEO (visualConfig.scaleBands). Quando a faixa correspondente à escala atual está marcada
-// `visible: false` no catálogo publicado, o switch fica inibido — sem regra fixa por tipo.
+// Genérico: qualquer geometria pode ter faixas de escala ocultas no Studio GEO. Quando a
+// faixa correspondente está marcada `visible: false` no catálogo publicado, o switch fica
+// inibido — sem regra fixa por tipo, origem ou forma.
 function disabledHint(node: MapLayerTreeNode, scaleMeters: number | null | undefined): string | null {
   if (node.kind !== 'ENTITY') return null;
   const config = node.visualConfig;
-  if (!config || config.geometryKind !== 'POINT') return null;
+  if (!config) return null;
   if (scaleMeters === undefined || scaleMeters === null) return null;
   const band = config.scaleBands[resolveScaleBandKey(scaleMeters)];
   if (band?.visible !== false) return null;

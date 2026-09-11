@@ -51,17 +51,17 @@ _referencia_ geografia via `place`. Nenhum contém o outro.
 
 ## 4. Módulos e estado real
 
-| #   | Módulo                    | Responde                                | Open APIs              | Estado                                                                                                                                                                                                                                                   |
-| --- | ------------------------- | --------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **Geographic**            | Onde                                    | TMF673, TMF674, TMF675 | ⚠️ Base implementada; aderência parcial ao HLD 1.24 (inclui Cobertura GPON por bairro, consulta inversa/aba Cobertura por Resource, Projetos de Trabalho com Resources e o Painel Unificado de Local)                                                    |
+| #   | Módulo                    | Responde                                | Open APIs              | Estado                                                                                                                                                                                                                                                                                                                                                                    |
+| --- | ------------------------- | --------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Geographic**            | Onde                                    | TMF673, TMF674, TMF675 | ⚠️ Base implementada; aderência parcial ao HLD 1.24 (inclui Cobertura GPON por bairro, consulta inversa/aba Cobertura por Resource, Projetos de Trabalho com Resources e o Painel Unificado de Local)                                                                                                                                                                     |
 | 2   | **Resource**              | O que existe                            | TMF634, TMF639, TMF664 | ⚠️ Base implementada; aderência ao HLD 1.12 (inclui catálogo em árvore dinâmica `ResourceCatalog`/`ResourceCatalogNode`, tipos desacoplados `ResourceType`, `ResourceSpecification` via FK `resourceTypeId`, detalhe agregado, Audit Trail, catálogo de estados granulares, portas de splitter no piloto Niterói/Icaraí e conexões físicas Porta→CaboDrop com faróis SID) |
-| 3   | **Service**               | Para quê / quem                         | TMF633, TMF638         | ⚠️ Base implementada; aderência parcial ao HLD 1.4                                                                                                                                                                                                       |
-| 4   | **Order & Fulfillment**   | Viabilidade e provisionamento           | TMF641, TMF645, TMF652 | ✅ Implementado                                                                                                                                                                                                                                          |
-| 5   | **Process Orchestration** | Fluxo de processo                       | TMF701                 | 📐 Previsto                                                                                                                                                                                                                                              |
-| 6   | **Party & Tenant**        | Quem é quem                             | TMF632, TMF669         | ✅ Implementado                                                                                                                                                                                                                                          |
-| 7   | **Analytics & Events**    | Eventos e documentos                    | TMF688, TMF724         | ⚠️ TMF688 ativo; TMF724 previsto                                                                                                                                                                                                                         |
-| —   | **Search / Copilot**      | Consulta em linguagem natural           | —                      | ✅ Implementado                                                                                                                                                                                                                                          |
-| —   | **MCP**                   | Exposição das APIs TMF a clientes de IA | —                      | ✅ Implementado                                                                                                                                                                                                                                          |
+| 3   | **Service**               | Para quê / quem                         | TMF633, TMF638         | ⚠️ Base implementada; aderência parcial ao HLD 1.4                                                                                                                                                                                                                                                                                                                        |
+| 4   | **Order & Fulfillment**   | Viabilidade e provisionamento           | TMF641, TMF645, TMF652 | ✅ Implementado                                                                                                                                                                                                                                                                                                                                                           |
+| 5   | **Process Orchestration** | Fluxo de processo                       | TMF701                 | 📐 Previsto                                                                                                                                                                                                                                                                                                                                                               |
+| 6   | **Party & Tenant**        | Quem é quem                             | TMF632, TMF669         | ✅ Implementado                                                                                                                                                                                                                                                                                                                                                           |
+| 7   | **Analytics & Events**    | Eventos e documentos                    | TMF688, TMF724         | ⚠️ TMF688 ativo; TMF724 previsto                                                                                                                                                                                                                                                                                                                                          |
+| —   | **Search / Copilot**      | Consulta em linguagem natural           | —                      | ✅ Implementado                                                                                                                                                                                                                                                                                                                                                           |
+| —   | **MCP**                   | Exposição das APIs TMF a clientes de IA | —                      | ✅ Implementado                                                                                                                                                                                                                                                                                                                                                           |
 
 Legenda: ✅ contrato entregue · ⚠️ base executável com gaps rastreados · 📐 previsto no design.
 
@@ -85,19 +85,21 @@ Autenticação por bearer token em tudo exceto `/health`. Detalhe operacional no
 
 Frontend React + Vite, com navegação lateral persistente:
 
-| Item                              | Conteúdo                                                    |
-| --------------------------------- | ----------------------------------------------------------- |
-| **Nova Conversa** / **Conversas** | Nexus Copilot — consulta ao inventário em linguagem natural |
-| **Locais**                        | Módulo Geo: árvore de hierarquia, mapa e detalhe de sites   |
-| **Recursos**                      | Inventário físico e lógico, com catálogo de especificações  |
-| **Serviços**                      | CFS/RFS e suas amarrações                                   |
-| **Ordens**                        | Viabilidade e ordens de serviço/recurso                     |
-| **Studio**                         | Control plane de metadados, versões e publicações governadas |
+| Item                              | Conteúdo                                                     |
+| --------------------------------- | ------------------------------------------------------------ |
+| **Nova Conversa** / **Conversas** | Nexus Copilot — consulta ao inventário em linguagem natural  |
+| **Locais**                        | Módulo Geo: árvore de hierarquia, mapa e detalhe de sites    |
+| **Recursos**                      | Inventário físico e lógico, com catálogo de especificações   |
+| **Serviços**                      | CFS/RFS e suas amarrações                                    |
+| **Ordens**                        | Viabilidade e ordens de serviço/recurso                      |
+| **Studio**                        | Control plane de metadados, versões e publicações governadas |
 
-O Studio fica separado de **Configuração**, que continua destinada à gestão de TI. A fundação de
-navegação e RBAC está em entrega pela issue [#192](https://github.com/niraldojunior/nexus/issues/192);
-os editores passam a ser habilitados por domínio apenas quando seus contratos draft/published estiverem
-prontos.
+O Studio fica separado de **Configuração**, que continua destinada à gestão de TI. Os oito
+`StudioDomain` (Recursos, Locais, Camadas, Mapa, Partes, Dados de referência, Regras e workflows,
+Templates) participam do mesmo ciclo de governança — baseline → draft → validate → publish →
+discard, com trilha de auditoria e descarte lógico (C6) — descrito em
+[`architecture.md`](../3-system-design/architecture.md) §4. A seção **Governança** da navegação do
+Studio resume o estado de publicação e a última auditoria dos oito domínios em uma única tela.
 
 O módulo Geo preserva a semântica TMF673/674/675 na interface: o Site **referencia** Address e
 Location, não os embute.
@@ -106,12 +108,12 @@ Location, não os embute.
 
 ## 7. Stack atual
 
-| Camada   | Tecnologia                                                                                  |
-| -------- | -------------------------------------------------------------------------------------------- |
-| Backend  | Node 22+ · TypeScript (ESM) · HTTP nativo                                                    |
-| Frontend | React 18 · Vite · Tailwind                                                                   |
-| Banco    | Oracle Thin (`node-oracledb`), único provider                                                |
-| Execução | Somente local — sem Vercel, Docker ou CI/CD                                                  |
+| Camada   | Tecnologia                                    |
+| -------- | --------------------------------------------- |
+| Backend  | Node 22+ · TypeScript (ESM) · HTTP nativo     |
+| Frontend | React 18 · Vite · Tailwind                    |
+| Banco    | Oracle Thin (`node-oracledb`), único provider |
+| Execução | Somente local — sem Vercel, Docker ou CI/CD   |
 
 > O cânone **C10** define Oracle como alvo corporativo homologado e único banco suportado. O produto
 > roda exclusivamente localmente nesta etapa, sem hospedagem remota.

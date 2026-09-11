@@ -3,8 +3,8 @@
 // do mapa, issue #69). Substitui useViewportInfra no caminho quente do mapa: aquele hook só
 // deduplicava o que estava *em voo* por bbox arredondado (nunca repete num pan contínuo); este
 // cacheia o RESULTADO por tile (z:x:y fixo em MAP_TILE_ZOOM), então panning dentro do mesmo
-// conjunto de tiles fica com ZERO ida ao servidor. Some acima de
-// PASSIVE_INFRA_MAX_SCALE_METERS (200 m), mesma régua de sempre.
+// conjunto de tiles fica com ZERO ida ao servidor. As shapes buscadas são determinadas pelo
+// catálogo publicado do Studio GEO e pela preferência da pessoa usuária na faixa atual.
 //
 // O endpoint de tile (GET /v1/geo/map/tile) não tem `include` — é leitura pura por PK, sem
 // filtro. O que o controle de camadas do mapa (RF-011) liga/desliga (Sites, Caixas, Cabos)
@@ -14,7 +14,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchMapTile, type MapTileFeature } from '../services/geoMapTileApi';
 import { tilesForBounds, tileKey, MAP_TILE_ZOOM } from '../utils/mapTile';
-import { PASSIVE_INFRA_MAX_SCALE_METERS } from '../utils/mapScale';
 import {
   isMapFeatureVisible,
   type MapLayerVisibility,
@@ -83,11 +82,10 @@ export function useMapTiles(
   }, []);
 
   useEffect(() => {
-    const outOfScale =
-      scaleMeters === null || scaleMeters >= PASSIVE_INFRA_MAX_SCALE_METERS || !bounds;
-    // `include` array vazio = todas as camadas de infra desligadas: nada a buscar.
-    const nothingRequested = Array.isArray(include) && include.length === 0;
-    if (outOfScale || nothingRequested) {
+    // `include` vazio significa que não há nenhuma shape publicada, habilitada pelo usuário e
+    // visível na faixa atual. A escala por si só nunca decide se a infraestrutura será buscada.
+    const nothingRequested = !bounds || (Array.isArray(include) && include.length === 0);
+    if (nothingRequested) {
       if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
       lastKeyRef.current = null;
       setData([]);
@@ -103,7 +101,7 @@ export function useMapTiles(
           .map(([layer, visible]) => `${layer}:${visible ? '1' : '0'}`)
           .join(',')
       : include?.join(',') ?? 'all';
-    const key = `${tiles.map(tileKey).join(',')}|${visibilityKey}`;
+    const key = `${tiles.map(tileKey).join(',')}|${visibilityKey}|${scaleMeters ?? 'unknown'}`;
     if (key === lastKeyRef.current) return;
 
     if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
@@ -137,7 +135,7 @@ export function useMapTiles(
               (feature) =>
                 isIncluded(feature, include) &&
                 (visibility
-                  ? isMapFeatureVisible(feature, visibility, roleByCode, catalog)
+                  ? isMapFeatureVisible(feature, visibility, roleByCode, catalog, scaleMeters)
                   : true),
             );
           setData(merged);

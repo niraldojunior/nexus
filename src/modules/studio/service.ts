@@ -76,6 +76,21 @@ export class StudioService {
     };
   }
 
+  /**
+   * Guarda usada pelas rotas HTTP de metadado que ainda mutam a tabela canônica diretamente em vez
+   * de passar por `saveDraft` (Party role types/characteristics, Reference Data, coberturas
+   * Spatial) — bloqueia a escrita quando o domínio/tenant não tem draft aberto no Studio, a mesma
+   * regra que os editores React já impõem no cliente (abrir "Editar" -> draft -> salvar ->
+   * publicar). Usa `getStatus`, que é leitura pura (não persiste workspace), então pode ser chamada
+   * em qualquer handler sem efeito colateral.
+   */
+  public async assertActiveDraft(domain: StudioDomain, context: RequestContext): Promise<void> {
+    const status = await this.getStatus(domain, context);
+    if (!status.workspace.draftVersionId) {
+      throw new AppError('no draft to act on', { code: 'STUDIO_NO_DRAFT', statusCode: 404 });
+    }
+  }
+
   /** Leitura interna do snapshot publicado para read-models operacionais; nunca expõe draft. */
   public async getPublishedVersion(
     domain: StudioDomain,

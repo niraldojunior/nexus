@@ -25,10 +25,15 @@ export type ResourceCharacteristicRow = {
   description?: string;
   valueType: CharacteristicValueType;
   valueText: string;
-  /** Valores permitidos da lista (quando `valueType === 'list'`). */
+  /** Valores permitidos da lista (quando `valueType === 'list'`), digitados inline. */
   allowedValues?: string[];
   /** Texto livre separado por vírgula para edição dos valores da lista. */
   allowedValuesText?: string;
+  /**
+   * Alternativa a `allowedValues`: chave de um conjunto publicado em Studio -> Dados de
+   * Referência. Mutuamente exclusivo com `allowedValues` — ver Characteristic em shared/tmf/types.ts.
+   */
+  referenceDataSetKey?: string | null;
 };
 
 let rowKeySeq = 0;
@@ -70,6 +75,7 @@ export function resourceCharacteristicRowsFrom(
       valueText: valueToText(characteristic.value, valueType),
       allowedValues,
       allowedValuesText: allowedValues ? allowedValues.join(', ') : '',
+      referenceDataSetKey: characteristic.referenceDataSetKey ?? null,
     };
   });
 }
@@ -109,6 +115,7 @@ export function specCharacteristicRowsFromType(
       valueText: valueToText(source.value, valueType),
       allowedValues,
       allowedValuesText: allowedValues ? allowedValues.join(', ') : '',
+      referenceDataSetKey: source.referenceDataSetKey ?? typeChar.referenceDataSetKey ?? null,
     };
   });
 
@@ -125,6 +132,7 @@ export function specCharacteristicRowsFromType(
         valueText: valueToText(c.value, valueType),
         allowedValues: c.allowedValues,
         allowedValuesText: c.allowedValues ? c.allowedValues.join(', ') : '',
+        referenceDataSetKey: c.referenceDataSetKey ?? null,
       };
     });
 
@@ -164,9 +172,13 @@ export function buildCharacteristicPayload(rows: ResourceCharacteristicRow[]): R
   return rows
     .filter((row) => row.name.trim().length > 0)
     .map((row) => {
+      // Lista tem opções inline OU por referência a um conjunto de Dados de Referência, nunca as
+      // duas — a referência tem prioridade quando ambas chegam preenchidas do formulário.
+      const referenceDataSetKey =
+        row.valueType === 'list' && row.referenceDataSetKey ? row.referenceDataSetKey : undefined;
       const allowedValues =
-        row.valueType === 'list'
-          ? parseAllowedValues(row.allowedValuesText) ?? row.allowedValues
+        row.valueType === 'list' && !referenceDataSetKey
+          ? (parseAllowedValues(row.allowedValuesText) ?? row.allowedValues)
           : undefined;
       return {
         name: row.name.trim(),
@@ -175,6 +187,7 @@ export function buildCharacteristicPayload(rows: ResourceCharacteristicRow[]): R
         ...(row.description?.trim() ? { description: row.description.trim() } : {}),
         ...(row.group?.trim() ? { group: row.group.trim() } : {}),
         ...(allowedValues && allowedValues.length > 0 ? { allowedValues } : {}),
+        ...(referenceDataSetKey ? { referenceDataSetKey } : {}),
       };
     });
 }

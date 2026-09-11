@@ -26,6 +26,8 @@ export type PartyRoleTypeCharacteristic = {
   description: string | null;
   valueType: PartyRoleTypeCharacteristicValueType;
   allowedValues: string[] | null;
+  /** Chave estável de um conjunto publicado em Studio -> Dados de Referência; alternativa a `allowedValues`. */
+  referenceDataSetKey: string | null;
   sortOrder: number;
   active: boolean;
   createdAt: string;
@@ -38,6 +40,7 @@ export type CreatePartyRoleTypeCharacteristicInput = {
   description?: string | null;
   valueType: PartyRoleTypeCharacteristicValueType;
   allowedValues?: string[] | null;
+  referenceDataSetKey?: string | null;
   sortOrder?: number;
 };
 
@@ -47,6 +50,7 @@ export type UpdatePartyRoleTypeCharacteristicInput = {
   description?: string | null;
   valueType?: PartyRoleTypeCharacteristicValueType;
   allowedValues?: string[] | null;
+  referenceDataSetKey?: string | null;
   sortOrder?: number;
   active?: boolean;
 };
@@ -60,6 +64,7 @@ type CharacteristicRow = {
   description: string | null;
   valueType: PartyRoleTypeCharacteristicValueType;
   allowedValues: string | null;
+  referenceDataSetKey: string | null;
   sortOrder: number;
   active: unknown;
   createdAt: string;
@@ -69,7 +74,8 @@ type CharacteristicRow = {
 const CHARACTERISTIC_SELECT = `
   SELECT id, tenant_id AS tenantId, role_name AS roleName, name,
          characteristic_group AS "group", description, value_type AS valueType,
-         allowed_values AS allowedValues, sort_order AS sortOrder,
+         allowed_values AS allowedValues, reference_data_set_key AS referenceDataSetKey,
+         sort_order AS sortOrder,
          CASE WHEN active = 1 THEN 1 ELSE 0 END AS active,
          created_at AS createdAt, updated_at AS updatedAt
     FROM party_role_type_characteristic`;
@@ -78,6 +84,7 @@ const toCharacteristic = (row: CharacteristicRow): PartyRoleTypeCharacteristic =
   ...row,
   active: Number(row.active) === 1,
   allowedValues: row.allowedValues ? (JSON.parse(row.allowedValues) as string[]) : null,
+  referenceDataSetKey: row.referenceDataSetKey ?? null,
 });
 
 // Não é um "IPartyRepository" — sem classe Oracle separada (padrão GeoProjectRepository): SQL
@@ -111,8 +118,8 @@ export class PartyRoleTypeCharacteristicRepository {
     await this.db.run(
       `INSERT INTO party_role_type_characteristic
           (id, tenant_id, role_name, name, characteristic_group, description, value_type,
-           allowed_values, sort_order, active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           allowed_values, reference_data_set_key, sort_order, active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         tenantId,
@@ -122,6 +129,7 @@ export class PartyRoleTypeCharacteristicRepository {
         input.description ?? null,
         input.valueType,
         input.allowedValues ? JSON.stringify(input.allowedValues) : null,
+        input.referenceDataSetKey ?? null,
         input.sortOrder ?? 100,
         1,
         now,
@@ -140,10 +148,12 @@ export class PartyRoleTypeCharacteristicRepository {
     if (!current) return null;
     const nextAllowedValues =
       patch.allowedValues !== undefined ? patch.allowedValues : current.allowedValues;
+    const nextReferenceDataSetKey =
+      patch.referenceDataSetKey !== undefined ? patch.referenceDataSetKey : current.referenceDataSetKey;
     await this.db.run(
       `UPDATE party_role_type_characteristic
           SET name = ?, characteristic_group = ?, description = ?, value_type = ?,
-              allowed_values = ?, sort_order = ?, active = ?, updated_at = ?
+              allowed_values = ?, reference_data_set_key = ?, sort_order = ?, active = ?, updated_at = ?
         WHERE tenant_id = ? AND id = ?`,
       [
         patch.name ?? current.name,
@@ -151,6 +161,7 @@ export class PartyRoleTypeCharacteristicRepository {
         patch.description !== undefined ? patch.description : current.description,
         patch.valueType ?? current.valueType,
         nextAllowedValues ? JSON.stringify(nextAllowedValues) : null,
+        nextReferenceDataSetKey ?? null,
         patch.sortOrder ?? current.sortOrder,
         (patch.active ?? current.active) ? 1 : 0,
         new Date().toISOString(),

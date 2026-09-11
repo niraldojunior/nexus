@@ -12,6 +12,7 @@ import {
   type PartyRoleTypeCharacteristic,
   type PartyRoleTypeCharacteristicValueType,
 } from '../../../services/partyRoleTypeCharacteristicApi';
+import { listReferenceDataSets, type ReferenceDataSet } from '../../../services/studioReferenceDataApi';
 import { Button } from '../../../components/ui';
 
 export type PartyCharacteristicCatalogEditorProps = {
@@ -35,6 +36,8 @@ type EditingRow = {
   description: string;
   valueType: PartyRoleTypeCharacteristicValueType;
   allowedValues: string;
+  /** Chave de um conjunto publicado em Studio -> Dados de Referência; '' = opções digitadas inline. */
+  referenceDataSetKey: string;
 };
 
 const emptyRow = (): EditingRow => ({
@@ -43,6 +46,7 @@ const emptyRow = (): EditingRow => ({
   description: '',
   valueType: 'string',
   allowedValues: '',
+  referenceDataSetKey: '',
 });
 
 export function PartyCharacteristicCatalogEditor({
@@ -52,6 +56,7 @@ export function PartyCharacteristicCatalogEditor({
   const [rows, setRows] = useState<PartyRoleTypeCharacteristic[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [referenceDataSets, setReferenceDataSets] = useState<ReferenceDataSet[]>([]);
 
   // Edição inline: qual id está sendo editado (null = nenhum, 'new' = criando)
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -71,6 +76,14 @@ export function PartyCharacteristicCatalogEditor({
     reload();
   }, [roleName]);
 
+  // Conjuntos publicados de Dados de Referência — carregados uma vez (não dependem do roleName)
+  // para popular o seletor "Conjunto de referência", alternativa a digitar valores inline.
+  useEffect(() => {
+    void listReferenceDataSets()
+      .then((sets) => setReferenceDataSets(sets.filter((set) => set.active)))
+      .catch(() => setReferenceDataSets([]));
+  }, []);
+
   const startCreate = () => {
     setEditingId('new');
     setEditDraft(emptyRow());
@@ -85,6 +98,7 @@ export function PartyCharacteristicCatalogEditor({
       description: item.description ?? '',
       valueType: item.valueType,
       allowedValues: item.allowedValues ? item.allowedValues.join(', ') : '',
+      referenceDataSetKey: item.referenceDataSetKey ?? '',
     });
     setError(null);
   };
@@ -107,7 +121,7 @@ export function PartyCharacteristicCatalogEditor({
     setEditDraft((current) => ({
       ...current,
       valueType,
-      ...(valueType === 'list' ? {} : { allowedValues: '' }),
+      ...(valueType === 'list' ? {} : { allowedValues: '', referenceDataSetKey: '' }),
     }));
   };
 
@@ -116,10 +130,16 @@ export function PartyCharacteristicCatalogEditor({
       setError('O nome da característica é obrigatório.');
       return;
     }
+    // Lista tem opções inline OU por referência a um conjunto de Dados de Referência, nunca as
+    // duas — a referência tem prioridade quando ambas chegam preenchidas do formulário.
+    const referenceDataSetKey =
+      editDraft.valueType === 'list' && editDraft.referenceDataSetKey ? editDraft.referenceDataSetKey : null;
     const allowedValues =
-      editDraft.valueType === 'list' ? parseAllowedValues(editDraft.allowedValues) : null;
-    if (editDraft.valueType === 'list' && !allowedValues?.length) {
-      setError('Características do tipo Lista exigem ao menos um valor permitido.');
+      editDraft.valueType === 'list' && !referenceDataSetKey
+        ? parseAllowedValues(editDraft.allowedValues)
+        : null;
+    if (editDraft.valueType === 'list' && !referenceDataSetKey && !allowedValues?.length) {
+      setError('Características do tipo Lista exigem valores permitidos ou um conjunto de referência.');
       return;
     }
     setSaving(true);
@@ -132,6 +152,7 @@ export function PartyCharacteristicCatalogEditor({
           description: editDraft.description.trim() || null,
           valueType: editDraft.valueType,
           allowedValues,
+          referenceDataSetKey,
         });
       } else if (editingId) {
         await updatePartyRoleTypeCharacteristic(roleName, editingId, {
@@ -140,6 +161,7 @@ export function PartyCharacteristicCatalogEditor({
           description: editDraft.description.trim() || null,
           valueType: editDraft.valueType,
           allowedValues,
+          referenceDataSetKey,
         });
       }
       setEditingId(null);
@@ -255,14 +277,37 @@ export function PartyCharacteristicCatalogEditor({
                     </td>
                     <td>
                       {editDraft.valueType === 'list' ? (
-                        <input
-                          value={editDraft.allowedValues}
-                          onChange={(e) =>
-                            setEditDraft({ ...editDraft, allowedValues: e.target.value })
-                          }
-                          className={inputClass}
-                          placeholder="val1, val2, val3"
-                        />
+                        <div className="grid gap-1">
+                          <select
+                            value={editDraft.referenceDataSetKey}
+                            onChange={(e) =>
+                              setEditDraft({
+                                ...editDraft,
+                                referenceDataSetKey: e.target.value,
+                                ...(e.target.value ? { allowedValues: '' } : {}),
+                              })
+                            }
+                            className={inputClass}
+                            aria-label="Conjunto de referência"
+                          >
+                            <option value="">Opções digitadas manualmente</option>
+                            {referenceDataSets.map((set) => (
+                              <option key={set.key} value={set.key}>
+                                {set.name}
+                              </option>
+                            ))}
+                          </select>
+                          {!editDraft.referenceDataSetKey && (
+                            <input
+                              value={editDraft.allowedValues}
+                              onChange={(e) =>
+                                setEditDraft({ ...editDraft, allowedValues: e.target.value })
+                              }
+                              className={inputClass}
+                              placeholder="val1, val2, val3"
+                            />
+                          )}
+                        </div>
                       ) : (
                         <span className="text-app-muted text-[0.8rem]">—</span>
                       )}
@@ -351,14 +396,37 @@ export function PartyCharacteristicCatalogEditor({
                             </td>
                             <td>
                               {editDraft.valueType === 'list' ? (
-                                <input
-                                  value={editDraft.allowedValues}
-                                  onChange={(e) =>
-                                    setEditDraft({ ...editDraft, allowedValues: e.target.value })
-                                  }
-                                  className={inputClass}
-                                  placeholder="val1, val2, val3"
-                                />
+                                <div className="grid gap-1">
+                                  <select
+                                    value={editDraft.referenceDataSetKey}
+                                    onChange={(e) =>
+                                      setEditDraft({
+                                        ...editDraft,
+                                        referenceDataSetKey: e.target.value,
+                                        ...(e.target.value ? { allowedValues: '' } : {}),
+                                      })
+                                    }
+                                    className={inputClass}
+                                    aria-label="Conjunto de referência"
+                                  >
+                                    <option value="">Opções digitadas manualmente</option>
+                                    {referenceDataSets.map((set) => (
+                                      <option key={set.key} value={set.key}>
+                                        {set.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {!editDraft.referenceDataSetKey && (
+                                    <input
+                                      value={editDraft.allowedValues}
+                                      onChange={(e) =>
+                                        setEditDraft({ ...editDraft, allowedValues: e.target.value })
+                                      }
+                                      className={inputClass}
+                                      placeholder="val1, val2, val3"
+                                    />
+                                  )}
+                                </div>
                               ) : (
                                 <span className="text-app-muted text-[0.8rem]">—</span>
                               )}
@@ -408,9 +476,11 @@ export function PartyCharacteristicCatalogEditor({
                               </span>
                             </td>
                             <td>
-                              {item.allowedValues && item.allowedValues.length > 0
-                                ? item.allowedValues.join(', ')
-                                : '—'}
+                              {item.referenceDataSetKey
+                                ? `Conjunto: ${referenceDataSets.find((set) => set.key === item.referenceDataSetKey)?.name ?? item.referenceDataSetKey}`
+                                : item.allowedValues && item.allowedValues.length > 0
+                                  ? item.allowedValues.join(', ')
+                                  : '—'}
                             </td>
                             <td>{item.active ? 'Sim' : 'Não'}</td>
                             <td>

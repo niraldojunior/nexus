@@ -343,6 +343,13 @@ coluna** dos índices compostos — garante _pruning_ por tenant.
 A imposição do filtro não pode depender de disciplina de quem escreve query. Ver
 [`security.md`](security.md) para o mecanismo (VPD/RLS ou filtro forçado no adaptador).
 
+`reference_data_set`/`reference_data_value` seguem a mesma regra: `tenant_id` obrigatório e primeira
+coluna dos índices (`idx_reference_data_set_tenant_active`,
+`idx_reference_data_value_set_active`). Um conjunto de dados de referência nunca é global — cada
+tenant modela e publica os seus; um `characteristic` de outro módulo referencia o conjunto pela
+identidade (`referenceDataSetId`), nunca copia seus valores, e a referência só resolve dentro do
+mesmo tenant.
+
 ---
 
 ## 9. Mapeamento TMF ↔ tabelas
@@ -362,6 +369,11 @@ A imposição do filtro não pode depender de disciplina de quem escreve query. 
 | `ResourceOrder`         | `resource_order`          | 4              |
 | `Party` / `PartyRole`   | `party`, `party_role`     | 6 — Party      |
 | `Event`                 | `event` + `outbox`        | Transversal    |
+| `StudioWorkspace`       | `studio_workspace`        | Studio (#191)  |
+| `StudioVersion`         | `studio_version`          | Studio (#191)  |
+| `StudioAuditEntry`      | `studio_audit_log`        | Studio (#191)  |
+| Reference Data set      | `reference_data_set`      | Studio (#196)  |
+| Reference Data value    | `reference_data_value`    | Studio (#196)  |
 
 Os tipos de linha crus estão tipados em `src/modules/*/rows.ts` — eles são o contrato entre o SQL e o
 domínio, e o compilador valida o mapeamento.
@@ -376,12 +388,12 @@ Por padrão o valor é relativo (`/tmf-api/...`). Quando o gateway público dife
 
 ## 10. Referências
 
-| Onde                                                                 | O quê                                       |
-| -------------------------------------------------------------------- | ------------------------------------------- |
+| Onde                                                                 | O quê                                         |
+| -------------------------------------------------------------------- | --------------------------------------------- |
 | [`architecture.md`](architecture.md)                                 | Concorrência, pool, Spatial, path computation |
-| [`non-functional-requirements.md`](non-functional-requirements.md)   | Volumetria e alvos                          |
-| [`security.md`](security.md)                                         | Isolamento de tenant e auditoria            |
-| [`../1-overview/business-rules.md`](../1-overview/business-rules.md) | C1, C4, C5, C6, C8                          |
+| [`non-functional-requirements.md`](non-functional-requirements.md)   | Volumetria e alvos                            |
+| [`security.md`](security.md)                                         | Isolamento de tenant e auditoria              |
+| [`../1-overview/business-rules.md`](../1-overview/business-rules.md) | C1, C4, C5, C6, C8                            |
 
 ---
 

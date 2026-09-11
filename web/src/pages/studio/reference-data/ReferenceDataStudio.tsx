@@ -1,18 +1,23 @@
+// Studio -> Dados de Referência (issue #196/#191): conjuntos e valores reutilizáveis por
+// characteristics de qualquer módulo. Mesmo padrão de PartyModelStudio: lista à esquerda com
+// busca/criação, detalhe à direita; captura de snapshot leva sets + values para o publish do
+// ReferenceDataStudioAdapter.
+
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { AlertCircle, Plus, Search, Users } from 'lucide-react';
+import { AlertCircle, Database, Plus, Search } from 'lucide-react';
 import { Button, Modal } from '../../../components/ui';
 import Field from '../../../components/Field';
 import {
-  createPartyRoleType,
-  listPartyRoleTypes,
-  type PartyRoleType,
-  type PartyRoleTypeInput,
-} from '../../../services/partyRoleTypeApi';
-import { PartyTypeDetail } from './PartyTypeDetail';
+  createReferenceDataSet,
+  listReferenceDataSets,
+  listReferenceDataValues,
+  type ReferenceDataSet,
+  type ReferenceDataSetInput,
+} from '../../../services/studioReferenceDataApi';
+import { ReferenceDataSetDetail } from './ReferenceDataSetDetail';
 import { getStudioStatus, saveStudioDraft } from '../../../services/studioApi';
-import { listPartyRoleTypeCharacteristics } from '../../../services/partyRoleTypeCharacteristicApi';
 
-export type PartyModelStudioProps = {
+export type ReferenceDataStudioProps = {
   canEdit: boolean;
   canAdmin: boolean;
   isEditing: boolean;
@@ -22,29 +27,29 @@ export type PartyModelStudioProps = {
   ) => void;
 };
 
-const emptyDraft = (): PartyRoleTypeInput => ({ key: '', roleName: '', label: '', description: '' });
+const emptyDraft = (): ReferenceDataSetInput => ({ key: '', name: '', description: '' });
 
-export function PartyModelStudio({
+export function ReferenceDataStudio({
   canEdit,
   isEditing,
   onRegisterCaptureDraft,
   onRegisterCaptureInitialSnapshot,
-}: PartyModelStudioProps) {
-  const [types, setTypes] = useState<PartyRoleType[]>([]);
+}: ReferenceDataStudioProps) {
+  const [sets, setSets] = useState<ReferenceDataSet[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState<PartyRoleTypeInput>(emptyDraft());
+  const [draft, setDraft] = useState<ReferenceDataSetInput>(emptyDraft());
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const reload = async () => {
     try {
-      const next = await listPartyRoleTypes();
-      setTypes(next);
+      const next = await listReferenceDataSets();
+      setSets(next);
       setSelectedId((current) => (next.some((item) => item.id === current) ? current : next[0]?.id ?? null));
     } catch {
-      setError('Não foi possível carregar os tipos de parte.');
+      setError('Não foi possível carregar os conjuntos de dados de referência.');
     }
   };
 
@@ -52,40 +57,35 @@ export function PartyModelStudio({
     void reload();
   }, []);
 
-  // Assíncrono: o snapshot publicado precisa levar as characteristics de cada tipo (aba
-  // "Características"), senão o publish do PartiesStudioAdapter as desativaria por ausência —
-  // o adapter diffa `type.characteristics` contra o catálogo existente a cada materialize.
+  // Assíncrono: o snapshot publicado precisa levar os valores de cada conjunto, senão o publish
+  // do ReferenceDataStudioAdapter os desativaria por ausência (diff contra o catálogo existente).
   const captureSnapshot = useCallback(async (): Promise<Record<string, unknown>> => {
-    const partyRoleTypes = await Promise.all(
-      types.map(async (partyType) => {
-        const characteristics = await listPartyRoleTypeCharacteristics(partyType.roleName);
+    const snapshotSets = await Promise.all(
+      sets.map(async (set) => {
+        const values = await listReferenceDataValues(set.id);
         return {
-          id: partyType.id,
-          key: partyType.key,
-          roleName: partyType.roleName,
-          label: partyType.label,
-          description: partyType.description,
-          active: partyType.active,
-          characteristics: characteristics.map((characteristic) => ({
-            id: characteristic.id,
-            name: characteristic.name,
-            group: characteristic.group,
-            description: characteristic.description,
-            valueType: characteristic.valueType,
-            allowedValues: characteristic.allowedValues,
-            sortOrder: characteristic.sortOrder,
-            active: characteristic.active,
+          id: set.id,
+          key: set.key,
+          name: set.name,
+          description: set.description,
+          active: set.active,
+          values: values.map((value) => ({
+            id: value.id,
+            key: value.key,
+            label: value.label,
+            sortOrder: value.sortOrder,
+            active: value.active,
           })),
         };
       }),
     );
-    return { partyRoleTypes };
-  }, [types]);
+    return { sets: snapshotSets };
+  }, [sets]);
 
   useEffect(() => {
     const capture = async (): Promise<void> => {
-      const status = await getStudioStatus('parties');
-      await saveStudioDraft('parties', await captureSnapshot(), status.draftVersion?.checksum);
+      const status = await getStudioStatus('reference-data');
+      await saveStudioDraft('reference-data', await captureSnapshot(), status.draftVersion?.checksum);
     };
     onRegisterCaptureDraft(capture);
     onRegisterCaptureInitialSnapshot(captureSnapshot);
@@ -95,34 +95,30 @@ export function PartyModelStudio({
     };
   }, [captureSnapshot, onRegisterCaptureDraft, onRegisterCaptureInitialSnapshot]);
 
-  const filteredTypes = useMemo(() => {
+  const filteredSets = useMemo(() => {
     const term = filterText.toLowerCase().trim();
-    if (!term) return types;
-    return types.filter((item) =>
-      [item.label, item.description, item.roleName, item.key].some((value) =>
-        (value ?? '').toLowerCase().includes(term),
-      ),
+    if (!term) return sets;
+    return sets.filter((item) =>
+      [item.name, item.description, item.key].some((value) => (value ?? '').toLowerCase().includes(term)),
     );
-  }, [filterText, types]);
-  const selectedPartyType = types.find((item) => item.id === selectedId) ?? null;
+  }, [filterText, sets]);
+  const selectedSet = sets.find((item) => item.id === selectedId) ?? null;
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
     setError(null);
     try {
-      const created = await createPartyRoleType({
-        ...draft,
+      const created = await createReferenceDataSet({
         key: draft.key.trim(),
-        roleName: draft.roleName.trim(),
-        label: draft.label.trim(),
+        name: draft.name.trim(),
         description: draft.description?.trim() || null,
       });
-      setTypes((current) => [...current, created].sort((a, b) => a.label.localeCompare(b.label, 'pt-BR')));
+      setSets((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
       setSelectedId(created.id);
       setCreating(false);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível criar o tipo de parte.');
+      setError(reason instanceof Error ? reason.message : 'Não foi possível criar o conjunto.');
     } finally {
       setSaving(false);
     }
@@ -146,8 +142,8 @@ export function PartyModelStudio({
                 type="text"
                 value={filterText}
                 onChange={(event) => setFilterText(event.target.value)}
-                placeholder="Buscar tipo de parte..."
-                aria-label="Buscar tipo de parte"
+                placeholder="Buscar conjunto..."
+                aria-label="Buscar conjunto"
                 className="w-full rounded-[10px] border border-app-border bg-white py-1.5 pl-8 pr-3 text-[0.82rem] text-app-text outline-none focus:border-app-accent"
               />
             </div>
@@ -155,8 +151,8 @@ export function PartyModelStudio({
               <Button
                 variant="primary"
                 size="sm"
-                title="Novo tipo de parte"
-                aria-label="Novo tipo de parte"
+                title="Novo conjunto"
+                aria-label="Novo conjunto"
                 onClick={() => {
                   setDraft(emptyDraft());
                   setError(null);
@@ -169,22 +165,22 @@ export function PartyModelStudio({
           </div>
 
           <div className="max-h-[640px] flex-1 space-y-1.5 overflow-y-auto pr-1">
-            {filteredTypes.length === 0 ? (
-              <div className="p-8 text-center text-[0.84rem] text-app-muted">Nenhum tipo de parte encontrado.</div>
+            {filteredSets.length === 0 ? (
+              <div className="p-8 text-center text-[0.84rem] text-app-muted">Nenhum conjunto encontrado.</div>
             ) : (
-              filteredTypes.map((item) => (
+              filteredSets.map((item) => (
                 <button
                   key={item.id}
                   type="button"
-                  aria-pressed={selectedPartyType?.id === item.id}
+                  aria-pressed={selectedSet?.id === item.id}
                   onClick={() => setSelectedId(item.id)}
                   className={`w-full rounded-[10px] border p-3 text-left text-[0.88rem] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-accent ${
-                    selectedPartyType?.id === item.id
+                    selectedSet?.id === item.id
                       ? 'border-app-accent bg-app-accent-soft font-semibold text-app-text'
                       : 'border-app-border text-app-text hover:bg-black/[0.02]'
                   }`}
                 >
-                  <span className="block truncate font-medium">{item.label}</span>
+                  <span className="block truncate font-medium">{item.name}</span>
                 </button>
               ))
             )}
@@ -192,19 +188,19 @@ export function PartyModelStudio({
         </div>
 
         <div className="min-w-0">
-          {selectedPartyType ? (
-            <PartyTypeDetail
-              partyType={selectedPartyType}
+          {selectedSet ? (
+            <ReferenceDataSetDetail
+              set={selectedSet}
               canMutate={canEdit && isEditing}
               onUpdated={(updated) =>
-                setTypes((current) =>
+                setSets((current) =>
                   current
                     .map((item) => (item.id === updated.id ? updated : item))
-                    .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR')),
+                    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
                 )
               }
               onDeactivated={(id) => {
-                setTypes((current) => {
+                setSets((current) => {
                   const next = current.filter((item) => item.id !== id);
                   setSelectedId((selected) => (selected === id ? next[0]?.id ?? null : selected));
                   return next;
@@ -213,8 +209,8 @@ export function PartyModelStudio({
             />
           ) : (
             <div className="flex min-h-[580px] flex-col items-center justify-center rounded-[10px] border border-dashed border-app-border p-12 text-center text-app-muted">
-              <Users className="mb-3 h-10 w-10 opacity-30" />
-              <h3 className="text-[1.1rem]">Nenhum tipo selecionado</h3>
+              <Database className="mb-3 h-10 w-10 opacity-30" />
+              <h3 className="text-[1.1rem]">Nenhum conjunto selecionado</h3>
             </div>
           )}
         </div>
@@ -222,26 +218,50 @@ export function PartyModelStudio({
 
       {creating && (
         <Modal
-          title="Novo tipo de parte"
+          title="Novo conjunto"
           onClose={() => !saving && setCreating(false)}
           width={520}
           footer={
             <>
-              <Button variant="secondary" onClick={() => setCreating(false)} disabled={saving}>Cancelar</Button>
-              <Button type="submit" form="party-role-type-form" disabled={saving}>
+              <Button variant="secondary" onClick={() => setCreating(false)} disabled={saving}>
+                Cancelar
+              </Button>
+              <Button type="submit" form="reference-data-set-form" disabled={saving}>
                 {saving ? 'Criando…' : 'Criar'}
               </Button>
             </>
           }
         >
-          {error && <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">{error}</p>}
-          <form id="party-role-type-form" onSubmit={(event) => void handleCreate(event)} className="grid gap-4">
-            <Field label="Título"><input value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} className="geo-input" autoFocus /></Field>
-            <Field label="Descrição"><textarea value={draft.description ?? ''} onChange={(event) => setDraft({ ...draft, description: event.target.value })} className="geo-input" rows={2} /></Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Papel (roleName)"><input value={draft.roleName} onChange={(event) => setDraft({ ...draft, roleName: event.target.value })} className="geo-input font-mono" placeholder="manufacturer" /></Field>
-              <Field label="Chave"><input value={draft.key} onChange={(event) => setDraft({ ...draft, key: event.target.value })} className="geo-input font-mono" placeholder="supplier" /></Field>
-            </div>
+          {error && (
+            <p className="mb-3 rounded-[10px] bg-status-red-soft px-3 py-2 text-[0.82rem] text-status-red">
+              {error}
+            </p>
+          )}
+          <form id="reference-data-set-form" onSubmit={(event) => void handleCreate(event)} className="grid gap-4">
+            <Field label="Nome">
+              <input
+                value={draft.name}
+                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                className="geo-input"
+                autoFocus
+              />
+            </Field>
+            <Field label="Descrição">
+              <textarea
+                value={draft.description ?? ''}
+                onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+                className="geo-input"
+                rows={2}
+              />
+            </Field>
+            <Field label="Chave">
+              <input
+                value={draft.key}
+                onChange={(event) => setDraft({ ...draft, key: event.target.value })}
+                className="geo-input font-mono"
+                placeholder="uf, tipo-fibra..."
+              />
+            </Field>
           </form>
         </Modal>
       )}

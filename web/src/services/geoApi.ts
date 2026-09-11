@@ -119,6 +119,10 @@ export type GeoSpecCharacteristic = {
   mandatory?: boolean;
   configurable?: boolean;
   defaultValue?: unknown;
+  /** Valores permitidos da lista (quando `valueType === 'list'`), digitados inline. */
+  allowedValues?: Array<string | number | boolean>;
+  /** Chave estável de um conjunto publicado em Studio -> Dados de Referência; alternativa a `allowedValues`. */
+  referenceDataSetKey?: string | null;
 };
 
 export type GeoSpec = {

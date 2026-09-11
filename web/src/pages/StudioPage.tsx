@@ -15,10 +15,12 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { StudioGovernanceSummary } from '../components/StudioGovernanceSummary';
+import { StudioGovernanceOverview } from '../components/StudioGovernanceOverview';
 import { ResourceModelStudio } from './studio/resource-model/ResourceModelStudio';
 import { LocationModelStudio } from './studio/location-model/LocationModelStudio';
 import { SpatialStudio } from './studio/spatial/SpatialStudio';
 import { PartyModelStudio } from './studio/party-model/PartyModelStudio';
+import { ReferenceDataStudio } from './studio/reference-data/ReferenceDataStudio';
 import { StudioGeoExperience } from './studio/StudioGeoExperience';
 import { GeoProjectWorkflowStudio } from './studio/rules-workflows/GeoProjectWorkflowStudio';
 import { TemplatesStudio } from './studio/templates/TemplatesStudio';
@@ -311,6 +313,16 @@ export function StudioPage({
                 onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
               />
             </div>
+          ) : section === 'reference-data' ? (
+            <div className="mt-5">
+              <ReferenceDataStudio
+                canEdit={canEdit}
+                canAdmin={canAdmin}
+                isEditing={isEditing}
+                onRegisterCaptureDraft={handleRegisterCaptureDraft}
+                onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
+              />
+            </div>
           ) : section === 'rules-workflows' ? (
             <div className="mt-5">
               <GeoProjectWorkflowStudio
@@ -328,6 +340,10 @@ export function StudioPage({
                 onRegisterCaptureDraft={handleRegisterCaptureDraft}
                 onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
               />
+            </div>
+          ) : section === 'governance' ? (
+            <div className="mt-5">
+              <StudioGovernanceOverview />
             </div>
           ) : (
             <div className="mt-5">

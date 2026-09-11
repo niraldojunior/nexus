@@ -18,6 +18,8 @@ export type PartyRoleTypeCharacteristicSnapshot = {
   description?: string | null;
   valueType: PartyRoleTypeCharacteristicValueType;
   allowedValues?: string[] | null;
+  /** Chave estável de um conjunto publicado em Studio -> Dados de Referência; alternativa a `allowedValues`. */
+  referenceDataSetKey?: string | null;
   sortOrder?: number;
 };
 
@@ -166,6 +168,7 @@ export class PartiesStudioAdapter implements StudioDomainAdapter {
             description: characteristic.description ?? null,
             valueType: characteristic.valueType,
             allowedValues: characteristic.allowedValues ?? null,
+            referenceDataSetKey: characteristic.referenceDataSetKey ?? null,
             sortOrder: characteristic.sortOrder ?? currentCharacteristic.sortOrder,
             active: true,
           });
@@ -176,6 +179,7 @@ export class PartiesStudioAdapter implements StudioDomainAdapter {
             description: characteristic.description ?? null,
             valueType: characteristic.valueType,
             allowedValues: characteristic.allowedValues ?? null,
+            referenceDataSetKey: characteristic.referenceDataSetKey ?? null,
             sortOrder: characteristic.sortOrder ?? 100,
           });
         }

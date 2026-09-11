@@ -80,18 +80,29 @@ spoofing.
 
 ## 3. Autorização — RBAC
 
-| Papel              | Pode                                                                   |
-| ------------------ | ---------------------------------------------------------------------- |
-| `inventory.reader` | Ler inventário do próprio tenant                                       |
-| `inventory.editor` | Criar e alterar Geo/Resource/Service                                   |
-| `order.requester`  | Abrir ordens e consultar viabilidade                                   |
-| `order.operator`   | Executar designação, avançar estado de ordem                           |
-| `catalog.admin`    | Manter catálogos (Specifications, RelationshipTypes) — C9              |
+| Papel              | Pode                                                                     |
+| ------------------ | ------------------------------------------------------------------------ |
+| `inventory.reader` | Ler inventário do próprio tenant                                         |
+| `inventory.editor` | Criar e alterar Geo/Resource/Service                                     |
+| `order.requester`  | Abrir ordens e consultar viabilidade                                     |
+| `order.operator`   | Executar designação, avançar estado de ordem                             |
+| `catalog.admin`    | Manter catálogos (Specifications, RelationshipTypes) — C9                |
 | `studio.reader`    | Consultar modelos e versões publicadas/draft do Studio do próprio tenant |
-| `studio.editor`    | Criar, alterar e validar drafts do Studio do próprio tenant            |
-| `studio.admin`     | Publicar, descartar drafts e executar exclusões lógicas governadas     |
-| `tenant.admin`     | Gerir usuários do próprio tenant                                       |
-| `platform.admin`   | **Cross-tenant**; exclusivo da operação V.tal, com auditoria reforçada |
+| `studio.editor`    | Criar, alterar e validar drafts do Studio do próprio tenant              |
+| `studio.admin`     | Publicar, descartar drafts e executar exclusões lógicas governadas       |
+| `tenant.admin`     | Gerir usuários do próprio tenant                                         |
+| `platform.admin`   | **Cross-tenant**; exclusivo da operação V.tal, com auditoria reforçada   |
+
+**Studio — dois conjuntos de papel, deliberadamente separados.** `STUDIO_EDIT_ROLES`
+(`studio.editor`/`studio.admin`/`platform.admin`) controla o ciclo de vida do envelope de
+governança (abrir/validar/publicar/descartar draft); `CATALOG_ADMIN_ROLES`
+(`catalog.admin`/`platform.admin`) controla a mutação direta das tabelas canônicas de metadado
+(características de party, valores de dados de referência). Os dois conjuntos só se sobrepõem em
+`platform.admin` — um operador que precise abrir um draft de `parties` **e** gravar uma
+characteristic nesse draft precisa dos dois papéis. Toda rota HTTP que muta metadado dos domínios
+`parties`, `spatial` e `reference-data` chama `StudioService.assertActiveDraft(domain, context)`
+antes de gravar, devolvendo `404 STUDIO_NO_DRAFT` sem draft aberto para o tenant — ver
+[`architecture.md`](architecture.md) §4.2.
 
 **Regra (alvo):** autorização verificada na **camada de serviço**, não no handler HTTP — é o que o
 Geo já faz (`GeoService.assertRole`), reforçado mesmo se algum caminho não-HTTP (MCP, script)

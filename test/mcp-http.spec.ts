@@ -1060,7 +1060,11 @@ test.skipIf(!oracleConfigured)('Copilot remove modelo de ONT usando o mesmo flux
   }
 });
 
-test.skipIf(!oracleConfigured)('Fallback local sem OpenAI nao executa ferramentas MCP', async () => {
+test.skipIf(!oracleConfigured)('Fallback local sem provedores externos nao executa ferramentas MCP', async () => {
+  const openAiApiKey = process.env.OPENAI_API_KEY;
+  const geminiApiKey = process.env.GEMINI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
   const app = await startHttpTestApp();
 
   try {
@@ -1081,5 +1085,9 @@ test.skipIf(!oracleConfigured)('Fallback local sem OpenAI nao executa ferramenta
     assert.equal(assistant.metadata?.toolExecutions, undefined);
   } finally {
     await app.cleanup();
+    if (openAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = openAiApiKey;
+    if (geminiApiKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = geminiApiKey;
   }
 });

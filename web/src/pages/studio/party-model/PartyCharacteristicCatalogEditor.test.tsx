@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PartyCharacteristicCatalogEditor } from './PartyCharacteristicCatalogEditor';
 import * as characteristicApi from '../../../services/partyRoleTypeCharacteristicApi';
+import * as referenceDataApi from '../../../services/studioReferenceDataApi';
 
 vi.mock('../../../services/partyRoleTypeCharacteristicApi', () => ({
   listPartyRoleTypeCharacteristics: vi.fn(),
@@ -11,10 +12,15 @@ vi.mock('../../../services/partyRoleTypeCharacteristicApi', () => ({
   deactivatePartyRoleTypeCharacteristic: vi.fn(),
 }));
 
+vi.mock('../../../services/studioReferenceDataApi', () => ({
+  listReferenceDataSets: vi.fn(),
+}));
+
 describe('PartyCharacteristicCatalogEditor', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.mocked(characteristicApi.listPartyRoleTypeCharacteristics).mockResolvedValue([]);
+    vi.mocked(referenceDataApi.listReferenceDataSets).mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -31,6 +37,7 @@ describe('PartyCharacteristicCatalogEditor', () => {
       description: 'Segmento de atuação do fornecedor',
       valueType: 'list',
       allowedValues: ['Óptico', 'Elétrico'],
+      referenceDataSetKey: null,
       sortOrder: 100,
       active: true,
       createdAt: '2026-09-07T10:00:00.000Z',
@@ -64,6 +71,7 @@ describe('PartyCharacteristicCatalogEditor', () => {
           description: 'Segmento de atuação do fornecedor',
           valueType: 'list',
           allowedValues: ['Óptico', 'Elétrico'],
+          referenceDataSetKey: null,
         },
       );
     });
@@ -80,6 +88,7 @@ describe('PartyCharacteristicCatalogEditor', () => {
         description: null,
         valueType: 'string',
         allowedValues: null,
+        referenceDataSetKey: null,
         sortOrder: 100,
         active: true,
         createdAt: '2026-09-07T10:00:00.000Z',
@@ -95,6 +104,7 @@ describe('PartyCharacteristicCatalogEditor', () => {
       description: 'Segmento de atuação do fornecedor',
       valueType: 'string',
       allowedValues: null,
+      referenceDataSetKey: null,
       sortOrder: 100,
       active: true,
       createdAt: '2026-09-07T10:00:00.000Z',
@@ -122,6 +132,7 @@ describe('PartyCharacteristicCatalogEditor', () => {
           description: 'Segmento de atuação do fornecedor',
           valueType: 'string',
           allowedValues: null,
+          referenceDataSetKey: null,
         },
       );
     });
@@ -141,7 +152,9 @@ describe('PartyCharacteristicCatalogEditor', () => {
     await user.click(screen.getByRole('button', { name: /^salvar$/i }));
 
     expect(
-      screen.getByText('Características do tipo Lista exigem ao menos um valor permitido.'),
+      screen.getByText(
+        'Características do tipo Lista exigem valores permitidos ou um conjunto de referência.',
+      ),
     ).toBeInTheDocument();
     expect(characteristicApi.createPartyRoleTypeCharacteristic).not.toHaveBeenCalled();
   });

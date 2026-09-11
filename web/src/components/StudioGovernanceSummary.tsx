@@ -179,17 +179,28 @@ export function StudioGovernanceSummary({
     );
   }
 
+  const statusLabel = editing
+    ? `Draft v${draft?.versionNumber}`
+    : published
+      ? `v${published.versionNumber} publicado`
+      : 'Sem versão publicada';
+
   return (
     <>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3" aria-busy={busy !== null}>
+        {/* Região viva silenciosa: leitores de tela anunciam a mudança de estado
+            (Editar -> Draft aberto -> Publicado) sem depender de foco visual. */}
+        <span className="sr-only" role="status" aria-live="polite">
+          {busy === 'edit'
+            ? 'Iniciando edição...'
+            : busy === 'publish'
+              ? 'Publicando...'
+              : busy === 'cancel'
+                ? 'Cancelando edição...'
+                : statusLabel}
+        </span>
         <div className="text-right leading-tight">
-          <p className="text-[0.78rem] font-semibold text-app-text">
-            {editing
-              ? `Draft v${draft?.versionNumber}`
-              : published
-                ? `v${published.versionNumber} publicado`
-                : 'Sem versão publicada'}
-          </p>
+          <p className="text-[0.78rem] font-semibold text-app-text">{statusLabel}</p>
           <p className="text-[0.72rem] text-app-muted">
             {editing
               ? `Alterado ${formatDateTime(draft?.createdAt)}`

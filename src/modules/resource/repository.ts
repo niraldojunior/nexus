@@ -17,9 +17,10 @@ import type {
   ResourceCatalog,
   ResourceCatalogNode,
   ResourceCatalogQuery,
+  ResourceRelationshipType,
+  ResourceTypeRelationshipRule,
 } from './domain.js';
 import type { IResourceRepository, ResourceTenantScope } from './resource-repository-interface.js';
-import type { Characteristic } from '../../shared/tmf/index.js';
 import { RESOURCE_TYPES } from './catalog.js';
 import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
 
@@ -35,6 +36,8 @@ export class ResourceRepository implements IResourceRepository {
   private readonly relationships = new Map<string, ResourceRelationship[]>();
   private readonly resourceCatalogs = new Map<string, ResourceCatalog>();
   private readonly resourceCatalogNodes = new Map<string, ResourceCatalogNode>();
+  private readonly resourceRelationshipTypes = new Map<string, ResourceRelationshipType>();
+  private readonly resourceTypeRelationshipRules = new Map<string, ResourceTypeRelationshipRule>();
 
   public constructor() {
     for (const type of RESOURCE_TYPES) {
@@ -42,8 +45,63 @@ export class ResourceRepository implements IResourceRepository {
     }
   }
 
-  public transaction<T>(fn: () => T): T {
-    return fn();
+  public async transaction<T>(fn: () => T | Promise<T>): Promise<T> {
+    const snapshot = {
+      resourceTypes: new Map([...this.resourceTypes].map(([key, value]) => [key, cloneResourceType(value)])),
+      resourceSpecifications: new Map(
+        [...this.resourceSpecifications].map(([key, value]) => [key, cloneResourceSpecification(value)]),
+      ),
+      resourceFunctionSpecifications: new Map(
+        [...this.resourceFunctionSpecifications].map(([key, value]) => [key, cloneResourceFunctionSpecification(value)]),
+      ),
+      physicalResources: new Map(
+        [...this.physicalResources].map(([key, value]) => [key, clonePhysicalResource(value)]),
+      ),
+      logicalResources: new Map(
+        [...this.logicalResources].map(([key, value]) => [key, cloneLogicalResource(value)]),
+      ),
+      relationships: new Map(
+        [...this.relationships].map(([key, value]) => [key, value.map(cloneRelationship)]),
+      ),
+      resourceCatalogs: new Map([...this.resourceCatalogs].map(([key, value]) => [key, { ...value }])),
+      resourceCatalogNodes: new Map(
+        [...this.resourceCatalogNodes].map(([key, value]) => [key, cloneResourceCatalogNode(value)]),
+      ),
+      resourceRelationshipTypes: new Map(
+        [...this.resourceRelationshipTypes].map(([key, value]) => [key, cloneResourceRelationshipType(value)]),
+      ),
+      resourceTypeRelationshipRules: new Map(
+        [...this.resourceTypeRelationshipRules].map(([key, value]) => [key, cloneResourceTypeRelationshipRule(value)]),
+      ),
+    };
+    try {
+      return await fn();
+    } catch (error) {
+      this.resourceTypes.clear();
+      this.resourceSpecifications.clear();
+      this.resourceFunctionSpecifications.clear();
+      this.physicalResources.clear();
+      this.logicalResources.clear();
+      this.relationships.clear();
+      this.resourceCatalogs.clear();
+      this.resourceCatalogNodes.clear();
+      this.resourceRelationshipTypes.clear();
+      this.resourceTypeRelationshipRules.clear();
+      for (const [key, value] of snapshot.resourceTypes) this.resourceTypes.set(key, value);
+      for (const [key, value] of snapshot.resourceSpecifications) this.resourceSpecifications.set(key, value);
+      for (const [key, value] of snapshot.resourceFunctionSpecifications)
+        this.resourceFunctionSpecifications.set(key, value);
+      for (const [key, value] of snapshot.physicalResources) this.physicalResources.set(key, value);
+      for (const [key, value] of snapshot.logicalResources) this.logicalResources.set(key, value);
+      for (const [key, value] of snapshot.relationships) this.relationships.set(key, value);
+      for (const [key, value] of snapshot.resourceCatalogs) this.resourceCatalogs.set(key, value);
+      for (const [key, value] of snapshot.resourceCatalogNodes) this.resourceCatalogNodes.set(key, value);
+      for (const [key, value] of snapshot.resourceRelationshipTypes)
+        this.resourceRelationshipTypes.set(key, value);
+      for (const [key, value] of snapshot.resourceTypeRelationshipRules)
+        this.resourceTypeRelationshipRules.set(key, value);
+      throw error;
+    }
   }
 
 
@@ -86,21 +144,95 @@ export class ResourceRepository implements IResourceRepository {
   }
 
   public listResourceTypes(scope?: ResourceTenantScope): ResourceType[] {
-    // Repositório in-memory não é multi-tenant de fato (usado só por testes unitários) — o
-    // parâmetro existe para satisfazer a interface, sem filtrar.
-    void scope;
-    return [...this.resourceTypes.values()].map(cloneResourceType);
+    return [...this.resourceTypes.values()]
+      .filter((resourceType) => sameTenant(resourceType.tenantId, scope?.tenantId))
+      .map(cloneResourceType);
   }
 
-  public updateResourceTypeCharacteristics(
-    id: string,
-    characteristics: Characteristic[],
+  public getResourceType(id: string, scope?: ResourceTenantScope): ResourceType | undefined {
+    const resourceType = [...this.resourceTypes.values()].find(
+      (candidate) => candidate.id === id && sameTenant(candidate.tenantId, scope?.tenantId),
+    );
+    return resourceType ? cloneResourceType(resourceType) : undefined;
+  }
+
+  public getResourceTypeByCode(code: string, scope?: ResourceTenantScope): ResourceType | undefined {
+    const resourceType = [...this.resourceTypes.values()].find(
+      (candidate) => candidate.code === code && sameTenant(candidate.tenantId, scope?.tenantId),
+    );
+    return resourceType ? cloneResourceType(resourceType) : undefined;
+  }
+
+  public upsertResourceType(resourceType: ResourceType): ResourceType {
+    const existing = [...this.resourceTypes.entries()].find(([, value]) => value.id === resourceType.id);
+    if (existing && existing[0] !== resourceType.code) this.resourceTypes.delete(existing[0]);
+    const stored = cloneResourceType(resourceType);
+    this.resourceTypes.set(stored.code, stored);
+    return cloneResourceType(stored);
+  }
+
+  public listResourceRelationshipTypes(scope?: ResourceTenantScope): ResourceRelationshipType[] {
+    return [...this.resourceRelationshipTypes.values()]
+      .filter((relationshipType) => sameTenant(relationshipType.tenantId, scope?.tenantId))
+      .map(cloneResourceRelationshipType);
+  }
+
+  public getResourceRelationshipType(
+    code: string,
     scope?: ResourceTenantScope,
-  ): void {
-    void scope;
-    const type = [...this.resourceTypes.values()].find((candidate) => candidate.id === id);
-    if (!type) return;
-    this.resourceTypes.set(type.code, { ...type, resourceTypeCharacteristic: characteristics });
+  ): ResourceRelationshipType | undefined {
+    const relationshipType = [...this.resourceRelationshipTypes.values()].find(
+      (candidate) => candidate.code === code && sameTenant(candidate.tenantId, scope?.tenantId),
+    );
+    return relationshipType ? cloneResourceRelationshipType(relationshipType) : undefined;
+  }
+
+  public upsertResourceRelationshipType(
+    relationshipType: ResourceRelationshipType,
+  ): ResourceRelationshipType {
+    const stored = cloneResourceRelationshipType(relationshipType);
+    this.resourceRelationshipTypes.set(`${stored.tenantId}:${stored.code}`, stored);
+    return cloneResourceRelationshipType(stored);
+  }
+
+  public listResourceTypeRelationshipRules(
+    sourceResourceTypeId: string,
+    scope?: ResourceTenantScope & { includeRetired?: boolean },
+  ): ResourceTypeRelationshipRule[] {
+    return this.listResourceTypeRelationshipRulesBySourceIds([sourceResourceTypeId], scope);
+  }
+
+  public listResourceTypeRelationshipRulesBySourceIds(
+    sourceResourceTypeIds: string[],
+    scope?: ResourceTenantScope & { includeRetired?: boolean },
+  ): ResourceTypeRelationshipRule[] {
+    const sourceIds = new Set(sourceResourceTypeIds);
+    return [...this.resourceTypeRelationshipRules.values()]
+      .filter(
+        (rule) =>
+          sourceIds.has(rule.sourceResourceTypeId) &&
+          sameTenant(rule.tenantId, scope?.tenantId) &&
+          (scope?.includeRetired || rule.lifecycleStatus === 'Active'),
+      )
+      .map(cloneResourceTypeRelationshipRule);
+  }
+
+  public getResourceTypeRelationshipRule(
+    id: string,
+    scope?: ResourceTenantScope,
+  ): ResourceTypeRelationshipRule | undefined {
+    const rule = this.resourceTypeRelationshipRules.get(id);
+    return rule && sameTenant(rule.tenantId, scope?.tenantId)
+      ? cloneResourceTypeRelationshipRule(rule)
+      : undefined;
+  }
+
+  public upsertResourceTypeRelationshipRule(
+    rule: ResourceTypeRelationshipRule,
+  ): ResourceTypeRelationshipRule {
+    const stored = cloneResourceTypeRelationshipRule(rule);
+    this.resourceTypeRelationshipRules.set(stored.id, stored);
+    return cloneResourceTypeRelationshipRule(stored);
   }
 
   public upsertResourceCatalog(catalog: ResourceCatalog): ResourceCatalog {
@@ -616,10 +748,11 @@ const cloneResourceFunctionSpecification = (
   ...(spec.validFor ? { validFor: { ...spec.validFor } } : {}),
 });
 
-// Tenant não informado no scope enxerga tudo — mesma convenção liberal do repositório em memória
-// para as demais entidades acima (usado só em testes; o service normaliza tenant antes de chamar).
+// Tenant não informado no scope enxerga tudo. Entidades com tenant 'default' (vocabulário
+// canônico seedado, como ResourceTypes e ResourceRelationshipTypes canônicos) são visíveis por
+// qualquer tenant, garantindo paridade com o comportamento do repositório Oracle.
 const sameTenant = (entityTenant: string, scopeTenant?: string): boolean =>
-  !scopeTenant || entityTenant === scopeTenant;
+  !scopeTenant || entityTenant === scopeTenant || entityTenant === 'default';
 
 const compareCatalogOrNode = (
   a: { sortOrder: number; name: string; id: string },
@@ -631,6 +764,31 @@ const compareCatalogOrNode = (
 
 const cloneResourceType = (type: ResourceType): ResourceType => ({
   ...type,
+  ...(type.resourceTypeCharacteristic
+    ? { resourceTypeCharacteristic: type.resourceTypeCharacteristic.map((characteristic) => ({ ...characteristic })) }
+    : {}),
+});
+
+const cloneResourceCatalogNode = (node: ResourceCatalogNode): ResourceCatalogNode => ({
+  ...node,
+  ...(node.metadata ? { metadata: { ...node.metadata } } : {}),
+  ...(node.resourceType ? { resourceType: { ...node.resourceType } } : {}),
+});
+
+const cloneResourceRelationshipType = (
+  relationshipType: ResourceRelationshipType,
+): ResourceRelationshipType => ({
+  ...relationshipType,
+  allowedTargetKinds: [...relationshipType.allowedTargetKinds],
+  ...(relationshipType.cardinality ? { cardinality: { ...relationshipType.cardinality } } : {}),
+});
+
+const cloneResourceTypeRelationshipRule = (
+  rule: ResourceTypeRelationshipRule,
+): ResourceTypeRelationshipRule => ({
+  ...rule,
+  ...(rule.cardinality ? { cardinality: { ...rule.cardinality } } : {}),
+  ...(rule.validFor ? { validFor: { ...rule.validFor } } : {}),
 });
 
 const clonePhysicalResource = (resource: PhysicalResource): PhysicalResource => ({

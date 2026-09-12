@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Box, Plus, AlertCircle, Search } from 'lucide-react';
+import { Box, Plus, AlertCircle, Search, Folder, Layers } from 'lucide-react';
 import type {
   ResourceCatalog,
   ResourceCatalogTreeNode,
@@ -15,7 +15,7 @@ import {
   deleteResourceCatalogNode,
   moveResourceCatalogNode,
   reorderResourceCatalogNodes,
-  listResourceCatalogNodes,
+  getResourceModelSnapshotSource,
 } from '../../../services/resourceCatalogApi';
 import {
   getStudioStatus,
@@ -23,9 +23,14 @@ import {
 } from '../../../services/studioApi';
 import { Button } from '../../../components/ui';
 import { ResourceCatalogTree } from './ResourceCatalogTree';
-import { ResourceNodeDetail } from './ResourceNodeDetail';
-import { ResourceNodeFormModal } from './ResourceNodeFormModal';
+import { ResourceNodeDetail, type AutosaveState } from './ResourceNodeDetail';
 import { ResourceNodeImpactModal } from './ResourceNodeImpactModal';
+
+const AUTOSAVE_BLOCK_REASON: Partial<Record<AutosaveState, string>> = {
+  dirty: 'Há uma alteração ainda não salva no painel de detalhe.',
+  saving: 'Aguarde a gravação da alteração em andamento.',
+  error: 'Uma alteração falhou ao salvar — corrija antes de publicar.',
+};
 
 const findNodeById = (
   nodes: ResourceCatalogTreeNode[],
@@ -61,6 +66,13 @@ export type ResourceModelStudioProps = {
    * permite "Cancelar" restaurar de verdade em vez de só descartar a versão de governança.
    */
   onRegisterCaptureInitialSnapshot?: (fn: (() => Promise<Record<string, unknown>>) | null) => void;
+  /**
+   * Notifica `StudioPage` sempre que o painel de detalhe entra ou sai de um estado que deveria
+   * bloquear "Publicar" em `StudioGovernanceSummary` — edição pendente/em voo/com erro (plano
+   * §5.8). Domínios sem este conceito simplesmente não recebem chamadas, e a publicação nunca
+   * fica bloqueada por causa deles.
+   */
+  onPublishBlockChange?: (blocked: boolean, reason?: string) => void;
 };
 
 export function ResourceModelStudio({
@@ -68,6 +80,7 @@ export function ResourceModelStudio({
   isEditing,
   onRegisterCaptureDraft,
   onRegisterCaptureInitialSnapshot,
+  onPublishBlockChange,
 }: ResourceModelStudioProps) {
   // Um catálogo por tenant — sem seletor. Assume-se sempre o catálogo padrão (ou o primeiro,
   // se nenhum estiver marcado como padrão).
@@ -79,13 +92,29 @@ export function ResourceModelStudio({
   // Textbox de busca da hierarquia começa oculta; a lupa no cabeçalho alterna a exibição.
   const [showSearch, setShowSearch] = useState(false);
 
-  // Modals state
-  const [formModalOpen, setFormModalOpen] = useState(false);
-  const [formParentNode, setFormParentNode] = useState<ResourceCatalogNode | null>(null);
-  const [formEditingNode, setFormEditingNode] = useState<ResourceCatalogNode | null>(null);
+  // Menu flutuante de criação (Grupo / Tipo de Recurso) — substitui o modal manual (issue #230).
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const [createMenuParent, setCreateMenuParent] = useState<ResourceCatalogNode | null>(null);
 
   const [impactModalOpen, setImpactModalOpen] = useState(false);
   const [impactingNode, setImpactingNode] = useState<ResourceCatalogNode | null>(null);
+
+  // Função `flush()` registrada pelo painel de detalhe atualmente montado — força a gravação de
+  // qualquer edição em debounce antes de capturar snapshot/draft/publicação (plano §5.5).
+  const flushDetailRef = useRef<(() => Promise<void>) | null>(null);
+  const registerDetailFlush = useCallback((fn: (() => Promise<void>) | null) => {
+    flushDetailRef.current = fn;
+  }, []);
+
+  // Repassa a `StudioPage` o bloqueio de "Publicar" enquanto o painel de detalhe tiver edição
+  // pendente/em voo/com erro (plano §5.8) — ver doc de `onPublishBlockChange`.
+  const handleAutosaveStateChange = useCallback(
+    (state: AutosaveState) => {
+      const reason = AUTOSAVE_BLOCK_REASON[state];
+      onPublishBlockChange?.(Boolean(reason), reason);
+    },
+    [onPublishBlockChange],
+  );
 
   // Nós que já estavam `active` no instante em que a sessão de edição atual começou (capturado
   // por `onRegisterCaptureInitialSnapshot`, chamado por `StudioGovernanceSummary` no clique de
@@ -142,24 +171,6 @@ export function ResourceModelStudio({
     }
   }, [selectedCatalogId]);
 
-  const handleCreateNode = async (input: CreateResourceCatalogNodeInput) => {
-    if (!selectedCatalogId) return;
-    const created = await createResourceCatalogNode(selectedCatalogId, input);
-    await reloadTree();
-    setSelectedNode(created);
-  };
-
-  const handleUpdateNode = async (input: UpdateResourceCatalogNodeInput) => {
-    if (!selectedCatalogId || !formEditingNode) return;
-    const updated = await updateResourceCatalogNode(
-      selectedCatalogId,
-      formEditingNode.id,
-      input,
-    );
-    await reloadTree();
-    setSelectedNode(updated);
-  };
-
   const handleUpdateSelectedNode = async (input: UpdateResourceCatalogNodeInput) => {
     if (!selectedCatalogId || !selectedNode) return;
     const updated = await updateResourceCatalogNode(
@@ -213,22 +224,39 @@ export function ResourceModelStudio({
     await reloadTree();
   };
 
-  // Botão "+" da Hierarquia: sem seleção, cria na raiz; com um GROUP selecionado, cria abaixo
-  // dele; com um RESOURCE_TYPE selecionado (que nunca tem filhos — é sempre folha), cria como
-  // irmão, usando o mesmo pai do nó selecionado.
-  const handleAddNodeClick = () => {
-    setFormEditingNode(null);
-    if (!selectedNode) {
-      setFormParentNode(null);
-    } else if (selectedNode.kind === 'GROUP') {
-      setFormParentNode(selectedNode);
-    } else {
-      const parentOfSelected = selectedNode.parentNodeId
-        ? findNodeById(tree, selectedNode.parentNodeId)
-        : null;
-      setFormParentNode(parentOfSelected);
+  // Resolve o pai para uma nova criação: sem seleção, cria na raiz; com um GROUP selecionado,
+  // cria abaixo dele; com um RESOURCE_TYPE selecionado (que nunca tem filhos — é sempre folha),
+  // cria como irmão, usando o mesmo pai do nó selecionado.
+  const resolveNewNodeParent = (explicitParent?: ResourceCatalogNode): ResourceCatalogNode | null => {
+    if (explicitParent) return explicitParent;
+    if (!selectedNode) return null;
+    if (selectedNode.kind === 'GROUP') return selectedNode;
+    return selectedNode.parentNodeId ? findNodeById(tree, selectedNode.parentNodeId) : null;
+  };
+
+  // Botão "+" da Hierarquia (cabeçalho ou hover de grupo): abre o menu flutuante Grupo/Tipo de
+  // Recurso com o pai já resolvido — sem modal, sem digitação prévia (issue #230).
+  const handleAddNodeClick = (explicitParent?: ResourceCatalogNode) => {
+    setCreateMenuParent(resolveNewNodeParent(explicitParent));
+    setCreateMenuOpen(true);
+  };
+
+  // Cria imediatamente "Novo Grupo" ou "Novo Tipo de Recurso" (+ seu ResourceType 1:1, no caso de
+  // RESOURCE_TYPE) sob o pai resolvido, seleciona o nó recém-criado, expande o pai e fecha o menu
+  // — a edição do nome acontece depois, via autosave na aba Geral.
+  const handleCreateFromMenu = async (kind: CreateResourceCatalogNodeInput['kind']) => {
+    if (!selectedCatalogId) return;
+    setCreateMenuOpen(false);
+    try {
+      const created = await createResourceCatalogNode(selectedCatalogId, {
+        kind,
+        parentNodeId: createMenuParent?.id,
+      });
+      await reloadTree();
+      setSelectedNode(created);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Falha ao criar nó no catálogo.');
     }
-    setFormModalOpen(true);
   };
 
   // Captura o estado atual do catálogo (que já reflete cada edição, gravada imediatamente via
@@ -239,31 +267,73 @@ export function ResourceModelStudio({
   // (`StudioGovernanceSummary.beforePublish`), garantindo que o que é publicado é sempre o
   // estado vivo do catálogo. Erros propagam para quem chama, que já lida com eles.
   const buildSnapshot = useCallback(async (): Promise<Record<string, unknown>> => {
+    // Garante que uma edição ainda em debounce no painel de detalhe seja gravada antes de
+    // fotografar o estado do catálogo — senão captura/publicação podem ler um valor desatualizado.
+    await flushDetailRef.current?.();
     if (!selectedCatalogId) return {};
     const currentCat = catalogs.find((c) => c.id === selectedCatalogId);
     if (!currentCat) return {};
 
-    const allNodes = await listResourceCatalogNodes(selectedCatalogId, true);
+    // Uma única projeção tenant-scoped traz nós, tipos e regras. Isso substitui a antiga chamada
+    // por folha, que fazia o clique "Editar" crescer linearmente em round trips HTTP/Oracle.
+    const source = await getResourceModelSnapshotSource(selectedCatalogId, true);
+    const typeById = new Map(source.resourceTypes.map((type) => [type.id, type]));
+    const rulesByTypeId = new Map<string, typeof source.relationshipRules>();
+    for (const rule of source.relationshipRules) {
+      const rules = rulesByTypeId.get(rule.sourceResourceTypeId) ?? [];
+      rules.push(rule);
+      rulesByTypeId.set(rule.sourceResourceTypeId, rules);
+    }
+
     return {
       catalog: {
-        id: currentCat.id,
-        code: currentCat.code,
-        name: currentCat.name,
-        description: currentCat.description,
+        id: source.catalog.id,
+        code: source.catalog.code,
+        name: source.catalog.name,
+        description: source.catalog.description,
       },
-      nodes: allNodes.map((n) => ({
-        id: n.id,
-        code: n.code,
-        name: n.name,
-        description: n.description,
-        kind: n.kind,
-        resourceTypeId: n.resourceTypeId,
-        resourceTypeCode: n.resourceType?.code,
-        parentNodeId: n.parentNodeId ?? null,
-        sortOrder: n.sortOrder,
-        status: n.status,
-        metadata: n.metadata,
-      })),
+      nodes: source.nodes.map((n) => {
+        const type = n.resourceTypeId ? typeById.get(n.resourceTypeId) : undefined;
+        const rules = n.resourceTypeId ? rulesByTypeId.get(n.resourceTypeId) : undefined;
+        return {
+          id: n.id,
+          code: n.code,
+          name: n.name,
+          description: n.description,
+          kind: n.kind,
+          resourceTypeId: n.resourceTypeId,
+          resourceTypeCode: n.resourceType?.code,
+          parentNodeId: n.parentNodeId ?? null,
+          sortOrder: n.sortOrder,
+          status: n.status,
+          metadata: n.metadata,
+          ...(type
+            ? {
+                resourceType: {
+                  name: type.name,
+                  description: type.description,
+                  status: type.status,
+                  nature: type.nature,
+                  mapPresence: type.mapPresence,
+                  resourceTypeCharacteristic: type.resourceTypeCharacteristic,
+                },
+              }
+            : {}),
+          ...(rules
+            ? {
+                relationshipRules: rules
+                  .filter((r) => r.lifecycleStatus === 'Active')
+                  .map((r) => ({
+                    relationshipTypeCode: r.relationshipTypeCode,
+                    targetKind: r.targetKind,
+                    targetId: r.targetId,
+                    cardinality: r.cardinality,
+                    validFor: r.validFor,
+                  })),
+              }
+            : {}),
+        };
+      }),
     };
   }, [selectedCatalogId, catalogs]);
 
@@ -301,9 +371,10 @@ export function ResourceModelStudio({
     if (wasEditingRef.current && !isEditing) {
       reloadTree();
       setBaselineActiveNodeIds(null);
+      onPublishBlockChange?.(false);
     }
     wasEditingRef.current = isEditing;
-  }, [isEditing]);
+  }, [isEditing, onPublishBlockChange]);
 
   const canMutate = canEdit && isEditing;
 
@@ -337,15 +408,51 @@ export function ResourceModelStudio({
                 <Search className="h-4 w-4" />
               </Button>
               {canMutate && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleAddNodeClick}
-                  title="Incluir nó"
-                  aria-label="Incluir nó"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
+                <div className="relative">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => handleAddNodeClick()}
+                    title="Incluir nó"
+                    aria-label="Incluir nó"
+                    aria-haspopup="menu"
+                    aria-expanded={createMenuOpen}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  {createMenuOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setCreateMenuOpen(false)}
+                      />
+                      <div
+                        role="menu"
+                        aria-label="Tipo de nó a incluir"
+                        className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-[12px] border border-app-border bg-white py-1 shadow-soft"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => handleCreateFromMenu('GROUP')}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.84rem] font-medium text-app-text transition hover:bg-app-accent-soft"
+                        >
+                          <Folder className="h-3.5 w-3.5" />
+                          Grupo
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => handleCreateFromMenu('RESOURCE_TYPE')}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.84rem] font-medium text-app-text transition hover:bg-app-accent-soft"
+                        >
+                          <Layers className="h-3.5 w-3.5" />
+                          Tipo de Recurso
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -356,11 +463,7 @@ export function ResourceModelStudio({
               showSearch={showSearch}
               selectedNodeId={selectedNode?.id ?? null}
               onSelectNode={setSelectedNode}
-              onAddChild={(parent) => {
-                setFormEditingNode(null);
-                setFormParentNode(parent);
-                setFormModalOpen(true);
-              }}
+              onAddChild={(parent) => handleAddNodeClick(parent)}
               onImpactNode={(n) => {
                 setImpactingNode(n);
                 setImpactModalOpen(true);
@@ -369,6 +472,7 @@ export function ResourceModelStudio({
               canEdit={canEdit}
               isEditing={isEditing}
               baselineActiveIds={baselineActiveNodeIds}
+              expandNodeId={selectedNode?.parentNodeId ?? null}
             />
           </div>
         </div>
@@ -388,6 +492,8 @@ export function ResourceModelStudio({
               }}
               onReactivate={() => handleUpdateSelectedNode({ status: 'active' })}
               onUpdateNode={handleUpdateSelectedNode}
+              onRegisterFlush={registerDetailFlush}
+              onAutosaveStateChange={handleAutosaveStateChange}
             />
           ) : (
             <div className="vt-card flex min-h-[560px] flex-col items-center justify-center p-12 text-center text-app-muted">
@@ -403,16 +509,6 @@ export function ResourceModelStudio({
       </div>
 
       {/* Modais */}
-      <ResourceNodeFormModal
-        isOpen={formModalOpen}
-        onClose={() => setFormModalOpen(false)}
-        onSubmitCreate={handleCreateNode}
-        onSubmitUpdate={handleUpdateNode}
-        parentNode={formParentNode}
-        editingNode={formEditingNode}
-        tree={tree}
-      />
-
       {impactingNode && selectedCatalogId && (
         <ResourceNodeImpactModal
           isOpen={impactModalOpen}

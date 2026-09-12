@@ -11,6 +11,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { config as loadEnv } from 'dotenv';
 import oracledb, { type Connection } from 'oracledb';
 import { lngLatToTile, MAP_TILE_ZOOM } from '../modules/geo/map-tile.js';
+import { excludeInternalResourceTypesSql } from '../modules/geo/map-visibility.js';
 import {
   configureOracleClient,
   cut,
@@ -60,7 +61,7 @@ type SourceRow = Record<string, unknown>;
 type Kind = 'survey' | 'site' | 'resource' | 'deferred';
 type Mapping = { kind: Kind; spec?: string; resourceType?: string };
 
-const MAPPING_VERSION = 'dl-infranode-v1';
+const MAPPING_VERSION = 'dl-infranode-v2-resource-type-identity';
 const SOURCE_ENTITY = 'DL_INFRANODE';
 const TABLE = '"NETWINOI"."DL_INFRANODE"';
 
@@ -224,7 +225,9 @@ function prepare(row: SourceRow) {
     latitude <= 6;
   const name = displayName(row, piId);
   const raw = JSON.stringify(row);
-  const sourceHash = createHash('sha256').update(raw).digest('hex');
+  const sourceHash = createHash('sha256')
+    .update(JSON.stringify({ mappingVersion: MAPPING_VERSION, row }))
+    .digest('hex');
   if (mapping.kind === 'deferred')
     return { row, piId, mapping, name, raw, sourceHash, state: 'deferred' as const, hasPoint };
   if (!hasPoint && mapping.kind !== 'site')
@@ -368,9 +371,14 @@ async function upsertResource(
   locationId: string | null,
   item: ReturnType<typeof prepare>,
 ) {
-  const specId = await resourceSpecId(target, item.mapping.spec!, item.mapping.resourceType!);
+  const specId = await resourceSpecId(
+    target,
+    item.mapping.spec!,
+    item.mapping.resourceType!,
+  );
   await merge(target, 'tmf_physical_resource', ['id'], {
     id,
+    tenant_id: args.tenantId,
     name: cut(item.name, 255),
     resource_specification_id: specId,
     resource_type: item.mapping.resourceType!,
@@ -405,14 +413,16 @@ async function ensureCatalog(target: Connection) {
     ['CableTunnel', 'Túnel de cabos'],
     ['IronPipe', 'Tubo de ferro'],
   ] as const)
-    await ensureResourceTypeShared(target, t, code, name);
+    await ensureResourceTypeShared(target, t, code, name, args.tenantId);
   for (const [code, name] of [
     ['Pole', 'Poste'],
     ['Manhole', 'Caixa subterrânea'],
+    ['category:CDOI', 'CDOI'],
+    ['category:CDOE', 'CDOE'],
     ['CTO', 'Caixa de terminação óptica'],
     ['DIO', 'Distribuidor interno óptico'],
   ] as const)
-    await ensureResourceTypeShared(target, t, code, name);
+    await ensureResourceTypeShared(target, t, code, name, args.tenantId);
   for (const [code, category, siteRole] of [
     ['BUILDING', 'Site', 'property'],
     ['CENTRAL_POP_LEGACY', 'Site', 'network'],
@@ -431,7 +441,7 @@ async function siteSpecId(target: Connection, code: string) {
   return siteSpecIdShared(target, t, code);
 }
 async function resourceSpecId(target: Connection, name: string, resourceType: string) {
-  return resourceSpecIdShared(target, t, name, resourceType);
+  return resourceSpecIdShared(target, t, name, resourceType, args.tenantId);
 }
 
 async function reject(
@@ -532,34 +542,42 @@ async function refreshMapFeatures(target: Connection, jobId: string): Promise<nu
     ENTITY_TYPE: 'PhysicalResource' | 'GeographicSite';
     RESOURCE_TYPE: string | null;
     SITE_CATEGORY: string | null;
+    SOURCE_MODEL_TYPE: 'RESOURCE_TYPE' | 'GEOGRAPHIC_SITE_SPECIFICATION';
+    SOURCE_MODEL_ID: string;
     STATUS: string | null;
     NAME: string;
     SUBLABEL: string | null;
     GEOMETRY: string;
   }>(
-    `SELECT r.id AS "ID", 'PhysicalResource' AS "ENTITY_TYPE", r.resource_type AS "RESOURCE_TYPE",
-            NULL AS "SITE_CATEGORY", r.status AS "STATUS", r.name AS "NAME", NULL AS "SUBLABEL",
-            l.geometry AS "GEOMETRY"
+    `SELECT r.id AS "ID", 'PhysicalResource' AS "ENTITY_TYPE", rt.code AS "RESOURCE_TYPE",
+            NULL AS "SITE_CATEGORY", 'RESOURCE_TYPE' AS "SOURCE_MODEL_TYPE",
+            rt.code AS "SOURCE_MODEL_ID", r.status AS "STATUS", r.name AS "NAME",
+            NULL AS "SUBLABEL", l.geometry AS "GEOMETRY"
        FROM ${touch} touch
        JOIN ${identities} identity ON identity.source_entity='${SOURCE_ENTITY}'
         AND identity.source_id=touch.source_id AND identity.target_role='primary'
        JOIN ${t('tmf_physical_resource')} r ON r.id=identity.nexus_id
+       JOIN ${t('tmf_resource_specification')} rs
+         ON rs.id=r.resource_specification_id AND rs.tenant_id=r.tenant_id
+       JOIN ${t('tmf_resource_type')} rt ON rt.id=rs.resource_type_id
        JOIN ${t('tmf_geographic_location')} l ON l.id=r.place_id
-      WHERE touch.job_id=:jobId AND r.status <> 'terminated'
-        AND r.resource_type <> 'Splitter' AND l.geometry_type='Point'
+      WHERE touch.job_id=:jobId AND r.tenant_id=:tenantId AND r.status <> 'terminated'
+        AND ${excludeInternalResourceTypesSql('rt')}
+        AND COALESCE(rt.map_presence, 1) = 1 AND l.geometry_type='Point'
      UNION ALL
      SELECT s.id AS "ID", 'GeographicSite' AS "ENTITY_TYPE", NULL AS "RESOURCE_TYPE",
-            spec.category AS "SITE_CATEGORY", s.status AS "STATUS", s.name AS "NAME", spec.code AS "SUBLABEL",
-            l.geometry AS "GEOMETRY"
+            spec.category AS "SITE_CATEGORY", 'GEOGRAPHIC_SITE_SPECIFICATION' AS "SOURCE_MODEL_TYPE",
+            spec.code AS "SOURCE_MODEL_ID", s.status AS "STATUS", s.name AS "NAME",
+            spec.code AS "SUBLABEL", l.geometry AS "GEOMETRY"
        FROM ${touch} touch
        JOIN ${identities} identity ON identity.source_entity='${SOURCE_ENTITY}'
         AND identity.source_id=touch.source_id AND identity.target_role='primary'
        JOIN ${t('tmf_geographic_site')} s ON s.id=identity.nexus_id
        JOIN ${t('tmf_geographic_site_specification')} spec ON spec.id=s.site_specification_id
        JOIN ${t('tmf_geographic_location')} l ON l.id=s.geographic_location_id
-      WHERE touch.job_id=:jobId AND spec.category IN ('Site','SubSite')
+      WHERE touch.job_id=:jobId AND s.tenant_id=:tenantId AND spec.category = 'Site'
         AND s.status NOT IN ('Retired','terminated') AND l.geometry_type='Point'`,
-    { jobId },
+    { jobId, tenantId: args.tenantId },
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
 
@@ -592,6 +610,8 @@ async function refreshMapFeatures(target: Connection, jobId: string): Promise<nu
         candidate.ENTITY_TYPE,
         candidate.RESOURCE_TYPE,
         candidate.SITE_CATEGORY,
+        candidate.SOURCE_MODEL_TYPE,
+        candidate.SOURCE_MODEL_ID,
         candidate.STATUS,
         candidate.NAME,
         candidate.SUBLABEL,
@@ -605,8 +625,9 @@ async function refreshMapFeatures(target: Connection, jobId: string): Promise<nu
 
   const insertSql = `INSERT INTO ${t('geo_map_feature')}
     (tenant_id,tile_z,tile_x,tile_y,entity_id,shape,feature_kind,entity_type,
-     type_code,site_category,status,label,sublabel,lng,lat,geometry,rank,generated_at)
-    VALUES (:1,:2,:3,:4,:5,:6,:7,:8,:9,:10,:11,:12,:13,:14,:15,NULL,0,SYSTIMESTAMP)`;
+     type_code,site_category,source_model_type,source_model_id,status,label,sublabel,lng,lat,
+     geometry,rank,generated_at)
+    VALUES (:1,:2,:3,:4,:5,:6,:7,:8,:9,:10,:11,:12,:13,:14,:15,:16,:17,NULL,0,SYSTIMESTAMP)`;
   const batchSize = 1000;
   for (let offset = 0; offset < features.length; offset += batchSize) {
     const batch = features.slice(offset, offset + batchSize);
@@ -714,9 +735,9 @@ function classify(type: string): Mapping {
   if (type.endsWith('.MANHOLE.MX'))
     return { kind: 'resource', spec: 'Netwin Manhole MX', resourceType: 'Manhole' };
   if (type.endsWith('.OPTDISTRIBUTIONBOX.CDOI'))
-    return { kind: 'resource', spec: 'Netwin CDOI', resourceType: 'CTO' };
+    return { kind: 'resource', spec: 'Netwin CDOI', resourceType: 'category:CDOI' };
   if (type.endsWith('.OPTDISTRIBUTIONBOX.CDOE'))
-    return { kind: 'resource', spec: 'Netwin CDOE', resourceType: 'CTO' };
+    return { kind: 'resource', spec: 'Netwin CDOE', resourceType: 'category:CDOE' };
   const physical: Array<[string, string, string]> = [
     ['.POLE.POLE', 'Netwin Pole', 'Pole'],
     ['.MANHOLE.', 'Netwin Manhole', 'Manhole'],

@@ -198,6 +198,16 @@ export function StudioPage({
     [],
   );
 
+  // Bloqueio de "Publicar" reportado pelo Studio do domínio ativo (hoje só `ResourceModelStudio`,
+  // via autosave) — ver doc de `onPublishBlockChange`. Domínios sem este conceito nunca chamam,
+  // e o estado permanece `false`.
+  const [publishBlocked, setPublishBlocked] = useState(false);
+  const [publishBlockedReason, setPublishBlockedReason] = useState<string | undefined>(undefined);
+  const handlePublishBlockChange = useCallback((blocked: boolean, reason?: string) => {
+    setPublishBlocked(blocked);
+    setPublishBlockedReason(reason);
+  }, []);
+
   if (!activeItem) return null;
 
   return (
@@ -259,6 +269,8 @@ export function StudioPage({
                   onEditingChange={handleEditingChange}
                   beforePublish={handleBeforePublish}
                   captureInitialSnapshot={handleCaptureInitialSnapshot}
+                  publishBlocked={publishBlocked}
+                  publishBlockedReason={publishBlockedReason}
                 />
               ) : undefined
             }
@@ -272,6 +284,7 @@ export function StudioPage({
                 isEditing={isEditing}
                 onRegisterCaptureDraft={handleRegisterCaptureDraft}
                 onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
+                onPublishBlockChange={handlePublishBlockChange}
               />
             </div>
           ) : section === 'location-model' ? (

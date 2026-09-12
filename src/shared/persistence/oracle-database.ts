@@ -26,6 +26,7 @@ import {
 } from './oracle-object-names.js';
 import { replaceQuestionBinds } from './question-binds.js';
 import { checksumMigrationBatch, findColumnDrift, MIGRATION_BATCHES } from './schema.js';
+import { createCanonicalId } from '../utils/canonical-id.js';
 
 export type OracleConnectionConfig = {
   connectString: string;
@@ -253,6 +254,9 @@ export class OracleDatabase implements DatabaseClient {
       if (batch.name === 'resource-type-map-presence-numeric') {
         await this.applyResourceTypeMapPresenceNumeric(connection);
       }
+      if (batch.name === 'resource-type-leaf-identity') {
+        await this.applyResourceTypeLeafIdentityMigration(connection);
+      }
       await connection.execute(
         `MERGE INTO ${migrations} target
          USING (SELECT :1 version, :2 name, :3 checksum FROM DUAL) source
@@ -346,6 +350,146 @@ export class OracleDatabase implements DatabaseClient {
     await executeOracleDdl(
       connection,
       `ALTER TABLE ${table} RENAME COLUMN map_presence_num TO map_presence`,
+    );
+  }
+
+  /**
+   * Reverte apenas o compartilhamento de tipos entre folhas. Specifications, Resources e o
+   * catálogo de estados permanecem no tipo original deliberadamente: uma cópia automática desses
+   * vínculos criaria semântica arbitrária. O ledger torna a sequência retomável mesmo com DDL
+   * auto-commit do Oracle.
+   */
+  private async applyResourceTypeLeafIdentityMigration(connection: Connection): Promise<void> {
+    const prefix = this.config.objectPrefix;
+    const nodes = prefixed('tmf_resource_catalog_node', prefix);
+    const types = prefixed('tmf_resource_type', prefix);
+    const ledger = prefixed('tmf_resource_type_clone_ledger', prefix);
+    const duplicates = await connection.execute<{
+      resource_type_id: string;
+      count: number | string;
+    }>(
+      `SELECT resource_type_id AS "resource_type_id", COUNT(*) AS "count"
+         FROM ${nodes}
+        WHERE kind = 'RESOURCE_TYPE' AND resource_type_id IS NOT NULL
+        GROUP BY resource_type_id HAVING COUNT(*) > 1`,
+      [],
+      QUERY_OPTIONS,
+    );
+
+    for (const duplicate of duplicates.rows ?? []) {
+      const leaves = await connection.execute<{
+        id: string;
+        tenant_id: string;
+        catalog_id: string;
+        code: string;
+        name: string;
+        description: string | null;
+        status: 'active' | 'inactive';
+        created_at: string;
+      }>(
+        `SELECT id AS "id", tenant_id AS "tenant_id", catalog_id AS "catalog_id", code AS "code",
+                name AS "name", description AS "description", status AS "status",
+                created_at AS "created_at"
+           FROM ${nodes}
+          WHERE kind = 'RESOURCE_TYPE' AND resource_type_id = :1
+          ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END,
+                   tenant_id, catalog_id, created_at, id`,
+        [duplicate.resource_type_id],
+        QUERY_OPTIONS,
+      );
+      const original = await connection.execute<{
+        id: string;
+        tenant_id: string;
+        code: string;
+        name: string;
+        description: string | null;
+        status: 'active' | 'inactive';
+        map_presence: number | null;
+        nature: 'PhysicalResource' | 'LogicalResource' | null;
+        characteristics: string | null;
+      }>(
+        `SELECT id AS "id", tenant_id AS "tenant_id", code AS "code", name AS "name",
+                description AS "description", status AS "status", map_presence AS "map_presence",
+                nature AS "nature", characteristics AS "characteristics"
+           FROM ${types} WHERE id = :1`,
+        [duplicate.resource_type_id],
+        QUERY_OPTIONS,
+      );
+      const source = original.rows?.[0];
+      if (!source) throw new Error(`ResourceType ${duplicate.resource_type_id} referenced by catalog node is missing`);
+
+      for (const leaf of (leaves.rows ?? []).slice(1)) {
+        const existing = await connection.execute<{ cloned_resource_type_id: string }>(
+          `SELECT cloned_resource_type_id AS "cloned_resource_type_id" FROM ${ledger} WHERE catalog_node_id = :1`,
+          [leaf.id],
+          QUERY_OPTIONS,
+        );
+        const cloneId = existing.rows?.[0]?.cloned_resource_type_id ?? createCanonicalId();
+        if (!existing.rows?.length) {
+          const baseCode = leaf.code.trim() || source.code;
+          let cloneCode = baseCode;
+          let suffix = 2;
+          while (
+            (
+              await connection.execute<{ id: string }>(
+                `SELECT id FROM ${types} WHERE tenant_id = :1 AND code = :2`,
+                [leaf.tenant_id, cloneCode],
+                QUERY_OPTIONS,
+              )
+            ).rows?.length
+          ) {
+            cloneCode = `${baseCode}-${suffix}`;
+            suffix += 1;
+          }
+          await connection.execute(
+            `INSERT INTO ${types}
+             (id, tenant_id, code, name, description, status, map_presence, nature, characteristics, created_at, updated_at)
+             VALUES (:1, :2, :3, :4, :5, :6, :7, :8, :9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+            [
+              cloneId,
+              leaf.tenant_id,
+              cloneCode,
+              leaf.name || source.name,
+              leaf.description ?? source.description,
+              source.status,
+              source.map_presence,
+              source.nature ?? 'PhysicalResource',
+              source.characteristics,
+            ],
+            { autoCommit: true },
+          );
+          await connection.execute(
+            `INSERT INTO ${ledger}
+             (catalog_node_id, original_resource_type_id, cloned_resource_type_id, strategy_version)
+             VALUES (:1, :2, :3, 'resource-type-leaf-identity-v1')`,
+            [leaf.id, source.id, cloneId],
+            { autoCommit: true },
+          );
+        }
+        await connection.execute(
+          `UPDATE ${nodes} SET resource_type_id = :1, updated_at = CURRENT_TIMESTAMP WHERE id = :2`,
+          [cloneId, leaf.id],
+          { autoCommit: true },
+        );
+      }
+    }
+
+    const remaining = await connection.execute<{ count: number | string }>(
+      `SELECT COUNT(*) AS "count" FROM (
+         SELECT resource_type_id FROM ${nodes}
+          WHERE kind = 'RESOURCE_TYPE' AND status = 'active' AND resource_type_id IS NOT NULL
+          GROUP BY resource_type_id HAVING COUNT(*) > 1
+       )`,
+      [],
+      QUERY_OPTIONS,
+    );
+    if (Number(remaining.rows?.[0]?.count ?? 0) > 0) {
+      throw new Error('ResourceType leaf identity backfill did not resolve every active duplicate');
+    }
+    await executeOracleDdl(
+      connection,
+      `CREATE UNIQUE INDEX ${prefix}idx_tmf_resource_catalog_node_active_type
+       ON ${nodes}(CASE WHEN kind = 'RESOURCE_TYPE' AND status = 'active' THEN resource_type_id END)`,
     );
   }
 

@@ -17,6 +17,23 @@ const APPLY = process.argv.includes('--apply');
 const TENANT_ID = 'vtal';
 const CATALOG_CODE = 'nexus-master-resource-catalog';
 
+// Script histórico de limpeza única: consolida sinônimos de typeCode (ex.: 'OpticalCable' +
+// 'DistributionCable' + 'BackboneCable' + 'DropCable') num único resource_type_id compartilhado
+// entre várias folhas. Isso é exatamente o padrão 1:N que a identidade 1:1 folha↔ResourceType
+// (plano de modelagem de recurso, §2.5/§11) elimina — rodar --apply hoje reintroduziria
+// compartilhamento e colidiria com o índice ativo 1:1 no Oracle. Mantido só para consulta em
+// dry-run; a manutenção contínua da árvore canônica é feita por seed-vtal-master-catalog.mjs,
+// que já cria/atualiza folha+tipo 1:1 e nunca reponta um tipo já vinculado.
+if (APPLY) {
+  console.error(
+    '\n[BLOQUEADO] reorganize-and-deduplicate-catalog.mjs é um script histórico de dedupe único.\n' +
+      'Aplicar --apply hoje reintroduziria compartilhamento 1:N de ResourceType, violando a\n' +
+      'identidade 1:1 folha↔ResourceType. Use scripts/seed-vtal-master-catalog.mjs --apply para\n' +
+      'manutenção contínua da árvore canônica (idempotente e 1:1-safe).\n',
+  );
+  process.exit(1);
+}
+
 /**
  * Mapeamento da árvore canônica solicitada pelo usuário.
  * Para cada nó folha ou grupo, definimos:

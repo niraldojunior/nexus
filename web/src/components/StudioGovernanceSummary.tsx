@@ -32,6 +32,14 @@ export type StudioGovernanceSummaryProps = {
    * o draft nasce com `{}` como hoje.
    */
   captureInitialSnapshot?: () => Promise<Record<string, unknown>>;
+  /**
+   * Bloqueia o botão "Publicar" independente do estado do draft — usado por domínios com
+   * autosave (ex.: `ResourceModelStudio`) enquanto houver edição pendente/em voo/com erro no
+   * painel de detalhe (plano §5.8). Domínios que não repassam isto nunca ficam bloqueados.
+   */
+  publishBlocked?: boolean;
+  /** Motivo exibido no `title` do botão "Publicar" enquanto `publishBlocked` for `true`. */
+  publishBlockedReason?: string;
 };
 
 type ModalErrorState = {
@@ -55,6 +63,8 @@ export function StudioGovernanceSummary({
   onEditingChange,
   beforePublish,
   captureInitialSnapshot,
+  publishBlocked = false,
+  publishBlockedReason,
 }: StudioGovernanceSummaryProps) {
   const [status, setStatus] = useState<StudioStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -256,7 +266,8 @@ export function StudioGovernanceSummary({
                 )
               }
               onClick={handlePublish}
-              disabled={busy !== null}
+              disabled={busy !== null || publishBlocked}
+              title={busy === null && publishBlocked ? publishBlockedReason : undefined}
             >
               Publicar
             </Button>

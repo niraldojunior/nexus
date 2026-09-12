@@ -114,6 +114,7 @@ async function main() {
       console.log(
         '\n⚠️  geo_map_feature está vazio para este tenant. Rode build-map-features.mjs antes.',
       );
+      if (APPLY) throw new Error(`Rebuild de densidade abortado: tenant ${TENANT} sem features.`);
     }
 
     if (!APPLY) {

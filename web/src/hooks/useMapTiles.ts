@@ -87,6 +87,9 @@ export function useMapTiles(
     const nothingRequested = !bounds || (Array.isArray(include) && include.length === 0);
     if (nothingRequested) {
       if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
+      // Uma resposta iniciada antes de todas as camadas serem desligadas não pode repopular o
+      // overlay depois que ele foi limpo.
+      tokenRef.current += 1;
       lastKeyRef.current = null;
       setData([]);
       setLoading(false);
@@ -105,9 +108,12 @@ export function useMapTiles(
     if (key === lastKeyRef.current) return;
 
     if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
+    // Invalida a geração anterior AGORA, não só quando o debounce abaixo disparar. Sem isso, uma
+    // resposta da viewport anterior que chega durante estes 250 ms ainda passa pela guarda e pode
+    // substituir o mapa novo por dados antigos (inclusive vazios).
+    const token = ++tokenRef.current;
     debounceRef.current = window.setTimeout(() => {
       lastKeyRef.current = key;
-      const token = ++tokenRef.current;
       setLoading(true);
 
       const perTile = tiles.map((tile) => {
@@ -126,11 +132,21 @@ export function useMapTiles(
         return pending;
       });
 
-      Promise.all(perTile)
+      Promise.allSettled(perTile)
         .then((results) => {
           if (tokenRef.current !== token) return;
-          const merged = results
-            .flat()
+          // Um pan normalmente cobre vários tiles. Falha de transporte em um deles não pode apagar
+          // todos os outros nem transformar erro em "viewport vazia"; preservamos os tiles que
+          // responderam e, se todos falharem, mantemos o último resultado válido para permitir retry
+          // no próximo movimento/invalidação.
+          const fulfilled = results.filter(
+            (result): result is PromiseFulfilledResult<MapTileFeature[]> =>
+              result.status === 'fulfilled',
+          );
+          if (fulfilled.length !== results.length) lastKeyRef.current = null;
+          if (fulfilled.length === 0) return;
+          const merged = fulfilled
+            .flatMap((result) => result.value)
             .filter(
               (feature) =>
                 isIncluded(feature, include) &&
@@ -139,9 +155,6 @@ export function useMapTiles(
                   : true),
             );
           setData(merged);
-        })
-        .catch(() => {
-          if (tokenRef.current === token) setData([]);
         })
         .finally(() => {
           if (tokenRef.current === token) setLoading(false);

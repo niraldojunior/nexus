@@ -45,6 +45,13 @@ import type {
   MoveResourceCatalogNodeInput,
   ReorderResourceCatalogNodesInput,
   ResourceCatalogNodeImpact,
+  ResourceRelationshipType,
+  CreateResourceRelationshipTypeInput,
+  UpdateResourceRelationshipTypeInput,
+  ResourceTypeRelationshipRule,
+  ResourceModelSnapshotSource,
+  CreateResourceTypeRelationshipRuleInput,
+  UpdateResourceTypeRelationshipRuleInput,
 } from './domain.js';
 import type {
   IResourceRepository,
@@ -77,6 +84,15 @@ type ResourceServiceDependencies = {
   lookupPartyRoles?: (
     partyId: string,
   ) => Promise<Array<{ name: string; status: 'active' | 'inactive' | 'terminated' }>>;
+  /**
+   * Porta de leitura para validar `targetId` de uma regra de relação cujo `targetKind` seja
+   * `GEOGRAPHIC_SITE_SPECIFICATION` — mesmo padrão de `lookupPlace`, sem importar `GeoService`
+   * nem duplicar a entidade no módulo Resource (plano §3.7). Retorna `undefined` quando a
+   * especificação não existe/está retirada.
+   */
+  lookupGeoSiteSpecification?: (
+    id: string,
+  ) => Promise<{ id: string; name: string } | undefined> | { id: string; name: string } | undefined;
   mapFeatureSynchronizer?: MapFeatureSynchronizer;
   /** Trilha de auditoria + outbox (C7) — best-effort: sem `db` (ex.: testes que montam o
    *  serviço com um repositório em memória), a auditoria só não roda. */
@@ -250,33 +266,370 @@ export class ResourceService {
   }
 
   public async listResourceTypes(context?: RequestContext): Promise<ResourceType[]> {
-    // ResourceType é vocabulário canônico compartilhado. O contexto só enriquece a categoria com
-    // a árvore ResourceCatalog do tenant; nunca restringe quais tipos podem ser referenciados.
     return await this.repository.listResourceTypes(scopeOf(context));
   }
 
-  /**
-   * Único campo mutável de `ResourceType` hoje (issue #216) — as características que definem o
-   * tipo, herdadas por toda `ResourceSpecification` vinculada. Nome/código/categoria continuam
-   * fora de escopo (CRUD completo é trabalho futuro, ver comentário abaixo).
-   */
   public async updateResourceType(
     id: string,
     input: UpdateResourceTypeInput,
     context?: RequestContext,
   ): Promise<ResourceType> {
-    const current = await this.getResourceTypeByIdOrThrow(id, context);
-    const characteristics = assertCanonicalCharacteristics(input.resourceTypeCharacteristic);
-    await this.repository.updateResourceTypeCharacteristics(id, characteristics, scopeOf(context));
-    const updated: ResourceType = { ...current, resourceTypeCharacteristic: characteristics };
+    // A reativação faz parte do lifecycle lógico (C6), inclusive ao restaurar a baseline do
+    // Studio. A operação continua protegida pelo endpoint administrativo; só os fluxos que
+    // exigem um tipo em uso devem rejeitar tipos inativos.
+    const current = await this.getResourceTypeByIdOrThrow(id, context, true);
+    if (input.code !== undefined) assertName(input.code, 'code');
+    if (input.name !== undefined) assertName(input.name);
+    const characteristics =
+      input.resourceTypeCharacteristic === undefined
+        ? current.resourceTypeCharacteristic
+        : assertCanonicalCharacteristics(input.resourceTypeCharacteristic);
+    const nature = input.nature ?? current.nature;
+    const updated = await this.repository.upsertResourceType({
+      ...current,
+      code: input.code?.trim() ?? current.code,
+      name: input.name?.trim() ?? current.name,
+      ...(input.description !== undefined
+        ? input.description.trim()
+          ? { description: input.description.trim() }
+          : {}
+        : current.description
+          ? { description: current.description }
+          : {}),
+      status: input.status ?? current.status,
+      nature,
+      mapPresence: nature === 'LogicalResource' ? false : (input.mapPresence ?? current.mapPresence),
+      ...(characteristics ? { resourceTypeCharacteristic: characteristics } : {}),
+    });
     await this.emit(
       'ResourceTypeAttributeValueChangeEvent',
       updated.id,
       'ResourceType',
       updated,
       context,
+      current,
     );
     return updated;
+  }
+
+  // --- Relações permitidas no modelo de recursos -------------------------------------------------
+
+  public async ensureBootstrapResourceRelationshipTypes(context?: RequestContext): Promise<{
+    created: number;
+    relationshipTypes: ResourceRelationshipType[];
+  }> {
+    const tenantId = tenantOf(context);
+    const definitions: CreateResourceRelationshipTypeInput[] = [
+      {
+        code: 'containsAsChild',
+        name: 'Contém como filho',
+        inverseCode: 'containedBy',
+        allowedTargetKinds: ['RESOURCE_TYPE', 'GEOGRAPHIC_SITE_SPECIFICATION'],
+      },
+      {
+        code: 'containedBy',
+        name: 'É contido por',
+        inverseCode: 'containsAsChild',
+        allowedTargetKinds: ['RESOURCE_TYPE', 'GEOGRAPHIC_SITE_SPECIFICATION'],
+      },
+      {
+        code: 'connectedTo',
+        name: 'Conectado a',
+        inverseCode: 'connectedTo',
+        symmetric: true,
+        allowedTargetKinds: ['RESOURCE_TYPE', 'GEOGRAPHIC_SITE_SPECIFICATION'],
+      },
+    ];
+    return await this.repository.transaction(async () => {
+      let created = 0;
+      for (const definition of definitions) {
+        const existing = await this.repository.getResourceRelationshipType(definition.code, { tenantId });
+        if (existing) continue;
+        created += 1;
+        await this.repository.upsertResourceRelationshipType({
+          '@type': 'ResourceRelationshipType',
+          id: createCanonicalId(),
+          href: buildHref('resourceRelationshipType', definition.code),
+          code: definition.code,
+          name: definition.name,
+          inverseCode: definition.inverseCode ?? definition.code,
+          symmetric: definition.symmetric ?? false,
+          allowedTargetKinds: definition.allowedTargetKinds,
+          ...(definition.cardinality ? { cardinality: definition.cardinality } : {}),
+          lifecycleStatus: 'Active',
+          tenantId,
+          _bootstrapProtected: true,
+        });
+      }
+      return {
+        created,
+        relationshipTypes: await this.repository.listResourceRelationshipTypes({ tenantId }),
+      };
+    });
+  }
+
+  public async listResourceRelationshipTypes(
+    context?: RequestContext,
+  ): Promise<ResourceRelationshipType[]> {
+    return await this.repository.listResourceRelationshipTypes(scopeOf(context));
+  }
+
+  public async createResourceRelationshipType(
+    input: CreateResourceRelationshipTypeInput,
+    context?: RequestContext,
+  ): Promise<ResourceRelationshipType> {
+    assertName(input.code, 'code');
+    assertName(input.name);
+    if (!input.allowedTargetKinds.length) {
+      throw new AppError('relationship type must allow at least one target kind', {
+        code: 'RESOURCE_RELATIONSHIP_TYPE_TARGET_REQUIRED',
+        statusCode: 400,
+      });
+    }
+    const tenantId = tenantOf(context);
+    const code = input.code.trim();
+    if (await this.repository.getResourceRelationshipType(code, { tenantId })) {
+      throw new AppError('resource relationship type code already exists', {
+        code: 'RESOURCE_RELATIONSHIP_TYPE_CODE_DUPLICATE',
+        statusCode: 409,
+      });
+    }
+    const relationshipType: ResourceRelationshipType = {
+      '@type': 'ResourceRelationshipType',
+      id: createCanonicalId(),
+      href: buildHref('resourceRelationshipType', code),
+      code,
+      name: input.name.trim(),
+      inverseCode: input.inverseCode?.trim() || code,
+      symmetric: input.symmetric ?? input.inverseCode?.trim() === code,
+      allowedTargetKinds: [...new Set(input.allowedTargetKinds)],
+      ...(input.cardinality ? { cardinality: input.cardinality } : {}),
+      lifecycleStatus: 'Active',
+      tenantId,
+    };
+    const stored = await this.repository.upsertResourceRelationshipType(relationshipType);
+    await this.emit(
+      'ResourceRelationshipTypeCreateEvent',
+      stored.id,
+      'ResourceRelationshipType',
+      stored,
+      context,
+    );
+    return stored;
+  }
+
+  public async updateResourceRelationshipType(
+    code: string,
+    input: UpdateResourceRelationshipTypeInput,
+    context?: RequestContext,
+  ): Promise<ResourceRelationshipType> {
+    const current = await this.getResourceRelationshipTypeOrThrow(code, context);
+    if (input.name !== undefined) assertName(input.name);
+    if (input.allowedTargetKinds !== undefined && input.allowedTargetKinds.length === 0) {
+      throw new AppError('relationship type must allow at least one target kind', {
+        code: 'RESOURCE_RELATIONSHIP_TYPE_TARGET_REQUIRED',
+        statusCode: 400,
+      });
+    }
+    const updated = await this.repository.upsertResourceRelationshipType({
+      ...current,
+      name: input.name?.trim() ?? current.name,
+      inverseCode: input.inverseCode?.trim() ?? current.inverseCode,
+      symmetric: input.symmetric ?? current.symmetric,
+      allowedTargetKinds: input.allowedTargetKinds
+        ? [...new Set(input.allowedTargetKinds)]
+        : current.allowedTargetKinds,
+      ...(input.cardinality !== undefined
+        ? input.cardinality
+          ? { cardinality: input.cardinality }
+          : {}
+        : current.cardinality
+          ? { cardinality: current.cardinality }
+          : {}),
+      lifecycleStatus: input.lifecycleStatus ?? current.lifecycleStatus,
+    });
+    await this.emit(
+      'ResourceRelationshipTypeAttributeValueChangeEvent',
+      updated.id,
+      'ResourceRelationshipType',
+      updated,
+      context,
+      current,
+    );
+    return updated;
+  }
+
+  public async retireResourceRelationshipType(
+    code: string,
+    context?: RequestContext,
+  ): Promise<ResourceRelationshipType> {
+    const current = await this.getResourceRelationshipTypeOrThrow(code, context);
+    if (current._bootstrapProtected) {
+      throw new AppError('bootstrap resource relationship type cannot be retired', {
+        code: 'RESOURCE_RELATIONSHIP_TYPE_BOOTSTRAP_PROTECTED',
+        statusCode: 409,
+      });
+    }
+    return await this.updateResourceRelationshipType(code, { lifecycleStatus: 'Retired' }, context);
+  }
+
+  public async listResourceTypeRelationshipRules(
+    resourceTypeId: string,
+    context?: RequestContext,
+    includeRetired = false,
+  ): Promise<ResourceTypeRelationshipRule[]> {
+    await this.getResourceTypeByIdOrThrow(resourceTypeId, context);
+    return await this.repository.listResourceTypeRelationshipRules(resourceTypeId, {
+      ...scopeOf(context),
+      includeRetired,
+    });
+  }
+
+  public async listResourceTypeRelationshipRulesBySourceIds(
+    resourceTypeIds: string[],
+    context?: RequestContext,
+    includeRetired = false,
+  ): Promise<ResourceTypeRelationshipRule[]> {
+    const uniqueIds = [...new Set(resourceTypeIds)];
+    if (uniqueIds.length === 0) return [];
+    const visibleTypes = new Set(
+      (await this.repository.listResourceTypes(scopeOf(context))).map((resourceType) => resourceType.id),
+    );
+    if (uniqueIds.some((id) => !visibleTypes.has(id))) {
+      throw new AppError('resource type not found', {
+        code: 'RESOURCE_TYPE_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    return await this.repository.listResourceTypeRelationshipRulesBySourceIds(uniqueIds, {
+      ...scopeOf(context),
+      includeRetired,
+    });
+  }
+
+  public async createResourceTypeRelationshipRule(
+    resourceTypeId: string,
+    input: CreateResourceTypeRelationshipRuleInput,
+    context?: RequestContext,
+  ): Promise<ResourceTypeRelationshipRule> {
+    const source = await this.getResourceTypeByIdOrThrow(resourceTypeId, context);
+    const tenantId = tenantOf(context);
+    const relationshipType = await this.getResourceRelationshipTypeOrThrow(
+      input.relationshipTypeCode,
+      context,
+    );
+    if (relationshipType.lifecycleStatus !== 'Active') {
+      throw new AppError('resource relationship type is retired', {
+        code: 'RESOURCE_RELATIONSHIP_TYPE_RETIRED',
+        statusCode: 409,
+      });
+    }
+    if (!relationshipType.allowedTargetKinds.includes(input.targetKind)) {
+      throw new AppError('target kind is not allowed by resource relationship type', {
+        code: 'RESOURCE_RELATIONSHIP_TARGET_KIND_NOT_ALLOWED',
+        statusCode: 409,
+      });
+    }
+    if (input.targetKind === 'RESOURCE_TYPE') {
+      await this.getResourceTypeByIdOrThrow(input.targetId, context);
+    } else if (input.targetKind === 'GEOGRAPHIC_SITE_SPECIFICATION') {
+      const geoSpec = await this.dependencies.lookupGeoSiteSpecification?.(input.targetId);
+      if (!geoSpec) {
+        throw new AppError('geographic site specification not found', {
+          code: 'RESOURCE_TYPE_RELATIONSHIP_RULE_GEO_TARGET_NOT_FOUND',
+          statusCode: 404,
+        });
+      }
+    }
+    const existing = await this.repository.listResourceTypeRelationshipRules(resourceTypeId, {
+      tenantId,
+      includeRetired: false,
+    });
+    if (
+      existing.some(
+        (rule) =>
+          rule.relationshipTypeCode === relationshipType.code &&
+          rule.targetKind === input.targetKind &&
+          rule.targetId === input.targetId,
+      )
+    ) {
+      throw new AppError('resource type relationship rule already exists', {
+        code: 'RESOURCE_TYPE_RELATIONSHIP_RULE_DUPLICATE',
+        statusCode: 409,
+      });
+    }
+    const stored = await this.repository.upsertResourceTypeRelationshipRule({
+      '@type': 'ResourceTypeRelationshipRule',
+      id: createCanonicalId(),
+      href: buildHref('resourceTypeRelationshipRule', resourceTypeId),
+      sourceResourceTypeId: source.id,
+      relationshipTypeCode: relationshipType.code,
+      targetKind: input.targetKind,
+      targetId: input.targetId,
+      ...(input.cardinality ? { cardinality: input.cardinality } : {}),
+      lifecycleStatus: 'Active',
+      tenantId,
+      ...(input.validFor ? { validFor: input.validFor } : {}),
+    });
+    await this.emit(
+      'ResourceTypeRelationshipRuleCreateEvent',
+      stored.id,
+      'ResourceTypeRelationshipRule',
+      stored,
+      context,
+    );
+    return stored;
+  }
+
+  public async updateResourceTypeRelationshipRule(
+    resourceTypeId: string,
+    ruleId: string,
+    input: UpdateResourceTypeRelationshipRuleInput,
+    context?: RequestContext,
+  ): Promise<ResourceTypeRelationshipRule> {
+    await this.getResourceTypeByIdOrThrow(resourceTypeId, context);
+    const current = await this.repository.getResourceTypeRelationshipRule(ruleId, scopeOf(context));
+    if (!current || current.sourceResourceTypeId !== resourceTypeId) {
+      throw new AppError('resource type relationship rule not found', {
+        code: 'RESOURCE_TYPE_RELATIONSHIP_RULE_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    const stored = await this.repository.upsertResourceTypeRelationshipRule({
+      ...current,
+      ...(input.cardinality !== undefined
+        ? input.cardinality
+          ? { cardinality: input.cardinality }
+          : {}
+        : current.cardinality
+          ? { cardinality: current.cardinality }
+          : {}),
+      ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
+      lifecycleStatus: input.lifecycleStatus ?? current.lifecycleStatus,
+    });
+    await this.emit(
+      'ResourceTypeRelationshipRuleAttributeValueChangeEvent',
+      stored.id,
+      'ResourceTypeRelationshipRule',
+      stored,
+      context,
+      current,
+    );
+    return stored;
+  }
+
+  private async getResourceRelationshipTypeOrThrow(
+    code: string,
+    context?: RequestContext,
+  ): Promise<ResourceRelationshipType> {
+    const relationshipType = await this.repository.getResourceRelationshipType(code, scopeOf(context));
+    if (!relationshipType) {
+      throw new AppError('resource relationship type not found', {
+        code: 'RESOURCE_RELATIONSHIP_TYPE_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    return relationshipType;
   }
 
   // --- Árvore dinâmica de catálogo (issue #188) -------------------------------------------------
@@ -425,15 +778,18 @@ export class ResourceService {
     input: CreateResourceCatalogNodeInput,
     context?: RequestContext,
   ): Promise<ResourceCatalogNode> {
-    assertName(input.code, 'code');
-    assertName(input.name);
     const catalog = await this.getResourceCatalogOrThrow(catalogId, context);
     const tenantId = tenantOf(context);
-    const duplicate = await this.repository.getResourceCatalogNodeByCode(
-      catalog.id,
-      input.code.trim(),
-      { tenantId },
-    );
+    const id = createCanonicalId();
+    const leafInput = input.kind === 'RESOURCE_TYPE' ? input : undefined;
+    const defaultName = leafInput ? 'Novo Tipo de Recurso' : 'Novo Grupo';
+    const name = input.name?.trim() || defaultName;
+    const code = input.code?.trim() || `${leafInput ? 'resource-type' : 'group'}-${id}`;
+    assertName(code, 'code');
+    assertName(name);
+    const duplicate = await this.repository.getResourceCatalogNodeByCode(catalog.id, code, {
+      tenantId,
+    });
     if (duplicate) {
       throw new AppError('resource catalog node code already exists', {
         code: 'RESOURCE_CATALOG_NODE_CODE_DUPLICATE',
@@ -441,29 +797,59 @@ export class ResourceService {
       });
     }
     const parent = await this.assertValidParent(catalog.id, input.parentNodeId, context);
-    const resourceType =
-      input.kind === 'RESOURCE_TYPE'
-        ? await this.getResourceTypeByIdOrThrow(input.resourceTypeId, context)
-        : undefined;
-    const id = createCanonicalId();
+    const resourceTypeId = leafInput ? createCanonicalId() : undefined;
     const node: ResourceCatalogNode = {
       '@type': 'ResourceCatalogNode',
       id,
       href: buildHref('resourceCatalogNode', id),
       catalogId: catalog.id,
-      code: input.code.trim(),
-      name: input.name.trim(),
+      code,
+      name,
       kind: input.kind,
       status: 'active',
       sortOrder: input.sortOrder ?? 0,
       tenantId,
       ...(parent ? { parentNodeId: parent.id } : {}),
-      ...(resourceType ? { resourceTypeId: resourceType.id } : {}),
+      ...(resourceTypeId ? { resourceTypeId } : {}),
       ...(input.description?.trim() ? { description: input.description.trim() } : {}),
       ...(input.metadata ? { metadata: input.metadata } : {}),
       ...(context?.actorSub ? { createdBy: context.actorSub, updatedBy: context.actorSub } : {}),
     };
-    const stored = await this.repository.upsertResourceCatalogNode(node);
+    const stored = await this.repository.transaction(async () => {
+      if (resourceTypeId) {
+        const typeDuplicate = await this.repository.getResourceTypeByCode(node.code, { tenantId });
+        if (typeDuplicate) {
+          throw new AppError('resource type code already exists', {
+            code: 'RESOURCE_TYPE_CODE_DUPLICATE',
+            statusCode: 409,
+          });
+        }
+        await this.repository.upsertResourceType({
+          '@type': 'ResourceType',
+          id: resourceTypeId,
+          href: buildHref('resourceType', resourceTypeId),
+          code: node.code,
+          name: node.name,
+          categoryCode: 'Uncategorized',
+          ...(node.description ? { description: node.description } : {}),
+          status: 'active',
+          nature: leafInput?.nature ?? 'PhysicalResource',
+          mapPresence:
+            leafInput?.nature === 'LogicalResource' ? false : (leafInput?.mapPresence ?? false),
+          resourceTypeCharacteristic: assertCanonicalCharacteristics(
+            leafInput?.resourceTypeCharacteristic ?? [],
+          ),
+          tenantId,
+        });
+      }
+      return await this.repository.upsertResourceCatalogNode(node);
+    });
+    if (resourceTypeId) {
+      const resourceType = await this.repository.getResourceType(resourceTypeId, { tenantId });
+      if (resourceType) {
+        await this.emit('ResourceTypeCreateEvent', resourceType.id, 'ResourceType', resourceType, context);
+      }
+    }
     await this.emit(
       'ResourceCatalogNodeCreateEvent',
       stored.id,
@@ -501,7 +887,7 @@ export class ResourceService {
       }
     }
 
-    const updated = await this.repository.upsertResourceCatalogNode({
+    const nextNode: ResourceCatalogNode = {
       ...current,
       code: input.code !== undefined ? input.code.trim() : current.code,
       name: input.name?.trim() ?? current.name,
@@ -519,7 +905,61 @@ export class ResourceService {
           ? { description: current.description }
           : {}),
       ...(context?.actorSub ? { updatedBy: context.actorSub } : {}),
+    };
+    const updated = await this.repository.transaction(async () => {
+      if (nextNode.kind === 'RESOURCE_TYPE' && nextNode.resourceTypeId) {
+        // O nó e seu tipo formam um agregado 1:1. Atualizar o lifecycle do nó precisa poder
+        // reativar o tipo correspondente ao restaurar uma baseline do Studio.
+        const resourceType = await this.getResourceTypeByIdOrThrow(
+          nextNode.resourceTypeId,
+          context,
+          true,
+        );
+        if (nextNode.code !== resourceType.code) {
+          const typeDuplicate = await this.repository.getResourceTypeByCode(nextNode.code, {
+            tenantId: tenantOf(context),
+          });
+          if (typeDuplicate && typeDuplicate.id !== resourceType.id) {
+            throw new AppError('resource type code already exists', {
+              code: 'RESOURCE_TYPE_CODE_DUPLICATE',
+              statusCode: 409,
+            });
+          }
+        }
+        await this.repository.upsertResourceType({
+          ...resourceType,
+          code: nextNode.code,
+          name: nextNode.name,
+          ...(nextNode.description ? { description: nextNode.description } : {}),
+          status: nextNode.status,
+          nature: input.nature ?? resourceType.nature,
+          mapPresence:
+            (input.nature ?? resourceType.nature) === 'LogicalResource'
+              ? false
+              : (input.mapPresence ?? resourceType.mapPresence),
+          ...(input.resourceTypeCharacteristic !== undefined
+            ? {
+                resourceTypeCharacteristic: assertCanonicalCharacteristics(
+                  input.resourceTypeCharacteristic,
+                ),
+              }
+            : {}),
+        });
+      }
+      return await this.repository.upsertResourceCatalogNode(nextNode);
     });
+    if (updated.kind === 'RESOURCE_TYPE' && updated.resourceTypeId) {
+      const resourceType = await this.repository.getResourceType(updated.resourceTypeId, scopeOf(context));
+      if (resourceType) {
+        await this.emit(
+          'ResourceTypeAttributeValueChangeEvent',
+          resourceType.id,
+          'ResourceType',
+          resourceType,
+          context,
+        );
+      }
+    }
     await this.emit(
       'ResourceCatalogNodeAttributeValueChangeEvent',
       updated.id,
@@ -812,6 +1252,41 @@ export class ResourceService {
     });
   }
 
+  public async getResourceModelSnapshotSource(
+    catalogId: string,
+    context?: RequestContext,
+    includeInactive = false,
+  ): Promise<ResourceModelSnapshotSource> {
+    const catalog = await this.getResourceCatalogOrThrow(catalogId, context);
+    const nodes = await this.repository.listResourceCatalogNodes(catalogId, {
+      ...scopeOf(context),
+      includeInactive,
+    });
+    const resourceTypeIds = [
+      ...new Set(
+        nodes.flatMap((node) =>
+          node.kind === 'RESOURCE_TYPE' && node.resourceTypeId ? [node.resourceTypeId] : [],
+        ),
+      ),
+    ];
+    const visibleTypes = new Map(
+      (await this.repository.listResourceTypes(scopeOf(context))).map((resourceType) => [
+        resourceType.id,
+        resourceType,
+      ]),
+    );
+    const resourceTypes = resourceTypeIds.flatMap((id) => {
+      const resourceType = visibleTypes.get(id);
+      return resourceType ? [resourceType] : [];
+    });
+    const relationshipRules =
+      await this.repository.listResourceTypeRelationshipRulesBySourceIds(resourceTypeIds, {
+        ...scopeOf(context),
+        includeRetired: false,
+      });
+    return { catalog, nodes, resourceTypes, relationshipRules };
+  }
+
   /** Monta a árvore a partir de uma consulta flat, em memória, O(n) (plano §4). */
   public async getResourceCatalogTree(
     catalogId: string,
@@ -995,16 +1470,16 @@ export class ResourceService {
   private async getResourceTypeByIdOrThrow(
     id: string,
     context?: RequestContext,
+    includeInactive = false,
   ): Promise<ResourceType> {
-    const types = await this.repository.listResourceTypes(scopeOf(context));
-    const type = types.find((candidate) => candidate.id === id);
+    const type = await this.repository.getResourceType(id, scopeOf(context));
     if (!type) {
       throw new AppError('resource type not found', {
         code: 'RESOURCE_TYPE_NOT_FOUND',
         statusCode: 404,
       });
     }
-    if (type.status !== 'active') {
+    if (!includeInactive && type.status !== 'active') {
       throw new AppError('resource type is inactive', {
         code: 'RESOURCE_TYPE_INACTIVE',
         statusCode: 409,

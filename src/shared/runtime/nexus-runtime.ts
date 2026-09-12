@@ -130,6 +130,11 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
       }
       return undefined;
     },
+    lookupGeoSiteSpecification: async (id) => {
+      const spec = await geoService.getSpec(id);
+      if (!spec) return undefined;
+      return { id: spec.id, name: spec.name };
+    },
     lookupParty: async (id) => {
       const party = await partyService.getParty(id);
       if (!party) return undefined;

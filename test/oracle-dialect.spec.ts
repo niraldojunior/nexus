@@ -7,6 +7,7 @@ import {
 } from '../src/shared/persistence/oracle-dialect-lint.js';
 import {
   ORACLE_JSON_CONSTRAINTS_SQL,
+  ORACLE_MIGRATION_BATCHES,
   ORACLE_MIGRATIONS_SQL,
   ORACLE_SCHEMA_SQL,
   splitOracleStatements,
@@ -203,6 +204,40 @@ test('text_pattern_ops index (search prefix path) survives the Oracle schema tra
     ORACLE_MIGRATIONS_SQL,
     /CREATE INDEX idx_tmf_physical_resource_name_lower\s+ON tmf_physical_resource \(LOWER\(name\)\)/,
   );
+});
+
+test('source_model_id escapa do dimensionamento por sufixo `_id`', () => {
+  // A inferência de tipo do adaptador é por NOME de coluna: tudo que termina em `_id` vira
+  // VARCHAR2(36), o tamanho de um UUID. Mas geo_map_feature.source_model_id guarda o `code` do
+  // ResourceType publicado pelo Studio — um caminho de categoria, não um id
+  // ('category:Infrastructure.CivilWorks:type:Pole' tem 44 chars e estourou ORA-12899 no rebuild
+  // do índice do mapa). Mesma classe do CHECK(col IS JSON) global por nome: a heurística acerta o
+  // caso comum e precisa de exceção nominal quando o nome mente sobre o conteúdo.
+  const table = ORACLE_MIGRATIONS_SQL.split('CREATE TABLE geo_map_feature')[1]!.split(';')[0]!;
+  assert.match(table, /source_model_id VARCHAR2\(255 CHAR\)/);
+  assert.doesNotMatch(table, /source_model_id VARCHAR2\(36 CHAR\)/);
+  // A regra geral continua valendo para as colunas que realmente guardam UUID.
+  assert.match(table, /tenant_id VARCHAR2\(36 CHAR\)/);
+  // O ADD COLUMN do lote 12 (bases anteriores à coluna) precisa do mesmo tipo, senão recria o
+  // problema em quem migra em vez de criar do zero.
+  const added = ORACLE_MIGRATION_BATCHES.find(
+    (candidate) => candidate.name === 'geo-map-feature-source-model',
+  );
+  assert.ok(added, 'lote que adiciona source_model_id deve existir');
+  assert.match(added.sql, /ADD source_model_id VARCHAR2\(255 CHAR\)/);
+});
+
+test('ALTER COLUMN ... TYPE vira MODIFY no Oracle (lote 16)', () => {
+  // Postgres alarga com `ALTER COLUMN <col> TYPE <tipo>`; Oracle escreve `MODIFY (<col> <tipo>)`.
+  // Sem esta reescrita o lote chegaria ao banco como sintaxe inválida. O lote existe porque bases
+  // criadas antes da exceção acima já têm a coluna estreita.
+  const batch = ORACLE_MIGRATION_BATCHES.find(
+    (candidate) => candidate.name === 'map-feature-source-model-id-width',
+  );
+  assert.ok(batch, 'lote de alargamento de source_model_id deve existir');
+  assert.equal(batch.version, 16);
+  assert.match(batch.sql, /ALTER TABLE geo_map_feature MODIFY \(source_model_id VARCHAR2\(255 CHAR\)\)/);
+  assert.doesNotMatch(batch.sql, /ALTER COLUMN/i);
 });
 
 test('findPostgresisms catches constructs the translator cannot bridge', () => {

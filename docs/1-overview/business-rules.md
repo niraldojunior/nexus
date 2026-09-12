@@ -219,8 +219,7 @@ governança (auditoria + evento TMF688). Sem listas fechadas hardcoded no códig
 exige deploy, o inventário fica permanentemente atrasado em relação à realidade de campo — e a
 operação passa a usar planilha paralela, que é o problema que o Nexus existe para resolver.
 
-Status: ⚠️ **Parcial** — Specifications possuem bootstrap e APIs, mas os catálogos governados de
-RelationshipType e parte dos lifecycles/versionamentos ainda estão pendentes ([#159](https://github.com/niraldojunior/nexus/issues/159),
+Status: ⚠️ **Parcial** — Specifications possuem bootstrap e APIs; o catálogo governado de `ResourceRelationshipType` e regras permitidas por tipo foram entregues no Oracle com bootstrap e API ([#230](https://github.com/niraldojunior/nexus/issues/230)), mas os catálogos governados de Service e parte dos lifecycles/versionamentos transversais ainda estão pendentes ([#159](https://github.com/niraldojunior/nexus/issues/159),
 [#147](https://github.com/niraldojunior/nexus/issues/147) e [#156](https://github.com/niraldojunior/nexus/issues/156)).
 
 ---

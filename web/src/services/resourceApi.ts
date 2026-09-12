@@ -32,8 +32,9 @@ export type ResourceType = {
   categoryCode: string;
   description?: string;
   status: 'active' | 'inactive';
-  // Características que definem o tipo (issue #216) — herdadas por toda ResourceSpecification
-  // desse tipo. Único campo mutável de ResourceType hoje; ver updateResourceType.
+  /** Campos presentes no contrato atual; opcionais para compatibilidade de leitura com catálogos legados. */
+  nature?: 'PhysicalResource' | 'LogicalResource';
+  mapPresence?: boolean;
   resourceTypeCharacteristic?: ResourceCharacteristic[];
 };
 
@@ -150,7 +151,58 @@ export type ResourceSpecificationPayload = {
 };
 
 export type UpdateResourceTypeInput = {
-  resourceTypeCharacteristic: ResourceCharacteristic[];
+  code?: string;
+  name?: string;
+  description?: string;
+  status?: ResourceType['status'];
+  nature?: ResourceType['nature'];
+  mapPresence?: boolean;
+  resourceTypeCharacteristic?: ResourceCharacteristic[];
+};
+
+export type ResourceRelationshipTargetKind = 'RESOURCE_TYPE' | 'GEOGRAPHIC_SITE_SPECIFICATION';
+
+export type ResourceRelationshipType = {
+  '@type': 'ResourceRelationshipType';
+  id: string;
+  href: string;
+  code: string;
+  name: string;
+  inverseCode: string;
+  symmetric: boolean;
+  allowedTargetKinds: ResourceRelationshipTargetKind[];
+  cardinality?: { maxSourcePerTarget?: number; maxTargetPerSource?: number };
+  lifecycleStatus: 'Active' | 'Retired';
+};
+
+export type ResourceTypeRelationshipRule = {
+  '@type': 'ResourceTypeRelationshipRule';
+  id: string;
+  href: string;
+  sourceResourceTypeId: string;
+  relationshipTypeCode: string;
+  targetKind: ResourceRelationshipTargetKind;
+  targetId: string;
+  cardinality?: { maxSourcePerTarget?: number; maxTargetPerSource?: number };
+  lifecycleStatus: 'Active' | 'Retired';
+  validFor?: TimePeriod;
+};
+
+export type ResourceRelationshipTypeInput = {
+  code: string;
+  name: string;
+  inverseCode?: string;
+  symmetric?: boolean;
+  allowedTargetKinds: ResourceRelationshipTargetKind[];
+  cardinality?: ResourceRelationshipType['cardinality'];
+};
+
+export type ResourceTypeRelationshipRuleInput = {
+  relationshipTypeCode: string;
+  targetKind: ResourceRelationshipTargetKind;
+  targetId: string;
+  cardinality?: ResourceTypeRelationshipRule['cardinality'];
+  validFor?: TimePeriod;
 };
 
 export type PhysicalResourcePayload = {
@@ -298,6 +350,80 @@ export async function updateResourceType(
     method: 'PATCH',
     body: cleanObject(payload),
   });
+}
+
+export async function ensureBootstrapResourceRelationshipTypes(): Promise<{
+  created: number;
+  relationshipTypes: ResourceRelationshipType[];
+}> {
+  return await requestJson('/v1/resource/relationship-types/bootstrap', { method: 'POST' });
+}
+
+export async function listResourceRelationshipTypes(): Promise<ResourceRelationshipType[]> {
+  return await requestJson<ResourceRelationshipType[]>('/v1/resource/relationship-types');
+}
+
+export async function createResourceRelationshipType(
+  payload: ResourceRelationshipTypeInput,
+): Promise<ResourceRelationshipType> {
+  return await requestJson<ResourceRelationshipType>('/v1/resource/relationship-types', {
+    method: 'POST',
+    body: cleanObject(payload),
+  });
+}
+
+export async function updateResourceRelationshipType(
+  code: string,
+  payload: Partial<Omit<ResourceRelationshipTypeInput, 'code'>> & {
+    lifecycleStatus?: ResourceRelationshipType['lifecycleStatus'];
+  },
+): Promise<ResourceRelationshipType> {
+  return await requestJson<ResourceRelationshipType>(
+    `/v1/resource/relationship-types/${encodeURIComponent(code)}`,
+    { method: 'PATCH', body: cleanObject(payload) },
+  );
+}
+
+export async function retireResourceRelationshipType(
+  code: string,
+): Promise<ResourceRelationshipType> {
+  return await requestJson<ResourceRelationshipType>(
+    `/v1/resource/relationship-types/${encodeURIComponent(code)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function listResourceTypeRelationshipRules(
+  resourceTypeId: string,
+  includeRetired = false,
+): Promise<ResourceTypeRelationshipRule[]> {
+  const query = includeRetired ? '?includeRetired=true' : '';
+  return await requestJson<ResourceTypeRelationshipRule[]>(
+    `/v1/resource-types/${encodeURIComponent(resourceTypeId)}/relationship-rules${query}`,
+  );
+}
+
+export async function createResourceTypeRelationshipRule(
+  resourceTypeId: string,
+  payload: ResourceTypeRelationshipRuleInput,
+): Promise<ResourceTypeRelationshipRule> {
+  return await requestJson<ResourceTypeRelationshipRule>(
+    `/v1/resource-types/${encodeURIComponent(resourceTypeId)}/relationship-rules`,
+    { method: 'POST', body: cleanObject(payload) },
+  );
+}
+
+export async function updateResourceTypeRelationshipRule(
+  resourceTypeId: string,
+  ruleId: string,
+  payload: Partial<
+    Pick<ResourceTypeRelationshipRuleInput, 'cardinality' | 'validFor'>
+  > & { lifecycleStatus?: ResourceTypeRelationshipRule['lifecycleStatus'] },
+): Promise<ResourceTypeRelationshipRule> {
+  return await requestJson<ResourceTypeRelationshipRule>(
+    `/v1/resource-types/${encodeURIComponent(resourceTypeId)}/relationship-rules/${encodeURIComponent(ruleId)}`,
+    { method: 'PATCH', body: cleanObject(payload) },
+  );
 }
 
 export async function loadResourceWorkspaceSnapshot({

@@ -14,6 +14,21 @@ import { lngLatToTile, tileBounds, MAP_TILE_ZOOM } from '../utils/mapTile';
 const RESOURCE_POINTS_ONLY: ViewportShape[] = ['resource-points'];
 const NOTHING_INCLUDED: ViewportShape[] = [];
 
+function boundsAcrossTwoTiles(): MapBounds {
+  tileOffset += 1;
+  const tile = lngLatToTile(-43 - tileOffset, -22 - tileOffset, MAP_TILE_ZOOM);
+  const first = tileBounds(MAP_TILE_ZOOM, tile.x, tile.y);
+  const second = tileBounds(MAP_TILE_ZOOM, tile.x + 1, tile.y);
+  const marginLng = (first.maxLng - first.minLng) * 0.01;
+  const marginLat = (first.maxLat - first.minLat) * 0.01;
+  return {
+    minLng: first.maxLng - marginLng,
+    maxLng: second.minLng + marginLng,
+    minLat: first.minLat + marginLat,
+    maxLat: first.maxLat - marginLat,
+  };
+}
+
 const mocks = vi.hoisted(() => ({ fetchMapTile: vi.fn() }));
 
 vi.mock('../services/geoMapTileApi', async (importOriginal) => {
@@ -153,6 +168,77 @@ describe('useMapTiles', () => {
     ]);
   });
 
+  it('preserva tiles válidos quando apenas um request da viewport falha', async () => {
+    const bounds = boundsAcrossTwoTiles();
+    mocks.fetchMapTile
+      .mockResolvedValueOnce([feature({ entityId: 'ok' })])
+      .mockRejectedValueOnce(new Error('tile indisponível'));
+
+    const { result } = renderHook(() => useMapTiles(bounds, 20, undefined));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+
+    expect(mocks.fetchMapTile).toHaveBeenCalledTimes(2);
+    expect(result.current.data).toEqual([expect.objectContaining({ entityId: 'ok' })]);
+  });
+
+  it('não deixa resposta da viewport anterior sobrescrever um pan ainda em debounce', async () => {
+    let resolveOld: ((features: MapTileFeature[]) => void) | undefined;
+    mocks.fetchMapTile
+      .mockImplementationOnce(
+        () =>
+          new Promise<MapTileFeature[]>((resolve) => {
+            resolveOld = resolve;
+          }),
+      )
+      .mockResolvedValueOnce([feature({ entityId: 'new' })]);
+
+    const firstBounds = freshBounds();
+    const secondBounds = freshBounds();
+    const { result, rerender } = renderHook(
+      ({ bounds }: { bounds: MapBounds }) => useMapTiles(bounds, 20, undefined),
+      { initialProps: { bounds: firstBounds } },
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+
+    rerender({ bounds: secondBounds });
+    await act(async () => {
+      resolveOld?.([feature({ entityId: 'old' })]);
+      await Promise.resolve();
+    });
+    expect(result.current.data).toEqual([]);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(result.current.data).toEqual([expect.objectContaining({ entityId: 'new' })]);
+  });
+
+  it('mantém o último resultado válido quando todos os tiles seguintes falham', async () => {
+    mocks.fetchMapTile.mockResolvedValueOnce([feature({ entityId: 'current' })]);
+    const firstBounds = freshBounds();
+    const secondBounds = freshBounds();
+    const { result, rerender } = renderHook(
+      ({ bounds }: { bounds: MapBounds }) => useMapTiles(bounds, 20, undefined),
+      { initialProps: { bounds: firstBounds } },
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(result.current.data).toEqual([expect.objectContaining({ entityId: 'current' })]);
+
+    mocks.fetchMapTile.mockRejectedValueOnce(new Error('backend reiniciando'));
+    rerender({ bounds: secondBounds });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+
+    expect(result.current.data).toEqual([expect.objectContaining({ entityId: 'current' })]);
+  });
+
   it('`include` vazio (todas as camadas de infra desligadas) não busca nada', async () => {
     const bounds = freshBounds();
     const { result } = renderHook(() => useMapTiles(bounds, 20, NOTHING_INCLUDED));
@@ -162,6 +248,32 @@ describe('useMapTiles', () => {
 
     expect(result.current.data).toEqual([]);
     expect(mocks.fetchMapTile).not.toHaveBeenCalled();
+  });
+
+  it('ignora request em voo quando todas as camadas são desligadas', async () => {
+    let resolvePending: ((features: MapTileFeature[]) => void) | undefined;
+    mocks.fetchMapTile.mockImplementationOnce(
+      () =>
+        new Promise<MapTileFeature[]>((resolve) => {
+          resolvePending = resolve;
+        }),
+    );
+    const bounds = freshBounds();
+    const { result, rerender } = renderHook(
+      ({ include }: { include: ViewportShape[] }) => useMapTiles(bounds, 20, include),
+      { initialProps: { include: RESOURCE_POINTS_ONLY } },
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+
+    rerender({ include: NOTHING_INCLUDED });
+    await act(async () => {
+      resolvePending?.([feature({ entityId: 'late' })]);
+      await Promise.resolve();
+    });
+
+    expect(result.current.data).toEqual([]);
   });
 
   it('reaplica o filtro de tipo Netwin a partir do cache quando um switch muda', async () => {

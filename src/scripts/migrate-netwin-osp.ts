@@ -34,6 +34,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { config as loadEnv } from 'dotenv';
 import oracledb, { type Connection } from 'oracledb';
 import { lngLatToTile, MAP_TILE_ZOOM, tileSegmentsForLine } from '../modules/geo/map-tile.js';
+import { excludeInternalResourceTypesSql } from '../modules/geo/map-visibility.js';
 import { parseWktLineString, parseWktPoint } from '../shared/utils/wkt.js';
 import type { GeoJSONGeometry } from '../modules/geo/domain.js';
 import {
@@ -64,6 +65,7 @@ configureOracleClient();
 const MIGRATED_AT = new Date().toISOString();
 const MIGRATED_BY = 'migrate-netwin-osp';
 const SEED_TAG = 'netwin-osp';
+const MAPPING_VERSION = 'osp-cable-route-v2-resource-type-identity';
 
 type Args = {
   apply: boolean;
@@ -175,7 +177,7 @@ async function run(): Promise<void> {
       await ensureControlTables(target, t);
       await ensureMapEntityIndex(target, t, targetPrefix);
       await ensureClearedTable(target, t);
-      await ensureCatalogForOsp(target, t);
+      await ensureCatalogForOsp(target, t, args.tenantId);
 
       const jobId = randomUUID();
 
@@ -209,8 +211,8 @@ async function run(): Promise<void> {
         console.log(JSON.stringify({ jobId, recursosCsvLimpos: cleared }));
 
         await target.execute(
-          `INSERT INTO ${t('netwin_mig_job')} (id,source_scn,mapping_version,last_pi_id,state,loaded_count,rejected_count,deferred_count,created_at,updated_at) VALUES (:1,'CURRENT','osp-cable-route-v1',0,'running',0,0,0,SYSTIMESTAMP,SYSTIMESTAMP)`,
-          [jobId],
+          `INSERT INTO ${t('netwin_mig_job')} (id,source_scn,mapping_version,last_pi_id,state,loaded_count,rejected_count,deferred_count,created_at,updated_at) VALUES (:1,'CURRENT',:2,0,'running',0,0,0,SYSTIMESTAMP,SYSTIMESTAMP)`,
+          [jobId, MAPPING_VERSION],
         );
 
         const touched: string[] = [];
@@ -632,8 +634,8 @@ function logLifecycleHistogram(designations: Array<string | undefined>): void {
 // ------------------------------------------------------------- classificação -----
 
 const EQUIPMENT_TYPE_BY_SUBTYPE: Record<number, { resourceType: string; specName: string }> = {
-  517: { resourceType: 'CTO', specName: 'Netwin CDOI' },
-  518: { resourceType: 'CTO', specName: 'Netwin CDOE' },
+  517: { resourceType: 'category:CDOI', specName: 'Netwin CDOI' },
+  518: { resourceType: 'category:CDOE', specName: 'Netwin CDOE' },
   512: { resourceType: 'SpliceClosure', specName: 'Netwin CEOS' },
   504: { resourceType: 'SpliceClosure', specName: 'Netwin CEO' },
   508: { resourceType: 'OpticalNode', specName: 'Netwin Optical Node' },
@@ -686,20 +688,25 @@ function classifyRoute(catSubtypeId: number): string {
 
 // ---------------------------------------------------------------- catálogo -----
 
-async function ensureCatalogForOsp(target: Connection, t: TablePrefixer): Promise<void> {
+async function ensureCatalogForOsp(
+  target: Connection,
+  t: TablePrefixer,
+  tenantId: string,
+): Promise<void> {
   for (const [code, name] of [
-    ['CTO', 'Caixa de Terminação Óptica'],
+    ['category:CDOI', 'CDOI'],
+    ['category:CDOE', 'CDOE'],
     ['SpliceClosure', 'Caixa de emenda'],
     ['OpticalNode', 'Nó óptico'],
   ] as const) {
-    await ensureResourceType(target, t, code, name);
+    await ensureResourceType(target, t, code, name, tenantId);
   }
   for (const [code, name] of [
     ['BackboneCable', 'Cabo backbone'],
     ['DistributionCable', 'Cabo de distribuição'],
     ['DropCable', 'Cabo drop'],
   ] as const) {
-    await ensureResourceType(target, t, code, name);
+    await ensureResourceType(target, t, code, name, tenantId);
   }
   for (const [code, name] of [
     ['AerialSpan', 'Lance aéreo'],
@@ -708,7 +715,7 @@ async function ensureCatalogForOsp(target: Connection, t: TablePrefixer): Promis
     ['InnerSpan', 'Lance interno'],
     ['OtherSpan', 'Lance (outro)'],
   ] as const) {
-    await ensureResourceType(target, t, code, name);
+    await ensureResourceType(target, t, code, name, tenantId);
   }
 }
 
@@ -829,19 +836,28 @@ async function persistEquipment(
   pathIncomplete: boolean,
 ): Promise<boolean> {
   const sourceId = String(node.id);
-  const sourceHash = createHash('sha256').update(JSON.stringify(node)).digest('hex');
+  const sourceHash = createHash('sha256')
+    .update(JSON.stringify({ mappingVersion: MAPPING_VERSION, node }))
+    .digest('hex');
   const previous = await identityState(target, t, 'OSP_EQUIPMENT', sourceId, 'primary');
   const nexusId = await identity(target, t, 'OSP_EQUIPMENT', sourceId, 'primary', 'PhysicalResource');
   if (previous?.sourceHash === sourceHash) return false;
 
   const classified = classifyEquipment(node.catSubtypeId);
-  const specId = await resourceSpecId(target, t, classified.specName, classified.resourceType, 'Infrastructure.Passive');
+  const specId = await resourceSpecId(
+    target,
+    t,
+    classified.specName,
+    classified.resourceType,
+    input.tenantId,
+  );
   const designation = node.lifeCycleStateId !== null ? lifecycleStates.get(node.lifeCycleStateId) : undefined;
   const { status, substatus, assumed } = resolveLifecycleStatus(designation);
 
   await upsertPointLocation(target, t, nexusId, node.wkt, input.tenantId, node.name || `Equipamento ${node.id}`);
   await merge(target, t, 'tmf_physical_resource', ['id'], {
     id: nexusId,
+    tenant_id: input.tenantId,
     name: cut(node.name || `Equipamento ${node.id}`, 255),
     resource_specification_id: specId,
     resource_type: classified.resourceType,
@@ -888,7 +904,9 @@ async function persistCable(
   lifecycleStates: Map<number, string>,
 ): Promise<boolean> {
   const sourceId = String(node.id);
-  const sourceHash = createHash('sha256').update(JSON.stringify(node)).digest('hex');
+  const sourceHash = createHash('sha256')
+    .update(JSON.stringify({ mappingVersion: MAPPING_VERSION, node }))
+    .digest('hex');
   const previous = await identityState(target, t, 'OSP_CABLE', sourceId, 'primary');
   const nexusId = await identity(target, t, 'OSP_CABLE', sourceId, 'primary', 'PhysicalResource');
   if (previous?.sourceHash === sourceHash) return false;
@@ -896,13 +914,14 @@ async function persistCable(
   const model = node.catModelId !== null ? models.get(node.catModelId) : undefined;
   const resourceType = classifyCable(model?.capacidade ?? null);
   const specName = model?.nome ? `Netwin ${model.nome}` : `Netwin ${resourceType}`;
-  const specId = await resourceSpecId(target, t, specName, resourceType, 'Cable.OutsidePlant');
+  const specId = await resourceSpecId(target, t, specName, resourceType, input.tenantId);
   const designation = node.lifeCycleStateId !== null ? lifecycleStates.get(node.lifeCycleStateId) : undefined;
   const { status, substatus, assumed } = resolveLifecycleStatus(designation);
 
   await upsertLineLocation(target, t, nexusId, node.wkt, input.tenantId, node.name || `Cabo ${node.id}`);
   await merge(target, t, 'tmf_physical_resource', ['id'], {
     id: nexusId,
+    tenant_id: input.tenantId,
     name: cut(node.name || `Cabo ${node.id}`, 255),
     resource_specification_id: specId,
     resource_type: resourceType,
@@ -949,19 +968,28 @@ async function persistRoute(
   lifecycleStates: Map<number, string>,
 ): Promise<boolean> {
   const sourceId = String(node.id);
-  const sourceHash = createHash('sha256').update(JSON.stringify(node)).digest('hex');
+  const sourceHash = createHash('sha256')
+    .update(JSON.stringify({ mappingVersion: MAPPING_VERSION, node }))
+    .digest('hex');
   const previous = await identityState(target, t, 'OSP_ROUTE', sourceId, 'primary');
   const nexusId = await identity(target, t, 'OSP_ROUTE', sourceId, 'primary', 'PhysicalResource');
   if (previous?.sourceHash === sourceHash) return false;
 
   const resourceType = classifyRoute(node.catSubtypeId);
-  const specId = await resourceSpecId(target, t, `Netwin ${resourceType}`, resourceType, 'Infrastructure.CivilWorks');
+  const specId = await resourceSpecId(
+    target,
+    t,
+    `Netwin ${resourceType}`,
+    resourceType,
+    input.tenantId,
+  );
   const designation = node.lifeCycleStateId !== null ? lifecycleStates.get(node.lifeCycleStateId) : undefined;
   const { status, substatus, assumed } = resolveLifecycleStatus(designation);
 
   await upsertLineLocation(target, t, nexusId, node.wkt, input.tenantId, node.name || `Lance ${node.id}`);
   await merge(target, t, 'tmf_physical_resource', ['id'], {
     id: nexusId,
+    tenant_id: input.tenantId,
     name: cut(node.name || `Lance ${node.id}`, 255),
     resource_specification_id: specId,
     resource_type: resourceType,
@@ -1057,15 +1085,20 @@ async function refreshMapFeatures(
     GEOMETRY_TYPE: string;
     GEOMETRY: string;
   }>(
-    `SELECT r.id AS "ID", r.resource_type AS "RESOURCE_TYPE", r.status AS "STATUS", r.name AS "NAME",
+    `SELECT r.id AS "ID", rt.code AS "RESOURCE_TYPE", r.status AS "STATUS", r.name AS "NAME",
             l.geometry_type AS "GEOMETRY_TYPE", l.geometry AS "GEOMETRY"
        FROM ${touch} touch
        JOIN ${identities} identity ON identity.source_entity IN ('OSP_EQUIPMENT','OSP_CABLE','OSP_ROUTE')
         AND identity.source_id=touch.source_id AND identity.target_role='primary'
        JOIN ${t('tmf_physical_resource')} r ON r.id=identity.nexus_id
+       JOIN ${t('tmf_resource_specification')} rs
+         ON rs.id=r.resource_specification_id AND rs.tenant_id=r.tenant_id
+       JOIN ${t('tmf_resource_type')} rt ON rt.id=rs.resource_type_id
        JOIN ${t('tmf_geographic_location')} l ON l.id=r.place_id
-      WHERE touch.job_id=:jobId AND r.status <> 'terminated'`,
-    { jobId },
+      WHERE touch.job_id=:jobId AND r.tenant_id=:tenantId AND r.status <> 'terminated'
+        AND ${excludeInternalResourceTypesSql('rt')}
+        AND COALESCE(rt.map_presence, 1) = 1`,
+    { jobId, tenantId },
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
 
@@ -1088,6 +1121,8 @@ async function refreshMapFeatures(
           'PhysicalResource',
           c.RESOURCE_TYPE,
           null,
+          'RESOURCE_TYPE',
+          c.RESOURCE_TYPE,
           c.STATUS,
           c.NAME,
           null,
@@ -1112,6 +1147,8 @@ async function refreshMapFeatures(
             'PhysicalResource',
             c.RESOURCE_TYPE,
             null,
+            'RESOURCE_TYPE',
+            c.RESOURCE_TYPE,
             c.STATUS,
             c.NAME,
             null,
@@ -1141,22 +1178,25 @@ async function upsertMapFeatureRows(
 ): Promise<void> {
   const mergeSql = `MERGE INTO ${t('geo_map_feature')} tgt
     USING (SELECT :1 tenant_id, :2 tile_z, :3 tile_x, :4 tile_y, :5 entity_id, :6 shape,
-                  :7 feature_kind, :8 entity_type, :9 type_code, :10 site_category, :11 status,
-                  :12 label, :13 sublabel, :14 lng, :15 lat, :16 geometry, :17 rank FROM DUAL) src
+                  :7 feature_kind, :8 entity_type, :9 type_code, :10 site_category,
+                  :11 source_model_type, :12 source_model_id, :13 status, :14 label,
+                  :15 sublabel, :16 lng, :17 lat, :18 geometry, :19 rank FROM DUAL) src
     ON (tgt.tenant_id=src.tenant_id AND tgt.tile_z=src.tile_z AND tgt.tile_x=src.tile_x
         AND tgt.tile_y=src.tile_y AND tgt.entity_id=src.entity_id AND tgt.shape=src.shape
         AND tgt.rank=src.rank)
     WHEN MATCHED THEN UPDATE SET
       tgt.feature_kind=src.feature_kind, tgt.entity_type=src.entity_type, tgt.type_code=src.type_code,
-      tgt.site_category=src.site_category, tgt.status=src.status, tgt.label=src.label,
+      tgt.site_category=src.site_category, tgt.source_model_type=src.source_model_type,
+      tgt.source_model_id=src.source_model_id, tgt.status=src.status, tgt.label=src.label,
       tgt.sublabel=src.sublabel, tgt.lng=src.lng, tgt.lat=src.lat, tgt.geometry=src.geometry,
       tgt.rank=src.rank, tgt.generated_at=SYSTIMESTAMP
     WHEN NOT MATCHED THEN INSERT
       (tenant_id,tile_z,tile_x,tile_y,entity_id,shape,feature_kind,entity_type,
-       type_code,site_category,status,label,sublabel,lng,lat,geometry,rank,generated_at)
+       type_code,site_category,source_model_type,source_model_id,status,label,sublabel,lng,lat,
+       geometry,rank,generated_at)
       VALUES (src.tenant_id,src.tile_z,src.tile_x,src.tile_y,src.entity_id,src.shape,src.feature_kind,
-              src.entity_type,src.type_code,src.site_category,src.status,src.label,src.sublabel,
-              src.lng,src.lat,src.geometry,src.rank,SYSTIMESTAMP)`;
+              src.entity_type,src.type_code,src.site_category,src.source_model_type,src.source_model_id,
+              src.status,src.label,src.sublabel,src.lng,src.lat,src.geometry,src.rank,SYSTIMESTAMP)`;
   const batchSize = 1000;
   for (let offset = 0; offset < rows.length; offset += batchSize) {
     await target.executeMany(mergeSql, rows.slice(offset, offset + batchSize));
@@ -1180,11 +1220,17 @@ async function reindexPointFeatures(
       NAME: string;
       GEOMETRY: string;
     }>(
-      `SELECT r.id AS "ID", r.resource_type AS "RESOURCE_TYPE", r.status AS "STATUS", r.name AS "NAME", l.geometry AS "GEOMETRY"
-         FROM ${t('tmf_physical_resource')} r JOIN ${t('tmf_geographic_location')} l ON l.id=r.place_id
-        WHERE r.id IN (${binds}) AND r.status <> 'terminated' AND r.resource_type <> 'Splitter'
-          AND l.geometry_type='Point'`,
-      chunk,
+      `SELECT r.id AS "ID", rt.code AS "RESOURCE_TYPE", r.status AS "STATUS", r.name AS "NAME",
+              l.geometry AS "GEOMETRY"
+         FROM ${t('tmf_physical_resource')} r
+         JOIN ${t('tmf_resource_specification')} rs
+           ON rs.id=r.resource_specification_id AND rs.tenant_id=r.tenant_id
+         JOIN ${t('tmf_resource_type')} rt ON rt.id=rs.resource_type_id
+         JOIN ${t('tmf_geographic_location')} l ON l.id=r.place_id
+        WHERE r.id IN (${binds}) AND r.tenant_id=:${chunk.length + 1}
+          AND r.status <> 'terminated' AND ${excludeInternalResourceTypesSql('rt')}
+          AND COALESCE(rt.map_presence, 1) = 1 AND l.geometry_type='Point'`,
+      [...chunk, tenantId],
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
     );
     const values: unknown[][] = [];
@@ -1206,6 +1252,8 @@ async function reindexPointFeatures(
           'PhysicalResource',
           c.RESOURCE_TYPE,
           null,
+          'RESOURCE_TYPE',
+          c.RESOURCE_TYPE,
           c.STATUS,
           c.NAME,
           null,

@@ -100,6 +100,16 @@ export function ResourceSpecificationFormModal({
     }
   };
 
+  // Agrupa as linhas por `group` (fallback "Geral"), preservando a ordem de primeira ocorrência —
+  // uma seção por grupo em vez de uma tabela única (plano §9).
+  const groupedRows: Array<{ group: string; rows: ResourceCharacteristicRow[] }> = [];
+  for (const row of rows) {
+    const groupName = row.group?.trim() || 'Geral';
+    const bucket = groupedRows.find((g) => g.group === groupName);
+    if (bucket) bucket.rows.push(row);
+    else groupedRows.push({ group: groupName, rows: [row] });
+  }
+
   const modalTitle = readOnly
     ? 'Detalhes da especificação'
     : isEditing
@@ -164,155 +174,146 @@ export function ResourceSpecificationFormModal({
             />
           </div>
 
-          <div>
-            <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
-              Descrição {readOnly ? '' : '(Opcional)'}
-            </label>
-            <textarea
-              rows={2}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={readOnly}
-              placeholder={readOnly ? 'Sem descrição cadastrada.' : 'Descreva a finalidade desta especificação...'}
-              className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
-            />
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-[0.8rem] font-semibold text-app-text">
-                Características herdadas do tipo ({rows.length})
+          {(!readOnly || Boolean(description.trim())) && (
+            <div>
+              <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
+                Descrição {readOnly ? '' : '(Opcional)'}
               </label>
-              <span className="text-[0.76rem] text-app-muted">
-                {readOnly
-                  ? 'Valores configurados para esta especificação'
-                  : 'Preencha os valores específicos para esta especificação'}
-              </span>
+              {readOnly ? (
+                <div className="rounded-[14px] border border-app-border bg-slate-50 px-3 py-2 text-[0.84rem] text-app-text">
+                  {description}
+                </div>
+              ) : (
+                <textarea
+                  rows={2}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Descreva a finalidade desta especificação..."
+                  className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+                />
+              )}
             </div>
+          )}
 
+          <div>
             {rows.length === 0 ? (
               <p className="rounded-[14px] border border-dashed border-app-border px-3 py-3 text-[0.82rem] text-app-muted text-center">
                 Este tipo de recurso ainda não tem características definidas na aba
                 "Características".
               </p>
             ) : (
-              <div className="divide-y divide-app-border rounded-[16px] border border-app-border bg-white overflow-hidden max-h-[320px] overflow-y-auto">
-                {rows.map((row) => {
-                  const listOptions =
-                    row.valueType === 'list'
-                      ? (row.allowedValuesText
-                          ? row.allowedValuesText
-                              .split(',')
-                              .map((s) => s.trim())
-                              .filter(Boolean)
-                          : row.allowedValues) ?? []
-                      : [];
+              <div className="space-y-4 max-h-[320px] overflow-y-auto pr-1">
+                {groupedRows.map((section) => (
+                  <div key={section.group}>
+                    <h4 className="mb-1.5 text-[0.76rem] font-semibold uppercase tracking-wide text-app-muted">
+                      {section.group}
+                    </h4>
+                    <div className="divide-y divide-app-border rounded-[16px] border border-app-border bg-white overflow-hidden">
+                      {section.rows.map((row) => {
+                        const listOptions =
+                          row.valueType === 'list'
+                            ? (row.allowedValuesText
+                                ? row.allowedValuesText
+                                    .split(',')
+                                    .map((s) => s.trim())
+                                    .filter(Boolean)
+                                : row.allowedValues) ?? []
+                            : [];
 
-                  return (
-                    <div
-                      key={row.key}
-                      className="p-3 hover:bg-black/[0.01] transition grid grid-cols-1 sm:grid-cols-[1fr_200px] gap-2 items-center"
-                    >
-                      <div className="min-w-0 pr-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-[0.84rem] text-app-text truncate">
-                            {row.name}
-                          </span>
-                          {row.group && (
-                            <span className="rounded-md bg-black/[0.04] px-1.5 py-0.5 text-[0.7rem] text-app-muted">
-                              {row.group}
-                            </span>
-                          )}
-                          <span className="text-[0.72rem] text-app-muted/70 font-mono">
-                            ({row.valueType})
-                          </span>
-                        </div>
-                        {row.description ? (
-                          <p className="text-[0.78rem] text-app-muted mt-0.5 leading-snug">
-                            {row.description}
-                          </p>
-                        ) : (
-                          <p className="text-[0.76rem] text-app-muted/50 mt-0.5 italic">
-                            Sem descrição
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        {row.valueType === 'boolean' ? (
-                          <label className={`flex items-center gap-2 select-none ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}>
-                            <input
-                              type="checkbox"
-                              checked={row.valueText === 'true'}
-                              disabled={readOnly}
-                              onChange={(e) =>
-                                setRows((prev) =>
-                                  prev.map((r) =>
-                                    r.key === row.key
-                                      ? { ...r, valueText: e.target.checked ? 'true' : 'false' }
-                                      : r,
-                                  ),
-                                )
-                              }
-                              className="h-4 w-4 rounded border-app-border text-app-accent focus:ring-app-accent disabled:opacity-75"
-                            />
-                            <span className="text-[0.82rem] text-app-text">
-                              {row.valueText === 'true' ? 'Sim' : 'Não'}
-                            </span>
-                          </label>
-                        ) : row.valueType === 'list' && listOptions.length > 0 ? (
-                          <select
-                            value={row.valueText}
-                            disabled={readOnly}
-                            onChange={(e) =>
-                              setRows((prev) =>
-                                prev.map((r) =>
-                                  r.key === row.key ? { ...r, valueText: e.target.value } : r,
-                                ),
-                              )
-                            }
-                            className="w-full rounded-[10px] border border-app-border bg-white px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+                        return (
+                          <div
+                            key={row.key}
+                            className="p-3 hover:bg-black/[0.01] transition grid grid-cols-1 sm:grid-cols-[1fr_200px] gap-2 items-center"
                           >
-                            <option value="">{readOnly ? 'Não especificado' : 'Selecione uma opção...'}</option>
-                            {listOptions.map((opt) => (
-                              <option key={opt} value={opt}>
-                                {opt}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            type={
-                              row.valueType === 'date'
-                                ? 'date'
-                                : row.valueType === 'integer' || row.valueType === 'decimal'
-                                  ? 'number'
-                                  : 'text'
-                            }
-                            step={row.valueType === 'decimal' ? 'any' : undefined}
-                            value={row.valueText}
-                            disabled={readOnly}
-                            onChange={(e) =>
-                              setRows((prev) =>
-                                prev.map((r) =>
-                                  r.key === row.key ? { ...r, valueText: e.target.value } : r,
-                                ),
-                              )
-                            }
-                            placeholder={
-                              readOnly
-                                ? '—'
-                                : row.valueType === 'json'
-                                  ? '{"chave":"valor"}'
-                                  : 'Valor da característica'
-                            }
-                            className="w-full rounded-[10px] border border-app-border bg-white px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
-                          />
-                        )}
-                      </div>
+                            <div className="min-w-0 pr-2">
+                              <span className="font-semibold text-[0.84rem] text-app-text truncate">
+                                {row.name}
+                              </span>
+                              {row.description && (
+                                <p className="text-[0.78rem] text-app-muted mt-0.5 leading-snug">
+                                  {row.description}
+                                </p>
+                              )}
+                            </div>
+
+                            <div>
+                              {row.valueType === 'boolean' ? (
+                                <label className={`flex items-center gap-2 select-none ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={row.valueText === 'true'}
+                                    disabled={readOnly}
+                                    onChange={(e) =>
+                                      setRows((prev) =>
+                                        prev.map((r) =>
+                                          r.key === row.key
+                                            ? { ...r, valueText: e.target.checked ? 'true' : 'false' }
+                                            : r,
+                                        ),
+                                      )
+                                    }
+                                    className="h-4 w-4 rounded border-app-border text-app-accent focus:ring-app-accent disabled:opacity-75"
+                                  />
+                                  <span className="text-[0.82rem] text-app-text">
+                                    {row.valueText === 'true' ? 'Sim' : 'Não'}
+                                  </span>
+                                </label>
+                              ) : row.valueType === 'list' && listOptions.length > 0 ? (
+                                <select
+                                  value={row.valueText}
+                                  disabled={readOnly}
+                                  onChange={(e) =>
+                                    setRows((prev) =>
+                                      prev.map((r) =>
+                                        r.key === row.key ? { ...r, valueText: e.target.value } : r,
+                                      ),
+                                    )
+                                  }
+                                  className="w-full rounded-[10px] border border-app-border bg-white px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+                                >
+                                  <option value="">{readOnly ? 'Não especificado' : 'Selecione uma opção...'}</option>
+                                  {listOptions.map((opt) => (
+                                    <option key={opt} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  type={
+                                    row.valueType === 'date'
+                                      ? 'date'
+                                      : row.valueType === 'integer' || row.valueType === 'decimal'
+                                        ? 'number'
+                                        : 'text'
+                                  }
+                                  step={row.valueType === 'decimal' ? 'any' : undefined}
+                                  value={row.valueText}
+                                  disabled={readOnly}
+                                  onChange={(e) =>
+                                    setRows((prev) =>
+                                      prev.map((r) =>
+                                        r.key === row.key ? { ...r, valueText: e.target.value } : r,
+                                      ),
+                                    )
+                                  }
+                                  placeholder={
+                                    readOnly
+                                      ? '—'
+                                      : row.valueType === 'json'
+                                        ? '{"chave":"valor"}'
+                                        : 'Valor da característica'
+                                  }
+                                  className="w-full rounded-[10px] border border-app-border bg-white px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+                                />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             )}
           </div>

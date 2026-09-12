@@ -39,10 +39,10 @@ export class GeoMapFeatureSynchronizer implements MapFeatureSynchronizer {
 
   public async syncLocation(locationId: string, tenantId: string): Promise<void> {
     const rows = await this.db.all<{ id: string }>(
-      `SELECT id FROM tmf_physical_resource WHERE place_id = ?
+      `SELECT id FROM tmf_physical_resource WHERE place_id = ? AND tenant_id = ?
        UNION
-       SELECT id FROM tmf_geographic_site WHERE geographic_location_id = ?`,
-      [locationId, locationId],
+       SELECT id FROM tmf_geographic_site WHERE geographic_location_id = ? AND tenant_id = ?`,
+      [locationId, tenantId, locationId, tenantId],
     );
     await this.syncEntities(
       rows.map((row) => row.id),
@@ -60,7 +60,12 @@ export class GeoMapFeatureSynchronizer implements MapFeatureSynchronizer {
           WHERE tenant_id = ? AND entity_id IN (${placeholders})`,
         [tenantId, ...ids],
       );
-      const candidates = await session.all<Candidate>(candidatesSql(placeholders), [...ids, ...ids]);
+      const candidates = await session.all<Candidate>(candidatesSql(placeholders), [
+        ...ids,
+        tenantId,
+        ...ids,
+        tenantId,
+      ]);
       for (const candidate of candidates) await insertFeature(session, tenantId, candidate);
     });
   }
@@ -76,11 +81,12 @@ export function candidatesSql(idPlaceholders: string): string {
                 rt.code type_code, NULL site_category, 'RESOURCE_TYPE' source_model_type,
                 rt.code source_model_id, r.status status, r.name label, NULL sublabel, l.geometry geometry
            FROM tmf_physical_resource r
-           JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+           JOIN tmf_resource_specification rs
+             ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
            JOIN tmf_resource_type rt
              ON rt.id = rs.resource_type_id
            JOIN tmf_geographic_location l ON l.id = r.place_id
-          WHERE r.id IN (${idPlaceholders}) AND r.status <> 'terminated'
+          WHERE r.id IN (${idPlaceholders}) AND r.tenant_id = ? AND r.status <> 'terminated'
             AND ${excludeInternalResourceTypesSql('rt')}
             AND COALESCE(rt.map_presence, 1) = 1
             AND l.geometry_type = 'Point'
@@ -92,7 +98,7 @@ export function candidatesSql(idPlaceholders: string): string {
            FROM tmf_geographic_site s
            JOIN tmf_geographic_site_specification spec ON spec.id = s.site_specification_id
            JOIN tmf_geographic_location l ON l.id = s.geographic_location_id
-          WHERE s.id IN (${idPlaceholders}) AND spec.category = 'Site'
+          WHERE s.id IN (${idPlaceholders}) AND s.tenant_id = ? AND spec.category = 'Site'
             AND s.status NOT IN ('Retired', 'terminated') AND l.geometry_type = 'Point'
             AND NOT EXISTS (
                   SELECT 1 FROM geo_project_site ps

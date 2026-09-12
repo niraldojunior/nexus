@@ -145,11 +145,13 @@ function resourceSource(entity, scopeWhere) {
     SELECT r.id, r.name, '${entity}' AS entity_type, rt.code AS resource_type, r.status,
            l.geometry_type, l.geometry
       FROM ${table} r
-      JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-      JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+      JOIN tmf_resource_specification rs
+        ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
+      JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id
       JOIN tmf_geographic_location l ON l.id = r.place_id
       LEFT JOIN tmf_geographic_address a ON a.geographic_location_id = r.place_id
-     WHERE r.status <> 'terminated'
+     WHERE r.tenant_id = $1
+       AND r.status <> 'terminated'
        AND ${excludeInternalResourceTypesSql('rt')}
        AND COALESCE(rt.map_presence, 1) = 1
        AND l.geometry_type IN ('Point', 'LineString')${scopeWhere}`;
@@ -164,7 +166,8 @@ const SITE_SOURCE = (scopeWhere) => `
       JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
       JOIN tmf_geographic_location l ON l.id = s.geographic_location_id
       LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id
-     WHERE sp.category = 'Site'
+     WHERE s.tenant_id = $1
+       AND sp.category = 'Site'
        AND s.status NOT IN ('Retired', 'terminated')
        AND l.geometry_type = 'Point'
        AND NOT EXISTS (
@@ -279,7 +282,7 @@ const FEATURE_COLUMNS = [
 async function main() {
   const client = await openLoaderDb();
   try {
-    const params = [];
+    const params = [TENANT];
     const scopeWhere = scopeFilter(params);
     const scopeLabel = [CITY && `city=${CITY}`, UF && `uf=${UF}`].filter(Boolean).join(' · ') || 'base inteira';
     console.log(`Escopo   : ${scopeLabel} (tenant=${TENANT})`);

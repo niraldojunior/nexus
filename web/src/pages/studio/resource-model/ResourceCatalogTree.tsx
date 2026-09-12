@@ -21,7 +21,7 @@ export type ResourceCatalogTreeProps = {
   /** Exibe a textbox de busca — alternada pela lupa no cabeçalho, em `ResourceModelStudio`. */
   showSearch: boolean;
   selectedNodeId: string | null;
-  onSelectNode: (node: ResourceCatalogNode) => void;
+  onSelectNode: (node: ResourceCatalogNode | null) => void;
   onAddChild: (parentNode: ResourceCatalogNode) => void;
   onImpactNode: (node: ResourceCatalogNode) => void;
   /** Callback para mover ou reordenar um nó diretamente via arrastar e soltar na árvore. */
@@ -39,6 +39,11 @@ export type ResourceCatalogTreeProps = {
    * (continua visível, pode reativar) de "já estava inativo antes desta edição" (fica oculto).
    */
   baselineActiveIds: Set<string> | null;
+  /**
+   * Quando muda para um id não-nulo, expande esse nó na árvore — usado para auto-expandir o pai
+   * logo após a criação imediata de um filho pelo menu flutuante (ver `ResourceModelStudio`).
+   */
+  expandNodeId?: string | null;
 };
 
 const getSiblingsOfParent = (
@@ -73,10 +78,19 @@ export function ResourceCatalogTree({
   canEdit,
   isEditing,
   baselineActiveIds,
+  expandNodeId,
 }: ResourceCatalogTreeProps) {
   const canMutate = canEdit && isEditing;
   const [filterText, setFilterText] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!expandNodeId) return;
+    setExpandedIds((prev) => {
+      if (prev.has(expandNodeId)) return prev;
+      return new Set(prev).add(expandNodeId);
+    });
+  }, [expandNodeId]);
 
   // Estado de Arrastar e Soltar (Drag and Drop)
   const [draggedNode, setDraggedNode] = useState<ResourceCatalogTreeNode | null>(null);
@@ -287,11 +301,12 @@ export function ResourceCatalogTree({
           onDragLeave={(e) => handleDragLeave(node, e)}
           onDrop={(e) => handleDrop(node, e)}
           onDragEnd={handleDragEnd}
-          onClick={() => onSelectNode(node)}
+          aria-selected={isSelected}
+          onClick={() => onSelectNode(isSelected ? null : node)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
-              onSelectNode(node);
+              onSelectNode(isSelected ? null : node);
             }
           }}
           className={`group flex items-center justify-between gap-1 rounded-[10px] border px-2 py-1.5 text-[0.85rem] transition ${

@@ -1,5 +1,9 @@
 import { bearerToken } from './session';
-import type { ResourceType, ResourceSpecification } from './resourceApi';
+import type {
+  ResourceType,
+  ResourceSpecification,
+  ResourceTypeRelationshipRule,
+} from './resourceApi';
 
 export type ResourceCatalogNodeKind = 'GROUP' | 'RESOURCE_TYPE';
 export type ResourceCatalogStatus = 'active' | 'inactive';
@@ -78,12 +82,25 @@ export type ResourceTypeCatalogContext = {
   catalogPaths: ResourceCatalogPath[];
 };
 
+export type ResourceModelSnapshotSource = {
+  catalog: ResourceCatalog;
+  nodes: ResourceCatalogNode[];
+  resourceTypes: ResourceType[];
+  relationshipRules: ResourceTypeRelationshipRule[];
+};
+
 export type CreateResourceCatalogNodeInput = {
-  code: string;
-  name: string;
+  /** O backend gera códigos e rótulos provisórios únicos para a criação imediata do Studio. */
+  code?: string;
+  name?: string;
   description?: string;
   kind: ResourceCatalogNodeKind;
+  /** @deprecated A folha cria sempre um ResourceType próprio; o backend ignora esta associação legada. */
   resourceTypeId?: string;
+  /** Campos aplicáveis somente a folhas RESOURCE_TYPE. */
+  nature?: NonNullable<ResourceType['nature']>;
+  mapPresence?: boolean;
+  resourceTypeCharacteristic?: ResourceType['resourceTypeCharacteristic'];
   parentNodeId?: string;
   sortOrder?: number;
   metadata?: Record<string, unknown>;
@@ -95,6 +112,10 @@ export type UpdateResourceCatalogNodeInput = {
   description?: string;
   status?: ResourceCatalogStatus;
   metadata?: Record<string, unknown>;
+  /** Campos aplicáveis somente a folhas RESOURCE_TYPE. */
+  nature?: NonNullable<ResourceType['nature']>;
+  mapPresence?: boolean;
+  resourceTypeCharacteristic?: ResourceType['resourceTypeCharacteristic'];
 };
 
 export type MoveResourceCatalogNodeInput = {
@@ -157,6 +178,27 @@ export async function listResourceCatalogNodes(
   return await requestJson<ResourceCatalogNode[]>(
     `/v1/resource-catalogs/${encodeURIComponent(catalogId)}/nodes${query}`,
   );
+}
+
+export async function getResourceModelSnapshotSource(
+  catalogId: string,
+  includeInactive = false,
+): Promise<ResourceModelSnapshotSource> {
+  const query = includeInactive ? '?includeInactive=true' : '';
+  return await requestJson<ResourceModelSnapshotSource>(
+    `/v1/resource-catalogs/${encodeURIComponent(catalogId)}/snapshot-source${query}`,
+  );
+}
+
+/** Tipos efetivamente modelados em folhas ativas do catálogo vigente — exclui tipos globais órfãos. */
+export async function listModeledResourceTypes(): Promise<ResourceType[]> {
+  const catalogs = await listResourceCatalogs();
+  const catalog =
+    catalogs.find((item) => item.status === 'active' && item.isDefault) ??
+    catalogs.find((item) => item.status === 'active');
+  if (!catalog) return [];
+  const source = await getResourceModelSnapshotSource(catalog.id);
+  return source.resourceTypes;
 }
 
 export async function getResourceCatalogNode(

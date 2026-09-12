@@ -718,13 +718,17 @@ async function run() {
     } else {
       codeToIdMap.set(nodeDef.code, existingNode.id);
       console.log(`(✓) Atualizar Nó: [${nodeDef.kind}] ${nodeDef.name} (code: ${nodeDef.code})`);
+      // Reconcilia sem repontar (plano §11.2): uma folha já existente mantém o tipo já vinculado
+      // a ela, mesmo que o cálculo de resourceTypeId acima aponte para outro id. Repontar aqui
+      // reintroduziria o padrão de tipo global compartilhado que a identidade 1:1 elimina.
+      const reconciledResourceTypeId = existingNode.resource_type_id ?? resourceTypeId;
       if (APPLY) {
         const now = new Date().toISOString();
         await db.query(
           `UPDATE tmf_resource_catalog_node
               SET name = $1, kind = $2, resource_type_id = $3, status = 'active', sort_order = $4, updated_at = $5
             WHERE id = $6`,
-          [nodeDef.name, nodeDef.kind, resourceTypeId, nodeDef.sortOrder, now, existingNode.id],
+          [nodeDef.name, nodeDef.kind, reconciledResourceTypeId, nodeDef.sortOrder, now, existingNode.id],
         );
       }
     }
@@ -783,6 +787,31 @@ async function run() {
         }
       }
     }
+  }
+
+  // 7. Verificação pós-seed: nenhum resource_type_id ativo pode estar vinculado a mais de uma
+  // folha ativa (plano §11.4) — a identidade é 1:1, e este seed nunca deve reintroduzir o
+  // compartilhamento que a migração Oracle (§2.5) e o service (§3) já impedem para escrita via API.
+  console.log(`\n--- Verificação pós-seed: unicidade 1:1 folha↔ResourceType ---`);
+  const dupCheckRes = await db.query(
+    `SELECT resource_type_id, COUNT(*) AS leaf_count
+       FROM tmf_resource_catalog_node
+      WHERE tenant_id = $1 AND kind = 'RESOURCE_TYPE' AND status = 'active' AND resource_type_id IS NOT NULL
+      GROUP BY resource_type_id
+     HAVING COUNT(*) > 1`,
+    [TENANT_ID],
+  );
+  if (dupCheckRes.rows.length > 0) {
+    console.error(`\n[ERRO] ${dupCheckRes.rows.length} ResourceType(s) compartilhado(s) por mais de uma folha ativa:`);
+    for (const row of dupCheckRes.rows) {
+      console.error(`  - resource_type_id=${row.resource_type_id} usado por ${row.leaf_count} folhas`);
+    }
+    if (APPLY) {
+      throw new Error('Violação de identidade 1:1 folha↔ResourceType detectada após o seed.');
+    }
+    console.warn('[DRY-RUN] Prosseguindo apesar da violação — corrija antes de rodar com --apply.');
+  } else {
+    console.log('(✓) Nenhum ResourceType compartilhado entre folhas ativas.');
   }
 
   console.log(`\n=== CONCLUÍDO COM SUCESSO ===\n`);

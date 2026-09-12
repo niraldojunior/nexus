@@ -741,6 +741,11 @@ const routeRequest = async ({
     url.pathname.startsWith('/v1/resource-types/') ||
     url.pathname.startsWith('/v1/resources/') ||
     url.pathname === '/v1/resource-statuses' ||
+    // Catálogo governado de RelationshipTypes (§3.6/§3.8 do plano de modelagem): rota singular
+    // `/v1/resource/relationship-types`, distinta de `/v1/resource-*` acima — sem esta condição
+    // o dispatcher nunca chega em `routeResourceRequest` e cai direto no fallback 404 genérico.
+    url.pathname === '/v1/resource/relationship-types' ||
+    url.pathname.startsWith('/v1/resource/relationship-types/') ||
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceCatalog') ||
     url.pathname.startsWith('/tmf-api/resourceCatalogManagement/v4/resourceSpecification') ||
     url.pathname.startsWith(
@@ -2487,7 +2492,10 @@ const routeGeoRequest = async ({
         statusCode: 400,
       });
     }
-    const features = await runtime.geoMapTileService.tile({ z, x, y });
+    const features = await runtime.geoMapTileService.tile(
+      { z, x, y },
+      { tenantId: geoContext.tenantId },
+    );
     return sendJson(response, 200, features);
   }
 
@@ -2519,12 +2527,16 @@ const routeGeoRequest = async ({
         statusCode: 400,
       });
     }
-    const density = await runtime.geoMapDensityService.density(z, {
-      minLng,
-      minLat,
-      maxLng,
-      maxLat,
-    });
+    const density = await runtime.geoMapDensityService.density(
+      z,
+      {
+        minLng,
+        minLat,
+        maxLng,
+        maxLat,
+      },
+      { tenantId: geoContext.tenantId },
+    );
     return sendJson(response, 200, density);
   }
 
@@ -3435,6 +3447,93 @@ const routeResourceRequest = async ({
       hasActiveService: activeServicePortIds.has(detail.resource.id),
     });
   }
+  if (request.method === 'POST' && url.pathname === '/v1/resource/relationship-types/bootstrap') {
+    requireRoles(context, CATALOG_ADMIN_ROLES);
+    return sendJson(response, 200, resourceService.ensureBootstrapResourceRelationshipTypes(context));
+  }
+
+  const resourceRelationshipTypeMatch = url.pathname.match(
+    /^\/v1\/resource\/relationship-types(?:\/([^/]+))?$/,
+  );
+  if (resourceRelationshipTypeMatch) {
+    const code = resourceRelationshipTypeMatch[1]
+      ? decodeURIComponent(resourceRelationshipTypeMatch[1])
+      : undefined;
+    requireRoles(context, request.method === 'GET' ? INVENTORY_READ_ROLES : CATALOG_ADMIN_ROLES);
+    if (!code && request.method === 'GET') {
+      return sendJson(response, 200, resourceService.listResourceRelationshipTypes(context));
+    }
+    if (!code && request.method === 'POST') {
+      return sendJson(
+        response,
+        201,
+        resourceService.createResourceRelationshipType(
+          (await readBody(request)) as Parameters<typeof resourceService.createResourceRelationshipType>[0],
+          context,
+        ),
+      );
+    }
+    if (code && request.method === 'PATCH') {
+      return sendJson(
+        response,
+        200,
+        resourceService.updateResourceRelationshipType(
+          code,
+          (await readBody(request)) as Parameters<typeof resourceService.updateResourceRelationshipType>[1],
+          context,
+        ),
+      );
+    }
+    if (code && request.method === 'DELETE') {
+      return sendJson(response, 200, resourceService.retireResourceRelationshipType(code, context));
+    }
+  }
+
+  const resourceTypeRelationshipRulesMatch = url.pathname.match(
+    /^\/v1\/resource-types\/([^/]+)\/relationship-rules(?:\/([^/]+))?$/,
+  );
+  if (resourceTypeRelationshipRulesMatch?.[1]) {
+    const resourceTypeId = decodeURIComponent(resourceTypeRelationshipRulesMatch[1]);
+    const ruleId = resourceTypeRelationshipRulesMatch[2]
+      ? decodeURIComponent(resourceTypeRelationshipRulesMatch[2])
+      : undefined;
+    requireRoles(context, request.method === 'GET' ? INVENTORY_READ_ROLES : CATALOG_ADMIN_ROLES);
+    if (!ruleId && request.method === 'GET') {
+      return sendJson(
+        response,
+        200,
+        resourceService.listResourceTypeRelationshipRules(
+          resourceTypeId,
+          context,
+          url.searchParams.get('includeRetired') === 'true',
+        ),
+      );
+    }
+    if (!ruleId && request.method === 'POST') {
+      return sendJson(
+        response,
+        201,
+        resourceService.createResourceTypeRelationshipRule(
+          resourceTypeId,
+          (await readBody(request)) as Parameters<typeof resourceService.createResourceTypeRelationshipRule>[1],
+          context,
+        ),
+      );
+    }
+    if (ruleId && request.method === 'PATCH') {
+      return sendJson(
+        response,
+        200,
+        resourceService.updateResourceTypeRelationshipRule(
+          resourceTypeId,
+          ruleId,
+          (await readBody(request)) as Parameters<typeof resourceService.updateResourceTypeRelationshipRule>[2],
+          context,
+        ),
+      );
+    }
+  }
+
   const resourceTypeCatalogContextMatch = url.pathname.match(
     /^\/v1\/resource-types\/([^/]+)\/catalog-context$/,
   );
@@ -3451,6 +3550,22 @@ const routeResourceRequest = async ({
       ),
     );
   }
+  const resourceCatalogSnapshotSourceMatch = url.pathname.match(
+    /^\/v1\/resource-catalogs\/([^/]+)\/snapshot-source$/,
+  );
+  if (request.method === 'GET' && resourceCatalogSnapshotSourceMatch?.[1]) {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    return sendJson(
+      response,
+      200,
+      resourceService.getResourceModelSnapshotSource(
+        decodeURIComponent(resourceCatalogSnapshotSourceMatch[1]),
+        context,
+        url.searchParams.get('includeInactive') === 'true',
+      ),
+    );
+  }
+
   const resourceCatalogTreeMatch = url.pathname.match(/^\/v1\/resource-catalogs\/([^/]+)\/tree$/);
   if (request.method === 'GET' && resourceCatalogTreeMatch?.[1]) {
     requireRoles(context, INVENTORY_READ_ROLES);
@@ -5027,28 +5142,57 @@ const assertResourceSpecificationLegacyFieldsAbsent = (body: Record<string, unkn
   }
 };
 
-// ResourceType ainda não tem CRUD completo (issue #216 restringe deliberadamente a
-// resourceTypeCharacteristic) — qualquer outro campo no corpo é rejeitado com o mesmo padrão de
-// erro usado em assertResourceSpecificationLegacyFieldsAbsent.
 const parseUpdateResourceTypeInput = (
   body: Record<string, unknown>,
 ): Parameters<ResourceService['updateResourceType']>[1] => {
-  const unexpected = Object.keys(body).find((field) => field !== 'resourceTypeCharacteristic');
+  const editable = new Set([
+    'code',
+    'name',
+    'description',
+    'status',
+    'nature',
+    'mapPresence',
+    'resourceTypeCharacteristic',
+  ]);
+  const unexpected = Object.keys(body).find((field) => !editable.has(field));
   if (unexpected) {
-    throw new AppError(`${unexpected} is not editable; only resourceTypeCharacteristic is`, {
+    throw new AppError(`${unexpected} is not editable on ResourceType`, {
       code: 'RESOURCE_TYPE_FIELD_NOT_EDITABLE',
       statusCode: 400,
     });
   }
-  if (!Array.isArray(body.resourceTypeCharacteristic)) {
+  if (
+    body.resourceTypeCharacteristic !== undefined &&
+    !Array.isArray(body.resourceTypeCharacteristic)
+  ) {
     throw new AppError('resourceTypeCharacteristic must be an array', {
-      code: 'RESOURCE_REQUIRED_FIELD',
+      code: 'RESOURCE_TYPE_CHARACTERISTICS_INVALID',
       statusCode: 400,
     });
   }
-  return { resourceTypeCharacteristic: body.resourceTypeCharacteristic } as Parameters<
-    ResourceService['updateResourceType']
-  >[1];
+  if (body.status !== undefined && body.status !== 'active' && body.status !== 'inactive') {
+    throw new AppError('status must be active or inactive', {
+      code: 'RESOURCE_TYPE_STATUS_INVALID',
+      statusCode: 400,
+    });
+  }
+  if (
+    body.nature !== undefined &&
+    body.nature !== 'PhysicalResource' &&
+    body.nature !== 'LogicalResource'
+  ) {
+    throw new AppError('nature must be PhysicalResource or LogicalResource', {
+      code: 'RESOURCE_TYPE_NATURE_INVALID',
+      statusCode: 400,
+    });
+  }
+  if (body.mapPresence !== undefined && typeof body.mapPresence !== 'boolean') {
+    throw new AppError('mapPresence must be boolean', {
+      code: 'RESOURCE_TYPE_MAP_PRESENCE_INVALID',
+      statusCode: 400,
+    });
+  }
+  return body as Parameters<ResourceService['updateResourceType']>[1];
 };
 
 // Mesmo limite do Resource (RESOURCE_SPEC_BULK_IMPORT_MAX_ITEMS) — Configurações → Catálogo de

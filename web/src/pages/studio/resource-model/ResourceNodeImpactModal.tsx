@@ -68,9 +68,6 @@ export function ResourceNodeImpactModal({
           </div>
           <div>
             <h3>Inativar nó do catálogo</h3>
-            <p className="text-[0.78rem] text-app-muted">
-              {node.name} ({node.code})
-            </p>
           </div>
         </div>
       }
@@ -109,8 +106,7 @@ export function ResourceNodeImpactModal({
           ) : (
             <>
               <p className="text-[0.88rem] text-app-text leading-relaxed">
-                Você está prestes a inativar o nó <strong>{node.name}</strong>. Conforme o cânone
-                arquitetural C6, a exclusão é lógica (soft-delete), preservando todo o histórico.
+                Você está prestes a inativar o nó <strong>{node.name}</strong>.
               </p>
 
               {isGroup && hasDescendants && (

@@ -63,8 +63,17 @@ const JSON_COLUMNS = new Set(
   ),
 );
 
+// Colunas que terminam em `_id` mas NÃO guardam UUID — o dimensionamento por sufixo abaixo as
+// truncaria. `geo_map_feature.source_model_id` guarda o `code` do ResourceType/Specification do
+// Studio, que é um caminho de categoria e passa fácil de 36 chars
+// ('category:Infrastructure.CivilWorks:type:Pole' tem 44, ORA-12899 no rebuild do índice do mapa).
+// Mesma classe do CHECK(col IS JSON) global por nome de coluna: a inferência por nome acerta o
+// caso comum e precisa de exceção nominal quando o nome mente sobre o conteúdo.
+const NON_UUID_ID_COLUMNS = new Set(['source_model_id']);
+
 const oracleTextType = (column: string): string => {
   if (CLOB_COLUMNS.has(column)) return 'CLOB';
+  if (NON_UUID_ID_COLUMNS.has(column)) return 'VARCHAR2(255 CHAR)';
   if (column === 'id' || column === 'token' || column.endsWith('_id')) return 'VARCHAR2(36 CHAR)';
   if (['description', 'message', 'note', 'query', 'summary', 'title'].includes(column)) {
     return 'VARCHAR2(4000 CHAR)';
@@ -99,6 +108,12 @@ export const transformOracleSchemaSql = (sql: string): string => {
     /CREATE UNIQUE INDEX\s+([a-zA-Z0-9_]+)\s+ON\s+([a-zA-Z0-9_]+)\s*\(tenant_id\)\s+WHERE\s+is_default\s*=\s*1/gi,
     'CREATE UNIQUE INDEX $1 ON $2(CASE WHEN is_default = 1 THEN tenant_id END)',
   );
+  // Regras de relacionamento são soft-retired. O índice parcial canônico é reescrito como
+  // expressões funcionais, pois Oracle só considera valores não nulos na unicidade.
+  output = output.replace(
+    /CREATE UNIQUE INDEX\s+([a-zA-Z0-9_]+)\s+ON\s+([a-zA-Z0-9_]+)\s*\(tenant_id,\s*source_resource_type_id,\s*relationship_type_code,\s*target_kind,\s*target_id\)\s+WHERE\s+lifecycle_status\s*=\s*'Active'/gi,
+    "CREATE UNIQUE INDEX $1 ON $2(CASE WHEN lifecycle_status = 'Active' THEN tenant_id END, CASE WHEN lifecycle_status = 'Active' THEN source_resource_type_id END, CASE WHEN lifecycle_status = 'Active' THEN relationship_type_code END, CASE WHEN lifecycle_status = 'Active' THEN target_kind END, CASE WHEN lifecycle_status = 'Active' THEN target_id END)",
+  );
 
   output = output.replace(
     /^(\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s+TEXT\b/gm,
@@ -132,6 +147,13 @@ export const transformOracleSchemaSql = (sql: string): string => {
   // expression). Oracle has no equivalent syntax — the same `LOWER(name)` functional index,
   // without the suffix, already serves `LOWER(name) LIKE 'prefix%'` there.
   output = output.replace(/\s+text_pattern_ops\b/gi, '');
+  // Postgres widens a column with `ALTER COLUMN <col> TYPE <type>`; Oracle spells the same thing
+  // `MODIFY (<col> <type>)`. Sem esta reescrita o lote 16 (alargamento de
+  // geo_map_feature.source_model_id) chegaria ao Oracle como sintaxe inválida.
+  output = output.replace(
+    /\bALTER COLUMN\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+TYPE\s+VARCHAR\((\d+)\)/gi,
+    'MODIFY ($1 VARCHAR2($2 CHAR))',
+  );
   // Oracle has no LIMIT — mesmo dentro de uma subquery correlacionada de UPDATE...SET (ver
   // Backfill 2/3 em schema.ts), sem isto o parser Oracle estoura ORA-00907 no `)` que segue.
   // FETCH FIRST n ROWS ONLY é ANSI e válido nos dois contextos (SELECT de topo e subquery).

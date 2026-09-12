@@ -280,6 +280,22 @@ describe('nodeForMapFeature', () => {
         },
         visualConfig: { ...publishedPointConfig, iconCode: 'data-center.server' },
       },
+      {
+        id: 'cdoi',
+        kind: 'ENTITY',
+        parentNodeId: null,
+        label: 'CDOI',
+        sortOrder: 30,
+        active: true,
+        defaultVisible: true,
+        entity: {
+          category: 'RESOURCE',
+          sourceDomain: 'resource-model',
+          sourceType: 'RESOURCE_TYPE',
+          sourceId: 'category:CDOI',
+        },
+        visualConfig: { ...publishedPointConfig, iconCode: 'network.ont' },
+      },
     ],
   };
 
@@ -290,6 +306,32 @@ describe('nodeForMapFeature', () => {
     );
     expect(node?.id).toBe('stations');
     expect((node?.visualConfig as StudioGeoPointVisualConfig).iconCode).toBe('energy.substation');
+  });
+
+  it('resolve Resource pelo ResourceType.code canônico persistido no índice', () => {
+    const node = nodeForMapFeature(
+      {
+        kind: 'resource',
+        shape: 'point',
+        sourceModelType: 'RESOURCE_TYPE',
+        sourceModelId: 'category:CDOI',
+      },
+      publishedCatalog,
+    );
+    expect(node?.id).toBe('cdoi');
+  });
+
+  it('não resolve o código histórico CTO em catálogo publicado com identidade canônica CDOI', () => {
+    const node = nodeForMapFeature(
+      {
+        kind: 'resource',
+        shape: 'point',
+        sourceModelType: 'RESOURCE_TYPE',
+        sourceModelId: 'CTO',
+      },
+      publishedCatalog,
+    );
+    expect(node).toBeUndefined();
   });
 
   it('não confunde Site e Resource com o mesmo sourceId quando sourceModelType diverge', () => {

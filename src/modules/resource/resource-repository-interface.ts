@@ -19,9 +19,9 @@ import type {
   ResourceCatalog,
   ResourceCatalogNode,
   ResourceCatalogQuery,
+  ResourceRelationshipType,
+  ResourceTypeRelationshipRule,
 } from './domain.js';
-import type { Characteristic } from '../../shared/tmf/index.js';
-
 // Escopo de tenant para leitura por id — as mesmas entidades cujo `list*` já aceita `tenantId`
 // na query.
 export type ResourceTenantScope = { tenantId?: string };
@@ -49,21 +49,42 @@ export interface IResourceRepository {
     query?: ResourceFunctionSpecificationQuery,
   ): Awaitable<ResourceFunctionSpecification[]>;
 
-  // Category/Layer foram removidos fisicamente na Fase B do cutover (issue #188). ResourceType
-  // permanece vocabulário fixo com `code` globalmente único, mas agora tenant-scoped na leitura
-  // (`tmf_resource_type.tenant_id`) — default 'vtal' quando o chamador não informa escopo.
+  // Cada ResourceType pertence a exatamente uma folha RESOURCE_TYPE ativa no mesmo tenant.
   listResourceTypes(scope?: ResourceTenantScope): Awaitable<ResourceType[]>;
-
-  // Único campo mutável de ResourceType hoje (issue #216) — ver `UpdateResourceTypeInput`.
-  updateResourceTypeCharacteristics(
-    id: string,
-    characteristics: Characteristic[],
+  getResourceType(id: string, scope?: ResourceTenantScope): Awaitable<ResourceType | undefined>;
+  getResourceTypeByCode(
+    code: string,
     scope?: ResourceTenantScope,
-  ): Awaitable<void>;
+  ): Awaitable<ResourceType | undefined>;
+  upsertResourceType(resourceType: ResourceType): Awaitable<ResourceType>;
 
-  // Árvore dinâmica de catálogo (issue #188) — sempre tenant-scoped. `resourceTypeId` em
-  // ResourceType não existe: o mesmo ResourceType é global ao módulo (chave de negócio `code`),
-  // a árvore é que é por tenant.
+  listResourceRelationshipTypes(scope?: ResourceTenantScope): Awaitable<ResourceRelationshipType[]>;
+  getResourceRelationshipType(
+    code: string,
+    scope?: ResourceTenantScope,
+  ): Awaitable<ResourceRelationshipType | undefined>;
+  upsertResourceRelationshipType(
+    relationshipType: ResourceRelationshipType,
+  ): Awaitable<ResourceRelationshipType>;
+
+  listResourceTypeRelationshipRules(
+    sourceResourceTypeId: string,
+    scope?: ResourceTenantScope & { includeRetired?: boolean },
+  ): Awaitable<ResourceTypeRelationshipRule[]>;
+  /** Carrega as regras de várias folhas em lote para snapshots/reconciliações do Studio. */
+  listResourceTypeRelationshipRulesBySourceIds(
+    sourceResourceTypeIds: string[],
+    scope?: ResourceTenantScope & { includeRetired?: boolean },
+  ): Awaitable<ResourceTypeRelationshipRule[]>;
+  getResourceTypeRelationshipRule(
+    id: string,
+    scope?: ResourceTenantScope,
+  ): Awaitable<ResourceTypeRelationshipRule | undefined>;
+  upsertResourceTypeRelationshipRule(
+    rule: ResourceTypeRelationshipRule,
+  ): Awaitable<ResourceTypeRelationshipRule>;
+
+  // Árvore dinâmica de catálogo (issue #188), sempre tenant-scoped.
   upsertResourceCatalog(catalog: ResourceCatalog): Awaitable<ResourceCatalog>;
   getResourceCatalog(id: string, scope: ResourceTenantScope): Awaitable<ResourceCatalog | undefined>;
   getResourceCatalogByCode(

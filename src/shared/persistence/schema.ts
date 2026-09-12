@@ -62,6 +62,9 @@ export const TABLE_NAMES = [
   'studio_asset',
   'reference_data_set',
   'reference_data_value',
+  'tmf_resource_relationship_type',
+  'tmf_resource_type_relationship_rule',
+  'tmf_resource_type_clone_ledger',
 ] as const;
 
 // Column migrations added after the base schema so databases created before these columns get
@@ -1882,6 +1885,80 @@ const MIGRATIONS_SQL_V14_PARTY_CHARACTERISTIC_REFERENCE_DATA = `
   ALTER TABLE party_role_type_characteristic ADD COLUMN IF NOT EXISTS reference_data_set_key TEXT;
 `;
 
+// Resource modeling refinement (issue #230): an active RESOURCE_TYPE leaf is the ResourceType
+// itself. DDL stays additive; the Oracle adapter performs the deterministic clone/repoint backfill
+// after these objects exist, before applying the active-only unique index.
+const MIGRATIONS_SQL_V15_RESOURCE_TYPE_LEAF_IDENTITY = `
+  ALTER TABLE tmf_resource_type ADD COLUMN IF NOT EXISTS nature TEXT NOT NULL DEFAULT 'PhysicalResource'
+    CHECK(nature IN ('PhysicalResource', 'LogicalResource'));
+
+  CREATE TABLE IF NOT EXISTS tmf_resource_relationship_type (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    inverse_code TEXT NOT NULL,
+    is_symmetric INTEGER NOT NULL DEFAULT 0,
+    allowed_target_kinds TEXT NOT NULL,
+    cardinality TEXT,
+    lifecycle_status TEXT NOT NULL DEFAULT 'Active' CHECK(lifecycle_status IN ('Active', 'Retired')),
+    is_bootstrap INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, code)
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_relationship_type_lifecycle
+    ON tmf_resource_relationship_type(tenant_id, lifecycle_status, name, code);
+
+  CREATE TABLE IF NOT EXISTS tmf_resource_type_relationship_rule (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    source_resource_type_id TEXT NOT NULL,
+    relationship_type_code TEXT NOT NULL,
+    target_kind TEXT NOT NULL CHECK(target_kind IN ('RESOURCE_TYPE', 'GEOGRAPHIC_SITE_SPECIFICATION')),
+    target_id TEXT NOT NULL,
+    cardinality TEXT,
+    lifecycle_status TEXT NOT NULL DEFAULT 'Active' CHECK(lifecycle_status IN ('Active', 'Retired')),
+    valid_for_start TIMESTAMPTZ,
+    valid_for_end TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (source_resource_type_id) REFERENCES tmf_resource_type(id),
+    FOREIGN KEY (tenant_id, relationship_type_code)
+      REFERENCES tmf_resource_relationship_type(tenant_id, code)
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_type_relationship_rule_source
+    ON tmf_resource_type_relationship_rule(tenant_id, source_resource_type_id, lifecycle_status);
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_type_relationship_rule_target
+    ON tmf_resource_type_relationship_rule(tenant_id, target_kind, target_id, lifecycle_status);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_tmf_resource_type_relationship_rule_active
+    ON tmf_resource_type_relationship_rule(tenant_id, source_resource_type_id, relationship_type_code, target_kind, target_id)
+    WHERE lifecycle_status = 'Active';
+
+  CREATE TABLE IF NOT EXISTS tmf_resource_type_clone_ledger (
+    catalog_node_id TEXT PRIMARY KEY,
+    original_resource_type_id TEXT NOT NULL,
+    cloned_resource_type_id TEXT NOT NULL,
+    strategy_version TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (catalog_node_id) REFERENCES tmf_resource_catalog_node(id),
+    FOREIGN KEY (original_resource_type_id) REFERENCES tmf_resource_type(id),
+    FOREIGN KEY (cloned_resource_type_id) REFERENCES tmf_resource_type(id)
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_tmf_resource_type_clone_ledger_clone
+    ON tmf_resource_type_clone_ledger(cloned_resource_type_id);
+`;
+
+// `geo_map_feature.source_model_id` guarda o `code` do ResourceType publicado pelo Studio GEO, não
+// um UUID. A inferência de tipo do adaptador Oracle dimensiona toda coluna terminada em `_id` como
+// VARCHAR2(36) — suficiente para UUID, curto demais para um caminho de categoria
+// ('category:Infrastructure.CivilWorks:type:Pole' tem 44 chars). Bases criadas antes da exceção em
+// oracle-schema.ts já têm a coluna estreita e estouram ORA-12899 no rebuild do índice do mapa.
+// Sem efeito onde a coluna já é larga o bastante (Oracle aceita o MODIFY para o mesmo tipo).
+const MIGRATIONS_SQL_V16_MAP_FEATURE_SOURCE_MODEL_ID_WIDTH = `
+  ALTER TABLE geo_map_feature ALTER COLUMN source_model_id TYPE VARCHAR(255);
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -1928,6 +2005,16 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 14,
     name: 'party-characteristic-reference-data',
     sql: MIGRATIONS_SQL_V14_PARTY_CHARACTERISTIC_REFERENCE_DATA,
+  },
+  {
+    version: 15,
+    name: 'resource-type-leaf-identity',
+    sql: MIGRATIONS_SQL_V15_RESOURCE_TYPE_LEAF_IDENTITY,
+  },
+  {
+    version: 16,
+    name: 'map-feature-source-model-id-width',
+    sql: MIGRATIONS_SQL_V16_MAP_FEATURE_SOURCE_MODEL_ID_WIDTH,
   },
 ];
 

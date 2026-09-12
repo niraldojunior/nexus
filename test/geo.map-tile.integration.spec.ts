@@ -59,13 +59,15 @@ test.skipIf(!oracleConfigured)(
         lng: number;
         lat: number;
         geometry?: string;
+        tenantId?: string;
       }) => {
         await db.run(
           `INSERT INTO geo_map_feature
              (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, feature_kind, entity_type,
               type_code, label, lng, lat, geometry, rank)
-           VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
           [
+            overrides.tenantId ?? 'default',
             tile.z,
             overrides.tileX,
             overrides.tileY,
@@ -113,6 +115,22 @@ test.skipIf(!oracleConfigured)(
           ],
         }),
       });
+      // Mesmo tile, outro tenant: precisa aparecer somente quando a request carregar aquele tenant
+      // no contexto. Esta é a regressão do mapa vtal que lia silenciosamente o índice `default`.
+      await insertFeature({
+        entityId: 'aaaaaaaa-0000-0000-0000-000000000003',
+        tileX: tile.x,
+        tileY: tile.y,
+        shape: 'point',
+        kind: 'resource',
+        entityType: 'PhysicalResource',
+        typeCode: 'category:CDOE',
+        label: 'CDOE-vtal',
+        lng: ICARAI[0],
+        lat: ICARAI[1],
+        tenantId: 'vtal',
+      });
+
       // Feature num tile VIZINHO — não deve aparecer na leitura do tile de Icaraí.
       await insertFeature({
         entityId: 'aaaaaaaa-0000-0000-0000-000000000099',
@@ -149,6 +167,20 @@ test.skipIf(!oracleConfigured)(
       assert.equal(line?.label, 'Cabo Distribuição 01');
       assert.deepEqual(line?.geometry?.type, 'LineString');
       assert.equal(line?.geometry?.coordinates.length, 2);
+      assert.ok(!features.some((f) => f.label === 'CDOE-vtal'));
+
+      const vtalResult = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/map/tile?z=${tile.z}&x=${tile.x}&y=${tile.y}`,
+        undefined,
+        { 'x-tenant-id': 'vtal' },
+      );
+      assert.equal(vtalResult.statusCode, 200);
+      const vtalFeatures = vtalResult.body as MapTileFeature[];
+      assert.equal(vtalFeatures.length, 1);
+      assert.equal(vtalFeatures[0]?.label, 'CDOE-vtal');
+      assert.equal(vtalFeatures[0]?.typeCode, 'category:CDOE');
 
       // O tile vizinho não vaza para esta leitura.
       assert.ok(!features.some((f) => f.label === 'CDO-vizinho'));

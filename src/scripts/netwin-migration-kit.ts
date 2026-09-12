@@ -145,15 +145,18 @@ export async function ensureResourceType(
   t: TablePrefixer,
   code: string,
   name: string,
-  tenantId = 'vtal',
+  tenantId: string,
 ): Promise<string> {
   const existing = await target.execute<{ ID: string }>(
-    `SELECT id AS "ID" FROM ${t('tmf_resource_type')} WHERE tenant_id=:1 AND code=:2 FETCH FIRST 1 ROWS ONLY`,
-    [tenantId, code],
+    `SELECT id AS "ID" FROM ${t('tmf_resource_type')}
+      WHERE code=:code AND tenant_id IN (:tenantId,'default')
+      ORDER BY CASE WHEN tenant_id=:tenantId THEN 0 ELSE 1 END
+      FETCH FIRST 1 ROWS ONLY`,
+    { code, tenantId },
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
   if (existing.rows?.[0]?.ID) return existing.rows[0].ID;
-  const id = `rt-${code.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+  const id = createCanonicalId();
   await merge(target, t, 'tmf_resource_type', ['tenant_id', 'code'], {
     id,
     tenant_id: tenantId,
@@ -204,7 +207,7 @@ export async function resourceSpecId(
   t: TablePrefixer,
   name: string,
   resourceTypeCode: string,
-  tenantId = 'vtal',
+  tenantId: string,
 ): Promise<string> {
   const resourceTypeId = await ensureResourceType(target, t, resourceTypeCode, resourceTypeCode, tenantId);
   const row = await target.execute<{ ID: string }>(

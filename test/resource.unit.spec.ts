@@ -597,12 +597,11 @@ test('ResourceCatalog and ResourceCatalogNode domain operations, ordering and tr
     sortOrder: 1,
   });
 
-  // Criar nós RESOURCE_TYPE folha apontando para CTO e Splitter
+  // Criar nós RESOURCE_TYPE folha (na modelagem 1:1 o tipo é criado atomicamente com o nó)
   const nodeCto = await service.createResourceCatalogNode(catalog.id, {
     code: 'node-cto',
     name: 'CTO (Caixa de Terminação Óptica)',
     kind: 'RESOURCE_TYPE',
-    resourceTypeId: 'rt-cto',
     parentNodeId: groupBoxes.id,
     sortOrder: 2,
   });
@@ -611,13 +610,12 @@ test('ResourceCatalog and ResourceCatalogNode domain operations, ordering and tr
     code: 'node-splitter',
     name: 'Splitter',
     kind: 'RESOURCE_TYPE',
-    resourceTypeId: 'rt-splitter',
     parentNodeId: groupPassive.id,
     sortOrder: 2,
   });
 
   assert.equal(nodeCto.kind, 'RESOURCE_TYPE');
-  assert.equal(nodeCto.resourceTypeId, 'rt-cto');
+  assert.ok(nodeCto.resourceTypeId);
   assert.equal(nodeSplitter.parentNodeId, groupPassive.id);
 
   // Consultar árvore montada
@@ -708,16 +706,15 @@ test('ResourceTypeCatalogContext returns consolidated paths and specifications f
     kind: 'GROUP',
   });
 
-  await service.createResourceCatalogNode(catalog.id, {
+  const leaf = await service.createResourceCatalogNode(catalog.id, {
     code: 'leaf-olt',
     name: 'OLT Node',
     kind: 'RESOURCE_TYPE',
-    resourceTypeId: 'rt-olt',
     parentNodeId: group.id,
   });
 
-  const context = await service.getResourceTypeCatalogContext('rt-olt');
-  assert.equal(context.resourceType.code, 'OLT');
+  const context = await service.getResourceTypeCatalogContext(leaf.resourceTypeId!);
+  assert.equal(context.resourceType.name, 'OLT Node');
   assert.equal(context.catalogPaths.length, 1);
   assert.equal(context.catalogPaths[0]?.catalog.code, 'main-catalog');
   assert.deepEqual(

@@ -17,6 +17,9 @@ const resourceType = (
   categoryCode,
   ...(description ? { description } : {}),
   status,
+  nature: categoryCode.startsWith('Logical.') ? 'LogicalResource' : 'PhysicalResource',
+  mapPresence: false,
+  tenantId: 'default',
 });
 
 export const RESOURCE_TYPES: ResourceType[] = [

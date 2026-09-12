@@ -19,9 +19,13 @@ export type ResourceType = {
   href: string;
   code: string;
   name: string;
+  /** Classificação de compatibilidade legada; a hierarquia é definida pelo ResourceCatalogNode. */
   categoryCode: string;
   description?: string;
   status: ResourceCatalogStatus;
+  nature: ResourceKind;
+  /** Flag canônica (1/0 no Oracle) para a presença própria do tipo no mapa. */
+  mapPresence: boolean;
   /**
    * Características que **definem** este tipo de recurso — o contrato estrutural que toda
    * `ResourceSpecification` do tipo herda. Cada entrada carrega também um valor padrão, copiado
@@ -29,16 +33,18 @@ export type ResourceType = {
    * como `characteristic` tipada via catálogo, nunca campo hardcoded).
    */
   resourceTypeCharacteristic?: Characteristic[];
-  tenantId?: string;
+  tenantId: string;
 };
 
-/**
- * Único campo de `ResourceType` editável hoje. `ResourceType` ainda não tem CRUD completo (nome,
- * código e categoria continuam derivados do nó de catálogo); esta entrada existe só para o
- * contrato de características do tipo.
- */
+/** Campos mutáveis do agregado ResourceType. Código, nome e descrição são sincronizados com a folha. */
 export type UpdateResourceTypeInput = {
-  resourceTypeCharacteristic: Characteristic[];
+  code?: string;
+  name?: string;
+  description?: string;
+  status?: ResourceCatalogStatus;
+  nature?: ResourceKind;
+  mapPresence?: boolean;
+  resourceTypeCharacteristic?: Characteristic[];
 };
 
 /**
@@ -155,9 +161,8 @@ export type ResourceTypeRef = {
 
 /**
  * Nó da árvore de catálogo. `GROUP` é organizacional e nunca referencia tipo; `RESOURCE_TYPE` é
- * sempre folha e referencia exatamente um `ResourceType` — sem unicidade global, o mesmo tipo pode
- * aparecer em 0..N nós, inclusive no mesmo catálogo. `code` é a chave estável do nó dentro do
- * catálogo, distinta do `code` do ResourceType que ele eventualmente referencia.
+ * sempre folha e representa exatamente um `ResourceType` ativo, sem compartilhamento entre folhas.
+ * Código, nome e descrição da folha são a identidade apresentada do tipo e permanecem sincronizados.
  */
 export type ResourceCatalogNode = {
   '@type': 'ResourceCatalogNode';
@@ -219,12 +224,25 @@ export type UpdateResourceCatalogInput = Partial<Omit<CreateResourceCatalogInput
 };
 
 type ResourceCatalogNodeShapeInput =
-  | { kind: 'GROUP'; resourceTypeId?: undefined }
-  | { kind: 'RESOURCE_TYPE'; resourceTypeId: string };
+  | { kind: 'GROUP' }
+  | {
+      kind: 'RESOURCE_TYPE';
+      /** @deprecated Ignorado; a folha sempre cria seu tipo 1:1. */
+      resourceTypeId?: string;
+      nature?: ResourceKind;
+      mapPresence?: boolean;
+      resourceTypeCharacteristic?: Characteristic[];
+    };
 
+/**
+ * Cria um nó de modelagem. Para `RESOURCE_TYPE`, o serviço cria atomicamente o ResourceType 1:1;
+ * portanto nunca aceita a associação manual a um tipo preexistente.
+ */
 export type CreateResourceCatalogNodeInput = ResourceCatalogNodeShapeInput & {
-  code: string;
-  name: string;
+  /** O serviço gera um código provisório único quando omitido (criação imediata no Studio). */
+  code?: string;
+  /** O serviço usa o rótulo padrão do tipo de nó quando omitido. */
+  name?: string;
   description?: string;
   parentNodeId?: string;
   sortOrder?: number;
@@ -238,6 +256,77 @@ export type UpdateResourceCatalogNodeInput = {
   description?: string;
   status?: ResourceCatalogStatus;
   metadata?: Record<string, unknown>;
+  /** Campos exclusivos da folha, persistidos no ResourceType associado na mesma transação. */
+  nature?: ResourceKind;
+  mapPresence?: boolean;
+  resourceTypeCharacteristic?: Characteristic[];
+};
+
+export type ResourceRelationshipTargetKind = 'RESOURCE_TYPE' | 'GEOGRAPHIC_SITE_SPECIFICATION';
+
+export type ResourceRelationshipCardinality = {
+  maxSourcePerTarget?: number;
+  maxTargetPerSource?: number;
+};
+
+/** Catálogo governado de semânticas de relação permitidas no modelo de recursos. */
+export type ResourceRelationshipType = {
+  '@type': 'ResourceRelationshipType';
+  id: string;
+  href: string;
+  code: string;
+  name: string;
+  inverseCode: string;
+  symmetric: boolean;
+  allowedTargetKinds: ResourceRelationshipTargetKind[];
+  cardinality?: ResourceRelationshipCardinality;
+  lifecycleStatus: 'Active' | 'Retired';
+  tenantId: string;
+  _bootstrapProtected?: boolean;
+};
+
+export type CreateResourceRelationshipTypeInput = {
+  code: string;
+  name: string;
+  inverseCode?: string;
+  symmetric?: boolean;
+  allowedTargetKinds: ResourceRelationshipTargetKind[];
+  cardinality?: ResourceRelationshipCardinality;
+};
+
+export type UpdateResourceRelationshipTypeInput = Partial<
+  Omit<CreateResourceRelationshipTypeInput, 'code'>
+> & {
+  lifecycleStatus?: ResourceRelationshipType['lifecycleStatus'];
+};
+
+/** Regra explícita que declara uma relação permitida para um ResourceType fonte. */
+export type ResourceTypeRelationshipRule = {
+  '@type': 'ResourceTypeRelationshipRule';
+  id: string;
+  href: string;
+  sourceResourceTypeId: string;
+  relationshipTypeCode: string;
+  targetKind: ResourceRelationshipTargetKind;
+  targetId: string;
+  cardinality?: ResourceRelationshipCardinality;
+  lifecycleStatus: 'Active' | 'Retired';
+  tenantId: string;
+  validFor?: TimePeriod;
+};
+
+export type CreateResourceTypeRelationshipRuleInput = {
+  relationshipTypeCode: string;
+  targetKind: ResourceRelationshipTargetKind;
+  targetId: string;
+  cardinality?: ResourceRelationshipCardinality;
+  validFor?: TimePeriod;
+};
+
+export type UpdateResourceTypeRelationshipRuleInput = Partial<
+  Omit<CreateResourceTypeRelationshipRuleInput, 'relationshipTypeCode' | 'targetKind' | 'targetId'>
+> & {
+  lifecycleStatus?: ResourceTypeRelationshipRule['lifecycleStatus'];
 };
 
 export type MoveResourceCatalogNodeInput = {
@@ -262,6 +351,30 @@ export type ResourceCatalogNodeImpact = {
   activeLogicalResourceCount: number;
 };
 
+/**
+ * Fotografia do `ResourceType` embutida em cada nó `RESOURCE_TYPE` do snapshot (plano §4) — sem
+ * isto, o draft de governança só capturava a árvore de nós; Characteristics/regras de relação são
+ * gravadas de imediato pelo autosave direto nas tabelas canônicas (fora do draft), então "Cancelar"
+ * não tinha como restaurar a baseline desses campos, só a hierarquia.
+ */
+export type ResourceModelSnapshotResourceType = {
+  name?: string;
+  description?: string;
+  status?: ResourceCatalogStatus;
+  nature?: ResourceKind;
+  mapPresence?: boolean;
+  resourceTypeCharacteristic?: Characteristic[];
+};
+
+/** Regra de relação permitida embutida no snapshot — mesma forma de `CreateResourceTypeRelationshipRuleInput`. */
+export type ResourceModelSnapshotRelationshipRule = {
+  relationshipTypeCode: string;
+  targetKind: ResourceRelationshipTargetKind;
+  targetId: string;
+  cardinality?: ResourceRelationshipCardinality;
+  validFor?: TimePeriod;
+};
+
 export type ResourceModelSnapshot = {
   catalog: {
     id?: string;
@@ -282,7 +395,19 @@ export type ResourceModelSnapshot = {
     sortOrder?: number;
     status?: ResourceCatalogStatus;
     metadata?: Record<string, unknown>;
+    /** Só presente quando `kind === 'RESOURCE_TYPE'`. */
+    resourceType?: ResourceModelSnapshotResourceType;
+    /** Só presente quando `kind === 'RESOURCE_TYPE'`; regras ativas no momento da captura. */
+    relationshipRules?: ResourceModelSnapshotRelationshipRule[];
   }>;
+};
+
+/** Projeção agregada usada pelo frontend para montar o snapshot sem N+1 por folha. */
+export type ResourceModelSnapshotSource = {
+  catalog: ResourceCatalog;
+  nodes: ResourceCatalogNode[];
+  resourceTypes: ResourceType[];
+  relationshipRules: ResourceTypeRelationshipRule[];
 };
 
 export type ResourceRelationship = {

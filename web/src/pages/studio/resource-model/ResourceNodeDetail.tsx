@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box,
   FileCode,
   Check,
-  Save,
+  Loader2,
   Cpu,
   MapPin,
   AlertCircle,
@@ -11,6 +11,8 @@ import {
   Plus,
   RotateCcw,
   Trash2,
+  Layers,
+  Tag,
 } from 'lucide-react';
 import type {
   ResourceCatalogNode,
@@ -33,15 +35,27 @@ import {
 } from '../../../services/resourceApi';
 import {
   buildCharacteristicPayload,
-  characteristicRowsValid,
   resourceCharacteristicRowsFrom,
   type ResourceCharacteristicRow,
 } from '../../../utils/resourceCharacteristicsForm';
-import ResourceCharacteristicsEditor from '../../../components/ResourceCharacteristicsEditor';
+import { ResourceCharacteristicFormModal } from './ResourceCharacteristicFormModal';
 import { ResourceSpecificationFormModal } from './ResourceSpecificationFormModal';
+import { ResourceRelationshipRulesPanel } from './ResourceRelationshipRulesPanel';
 import { IconPickerModal } from './IconPickerModal';
 import { resolveNodeIcon } from './catalogNodeIcons';
 import { Button } from '../../../components/ui';
+
+const numberFormatter = new Intl.NumberFormat('pt-BR');
+
+const VALUE_TYPE_LABELS: Record<ResourceCharacteristicRow['valueType'], string> = {
+  string: 'Texto',
+  integer: 'Inteiro',
+  decimal: 'Decimal',
+  boolean: 'Booleano',
+  date: 'Data',
+  list: 'Lista de opções',
+  json: 'JSON livre',
+};
 
 export type ResourceNodeDetailProps = {
   catalogId: string;
@@ -59,9 +73,33 @@ export type ResourceNodeDetailProps = {
   onImpact: () => void;
   onReactivate: () => void;
   onUpdateNode?: (input: UpdateResourceCatalogNodeInput) => Promise<void>;
+  /**
+   * Registra (ou desregistra, com `null`) a função `flush()` do autosave deste painel — chamada
+   * por `ResourceModelStudio` antes de capturar snapshot/draft/publicação, para garantir que uma
+   * edição em debounce não seja perdida (plano §5.5).
+   */
+  onRegisterFlush?: (fn: (() => Promise<void>) | null) => void;
+  /**
+   * Notifica o pai a cada transição do estado de autosave deste painel — `ResourceModelStudio`
+   * usa isto para bloquear "Publicar" em `StudioGovernanceSummary` enquanto houver edição
+   * pendente/em voo/com erro (plano §5.8). Chamado com `'idle'` ao desmontar (nó desselecionado).
+   */
+  onAutosaveStateChange?: (state: AutosaveState) => void;
 };
 
-type DetailTab = 'overview' | 'characteristics' | 'specifications' | 'impact';
+export type DetailTab = 'overview' | 'characteristics' | 'specifications' | 'relations';
+export type AutosaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
+
+type FormSnapshot = {
+  name: string;
+  code: string;
+  description: string;
+  icon: string | undefined;
+  nature: 'PhysicalResource' | 'LogicalResource';
+  mapPresence: boolean;
+};
+
+const AUTOSAVE_DEBOUNCE_MS = 700;
 
 export function ResourceNodeDetail({
   catalogId,
@@ -72,6 +110,8 @@ export function ResourceNodeDetail({
   onImpact,
   onReactivate,
   onUpdateNode,
+  onRegisterFlush,
+  onAutosaveStateChange,
 }: ResourceNodeDetailProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [path, setPath] = useState<ResourceCatalogPath | null>(null);
@@ -79,13 +119,17 @@ export function ResourceNodeDetail({
   const [context, setContext] = useState<ResourceTypeCatalogContext | null>(null);
   const [impact, setImpact] = useState<ResourceCatalogNodeImpact | null>(null);
 
-  // Linhas editáveis das características que definem o ResourceType (issue #216) — a aba
-  // "Características" deixou de ser por especificação: agora edita
-  // `context.resourceType.resourceTypeCharacteristic`, herdado por todas as specs desse tipo.
+  // Linhas das características que definem o ResourceType (issue #216) — a aba "Características"
+  // deixou de ser por especificação: edita `context.resourceType.resourceTypeCharacteristic`,
+  // herdado por todas as specs desse tipo. Lista + modal de item único (plano §8) em vez da
+  // edição tabular de `ResourceCharacteristicsEditor` — cada add/edit/remove persiste de imediato.
   const [typeCharacteristicRows, setTypeCharacteristicRows] = useState<ResourceCharacteristicRow[]>([]);
-  const [typeCharacteristicSaving, setTypeCharacteristicSaving] = useState(false);
-  const [typeCharacteristicSuccess, setTypeCharacteristicSuccess] = useState(false);
   const [typeCharacteristicError, setTypeCharacteristicError] = useState<string | null>(null);
+  const [characteristicModalOpen, setCharacteristicModalOpen] = useState(false);
+  const [editingCharacteristicRow, setEditingCharacteristicRow] = useState<ResourceCharacteristicRow | null>(
+    null,
+  );
+  const [characteristicDeletingKey, setCharacteristicDeletingKey] = useState<string | null>(null);
 
   // Modal de criação/edição/leitura de ResourceSpecification (aba "Especificações", issue #216).
   const [specModalOpen, setSpecModalOpen] = useState(false);
@@ -94,95 +138,148 @@ export function ResourceNodeDetail({
   const [specDeletingId, setSpecDeletingId] = useState<string | null>(null);
   const [specError, setSpecError] = useState<string | null>(null);
 
-  // Estados locais para edição direta (inline)
+  // Estados locais para edição direta (inline), autosalvos — ver `scheduleSave`/`flush` abaixo.
   const [formName, setFormName] = useState(node.name);
   const [formCode, setFormCode] = useState(node.code);
   const [formDescription, setFormDescription] = useState(node.description || '');
   const [formNature, setFormNature] = useState<'PhysicalResource' | 'LogicalResource'>('PhysicalResource');
-  const [formMapPresence, setFormMapPresence] = useState<boolean>(true);
+  const [formMapPresence, setFormMapPresence] = useState<boolean>(false);
   const [formIcon, setFormIcon] = useState<string | undefined>(
     (node.metadata?.icon as string) || undefined,
   );
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [autosaveState, setAutosaveState] = useState<AutosaveState>('idle');
+  const [autosaveError, setAutosaveError] = useState<string | null>(null);
 
   const isGroup = node.kind === 'GROUP';
 
   const defaultIsLogical = isLogicalResourceNode(node, context?.resourceType?.categoryCode);
 
+  // Espelha os campos do formulário em um ref para que o autosave (debounce/flush) sempre leia o
+  // valor mais recente, mesmo dentro de um timeout ou de uma closure antiga.
+  const formRef = useRef<FormSnapshot>({
+    name: node.name,
+    code: node.code,
+    description: node.description || '',
+    icon: (node.metadata?.icon as string) || undefined,
+    nature: 'PhysicalResource',
+    mapPresence: false,
+  });
+
+  // Revisão monotônica por nó — cada novo save incrementa; uma resposta de uma revisão antiga
+  // nunca sobrescreve o estado local de uma edição mais nova (ver plano §5.3).
+  const revisionRef = useRef(0);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onUpdateNodeRef = useRef(onUpdateNode);
+  onUpdateNodeRef.current = onUpdateNode;
+
+  // Sincroniza o formulário somente quando o nó SELECIONADO muda de fato (por id) — nunca a cada
+  // nova referência de objeto `node` recebida após `reloadTree()`. Antes, o efeito dependia de
+  // `[node, defaultIsLogical]`, então toda gravação (que dispara reload) recriava o objeto `node`
+  // e este efeito resetava o formulário por cima de uma edição em andamento — a exata corrida que
+  // o autosave precisa evitar.
   useEffect(() => {
     setFormName(node.name);
     setFormCode(node.code);
     setFormDescription(node.description || '');
     setFormIcon((node.metadata?.icon as string) || undefined);
 
-    const initialNature: 'PhysicalResource' | 'LogicalResource' =
-      node.metadata?.nature === 'LogicalResource'
-        ? 'LogicalResource'
-        : node.metadata?.nature === 'PhysicalResource'
-          ? 'PhysicalResource'
-          : defaultIsLogical
-            ? 'LogicalResource'
-            : 'PhysicalResource';
+    // Enquanto o contexto canônico do ResourceType carrega, usa apenas a heurística de natureza e
+    // mantém a visibilidade desligada. Nunca usa metadata legado para exibir "Sim": isso fazia a UI
+    // mentir mesmo quando tmf_resource_type.map_presence permanecia false.
+    const initialNature: 'PhysicalResource' | 'LogicalResource' = defaultIsLogical
+      ? 'LogicalResource'
+      : 'PhysicalResource';
     setFormNature(initialNature);
 
-    const initialMapPresence =
-      typeof node.metadata?.mapPresence === 'boolean'
-        ? Boolean(node.metadata?.mapPresence)
-        : true;
+    const initialMapPresence = false;
     setFormMapPresence(initialMapPresence);
-    setError(null);
-    setSaveSuccess(false);
-  }, [node, defaultIsLogical]);
+
+    formRef.current = {
+      name: node.name,
+      code: node.code,
+      description: node.description || '',
+      icon: (node.metadata?.icon as string) || undefined,
+      nature: initialNature,
+      mapPresence: initialMapPresence,
+    };
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    revisionRef.current = 0;
+    setAutosaveState('idle');
+    setAutosaveError(null);
+    // Depende apenas do id do nó selecionado — ver comentário acima sobre por que `node` inteiro
+    // e `defaultIsLogical` não entram nas dependências.
+  }, [node.id]);
 
   useEffect(() => {
     let isMounted = true;
 
-    async function loadDetails() {
-      try {
-        const [pathRes, impactRes] = await Promise.all([
-          getResourceCatalogNodePath(catalogId, node.id).catch(() => null),
-          getResourceCatalogNodeImpact(catalogId, node.id).catch(() => null),
-        ]);
+    // Caminho/impacto podem ser consultas caras no Oracle. Carrega-os sem bloquear o contexto do
+    // ResourceType, que é a fonte canônica de nature/mapPresence e precisa chegar primeiro para o
+    // formulário não apresentar um valor fictício enquanto as métricas ainda estão calculando.
+    void getResourceCatalogNodePath(catalogId, node.id)
+      .then((result) => {
+        if (isMounted) setPath(result);
+      })
+      .catch(() => {
+        if (isMounted) setPath(null);
+      });
+    void getResourceCatalogNodeImpact(catalogId, node.id)
+      .then((result) => {
+        if (isMounted) setImpact(result);
+      })
+      .catch(() => {
+        if (isMounted) setImpact(null);
+      });
 
-        if (isMounted) {
-          setPath(pathRes);
-          setImpact(impactRes);
+    if (node.kind === 'RESOURCE_TYPE' && node.resourceTypeId) {
+      void Promise.all([
+        listResourceSpecifications({ resourceTypeId: node.resourceTypeId }).catch(() => []),
+        getResourceTypeCatalogContext(node.resourceTypeId).catch(() => null),
+      ]).then(([specsRes, contextRes]) => {
+        if (!isMounted) return;
+        setSpecifications(specsRes);
+        setContext(contextRes);
+        setTypeCharacteristicRows(
+          resourceCharacteristicRowsFrom(contextRes?.resourceType.resourceTypeCharacteristic),
+        );
+        setTypeCharacteristicError(null);
+        if (contextRes) {
+          const canonicalNature = contextRes.resourceType.nature ?? 'PhysicalResource';
+          const canonicalMapPresence =
+            canonicalNature === 'PhysicalResource' && contextRes.resourceType.mapPresence === true;
+          setFormNature(canonicalNature);
+          setFormMapPresence(canonicalMapPresence);
+          formRef.current = {
+            ...formRef.current,
+            nature: canonicalNature,
+            mapPresence: canonicalMapPresence,
+          };
         }
-
-        if (node.kind === 'RESOURCE_TYPE' && node.resourceTypeId) {
-          const [specsRes, contextRes] = await Promise.all([
-            listResourceSpecifications({ resourceTypeId: node.resourceTypeId }).catch(() => []),
-            getResourceTypeCatalogContext(node.resourceTypeId).catch(() => null),
-          ]);
-          if (isMounted) {
-            setSpecifications(specsRes);
-            setContext(contextRes);
-            setTypeCharacteristicRows(
-              resourceCharacteristicRowsFrom(contextRes?.resourceType.resourceTypeCharacteristic),
-            );
-            setTypeCharacteristicError(null);
-          }
-        } else {
-          if (isMounted) {
-            setSpecifications([]);
-            setContext(null);
-            setTypeCharacteristicRows([]);
-            setTypeCharacteristicError(null);
-          }
-        }
-      } catch {
-        // Ignora erros individuais de detalhamento para manter UI responsiva
-      }
+      });
+    } else {
+      setSpecifications([]);
+      setContext(null);
+      setTypeCharacteristicRows([]);
+      setTypeCharacteristicError(null);
     }
 
-    loadDetails();
     return () => {
       isMounted = false;
     };
   }, [catalogId, node]);
+
+  // Se a folha selecionada deixa de ser RESOURCE_TYPE (ex.: seleção mudou para um grupo) e a aba
+  // ativa era exclusiva de tipo, volta para Geral — evita renderizar uma aba inexistente.
+  useEffect(() => {
+    if (isGroup && activeTab !== 'overview') {
+      setActiveTab('overview');
+    }
+  }, [isGroup, activeTab]);
 
   const pathString = path
     ? path.nodes.length > 1
@@ -190,117 +287,161 @@ export function ResourceNodeDetail({
       : '/'
     : '';
 
-  const isLogical =
-    node.metadata?.nature === 'LogicalResource'
-      ? true
-      : node.metadata?.nature === 'PhysicalResource'
-        ? false
-        : defaultIsLogical;
+  const isLogical = context?.resourceType.nature
+    ? context.resourceType.nature === 'LogicalResource'
+    : defaultIsLogical;
 
-  const handleSelectIcon = async (newIcon: string) => {
-    setFormIcon(newIcon);
-    setIconPickerOpen(false);
+  // ---- Autosave: núcleo do controlador (plano §5) --------------------------------------------
+
+  const doSaveNow = useCallback(async (): Promise<void> => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    const myRevision = ++revisionRef.current;
+    setAutosaveState('saving');
+    setAutosaveError(null);
+
+    const snapshot = formRef.current;
+    const updatedMetadata: Record<string, unknown> = {
+      ...(node.metadata ?? {}),
+      ...(snapshot.icon ? { icon: snapshot.icon } : {}),
+    };
+    if (!snapshot.icon && 'icon' in updatedMetadata) {
+      delete updatedMetadata.icon;
+    }
+    // Estes campos pertencem ao ResourceType. Remove cópias legadas do metadata para manter uma
+    // única fonte de verdade e evitar que a visualização volte a divergir da elegibilidade GEO.
+    delete updatedMetadata.nature;
+    delete updatedMetadata.mapPresence;
 
     try {
-      setSaving(true);
-      const updatedMetadata: Record<string, unknown> = {
-        ...(node.metadata ?? {}),
-        icon: newIcon,
-        ...(node.kind === 'RESOURCE_TYPE'
-          ? {
-              nature: formNature,
-              mapPresence: formNature === 'PhysicalResource' ? formMapPresence : false,
-            }
-          : {}),
-      };
-
-      await onUpdateNode?.({
-        name: formName.trim() || node.name,
-        code: formCode.trim() || node.code,
-        description: formDescription.trim() || undefined,
+      await onUpdateNodeRef.current?.({
+        name: snapshot.name.trim() || node.name,
+        code: snapshot.code.trim() || node.code,
+        description: snapshot.description.trim() || undefined,
         metadata: updatedMetadata,
-      });
-
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2500);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Falha ao salvar novo ícone no catálogo.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveInline = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    setError(null);
-
-    if (!formName.trim()) {
-      setError('O nome do nó é obrigatório.');
-      return;
-    }
-    if (!formCode.trim()) {
-      setError('O código do nó é obrigatório.');
-      return;
-    }
-
-    try {
-      setSaving(true);
-      const updatedMetadata: Record<string, unknown> = {
-        ...(node.metadata ?? {}),
-        ...(formIcon ? { icon: formIcon } : {}),
         ...(node.kind === 'RESOURCE_TYPE'
           ? {
-              nature: formNature,
-              mapPresence: formNature === 'PhysicalResource' ? formMapPresence : false,
+              nature: snapshot.nature,
+              mapPresence:
+                snapshot.nature === 'PhysicalResource' ? snapshot.mapPresence : false,
             }
           : {}),
-      };
-
-      // Se o ícone foi resetado para vazio/padrão, remove do metadata
-      if (!formIcon && 'icon' in updatedMetadata) {
-        delete updatedMetadata.icon;
+      });
+      // Uma edição mais nova já começou enquanto este save estava em voo — deixa o ciclo mais
+      // recente decidir o estado final; não regride "saving"/"dirty" para "saved" por cima dele.
+      if (myRevision === revisionRef.current) {
+        setAutosaveState('saved');
       }
-
-      await onUpdateNode?.({
-        name: formName.trim(),
-        code: formCode.trim(),
-        description: formDescription.trim() || undefined,
-        metadata: updatedMetadata,
-      });
-
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2500);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Falha ao salvar alterações do nó.');
-    } finally {
-      setSaving(false);
+      if (myRevision === revisionRef.current) {
+        setAutosaveState('error');
+        setAutosaveError(err instanceof Error ? err.message : 'Falha ao salvar alterações do nó.');
+      }
     }
+  }, [node]);
+
+  const scheduleSave = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      void doSaveNow();
+    }, AUTOSAVE_DEBOUNCE_MS);
+  }, [doSaveNow]);
+
+  /** Força o flush imediato de qualquer alteração pendente — usado em blur, troca de aba, troca
+   * de nó e antes de captura/publicação (plano §5.5). Idempotente quando não há nada pendente. */
+  const flush = useCallback(async (): Promise<void> => {
+    if (debounceTimerRef.current) {
+      await doSaveNow();
+    }
+  }, [doSaveNow]);
+
+  useEffect(() => {
+    onRegisterFlush?.(flush);
+    return () => onRegisterFlush?.(null);
+  }, [flush, onRegisterFlush]);
+
+  // Repassa cada transição de estado ao pai (ver doc de `onAutosaveStateChange`) e reporta
+  // `'idle'` ao desmontar — o nó pode ter sido desselecionado com uma gravação em erro pendente,
+  // e "Publicar" não deve continuar bloqueado por um painel que não existe mais.
+  useEffect(() => {
+    onAutosaveStateChange?.(autosaveState);
+  }, [autosaveState, onAutosaveStateChange]);
+
+  useEffect(() => {
+    return () => onAutosaveStateChange?.('idle');
+    // Roda apenas na montagem/desmontagem — não deve disparar a cada render por causa de
+    // `onAutosaveStateChange` sendo recriada no pai.
+  }, []);
+
+  const handleTextChange = (field: 'name' | 'code' | 'description', value: string) => {
+    formRef.current = { ...formRef.current, [field]: value };
+    if (field === 'name') setFormName(value);
+    if (field === 'code') setFormCode(value);
+    if (field === 'description') setFormDescription(value);
+    setAutosaveState('dirty');
+    scheduleSave();
   };
 
-  const handleSaveTypeCharacteristics = async () => {
+  const handleImmediateChange = (patch: Partial<FormSnapshot>) => {
+    formRef.current = { ...formRef.current, ...patch };
+    if (patch.icon !== undefined) setFormIcon(patch.icon);
+    if (patch.nature !== undefined) setFormNature(patch.nature);
+    if (patch.mapPresence !== undefined) setFormMapPresence(patch.mapPresence);
+    setAutosaveState('dirty');
+    void doSaveNow();
+  };
+
+  const handleSelectIcon = (newIcon: string) => {
+    setIconPickerOpen(false);
+    handleImmediateChange({ icon: newIcon });
+  };
+
+  // Persiste um array completo de linhas como `resourceTypeCharacteristic` do tipo — chamada por
+  // add/edit/remove, que montam o array alvo antes de chamar isto (plano §8.5). Em falha, o
+  // array em tela não é alterado, para o modal/estado local não sumirem antes da confirmação.
+  const persistCharacteristicRows = async (nextRows: ResourceCharacteristicRow[]): Promise<void> => {
     if (!context) return;
-    if (!characteristicRowsValid(typeCharacteristicRows)) {
-      setTypeCharacteristicError('Toda característica precisa de um nome.');
-      return;
-    }
+    const updated = await updateResourceType(context.resourceType.id, {
+      resourceTypeCharacteristic: buildCharacteristicPayload(nextRows),
+    });
+    setContext((prev) => (prev ? { ...prev, resourceType: updated } : prev));
+    setTypeCharacteristicRows(resourceCharacteristicRowsFrom(updated.resourceTypeCharacteristic));
+  };
 
-    setTypeCharacteristicSaving(true);
+  const handleOpenCreateCharacteristic = () => {
+    setEditingCharacteristicRow(null);
     setTypeCharacteristicError(null);
+    setCharacteristicModalOpen(true);
+  };
 
+  const handleOpenEditCharacteristic = (row: ResourceCharacteristicRow) => {
+    setEditingCharacteristicRow(row);
+    setTypeCharacteristicError(null);
+    setCharacteristicModalOpen(true);
+  };
+
+  const handleSaveCharacteristic = async (row: ResourceCharacteristicRow) => {
+    const exists = typeCharacteristicRows.some((r) => r.key === row.key);
+    const nextRows = exists
+      ? typeCharacteristicRows.map((r) => (r.key === row.key ? row : r))
+      : [...typeCharacteristicRows, row];
+    await persistCharacteristicRows(nextRows);
+  };
+
+  const handleDeleteCharacteristic = async (row: ResourceCharacteristicRow) => {
+    setTypeCharacteristicError(null);
+    setCharacteristicDeletingKey(row.key);
     try {
-      const updated = await updateResourceType(context.resourceType.id, {
-        resourceTypeCharacteristic: buildCharacteristicPayload(typeCharacteristicRows),
-      });
-      setContext((prev) => (prev ? { ...prev, resourceType: updated } : prev));
-      setTypeCharacteristicRows(resourceCharacteristicRowsFrom(updated.resourceTypeCharacteristic));
-      setTypeCharacteristicSuccess(true);
-      setTimeout(() => setTypeCharacteristicSuccess(false), 2500);
+      await persistCharacteristicRows(typeCharacteristicRows.filter((r) => r.key !== row.key));
     } catch (err: unknown) {
       setTypeCharacteristicError(
-        err instanceof Error ? err.message : 'Falha ao salvar características do tipo.',
+        err instanceof Error ? err.message : 'Falha ao remover característica.',
       );
     } finally {
-      setTypeCharacteristicSaving(false);
+      setCharacteristicDeletingKey(null);
     }
   };
 
@@ -345,45 +486,13 @@ export function ResourceNodeDetail({
     }
   };
 
-  const handleResetForm = () => {
-    setFormName(node.name);
-    setFormCode(node.code);
-    setFormDescription(node.description || '');
-    setFormIcon((node.metadata?.icon as string) || undefined);
-    setFormNature(isLogical ? 'LogicalResource' : 'PhysicalResource');
-    setFormMapPresence(
-      typeof node.metadata?.mapPresence === 'boolean'
-        ? Boolean(node.metadata.mapPresence)
-        : true,
-    );
-    setError(null);
-  };
-
-  const hasFormChanges =
-    formName !== node.name ||
-    formCode !== node.code ||
-    formDescription !== (node.description || '') ||
-    formIcon !== ((node.metadata?.icon as string) || undefined) ||
-    (!isGroup && formNature !== (isLogical ? 'LogicalResource' : 'PhysicalResource')) ||
-    (!isGroup &&
-      formNature === 'PhysicalResource' &&
-      formMapPresence !==
-        (typeof node.metadata?.mapPresence === 'boolean' ? Boolean(node.metadata.mapPresence) : true));
-
-  const initialCharacteristicsJson = JSON.stringify(
-    buildCharacteristicPayload(
-      resourceCharacteristicRowsFrom(context?.resourceType?.resourceTypeCharacteristic),
-    ),
-  );
-  const currentCharacteristicsPayload = buildCharacteristicPayload(typeCharacteristicRows);
-  const hasCharacteristicChanges =
-    JSON.stringify(currentCharacteristicsPayload) !== initialCharacteristicsJson ||
-    typeCharacteristicRows.some(
-      (r) => !r.name.trim() && (r.valueText || r.description || r.group),
-    );
-
   const displayIcon = isEditing ? formIcon : (node.metadata?.icon as string | undefined);
   const CurrentNodeIcon = resolveNodeIcon(displayIcon, node.kind, isLogical);
+
+  const handleTabChange = (tab: DetailTab) => {
+    void flush();
+    setActiveTab(tab);
+  };
 
   return (
     <div className="vt-card flex h-full flex-col overflow-hidden p-0">
@@ -420,7 +529,7 @@ export function ResourceNodeDetail({
                 <span
                   onClick={() => setIconPickerOpen(true)}
                   title="Trocar ícone"
-                  className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-app-text text-white shadow-xs opacity-0 group-hover/icon:opacity-100 transition cursor-pointer"
+                  className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-app-accent text-app-text shadow-xs transition cursor-pointer"
                 >
                   <Pencil className="h-2.5 w-2.5" />
                 </span>
@@ -436,25 +545,28 @@ export function ResourceNodeDetail({
             </div>
           </div>
 
-          {canEdit && isEditing && (
-            <div className="flex items-center gap-2 shrink-0">
-              {node.status === 'active' && (
-                <Button variant="danger" size="sm" onClick={onImpact}>
-                  Inativar
-                </Button>
-              )}
-              {node.status !== 'active' && wasActiveAtBaseline && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  iconLeft={<RotateCcw className="h-4 w-4" />}
-                  onClick={onReactivate}
-                >
-                  Reativar
-                </Button>
-              )}
-            </div>
-          )}
+          <div className="flex items-center gap-3 shrink-0">
+            {isEditing && <AutosaveIndicator state={autosaveState} error={autosaveError} />}
+            {canEdit && isEditing && (
+              <div className="flex items-center gap-2">
+                {node.status === 'active' && (
+                  <Button variant="danger" size="sm" onClick={onImpact}>
+                    Inativar
+                  </Button>
+                )}
+                {node.status !== 'active' && wasActiveAtBaseline && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    iconLeft={<RotateCcw className="h-4 w-4" />}
+                    onClick={onReactivate}
+                  >
+                    Reativar
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Tabs — segmented control pill */}
@@ -462,7 +574,7 @@ export function ResourceNodeDetail({
           <div className="inline-flex items-center rounded-xl bg-black/[0.04] p-1 gap-1">
             <button
               type="button"
-              onClick={() => setActiveTab('overview')}
+              onClick={() => handleTabChange('overview')}
               className={`rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
                 activeTab === 'overview'
                   ? 'bg-white text-app-text font-semibold shadow-sm'
@@ -474,7 +586,7 @@ export function ResourceNodeDetail({
             {!isGroup && (
               <button
                 type="button"
-                onClick={() => setActiveTab('characteristics')}
+                onClick={() => handleTabChange('characteristics')}
                 className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
                   activeTab === 'characteristics'
                     ? 'bg-white text-app-text font-semibold shadow-sm'
@@ -490,7 +602,7 @@ export function ResourceNodeDetail({
             {!isGroup && (
               <button
                 type="button"
-                onClick={() => setActiveTab('specifications')}
+                onClick={() => handleTabChange('specifications')}
                 className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
                   activeTab === 'specifications'
                     ? 'bg-white text-app-text font-semibold shadow-sm'
@@ -503,17 +615,19 @@ export function ResourceNodeDetail({
                 </span>
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => setActiveTab('impact')}
-              className={`rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
-                activeTab === 'impact'
-                  ? 'bg-white text-app-text font-semibold shadow-sm'
-                  : 'text-app-muted hover:text-app-text'
-              }`}
-            >
-              Abrangência
-            </button>
+            {!isGroup && (
+              <button
+                type="button"
+                onClick={() => handleTabChange('relations')}
+                className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
+                  activeTab === 'relations'
+                    ? 'bg-white text-app-text font-semibold shadow-sm'
+                    : 'text-app-muted hover:text-app-text'
+                }`}
+              >
+                Relações
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -523,52 +637,17 @@ export function ResourceNodeDetail({
         {activeTab === 'overview' && (
           <div className="space-y-6">
             {isEditing ? (
-              /* Modo Edição Inline Direta */
-              <form onSubmit={handleSaveInline} className="space-y-5">
-                {error && (
+              /* Modo Edição Inline Direta — autosalva; ver `handleTextChange`/`handleImmediateChange`. */
+              <div className="space-y-5">
+                {autosaveState === 'error' && autosaveError && (
                   <div
                     className="flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
                     style={{ background: 'var(--status-red-soft)', color: 'var(--status-red)' }}
                   >
                     <AlertCircle className="h-4 w-4 shrink-0" />
-                    <span>{error}</span>
+                    <span>{autosaveError}</span>
                   </div>
                 )}
-
-                {saveSuccess && (
-                  <div className="flex items-center gap-2 rounded-[10px] bg-emerald-50 p-3 text-[0.84rem] text-emerald-800 border border-emerald-200">
-                    <Check className="h-4 w-4 shrink-0 text-emerald-600" />
-                    <span>Alterações salvas com sucesso no catálogo.</span>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between pb-2 border-b border-app-border">
-                  <span className="text-[0.78rem] text-app-muted">
-                    {hasFormChanges ? 'Existem alterações não salvas.' : 'Campos em sincronia.'}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {hasFormChanges && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleResetForm}
-                        disabled={saving}
-                      >
-                        Reverter
-                      </Button>
-                    )}
-                    <Button
-                      type="submit"
-                      variant="primary"
-                      size="sm"
-                      iconLeft={<Save className="h-4 w-4" />}
-                      disabled={saving || !hasFormChanges}
-                    >
-                      {saving ? 'Salvando…' : 'Salvar alterações'}
-                    </Button>
-                  </div>
-                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -578,7 +657,8 @@ export function ResourceNodeDetail({
                     <input
                       type="text"
                       value={formName}
-                      onChange={(e) => setFormName(e.target.value)}
+                      onChange={(e) => handleTextChange('name', e.target.value)}
+                      onBlur={() => void flush()}
                       placeholder="Ex: Optical Line Terminal"
                       className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
                     />
@@ -591,7 +671,8 @@ export function ResourceNodeDetail({
                     <input
                       type="text"
                       value={formCode}
-                      onChange={(e) => setFormCode(e.target.value)}
+                      onChange={(e) => handleTextChange('code', e.target.value)}
+                      onBlur={() => void flush()}
                       placeholder="Ex: OLT"
                       className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
                     />
@@ -603,9 +684,10 @@ export function ResourceNodeDetail({
                     Descrição
                   </label>
                   <textarea
-                    rows={3}
+                    rows={2}
                     value={formDescription}
-                    onChange={(e) => setFormDescription(e.target.value)}
+                    onChange={(e) => handleTextChange('description', e.target.value)}
+                    onBlur={() => void flush()}
                     placeholder="Descrição funcional do nó no catálogo de recursos..."
                     className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
                   />
@@ -620,7 +702,7 @@ export function ResourceNodeDetail({
                       <div className="inline-flex rounded-xl bg-black/[0.04] p-1 gap-1">
                         <button
                           type="button"
-                          onClick={() => setFormNature('PhysicalResource')}
+                          onClick={() => handleImmediateChange({ nature: 'PhysicalResource' })}
                           className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-[0.84rem] font-medium transition ${
                             formNature === 'PhysicalResource'
                               ? 'bg-white text-app-text font-semibold shadow-sm'
@@ -632,7 +714,7 @@ export function ResourceNodeDetail({
                         </button>
                         <button
                           type="button"
-                          onClick={() => setFormNature('LogicalResource')}
+                          onClick={() => handleImmediateChange({ nature: 'LogicalResource' })}
                           className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-[0.84rem] font-medium transition ${
                             formNature === 'LogicalResource'
                               ? 'bg-white text-app-text font-semibold shadow-sm'
@@ -651,7 +733,7 @@ export function ResourceNodeDetail({
                           <input
                             type="checkbox"
                             checked={formMapPresence}
-                            onChange={(e) => setFormMapPresence(e.target.checked)}
+                            onChange={(e) => handleImmediateChange({ mapPresence: e.target.checked })}
                             className="mt-0.5 h-4 w-4 rounded border-app-border text-app-accent focus:ring-app-accent"
                           />
                           <div className="text-left">
@@ -668,31 +750,26 @@ export function ResourceNodeDetail({
                     )}
                   </div>
                 )}
-              </form>
+              </div>
             ) : (
               /* Modo Visualização (Read-Only) */
               <>
-                <div>
-                  <h3 className="mb-3" style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
-                    Descrição
-                  </h3>
-                  <p className="text-[0.92rem] text-app-text leading-relaxed">
-                    {node.description || 'Nenhuma descrição fornecida.'}
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                  <div className="rounded-[10px] border border-app-border p-4">
-                    <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Tipo de nó</span>
-                    <p className="text-[0.95rem] font-medium text-app-text mt-1">
-                      {isGroup ? 'Grupo' : 'Tipo de Recurso'}
+                {Boolean(node.description?.trim()) && (
+                  <div>
+                    <h3 className="mb-3" style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                      Descrição
+                    </h3>
+                    <p className="text-[0.92rem] text-app-text leading-relaxed">
+                      {node.description}
                     </p>
                   </div>
+                )}
 
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                   {!isGroup && (
                     <div className="rounded-[10px] border border-app-border p-4">
                       <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
-                        Natureza do recurso
+                        Natureza
                       </span>
                       <p className="text-[0.95rem] font-semibold text-app-text mt-1">
                         {isLogical ? 'Recurso Lógico' : 'Recurso Físico'}
@@ -703,29 +780,44 @@ export function ResourceNodeDetail({
                   {!isGroup && !isLogical && (
                     <div className="rounded-[10px] border border-app-border p-4">
                       <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
-                        Presença no mapa
+                        Visível no Mapa
                       </span>
                       <p className="text-[0.95rem] font-semibold text-app-text mt-1">
-                        {node.metadata?.mapPresence === false ? 'Oculto no mapa' : 'Exibido no mapa'}
-                      </p>
-                    </div>
-                  )}
-
-                  {node.resourceType && (
-                    <div className="rounded-[10px] border border-app-border p-4">
-                      <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
-                        Tipo referenciado
-                      </span>
-                      <p className="text-[0.95rem] font-medium text-app-text mt-1">
-                        {node.resourceType.name}
+                        {context?.resourceType.mapPresence === true ? 'Sim' : 'Não'}
                       </p>
                     </div>
                   )}
 
                   <div className="rounded-[10px] border border-app-border p-4">
-                    <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Ordem (sort)</span>
-                    <p className="text-[0.95rem] font-medium text-app-text mt-1">{node.sortOrder}</p>
+                    <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                      Descendentes
+                    </span>
+                    <p className="text-[0.95rem] font-semibold text-app-text mt-1">
+                      {numberFormatter.format(impact?.descendantCount ?? 0)}
+                    </p>
                   </div>
+
+                  {!isGroup && (
+                    <div className="rounded-[10px] border border-app-border p-4">
+                      <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                        Volume de Recursos Físicos Cadastrados
+                      </span>
+                      <p className="text-[0.95rem] font-semibold text-app-text mt-1">
+                        {numberFormatter.format(impact?.activePhysicalResourceCount ?? 0)}
+                      </p>
+                    </div>
+                  )}
+
+                  {!isGroup && (
+                    <div className="rounded-[10px] border border-app-border p-4">
+                      <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                        Volume Recursos Lógicos Cadastrados
+                      </span>
+                      <p className="text-[0.95rem] font-semibold text-app-text mt-1">
+                        {numberFormatter.format(impact?.activeLogicalResourceCount ?? 0)}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -733,15 +825,14 @@ export function ResourceNodeDetail({
         )}
 
         {activeTab === 'characteristics' && (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-[0.88rem] font-semibold text-app-text">
-                  Características do tipo de recurso
+                  Características do tipo ({typeCharacteristicRows.length})
                 </h3>
                 <p className="text-[0.78rem] text-app-muted mt-0.5">
-                  Define nome, grupo, tipo e valor padrão. Toda especificação deste tipo herda este
-                  conjunto e pode ajustar o valor.
+                  Toda especificação deste tipo herda este conjunto e pode ajustar o valor.
                 </p>
               </div>
               {canEdit && isEditing && (
@@ -749,11 +840,10 @@ export function ResourceNodeDetail({
                   type="button"
                   variant="primary"
                   size="sm"
-                  iconLeft={<Save className="h-3.5 w-3.5" />}
-                  onClick={handleSaveTypeCharacteristics}
-                  disabled={!hasCharacteristicChanges || typeCharacteristicSaving}
+                  iconLeft={<Plus className="h-3.5 w-3.5" />}
+                  onClick={handleOpenCreateCharacteristic}
                 >
-                  {typeCharacteristicSaving ? 'Salvando…' : 'Salvar'}
+                  Adicionar característica
                 </Button>
               )}
             </div>
@@ -768,18 +858,62 @@ export function ResourceNodeDetail({
               </div>
             )}
 
-            {typeCharacteristicSuccess && (
-              <div className="flex items-center gap-2 rounded-[10px] bg-emerald-50 p-3 text-[0.84rem] text-emerald-800 border border-emerald-200">
-                <Check className="h-4 w-4 shrink-0 text-emerald-600" />
-                <span>Características do tipo salvas com sucesso.</span>
+            {typeCharacteristicRows.length === 0 ? (
+              <div className="rounded-[18px] border border-dashed border-app-border p-8 text-center text-app-muted">
+                <Tag className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-[0.88rem] font-medium">Nenhuma característica cadastrada.</p>
+                <p className="text-[0.78rem]">
+                  As características definidas aqui serão herdadas por toda especificação deste
+                  tipo.
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-app-border rounded-[18px] border border-app-border overflow-hidden">
+                {typeCharacteristicRows.map((row) => {
+                  const canMutateCharacteristic = canEdit && isEditing;
+                  return (
+                    <div
+                      key={row.key}
+                      onClick={() => handleOpenEditCharacteristic(row)}
+                      className="group px-3.5 py-2.5 hover:bg-black/[0.02] cursor-pointer transition flex items-center justify-between gap-3"
+                      role="button"
+                      tabIndex={0}
+                      title={row.description || undefined}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleOpenEditCharacteristic(row);
+                        }
+                      }}
+                    >
+                      <div className="min-w-0">
+                        <h4 className="text-[0.88rem] font-semibold text-app-text truncate">
+                          {row.name}
+                        </h4>
+                        <p className="text-[0.78rem] text-app-muted truncate">
+                          {row.group ? `${row.group} · ` : ''}
+                          {VALUE_TYPE_LABELS[row.valueType] ?? row.valueType}
+                        </p>
+                      </div>
+                      {canMutateCharacteristic && (
+                        <button
+                          type="button"
+                          title="Remover característica"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleDeleteCharacteristic(row);
+                          }}
+                          disabled={characteristicDeletingKey === row.key}
+                          className="hidden group-hover:flex group-focus-within:flex rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft disabled:opacity-50 shrink-0"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
-
-            <ResourceCharacteristicsEditor
-              rows={typeCharacteristicRows}
-              onChange={setTypeCharacteristicRows}
-              disabled={!(canEdit && isEditing)}
-            />
           </div>
         )}
 
@@ -883,34 +1017,17 @@ export function ResourceNodeDetail({
           </div>
         )}
 
-        {activeTab === 'impact' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <div className="rounded-[10px] border border-app-border p-4">
-                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Descendentes</span>
-                <p className="text-[1.25rem] font-semibold text-app-text mt-1">
-                  {impact?.descendantCount ?? 0}
-                </p>
-              </div>
-              <div className="rounded-[10px] border border-app-border p-4">
-                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Tipos afetados</span>
-                <p className="text-[1.25rem] font-semibold text-app-text mt-1">
-                  {impact?.resourceTypeIds.length ?? 0}
-                </p>
-              </div>
-              <div className="rounded-[10px] border border-app-border p-4">
-                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Recursos físicos</span>
-                <p className="text-[1.25rem] font-semibold text-app-text mt-1">
-                  {impact?.activePhysicalResourceCount ?? 0}
-                </p>
-              </div>
-              <div className="rounded-[10px] border border-app-border p-4">
-                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Recursos lógicos</span>
-                <p className="text-[1.25rem] font-semibold text-app-text mt-1">
-                  {impact?.activeLogicalResourceCount ?? 0}
-                </p>
-              </div>
-            </div>
+        {activeTab === 'relations' && !isGroup && node.resourceTypeId && (
+          <ResourceRelationshipRulesPanel
+            resourceTypeId={node.resourceTypeId}
+            canEdit={canEdit}
+            isEditing={isEditing}
+          />
+        )}
+        {activeTab === 'relations' && !isGroup && !node.resourceTypeId && (
+          <div className="rounded-[18px] border border-dashed border-app-border p-8 text-center text-app-muted">
+            <Layers className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p className="text-[0.88rem] font-medium">Tipo de recurso ainda não sincronizado.</p>
           </div>
         )}
       </div>
@@ -926,6 +1043,17 @@ export function ResourceNodeDetail({
         />
       )}
 
+      <ResourceCharacteristicFormModal
+        isOpen={characteristicModalOpen}
+        onClose={() => setCharacteristicModalOpen(false)}
+        editingRow={editingCharacteristicRow}
+        readOnly={!(canEdit && isEditing)}
+        existingNames={typeCharacteristicRows
+          .filter((r) => r.key !== editingCharacteristicRow?.key)
+          .map((r) => r.name)}
+        onSave={handleSaveCharacteristic}
+      />
+
       <IconPickerModal
         isOpen={iconPickerOpen}
         onClose={() => setIconPickerOpen(false)}
@@ -938,3 +1066,34 @@ export function ResourceNodeDetail({
   );
 }
 
+/** Indicador discreto do autosave — substitui os antigos botões "Salvar alterações"/"Reverter" e
+ * os banners de sucesso/erro persistentes (plano §5.7). */
+function AutosaveIndicator({ state, error }: { state: AutosaveState; error: string | null }) {
+  if (state === 'idle') return null;
+  if (state === 'saving') {
+    return (
+      <span className="flex items-center gap-1.5 text-[0.78rem] text-app-muted">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        Salvando…
+      </span>
+    );
+  }
+  if (state === 'saved') {
+    return (
+      <span className="flex items-center gap-1.5 text-[0.78rem] text-emerald-700">
+        <Check className="h-3.5 w-3.5" />
+        Salvo
+      </span>
+    );
+  }
+  if (state === 'error') {
+    return (
+      <span className="flex items-center gap-1.5 text-[0.78rem] text-status-red" title={error ?? undefined}>
+        <AlertCircle className="h-3.5 w-3.5" />
+        Falha ao salvar
+      </span>
+    );
+  }
+  // dirty
+  return <span className="text-[0.78rem] text-app-muted">Alterações pendentes…</span>;
+}

@@ -22,6 +22,8 @@ import type {
   ResourceCatalog,
   ResourceCatalogNode,
   ResourceCatalogQuery,
+  ResourceRelationshipType,
+  ResourceTypeRelationshipRule,
 } from './domain.js';
 import type {
   IResourceRepository,
@@ -34,7 +36,6 @@ import {
   getResourceTypeByCode,
 } from './catalog.js';
 import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
-import type { Characteristic } from '../../shared/tmf/index.js';
 import { buildHref } from '../../shared/tmf/index.js';
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 
@@ -44,6 +45,13 @@ import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 // `serving_site_id` abaixo é só armazenamento derivado, para a árvore de navegação
 // do módulo Geo poder expandir uma estação por índice em vez de varrer o JSON.
 const SERVING_SITE_CHARACTERISTIC = 'servingSite';
+
+// `seedResourceCatalog()` sempre grava o vocabulário canônico de ResourceType sob este tenant
+// fixo (nunca sob o tenant do chamador) — é vocabulário compartilhado, não recorte por tenant.
+// Toda leitura de `tmf_resource_type` precisa resolver contra este valor, independentemente do
+// `scope.tenantId` de quem pediu; só a classificação do tipo dentro da árvore ResourceCatalog
+// (tabela `tmf_resource_catalog_node`) é de fato tenant-scoped.
+const RESOURCE_TYPE_CANONICAL_TENANT_ID = 'default';
 
 // `before_state`/`after_state` são CLOB de JSON gravados por `recordMutation`. Linha corrompida
 // (ou já não-JSON, de auditoria antiga) não pode derrubar a aba Histórico inteira — vira `null`.
@@ -465,39 +473,113 @@ export class OracleResourceRepository implements IResourceRepository {
 
   public async listResourceTypes(scope?: ResourceTenantScope): Promise<ResourceType[]> {
     await this.seedResourceCatalog();
-    // ResourceType é vocabulário canônico compartilhado. O tenant ainda determina onde a árvore
-    // ResourceCatalog pode classificar o tipo, não quais tipos uma specification pode referenciar.
-    const categoryTenantId = scope?.tenantId ?? 'default';
+    // `tmf_resource_type` mistura dois tipos de linha: o vocabulário canônico seedado sempre sob
+    // tenant_id='default' (linha ~428) e os tipos criados via API pela folha do tenant real
+    // (`ResourceService.createResourceCatalogNode` grava com `tenantOf(context)`). Uma leitura
+    // scoped por tenant precisa enxergar as duas — filtrar só por `scope.tenantId` esconderia o
+    // canônico; filtrar só por 'default' esconderia o que o próprio tenant criou.
+    const tenantId = scope?.tenantId ?? RESOURCE_TYPE_CANONICAL_TENANT_ID;
     const rows = await this.db.all<{
       id: string;
       code: string;
       name: string;
       description?: string | null;
+      tenant_id: string;
       status: 'active' | 'inactive';
+      map_presence?: number | null;
+      nature?: 'PhysicalResource' | 'LogicalResource' | null;
       characteristics?: string | null;
     }>(
-      `SELECT id, code, name, description, status, characteristics
+      `SELECT id, tenant_id, code, name, description, status, map_presence, nature, characteristics
        FROM tmf_resource_type
-       ORDER BY code`,
+       WHERE tenant_id = ? OR tenant_id = ?
+       ORDER BY code, id`,
+      [tenantId, RESOURCE_TYPE_CANONICAL_TENANT_ID],
     );
-    const categoryCodeById = await this.loadCategoryCodeByResourceTypeId(categoryTenantId);
+    const categoryCodeById = await this.loadCategoryCodeByResourceTypeId(tenantId);
     return rows.map((row) => this.mapResourceType(row, categoryCodeById.get(row.id)));
   }
 
-  /**
-   * Grava as características que definem o tipo (issue #216). Escopo deliberadamente estreito:
-   * `ResourceType` não tem CRUD — nome, código e categoria continuam derivados do nó de catálogo.
-   */
-  public async updateResourceTypeCharacteristics(
+  public async getResourceType(
     id: string,
-    characteristics: Characteristic[],
     scope?: ResourceTenantScope,
-  ): Promise<void> {
-    void scope;
-    await this.db.run(
-      `UPDATE tmf_resource_type SET characteristics = ?, updated_at = ? WHERE id = ?`,
-      [JSON.stringify(characteristics), new Date().toISOString(), id],
+  ): Promise<ResourceType | undefined> {
+    const tenantId = scope?.tenantId ?? RESOURCE_TYPE_CANONICAL_TENANT_ID;
+    const row = await this.db.get<{
+      id: string;
+      tenant_id: string;
+      code: string;
+      name: string;
+      description?: string | null;
+      status: 'active' | 'inactive';
+      map_presence?: number | null;
+      nature?: 'PhysicalResource' | 'LogicalResource' | null;
+      characteristics?: string | null;
+    }>(
+      `SELECT id, tenant_id, code, name, description, status, map_presence, nature, characteristics
+         FROM tmf_resource_type WHERE id = ? AND (tenant_id = ? OR tenant_id = ?)`,
+      [id, tenantId, RESOURCE_TYPE_CANONICAL_TENANT_ID],
     );
+    if (!row) return undefined;
+    const categoryCodes = await this.loadCategoryCodeByResourceTypeId(tenantId);
+    return this.mapResourceType(row, categoryCodes.get(row.id));
+  }
+
+  public async getResourceTypeByCode(
+    code: string,
+    scope?: ResourceTenantScope,
+  ): Promise<ResourceType | undefined> {
+    const tenantId = scope?.tenantId ?? RESOURCE_TYPE_CANONICAL_TENANT_ID;
+    const row = await this.db.get<{
+      id: string;
+      tenant_id: string;
+      code: string;
+      name: string;
+      description?: string | null;
+      status: 'active' | 'inactive';
+      map_presence?: number | null;
+      nature?: 'PhysicalResource' | 'LogicalResource' | null;
+      characteristics?: string | null;
+    }>(
+      `SELECT id, tenant_id, code, name, description, status, map_presence, nature, characteristics
+         FROM tmf_resource_type WHERE code = ? AND (tenant_id = ? OR tenant_id = ?)`,
+      [code, tenantId, RESOURCE_TYPE_CANONICAL_TENANT_ID],
+    );
+    if (!row) return undefined;
+    const categoryCodes = await this.loadCategoryCodeByResourceTypeId(tenantId);
+    return this.mapResourceType(row, categoryCodes.get(row.id));
+  }
+
+  public async upsertResourceType(resourceType: ResourceType): Promise<ResourceType> {
+    const now = new Date().toISOString();
+    await this.db.run(
+      `INSERT INTO tmf_resource_type
+       (id, tenant_id, code, name, description, status, map_presence, nature, characteristics, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         code = excluded.code,
+         name = excluded.name,
+         description = excluded.description,
+         status = excluded.status,
+         map_presence = excluded.map_presence,
+         nature = excluded.nature,
+         characteristics = excluded.characteristics,
+         updated_at = excluded.updated_at`,
+      [
+        resourceType.id,
+        resourceType.tenantId,
+        resourceType.code,
+        resourceType.name,
+        resourceType.description ?? null,
+        resourceType.status,
+        resourceType.mapPresence ? 1 : 0,
+        resourceType.nature,
+        JSON.stringify(resourceType.resourceTypeCharacteristic ?? []),
+        now,
+        now,
+      ],
+    );
+    return (await this.getResourceType(resourceType.id, { tenantId: resourceType.tenantId })) ?? resourceType;
   }
 
   // `tmf_resource_type.category_code` foi removida na Fase B: categoryCode agora vem do node
@@ -506,6 +588,180 @@ export class OracleResourceRepository implements IResourceRepository {
   // não tem node (ambiente novo, seed a partir de catalog.ts), cai no categoryCode estático de
   // `RESOURCE_TYPES`; sem os dois, 'Uncategorized' em vez de quebrar o contrato `categoryCode:
   // string`.
+  public async listResourceRelationshipTypes(
+    scope?: ResourceTenantScope,
+  ): Promise<ResourceRelationshipType[]> {
+    const rows = await this.db.all<{
+      id: string;
+      tenant_id: string;
+      code: string;
+      name: string;
+      inverse_code: string;
+      is_symmetric: number;
+      allowed_target_kinds: string;
+      cardinality?: string | null;
+      lifecycle_status: 'Active' | 'Retired';
+      is_bootstrap: number;
+    }>(
+      `SELECT id, tenant_id, code, name, inverse_code, is_symmetric, allowed_target_kinds,
+              cardinality, lifecycle_status, is_bootstrap
+         FROM tmf_resource_relationship_type
+        WHERE tenant_id = ? ORDER BY name, code`,
+      [scope?.tenantId ?? 'default'],
+    );
+    return rows.map((row) => this.mapResourceRelationshipType(row));
+  }
+
+  public async getResourceRelationshipType(
+    code: string,
+    scope?: ResourceTenantScope,
+  ): Promise<ResourceRelationshipType | undefined> {
+    const row = await this.db.get<{
+      id: string;
+      tenant_id: string;
+      code: string;
+      name: string;
+      inverse_code: string;
+      is_symmetric: number;
+      allowed_target_kinds: string;
+      cardinality?: string | null;
+      lifecycle_status: 'Active' | 'Retired';
+      is_bootstrap: number;
+    }>(
+      `SELECT id, tenant_id, code, name, inverse_code, is_symmetric, allowed_target_kinds,
+              cardinality, lifecycle_status, is_bootstrap
+         FROM tmf_resource_relationship_type WHERE tenant_id = ? AND code = ?`,
+      [scope?.tenantId ?? 'default', code],
+    );
+    return row ? this.mapResourceRelationshipType(row) : undefined;
+  }
+
+  public async upsertResourceRelationshipType(
+    relationshipType: ResourceRelationshipType,
+  ): Promise<ResourceRelationshipType> {
+    const now = new Date().toISOString();
+    await this.db.run(
+      `INSERT INTO tmf_resource_relationship_type
+       (id, tenant_id, code, name, inverse_code, is_symmetric, allowed_target_kinds, cardinality,
+        lifecycle_status, is_bootstrap, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         code = excluded.code, name = excluded.name, inverse_code = excluded.inverse_code,
+         is_symmetric = excluded.is_symmetric, allowed_target_kinds = excluded.allowed_target_kinds,
+         cardinality = excluded.cardinality, lifecycle_status = excluded.lifecycle_status,
+         is_bootstrap = excluded.is_bootstrap, updated_at = excluded.updated_at`,
+      [
+        relationshipType.id,
+        relationshipType.tenantId,
+        relationshipType.code,
+        relationshipType.name,
+        relationshipType.inverseCode,
+        relationshipType.symmetric ? 1 : 0,
+        JSON.stringify(relationshipType.allowedTargetKinds),
+        relationshipType.cardinality ? JSON.stringify(relationshipType.cardinality) : null,
+        relationshipType.lifecycleStatus,
+        relationshipType._bootstrapProtected ? 1 : 0,
+        now,
+        now,
+      ],
+    );
+    return (
+      (await this.getResourceRelationshipType(relationshipType.code, {
+        tenantId: relationshipType.tenantId,
+      })) ?? relationshipType
+    );
+  }
+
+  public async listResourceTypeRelationshipRules(
+    sourceResourceTypeId: string,
+    scope?: ResourceTenantScope & { includeRetired?: boolean },
+  ): Promise<ResourceTypeRelationshipRule[]> {
+    return await this.listResourceTypeRelationshipRulesBySourceIds([sourceResourceTypeId], scope);
+  }
+
+  public async listResourceTypeRelationshipRulesBySourceIds(
+    sourceResourceTypeIds: string[],
+    scope?: ResourceTenantScope & { includeRetired?: boolean },
+  ): Promise<ResourceTypeRelationshipRule[]> {
+    const uniqueSourceIds = [...new Set(sourceResourceTypeIds)];
+    if (uniqueSourceIds.length === 0) return [];
+    const rows = await this.db.all<{
+      id: string;
+      tenant_id: string;
+      source_resource_type_id: string;
+      relationship_type_code: string;
+      target_kind: ResourceTypeRelationshipRule['targetKind'];
+      target_id: string;
+      cardinality?: string | null;
+      lifecycle_status: 'Active' | 'Retired';
+      valid_for_start?: string | null;
+      valid_for_end?: string | null;
+    }>(
+      `SELECT id, tenant_id, source_resource_type_id, relationship_type_code, target_kind, target_id,
+              cardinality, lifecycle_status, valid_for_start, valid_for_end
+         FROM tmf_resource_type_relationship_rule
+        WHERE tenant_id = ?
+          AND source_resource_type_id IN (${uniqueSourceIds.map(() => '?').join(', ')})${scope?.includeRetired ? '' : " AND lifecycle_status = 'Active'"}
+        ORDER BY source_resource_type_id, relationship_type_code, target_kind, target_id, id`,
+      [scope?.tenantId ?? 'default', ...uniqueSourceIds],
+    );
+    return rows.map((row) => this.mapResourceTypeRelationshipRule(row));
+  }
+
+  public async getResourceTypeRelationshipRule(
+    id: string,
+    scope?: ResourceTenantScope,
+  ): Promise<ResourceTypeRelationshipRule | undefined> {
+    const row = await this.db.get<{
+      id: string;
+      tenant_id: string;
+      source_resource_type_id: string;
+      relationship_type_code: string;
+      target_kind: ResourceTypeRelationshipRule['targetKind'];
+      target_id: string;
+      cardinality?: string | null;
+      lifecycle_status: 'Active' | 'Retired';
+      valid_for_start?: string | null;
+      valid_for_end?: string | null;
+    }>(
+      `SELECT id, tenant_id, source_resource_type_id, relationship_type_code, target_kind, target_id,
+              cardinality, lifecycle_status, valid_for_start, valid_for_end
+         FROM tmf_resource_type_relationship_rule WHERE id = ? AND tenant_id = ?`,
+      [id, scope?.tenantId ?? 'default'],
+    );
+    return row ? this.mapResourceTypeRelationshipRule(row) : undefined;
+  }
+
+  public async upsertResourceTypeRelationshipRule(
+    rule: ResourceTypeRelationshipRule,
+  ): Promise<ResourceTypeRelationshipRule> {
+    const now = new Date().toISOString();
+    await this.db.run(
+      `INSERT INTO tmf_resource_type_relationship_rule
+       (id, tenant_id, source_resource_type_id, relationship_type_code, target_kind, target_id,
+        cardinality, lifecycle_status, valid_for_start, valid_for_end, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET cardinality = excluded.cardinality,
+         lifecycle_status = excluded.lifecycle_status, valid_for_start = excluded.valid_for_start,
+         valid_for_end = excluded.valid_for_end, updated_at = excluded.updated_at`,
+      [
+        rule.id,
+        rule.tenantId,
+        rule.sourceResourceTypeId,
+        rule.relationshipTypeCode,
+        rule.targetKind,
+        rule.targetId,
+        rule.cardinality ? JSON.stringify(rule.cardinality) : null,
+        rule.lifecycleStatus,
+        rule.validFor?.startDateTime ?? null,
+        rule.validFor?.endDateTime ?? null,
+        now,
+        now,
+      ],
+    );
+    return (await this.getResourceTypeRelationshipRule(rule.id, { tenantId: rule.tenantId })) ?? rule;
+  }
+
   private async loadCategoryCodeByResourceTypeId(tenantId: string): Promise<Map<string, string>> {
     const rows = await this.db.all<{ resource_type_id: string; node_code: string }>(
       `SELECT resource_type_id, code AS node_code
@@ -1890,10 +2146,13 @@ export class OracleResourceRepository implements IResourceRepository {
   private mapResourceType(
     row: {
       id: string;
+      tenant_id: string;
       code: string;
       name: string;
       description?: string | null;
       status: 'active' | 'inactive';
+      map_presence?: number | null;
+      nature?: 'PhysicalResource' | 'LogicalResource' | null;
       characteristics?: string | null;
     },
     categoryCode?: string,
@@ -1907,7 +2166,72 @@ export class OracleResourceRepository implements IResourceRepository {
       categoryCode: categoryCode ?? getResourceTypeByCode(row.code)?.categoryCode ?? 'Uncategorized',
       ...(row.description ? { description: row.description } : {}),
       status: row.status,
+      nature: row.nature ?? 'PhysicalResource',
+      mapPresence: Number(row.map_presence ?? 0) === 1,
       resourceTypeCharacteristic: JSON.parse(row.characteristics || '[]'),
+      tenantId: row.tenant_id,
+    };
+  }
+
+  private mapResourceRelationshipType(row: {
+    id: string;
+    tenant_id: string;
+    code: string;
+    name: string;
+    inverse_code: string;
+    is_symmetric: number;
+    allowed_target_kinds: string;
+    cardinality?: string | null;
+    lifecycle_status: 'Active' | 'Retired';
+    is_bootstrap: number;
+  }): ResourceRelationshipType {
+    return {
+      '@type': 'ResourceRelationshipType',
+      id: row.id,
+      href: buildHref('resourceRelationshipType', row.id),
+      code: row.code,
+      name: row.name,
+      inverseCode: row.inverse_code,
+      symmetric: Number(row.is_symmetric) === 1,
+      allowedTargetKinds: JSON.parse(row.allowed_target_kinds || '[]'),
+      ...(row.cardinality ? { cardinality: JSON.parse(row.cardinality) } : {}),
+      lifecycleStatus: row.lifecycle_status,
+      tenantId: row.tenant_id,
+      ...(Number(row.is_bootstrap) === 1 ? { _bootstrapProtected: true } : {}),
+    };
+  }
+
+  private mapResourceTypeRelationshipRule(row: {
+    id: string;
+    tenant_id: string;
+    source_resource_type_id: string;
+    relationship_type_code: string;
+    target_kind: ResourceTypeRelationshipRule['targetKind'];
+    target_id: string;
+    cardinality?: string | null;
+    lifecycle_status: 'Active' | 'Retired';
+    valid_for_start?: string | null;
+    valid_for_end?: string | null;
+  }): ResourceTypeRelationshipRule {
+    return {
+      '@type': 'ResourceTypeRelationshipRule',
+      id: row.id,
+      href: buildHref('resourceTypeRelationshipRule', row.id),
+      sourceResourceTypeId: row.source_resource_type_id,
+      relationshipTypeCode: row.relationship_type_code,
+      targetKind: row.target_kind,
+      targetId: row.target_id,
+      ...(row.cardinality ? { cardinality: JSON.parse(row.cardinality) } : {}),
+      lifecycleStatus: row.lifecycle_status,
+      tenantId: row.tenant_id,
+      ...(row.valid_for_start || row.valid_for_end
+        ? {
+            validFor: {
+              ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
+              ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
+            },
+          }
+        : {}),
     };
   }
 

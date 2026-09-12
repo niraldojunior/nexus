@@ -28,7 +28,7 @@ import type {
   StudioGeoVisualConfig,
 } from '../../services/studioGeoApi';
 import { listGeoSiteSpecifications, type GeoSpec } from '../../services/geoApi';
-import { listResourceTypes } from '../../services/resourceCatalogApi';
+import { listModeledResourceTypes } from '../../services/resourceCatalogApi';
 import type { ResourceType } from '../../services/resourceApi';
 import { MAP_LAYER_CATALOG_FALLBACK, mapLayerTree, type MapLayerTreeNode } from '../../utils/mapLayers';
 import {
@@ -156,7 +156,7 @@ export function StudioGeoExperience({
       const [status, specs, types] = await Promise.all([
         getStudioStatus('studio-geo'),
         listGeoSiteSpecifications().catch(() => []),
-        listResourceTypes().catch(() => []),
+        listModeledResourceTypes().catch(() => []),
       ]);
       const version = status.draftVersion ?? status.publishedVersion;
       const next = normalize(version?.snapshot);
@@ -991,7 +991,7 @@ export function StudioGeoExperience({
                             <option value="">Selecione a entidade de origem…</option>
                             {getEligibleListForCategory(selected.entity.category).map((item) => (
                               <option key={item.id} value={item.sourceId}>
-                                {item.name} {item.code ? `(${item.code})` : ''}
+                                {item.name}
                               </option>
                             ))}
                           </select>

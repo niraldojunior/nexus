@@ -73,16 +73,12 @@ test('ResourceService: calculates impact of a node and its descendants', async (
     context,
   );
 
-  const types = await resourceService.listResourceTypes(context);
-  const ctoType = types.find((t) => t.code === 'CTO') ?? types[0]!;
-
   const leaf = await resourceService.createResourceCatalogNode(
     catalog.id,
     {
       code: 'node-cto',
       name: 'Nó CTO',
       kind: 'RESOURCE_TYPE',
-      resourceTypeId: ctoType.id,
       parentNodeId: group.id,
     },
     context,
@@ -92,7 +88,8 @@ test('ResourceService: calculates impact of a node and its descendants', async (
   assert.equal(impact.nodeId, group.id);
   assert.equal(impact.descendantCount, 1);
   assert.deepEqual(impact.descendantNodeIds, [leaf.id]);
-  assert.equal(impact.resourceTypeIds.includes(ctoType.id), true);
+  assert.ok(leaf.resourceTypeId);
+  assert.equal(impact.resourceTypeIds.includes(leaf.resourceTypeId), true);
 });
 
 test('ResourceModelStudioAdapter: validates snapshot for cycles, missing codes, and invalid parents', async () => {
@@ -168,6 +165,187 @@ test('ResourceModelStudioAdapter: publishes and materializes draft snapshot into
   assert.equal(tree[0]?.children.length, 1);
   assert.equal(tree[0]?.children[0]?.code, 'sub-cto');
   assert.equal(tree[0]?.children[0]?.kind, 'RESOURCE_TYPE');
+});
+
+test('ResourceService: snapshot source aggregates modeled types and rules in one repository call', async () => {
+  const { resourceRepo, resourceService } = createTestServices();
+  const catalog = await resourceService.createResourceCatalog(
+    { code: 'catalog-snapshot-source', name: 'Catálogo Snapshot Source' },
+    context,
+  );
+  await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'group-source', name: 'Grupo', kind: 'GROUP' },
+    context,
+  );
+  const leaf = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'cdoe', name: 'CDOE', kind: 'RESOURCE_TYPE', mapPresence: true },
+    context,
+  );
+  const inactiveLeaf = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'cdoi', name: 'CDOI', kind: 'RESOURCE_TYPE', mapPresence: true },
+    context,
+  );
+  assert.ok(leaf.resourceTypeId);
+  assert.ok(inactiveLeaf.resourceTypeId);
+  await resourceService.updateResourceCatalogNode(
+    catalog.id,
+    inactiveLeaf.id,
+    { status: 'inactive' },
+    context,
+  );
+  const listRules = vi.spyOn(resourceRepo, 'listResourceTypeRelationshipRulesBySourceIds');
+
+  const source = await resourceService.getResourceModelSnapshotSource(catalog.id, context);
+
+  assert.equal(source.catalog.id, catalog.id);
+  assert.equal(source.nodes.length, 2);
+  assert.deepEqual(source.resourceTypes.map((type) => type.id), [leaf.resourceTypeId]);
+  assert.equal(source.resourceTypes.some((type) => type.code === 'CTO'), false);
+  assert.equal(listRules.mock.calls.length, 1);
+  assert.deepEqual(listRules.mock.calls[0]?.[0], [leaf.resourceTypeId]);
+});
+
+test('ResourceModelStudioAdapter: unchanged snapshot skips catalog, node, type, and move writes', async () => {
+  const { adapter, resourceService } = createTestServices();
+  const catalog = await resourceService.createResourceCatalog(
+    { code: 'catalog-noop', name: 'Catálogo No-op' },
+    context,
+  );
+  const group = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'group-noop', name: 'Grupo', kind: 'GROUP', sortOrder: 0 },
+    context,
+  );
+  const leaf = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    {
+      code: 'cdoe-noop',
+      name: 'CDOE',
+      kind: 'RESOURCE_TYPE',
+      parentNodeId: group.id,
+      sortOrder: 0,
+      mapPresence: true,
+    },
+    context,
+  );
+  assert.ok(leaf.resourceTypeId);
+  const source = await resourceService.getResourceModelSnapshotSource(catalog.id, context, true);
+  const typeById = new Map(source.resourceTypes.map((type) => [type.id, type]));
+  const snapshot: ResourceModelSnapshot = {
+    catalog: {
+      id: catalog.id,
+      code: catalog.code,
+      name: catalog.name,
+      ...(catalog.description !== undefined ? { description: catalog.description } : {}),
+    },
+    nodes: source.nodes.map((node) => {
+      const type = node.resourceTypeId ? typeById.get(node.resourceTypeId) : undefined;
+      return {
+        id: node.id,
+        code: node.code,
+        name: node.name,
+        ...(node.description !== undefined ? { description: node.description } : {}),
+        kind: node.kind,
+        ...(node.resourceTypeId !== undefined ? { resourceTypeId: node.resourceTypeId } : {}),
+        ...(node.resourceType?.code !== undefined
+          ? { resourceTypeCode: node.resourceType.code }
+          : {}),
+        parentNodeId: node.parentNodeId ?? null,
+        sortOrder: node.sortOrder,
+        status: node.status,
+        ...(node.metadata !== undefined ? { metadata: node.metadata } : {}),
+        ...(type
+          ? {
+              resourceType: {
+                name: type.name,
+                ...(type.description !== undefined ? { description: type.description } : {}),
+                status: type.status,
+                nature: type.nature,
+                mapPresence: type.mapPresence,
+                ...(type.resourceTypeCharacteristic !== undefined
+                  ? { resourceTypeCharacteristic: type.resourceTypeCharacteristic }
+                  : {}),
+              },
+            }
+          : {}),
+        ...(node.kind === 'RESOURCE_TYPE' ? { relationshipRules: [] } : {}),
+      };
+    }),
+  };
+  const updateCatalog = vi.spyOn(resourceService, 'updateResourceCatalog');
+  const updateNode = vi.spyOn(resourceService, 'updateResourceCatalogNode');
+  const updateType = vi.spyOn(resourceService, 'updateResourceType');
+  const moveNode = vi.spyOn(resourceService, 'moveResourceCatalogNode');
+
+  await adapter.materialize(snapshot as never, { tenantId: context.tenantId });
+
+  assert.equal(updateCatalog.mock.calls.length, 0);
+  assert.equal(updateNode.mock.calls.length, 0);
+  assert.equal(updateType.mock.calls.length, 0);
+  assert.equal(moveNode.mock.calls.length, 0);
+});
+
+test('ResourceModelStudioAdapter: applies ResourceType details when materializing a new leaf', async () => {
+  const { adapter, resourceService } = createTestServices();
+  const existingType = (await resourceService.listResourceTypes(context)).find(
+    (type) => type.code === 'CTO',
+  );
+  assert.ok(existingType);
+  const characteristics: NonNullable<
+    ResourceModelSnapshot['nodes'][number]['resourceType']
+  >['resourceTypeCharacteristic'] = [
+    { name: 'capacity', valueType: 'integer', value: 48 },
+    { name: 'connector', valueType: 'string', value: 'SC/APC' },
+  ];
+  const snapshot: ResourceModelSnapshot = {
+    catalog: {
+      code: 'catalog-new-leaf-details',
+      name: 'Catálogo Nova Folha',
+    },
+    nodes: [
+      {
+        id: 'snapshot-new-leaf',
+        code: 'CDOE_NEW',
+        name: 'CDOE Nova',
+        description: 'Caixa modelada no Studio',
+        kind: 'RESOURCE_TYPE',
+        resourceTypeCode: existingType.code,
+        parentNodeId: null,
+        sortOrder: 0,
+        status: 'active',
+        resourceType: {
+          name: 'CDOE Nova',
+          description: 'Caixa modelada no Studio',
+          status: 'active',
+          nature: 'PhysicalResource',
+          mapPresence: true,
+          resourceTypeCharacteristic: characteristics,
+        },
+        relationshipRules: [],
+      },
+    ],
+  };
+
+  await adapter.materialize(snapshot, { tenantId: context.tenantId });
+
+  const catalog = await resourceService.getResourceCatalogByCode(
+    snapshot.catalog.code,
+    context,
+  );
+  assert.ok(catalog);
+  const nodes = await resourceService.listResourceCatalogNodes(catalog.id, context, true);
+  const leaf = nodes.find((node) => node.code === 'CDOE_NEW');
+  assert.ok(leaf?.resourceTypeId);
+  const materializedType = (await resourceService.listResourceTypes(context)).find(
+    (type) => type.id === leaf.resourceTypeId,
+  );
+  assert.equal(materializedType?.description, 'Caixa modelada no Studio');
+  assert.equal(materializedType?.nature, 'PhysicalResource');
+  assert.equal(materializedType?.mapPresence, true);
+  assert.deepEqual(materializedType?.resourceTypeCharacteristic, characteristics);
 });
 
 test('ResourceModelStudioAdapter: materializes a snapshot linking parents by parentNodeId (UUID), the shape the real UI sends (issue #214)', async () => {
@@ -370,6 +548,47 @@ test('StudioService.discardDraft: restores the domain to the baseline captured w
 
   // Criado durante a edição, ausente da baseline -> inativado (poda), não apagado (C6).
   assert.equal(byId.get(createdDuringEdit.id)?.status, 'inactive');
+});
+
+test('StudioService.discardDraft: reactivates an inactive ResourceType from the baseline', async () => {
+  const { studioService, resourceService } = createTestServices();
+  const catalog = await resourceService.createResourceCatalog(
+    { code: 'catalog-revert-type', name: 'Catálogo Reverte Tipo' },
+    context,
+  );
+  const leaf = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'type-revert', name: 'Tipo Reverte', kind: 'RESOURCE_TYPE', sortOrder: 0 },
+    context,
+  );
+  assert.ok(leaf.resourceTypeId);
+
+  const baseline = {
+    catalog: { id: catalog.id, code: catalog.code, name: catalog.name },
+    nodes: [
+      {
+        id: leaf.id,
+        code: leaf.code,
+        name: leaf.name,
+        kind: leaf.kind,
+        resourceTypeId: leaf.resourceTypeId,
+        parentNodeId: null,
+        sortOrder: leaf.sortOrder,
+        status: 'active',
+        resourceType: { status: 'active' },
+      },
+    ],
+  };
+  const draft = await studioService.saveDraft('resource-model', baseline as never, context);
+
+  await resourceService.updateResourceCatalogNode(catalog.id, leaf.id, { status: 'inactive' }, context);
+
+  await studioService.discardDraft('resource-model', context, draft.checksum);
+
+  const restoredType = (await resourceService.listResourceTypes(context)).find(
+    (type) => type.id === leaf.resourceTypeId,
+  );
+  assert.equal(restoredType?.status, 'active');
 });
 
 test('ResourceService.updateResourceType: persists resourceTypeCharacteristic (issue #216)', async () => {

@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { AppError } from '../../../shared/errors/app-error.js';
 import { createCanonicalId } from '../../../shared/utils/canonical-id.js';
 import type { StudioDomainAdapter, StudioValidationIssue, StudioValidationResult } from '../domain.js';
@@ -8,6 +9,7 @@ import type {
   ResourceModelSnapshot,
   CreateResourceCatalogNodeInput,
   UpdateResourceCatalogNodeInput,
+  UpdateResourceTypeInput,
 } from '../../resource/domain.js';
 
 export class ResourceModelStudioAdapter implements StudioDomainAdapter {
@@ -62,6 +64,7 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
 
     const codeSet = new Set<string>();
     const nodeIdentifierMap = new Map<string, { code: string; index: number; kind?: ResourceCatalogNodeKind }>();
+    const nodeByIdentifier = new Map<string, ResourceModelSnapshot['nodes'][number]>();
 
     // 1ª passada: valida campos individuais e unicidade de código
     for (let i = 0; i < nodes.length; i++) {
@@ -88,8 +91,10 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
         }
         codeSet.add(normalizedCode);
         nodeIdentifierMap.set(normalizedCode, { code: normalizedCode, index: i, kind: node.kind });
+        nodeByIdentifier.set(normalizedCode, node);
         if (node.id) {
           nodeIdentifierMap.set(node.id, { code: normalizedCode, index: i, kind: node.kind });
+          nodeByIdentifier.set(node.id, node);
         }
       }
 
@@ -119,6 +124,51 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
             message: `Nó do tipo RESOURCE_TYPE deve referenciar um tipo de recurso.`,
             path: `${pathPrefix}.resourceTypeCode`,
           });
+        }
+
+        // Characteristics embutidas no snapshot (plano §4.4) — mesma checagem de unicidade que
+        // `assertCanonicalCharacteristics` faz no service, só que aqui cedo o bastante para
+        // reportar como impedimento de validação em vez de deixar `materialize` lançar no meio
+        // da reconciliação (nó já criado, tipo parcialmente atualizado).
+        const characteristics = node.resourceType?.resourceTypeCharacteristic ?? [];
+        const characteristicNames = new Set<string>();
+        for (const c of characteristics) {
+          const key = c.name?.trim().toLowerCase();
+          if (!key) {
+            issues.push({
+              severity: 'error',
+              code: 'CHARACTERISTIC_NAME_REQUIRED',
+              message: `Toda característica precisa de um nome (nó '${node.code}').`,
+              path: `${pathPrefix}.resourceType.resourceTypeCharacteristic`,
+            });
+            continue;
+          }
+          if (characteristicNames.has(key)) {
+            issues.push({
+              severity: 'error',
+              code: 'CHARACTERISTIC_NAME_DUPLICATE',
+              message: `Característica duplicada '${c.name}' no nó '${node.code}'.`,
+              path: `${pathPrefix}.resourceType.resourceTypeCharacteristic`,
+            });
+          }
+          characteristicNames.add(key);
+        }
+
+        // Regras de relação embutidas (plano §4.4) — checagem estrutural mínima; a validação
+        // semântica completa (RelationshipType Active, targetKind permitido, duplicata,
+        // cardinalidade) já é feita pelo service ao materializar, com AppError se o snapshot
+        // trapacear a validação do Studio.
+        const rules = node.relationshipRules ?? [];
+        for (let r = 0; r < rules.length; r++) {
+          const rule = rules[r];
+          if (!rule?.relationshipTypeCode?.trim() || !rule.targetKind || !rule.targetId?.trim()) {
+            issues.push({
+              severity: 'error',
+              code: 'RELATIONSHIP_RULE_INCOMPLETE',
+              message: `Regra de relação incompleta no nó '${node.code}'.`,
+              path: `${pathPrefix}.relationshipRules[${r}]`,
+            });
+          }
         }
       }
     }
@@ -164,7 +214,7 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
           break;
         }
         visited.add(cursor);
-        const currentTarget = nodes.find((n) => n?.code?.trim() === cursor || (n?.id && n.id === cursor));
+        const currentTarget = nodeByIdentifier.get(cursor);
         const nextParentRef = currentTarget?.parentNodeId ?? currentTarget?.parentCode;
         if (!nextParentRef) break;
         const nextParent = nodeIdentifierMap.get(nextParentRef);
@@ -205,7 +255,11 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
         },
         reqContext,
       );
-    } else {
+    } else if (
+      catalog.name !== typedSnapshot.catalog.name.trim() ||
+      (catalog.description ?? '') !== (typedSnapshot.catalog.description?.trim() ?? '') ||
+      catalog.status !== 'active'
+    ) {
       catalog = await this.resourceService.updateResourceCatalog(
         catalog.id,
         {
@@ -241,30 +295,61 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
     // `codeToIdMap` (indexado por código) nunca casa — foi a causa da hierarquia inteira cair pra
     // raiz numa publicação (issue #214): todo nó recebia `targetParentId = null` silenciosamente.
     const snapshotIdToDbId = new Map<string, string>();
+    const existingByMaterializedId = new Map(existingNodes.map((node) => [node.id, node]));
+    const resourceTypeIdByNodeId = new Map(
+      existingNodes.flatMap((node) =>
+        node.resourceTypeId ? [[node.id, node.resourceTypeId] as const] : [],
+      ),
+    );
 
     // 4. Criação / atualização básica dos nós (sem parentNodeId definitivo inicialmente para garantir existência)
+    let createdResourceType = false;
     for (let i = 0; i < snapshotNodes.length; i++) {
       const snapNode = snapshotNodes[i];
       if (!snapNode) continue;
       const existing = (snapNode.id ? existingById.get(snapNode.id) : undefined) ?? existingByCode.get(snapNode.code);
       if (existing) {
-        const updateInput: UpdateResourceCatalogNodeInput = {
-          // Casado por id (ver `existingById` acima), então `code` também precisa ser reafirmado
-          // aqui — senão um code renomeado depois da baseline nunca volta ao original no restore.
-          code: snapNode.code,
-          name: snapNode.name,
-          ...(snapNode.description !== undefined ? { description: snapNode.description } : {}),
-          status: (snapNode.status as ResourceCatalogStatus) ?? 'active',
-          ...(snapNode.metadata !== undefined ? { metadata: snapNode.metadata } : {}),
-        };
-        const updated = await this.resourceService.updateResourceCatalogNode(
-          catalog.id,
-          existing.id,
-          updateInput,
-          reqContext,
-        );
-        codeToIdMap.set(snapNode.code, updated.id);
-        if (snapNode.id) snapshotIdToDbId.set(snapNode.id, updated.id);
+        const desiredStatus = (snapNode.status as ResourceCatalogStatus) ?? 'active';
+        const nodeChanged =
+          existing.code !== snapNode.code.trim() ||
+          existing.name !== snapNode.name.trim() ||
+          (snapNode.description !== undefined &&
+            (existing.description ?? '') !== snapNode.description.trim()) ||
+          existing.status !== desiredStatus ||
+          (snapNode.metadata !== undefined &&
+            !isDeepStrictEqual(existing.metadata ?? {}, snapNode.metadata));
+        let materialized = existing;
+        if (nodeChanged) {
+          const updateInput: UpdateResourceCatalogNodeInput = {
+            // Casado por id (ver `existingById` acima), então `code` também precisa ser reafirmado
+            // aqui — senão um code renomeado depois da baseline nunca volta ao original no restore.
+            code: snapNode.code,
+            name: snapNode.name,
+            ...(snapNode.description !== undefined ? { description: snapNode.description } : {}),
+            status: desiredStatus,
+            ...(snapNode.metadata !== undefined ? { metadata: snapNode.metadata } : {}),
+          };
+          materialized = await this.resourceService.updateResourceCatalogNode(
+            catalog.id,
+            existing.id,
+            updateInput,
+            reqContext,
+          );
+          if (materialized.resourceTypeId) {
+            const currentType = typeById.get(materialized.resourceTypeId);
+            if (currentType) {
+              typeById.set(materialized.resourceTypeId, {
+                ...currentType,
+                code: materialized.code,
+                name: materialized.name,
+                status: materialized.status,
+                ...(materialized.description ? { description: materialized.description } : {}),
+              });
+            }
+          }
+        }
+        codeToIdMap.set(snapNode.code, materialized.id);
+        if (snapNode.id) snapshotIdToDbId.set(snapNode.id, materialized.id);
       } else {
         let resolvedTypeId: string | undefined = undefined;
         if (snapNode.kind === 'RESOURCE_TYPE') {
@@ -310,7 +395,22 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
           reqContext,
         );
         codeToIdMap.set(snapNode.code, created.id);
+        existingByMaterializedId.set(created.id, created);
+        if (created.resourceTypeId) {
+          resourceTypeIdByNodeId.set(created.id, created.resourceTypeId);
+          createdResourceType = true;
+        }
         if (snapNode.id) snapshotIdToDbId.set(snapNode.id, created.id);
+      }
+    }
+
+    // A criação agregada da folha também cria um ResourceType 1:1 com novo id. Uma única releitura
+    // após todo o passe completa o mapa desses tipos, sem voltar ao N+1 por folha. Assim os detalhes
+    // embutidos no snapshot (nature/mapPresence/Characteristics) também são aplicados a folhas novas.
+    if (createdResourceType) {
+      const refreshedResourceTypes = await this.resourceService.listResourceTypes(reqContext);
+      for (const resourceType of refreshedResourceTypes) {
+        typeById.set(resourceType.id, resourceType);
       }
     }
 
@@ -340,18 +440,140 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
         continue;
       }
 
-      await this.resourceService.moveResourceCatalogNode(
+      const desiredSortOrder = snapNode.sortOrder ?? i;
+      const currentNode = existingByMaterializedId.get(nodeId);
+      if (
+        currentNode &&
+        (currentNode.parentNodeId ?? null) === targetParentId &&
+        currentNode.sortOrder === desiredSortOrder
+      ) {
+        continue;
+      }
+
+      const moved = await this.resourceService.moveResourceCatalogNode(
         catalog.id,
         nodeId,
         {
           parentNodeId: targetParentId,
-          sortOrder: snapNode.sortOrder ?? i,
+          sortOrder: desiredSortOrder,
         },
         reqContext,
       );
+      existingByMaterializedId.set(nodeId, moved);
     }
 
-    // 6. Poda: inativa nós ativos que existiam antes da materialização mas não estão no snapshot.
+    // 6. Reconcilia ResourceType (Characteristics/nature/mapPresence/status/descrição) e regras de
+    // relação de cada folha (plano §4). Os tipos e regras atuais já foram carregados em lote, para
+    // que publicar/cancelar não façam uma releitura Oracle por folha.
+    const materializedTypeIds = snapshotNodes.flatMap((snapNode) => {
+      if (!snapNode || snapNode.kind !== 'RESOURCE_TYPE') return [];
+      const nodeId = codeToIdMap.get(snapNode.code);
+      const typeId = nodeId ? resourceTypeIdByNodeId.get(nodeId) : undefined;
+      return typeId ? [typeId] : [];
+    });
+    const currentRules = await this.resourceService.listResourceTypeRelationshipRulesBySourceIds(
+      materializedTypeIds,
+      reqContext,
+    );
+    const currentRulesByTypeId = new Map<string, typeof currentRules>();
+    for (const rule of currentRules) {
+      const rules = currentRulesByTypeId.get(rule.sourceResourceTypeId) ?? [];
+      rules.push(rule);
+      currentRulesByTypeId.set(rule.sourceResourceTypeId, rules);
+    }
+    const ruleKey = (rule: {
+      relationshipTypeCode: string;
+      targetKind: string;
+      targetId: string;
+    }) => `${rule.relationshipTypeCode}::${rule.targetKind}::${rule.targetId}`;
+
+    for (let i = 0; i < snapshotNodes.length; i++) {
+      const snapNode = snapshotNodes[i];
+      if (!snapNode || snapNode.kind !== 'RESOURCE_TYPE') continue;
+      const nodeId = codeToIdMap.get(snapNode.code);
+      if (!nodeId) continue;
+      const typeId = resourceTypeIdByNodeId.get(nodeId);
+      if (!typeId) continue;
+
+      const currentType = typeById.get(typeId);
+      if (snapNode.resourceType && currentType) {
+        const snapshotType = snapNode.resourceType;
+        const desiredNature = snapshotType.nature ?? currentType.nature;
+        const desiredMapPresence =
+          desiredNature === 'LogicalResource'
+            ? false
+            : (snapshotType.mapPresence ?? currentType.mapPresence);
+        const typeChanged =
+          (snapshotType.description !== undefined &&
+            (currentType.description ?? '') !== snapshotType.description.trim()) ||
+          (snapshotType.status !== undefined && currentType.status !== snapshotType.status) ||
+          currentType.nature !== desiredNature ||
+          currentType.mapPresence !== desiredMapPresence ||
+          (snapshotType.resourceTypeCharacteristic !== undefined &&
+            !isDeepStrictEqual(
+              currentType.resourceTypeCharacteristic ?? [],
+              snapshotType.resourceTypeCharacteristic,
+            ));
+        if (typeChanged) {
+          const typeUpdate: UpdateResourceTypeInput = {
+            ...(snapshotType.description !== undefined
+              ? { description: snapshotType.description }
+              : {}),
+            ...(snapshotType.status ? { status: snapshotType.status } : {}),
+            ...(snapshotType.nature ? { nature: snapshotType.nature } : {}),
+            ...(snapshotType.mapPresence !== undefined
+              ? { mapPresence: snapshotType.mapPresence }
+              : {}),
+            ...(snapshotType.resourceTypeCharacteristic !== undefined
+              ? { resourceTypeCharacteristic: snapshotType.resourceTypeCharacteristic }
+              : {}),
+          };
+          typeById.set(
+            typeId,
+            await this.resourceService.updateResourceType(typeId, typeUpdate, reqContext),
+          );
+        }
+      }
+
+      // Diff de regras: cria as que faltam, retira as ativas que não estão mais no snapshot.
+      // Casamento por (relationshipTypeCode, targetKind, targetId) — mesma tripla que o service
+      // usa para rejeitar duplicata em `createResourceTypeRelationshipRule`.
+      const snapshotRules = snapNode.relationshipRules ?? [];
+      const snapshotKeys = new Set(snapshotRules.map(ruleKey));
+      const currentActiveByKey = new Map(
+        (currentRulesByTypeId.get(typeId) ?? [])
+          .filter((rule) => rule.lifecycleStatus === 'Active')
+          .map((rule) => [ruleKey(rule), rule]),
+      );
+
+      for (const rule of snapshotRules) {
+        if (!currentActiveByKey.has(ruleKey(rule))) {
+          await this.resourceService.createResourceTypeRelationshipRule(
+            typeId,
+            {
+              relationshipTypeCode: rule.relationshipTypeCode,
+              targetKind: rule.targetKind,
+              targetId: rule.targetId,
+              ...(rule.cardinality ? { cardinality: rule.cardinality } : {}),
+              ...(rule.validFor ? { validFor: rule.validFor } : {}),
+            },
+            reqContext,
+          );
+        }
+      }
+      for (const [key, current] of currentActiveByKey) {
+        if (!snapshotKeys.has(key)) {
+          await this.resourceService.updateResourceTypeRelationshipRule(
+            typeId,
+            current.id,
+            { lifecycleStatus: 'Retired' },
+            reqContext,
+          );
+        }
+      }
+    }
+
+    // 7. Poda: inativa nós ativos que existiam antes da materialização mas não estão no snapshot.
     // No publish normal isto é sempre um no-op — a listagem viva capturada como snapshot já é
     // exatamente `existingNodes`. Mas ao restaurar uma baseline anterior (revert de "Cancelar"),
     // é o que remove nós criados durante a sessão de edição abortada. Soft-delete (C6): preserva

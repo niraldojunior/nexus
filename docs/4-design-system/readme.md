@@ -109,6 +109,7 @@ The full logo exploration and rationale live in `Nexus Logo C.html` (chosen dire
 - `styles.css` — root entry point (`@import` list only).
 - `tokens/fonts.css` · `colors.css` · `typography.css` · `spacing.css` · `effects.css` · `base.css` — all design tokens + base element styles.
 - `guidelines/*.card.html` — foundation specimen cards (Colors, Type, Spacing, Effects, Brand) shown on the Design System tab.
+- `guidelines/studio-editors.md` — padrão de UX e persistência para editores master/detail governados do Studio.
 
 **Components** (`components/core/`) — `Button`, `Badge`, `StatusPill`, `Input`, `Switch`, `Card`, `MetricCard`, `IconTabs`, `MapMarker`. Each has `.jsx` + `.d.ts`; the set is showcased in `core.card.html`, the conversational chrome in `chat.card.html`, and the Locais chrome (icon rail, floating panels, layer toggles, markers, legend) in `geo.card.html`.
 

@@ -52,12 +52,7 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
     }
 
     const codeSet = new Set<string>();
-    const validCategories = new Set<GeographicSiteSpecificationCategory>([
-      'Region',
-      'FunctionalGroup',
-      'Site',
-      'SubSite',
-    ]);
+    const validCategories = new Set<GeographicSiteSpecificationCategory>(['Region', 'Site', 'SubSite']);
     const validRoles = new Set<GeographicSiteRole>(GEO_SITE_ROLES);
 
     // 1ª passada: validação individual de campos e unicidade
@@ -99,7 +94,7 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
         issues.push({
           severity: 'error',
           code: 'SPEC_CATEGORY_INVALID',
-          message: `Categoria '${s.category}' inválida. Esperado: Region, FunctionalGroup, Site ou SubSite.`,
+          message: `Categoria '${s.category}' inválida. Esperado: Region, Site ou SubSite.`,
           path: `${pathPrefix}.category`,
         });
       }
@@ -201,6 +196,7 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
           existing.id,
           {
             name: specInput.name,
+            category: specInput.category,
             ...(specInput.description !== undefined ? { description: specInput.description } : {}),
             ...(specInput.siteRole !== undefined ? { siteRole: specInput.siteRole } : {}),
             lifecycleStatus: specInput.lifecycleStatus ?? existing.lifecycleStatus ?? 'Active',

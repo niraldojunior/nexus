@@ -215,15 +215,6 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     ],
   },
   {
-    name: 'Functional Group',
-    code: 'FUNCTIONAL_GROUP',
-    category: 'FunctionalGroup',
-    siteRole: 'grouping',
-    description: 'Agrupador lógico sem containment físico direto.',
-    allowedParentCodes: [],
-    allowedChildCodes: [],
-  },
-  {
     name: 'Central Office',
     code: 'CO',
     category: 'Site',
@@ -321,37 +312,37 @@ const BOOTSTRAP_RELATIONSHIP_TYPES: RelationshipTypeInput[] = [
     code: 'feeds',
     name: 'Feeds',
     inverseCode: 'fedBy',
-    allowedSourceCategories: ['Region', 'FunctionalGroup', 'Site', 'SubSite'],
-    allowedTargetCategories: ['Region', 'FunctionalGroup', 'Site', 'SubSite'],
+    allowedSourceCategories: ['Region', 'Site', 'SubSite'],
+    allowedTargetCategories: ['Region', 'Site', 'SubSite'],
   },
   {
     code: 'fedBy',
     name: 'Fed by',
     inverseCode: 'feeds',
-    allowedSourceCategories: ['Region', 'FunctionalGroup', 'Site', 'SubSite'],
-    allowedTargetCategories: ['Region', 'FunctionalGroup', 'Site', 'SubSite'],
+    allowedSourceCategories: ['Region', 'Site', 'SubSite'],
+    allowedTargetCategories: ['Region', 'Site', 'SubSite'],
   },
   {
     code: 'peersWith',
     name: 'Peers with',
     inverseCode: 'peersWith',
     symmetric: true,
-    allowedSourceCategories: ['Region', 'FunctionalGroup', 'Site', 'SubSite'],
-    allowedTargetCategories: ['Region', 'FunctionalGroup', 'Site', 'SubSite'],
+    allowedSourceCategories: ['Region', 'Site', 'SubSite'],
+    allowedTargetCategories: ['Region', 'Site', 'SubSite'],
   },
   {
     code: 'memberOf',
     name: 'Member of',
     inverseCode: 'contains',
-    allowedSourceCategories: ['Region', 'FunctionalGroup', 'Site', 'SubSite'],
-    allowedTargetCategories: ['Region', 'FunctionalGroup', 'Site', 'SubSite'],
+    allowedSourceCategories: ['Region', 'Site', 'SubSite'],
+    allowedTargetCategories: ['Region', 'Site', 'SubSite'],
   },
   {
     code: 'contains',
     name: 'Contains',
     inverseCode: 'memberOf',
-    allowedSourceCategories: ['Region', 'FunctionalGroup', 'Site', 'SubSite'],
-    allowedTargetCategories: ['Region', 'FunctionalGroup', 'Site', 'SubSite'],
+    allowedSourceCategories: ['Region', 'Site', 'SubSite'],
+    allowedTargetCategories: ['Region', 'Site', 'SubSite'],
   },
 ];
 
@@ -546,6 +537,22 @@ export class GeoService {
             _bootstrapProtected: false,
           });
         }
+      }
+
+      // D-GEO-003 foi superada: a categoria FunctionalGroup foi descontinuada e removida do
+      // domínio (não é mais um valor válido de GeographicSiteSpecificationCategory). A spec de
+      // bootstrap correspondente não é mais definida acima; se ainda existir Active de um boot
+      // anterior, ela é soft-retired aqui (C6 — nunca DELETE físico) em vez de deixada órfã com
+      // uma categoria que o restante do código não reconhece mais.
+      const discontinuedFunctionalGroup = existingSpecs.find(
+        (spec) => spec.code === 'FUNCTIONAL_GROUP' && spec.lifecycleStatus === 'Active',
+      );
+      if (discontinuedFunctionalGroup) {
+        await this.repository.upsertSpec({
+          ...discontinuedFunctionalGroup,
+          lifecycleStatus: 'Retired',
+          _bootstrapProtected: false,
+        });
       }
 
       return {
@@ -847,11 +854,18 @@ export class GeoService {
     this.assertRole(ctx, CATALOG_ROLE);
     const current = await this.getSpecOrThrow(id);
     if (input.name !== undefined) assertRequiredString(input.name, 'name');
-    if (input.category !== undefined && input.category !== current.category) {
-      throw new AppError('site specification category is immutable', {
-        code: 'GEO_SPEC_CATEGORY_IMMUTABLE',
-        statusCode: 409,
-      });
+    if (input.category !== undefined) validateSpecCategory(input.category);
+    const nextCategory = input.category ?? current.category;
+    if (nextCategory === 'SubSite' && current.category !== 'SubSite') {
+      const activeSitesWithoutParent = (await this.repository.listSites({
+        siteSpecificationId: current.id,
+      })).some((site) => site.status !== 'Retired' && !site.parentSite?.id);
+      if (activeSitesWithoutParent) {
+        throw new AppError('sub-site specification has active sites without parent', {
+          code: 'GEO_SPEC_CATEGORY_SUBSITE_PARENT_REQUIRED',
+          statusCode: 409,
+        });
+      }
     }
     if (input.code !== undefined && normalizeSpecificationCode(input.code) !== current.code) {
       throw new AppError('site specification code is immutable', {
@@ -911,7 +925,7 @@ export class GeoService {
             : current.description !== undefined
               ? { description: current.description }
               : {}),
-          category: current.category,
+          category: nextCategory,
           siteRole: input.siteRole ?? current.siteRole,
           lifecycleStatus: nextLifecycleStatus,
           ...(input.validFor !== undefined
@@ -3310,7 +3324,7 @@ const validateSpecCategory: (
 ) => asserts category is GeographicSiteSpecificationCategory = (
   category: string,
 ): asserts category is GeographicSiteSpecificationCategory => {
-  if (!['Region', 'FunctionalGroup', 'Site', 'SubSite'].includes(category)) {
+  if (!['Region', 'Site', 'SubSite'].includes(category)) {
     throw new AppError('invalid site specification category', {
       code: 'GEO_SPEC_CATEGORY_INVALID',
       statusCode: 400,

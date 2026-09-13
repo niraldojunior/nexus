@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Box, Plus, AlertCircle, Search, Folder, Layers } from 'lucide-react';
+import { Box, Plus, AlertCircle, Folder, Layers } from 'lucide-react';
 import type {
   ResourceCatalog,
   ResourceCatalogTreeNode,
@@ -24,6 +24,7 @@ import {
 } from '../../../services/studioApi';
 import { Button } from '../../../components/ui';
 import { ResourceCatalogTree } from './ResourceCatalogTree';
+import { StudioCollectionHeader } from '../../../components/studio/StudioCollectionHeader';
 import { ResourceNodeDetail, type AutosaveState } from './ResourceNodeDetail';
 import { ResourceNodeImpactModal } from './ResourceNodeImpactModal';
 
@@ -409,68 +410,60 @@ export function ResourceModelStudio({
       <div className="grid gap-5 lg:grid-cols-[342px_minmax(0,1fr)]">
         {/* Left: Árvore Hierárquica */}
         <div className="vt-card flex min-h-[560px] flex-col p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="font-bold">Hierarquia</h3>
-            <div className="flex items-center gap-2">
-              <Button
-                variant={showSearch ? 'secondary' : 'primary'}
-                size="sm"
-                onClick={() => setShowSearch((prev) => !prev)}
-                title={showSearch ? 'Ocultar busca' : 'Buscar nós'}
-                aria-label={showSearch ? 'Ocultar busca' : 'Buscar nós'}
-                aria-pressed={showSearch}
-              >
-                <Search className="h-4 w-4" />
-              </Button>
-              {canMutate && (
-                <div className="relative">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => handleAddNodeClick()}
-                    title="Incluir nó"
-                    aria-label="Incluir nó"
-                    aria-haspopup="menu"
-                    aria-expanded={createMenuOpen}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                  {createMenuOpen && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-40"
-                        onClick={() => setCreateMenuOpen(false)}
-                      />
-                      <div
-                        role="menu"
-                        aria-label="Tipo de nó a incluir"
-                        className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-[12px] border border-app-border bg-white py-1 shadow-soft"
+          <StudioCollectionHeader
+            title="Hierarquia"
+            showSearch={showSearch}
+            onToggleSearch={() => setShowSearch((prev) => !prev)}
+            searchLabel="Buscar nós"
+          >
+            {canMutate && (
+              <div className="relative">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => handleAddNodeClick()}
+                  title="Incluir nó"
+                  aria-label="Incluir nó"
+                  aria-haspopup="menu"
+                  aria-expanded={createMenuOpen}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+                {createMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setCreateMenuOpen(false)}
+                    />
+                    <div
+                      role="menu"
+                      aria-label="Tipo de nó a incluir"
+                      className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-[12px] border border-app-border bg-white py-1 shadow-soft"
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => handleCreateFromMenu('GROUP')}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.84rem] font-medium text-app-text transition hover:bg-app-accent-soft"
                       >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => handleCreateFromMenu('GROUP')}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.84rem] font-medium text-app-text transition hover:bg-app-accent-soft"
-                        >
-                          <Folder className="h-3.5 w-3.5" />
-                          Grupo
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => handleCreateFromMenu('RESOURCE_TYPE')}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.84rem] font-medium text-app-text transition hover:bg-app-accent-soft"
-                        >
-                          <Layers className="h-3.5 w-3.5" />
-                          Tipo de Recurso
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+                        <Folder className="h-3.5 w-3.5" />
+                        Grupo
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => handleCreateFromMenu('RESOURCE_TYPE')}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.84rem] font-medium text-app-text transition hover:bg-app-accent-soft"
+                      >
+                        <Layers className="h-3.5 w-3.5" />
+                        Tipo de Recurso
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </StudioCollectionHeader>
 
           <div className="flex-1">
             <ResourceCatalogTree

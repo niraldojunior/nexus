@@ -298,13 +298,17 @@ Status: 📐 **Previsto no design** — declarado nos HLDs 1 e 2; a implementaç
 ## C11 — Papel do site (`siteRole`)
 
 **Regra.** Todo `GeographicSiteSpecification` carrega um segundo eixo, ortogonal a `category`
-(estrutural: `Region | FunctionalGroup | Site | SubSite`, onde o nó cabe na hierarquia):
+(estrutural: `Region | Site | SubSite`, onde o nó cabe na hierarquia):
 `siteRole` (funcional: `grouping | network | property | service`, **o que** o nó é). O papel vive
 na spec, não no site — herda de C1 (extensão via catálogo, nunca campo hardcoded).
 
+> `FunctionalGroup` foi descontinuada como categoria (D-GEO-003 superada — ver
+> `docs/5-delivery-plan/architecture-decisions.md`). A spec de bootstrap `FUNCTIONAL_GROUP` é
+> soft-retired em bases existentes; não há mais essa categoria a criar.
+
 | `siteRole` | Rótulo pt-BR    | Exemplos de spec                                                                  |
 | ---------- | --------------- | --------------------------------------------------------------------------------- |
-| `grouping` | Agrupamento     | `REGION`, `FUNCTIONAL_GROUP`                                                      |
+| `grouping` | Agrupamento     | `REGION`                                                                          |
 | `network`  | Site de Rede    | `CO`, `POP`, `CABINET`, `FLOOR`, `ROOM`, `CAGE`, unidades remotas, salas técnicas |
 | `property` | Imóvel          | `CONDOMINIUM`, `BLOCK`, `BUILDING`                                                |
 | `service`  | Site de Serviço | `CUSTOMER_SITE` (unidade atendida: casa, apartamento)                             |

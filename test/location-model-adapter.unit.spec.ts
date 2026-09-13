@@ -242,3 +242,53 @@ test('LocationModelStudioAdapter permite remover containment que o snapshot não
   assert.ok(coUpdate, 'CO deveria receber update de containment');
   assert.deepEqual(new Set(coUpdate!.patch.allowedParentSpecIds as string[]), new Set());
 });
+
+test('LocationModelStudioAdapter encaminha mudança de categoria de uma spec existente ao materializar', async () => {
+  const existingSpecs: GeographicSiteSpecification[] = [
+    {
+      '@type': 'GeographicSiteSpecification',
+      id: 'spec-co-id',
+      href: '/tmf-api/geographicSiteManagement/v4/geographicSiteSpecification/spec-co-id',
+      code: 'CO',
+      name: 'Central Office',
+      category: 'Site',
+      siteRole: 'network',
+      lifecycleStatus: 'Active',
+      specCharacteristic: [],
+      allowedParentSpec: [],
+      allowedChildSpec: [],
+      allowedParentSpecIds: [],
+      allowedChildSpecIds: [],
+    },
+  ];
+
+  const updateSpecCalls: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const geoService = {
+    listSpecs: vi.fn(async () => existingSpecs),
+    createSpec: vi.fn(),
+    updateSpec: vi.fn(async (id: string, patch: Record<string, unknown>) => {
+      updateSpecCalls.push({ id, patch });
+      return existingSpecs.find((s) => s.id === id);
+    }),
+  } as unknown as GeoService;
+
+  const adapter = new LocationModelStudioAdapter(geoService);
+
+  // O draft recategoriza CO de Site para Region antes de publicar.
+  const snapshot = {
+    specifications: [
+      {
+        code: 'CO',
+        name: 'Central Office',
+        category: 'Region',
+        siteRole: 'network',
+      },
+    ],
+  };
+
+  await adapter.materialize(snapshot as Record<string, unknown>, { tenantId: 'vtal' });
+
+  const metadataUpdate = updateSpecCalls.find((c) => c.id === 'spec-co-id' && 'category' in c.patch);
+  assert.ok(metadataUpdate, 'CO deveria receber update com a nova categoria');
+  assert.equal(metadataUpdate!.patch.category, 'Region');
+});

@@ -4781,7 +4781,7 @@ const parseGeoSpecificationListQuery = (
 ): {
   name?: string;
   code?: string;
-  category?: 'Region' | 'FunctionalGroup' | 'Site' | 'SubSite';
+  category?: 'Region' | 'Site' | 'SubSite';
   lifecycleStatus?: 'Active' | 'Retired';
   limit?: number;
   offset?: number;
@@ -4789,7 +4789,7 @@ const parseGeoSpecificationListQuery = (
   const query: {
     name?: string;
     code?: string;
-    category?: 'Region' | 'FunctionalGroup' | 'Site' | 'SubSite';
+    category?: 'Region' | 'Site' | 'SubSite';
     lifecycleStatus?: 'Active' | 'Retired';
     limit?: number;
     offset?: number;
@@ -4799,12 +4799,7 @@ const parseGeoSpecificationListQuery = (
   const code = params.get('code');
   if (code) query.code = code;
   const category = params.get('category');
-  if (
-    category === 'Region' ||
-    category === 'FunctionalGroup' ||
-    category === 'Site' ||
-    category === 'SubSite'
-  ) {
+  if (category === 'Region' || category === 'Site' || category === 'SubSite') {
     query.category = category;
   }
   const lifecycleStatus = params.get('lifecycleStatus');

@@ -893,36 +893,7 @@ export class GeoService {
       });
     }
 
-    const protectedParentSpecIds = new Set(current._protectedAllowedParentSpecIds ?? []);
-    const protectedChildSpecIds = new Set(current._protectedAllowedChildSpecIds ?? []);
-    for (const protectedSpecId of protectedParentSpecIds) {
-      if (!nextAllowedParentSpecIds.includes(protectedSpecId)) {
-        throw new AppError('protected parent containment rule cannot be removed', {
-          code: 'GEO_SPEC_CONTAINMENT_PROTECTED',
-          statusCode: 409,
-        });
-      }
-    }
-    for (const protectedSpecId of protectedChildSpecIds) {
-      if (!nextAllowedChildSpecIds.includes(protectedSpecId)) {
-        throw new AppError('protected child containment rule cannot be removed', {
-          code: 'GEO_SPEC_CONTAINMENT_PROTECTED',
-          statusCode: 409,
-        });
-      }
-    }
-
     const nextLifecycleStatus = input.lifecycleStatus ?? current.lifecycleStatus;
-    if (
-      current._bootstrapProtected &&
-      current.lifecycleStatus !== 'Retired' &&
-      nextLifecycleStatus === 'Retired'
-    ) {
-      throw new AppError('bootstrap specification cannot be retired', {
-        code: 'GEO_SPEC_BOOTSTRAP_PROTECTED',
-        statusCode: 409,
-      });
-    }
 
     const nextCharacteristics = normalizeSpecCharacteristics(
       input.specCharacteristic ?? current.specCharacteristic,
@@ -951,20 +922,11 @@ export class GeoService {
           specCharacteristic: nextCharacteristics,
           allowedParentSpecIds: nextAllowedParentSpecIds,
           allowedChildSpecIds: nextAllowedChildSpecIds,
-          ...(current._bootstrapProtected !== undefined
-            ? { bootstrapProtected: current._bootstrapProtected }
-            : {}),
         }),
       );
       await this.repository.syncSpecContainmentRules(updated.id, {
         allowedParentSpecIds: nextAllowedParentSpecIds,
         allowedChildSpecIds: nextAllowedChildSpecIds,
-        ...(current._protectedAllowedParentSpecIds
-          ? { protectedParentSpecIds: current._protectedAllowedParentSpecIds }
-          : {}),
-        ...(current._protectedAllowedChildSpecIds
-          ? { protectedChildSpecIds: current._protectedAllowedChildSpecIds }
-          : {}),
       });
       const stored = await this.getSpecOrThrow(updated.id);
       await this.recordMutation(
@@ -987,12 +949,6 @@ export class GeoService {
     context?: RequestContext,
   ): Promise<GeographicSiteSpecification> {
     const spec = await this.getSpecOrThrow(id);
-    if (spec._bootstrapProtected) {
-      throw new AppError('bootstrap specification cannot be retired', {
-        code: 'GEO_SPEC_BOOTSTRAP_PROTECTED',
-        statusCode: 409,
-      });
-    }
 
     const retired = await this.updateSpec(
       id,

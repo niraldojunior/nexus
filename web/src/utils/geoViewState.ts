@@ -41,7 +41,25 @@ export type GeoViewContext =
 
 export type GeoViewState = { v: 1; camera: MapCamera; context: GeoViewContext };
 
-const STORAGE_KEY = 'nexus.geo.viewState';
+const STORAGE_KEY_BASE = 'nexus.geo.viewState';
+// Preferências antigas (sem namespace) migram uma única vez para o primeiro ambiente legacy que
+// ainda não tiver chave própria. Um ambiente empty nunca lê, move nem apaga a chave legada.
+const LEGACY_MIGRATION_ENVIRONMENT_ID = 'legacy';
+
+const namespacedStorageKey = (environmentId: string): string =>
+  `${STORAGE_KEY_BASE}::${environmentId}`;
+
+const migrateLegacyStorage = (environmentId: string): void => {
+  if (typeof window === 'undefined' || environmentId !== LEGACY_MIGRATION_ENVIRONMENT_ID) return;
+  try {
+    const namespaced = namespacedStorageKey(environmentId);
+    if (window.localStorage.getItem(namespaced) !== null) return;
+    const legacy = window.localStorage.getItem(STORAGE_KEY_BASE);
+    if (legacy !== null) window.localStorage.setItem(namespaced, legacy);
+  } catch {
+    // Storage indisponível: segue sem migrar, sem quebrar leitura/escrita.
+  }
+};
 
 // Nomes de parâmetro de URL próprios do viewport do mapa — deliberadamente distintos de
 // `page`/`siteId`/`resourceId` (ver utils/navigation.ts). `clearNavigationParams()` apaga
@@ -129,10 +147,11 @@ function normalizeContext(value: unknown): GeoViewContext | null {
 // Lê o estado salvo; qualquer coisa fora do formato esperado (JSON inválido, versão
 // desconhecida, campo fora de faixa, storage indisponível) devolve `null` — quem chama decide
 // o default (ver resolveInitialViewState). Nunca lança.
-export function readStoredViewState(): GeoViewState | null {
+export function readStoredViewState(environmentId: string): GeoViewState | null {
   if (typeof window === 'undefined') return null;
+  migrateLegacyStorage(environmentId);
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(namespacedStorageKey(environmentId));
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return null;
@@ -147,10 +166,10 @@ export function readStoredViewState(): GeoViewState | null {
   }
 }
 
-export function writeStoredViewState(state: GeoViewState): void {
+export function writeStoredViewState(state: GeoViewState, environmentId: string): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    window.localStorage.setItem(namespacedStorageKey(environmentId), JSON.stringify(state));
   } catch {
     // Storage indisponível (modo privado, cota): a posição só não persiste entre sessões —
     // a URL segue funcionando sozinha.
@@ -289,10 +308,11 @@ function contextIdentity(context: GeoViewContext): string {
 // `DraftAddress` salvo pertence a outra seleção e seria enganoso reusá-lo. Sem URL nem storage,
 // devolve `null`: quem chama cai no default de sempre (`DEFAULT_CENTER`/zoom 15, sem contexto).
 export function resolveInitialViewState(
+  environmentId: string,
   search: string = typeof window !== 'undefined' ? window.location.search : '',
 ): GeoViewState | null {
   const fromUrl = parseGeoViewParams(search);
-  const stored = readStoredViewState();
+  const stored = readStoredViewState(environmentId);
 
   if (fromUrl.camera) {
     let context = fromUrl.context;

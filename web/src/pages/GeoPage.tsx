@@ -553,10 +553,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // que roda acima de 100 m, não na de detalhe.
   const [viewportBounds, setViewportBounds] = useState<MapBounds | null>(null);
 
-  // Posição e contexto do mapa persistidos em URL + localStorage (issue #182) — ver
-  // hooks/useGeoViewState. `initialView` semeia o mapa já no lugar certo (ver GoogleMapPanel
-  // `initialView`); `reportCamera`/`setContext` são chamados abaixo, sem entrar em `useState`.
-  const viewState = useGeoViewState();
+  // O catálogo resolve a identidade persistida do namespace. Nunca restauramos viewport sob
+  // `pending`: o painel só é montado depois que o environmentId real estiver disponível.
+  const mapLayerCatalog = useMapLayerCatalog();
+  const environmentId = mapLayerCatalog.loading ? null : mapLayerCatalog.catalog.environmentId;
+  const viewState = useGeoViewState(environmentId);
 
   // Chamado pelo mapa a cada `idle` (fim de pan/zoom) com os limites, a escala e a câmera
   // atuais — registra estado (bounds/scaleMeters, para infra passiva/cobertura, que já
@@ -567,9 +568,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       setViewportBounds(bounds);
       viewState.reportCamera(camera);
     },
-    // `reportCamera` é a única peça estável de `viewState` (ver useGeoViewState) — depender do
-    // objeto inteiro recriaria este callback (e tudo que o consome, ver GoogleMapPanel) a cada
-    // render, o mesmo cuidado já documentado em `selectNode`/`tree.revealNode` acima.
     [viewState.reportCamera],
   );
 
@@ -580,7 +578,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // grupo, persistido em localStorage. `include` fica memoizado pelas flags que realmente
   // importam para o viewport — sem isso, `viewportInclude` devolveria uma referência de array
   // nova a cada render e o useEffect de useMapTiles reentraria em loop.
-  const mapLayerCatalog = useMapLayerCatalog();
   const mapLayers = useMapLayers(mapLayerCatalog.catalog);
   const viewportShapesInclude = useMemo(
     () => viewportInclude(mapLayers.layers, mapLayerCatalog.catalog, scaleMeters),
@@ -1830,7 +1827,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
           )}
 
           <div className="relative min-h-0 flex-1">
-            <GoogleMapPanel
+            {environmentId ? <GoogleMapPanel
+              key={environmentId}
               nodes={mapNodes}
               pinnedNode={pinnedSelectedNode}
               projectSiteFeatures={projectSiteFeatures}
@@ -1894,7 +1892,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               mapLayersAllVisible={mapLayers.allVisible}
               mapLayersScaleMeters={scaleMeters}
               siteRoleByCode={siteRoleByCode}
-            />
+            /> : <MapLoadingBar />}
           </div>
 
           {/* Instância única da barra de pesquisa: sobreposta à doca e ao mapa, com o

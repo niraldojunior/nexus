@@ -1834,13 +1834,27 @@ const routeGeoRequest = async ({
       requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
       const body = await readBody(request);
       assertProjectIconSize(body.iconDataUrl);
+      const workflow = await runtime.geoProjectWorkflowService.getWorkflow(geoContext);
+      if (workflow.states.length === 0 || !workflow.initialStateCode) {
+        throw new AppError('project workflow is not configured', {
+          code: 'GEO_PROJECT_WORKFLOW_NOT_CONFIGURED',
+          statusCode: 409,
+        });
+      }
       const requestedStatusCode =
-        body.statusCode === undefined ? undefined : String(body.statusCode);
+        body.statusCode === undefined ? workflow.initialStateCode : String(body.statusCode);
       const requestedCatalogStatus = await resolveProjectStatus(
         runtime.geoProjectRepository,
         geoContext.tenantId,
         requestedStatusCode,
       );
+      const workflowState = workflow.states.find((state) => state.code === requestedStatusCode);
+      if (!workflowState?.active) {
+        throw new AppError('project workflow state is not available', {
+          code: 'GEO_PROJECT_WORKFLOW_STATE_NOT_FOUND',
+          statusCode: 409,
+        });
+      }
       const project = await runtime.geoProjectRepository.create(
         geoContext.tenantId,
         geoContext.actorSub,
@@ -1850,9 +1864,10 @@ const routeGeoRequest = async ({
           iconDataUrl: body.iconDataUrl ? String(body.iconDataUrl) : null,
           status:
             projectStatusOperationalStatus(requestedCatalogStatus) ??
+            projectStatusOperationalStatus(workflowState) ??
             parseGeoProjectStatus(body.status) ??
             'planned',
-          statusCode: requestedStatusCode ?? '1',
+          statusCode: requestedStatusCode,
         },
       );
       return sendJson(response, 201, project);
